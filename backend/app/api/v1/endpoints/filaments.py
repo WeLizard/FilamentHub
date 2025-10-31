@@ -14,7 +14,6 @@ from app.schemas.filament import (
     FilamentListResponse,
     FilamentResponse,
     FilamentUpdate,
-    FilamentWithBrand,
 )
 
 router = APIRouter(prefix="/filaments", tags=["filaments"])
@@ -69,21 +68,77 @@ async def list_filaments(
     )
 
 
-@router.get("/{filament_id}", response_model=FilamentWithBrand)
+@router.get("/{filament_id}", response_model=FilamentResponse)
 async def get_filament(
     filament_id: int,
     db: Annotated[AsyncSession, Depends(get_db)],
-) -> FilamentWithBrand:
-    """Получить материал по ID с информацией о бренде."""
+) -> FilamentResponse:
+    """Получить материал по ID."""
     result = await db.execute(
-        select(Filament).where(Filament.id == filament_id).options(selectinload(Filament.brand))
+        select(Filament).where(Filament.id == filament_id)
     )
     filament = result.scalar_one_or_none()
 
     if not filament:
         raise HTTPException(status_code=404, detail="Filament not found")
 
-    return FilamentWithBrand.model_validate(filament)
+    return FilamentResponse.model_validate(filament)
+
+
+@router.get("/{filament_id}/presets")
+async def get_filament_presets(
+    filament_id: int,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    page: int = Query(1, ge=1),
+    size: int = Query(50, ge=1, le=100),
+    is_official: bool | None = Query(None),
+) -> dict:
+    """Получить пресеты для материала."""
+    from app.models.preset import Preset
+    from app.schemas.preset import PresetResponse
+
+    # Check if filament exists
+    filament_result = await db.execute(select(Filament).where(Filament.id == filament_id))
+    filament = filament_result.scalar_one_or_none()
+
+    if not filament:
+        raise HTTPException(status_code=404, detail="Filament not found")
+
+    # Build query
+    query = select(Preset).where(Preset.filament_id == filament_id, Preset.active == True)
+    if is_official is not None:
+        query = query.where(Preset.is_official == is_official)
+
+    # Count total
+    count_query = select(func.count()).select_from(Preset).where(
+        Preset.filament_id == filament_id, Preset.active == True
+    )
+    if is_official is not None:
+        count_query = count_query.where(Preset.is_official == is_official)
+    total_result = await db.execute(count_query)
+    total = total_result.scalar() or 0
+
+    # Paginate
+    offset = (page - 1) * size
+    query = (
+        query.offset(offset)
+        .limit(size)
+        .order_by(Preset.is_official.desc(), Preset.rating.desc().nulls_last(), Preset.created_at.desc())
+    )
+
+    # Execute
+    result = await db.execute(query)
+    presets = result.scalars().all()
+
+    pages = (total + size - 1) // size if total > 0 else 0
+
+    return {
+        "items": [PresetResponse.model_validate(preset).model_dump() for preset in presets],
+        "total": total,
+        "page": page,
+        "size": size,
+        "pages": pages,
+    }
 
 
 @router.post("/", response_model=FilamentResponse, status_code=201)

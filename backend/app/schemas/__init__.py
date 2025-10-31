@@ -13,7 +13,24 @@ from app.schemas.filament import (
     FilamentListResponse,
     FilamentResponse,
     FilamentUpdate,
-    FilamentWithBrand,
+)
+from app.schemas.preset import (
+    PresetBase,
+    PresetCreate,
+    PresetListResponse,
+    PresetResponse,
+    PresetUpdate,
+)
+from app.schemas.user import (
+    APIKeyResponse,
+    LoginRequest,
+    RegisterRequest,
+    Token,
+    TokenData,
+    UserCreate,
+    UserPublic,
+    UserResponse,
+    UserUpdate,
 )
 
 __all__ = [
@@ -26,7 +43,21 @@ __all__ = [
     "FilamentCreate",
     "FilamentUpdate",
     "FilamentResponse",
-    "FilamentWithBrand",
     "FilamentListResponse",
+    "PresetBase",
+    "PresetCreate",
+    "PresetUpdate",
+    "PresetResponse",
+    "PresetListResponse",
+    "UserBase",
+    "UserCreate",
+    "UserUpdate",
+    "UserResponse",
+    "UserPublic",
+    "Token",
+    "TokenData",
+    "LoginRequest",
+    "RegisterRequest",
+    "APIKeyResponse",
 ]
 

@@ -1,5 +1,7 @@
 """Pydantic schemas for Filament."""
 
+from __future__ import annotations
+
 from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -52,14 +54,12 @@ class FilamentResponse(FilamentBase):
     model_config = ConfigDict(from_attributes=True)
 
 
-class FilamentWithBrand(FilamentResponse):
-    """Schema for Filament with Brand info."""
-
-    from app.schemas.brand import BrandResponse
-
-    brand: BrandResponse
-
-    model_config = ConfigDict(from_attributes=True)
+# FilamentWithBrand - временно закомментирован из-за проблем с forward references в OpenAPI
+# TODO: Восстановить после исправления проблемы
+# class FilamentWithBrand(FilamentResponse):
+#     """Schema for Filament with Brand info."""
+#     brand: "BrandResponse"
+#     model_config = ConfigDict(from_attributes=True)
 
 
 class FilamentListResponse(BaseModel):

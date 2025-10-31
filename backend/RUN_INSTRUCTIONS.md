@@ -86,6 +86,14 @@ psql -U filamenthub -d filamenthub -f create_tables.sql
 
 ## 🐛 Проблемы?
 
+### Docker не запускается (Virtualization support not detected)
+
+**Быстрое решение:** Используйте PostgreSQL БЕЗ Docker!
+
+См. подробные инструкции:
+- `SETUP_WITHOUT_DOCKER.md` - установка PostgreSQL локально
+- `fix_docker_virtualization.md` - как исправить Docker
+
 ### Ошибка подключения к PostgreSQL
 - Убедитесь что PostgreSQL запущен (`docker-compose ps`)
 - Проверьте DATABASE_URL в .env файле

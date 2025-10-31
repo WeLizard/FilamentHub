@@ -1,9 +1,10 @@
 """Preset (настройки печати) model."""
 
 from datetime import datetime
+from enum import Enum
 from typing import TYPE_CHECKING
 
-from sqlalchemy import Boolean, Float, ForeignKey, Integer, String, Text
+from sqlalchemy import Boolean, DateTime, Enum as SQLEnum, Float, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.sql import func
 
@@ -11,6 +12,14 @@ from app.db.base import Base
 
 if TYPE_CHECKING:
     from app.models.filament import Filament
+
+
+class PresetModerationStatus(str, Enum):
+    """Статус модерации пресета."""
+
+    PENDING = "pending"  # Ожидает модерации
+    APPROVED = "approved"  # Одобрен
+    REJECTED = "rejected"  # Отклонен
 
 
 class Preset(Base):
@@ -60,6 +69,21 @@ class Preset(Base):
     # rating: средняя оценка пользователей (1-5)
     usage_count: Mapped[int] = mapped_column(Integer, default=0)
     # usage_count: сколько раз использовали
+
+    # Moderation (для пользовательских пресетов)
+    moderation_status: Mapped[PresetModerationStatus] = mapped_column(
+        SQLEnum(PresetModerationStatus),
+        default=PresetModerationStatus.PENDING,
+        nullable=False,
+        index=True,
+    )
+    # Официальные пресеты автоматически APPROVED
+    # Пользовательские требуют модерации
+    moderation_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    moderated_by: Mapped[int | None] = mapped_column(Integer, nullable=True)  # admin user_id
+    moderated_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
 
     # Status
     active: Mapped[bool] = mapped_column(Boolean, default=True, index=True)

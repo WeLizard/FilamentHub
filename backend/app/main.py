@@ -3,7 +3,6 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-from fastapi.staticfiles import StaticFiles
 
 from app.core.config import settings
 
@@ -25,12 +24,8 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Mount static files (HTML frontend)
-from pathlib import Path
-
-static_dir = Path(__file__).parent.parent.parent / "static"
-if static_dir.exists():
-    app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
+# Static files removed - will use React frontend later
+# Frontend will be separate project (TypeScript + React 18 + Vite)
 
 
 # Health check endpoint
@@ -44,7 +39,7 @@ async def health_check() -> dict[str, str]:
     }
 
 
-# Root endpoint - redirect to frontend
+# Root endpoint
 @app.get("/")
 async def root() -> dict[str, str]:
     """Root endpoint."""
@@ -52,7 +47,7 @@ async def root() -> dict[str, str]:
         "message": f"Welcome to {settings.PROJECT_NAME} API",
         "version": settings.VERSION,
         "docs": f"{settings.API_V1_PREFIX}/docs",
-        "frontend": "/static/index.html",
+        "api": f"{settings.API_V1_PREFIX}",
     }
 
 
@@ -60,3 +55,7 @@ async def root() -> dict[str, str]:
 from app.api.v1.api import api_router
 
 app.include_router(api_router, prefix=settings.API_V1_PREFIX)
+
+
+# FilamentWithBrand and PresetWithFilament временно отключены
+# TODO: Восстановить после исправления проблемы с forward references
