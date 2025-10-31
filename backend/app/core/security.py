@@ -13,7 +13,8 @@ from app.core.config import settings
 ALGORITHM = settings.ALGORITHM
 
 # Password hashing context
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+# Отключаем wrap bug detection для совместимости с bcrypt 4.x
+pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto", bcrypt__ident="2b")
 
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
@@ -23,7 +24,14 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
 
 def get_password_hash(password: str) -> str:
     """Hash a password."""
-    return pwd_context.hash(password)
+    try:
+        return pwd_context.hash(password)
+    except Exception as e:
+        # Логируем ошибку для отладки
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.error(f"Error hashing password: {str(e)}", exc_info=True)
+        raise
 
 
 def create_access_token(data: dict[str, Any], expires_delta: timedelta | None = None) -> str:
@@ -35,7 +43,17 @@ def create_access_token(data: dict[str, Any], expires_delta: timedelta | None = 
     else:
         expire = datetime.utcnow() + timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
     
-    to_encode.update({"exp": expire})
+    to_encode.update({"exp": expire, "type": "access"})
+    encoded_jwt = jwt.encode(to_encode, settings.SECRET_KEY, algorithm=ALGORITHM)
+    return encoded_jwt
+
+
+def create_refresh_token(data: dict[str, Any]) -> str:
+    """Create a JWT refresh token."""
+    to_encode = data.copy()
+    expire = datetime.utcnow() + timedelta(days=settings.REFRESH_TOKEN_EXPIRE_DAYS)
+    
+    to_encode.update({"exp": expire, "type": "refresh"})
     encoded_jwt = jwt.encode(to_encode, settings.SECRET_KEY, algorithm=ALGORITHM)
     return encoded_jwt
 
@@ -44,6 +62,21 @@ def decode_access_token(token: str) -> dict[str, Any] | None:
     """Decode a JWT access token."""
     try:
         payload = jwt.decode(token, settings.SECRET_KEY, algorithms=[ALGORITHM])
+        # Проверяем тип токена
+        if payload.get("type") != "access":
+            return None
+        return payload
+    except JWTError:
+        return None
+
+
+def decode_refresh_token(token: str) -> dict[str, Any] | None:
+    """Decode a JWT refresh token."""
+    try:
+        payload = jwt.decode(token, settings.SECRET_KEY, algorithms=[ALGORITHM])
+        # Проверяем тип токена
+        if payload.get("type") != "refresh":
+            return None
         return payload
     except JWTError:
         return None
