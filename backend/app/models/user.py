@@ -3,7 +3,7 @@
 from datetime import datetime
 from enum import Enum
 
-from sqlalchemy import Boolean, DateTime, Integer, String, Text
+from sqlalchemy import Boolean, DateTime, Enum as SQLEnum, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.sql import func
 
@@ -27,7 +27,11 @@ class User(Base):
     email: Mapped[str] = mapped_column(String(255), unique=True, index=True, nullable=False)
     username: Mapped[str] = mapped_column(String(100), unique=True, index=True, nullable=False)
     password_hash: Mapped[str] = mapped_column(String(255), nullable=False)
-    role: Mapped[UserRole] = mapped_column(String(20), default=UserRole.USER, nullable=False)
+    role: Mapped[UserRole] = mapped_column(
+        SQLEnum(UserRole, values_callable=lambda x: [e.value for e in x]),
+        default=UserRole.USER,
+        nullable=False,
+    )
     
     # API key for OrcaSlicer integration
     api_key: Mapped[str | None] = mapped_column(String(64), unique=True, index=True, nullable=True)

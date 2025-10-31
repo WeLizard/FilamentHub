@@ -72,7 +72,7 @@ class Preset(Base):
 
     # Moderation (для пользовательских пресетов)
     moderation_status: Mapped[PresetModerationStatus] = mapped_column(
-        SQLEnum(PresetModerationStatus),
+        SQLEnum(PresetModerationStatus, values_callable=lambda x: [e.value for e in x]),
         default=PresetModerationStatus.PENDING,
         nullable=False,
         index=True,
