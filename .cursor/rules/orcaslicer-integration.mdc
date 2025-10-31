@@ -1,0 +1,375 @@
+---
+description: Правила для интеграции FilamentHub с OrcaSlicer (C++)
+globs:
+  - "orcaslicer-fork/**/*.cpp"
+  - "orcaslicer-fork/**/*.h"
+  - "orcaslicer-fork/**/*.hpp"
+alwaysApply: false
+---
+
+# OrcaSlicer Integration Rules
+
+## ⚠️ Важно
+
+Этот модуль пока в стадии **изучения** (Фаза 2).  
+Активная разработка начнётся после базового Backend MVP.
+
+---
+
+## 🎯 Цель интеграции
+
+Встроить FilamentHub прямо в OrcaSlicer UI:
+- Новый tab "FilamentHub" (рядом с Подготовка, Принтер, Проект)
+- Синхронизация профилей в "Профиль прутка" dropdown
+- Авторизация через API key
+- Поиск и применение материалов
+
+---
+
+## 🏗️ Архитектура OrcaSlicer
+
+### Структура проекта:
+```
+OrcaSlicer/
+├── src/
+│   ├── slic3r/
+│   │   ├── GUI/              # UI компоненты (wxWidgets)
+│   │   │   ├── Tab.cpp       # Базовый класс для tabs
+│   │   │   ├── MainFrame.cpp # Главное окно
+│   │   │   ├── Plater.cpp    # 3D view
+│   │   │   └── ...
+│   │   └── Utils/
+│   │       └── Http.cpp      # HTTP клиент (libcurl)
+│   ├── libslic3r/            # Core slicing engine
+│   └── ...
+├── resources/                 # Icons, profiles
+└── CMakeLists.txt
+```
+
+### Технологии:
+- **Язык:** C++17
+- **UI:** wxWidgets 3.2+
+- **HTTP:** libcurl (уже есть в проекте)
+- **Build:** CMake
+- **Платформы:** Windows, macOS, Linux
+
+---
+
+## 📝 C++ Code Style (OrcaSlicer conventions)
+
+### Naming:
+- `PascalCase` - классы: `FilamentHubPanel`
+- `snake_case` - функции: `load_filaments()`
+- `m_snake_case` - member variables: `m_api_key`
+- `SCREAMING_SNAKE_CASE` - константы: `API_BASE_URL`
+
+### Formatting (clang-format):
+- 4 spaces indentation
+- 140 column limit
+- Brace wrapping for classes/functions
+- Aligned initializers
+
+### Example:
+```cpp
+class FilamentHubPanel : public wxPanel
+{
+public:
+    FilamentHubPanel(wxWindow* parent);
+    ~FilamentHubPanel();
+
+    void load_filaments(const std::string& query);
+    void apply_profile(int filament_id);
+
+private:
+    std::string m_api_key;
+    std::string m_base_url;
+    
+    wxTextCtrl*   m_search_box;
+    wxListCtrl*   m_results_list;
+    wxButton*     m_apply_button;
+    
+    void on_search_clicked(wxCommandEvent& event);
+    void on_apply_clicked(wxCommandEvent& event);
+};
+```
+
+---
+
+## 🔌 HTTP Client (libcurl)
+
+OrcaSlicer уже использует libcurl для HTTP запросов.
+
+### Пример GET запроса:
+```cpp
+#include "slic3r/Utils/Http.hpp"
+
+namespace Slic3r {
+namespace GUI {
+
+void FilamentHubPanel::load_filaments(const std::string& query)
+{
+    std::string url = m_base_url + "/api/v1/filaments?search=" + query;
+    
+    auto http = Http::get(url);
+    http.header("Authorization", "Bearer " + m_api_key);
+    http.on_complete([this](std::string body, unsigned status) {
+        if (status == 200) {
+            // Parse JSON response
+            parse_filaments_response(body);
+        } else {
+            show_error("Failed to load filaments");
+        }
+    });
+    http.on_error([this](std::string body, std::string error, unsigned status) {
+        show_error("Network error: " + error);
+    });
+    http.perform_sync();
+}
+
+} // namespace GUI
+} // namespace Slic3r
+```
+
+---
+
+## 🎨 wxWidgets UI Basics
+
+### Creating a Panel:
+```cpp
+FilamentHubPanel::FilamentHubPanel(wxWindow* parent)
+    : wxPanel(parent, wxID_ANY)
+{
+    // Main sizer
+    auto* main_sizer = new wxBoxSizer(wxVERTICAL);
+    
+    // Search box
+    auto* search_sizer = new wxBoxSizer(wxHORIZONTAL);
+    m_search_box = new wxTextCtrl(this, wxID_ANY, "", 
+                                   wxDefaultPosition, wxDefaultSize);
+    auto* search_btn = new wxButton(this, wxID_ANY, "Search");
+    
+    search_sizer->Add(m_search_box, 1, wxEXPAND | wxRIGHT, 5);
+    search_sizer->Add(search_btn, 0);
+    
+    // Results list
+    m_results_list = new wxListCtrl(this, wxID_ANY, 
+                                     wxDefaultPosition, wxDefaultSize,
+                                     wxLC_REPORT | wxLC_SINGLE_SEL);
+    m_results_list->AppendColumn("Material", wxLIST_FORMAT_LEFT, 200);
+    m_results_list->AppendColumn("Brand", wxLIST_FORMAT_LEFT, 150);
+    m_results_list->AppendColumn("Type", wxLIST_FORMAT_LEFT, 80);
+    
+    // Apply button
+    m_apply_button = new wxButton(this, wxID_ANY, "Add to Profiles");
+    
+    // Layout
+    main_sizer->Add(search_sizer, 0, wxEXPAND | wxALL, 5);
+    main_sizer->Add(m_results_list, 1, wxEXPAND | wxALL, 5);
+    main_sizer->Add(m_apply_button, 0, wxALIGN_RIGHT | wxALL, 5);
+    
+    SetSizer(main_sizer);
+    
+    // Bind events
+    search_btn->Bind(wxEVT_BUTTON, &FilamentHubPanel::on_search_clicked, this);
+    m_apply_button->Bind(wxEVT_BUTTON, &FilamentHubPanel::on_apply_clicked, this);
+}
+```
+
+---
+
+## 📦 JSON Parsing
+
+OrcaSlicer использует **nlohmann/json** (уже в проекте).
+
+```cpp
+#include <nlohmann/json.hpp>
+
+using json = nlohmann::json;
+
+void FilamentHubPanel::parse_filaments_response(const std::string& body)
+{
+    try {
+        auto j = json::parse(body);
+        
+        // Clear existing items
+        m_results_list->DeleteAllItems();
+        
+        // Parse items array
+        for (const auto& item : j["items"]) {
+            int idx = m_results_list->GetItemCount();
+            
+            std::string name = item["name"];
+            std::string brand = item["brand"]["name"];
+            std::string type = item["material_type"];
+            
+            m_results_list->InsertItem(idx, name);
+            m_results_list->SetItem(idx, 1, brand);
+            m_results_list->SetItem(idx, 2, type);
+            
+            // Store filament_id in item data
+            m_results_list->SetItemData(idx, item["id"]);
+        }
+    } catch (json::exception& e) {
+        show_error("Failed to parse response: " + std::string(e.what()));
+    }
+}
+```
+
+---
+
+## 🔐 Configuration & Persistence
+
+Сохранение API key и настроек:
+
+```cpp
+#include "slic3r/GUI/Preferences.hpp"
+
+// Save API key
+void FilamentHubPanel::save_api_key(const std::string& api_key)
+{
+    wxGetApp().app_config->set("filamenthub", "api_key", api_key);
+    wxGetApp().app_config->save();
+}
+
+// Load API key
+std::string FilamentHubPanel::load_api_key()
+{
+    return wxGetApp().app_config->get("filamenthub", "api_key");
+}
+```
+
+---
+
+## 📁 Profile Management
+
+Найти где хранятся профили и добавить свои:
+
+```cpp
+#include "slic3r/GUI/Preset.hpp"
+
+void FilamentHubPanel::download_and_save_profile(int filament_id)
+{
+    // 1. Download profile JSON from API
+    std::string url = m_base_url + "/api/v1/filaments/" + 
+                      std::to_string(filament_id) + "/profile";
+    
+    auto http = Http::get(url);
+    http.header("Authorization", "Bearer " + m_api_key);
+    http.on_complete([this](std::string body, unsigned status) {
+        if (status == 200) {
+            save_profile_to_file(body);
+        }
+    });
+    http.perform_sync();
+}
+
+void FilamentHubPanel::save_profile_to_file(const std::string& json_content)
+{
+    // 2. Parse JSON
+    auto j = json::parse(json_content);
+    
+    // 3. Get filament preset dir
+    auto preset_dir = wxGetApp().preset_bundle->filaments.get_preset_dir();
+    
+    // 4. Generate filename
+    std::string filename = j["name"].get<std::string>() + " (FilamentHub).json";
+    boost::filesystem::path profile_path = preset_dir / filename;
+    
+    // 5. Write file
+    std::ofstream file(profile_path.string());
+    file << json_content;
+    file.close();
+    
+    // 6. Reload presets
+    wxGetApp().preset_bundle->filaments.load_presets();
+    
+    show_message("Profile added successfully!");
+}
+```
+
+---
+
+## 🔧 Adding New Tab
+
+Зарегистрировать FilamentHub tab в MainFrame:
+
+```cpp
+// В src/slic3r/GUI/MainFrame.cpp
+
+#include "FilamentHubPanel.h"
+
+void MainFrame::init_tabpanel()
+{
+    // ... существующий код ...
+    
+    // Add FilamentHub tab
+    m_tabpanel->AddPage(new FilamentHubPanel(m_tabpanel), 
+                        _(L("FilamentHub")), 
+                        "filamenthub_icon");
+    
+    // ...
+}
+```
+
+---
+
+## 🧪 Testing
+
+### Local Development:
+1. Компилируем OrcaSlicer с изменениями
+2. Запускаем Backend локально (localhost:8000)
+3. В OrcaSlicer настраиваем base_url = "http://localhost:8000"
+4. Тестируем интеграцию
+
+### Debugging:
+- Используем Visual Studio или CLion
+- Breakpoints в `FilamentHubPanel` методах
+- Логирование через `BOOST_LOG_TRIVIAL`
+
+```cpp
+#include <boost/log/trivial.hpp>
+
+BOOST_LOG_TRIVIAL(info) << "FilamentHub: Loading filaments from API";
+BOOST_LOG_TRIVIAL(error) << "FilamentHub: Failed to connect: " << error_msg;
+```
+
+---
+
+## 📚 Референсы
+
+### OrcaSlicer Docs:
+- `OrcaSlicer-main/CLAUDE.md` - архитектура проекта
+- `OrcaSlicer-main/AGENTS.md` - стиль кода
+- `src/slic3r/GUI/Tab.cpp` - пример реализации tab
+
+### wxWidgets Docs:
+- https://docs.wxwidgets.org/3.2/
+
+### HTTP в OrcaSlicer:
+- `src/slic3r/Utils/Http.cpp` - наш HTTP клиент
+
+---
+
+## 🚦 Workflow
+
+### Фаза 2.1: Изучение (Сейчас)
+- [ ] Клонировать репо
+- [ ] Прочитать документацию
+- [ ] Найти где tabs создаются
+- [ ] Скомпилировать локально
+
+### Фаза 2.2: Proof-of-Concept
+- [ ] Создать форк
+- [ ] Добавить пустой FilamentHub tab
+- [ ] Сделать тестовый HTTP запрос
+- [ ] Скомпилировать и протестировать
+
+### Фаза 2.3: Implementation
+- [ ] Реализовать UI
+- [ ] Подключить к Backend API
+- [ ] Реализовать profile sync
+- [ ] Тестирование
+
+---
+
+**Пока изучаем архитектуру параллельно с Backend разработкой!**
