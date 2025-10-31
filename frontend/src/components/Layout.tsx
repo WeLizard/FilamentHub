@@ -92,7 +92,12 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
       <main className="relative max-w-7xl mx-auto px-6 py-8 z-10">{children}</main>
 
       {/* Auth Modal */}
-      <AuthModal isOpen={isAuthModalOpen} onClose={() => setIsAuthModalOpen(false)} />
+      <AuthModal
+        isOpen={isAuthModalOpen}
+        onClose={() => {
+          setIsAuthModalOpen(false);
+        }}
+      />
     </div>
   );
 };

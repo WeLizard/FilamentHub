@@ -1,7 +1,7 @@
 /** Страница профиля пользователя */
 
 import { useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   User,
   Package,
@@ -19,16 +19,21 @@ import {
   Thermometer,
   Gauge,
   Clock,
+  Edit,
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { presetsAPI } from '../api/client';
+import { CreatePresetModal } from '../components/CreatePresetModal';
 import type { Preset } from '../types/api';
 
 export const ProfilePage: React.FC = () => {
   const { user } = useAuth();
+  const queryClient = useQueryClient();
   const [userTab, setUserTab] = useState<'dashboard' | 'presets' | 'history' | 'calculator'>(
     'dashboard'
   );
+  const [isCreatePresetModalOpen, setIsCreatePresetModalOpen] = useState(false);
+  const [editingPreset, setEditingPreset] = useState<Preset | null>(null);
 
   // Загружаем пресеты пользователя
   const { data: userPresetsData } = useQuery({
@@ -37,6 +42,37 @@ export const ProfilePage: React.FC = () => {
   });
 
   const userPresets = userPresetsData?.items || [];
+
+  // Мутация для удаления пресета
+  const deletePresetMutation = useMutation({
+    mutationFn: (id: number) => presetsAPI.delete(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['user-presets'] });
+      queryClient.invalidateQueries({ queryKey: ['presets'] });
+      queryClient.invalidateQueries({ queryKey: ['filament-presets'] });
+    },
+  });
+
+  const handleDeletePreset = (presetId: number) => {
+    if (confirm('Вы уверены, что хотите удалить этот пресет?')) {
+      deletePresetMutation.mutate(presetId);
+    }
+  };
+
+  const handleEditPreset = (preset: Preset) => {
+    setEditingPreset(preset);
+    setIsCreatePresetModalOpen(true);
+  };
+
+  const handleCreatePreset = () => {
+    setEditingPreset(null);
+    setIsCreatePresetModalOpen(true);
+  };
+
+  const handleClosePresetModal = () => {
+    setIsCreatePresetModalOpen(false);
+    setEditingPreset(null);
+  };
 
   // TODO: Загрузить историю печати (когда будет эндпоинт)
   const userHistory: Array<{
@@ -145,7 +181,10 @@ export const ProfilePage: React.FC = () => {
         <div className="space-y-6">
           <div className="flex items-center justify-between">
             <h3 className="text-2xl font-bold text-white">Мои пресеты</h3>
-            <button className="bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white px-4 py-2 rounded-xl transition-all shadow-lg shadow-purple-500/25 hover:shadow-purple-500/40">
+            <button
+              onClick={handleCreatePreset}
+              className="bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white px-4 py-2 rounded-xl transition-all shadow-lg shadow-purple-500/25 hover:shadow-purple-500/40"
+            >
               <Plus className="w-4 h-4 inline mr-2" />
               Новый пресет
             </button>
@@ -153,7 +192,12 @@ export const ProfilePage: React.FC = () => {
 
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             {userPresets.map((preset) => (
-              <PresetCard key={preset.id} preset={preset} />
+              <PresetCard
+                key={preset.id}
+                preset={preset}
+                onEdit={handleEditPreset}
+                onDelete={handleDeletePreset}
+              />
             ))}
           </div>
 
@@ -201,6 +245,13 @@ export const ProfilePage: React.FC = () => {
           <CalculatorComponent />
         </div>
       )}
+
+      {/* Create/Edit Preset Modal */}
+      <CreatePresetModal
+        isOpen={isCreatePresetModalOpen}
+        onClose={handleClosePresetModal}
+        preset={editingPreset}
+      />
     </div>
   );
 };
@@ -306,20 +357,30 @@ const RecentHistory: React.FC<RecentHistoryProps> = ({ history }) => (
 
 interface PresetCardProps {
   preset: Preset;
+  onEdit?: (preset: Preset) => void;
+  onDelete?: (presetId: number) => void;
 }
 
-const PresetCard: React.FC<PresetCardProps> = ({ preset }) => (
+const PresetCard: React.FC<PresetCardProps> = ({ preset, onEdit, onDelete }) => (
   <div className="bg-white/10 backdrop-blur-sm rounded-2xl p-6 border border-white/20 shadow-xl">
     <div className="flex items-center justify-between mb-4">
       <h4 className="text-xl font-bold text-white">{preset.name}</h4>
       <div className="flex space-x-2">
-        <button className="p-2 bg-white/10 hover:bg-white/20 rounded-lg text-white transition-all">
+        <button
+          onClick={() => onEdit?.(preset)}
+          className="p-2 bg-white/10 hover:bg-white/20 rounded-lg text-white transition-all"
+          title="Редактировать"
+        >
+          <Edit className="w-4 h-4" />
+        </button>
+        <button className="p-2 bg-white/10 hover:bg-white/20 rounded-lg text-white transition-all" title="Скачать">
           <Download className="w-4 h-4" />
         </button>
-        <button className="p-2 bg-white/10 hover:bg-white/20 rounded-lg text-white transition-all">
-          <Upload className="w-4 h-4" />
-        </button>
-        <button className="p-2 bg-white/10 hover:bg-white/20 rounded-lg text-white transition-all">
+        <button
+          onClick={() => onDelete?.(preset.id)}
+          className="p-2 bg-white/10 hover:bg-red-500/20 rounded-lg text-white transition-all"
+          title="Удалить"
+        >
           <Trash2 className="w-4 h-4" />
         </button>
       </div>

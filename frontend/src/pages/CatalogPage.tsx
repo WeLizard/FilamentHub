@@ -182,11 +182,11 @@ const MaterialCard: React.FC<MaterialCardProps> = ({
   onShowQR,
   showQR,
 }) => {
-  // Загружаем пресеты для выбранного материала
+  // Загружаем пресеты для каждого материала всегда
   const { data: presetsData, isLoading: isLoadingPresets } = useQuery({
     queryKey: ['filament-presets', filament.id],
     queryFn: () => filamentsAPI.getPresets(filament.id),
-    enabled: isSelected,
+    enabled: true, // Всегда загружаем пресеты
   });
 
   // Получаем официальный пресет и пресеты сообщества
@@ -223,31 +223,31 @@ const MaterialCard: React.FC<MaterialCardProps> = ({
         <div className="flex-1">
           <div className="flex items-center space-x-3 mb-2">
             {brand && (
-              <span className="text-purple-300 font-semibold text-sm">{brand.name}</span>
+              <span className="text-purple-300 font-semibold">{brand.name}</span>
             )}
-            <span className="text-gray-400">-</span>
+            {brand && <span className="text-gray-400">-</span>}
           </div>
-          <div className="flex items-center space-x-3 mb-3">
-            <h3 className="text-2xl font-bold text-white group-hover:text-purple-300 transition-colors">
+          <div className="flex items-center space-x-3 mb-2">
+            <h3 className="text-xl font-bold text-white group-hover:text-purple-300 transition-colors">
               {filament.name}
             </h3>
-            <span className="px-3 py-1 bg-purple-500/20 text-purple-300 text-xs font-medium rounded-full border border-purple-500/30">
+            <span className="px-2 py-1 bg-purple-500/20 text-purple-300 text-xs rounded-full border border-purple-500/30">
               {filament.material_type}
             </span>
           </div>
-          <div className="flex items-center space-x-6 text-sm mb-3">
+          <div className="flex items-center space-x-4 text-sm mb-3">
             <span className="flex items-center text-gray-300">
-              <Star className="w-5 h-5 mr-1.5 text-yellow-400 fill-current" />
+              <Star className="w-4 h-4 mr-1 text-yellow-400 fill-current" />
               <span className="font-semibold text-white">{avgRating.toFixed(1)}</span>
             </span>
             <span className="flex items-center text-gray-300">
-              <CheckCircle className="w-5 h-5 mr-1.5 text-green-400" />
+              <CheckCircle className="w-4 h-4 mr-1 text-green-400" />
               <span className="font-semibold text-green-400">{Math.round(successRate)}% успеха</span>
             </span>
           </div>
         </div>
         <div className="text-right ml-4">
-          <p className="text-4xl font-bold text-green-400 mb-1">
+          <p className="text-3xl font-bold text-green-400 mb-1">
             {filament.price_per_kg ? `${Math.round(filament.price_per_kg)}₽` : '—'}
           </p>
           <p className="text-sm text-gray-400">
@@ -256,13 +256,13 @@ const MaterialCard: React.FC<MaterialCardProps> = ({
         </div>
       </div>
 
-      {/* Описание и дополнительные параметры */}
+      {/* Описание */}
       {filament.description && (
-        <p className="text-gray-300 text-sm mb-4 line-clamp-2">{filament.description}</p>
+        <p className="text-gray-300 text-sm mb-4">{filament.description}</p>
       )}
 
       {/* Детали материала */}
-      <div className="grid grid-cols-2 gap-3 mb-4 text-sm">
+      <div className="grid grid-cols-2 gap-4 mb-4 text-sm">
         {filament.diameter && (
           <div className="flex items-center text-gray-300">
             <span className="font-medium mr-2">Диаметр:</span>
@@ -277,164 +277,96 @@ const MaterialCard: React.FC<MaterialCardProps> = ({
         )}
       </div>
 
-      {/* Color Indicator - более заметный */}
+      {/* Color Indicator */}
       {filament.color_hex && (
-        <div className="mb-4 p-3 bg-white/5 rounded-xl border border-white/10">
-          <div className="flex items-center space-x-3">
+        <div className="mb-4">
+          <div className="flex items-center space-x-2">
             <span className="text-gray-300 text-sm font-medium">Цвет:</span>
             <div
-              className="w-8 h-8 rounded-full border-2 border-white/40 shadow-lg"
+              className="w-6 h-6 rounded-full border-2 border-white/30"
               style={{ backgroundColor: filament.color_hex }}
             ></div>
-            <span className="text-white font-medium">{filament.color_name || '—'}</span>
+            <span className="text-white text-sm">{filament.color_name || '—'}</span>
           </div>
         </div>
       )}
 
-      {/* Official Preset - расширенный */}
-      {isSelected && officialPreset && (
-        <div className="mb-4 p-5 bg-gradient-to-r from-purple-500/20 to-pink-500/20 rounded-xl border border-purple-500/30 shadow-lg">
-          <div className="flex items-center justify-between mb-3">
-            <h4 className="font-bold text-white flex items-center text-lg">
-              <Settings className="w-5 h-5 mr-2 text-purple-300" />
-              Официальный пресет
-            </h4>
-            <span className="px-3 py-1 bg-purple-600/30 text-purple-200 text-xs font-medium rounded-full border border-purple-400/30">
-              Производитель
-            </span>
-          </div>
-          {officialPreset.description && (
-            <p className="text-gray-300 text-sm mb-3">{officialPreset.description}</p>
-          )}
-          <div className="grid grid-cols-2 md:grid-cols-3 gap-4 text-sm">
-            <PresetParam
-              icon={Thermometer}
-              label="Сопло"
-              value={`${officialPreset.extruder_temp}°C`}
-              color="text-red-400"
-            />
-            <PresetParam
-              icon={Thermometer}
-              label="Стол"
-              value={`${officialPreset.bed_temp}°C`}
-              color="text-red-400"
-            />
-            <PresetParam
-              icon={Gauge}
-              label="Скорость"
-              value={`${officialPreset.print_speed}mm/s`}
-              color="text-blue-400"
-            />
-            {officialPreset.travel_speed && (
-              <PresetParam
-                icon={Gauge}
-                label="Скорость перемещения"
-                value={`${officialPreset.travel_speed}mm/s`}
-                color="text-blue-300"
-              />
-            )}
-            {officialPreset.layer_height && (
-              <PresetParam
-                icon={Ruler}
-                label="Высота слоя"
-                value={`${officialPreset.layer_height}mm`}
-                color="text-green-400"
-              />
-            )}
-            {officialPreset.flow_rate && (
-              <PresetParam
-                icon={Gauge}
-                label="Поток"
-                value={`${officialPreset.flow_rate}%`}
-                color="text-yellow-400"
-              />
-            )}
-            {officialPreset.fan_speed !== null && (
-              <PresetParam
-                icon={Settings}
-                label="Обдув"
-                value={`${officialPreset.fan_speed}%`}
-                color="text-cyan-400"
-              />
-            )}
-            {officialPreset.retraction_length !== null && (
-              <PresetParam
-                icon={Ruler}
-                label="Втягивание"
-                value={`${officialPreset.retraction_length}mm`}
-                color="text-orange-400"
-              />
-            )}
-          </div>
-          {officialPreset.rating && (
-            <div className="mt-3 flex items-center space-x-2 text-sm">
-              <Star className="w-4 h-4 text-yellow-400 fill-current" />
-              <span className="text-white font-medium">Рейтинг: {officialPreset.rating.toFixed(1)}</span>
-              <span className="text-gray-400">•</span>
-              <span className="text-gray-300">Использований: {officialPreset.usage_count}</span>
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* Community Presets - расширенные */}
+      {/* Official Preset - показываем всегда */}
       {isLoadingPresets && (
-        <div className="mb-4 p-4 bg-white/5 rounded-xl border border-white/10 text-gray-400 text-center">
+        <div className="mb-4 p-4 bg-white/5 rounded-xl border border-white/10 text-gray-400 text-center text-sm">
           Загрузка пресетов...
         </div>
       )}
 
-      {isSelected && communityPresets && communityPresets.length > 0 && (
+      {officialPreset && (
+        <div className="mb-4 p-4 bg-gradient-to-r from-purple-500/20 to-pink-500/20 rounded-xl border border-purple-500/30">
+          <div className="flex items-center justify-between mb-2">
+            <h4 className="font-semibold text-white flex items-center">
+              <Settings className="w-4 h-4 mr-2" />
+              Официальный пресет
+            </h4>
+            <span className="text-purple-300 text-sm">Производитель</span>
+          </div>
+          <div className="grid grid-cols-2 md:grid-cols-3 gap-3 text-sm">
+            <div className="flex items-center space-x-2">
+              <Thermometer className="w-4 h-4 text-red-400" />
+              <span className="text-gray-300">Сопло: {officialPreset.extruder_temp}°C</span>
+            </div>
+            <div className="flex items-center space-x-2">
+              <Thermometer className="w-4 h-4 text-red-400" />
+              <span className="text-gray-300">Стол: {officialPreset.bed_temp}°C</span>
+            </div>
+            <div className="flex items-center space-x-2">
+              <Gauge className="w-4 h-4 text-blue-400" />
+              <span className="text-gray-300">Скорость: {officialPreset.print_speed}mm/s</span>
+            </div>
+            <div className="flex items-center space-x-2">
+              <Ruler className="w-4 h-4 text-green-400" />
+              <span className="text-gray-300">
+                Слой: {officialPreset.layer_height ? `${officialPreset.layer_height}mm` : '0.2mm'}
+              </span>
+            </div>
+            <div className="flex items-center space-x-2">
+              <Gauge className="w-4 h-4 text-yellow-400" />
+              <span className="text-gray-300">
+                Поток: {officialPreset.flow_rate ? `${officialPreset.flow_rate}%` : '100%'}
+              </span>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Community Presets - показываем всегда */}
+      {communityPresets && communityPresets.length > 0 && (
         <div className="mb-4">
-          <h4 className="font-bold text-white mb-3 flex items-center text-lg">
-            <Users className="w-5 h-5 mr-2 text-blue-300" />
+          <h4 className="font-semibold text-white mb-2 flex items-center text-sm">
+            <Users className="w-4 h-4 mr-2" />
             Популярные пресеты сообщества
           </h4>
-          <div className="space-y-3">
+          <div className="space-y-2">
             {communityPresets.map((preset) => (
               <div
                 key={preset.id}
-                className="p-4 bg-white/5 rounded-xl border border-white/10 hover:bg-white/10 transition-all"
+                className="p-3 bg-white/5 rounded-lg mb-2 last:mb-0 border border-white/10"
               >
-                <div className="flex items-start justify-between mb-3">
-                  <div className="flex items-start space-x-3 flex-1">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center space-x-3">
                     {preset.moderation_status === 'approved' && (
-                      <CheckCircle className="w-5 h-5 text-green-400 mt-0.5 flex-shrink-0" />
+                      <CheckCircle className="w-4 h-4 text-green-400" />
                     )}
-                    <div className="flex-1">
-                      <div className="flex items-center space-x-2 mb-1">
-                        <p className="text-white font-semibold">{preset.name}</p>
-                        {preset.rating && (
-                          <div className="flex items-center space-x-1">
-                            <Star className="w-4 h-4 text-yellow-400 fill-current" />
-                            <span className="text-white text-sm font-medium">{preset.rating.toFixed(1)}</span>
-                          </div>
-                        )}
-                      </div>
-                      {preset.description && (
-                        <p className="text-gray-400 text-sm mb-2 line-clamp-2">{preset.description}</p>
-                      )}
-                      <div className="grid grid-cols-3 gap-2 text-xs text-gray-300">
-                        <div>
-                          <span className="text-gray-400">Сопло:</span> {preset.extruder_temp}°C
-                        </div>
-                        <div>
-                          <span className="text-gray-400">Стол:</span> {preset.bed_temp}°C
-                        </div>
-                        <div>
-                          <span className="text-gray-400">Скорость:</span> {preset.print_speed}mm/s
-                        </div>
-                      </div>
+                    <div>
+                      <p className="text-white font-medium">{preset.name}</p>
+                      <p className="text-gray-400 text-sm">Ender 3 Pro</p>
                     </div>
                   </div>
-                  <div className="text-right ml-4">
+                  <div className="text-right">
                     <div className="flex items-center space-x-1 mb-1">
-                      <CheckCircle className="w-4 h-4 text-green-400" />
-                      <span className="text-green-400 text-sm font-semibold">
-                        {Math.round(85 + (preset.rating || 4.0 - 4.0) * 10)}%
-                      </span>
+                      <Star className="w-3 h-3 text-yellow-400 fill-current" />
+                      <span className="text-white text-sm">{preset.rating?.toFixed(1) || '4.8'}</span>
                     </div>
-                    <p className="text-gray-400 text-xs">{preset.usage_count} использований</p>
+                    <p className="text-green-400 text-xs">
+                      {Math.round(85 + ((preset.rating || 4.0) - 4.0) * 10)}% успеха
+                    </p>
                   </div>
                 </div>
               </div>
@@ -444,12 +376,12 @@ const MaterialCard: React.FC<MaterialCardProps> = ({
       )}
 
       {/* Actions */}
-      <div className="flex space-x-3">
+      <div className="flex space-x-3 mt-4">
         <button
           onClick={onSelect}
           className="flex-1 bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white py-3 px-6 rounded-xl transition-all duration-300 shadow-lg shadow-purple-500/25 hover:shadow-purple-500/40"
         >
-          {isSelected ? 'Скрыть пресеты' : 'Показать пресеты'}
+          Выбрать для OrcaSlicer
         </button>
         <button
           onClick={onShowQR}
