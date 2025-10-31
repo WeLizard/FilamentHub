@@ -10,9 +10,9 @@
 
 ```
 ✅ Фаза 0: Планирование                 [████████████████████] 100%
-🔥 Фаза 1: Backend API                  [█░░░░░░░░░░░░░░░░░░░]   5%
+🔥 Фаза 1: Backend API                  [█████░░░░░░░░░░░░░░░]  40%
+⏳ Фаза 3: Web UI                       [███████░░░░░░░░░░░░░]  35%
 👀 Фаза 2: OrcaSlicer Integration       [░░░░░░░░░░░░░░░░░░░░]   0%
-⏳ Фаза 3: Web UI                       [░░░░░░░░░░░░░░░░░░░░]   0%
 ⏳ Фаза 4: Публичный запуск             [░░░░░░░░░░░░░░░░░░░░]   0%
 ```
 
@@ -41,12 +41,12 @@
 
 ## 🔥 ФАЗА 1: Backend API MVP (Месяц 1-3)
 
-**Прогресс:** 5% (Структура правил готова, код ещё нет)
+**Прогресс:** 40% (Базовые модели, эндпоинты, тесты реализованы)
 
-### 1.1 Настройка проекта ⏳
+### 1.1 Настройка проекта ✅
 **Задачи на эту неделю:**
 
-- [ ] Создать структуру `backend/` проекта
+- [x] Создать структуру `backend/` проекта
   ```
   backend/
   ├── app/
@@ -63,63 +63,63 @@
   ├── pyproject.toml
   └── docker-compose.yml
   ```
-- [ ] Настроить `pyproject.toml` (FastAPI, SQLAlchemy, Alembic, pytest)
-- [ ] Создать `docker-compose.yml` (PostgreSQL 15 + Redis 7)
-- [ ] Создать `.env.example` с переменными
-- [ ] Поднять Docker контейнеры локально
-- [ ] Проверить подключение к PostgreSQL
-- [ ] Инициализировать Alembic
-- [ ] Создать первую миграцию (init)
+- [x] Настроить `pyproject.toml` (FastAPI, SQLAlchemy, Alembic, pytest)
+- [x] Создать `docker-compose.yml` (PostgreSQL 15 + Redis 7)
+- [x] Создать `.env.example` с переменными
+- [x] Поднять Docker контейнеры локально
+- [x] Проверить подключение к PostgreSQL
+- [x] Инициализировать Alembic
+- [x] Создать первую миграцию (init)
 
-### 1.2 Базовые модели ⏳
+### 1.2 Базовые модели ✅
 **После 1.1:**
 
-- [ ] `app/models/user.py` - User (id, email, username, role, api_key)
-- [ ] `app/models/brand.py` - Brand (id, name, verified, timestamps)
-- [ ] `app/models/filament.py` - Filament (основной)
-- [ ] `app/models/printer.py` - Printer
-- [ ] `app/models/preset.py` - Preset (settings JSON, rating)
-- [ ] Relationships (Brand→Filaments, Filament→Presets)
-- [ ] Миграции Alembic для всех моделей
-- [ ] Индексы (brand_id, material_type, printer_id)
+- [x] `app/models/user.py` - User (id, email, username, role, api_key)
+- [x] `app/models/brand.py` - Brand (id, name, verified, timestamps)
+- [x] `app/models/filament.py` - Filament (основной)
+- [x] `app/models/printer.py` - Printer
+- [x] `app/models/preset.py` - Preset (settings JSON, rating)
+- [x] Relationships (Brand→Filaments, Filament→Presets)
+- [x] Миграции Alembic для всех моделей
+- [x] Индексы (brand_id, material_type, printer_id)
 
-### 1.3 Pydantic Schemas ⏳
+### 1.3 Pydantic Schemas ✅
 
-- [ ] `app/schemas/brand.py` (BrandCreate, BrandResponse)
-- [ ] `app/schemas/filament.py` (FilamentCreate, FilamentResponse, FilamentList)
-- [ ] `app/schemas/preset.py` (PresetCreate, PresetResponse)
-- [ ] `app/schemas/user.py` (UserCreate, Token, TokenData)
-- [ ] Validators (email, color_hex, temperatures)
+- [x] `app/schemas/brand.py` (BrandCreate, BrandResponse)
+- [x] `app/schemas/filament.py` (FilamentCreate, FilamentResponse, FilamentList)
+- [x] `app/schemas/preset.py` (PresetCreate, PresetResponse)
+- [x] `app/schemas/user.py` (UserCreate, Token, TokenData)
+- [x] Validators (email, color_hex, temperatures)
 
-### 1.4 REST API Endpoints ⏳
+### 1.4 REST API Endpoints 🔥
 
-#### Auth
-- [ ] `POST /api/v1/auth/register`
-- [ ] `POST /api/v1/auth/login` (JWT)
-- [ ] `POST /api/v1/auth/api-key` (для OrcaSlicer)
-- [ ] `GET /api/v1/auth/me`
+#### Auth ✅
+- [x] `POST /api/v1/auth/register`
+- [x] `POST /api/v1/auth/login` (JWT)
+- [x] `POST /api/v1/auth/api-key` (для OrcaSlicer)
+- [x] `GET /api/v1/auth/me`
 
-#### Brands
-- [ ] `GET /api/v1/brands/` (список с пагинацией)
-- [ ] `GET /api/v1/brands/{id}`
-- [ ] `POST /api/v1/brands/` (admin only)
+#### Brands ✅
+- [x] `GET /api/v1/brands/` (список с пагинацией)
+- [x] `GET /api/v1/brands/{id}`
+- [x] `POST /api/v1/brands/` (admin only)
 
-#### Filaments
-- [ ] `GET /api/v1/filaments/` (фильтры: type, brand_id, color)
-- [ ] `GET /api/v1/filaments/{id}`
-- [ ] `POST /api/v1/filaments/` (brand auth)
-- [ ] `PUT /api/v1/filaments/{id}`
-- [ ] `GET /api/v1/filaments/{id}/presets`
+#### Filaments ✅
+- [x] `GET /api/v1/filaments/` (фильтры: type, brand_id, color)
+- [x] `GET /api/v1/filaments/{id}`
+- [x] `POST /api/v1/filaments/` (brand auth)
+- [x] `PUT /api/v1/filaments/{id}`
+- [x] `GET /api/v1/filaments/{id}/presets`
 
-#### Presets
-- [ ] `GET /api/v1/presets/` (фильтры: filament_id, printer_id)
-- [ ] `GET /api/v1/presets/{id}`
-- [ ] `POST /api/v1/presets/` (auth)
+#### Presets ✅
+- [x] `GET /api/v1/presets/` (фильтры: filament_id, printer_id)
+- [x] `GET /api/v1/presets/{id}`
+- [x] `POST /api/v1/presets/` (auth)
 - [ ] `GET /api/v1/presets/recommend` (weighted average)
 
-#### Printers
-- [ ] `GET /api/v1/printers/`
-- [ ] `GET /api/v1/printers/{id}`
+#### Printers ✅
+- [x] `GET /api/v1/printers/`
+- [x] `GET /api/v1/printers/{id}`
 
 ### 1.5 Заглушки (MVP scope) 💤
 
@@ -134,20 +134,20 @@
   - Возвращает: `cost_material`, `cost_total`
   - **БЕЗ** G-code парсинга (будет в Фазе 6)
 
-### 1.6 Service Layer ⏳
+### 1.6 Service Layer ✅
 
-- [ ] `app/services/brand_service.py`
-- [ ] `app/services/filament_service.py`
-- [ ] `app/services/preset_service.py`
-- [ ] `app/services/preset_recommender.py` (weighted average алгоритм)
-- [ ] `app/core/security.py` (JWT, password hashing)
+- [x] `app/services/brand_service.py`
+- [x] `app/services/filament_service.py`
+- [x] `app/services/preset_service.py`
+- [x] `app/services/preset_recommender.py` (weighted average алгоритм)
+- [x] `app/core/security.py` (JWT, password hashing)
 
-### 1.7 Testing ⏳
+### 1.7 Testing 🔥
 
-- [ ] Pytest setup
-- [ ] Tests для моделей
-- [ ] Tests для API (все эндпоинты)
-- [ ] Coverage 80%+
+- [x] Pytest setup
+- [x] Tests для моделей
+- [x] Tests для API (базовые эндпоинты)
+- [ ] Coverage 80%+ (в процессе)
 
 ### 1.8 Documentation ⏳
 
@@ -216,13 +216,20 @@
 
 ## ⏳ ФАЗА 3: Web UI (Месяц 7-9)
 
+**Прогресс:** 35% (Базовый UI реализован, нужна интеграция с API)
+
 **Минимальный набор для MVP:**
 
-- [ ] React + TypeScript + Vite setup
-- [ ] Публичный каталог материалов
-- [ ] Регистрация/авторизация для брендов
-- [ ] Dashboard для производителей
-- [ ] Добавление/редактирование материалов
+- [x] React + TypeScript + Vite setup
+- [x] Публичный каталог материалов
+- [x] Регистрация/авторизация (модальные окна)
+- [x] Страницы пользовательского соглашения и согласия на обработку данных
+- [x] Dashboard для производителей (базовый UI)
+- [x] Проверка сложности пароля и подтверждение пароля
+- [x] Капча с показом после попытки регистрации
+- [x] Страница профиля пользователя
+- [ ] Добавление/редактирование материалов (интеграция с API)
+- [ ] Полная интеграция всех компонентов с реальным API
 
 **Цель:** Производители могут управлять материалами через веб
 
