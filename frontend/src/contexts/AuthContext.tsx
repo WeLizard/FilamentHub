@@ -2,7 +2,7 @@
 
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { authAPI } from '../api/client';
-import { setToken, removeToken, getToken } from '../utils/auth';
+import { setToken, setRefreshToken, removeToken, getToken, getRefreshToken } from '../utils/auth';
 import type { User } from '../types/api';
 
 interface AuthContextType {
@@ -41,10 +41,14 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         try {
           const userData = await authAPI.me();
           setUser(userData);
-        } catch (error) {
-          // Токен невалидный, удаляем
+        } catch (error: any) {
+          // Токен невалидный или истек, удаляем
           removeToken();
+          setUser(null);
+          // Не логируем ошибку - это нормально при первом заходе или истекшем токене
         }
+      } else {
+        setUser(null);
       }
       setIsLoading(false);
     };
@@ -52,18 +56,47 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   }, []);
 
   const login = async (email: string, password: string) => {
-    const tokenData = await authAPI.login({ email, password });
-    setToken(tokenData.access_token);
-    
-    // Загружаем данные пользователя
-    const userData = await authAPI.me();
-    setUser(userData);
+    try {
+      const tokenData = await authAPI.login({ email, password });
+      setToken(tokenData.access_token);
+      
+      // Сохраняем refresh token если есть
+      if (tokenData.refresh_token) {
+        setRefreshToken(tokenData.refresh_token);
+      }
+      
+      // Загружаем данные пользователя
+      const userData = await authAPI.me();
+      setUser(userData);
+    } catch (error: any) {
+      // Удаляем токен если логин не удался
+      removeToken();
+      throw error; // Пробрасываем ошибку дальше для обработки в компоненте
+    }
   };
 
   const register = async (data: { email: string; username: string; password: string; role: string }) => {
-    await authAPI.register(data);
-    // После регистрации автоматически логиним
-    await login(data.email, data.password);
+    try {
+      // Регистрируем пользователя
+      const userResponse = await authAPI.register(data);
+      
+      // После успешной регистрации автоматически логиним
+      try {
+        await login(data.email, data.password);
+      } catch (loginError: any) {
+        // Если автоматический логин не удался, это не критично
+        // Пользователь сможет войти вручную
+        // Но все равно пробрасываем ошибку регистрации, чтобы пользователь знал об успехе
+        console.warn('Auto-login after registration failed:', loginError);
+        // Не пробрасываем ошибку логина, т.к. регистрация прошла успешно
+      }
+      
+      // Возвращаем успешный результат регистрации
+      return;
+    } catch (error: any) {
+      // Пробрасываем ошибку дальше для обработки в компоненте
+      throw error;
+    }
   };
 
   const logout = () => {
