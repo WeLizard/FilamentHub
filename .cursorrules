@@ -1,0 +1,28 @@
+# FilamentHub - Cursor Rules
+
+## MCP Database Configuration
+
+To enable MCP access to the FilamentHub PostgreSQL database, add this to your Cursor MCP settings:
+
+**Connection String:**
+```
+postgresql://filamenthub:filamenthub_dev_password@localhost:5432/filamenthub
+```
+
+**Environment Variables:**
+- POSTGRES_HOST=localhost
+- POSTGRES_PORT=5432
+- POSTGRES_DB=filamenthub
+- POSTGRES_USER=filamenthub
+- POSTGRES_PASSWORD=filamenthub_dev_password
+
+## Available Tables
+
+- `users` - Пользователи системы
+- `brands` - Производители материалов
+- `filaments` - Материалы для 3D-печати
+- `presets` - Пресеты настроек печати
+- `printers` - Принтеры
+
+
+
