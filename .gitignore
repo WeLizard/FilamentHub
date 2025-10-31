@@ -83,3 +83,12 @@ docs/
 3dcalc/vendor/
 3dcalc/node_modules/
 
+# MCP configuration (may contain passwords)
+.cursor/mcp-config.json
+
+# Playwright screenshots
+.playwright-mcp/
+
+# Cursor config examples
+.cursor/mcp-config.json.example
+

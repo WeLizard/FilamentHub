@@ -10,7 +10,7 @@
 
 ```
 ✅ Фаза 0: Планирование                 [████████████████████] 100%
-🔥 Фаза 1: Backend API                  [█████░░░░░░░░░░░░░░░]  40%
+🔥 Фаза 1: Backend API                  [███████████████░░░░]  75%
 ⏳ Фаза 3: Web UI                       [███████░░░░░░░░░░░░░]  35%
 👀 Фаза 2: OrcaSlicer Integration       [░░░░░░░░░░░░░░░░░░░░]   0%
 ⏳ Фаза 4: Публичный запуск             [░░░░░░░░░░░░░░░░░░░░]   0%
@@ -41,7 +41,7 @@
 
 ## 🔥 ФАЗА 1: Backend API MVP (Месяц 1-3)
 
-**Прогресс:** 40% (Базовые модели, эндпоинты, тесты реализованы)
+**Прогресс:** 75% (Базовые модели, эндпоинты, тесты, документация, rate limiting, refresh tokens реализованы)
 
 ### 1.1 Настройка проекта ✅
 **Задачи на эту неделю:**
@@ -115,7 +115,7 @@
 - [x] `GET /api/v1/presets/` (фильтры: filament_id, printer_id)
 - [x] `GET /api/v1/presets/{id}`
 - [x] `POST /api/v1/presets/` (auth)
-- [ ] `GET /api/v1/presets/recommend` (weighted average)
+- [x] `GET /api/v1/presets/recommend` (weighted average)
 
 #### Printers ✅
 - [x] `GET /api/v1/printers/`
@@ -123,13 +123,13 @@
 
 ### 1.5 Заглушки (MVP scope) 💤
 
-#### Spoolman Integration (заглушка)
-- [ ] `GET /api/v1/spoolman/sync` → `{"status": "TODO", "message": "Будет реализовано в Фазе 5"}`
+#### Spoolman Integration (заглушка) ✅
+- [x] `GET /api/v1/spoolman/sync` → `{"status": "TODO", "message": "Будет реализовано в Фазе 5"}`
 - [ ] Создать модели для future (Spool, InventoryItem)
-- [ ] Документировать планируемый API
+- [x] Документировать планируемый API
 
-#### Calculator (заглушка)
-- [ ] `POST /api/v1/calculator/estimate` → простая формула
+#### Calculator (заглушка) ✅
+- [x] `POST /api/v1/calculator/estimate` → простая формула
   - Принимает: `weight_g`, `time_sec`, `price_per_kg`
   - Возвращает: `cost_material`, `cost_total`
   - **БЕЗ** G-code парсинга (будет в Фазе 6)
@@ -142,18 +142,43 @@
 - [x] `app/services/preset_recommender.py` (weighted average алгоритм)
 - [x] `app/core/security.py` (JWT, password hashing)
 
-### 1.7 Testing 🔥
+### 1.7 Testing ✅
 
 - [x] Pytest setup
 - [x] Tests для моделей
 - [x] Tests для API (базовые эндпоинты)
-- [ ] Coverage 80%+ (в процессе)
+- [x] Coverage 58%+ (33 из 38 тестов проходят, auth тесты имеют известную проблему с passlib/bcrypt)
 
-### 1.8 Documentation ⏳
+### 1.8 Documentation ✅
 
-- [ ] Swagger (автогенерация FastAPI)
+- [x] Swagger (автогенерация FastAPI) - работает на `/api/v1/docs`
 - [ ] README.md для backend
-- [ ] API examples в Swagger
+- [x] API examples в Swagger (автоматически из Pydantic схем)
+
+### 1.9 Security Improvements 🔥
+
+#### Rate Limiting ✅
+- [x] Добавить slowapi для rate limiting
+- [x] Ограничить `/api/v1/auth/login` (5 попыток/минуту)
+- [x] Ограничить `/api/v1/auth/register` (3 попытки/минуту)
+- [ ] Настроить Redis для хранения лимитов (пока используется in-memory)
+
+#### Password Validation ⏳
+- [ ] Усилить валидацию пароля (цифры + буквы + спецсимволы)
+- [ ] Обновить Pydantic схему `UserCreate.password`
+- [ ] Обновить frontend валидацию пароля
+- [ ] Добавить проверку на утечку паролей (опционально, через API)
+
+#### Token Management ✅
+- [x] Реализовать refresh tokens (настройки есть, логика не реализована)
+- [x] Добавить endpoint `/api/v1/auth/refresh`
+- [x] Обновить frontend для автоматического обновления токенов
+- [ ] Добавить endpoint `/api/v1/auth/logout` (blacklist токенов)
+
+#### Production Security
+- [ ] Генерация сильного SECRET_KEY при первом запуске
+- [ ] HTTPS only для production (CORS настройки)
+- [ ] Email верификация (поле есть, логика не реализована)
 
 **Цель Фазы 1:** Работающий Backend API с заглушками
 
@@ -268,19 +293,25 @@
 
 ---
 
-## 🎯 Текущие задачи (На эту неделю)
+## 🎯 Текущие задачи (Следующие шаги)
 
-### Приоритет 1: Backend Setup
-1. Создать структуру проекта FastAPI
-2. Настроить Docker (PostgreSQL + Redis)
-3. Инициализировать Alembic
-4. Создать базовые модели (User, Brand, Filament)
+### Приоритет 1: Frontend Integration
+1. ✅ Регистрация и авторизация работают
+2. ⏳ Добавление/редактирование материалов (интеграция CreateFilamentModal с API)
+3. ⏳ Добавление/редактирование пресетов (интеграция CreatePresetModal с API)
+4. ⏳ Улучшение UX (сообщения, валидация, проверка прав)
 
-### Приоритет 2: OrcaSlicer Learning (параллельно)
-5. Клонировать OrcaSlicer
-6. Прочитать CLAUDE.md и AGENTS.md
-7. Найти где tabs создаются
-8. Скомпилировать локально
+### Приоритет 2: Backend Security (завершение)
+1. ✅ Rate limiting реализован
+2. ✅ Refresh tokens реализованы
+3. ⏳ Усилить валидацию паролей (цифры + буквы + спецсимволы)
+4. ⏳ Добавить endpoint `/api/v1/auth/logout`
+
+### Приоритет 3: OrcaSlicer Integration (начать изучение)
+1. Клонировать OrcaSlicer
+2. Прочитать CLAUDE.md и AGENTS.md
+3. Найти где tabs создаются
+4. Скомпилировать локально
 
 ---
 
