@@ -7,146 +7,218 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.session import AsyncSessionLocal
 from app.models.brand import Brand
 from app.models.filament import Filament
+from app.models.preset import Preset, PresetModerationStatus
 
 
 async def init_test_data() -> None:
     """Create test data."""
     async with AsyncSessionLocal() as db:
-        # Check if data exists
-        from sqlalchemy import select
+        from sqlalchemy import select, func
 
-        result = await db.execute(select(Brand))
-        existing = result.scalar_one_or_none()
+        # Check if presets already exist
+        preset_count = await db.execute(select(func.count(Preset.id)))
+        preset_count_val = preset_count.scalar() or 0
 
-        if existing:
-            print("Test data already exists, skipping...")
+        if preset_count_val > 0:
+            print(f"Found {preset_count_val} presets in database, skipping preset creation...")
             return
 
-        # Create brands
-        brands_data = [
+        # Get existing filaments
+        filament_result = await db.execute(select(Filament).order_by(Filament.id))
+        filaments = list(filament_result.scalars().all())
+
+        if not filaments or len(filaments) < 6:
+            print("Not enough filaments in database. Please create filaments first.")
+            return
+
+        # Create presets for each filament
+        # Official presets (from manufacturers)
+        official_presets_data = [
+            # PLA Red (filament 0)
             {
-                "name": "Bestfilament",
-                "slug": "bestfilament",
-                "description": "Российский производитель качественного пластика",
-                "website": "https://bestfilament.ru",
-                "verified": True,
+                "filament_id": filaments[0].id,
+                "name": "Официальный пресет Bestfilament",
+                "description": "Рекомендуемые настройки от производителя",
+                "is_official": True,
+                "extruder_temp": 200.0,
+                "bed_temp": 60.0,
+                "print_speed": 50.0,
+                "travel_speed": 150.0,
+                "layer_height": 0.2,
+                "flow_rate": 100.0,
+                "fan_speed": 100,
+                "retraction_length": 5.0,
+                "retraction_speed": 45.0,
+                "rating": 4.8,
+                "usage_count": 245,
+                "moderation_status": "approved",
             },
+            # PLA Blue (filament 1)
             {
-                "name": "Sunlu",
-                "slug": "sunlu",
-                "description": "Популярный китайский бренд",
-                "website": "https://www.sunlu.com",
-                "verified": True,
+                "filament_id": filaments[1].id,
+                "name": "Официальный пресет Bestfilament",
+                "description": "Рекомендуемые настройки от производителя",
+                "is_official": True,
+                "extruder_temp": 200.0,
+                "bed_temp": 60.0,
+                "print_speed": 50.0,
+                "travel_speed": 150.0,
+                "layer_height": 0.2,
+                "flow_rate": 100.0,
+                "fan_speed": 100,
+                "retraction_length": 5.0,
+                "retraction_speed": 45.0,
+                "rating": 4.8,
+                "usage_count": 189,
+                "moderation_status": "approved",
             },
+            # PETG Black (filament 2)
             {
-                "name": "eSUN",
-                "slug": "esun",
-                "description": "Профессиональные материалы для 3D-печати",
-                "website": "https://www.esun3d.com",
-                "verified": True,
+                "filament_id": filaments[2].id,
+                "name": "Официальный пресет Sunlu",
+                "description": "Рекомендуемые настройки от производителя",
+                "is_official": True,
+                "extruder_temp": 240.0,
+                "bed_temp": 80.0,
+                "print_speed": 40.0,
+                "travel_speed": 150.0,
+                "layer_height": 0.2,
+                "flow_rate": 98.0,
+                "fan_speed": 50,
+                "retraction_length": 6.0,
+                "retraction_speed": 40.0,
+                "rating": 4.9,
+                "usage_count": 312,
+                "moderation_status": "approved",
             },
+            # PLA+ White (filament 3)
             {
-                "name": "Polymaker",
-                "slug": "polymaker",
-                "description": "Премиум материалы из Китая",
-                "website": "https://polymaker.com",
-                "verified": True,
+                "filament_id": filaments[3].id,
+                "name": "Официальный пресет Sunlu",
+                "description": "Рекомендуемые настройки от производителя",
+                "is_official": True,
+                "extruder_temp": 210.0,
+                "bed_temp": 60.0,
+                "print_speed": 55.0,
+                "travel_speed": 150.0,
+                "layer_height": 0.2,
+                "flow_rate": 100.0,
+                "fan_speed": 100,
+                "retraction_length": 5.0,
+                "retraction_speed": 45.0,
+                "rating": 4.8,
+                "usage_count": 198,
+                "moderation_status": "approved",
+            },
+            # TPU 95A (filament 4)
+            {
+                "filament_id": filaments[4].id,
+                "name": "Официальный пресет eSUN",
+                "description": "Рекомендуемые настройки от производителя",
+                "is_official": True,
+                "extruder_temp": 230.0,
+                "bed_temp": 50.0,
+                "print_speed": 25.0,
+                "travel_speed": 100.0,
+                "layer_height": 0.2,
+                "flow_rate": 95.0,
+                "fan_speed": 0,
+                "retraction_length": 3.0,
+                "retraction_speed": 30.0,
+                "rating": 4.7,
+                "usage_count": 156,
+                "moderation_status": "approved",
+            },
+            # PolyTerra PLA (filament 5)
+            {
+                "filament_id": filaments[5].id,
+                "name": "Официальный пресет Polymaker",
+                "description": "Рекомендуемые настройки от производителя",
+                "is_official": True,
+                "extruder_temp": 205.0,
+                "bed_temp": 60.0,
+                "print_speed": 50.0,
+                "travel_speed": 150.0,
+                "layer_height": 0.2,
+                "flow_rate": 100.0,
+                "fan_speed": 100,
+                "retraction_length": 5.0,
+                "retraction_speed": 45.0,
+                "rating": 4.8,
+                "usage_count": 234,
+                "moderation_status": "approved",
             },
         ]
 
-        brands = []
-        for brand_data in brands_data:
-            brand = Brand(**brand_data)
-            db.add(brand)
-            brands.append(brand)
-
-        await db.flush()  # Get brand IDs
-
-        # Create filaments
-        filaments_data = [
+        # Community presets (from users)
+        community_presets_data = [
+            # For PLA Red
             {
-                "brand_id": brands[0].id,  # Bestfilament
-                "name": "PLA Red",
-                "material_type": "PLA",
-                "color_name": "Red",
-                "color_hex": "#FF0000",
-                "diameter": 1.75,
-                "density": 1.24,
-                "price_per_kg": 800.0,
-                "spool_weight": 1000.0,
-                "description": "Красный PLA от Bestfilament",
+                "filament_id": filaments[0].id,
+                "name": "3D_Guru",
+                "description": "Проверенная настройка для Ender 3 Pro",
+                "is_official": False,
+                "extruder_temp": 195.0,
+                "bed_temp": 60.0,
+                "print_speed": 45.0,
+                "travel_speed": 150.0,
+                "layer_height": 0.2,
+                "flow_rate": 100.0,
+                "fan_speed": 100,
+                "retraction_length": 5.0,
+                "retraction_speed": 45.0,
+                "rating": 4.8,
+                "usage_count": 124,
+                "moderation_status": "approved",
             },
             {
-                "brand_id": brands[0].id,  # Bestfilament
-                "name": "PLA Blue",
-                "material_type": "PLA",
-                "color_name": "Blue",
-                "color_hex": "#0000FF",
-                "diameter": 1.75,
-                "density": 1.24,
-                "price_per_kg": 800.0,
-                "spool_weight": 1000.0,
-                "description": "Синий PLA от Bestfilament",
+                "filament_id": filaments[0].id,
+                "name": "PrintMaster",
+                "description": "Оптимизированная настройка для высокой скорости",
+                "is_official": False,
+                "extruder_temp": 205.0,
+                "bed_temp": 55.0,
+                "print_speed": 55.0,
+                "travel_speed": 150.0,
+                "layer_height": 0.2,
+                "flow_rate": 100.0,
+                "fan_speed": 100,
+                "retraction_length": 5.0,
+                "retraction_speed": 45.0,
+                "rating": 4.5,
+                "usage_count": 87,
+                "moderation_status": "approved",
             },
+            # For PETG Black
             {
-                "brand_id": brands[1].id,  # Sunlu
-                "name": "PETG Black",
-                "material_type": "PETG",
-                "color_name": "Black",
-                "color_hex": "#000000",
-                "diameter": 1.75,
-                "density": 1.27,
-                "price_per_kg": 950.0,
-                "spool_weight": 1000.0,
-                "description": "Черный PETG от Sunlu",
-            },
-            {
-                "brand_id": brands[1].id,  # Sunlu
-                "name": "PLA+ White",
-                "material_type": "PLA",
-                "color_name": "White",
-                "color_hex": "#FFFFFF",
-                "diameter": 1.75,
-                "density": 1.24,
-                "price_per_kg": 850.0,
-                "spool_weight": 1000.0,
-                "description": "Белый PLA+ от Sunlu",
-            },
-            {
-                "brand_id": brands[2].id,  # eSUN
-                "name": "TPU 95A",
-                "material_type": "TPU",
-                "color_name": "Transparent",
-                "color_hex": "#FFFFFF",
-                "diameter": 1.75,
-                "density": 1.20,
-                "price_per_kg": 1800.0,
-                "spool_weight": 500.0,
-                "description": "Прозрачный TPU от eSUN",
-            },
-            {
-                "brand_id": brands[3].id,  # Polymaker
-                "name": "PolyTerra PLA",
-                "material_type": "PLA",
-                "color_name": "Natural",
-                "color_hex": "#F5E6D3",
-                "diameter": 1.75,
-                "density": 1.24,
-                "price_per_kg": 1200.0,
-                "spool_weight": 1000.0,
-                "description": "Экологичный PLA от Polymaker",
+                "filament_id": filaments[2].id,
+                "name": "PETG_Pro",
+                "description": "Оптимальные настройки для прочности",
+                "is_official": False,
+                "extruder_temp": 235.0,
+                "bed_temp": 85.0,
+                "print_speed": 35.0,
+                "travel_speed": 150.0,
+                "layer_height": 0.2,
+                "flow_rate": 98.0,
+                "fan_speed": 50,
+                "retraction_length": 6.0,
+                "retraction_speed": 40.0,
+                "rating": 4.9,
+                "usage_count": 156,
+                "moderation_status": "approved",
             },
         ]
 
-        for filament_data in filaments_data:
-            filament = Filament(**filament_data)
-            db.add(filament)
+        # Add all presets
+        for preset_data in official_presets_data + community_presets_data:
+            preset = Preset(**preset_data)
+            db.add(preset)
 
         await db.commit()
-        print("Test data created successfully!")
-        print(f"Created {len(brands)} brands and {len(filaments_data)} filaments")
+        print("Presets created successfully!")
+        print(f"Created {len(official_presets_data)} official presets and {len(community_presets_data)} community presets")
 
 
 if __name__ == "__main__":
     asyncio.run(init_test_data())
-
