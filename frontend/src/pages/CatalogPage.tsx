@@ -391,7 +391,7 @@ const MaterialCard: React.FC<MaterialCardProps> = ({
         </button>
       </div>
 
-      {/* QR Code */}
+      {/* ЗАГЛУШКА: QR Code */}
       {showQR && (
         <div className="mt-4 p-4 bg-white/5 rounded-xl border border-white/10">
           <div className="text-center">
@@ -402,7 +402,7 @@ const MaterialCard: React.FC<MaterialCardProps> = ({
                 ))}
               </div>
             </div>
-            <p className="text-gray-300 text-sm">QR-код для материала {filament.id}</p>
+            <p className="text-gray-300 text-sm">QR-код для материала {filament.id} [ЗАГЛУШКА]</p>
             <p className="text-gray-400 text-xs">Сканируйте для быстрого импорта</p>
           </div>
         </div>

@@ -196,7 +196,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
   };
 
   const handleGoogleLogin = () => {
-    // TODO: Реализовать Google OAuth
+    // ЗАГЛУШКА: TODO - Реализовать Google OAuth
     setError('Вход через Google будет доступен в ближайшее время');
   };
 
@@ -301,7 +301,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
           </div>
         )}
 
-        {/* Google Login Button - показываем только если выбран метод Google */}
+        {/* ЗАГЛУШКА: Google Login Button - показываем только если выбран метод Google */}
         {authMode === 'login' && authMethod === 'google' && (
           <button
             type="button"

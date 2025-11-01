@@ -1,4 +1,4 @@
-/** Компонент капчи (заглушка) */
+/** ЗАГЛУШКА: Компонент капчи - визуальная заглушка */
 
 import { useState } from 'react';
 import { RefreshCw, Shield } from 'lucide-react';

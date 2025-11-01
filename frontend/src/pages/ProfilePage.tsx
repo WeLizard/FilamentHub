@@ -75,6 +75,7 @@ export const ProfilePage: React.FC = () => {
   };
 
   // TODO: Загрузить историю печати (когда будет эндпоинт)
+  // ЗАГЛУШКА - пустой массив, история не реализована
   const userHistory: Array<{
     id: number;
     material: string;
@@ -137,7 +138,7 @@ export const ProfilePage: React.FC = () => {
             <StatCard
               icon={CheckCircle}
               label="Успешных печатей"
-              value="156"
+              value="156 [ЗАГЛУШКА]"
               color="from-purple-500/20 to-pink-500/20"
               borderColor="border-purple-500/30"
               iconColor="text-green-400"
@@ -153,7 +154,7 @@ export const ProfilePage: React.FC = () => {
             <StatCard
               icon={Package}
               label="Использованных материалов"
-              value="23"
+              value="23 [ЗАГЛУШКА]"
               color="from-green-500/20 to-emerald-500/20"
               borderColor="border-green-500/30"
               iconColor="text-green-400"
@@ -161,7 +162,7 @@ export const ProfilePage: React.FC = () => {
             <StatCard
               icon={Star}
               label="Средний рейтинг"
-              value="4.7"
+              value="4.7 [ЗАГЛУШКА]"
               color="from-yellow-500/20 to-orange-500/20"
               borderColor="border-yellow-500/30"
               iconColor="text-yellow-400"
@@ -457,6 +458,7 @@ const HistoryItem: React.FC<HistoryItemProps> = ({ item }) => (
   </div>
 );
 
+// ЗАГЛУШКА: Калькулятор - простая математика, без G-code парсинга
 const CalculatorComponent: React.FC = () => {
   const [weight, setWeight] = useState<number>(100);
   const [timeHours, setTimeHours] = useState<number>(1);
