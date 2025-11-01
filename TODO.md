@@ -1,7 +1,7 @@
 # FilamentHub - TODO List
 
-> **Последнее обновление:** 2025-10-31  
-> **Текущий фокус:** 🔥 Фаза 1 - Backend API (Месяц 1-3)  
+> **Последнее обновление:** 2025-11-01  
+> **Текущий фокус:** 🔥 Фаза 1 - Backend API (завершение) + Фаза 3 - Frontend Integration  
 > **Параллельно:** 👀 Изучение OrcaSlicer (Месяц 1+)
 
 ---
@@ -10,8 +10,8 @@
 
 ```
 ✅ Фаза 0: Планирование                 [████████████████████] 100%
-🔥 Фаза 1: Backend API                  [███████████████░░░░]  75%
-⏳ Фаза 3: Web UI                       [███████░░░░░░░░░░░░░]  35%
+🔥 Фаза 1: Backend API                  [██████████████████░░]  90%
+🔥 Фаза 3: Web UI                       [█████████░░░░░░░░░░░]  45%
 👀 Фаза 2: OrcaSlicer Integration       [░░░░░░░░░░░░░░░░░░░░]   0%
 ⏳ Фаза 4: Публичный запуск             [░░░░░░░░░░░░░░░░░░░░]   0%
 ```
@@ -41,7 +41,7 @@
 
 ## 🔥 ФАЗА 1: Backend API MVP (Месяц 1-3)
 
-**Прогресс:** 75% (Базовые модели, эндпоинты, тесты, документация, rate limiting, refresh tokens реализованы)
+**Прогресс:** 90% (Базовые модели, эндпоинты, тесты, документация, rate limiting, refresh tokens реализованы. Добавлены модели для reviews и saved presets)
 
 ### 1.1 Настройка проекта ✅
 **Задачи на эту неделю:**
@@ -79,7 +79,9 @@
 - [x] `app/models/filament.py` - Filament (основной)
 - [x] `app/models/printer.py` - Printer
 - [x] `app/models/preset.py` - Preset (settings JSON, rating)
-- [x] Relationships (Brand→Filaments, Filament→Presets)
+- [x] `app/models/filament_review.py` - FilamentReview (reviews from users)
+- [x] `app/models/user_saved_preset.py` - UserSavedPreset (favorites)
+- [x] Relationships (Brand→Filaments, Filament→Presets, User→Reviews)
 - [x] Миграции Alembic для всех моделей
 - [x] Индексы (brand_id, material_type, printer_id)
 
@@ -241,7 +243,7 @@
 
 ## ⏳ ФАЗА 3: Web UI (Месяц 7-9)
 
-**Прогресс:** 35% (Базовый UI реализован, нужна интеграция с API)
+**Прогресс:** 45% (Базовый UI реализован, интеграция с API в процессе)
 
 **Минимальный набор для MVP:**
 
