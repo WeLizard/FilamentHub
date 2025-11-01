@@ -78,9 +78,6 @@ backend/static/uploads/*
 *.temp
 .cache/
 
-# Project specific
-3dcalc/vendor/
-3dcalc/node_modules/
 
 # Docs folder - exclude large reference folders, keep essential files
 docs/Spoolman-master/
