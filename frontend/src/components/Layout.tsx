@@ -1,7 +1,7 @@
 /** Базовый Layout с Header и навигацией */
 
 import { ReactNode, useState } from 'react';
-import { Link, useLocation } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { Package, User, LogOut } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { AuthModal } from './AuthModal';
@@ -13,9 +13,15 @@ interface LayoutProps {
 export const Layout: React.FC<LayoutProps> = ({ children }) => {
   const { user, logout } = useAuth();
   const location = useLocation();
+  const navigate = useNavigate();
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
 
   const isActive = (path: string) => location.pathname === path;
+
+  const handleLogout = () => {
+    logout();
+    navigate('/');
+  };
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900">
@@ -68,7 +74,7 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
 
               {user ? (
                 <button
-                  onClick={logout}
+                  onClick={handleLogout}
                   className="flex items-center space-x-2 px-4 py-2 bg-red-600/20 hover:bg-red-600/30 text-red-400 rounded-lg transition-all"
                 >
                   <LogOut className="w-4 h-4" />

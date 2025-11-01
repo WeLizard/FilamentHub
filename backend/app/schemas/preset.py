@@ -47,6 +47,7 @@ class PresetCreate(PresetBase):
     """Schema for creating Preset."""
 
     filament_id: int = Field(..., gt=0)
+    user_id: int | None = Field(None, gt=0)  # Автоматически заполняется из токена
 
 
 class PresetUpdate(BaseModel):
@@ -80,6 +81,7 @@ class PresetResponse(PresetBase):
 
     id: int
     filament_id: int
+    user_id: int | None = None
     active: bool
     moderation_status: str  # pending, approved, rejected
     moderation_reason: str | None = None
@@ -137,4 +139,6 @@ class RecommendedPresetResponse(BaseModel):
 
 # PresetWithFilament временно отключен из-за проблем с forward references в OpenAPI
 # TODO: Восстановить после исправления проблемы
+
+
 

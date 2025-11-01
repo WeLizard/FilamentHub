@@ -95,8 +95,21 @@ export const CreateFilamentModal: React.FC<CreateFilamentModalProps> = ({
 
   // Мутация для обновления материала
   const updateMutation = useMutation({
-    mutationFn: ({ id, data }: { id: number; data: Partial<Filament> }) =>
-      filamentsAPI.update(id, data),
+    mutationFn: ({ id, data }: { 
+      id: number; 
+      data: Partial<{
+        name?: string;
+        material_type?: string;
+        color_name?: string;
+        color_hex?: string;
+        diameter?: number;
+        density?: number;
+        price_per_kg?: number;
+        spool_weight?: number;
+        description?: string;
+        active?: boolean;
+      }>
+    }) => filamentsAPI.update(id, data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['filaments'] });
       queryClient.invalidateQueries({ queryKey: ['brands'] });

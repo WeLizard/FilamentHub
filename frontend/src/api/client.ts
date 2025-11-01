@@ -143,7 +143,7 @@ export const authAPI = {
 
 // Brands API
 export const brandsAPI = {
-  list: async (params?: { page?: number; size?: number; active_only?: boolean }) => {
+  list: async (params?: { page?: number; size?: number; active_only?: boolean; search?: string }) => {
     const response = await api.get<ListResponse<Brand>>('/brands/', { params });
     return response.data;
   },
@@ -167,6 +167,7 @@ export const filamentsAPI = {
     active_only?: boolean;
     brand_id?: number;
     material_type?: string;
+    search?: string;
   }) => {
     const response = await api.get<ListResponse<Filament>>('/filaments/', { params });
     return response.data;
@@ -227,6 +228,7 @@ export const presetsAPI = {
     active_only?: boolean;
     filament_id?: number;
     is_official?: boolean;
+    user_id?: number;
   }) => {
     const response = await api.get<ListResponse<Preset>>('/presets/', { params });
     return response.data;
@@ -283,6 +285,23 @@ export const presetsAPI = {
 
   delete: async (id: number) => {
     await api.delete(`/presets/${id}`);
+  },
+};
+
+// Saved Presets API
+export const savedPresetsAPI = {
+  list: async () => {
+    const response = await api.get<{ items: Array<{ id: number; preset_id: number }>; total: number }>('/saved-presets/');
+    return response.data;
+  },
+
+  save: async (preset_id: number) => {
+    const response = await api.post<{ id: number; preset_id: number; user_id: number; saved_at: string }>('/saved-presets/', { preset_id });
+    return response.data;
+  },
+
+  unsave: async (preset_id: number) => {
+    await api.delete(`/saved-presets/${preset_id}`);
   },
 };
 

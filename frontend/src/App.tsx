@@ -4,6 +4,7 @@ import { ProtectedRoute } from './components/ProtectedRoute';
 import { Layout } from './components/Layout';
 import { CatalogPage } from './pages/CatalogPage';
 import { ProfilePage } from './pages/ProfilePage';
+import { FilamentDetailPage } from './pages/FilamentDetailPage';
 import { TermsPage } from './pages/TermsPage';
 import { ConsentPage } from './pages/ConsentPage';
 
@@ -16,6 +17,14 @@ function App() {
           element={
             <Layout>
               <CatalogPage />
+            </Layout>
+          }
+        />
+        <Route
+          path="/filaments/:id"
+          element={
+            <Layout>
+              <FilamentDetailPage />
             </Layout>
           }
         />

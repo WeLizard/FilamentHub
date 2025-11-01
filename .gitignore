@@ -78,10 +78,16 @@ backend/static/uploads/*
 *.temp
 .cache/
 
-# Project specific - docs folder excluded completely
-docs/
+# Project specific
 3dcalc/vendor/
 3dcalc/node_modules/
+
+# Docs folder - exclude large reference folders, keep essential files
+docs/Spoolman-master/
+docs/orcaSlicer-main/
+docs/3dcalc/
+docs/awesome-cursor-best-practices-main/
+docs/spoolman2slicer-main/
 
 # MCP configuration (may contain passwords)
 .cursor/mcp-config.json

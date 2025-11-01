@@ -12,6 +12,8 @@ from app.db.base import Base
 
 if TYPE_CHECKING:
     from app.models.filament import Filament
+    from app.models.user import User
+    from app.models.user_saved_preset import UserSavedPreset
 
 
 class PresetModerationStatus(str, Enum):
@@ -36,6 +38,10 @@ class Preset(Base):
 
     # Filament relationship
     filament_id: Mapped[int] = mapped_column(ForeignKey("filaments.id"), index=True)
+
+    # User relationship (кто создал пресет)
+    user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), index=True, nullable=True)
+    # user_id=None - для старых пресетов или системных
 
     # Preset info
     name: Mapped[str] = mapped_column(String(200))
@@ -98,6 +104,10 @@ class Preset(Base):
 
     # Relationships
     filament: Mapped["Filament"] = relationship("Filament", back_populates="presets")
+    user: Mapped["User"] = relationship("User", back_populates="presets")
+    saved_by_users: Mapped[list["UserSavedPreset"]] = relationship(
+        "UserSavedPreset", back_populates="preset", cascade="all, delete-orphan"
+    )
 
     def __repr__(self) -> str:
         """String representation."""

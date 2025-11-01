@@ -19,17 +19,28 @@ async def list_brands(
     page: int = Query(1, ge=1),
     size: int = Query(50, ge=1, le=100),
     active_only: bool = Query(True),
+    search: str | None = Query(None, description="Поиск по названию бренда"),
 ) -> BrandListResponse:
     """Получить список производителей."""
+    from sqlalchemy import or_
+    
     # Build query
     query = select(Brand)
     if active_only:
         query = query.where(Brand.active == True)
+    
+    # Search filter
+    if search:
+        search_term = f"%{search.lower()}%"
+        query = query.where(Brand.name.ilike(search_term))
 
     # Count total
     count_query = select(func.count()).select_from(Brand)
     if active_only:
         count_query = count_query.where(Brand.active == True)
+    if search:
+        search_term = f"%{search.lower()}%"
+        count_query = count_query.where(Brand.name.ilike(search_term))
     total_result = await db.execute(count_query)
     total = total_result.scalar() or 0
 
@@ -125,4 +136,15 @@ async def delete_brand(
 
     await db.delete(brand)
     await db.commit()
+
+    """Удалить производителя."""
+    result = await db.execute(select(Brand).where(Brand.id == brand_id))
+    brand = result.scalar_one_or_none()
+
+    if not brand:
+        raise HTTPException(status_code=404, detail="Brand not found")
+
+    await db.delete(brand)
+    await db.commit()
+
 

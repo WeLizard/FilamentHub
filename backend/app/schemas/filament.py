@@ -47,6 +47,9 @@ class FilamentResponse(FilamentBase):
 
     id: int
     brand_id: int
+    brand_name: str | None = Field(None)
+    views_count: int | None = 0
+    scans_count: int | None = 0
     active: bool
     created_at: datetime
     updated_at: datetime
@@ -70,4 +73,5 @@ class FilamentListResponse(BaseModel):
     page: int
     size: int
     pages: int
+
 

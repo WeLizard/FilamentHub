@@ -1,7 +1,8 @@
 /** Страница профиля пользователя */
 
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useNavigate } from 'react-router-dom';
 import {
   User,
   Package,
@@ -14,15 +15,16 @@ import {
   XCircle,
   Plus,
   Download,
-  Upload,
   Trash2,
   Thermometer,
   Gauge,
-  Clock,
   Edit,
+  Wind,
+  Fan,
+  Ruler,
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
-import { presetsAPI } from '../api/client';
+import { presetsAPI, filamentsAPI, brandsAPI, savedPresetsAPI } from '../api/client';
 import { CreatePresetModal } from '../components/CreatePresetModal';
 import type { Preset } from '../types/api';
 
@@ -35,15 +37,43 @@ export const ProfilePage: React.FC = () => {
   const [isCreatePresetModalOpen, setIsCreatePresetModalOpen] = useState(false);
   const [editingPreset, setEditingPreset] = useState<Preset | null>(null);
 
-  // Загружаем пресеты пользователя
+  // Загружаем пресеты пользователя (созданные им)
   const { data: userPresetsData } = useQuery({
-    queryKey: ['user-presets'],
-    queryFn: () => presetsAPI.list({ active_only: true, page: 1, size: 100 }),
+    queryKey: ['user-presets', user?.id],
+    queryFn: () => presetsAPI.list({ active_only: true, page: 1, size: 100, user_id: user?.id }),
+    enabled: !!user?.id,
   });
 
-  const userPresets = userPresetsData?.items || [];
+  // Загружаем сохранённые пресеты
+  const { data: savedPresetsData } = useQuery({
+    queryKey: ['saved-presets', user?.id],
+    queryFn: () => savedPresetsAPI.list(),
+    enabled: !!user?.id,
+  });
 
-  // Мутация для удаления пресета
+  // Загружаем детали сохранённых пресетов
+  const savedPresetIds = savedPresetsData?.items.map(sp => sp.preset_id) || [];
+  const { data: savedPresetsDetails } = useQuery({
+    queryKey: ['saved-presets-details', savedPresetIds],
+    queryFn: async () => {
+      const details = await Promise.all(
+        savedPresetIds.map(presetId => presetsAPI.get(presetId))
+      );
+      return details;
+    },
+    enabled: savedPresetIds.length > 0,
+  });
+
+  // Объединяем пресеты: созданные пользователем + сохранённые из каталога
+  const allMyPresets = useMemo(() => {
+    const created = (userPresetsData?.items || []).map(p => ({ ...p, source: 'own' as const }));
+    const saved = (savedPresetsDetails || []).map(p => ({ ...p, source: 'saved' as const }));
+    return [...created, ...saved];
+  }, [userPresetsData, savedPresetsDetails]);
+
+  const userPresets = allMyPresets;
+
+  // Мутация для удаления пресета (созданного пользователем)
   const deletePresetMutation = useMutation({
     mutationFn: (id: number) => presetsAPI.delete(id),
     onSuccess: () => {
@@ -53,9 +83,24 @@ export const ProfilePage: React.FC = () => {
     },
   });
 
-  const handleDeletePreset = (presetId: number) => {
-    if (confirm('Вы уверены, что хотите удалить этот пресет?')) {
-      deletePresetMutation.mutate(presetId);
+  // Мутация для удаления сохранённого пресета
+  const unsavePresetMutation = useMutation({
+    mutationFn: (presetId: number) => savedPresetsAPI.unsave(presetId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['saved-presets'] });
+      queryClient.invalidateQueries({ queryKey: ['user-presets'] });
+    },
+  });
+
+  const handleDeletePreset = (preset: Preset) => {
+    if (preset.source === 'saved') {
+      if (confirm('Убрать пресет из профиля?')) {
+        unsavePresetMutation.mutate(preset.id);
+      }
+    } else {
+      if (confirm('Вы уверены, что хотите удалить этот пресет?')) {
+        deletePresetMutation.mutate(preset.id);
+      }
     }
   };
 
@@ -359,66 +404,168 @@ const RecentHistory: React.FC<RecentHistoryProps> = ({ history }) => (
 interface PresetCardProps {
   preset: Preset;
   onEdit?: (preset: Preset) => void;
-  onDelete?: (presetId: number) => void;
+  onDelete?: (preset: Preset) => void;
 }
 
-const PresetCard: React.FC<PresetCardProps> = ({ preset, onEdit, onDelete }) => (
-  <div className="bg-white/10 backdrop-blur-sm rounded-2xl p-6 border border-white/20 shadow-xl">
-    <div className="flex items-center justify-between mb-4">
-      <h4 className="text-xl font-bold text-white">{preset.name}</h4>
-      <div className="flex space-x-2">
-        <button
-          onClick={() => onEdit?.(preset)}
-          className="p-2 bg-white/10 hover:bg-white/20 rounded-lg text-white transition-all"
-          title="Редактировать"
-        >
-          <Edit className="w-4 h-4" />
-        </button>
-        <button className="p-2 bg-white/10 hover:bg-white/20 rounded-lg text-white transition-all" title="Скачать">
-          <Download className="w-4 h-4" />
-        </button>
-        <button
-          onClick={() => onDelete?.(preset.id)}
-          className="p-2 bg-white/10 hover:bg-red-500/20 rounded-lg text-white transition-all"
-          title="Удалить"
-        >
-          <Trash2 className="w-4 h-4" />
-        </button>
-      </div>
-    </div>
+const PresetCard: React.FC<PresetCardProps> = ({ preset, onEdit, onDelete }) => {
+  const navigate = useNavigate();
+  
+  // Загружаем филамент для отображения информации
+  const { data: filament } = useQuery({
+    queryKey: ['filament', preset.filament_id],
+    queryFn: () => filamentsAPI.get(preset.filament_id),
+  });
 
-    <div className="grid grid-cols-2 gap-4 mb-4 text-sm">
-      <div className="flex items-center space-x-2">
-        <Thermometer className="w-4 h-4 text-red-400" />
-        <span className="text-gray-300">Сопло: {preset.extruder_temp}°C</span>
-      </div>
-      <div className="flex items-center space-x-2">
-        <Thermometer className="w-4 h-4 text-red-400" />
-        <span className="text-gray-300">Стол: {preset.bed_temp}°C</span>
-      </div>
-      <div className="flex items-center space-x-2">
-        <Gauge className="w-4 h-4 text-blue-400" />
-        <span className="text-gray-300">Скорость: {preset.print_speed}mm/s</span>
-      </div>
-      <div className="flex items-center space-x-2">
-        <CheckCircle className="w-4 h-4 text-green-400" />
-        <span className="text-gray-300">Использований: {preset.usage_count}</span>
-      </div>
-    </div>
+  // Загружаем бренд
+  const { data: brand } = useQuery({
+    queryKey: ['brand', filament?.brand_id],
+    queryFn: () => brandsAPI.get(filament!.brand_id),
+    enabled: !!filament?.brand_id,
+  });
 
-    <div className="flex items-center justify-between text-sm">
-      <span className="text-gray-400">
-        Создан: {new Date(preset.created_at).toLocaleDateString('ru-RU')}
-      </span>
-      {preset.rating && (
-        <div className="flex items-center space-x-1">
-          <Star className="w-4 h-4 text-yellow-400 fill-current" />
-          <span className="text-white">{preset.rating.toFixed(1)}</span>
+  return (
+    <div className="bg-white/10 backdrop-blur-sm rounded-2xl p-6 border border-white/20 shadow-xl">
+      <div className="flex items-center justify-between mb-4">
+        <div className="flex-1">
+          <div className="flex items-center space-x-2">
+            <h4 className="text-xl font-bold text-white">{preset.name}</h4>
+            {preset.source === 'saved' && (
+              <span className="px-2 py-0.5 bg-blue-600/30 rounded text-blue-300 text-xs font-medium">
+                Из каталога
+              </span>
+            )}
+          </div>
+          {filament && (
+            <div 
+              className="flex items-center space-x-2 mt-1 cursor-pointer hover:opacity-80 transition-opacity"
+              onClick={() => navigate(`/filaments/${filament.id}`, { state: { from: 'profile' } })}
+            >
+              {brand && (
+                <>
+                  <span className={`text-sm font-medium ${brand.verified ? 'text-green-400' : 'text-gray-300'}`}>
+                    {brand.name}
+                  </span>
+                  <span className="text-gray-500">•</span>
+                </>
+              )}
+              <span className="text-gray-400 text-sm">{filament.name}</span>
+              {filament.color_name && (
+                <>
+                  <span className="text-gray-500">•</span>
+                  <span className="text-gray-400 text-sm">{filament.color_name}</span>
+                </>
+              )}
+              <span className="px-2 py-0.5 bg-purple-600/30 rounded text-purple-300 text-xs font-medium">
+                {filament.material_type}
+              </span>
+            </div>
+          )}
         </div>
-      )}
+        <div className="flex space-x-2">
+          {preset.source === 'own' && (
+            <button
+              onClick={() => onEdit?.(preset)}
+              className="p-2 bg-white/10 hover:bg-white/20 rounded-lg text-white transition-all"
+              title="Редактировать"
+            >
+              <Edit className="w-4 h-4" />
+            </button>
+          )}
+          <button className="p-2 bg-white/10 hover:bg-white/20 rounded-lg text-white transition-all" title="Скачать">
+            <Download className="w-4 h-4" />
+          </button>
+          <button
+            onClick={() => onDelete?.(preset)}
+            className="p-2 bg-white/10 hover:bg-red-500/20 rounded-lg text-white transition-all"
+            title={preset.source === 'saved' ? 'Убрать из профиля' : 'Удалить'}
+          >
+            <Trash2 className="w-4 h-4" />
+          </button>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 mb-4 text-sm">
+        <div className="flex items-center space-x-2">
+          <Thermometer className="w-4 h-4 text-red-400" />
+          <span className="text-gray-300">Сопло: {preset.extruder_temp}°C</span>
+        </div>
+        <div className="flex items-center space-x-2">
+          <Thermometer className="w-4 h-4 text-red-400" />
+          <span className="text-gray-300">Стол: {preset.bed_temp}°C</span>
+        </div>
+        <div className="flex items-center space-x-2">
+          <Gauge className="w-4 h-4 text-blue-400" />
+          <span className="text-gray-300">Скорость: {preset.print_speed}mm/s</span>
+        </div>
+        {preset.travel_speed && (
+          <div className="flex items-center space-x-2">
+            <Wind className="w-4 h-4 text-cyan-400" />
+            <span className="text-gray-300">Перемещение: {preset.travel_speed}mm/s</span>
+          </div>
+        )}
+        {preset.layer_height && (
+          <div className="flex items-center space-x-2">
+            <Ruler className="w-4 h-4 text-green-400" />
+            <span className="text-gray-300">Слой: {preset.layer_height}mm</span>
+          </div>
+        )}
+        {preset.first_layer_height && (
+          <div className="flex items-center space-x-2">
+            <Ruler className="w-4 h-4 text-green-300" />
+            <span className="text-gray-300">Перв. слой: {preset.first_layer_height}mm</span>
+          </div>
+        )}
+        {preset.flow_rate && (
+          <div className="flex items-center space-x-2">
+            <Gauge className="w-4 h-4 text-yellow-400" />
+            <span className="text-gray-300">Поток: {preset.flow_rate}%</span>
+          </div>
+        )}
+        {preset.fan_speed !== null && (
+          <div className="flex items-center space-x-2">
+            <Fan className="w-4 h-4 text-orange-400" />
+            <span className="text-gray-300">Вентилятор: {preset.fan_speed}%</span>
+          </div>
+        )}
+        {preset.retraction_length && (
+          <div className="flex items-center space-x-2">
+            <Wind className="w-4 h-4 text-purple-400" />
+            <span className="text-gray-300">Ретракт: {preset.retraction_length}mm</span>
+          </div>
+        )}
+        {preset.retraction_speed && (
+          <div className="flex items-center space-x-2">
+            <Gauge className="w-4 h-4 text-indigo-400" />
+            <span className="text-gray-300">Ск. ретракт: {preset.retraction_speed}mm/s</span>
+          </div>
+        )}
+        <div className="flex items-center space-x-2">
+          <CheckCircle className="w-4 h-4 text-green-400" />
+          <span className="text-gray-300">Использований: {preset.usage_count}</span>
+        </div>
+      </div>
+
+      <div className="flex items-center justify-between text-sm">
+        <div className="flex items-center space-x-3">
+          <span className="text-gray-400">
+            Создан: {new Date(preset.created_at).toLocaleDateString('ru-RU')}
+          </span>
+          {preset.created_at !== preset.updated_at && (
+            <span className="text-blue-400">
+              Изменён: {new Date(preset.updated_at).toLocaleDateString('ru-RU')}
+            </span>
+          )}
+        </div>
+        {preset.rating && (
+          <div className="flex items-center space-x-1">
+            <Star className="w-4 h-4 text-yellow-400 fill-current" />
+            <span className="text-white">{preset.rating.toFixed(1)}</span>
+          </div>
+        )}
+      </div>
     </div>
-  </div>
-);
+  );
+};
 
 interface HistoryItemProps {
   item: {

@@ -16,6 +16,7 @@ export interface Brand {
 export interface Filament {
   id: number;
   brand_id: number;
+  brand_name: string | null; // Added
   name: string;
   material_type: string;
   color_name: string | null;
@@ -25,6 +26,8 @@ export interface Filament {
   price_per_kg: number | null;
   spool_weight: number | null;
   description: string | null;
+  views_count: number | null;
+  scans_count: number | null;
   active: boolean;
   created_at: string;
   updated_at: string;
@@ -52,6 +55,8 @@ export interface Preset {
   moderation_status: string;
   created_at: string;
   updated_at: string;
+  source?: 'own' | 'saved'; // For UI: 'own' = created by user, 'saved' = added from catalog
+  user_id?: number | null;
 }
 
 export interface User {
@@ -99,4 +104,3 @@ export interface FilamentWithBrand extends Filament {
   officialPreset?: Preset;
   communityPresets?: Preset[];
 }
-

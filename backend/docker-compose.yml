@@ -45,6 +45,10 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+    environment:
+      # Переопределяем только те переменные, которые отличаются в Docker
+      DATABASE_URL: postgresql+asyncpg://filamenthub:filamenthub_dev_password@postgres:5432/filamenthub
+      REDIS_URL: redis://redis:6379/0
     env_file:
       - .env
     restart: unless-stopped
@@ -52,4 +56,5 @@ services:
 volumes:
   postgres_data:
   redis_data:
+
 

@@ -2,12 +2,18 @@
 
 from datetime import datetime
 from enum import Enum
+from typing import TYPE_CHECKING
 
 from sqlalchemy import Boolean, DateTime, Enum as SQLEnum, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.sql import func
 
 from app.db.base import Base
+
+if TYPE_CHECKING:
+    from app.models.filament_review import FilamentReview
+    from app.models.preset import Preset
+    from app.models.user_saved_preset import UserSavedPreset
 
 
 class UserRole(str, Enum):
@@ -53,8 +59,15 @@ class User(Base):
     last_login: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     # Relationships
-    # presets: Mapped[list["Preset"]] = relationship("Preset", back_populates="user")  # TODO: когда добавим user_id в Preset
+    presets: Mapped[list["Preset"]] = relationship("Preset", back_populates="user")
+    filament_reviews: Mapped[list["FilamentReview"]] = relationship(
+        "FilamentReview", back_populates="user", cascade="all, delete-orphan"
+    )
+    saved_presets: Mapped[list["UserSavedPreset"]] = relationship(
+        "UserSavedPreset", back_populates="user", cascade="all, delete-orphan"
+    )
 
     def __repr__(self) -> str:
         return f"<User(id={self.id}, email={self.email}, role={self.role.value})>"
+
 

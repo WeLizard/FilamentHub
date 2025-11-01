@@ -6,8 +6,10 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.dependencies import get_current_active_user, get_current_brand_user
 from app.db.session import get_db
 from app.models.preset import Preset, PresetModerationStatus
+from app.models.user import User
 from app.schemas.preset import (
     PresetCreate,
     PresetListResponse,
@@ -27,6 +29,7 @@ async def list_presets(
     active_only: bool = Query(True),
     filament_id: int | None = Query(None, gt=0),
     is_official: bool | None = Query(None),
+    user_id: int | None = Query(None, gt=0),
 ) -> PresetListResponse:
     """Получить список пресетов."""
     # Build query
@@ -37,14 +40,17 @@ async def list_presets(
         query = query.where(Preset.filament_id == filament_id)
     if is_official is not None:
         query = query.where(Preset.is_official == is_official)
-    
-    # Показываем только одобренные пресеты (официальные автоматически одобрены)
-    query = query.where(
-        or_(
-            Preset.moderation_status == PresetModerationStatus.APPROVED,
-            Preset.is_official == True  # Официальные всегда видимы
+    if user_id is not None:
+        # Если указан user_id, показываем ВСЕ пресеты пользователя (включая неодобренные)
+        query = query.where(Preset.user_id == user_id)
+    else:
+        # Показываем только одобренные пресеты (официальные автоматически одобрены)
+        query = query.where(
+            or_(
+                Preset.moderation_status == PresetModerationStatus.APPROVED,
+                Preset.is_official == True  # Официальные всегда видимы
+            )
         )
-    )
 
     # Count total
     count_query = select(func.count()).select_from(Preset)
@@ -54,13 +60,16 @@ async def list_presets(
         count_query = count_query.where(Preset.filament_id == filament_id)
     if is_official is not None:
         count_query = count_query.where(Preset.is_official == is_official)
-    # Учитываем только одобренные
-    count_query = count_query.where(
-        or_(
-            Preset.moderation_status == PresetModerationStatus.APPROVED,
-            Preset.is_official == True
+    if user_id is not None:
+        count_query = count_query.where(Preset.user_id == user_id)
+    else:
+        # Учитываем только одобренные
+        count_query = count_query.where(
+            or_(
+                Preset.moderation_status == PresetModerationStatus.APPROVED,
+                Preset.is_official == True
+            )
         )
-    )
     total_result = await db.execute(count_query)
     total = total_result.scalar() or 0
 
@@ -223,6 +232,7 @@ async def get_preset(
 async def create_preset(
     data: PresetCreate,
     db: Annotated[AsyncSession, Depends(get_db)],
+    current_user: Annotated[User, Depends(get_current_active_user)],
 ) -> PresetResponse:
     """Создать пресет."""
     # Check if filament exists
@@ -235,13 +245,21 @@ async def create_preset(
         raise HTTPException(status_code=404, detail="Filament not found")
 
     # Create preset
-    preset_data = data.model_dump()
+    preset_data = data.model_dump(exclude={"user_id"})  # Игнорируем user_id из запроса
+    preset_data["user_id"] = current_user.id  # Используем текущего пользователя
     
-    # Автоматическая модерация: официальные пресеты сразу APPROVED
+    # Проверка: только верифицированные производители могут создавать официальные пресеты
     if preset_data.get("is_official", False):
+        # TODO: Добавить проверку verified бренда через filament.brand_id
+        if current_user.role.value != "brand":
+            raise HTTPException(
+                status_code=403,
+                detail="Only verified manufacturers can create official presets"
+            )
         preset_data["moderation_status"] = PresetModerationStatus.APPROVED
     else:
-        preset_data["moderation_status"] = PresetModerationStatus.PENDING
+        # Для MVP модерация отключена - все пресеты сразу одобрены
+        preset_data["moderation_status"] = PresetModerationStatus.APPROVED
     
     preset = Preset(**preset_data)
     db.add(preset)
@@ -256,6 +274,7 @@ async def update_preset(
     preset_id: int,
     data: PresetUpdate,
     db: Annotated[AsyncSession, Depends(get_db)],
+    current_user: Annotated[User, Depends(get_current_active_user)],
 ) -> PresetResponse:
     """Обновить пресет."""
     result = await db.execute(select(Preset).where(Preset.id == preset_id))
@@ -263,6 +282,13 @@ async def update_preset(
 
     if not preset:
         raise HTTPException(status_code=404, detail="Preset not found")
+
+    # Проверка: пользователь может редактировать только свои пресеты (или админ)
+    if preset.user_id != current_user.id and current_user.role.value != "admin":
+        raise HTTPException(
+            status_code=403,
+            detail="You can only edit your own presets"
+        )
 
     # Update fields
     update_data = data.model_dump(exclude_unset=True)
@@ -279,6 +305,7 @@ async def update_preset(
 async def delete_preset(
     preset_id: int,
     db: Annotated[AsyncSession, Depends(get_db)],
+    current_user: Annotated[User, Depends(get_current_active_user)],
 ) -> None:
     """Удалить пресет."""
     result = await db.execute(select(Preset).where(Preset.id == preset_id))
@@ -286,6 +313,47 @@ async def delete_preset(
 
     if not preset:
         raise HTTPException(status_code=404, detail="Preset not found")
+
+    # Проверка: пользователь может удалять только свои пресеты (или админ)
+    if preset.user_id != current_user.id and current_user.role.value != "admin":
+        raise HTTPException(
+            status_code=403,
+            detail="You can only delete your own presets"
+        )
+
+    await db.delete(preset)
+    await db.commit()
+
+
+@router.post("/{preset_id}/increment-usage", response_model=PresetResponse)
+async def increment_usage(
+    preset_id: int,
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> PresetResponse:
+    """Увеличить счётчик использования пресета."""
+    result = await db.execute(select(Preset).where(Preset.id == preset_id))
+    preset = result.scalar_one_or_none()
+
+    if not preset:
+        raise HTTPException(status_code=404, detail="Preset not found")
+
+    preset.usage_count += 1
+    await db.commit()
+    await db.refresh(preset)
+
+    return PresetResponse.model_validate(preset)
+
+
+
+    if not preset:
+        raise HTTPException(status_code=404, detail="Preset not found")
+
+    # Проверка: пользователь может удалять только свои пресеты (или админ)
+    if preset.user_id != current_user.id and current_user.role.value != "admin":
+        raise HTTPException(
+            status_code=403,
+            detail="You can only delete your own presets"
+        )
 
     await db.delete(preset)
     await db.commit()

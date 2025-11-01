@@ -3,7 +3,7 @@
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -27,16 +27,28 @@ async def list_filaments(
     active_only: bool = Query(True),
     brand_id: int | None = Query(None),
     material_type: str | None = Query(None),
+    search: str | None = Query(None, description="Поиск по названию материала"),
 ) -> FilamentListResponse:
     """Получить список материалов."""
+    from app.models.brand import Brand
+    
     # Build query
-    query = select(Filament)
+    query = select(Filament).options(selectinload(Filament.brand))
     if active_only:
         query = query.where(Filament.active == True)
     if brand_id:
         query = query.where(Filament.brand_id == brand_id)
     if material_type:
         query = query.where(Filament.material_type == material_type)
+    if search:
+        search_term = f"%{search.lower()}%"
+        # Search in filament name AND brand name
+        query = query.join(Brand).where(
+            or_(
+                Filament.name.ilike(search_term),
+                Brand.name.ilike(search_term)
+            )
+        )
 
     # Count total
     count_query = select(func.count()).select_from(Filament)
@@ -46,6 +58,15 @@ async def list_filaments(
         count_query = count_query.where(Filament.brand_id == brand_id)
     if material_type:
         count_query = count_query.where(Filament.material_type == material_type)
+    if search:
+        search_term = f"%{search.lower()}%"
+        # Search in filament name AND brand name
+        count_query = count_query.join(Brand).where(
+            or_(
+                Filament.name.ilike(search_term),
+                Brand.name.ilike(search_term)
+            )
+        )
     total_result = await db.execute(count_query)
     total = total_result.scalar() or 0
 
@@ -59,8 +80,15 @@ async def list_filaments(
 
     pages = (total + size - 1) // size if total > 0 else 0
 
+    # Serialize with brand_name
+    filament_responses = []
+    for filament in filaments:
+        filament_dict = FilamentResponse.model_validate(filament).model_dump()
+        filament_dict["brand_name"] = filament.brand.name if filament.brand else None
+        filament_responses.append(filament_dict)
+
     return FilamentListResponse(
-        items=[FilamentResponse.model_validate(filament) for filament in filaments],
+        items=filament_responses,
         total=total,
         page=page,
         size=size,
@@ -75,14 +103,16 @@ async def get_filament(
 ) -> FilamentResponse:
     """Получить материал по ID."""
     result = await db.execute(
-        select(Filament).where(Filament.id == filament_id)
+        select(Filament).options(selectinload(Filament.brand)).where(Filament.id == filament_id)
     )
     filament = result.scalar_one_or_none()
 
     if not filament:
         raise HTTPException(status_code=404, detail="Filament not found")
 
-    return FilamentResponse.model_validate(filament)
+    filament_dict = FilamentResponse.model_validate(filament).model_dump()
+    filament_dict["brand_name"] = filament.brand.name if filament.brand else None
+    return filament_dict
 
 
 @router.get("/{filament_id}/presets")
@@ -104,14 +134,28 @@ async def get_filament_presets(
     if not filament:
         raise HTTPException(status_code=404, detail="Filament not found")
 
-    # Build query
-    query = select(Preset).where(Preset.filament_id == filament_id, Preset.active == True)
+    # Build query - показываем только одобренные пресеты (официальные автоматически одобрены)
+    from app.models.preset import PresetModerationStatus
+    
+    query = select(Preset).where(
+        Preset.filament_id == filament_id,
+        Preset.active == True,
+        or_(
+            Preset.moderation_status == PresetModerationStatus.APPROVED,
+            Preset.is_official == True  # Официальные всегда видимы
+        )
+    )
     if is_official is not None:
         query = query.where(Preset.is_official == is_official)
 
     # Count total
     count_query = select(func.count()).select_from(Preset).where(
-        Preset.filament_id == filament_id, Preset.active == True
+        Preset.filament_id == filament_id,
+        Preset.active == True,
+        or_(
+            Preset.moderation_status == PresetModerationStatus.APPROVED,
+            Preset.is_official == True
+        )
     )
     if is_official is not None:
         count_query = count_query.where(Preset.is_official == is_official)
@@ -201,4 +245,48 @@ async def delete_filament(
 
     await db.delete(filament)
     await db.commit()
+
+
+    return FilamentResponse.model_validate(filament)
+
+
+@router.patch("/{filament_id}", response_model=FilamentResponse)
+async def update_filament(
+    filament_id: int,
+    data: FilamentUpdate,
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> FilamentResponse:
+    """Обновить материал."""
+    result = await db.execute(select(Filament).where(Filament.id == filament_id))
+    filament = result.scalar_one_or_none()
+
+    if not filament:
+        raise HTTPException(status_code=404, detail="Filament not found")
+
+    # Update fields
+    update_data = data.model_dump(exclude_unset=True)
+    for field, value in update_data.items():
+        setattr(filament, field, value)
+
+    await db.commit()
+    await db.refresh(filament)
+
+    return FilamentResponse.model_validate(filament)
+
+
+@router.delete("/{filament_id}", status_code=204)
+async def delete_filament(
+    filament_id: int,
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> None:
+    """Удалить материал."""
+    result = await db.execute(select(Filament).where(Filament.id == filament_id))
+    filament = result.scalar_one_or_none()
+
+    if not filament:
+        raise HTTPException(status_code=404, detail="Filament not found")
+
+    await db.delete(filament)
+    await db.commit()
+
 

@@ -3,7 +3,7 @@
 from datetime import datetime
 from typing import TYPE_CHECKING
 
-from sqlalchemy import Boolean, Float, ForeignKey, String, Text
+from sqlalchemy import Boolean, Float, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.sql import func
 
@@ -11,6 +11,7 @@ from app.db.base import Base
 
 if TYPE_CHECKING:
     from app.models.brand import Brand
+    from app.models.filament_review import FilamentReview
 
 
 class Filament(Base):
@@ -53,6 +54,13 @@ class Filament(Base):
     # Description
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
 
+    # Statistics
+    views_count: Mapped[int] = mapped_column(Integer, default=0)
+    # views_count: сколько раз посмотрели страницу филамента
+    
+    scans_count: Mapped[int] = mapped_column(Integer, default=0)
+    # scans_count: сколько раз отсканировали QR-код
+
     # Status
     active: Mapped[bool] = mapped_column(Boolean, default=True, index=True)
 
@@ -68,6 +76,9 @@ class Filament(Base):
     brand: Mapped["Brand"] = relationship("Brand", back_populates="filaments")
     presets: Mapped[list["Preset"]] = relationship(
         "Preset", back_populates="filament", cascade="all, delete-orphan"
+    )
+    reviews: Mapped[list["FilamentReview"]] = relationship(
+        "FilamentReview", back_populates="filament", cascade="all, delete-orphan"
     )
 
     def __repr__(self) -> str:
