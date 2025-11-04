@@ -114,19 +114,36 @@ backend/
 
 ### Создание миграций (Alembic)
 
+**⚠️ ВАЖНО:** Всегда проверяйте миграции перед применением!
+
 ```bash
+# Проверить целостность миграций
+python scripts/check_migrations.py
+
 # Инициализация Alembic (уже сделано)
 alembic init alembic
 
 # Создать новую миграцию
 alembic revision --autogenerate -m "Add Brand model"
 
-# Применить миграции
-alembic upgrade head
+# ⚠️ Перед применением всегда проверяйте:
+python scripts/check_migrations.py
+
+# Применить миграции (безопасно)
+python scripts/check_migrations.py && alembic upgrade head
+
+# Или использовать скрипт:
+bash scripts/safe_migrate.sh
 
 # Откатить последнюю миграцию
 alembic downgrade -1
+
+# Проверить текущее состояние
+alembic heads  # Должна быть только одна головная ревизия
+alembic current  # Текущая применённая ревизия
 ```
+
+**📖 Подробнее:** См. [docs/MIGRATIONS.md](docs/MIGRATIONS.md)
 
 ### Тестирование
 
