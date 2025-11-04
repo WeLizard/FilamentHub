@@ -96,6 +96,43 @@ async def list_filaments(
     )
 
 
+@router.get("/material-types")
+async def get_material_types(
+    db: Annotated[AsyncSession, Depends(get_db)],
+    active_only: bool = Query(True),
+) -> list[str]:
+    """
+    Получить список уникальных типов материалов.
+    
+    Возвращает типы из material_mappings (начальные типы из миграций) +
+    типы из активных филаментов (если есть).
+    """
+    from app.models.material_mapping import MaterialMapping
+    
+    # Получаем типы из material_mappings (начальные типы, заполненные миграцией)
+    mapping_query = select(MaterialMapping.material_type).distinct()
+    if active_only:
+        mapping_query = mapping_query.where(MaterialMapping.active == True)
+    mapping_query = mapping_query.order_by(MaterialMapping.material_type)
+    
+    mapping_result = await db.execute(mapping_query)
+    mapping_types = {row[0] for row in mapping_result.all() if row[0]}
+    
+    # Получаем типы из активных филаментов (если есть дополнительные)
+    filament_query = select(Filament.material_type).distinct()
+    if active_only:
+        filament_query = filament_query.where(Filament.active == True)
+    filament_query = filament_query.order_by(Filament.material_type)
+    
+    filament_result = await db.execute(filament_query)
+    filament_types = {row[0] for row in filament_result.all() if row[0]}
+    
+    # Объединяем оба множества (уникальные типы)
+    all_material_types = sorted(mapping_types | filament_types)
+    
+    return all_material_types
+
+
 @router.get("/{filament_id}", response_model=FilamentResponse)
 async def get_filament(
     filament_id: int,
@@ -193,16 +230,79 @@ async def create_filament(
     """Создать материал."""
     # Check if brand exists
     from app.models.brand import Brand
+    from app.services.material_mapping_service import (
+        get_material_preset,
+        create_material_mapping,
+    )
+    from app.models.material_mapping import MaterialMappingPriority
 
     brand_result = await db.execute(select(Brand).where(Brand.id == data.brand_id))
-    if not brand_result.scalar_one_or_none():
+    brand = brand_result.scalar_one_or_none()
+    if not brand:
         raise HTTPException(status_code=404, detail="Brand not found")
 
     # Create filament
     filament = Filament(**data.model_dump())
     db.add(filament)
+    await db.flush()  # Получаем ID без коммита
+    
+    # Если бренд верифицирован - автоматически генерируем QR-код
+    if brand.verified:
+        from app.services.qr_service import generate_short_code
+        
+        # Генерируем короткий код
+        short_code = generate_short_code(filament.id)
+        
+        # Проверяем уникальность (на случай коллизий)
+        existing = await db.execute(
+            select(Filament).where(Filament.qr_code == short_code)
+        )
+        if existing.scalar_one_or_none():
+            # Если коллизия - добавляем суффикс
+            short_code = f"{short_code}-{filament.id % 1000}"
+        
+        filament.qr_code = short_code
+    
     await db.commit()
     await db.refresh(filament)
+
+    # Автоматически создаём маппинг для нового типа материала, если его ещё нет
+    material_type_upper = data.material_type.upper().strip()
+    
+    # Проверяем, есть ли уже маппинг для этого типа
+    from app.models.material_mapping import MaterialMapping
+    existing_mapping = await db.execute(
+        select(MaterialMapping).where(
+            MaterialMapping.material_type.ilike(material_type_upper),
+            MaterialMapping.active == True,
+        )
+    )
+    
+    if not existing_mapping.scalar_one_or_none():
+        # Маппинга нет - определяем базовый пресет через сервис
+        base_preset = await get_material_preset(
+            data.material_type,
+            db,
+            log_unknown=True,
+        )
+        
+        # Создаём автоматический маппинг
+        try:
+            await create_material_mapping(
+                material_type=data.material_type,
+                orcaslicer_preset=base_preset,
+                db=db,
+                priority=MaterialMappingPriority.AUTOMATIC,
+                brand_id=None,  # Автоматический маппинг, не от производителя
+                description=f"Автоматически создан для материала '{data.material_type}' → '{base_preset}'",
+            )
+        except Exception as e:
+            # Логируем ошибку, но не блокируем создание филамента
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.warning(
+                f"Failed to create automatic material mapping for '{data.material_type}': {e}"
+            )
 
     return FilamentResponse.model_validate(filament)
 

@@ -23,6 +23,7 @@ import {
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { filamentsAPI, brandsAPI, savedPresetsAPI } from '../api/client';
+import { FilamentPreview } from '../components/FilamentPreview';
 
 export const FilamentDetailPage: React.FC = () => {
   const { id } = useParams<{ id: string }>();
@@ -72,10 +73,20 @@ export const FilamentDetailPage: React.FC = () => {
 
   // Мутация для сохранения пресета
   const savePresetMutation = useMutation({
-    mutationFn: (presetId: number) => savedPresetsAPI.save(presetId),
+    mutationFn: (presetId: number) => {
+      if (!user) {
+        throw new Error('Необходимо войти в систему');
+      }
+      return savedPresetsAPI.save(presetId);
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['saved-presets'] });
       queryClient.invalidateQueries({ queryKey: ['user-presets'] });
+    },
+    onError: (error: any) => {
+      console.error('Ошибка сохранения пресета:', error);
+      // Можно добавить уведомление пользователю
+      alert(error.response?.data?.detail || error.message || 'Не удалось добавить пресет в профиль');
     },
   });
 
@@ -110,17 +121,15 @@ export const FilamentDetailPage: React.FC = () => {
   const isOfficialPresetSaved = officialPreset ? savedPresetIds.has(officialPreset.id) : false;
 
   // Вычисляем средний рейтинг из пресетов
+  const ratingsWithValues = presetsData?.items?.filter((p) => p.rating !== null && p.rating !== undefined) || [];
   const avgRating =
-    presetsData?.items && presetsData.items.length > 0
-      ? presetsData.items
-          .filter((p) => p.rating !== null)
-          .reduce((acc, p) => acc + (p.rating || 0), 0) /
-        presetsData.items.filter((p) => p.rating !== null).length
-      : 4.8;
+    ratingsWithValues.length > 0
+      ? ratingsWithValues.reduce((acc, p) => acc + (p.rating || 0), 0) / ratingsWithValues.length
+      : null;
 
   // Вычисляем успешность
   const successRate =
-    presetsData?.items && presetsData.items.length > 0
+    presetsData?.items && presetsData.items.length > 0 && avgRating !== null
       ? Math.min(
           95,
           Math.max(
@@ -130,7 +139,7 @@ export const FilamentDetailPage: React.FC = () => {
               (avgRating - 4.0) * 10
           )
         )
-      : 92;
+      : null;
 
   return (
     <div className="space-y-6">
@@ -151,7 +160,8 @@ export const FilamentDetailPage: React.FC = () => {
               {brandData && (
                 <>
                   <span
-                    className={brandData.verified ? 'text-green-400 font-bold text-2xl' : 'text-purple-300 font-bold text-2xl'}
+                    onClick={() => navigate(`/brands/${brandData.id}`)}
+                    className={`${brandData.verified ? 'text-green-400' : 'text-purple-300'} font-bold text-2xl hover:underline cursor-pointer transition-colors`}
                   >
                     {brandData.name}
                   </span>
@@ -168,14 +178,18 @@ export const FilamentDetailPage: React.FC = () => {
 
             {/* Статистика */}
             <div className="flex items-center space-x-6 text-lg mb-4">
-              <span className="flex items-center text-gray-300">
-                <Star className="w-5 h-5 mr-2 text-yellow-400 fill-current" />
-                <span className="font-bold text-white">{avgRating.toFixed(1)}</span>
-              </span>
-              <span className="flex items-center text-gray-300">
-                <CheckCircle className="w-5 h-5 mr-2 text-green-400" />
-                <span className="font-bold text-green-400">{Math.round(successRate)}% успеха</span>
-              </span>
+              {avgRating !== null && (
+                <span className="flex items-center text-gray-300">
+                  <Star className="w-5 h-5 mr-2 text-yellow-400 fill-current" />
+                  <span className="font-bold text-white">{avgRating.toFixed(1)}</span>
+                </span>
+              )}
+              {successRate !== null && (
+                <span className="flex items-center text-gray-300">
+                  <CheckCircle className="w-5 h-5 mr-2 text-green-400" />
+                  <span className="font-bold text-green-400">{Math.round(successRate)}% успеха</span>
+                </span>
+              )}
               <span className="flex items-center text-gray-300">
                 <TrendingUp className="w-5 h-5 mr-2 text-blue-400" />
                 <span className="font-bold text-white">{presetsData?.total || 0} пресетов</span>
@@ -207,12 +221,16 @@ export const FilamentDetailPage: React.FC = () => {
                 </span>
               </a>
             )}
-            <p className="text-4xl font-bold text-green-400 mb-2">
-              {filament.price_per_kg ? `${Math.round(filament.price_per_kg)}₽` : '—'}
-            </p>
-            <p className="text-gray-400 text-lg">
-              {filament.spool_weight ? `${Math.round(filament.spool_weight)}g` : '—'}
-            </p>
+            {filament.price_per_kg && (
+              <p className="text-4xl font-bold text-green-400 mb-2">
+                {Math.round(filament.price_per_kg)}₽
+              </p>
+            )}
+            {filament.spool_weight && (
+              <p className="text-gray-400 text-lg">
+                {Math.round(filament.spool_weight)}g
+              </p>
+            )}
           </div>
         </div>
 
@@ -236,12 +254,11 @@ export const FilamentDetailPage: React.FC = () => {
               </div>
             </div>
           )}
-          {filament.color_hex && (
+          {(filament.color_hex || filament.color_name) && (
             <div className="flex items-center space-x-3 text-gray-300">
-              <div
-                className="w-10 h-10 rounded-full border-2 border-white/30"
-                style={{ backgroundColor: filament.color_hex }}
-              />
+              <div className="flex-shrink-0" style={{ transform: 'scale(0.4)', transformOrigin: 'left center', marginRight: '-80px' }}>
+                <FilamentPreview colorHex={filament.color_hex || '#FFFFFF'} visualSettings={filament.visual_settings} size="medium" />
+              </div>
               <div>
                 <div className="text-sm">Цвет</div>
                 <div className="text-xl font-bold text-white">{filament.color_name || '—'}</div>
@@ -260,7 +277,15 @@ export const FilamentDetailPage: React.FC = () => {
         {/* Кнопки действий */}
         <div className="flex space-x-4">
           {officialPreset ? (
-            isOfficialPresetSaved ? (
+            !user ? (
+              <button
+                disabled
+                className="flex-1 bg-gray-600/50 text-white py-4 px-8 rounded-xl cursor-not-allowed text-lg font-semibold"
+                title="Необходимо войти в систему"
+              >
+                Войдите, чтобы добавить
+              </button>
+            ) : isOfficialPresetSaved ? (
               <button
                 disabled
                 className="flex-1 bg-green-600/50 text-white py-4 px-8 rounded-xl cursor-not-allowed text-lg font-semibold flex items-center justify-center"
@@ -271,9 +296,10 @@ export const FilamentDetailPage: React.FC = () => {
             ) : (
               <button
                 onClick={() => officialPreset && savePresetMutation.mutate(officialPreset.id)}
-                className="flex-1 bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white py-4 px-8 rounded-xl transition-all shadow-lg shadow-purple-500/25 hover:shadow-purple-500/40 text-lg font-semibold"
+                disabled={savePresetMutation.isPending}
+                className="flex-1 bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white py-4 px-8 rounded-xl transition-all shadow-lg shadow-purple-500/25 hover:shadow-purple-500/40 text-lg font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                Добавить в профиль
+                {savePresetMutation.isPending ? 'Сохранение...' : 'Добавить в профиль'}
               </button>
             )
           ) : (
@@ -347,11 +373,28 @@ export const FilamentDetailPage: React.FC = () => {
             {officialPreset && (
               <div className="bg-gradient-to-r from-purple-500/20 to-pink-500/20 rounded-xl border border-purple-500/30 p-6">
                 <div className="flex items-center justify-between mb-4">
-                  <h3 className="text-xl font-bold text-white flex items-center">
-                    <Settings className="w-5 h-5 mr-2" />
-                    Официальный пресет
-                  </h3>
-                  <span className="text-purple-300 font-semibold">Производитель</span>
+                  <div className="flex items-center gap-2">
+                    <h3 className="text-xl font-bold text-white flex items-center">
+                      <Settings className="w-5 h-5 mr-2" />
+                      Официальный пресет
+                    </h3>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    {officialPreset.printers && officialPreset.printers.length > 0 && (
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        {officialPreset.printers.map((printer) => (
+                          <span
+                            key={printer.id}
+                            className="px-2 py-0.5 bg-white/10 rounded-md text-xs text-gray-300 border border-white/20"
+                            title={`${printer.manufacturer} ${printer.model}`}
+                          >
+                            {printer.name}
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                    <span className="text-purple-300 font-semibold">Производитель</span>
+                  </div>
                 </div>
                 <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
                   <div className="flex items-center space-x-2">
@@ -439,6 +482,59 @@ export const FilamentDetailPage: React.FC = () => {
                     </div>
                   )}
                 </div>
+                
+                {/* Расширенные параметры OrcaSlicer */}
+                {officialPreset.orcaslicer_settings && Object.keys(officialPreset.orcaslicer_settings).length > 0 && (
+                  <div className="mt-4 pt-4 border-t border-white/10">
+                    <h4 className="text-sm font-medium text-gray-300 mb-3">Расширенные настройки</h4>
+                    <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+                      {officialPreset.orcaslicer_settings.nozzle_temperature_range_low?.[0] && officialPreset.orcaslicer_settings.nozzle_temperature_range_high?.[0] && (
+                        <div className="flex items-center space-x-2">
+                          <Thermometer className="w-4 h-4 text-orange-400" />
+                          <div>
+                            <div className="text-gray-400 text-xs">Диапазон</div>
+                            <div className="text-white text-sm font-semibold">
+                              {officialPreset.orcaslicer_settings.nozzle_temperature_range_low[0]}–{officialPreset.orcaslicer_settings.nozzle_temperature_range_high[0]}°C
+                            </div>
+                          </div>
+                        </div>
+                      )}
+                      {officialPreset.orcaslicer_settings.filament_max_volumetric_speed?.[0] && (
+                        <div className="flex items-center space-x-2">
+                          <Gauge className="w-4 h-4 text-blue-400" />
+                          <div>
+                            <div className="text-gray-400 text-xs">Объемная скорость</div>
+                            <div className="text-white text-sm font-semibold">
+                              {officialPreset.orcaslicer_settings.filament_max_volumetric_speed[0]}mm³/s
+                            </div>
+                          </div>
+                        </div>
+                      )}
+                      {officialPreset.orcaslicer_settings.fan_min_speed?.[0] && officialPreset.orcaslicer_settings.fan_max_speed?.[0] && (
+                        <div className="flex items-center space-x-2">
+                          <Fan className="w-4 h-4 text-cyan-400" />
+                          <div>
+                            <div className="text-gray-400 text-xs">Вентилятор</div>
+                            <div className="text-white text-sm font-semibold">
+                              {officialPreset.orcaslicer_settings.fan_min_speed[0]}–{officialPreset.orcaslicer_settings.fan_max_speed[0]}%
+                            </div>
+                          </div>
+                        </div>
+                      )}
+                      {officialPreset.orcaslicer_settings.chamber_temperature?.[0] && Number(officialPreset.orcaslicer_settings.chamber_temperature[0]) > 0 && (
+                        <div className="flex items-center space-x-2">
+                          <Thermometer className="w-4 h-4 text-red-400" />
+                          <div>
+                            <div className="text-gray-400 text-xs">Камера</div>
+                            <div className="text-white text-sm font-semibold">
+                              {officialPreset.orcaslicer_settings.chamber_temperature[0]}°C
+                            </div>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
               </div>
             )}
 
@@ -463,12 +559,27 @@ export const FilamentDetailPage: React.FC = () => {
                               <CheckCircle className="w-5 h-5 text-green-400" />
                             )}
                             <div className="flex-1">
-                              <p className="text-white font-semibold text-lg">{preset.name}</p>
+                              <div className="flex items-center gap-2 mb-1">
+                                <p className="text-white font-semibold text-lg">{preset.name}</p>
+                              </div>
                               {preset.description && (
                                 <p className="text-gray-400 text-sm">{preset.description}</p>
                               )}
                             </div>
                           </div>
+                          {preset.printers && preset.printers.length > 0 && (
+                            <div className="flex items-center gap-1.5 flex-wrap ml-4">
+                              {preset.printers.map((printer) => (
+                                <span
+                                  key={printer.id}
+                                  className="px-2 py-0.5 bg-white/10 rounded-md text-xs text-gray-300 border border-white/20"
+                                  title={`${printer.manufacturer} ${printer.model}`}
+                                >
+                                  {printer.name}
+                                </span>
+                              ))}
+                            </div>
+                          )}
                           <div className="text-right ml-4">
                             <div className="flex items-center space-x-2 mb-2">
                               <Star className="w-5 h-5 text-yellow-400 fill-current" />
@@ -569,9 +680,69 @@ export const FilamentDetailPage: React.FC = () => {
                         )}
                         </div>
                       
+                      {/* Расширенные параметры OrcaSlicer */}
+                      {preset.orcaslicer_settings && Object.keys(preset.orcaslicer_settings).length > 0 && (
+                        <div className="mt-3 pt-3 border-t border-white/10">
+                          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
+                            {preset.orcaslicer_settings.nozzle_temperature_range_low?.[0] && preset.orcaslicer_settings.nozzle_temperature_range_high?.[0] && (
+                              <div className="flex items-center space-x-2">
+                                <Thermometer className="w-4 h-4 text-orange-400" />
+                                <div>
+                                  <div className="text-gray-400 text-xs">Диапазон</div>
+                                  <div className="text-white text-sm font-semibold">
+                                    {preset.orcaslicer_settings.nozzle_temperature_range_low[0]}–{preset.orcaslicer_settings.nozzle_temperature_range_high[0]}°C
+                                  </div>
+                                </div>
+                              </div>
+                            )}
+                            {preset.orcaslicer_settings.filament_max_volumetric_speed?.[0] && (
+                              <div className="flex items-center space-x-2">
+                                <Gauge className="w-4 h-4 text-blue-400" />
+                                <div>
+                                  <div className="text-gray-400 text-xs">Объемная</div>
+                                  <div className="text-white text-sm font-semibold">
+                                    {preset.orcaslicer_settings.filament_max_volumetric_speed[0]}mm³/s
+                                  </div>
+                                </div>
+                              </div>
+                            )}
+                            {preset.orcaslicer_settings.fan_min_speed?.[0] && preset.orcaslicer_settings.fan_max_speed?.[0] && (
+                              <div className="flex items-center space-x-2">
+                                <Fan className="w-4 h-4 text-cyan-400" />
+                                <div>
+                                  <div className="text-gray-400 text-xs">Вентилятор</div>
+                                  <div className="text-white text-sm font-semibold">
+                                    {preset.orcaslicer_settings.fan_min_speed[0]}–{preset.orcaslicer_settings.fan_max_speed[0]}%
+                                  </div>
+                                </div>
+                              </div>
+                            )}
+                            {preset.orcaslicer_settings.chamber_temperature?.[0] && Number(preset.orcaslicer_settings.chamber_temperature[0]) > 0 && (
+                              <div className="flex items-center space-x-2">
+                                <Thermometer className="w-4 h-4 text-red-400" />
+                                <div>
+                                  <div className="text-gray-400 text-xs">Камера</div>
+                                  <div className="text-white text-sm font-semibold">
+                                    {preset.orcaslicer_settings.chamber_temperature[0]}°C
+                                  </div>
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      )}
+                      
                       {/* Кнопка добавления в профиль */}
                       <div className="pt-3 border-t border-white/10">
-                        {isPresetSaved ? (
+                        {!user ? (
+                          <button
+                            disabled
+                            className="w-full bg-gray-600/50 text-white py-2 px-4 rounded-lg cursor-not-allowed flex items-center justify-center"
+                            title="Необходимо войти в систему"
+                          >
+                            Войдите, чтобы добавить
+                          </button>
+                        ) : isPresetSaved ? (
                           <button
                             disabled
                             className="w-full bg-green-600/50 text-white py-2 px-4 rounded-lg cursor-not-allowed flex items-center justify-center"
@@ -585,9 +756,10 @@ export const FilamentDetailPage: React.FC = () => {
                               e.stopPropagation();
                               savePresetMutation.mutate(preset.id);
                             }}
-                            className="w-full bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white py-2 px-4 rounded-lg transition-all"
+                            disabled={savePresetMutation.isPending}
+                            className="w-full bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white py-2 px-4 rounded-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed"
                           >
-                            Добавить в профиль
+                            {savePresetMutation.isPending ? 'Сохранение...' : 'Добавить в профиль'}
                           </button>
                         )}
                       </div>

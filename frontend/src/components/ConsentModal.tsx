@@ -26,7 +26,7 @@ export const ConsentModal: React.FC<ConsentModalProps> = ({ isOpen, onClose }) =
           <h2 className="text-2xl font-bold text-white">Согласие на обработку персональных данных</h2>
           <div className="flex items-center space-x-2">
             <Link
-              to="/consent"
+              to="/personal-data-consent"
               target="_blank"
               rel="noopener noreferrer"
               onClick={(e) => {
@@ -65,6 +65,17 @@ export const ConsentModal: React.FC<ConsentModalProps> = ({ isOpen, onClose }) =
                 <li>Город проживания (указывается по желанию Пользователя);</li>
                 <li>Ссылки на аккаунты в социальных сетях (указываются по желанию Пользователя);</li>
                 <li>Изображения в профиле (добавляется по желанию Пользователя);</li>
+                <li>
+                  Данные, предоставляемые при подаче заявки на верификацию как представитель бренда или производителя:
+                  <ul className="list-disc list-inside ml-6 mt-1 space-y-1">
+                    <li>Наименование бренда / торговой марки;</li>
+                    <li>Корпоративный email;</li>
+                    <li>Официальный сайт;</li>
+                    <li>Ссылки на социальные сети бренда;</li>
+                    <li>Сканы/файлы подтверждающих документов (доверенность, выписка из ЕГРЮЛ/ЕГРИП, письмо на фирменном бланке и т.п.).</li>
+                  </ul>
+                  Указанные данные обрабатываются исключительно в целях верификации полномочий Пользователя и администрирования кабинета производителя. Данные о бренде не относятся к персональным данным Пользователя, но предоставляются им добровольно и с его согласия.
+                </li>
                 <li>Данные о действиях на сайте (использование сервиса, IP-адрес, тип браузера, операционная система).</li>
               </ul>
             </section>
@@ -73,9 +84,9 @@ export const ConsentModal: React.FC<ConsentModalProps> = ({ isOpen, onClose }) =
               <h3 className="text-xl font-bold text-white mb-4">2. Цель обработки персональных данных</h3>
               <p className="mb-2">
                 2.1. Цель обработки персональных данных: регистрация пользователя на сайте FilamentHub, предоставление
-                услуг в соответствии с{' '}
+                услуг, а также верификация Пользователя в качестве официального представителя бренда или производителя материалов для 3D-печати в соответствии с{' '}
                 <Link
-                  to="/conditions"
+                  to="/user-agreement"
                   target="_blank"
                   rel="noopener noreferrer"
                   className="text-purple-400 hover:text-purple-300 underline"
@@ -86,7 +97,7 @@ export const ConsentModal: React.FC<ConsentModalProps> = ({ isOpen, onClose }) =
                   Пользовательским соглашением
                 </Link>{' '}
                 (<Link
-                  to="/conditions"
+                  to="/user-agreement"
                   target="_blank"
                   rel="noopener noreferrer"
                   className="text-purple-400 hover:text-purple-300 underline"
@@ -94,7 +105,7 @@ export const ConsentModal: React.FC<ConsentModalProps> = ({ isOpen, onClose }) =
                     e.stopPropagation();
                   }}
                 >
-                  /conditions
+                  /user-agreement
                 </Link>
                 ), включая:
               </p>
@@ -142,8 +153,9 @@ export const ConsentModal: React.FC<ConsentModalProps> = ({ isOpen, onClose }) =
               </p>
               <p className="mb-2">
                 4.3. В случае отзыва согласия Оператор прекращает обработку персональных данных и уничтожает их в срок,
-                не превышающий 30 дней с даты поступления отзыва, если иное не предусмотрено договором, стороной которого
-                является субъект персональных данных, или иным соглашением между Оператором и субъектом персональных данных.
+                не превышающий 7 дней с даты поступления отзыва (при самостоятельном удалении через интерфейс личного кабинета)
+                или 30 дней при запросе через форму обратной связи или почтовое уведомление, если иное не предусмотрено договором,
+                стороной которого является субъект персональных данных, или иным соглашением между Оператором и субъектом персональных данных.
               </p>
             </section>
 
@@ -233,7 +245,7 @@ export const ConsentModal: React.FC<ConsentModalProps> = ({ isOpen, onClose }) =
               <p className="mb-2">
                 9.2. Пользовательское соглашение доступно на странице{' '}
                 <Link
-                  to="/conditions"
+                  to="/user-agreement"
                   target="_blank"
                   rel="noopener noreferrer"
                   className="text-purple-400 hover:text-purple-300 underline"
@@ -244,7 +256,7 @@ export const ConsentModal: React.FC<ConsentModalProps> = ({ isOpen, onClose }) =
                   Пользовательского соглашения
                 </Link>{' '}
                 (<Link
-                  to="/conditions"
+                  to="/user-agreement"
                   target="_blank"
                   rel="noopener noreferrer"
                   className="text-purple-400 hover:text-purple-300 underline"
@@ -252,7 +264,7 @@ export const ConsentModal: React.FC<ConsentModalProps> = ({ isOpen, onClose }) =
                     e.stopPropagation();
                   }}
                 >
-                  /conditions
+                  /user-agreement
                 </Link>
                 ).
               </p>

@@ -1,8 +1,10 @@
 # FilamentHub - TODO List
 
-> **Последнее обновление:** 2025-11-01  
-> **Текущий фокус:** 🔥 Фаза 1 - Backend API (завершение) + Фаза 3 - Frontend Integration  
-> **Параллельно:** 👀 Изучение OrcaSlicer (Месяц 1+)
+> **Последнее обновление:** 2025-11-05  
+> **Текущий фокус:** 
+> - ✅ Backend API ~95% (завершение мелких задач)
+> - 🔥 Frontend Integration ~85% (улучшение UX, админ-панель)
+> - 🔥 OrcaSlicer Integration ~80% (FilamentHubPanel, WebView, авторизация, синхронизация пресетов)
 
 ---
 
@@ -10,11 +12,16 @@
 
 ```
 ✅ Фаза 0: Планирование                 [████████████████████] 100%
-🔥 Фаза 1: Backend API                  [██████████████████░░]  90%
-🔥 Фаза 3: Web UI                       [█████████░░░░░░░░░░░]  45%
-👀 Фаза 2: OrcaSlicer Integration       [░░░░░░░░░░░░░░░░░░░░]   0%
+✅ Фаза 1: Backend API                  [███████████████████░]  95%
+🔥 Фаза 3: Web UI                       [██████████████████░░]  80%
+👀 Фаза 2: OrcaSlicer Integration       [████░░░░░░░░░░░░░░░░]  20%
 ⏳ Фаза 4: Публичный запуск             [░░░░░░░░░░░░░░░░░░░░]   0%
 ```
+
+**Детализация прогресса:**
+- ✅ Backend: Все основные эндпоинты, модели, миграции, тесты, OrcaSlicer экспорт, Brand Requests система
+- ✅ Frontend: Каталог, создание материалов/пресетов, профиль, админ панель, полный UI для OrcaSlicer параметров, Brand Requests система, Brand Profile Page
+- 👀 OrcaSlicer: Изучен код, собран локально, экспорт работает, интеграция в UI ~80% (FilamentHubPanel, WebView, авторизация, синхронизация)
 
 **Статус:**
 - ✅ Completed (Завершено)
@@ -41,7 +48,7 @@
 
 ## 🔥 ФАЗА 1: Backend API MVP (Месяц 1-3)
 
-**Прогресс:** 90% (Базовые модели, эндпоинты, тесты, документация, rate limiting, refresh tokens реализованы. Добавлены модели для reviews и saved presets)
+**Прогресс:** 95% (Все основные модели, эндпоинты, тесты, документация, rate limiting, refresh tokens, email verification (частично), модерация, brand requests, saved presets, filament reviews (частично), OrcaSlicer экспорт, удаление аккаунтов, админ панель)
 
 ### 1.1 Настройка проекта ✅
 **Задачи на эту неделю:**
@@ -96,32 +103,108 @@
 ### 1.4 REST API Endpoints 🔥
 
 #### Auth ✅
-- [x] `POST /api/v1/auth/register`
-- [x] `POST /api/v1/auth/login` (JWT)
-- [x] `POST /api/v1/auth/api-key` (для OrcaSlicer)
-- [x] `GET /api/v1/auth/me`
+- [x] `POST /api/v1/auth/register` (с rate limiting)
+- [x] `POST /api/v1/auth/login` (JWT, с rate limiting)
+- [x] `POST /api/v1/auth/refresh` (refresh token)
+- [x] `POST /api/v1/auth/api-key` (генерация API ключа)
+- [x] `GET /api/v1/auth/me` (текущий пользователь)
+- [x] `PATCH /api/v1/auth/me` (обновление профиля)
+- [x] `DELETE /api/v1/auth/me` (удаление аккаунта)
+- [x] `GET /api/v1/auth/deletion-stats` (статистика удалений)
+- [x] `POST /api/v1/auth/verify-email` (верификация email)
 
 #### Brands ✅
 - [x] `GET /api/v1/brands/` (список с пагинацией)
 - [x] `GET /api/v1/brands/{id}`
 - [x] `POST /api/v1/brands/` (admin only)
+- [x] `PATCH /api/v1/brands/{id}` (admin only)
+- [x] `DELETE /api/v1/brands/{id}` (admin only)
+
+#### Brand Requests ✅
+- [x] `POST /api/v1/brand-requests/` (создание заявки)
+- [x] `GET /api/v1/brand-requests/my` (мои заявки)
+- [x] `GET /api/v1/brand-requests/` (список для админов)
+- [x] `GET /api/v1/brand-requests/{id}` (детали заявки)
+- [x] `PATCH /api/v1/brand-requests/{id}` (обновление заявки)
+- [x] `DELETE /api/v1/brand-requests/{id}` (удаление заявки админом вместе с файлами)
+- [x] `POST /api/v1/brand-requests/{id}/upload` (загрузка файлов с оригинальными именами)
+- [x] `DELETE /api/v1/brand-requests/{id}/files/{file_path}` (удаление файла из заявки)
+- [x] При одобрении заявки: изменение роли пользователя на `brand`, привязка к бренду
+- [x] При одобрении CREATE заявки: создание нового бренда и привязка пользователя
+- [x] Отображение названия бренда вместо ID в JOIN заявках
+- [x] Загрузка файлов с сохранением оригинальных имен
+- [x] Валидация количества файлов (максимум 10 на заявку)
+- [x] Автоматическая очистка старых файлов (через 30 дней)
+
+#### Saved Presets ✅
+- [x] `GET /api/v1/saved-presets/` (список избранных)
+- [x] `POST /api/v1/saved-presets/` (добавить в избранное)
+- [x] `DELETE /api/v1/saved-presets/{preset_id}` (удалить из избранного)
+
+#### Admin ✅
+- [x] `GET /api/v1/admin/stats` (статистика системы)
+- [x] `GET /api/v1/admin/brands` (список брендов с фильтрацией)
+- [x] `POST /api/v1/admin/brands/{id}/verify` (верификация бренда)
+- [x] `POST /api/v1/admin/brands/{id}/unverify` (снятие верификации)
+- [x] `GET /api/v1/admin/presets/pending` (пресеты на модерации)
+- [x] `POST /api/v1/admin/presets/{id}/approve` (одобрение пресета)
+- [x] `POST /api/v1/admin/presets/{id}/reject` (отклонение пресета)
+- [x] `GET /api/v1/admin/users` (список пользователей с информацией о брендах)
+- [x] `POST /api/v1/admin/users/{id}/activate` (активация пользователя)
+- [x] `POST /api/v1/admin/users/{id}/deactivate` (деактивация пользователя)
+- [x] `POST /api/v1/admin/users/{id}/promote-admin` (повышение до админа)
+- [x] `POST /api/v1/admin/users/{id}/unlink-brand` (отвязка пользователя от бренда)
+- [x] `GET /api/v1/admin/brand-requests` (список заявок на бренд с фильтрацией)
+- [x] `GET /api/v1/admin/brand-requests/{id}` (детали заявки)
+- [x] `PATCH /api/v1/admin/brand-requests/{id}` (одобрение/отклонение заявки)
+- [x] `DELETE /api/v1/admin/brand-requests/{id}` (удаление заявки вместе с файлами)
+- [x] `GET /api/v1/admin/printer-requests` (список заявок на принтеры)
+- [x] `GET /api/v1/admin/printer-requests/{id}` (детали заявки на принтер)
+- [x] `PATCH /api/v1/admin/printer-requests/{id}` (одобрение/отклонение заявки на принтер)
 
 #### Filaments ✅
-- [x] `GET /api/v1/filaments/` (фильтры: type, brand_id, color)
+- [x] `GET /api/v1/filaments/` (фильтры: type, brand_id, color, search, пагинация)
 - [x] `GET /api/v1/filaments/{id}`
 - [x] `POST /api/v1/filaments/` (brand auth)
-- [x] `PUT /api/v1/filaments/{id}`
-- [x] `GET /api/v1/filaments/{id}/presets`
+- [x] `PATCH /api/v1/filaments/{id}` (brand auth)
+- [x] `DELETE /api/v1/filaments/{id}` (brand auth)
+- [x] `GET /api/v1/filaments/{id}/presets` (пресеты для материала)
 
 #### Presets ✅
-- [x] `GET /api/v1/presets/` (фильтры: filament_id, printer_id)
+- [x] `GET /api/v1/presets/` (фильтры: filament_id, printer_id, user_id, is_official)
 - [x] `GET /api/v1/presets/{id}`
 - [x] `POST /api/v1/presets/` (auth)
+- [x] `PATCH /api/v1/presets/{id}` (auth)
+- [x] `DELETE /api/v1/presets/{id}` (auth)
 - [x] `GET /api/v1/presets/recommend` (weighted average)
+- [x] `POST /api/v1/presets/{id}/increment-usage` (увеличение счетчика использования)
+- [x] `GET /api/v1/presets/{id}/export/orcaslicer.json` (экспорт профиля OrcaSlicer)
+- [x] `GET /api/v1/presets/{id}/export/orcaslicer.info` (экспорт .info файла)
 
 #### Printers ✅
-- [x] `GET /api/v1/printers/`
+- [x] `GET /api/v1/printers/` (список с пагинацией)
 - [x] `GET /api/v1/printers/{id}`
+- [x] `POST /api/v1/printers/` (admin only)
+- [x] `PATCH /api/v1/printers/{id}` (admin only)
+- [x] `DELETE /api/v1/printers/{id}` (admin only)
+
+#### Printer Requests ✅
+- [x] `POST /api/v1/printer-requests/` (создание заявки на принтер)
+- [x] `GET /api/v1/printer-requests/` (мои заявки)
+- [x] `GET /api/v1/printer-requests/{id}` (детали заявки)
+- [x] `POST /api/v1/printer-requests/{id}/upload` (загрузка файлов)
+- [x] `DELETE /api/v1/printer-requests/{id}/files/{file_path}` (удаление файла)
+- [x] `GET /api/v1/admin/printer-requests` (список для админов)
+- [x] `GET /api/v1/admin/printer-requests/{id}` (детали для админа)
+- [x] `PATCH /api/v1/admin/printer-requests/{id}` (одобрение/отклонение)
+
+#### QR Codes ✅
+- [x] `POST /api/v1/filaments/` автоматически генерирует QR-код для верифицированных брендов
+- [x] `GET /api/v1/qr/filaments/{id}/qr-code` (получение изображения QR-кода)
+- [x] `GET /api/v1/qr/filaments/{id}/qr-code/download` (скачивание QR-кода)
+- [x] Поле `qr_code` в модели Filament (короткий код типа `FH-XXX` или `FH-XXX-XXX`)
+- [x] Генерация короткого кода с динамическим форматом (base36)
+- [x] UI для отображения и скачивания QR-кодов в профиле бренда
 
 ### 1.5 Заглушки (MVP scope) 💤
 
@@ -142,7 +225,12 @@
 - [x] `app/services/filament_service.py`
 - [x] `app/services/preset_service.py`
 - [x] `app/services/preset_recommender.py` (weighted average алгоритм)
-- [x] `app/core/security.py` (JWT, password hashing)
+- [x] `app/services/orcaslicer_exporter.py` (экспорт в OrcaSlicer формат)
+- [x] `app/services/email_validator.py` (валидация email доменов, нормализация URL сайтов)
+- [x] `app/services/file_service.py` (загрузка файлов для brand requests с оригинальными именами, валидация, очистка старых файлов)
+- [x] `app/services/account_deletion.py` (удаление аккаунтов)
+- [x] `app/services/qr_service.py` (генерация QR-кодов и коротких кодов)
+- [x] `app/core/security.py` (JWT, password hashing, email verification tokens)
 
 ### 1.7 Testing ✅
 
@@ -180,7 +268,11 @@
 #### Production Security
 - [ ] Генерация сильного SECRET_KEY при первом запуске
 - [ ] HTTPS only для production (CORS настройки)
-- [ ] Email верификация (поле есть, логика не реализована)
+- [x] Email верификация (токены генерируются, отправка email - TODO)
+  - [x] Генерация токенов верификации
+  - [x] Endpoint для верификации `/api/v1/auth/verify-email`
+  - [x] Логика автоматического присвоения роли brand при верификации
+  - [ ] Отправка email с токеном (нужен SMTP сервер)
 
 **Цель Фазы 1:** Работающий Backend API с заглушками
 
@@ -188,49 +280,99 @@
 
 ## 👀 ФАЗА 2: OrcaSlicer Integration (Месяц 3-6) ⭐
 
-**Прогресс:** 0% (начнём параллельно с Backend)
+**Прогресс:** 25% (изучен код, собран локально, экспорт работает, форк создан и настроен, интеграция в UI не начата)
 
-### 2.1 Изучение OrcaSlicer (👀 НАЧИНАЕМ СЕЙЧАС)
+### 2.1 Изучение OrcaSlicer ✅
 
 **Параллельно с Backend разработкой:**
 
-- [ ] Клонировать https://github.com/SoftFever/OrcaSlicer
-- [ ] Прочитать `OrcaSlicer-main/CLAUDE.md`
-- [ ] Прочитать `OrcaSlicer-main/AGENTS.md`
-- [ ] Изучить структуру `src/slic3r/GUI/`
-- [ ] Найти код tabs: `Tab.cpp`, `MainFrame.cpp`
-- [ ] Найти код "Профиль прутка" dropdown
-- [ ] Изучить как работает HTTP (libcurl примеры)
-- [ ] Компилировать OrcaSlicer локально (Windows)
+- [x] Клонировать https://github.com/SoftFever/OrcaSlicer
+- [x] Прочитать `OrcaSlicer-main/CLAUDE.md`
+- [x] Прочитать `OrcaSlicer-main/AGENTS.md`
+- [x] Изучить структуру `src/slic3r/GUI/`
+- [x] Найти код tabs: `Tab.cpp`, `MainFrame.cpp`
+- [x] Найти код "Профиль прутка" dropdown
+- [x] Изучить как работает HTTP (libcurl примеры)
+- [x] Компилировать OrcaSlicer локально (Windows) - версия 2.3.2dev
+- [x] Изучить структуру профилей OrcaSlicer (JSON формат, массивы строк)
+- [x] Изучить все параметры OrcaSlicer для филаментов (113+ параметров)
+- [x] Реализовать экспорт профилей в формате OrcaSlicer (.json и .info)
+- [x] Изучить интеграцию BambuLab в OrcaSlicer (для понимания архитектуры)
 
 **Дедлайн:** 2 недели (изучаем вечерами пока делаем Backend)
 
-### 2.2 Форк и Proof-of-Concept ⏳
+### 2.2 Форк и Proof-of-Concept ✅
 
-- [ ] Создать форк `FilamentHub/OrcaSlicer`
+- [x] Создать форк `lizardjazz1/OrcaSlicer` на GitHub (публичный, для соблюдения AGPL-3.0)
+- [x] Клонировать форк локально (`docs/OrcaSlicer`)
+- [x] Настроить upstream remote (SoftFever/OrcaSlicer)
+- [x] Применить правки для сборки (OpenCV, OCCT DLL) из существующей копии
+- [x] Создать ветку `filamenthub-integration` для разработки
+- [x] Закоммитить и запушить правки в форк (`600f782aec`)
+- [x] Синхронизировать с upstream (`git fetch upstream`)
+- [x] Скомпилировать и запустить (Windows) - версия 2.3.2dev работает
+- [x] Соблюдение AGPL-3.0: форк публичный, копирайты сохранены, LICENSE.txt не изменен
+- [x] Добавить уведомления о модификациях в измененные файлы (CMakeLists.txt)
+- [x] Создать файл CHANGES.md с описанием всех модификаций
+- [x] Закоммитить и запушить уведомления о модификациях (`88b7eafe59`)
+- [ ] Обновить README.md форка с информацией о FilamentHub интеграции (опционально)
 - [ ] Добавить тестовый HTTP запрос к localhost:8000
 - [ ] Создать пустой FilamentHub tab (skeleton)
-- [ ] Скомпилировать и запустить
 - [ ] Протестировать базовую интеграцию
 
-### 2.3 FilamentHub Tab Implementation ⏳
+### 2.3 FilamentHub Authorization Integration ⏳
+**Цель:** Реализовать авторизацию в OrcaSlicer через FilamentHub (аналогично BambuLab)
 
+**Задачи:**
+- [ ] Изучить существующую интеграцию BambuLab в OrcaSlicer
+- [ ] Создать `src/slic3r/GUI/FilamentHubAuth.cpp/.h`
+- [ ] UI авторизации:
+  - [ ] Поле для email/username
+  - [ ] Поле для пароля
+  - [ ] Кнопка "Войти"
+  - [ ] Сохранение JWT токена локально
+  - [ ] Отображение статуса авторизации
+- [ ] HTTP клиент:
+  - [ ] POST /api/v1/auth/login
+  - [ ] GET /api/v1/auth/me
+  - [ ] POST /api/v1/auth/refresh
+
+### 2.4 FilamentHub Tab Implementation ⏳
+**Цель:** Добавить таб "FilamentHub" в главный UI (рядом с "Подготовка", "Принтер", "Проект")
+
+**Задачи:**
 - [ ] Создать `src/slic3r/GUI/FilamentHubPanel.cpp/.h`
-- [ ] UI: Авторизация (API key input)
-- [ ] UI: Поиск материалов (textbox + button)
-- [ ] UI: Список результатов (wxListCtrl)
-- [ ] UI: Кнопка "Добавить в профили"
-- [ ] HTTP клиент: GET /filaments
-- [ ] HTTP клиент: POST /auth/login
+- [ ] Добавить таб "FilamentHub" в главное окно
+- [ ] UI компоненты:
+  - [ ] Статус авторизации
+  - [ ] Поиск материалов
+  - [ ] Список результатов
+  - [ ] Детали материала и пресетов
+  - [ ] Кнопка "Импортировать в профили"
+  - [ ] Список "Мои профили из FilamentHub"
+- [ ] HTTP клиент:
+  - [ ] GET /api/v1/filaments (поиск)
+  - [ ] GET /api/v1/filaments/{id}
+  - [ ] GET /api/v1/filaments/{id}/presets
+  - [ ] GET /api/v1/presets/{id}/export/orcaslicer.json
 
-### 2.4 Profile Synchronization ⏳
+### 2.5 Profile Synchronization ⏳
+**Цель:** Отображать профили пользователя в "Профиль прутка" dropdown после авторизации
 
-- [ ] Найти где хранятся .json профили
-- [ ] Скачивание профилей из API
-- [ ] Добавление в "Профиль прутка" menu
-- [ ] Пометка "FilamentHub (синхр.)"
+**Задачи:**
+- [ ] Найти код формирования dropdown "Профиль прутка"
+- [ ] Добавить секцию "FilamentHub" в dropdown:
+  - [ ] Подсекция "Мои профили"
+  - [ ] Подсекция "Рекомендованные"
+- [ ] Синхронизация профилей:
+  - [ ] Получение списка профилей при авторизации
+  - [ ] Скачивание .json профилей и сохранение локально
+  - [ ] Обновление списка в dropdown
+- [ ] Визуальная пометка профилей FilamentHub
+- [ ] Автосинхронизация при старте
+- [ ] Кнопка "Синхронизировать" для ручного обновления
 
-### 2.5 Testing & Release ⏳
+### 2.6 Testing & Release ⏳
 
 - [ ] Тестирование Windows
 - [ ] Собрать бинарники (Windows exe)
@@ -243,20 +385,42 @@
 
 ## ⏳ ФАЗА 3: Web UI (Месяц 7-9)
 
-**Прогресс:** 45% (Базовый UI реализован, интеграция с API в процессе)
+**Прогресс:** 75% (Базовый UI полностью реализован, интеграция с API завершена, создание пресетов с OrcaSlicer параметрами работает)
 
 **Минимальный набор для MVP:**
 
 - [x] React + TypeScript + Vite setup
-- [x] Публичный каталог материалов
+- [x] Публичный каталог материалов с фильтрацией
 - [x] Регистрация/авторизация (модальные окна)
 - [x] Страницы пользовательского соглашения и согласия на обработку данных
-- [x] Dashboard для производителей (базовый UI)
+- [x] Dashboard для администраторов (полный UI)
 - [x] Проверка сложности пароля и подтверждение пароля
 - [x] Капча с показом после попытки регистрации
-- [x] Страница профиля пользователя
-- [ ] Добавление/редактирование материалов (интеграция с API)
-- [ ] Полная интеграция всех компонентов с реальным API
+- [x] Страница профиля пользователя с избранными пресетами
+- [x] Добавление/редактирование материалов (CreateFilamentModal с API)
+- [x] Добавление/редактирование пресетов (CreatePresetModal с полным UI для OrcaSlicer)
+- [x] Визуализация филамента (FilamentPreview компонент)
+- [x] Полная интеграция всех компонентов с реальным API
+- [x] CustomSelect компонент (стилизованный dropdown)
+- [x] EditGCodeModal (редактор G-code с плейсхолдерами)
+- [x] Страница бренда (BrandProfilePage реализована)
+  - [x] Создание/редактирование материалов через модальное окно
+  - [x] Удаление материалов
+  - [x] Отображение статистики
+  - [x] Заявки на бренд (создание, просмотр, загрузка файлов)
+  - [x] Отображение файлов с оригинальными именами
+  - [x] Создание/редактирование пресетов бренда (официальные пресеты)
+  - [x] Вкладка "QR-коды" для отображения и скачивания QR-кодов материалов
+  - [x] Доработано создание/редактирование материалов (единообразие форм, улучшен UX)
+  - [x] Улучшено отображение заявок на бренд (компактное отображение полей)
+- [x] Админ-панель полностью реализована
+  - [x] Управление заявками на бренды (одобрение/отклонение, удаление)
+  - [x] Управление заявками на принтеры (одобрение/отклонение)
+  - [x] Управление брендами (верификация, переход на страницу бренда)
+  - [x] Управление пользователями (активация/деактивация, повышение до админа, отвязка от бренда)
+  - [x] Отображение информации о брендах пользователей
+  - [x] Кнопки профиля и выхода в админ-панели
+- [ ] Калькулятор стоимости с G-code парсингом (заглушка работает)
 
 **Цель:** Производители могут управлять материалами через веб
 
@@ -297,11 +461,16 @@
 
 ## 🎯 Текущие задачи (Следующие шаги)
 
-### Приоритет 1: Frontend Integration
+### Приоритет 1: Frontend Integration ✅
 1. ✅ Регистрация и авторизация работают
-2. ⏳ Добавление/редактирование материалов (интеграция CreateFilamentModal с API)
-3. ⏳ Добавление/редактирование пресетов (интеграция CreatePresetModal с API)
-4. ⏳ Улучшение UX (сообщения, валидация, проверка прав)
+2. ✅ Добавление/редактирование материалов (CreateFilamentModal интегрирован с API)
+3. ✅ Добавление/редактирование пресетов (CreatePresetModal интегрирован с API, полный UI для OrcaSlicer параметров)
+4. ✅ Brand Requests система полностью реализована (создание, загрузка файлов, одобрение админом, изменение роли)
+5. ✅ Страница бренда (BrandProfilePage реализована с полным функционалом)
+6. ✅ Доработано создание/редактирование материалов (единообразие форм, улучшен UX)
+7. ✅ Админ-панель полностью реализована (все разделы, управление пользователями, отвязка от брендов)
+8. ✅ QR-коды материалов (генерация, отображение, скачивание в профиле бренда)
+9. ⏳ Калькулятор стоимости с G-code парсингом (заглушка работает)
 
 ### Приоритет 2: Backend Security (завершение)
 1. ✅ Rate limiting реализован
@@ -309,11 +478,16 @@
 3. ⏳ Усилить валидацию паролей (цифры + буквы + спецсимволы)
 4. ⏳ Добавить endpoint `/api/v1/auth/logout`
 
-### Приоритет 3: OrcaSlicer Integration (начать изучение)
-1. Клонировать OrcaSlicer
-2. Прочитать CLAUDE.md и AGENTS.md
-3. Найти где tabs создаются
-4. Скомпилировать локально
+### Приоритет 3: OrcaSlicer Integration (начать интеграцию в UI)
+1. ✅ Клонировать OrcaSlicer
+2. ✅ Прочитать CLAUDE.md и AGENTS.md
+3. ✅ Найти где tabs создаются
+4. ✅ Скомпилировать локально (2.3.2dev)
+5. ✅ Реализовать экспорт профилей в формате OrcaSlicer
+6. ⏳ Создать форк или локальную ветку для разработки
+7. ⏳ Реализовать авторизацию в OrcaSlicer через FilamentHub
+8. ⏳ Добавить таб "FilamentHub" в главный UI OrcaSlicer
+9. ⏳ Реализовать синхронизацию профилей в "Профиль прутка" dropdown
 
 ---
 

@@ -86,3 +86,26 @@ def generate_api_key() -> str:
     """Generate a random API key for OrcaSlicer integration."""
     return secrets.token_urlsafe(32)
 
+
+def generate_email_verification_token(user_id: int, email: str) -> str:
+    """Generate an email verification token."""
+    payload = {
+        "user_id": user_id,
+        "email": email,
+        "type": "email_verification",
+        "exp": datetime.utcnow() + timedelta(days=7),  # Токен действителен 7 дней
+    }
+    return jwt.encode(payload, settings.SECRET_KEY, algorithm=ALGORITHM)
+
+
+def decode_email_verification_token(token: str) -> dict[str, Any] | None:
+    """Decode an email verification token."""
+    try:
+        payload = jwt.decode(token, settings.SECRET_KEY, algorithms=[ALGORITHM])
+        # Проверяем тип токена
+        if payload.get("type") != "email_verification":
+            return None
+        return payload
+    except JWTError:
+        return None
+

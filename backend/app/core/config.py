@@ -11,6 +11,7 @@ class Settings(BaseSettings):
     VERSION: str = "0.1.0"
     API_V1_PREFIX: str = "/api/v1"
     DEBUG: bool = False
+    BASE_URL: str = "https://filamenthub.ru"  # Базовый URL для QR-кодов
 
     # Database
     DATABASE_URL: str
@@ -38,6 +39,11 @@ class Settings(BaseSettings):
 
     # File Upload
     MAX_UPLOAD_SIZE_MB: int = 50
+    MAX_FILES_PER_REQUEST: int = 10  # Максимум файлов на одну заявку
+    UPLOAD_DIR: str = "uploads"
+    ALLOWED_PROOF_FILE_EXTENSIONS: list[str] = [".pdf", ".jpg", ".jpeg", ".png", ".doc", ".docx"]
+    # Автоматическая очистка файлов от завершенных/отклоненных заявок через N дней
+    CLEANUP_FILES_AFTER_DAYS: int = 30
 
     model_config = SettingsConfigDict(
         env_file=".env",

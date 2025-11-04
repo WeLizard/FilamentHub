@@ -12,6 +12,19 @@ export const setToken = (token: string): void => {
   localStorage.setItem('access_token', token);
 };
 
+export const setUserId = (userId: number): void => {
+  localStorage.setItem('user_id', userId.toString());
+};
+
+export const getUserId = (): number | null => {
+  const userId = localStorage.getItem('user_id');
+  return userId ? parseInt(userId, 10) : null;
+};
+
+export const removeUserId = (): void => {
+  localStorage.removeItem('user_id');
+};
+
 export const setRefreshToken = (token: string): void => {
   localStorage.setItem('refresh_token', token);
 };
@@ -19,6 +32,7 @@ export const setRefreshToken = (token: string): void => {
 export const removeToken = (): void => {
   localStorage.removeItem('access_token');
   localStorage.removeItem('refresh_token');
+  removeUserId();
 };
 
 export const isAuthenticated = (): boolean => {

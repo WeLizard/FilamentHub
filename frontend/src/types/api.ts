@@ -13,6 +13,14 @@ export interface Brand {
   updated_at: string;
 }
 
+export interface FilamentVisualSettings {
+  color_type?: 'single' | 'two' | 'three' | 'gradient' | 'transition' | 'thermochromic';
+  colors?: string[]; // До 5 цветов для градиента/перехода
+  finish?: 'matte' | 'glossy';
+  filler?: 'none' | 'wood' | 'carbon' | 'glitter' | 'metallic' | 'luminescent' | 'fibers' | 'stone' | 'glass' | 'pattern1' | 'pattern2' | 'pattern3' | 'pattern4' | 'pattern5' | 'pattern6' | 'pattern7' | 'pattern8' | 'pattern9' | 'pattern10' | 'pattern11' | 'pattern12';
+  transparency?: boolean; // Прозрачный/непрозрачный (да/нет)
+}
+
 export interface Filament {
   id: number;
   brand_id: number;
@@ -21,6 +29,7 @@ export interface Filament {
   material_type: string;
   color_name: string | null;
   color_hex: string | null;
+  visual_settings: FilamentVisualSettings | null; // Расширенные визуальные эффекты (только для сайта)
   diameter: number;
   density: number | null;
   price_per_kg: number | null;
@@ -28,7 +37,51 @@ export interface Filament {
   description: string | null;
   views_count: number | null;
   scans_count: number | null;
+  qr_code: string | null; // Короткий код для QR-кода (например: "FHUB-ABC123")
   active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface Printer {
+  id: number;
+  name: string;
+  manufacturer: string;
+  model: string;
+  slug: string;
+  build_volume_x: number | null;
+  build_volume_y: number | null;
+  build_volume_z: number | null;
+  nozzle_diameter: number | null;
+  max_extruder_temp: number | null;
+  max_bed_temp: number | null;
+  description: string | null;
+  image_url: string | null;
+  active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface PrinterRequest {
+  id: number;
+  user_id: number;
+  name: string;
+  manufacturer: string;
+  model: string;
+  slug: string;
+  description: string | null;
+  build_volume_x: number | null;
+  build_volume_y: number | null;
+  build_volume_z: number | null;
+  nozzle_diameter: number | null;
+  max_extruder_temp: number | null;
+  max_bed_temp: number | null;
+  image_url: string | null;
+  message: string | null;
+  status: 'pending' | 'approved' | 'rejected';
+  processed_by_id: number | null;
+  processed_at: string | null;
+  rejection_reason: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -49,6 +102,7 @@ export interface Preset {
   fan_speed: number | null;
   retraction_length: number | null;
   retraction_speed: number | null;
+  orcaslicer_settings: Record<string, any> | null; // Расширенные параметры OrcaSlicer в формате JSON
   rating: number | null;
   usage_count: number;
   active: boolean;
@@ -57,6 +111,7 @@ export interface Preset {
   updated_at: string;
   source?: 'own' | 'saved'; // For UI: 'own' = created by user, 'saved' = added from catalog
   user_id?: number | null;
+  printers?: Printer[]; // Список принтеров, для которых подходит этот пресет
 }
 
 export interface User {
@@ -69,8 +124,21 @@ export interface User {
   active: boolean;
   email_verified: boolean;
   brand_id: number | null;
+  brand_name: string | null; // Название бренда (для админки)
   created_at: string;
   updated_at: string;
+}
+
+export interface AccountDeletionStats {
+  presets_count: number;
+  official_presets_count: number;
+  approved_presets_count: number;
+  presets_used_by_others_count: number;
+  reviews_count: number;
+  saved_presets_count: number;
+  brand_requests_count: number;
+  is_brand_representative: boolean;
+  brand_other_representatives_count: number;
 }
 
 export interface Token {
@@ -103,4 +171,32 @@ export interface FilamentWithBrand extends Filament {
   successRate?: number; // Вычисляется из пресетов
   officialPreset?: Preset;
   communityPresets?: Preset[];
+}
+
+export type BrandRequestType = 'join' | 'create';
+export type BrandRequestStatus = 'pending' | 'approved' | 'rejected';
+
+export interface BrandRequest {
+  id: number;
+  user_id: number;
+  user_email?: string | null; // Email пользователя для админки
+  request_type: BrandRequestType;
+  brand_id: number | null;
+  brand_name?: string | null; // Название бренда для JOIN заявок
+  new_brand_name: string | null;
+  new_brand_slug: string | null;
+  new_brand_description: string | null;
+  new_brand_website: string | null;
+  message: string | null;
+  company_email: string | null;
+  company_website: string | null;
+  social_media_urls: string[] | null;
+  proof_text: string | null;
+  proof_files: Array<{ path: string; name: string } | string> | null; // Поддержка старого формата (строка) и нового (объект)
+  status: BrandRequestStatus;
+  processed_by_id: number | null;
+  processed_at: string | null;
+  rejection_reason: string | null;
+  created_at: string;
+  updated_at: string;
 }

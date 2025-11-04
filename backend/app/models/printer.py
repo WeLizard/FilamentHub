@@ -4,13 +4,13 @@ from datetime import datetime
 from typing import TYPE_CHECKING
 
 from sqlalchemy import Boolean, DateTime, Float, Integer, String, Text
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.sql import func
 
 from app.db.base import Base
 
 if TYPE_CHECKING:
-    pass
+    from app.models.preset_printer import PresetPrinter
 
 
 class Printer(Base):
@@ -61,6 +61,11 @@ class Printer(Base):
     )
     updated_at: Mapped[datetime] = mapped_column(
         default=func.now(), onupdate=func.now(), server_default=func.now()
+    )
+
+    # Relationships
+    preset_links: Mapped[list["PresetPrinter"]] = relationship(
+        "PresetPrinter", back_populates="printer", cascade="all, delete-orphan"
     )
 
     def __repr__(self) -> str:

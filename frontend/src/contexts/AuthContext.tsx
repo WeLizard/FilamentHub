@@ -2,7 +2,7 @@
 
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { authAPI } from '../api/client';
-import { setToken, setRefreshToken, removeToken, getToken, getRefreshToken } from '../utils/auth';
+import { setToken, setRefreshToken, removeToken, getToken, getRefreshToken, setUserId, removeUserId } from '../utils/auth';
 import type { User } from '../types/api';
 
 interface AuthContextType {
@@ -68,6 +68,16 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       // Загружаем данные пользователя
       const userData = await authAPI.me();
       setUser(userData);
+      
+      // Сохраняем user_id в localStorage
+      if (userData.id) {
+        setUserId(userData.id);
+      }
+      
+      // Отправляем сообщение в OrcaSlicer если запущено там
+      if (typeof window !== 'undefined' && (window as any).filamenthub?.sendLoginSuccess) {
+        (window as any).filamenthub.sendLoginSuccess(tokenData.access_token, userData.id);
+      }
     } catch (error: any) {
       // Удаляем токен если логин не удался
       removeToken();
@@ -101,6 +111,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
   const logout = () => {
     removeToken();
+    removeUserId();
     setUser(null);
   };
 

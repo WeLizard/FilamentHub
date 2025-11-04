@@ -5,6 +5,8 @@ import { Layout } from './components/Layout';
 import { CatalogPage } from './pages/CatalogPage';
 import { ProfilePage } from './pages/ProfilePage';
 import { FilamentDetailPage } from './pages/FilamentDetailPage';
+import { BrandDetailPage } from './pages/BrandDetailPage';
+import { AdminPanel } from './pages/AdminPanel';
 import { TermsPage } from './pages/TermsPage';
 import { ConsentPage } from './pages/ConsentPage';
 
@@ -29,6 +31,14 @@ function App() {
           }
         />
         <Route
+          path="/brands/:id"
+          element={
+            <Layout>
+              <BrandDetailPage />
+            </Layout>
+          }
+        />
+        <Route
           path="/profile"
           element={
             <ProtectedRoute>
@@ -38,8 +48,16 @@ function App() {
             </ProtectedRoute>
           }
         />
-        <Route path="/conditions" element={<TermsPage />} />
-        <Route path="/consent" element={<ConsentPage />} />
+        <Route
+          path="/admin"
+          element={
+            <ProtectedRoute requiredRole="admin">
+              <AdminPanel />
+            </ProtectedRoute>
+          }
+        />
+        <Route path="/user-agreement" element={<TermsPage />} />
+        <Route path="/personal-data-consent" element={<ConsentPage />} />
       </Routes>
     </AuthProvider>
   );

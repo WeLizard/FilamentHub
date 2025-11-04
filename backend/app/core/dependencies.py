@@ -2,7 +2,7 @@
 
 from typing import Annotated
 
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -62,6 +62,34 @@ async def get_current_active_user(
 ) -> User:
     """Get current active user."""
     return current_user
+
+
+async def get_current_active_user_optional(
+    request: Request,
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> User | None:
+    """Get current active user if authenticated, otherwise return None."""
+    authorization = request.headers.get("Authorization")
+    if not authorization or not authorization.startswith("Bearer "):
+        return None
+    
+    token = authorization.split(" ")[1]
+    payload = decode_access_token(token)
+    
+    if payload is None:
+        return None
+    
+    email: str | None = payload.get("sub")
+    if email is None:
+        return None
+    
+    result = await db.execute(select(User).where(User.email == email))
+    user = result.scalar_one_or_none()
+    
+    if user is None or not user.active:
+        return None
+    
+    return user
 
 
 async def get_current_brand_user(

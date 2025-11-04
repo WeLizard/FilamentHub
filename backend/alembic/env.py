@@ -14,7 +14,7 @@ from app.db.base import Base
 from app.core.config import settings
 
 # Import all models to ensure they are registered with Base.metadata
-from app.models import Brand, Filament, Preset, Printer, User  # noqa: F401
+from app.models import Brand, BrandRequest, Filament, Preset, Printer, User  # noqa: F401
 
 # this is the Alembic Config object
 config = context.config
@@ -64,16 +64,34 @@ def do_run_migrations(connection: Connection) -> None:
 
 async def run_async_migrations() -> None:
     """Run migrations in 'online' mode with async engine."""
-    connectable = async_engine_from_config(
-        config.get_section(config.config_ini_section, {}),
-        prefix="sqlalchemy.",
-        poolclass=pool.NullPool,
-    )
+    import socket
+    
+    # Retry logic for Docker network DNS resolution
+    max_retries = 30
+    retry_delay = 1
+    
+    for attempt in range(max_retries):
+        try:
+            connectable = async_engine_from_config(
+                config.get_section(config.config_ini_section, {}),
+                prefix="sqlalchemy.",
+                poolclass=pool.NullPool,
+            )
 
-    async with connectable.connect() as connection:
-        await connection.run_sync(do_run_migrations)
+            async with connectable.connect() as connection:
+                await connection.run_sync(do_run_migrations)
 
-    await connectable.dispose()
+            await connectable.dispose()
+            return  # Success, exit retry loop
+            
+        except (socket.gaierror, OSError, Exception) as e:
+            if attempt < max_retries - 1:
+                print(f"⚠️  Database connection attempt {attempt + 1}/{max_retries} failed: {e}")
+                print(f"   Retrying in {retry_delay} seconds...")
+                await asyncio.sleep(retry_delay)
+            else:
+                # Last attempt failed, raise the error
+                raise
 
 
 def run_migrations_online() -> None:

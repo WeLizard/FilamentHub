@@ -1,0 +1,102 @@
+/**
+ * Белый список личных почтовых сервисов
+ * Синхронизирован с backend/app/core/personal_email_domains.txt
+ * Обновлено: 2024
+ */
+
+export const PERSONAL_EMAIL_DOMAINS = [
+  // Google
+  'gmail.com',
+  
+  // Microsoft (Outlook/Hotmail)
+  'outlook.com',
+  'hotmail.com',
+  'hotmail.co.uk',
+  'hotmail.fr',
+  'hotmail.de',
+  'live.com',
+  'msn.com',
+  'outlook.fr',
+  'outlook.de',
+  
+  // Yahoo
+  'yahoo.com',
+  'yahoo.co.uk',
+  'yahoo.fr',
+  'yahoo.de',
+  'yahoo.it',
+  'yahoo.es',
+  'yahoo.com.au',
+  'yahoo.co.jp',
+  'yahoo.ca',
+  'ymail.com',
+  'rocketmail.com',
+  
+  // Apple
+  'icloud.com',
+  'me.com',
+  'mac.com',
+  
+  // Mail.ru Group (российские)
+  'mail.ru',
+  'inbox.ru',
+  'list.ru',
+  'bk.ru',
+  'internet.ru',
+  'xmail.ru',
+  'mail.ua',
+  
+  // Yandex (российские)
+  'yandex.ru',
+  'yandex.com',
+  'yandex.ua',
+  'yandex.kz',
+  'yandex.by',
+  'ya.ru',
+  
+  // Rambler (российские)
+  'rambler.ru',
+  'rambler.ua',
+  'lenta.ru',
+  'autorambler.ru',
+  'myrambler.ru',
+  'ro.ru',
+  
+  // ProtonMail (шифрование)
+  'protonmail.com',
+  'proton.me',
+  'protonmail.ch',
+  
+  // Mail.com и поддомены (популярные)
+  'mail.com',
+  'email.com',
+  'usa.com',
+  'myself.com',
+  'consultant.com',
+  'post.com',
+  'iname.com',
+  'engineer.com',
+  
+  // GMX
+  'gmx.com',
+  'gmx.net',
+  'gmx.de',
+  'gmx.fr',
+  'gmx.at',
+  'gmx.ch',
+  
+  // Другие популярные международные
+  'aol.com',
+  'zoho.com',
+  'tutanota.com',
+  'fastmail.com',
+  'disroot.org',
+  'hey.com',
+  
+  // Региональные для СНГ и других стран
+  'ukr.net',
+  'i.ua',
+  'meta.ua',
+  'bigmir.net',
+] as const;
+

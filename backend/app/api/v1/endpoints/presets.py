@@ -2,14 +2,20 @@
 
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Response
+from fastapi.responses import JSONResponse
+import json
 from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.core.dependencies import get_current_active_user, get_current_brand_user
 from app.db.session import get_db
 from app.models.preset import Preset, PresetModerationStatus
+from app.models.preset_printer import PresetPrinter
+from app.models.printer import Printer
 from app.models.user import User
+from app.models.filament import Filament
 from app.schemas.preset import (
     PresetCreate,
     PresetListResponse,
@@ -17,6 +23,8 @@ from app.schemas.preset import (
     PresetUpdate,
     RecommendedPresetResponse,
 )
+from app.schemas.printer import PrinterResponse
+from app.services.orcaslicer_exporter import export_preset_to_orcaslicer, generate_profile_info, preset_to_orcaslicer_json
 
 router = APIRouter(prefix="/presets", tags=["presets"])
 
@@ -28,16 +36,21 @@ async def list_presets(
     size: int = Query(50, ge=1, le=100),
     active_only: bool = Query(True),
     filament_id: int | None = Query(None, gt=0),
+    printer_id: int | None = Query(None, gt=0, description="Фильтр по принтеру"),
     is_official: bool | None = Query(None),
     user_id: int | None = Query(None, gt=0),
 ) -> PresetListResponse:
     """Получить список пресетов."""
     # Build query
-    query = select(Preset)
+    query = select(Preset).options(selectinload(Preset.printer_links).selectinload(PresetPrinter.printer))
+    
     if active_only:
         query = query.where(Preset.active == True)
     if filament_id:
         query = query.where(Preset.filament_id == filament_id)
+    if printer_id:
+        # Фильтруем пресеты, связанные с указанным принтером
+        query = query.join(PresetPrinter).where(PresetPrinter.printer_id == printer_id)
     if is_official is not None:
         query = query.where(Preset.is_official == is_official)
     if user_id is not None:
@@ -58,158 +71,38 @@ async def list_presets(
         count_query = count_query.where(Preset.active == True)
     if filament_id:
         count_query = count_query.where(Preset.filament_id == filament_id)
+    if printer_id:
+        count_query = count_query.join(PresetPrinter).where(PresetPrinter.printer_id == printer_id)
     if is_official is not None:
         count_query = count_query.where(Preset.is_official == is_official)
     if user_id is not None:
         count_query = count_query.where(Preset.user_id == user_id)
     else:
-        # Учитываем только одобренные
         count_query = count_query.where(
             or_(
                 Preset.moderation_status == PresetModerationStatus.APPROVED,
                 Preset.is_official == True
             )
         )
+
     total_result = await db.execute(count_query)
-    total = total_result.scalar() or 0
+    total = total_result.scalar_one()
 
-    # Paginate
+    # Pagination
+    pages = (total + size - 1) // size
     offset = (page - 1) * size
-    query = query.offset(offset).limit(size).order_by(
-        Preset.is_official.desc(), Preset.rating.desc().nulls_last(), Preset.created_at.desc()
-    )
+    query = query.offset(offset).limit(size)
 
-    # Execute
+    # Execute query
     result = await db.execute(query)
-    presets = result.scalars().all()
-
-    pages = (total + size - 1) // size if total > 0 else 0
+    presets = result.scalars().unique().all()
 
     return PresetListResponse(
-        items=[PresetResponse.model_validate(preset) for preset in presets],
+        items=[PresetResponse.model_validate(p) for p in presets],
         total=total,
         page=page,
         size=size,
         pages=pages,
-    )
-
-
-@router.get("/recommend", response_model=RecommendedPresetResponse)
-async def recommend_preset(
-    filament_id: int = Query(..., gt=0, description="Filament ID to get recommendations for"),
-    db: Annotated[AsyncSession, Depends(get_db)] = ...,
-) -> RecommendedPresetResponse:
-    """
-    Получить рекомендованные настройки для материала (weighted average алгоритм).
-    
-    Вычисляет оптимальные значения на основе всех одобренных пресетов для материала,
-    используя взвешенное среднее: Σ(значение_i × вес_i) / Σ(вес_i)
-    
-    Вес = rating × (1 + usage_count / 100)
-    """
-    # Проверяем существование материала
-    from app.models.filament import Filament
-    
-    filament_result = await db.execute(select(Filament).where(Filament.id == filament_id))
-    filament = filament_result.scalar_one_or_none()
-    
-    if not filament:
-        raise HTTPException(status_code=404, detail="Filament not found")
-    
-    # Получаем все одобренные пресеты для материала
-    query = select(Preset).where(
-        Preset.filament_id == filament_id,
-        Preset.active == True,
-        or_(
-            Preset.moderation_status == PresetModerationStatus.APPROVED,
-            Preset.is_official == True
-        )
-    )
-    result = await db.execute(query)
-    presets = result.scalars().all()
-    
-    if not presets:
-        raise HTTPException(
-            status_code=404,
-            detail="No approved presets found for this filament"
-        )
-    
-    # Вычисляем веса для каждого пресета
-    # Вес = rating × (1 + usage_count / 100)
-    # Если rating отсутствует, используем usage_count / 10 как базовый вес
-    def calculate_weight(preset: Preset) -> float:
-        """Вычислить вес пресета для weighted average."""
-        base_weight = preset.rating if preset.rating is not None else (preset.usage_count / 10.0)
-        if base_weight <= 0:
-            base_weight = 1.0  # Минимальный вес для участия в расчете
-        
-        # Увеличиваем вес на основе usage_count (но не слишком сильно)
-        usage_factor = 1 + (preset.usage_count / 100.0)
-        
-        # Официальные пресеты получают дополнительный вес
-        official_bonus = 1.5 if preset.is_official else 1.0
-        
-        return base_weight * usage_factor * official_bonus
-    
-    weights = [calculate_weight(p) for p in presets]
-    total_weight = sum(weights)
-    
-    if total_weight == 0:
-        raise HTTPException(
-            status_code=500,
-            detail="Unable to calculate recommendation (zero total weight)"
-        )
-    
-    # Вычисляем weighted average для обязательных параметров
-    extruder_temp = sum(p.extruder_temp * w for p, w in zip(presets, weights)) / total_weight
-    bed_temp = sum(p.bed_temp * w for p, w in zip(presets, weights)) / total_weight
-    print_speed = sum(p.print_speed * w for p, w in zip(presets, weights)) / total_weight
-    
-    # Вычисляем weighted average для опциональных параметров (только если есть значения)
-    def weighted_avg_optional(values_and_weights: list[tuple[float, float]]) -> float | None:
-        """Вычислить weighted average для опциональных параметров."""
-        filtered = [(v, w) for v, w in values_and_weights if v is not None]
-        if not filtered:
-            return None
-        values, ws = zip(*filtered)
-        total_w = sum(ws)
-        if total_w == 0:
-            return None
-        return sum(v * w for v, w in filtered) / total_w
-    
-    travel_speed = weighted_avg_optional([(p.travel_speed, w) if p.travel_speed is not None else (None, w) for p, w in zip(presets, weights)])
-    layer_height = weighted_avg_optional([(p.layer_height, w) if p.layer_height is not None else (None, w) for p, w in zip(presets, weights)])
-    first_layer_height = weighted_avg_optional([(p.first_layer_height, w) if p.first_layer_height is not None else (None, w) for p, w in zip(presets, weights)])
-    flow_rate = weighted_avg_optional([(p.flow_rate, w) if p.flow_rate is not None else (None, w) for p, w in zip(presets, weights)])
-    
-    # fan_speed - целое число, нужно округлить
-    fan_speed_values = [(p.fan_speed, w) for p, w in zip(presets, weights) if p.fan_speed is not None]
-    fan_speed = None
-    if fan_speed_values:
-        fan_speed_avg = sum(v * w for v, w in fan_speed_values) / sum(w for _, w in fan_speed_values)
-        fan_speed = round(fan_speed_avg)
-    
-    retraction_length = weighted_avg_optional([(p.retraction_length, w) if p.retraction_length is not None else (None, w) for p, w in zip(presets, weights)])
-    retraction_speed = weighted_avg_optional([(p.retraction_speed, w) if p.retraction_speed is not None else (None, w) for p, w in zip(presets, weights)])
-    
-    # Вычисляем средний рейтинг
-    ratings = [p.rating for p in presets if p.rating is not None]
-    avg_rating = sum(ratings) / len(ratings) if ratings else None
-    
-    return RecommendedPresetResponse(
-        filament_id=filament_id,
-        extruder_temp=round(extruder_temp, 1),
-        bed_temp=round(bed_temp, 1),
-        print_speed=round(print_speed, 1),
-        travel_speed=round(travel_speed, 1) if travel_speed is not None else None,
-        layer_height=round(layer_height, 3) if layer_height is not None else None,
-        first_layer_height=round(first_layer_height, 3) if first_layer_height is not None else None,
-        flow_rate=round(flow_rate, 1) if flow_rate is not None else None,
-        fan_speed=fan_speed,
-        retraction_length=round(retraction_length, 2) if retraction_length is not None else None,
-        retraction_speed=round(retraction_speed, 1) if retraction_speed is not None else None,
-        presets_count=len(presets),
-        avg_rating=round(avg_rating, 2) if avg_rating else None,
     )
 
 
@@ -219,13 +112,23 @@ async def get_preset(
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> PresetResponse:
     """Получить пресет по ID."""
-    result = await db.execute(select(Preset).where(Preset.id == preset_id))
+    result = await db.execute(
+        select(Preset)
+        .options(selectinload(Preset.printer_links).selectinload(PresetPrinter.printer))
+        .where(Preset.id == preset_id)
+    )
     preset = result.scalar_one_or_none()
 
     if not preset:
         raise HTTPException(status_code=404, detail="Preset not found")
 
-    return PresetResponse.model_validate(preset)
+    # Преобразуем пресет в ответ с принтерами
+    preset_dict = PresetResponse.model_validate(preset).model_dump()
+    preset_dict["printers"] = [
+        PrinterResponse.model_validate(link.printer).model_dump()
+        for link in preset.printer_links
+    ]
+    return PresetResponse(**preset_dict)
 
 
 @router.post("/", response_model=PresetResponse, status_code=201)
@@ -234,39 +137,106 @@ async def create_preset(
     db: Annotated[AsyncSession, Depends(get_db)],
     current_user: Annotated[User, Depends(get_current_active_user)],
 ) -> PresetResponse:
-    """Создать пресет."""
-    # Check if filament exists
+    """Создать новый пресет."""
     from app.models.filament import Filament
-
+    
+    # Проверка существования filament
     filament_result = await db.execute(select(Filament).where(Filament.id == data.filament_id))
     filament = filament_result.scalar_one_or_none()
-
+    
     if not filament:
         raise HTTPException(status_code=404, detail="Filament not found")
-
-    # Create preset
-    preset_data = data.model_dump(exclude={"user_id"})  # Игнорируем user_id из запроса
-    preset_data["user_id"] = current_user.id  # Используем текущего пользователя
     
-    # Проверка: только верифицированные производители могут создавать официальные пресеты
-    if preset_data.get("is_official", False):
-        # TODO: Добавить проверку verified бренда через filament.brand_id
-        if current_user.role.value != "brand":
+    # Проверка прав на создание официального пресета
+    if data.is_official:
+        # Только верифицированные производители могут создавать официальные пресеты
+        if current_user.role.value != "brand" and current_user.role.value != "admin":
             raise HTTPException(
                 status_code=403,
-                detail="Only verified manufacturers can create official presets"
+                detail="Only verified brands can create official presets"
             )
-        preset_data["moderation_status"] = PresetModerationStatus.APPROVED
-    else:
-        # Для MVP модерация отключена - все пресеты сразу одобрены
-        preset_data["moderation_status"] = PresetModerationStatus.APPROVED
+        # Проверяем, что filament принадлежит бренду пользователя
+        if current_user.role.value == "brand" and filament.brand_id != current_user.brand_id:
+            raise HTTPException(
+                status_code=403,
+                detail="You can only create official presets for your brand's filaments"
+            )
     
-    preset = Preset(**preset_data)
+    preset = Preset(
+        filament_id=data.filament_id,
+        user_id=current_user.id,
+        name=data.name,
+        description=data.description,
+        extruder_temp=data.extruder_temp,
+        bed_temp=data.bed_temp,
+        print_speed=data.print_speed,
+        travel_speed=data.travel_speed,
+        layer_height=data.layer_height,
+        first_layer_height=data.first_layer_height,
+        flow_rate=data.flow_rate,
+        fan_speed=data.fan_speed,
+        retraction_length=data.retraction_length,
+        retraction_speed=data.retraction_speed,
+        is_official=data.is_official if data.is_official else False,
+        orcaslicer_settings=data.orcaslicer_settings,
+        active=True,
+    )
+    
+    # Модерация: официальные пресеты автоматически одобрены
+    if preset.is_official:
+        preset.moderation_status = PresetModerationStatus.APPROVED
+    else:
+        preset.moderation_status = PresetModerationStatus.PENDING
+    
     db.add(preset)
+    await db.flush()  # Получаем ID пресета
+    
+    # Создаём связи с принтерами
+    if data.printer_ids:
+        for printer_id in data.printer_ids:
+            # Проверяем существование принтера
+            printer_result = await db.execute(select(Printer).where(Printer.id == printer_id))
+            printer = printer_result.scalar_one_or_none()
+            if not printer:
+                continue  # Пропускаем несуществующие принтеры
+            
+            # Создаём связь
+            preset_printer = PresetPrinter(
+                preset_id=preset.id,
+                printer_id=printer_id,
+                is_primary=False,  # Первый принтер будет основным
+            )
+            db.add(preset_printer)
+        
+        # Первый принтер делаем основным
+        if data.printer_ids:
+            first_link = await db.execute(
+                select(PresetPrinter)
+                .where(PresetPrinter.preset_id == preset.id)
+                .where(PresetPrinter.printer_id == data.printer_ids[0])
+            )
+            first_link_obj = first_link.scalar_one_or_none()
+            if first_link_obj:
+                first_link_obj.is_primary = True
+    
     await db.commit()
-    await db.refresh(preset)
-
-    return PresetResponse.model_validate(preset)
+    await db.refresh(preset, ["printer_links"])
+    
+    # Загружаем принтеры для ответа
+    result = await db.execute(
+        select(Preset)
+        .options(selectinload(Preset.printer_links).selectinload(PresetPrinter.printer))
+        .where(Preset.id == preset.id)
+    )
+    preset_with_printers = result.scalar_one()
+    
+    # Преобразуем пресет в ответ с принтерами
+    preset_dict = PresetResponse.model_validate(preset_with_printers).model_dump()
+    preset_dict["printers"] = [
+        PrinterResponse.model_validate(link.printer).model_dump()
+        for link in preset_with_printers.printer_links
+    ]
+    return PresetResponse(**preset_dict)
 
 
 @router.patch("/{preset_id}", response_model=PresetResponse)
@@ -283,22 +253,58 @@ async def update_preset(
     if not preset:
         raise HTTPException(status_code=404, detail="Preset not found")
 
-    # Проверка: пользователь может редактировать только свои пресеты (или админ)
+    # Проверка прав: пользователь может редактировать только свои пресеты (или админ)
     if preset.user_id != current_user.id and current_user.role.value != "admin":
         raise HTTPException(
             status_code=403,
-            detail="You can only edit your own presets"
+            detail="You can only update your own presets"
         )
 
-    # Update fields
+    # Обновляем только переданные поля
     update_data = data.model_dump(exclude_unset=True)
+    printer_ids = update_data.pop("printer_ids", None)
+    
     for field, value in update_data.items():
         setattr(preset, field, value)
+    
+    # Обновляем связи с принтерами, если указаны
+    if printer_ids is not None:
+        # Удаляем старые связи
+        delete_result = await db.execute(
+            select(PresetPrinter).where(PresetPrinter.preset_id == preset_id)
+        )
+        old_links = delete_result.scalars().all()
+        for link in old_links:
+            await db.delete(link)
+        
+        # Создаём новые связи
+        if printer_ids:
+            for i, printer_id in enumerate(printer_ids):
+                # Проверяем существование принтера
+                printer_result = await db.execute(select(Printer).where(Printer.id == printer_id))
+                printer = printer_result.scalar_one_or_none()
+                if not printer:
+                    continue  # Пропускаем несуществующие принтеры
+                
+                # Создаём связь
+                preset_printer = PresetPrinter(
+                    preset_id=preset.id,
+                    printer_id=printer_id,
+                    is_primary=(i == 0),  # Первый принтер - основной
+                )
+                db.add(preset_printer)
 
     await db.commit()
-    await db.refresh(preset)
+    
+    # Загружаем принтеры для ответа
+    result = await db.execute(
+        select(Preset)
+        .options(selectinload(Preset.printer_links).selectinload(PresetPrinter.printer))
+        .where(Preset.id == preset_id)
+    )
+    preset_with_printers = result.scalar_one()
 
-    return PresetResponse.model_validate(preset)
+    return PresetResponse.model_validate(preset_with_printers)
 
 
 @router.delete("/{preset_id}", status_code=204)
@@ -344,36 +350,136 @@ async def increment_usage(
     return PresetResponse.model_validate(preset)
 
 
-
-    if not preset:
-        raise HTTPException(status_code=404, detail="Preset not found")
-
-    # Проверка: пользователь может удалять только свои пресеты (или админ)
-    if preset.user_id != current_user.id and current_user.role.value != "admin":
-        raise HTTPException(
-            status_code=403,
-            detail="You can only delete your own presets"
-        )
-
-    await db.delete(preset)
-    await db.commit()
-
-
-@router.post("/{preset_id}/increment-usage", response_model=PresetResponse)
-async def increment_usage(
+@router.get("/{preset_id}/export/orcaslicer.json")
+async def export_preset_json(
     preset_id: int,
     db: Annotated[AsyncSession, Depends(get_db)],
-) -> PresetResponse:
-    """Увеличить счётчик использования пресета."""
-    result = await db.execute(select(Preset).where(Preset.id == preset_id))
+) -> Response:
+    """
+    Экспортировать профиль в формате OrcaSlicer (.json).
+    
+    Returns:
+        JSONResponse: JSON файл профиля OrcaSlicer
+    """
+    # Получаем preset с filament и brand
+    result = await db.execute(
+        select(Preset)
+        .options(selectinload(Preset.filament).selectinload(Filament.brand))
+        .where(Preset.id == preset_id, Preset.active == True)
+    )
     preset = result.scalar_one_or_none()
-
+    
     if not preset:
         raise HTTPException(status_code=404, detail="Preset not found")
+    
+    if not preset.filament:
+        raise HTTPException(status_code=404, detail="Filament not found")
+    
+    # Экспортируем в JSON
+    try:
+        profile_dict = await preset_to_orcaslicer_json(preset, preset.filament, db)
+    except Exception as e:
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.error(f"Error exporting preset {preset_id}: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Error exporting preset: {str(e)}")
+    
+    # Возвращаем JSON файл
+    # Формируем безопасное имя файла (только латиница и безопасные символы для HTTP заголовков)
+    brand_name = preset.filament.brand.name if preset.filament.brand else "Generic"
+    
+    # Формируем читабельное имя файла (OrcaSlicer поддерживает кириллицу, пробелы и спецсимволы)
+    # Убираем только недопустимые символы для файловой системы: <>:"/\|?*
+    def to_safe_filename(text: str) -> str:
+        """Преобразует текст в безопасное имя файла, сохраняя кириллицу и пробелы."""
+        if not text:
+            return ""
+        # Убираем только действительно недопустимые символы для файловой системы
+        safe = text.replace("<", "_").replace(">", "_").replace(":", "_")
+        safe = safe.replace('"', "_").replace("/", "_").replace("\\", "_")
+        safe = safe.replace("|", "_").replace("?", "_").replace("*", "_")
+        # Убираем множественные подчеркивания
+        while "__" in safe:
+            safe = safe.replace("__", "_")
+        return safe.strip(" _")  # Убираем пробелы и подчеркивания в начале/конце
+    
+    # Формируем имя файла: используем имя пресета (OrcaSlicer поддерживает кириллицу, пробелы, спецсимволы)
+    # Примеры из OrcaSlicer: "TEST-2 ABS.json", "ABS @FilamentHub2.json", "ABS HTP.json"
+    if preset.name:
+        filename = to_safe_filename(preset.name) + ".json"
+    else:
+        # Fallback: Brand Material.json или просто Material.json
+        filename_parts = []
+        if brand_name:
+            filename_parts.append(to_safe_filename(brand_name))
+        if preset.filament.material_type:
+            filename_parts.append(to_safe_filename(preset.filament.material_type))
+        
+        if filename_parts:
+            filename = " ".join(filename_parts) + ".json"
+        else:
+            filename = "preset.json"
+    
+    # Ограничиваем длину имени файла
+    if len(filename) > 200:
+        # Обрезаем до 200 символов, стараясь не резать по середине слова
+        filename = filename[:197].rsplit(" ", 1)[0] + ".json"
+    
+    # Для HTTP заголовка используем RFC 5987 формат для поддержки Unicode
+    from urllib.parse import quote
+    
+    # ASCII версия имени для совместимости
+    ascii_filename = filename.encode('ascii', 'replace').decode('ascii').replace('?', '_')
+    
+    # Используем оба формата: ASCII для совместимости и UTF-8 для правильного отображения
+    return JSONResponse(
+        content=profile_dict,
+        media_type="application/json",
+        headers={
+            "Content-Disposition": f'attachment; filename="{ascii_filename}"; filename*=UTF-8\'\'{quote(filename, safe="")}',
+        }
+    )
 
-    preset.usage_count += 1
-    await db.commit()
-    await db.refresh(preset)
 
-    return PresetResponse.model_validate(preset)
-
+@router.get("/{preset_id}/export/orcaslicer.info")
+async def export_preset_info(
+    preset_id: int,
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> Response:
+    """
+    Экспортировать .info файл в формате INI для OrcaSlicer.
+    
+    Returns:
+        Response: .info файл профиля OrcaSlicer (INI формат)
+    """
+    from fastapi.responses import PlainTextResponse
+    
+    # Получаем preset с filament и brand
+    result = await db.execute(
+        select(Preset)
+        .options(selectinload(Preset.filament).selectinload(Filament.brand))
+        .where(Preset.id == preset_id, Preset.active == True)
+    )
+    preset = result.scalar_one_or_none()
+    
+    if not preset:
+        raise HTTPException(status_code=404, detail="Preset not found")
+    
+    if not preset.filament:
+        raise HTTPException(status_code=404, detail="Filament not found")
+    
+    # Генерируем .info файл (INI формат)
+    info_content = generate_profile_info(preset, preset.filament)
+    
+    # Возвращаем .info файл
+    brand_name = preset.filament.brand.name if preset.filament.brand else "Generic"
+    filename = f"{brand_name}_{preset.filament.material_type}_{preset.name}.info"
+    filename = filename.replace(" ", "_").replace("/", "_")
+    
+    return PlainTextResponse(
+        content=info_content,
+        media_type="text/plain",
+        headers={
+            "Content-Disposition": f'attachment; filename="{filename}"',
+        }
+    )

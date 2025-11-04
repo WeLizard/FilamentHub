@@ -1,15 +1,15 @@
 /** Защищенный роут - требует аутентификации */
 
-import { Navigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { User, Lock } from 'lucide-react';
 
 interface ProtectedRouteProps {
   children: React.ReactNode;
+  requiredRole?: 'admin' | 'brand';
 }
 
-export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ children }) => {
-  const { isAuthenticated, isLoading } = useAuth();
+export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ children, requiredRole }) => {
+  const { isAuthenticated, isLoading, user } = useAuth();
 
   if (isLoading) {
     return (
@@ -40,6 +40,23 @@ export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ children }) => {
               После входа вы сможете создавать пресеты, управлять материалами и использовать все возможности платформы.
             </p>
           </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Проверка роли
+  if (requiredRole && user?.role !== requiredRole) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 flex items-center justify-center">
+        <div className="text-center max-w-md mx-auto px-6">
+          <div className="w-20 h-20 bg-gradient-to-r from-red-500 to-orange-500 rounded-2xl flex items-center justify-center mx-auto mb-6 shadow-lg shadow-red-500/25">
+            <Lock className="w-10 h-10 text-white" />
+          </div>
+          <h2 className="text-3xl font-bold text-white mb-4">Доступ запрещен</h2>
+          <p className="text-gray-300 mb-6">
+            Эта страница доступна только {requiredRole === 'admin' ? 'администраторам' : 'представителям брендов'}.
+          </p>
         </div>
       </div>
     );

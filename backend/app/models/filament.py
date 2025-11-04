@@ -3,7 +3,7 @@
 from datetime import datetime
 from typing import TYPE_CHECKING
 
-from sqlalchemy import Boolean, Float, ForeignKey, Integer, String, Text
+from sqlalchemy import Boolean, Float, ForeignKey, Integer, JSON, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.sql import func
 
@@ -18,7 +18,7 @@ class Filament(Base):
     """
     Материал для 3D-печати.
 
-    Примеры: Bestfilament PLA Red, Sunlu PETG Black
+    Примеры: ThermPlast PLA Red, ThermPlast PETG Black
     """
 
     __tablename__ = "filaments"
@@ -37,7 +37,17 @@ class Filament(Base):
     # Visual
     color_name: Mapped[str | None] = mapped_column(String(100), nullable=True)
     color_hex: Mapped[str | None] = mapped_column(String(7), nullable=True)
-    # color_hex: #FF0000
+    # color_hex: #FF0000 (базовый цвет, используется в OrcaSlicer)
+    
+    # Extended visual settings (JSON) - только для сайта
+    visual_settings: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    # visual_settings: {
+    #   "color_type": "single" | "two" | "three" | "gradient" | "transition" | "thermochromic",
+    #   "colors": ["#FF0000", "#00FF00", ...], // до 5 цветов
+    #   "finish": "matte" | "glossy",
+    #   "filler": "none" | "wood" | "carbon" | "glitter" | "metallic" | "luminescent" | "fibers" | "stone" | "glass" | "pattern1-12",
+    #   "transparency": 0-100 // прозрачность в процентах
+    # }
 
     # Physical properties
     diameter: Mapped[float] = mapped_column(Float, default=1.75)
@@ -60,6 +70,11 @@ class Filament(Base):
     
     scans_count: Mapped[int] = mapped_column(Integer, default=0)
     # scans_count: сколько раз отсканировали QR-код
+    
+    # QR Code
+    qr_code: Mapped[str | None] = mapped_column(String(50), unique=True, nullable=True, index=True)
+    # qr_code: короткий код для QR-кода (например: "FHUB-ABC123")
+    # Автоматически генерируется для верифицированных брендов
 
     # Status
     active: Mapped[bool] = mapped_column(Boolean, default=True, index=True)

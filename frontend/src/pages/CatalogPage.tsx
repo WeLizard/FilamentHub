@@ -22,6 +22,8 @@ import {
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { filamentsAPI, brandsAPI, presetsAPI, savedPresetsAPI } from '../api/client';
+import { Dropdown } from '../components/Dropdown';
+import { FilamentPreview } from '../components/FilamentPreview';
 import type { Filament, Preset } from '../types/api';
 
 export const CatalogPage: React.FC = () => {
@@ -46,10 +48,19 @@ export const CatalogPage: React.FC = () => {
 
   // Мутация для сохранения пресета
   const savePresetMutation = useMutation({
-    mutationFn: (presetId: number) => savedPresetsAPI.save(presetId),
+    mutationFn: (presetId: number) => {
+      if (!user) {
+        throw new Error('Необходимо войти в систему');
+      }
+      return savedPresetsAPI.save(presetId);
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['saved-presets'] });
       queryClient.invalidateQueries({ queryKey: ['user-presets'] });
+    },
+    onError: (error: any) => {
+      console.error('Ошибка сохранения пресета:', error);
+      alert(error.response?.data?.detail || error.message || 'Не удалось добавить пресет в профиль');
     },
   });
 
@@ -186,31 +197,29 @@ export const CatalogPage: React.FC = () => {
             />
           </div>
 
-          <select
-            value={materialTypeFilter || ''}
-            onChange={(e) => setMaterialTypeFilter(e.target.value || null)}
-            className="px-4 py-4 bg-white/10 border border-white/20 rounded-xl text-white focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all min-w-48"
-          >
-            <option value="">Все типы</option>
-            {materialTypes.map((type) => (
-              <option key={type} value={type}>
-                {type}
-              </option>
-            ))}
-          </select>
+          <div className="min-w-48">
+            <Dropdown
+              value={materialTypeFilter || ''}
+              onChange={(val) => setMaterialTypeFilter(val === '' ? null : (val as string))}
+              options={[
+                { value: '', label: 'Все типы' },
+                ...materialTypes.map((type) => ({ value: type, label: type })),
+              ]}
+              placeholder="Все типы"
+            />
+          </div>
 
-          <select
-            value={brandFilter || ''}
-            onChange={(e) => setBrandFilter(e.target.value ? Number(e.target.value) : null)}
-            className="px-4 py-4 bg-white/10 border border-white/20 rounded-xl text-white focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all min-w-48"
-          >
-            <option value="">Все бренды</option>
-            {brandsData?.items.map((brand) => (
-              <option key={brand.id} value={brand.id}>
-                {brand.name}
-              </option>
-            ))}
-          </select>
+          <div className="min-w-48">
+            <Dropdown
+              value={brandFilter || ''}
+              onChange={(val) => setBrandFilter(val === '' ? null : Number(val))}
+              options={[
+                { value: '', label: 'Все бренды' },
+                ...(brandsData?.items.map((brand) => ({ value: brand.id, label: brand.name })) || []),
+              ]}
+              placeholder="Все бренды"
+            />
+          </div>
         </div>
       </div>
 
@@ -262,6 +271,28 @@ const MaterialCard: React.FC<MaterialCardProps> = ({
   onClick,
   savedPresetIds,
 }) => {
+  const navigate = useNavigate();
+  const { user } = useAuth();
+  const queryClient = useQueryClient();
+  
+  // Мутация для сохранения пресета
+  const savePresetMutation = useMutation({
+    mutationFn: (presetId: number) => {
+      if (!user) {
+        throw new Error('Необходимо войти в систему');
+      }
+      return savedPresetsAPI.save(presetId);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['saved-presets'] });
+      queryClient.invalidateQueries({ queryKey: ['user-presets'] });
+    },
+    onError: (error: any) => {
+      console.error('Ошибка сохранения пресета:', error);
+      alert(error.response?.data?.detail || error.message || 'Не удалось добавить пресет в профиль');
+    },
+  });
+  
   // Загружаем пресеты для каждого материала всегда
   const { data: presetsData, isLoading: isLoadingPresets } = useQuery({
     queryKey: ['filament-presets', filament.id],
@@ -280,17 +311,15 @@ const MaterialCard: React.FC<MaterialCardProps> = ({
   const isPresetSaved = displayPreset ? savedPresetIds.has(displayPreset.id) : false;
 
   // Вычисляем средний рейтинг из пресетов
+  const ratingsWithValues = presetsData?.items?.filter((p) => p.rating !== null && p.rating !== undefined) || [];
   const avgRating =
-    presetsData?.items && presetsData.items.length > 0
-      ? presetsData.items
-          .filter((p) => p.rating !== null)
-          .reduce((acc, p) => acc + (p.rating || 0), 0) /
-        presetsData.items.filter((p) => p.rating !== null).length
-      : 4.8;
+    ratingsWithValues.length > 0
+      ? ratingsWithValues.reduce((acc, p) => acc + (p.rating || 0), 0) / ratingsWithValues.length
+      : null;
 
   // Вычисляем успешность (на основе usage_count и рейтинга)
   const successRate =
-    presetsData?.items && presetsData.items.length > 0
+    presetsData?.items && presetsData.items.length > 0 && avgRating !== null
       ? Math.min(
           95,
           Math.max(
@@ -300,7 +329,7 @@ const MaterialCard: React.FC<MaterialCardProps> = ({
               (avgRating - 4.0) * 10
           )
         )
-      : 92;
+      : null;
 
   const handleCardClick = (e: React.MouseEvent) => {
     // Не открываем детальную страницу, если кликнули на кнопку или внутри кнопки
@@ -322,7 +351,13 @@ const MaterialCard: React.FC<MaterialCardProps> = ({
           <div className="flex items-center space-x-3 mb-2">
             {brand && (
               <>
-                <span className={brand.verified ? "text-green-400 font-semibold" : "text-purple-300 font-semibold"}>
+                <span
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    navigate(`/brands/${brand.id}`);
+                  }}
+                  className={`${brand.verified ? "text-green-400" : "text-purple-300"} font-semibold hover:underline cursor-pointer transition-colors`}
+                >
                   {brand.name}
                 </span>
                 {brand.verified && (
@@ -337,25 +372,37 @@ const MaterialCard: React.FC<MaterialCardProps> = ({
               {filament.material_type}
             </span>
           </div>
-          <div className="flex items-center space-x-4 text-sm mb-3">
-            <span className="flex items-center text-gray-300">
-              <Star className="w-4 h-4 mr-1 text-yellow-400 fill-current" />
-              <span className="font-semibold text-white">{avgRating.toFixed(1)}</span>
-            </span>
-            <span className="flex items-center text-gray-300">
-              <CheckCircle className="w-4 h-4 mr-1 text-green-400" />
-              <span className="font-semibold text-green-400">{Math.round(successRate)}% успеха</span>
-            </span>
+          {(avgRating !== null || successRate !== null) && (
+            <div className="flex items-center space-x-4 text-sm mb-3">
+              {avgRating !== null && (
+                <span className="flex items-center text-gray-300">
+                  <Star className="w-4 h-4 mr-1 text-yellow-400 fill-current" />
+                  <span className="font-semibold text-white">{avgRating.toFixed(1)}</span>
+                </span>
+              )}
+              {successRate !== null && (
+                <span className="flex items-center text-gray-300">
+                  <CheckCircle className="w-4 h-4 mr-1 text-green-400" />
+                  <span className="font-semibold text-green-400">{Math.round(successRate)}% успеха</span>
+                </span>
+              )}
+            </div>
+          )}
+        </div>
+        {(filament.price_per_kg || filament.spool_weight) && (
+          <div className="text-right ml-4">
+            {filament.price_per_kg && (
+              <p className="text-3xl font-bold text-green-400 mb-1">
+                {Math.round(filament.price_per_kg)}₽
+              </p>
+            )}
+            {filament.spool_weight && (
+              <p className="text-sm text-gray-400">
+                {Math.round(filament.spool_weight)}g
+              </p>
+            )}
           </div>
-        </div>
-        <div className="text-right ml-4">
-          <p className="text-3xl font-bold text-green-400 mb-1">
-            {filament.price_per_kg ? `${Math.round(filament.price_per_kg)}₽` : '—'}
-          </p>
-          <p className="text-sm text-gray-400">
-            {filament.spool_weight ? `${Math.round(filament.spool_weight)}g` : '—'}
-          </p>
-        </div>
+        )}
       </div>
 
       {/* Детали материала */}
@@ -375,15 +422,20 @@ const MaterialCard: React.FC<MaterialCardProps> = ({
       </div>
 
       {/* Color Indicator */}
-      {filament.color_hex && (
+      {(filament.color_hex || filament.color_name) && (
         <div className="mb-4">
           <div className="flex items-center space-x-2">
             <span className="text-gray-300 text-sm font-medium">Цвет:</span>
-            <div
-              className="w-6 h-6 rounded-full border-2 border-white/30"
-              style={{ backgroundColor: filament.color_hex }}
-            ></div>
-            <span className="text-white text-sm">{filament.color_name || '—'}</span>
+            <div style={{ transform: 'scale(0.4)', transformOrigin: 'left center', marginRight: '-80px' }}>
+              <FilamentPreview
+                colorHex={filament.color_hex || '#FFFFFF'}
+                visualSettings={filament.visual_settings}
+                size="medium"
+              />
+            </div>
+            {filament.color_name && (
+              <span className="text-white text-sm">{filament.color_name}</span>
+            )}
           </div>
         </div>
       )}
@@ -480,7 +532,15 @@ const MaterialCard: React.FC<MaterialCardProps> = ({
 
       {/* Actions */}
       <div className="flex space-x-3 mt-4">
-        {isPresetSaved ? (
+        {!user ? (
+          <button
+            disabled
+            className="flex-1 bg-gray-600/50 text-white py-3 px-6 rounded-xl cursor-not-allowed flex items-center justify-center"
+            title="Необходимо войти в систему"
+          >
+            Войдите, чтобы добавить
+          </button>
+        ) : isPresetSaved ? (
           <button
             disabled
             className="flex-1 bg-green-600/50 text-white py-3 px-6 rounded-xl cursor-not-allowed flex items-center justify-center"
@@ -490,10 +550,16 @@ const MaterialCard: React.FC<MaterialCardProps> = ({
           </button>
         ) : (
           <button
-            onClick={() => displayPreset && onSelect(displayPreset.id)}
-            className="flex-1 bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white py-3 px-6 rounded-xl transition-all duration-300 shadow-lg shadow-purple-500/25 hover:shadow-purple-500/40"
+            onClick={(e) => {
+              e.stopPropagation();
+              if (displayPreset) {
+                savePresetMutation.mutate(displayPreset.id);
+              }
+            }}
+            disabled={savePresetMutation.isPending}
+            className="flex-1 bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white py-3 px-6 rounded-xl transition-all duration-300 shadow-lg shadow-purple-500/25 hover:shadow-purple-500/40 disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            Добавить в профиль
+            {savePresetMutation.isPending ? 'Сохранение...' : 'Добавить в профиль'}
           </button>
         )}
         <button

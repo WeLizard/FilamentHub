@@ -26,7 +26,7 @@ export const TermsModal: React.FC<TermsModalProps> = ({ isOpen, onClose }) => {
           <h2 className="text-2xl font-bold text-white">Пользовательское соглашение</h2>
           <div className="flex items-center space-x-2">
             <Link
-              to="/conditions"
+              to="/user-agreement"
               target="_blank"
               rel="noopener noreferrer"
               onClick={(e) => {
@@ -71,7 +71,7 @@ export const TermsModal: React.FC<TermsModalProps> = ({ isOpen, onClose }) => {
                 Пользователем.
               </p>
               <p className="mb-2">
-                2.2. Действующая редакция Соглашения находится на странице по адресу /conditions. Соглашение может быть
+                2.2. Действующая редакция Соглашения находится на странице по адресу /user-agreement. Соглашение может быть
                 изменено Администрацией без специального уведомления путем размещения по тому же адресу новой редакции
                 Соглашения. Новая редакция Соглашения вступает в силу с момента ее размещения в сети Интернет, если
                 иное не предусмотрено новой редакцией Соглашения.
@@ -203,7 +203,7 @@ export const TermsModal: React.FC<TermsModalProps> = ({ isOpen, onClose }) => {
               <p className="mb-2">
                 Подробная информация о согласии на обработку персональных данных доступна на странице{' '}
                 <Link
-                  to="/consent"
+                  to="/personal-data-consent"
                   target="_blank"
                   rel="noopener noreferrer"
                   className="text-purple-400 hover:text-purple-300 underline"
@@ -214,7 +214,7 @@ export const TermsModal: React.FC<TermsModalProps> = ({ isOpen, onClose }) => {
                   согласия на обработку персональных данных
                 </Link>{' '}
                 (<Link
-                  to="/consent"
+                  to="/personal-data-consent"
                   target="_blank"
                   rel="noopener noreferrer"
                   className="text-purple-400 hover:text-purple-300 underline"
@@ -222,7 +222,7 @@ export const TermsModal: React.FC<TermsModalProps> = ({ isOpen, onClose }) => {
                     e.stopPropagation();
                   }}
                 >
-                  /consent
+                  /personal-data-consent
                 </Link>
                 ).
               </p>

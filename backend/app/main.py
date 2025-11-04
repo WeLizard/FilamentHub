@@ -1,8 +1,11 @@
 """FilamentHub FastAPI Application."""
 
+from pathlib import Path
+
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from fastapi.staticfiles import StaticFiles
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.middleware import SlowAPIMiddleware
 from slowapi.errors import RateLimitExceeded
@@ -33,8 +36,11 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Static files removed - will use React frontend later
-# Frontend will be separate project (TypeScript + React 18 + Vite)
+# Static files for uploaded proof files
+# Используем абсолютный путь относительно корня проекта
+upload_dir = Path(__file__).parent.parent / settings.UPLOAD_DIR
+upload_dir.mkdir(parents=True, exist_ok=True)
+app.mount("/uploads", StaticFiles(directory=str(upload_dir)), name="uploads")
 
 
 # Health check endpoint

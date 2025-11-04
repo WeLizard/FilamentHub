@@ -1,6 +1,6 @@
 /** Страница профиля пользователя */
 
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 import {
@@ -22,20 +22,32 @@ import {
   Wind,
   Fan,
   Ruler,
+  Factory,
+  AlertTriangle,
+  Loader2,
+  Upload,
+  Printer,
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { presetsAPI, filamentsAPI, brandsAPI, savedPresetsAPI } from '../api/client';
+import api from '../api/client';
 import { CreatePresetModal } from '../components/CreatePresetModal';
+import { CreatePrinterRequestModal } from '../components/CreatePrinterRequestModal';
+import { DeleteAccountModal } from '../components/DeleteAccountModal';
+import { BrandProfilePage } from './BrandProfilePage';
 import type { Preset } from '../types/api';
 
 export const ProfilePage: React.FC = () => {
-  const { user } = useAuth();
+  const { user, refreshUser } = useAuth();
   const queryClient = useQueryClient();
+  const [showBrandCabinet, setShowBrandCabinet] = useState(false); // Показывать ли кабинет производителя
   const [userTab, setUserTab] = useState<'dashboard' | 'presets' | 'history' | 'calculator'>(
     'dashboard'
   );
   const [isCreatePresetModalOpen, setIsCreatePresetModalOpen] = useState(false);
+  const [isCreatePrinterRequestModalOpen, setIsCreatePrinterRequestModalOpen] = useState(false);
   const [editingPreset, setEditingPreset] = useState<Preset | null>(null);
+  const [isDeleteAccountModalOpen, setIsDeleteAccountModalOpen] = useState(false);
 
   // Загружаем пресеты пользователя (созданные им)
   const { data: userPresetsData } = useQuery({
@@ -88,7 +100,12 @@ export const ProfilePage: React.FC = () => {
     mutationFn: (presetId: number) => savedPresetsAPI.unsave(presetId),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['saved-presets'] });
+      queryClient.invalidateQueries({ queryKey: ['saved-presets-details'] });
       queryClient.invalidateQueries({ queryKey: ['user-presets'] });
+    },
+    onError: (error: any) => {
+      console.error('Ошибка удаления сохранённого пресета:', error);
+      alert(error.response?.data?.detail || error.message || 'Не удалось убрать пресет из профиля');
     },
   });
 
@@ -135,8 +152,57 @@ export const ProfilePage: React.FC = () => {
     return null; // ProtectedRoute должен это обработать
   }
 
+  // Если выбран профиль компании, показываем BrandProfilePage
+  if (showBrandCabinet) {
+    return (
+      <div className="space-y-6">
+        {/* Переключатель профилей */}
+        <div className="flex justify-center mb-6">
+          <div className="flex bg-white/10 rounded-lg p-1 border border-white/20">
+            <button
+              onClick={() => setShowBrandCabinet(false)}
+              className="flex items-center space-x-2 px-6 py-2 rounded-lg transition-all text-gray-300 hover:text-white"
+            >
+              <User className="w-4 h-4" />
+              <span>Профиль пользователя</span>
+            </button>
+            <button
+              onClick={() => setShowBrandCabinet(true)}
+              className="flex items-center space-x-2 px-6 py-2 rounded-lg transition-all bg-green-600 text-white shadow-lg shadow-green-500/25"
+            >
+              <Factory className="w-4 h-4" />
+              <span>Профиль компании</span>
+            </button>
+          </div>
+        </div>
+        
+        <BrandProfilePage onBack={() => setShowBrandCabinet(false)} />
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-6">
+      {/* Переключатель профилей */}
+      <div className="flex justify-center mb-6">
+        <div className="flex bg-white/10 rounded-lg p-1 border border-white/20">
+          <button
+            onClick={() => setShowBrandCabinet(false)}
+            className="flex items-center space-x-2 px-6 py-2 rounded-lg transition-all bg-purple-600 text-white shadow-lg shadow-purple-500/25"
+          >
+            <User className="w-4 h-4" />
+            <span>Профиль пользователя</span>
+          </button>
+          <button
+            onClick={() => setShowBrandCabinet(true)}
+            className="flex items-center space-x-2 px-6 py-2 rounded-lg transition-all text-gray-300 hover:text-white"
+          >
+            <Factory className="w-4 h-4" />
+            <span>Профиль компании</span>
+          </button>
+        </div>
+      </div>
+      
       {/* Header */}
       <div className="text-center mb-8">
         <div className="flex items-center justify-center space-x-3 mb-4">
@@ -146,7 +212,7 @@ export const ProfilePage: React.FC = () => {
           <div>
             <h2 className="text-3xl font-bold text-white">Мой профиль</h2>
             <p className="text-gray-300">
-              {user.full_name || user.username} • {user.role === 'user' ? '3D печатник' : 'Производитель'}
+              {user.full_name || user.username} • 3D печатник
             </p>
           </div>
         </div>
@@ -298,6 +364,44 @@ export const ProfilePage: React.FC = () => {
         onClose={handleClosePresetModal}
         preset={editingPreset}
       />
+
+      {/* Create Printer Request Modal */}
+      <CreatePrinterRequestModal
+        isOpen={isCreatePrinterRequestModalOpen}
+        onClose={() => setIsCreatePrinterRequestModalOpen(false)}
+      />
+
+      {/* Delete Account Modal */}
+      <DeleteAccountModal
+        isOpen={isDeleteAccountModalOpen}
+        onClose={() => setIsDeleteAccountModalOpen(false)}
+      />
+
+      {/* Кнопка удаления аккаунта */}
+      <div className="mt-8 pt-6 border-t border-white/20">
+        <div className="max-w-2xl mx-auto">
+          <div className="bg-red-500/10 border border-red-500/30 rounded-xl p-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-start space-x-3 flex-1">
+                <AlertTriangle className="w-5 h-5 text-red-400 flex-shrink-0 mt-0.5" />
+                <div className="flex-1">
+                  <h3 className="text-sm font-semibold text-red-300 mb-1">Опасная зона</h3>
+                  <p className="text-xs text-red-200 mb-2">
+                    Удаление аккаунта приведёт к деактивации вашего профиля. Это действие необратимо.
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setIsDeleteAccountModalOpen(true)}
+                className="px-4 py-2 bg-red-600/20 hover:bg-red-600/30 text-red-400 rounded-lg transition-all border border-red-500/30 flex items-center space-x-2"
+              >
+                <Trash2 className="w-4 h-4" />
+                <span>Удалить аккаунт</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
   );
 };
@@ -337,8 +441,23 @@ const RecentPresets: React.FC<RecentPresetsProps> = ({ presets }) => (
       {presets.length > 0 ? (
         presets.map((preset) => (
           <div key={preset.id} className="flex items-center justify-between p-3 bg-white/5 rounded-xl">
-            <div>
-              <p className="text-white font-medium">{preset.name}</p>
+            <div className="flex-1">
+              <div className="flex items-center gap-2 mb-1">
+                <p className="text-white font-medium">{preset.name}</p>
+                {preset.printers && preset.printers.length > 0 && (
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    {preset.printers.map((printer) => (
+                      <span
+                        key={printer.id}
+                        className="px-2 py-0.5 bg-white/10 rounded-md text-xs text-gray-300 border border-white/20"
+                        title={`${printer.manufacturer} ${printer.model}`}
+                      >
+                        {printer.name}
+                      </span>
+                    ))}
+                  </div>
+                )}
+              </div>
               <p className="text-gray-400 text-sm">
                 {preset.extruder_temp}°C / {preset.bed_temp}°C
               </p>
@@ -409,6 +528,47 @@ interface PresetCardProps {
 
 const PresetCard: React.FC<PresetCardProps> = ({ preset, onEdit, onDelete }) => {
   const navigate = useNavigate();
+  const [isDownloading, setIsDownloading] = useState(false);
+  const [isImporting, setIsImporting] = useState(false);
+  const [isInOrcaSlicer, setIsInOrcaSlicer] = useState(false);
+  
+  // Проверяем, запущен ли frontend внутри OrcaSlicer
+  useEffect(() => {
+    // Проверяем наличие window.filamenthub или window.wx
+    const inOrca = typeof window !== 'undefined' && (
+      (window as any).filamenthub?.importProfile ||
+      (window as any).wx?.postMessage
+    );
+    setIsInOrcaSlicer(inOrca || false);
+    
+    // Если в OrcaSlicer, подписываемся на ответы от C++
+    if (inOrca) {
+      const handleMessage = (event: MessageEvent) => {
+        try {
+          const data = typeof event.data === 'string' ? JSON.parse(event.data) : event.data;
+          if (data.command === 'import_profile') {
+            setIsImporting(false);
+            if (data.status === 'success') {
+              // Показываем уведомление об успехе (можно заменить на toast)
+              console.log('✅ Профиль успешно импортирован:', data.message);
+            } else if (data.status === 'error') {
+              // Показываем ошибку
+              alert(`❌ Ошибка импорта: ${data.message || 'Неизвестная ошибка'}`);
+            }
+          }
+        } catch (e) {
+          // Игнорируем сообщения, которые не являются ответами от OrcaSlicer
+        }
+      };
+      
+      window.addEventListener('message', handleMessage);
+      
+      // Cleanup при размонтировании
+      return () => {
+        window.removeEventListener('message', handleMessage);
+      };
+    }
+  }, []); // Пустой массив зависимостей = выполняется только при монтировании
   
   // Загружаем филамент для отображения информации
   const { data: filament } = useQuery({
@@ -423,18 +583,160 @@ const PresetCard: React.FC<PresetCardProps> = ({ preset, onEdit, onDelete }) => 
     enabled: !!filament?.brand_id,
   });
 
+  // Обработчик скачивания пресета в формате OrcaSlicer
+  const handleDownload = async () => {
+    if (isDownloading) return; // Предотвращаем множественные клики
+    
+    setIsDownloading(true);
+    try {
+      // Получаем JSON ответ от сервера
+      const response = await api.get(`/presets/${preset.id}/export/orcaslicer.json`, {
+        responseType: 'json', // Получаем JSON (axios автоматически парсит)
+      });
+
+      const jsonContent = response.data;
+      
+      // Получаем имя файла из заголовка Content-Disposition
+      let filename = 'preset.json';
+      
+      // Пытаемся получить имя файла из заголовка Content-Disposition
+      const contentDisposition = response.headers['content-disposition'] || response.headers['Content-Disposition'];
+      
+      if (contentDisposition) {
+        // Парсим имя файла из заголовка
+        // Формат: attachment; filename="filename.json" или attachment; filename=filename.json
+        // Также поддерживаем: attachment; filename*=UTF-8''filename.json
+        
+        // Сначала пытаемся получить из filename*=UTF-8'' (RFC 5987)
+        let matches = /filename\*=UTF-8''([^;]+)/i.exec(contentDisposition);
+        if (matches && matches[1]) {
+          // Декодируем имя файла из RFC 5987 формата
+          filename = decodeURIComponent(matches[1]);
+        } else {
+          // Если нет filename*, пытаемся получить из обычного filename
+          matches = /filename\s*=\s*"([^"]+)"|filename\s*=\s*([^;]+)/i.exec(contentDisposition);
+          if (matches && (matches[1] || matches[2])) {
+            filename = matches[1] || matches[2];
+            // Убираем возможные пробелы и декодируем URL-encoded символы
+            filename = filename.trim();
+            try {
+              filename = decodeURIComponent(filename);
+            } catch (e) {
+              // Если decodeURIComponent не работает, используем как есть
+            }
+          }
+        }
+      }
+      
+      // Если не получилось из заголовка, формируем имя из preset.name
+      if (filename === 'preset.json' || !filename || filename === '') {
+        // Формируем безопасное имя из preset.name (убираем только недопустимые символы для файловой системы)
+        const safeName = preset.name
+          .replace(/[<>:"/\\|?*]/g, '_') // Заменяем недопустимые символы
+          .trim()
+          .replace(/\s+/g, '_') // Заменяем пробелы на подчеркивания
+          .substring(0, 100) || 'preset'; // Ограничиваем длину
+        
+        filename = `${safeName}.json`;
+      }
+      
+      // Убеждаемся, что имя файла заканчивается на .json
+      if (!filename.toLowerCase().endsWith('.json')) {
+        filename = `${filename}.json`;
+      }
+      
+      // Создаем blob из JSON с красивым форматированием
+      const jsonString = JSON.stringify(jsonContent, null, 2);
+      const blob = new Blob([jsonString], { 
+        type: 'application/json;charset=utf-8' // Явно указываем кодировку для кириллицы
+      });
+      
+      // Создаем blob URL для скачивания (не data URL, чтобы не открывался в браузере)
+      const url = URL.createObjectURL(blob);
+      
+      // Создаем ссылку для скачивания
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = filename;
+      link.style.display = 'none';
+      
+      // Добавляем в DOM (обязательно для некоторых браузеров)
+      document.body.appendChild(link);
+      
+      // Инициируем скачивание
+      // Используем setTimeout для гарантии, что элемент добавлен в DOM
+      setTimeout(() => {
+        link.click();
+        
+        // Очищаем после задержки (чтобы скачивание успело начаться)
+        setTimeout(() => {
+          if (document.body.contains(link)) {
+            document.body.removeChild(link);
+          }
+          URL.revokeObjectURL(url);
+          setIsDownloading(false);
+        }, 300);
+      }, 0);
+    } catch (error: any) {
+      console.error('Ошибка скачивания пресета:', error);
+      
+      // Детальная обработка ошибок
+      let errorMessage = 'Неизвестная ошибка';
+      if (error.response) {
+        // Ошибка от сервера
+        const status = error.response.status;
+        const data = error.response.data;
+        
+        if (status === 401) {
+          errorMessage = 'Необходима авторизация. Пожалуйста, войдите в систему.';
+        } else if (status === 404) {
+          errorMessage = 'Пресет не найден.';
+        } else if (status === 500) {
+          const detail = data?.detail || 'Внутренняя ошибка сервера';
+          errorMessage = `Ошибка сервера при экспорте: ${detail}`;
+          console.error('Детали ошибки 500:', detail);
+        } else {
+          errorMessage = `Ошибка ${status}: ${data?.detail || data?.message || 'Ошибка запроса'}`;
+        }
+      } else if (error.request) {
+        // Запрос был сделан, но ответа не получено
+        errorMessage = 'Не удалось подключиться к серверу. Проверьте подключение.';
+      } else {
+        // Ошибка настройки запроса
+        errorMessage = error.message || 'Ошибка при выполнении запроса';
+      }
+      
+      alert(`Не удалось скачать пресет: ${errorMessage}`);
+    } finally {
+      setIsDownloading(false);
+    }
+  };
+
   return (
-    <div className="bg-white/10 backdrop-blur-sm rounded-2xl p-6 border border-white/20 shadow-xl">
-      <div className="flex items-center justify-between mb-4">
-        <div className="flex-1">
-          <div className="flex items-center space-x-2">
-            <h4 className="text-xl font-bold text-white">{preset.name}</h4>
-            {preset.source === 'saved' && (
-              <span className="px-2 py-0.5 bg-blue-600/30 rounded text-blue-300 text-xs font-medium">
-                Из каталога
-              </span>
-            )}
-          </div>
+      <div className="bg-white/10 backdrop-blur-sm rounded-2xl p-6 border border-white/20 shadow-xl">
+        <div className="flex items-center justify-between mb-4">
+          <div className="flex-1">
+            <div className="flex items-center space-x-2">
+              <h4 className="text-xl font-bold text-white">{preset.name}</h4>
+              {preset.printers && preset.printers.length > 0 && (
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  {preset.printers.map((printer) => (
+                    <span
+                      key={printer.id}
+                      className="px-2 py-0.5 bg-white/10 rounded-md text-xs text-gray-300 border border-white/20"
+                      title={`${printer.manufacturer} ${printer.model}`}
+                    >
+                      {printer.name}
+                    </span>
+                  ))}
+                </div>
+              )}
+              {preset.source === 'saved' && (
+                <span className="px-2 py-0.5 bg-blue-600/30 rounded text-blue-300 text-xs font-medium">
+                  Из каталога
+                </span>
+              )}
+            </div>
           {filament && (
             <div 
               className="flex items-center space-x-2 mt-1 cursor-pointer hover:opacity-80 transition-opacity"
@@ -471,8 +773,17 @@ const PresetCard: React.FC<PresetCardProps> = ({ preset, onEdit, onDelete }) => 
               <Edit className="w-4 h-4" />
             </button>
           )}
-          <button className="p-2 bg-white/10 hover:bg-white/20 rounded-lg text-white transition-all" title="Скачать">
-            <Download className="w-4 h-4" />
+          <button
+            onClick={handleDownload}
+            disabled={isDownloading}
+            className="p-2 bg-white/10 hover:bg-white/20 rounded-lg text-white transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+            title={isDownloading ? "Скачивание..." : "Скачать в формате OrcaSlicer"}
+          >
+            {isDownloading ? (
+              <Loader2 className="w-4 h-4 animate-spin" />
+            ) : (
+              <Download className="w-4 h-4" />
+            )}
           </button>
           <button
             onClick={() => onDelete?.(preset)}

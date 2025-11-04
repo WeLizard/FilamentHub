@@ -1,7 +1,7 @@
 /** Модальное окно авторизации */
 
 import { useState, useEffect, FormEvent } from 'react';
-import { Mail, Lock, LogIn, UserPlus, User, Factory, Package, X, Check, Eye, EyeOff } from 'lucide-react';
+import { Mail, Lock, LogIn, UserPlus, User, Factory, Package, X, Check, Eye, EyeOff, AlertCircle } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { Captcha } from './Captcha';
 import { TermsModal } from './TermsModal';
@@ -22,7 +22,6 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [username, setUsername] = useState('');
-  const [role, setRole] = useState<'user' | 'brand'>('user');
   const [agreed, setAgreed] = useState(false);
   const [captchaValue, setCaptchaValue] = useState('');
   const [captchaVerified, setCaptchaVerified] = useState(false);
@@ -106,7 +105,9 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
         
         // Все проверки пройдены - регистрируем
         try {
-          await register({ email, username, password, role });
+          // Всегда регистрируем как обычный пользователь
+          // Роль производителя устанавливается через привязку к бренду в профиле
+          await register({ email, username, password, role: 'user' });
         } catch (registerError: any) {
           // Если ошибка регистрации (валидация или rate limit), показываем капчу при следующей попытке
           if (registerError.response?.status === 400 || registerError.response?.status === 429) {
@@ -209,22 +210,28 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
       ></div>
 
       {/* Modal */}
-      <div className="relative w-full max-w-md max-h-[90vh] bg-white/10 backdrop-blur-sm rounded-2xl p-8 border border-white/20 shadow-xl z-10 overflow-y-auto">
-        {/* Close Button */}
-        <button
-          onClick={onClose}
-          className="absolute top-4 right-4 p-2 text-gray-400 hover:text-white transition-colors"
-        >
-          <X className="w-5 h-5" />
-        </button>
+      <div className="relative w-full max-w-md max-h-[90vh] bg-white/10 backdrop-blur-sm rounded-2xl border border-white/20 shadow-xl z-10 overflow-hidden flex flex-col">
+        {/* Header */}
+        <div className="relative p-8 pb-0 flex-shrink-0">
+          {/* Close Button */}
+          <button
+            onClick={onClose}
+            className="absolute top-4 right-4 p-2 text-gray-400 hover:text-white transition-colors"
+          >
+            <X className="w-5 h-5" />
+          </button>
 
-        <div className="text-center mb-8">
-          <div className="w-16 h-16 bg-gradient-to-r from-purple-500 to-pink-500 rounded-xl flex items-center justify-center mx-auto mb-4 shadow-lg shadow-purple-500/25">
-            <Package className="w-8 h-8 text-white" />
+          <div className="text-center mb-8">
+            <div className="w-16 h-16 flex items-center justify-center mx-auto mb-4">
+              <img src="/logo.svg" alt="FilamentHub Logo" className="w-16 h-16 object-contain" />
+            </div>
+            <h2 className="text-2xl font-bold text-white mb-2">Добро пожаловать в FilamentHub</h2>
+            <p className="text-gray-300">Войдите в систему для доступа к персональному кабинету</p>
           </div>
-          <h2 className="text-2xl font-bold text-white mb-2">Добро пожаловать в FilamentHub</h2>
-          <p className="text-gray-300">Войдите в систему для доступа к персональному кабинету</p>
         </div>
+
+        {/* Scrollable Content */}
+        <div className="flex-1 overflow-y-auto px-8 pb-8">
 
         {/* Tabs */}
         <div className="flex mb-6">
@@ -338,7 +345,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
             <div>
               <label className="block text-gray-300 mb-2">Email</label>
               <div className="relative">
-                <Mail className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
+                <Mail className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5 pointer-events-none" />
                 <input
                   type="email"
                   value={email}
@@ -348,6 +355,12 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
                   placeholder="your@email.com"
                 />
               </div>
+              {authMode === 'register' && (
+                <p className="mt-1 text-xs text-gray-400 flex items-start">
+                  <AlertCircle className="w-3.5 h-3.5 text-yellow-400 mr-1.5 flex-shrink-0 mt-0.5" />
+                  <span>Для производителей рекомендуется корпоративная почта для ускоренной верификации бренда</span>
+                </p>
+              )}
             </div>
 
             {authMode === 'register' && (
@@ -464,36 +477,6 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
 
             {authMode === 'register' && (
               <>
-                <div>
-                  <label className="block text-gray-300 mb-2">Тип аккаунта</label>
-                  <div className="flex space-x-2">
-                    <button
-                      type="button"
-                      onClick={() => setRole('user')}
-                      className={`flex-1 py-2 px-4 rounded-lg transition-all border ${
-                        role === 'user'
-                          ? 'bg-purple-600 text-white border-purple-500'
-                          : 'bg-white/10 hover:bg-white/20 text-white border-white/20'
-                      }`}
-                    >
-                      <User className="w-4 h-4 inline mr-2" />
-                      Пользователь
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setRole('brand')}
-                      className={`flex-1 py-2 px-4 rounded-lg transition-all border ${
-                        role === 'brand'
-                          ? 'bg-purple-600 text-white border-purple-500'
-                          : 'bg-white/10 hover:bg-white/20 text-white border-white/20'
-                      }`}
-                    >
-                      <Factory className="w-4 h-4 inline mr-2" />
-                      Производитель
-                    </button>
-                  </div>
-                </div>
-
                 <div className="flex items-start space-x-2">
                   <button
                     type="button"
@@ -573,6 +556,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
           </div>
         </form>
         )}
+        </div>
       </div>
 
       {/* Terms Modal */}

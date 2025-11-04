@@ -1,10 +1,11 @@
 /** Базовый Layout с Header и навигацией */
 
-import { ReactNode, useState } from 'react';
+import { ReactNode, useState, useEffect, useRef } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
-import { Package, User, LogOut } from 'lucide-react';
+import { Package, User, LogOut, Shield } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { AuthModal } from './AuthModal';
+import { Notifications } from './Notifications';
 
 interface LayoutProps {
   children: ReactNode;
@@ -15,6 +16,33 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
   const location = useLocation();
   const navigate = useNavigate();
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
+  const hasOpenedLoginModalRef = useRef(false);
+
+  // Обработка URL параметра ?auth=login для автоматического открытия модального окна
+  useEffect(() => {
+    const searchParams = new URLSearchParams(location.search);
+    const authParam = searchParams.get('auth');
+    
+    if (authParam === 'login' && !user && !isAuthModalOpen && !hasOpenedLoginModalRef.current) {
+      hasOpenedLoginModalRef.current = true;
+      setIsAuthModalOpen(true);
+      // Убираем параметр из URL после небольшой задержки
+      setTimeout(() => {
+        navigate(location.pathname, { replace: true });
+      }, 100);
+    }
+    
+    // Сбрасываем флаг если пользователь залогинился или параметр убран из URL
+    if (user || !authParam) {
+      hasOpenedLoginModalRef.current = false;
+    }
+  }, [location.search, user, isAuthModalOpen, navigate, location.pathname]);
+
+  // Проверяем, запущен ли frontend внутри OrcaSlicer
+  const isInOrcaSlicer = typeof window !== 'undefined' && (
+    (window as any).filamenthub?.importProfile ||
+    (window as any).wx?.postMessage
+  );
 
   const isActive = (path: string) => location.pathname === path;
 
@@ -31,13 +59,18 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
         <div className="absolute -bottom-40 -left-40 w-80 h-80 bg-blue-500/10 rounded-full blur-3xl animate-pulse delay-1000"></div>
       </div>
 
-      {/* Header */}
-      <header className="relative bg-black/20 backdrop-blur-sm border-b border-white/10 z-10">
+      {/* Header - скрываем если открыто через OrcaSlicer */}
+      {!isInOrcaSlicer && (
+      <header className="relative bg-black/20 backdrop-blur-sm border-b border-white/10 z-50">
         <div className="max-w-7xl mx-auto px-6 py-4">
           <div className="flex items-center justify-between">
             <Link to="/" className="flex items-center space-x-4">
-              <div className="w-12 h-12 bg-gradient-to-r from-purple-500 to-pink-500 rounded-xl flex items-center justify-center shadow-lg shadow-purple-500/25">
-                <Package className="w-6 h-6 text-white" />
+              <div className="w-12 h-12 flex items-center justify-center">
+                <img 
+                  src="/logo.svg" 
+                  alt="FilamentHub Logo" 
+                  className="w-12 h-12 object-contain"
+                />
               </div>
               <div>
                 <h1 className="text-2xl font-bold text-white">FilamentHub</h1>
@@ -45,7 +78,12 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
               </div>
             </Link>
 
-            <nav className="flex items-center space-x-2">
+            <nav className="flex items-center space-x-2 relative z-[100]">
+              {/* Notifications - только для авторизованных */}
+              {user && (
+                <Notifications />
+              )}
+
               <Link
                 to="/"
                 className={`flex items-center space-x-2 px-4 py-2 rounded-lg transition-all ${
@@ -57,6 +95,21 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
                 <Package className="w-4 h-4" />
                 <span>Каталог</span>
               </Link>
+
+              {/* Admin Panel - только для админов */}
+              {user?.role === 'admin' && (
+                <Link
+                  to="/admin"
+                  className={`flex items-center space-x-2 px-4 py-2 rounded-lg transition-all ${
+                    isActive('/admin')
+                      ? 'bg-yellow-600 text-white shadow-lg shadow-yellow-500/25'
+                      : 'text-gray-300 hover:text-white hover:bg-white/10'
+                  }`}
+                >
+                  <Shield className="w-4 h-4" />
+                  <span>Админка</span>
+                </Link>
+              )}
 
               {user && (
                 <Link
@@ -93,6 +146,7 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
           </div>
         </div>
       </header>
+      )}
 
       {/* Main Content */}
       <main className="relative max-w-7xl mx-auto px-6 py-8 z-10">{children}</main>
@@ -102,7 +156,9 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
         isOpen={isAuthModalOpen}
         onClose={() => {
           setIsAuthModalOpen(false);
+          hasOpenedLoginModalRef.current = false; // Сбрасываем флаг при закрытии
         }}
+        initialMode="login"
       />
     </div>
   );

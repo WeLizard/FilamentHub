@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from pydantic import BaseModel, ConfigDict, Field
+
+from app.schemas.printer import PrinterResponse
 
 if TYPE_CHECKING:
     from app.schemas.filament import FilamentResponse
@@ -38,6 +40,9 @@ class PresetBase(BaseModel):
     retraction_length: float | None = Field(None, ge=0, le=10)
     retraction_speed: float | None = Field(None, ge=1, le=100)
 
+    # Extended OrcaSlicer parameters (JSON)
+    orcaslicer_settings: dict[str, Any] | None = Field(None, description="Расширенные параметры OrcaSlicer в формате JSON")
+
     # Rating
     rating: float | None = Field(None, ge=1, le=5)
     usage_count: int = Field(0, ge=0)
@@ -48,6 +53,7 @@ class PresetCreate(PresetBase):
 
     filament_id: int = Field(..., gt=0)
     user_id: int | None = Field(None, gt=0)  # Автоматически заполняется из токена
+    printer_ids: list[int] = Field(default_factory=list, description="Список ID принтеров, для которых подходит этот пресет")
 
 
 class PresetUpdate(BaseModel):
@@ -71,9 +77,15 @@ class PresetUpdate(BaseModel):
     retraction_length: float | None = Field(None, ge=0, le=10)
     retraction_speed: float | None = Field(None, ge=1, le=100)
 
+    # Extended OrcaSlicer parameters (JSON)
+    orcaslicer_settings: dict[str, Any] | None = Field(None, description="Расширенные параметры OrcaSlicer в формате JSON")
+
     # Rating
     rating: float | None = Field(None, ge=1, le=5)
     active: bool | None = None
+    
+    # Printers
+    printer_ids: list[int] | None = Field(None, description="Список ID принтеров, для которых подходит этот пресет")
 
 
 class PresetResponse(PresetBase):
@@ -89,6 +101,7 @@ class PresetResponse(PresetBase):
     moderated_at: datetime | None = None
     created_at: datetime
     updated_at: datetime
+    printers: list[PrinterResponse] = Field(default_factory=list, description="Список принтеров, для которых подходит этот пресет")
 
     model_config = ConfigDict(from_attributes=True)
 

@@ -6,8 +6,10 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.dependencies import get_current_admin_user
 from app.db.session import get_db
 from app.models.printer import Printer
+from app.models.user import User
 from app.schemas.printer import (
     PrinterCreate,
     PrinterListResponse,
@@ -99,9 +101,10 @@ async def get_printer(
 @router.post("/", response_model=PrinterResponse, status_code=201)
 async def create_printer(
     data: PrinterCreate,
+    admin: Annotated[User, Depends(get_current_admin_user)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> PrinterResponse:
-    """Создать принтер (admin only - будет добавлена авторизация позже)."""
+    """Создать принтер (admin only)."""
     # Проверяем уникальность slug
     slug_result = await db.execute(select(Printer).where(Printer.slug == data.slug))
     existing = slug_result.scalar_one_or_none()
@@ -122,9 +125,10 @@ async def create_printer(
 async def update_printer(
     printer_id: int,
     data: PrinterUpdate,
+    admin: Annotated[User, Depends(get_current_admin_user)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> PrinterResponse:
-    """Обновить принтер (admin only - будет добавлена авторизация позже)."""
+    """Обновить принтер (admin only)."""
     result = await db.execute(select(Printer).where(Printer.id == printer_id))
     printer = result.scalar_one_or_none()
     
@@ -152,9 +156,10 @@ async def update_printer(
 @router.delete("/{printer_id}", status_code=204)
 async def delete_printer(
     printer_id: int,
+    admin: Annotated[User, Depends(get_current_admin_user)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> None:
-    """Удалить принтер (admin only - будет добавлена авторизация позже)."""
+    """Удалить принтер (admin only)."""
     result = await db.execute(select(Printer).where(Printer.id == printer_id))
     printer = result.scalar_one_or_none()
     

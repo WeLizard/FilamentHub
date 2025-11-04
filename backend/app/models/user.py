@@ -4,13 +4,14 @@ from datetime import datetime
 from enum import Enum
 from typing import TYPE_CHECKING
 
-from sqlalchemy import Boolean, DateTime, Enum as SQLEnum, Integer, String, Text
+from sqlalchemy import Boolean, DateTime, Enum as SQLEnum, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.sql import func
 
 from app.db.base import Base
 
 if TYPE_CHECKING:
+    from app.models.brand import Brand
     from app.models.filament_review import FilamentReview
     from app.models.preset import Preset
     from app.models.user_saved_preset import UserSavedPreset
@@ -51,7 +52,15 @@ class User(Base):
     email_verified: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     
     # Brand relationship (if user is a brand)
-    brand_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
+    brand_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("brands.id"), nullable=True, index=True
+    )
+    
+    # Printer relationship (user's preferred printer, optional)
+    printer_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("printers.id"), nullable=True, index=True
+    )
+    # printer_id: выбранный принтер пользователя (для фильтрации релевантных пресетов)
     
     # Timestamps
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
@@ -59,6 +68,7 @@ class User(Base):
     last_login: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     # Relationships
+    brand: Mapped["Brand | None"] = relationship("Brand", foreign_keys=[brand_id])
     presets: Mapped[list["Preset"]] = relationship("Preset", back_populates="user")
     filament_reviews: Mapped[list["FilamentReview"]] = relationship(
         "FilamentReview", back_populates="user", cascade="all, delete-orphan"

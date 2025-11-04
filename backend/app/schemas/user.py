@@ -21,7 +21,8 @@ class UserCreate(UserBase):
     """Schema for creating User."""
 
     password: str = Field(..., min_length=8, max_length=100)
-    role: Literal["user", "brand"] = Field(default="user")
+    # Роль всегда "user" при создании - роль "brand" присваивается только через процесс верификации
+    role: Literal["user"] = Field(default="user")
 
 
 class UserUpdate(BaseModel):
@@ -32,6 +33,7 @@ class UserUpdate(BaseModel):
     full_name: str | None = Field(None, max_length=255)
     bio: str | None = None
     password: str | None = Field(None, min_length=8, max_length=100)
+    brand_id: int | None = Field(None, gt=0, description="ID бренда, который представляет пользователь")
 
 
 class UserResponse(UserBase):
@@ -43,6 +45,7 @@ class UserResponse(UserBase):
     active: bool
     email_verified: bool
     brand_id: int | None = None
+    brand_name: str | None = None  # Название бренда (для админки)
     created_at: datetime
     updated_at: datetime
     last_login: datetime | None = None
@@ -107,4 +110,35 @@ class APIKeyResponse(BaseModel):
 
     api_key: str
     message: str = "API key generated. Use it for OrcaSlicer integration."
+
+
+class AccountDeleteRequest(BaseModel):
+    """Schema for account deletion request with options."""
+    
+    delete_reviews: bool = Field(
+        default=False,
+        description="Полностью удалить отзывы (True) или анонимизировать (False)"
+    )
+    delete_brand_if_sole_representative: bool = Field(
+        default=False,
+        description="Удалить бренд, если пользователь единственный представитель (True) или передать админу (False)"
+    )
+    password_confirm: str = Field(
+        ...,
+        description="Подтверждение пароля для удаления аккаунта"
+    )
+
+
+class AccountDeletionStats(BaseModel):
+    """Schema for account deletion statistics."""
+    
+    presets_count: int = Field(description="Количество созданных пресетов")
+    official_presets_count: int = Field(description="Количество официальных пресетов")
+    approved_presets_count: int = Field(description="Количество одобренных пресетов")
+    presets_used_by_others_count: int = Field(description="Количество пресетов, сохраненных другими пользователями")
+    reviews_count: int = Field(description="Количество отзывов")
+    saved_presets_count: int = Field(description="Количество сохраненных пресетов")
+    brand_requests_count: int = Field(description="Количество заявок на верификацию бренда")
+    is_brand_representative: bool = Field(description="Является ли пользователь представителем бренда")
+    brand_other_representatives_count: int = Field(description="Количество других представителей бренда (если есть)")
 

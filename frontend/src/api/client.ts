@@ -1,8 +1,8 @@
 /** API Client для интеграции с бэкендом */
 
 import axios from 'axios';
-import type { Brand, Filament, Preset, User, Token, RefreshTokenRequest, RefreshTokenResponse, ListResponse } from '../types/api';
-import { getRefreshToken, setToken, setRefreshToken, removeToken } from '../utils/auth';
+import type { Brand, BrandRequest, BrandRequestStatus, Filament, FilamentVisualSettings, Preset, Printer, PrinterRequest, User, Token, RefreshTokenRequest, RefreshTokenResponse, ListResponse, AccountDeletionStats } from '../types/api';
+import { getRefreshToken, setToken, removeToken } from '../utils/auth';
 
 const API_BASE_URL = '/api/v1';
 
@@ -135,9 +135,29 @@ export const authAPI = {
     return response.data;
   },
 
+  updateProfile: async (data: Partial<{ email: string; username: string; full_name: string | null; bio: string | null; password: string; brand_id: number | null }>) => {
+    const response = await api.patch<User>('/auth/me', data);
+    return response.data;
+  },
+
   generateApiKey: async () => {
     const response = await api.post<{ api_key: string }>('/auth/api-key');
     return response.data;
+  },
+
+  getDeletionStats: async (): Promise<AccountDeletionStats> => {
+    const response = await api.get<AccountDeletionStats>('/auth/deletion-stats');
+    return response.data;
+  },
+
+  deleteAccount: async (data: { 
+    delete_reviews: boolean; 
+    delete_brand_if_sole_representative: boolean; 
+    password_confirm: string;
+  }) => {
+    await api.delete('/auth/me', {
+      data,
+    });
   },
 };
 
@@ -161,6 +181,10 @@ export const brandsAPI = {
 
 // Filaments API
 export const filamentsAPI = {
+  getMaterialTypes: async (): Promise<string[]> => {
+    const response = await api.get<string[]>('/filaments/material-types');
+    return response.data;
+  },
   list: async (params?: {
     page?: number;
     size?: number;
@@ -187,6 +211,7 @@ export const filamentsAPI = {
     brand_id: number;
     name: string;
     material_type: string;
+    visual_settings?: FilamentVisualSettings | null;
     color_name?: string;
     color_hex?: string;
     diameter?: number;
@@ -204,6 +229,7 @@ export const filamentsAPI = {
     material_type?: string;
     color_name?: string;
     color_hex?: string;
+    visual_settings?: FilamentVisualSettings | null;
     diameter?: number;
     density?: number;
     price_per_kg?: number;
@@ -220,6 +246,48 @@ export const filamentsAPI = {
   },
 };
 
+// QR Code API
+export const qrAPI = {
+  // Получить QR-код изображение (URL)
+  getQRCodeURL: (filamentId: number, size: number = 300): string => {
+    return `${API_BASE_URL}/qr/filaments/${filamentId}/qr-code?size=${size}`;
+  },
+
+  // Скачать QR-код для печати
+  downloadQRCode: async (filamentId: number, size: number = 600): Promise<void> => {
+    const response = await api.get(`/qr/filaments/${filamentId}/qr-code/download`, {
+      params: { size },
+      responseType: 'blob',
+    });
+    
+    // Создаем временную ссылку для скачивания
+    const url = window.URL.createObjectURL(new Blob([response.data]));
+    const link = document.createElement('a');
+    link.href = url;
+    link.setAttribute('download', `qr-code-${filamentId}-${size}x${size}.png`);
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    window.URL.revokeObjectURL(url);
+  },
+
+  // Регистрация сканирования QR-кода
+  scan: async (shortCode: string): Promise<{
+    filament: Filament;
+    preset_added: boolean;
+    preset: Preset | null;
+  }> => {
+    const response = await api.post(`/qr/${shortCode}/scan`);
+    return response.data;
+  },
+
+  // Получить пресет по QR-коду
+  getPreset: async (shortCode: string): Promise<any> => {
+    const response = await api.get(`/qr/${shortCode}/preset`);
+    return response.data;
+  },
+};
+
 // Presets API
 export const presetsAPI = {
   list: async (params?: {
@@ -227,6 +295,7 @@ export const presetsAPI = {
     size?: number;
     active_only?: boolean;
     filament_id?: number;
+    printer_id?: number;
     is_official?: boolean;
     user_id?: number;
   }) => {
@@ -259,6 +328,8 @@ export const presetsAPI = {
     fan_speed?: number;
     retraction_length?: number;
     retraction_speed?: number;
+    orcaslicer_settings?: Record<string, any> | null; // Расширенные параметры OrcaSlicer
+    printer_ids?: number[]; // Список ID принтеров, для которых подходит этот пресет
   }) => {
     const response = await api.post<Preset>('/presets/', data);
     return response.data;
@@ -277,6 +348,8 @@ export const presetsAPI = {
     fan_speed?: number;
     retraction_length?: number;
     retraction_speed?: number;
+    orcaslicer_settings?: Record<string, any> | null; // Расширенные параметры OrcaSlicer
+    printer_ids?: number[]; // Список ID принтеров, для которых подходит этот пресет
     active?: boolean;
   }>) => {
     const response = await api.patch<Preset>(`/presets/${id}`, data);
@@ -305,7 +378,77 @@ export const savedPresetsAPI = {
   },
 };
 
+// Printers API
+export const printersAPI = {
+  list: async (params?: {
+    page?: number;
+    size?: number;
+    active_only?: boolean;
+    manufacturer?: string;
+    search?: string;
+  }) => {
+    const response = await api.get<ListResponse<Printer>>('/printers/', { params });
+    return response.data;
+  },
+
+  get: async (id: number) => {
+    const response = await api.get<Printer>(`/printers/${id}`);
+    return response.data;
+  },
+};
+
 // Calculator API
+// Brand Requests API
+export const brandRequestsAPI = {
+  create: async (data: {
+    request_type: 'join' | 'create';
+    brand_id?: number;
+    new_brand_name?: string;
+    new_brand_slug?: string;
+    new_brand_description?: string;
+    new_brand_website?: string;
+    message?: string;
+    company_email?: string;
+    company_website?: string;
+    social_media_urls?: string[];
+    proof_text: string;
+    proof_files?: string[];
+  }) => {
+    const response = await api.post<BrandRequest>('/brand-requests/', data);
+    return response.data;
+  },
+
+  getMy: async () => {
+    const response = await api.get<BrandRequest[]>('/brand-requests/my');
+    return response.data;
+  },
+
+  get: async (id: number) => {
+    const response = await api.get<BrandRequest>(`/brand-requests/${id}`);
+    return response.data;
+  },
+
+  cancel: async (id: number) => {
+    await api.delete(`/brand-requests/${id}`);
+  },
+
+  uploadFile: async (requestId: number, file: File) => {
+    const formData = new FormData();
+    formData.append('file', file);
+    const response = await api.post<BrandRequest>(`/brand-requests/${requestId}/upload`, formData, {
+      headers: {
+        'Content-Type': 'multipart/form-data',
+      },
+    });
+    return response.data;
+  },
+
+  deleteFile: async (requestId: number, filePath: string) => {
+    const response = await api.delete<BrandRequest>(`/brand-requests/${requestId}/files/${encodeURIComponent(filePath)}`);
+    return response.data;
+  },
+};
+
 export const calculatorAPI = {
   estimate: async (data: {
     weight_g: number;
@@ -315,6 +458,171 @@ export const calculatorAPI = {
     printer_power_w?: number;
   }) => {
     const response = await api.post('/calculator/estimate', data);
+    return response.data;
+  },
+};
+
+// ==================== Admin API ====================
+
+export const adminAPI = {
+  // Brand Requests
+  listBrandRequests: async (params?: { page?: number; size?: number; status?: BrandRequestStatus }): Promise<ListResponse<BrandRequest>> => {
+    const response = await api.get<ListResponse<BrandRequest>>('/admin/brand-requests', { params });
+    return response.data;
+  },
+  
+  getBrandRequest: async (id: number): Promise<BrandRequest> => {
+    const response = await api.get<BrandRequest>(`/admin/brand-requests/${id}`);
+    return response.data;
+  },
+  
+  deleteBrandRequest: async (id: number): Promise<void> => {
+    await api.delete(`/admin/brand-requests/${id}`);
+  },
+  
+  updateBrandRequest: async (id: number, data: { status: BrandRequestStatus; rejection_reason?: string }): Promise<BrandRequest> => {
+    const response = await api.patch<BrandRequest>(`/admin/brand-requests/${id}`, data);
+    return response.data;
+  },
+
+  // Brands
+  listBrands: async (params?: { 
+    page?: number; 
+    size?: number; 
+    verified?: boolean | null;
+    active_only?: boolean;
+    search?: string;
+  }): Promise<{ items: Brand[]; total: number; page: number; size: number; pages: number }> => {
+    const response = await api.get<{ items: Brand[]; total: number; page: number; size: number; pages: number }>('/admin/brands', { params });
+    return response.data;
+  },
+
+  // Printers
+  createPrinter: async (data: {
+    name: string;
+    manufacturer: string;
+    model: string;
+    slug: string;
+    description?: string;
+    build_volume_x?: number;
+    build_volume_y?: number;
+    build_volume_z?: number;
+    nozzle_diameter?: number;
+    max_extruder_temp?: number;
+    max_bed_temp?: number;
+    image_url?: string;
+  }): Promise<Printer> => {
+    const response = await api.post<Printer>('/admin/printers', data);
+    return response.data;
+  },
+
+  updatePrinter: async (id: number, data: {
+    name?: string;
+    manufacturer?: string;
+    model?: string;
+    slug?: string;
+    description?: string;
+    build_volume_x?: number;
+    build_volume_y?: number;
+    build_volume_z?: number;
+    nozzle_diameter?: number;
+    max_extruder_temp?: number;
+    max_bed_temp?: number;
+    image_url?: string;
+    active?: boolean;
+  }): Promise<Printer> => {
+    const response = await api.patch<Printer>(`/admin/printers/${id}`, data);
+    return response.data;
+  },
+
+  deletePrinter: async (id: number): Promise<void> => {
+    await api.delete(`/admin/printers/${id}`);
+  },
+
+  // Printer Requests
+  listPrinterRequests: async (params?: { 
+    page?: number; 
+    size?: number; 
+    status?: 'pending' | 'approved' | 'rejected';
+  }): Promise<{ items: PrinterRequest[]; total: number }> => {
+    const response = await api.get<{ items: PrinterRequest[]; total: number }>('/admin/printer-requests', { params });
+    return response.data;
+  },
+
+  getPrinterRequest: async (id: number): Promise<PrinterRequest> => {
+    const response = await api.get<PrinterRequest>(`/admin/printer-requests/${id}`);
+    return response.data;
+  },
+
+  updatePrinterRequest: async (id: number, data: { 
+    status: 'pending' | 'approved' | 'rejected'; 
+    rejection_reason?: string;
+  }): Promise<PrinterRequest> => {
+    const response = await api.patch<PrinterRequest>(`/admin/printer-requests/${id}`, data);
+    return response.data;
+  },
+
+  verifyBrand: async (brandId: number): Promise<Brand> => {
+    const response = await api.post<Brand>(`/admin/brands/${brandId}/verify`);
+    return response.data;
+  },
+  
+  unverifyBrand: async (brandId: number): Promise<Brand> => {
+    const response = await api.post<Brand>(`/admin/brands/${brandId}/unverify`);
+    return response.data;
+  },
+
+  // Presets
+  listPendingPresets: async (params?: { page?: number; size?: number }): Promise<Preset[]> => {
+    const response = await api.get<Preset[]>('/admin/presets/pending', { params });
+    return response.data;
+  },
+  
+  approvePreset: async (presetId: number): Promise<Preset> => {
+    const response = await api.post<Preset>(`/admin/presets/${presetId}/approve`);
+    return response.data;
+  },
+  
+  rejectPreset: async (presetId: number, reason: string): Promise<Preset> => {
+    const response = await api.post<Preset>(`/admin/presets/${presetId}/reject`, null, {
+      params: { reason },
+    });
+    return response.data;
+  },
+
+  // Users
+  listUsers: async (params?: { page?: number; size?: number; role?: string; active_only?: boolean }): Promise<User[]> => {
+    const response = await api.get<User[]>('/admin/users', { params });
+    return response.data;
+  },
+  
+  activateUser: async (userId: number): Promise<User> => {
+    const response = await api.post<User>(`/admin/users/${userId}/activate`);
+    return response.data;
+  },
+  
+  deactivateUser: async (userId: number): Promise<User> => {
+    const response = await api.post<User>(`/admin/users/${userId}/deactivate`);
+    return response.data;
+  },
+  
+  promoteToAdmin: async (userId: number): Promise<User> => {
+    const response = await api.post<User>(`/admin/users/${userId}/promote-admin`);
+    return response.data;
+  },
+
+  unlinkUserFromBrand: async (userId: number): Promise<User> => {
+    const response = await api.post<User>(`/admin/users/${userId}/unlink-brand`);
+    return response.data;
+  },
+
+  // Stats
+  getStats: async (): Promise<{
+    users: { total: number; brands: number; admins: number };
+    brands: { total: number; verified: number; pending_verification: number };
+    presets: { total: number; pending_moderation: number; approved: number; rejected: number };
+  }> => {
+    const response = await api.get('/admin/stats');
     return response.data;
   },
 };

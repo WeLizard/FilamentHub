@@ -12,6 +12,30 @@ from app.models.preset import Preset, PresetModerationStatus
 
 async def init_test_data() -> None:
     """Create test data."""
+    import socket
+    from app.db.session import engine
+    
+    # Retry logic for Docker network DNS resolution
+    max_retries = 30
+    retry_delay = 1
+    
+    # Test database connection before proceeding
+    from sqlalchemy import text
+    for attempt in range(max_retries):
+        try:
+            async with engine.connect() as conn:
+                await conn.execute(text("SELECT 1"))  # Simple query to test connection
+                break  # Success, exit retry loop
+        except (socket.gaierror, OSError, Exception) as e:
+            if attempt < max_retries - 1:
+                print(f"⚠️  Database connection attempt {attempt + 1}/{max_retries} failed: {e}")
+                print(f"   Retrying in {retry_delay} seconds...")
+                await asyncio.sleep(retry_delay)
+            else:
+                # Last attempt failed, raise the error
+                raise
+    
+    # Now proceed with database operations
     async with AsyncSessionLocal() as db:
         from sqlalchemy import select, func
 
@@ -37,7 +61,7 @@ async def init_test_data() -> None:
             # PLA Red (filament 0)
             {
                 "filament_id": filaments[0].id,
-                "name": "Официальный пресет Bestfilament",
+                "name": "Официальный пресет производителя",
                 "description": "Рекомендуемые настройки от производителя",
                 "is_official": True,
                 "extruder_temp": 200.0,
@@ -56,7 +80,7 @@ async def init_test_data() -> None:
             # PLA Blue (filament 1)
             {
                 "filament_id": filaments[1].id,
-                "name": "Официальный пресет Bestfilament",
+                "name": "Официальный пресет производителя",
                 "description": "Рекомендуемые настройки от производителя",
                 "is_official": True,
                 "extruder_temp": 200.0,
@@ -75,7 +99,7 @@ async def init_test_data() -> None:
             # PETG Black (filament 2)
             {
                 "filament_id": filaments[2].id,
-                "name": "Официальный пресет Sunlu",
+                "name": "Официальный пресет производителя",
                 "description": "Рекомендуемые настройки от производителя",
                 "is_official": True,
                 "extruder_temp": 240.0,
@@ -94,7 +118,7 @@ async def init_test_data() -> None:
             # PLA+ White (filament 3)
             {
                 "filament_id": filaments[3].id,
-                "name": "Официальный пресет Sunlu",
+                "name": "Официальный пресет производителя",
                 "description": "Рекомендуемые настройки от производителя",
                 "is_official": True,
                 "extruder_temp": 210.0,

@@ -11,13 +11,14 @@ from app.db.base import Base
 
 if TYPE_CHECKING:
     from app.models.filament import Filament
+    from app.models.material_mapping import MaterialMapping
 
 
 class Brand(Base):
     """
     Производитель пластика.
 
-    Примеры: Bestfilament, Sunlu, eSUN, Polymaker, Prusament
+    Примеры: ThermPlast, SampleManufacturer, BrandName
     """
 
     __tablename__ = "brands"
@@ -54,6 +55,9 @@ class Brand(Base):
     # Relationships
     filaments: Mapped[list["Filament"]] = relationship(
         "Filament", back_populates="brand", cascade="all, delete-orphan"
+    )
+    material_mappings: Mapped[list["MaterialMapping"]] = relationship(
+        "MaterialMapping", back_populates="brand"
     )
 
     def __repr__(self) -> str:

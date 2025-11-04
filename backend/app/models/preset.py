@@ -4,7 +4,7 @@ from datetime import datetime
 from enum import Enum
 from typing import TYPE_CHECKING
 
-from sqlalchemy import Boolean, DateTime, Enum as SQLEnum, Float, ForeignKey, Integer, String, Text
+from sqlalchemy import Boolean, DateTime, Enum as SQLEnum, Float, ForeignKey, Integer, JSON, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.sql import func
 
@@ -14,6 +14,7 @@ if TYPE_CHECKING:
     from app.models.filament import Filament
     from app.models.user import User
     from app.models.user_saved_preset import UserSavedPreset
+    from app.models.preset_printer import PresetPrinter
 
 
 class PresetModerationStatus(str, Enum):
@@ -70,6 +71,12 @@ class Preset(Base):
     retraction_length: Mapped[float | None] = mapped_column(Float, nullable=True)
     retraction_speed: Mapped[float | None] = mapped_column(Float, nullable=True)
 
+    # Extended OrcaSlicer parameters (JSON)
+    orcaslicer_settings: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    # orcaslicer_settings: JSON объект со всеми параметрами OrcaSlicer
+    # Используется для хранения расширенных параметров, которых нет в базовых полях
+    # Например: nozzle_temperature_range_low, filament_max_volumetric_speed, pressure_advance и т.д.
+
     # Rating & usage stats
     rating: Mapped[float | None] = mapped_column(Float, nullable=True)
     # rating: средняя оценка пользователей (1-5)
@@ -107,6 +114,9 @@ class Preset(Base):
     user: Mapped["User"] = relationship("User", back_populates="presets")
     saved_by_users: Mapped[list["UserSavedPreset"]] = relationship(
         "UserSavedPreset", back_populates="preset", cascade="all, delete-orphan"
+    )
+    printer_links: Mapped[list["PresetPrinter"]] = relationship(
+        "PresetPrinter", back_populates="preset", cascade="all, delete-orphan"
     )
 
     def __repr__(self) -> str:

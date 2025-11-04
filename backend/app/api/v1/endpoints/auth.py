@@ -4,26 +4,35 @@ from datetime import datetime
 
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Body, Depends, HTTPException, Query, Request, status
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
-from sqlalchemy import select
+from sqlalchemy import select, or_
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.core.dependencies import get_current_active_user, get_current_user
 from app.core.security import (
     create_access_token,
     create_refresh_token,
     decode_refresh_token,
+    decode_email_verification_token,
     generate_api_key,
+    generate_email_verification_token,
     get_password_hash,
     verify_password,
 )
+from app.services.email_validator import is_personal_email, normalize_website_url
 from app.db.session import get_db
 from app.models.user import User, UserRole
+from app.models.brand import Brand
+from app.models.preset import Preset
+from app.models.user_saved_preset import UserSavedPreset
 from app.schemas.user import (
     APIKeyResponse,
+    AccountDeleteRequest,
+    AccountDeletionStats,
     LoginRequest,
     RefreshTokenRequest,
     RefreshTokenResponse,
@@ -31,7 +40,9 @@ from app.schemas.user import (
     Token,
     UserCreate,
     UserResponse,
+    UserUpdate,
 )
+from app.schemas.preset import PresetListResponse, PresetResponse
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -69,14 +80,9 @@ async def register(
             detail="Username already taken",
         )
     
-    # Валидация и конвертация роли
-    try:
-        user_role = UserRole(data.role)
-    except ValueError:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Invalid role: {data.role}. Must be 'user' or 'brand'",
-        )
+    # Роль всегда "user" при регистрации - роль "brand" присваивается только после верификации email
+    # если email совпадает с доменом существующего верифицированного бренда
+    user_role = UserRole.USER
     
     # Хеширование пароля
     try:
@@ -94,6 +100,7 @@ async def register(
         username=data.username,
         password_hash=password_hash,
         role=user_role,
+        brand_id=None,  # Привязка к бренду происходит только после верификации email
         full_name=data.full_name if data.full_name else None,
         bio=data.bio if data.bio else None,
         active=True,
@@ -105,6 +112,13 @@ async def register(
         await db.commit()
         await db.refresh(user)
         logger.info(f"User registered successfully: {user.email} (id={user.id})")
+        
+        # Генерируем токен для верификации email
+        verification_token = generate_email_verification_token(user.id, user.email)
+        
+        # TODO: Отправить email с токеном верификации
+        # Ссылка: {FRONTEND_URL}/verify-email?token={verification_token}
+        logger.info(f"Email verification token generated for user {user.email}: {verification_token[:20]}...")
     except Exception as e:
         await db.rollback()
         logger.error(f"Error creating user: {str(e)}", exc_info=True)
@@ -232,6 +246,142 @@ async def get_current_user_info(
     return UserResponse.model_validate(current_user)
 
 
+@router.get("/my-presets", response_model=PresetListResponse)
+async def get_my_presets(
+    current_user: Annotated[User, Depends(get_current_active_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+    updated_since: datetime | None = Query(
+        None,
+        description="ISO 8601 timestamp. Возвращает только пресеты, обновленные после указанного времени (инкрементальная синхронизация).",
+    ),
+) -> PresetListResponse:
+    """
+    Получить все пресеты пользователя (созданные + сохраненные из каталога).
+    
+    Используется для синхронизации пресетов в OrcaSlicer.
+    Поддерживает инкрементальную синхронизацию через параметр updated_since.
+    """
+    preset_ids: set[int] = set()
+    presets_dict: dict[int, Preset] = {}
+    
+    # 1. Получаем созданные пресеты (где user_id == current_user.id)
+    created_query = select(Preset).where(
+        Preset.user_id == current_user.id,
+        Preset.active == True,
+    )
+    
+    if updated_since:
+        created_query = created_query.where(Preset.updated_at >= updated_since)
+    
+    created_result = await db.execute(created_query.options(selectinload(Preset.filament)))
+    created_presets = created_result.scalars().all()
+    
+    for preset in created_presets:
+        preset_ids.add(preset.id)
+        presets_dict[preset.id] = preset
+    
+    # 2. Получаем сохраненные пресеты (из каталога)
+    saved_query = select(UserSavedPreset).where(
+        UserSavedPreset.user_id == current_user.id,
+    )
+    
+    if updated_since:
+        # Для сохраненных пресетов проверяем либо saved_at, либо updated_at самого пресета
+        saved_query = saved_query.join(Preset).where(
+            or_(
+                UserSavedPreset.saved_at >= updated_since,
+                Preset.updated_at >= updated_since,
+            ),
+        )
+    else:
+        saved_query = saved_query.join(Preset)
+    
+    saved_result = await db.execute(
+        saved_query.options(selectinload(UserSavedPreset.preset).selectinload(Preset.filament))
+    )
+    saved_presets_relations = saved_result.scalars().all()
+    
+    for saved_preset_relation in saved_presets_relations:
+        preset = saved_preset_relation.preset
+        if preset.active:  # Проверяем, что пресет активен
+            preset_id = preset.id
+            if preset_id not in preset_ids:  # Убираем дубликаты (если пресет и создан, и сохранен)
+                preset_ids.add(preset_id)
+                presets_dict[preset_id] = preset
+    
+    # 3. Формируем список пресетов
+    presets_list = [presets_dict[pid] for pid in sorted(preset_ids)]
+    
+    # 4. Преобразуем в PresetResponse
+    preset_responses = [PresetResponse.model_validate(p) for p in presets_list]
+    
+    return PresetListResponse(
+        items=preset_responses,
+        total=len(preset_responses),
+        page=1,
+        size=len(preset_responses),
+        pages=1,
+    )
+
+
+@router.patch("/me", response_model=UserResponse)
+async def update_current_user(
+    data: UserUpdate,
+    current_user: Annotated[User, Depends(get_current_active_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> UserResponse:
+    """Обновить профиль текущего пользователя."""
+    from app.models.brand import Brand
+    
+    # Обновляем поля пользователя
+    update_data = data.model_dump(exclude_unset=True)
+    
+    # Если обновляется пароль, хешируем его
+    if "password" in update_data and update_data["password"]:
+        update_data["password_hash"] = get_password_hash(update_data.pop("password"))
+    
+    # Если обновляется email или username, проверяем уникальность
+    if "email" in update_data and update_data["email"]:
+        result = await db.execute(select(User).where(User.email == update_data["email"]))
+        existing_user = result.scalar_one_or_none()
+        if existing_user and existing_user.id != current_user.id:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Email already registered",
+            )
+    
+    if "username" in update_data and update_data["username"]:
+        result = await db.execute(select(User).where(User.username == update_data["username"]))
+        existing_user = result.scalar_one_or_none()
+        if existing_user and existing_user.id != current_user.id:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Username already taken",
+            )
+    
+    # Если обновляется brand_id, проверяем что бренд существует
+    if "brand_id" in update_data and update_data["brand_id"]:
+        result = await db.execute(select(Brand).where(Brand.id == update_data["brand_id"]))
+        brand = result.scalar_one_or_none()
+        if not brand:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Brand not found",
+            )
+    
+    # Применяем обновления
+    for key, value in update_data.items():
+        if key == "password_hash":
+            setattr(current_user, "password_hash", value)
+        elif hasattr(current_user, key):
+            setattr(current_user, key, value)
+    
+    await db.commit()
+    await db.refresh(current_user)
+    
+    return UserResponse.model_validate(current_user)
+
+
 @router.post("/api-key", response_model=APIKeyResponse)
 async def generate_api_key_endpoint(
     current_user: Annotated[User, Depends(get_current_active_user)],
@@ -246,4 +396,135 @@ async def generate_api_key_endpoint(
     await db.commit()
     
     return APIKeyResponse(api_key=new_api_key)
+
+
+@router.get("/deletion-stats", response_model=AccountDeletionStats)
+async def get_deletion_stats(
+    current_user: Annotated[User, Depends(get_current_active_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> AccountDeletionStats:
+    """Получить статистику данных пользователя перед удалением аккаунта."""
+    from app.services.account_deletion import get_deletion_stats
+    
+    stats = await get_deletion_stats(current_user.id, db)
+    return AccountDeletionStats(**stats)
+
+
+@router.post("/verify-email", response_model=UserResponse)
+async def verify_email(
+    db: Annotated[AsyncSession, Depends(get_db)],
+    token: str = Body(..., embed=True),
+) -> UserResponse:
+    """
+    Верифицировать email пользователя по токену.
+    
+    После верификации автоматически проверяет, можно ли присвоить роль brand,
+    если домен email совпадает с доменом сайта существующего верифицированного бренда.
+    """
+    import logging
+    logger = logging.getLogger(__name__)
+    
+    # Декодируем токен верификации
+    payload = decode_email_verification_token(token)
+    if not payload:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid or expired verification token",
+        )
+    
+    user_id: int | None = payload.get("user_id")
+    email: str | None = payload.get("email")
+    
+    if not user_id or not email:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid verification token",
+        )
+    
+    # Получаем пользователя
+    result = await db.execute(select(User).where(User.id == user_id))
+    user = result.scalar_one_or_none()
+    
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User not found",
+        )
+    
+    # Проверяем, что email совпадает
+    if user.email != email:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Email mismatch",
+        )
+    
+    # Проверяем, не верифицирован ли уже
+    if user.email_verified:
+        logger.info(f"Email already verified for user {user.email} (id={user.id})")
+        return UserResponse.model_validate(user)
+    
+    # Устанавливаем email_verified = True
+    user.email_verified = True
+    
+    # Проверяем, можно ли автоматически присвоить роль brand
+    # Если email не личный и есть существующий верифицированный бренд с таким доменом сайта
+    if not is_personal_email(user.email):
+        # Извлекаем домен email
+        email_domain = user.email.split("@")[1].lower() if "@" in user.email else None
+        
+        if email_domain:
+            # Ищем верифицированные бренды с таким доменом сайта
+            result = await db.execute(
+                select(Brand).where(Brand.active == True, Brand.verified == True)
+            )
+            brands = result.scalars().all()
+            
+            for brand in brands:
+                if brand.website:
+                    # Нормализуем сайт бренда и сравниваем с доменом email
+                    brand_website_domain = normalize_website_url(brand.website)
+                    if brand_website_domain and email_domain == brand_website_domain:
+                        # Нашли совпадение! Автоматически присваиваем роль brand и привязываем к бренду
+                        user.role = UserRole.BRAND
+                        user.brand_id = brand.id
+                        logger.info(
+                            f"Auto-assigned brand role to user {user.email} (id={user.id}) "
+                            f"after email verification - matched brand {brand.name} "
+                            f"(email domain: {email_domain}, brand website: {brand_website_domain})"
+                        )
+                        break
+    
+    await db.commit()
+    await db.refresh(user)
+    
+    return UserResponse.model_validate(user)
+
+
+@router.delete("/me", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_account(
+    data: Annotated[AccountDeleteRequest, Body()],
+    current_user: Annotated[User, Depends(get_current_active_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> None:
+    """
+    Удалить аккаунт текущего пользователя.
+    
+    Требует подтверждения пароля и предоставляет опции обработки данных.
+    """
+    from app.services.account_deletion import delete_user_account
+    
+    # Проверяем пароль
+    if not verify_password(data.password_confirm, current_user.password_hash):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Неверный пароль",
+        )
+    
+    # Выполняем удаление аккаунта
+    await delete_user_account(
+        user=current_user,
+        delete_reviews=data.delete_reviews,
+        delete_brand_if_sole_representative=data.delete_brand_if_sole_representative,
+        db=db,
+    )
 
