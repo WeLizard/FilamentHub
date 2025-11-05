@@ -1,7 +1,7 @@
 /** API Client для интеграции с бэкендом */
 
 import axios from 'axios';
-import type { Brand, BrandRequest, BrandRequestStatus, Filament, FilamentVisualSettings, Preset, Printer, PrinterRequest, User, Token, RefreshTokenRequest, RefreshTokenResponse, ListResponse, AccountDeletionStats } from '../types/api';
+import type { Brand, BrandRequest, BrandRequestStatus, Filament, FilamentVisualSettings, FilamentReview, FilamentRatingStats, Preset, Printer, PrinterRequest, User, Token, RefreshTokenRequest, RefreshTokenResponse, ListResponse, AccountDeletionStats, UserSavedPreset } from '../types/api';
 import { getRefreshToken, setToken, removeToken } from '../utils/auth';
 
 const API_BASE_URL = '/api/v1';
@@ -244,6 +244,82 @@ export const filamentsAPI = {
   delete: async (id: number) => {
     await api.delete(`/filaments/${id}`);
   },
+
+  // Reviews
+  getReviews: async (id: number, params?: { page?: number; size?: number; active_only?: boolean }) => {
+    const response = await api.get<ListResponse<FilamentReview>>(`/filament-reviews/filament/${id}`, { params });
+    return response.data;
+  },
+
+  getRatingStats: async (id: number) => {
+    const response = await api.get<FilamentRatingStats>(`/filament-reviews/filament/${id}/stats`);
+    return response.data;
+  },
+};
+
+// Filament Reviews API
+export const filamentReviewsAPI = {
+  list: async (filamentId: number, params?: {
+    page?: number;
+    size?: number;
+    active_only?: boolean;
+    order_by?: 'created_at' | 'rating' | 'updated_at';
+    order_desc?: boolean;
+  }) => {
+    const response = await api.get<ListResponse<FilamentReview>>(`/filament-reviews/filament/${filamentId}`, { params });
+    return response.data;
+  },
+
+  get: async (reviewId: number) => {
+    const response = await api.get<FilamentReview>(`/filament-reviews/${reviewId}`);
+    return response.data;
+  },
+
+  getAvailablePresets: async (filamentId: number) => {
+    const response = await api.get<{ items: Preset[]; total: number }>(`/filament-reviews/available-presets/${filamentId}`);
+    return response.data;
+  },
+
+  create: async (data: {
+    filament_id: number;
+    preset_id?: number | null;
+    success: boolean;
+    rating: number; // 1.0 - 5.0
+    comment?: string | null;
+    printer_model?: string | null;
+  }) => {
+    const response = await api.post<FilamentReview>('/filament-reviews/', data);
+    return response.data;
+  },
+
+  update: async (reviewId: number, data: Partial<{
+    success?: boolean;
+    rating?: number;
+    comment?: string | null;
+    printer_model?: string | null;
+    active?: boolean;
+  }>) => {
+    const response = await api.patch<FilamentReview>(`/filament-reviews/${reviewId}`, data);
+    return response.data;
+  },
+
+  delete: async (reviewId: number) => {
+    await api.delete(`/filament-reviews/${reviewId}`);
+  },
+
+  getStats: async (filamentId: number) => {
+    const response = await api.get<FilamentRatingStats>(`/filament-reviews/filament/${filamentId}/stats`);
+    return response.data;
+  },
+
+  getMyReviews: async (params?: {
+    page?: number;
+    size?: number;
+    active_only?: boolean;
+  }) => {
+    const response = await api.get<ListResponse<FilamentReview>>('/filament-reviews/my', { params });
+    return response.data;
+  },
 };
 
 // QR Code API
@@ -364,12 +440,12 @@ export const presetsAPI = {
 // Saved Presets API
 export const savedPresetsAPI = {
   list: async () => {
-    const response = await api.get<{ items: Array<{ id: number; preset_id: number }>; total: number }>('/saved-presets/');
+    const response = await api.get<{ items: UserSavedPreset[]; total: number }>('/saved-presets/');
     return response.data;
   },
 
   save: async (preset_id: number) => {
-    const response = await api.post<{ id: number; preset_id: number; user_id: number; saved_at: string }>('/saved-presets/', { preset_id });
+    const response = await api.post<UserSavedPreset>('/saved-presets/', { preset_id });
     return response.data;
   },
 

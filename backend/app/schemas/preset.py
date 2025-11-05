@@ -45,6 +45,7 @@ class PresetBase(BaseModel):
 
     # Rating
     rating: float | None = Field(None, ge=1, le=5)
+    success_rate: float | None = Field(None, ge=0.0, le=100.0, description="Процент успешных печатей (0-100)")
     usage_count: int = Field(0, ge=0)
 
 

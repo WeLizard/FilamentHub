@@ -21,7 +21,7 @@ import {
   Flame,
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
-import { filamentsAPI, brandsAPI, presetsAPI, savedPresetsAPI } from '../api/client';
+import { filamentsAPI, brandsAPI, presetsAPI, savedPresetsAPI, filamentReviewsAPI } from '../api/client';
 import { Dropdown } from '../components/Dropdown';
 import { FilamentPreview } from '../components/FilamentPreview';
 import type { Filament, Preset } from '../types/api';
@@ -56,6 +56,7 @@ export const CatalogPage: React.FC = () => {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['saved-presets'] });
+      queryClient.invalidateQueries({ queryKey: ['saved-presets-details'] });
       queryClient.invalidateQueries({ queryKey: ['user-presets'] });
     },
     onError: (error: any) => {
@@ -285,6 +286,7 @@ const MaterialCard: React.FC<MaterialCardProps> = ({
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['saved-presets'] });
+      queryClient.invalidateQueries({ queryKey: ['saved-presets-details'] });
       queryClient.invalidateQueries({ queryKey: ['user-presets'] });
     },
     onError: (error: any) => {
@@ -300,6 +302,13 @@ const MaterialCard: React.FC<MaterialCardProps> = ({
     enabled: true, // Всегда загружаем пресеты
   });
 
+  // Загружаем статистику отзывов для каждого материала
+  const { data: ratingStats } = useQuery({
+    queryKey: ['filament-rating-stats', filament.id],
+    queryFn: () => filamentReviewsAPI.getStats(filament.id),
+    enabled: true,
+  });
+
   // Получаем официальный пресет и пресеты сообщества
   const officialPreset = presetsData?.items?.find((p) => p.is_official);
   const communityPresets = presetsData?.items?.filter((p) => !p.is_official).slice(0, 3) || [];
@@ -310,26 +319,13 @@ const MaterialCard: React.FC<MaterialCardProps> = ({
   // Проверяем, сохранён ли пресет
   const isPresetSaved = displayPreset ? savedPresetIds.has(displayPreset.id) : false;
 
-  // Вычисляем средний рейтинг из пресетов
-  const ratingsWithValues = presetsData?.items?.filter((p) => p.rating !== null && p.rating !== undefined) || [];
-  const avgRating =
-    ratingsWithValues.length > 0
-      ? ratingsWithValues.reduce((acc, p) => acc + (p.rating || 0), 0) / ratingsWithValues.length
-      : null;
-
-  // Вычисляем успешность (на основе usage_count и рейтинга)
-  const successRate =
-    presetsData?.items && presetsData.items.length > 0 && avgRating !== null
-      ? Math.min(
-          95,
-          Math.max(
-            85,
-            85 +
-              (presetsData.items.reduce((acc, p) => acc + (p.usage_count || 0), 0) / presetsData.items.length / 10) +
-              (avgRating - 4.0) * 10
-          )
-        )
-      : null;
+  // РЕЙТИНГ ФИЛАМЕНТА: только из отзывов (FilamentReview)
+  // Это оценка качества самого материала
+  const filamentRating = ratingStats?.avg_rating ?? null;
+  const filamentSuccessRate = ratingStats?.success_rate ?? null;
+  
+  // РЕЙТИНГ ПРЕСЕТА: отдельно для каждого пресета (preset.rating)
+  // Показывается у каждого пресета индивидуально в карточке
 
   const handleCardClick = (e: React.MouseEvent) => {
     // Не открываем детальную страницу, если кликнули на кнопку или внутри кнопки
@@ -372,18 +368,25 @@ const MaterialCard: React.FC<MaterialCardProps> = ({
               {filament.material_type}
             </span>
           </div>
-          {(avgRating !== null || successRate !== null) && (
+          {/* Рейтинг материала (из отзывов) */}
+          {(filamentRating !== null || filamentSuccessRate !== null) && (
             <div className="flex items-center space-x-4 text-sm mb-3">
-              {avgRating !== null && (
-                <span className="flex items-center text-gray-300">
+              {filamentRating !== null && (
+                <span className="flex items-center text-gray-300" title="Рейтинг материала">
                   <Star className="w-4 h-4 mr-1 text-yellow-400 fill-current" />
-                  <span className="font-semibold text-white">{avgRating.toFixed(1)}</span>
+                  <span className="font-semibold text-white">{filamentRating.toFixed(1)}</span>
+                  {ratingStats && ratingStats.total_reviews > 0 && (
+                    <span className="text-gray-400 ml-1">({ratingStats.total_reviews})</span>
+                  )}
                 </span>
               )}
-              {successRate !== null && (
-                <span className="flex items-center text-gray-300">
+              {filamentSuccessRate !== null && (
+                <span className="flex items-center text-gray-300" title="Процент успешных печатей с этим материалом">
                   <CheckCircle className="w-4 h-4 mr-1 text-green-400" />
-                  <span className="font-semibold text-green-400">{Math.round(successRate)}% успеха</span>
+                  <span className="font-semibold text-green-400">{filamentSuccessRate.toFixed(1)}% успеха</span>
+                  {ratingStats && ratingStats.total_reviews > 0 && (
+                    <span className="text-gray-400 ml-1">из {ratingStats.total_reviews}</span>
+                  )}
                 </span>
               )}
             </div>
@@ -515,13 +518,15 @@ const MaterialCard: React.FC<MaterialCardProps> = ({
                     </div>
                   </div>
                   <div className="text-right">
-                    <div className="flex items-center space-x-1 mb-1">
-                      <Star className="w-3 h-3 text-yellow-400 fill-current" />
-                      <span className="text-white text-sm">{preset.rating?.toFixed(1) || '4.8'}</span>
-                    </div>
-                    <p className="text-green-400 text-xs">
-                      {Math.round(85 + ((preset.rating || 4.0) - 4.0) * 10)}% успеха
-                    </p>
+                    {/* Рейтинг пресета (отдельный от рейтинга материала) */}
+                    {preset.rating !== null && preset.rating !== undefined ? (
+                      <div className="flex items-center space-x-1 mb-1" title="Рейтинг этого пресета настроек">
+                        <Star className="w-3 h-3 text-yellow-400 fill-current" />
+                        <span className="text-white text-sm">{preset.rating.toFixed(1)}</span>
+                      </div>
+                    ) : (
+                      <div className="mb-1 text-gray-500 text-xs">Нет рейтинга</div>
+                    )}
                   </div>
                 </div>
               </div>

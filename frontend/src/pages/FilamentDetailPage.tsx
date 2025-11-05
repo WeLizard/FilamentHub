@@ -22,8 +22,11 @@ import {
   Fan,
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
-import { filamentsAPI, brandsAPI, savedPresetsAPI } from '../api/client';
+import { filamentsAPI, brandsAPI, savedPresetsAPI, filamentReviewsAPI } from '../api/client';
 import { FilamentPreview } from '../components/FilamentPreview';
+import { ReviewCard } from '../components/ReviewCard';
+import { CreateReviewModal } from '../components/CreateReviewModal';
+import { FilamentReview } from '../types/api';
 
 export const FilamentDetailPage: React.FC = () => {
   const { id } = useParams<{ id: string }>();
@@ -33,6 +36,9 @@ export const FilamentDetailPage: React.FC = () => {
   const queryClient = useQueryClient();
   const [showQR, setShowQR] = useState(false);
   const [activeTab, setActiveTab] = useState<'presets' | 'reviews'>('presets');
+  const [showCreateReviewModal, setShowCreateReviewModal] = useState(false);
+  const [editingReview, setEditingReview] = useState<FilamentReview | null>(null);
+  const [reviewsPage, setReviewsPage] = useState(1);
   
   // Определяем откуда пришли (из каталога или профиля)
   const cameFrom = location.state?.from || 'catalog';
@@ -81,6 +87,7 @@ export const FilamentDetailPage: React.FC = () => {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['saved-presets'] });
+      queryClient.invalidateQueries({ queryKey: ['saved-presets-details'] });
       queryClient.invalidateQueries({ queryKey: ['user-presets'] });
     },
     onError: (error: any) => {
@@ -90,12 +97,39 @@ export const FilamentDetailPage: React.FC = () => {
     },
   });
 
-  // TODO: Загружаем отзывы
-  // const { data: reviewsData } = useQuery({
-  //   queryKey: ['filament-reviews', id],
-  //   queryFn: () => filamentsAPI.getReviews(Number(id)),
-  //   enabled: !!id,
-  // });
+  // Загружаем отзывы
+  const { data: reviewsData, isLoading: isLoadingReviews } = useQuery({
+    queryKey: ['filament-reviews', id, reviewsPage],
+    queryFn: () => filamentReviewsAPI.list(Number(id), { page: reviewsPage, size: 20, active_only: true }),
+    enabled: !!id,
+  });
+
+  // Загружаем статистику рейтингов
+  const { data: ratingStats } = useQuery({
+    queryKey: ['filament-rating-stats', id],
+    queryFn: () => filamentReviewsAPI.getStats(Number(id)),
+    enabled: !!id,
+  });
+
+  // Мутация для удаления отзыва
+  const deleteReviewMutation = useMutation({
+    mutationFn: (reviewId: number) => filamentReviewsAPI.delete(reviewId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['filament-reviews', id] });
+      queryClient.invalidateQueries({ queryKey: ['filament-rating-stats', id] });
+    },
+  });
+
+  const handleEditReview = (review: FilamentReview) => {
+    setEditingReview(review);
+    setShowCreateReviewModal(true);
+  };
+
+  const handleDeleteReview = (reviewId: number) => {
+    if (confirm('Вы уверены, что хотите удалить этот отзыв?')) {
+      deleteReviewMutation.mutate(reviewId);
+    }
+  };
 
   if (isLoadingFilament) {
     return (
@@ -120,26 +154,14 @@ export const FilamentDetailPage: React.FC = () => {
   // Проверяем, сохранён ли официальный пресет
   const isOfficialPresetSaved = officialPreset ? savedPresetIds.has(officialPreset.id) : false;
 
-  // Вычисляем средний рейтинг из пресетов
-  const ratingsWithValues = presetsData?.items?.filter((p) => p.rating !== null && p.rating !== undefined) || [];
-  const avgRating =
-    ratingsWithValues.length > 0
-      ? ratingsWithValues.reduce((acc, p) => acc + (p.rating || 0), 0) / ratingsWithValues.length
-      : null;
-
-  // Вычисляем успешность
-  const successRate =
-    presetsData?.items && presetsData.items.length > 0 && avgRating !== null
-      ? Math.min(
-          95,
-          Math.max(
-            85,
-            85 +
-              (presetsData.items.reduce((acc, p) => acc + p.usage_count, 0) / presetsData.items.length / 10) +
-              (avgRating - 4.0) * 10
-          )
-        )
-      : null;
+  // РЕЙТИНГ ФИЛАМЕНТА: только из отзывов (FilamentReview)
+  // Это оценка качества самого материала пользователями
+  const filamentRating = ratingStats?.avg_rating ?? null;
+  const filamentSuccessRate = ratingStats?.success_rate ?? null;
+  
+  // РЕЙТИНГ ПРЕСЕТА: отдельно для каждого пресета (preset.rating)
+  // Это оценка качества настроек печати для конкретного пресета
+  // Показывается у каждого пресета индивидуально
 
   return (
     <div className="space-y-6">
@@ -176,28 +198,45 @@ export const FilamentDetailPage: React.FC = () => {
               </span>
             </div>
 
-            {/* Статистика */}
+            {/* Статистика материала */}
             <div className="flex items-center space-x-6 text-lg mb-4">
-              {avgRating !== null && (
-                <span className="flex items-center text-gray-300">
+              {/* Рейтинг материала (из отзывов) */}
+              {filamentRating !== null && (
+                <span className="flex items-center text-gray-300" title="Рейтинг материала">
                   <Star className="w-5 h-5 mr-2 text-yellow-400 fill-current" />
-                  <span className="font-bold text-white">{avgRating.toFixed(1)}</span>
+                  <span className="font-bold text-white">{filamentRating.toFixed(1)}</span>
+                  {ratingStats && ratingStats.total_reviews > 0 && (
+                    <span className="text-gray-400 text-sm ml-1">({ratingStats.total_reviews})</span>
+                  )}
                 </span>
               )}
-              {successRate !== null && (
-                <span className="flex items-center text-gray-300">
+              {/* Успешность печати (из отзывов) */}
+              {filamentSuccessRate !== null && (
+                <span className="flex items-center text-gray-300" title="Процент успешных печатей с этим материалом">
                   <CheckCircle className="w-5 h-5 mr-2 text-green-400" />
-                  <span className="font-bold text-green-400">{Math.round(successRate)}% успеха</span>
+                  <span className="font-bold text-green-400">{filamentSuccessRate.toFixed(1)}% успеха</span>
+                  {ratingStats && ratingStats.total_reviews > 0 && (
+                    <span className="text-gray-400 text-sm ml-1">из {ratingStats.total_reviews} отзывов</span>
+                  )}
                 </span>
               )}
-              <span className="flex items-center text-gray-300">
+              {/* Количество пресетов */}
+              <span className="flex items-center text-gray-300" title="Количество пресетов настроек">
                 <TrendingUp className="w-5 h-5 mr-2 text-blue-400" />
                 <span className="font-bold text-white">{presetsData?.total || 0} пресетов</span>
               </span>
-              <span className="flex items-center text-gray-300">
+              {/* Просмотры */}
+              <span className="flex items-center text-gray-300" title="Количество просмотров">
                 <Package className="w-5 h-5 mr-2 text-purple-400" />
                 <span className="font-bold text-white">{filament.views_count || 0} просмотров</span>
               </span>
+              {/* Количество отзывов */}
+              {ratingStats && ratingStats.total_reviews > 0 && (
+                <span className="flex items-center text-gray-300" title="Количество отзывов о материале">
+                  <MessageCircle className="w-5 h-5 mr-2 text-purple-400" />
+                  <span className="font-bold text-white">{ratingStats.total_reviews} отзывов</span>
+                </span>
+              )}
             </div>
 
             {/* Описание */}
@@ -359,7 +398,7 @@ export const FilamentDetailPage: React.FC = () => {
             }`}
           >
             <MessageCircle className="w-5 h-5 inline mr-2" />
-            Отзывы [ЗАГЛУШКА] (0)
+            Отзывы ({ratingStats?.total_reviews || 0})
           </button>
         </div>
 
@@ -394,6 +433,21 @@ export const FilamentDetailPage: React.FC = () => {
                       </div>
                     )}
                     <span className="text-purple-300 font-semibold">Производитель</span>
+                    {/* Рейтинг и успешность официального пресета */}
+                    <div className="flex items-center space-x-2">
+                      {officialPreset.rating !== null && officialPreset.rating !== undefined && (
+                        <div className="flex items-center space-x-1" title="Рейтинг этого пресета настроек">
+                          <Star className="w-4 h-4 text-yellow-400 fill-current" />
+                          <span className="text-white font-semibold">{officialPreset.rating.toFixed(1)}</span>
+                        </div>
+                      )}
+                      {officialPreset.success_rate !== null && officialPreset.success_rate !== undefined && (
+                        <div className="flex items-center space-x-1" title="Процент успешных печатей с этим пресетом">
+                          <CheckCircle className="w-4 h-4 text-green-400" />
+                          <span className="text-green-400 text-sm font-semibold">{officialPreset.success_rate.toFixed(1)}%</span>
+                        </div>
+                      )}
+                    </div>
                   </div>
                 </div>
                 <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
@@ -581,13 +635,23 @@ export const FilamentDetailPage: React.FC = () => {
                             </div>
                           )}
                           <div className="text-right ml-4">
-                            <div className="flex items-center space-x-2 mb-2">
-                              <Star className="w-5 h-5 text-yellow-400 fill-current" />
-                              <span className="text-white font-bold">{preset.rating?.toFixed(1) || '4.8'}</span>
-                            </div>
-                            <p className="text-green-400 text-sm font-semibold">
-                              {Math.round(85 + ((preset.rating || 4.0) - 4.0) * 10)}% успеха
-                            </p>
+                            {/* Рейтинг пресета (отдельный от рейтинга материала) */}
+                            {preset.rating !== null && preset.rating !== undefined ? (
+                              <div className="flex items-center space-x-2 mb-2" title="Рейтинг этого пресета настроек">
+                                <Star className="w-5 h-5 text-yellow-400 fill-current" />
+                                <span className="text-white font-bold">{preset.rating.toFixed(1)}</span>
+                              </div>
+                            ) : (
+                              <div className="mb-2 text-gray-500 text-sm">Нет рейтинга</div>
+                            )}
+                            {/* Успешность пресета */}
+                            {preset.success_rate !== null && preset.success_rate !== undefined && (
+                              <div className="flex items-center space-x-1 mb-1" title="Процент успешных печатей с этим пресетом">
+                                <CheckCircle className="w-4 h-4 text-green-400" />
+                                <span className="text-green-400 text-sm font-semibold">{preset.success_rate.toFixed(1)}%</span>
+                              </div>
+                            )}
+                            {/* Использования пресета */}
                             <p className="text-gray-400 text-xs">{preset.usage_count} использований</p>
                           </div>
                         </div>
@@ -773,10 +837,112 @@ export const FilamentDetailPage: React.FC = () => {
         )}
 
         {activeTab === 'reviews' && (
-          <div className="text-center py-12 text-gray-400">
-            <MessageCircle className="w-16 h-16 mx-auto mb-4 opacity-50" />
-            <p className="text-xl">Отзывы будут доступны после реализации API</p>
+          <div className="space-y-6">
+            {/* Заголовок и кнопка создания отзыва */}
+            <div className="flex items-center justify-between">
+              <div>
+                <h3 className="text-xl font-bold text-white mb-2">
+                  Отзывы пользователей
+                </h3>
+                {ratingStats && ratingStats.total_reviews > 0 && (
+                  <div className="flex items-center space-x-4 text-sm text-gray-400">
+                    {ratingStats.avg_rating && (
+                      <div className="flex items-center space-x-1">
+                        <Star className="w-4 h-4 text-yellow-400 fill-current" />
+                        <span className="text-white font-semibold">{ratingStats.avg_rating.toFixed(1)}</span>
+                        <span>из 5.0</span>
+                      </div>
+                    )}
+                    {ratingStats.success_rate !== null && (
+                      <div className="flex items-center space-x-1">
+                        <CheckCircle className="w-4 h-4 text-green-400" />
+                        <span>{ratingStats.success_rate.toFixed(1)}% успешных печатей</span>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+              {user && (
+                <button
+                  onClick={() => {
+                    setEditingReview(null);
+                    setShowCreateReviewModal(true);
+                  }}
+                  className="px-6 py-3 bg-purple-600 hover:bg-purple-700 text-white rounded-xl transition-colors font-semibold flex items-center space-x-2"
+                >
+                  <MessageCircle className="w-5 h-5" />
+                  <span>Оставить отзыв</span>
+                </button>
+              )}
+            </div>
+
+            {/* Список отзывов */}
+            {isLoadingReviews ? (
+              <div className="text-center py-12 text-gray-400">Загрузка отзывов...</div>
+            ) : reviewsData && reviewsData.items.length > 0 ? (
+              <>
+                <div className="space-y-4">
+                  {reviewsData.items.map((review) => (
+                    <ReviewCard
+                      key={review.id}
+                      review={review}
+                      isOwn={user?.id === review.user_id}
+                      onEdit={handleEditReview}
+                      onDelete={handleDeleteReview}
+                    />
+                  ))}
+                </div>
+
+                {/* Пагинация */}
+                {reviewsData.pages > 1 && (
+                  <div className="flex items-center justify-center space-x-2 pt-6">
+                    <button
+                      onClick={() => setReviewsPage((p) => Math.max(1, p - 1))}
+                      disabled={reviewsPage === 1}
+                      className="px-4 py-2 bg-white/10 hover:bg-white/20 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-xl transition-colors"
+                    >
+                      Назад
+                    </button>
+                    <span className="text-gray-300">
+                      Страница {reviewsPage} из {reviewsData.pages}
+                    </span>
+                    <button
+                      onClick={() => setReviewsPage((p) => Math.min(reviewsData.pages, p + 1))}
+                      disabled={reviewsPage >= reviewsData.pages}
+                      className="px-4 py-2 bg-white/10 hover:bg-white/20 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-xl transition-colors"
+                    >
+                      Вперёд
+                    </button>
+                  </div>
+                )}
+              </>
+            ) : (
+              <div className="text-center py-12 text-gray-400">
+                <MessageCircle className="w-16 h-16 mx-auto mb-4 opacity-50" />
+                <p className="text-xl mb-2">Пока нет отзывов</p>
+                {user && (
+                  <p className="text-sm">
+                    Станьте первым, кто оставит отзыв об этом материале!
+                  </p>
+                )}
+              </div>
+            )}
           </div>
+        )}
+
+        {/* Модальное окно создания/редактирования отзыва */}
+        {showCreateReviewModal && (
+          <CreateReviewModal
+            filamentId={Number(id)}
+            review={editingReview}
+            onClose={() => {
+              setShowCreateReviewModal(false);
+              setEditingReview(null);
+            }}
+            onSuccess={() => {
+              setReviewsPage(1); // Возвращаемся на первую страницу
+            }}
+          />
         )}
       </div>
     </div>

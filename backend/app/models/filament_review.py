@@ -12,6 +12,7 @@ from app.db.base import Base
 if TYPE_CHECKING:
     from app.models.filament import Filament
     from app.models.user import User
+    from app.models.preset import Preset
 
 
 class FilamentReview(Base):
@@ -25,6 +26,10 @@ class FilamentReview(Base):
     # Foreign keys
     filament_id: Mapped[int] = mapped_column(ForeignKey("filaments.id"), index=True)
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    preset_id: Mapped[int | None] = mapped_column(
+        ForeignKey("presets.id"), nullable=True, index=True
+    )
+    # preset_id: к какому пресету относится отзыв (None если отзыв о филаменте в целом)
 
     # Review data
     success: Mapped[bool] = mapped_column(Boolean, nullable=False)
@@ -49,6 +54,7 @@ class FilamentReview(Base):
     # Relationships
     filament: Mapped["Filament"] = relationship("Filament", back_populates="reviews")
     user: Mapped["User"] = relationship("User", back_populates="filament_reviews")
+    preset: Mapped["Preset | None"] = relationship("Preset", foreign_keys=[preset_id])
 
     def __repr__(self) -> str:
         """String representation."""

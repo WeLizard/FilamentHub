@@ -8,7 +8,7 @@ from app.api.v1.endpoints import (
     brand_requests,
     brands,
     calculator,
-    # filament_reviews,
+    filament_reviews,
     filaments,
     presets,
     printer_requests,
@@ -33,5 +33,5 @@ api_router.include_router(calculator.router)
 api_router.include_router(spoolman.router)
 api_router.include_router(admin.router)
 api_router.include_router(saved_presets.router)
-# api_router.include_router(filament_reviews.router)  # TODO: доделать
+api_router.include_router(filament_reviews.router)
 

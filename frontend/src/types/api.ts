@@ -104,6 +104,7 @@ export interface Preset {
   retraction_speed: number | null;
   orcaslicer_settings: Record<string, any> | null; // Расширенные параметры OrcaSlicer в формате JSON
   rating: number | null;
+  success_rate: number | null; // Процент успешных печатей (0-100)
   usage_count: number;
   active: boolean;
   moderation_status: string;
@@ -112,6 +113,7 @@ export interface Preset {
   source?: 'own' | 'saved'; // For UI: 'own' = created by user, 'saved' = added from catalog
   user_id?: number | null;
   printers?: Printer[]; // Список принтеров, для которых подходит этот пресет
+  is_saved?: boolean; // Для UI: сохранен ли пресет пользователем (из available-presets эндпоинта)
 }
 
 export interface User {
@@ -199,4 +201,34 @@ export interface BrandRequest {
   rejection_reason: string | null;
   created_at: string;
   updated_at: string;
+}
+
+export interface FilamentReview {
+  id: number;
+  filament_id: number;
+  user_id: number;
+  preset_id: number | null;
+  preset_name: string | null;
+  username: string | null;
+  success: boolean;
+  rating: number; // 1.0 - 5.0
+  comment: string | null;
+  printer_model: string | null;
+  active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface FilamentRatingStats {
+  avg_rating: number | null;
+  total_reviews: number;
+  success_rate: number | null; // 0.0 - 100.0
+  rating_distribution: Record<number, number>; // {1: count, 2: count, ...}
+}
+
+export interface UserSavedPreset {
+  id: number;
+  user_id: number;
+  preset_id: number;
+  saved_at: string; // ISO 8601 datetime string
 }

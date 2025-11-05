@@ -29,7 +29,7 @@ import {
   Printer,
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
-import { presetsAPI, filamentsAPI, brandsAPI, savedPresetsAPI } from '../api/client';
+import { presetsAPI, filamentsAPI, brandsAPI, savedPresetsAPI, filamentReviewsAPI } from '../api/client';
 import api from '../api/client';
 import { CreatePresetModal } from '../components/CreatePresetModal';
 import { CreatePrinterRequestModal } from '../components/CreatePrinterRequestModal';
@@ -64,13 +64,36 @@ export const ProfilePage: React.FC = () => {
   });
 
   // Загружаем детали сохранённых пресетов
-  const savedPresetIds = savedPresetsData?.items.map(sp => sp.preset_id) || [];
+  const savedPresetIds = useMemo(() => {
+    if (!savedPresetsData?.items) return [];
+    // Сортируем по saved_at (новые первыми) для стабильности
+    const sorted = [...savedPresetsData.items].sort((a, b) => {
+      const dateA = new Date(a.saved_at).getTime();
+      const dateB = new Date(b.saved_at).getTime();
+      return dateB - dateA; // Новые первыми
+    });
+    return sorted.map(sp => sp.preset_id);
+  }, [savedPresetsData]);
+  
   const { data: savedPresetsDetails } = useQuery({
     queryKey: ['saved-presets-details', savedPresetIds],
     queryFn: async () => {
-      const details = await Promise.all(
+      // Используем Promise.allSettled для обработки ошибок
+      const results = await Promise.allSettled(
         savedPresetIds.map(presetId => presetsAPI.get(presetId))
       );
+      // Фильтруем успешные запросы
+      const details = results
+        .filter((result): result is PromiseFulfilledResult<any> => result.status === 'fulfilled')
+        .map(result => result.value)
+        .filter(p => p !== null && p !== undefined);
+      
+      // Логируем ошибки для отладки
+      const errors = results.filter(result => result.status === 'rejected');
+      if (errors.length > 0) {
+        console.warn('Некоторые пресеты не удалось загрузить:', errors);
+      }
+      
       return details;
     },
     enabled: savedPresetIds.length > 0,
@@ -84,6 +107,34 @@ export const ProfilePage: React.FC = () => {
   }, [userPresetsData, savedPresetsDetails]);
 
   const userPresets = allMyPresets;
+
+  // Загружаем отзывы пользователя
+  const { data: userReviewsData } = useQuery({
+    queryKey: ['user-reviews', user?.id],
+    queryFn: () => filamentReviewsAPI.getMyReviews({ page: 1, size: 1000, active_only: true }),
+    enabled: !!user?.id,
+  });
+
+  // Вычисляем статистику из отзывов
+  const reviewsStats = useMemo(() => {
+    if (!userReviewsData || userReviewsData.items.length === 0) {
+      return {
+        successCount: 0,
+        avgRating: null,
+        totalReviews: 0,
+      };
+    }
+
+    const reviews = userReviewsData.items;
+    const successCount = reviews.filter(r => r.success).length;
+    const avgRating = reviews.reduce((sum, r) => sum + r.rating, 0) / reviews.length;
+
+    return {
+      successCount,
+      avgRating: avgRating.toFixed(1),
+      totalReviews: reviews.length,
+    };
+  }, [userReviewsData]);
 
   // Мутация для удаления пресета (созданного пользователем)
   const deletePresetMutation = useMutation({
@@ -249,7 +300,7 @@ export const ProfilePage: React.FC = () => {
             <StatCard
               icon={CheckCircle}
               label="Успешных печатей"
-              value="156 [ЗАГЛУШКА]"
+              value={reviewsStats.successCount.toString()}
               color="from-purple-500/20 to-pink-500/20"
               borderColor="border-purple-500/30"
               iconColor="text-green-400"
@@ -264,8 +315,8 @@ export const ProfilePage: React.FC = () => {
             />
             <StatCard
               icon={Package}
-              label="Использованных материалов"
-              value="23 [ЗАГЛУШКА]"
+              label="Оставлено отзывов"
+              value={reviewsStats.totalReviews.toString()}
               color="from-green-500/20 to-emerald-500/20"
               borderColor="border-green-500/30"
               iconColor="text-green-400"
@@ -273,7 +324,7 @@ export const ProfilePage: React.FC = () => {
             <StatCard
               icon={Star}
               label="Средний рейтинг"
-              value="4.7 [ЗАГЛУШКА]"
+              value={reviewsStats.avgRating || '—'}
               color="from-yellow-500/20 to-orange-500/20"
               borderColor="border-yellow-500/30"
               iconColor="text-yellow-400"

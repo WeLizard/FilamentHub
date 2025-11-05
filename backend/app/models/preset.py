@@ -79,7 +79,9 @@ class Preset(Base):
 
     # Rating & usage stats
     rating: Mapped[float | None] = mapped_column(Float, nullable=True)
-    # rating: средняя оценка пользователей (1-5)
+    # rating: средняя оценка пользователей (1-5), вычисляется из отзывов
+    success_rate: Mapped[float | None] = mapped_column(Float, nullable=True)
+    # success_rate: процент успешных печатей (0-100), вычисляется из отзывов
     usage_count: Mapped[int] = mapped_column(Integer, default=0)
     # usage_count: сколько раз использовали
 

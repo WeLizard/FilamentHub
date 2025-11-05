@@ -9,7 +9,7 @@ from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.core.dependencies import get_current_active_user, get_current_brand_user
+from app.core.dependencies import get_current_active_user, get_current_brand_user, get_current_active_user_optional
 from app.db.session import get_db
 from app.models.preset import Preset, PresetModerationStatus
 from app.models.preset_printer import PresetPrinter
@@ -110,24 +110,49 @@ async def list_presets(
 async def get_preset(
     preset_id: int,
     db: Annotated[AsyncSession, Depends(get_db)],
+    current_user: User | None = Depends(get_current_active_user_optional),
 ) -> PresetResponse:
     """Получить пресет по ID."""
+    # Загружаем пресет БЕЗ printer_links (таблица может не существовать)
     result = await db.execute(
-        select(Preset)
-        .options(selectinload(Preset.printer_links).selectinload(PresetPrinter.printer))
-        .where(Preset.id == preset_id)
+        select(Preset).where(Preset.id == preset_id)
     )
     preset = result.scalar_one_or_none()
 
     if not preset:
         raise HTTPException(status_code=404, detail="Preset not found")
 
-    # Преобразуем пресет в ответ с принтерами
+    # Если пресет не активен и пользователь не является владельцем - не показываем
+    if not preset.active:
+        # Проверяем, является ли пользователь владельцем или сохраненным у него
+        can_access = False
+        if current_user:
+            # Владелец пресета
+            if preset.user_id == current_user.id:
+                can_access = True
+            # Или сохранен у пользователя
+            else:
+                from app.models.user_saved_preset import UserSavedPreset
+                saved_check = await db.execute(
+                    select(UserSavedPreset).where(
+                        UserSavedPreset.user_id == current_user.id,
+                        UserSavedPreset.preset_id == preset_id,
+                    )
+                )
+                if saved_check.scalar_one_or_none():
+                    can_access = True
+        
+        if not can_access:
+            raise HTTPException(status_code=404, detail="Preset not found")
+
+    # Если пресет не одобрен и пользователь не является владельцем - не показываем
+    if preset.moderation_status != PresetModerationStatus.APPROVED and not preset.is_official:
+        if current_user and preset.user_id != current_user.id:
+            raise HTTPException(status_code=404, detail="Preset not found")
+
+    # Преобразуем пресет в ответ (без printers, так как таблица может не существовать)
     preset_dict = PresetResponse.model_validate(preset).model_dump()
-    preset_dict["printers"] = [
-        PrinterResponse.model_validate(link.printer).model_dump()
-        for link in preset.printer_links
-    ]
+    preset_dict["printers"] = []  # Пустой массив, так как printer_links не загружаем
     return PresetResponse(**preset_dict)
 
 
