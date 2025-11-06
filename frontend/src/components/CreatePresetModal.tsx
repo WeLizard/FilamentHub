@@ -13,6 +13,7 @@ import { CustomSelect } from './CustomSelect';
 import type { FilamentVisualSettings } from '../types/api';
 import { Dropdown } from './Dropdown';
 import { useClickOutside } from '../hooks/useClickOutside';
+import { useHeaderVisible } from '../hooks/useHeaderVisible';
 import { ColorMaterialSection } from './ColorMaterialSection';
 import { HSLColorPicker } from './HSLColorPicker';
 import { FilamentPreview } from './FilamentPreview';
@@ -105,7 +106,7 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
   const [pressureAdvance, setPressureAdvance] = useState<number | ''>('');
   const [enablePressureAdvance, setEnablePressureAdvance] = useState(false);
   const [adaptivePressureAdvance, setAdaptivePressureAdvance] = useState(false);
-  const [adaptivePABridges, setAdaptivePABridges] = useState(false);
+  const [adaptivePABridges, setAdaptivePABridges] = useState<number | ''>('');
   const [adaptivePAOverhangs, setAdaptivePAOverhangs] = useState(false);
   const [chamberTemp, setChamberTemp] = useState<number | ''>('');
   const [enableChamberControl, setEnableChamberControl] = useState(false);
@@ -382,7 +383,199 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
           setFilamentEndGcode('');
         }
         
+        // Заметки
+        if (settings.filament_notes) {
+          // filament_notes может быть строкой или массивом строк
+          if (Array.isArray(settings.filament_notes)) {
+            setFilamentNotes(settings.filament_notes.join('\n'));
+          } else if (typeof settings.filament_notes === 'string') {
+            setFilamentNotes(settings.filament_notes);
+          } else {
+            setFilamentNotes('');
+          }
+        } else {
+          setFilamentNotes('');
+        }
+        
+        // === ВКЛАДКА "ПРОФИЛЬ ПРУТКА" - дополнительные параметры ===
+        setNozzleTempInitialLayer(settings.nozzle_temperature_initial_layer?.[0] ? Number(settings.nozzle_temperature_initial_layer[0]) : '');
+        setAdaptiveVolumetricSpeed(settings.filament_adaptive_volumetric_speed?.[0] === '1' || settings.filament_adaptive_volumetric_speed?.[0] === 1);
+        setVolumetricSpeedCoefficients(settings.volumetric_speed_coefficients?.[0] ? String(settings.volumetric_speed_coefficients[0]) : '');
+        // Процентные значения (убираем % при загрузке)
+        const shrink = settings.filament_shrink?.[0];
+        setFilamentShrink(typeof shrink === 'string' ? shrink.replace('%', '') : shrink ? String(shrink).replace('%', '') : '');
+        const shrinkZ = settings.filament_shrinkage_compensation_z?.[0];
+        setFilamentShrinkageCompensationZ(typeof shrinkZ === 'string' ? shrinkZ.replace('%', '') : shrinkZ ? String(shrinkZ).replace('%', '') : '');
+        setDefaultFilamentColour(settings.default_filament_colour?.[0] ? String(settings.default_filament_colour[0]) : '');
+        setFilamentAdhesivenessCategory(settings.filament_adhesiveness_category?.[0] ? Number(settings.filament_adhesiveness_category[0]) : '');
+        setFilamentIsSupport(settings.filament_is_support?.[0] === '1' || settings.filament_is_support?.[0] === 1);
+        setFilamentSoluble(settings.filament_soluble?.[0] === '1' || settings.filament_soluble?.[0] === 1);
+        setFilamentPrintable(settings.filament_printable?.[0] ? Number(settings.filament_printable[0]) : '');
+        
+        // Ретракция (дополнительные параметры)
+        setDeretractionSpeed(settings.filament_deretraction_speed?.[0] ? Number(settings.filament_deretraction_speed[0]) : '');
+        setRetractionMinimumTravel(settings.filament_retraction_minimum_travel?.[0] ? Number(settings.filament_retraction_minimum_travel[0]) : '');
+        const retractBeforeWipeVal = settings.filament_retract_before_wipe?.[0];
+        setRetractBeforeWipe(typeof retractBeforeWipeVal === 'string' ? retractBeforeWipeVal.replace('%', '') : retractBeforeWipeVal ? String(retractBeforeWipeVal).replace('%', '') : '');
+        setRetractWhenChangingLayer(settings.filament_retract_when_changing_layer?.[0] === '1' || settings.filament_retract_when_changing_layer?.[0] === 1);
+        setRetractRestartExtra(settings.filament_retract_restart_extra?.[0] ? Number(settings.filament_retract_restart_extra[0]) : '');
+        
+        // Lift (подъем Z)
+        setFilamentZHop(settings.filament_z_hop?.[0] ? Number(settings.filament_z_hop[0]) : '');
+        setFilamentZHopTypes(settings.filament_z_hop_types?.[0] ? String(settings.filament_z_hop_types[0]) : '');
+        setRetractLiftAbove(settings.filament_retract_lift_above?.[0] ? Number(settings.filament_retract_lift_above[0]) : '');
+        setRetractLiftBelow(settings.filament_retract_lift_below?.[0] ? Number(settings.filament_retract_lift_below[0]) : '');
+        setRetractLiftEnforce(settings.filament_retract_lift_enforce?.[0] ? String(settings.filament_retract_lift_enforce[0]) : '');
+        
+        // Wipe
+        setFilamentWipe(settings.filament_wipe?.[0] === '1' || settings.filament_wipe?.[0] === 1);
+        setFilamentWipeDistance(settings.filament_wipe_distance?.[0] ? Number(settings.filament_wipe_distance[0]) : '');
+        setFilamentFlushTemp(settings.filament_flush_temp?.[0] ? Number(settings.filament_flush_temp[0]) : '');
+        setFilamentFlushVolumetricSpeed(settings.filament_flush_volumetric_speed?.[0] ? Number(settings.filament_flush_volumetric_speed[0]) : '');
+        
+        // Pressure Advance (дополнительные параметры)
+        setAdaptivePressureAdvance(settings.adaptive_pressure_advance?.[0] === '1' || settings.adaptive_pressure_advance?.[0] === 1);
+        setAdaptivePABridges(settings.adaptive_pressure_advance_bridges?.[0] ? Number(settings.adaptive_pressure_advance_bridges[0]) : '');
+        setAdaptivePAOverhangs(settings.adaptive_pressure_advance_overhangs?.[0] === '1' || settings.adaptive_pressure_advance_overhangs?.[0] === 1);
+        
+        // === ВКЛАДКА "ОХЛАЖДЕНИЕ" - дополнительные параметры ===
+        setFanCoolingLayerTime(settings.fan_cooling_layer_time?.[0] ? Number(settings.fan_cooling_layer_time[0]) : '');
+        setFanMaxSpeedLayerTime(settings.slow_down_layer_time?.[0] ? Number(settings.slow_down_layer_time[0]) : ''); // slow_down_layer_time используется для fanMaxSpeedLayerTime
+        setFullFanSpeedLayer(settings.full_fan_speed_layer?.[0] ? Number(settings.full_fan_speed_layer[0]) : '');
+        setCloseFanFirstXLayers(settings.close_fan_the_first_x_layers?.[0] ? Number(settings.close_fan_the_first_x_layers[0]) : '');
+        setSlowDownForLayerCooling(settings.slow_down_for_layer_cooling?.[0] === '1' || settings.slow_down_for_layer_cooling?.[0] === 1);
+        setEnableOverhangBridgeFan(settings.enable_overhang_bridge_fan?.[0] === '1' || settings.enable_overhang_bridge_fan?.[0] === 1);
+        setOverhangFanSpeed(settings.overhang_fan_speed?.[0] ? Number(settings.overhang_fan_speed[0]) : '');
+        const overhangThreshold = settings.overhang_fan_threshold?.[0];
+        setOverhangFanThreshold(typeof overhangThreshold === 'string' ? overhangThreshold.replace('%', '') : overhangThreshold ? String(overhangThreshold).replace('%', '') : '');
+        setInternalBridgeFanSpeed(settings.internal_bridge_fan_speed?.[0] ? Number(settings.internal_bridge_fan_speed[0]) : '');
+        setIroningFanSpeed(settings.ironing_fan_speed?.[0] ? Number(settings.ironing_fan_speed[0]) : '');
+        setSupportMaterialInterfaceFanSpeed(settings.support_material_interface_fan_speed?.[0] ? Number(settings.support_material_interface_fan_speed[0]) : '');
+        setAdditionalCoolingFanSpeed(settings.additional_cooling_fan_speed?.[0] ? Number(settings.additional_cooling_fan_speed[0]) : '');
+        setEnableExhaustFan(settings.enable_exhaust_fan?.[0] === '1' || settings.enable_exhaust_fan?.[0] === 1 || !!settings.during_print_exhaust_fan_speed || !!settings.complete_print_exhaust_fan_speed);
+        setDuringPrintExhaustFanSpeed(settings.during_print_exhaust_fan_speed?.[0] ? Number(settings.during_print_exhaust_fan_speed[0]) : '');
+        setCompletePrintExhaustFanSpeed(settings.complete_print_exhaust_fan_speed?.[0] ? Number(settings.complete_print_exhaust_fan_speed[0]) : '');
+        setActivateAirFiltration(settings.activate_air_filtration?.[0] === '1' || settings.activate_air_filtration?.[0] === 1);
+        
+        // === ВКЛАДКА "ПЕРЕОПРЕДЕЛЕНИЕ ПАРАМЕТРОВ" ===
+        setSlowDownMinSpeed(settings.slow_down_min_speed?.[0] ? Number(settings.slow_down_min_speed[0]) : '');
+        setDontSlowDownOuterWall(settings.dont_slow_down_outer_wall?.[0] === '1' || settings.dont_slow_down_outer_wall?.[0] === 1);
+        setRetractionDistancesWhenCut(settings.filament_retraction_distances_when_cut?.[0] ? String(settings.filament_retraction_distances_when_cut[0]) : '');
+        setLongRetractionsWhenCut(settings.filament_long_retractions_when_cut?.[0] ? String(settings.filament_long_retractions_when_cut[0]) : '');
+        setLongRetractionsWhenEC(settings.long_retractions_when_ec?.[0] === '1' || settings.long_retractions_when_ec?.[0] === 1);
+        setRetractionDistancesWhenEC(settings.retraction_distances_when_ec?.[0] ? Number(settings.retraction_distances_when_ec[0]) : '');
+        
+        // === ВКЛАДКА "ДОПОЛНИТЕЛЬНО" - дополнительные параметры ===
+        setFilamentMultitoolRamming(settings.filament_multitool_ramming?.[0] === '1' || settings.filament_multitool_ramming?.[0] === 1);
+        setFilamentMultitoolRammingFlow(settings.filament_multitool_ramming_flow?.[0] ? Number(settings.filament_multitool_ramming_flow[0]) : '');
+        setFilamentMultitoolRammingVolume(settings.filament_multitool_ramming_volume?.[0] ? Number(settings.filament_multitool_ramming_volume[0]) : '');
+        setFilamentToolchangeDelay(settings.filament_toolchange_delay?.[0] ? Number(settings.filament_toolchange_delay[0]) : '');
+        setFilamentLoadingSpeed(settings.filament_loading_speed?.[0] ? Number(settings.filament_loading_speed[0]) : '');
+        setFilamentLoadingSpeedStart(settings.filament_loading_speed_start?.[0] ? Number(settings.filament_loading_speed_start[0]) : '');
+        setFilamentUnloadingSpeed(settings.filament_unloading_speed?.[0] ? Number(settings.filament_unloading_speed[0]) : '');
+        setFilamentUnloadingSpeedStart(settings.filament_unloading_speed_start?.[0] ? Number(settings.filament_unloading_speed_start[0]) : '');
+        setFilamentChangeLength(settings.filament_change_length?.[0] ? Number(settings.filament_change_length[0]) : '');
+        setFilamentCoolingInitialSpeed(settings.filament_cooling_initial_speed?.[0] ? Number(settings.filament_cooling_initial_speed[0]) : '');
+        setFilamentCoolingFinalSpeed(settings.filament_cooling_final_speed?.[0] ? Number(settings.filament_cooling_final_speed[0]) : '');
+        setFilamentCoolingMoves(settings.filament_cooling_moves?.[0] ? Number(settings.filament_cooling_moves[0]) : '');
+        setFilamentStampingDistance(settings.filament_stamping_distance?.[0] ? Number(settings.filament_stamping_distance[0]) : '');
+        setFilamentStampingLoadingSpeed(settings.filament_stamping_loading_speed?.[0] ? Number(settings.filament_stamping_loading_speed[0]) : '');
+        setFilamentMinimalPurgeOnWipeTower(settings.filament_minimal_purge_on_wipe_tower?.[0] ? Number(settings.filament_minimal_purge_on_wipe_tower[0]) : '');
+        setPelletFlowCoefficient(settings.pellet_flow_coefficient?.[0] ? Number(settings.pellet_flow_coefficient[0]) : '');
+        
+        // === ВКЛАДКА "ЭКСТРУДЕР ММ" ===
+        setFilamentExtruderVariant(settings.filament_extruder_variant?.[0] ? String(settings.filament_extruder_variant[0]) : '');
+        setRequiredNozzleHRC(settings.required_nozzle_HRC?.[0] ? Number(settings.required_nozzle_HRC[0]) : '');
+        
+        // === ВКЛАДКА "ЗАВИСИМОСТИ" ===
+        if (settings.compatible_printers && Array.isArray(settings.compatible_printers)) {
+          setCompatiblePrinters(settings.compatible_printers.join(', '));
+        } else {
+          setCompatiblePrinters('');
+        }
+        setCompatiblePrintersCondition(settings.compatible_printers_condition?.[0] ? String(settings.compatible_printers_condition[0]) : '');
+        if (settings.compatible_prints && Array.isArray(settings.compatible_prints)) {
+          setCompatiblePrints(settings.compatible_prints.join(', '));
+        } else {
+          setCompatiblePrints('');
+        }
+        setCompatiblePrintsCondition(settings.compatible_prints_condition?.[0] ? String(settings.compatible_prints_condition[0]) : '');
+        
         // showAdvancedSettings - устаревшая переменная, больше не используется (используем вкладки)
+      } else {
+        // Если нет orcaslicer_settings, сбрасываем все расширенные параметры
+        setFilamentNotes('');
+        setNozzleTempInitialLayer('');
+        setAdaptiveVolumetricSpeed(false);
+        setVolumetricSpeedCoefficients('');
+        setFilamentShrink('');
+        setFilamentShrinkageCompensationZ('');
+        setDefaultFilamentColour('');
+        setFilamentAdhesivenessCategory('');
+        setFilamentIsSupport(false);
+        setFilamentSoluble(false);
+        setFilamentPrintable('');
+        setDeretractionSpeed('');
+        setRetractionMinimumTravel('');
+        setRetractBeforeWipe('');
+        setRetractWhenChangingLayer(false);
+        setRetractRestartExtra('');
+        setFilamentZHop('');
+        setFilamentZHopTypes('');
+        setRetractLiftAbove('');
+        setRetractLiftBelow('');
+        setRetractLiftEnforce('');
+        setFilamentWipe(false);
+        setFilamentWipeDistance('');
+        setFilamentFlushTemp('');
+        setFilamentFlushVolumetricSpeed('');
+        setAdaptivePressureAdvance(false);
+        setAdaptivePABridges('');
+        setAdaptivePAOverhangs(false);
+        setFanCoolingLayerTime('');
+        setFanMaxSpeedLayerTime('');
+        setFullFanSpeedLayer('');
+        setCloseFanFirstXLayers('');
+        setSlowDownForLayerCooling(false);
+        setEnableOverhangBridgeFan(false);
+        setOverhangFanSpeed('');
+        setOverhangFanThreshold('');
+        setInternalBridgeFanSpeed('');
+        setIroningFanSpeed('');
+        setSupportMaterialInterfaceFanSpeed('');
+        setAdditionalCoolingFanSpeed('');
+        setEnableExhaustFan(false);
+        setDuringPrintExhaustFanSpeed('');
+        setCompletePrintExhaustFanSpeed('');
+        setActivateAirFiltration(false);
+        setSlowDownMinSpeed('');
+        setDontSlowDownOuterWall(false);
+        setRetractionDistancesWhenCut('');
+        setLongRetractionsWhenCut('');
+        setLongRetractionsWhenEC(false);
+        setRetractionDistancesWhenEC('');
+        setFilamentMultitoolRamming(false);
+        setFilamentMultitoolRammingFlow('');
+        setFilamentMultitoolRammingVolume('');
+        setFilamentToolchangeDelay('');
+        setFilamentLoadingSpeed('');
+        setFilamentLoadingSpeedStart('');
+        setFilamentUnloadingSpeed('');
+        setFilamentUnloadingSpeedStart('');
+        setFilamentChangeLength('');
+        setFilamentCoolingInitialSpeed('');
+        setFilamentCoolingFinalSpeed('');
+        setFilamentCoolingMoves('');
+        setFilamentStampingDistance('');
+        setFilamentStampingLoadingSpeed('');
+        setFilamentMinimalPurgeOnWipeTower('');
+        setPelletFlowCoefficient('');
+        setFilamentExtruderVariant('');
+        setRequiredNozzleHRC('');
+        setCompatiblePrinters('');
+        setCompatiblePrintersCondition('');
+        setCompatiblePrints('');
+        setCompatiblePrintsCondition('');
       }
       setSelectedFilamentId(preset.filament_id);
       // Инициализируем выбранные принтеры
@@ -410,18 +603,93 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
         setIsOfficial(true);
       }
       
-      // Сброс расширенных параметров
+      // Сброс расширенных параметров (все вкладки)
       setTempRangeLow('');
       setTempRangeHigh('');
+      setNozzleTempInitialLayer('');
+      setIdleTemperature('');
+      setSofteningTemperature('');
       setVolumetricSpeed('');
-      setFanMinSpeed('');
-      setFanMaxSpeed('');
+      setAdaptiveVolumetricSpeed(false);
+      setVolumetricSpeedCoefficients('');
+      setFilamentShrink('');
+      setFilamentShrinkageCompensationZ('');
+      setDefaultFilamentColour('');
+      setFilamentAdhesivenessCategory('');
+      setFilamentIsSupport(false);
+      setFilamentSoluble(false);
+      setFilamentPrintable('');
+      setDeretractionSpeed('');
+      setRetractionMinimumTravel('');
+      setRetractBeforeWipe('');
+      setRetractWhenChangingLayer(false);
+      setRetractRestartExtra('');
+      setFilamentZHop('');
+      setFilamentZHopTypes('');
+      setRetractLiftAbove('');
+      setRetractLiftBelow('');
+      setRetractLiftEnforce('');
+      setFilamentWipe(false);
+      setFilamentWipeDistance('');
+      setFilamentFlushTemp('');
+      setFilamentFlushVolumetricSpeed('');
       setPressureAdvance('');
       setEnablePressureAdvance(false);
+      setAdaptivePressureAdvance(false);
+      setAdaptivePABridges('');
+      setAdaptivePAOverhangs(false);
       setChamberTemp('');
       setEnableChamberControl(false);
+      setFanMinSpeed('');
+      setFanMaxSpeed('');
+      setFanCoolingLayerTime('');
+      setFanMaxSpeedLayerTime('');
+      setFullFanSpeedLayer('');
+      setCloseFanFirstXLayers('');
+      setReduceFanStopStartFreq(false);
+      setSlowDownForLayerCooling(false);
+      setEnableOverhangBridgeFan(false);
+      setOverhangFanSpeed('');
+      setOverhangFanThreshold('');
+      setInternalBridgeFanSpeed('');
+      setIroningFanSpeed('');
+      setSupportMaterialInterfaceFanSpeed('');
+      setAdditionalCoolingFanSpeed('');
+      setEnableExhaustFan(false);
+      setDuringPrintExhaustFanSpeed('');
+      setCompletePrintExhaustFanSpeed('');
+      setActivateAirFiltration(false);
+      setSlowDownMinSpeed('');
+      setDontSlowDownOuterWall(false);
+      setRetractionDistancesWhenCut('');
+      setLongRetractionsWhenCut('');
+      setLongRetractionsWhenEC(false);
+      setRetractionDistancesWhenEC('');
       setFilamentStartGcode('');
       setFilamentEndGcode('');
+      setFilamentMultitoolRamming(false);
+      setFilamentMultitoolRammingFlow('');
+      setFilamentMultitoolRammingVolume('');
+      setFilamentToolchangeDelay('');
+      setFilamentLoadingSpeed('');
+      setFilamentLoadingSpeedStart('');
+      setFilamentUnloadingSpeed('');
+      setFilamentUnloadingSpeedStart('');
+      setFilamentChangeLength('');
+      setFilamentCoolingInitialSpeed('');
+      setFilamentCoolingFinalSpeed('');
+      setFilamentCoolingMoves('');
+      setFilamentStampingDistance('');
+      setFilamentStampingLoadingSpeed('');
+      setFilamentMinimalPurgeOnWipeTower('');
+      setPelletFlowCoefficient('');
+      setFilamentExtruderVariant('');
+      setRequiredNozzleHRC('');
+      setCompatiblePrinters('');
+      setCompatiblePrintersCondition('');
+      setCompatiblePrints('');
+      setCompatiblePrintsCondition('');
+      setFilamentNotes(''); // Сброс заметок при создании нового пресета
       // showAdvancedSettings - устаревшая переменная, больше не используется (используем вкладки)
       
       setSelectedFilamentId(filamentId || null);
@@ -713,7 +981,7 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
     addParam('pressure_advance', pressureAdvance);
     addBoolParam('enable_pressure_advance', enablePressureAdvance);
     addBoolParam('adaptive_pressure_advance', adaptivePressureAdvance);
-    addBoolParam('adaptive_pressure_advance_bridges', adaptivePABridges);
+    addParam('adaptive_pressure_advance_bridges', adaptivePABridges);
     addBoolParam('adaptive_pressure_advance_overhangs', adaptivePAOverhangs);
 
     // === ВКЛАДКА "ОХЛАЖДЕНИЕ" ===
@@ -1051,9 +1319,10 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
   if (!isOpen) return null;
 
   const isLoading = createMutation.isPending || updateMutation.isPending || createFilamentMutation.isPending;
+  const isHeaderVisible = useHeaderVisible();
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm pt-20">
+    <div className={`fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm ${isHeaderVisible ? 'pt-[88px]' : ''}`}>
       <div 
         className="bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900 rounded-2xl w-full max-w-5xl max-h-[90vh] overflow-hidden flex flex-col border border-white/20 shadow-2xl"
         onClick={(e) => e.stopPropagation()}
@@ -1571,14 +1840,14 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                               <input
                                 type="text"
                                 value={newBrandName}
-                                onChange={(e) => setNewBrandName(e.target.value)}
+                                onChange={(e) => { setNewBrandName(e.target.value); }}
                                 placeholder="Название нового производителя..."
                           className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white placeholder-gray-400 placeholder:text-center focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all"
                         />
                         <input
                           type="text"
                           value={newBrandWebsite}
-                          onChange={(e) => setNewBrandWebsite(e.target.value)}
+                          onChange={(e) => { setNewBrandWebsite(e.target.value); }}
                           placeholder="Сайт производителя (необязательно)"
                           className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white placeholder-gray-400 placeholder:text-center focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all"
                         />
@@ -1595,7 +1864,7 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                     <input
                       type="text"
                       value={filamentName}
-                      onChange={(e) => setFilamentName(e.target.value)}
+                      onChange={(e) => { setFilamentName(e.target.value); }}
                       placeholder="Например: PLA+ Mate R24"
                       className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white placeholder-gray-400 placeholder:text-center focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all"
                     />
@@ -1818,7 +2087,7 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                             <input
                               type="checkbox"
                               checked={filamentVisualTransparency}
-                              onChange={(e) => setFilamentVisualTransparency(e.target.checked)}
+                              onChange={(e) => { setFilamentVisualTransparency(e.target.checked); }}
                               className="w-4 h-4 rounded border-white/20 bg-white/10 text-purple-500 focus:ring-purple-500"
                             />
                             <span>Прозрачный материал</span>
@@ -1847,7 +2116,7 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                       <input
                         type="number"
                         value={filamentDensity}
-                        onChange={(e) => setFilamentDensity(e.target.value === '' ? '' : Number(e.target.value))}
+                        onChange={(e) => { setFilamentDensity(e.target.value === '' ? '' : Number(e.target.value)); }}
                         placeholder={canEditDensity ? "Например: 1.24" : "Определяется по типу"}
                         disabled={!canEditDensity}
                         min={0.5}
@@ -1873,7 +2142,7 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                         <input
                           type="number"
                           value={filamentPricePerKg}
-                          onChange={(e) => setFilamentPricePerKg(e.target.value === '' ? '' : Number(e.target.value))}
+                          onChange={(e) => { setFilamentPricePerKg(e.target.value === '' ? '' : Number(e.target.value)); }}
                           placeholder="Например: 1500"
                           min={0}
                           step="10"
@@ -1885,7 +2154,7 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                         <input
                           type="number"
                           value={filamentSpoolWeight}
-                          onChange={(e) => setFilamentSpoolWeight(e.target.value === '' ? '' : Number(e.target.value))}
+                          onChange={(e) => { setFilamentSpoolWeight(e.target.value === '' ? '' : Number(e.target.value)); }}
                           placeholder="Например: 1000"
                           min={0}
                           step="50"
@@ -1900,7 +2169,7 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                     <label className="block text-gray-300 mb-2 text-sm font-medium">Описание материала</label>
                     <textarea
                       value={filamentDescription}
-                      onChange={(e) => setFilamentDescription(e.target.value)}
+                      onChange={(e) => { setFilamentDescription(e.target.value); }}
                       rows={3}
                       placeholder="Описание особенностей материала, характеристик, применения..."
                       className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white placeholder-gray-400 placeholder:text-center focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all resize-none"
@@ -1918,9 +2187,9 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
               <input
                 type="text"
                 value={name}
-                onChange={(e) => setName(e.target.value)}
+                onChange={(e) => { setName(e.target.value); }}
                 required
-                className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white placeholder-gray-400 placeholder:text-center focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all"
+                className={`w-full px-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white placeholder-gray-400 placeholder:text-center focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all `}
                 placeholder="Например: PLA Standard"
               />
             </div>
@@ -1981,7 +2250,7 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
             <label className="block text-gray-300 mb-2 text-sm font-medium">Описание</label>
             <textarea
               value={description}
-              onChange={(e) => setDescription(e.target.value)}
+              onChange={(e) => { setDescription(e.target.value); }}
               rows={3}
               className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all resize-none"
               placeholder="Описание настроек..."
@@ -1996,7 +2265,7 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                 type="checkbox"
                 id="isOfficial"
                 checked={isOfficial}
-                onChange={(e) => setIsOfficial(e.target.checked)}
+                onChange={(e) => { setIsOfficial(e.target.checked); }}
                 className="w-4 h-4 rounded border-white/20 bg-white/10 text-purple-500 focus:ring-purple-500"
               />
               <label htmlFor="isOfficial" className="text-gray-300 text-sm">
@@ -2017,104 +2286,104 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
 
           {/* Temperature Settings */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
-              <label className="block text-gray-300 mb-2 text-sm font-medium">
-                Температура сопла (°C) *
-              </label>
-              <input
-                type="number"
-                value={extruderTemp}
-                onChange={(e) => setExtruderTemp(Number(e.target.value))}
-                required
-                min={150}
-                max={300}
-                step="1"
-                className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all"
-              />
+              <div>
+                <label className="block text-gray-300 mb-2 text-sm font-medium">
+                  Температура сопла (°C) *
+                </label>
+                <input
+                  type="number"
+                  value={extruderTemp}
+                  onChange={(e) => { setExtruderTemp(Number(e.target.value)); }}
+                  required
+                  min={150}
+                  max={300}
+                  step="1"
+                  className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all"
+                />
+              </div>
+              <div>
+                <label className="block text-gray-300 mb-2 text-sm font-medium">
+                  Температура стола (°C) *
+                </label>
+                <input
+                  type="number"
+                  value={bedTemp}
+                  onChange={(e) => { setBedTemp(Number(e.target.value)); }}
+                  required
+                  min={0}
+                  max={120}
+                  step="1"
+                  className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all"
+                />
+              </div>
             </div>
-            <div>
-              <label className="block text-gray-300 mb-2 text-sm font-medium">
-                Температура стола (°C) *
-              </label>
-              <input
-                type="number"
-                value={bedTemp}
-                onChange={(e) => setBedTemp(Number(e.target.value))}
-                required
-                min={0}
-                max={120}
-                step="1"
-                className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all"
-              />
-            </div>
-          </div>
 
           {/* Speed Settings */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
-              <label className="block text-gray-300 mb-2 text-sm font-medium">Скорость печати (mm/s) *</label>
-              <input
-                type="number"
-                value={printSpeed}
-                onChange={(e) => setPrintSpeed(Number(e.target.value))}
-                required
-                min={10}
-                max={300}
-                step="1"
-                className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all"
-              />
+              <div>
+                <label className="block text-gray-300 mb-2 text-sm font-medium">Скорость печати (mm/s) *</label>
+                <input
+                  type="number"
+                  value={printSpeed}
+                  onChange={(e) => { setPrintSpeed(Number(e.target.value)); }}
+                  required
+                  min={10}
+                  max={300}
+                  step="1"
+                  className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all"
+                />
+              </div>
+              <div>
+                <label className="block text-gray-300 mb-2 text-sm font-medium">
+                  Скорость перемещений (mm/s)
+                </label>
+                <input
+                  type="number"
+                  value={travelSpeed}
+                  onChange={(e) => { setTravelSpeed(Number(e.target.value)); }}
+                  min={50}
+                  max={300}
+                  step="1"
+                  className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all"
+                />
+              </div>
             </div>
-            <div>
-              <label className="block text-gray-300 mb-2 text-sm font-medium">
-                Скорость перемещений (mm/s)
-              </label>
-              <input
-                type="number"
-                value={travelSpeed}
-                onChange={(e) => setTravelSpeed(Number(e.target.value))}
-                min={50}
-                max={300}
-                step="1"
-                className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all"
-              />
-            </div>
-          </div>
 
           {/* Layer and Flow Settings */}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <div>
-              <label className="block text-gray-300 mb-2 text-sm font-medium">Высота слоя (mm)</label>
-              <input
-                type="number"
-                value={layerHeight}
-                onChange={(e) => setLayerHeight(Number(e.target.value))}
-                min={0.05}
-                max={0.5}
-                step="0.05"
-                className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all"
-              />
-            </div>
-            <div>
-              <label className="block text-gray-300 mb-2 text-sm font-medium">Высота первого слоя (mm)</label>
-              <input
-                type="number"
-                value={firstLayerHeight !== '' ? firstLayerHeight : ''}
-                onChange={(e) => setFirstLayerHeight(e.target.value === '' ? '' : Number(e.target.value))}
-                min={0.05}
-                max={0.5}
-                step="0.05"
-                placeholder="0.25"
-                className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all"
-              />
-            </div>
-            <div>
-              <label className="block text-gray-300 mb-2 text-sm font-medium">Поток (%)</label>
-              <input
-                type="number"
-                value={flowRate}
-                onChange={(e) => setFlowRate(Number(e.target.value))}
-                min={50}
-                max={150}
+              <div>
+                <label className="block text-gray-300 mb-2 text-sm font-medium">Высота слоя (mm)</label>
+                <input
+                  type="number"
+                  value={layerHeight}
+                  onChange={(e) => { setLayerHeight(Number(e.target.value)); }}
+                  min={0.05}
+                  max={0.5}
+                  step="0.05"
+                  className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all"
+                />
+              </div>
+              <div>
+                <label className="block text-gray-300 mb-2 text-sm font-medium">Высота первого слоя (mm)</label>
+                <input
+                  type="number"
+                  value={firstLayerHeight !== '' ? firstLayerHeight : ''}
+                  onChange={(e) => { setFirstLayerHeight(e.target.value === '' ? '' : Number(e.target.value)); }}
+                  min={0.05}
+                  max={0.5}
+                  step="0.05"
+                  placeholder="0.25"
+                  className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all"
+                />
+              </div>
+              <div>
+                <label className="block text-gray-300 mb-2 text-sm font-medium">Поток (%)</label>
+                <input
+                  type="number"
+                  value={flowRate}
+                  onChange={(e) => { setFlowRate(Number(e.target.value)); }}
+                  min={50}
+                  max={150}
                 step="1"
                 className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all"
               />
@@ -2123,13 +2392,13 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
 
           {/* Cooling and Retraction */}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <div>
-              <label className="block text-gray-300 mb-2 text-sm font-medium">Скорость вентилятора (%)</label>
-              <input
-                type="number"
-                value={fanSpeed}
-                onChange={(e) => setFanSpeed(Number(e.target.value))}
-                min={0}
+              <div>
+                <label className="block text-gray-300 mb-2 text-sm font-medium">Скорость вентилятора (%)</label>
+                <input
+                  type="number"
+                  value={fanSpeed}
+                  onChange={(e) => { setFanSpeed(Number(e.target.value)); }}
+                  min={0}
                 max={100}
                 step="1"
                 className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all"
@@ -2142,7 +2411,7 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
               <input
                 type="number"
                 value={retractionLength}
-                onChange={(e) => setRetractionLength(Number(e.target.value))}
+                onChange={(e) => { setRetractionLength(Number(e.target.value)); }}
                 min={0}
                 max={10}
                 step="0.1"
@@ -2156,7 +2425,7 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
               <input
                 type="number"
                 value={retractionSpeed}
-                onChange={(e) => setRetractionSpeed(Number(e.target.value))}
+                onChange={(e) => { setRetractionSpeed(Number(e.target.value)); }}
                 min={10}
                 max={100}
                 step="1"
@@ -2276,7 +2545,7 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                         type="checkbox"
                         id="filamentSoluble"
                         checked={filamentSoluble}
-                        onChange={(e) => setFilamentSoluble(e.target.checked)}
+                        onChange={(e) => { setFilamentSoluble(e.target.checked); }}
                         className="w-4 h-4 rounded border-white/20 bg-white/10 text-purple-500 focus:ring-purple-500"
                       />
                       <label htmlFor="filamentSoluble" className="text-gray-300 text-sm">
@@ -2290,7 +2559,7 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                         type="checkbox"
                         id="filamentIsSupport"
                         checked={filamentIsSupport}
-                        onChange={(e) => setFilamentIsSupport(e.target.checked)}
+                        onChange={(e) => { setFilamentIsSupport(e.target.checked); }}
                         className="w-4 h-4 rounded border-white/20 bg-white/10 text-purple-500 focus:ring-purple-500"
                       />
                       <label htmlFor="filamentIsSupport" className="text-gray-300 text-sm">
@@ -2306,7 +2575,7 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                         <input
                           type="number"
                           value={filamentMultitoolRammingVolume !== '' ? filamentMultitoolRammingVolume : ''}
-                          onChange={(e) => setFilamentMultitoolRammingVolume(e.target.value === '' ? '' : Number(e.target.value))}
+                          onChange={(e) => { setFilamentMultitoolRammingVolume(e.target.value === '' ? '' : Number(e.target.value)); }}
                           min={0}
                           step="1"
                           placeholder="10"
@@ -2395,7 +2664,7 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                         <input
                           type="text"
                           value={filamentShrink || ''}
-                          onChange={(e) => setFilamentShrink(e.target.value)}
+                          onChange={(e) => { setFilamentShrink(e.target.value); }}
                           placeholder="99.8"
                           className="w-full pl-3 pr-8 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-gray-500 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all"
                         />
@@ -2410,7 +2679,7 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                         <input
                           type="text"
                           value={filamentShrinkageCompensationZ || ''}
-                          onChange={(e) => setFilamentShrinkageCompensationZ(e.target.value)}
+                          onChange={(e) => { setFilamentShrinkageCompensationZ(e.target.value); }}
                           placeholder="100"
                           className="w-full pl-3 pr-8 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-gray-500 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all"
                         />
@@ -2425,7 +2694,7 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                         <input
                           type="number"
                           value={softeningTemperature !== '' ? softeningTemperature : ''}
-                          onChange={(e) => setSofteningTemperature(e.target.value === '' ? '' : Number(e.target.value))}
+                          onChange={(e) => { setSofteningTemperature(e.target.value === '' ? '' : Number(e.target.value)); }}
                           min={0}
                           max={255}
                           step="1"
@@ -2443,7 +2712,7 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                         <input
                           type="number"
                           value={idleTemperature !== '' ? idleTemperature : ''}
-                          onChange={(e) => setIdleTemperature(e.target.value === '' ? '' : Number(e.target.value))}
+                          onChange={(e) => { setIdleTemperature(e.target.value === '' ? '' : Number(e.target.value)); }}
                           min={0}
                           max={255}
                           step="1"
@@ -2460,34 +2729,34 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                 <div>
                   <h4 className="text-sm font-semibold text-white mb-3">Рекомендуемая температура сопла</h4>
                   <div className="grid grid-cols-2 gap-3">
-                    <div>
-                      <label className="block text-gray-400 mb-1 text-xs">Мин. (°C)</label>
-                      <input
-                        type="number"
-                        value={tempRangeLow}
-                        onChange={(e) => setTempRangeLow(e.target.value === '' ? '' : Number(e.target.value))}
-                        min={150}
-                        max={300}
-                        step="1"
-                        placeholder="220"
-                        className="w-full px-3 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-gray-500 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-gray-400 mb-1 text-xs">Макс. (°C)</label>
-                      <input
-                        type="number"
-                        value={tempRangeHigh}
-                        onChange={(e) => setTempRangeHigh(e.target.value === '' ? '' : Number(e.target.value))}
-                        min={150}
-                        max={300}
-                        step="1"
-                        placeholder="260"
-                        className="w-full px-3 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-gray-500 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all"
-                      />
+                      <div>
+                        <label className="block text-gray-400 mb-1 text-xs">Мин. (°C)</label>
+                        <input
+                          type="number"
+                          value={tempRangeLow}
+                          onChange={(e) => { setTempRangeLow(e.target.value === '' ? '' : Number(e.target.value)); }}
+                          min={150}
+                          max={300}
+                          step="1"
+                          placeholder="220"
+                          className="w-full px-3 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-gray-500 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-gray-400 mb-1 text-xs">Макс. (°C)</label>
+                        <input
+                          type="number"
+                          value={tempRangeHigh}
+                          onChange={(e) => { setTempRangeHigh(e.target.value === '' ? '' : Number(e.target.value)); }}
+                          min={150}
+                          max={300}
+                          step="1"
+                          placeholder="260"
+                          className="w-full px-3 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-gray-500 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all"
+                        />
+                      </div>
                     </div>
                   </div>
-                </div>
 
                 {/* Коэффициент потока и Pressure Advance */}
                 <div>
@@ -2500,12 +2769,12 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                       <input
                         type="number"
                         value={flowRate !== 100 ? flowRate / 100 : 0.95}
-                        onChange={(e) => setFlowRate(e.target.value === '' ? 100 : Number(e.target.value) * 100)}
+                        onChange={(e) => { setFlowRate(e.target.value === '' ? 100 : Number(e.target.value) * 100); }}
                         min={0.5}
                         max={1.5}
                         step="0.01"
                         placeholder="0.95"
-                        className="w-full px-3 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-gray-500 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all"
+                        className={`w-full px-3 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-gray-500 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all `}
                       />
                     </div>
 
@@ -2515,7 +2784,7 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                         type="checkbox"
                         id="enablePA"
                         checked={enablePressureAdvance}
-                        onChange={(e) => setEnablePressureAdvance(e.target.checked)}
+                        onChange={(e) => { setEnablePressureAdvance(e.target.checked); }}
                         className="w-4 h-4 rounded border-white/20 bg-white/10 text-purple-500 focus:ring-purple-500"
                       />
                       <label htmlFor="enablePA" className="text-gray-300 text-sm">
@@ -2530,12 +2799,12 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                         <input
                           type="number"
                           value={pressureAdvance}
-                          onChange={(e) => setPressureAdvance(e.target.value === '' ? '' : Number(e.target.value))}
+                          onChange={(e) => { setPressureAdvance(e.target.value === '' ? '' : Number(e.target.value)); }}
                           min={0}
                           max={1}
                           step="0.001"
                           placeholder="0.038"
-                          className="w-full px-3 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-gray-500 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all"
+                          className={`w-full px-3 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-gray-500 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all `}
                         />
                       </div>
                     )}
@@ -2546,7 +2815,7 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                         type="checkbox"
                         id="adaptivePA"
                         checked={adaptivePressureAdvance}
-                        onChange={(e) => setAdaptivePressureAdvance(e.target.checked)}
+                        onChange={(e) => { setAdaptivePressureAdvance(e.target.checked); }}
                         className="w-4 h-4 rounded border-white/20 bg-white/10 text-purple-500 focus:ring-purple-500"
                       />
                       <label htmlFor="adaptivePA" className="text-gray-300 text-sm">
@@ -2560,7 +2829,7 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                         type="checkbox"
                         id="adaptivePAOverhangs"
                         checked={adaptivePAOverhangs}
-                        onChange={(e) => setAdaptivePAOverhangs(e.target.checked)}
+                        onChange={(e) => { setAdaptivePAOverhangs(e.target.checked); }}
                         className="w-4 h-4 rounded border-white/20 bg-white/10 text-purple-500 focus:ring-purple-500"
                       />
                       <label htmlFor="adaptivePAOverhangs" className="text-gray-300 text-sm">
@@ -2574,13 +2843,13 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                         <label className="block text-gray-300 mb-1 text-sm">Коэф. Pressure advance для мостов</label>
                         <input
                           type="number"
-                          value={adaptivePABridges ? 1 : ''}
-                          onChange={(e) => setAdaptivePABridges(Number(e.target.value) > 0)}
+                          value={adaptivePABridges}
+                          onChange={(e) => { setAdaptivePABridges(e.target.value ? Number(e.target.value) : ''); }}
                           min={0}
                           max={2}
                           step="0.1"
                           placeholder="1"
-                          className="w-full px-3 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-gray-500 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all"
+                          className={`w-full px-3 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-gray-500 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all `}
                         />
                       </div>
                     )}
@@ -2591,10 +2860,10 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                         <label className="block text-gray-300 mb-1 text-sm">Измеренные значения адаптивного Pressure advance (beta)</label>
                         <textarea
                           value={volumetricSpeedCoefficients || ''}
-                          onChange={(e) => setVolumetricSpeedCoefficients(e.target.value)}
+                          onChange={(e) => { setVolumetricSpeedCoefficients(e.target.value); }}
                           placeholder="0,0,00,0,0"
                           rows={3}
-                          className="w-full px-3 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-gray-500 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all resize-none"
+                          className={`w-full px-3 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-gray-500 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all resize-none `}
                         />
                       </div>
                     )}
@@ -2612,12 +2881,12 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                         <input
                           type="number"
                           value={chamberTemp}
-                          onChange={(e) => setChamberTemp(e.target.value === '' ? '' : Number(e.target.value))}
+                          onChange={(e) => { setChamberTemp(e.target.value === '' ? '' : Number(e.target.value)); }}
                           min={0}
                           max={100}
                           step="1"
                           placeholder="1"
-                          className="w-full pl-3 pr-10 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-gray-500 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all"
+                          className={`w-full pl-3 pr-10 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-gray-500 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all `}
                         />
                         <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400 pointer-events-none">°C</span>
                       </div>
@@ -2628,7 +2897,7 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                         type="checkbox"
                         id="enableChamber"
                         checked={enableChamberControl}
-                        onChange={(e) => setEnableChamberControl(e.target.checked)}
+                        onChange={(e) => { setEnableChamberControl(e.target.checked); }}
                         className="w-4 h-4 rounded border-white/20 bg-white/10 text-purple-500 focus:ring-purple-500"
                       />
                       <label htmlFor="enableChamber" className="text-gray-300 text-sm whitespace-nowrap">
@@ -2653,12 +2922,12 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                             <input
                               type="number"
                               value={nozzleTempInitialLayer !== '' ? nozzleTempInitialLayer : extruderTemp}
-                              onChange={(e) => setNozzleTempInitialLayer(e.target.value === '' ? '' : Number(e.target.value))}
+                              onChange={(e) => { setNozzleTempInitialLayer(e.target.value === '' ? '' : Number(e.target.value)); }}
                               min={150}
                               max={300}
                               step="1"
                               placeholder="250"
-                              className="w-full pl-3 pr-10 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-gray-500 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all"
+                              className={`w-full pl-3 pr-10 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-gray-500 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all `}
                             />
                             <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400 pointer-events-none">°C</span>
                           </div>
@@ -2669,12 +2938,12 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                             <input
                               type="number"
                               value={extruderTemp}
-                              onChange={(e) => setExtruderTemp(Number(e.target.value))}
+                              onChange={(e) => { setExtruderTemp(Number(e.target.value)); }}
                               min={150}
                               max={300}
                               step="1"
                               placeholder="250"
-                              className="w-full pl-3 pr-10 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-gray-500 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all"
+                              className={`w-full pl-3 pr-10 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-gray-500 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all `}
                             />
                             <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400 pointer-events-none">°C</span>
                           </div>
@@ -2692,12 +2961,12 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                             <input
                               type="number"
                               value={bedTemp}
-                              onChange={(e) => setBedTemp(Number(e.target.value))}
+                              onChange={(e) => { setBedTemp(Number(e.target.value)); }}
                               min={0}
                               max={120}
                               step="1"
                               placeholder="90"
-                              className="w-full pl-3 pr-10 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-gray-500 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all"
+                              className={`w-full pl-3 pr-10 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-gray-500 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all `}
                             />
                             <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400 pointer-events-none">°C</span>
                           </div>
@@ -2708,12 +2977,12 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                             <input
                               type="number"
                               value={bedTemp}
-                              onChange={(e) => setBedTemp(Number(e.target.value))}
+                              onChange={(e) => { setBedTemp(Number(e.target.value)); }}
                               min={0}
                               max={120}
                               step="1"
                               placeholder="90"
-                              className="w-full pl-3 pr-10 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-gray-500 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all"
+                              className={`w-full pl-3 pr-10 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-gray-500 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all `}
                             />
                             <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400 pointer-events-none">°C</span>
                           </div>
@@ -2733,7 +3002,7 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                         type="checkbox"
                         id="adaptiveVolumetricSpeed"
                         checked={adaptiveVolumetricSpeed}
-                        onChange={(e) => setAdaptiveVolumetricSpeed(e.target.checked)}
+                        onChange={(e) => { setAdaptiveVolumetricSpeed(e.target.checked); }}
                         className="w-4 h-4 rounded border-white/20 bg-white/10 text-purple-500 focus:ring-purple-500"
                       />
                       <label htmlFor="adaptiveVolumetricSpeed" className="text-gray-300 text-sm">
@@ -2747,12 +3016,12 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                         <input
                           type="number"
                           value={volumetricSpeed}
-                          onChange={(e) => setVolumetricSpeed(e.target.value === '' ? '' : Number(e.target.value))}
+                          onChange={(e) => { setVolumetricSpeed(e.target.value === '' ? '' : Number(e.target.value)); }}
                           min={1}
                           max={100}
                           step="0.1"
                           placeholder="12"
-                          className="w-full pl-3 pr-16 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-gray-500 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all"
+                          className={`w-full pl-3 pr-16 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-gray-500 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all `}
                         />
                         <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400 pointer-events-none">mm³/s</span>
                       </div>
@@ -2776,11 +3045,11 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                           <input
                             type="number"
                             value={closeFanFirstXLayers}
-                            onChange={(e) => setCloseFanFirstXLayers(e.target.value === '' ? '' : Number(e.target.value))}
+                            onChange={(e) => { setCloseFanFirstXLayers(e.target.value === '' ? '' : Number(e.target.value)); }}
                             min={0}
                             step="1"
                             placeholder="3"
-                            className="w-full pl-3 pr-16 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-gray-500 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all"
+                            className={`w-full pl-3 pr-16 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-gray-500 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all `}
                           />
                           <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400 pointer-events-none">слой(-я)</span>
                         </div>
@@ -2793,11 +3062,11 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                           <input
                             type="number"
                             value={fullFanSpeedLayer}
-                            onChange={(e) => setFullFanSpeedLayer(e.target.value === '' ? '' : Number(e.target.value))}
+                            onChange={(e) => { setFullFanSpeedLayer(e.target.value === '' ? '' : Number(e.target.value)); }}
                             min={0}
                             step="1"
                             placeholder="0"
-                            className="w-full pl-3 pr-16 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-gray-500 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all"
+                            className={`w-full pl-3 pr-16 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-gray-500 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all `}
                           />
                           <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400 pointer-events-none">слой</span>
                         </div>
@@ -2820,12 +3089,12 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                               <input
                                 type="number"
                                 value={fanMinSpeed}
-                                onChange={(e) => setFanMinSpeed(e.target.value === '' ? '' : Number(e.target.value))}
+                                onChange={(e) => { setFanMinSpeed(e.target.value === '' ? '' : Number(e.target.value)); }}
                                 min={0}
                                 max={100}
                                 step="1"
                                 placeholder="10"
-                                className="w-full pl-3 pr-8 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-gray-500 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all"
+                                className={`w-full pl-3 pr-8 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-gray-500 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all `}
                               />
                               <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400 pointer-events-none">%</span>
                             </div>
@@ -2836,11 +3105,11 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                               <input
                                 type="number"
                                 value={fanCoolingLayerTime}
-                                onChange={(e) => setFanCoolingLayerTime(e.target.value === '' ? '' : Number(e.target.value))}
+                                onChange={(e) => { setFanCoolingLayerTime(e.target.value === '' ? '' : Number(e.target.value)); }}
                                 min={0}
                                 step="1"
                                 placeholder="30"
-                                className="w-full pl-3 pr-8 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-gray-500 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all"
+                                className={`w-full pl-3 pr-8 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-gray-500 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all `}
                               />
                               <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400 pointer-events-none">с</span>
                             </div>
@@ -2858,12 +3127,12 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                               <input
                                 type="number"
                                 value={fanMaxSpeed}
-                                onChange={(e) => setFanMaxSpeed(e.target.value === '' ? '' : Number(e.target.value))}
+                                onChange={(e) => { setFanMaxSpeed(e.target.value === '' ? '' : Number(e.target.value)); }}
                                 min={0}
                                 max={100}
                                 step="1"
                                 placeholder="80"
-                                className="w-full pl-3 pr-8 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-gray-500 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all"
+                                className={`w-full pl-3 pr-8 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-gray-500 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all `}
                               />
                               <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400 pointer-events-none">%</span>
                             </div>
@@ -2874,11 +3143,11 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                                 <input
                                 type="number"
                                 value={fanMaxSpeedLayerTime}
-                                onChange={(e) => setFanMaxSpeedLayerTime(e.target.value === '' ? '' : Number(e.target.value))}
+                                onChange={(e) => { setFanMaxSpeedLayerTime(e.target.value === '' ? '' : Number(e.target.value)); }}
                                 min={0}
                                 step="1"
                                 placeholder="3"
-                                className="w-full pl-3 pr-8 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-gray-500 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all"
+                                className={`w-full pl-3 pr-8 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-gray-500 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all `}
                               />
                               <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400 pointer-events-none">с</span>
                             </div>
@@ -2892,7 +3161,7 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                           type="checkbox"
                           id="reduceFanStopStartFreq"
                           checked={reduceFanStopStartFreq}
-                          onChange={(e) => setReduceFanStopStartFreq(e.target.checked)}
+                          onChange={(e) => { setReduceFanStopStartFreq(e.target.checked); }}
                           className="w-4 h-4 rounded border-white/20 bg-white/10 text-purple-500 focus:ring-purple-500"
                         />
                         <label htmlFor="reduceFanStopStartFreq" className="text-gray-300 text-sm">
@@ -2906,7 +3175,7 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                           type="checkbox"
                           id="slowDownForLayerCooling"
                           checked={slowDownForLayerCooling}
-                          onChange={(e) => setSlowDownForLayerCooling(e.target.checked)}
+                          onChange={(e) => { setSlowDownForLayerCooling(e.target.checked); }}
                           className="w-4 h-4 rounded border-white/20 bg-white/10 text-purple-500 focus:ring-purple-500"
                         />
                         <label htmlFor="slowDownForLayerCooling" className="text-gray-300 text-sm">
@@ -2920,7 +3189,7 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                           type="checkbox"
                           id="dontSlowDownOuterWall"
                           checked={dontSlowDownOuterWall}
-                          onChange={(e) => setDontSlowDownOuterWall(e.target.checked)}
+                          onChange={(e) => { setDontSlowDownOuterWall(e.target.checked); }}
                           className="w-4 h-4 rounded border-white/20 bg-white/10 text-purple-500 focus:ring-purple-500"
                         />
                         <label htmlFor="dontSlowDownOuterWall" className="text-gray-300 text-sm">
@@ -2935,11 +3204,11 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                           <input
                             type="number"
                             value={slowDownMinSpeed}
-                            onChange={(e) => setSlowDownMinSpeed(e.target.value === '' ? '' : Number(e.target.value))}
+                            onChange={(e) => { setSlowDownMinSpeed(e.target.value === '' ? '' : Number(e.target.value)); }}
                             min={0}
                             step="1"
                             placeholder="10"
-                            className="w-full pl-3 pr-12 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-gray-500 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all"
+                            className={`w-full pl-3 pr-12 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-gray-500 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all `}
                           />
                           <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400 pointer-events-none">mm/s</span>
                         </div>
@@ -2951,7 +3220,7 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                           type="checkbox"
                           id="enableOverhangBridgeFan"
                           checked={enableOverhangBridgeFan}
-                          onChange={(e) => setEnableOverhangBridgeFan(e.target.checked)}
+                          onChange={(e) => { setEnableOverhangBridgeFan(e.target.checked); }}
                           className="w-4 h-4 rounded border-white/20 bg-white/10 text-purple-500 focus:ring-purple-500"
                         />
                         <label htmlFor="enableOverhangBridgeFan" className="text-gray-300 text-sm">
@@ -2967,9 +3236,9 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                             <input
                               type="text"
                               value={overhangFanThreshold}
-                              onChange={(e) => setOverhangFanThreshold(e.target.value)}
+                              onChange={(e) => { setOverhangFanThreshold(e.target.value); }}
                               placeholder="25"
-                              className="w-full pl-3 pr-8 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-gray-500 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all"
+                              className={`w-full pl-3 pr-8 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-gray-500 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all `}
                             />
                             <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400 pointer-events-none">%</span>
                           </div>
@@ -2984,12 +3253,12 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                             <input
                               type="number"
                               value={overhangFanSpeed}
-                              onChange={(e) => setOverhangFanSpeed(e.target.value === '' ? '' : Number(e.target.value))}
+                              onChange={(e) => { setOverhangFanSpeed(e.target.value === '' ? '' : Number(e.target.value)); }}
                               min={-1}
                               max={100}
                               step="1"
                               placeholder="80"
-                              className="w-full pl-3 pr-8 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-gray-500 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all"
+                              className={`w-full pl-3 pr-8 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-gray-500 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all `}
                             />
                             <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400 pointer-events-none">%</span>
                           </div>
@@ -3005,12 +3274,12 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                             <input
                               type="number"
                               value={internalBridgeFanSpeed}
-                              onChange={(e) => setInternalBridgeFanSpeed(e.target.value === '' ? '' : Number(e.target.value))}
+                              onChange={(e) => { setInternalBridgeFanSpeed(e.target.value === '' ? '' : Number(e.target.value)); }}
                               min={-1}
                               max={100}
                               step="1"
                               placeholder="-1"
-                              className="w-full pl-3 pr-8 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-gray-500 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all"
+                              className={`w-full pl-3 pr-8 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-gray-500 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all `}
                             />
                             <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400 pointer-events-none">%</span>
                           </div>
@@ -3026,12 +3295,12 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                             <input
                               type="number"
                               value={supportMaterialInterfaceFanSpeed}
-                              onChange={(e) => setSupportMaterialInterfaceFanSpeed(e.target.value === '' ? '' : Number(e.target.value))}
+                              onChange={(e) => { setSupportMaterialInterfaceFanSpeed(e.target.value === '' ? '' : Number(e.target.value)); }}
                               min={-1}
                               max={100}
                               step="1"
                               placeholder="-1"
-                              className="w-full pl-3 pr-8 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-gray-500 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all"
+                              className={`w-full pl-3 pr-8 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-gray-500 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all `}
                             />
                             <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400 pointer-events-none">%</span>
                           </div>
@@ -3046,12 +3315,12 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                           <input
                             type="number"
                             value={ironingFanSpeed}
-                            onChange={(e) => setIroningFanSpeed(e.target.value === '' ? '' : Number(e.target.value))}
+                            onChange={(e) => { setIroningFanSpeed(e.target.value === '' ? '' : Number(e.target.value)); }}
                             min={-1}
                             max={100}
                             step="1"
                             placeholder="-1"
-                            className="w-full pl-3 pr-8 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-gray-500 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all"
+                            className={`w-full pl-3 pr-8 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-gray-500 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all `}
                           />
                           <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400 pointer-events-none">%</span>
                         </div>
@@ -3070,12 +3339,12 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                         <input
                           type="number"
                           value={additionalCoolingFanSpeed}
-                          onChange={(e) => setAdditionalCoolingFanSpeed(e.target.value === '' ? '' : Number(e.target.value))}
+                          onChange={(e) => { setAdditionalCoolingFanSpeed(e.target.value === '' ? '' : Number(e.target.value)); }}
                           min={0}
                           max={100}
                           step="1"
                           placeholder="0"
-                          className="w-full pl-3 pr-8 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-gray-500 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all"
+                          className={`w-full pl-3 pr-8 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-gray-500 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all `}
                         />
                         <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400 pointer-events-none">%</span>
                       </div>
@@ -3092,7 +3361,7 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                           type="checkbox"
                           id="enableExhaustFan"
                           checked={enableExhaustFan}
-                          onChange={(e) => setEnableExhaustFan(e.target.checked)}
+                          onChange={(e) => { setEnableExhaustFan(e.target.checked); }}
                           className="w-4 h-4 rounded border-white/20 bg-white/10 text-purple-500 focus:ring-purple-500"
                         />
                         <label htmlFor="enableExhaustFan" className="text-gray-300 text-sm">
@@ -3108,12 +3377,12 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                               <input
                                 type="number"
                                 value={duringPrintExhaustFanSpeed}
-                                onChange={(e) => setDuringPrintExhaustFanSpeed(e.target.value === '' ? '' : Number(e.target.value))}
+                                onChange={(e) => { setDuringPrintExhaustFanSpeed(e.target.value === '' ? '' : Number(e.target.value)); }}
                                 min={0}
                                 max={100}
                                 step="1"
                                 placeholder="70"
-                                className="w-full pl-3 pr-8 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-gray-500 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all"
+                                className={`w-full pl-3 pr-8 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-gray-500 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all `}
                               />
                               <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400 pointer-events-none">%</span>
                             </div>
@@ -3125,12 +3394,12 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                               <input
                                 type="number"
                                 value={completePrintExhaustFanSpeed}
-                                onChange={(e) => setCompletePrintExhaustFanSpeed(e.target.value === '' ? '' : Number(e.target.value))}
+                                onChange={(e) => { setCompletePrintExhaustFanSpeed(e.target.value === '' ? '' : Number(e.target.value)); }}
                                 min={0}
                                 max={100}
                                 step="1"
                                 placeholder="70"
-                                className="w-full pl-3 pr-8 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-gray-500 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all"
+                                className={`w-full pl-3 pr-8 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-gray-500 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all `}
                               />
                               <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400 pointer-events-none">%</span>
                             </div>
@@ -3141,7 +3410,7 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                               type="checkbox"
                               id="activateAirFiltration"
                               checked={activateAirFiltration}
-                              onChange={(e) => setActivateAirFiltration(e.target.checked)}
+                              onChange={(e) => { setActivateAirFiltration(e.target.checked); }}
                               className="w-4 h-4 rounded border-white/20 bg-white/10 text-purple-500 focus:ring-purple-500"
                             />
                             <label htmlFor="activateAirFiltration" className="text-gray-300 text-sm">
@@ -3169,7 +3438,7 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                           type="checkbox"
                           id="slowDownForLayerCoolingOverride"
                           checked={slowDownForLayerCooling}
-                          onChange={(e) => setSlowDownForLayerCooling(e.target.checked)}
+                          onChange={(e) => { setSlowDownForLayerCooling(e.target.checked); }}
                           className="w-4 h-4 rounded border-white/20 bg-white/10 text-purple-500 focus:ring-purple-500"
                         />
                         <label htmlFor="slowDownForLayerCoolingOverride" className="text-gray-300 text-sm">
@@ -3183,7 +3452,7 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                           type="checkbox"
                           id="dontSlowDownOuterWallOverride"
                           checked={dontSlowDownOuterWall}
-                          onChange={(e) => setDontSlowDownOuterWall(e.target.checked)}
+                          onChange={(e) => { setDontSlowDownOuterWall(e.target.checked); }}
                           className="w-4 h-4 rounded border-white/20 bg-white/10 text-purple-500 focus:ring-purple-500"
                         />
                         <label htmlFor="dontSlowDownOuterWallOverride" className="text-gray-300 text-sm">
@@ -3198,11 +3467,11 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                           <input
                             type="number"
                             value={slowDownMinSpeed}
-                            onChange={(e) => setSlowDownMinSpeed(e.target.value === '' ? '' : Number(e.target.value))}
+                            onChange={(e) => { setSlowDownMinSpeed(e.target.value === '' ? '' : Number(e.target.value)); }}
                             min={0}
                             step="1"
                             placeholder="10"
-                            className="w-full pl-3 pr-12 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-gray-500 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all"
+                            className={`w-full pl-3 pr-12 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-gray-500 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all `}
                           />
                           <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400 pointer-events-none">mm/s</span>
                         </div>
@@ -3223,12 +3492,12 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                             <input
                               type="number"
                               value={retractionLength}
-                              onChange={(e) => setRetractionLength(Number(e.target.value))}
+                              onChange={(e) => { setRetractionLength(Number(e.target.value)); }}
                               min={0}
                               max={10}
                               step="0.1"
                               placeholder="0.8"
-                              className="w-full pl-3 pr-12 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-gray-500 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all"
+                              className={`w-full pl-3 pr-12 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-gray-500 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all `}
                             />
                             <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400 pointer-events-none">mm</span>
                           </div>
@@ -3240,12 +3509,12 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                             <input
                               type="number"
                               value={retractionSpeed}
-                              onChange={(e) => setRetractionSpeed(Number(e.target.value))}
+                              onChange={(e) => { setRetractionSpeed(Number(e.target.value)); }}
                               min={0}
                               max={100}
                               step="1"
                               placeholder="30"
-                              className="w-full pl-3 pr-12 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-gray-500 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all"
+                              className={`w-full pl-3 pr-12 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-gray-500 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all `}
                             />
                             <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400 pointer-events-none">mm/s</span>
                           </div>
@@ -3261,12 +3530,12 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                             <input
                               type="number"
                               value={filamentZHop}
-                              onChange={(e) => setFilamentZHop(e.target.value === '' ? '' : Number(e.target.value))}
+                              onChange={(e) => { setFilamentZHop(e.target.value === '' ? '' : Number(e.target.value)); }}
                               min={0}
                               max={5}
                               step="0.1"
                               placeholder="0.4"
-                              className="w-full pl-3 pr-12 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-gray-500 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all"
+                              className={`w-full pl-3 pr-12 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-gray-500 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all `}
                             />
                             <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400 pointer-events-none">mm</span>
                           </div>
@@ -3277,12 +3546,12 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                             <input
                               type="number"
                               value={deretractionSpeed}
-                              onChange={(e) => setDeretractionSpeed(e.target.value === '' ? '' : Number(e.target.value))}
+                              onChange={(e) => { setDeretractionSpeed(e.target.value === '' ? '' : Number(e.target.value)); }}
                               min={0}
                               max={100}
                               step="1"
                               placeholder="30"
-                              className="w-full pl-3 pr-12 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-gray-500 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all"
+                              className={`w-full pl-3 pr-12 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-gray-500 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all `}
                             />
                             <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400 pointer-events-none">mm/s</span>
                           </div>
@@ -3295,7 +3564,7 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                           <label className="block text-gray-300 mb-1 text-sm">Тип подъёма оси Z</label>
                           <CustomSelect
                             value={filamentZHopTypes || null}
-                            onChange={(value: string | number | null) => setFilamentZHopTypes(value as string || '')}
+                            onChange={(value: string | number | null) => {  setFilamentZHopTypes(value as string || ''); }}
                             options={[
                               { value: '', label: 'По умолчанию' },
                               { value: 'Normal', label: 'Обычный' },
@@ -3309,7 +3578,7 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                           <label className="block text-gray-300 mb-1 text-sm">На поверхностях</label>
                           <CustomSelect
                             value={retractLiftEnforce || null}
-                            onChange={(value: string | number | null) => setRetractLiftEnforce(value as string || '')}
+                            onChange={(value: string | number | null) => {  setRetractLiftEnforce(value as string || ''); }}
                             options={[
                               { value: '', label: 'По умолчанию' },
                               { value: 'All', label: 'Все верхние' },
@@ -3329,11 +3598,11 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                             <input
                               type="number"
                               value={retractLiftAbove}
-                              onChange={(e) => setRetractLiftAbove(e.target.value === '' ? '' : Number(e.target.value))}
+                              onChange={(e) => { setRetractLiftAbove(e.target.value === '' ? '' : Number(e.target.value)); }}
                               min={0}
                               step="0.1"
                               placeholder="0"
-                              className="w-full pl-3 pr-12 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-gray-500 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all"
+                              className={`w-full pl-3 pr-12 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-gray-500 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all `}
                             />
                             <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400 pointer-events-none">mm</span>
                           </div>
@@ -3344,11 +3613,11 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                             <input
                               type="number"
                               value={retractLiftBelow}
-                              onChange={(e) => setRetractLiftBelow(e.target.value === '' ? '' : Number(e.target.value))}
+                              onChange={(e) => { setRetractLiftBelow(e.target.value === '' ? '' : Number(e.target.value)); }}
                               min={0}
                               step="0.1"
                               placeholder="0"
-                              className="w-full pl-3 pr-12 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-gray-500 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all"
+                              className={`w-full pl-3 pr-12 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-gray-500 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all `}
                             />
                             <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400 pointer-events-none">mm</span>
                           </div>
@@ -3363,11 +3632,11 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                             <input
                               type="number"
                               value={retractRestartExtra}
-                              onChange={(e) => setRetractRestartExtra(e.target.value === '' ? '' : Number(e.target.value))}
+                              onChange={(e) => { setRetractRestartExtra(e.target.value === '' ? '' : Number(e.target.value)); }}
                               min={0}
                               step="0.1"
                               placeholder="0"
-                              className="w-full pl-3 pr-12 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-gray-500 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all"
+                              className={`w-full pl-3 pr-12 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-gray-500 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all `}
                             />
                             <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400 pointer-events-none">mm</span>
                           </div>
@@ -3378,11 +3647,11 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                             <input
                               type="number"
                               value={retractionMinimumTravel}
-                              onChange={(e) => setRetractionMinimumTravel(e.target.value === '' ? '' : Number(e.target.value))}
+                              onChange={(e) => { setRetractionMinimumTravel(e.target.value === '' ? '' : Number(e.target.value)); }}
                               min={0}
                               step="0.1"
                               placeholder="1"
-                              className="w-full pl-3 pr-12 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-gray-500 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all"
+                              className={`w-full pl-3 pr-12 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-gray-500 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all `}
                             />
                             <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400 pointer-events-none">mm</span>
                           </div>
@@ -3396,7 +3665,7 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                             type="checkbox"
                             id="retractWhenChangingLayerOverride"
                             checked={retractWhenChangingLayer}
-                            onChange={(e) => setRetractWhenChangingLayer(e.target.checked)}
+                            onChange={(e) => { setRetractWhenChangingLayer(e.target.checked); }}
                             className="w-4 h-4 rounded border-white/20 bg-white/10 text-purple-500 focus:ring-purple-500"
                           />
                           <label htmlFor="retractWhenChangingLayerOverride" className="text-gray-300 text-sm">
@@ -3408,7 +3677,7 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                             type="checkbox"
                             id="filamentWipeOverride"
                             checked={filamentWipe}
-                            onChange={(e) => setFilamentWipe(e.target.checked)}
+                            onChange={(e) => { setFilamentWipe(e.target.checked); }}
                             className="w-4 h-4 rounded border-white/20 bg-white/10 text-purple-500 focus:ring-purple-500"
                           />
                           <label htmlFor="filamentWipeOverride" className="text-gray-300 text-sm">
@@ -3426,11 +3695,11 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                               <input
                                 type="number"
                                 value={filamentWipeDistance}
-                                onChange={(e) => setFilamentWipeDistance(e.target.value === '' ? '' : Number(e.target.value))}
+                                onChange={(e) => { setFilamentWipeDistance(e.target.value === '' ? '' : Number(e.target.value)); }}
                                 min={0}
                                 step="0.1"
                                 placeholder="1"
-                                className="w-full pl-3 pr-12 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-gray-500 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all"
+                                className={`w-full pl-3 pr-12 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-gray-500 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all `}
                               />
                               <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400 pointer-events-none">mm</span>
                             </div>
@@ -3441,9 +3710,9 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                               <input
                                 type="text"
                                 value={retractBeforeWipe}
-                                onChange={(e) => setRetractBeforeWipe(e.target.value)}
+                                onChange={(e) => { setRetractBeforeWipe(e.target.value); }}
                                 placeholder="70"
-                                className="w-full pl-3 pr-8 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-gray-500 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all"
+                                className={`w-full pl-3 pr-8 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-gray-500 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all `}
                               />
                               <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400 pointer-events-none">%</span>
                             </div>
@@ -3465,9 +3734,9 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                           <input
                             type="text"
                             value={retractionDistancesWhenCut}
-                            onChange={(e) => setRetractionDistancesWhenCut(e.target.value)}
+                            onChange={(e) => { setRetractionDistancesWhenCut(e.target.value); }}
                             placeholder="0,0,0"
-                            className="w-full px-3 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-gray-500 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all"
+                            className={`w-full px-3 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-gray-500 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all `}
                           />
                           <p className="text-xs text-gray-500 mt-1">Список значений через запятую</p>
                         </div>
@@ -3476,9 +3745,9 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                           <input
                             type="text"
                             value={longRetractionsWhenCut}
-                            onChange={(e) => setLongRetractionsWhenCut(e.target.value)}
+                            onChange={(e) => { setLongRetractionsWhenCut(e.target.value); }}
                             placeholder="nil"
-                            className="w-full px-3 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-gray-500 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all"
+                            className={`w-full px-3 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-gray-500 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all `}
                           />
                         </div>
                       </div>
@@ -3489,7 +3758,7 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                           type="checkbox"
                           id="longRetractionsWhenEC"
                           checked={longRetractionsWhenEC}
-                          onChange={(e) => setLongRetractionsWhenEC(e.target.checked)}
+                          onChange={(e) => { setLongRetractionsWhenEC(e.target.checked); }}
                           className="w-4 h-4 rounded border-white/20 bg-white/10 text-purple-500 focus:ring-purple-500"
                         />
                         <label htmlFor="longRetractionsWhenEC" className="text-gray-300 text-sm">
@@ -3505,11 +3774,11 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                             <input
                               type="number"
                               value={retractionDistancesWhenEC}
-                              onChange={(e) => setRetractionDistancesWhenEC(e.target.value === '' ? '' : Number(e.target.value))}
+                              onChange={(e) => { setRetractionDistancesWhenEC(e.target.value === '' ? '' : Number(e.target.value)); }}
                               min={0}
                               step="0.1"
                               placeholder="0"
-                              className="w-full pl-3 pr-12 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-gray-500 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all"
+                              className={`w-full pl-3 pr-12 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-gray-500 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all `}
                             />
                             <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400 pointer-events-none">mm</span>
                           </div>
@@ -3537,10 +3806,10 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                       <textarea
                         id="filament-start-gcode"
                         value={filamentStartGcode}
-                        onChange={(e) => setFilamentStartGcode(e.target.value)}
+                        onChange={(e) => { setFilamentStartGcode(e.target.value); }}
                         placeholder="; Filament gcode"
                         rows={12}
-                        className="flex-1 px-3 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-gray-500 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all resize-none"
+                        className={`flex-1 px-3 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-gray-500 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all resize-none `}
                         style={{ fontFamily: 'monospace' }}
                         onClick={(e) => e.stopPropagation()}
                         onMouseDown={(e) => e.stopPropagation()}
@@ -3589,10 +3858,10 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                       <textarea
                         id="filament-end-gcode"
                         value={filamentEndGcode}
-                        onChange={(e) => setFilamentEndGcode(e.target.value)}
+                        onChange={(e) => { setFilamentEndGcode(e.target.value); }}
                         placeholder="; filament end gcode"
                         rows={12}
-                        className="flex-1 px-3 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-gray-500 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all resize-none"
+                        className={`flex-1 px-3 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-gray-500 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all resize-none `}
                         style={{ fontFamily: 'monospace' }}
                         onClick={(e) => e.stopPropagation()}
                         onMouseDown={(e) => e.stopPropagation()}
@@ -3643,9 +3912,9 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                         <input
                           type="text"
                           value={filamentExtruderVariant}
-                          onChange={(e) => setFilamentExtruderVariant(e.target.value)}
+                          onChange={(e) => { setFilamentExtruderVariant(e.target.value); }}
                           placeholder="Direct Drive Standard"
-                          className="w-full px-3 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-gray-500 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all"
+                          className={`w-full px-3 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-gray-500 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all `}
                         />
                         <p className="text-xs text-gray-500 mt-1">Например: "Direct Drive Standard", "Bowden"</p>
                       </div>
@@ -3657,12 +3926,12 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                           <input
                             type="number"
                             value={requiredNozzleHRC}
-                            onChange={(e) => setRequiredNozzleHRC(e.target.value === '' ? '' : Number(e.target.value))}
+                            onChange={(e) => { setRequiredNozzleHRC(e.target.value === '' ? '' : Number(e.target.value)); }}
                             min={0}
                             max={100}
                             step="1"
                             placeholder="3"
-                            className="w-full pl-3 pr-10 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-gray-500 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all"
+                            className={`w-full pl-3 pr-10 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-gray-500 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all `}
                           />
                           <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400 pointer-events-none">HRC</span>
                         </div>
@@ -3681,11 +3950,11 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                         <input
                           type="number"
                           value={filamentMinimalPurgeOnWipeTower}
-                          onChange={(e) => setFilamentMinimalPurgeOnWipeTower(e.target.value === '' ? '' : Number(e.target.value))}
+                          onChange={(e) => { setFilamentMinimalPurgeOnWipeTower(e.target.value === '' ? '' : Number(e.target.value)); }}
                           min={0}
                           step="0.1"
                           placeholder="15"
-                          className="w-full pl-3 pr-12 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-gray-500 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all"
+                          className={`w-full pl-3 pr-12 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-gray-500 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all `}
                         />
                         <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400 pointer-events-none">mm³</span>
                       </div>
@@ -3705,11 +3974,11 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                             <input
                               type="number"
                               value={filamentLoadingSpeedStart}
-                              onChange={(e) => setFilamentLoadingSpeedStart(e.target.value === '' ? '' : Number(e.target.value))}
+                              onChange={(e) => { setFilamentLoadingSpeedStart(e.target.value === '' ? '' : Number(e.target.value)); }}
                               min={0}
                               step="1"
                               placeholder="3"
-                              className="w-full pl-3 pr-12 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-gray-500 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all"
+                              className={`w-full pl-3 pr-12 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-gray-500 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all `}
                             />
                             <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400 pointer-events-none">mm/s</span>
                           </div>
@@ -3721,11 +3990,11 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                             <input
                               type="number"
                               value={filamentLoadingSpeed}
-                              onChange={(e) => setFilamentLoadingSpeed(e.target.value === '' ? '' : Number(e.target.value))}
+                              onChange={(e) => { setFilamentLoadingSpeed(e.target.value === '' ? '' : Number(e.target.value)); }}
                               min={0}
                               step="1"
                               placeholder="28"
-                              className="w-full pl-3 pr-12 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-gray-500 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all"
+                              className={`w-full pl-3 pr-12 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-gray-500 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all `}
                             />
                             <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400 pointer-events-none">mm/s</span>
                           </div>
@@ -3740,11 +4009,11 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                             <input
                               type="number"
                               value={filamentUnloadingSpeedStart}
-                              onChange={(e) => setFilamentUnloadingSpeedStart(e.target.value === '' ? '' : Number(e.target.value))}
+                              onChange={(e) => { setFilamentUnloadingSpeedStart(e.target.value === '' ? '' : Number(e.target.value)); }}
                               min={0}
                               step="1"
                               placeholder="100"
-                              className="w-full pl-3 pr-12 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-gray-500 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all"
+                              className={`w-full pl-3 pr-12 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-gray-500 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all `}
                             />
                             <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400 pointer-events-none">mm/s</span>
                           </div>
@@ -3756,11 +4025,11 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                             <input
                               type="number"
                               value={filamentUnloadingSpeed}
-                              onChange={(e) => setFilamentUnloadingSpeed(e.target.value === '' ? '' : Number(e.target.value))}
+                              onChange={(e) => { setFilamentUnloadingSpeed(e.target.value === '' ? '' : Number(e.target.value)); }}
                               min={0}
                               step="1"
                               placeholder="90"
-                              className="w-full pl-3 pr-12 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-gray-500 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all"
+                              className={`w-full pl-3 pr-12 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-gray-500 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all `}
                             />
                             <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400 pointer-events-none">mm/s</span>
                           </div>
@@ -3775,11 +4044,11 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                             <input
                               type="number"
                               value={filamentToolchangeDelay}
-                              onChange={(e) => setFilamentToolchangeDelay(e.target.value === '' ? '' : Number(e.target.value))}
+                              onChange={(e) => { setFilamentToolchangeDelay(e.target.value === '' ? '' : Number(e.target.value)); }}
                               min={0}
                               step="0.1"
                               placeholder="0"
-                              className="w-full pl-3 pr-8 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-gray-500 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all"
+                              className={`w-full pl-3 pr-8 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-gray-500 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all `}
                             />
                             <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400 pointer-events-none">s</span>
                           </div>
@@ -3790,11 +4059,11 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                           <input
                             type="number"
                             value={filamentCoolingMoves}
-                            onChange={(e) => setFilamentCoolingMoves(e.target.value === '' ? '' : Number(e.target.value))}
+                            onChange={(e) => { setFilamentCoolingMoves(e.target.value === '' ? '' : Number(e.target.value)); }}
                             min={0}
                             step="1"
                             placeholder="4"
-                            className="w-full px-3 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-gray-500 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all"
+                            className={`w-full px-3 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-gray-500 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all `}
                           />
                         </div>
                       </div>
@@ -3807,11 +4076,11 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                             <input
                               type="number"
                               value={filamentCoolingInitialSpeed}
-                              onChange={(e) => setFilamentCoolingInitialSpeed(e.target.value === '' ? '' : Number(e.target.value))}
+                              onChange={(e) => { setFilamentCoolingInitialSpeed(e.target.value === '' ? '' : Number(e.target.value)); }}
                               min={0}
                               step="0.1"
                               placeholder="2.2"
-                              className="w-full pl-3 pr-12 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-gray-500 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all"
+                              className={`w-full pl-3 pr-12 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-gray-500 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all `}
                             />
                             <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400 pointer-events-none">mm/s</span>
                           </div>
@@ -3823,11 +4092,11 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                             <input
                               type="number"
                               value={filamentCoolingFinalSpeed}
-                              onChange={(e) => setFilamentCoolingFinalSpeed(e.target.value === '' ? '' : Number(e.target.value))}
+                              onChange={(e) => { setFilamentCoolingFinalSpeed(e.target.value === '' ? '' : Number(e.target.value)); }}
                               min={0}
                               step="0.1"
                               placeholder="3.4"
-                              className="w-full pl-3 pr-12 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-gray-500 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all"
+                              className={`w-full pl-3 pr-12 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-gray-500 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all `}
                             />
                             <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400 pointer-events-none">mm/s</span>
                           </div>
@@ -3842,11 +4111,11 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                             <input
                               type="number"
                               value={filamentStampingLoadingSpeed}
-                              onChange={(e) => setFilamentStampingLoadingSpeed(e.target.value === '' ? '' : Number(e.target.value))}
+                              onChange={(e) => { setFilamentStampingLoadingSpeed(e.target.value === '' ? '' : Number(e.target.value)); }}
                               min={0}
                               step="1"
                               placeholder="0"
-                              className="w-full pl-3 pr-12 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-gray-500 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all"
+                              className={`w-full pl-3 pr-12 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-gray-500 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all `}
                             />
                             <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400 pointer-events-none">mm/s</span>
                           </div>
@@ -3858,11 +4127,11 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                             <input
                               type="number"
                               value={filamentStampingDistance}
-                              onChange={(e) => setFilamentStampingDistance(e.target.value === '' ? '' : Number(e.target.value))}
+                              onChange={(e) => { setFilamentStampingDistance(e.target.value === '' ? '' : Number(e.target.value)); }}
                               min={0}
                               step="0.1"
                               placeholder="0"
-                              className="w-full pl-3 pr-12 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-gray-500 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all"
+                              className={`w-full pl-3 pr-12 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-gray-500 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all `}
                             />
                             <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400 pointer-events-none">mm</span>
                           </div>
@@ -3882,7 +4151,7 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                           type="checkbox"
                           id="filamentMultitoolRammingExtruder"
                           checked={filamentMultitoolRamming}
-                          onChange={(e) => setFilamentMultitoolRamming(e.target.checked)}
+                          onChange={(e) => { setFilamentMultitoolRamming(e.target.checked); }}
                           className="w-4 h-4 rounded border-white/20 bg-white/10 text-purple-500 focus:ring-purple-500"
                         />
                         <label htmlFor="filamentMultitoolRammingExtruder" className="text-gray-300 text-sm">
@@ -3898,11 +4167,11 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                             <input
                               type="number"
                               value={filamentMultitoolRammingVolume}
-                              onChange={(e) => setFilamentMultitoolRammingVolume(e.target.value === '' ? '' : Number(e.target.value))}
+                              onChange={(e) => { setFilamentMultitoolRammingVolume(e.target.value === '' ? '' : Number(e.target.value)); }}
                               min={0}
                               step="0.1"
                               placeholder="10"
-                              className="w-full pl-3 pr-12 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-gray-500 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all"
+                              className={`w-full pl-3 pr-12 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-gray-500 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all `}
                             />
                             <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400 pointer-events-none">mm³</span>
                           </div>
@@ -3914,11 +4183,11 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                             <input
                               type="number"
                               value={filamentMultitoolRammingFlow}
-                              onChange={(e) => setFilamentMultitoolRammingFlow(e.target.value === '' ? '' : Number(e.target.value))}
+                              onChange={(e) => { setFilamentMultitoolRammingFlow(e.target.value === '' ? '' : Number(e.target.value)); }}
                               min={0}
                               step="0.1"
                               placeholder="10"
-                              className="w-full pl-3 pr-16 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-gray-500 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all"
+                              className={`w-full pl-3 pr-16 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-gray-500 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all `}
                             />
                             <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400 pointer-events-none">mm³/s</span>
                           </div>
@@ -3939,11 +4208,11 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                           <input
                             type="number"
                             value={filamentChangeLength}
-                            onChange={(e) => setFilamentChangeLength(e.target.value === '' ? '' : Number(e.target.value))}
+                            onChange={(e) => { setFilamentChangeLength(e.target.value === '' ? '' : Number(e.target.value)); }}
                             min={0}
                             step="0.1"
                             placeholder="0"
-                            className="w-full pl-3 pr-12 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-gray-500 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all"
+                            className={`w-full pl-3 pr-12 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-gray-500 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all `}
                           />
                           <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400 pointer-events-none">mm</span>
                         </div>
@@ -3955,11 +4224,11 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                         <input
                           type="number"
                           value={pelletFlowCoefficient}
-                          onChange={(e) => setPelletFlowCoefficient(e.target.value === '' ? '' : Number(e.target.value))}
+                          onChange={(e) => { setPelletFlowCoefficient(e.target.value === '' ? '' : Number(e.target.value)); }}
                           min={0}
                           step="0.01"
                           placeholder="1.0"
-                          className="w-full px-3 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-gray-500 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all"
+                          className={`w-full px-3 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-gray-500 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all `}
                         />
                         <p className="text-xs text-gray-500 mt-1">Для пеллетных экструдеров (например "0.4157")</p>
                       </div>
@@ -3974,7 +4243,7 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                     <h4 className="text-sm font-semibold text-white mb-3 pb-2 border-b border-white/10">Заметки</h4>
                     <textarea
                       value={filamentNotes}
-                      onChange={(e) => setFilamentNotes(e.target.value)}
+                      onChange={(e) => { setFilamentNotes(e.target.value); }}
                       placeholder="Введите заметки для этого профиля..."
                       rows={10}
                       className="w-full px-3 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-gray-500 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all resize-none"

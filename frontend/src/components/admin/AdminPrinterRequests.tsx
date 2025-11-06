@@ -5,10 +5,12 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Package, CheckCircle, XCircle, Eye, Clock, Printer, Download } from 'lucide-react';
 import { adminAPI } from '../../api/client';
 import type { PrinterRequest } from '../../types/api';
+import { useHeaderVisible } from '../../hooks/useHeaderVisible';
 
 type PrinterRequestStatus = 'pending' | 'approved' | 'rejected';
 
 export function AdminPrinterRequests() {
+  const isHeaderVisible = useHeaderVisible();
   const queryClient = useQueryClient();
   const [selectedStatus, setSelectedStatus] = useState<PrinterRequestStatus | 'all'>('all');
   const [selectedRequest, setSelectedRequest] = useState<PrinterRequest | null>(null);
@@ -191,7 +193,7 @@ export function AdminPrinterRequests() {
 
       {/* Модальное окно с деталями заявки */}
       {selectedRequest && (
-        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+        <div className={`fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4 z-50 ${isHeaderVisible ? 'pt-[88px]' : ''}`}>
           <div className="bg-gradient-to-br from-purple-900 to-indigo-900 rounded-2xl max-w-3xl w-full max-h-[90vh] overflow-hidden flex flex-col border border-white/20">
             {/* Header */}
             <div className="flex items-center justify-between p-6 border-b border-white/10">
@@ -283,7 +285,7 @@ export function AdminPrinterRequests() {
                 <div>
                   <p className="text-gray-400 text-sm mb-2">Прикрепленные файлы</p>
                   <div className="space-y-3">
-                    {selectedRequest.proof_files.map((file, idx) => {
+                    {selectedRequest.proof_files.map((file: string, idx: number) => {
                       const fileUrl = `/uploads/${file}`;
                       const fileName = file.split('/').pop() || `Файл ${idx + 1}`;
                       const fileExt = fileName.split('.').pop()?.toLowerCase() || '';

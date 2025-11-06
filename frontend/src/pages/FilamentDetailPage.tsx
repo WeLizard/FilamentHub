@@ -153,6 +153,8 @@ export const FilamentDetailPage: React.FC = () => {
   
   // Проверяем, сохранён ли официальный пресет
   const isOfficialPresetSaved = officialPreset ? savedPresetIds.has(officialPreset.id) : false;
+  // Проверяем, является ли официальный пресет созданным пользователем
+  const isOfficialPresetOwn = officialPreset && user ? officialPreset.user_id === user.id : false;
 
   // РЕЙТИНГ ФИЛАМЕНТА: только из отзывов (FilamentReview)
   // Это оценка качества самого материала пользователями
@@ -323,6 +325,14 @@ export const FilamentDetailPage: React.FC = () => {
                 title="Необходимо войти в систему"
               >
                 Войдите, чтобы добавить
+              </button>
+            ) : isOfficialPresetOwn ? (
+              <button
+                disabled
+                className="flex-1 bg-purple-600/50 text-white py-4 px-8 rounded-xl cursor-not-allowed text-lg font-semibold flex items-center justify-center"
+              >
+                <CheckCircle className="w-6 h-6 mr-2" />
+                Ваш пресет
               </button>
             ) : isOfficialPresetSaved ? (
               <button
@@ -602,6 +612,7 @@ export const FilamentDetailPage: React.FC = () => {
                 <div className="space-y-3">
                   {communityPresets.map((preset) => {
                     const isPresetSaved = savedPresetIds.has(preset.id);
+                    const isPresetOwn = user ? preset.user_id === user.id : false;
                     return (
                       <div
                         key={preset.id}
@@ -638,9 +649,9 @@ export const FilamentDetailPage: React.FC = () => {
                             {/* Рейтинг пресета (отдельный от рейтинга материала) */}
                             {preset.rating !== null && preset.rating !== undefined ? (
                               <div className="flex items-center space-x-2 mb-2" title="Рейтинг этого пресета настроек">
-                                <Star className="w-5 h-5 text-yellow-400 fill-current" />
+                              <Star className="w-5 h-5 text-yellow-400 fill-current" />
                                 <span className="text-white font-bold">{preset.rating.toFixed(1)}</span>
-                              </div>
+                            </div>
                             ) : (
                               <div className="mb-2 text-gray-500 text-sm">Нет рейтинга</div>
                             )}
@@ -806,6 +817,14 @@ export const FilamentDetailPage: React.FC = () => {
                           >
                             Войдите, чтобы добавить
                           </button>
+                        ) : isPresetOwn ? (
+                          <button
+                            disabled
+                            className="w-full bg-purple-600/50 text-white py-2 px-4 rounded-lg cursor-not-allowed flex items-center justify-center"
+                          >
+                            <CheckCircle className="w-5 h-5 mr-2" />
+                            Ваш пресет
+                          </button>
                         ) : isPresetSaved ? (
                           <button
                             disabled
@@ -917,15 +936,15 @@ export const FilamentDetailPage: React.FC = () => {
                 )}
               </>
             ) : (
-              <div className="text-center py-12 text-gray-400">
-                <MessageCircle className="w-16 h-16 mx-auto mb-4 opacity-50" />
+          <div className="text-center py-12 text-gray-400">
+            <MessageCircle className="w-16 h-16 mx-auto mb-4 opacity-50" />
                 <p className="text-xl mb-2">Пока нет отзывов</p>
                 {user && (
                   <p className="text-sm">
                     Станьте первым, кто оставит отзыв об этом материале!
                   </p>
                 )}
-              </div>
+          </div>
             )}
           </div>
         )}

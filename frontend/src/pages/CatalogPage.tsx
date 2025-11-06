@@ -318,6 +318,8 @@ const MaterialCard: React.FC<MaterialCardProps> = ({
   
   // Проверяем, сохранён ли пресет
   const isPresetSaved = displayPreset ? savedPresetIds.has(displayPreset.id) : false;
+  // Проверяем, является ли пресет созданным пользователем
+  const isPresetOwn = displayPreset && user ? displayPreset.user_id === user.id : false;
 
   // РЕЙТИНГ ФИЛАМЕНТА: только из отзывов (FilamentReview)
   // Это оценка качества самого материала
@@ -521,9 +523,9 @@ const MaterialCard: React.FC<MaterialCardProps> = ({
                     {/* Рейтинг пресета (отдельный от рейтинга материала) */}
                     {preset.rating !== null && preset.rating !== undefined ? (
                       <div className="flex items-center space-x-1 mb-1" title="Рейтинг этого пресета настроек">
-                        <Star className="w-3 h-3 text-yellow-400 fill-current" />
+                      <Star className="w-3 h-3 text-yellow-400 fill-current" />
                         <span className="text-white text-sm">{preset.rating.toFixed(1)}</span>
-                      </div>
+                    </div>
                     ) : (
                       <div className="mb-1 text-gray-500 text-xs">Нет рейтинга</div>
                     )}
@@ -544,6 +546,14 @@ const MaterialCard: React.FC<MaterialCardProps> = ({
             title="Необходимо войти в систему"
           >
             Войдите, чтобы добавить
+          </button>
+        ) : isPresetOwn ? (
+          <button
+            disabled
+            className="flex-1 bg-purple-600/50 text-white py-3 px-6 rounded-xl cursor-not-allowed flex items-center justify-center"
+          >
+            <CheckCircle className="w-5 h-5 mr-2" />
+            Ваш пресет
           </button>
         ) : isPresetSaved ? (
           <button

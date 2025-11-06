@@ -7,6 +7,7 @@ import { filamentReviewsAPI } from '../api/client';
 import { FilamentReview, Preset } from '../types/api';
 import { StarRating } from './StarRating';
 import { useAuth } from '../contexts/AuthContext';
+import { useHeaderVisible } from '../hooks/useHeaderVisible';
 
 interface CreateReviewModalProps {
   filamentId: number;
@@ -21,6 +22,7 @@ export const CreateReviewModal: React.FC<CreateReviewModalProps> = ({
   onClose,
   onSuccess,
 }) => {
+  const isHeaderVisible = useHeaderVisible();
   const { user } = useAuth();
   const queryClient = useQueryClient();
   const isEdit = !!review;
@@ -57,6 +59,7 @@ export const CreateReviewModal: React.FC<CreateReviewModalProps> = ({
   const createMutation = useMutation({
     mutationFn: (data: {
       filament_id: number;
+      preset_id?: number | null;
       success: boolean;
       rating: number;
       comment?: string | null;
@@ -109,7 +112,7 @@ export const CreateReviewModal: React.FC<CreateReviewModalProps> = ({
 
   if (!user) {
     return (
-      <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50">
+      <div className={`fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 ${isHeaderVisible ? 'pt-[88px]' : ''}`}>
         <div className="bg-gray-900 rounded-2xl p-8 border border-white/20 max-w-md w-full mx-4">
           <div className="text-center">
             <AlertCircle className="w-16 h-16 text-yellow-400 mx-auto mb-4" />
@@ -130,7 +133,7 @@ export const CreateReviewModal: React.FC<CreateReviewModalProps> = ({
   }
 
   return (
-    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+    <div className={`fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4 ${isHeaderVisible ? 'pt-[88px]' : ''}`}>
       <div className="bg-gray-900 rounded-2xl p-8 border border-white/20 max-w-2xl w-full max-h-[90vh] overflow-y-auto">
         {/* Заголовок */}
         <div className="flex items-center justify-between mb-6">
@@ -177,7 +180,9 @@ export const CreateReviewModal: React.FC<CreateReviewModalProps> = ({
                       <div className="flex items-center justify-between">
                         <div className="flex items-center space-x-2">
                           {preset.is_official && (
-                            <Shield className="w-4 h-4 text-green-400" title="Официальный пресет" />
+                            <span title="Официальный пресет">
+                              <Shield className="w-4 h-4 text-green-400" />
+                            </span>
                           )}
                           <span className="font-semibold">{preset.name}</span>
                           {preset.is_saved && (

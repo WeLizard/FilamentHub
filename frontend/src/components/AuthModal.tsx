@@ -1,11 +1,13 @@
 /** Модальное окно авторизации */
 
 import { useState, useEffect, FormEvent } from 'react';
-import { Mail, Lock, LogIn, UserPlus, User, Factory, Package, X, Check, Eye, EyeOff, AlertCircle } from 'lucide-react';
+import { Mail, Lock, LogIn, UserPlus, User, Factory, Package, X, Check, Eye, EyeOff, AlertCircle, KeyRound } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { Captcha } from './Captcha';
 import { TermsModal } from './TermsModal';
 import { ConsentModal } from './ConsentModal';
+import { ForgotPasswordModal } from './ForgotPasswordModal';
+import { useHeaderVisible } from '../hooks/useHeaderVisible';
 
 interface AuthModalProps {
   isOpen: boolean;
@@ -14,6 +16,7 @@ interface AuthModalProps {
 }
 
 export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMode = 'login' }) => {
+  const isHeaderVisible = useHeaderVisible();
   const [authMode, setAuthMode] = useState<'login' | 'register'>(initialMode);
   const [authMethod, setAuthMethod] = useState<'email' | 'google'>('email'); // Новое состояние для метода входа
   const [email, setEmail] = useState('');
@@ -30,6 +33,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
   const [isLoading, setIsLoading] = useState(false);
   const [isTermsModalOpen, setIsTermsModalOpen] = useState(false);
   const [isConsentModalOpen, setIsConsentModalOpen] = useState(false);
+  const [isForgotPasswordModalOpen, setIsForgotPasswordModalOpen] = useState(false);
 
   const { login, register } = useAuth();
 
@@ -74,10 +78,12 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
     try {
       if (authMode === 'login') {
         await login(email, password);
+        // Закрываем модалку только при успешном логине
         onClose();
         setEmail('');
         setPassword('');
         setIsLoading(false);
+        setError(null); // Очищаем ошибки при успехе
       } else {
         // Валидация без очистки полей
         if (!agreed) {
@@ -176,7 +182,11 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
             errorMessage = JSON.stringify(detail);
           }
         } else if (status === 401) {
-          errorMessage = 'Неверный email или пароль.';
+          // Неверные учетные данные - показываем конкретное сообщение
+          errorMessage = 'Неверный email или пароль. Проверьте правильность ввода.';
+          // Очищаем пароль для безопасности
+          setPassword('');
+          // Показываем капчу после нескольких неудачных попыток (опционально)
         } else if (status === 403) {
           errorMessage = 'Аккаунт заблокирован. Обратитесь в поддержку.';
         } else if (status === 500) {
@@ -202,11 +212,16 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+    <div className={`fixed inset-0 z-50 flex items-center justify-center p-4 ${isHeaderVisible ? 'pt-[88px]' : ''}`}>
       {/* Backdrop */}
       <div
         className="absolute inset-0 bg-black/60 backdrop-blur-sm"
-        onClick={onClose}
+        onClick={(e) => {
+          // Закрываем модалку только если не идет загрузка и нет ошибки
+          if (!isLoading && !error) {
+            onClose();
+          }
+        }}
       ></div>
 
       {/* Modal */}
@@ -215,8 +230,14 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
         <div className="relative p-8 pb-0 flex-shrink-0">
           {/* Close Button */}
           <button
-            onClick={onClose}
-            className="absolute top-4 right-4 p-2 text-gray-400 hover:text-white transition-colors"
+            onClick={(e) => {
+              // Закрываем модалку только если не идет загрузка
+              if (!isLoading) {
+                onClose();
+              }
+            }}
+            disabled={isLoading}
+            className="absolute top-4 right-4 p-2 text-gray-400 hover:text-white transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
           >
             <X className="w-5 h-5" />
           </button>
@@ -392,7 +413,22 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
             )}
 
             <div>
-              <label className="block text-gray-300 mb-2">Пароль</label>
+              <div className="flex items-center justify-between mb-2">
+                <label className="block text-gray-300">Пароль</label>
+                {authMode === 'login' && (
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.preventDefault();
+                      setIsForgotPasswordModalOpen(true);
+                    }}
+                    className="text-sm text-purple-400 hover:text-purple-300 transition-colors flex items-center space-x-1"
+                  >
+                    <KeyRound className="w-3.5 h-3.5" />
+                    <span>Забыли пароль?</span>
+                  </button>
+                )}
+              </div>
               <div className="relative">
                 <Lock className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
                 <input
@@ -564,6 +600,15 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
 
       {/* Consent Modal */}
       <ConsentModal isOpen={isConsentModalOpen} onClose={() => setIsConsentModalOpen(false)} />
+
+      {/* Forgot Password Modal */}
+      <ForgotPasswordModal
+        isOpen={isForgotPasswordModalOpen}
+        onClose={() => setIsForgotPasswordModalOpen(false)}
+        onSuccess={() => {
+          setIsForgotPasswordModalOpen(false);
+        }}
+      />
     </div>
   );
 };

@@ -89,7 +89,7 @@ export const ReviewCard: React.FC<ReviewCardProps> = ({
 
       {/* Рейтинг и статус */}
       <div className="flex items-center space-x-4 mb-4">
-        <StarRating rating={review.rating} readonly size="md" />
+        <StarRating rating={review.rating} readonly size="md" onChange={() => {}} />
         {review.success ? (
           <div className="flex items-center space-x-1 text-green-400">
             <CheckCircle className="w-5 h-5" />

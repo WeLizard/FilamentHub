@@ -27,11 +27,13 @@ import {
   Loader2,
   Upload,
   Printer,
+  Eye,
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { presetsAPI, filamentsAPI, brandsAPI, savedPresetsAPI, filamentReviewsAPI } from '../api/client';
 import api from '../api/client';
 import { CreatePresetModal } from '../components/CreatePresetModal';
+import { ViewPresetModal } from '../components/ViewPresetModal';
 import { CreatePrinterRequestModal } from '../components/CreatePrinterRequestModal';
 import { DeleteAccountModal } from '../components/DeleteAccountModal';
 import { BrandProfilePage } from './BrandProfilePage';
@@ -45,8 +47,10 @@ export const ProfilePage: React.FC = () => {
     'dashboard'
   );
   const [isCreatePresetModalOpen, setIsCreatePresetModalOpen] = useState(false);
+  const [isViewPresetModalOpen, setIsViewPresetModalOpen] = useState(false);
   const [isCreatePrinterRequestModalOpen, setIsCreatePrinterRequestModalOpen] = useState(false);
   const [editingPreset, setEditingPreset] = useState<Preset | null>(null);
+  const [viewingPreset, setViewingPreset] = useState<Preset | null>(null);
   const [isDeleteAccountModalOpen, setIsDeleteAccountModalOpen] = useState(false);
 
   // Загружаем пресеты пользователя (созданные им)
@@ -100,9 +104,13 @@ export const ProfilePage: React.FC = () => {
   });
 
   // Объединяем пресеты: созданные пользователем + сохранённые из каталога
+  // Исключаем из сохранённых те, которые уже есть в созданных (чтобы не было дублей)
   const allMyPresets = useMemo(() => {
     const created = (userPresetsData?.items || []).map(p => ({ ...p, source: 'own' as const }));
-    const saved = (savedPresetsDetails || []).map(p => ({ ...p, source: 'saved' as const }));
+    const createdIds = new Set(created.map(p => p.id));
+    const saved = (savedPresetsDetails || [])
+      .filter(p => !createdIds.has(p.id)) // Исключаем пресеты, которые уже созданы пользователем
+      .map(p => ({ ...p, source: 'saved' as const }));
     return [...created, ...saved];
   }, [userPresetsData, savedPresetsDetails]);
 
@@ -175,6 +183,11 @@ export const ProfilePage: React.FC = () => {
   const handleEditPreset = (preset: Preset) => {
     setEditingPreset(preset);
     setIsCreatePresetModalOpen(true);
+  };
+
+  const handleViewPreset = (preset: Preset) => {
+    setViewingPreset(preset);
+    setIsViewPresetModalOpen(true);
   };
 
   const handleCreatePreset = () => {
@@ -359,6 +372,7 @@ export const ProfilePage: React.FC = () => {
                 key={preset.id}
                 preset={preset}
                 onEdit={handleEditPreset}
+                onView={handleViewPreset}
                 onDelete={handleDeletePreset}
               />
             ))}
@@ -414,6 +428,16 @@ export const ProfilePage: React.FC = () => {
         isOpen={isCreatePresetModalOpen}
         onClose={handleClosePresetModal}
         preset={editingPreset}
+      />
+
+      {/* View Preset Modal */}
+      <ViewPresetModal
+        isOpen={isViewPresetModalOpen}
+        onClose={() => {
+          setIsViewPresetModalOpen(false);
+          setViewingPreset(null);
+        }}
+        preset={viewingPreset}
       />
 
       {/* Create Printer Request Modal */}
@@ -574,10 +598,11 @@ const RecentHistory: React.FC<RecentHistoryProps> = ({ history }) => (
 interface PresetCardProps {
   preset: Preset;
   onEdit?: (preset: Preset) => void;
+  onView?: (preset: Preset) => void;
   onDelete?: (preset: Preset) => void;
 }
 
-const PresetCard: React.FC<PresetCardProps> = ({ preset, onEdit, onDelete }) => {
+const PresetCard: React.FC<PresetCardProps> = ({ preset, onEdit, onView, onDelete }) => {
   const navigate = useNavigate();
   const [isDownloading, setIsDownloading] = useState(false);
   const [isImporting, setIsImporting] = useState(false);
@@ -815,13 +840,21 @@ const PresetCard: React.FC<PresetCardProps> = ({ preset, onEdit, onDelete }) => 
           )}
         </div>
         <div className="flex space-x-2">
-          {preset.source === 'own' && (
+          {preset.source === 'own' ? (
             <button
               onClick={() => onEdit?.(preset)}
               className="p-2 bg-white/10 hover:bg-white/20 rounded-lg text-white transition-all"
               title="Редактировать"
             >
               <Edit className="w-4 h-4" />
+            </button>
+          ) : (
+            <button
+              onClick={() => onView?.(preset)}
+              className="p-2 bg-white/10 hover:bg-white/20 rounded-lg text-white transition-all"
+              title="Посмотреть пресет подробно"
+            >
+              <Eye className="w-4 h-4" />
             </button>
           )}
           <button

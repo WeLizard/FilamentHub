@@ -5,7 +5,7 @@ import { Star } from 'lucide-react';
 
 interface StarRatingProps {
   rating: number; // 0.0 - 5.0 (0 = не выбрано)
-  onChange: (rating: number) => void;
+  onChange?: (rating: number) => void; // Опциональный для readonly режима
   readonly?: boolean;
   size?: 'sm' | 'md' | 'lg';
 }
@@ -23,7 +23,7 @@ export const StarRating: React.FC<StarRatingProps> = ({
   };
 
   const handleClick = (value: number) => {
-    if (!readonly) {
+    if (!readonly && onChange) {
       onChange(value);
     }
   };

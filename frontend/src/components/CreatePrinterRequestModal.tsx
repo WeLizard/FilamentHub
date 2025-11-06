@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { X, Printer, Save } from 'lucide-react';
 import { printerRequestsAPI } from '../api/printerRequestsAPI';
+import { useHeaderVisible } from '../hooks/useHeaderVisible';
 
 interface CreatePrinterRequestModalProps {
   isOpen: boolean;
@@ -11,6 +12,7 @@ interface CreatePrinterRequestModalProps {
 }
 
 export function CreatePrinterRequestModal({ isOpen, onClose }: CreatePrinterRequestModalProps) {
+  const isHeaderVisible = useHeaderVisible();
   const queryClient = useQueryClient();
   const [formData, setFormData] = useState({
     name: '',
@@ -78,7 +80,7 @@ export function CreatePrinterRequestModal({ isOpen, onClose }: CreatePrinterRequ
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+    <div className={`fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4 z-50 ${isHeaderVisible ? 'pt-[88px]' : ''}`}>
       <div className="bg-gradient-to-br from-purple-900 to-indigo-900 rounded-2xl max-w-2xl w-full max-h-[90vh] overflow-hidden flex flex-col border border-white/20">
         {/* Header */}
         <div className="flex items-center justify-between p-6 border-b border-white/10">

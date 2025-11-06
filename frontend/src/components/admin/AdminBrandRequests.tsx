@@ -7,8 +7,10 @@ import { FileText, CheckCircle, XCircle, Eye, Download, Clock, Building2, UserPl
 import { adminAPI } from '../../api/client';
 import type { BrandRequest, BrandRequestStatus } from '../../types/api';
 import { ConfirmDeleteModal } from '../ConfirmDeleteModal';
+import { useHeaderVisible } from '../../hooks/useHeaderVisible';
 
 export function AdminBrandRequests() {
+  const isHeaderVisible = useHeaderVisible();
   const queryClient = useQueryClient();
   const [selectedStatus, setSelectedStatus] = useState<BrandRequestStatus | 'all'>('all');
   const [selectedRequest, setSelectedRequest] = useState<BrandRequest | null>(null);
@@ -217,7 +219,7 @@ export function AdminBrandRequests() {
 
       {/* Модальное окно с деталями заявки */}
       {selectedRequest && createPortal(
-        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 overflow-y-auto">
+        <div className={`fixed inset-0 bg-black/50 backdrop-blur-sm z-50 overflow-y-auto ${isHeaderVisible ? 'pt-[88px]' : ''}`}>
           <div className="min-h-full flex items-center justify-center p-4">
             <div className="bg-gradient-to-br from-purple-900 to-indigo-900 rounded-2xl max-w-3xl w-full max-h-[90vh] my-8 overflow-hidden flex flex-col border border-white/20">
             {/* Header */}

@@ -1,5 +1,6 @@
 import { createPortal } from 'react-dom';
 import { AlertTriangle, X } from 'lucide-react';
+import { useHeaderVisible } from '../hooks/useHeaderVisible';
 
 interface ConfirmDeleteModalProps {
   isOpen: boolean;
@@ -31,9 +32,10 @@ export const ConfirmDeleteModal: React.FC<ConfirmDeleteModalProps> = ({
     : 'Вы уверены, что хотите удалить этот элемент? Это действие нельзя отменить.';
 
   const displayMessage = message || defaultMessage;
+  const isHeaderVisible = useHeaderVisible();
 
   return createPortal(
-    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 overflow-y-auto">
+    <div className={`fixed inset-0 bg-black/50 backdrop-blur-sm z-50 overflow-y-auto ${isHeaderVisible ? 'pt-[88px]' : ''}`}>
       <div className="min-h-full flex items-center justify-center p-4">
         <div className="bg-gradient-to-br from-purple-900 to-indigo-900 rounded-2xl max-w-md w-full overflow-hidden flex flex-col border border-white/20 shadow-xl">
           {/* Header */}

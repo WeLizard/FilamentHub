@@ -65,6 +65,7 @@ export interface Printer {
 export interface PrinterRequest {
   id: number;
   user_id: number;
+  user_email: string | null; // Email пользователя для админки
   name: string;
   manufacturer: string;
   model: string;
@@ -78,6 +79,7 @@ export interface PrinterRequest {
   max_bed_temp: number | null;
   image_url: string | null;
   message: string | null;
+  proof_files: string[] | null; // JSON массив путей к загруженным файлам
   status: 'pending' | 'approved' | 'rejected';
   processed_by_id: number | null;
   processed_at: string | null;

@@ -11,6 +11,7 @@ import { Dropdown } from './Dropdown';
 import type { Filament, Brand } from '../types/api';
 import { useAuth } from '../contexts/AuthContext';
 import { useClickOutside } from '../hooks/useClickOutside';
+import { useHeaderVisible } from '../hooks/useHeaderVisible';
 
 interface CreateFilamentModalProps {
   isOpen: boolean;
@@ -350,9 +351,10 @@ export const CreateFilamentModal: React.FC<CreateFilamentModalProps> = ({
   if (!isOpen) return null;
 
   const isLoading = createMutation.isPending || updateMutation.isPending;
+  const isHeaderVisible = useHeaderVisible();
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm pt-20">
+    <div className={`fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm ${isHeaderVisible ? 'pt-[88px]' : ''}`}>
       <div 
         className="bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900 rounded-2xl w-full max-w-5xl max-h-[90vh] overflow-hidden flex flex-col border border-white/20 shadow-2xl"
         onClick={(e) => e.stopPropagation()}

@@ -6,6 +6,7 @@ import { useNavigate } from 'react-router-dom';
 import { X, AlertTriangle, Trash2, Eye, Shield } from 'lucide-react';
 import { authAPI } from '../api/client';
 import { useAuth } from '../contexts/AuthContext';
+import { useHeaderVisible } from '../hooks/useHeaderVisible';
 
 interface DeleteAccountModalProps {
   isOpen: boolean;
@@ -13,6 +14,7 @@ interface DeleteAccountModalProps {
 }
 
 export const DeleteAccountModal: React.FC<DeleteAccountModalProps> = ({ isOpen, onClose }) => {
+  const isHeaderVisible = useHeaderVisible();
   const { user, logout } = useAuth();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
@@ -85,7 +87,7 @@ export const DeleteAccountModal: React.FC<DeleteAccountModalProps> = ({ isOpen, 
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
+    <div className={`fixed inset-0 z-[60] flex items-center justify-center p-4 ${isHeaderVisible ? 'pt-[88px]' : ''}`}>
       {/* Backdrop */}
       <div
         className="absolute inset-0 bg-black/75 backdrop-blur-sm"

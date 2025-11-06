@@ -5,8 +5,10 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Printer, Plus, Edit, Trash2, X, Save } from 'lucide-react';
 import { adminAPI, printersAPI } from '../../api/client';
 import type { Printer as PrinterType } from '../../types/api';
+import { useHeaderVisible } from '../../hooks/useHeaderVisible';
 
 export function AdminPrinters() {
+  const isHeaderVisible = useHeaderVisible();
   const queryClient = useQueryClient();
   const [page, setPage] = useState(1);
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
@@ -228,6 +230,7 @@ interface PrinterModalProps {
 }
 
 function PrinterModal({ printer, onClose, onSave, isLoading }: PrinterModalProps) {
+  const isHeaderVisible = useHeaderVisible();
   const [formData, setFormData] = useState({
     name: printer?.name || '',
     manufacturer: printer?.manufacturer || '',
@@ -265,7 +268,7 @@ function PrinterModal({ printer, onClose, onSave, isLoading }: PrinterModalProps
   };
 
   return (
-    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+    <div className={`fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4 z-50 ${isHeaderVisible ? 'pt-[88px]' : ''}`}>
       <div className="bg-gradient-to-br from-purple-900 to-indigo-900 rounded-2xl max-w-2xl w-full max-h-[90vh] overflow-hidden flex flex-col border border-white/20">
         {/* Header */}
         <div className="flex items-center justify-between p-6 border-b border-white/10">
