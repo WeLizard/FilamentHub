@@ -44,7 +44,9 @@ export const CreateFilamentModal: React.FC<CreateFilamentModalProps> = ({
   const [openColorPickers, setOpenColorPickers] = useState<boolean[]>([]);
   const [diameter, setDiameter] = useState(1.75);
   const [density, setDensity] = useState(1.24);
+  const [priceMode, setPriceMode] = useState<'per_kg' | 'per_spool'>('per_kg');
   const [pricePerKg, setPricePerKg] = useState(0);
+  const [pricePerSpool, setPricePerSpool] = useState(0);
   const [spoolWeight, setSpoolWeight] = useState(1000);
   const [description, setDescription] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -133,6 +135,8 @@ export const CreateFilamentModal: React.FC<CreateFilamentModalProps> = ({
 
   // Инициализация формы при редактировании
   useEffect(() => {
+    if (!isOpen) return; // Не выполняем инициализацию, если модалка закрыта
+    
     if (filament) {
       setBrandIdValue(filament.brand_id);
       setName(filament.name);
@@ -167,12 +171,20 @@ export const CreateFilamentModal: React.FC<CreateFilamentModalProps> = ({
       setOpenColorPickers([]);
       setDiameter(filament.diameter || 1.75);
       setDensity(filament.density || 1.24);
-      setPricePerKg(filament.price_per_kg || 0);
-      setSpoolWeight(filament.spool_weight || 1000);
+      const initialPricePerKg = filament.price_per_kg || 0;
+      const initialSpoolWeight = filament.spool_weight || 1000;
+      setPricePerKg(initialPricePerKg);
+      setSpoolWeight(initialSpoolWeight);
+      // Вычисляем цену за катушку из цены за кг
+      setPricePerSpool(initialPricePerKg > 0 && initialSpoolWeight > 0 ? (initialPricePerKg * initialSpoolWeight) / 1000 : 0);
+      setPriceMode('per_kg'); // По умолчанию показываем за кг
       setDescription(filament.description || '');
     } else {
       // Сброс формы при создании нового
-      setBrandIdValue(brandId || null);
+      // Если пользователь является сотрудником бренда, автоматически устанавливаем его brand_id
+      const newBrandId = brandId || user?.brand_id || null;
+      // Устанавливаем только если значение изменилось, чтобы избежать бесконечного цикла
+      setBrandIdValue((prev) => prev !== newBrandId ? newBrandId : prev);
       setName('');
       setMaterialType('PLA');
       setCustomMaterialType('');
@@ -190,13 +202,41 @@ export const CreateFilamentModal: React.FC<CreateFilamentModalProps> = ({
       setDiameter(1.75);
       setDensity(1.24);
       setPricePerKg(0);
+      setPricePerSpool(0);
       setSpoolWeight(1000);
+      setPriceMode('per_kg');
       setDescription('');
     }
     setError(null);
     setSuccessMessage(null);
     setCreatedFilament(null); // Сбрасываем QR-код при закрытии
-  }, [filament, brandId, isOpen, materialTypes]);
+  }, [filament?.id, brandId, isOpen, user?.brand_id]); // Убрал materialTypes и filament целиком, используем только filament.id
+
+  // Автоматический пересчет при изменении цены за кг (режим "за кг") или веса катушки
+  useEffect(() => {
+    if (priceMode === 'per_kg' && spoolWeight > 0 && pricePerKg > 0) {
+      const calculatedPricePerSpool = (pricePerKg * spoolWeight) / 1000;
+      // Обновляем только если значение изменилось (с небольшой погрешностью)
+      if (Math.abs(calculatedPricePerSpool - pricePerSpool) > 0.01) {
+        setPricePerSpool(calculatedPricePerSpool);
+      }
+    } else if (priceMode === 'per_kg' && pricePerKg === 0 && pricePerSpool !== 0) {
+      setPricePerSpool(0);
+    }
+  }, [priceMode, pricePerKg, spoolWeight]);
+
+  // Автоматический пересчет при изменении цены за катушку (режим "за катушку") или веса катушки
+  useEffect(() => {
+    if (priceMode === 'per_spool' && spoolWeight > 0 && pricePerSpool > 0) {
+      const calculatedPricePerKg = (pricePerSpool / spoolWeight) * 1000;
+      // Обновляем только если значение изменилось (с небольшой погрешностью)
+      if (Math.abs(calculatedPricePerKg - pricePerKg) > 0.01) {
+        setPricePerKg(calculatedPricePerKg);
+      }
+    } else if (priceMode === 'per_spool' && pricePerSpool === 0 && pricePerKg !== 0) {
+      setPricePerKg(0);
+    }
+  }, [priceMode, pricePerSpool, spoolWeight]);
 
   // Мутация для создания материала
   const createMutation = useMutation({
@@ -348,15 +388,16 @@ export const CreateFilamentModal: React.FC<CreateFilamentModalProps> = ({
     }
   };
 
-  if (!isOpen) return null;
-
-  const isLoading = createMutation.isPending || updateMutation.isPending;
+  // Хуки должны вызываться до условного возврата
   const isHeaderVisible = useHeaderVisible();
+  const isLoading = createMutation.isPending || updateMutation.isPending;
+
+  if (!isOpen) return null;
 
   return (
     <div className={`fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm ${isHeaderVisible ? 'pt-[88px]' : ''}`}>
       <div 
-        className="bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900 rounded-2xl w-full max-w-5xl max-h-[90vh] overflow-hidden flex flex-col border border-white/20 shadow-2xl"
+        className={`bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900 rounded-2xl w-full max-w-5xl overflow-hidden flex flex-col border border-white/20 shadow-2xl ${isHeaderVisible ? 'max-h-[calc(100vh-60px)]' : 'max-h-[calc(100vh-10px)]'}`}
         onClick={(e) => e.stopPropagation()}
         onMouseDown={(e) => e.stopPropagation()}
       >
@@ -583,8 +624,8 @@ export const CreateFilamentModal: React.FC<CreateFilamentModalProps> = ({
                 </>
               )}
             </div>
-            {/* Brand Selection (только при создании без brandId) */}
-            {!filament && !brandId && (
+            {/* Brand Selection (только при создании без brandId и если пользователь не сотрудник бренда) */}
+            {!filament && !brandId && !user?.brand_id && (
               <div className="flex-[2]">
                 <Dropdown
                   label="Производитель *"
@@ -709,7 +750,7 @@ export const CreateFilamentModal: React.FC<CreateFilamentModalProps> = ({
                                 newOpenStates[idx] = !openColorPickers[idx];
                                 setOpenColorPickers(newOpenStates);
                               }}
-                              className="w-full h-12 rounded-lg border border-white/20 cursor-pointer hover:opacity-80 transition-opacity relative overflow-hidden"
+                              className="w-full h-12 rounded-lg border border-white/20 cursor-pointer hover:opacity-80 transition-opacity relative overflow-visible"
                               style={{ backgroundColor: currentColor }}
                               title="Нажмите для выбора цвета"
                             >
@@ -720,7 +761,7 @@ export const CreateFilamentModal: React.FC<CreateFilamentModalProps> = ({
                             
                             {/* HSL Color Picker - появляется над кнопкой */}
                             {isPickerOpen && (
-                              <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 z-50">
+                              <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 z-[100]">
                                 <HSLColorPicker
                                   color={currentColor}
                                   onChange={(hex) => {
@@ -851,23 +892,74 @@ export const CreateFilamentModal: React.FC<CreateFilamentModalProps> = ({
           {/* Price and Weight */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
-              <label className="block text-gray-300 mb-2 text-sm font-medium">Цена за кг (₽)</label>
+              <div className="flex items-center justify-between mb-2">
+                <label className="block text-gray-300 text-sm font-medium">
+                  {priceMode === 'per_kg' ? 'Цена за кг (₽)' : 'Цена за катушку (₽)'}
+                </label>
+                {/* Price Mode Toggle */}
+                <div className="flex items-center bg-white/10 rounded-lg p-1 border border-white/20">
+                  <button
+                    type="button"
+                    onClick={() => setPriceMode('per_kg')}
+                    className={`px-2 py-1 text-xs rounded transition-all ${
+                      priceMode === 'per_kg'
+                        ? 'bg-purple-600 text-white'
+                        : 'text-gray-400 hover:text-white'
+                    }`}
+                    title="За кг"
+                  >
+                    За кг
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setPriceMode('per_spool')}
+                    className={`px-2 py-1 text-xs rounded transition-all ${
+                      priceMode === 'per_spool'
+                        ? 'bg-purple-600 text-white'
+                        : 'text-gray-400 hover:text-white'
+                    }`}
+                    title="За катушку"
+                  >
+                    За катушку
+                  </button>
+                </div>
+              </div>
               <input
                 type="number"
-                value={pricePerKg}
-                onChange={(e) => setPricePerKg(Number(e.target.value))}
+                value={priceMode === 'per_kg' ? (pricePerKg || '') : (pricePerSpool || '')}
+                onChange={(e) => {
+                  const value = e.target.value === '' ? 0 : Number(e.target.value);
+                  if (priceMode === 'per_kg') {
+                    setPricePerKg(value);
+                  } else {
+                    setPricePerSpool(value);
+                  }
+                }}
                 min={0}
-                step="1"
+                step="0.01"
                 className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all"
-                placeholder="800"
+                placeholder={priceMode === 'per_kg' ? "800" : "800"}
               />
+              {/* Показываем пересчитанное значение */}
+              {priceMode === 'per_kg' && pricePerKg > 0 && spoolWeight > 0 && (
+                <p className="text-xs text-gray-400 mt-1">
+                  ≈ {((pricePerKg * spoolWeight) / 1000).toFixed(2)} ₽ за катушку
+                </p>
+              )}
+              {priceMode === 'per_spool' && pricePerSpool > 0 && spoolWeight > 0 && (
+                <p className="text-xs text-gray-400 mt-1">
+                  ≈ {((pricePerSpool / spoolWeight) * 1000).toFixed(2)} ₽ за кг
+                </p>
+              )}
             </div>
-            <div>
-              <label className="block text-gray-300 mb-2 text-sm font-medium">Вес катушки (g)</label>
+            <div className="flex flex-col">
+              <div className="h-[34px] mb-2 flex items-end">
+                <label className="block text-gray-300 text-sm font-medium">Вес катушки (g)</label>
+              </div>
               <input
                 type="number"
-                value={spoolWeight}
-                onChange={(e) => setSpoolWeight(Number(e.target.value))}
+                value={spoolWeight || ''}
+                onChange={(e) => setSpoolWeight(e.target.value === '' ? 0 : Number(e.target.value))}
                 min={0}
                 step="1"
                 className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all"

@@ -95,11 +95,12 @@ async def get_current_active_user_optional(
 async def get_current_brand_user(
     current_user: Annotated[User, Depends(get_current_user)],
 ) -> User:
-    """Get current user with brand role."""
-    if current_user.role != UserRole.BRAND:
+    """Get current user linked to a brand (by brand_id, not role)."""
+    # Проверяем наличие brand_id, а не роль (админ может быть привязан к бренду, но оставаться админом)
+    if not current_user.brand_id:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Not enough permissions. Brand role required.",
+            detail="Not enough permissions. User must be linked to a brand.",
         )
     return current_user
 

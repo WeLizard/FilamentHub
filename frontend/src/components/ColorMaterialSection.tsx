@@ -1,6 +1,7 @@
 /** Компонент секции цвета материала с поддержкой режимов preview и edit */
 
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { FilamentPreview } from './FilamentPreview';
 import { HSLColorPicker } from './HSLColorPicker';
 import type { FilamentVisualSettings } from '../types/api';
@@ -45,10 +46,42 @@ export const ColorMaterialSection: React.FC<ColorMaterialSectionProps> = ({
 }) => {
   const isEditMode = mode === 'edit';
   const [isColorPickerOpen, setIsColorPickerOpen] = useState(false);
+  const buttonRef = useRef<HTMLButtonElement | null>(null);
+  const [pickerPosition, setPickerPosition] = useState<{ bottom: number; left: number } | null>(null);
 
   // Высота соответствует высоте input полей (py-3 = 12px padding сверху/снизу, плюс высота текста)
   // Input поля имеют высоту примерно 48px (h-12)
   const fieldHeight = '48px'; // h-12 в Tailwind
+
+  // Вычисляем позицию пикера для portal
+  useEffect(() => {
+    if (isColorPickerOpen && buttonRef.current) {
+      const updatePosition = () => {
+        if (buttonRef.current) {
+          const rect = buttonRef.current.getBoundingClientRect();
+          // Пикер должен быть над кнопкой, используем bottom позиционирование
+          // bottom = расстояние от нижнего края viewport до верхнего края кнопки
+          const viewportHeight = window.innerHeight;
+          const bottom = viewportHeight - rect.top;
+          setPickerPosition({
+            bottom: bottom + 10, // 10px отступ над кнопкой
+            left: rect.left + rect.width / 2, // Центр кнопки
+          });
+        }
+      };
+
+      updatePosition();
+      window.addEventListener('scroll', updatePosition, true);
+      window.addEventListener('resize', updatePosition);
+
+      return () => {
+        window.removeEventListener('scroll', updatePosition, true);
+        window.removeEventListener('resize', updatePosition);
+      };
+    } else {
+      setPickerPosition(null);
+    }
+  }, [isColorPickerOpen]);
 
   return (
     <div className={className}>
@@ -85,6 +118,7 @@ export const ColorMaterialSection: React.FC<ColorMaterialSectionProps> = ({
               {/* Filament Preview - кликабельная кнопка для открытия пикера */}
               <div className="relative z-10">
                 <button
+                  ref={buttonRef}
                   type="button"
                   onClick={() => setIsColorPickerOpen(!isColorPickerOpen)}
                   className="cursor-pointer hover:opacity-80 transition-opacity flex items-center justify-center h-full"
@@ -98,15 +132,25 @@ export const ColorMaterialSection: React.FC<ColorMaterialSectionProps> = ({
                     />
                   </div>
                 </button>
-                {/* HSL Color Picker - появляется над кнопкой, выровнен по центру филамента */}
-                <div className="absolute bottom-full left-1/2 mb-2" style={{ transform: 'translateX(-50%)' }}>
-                  <HSLColorPicker
-                    color={colorHex}
-                    onChange={(hex) => onColorHexChange?.(hex)}
-                    isOpen={isColorPickerOpen}
-                    onToggle={setIsColorPickerOpen}
-                  />
-                </div>
+                {/* HSL Color Picker - рендерим через portal вне модального окна */}
+                {isColorPickerOpen && pickerPosition && createPortal(
+                  <div
+                    className="fixed z-[200]"
+                    style={{
+                      bottom: `${pickerPosition.bottom}px`,
+                      left: `${pickerPosition.left}px`,
+                      transform: 'translateX(-50%)',
+                    }}
+                  >
+                    <HSLColorPicker
+                      color={colorHex}
+                      onChange={(hex) => onColorHexChange?.(hex)}
+                      isOpen={isColorPickerOpen}
+                      onToggle={setIsColorPickerOpen}
+                    />
+                  </div>,
+                  document.body
+                )}
               </div>
             </div>
           ) : (

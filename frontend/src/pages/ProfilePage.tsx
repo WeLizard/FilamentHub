@@ -28,16 +28,18 @@ import {
   Upload,
   Printer,
   Eye,
+  DollarSign,
+  Clock,
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
-import { presetsAPI, filamentsAPI, brandsAPI, savedPresetsAPI, filamentReviewsAPI } from '../api/client';
+import { presetsAPI, filamentsAPI, brandsAPI, savedPresetsAPI, filamentReviewsAPI, calculatorAPI } from '../api/client';
 import api from '../api/client';
 import { CreatePresetModal } from '../components/CreatePresetModal';
 import { ViewPresetModal } from '../components/ViewPresetModal';
 import { CreatePrinterRequestModal } from '../components/CreatePrinterRequestModal';
 import { DeleteAccountModal } from '../components/DeleteAccountModal';
 import { BrandProfilePage } from './BrandProfilePage';
-import type { Preset } from '../types/api';
+import type { Preset, PricingMethod, CalculatorEstimateRequest } from '../types/api';
 
 export const ProfilePage: React.FC = () => {
   const { user, refreshUser } = useAuth();
@@ -119,7 +121,7 @@ export const ProfilePage: React.FC = () => {
   // Загружаем отзывы пользователя
   const { data: userReviewsData } = useQuery({
     queryKey: ['user-reviews', user?.id],
-    queryFn: () => filamentReviewsAPI.getMyReviews({ page: 1, size: 1000, active_only: true }),
+    queryFn: () => filamentReviewsAPI.getMyReviews({ page: 1, size: 100, active_only: true }),
     enabled: !!user?.id,
   });
 
@@ -252,14 +254,22 @@ export const ProfilePage: React.FC = () => {
         <div className="flex bg-white/10 rounded-lg p-1 border border-white/20">
           <button
             onClick={() => setShowBrandCabinet(false)}
-            className="flex items-center space-x-2 px-6 py-2 rounded-lg transition-all bg-purple-600 text-white shadow-lg shadow-purple-500/25"
+            className={`flex items-center space-x-2 px-6 py-2 rounded-lg transition-all ${
+              !showBrandCabinet 
+                ? 'bg-purple-600 text-white shadow-lg shadow-purple-500/25' 
+                : 'text-gray-300 hover:text-white'
+            }`}
           >
             <User className="w-4 h-4" />
             <span>Профиль пользователя</span>
           </button>
           <button
             onClick={() => setShowBrandCabinet(true)}
-            className="flex items-center space-x-2 px-6 py-2 rounded-lg transition-all text-gray-300 hover:text-white"
+            className={`flex items-center space-x-2 px-6 py-2 rounded-lg transition-all ${
+              showBrandCabinet 
+                ? 'bg-green-600 text-white shadow-lg shadow-green-500/25' 
+                : 'text-gray-300 hover:text-white'
+            }`}
           >
             <Factory className="w-4 h-4" />
             <span>Профиль компании</span>
@@ -790,10 +800,10 @@ const PresetCard: React.FC<PresetCardProps> = ({ preset, onEdit, onView, onDelet
 
   return (
       <div className="bg-white/10 backdrop-blur-sm rounded-2xl p-6 border border-white/20 shadow-xl">
-        <div className="flex items-center justify-between mb-4">
-          <div className="flex-1">
-            <div className="flex items-center space-x-2">
-              <h4 className="text-xl font-bold text-white">{preset.name}</h4>
+        <div className="flex items-start justify-between mb-4 gap-4">
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center flex-wrap gap-2 mb-1">
+              <h4 className="text-xl font-bold text-white break-words">{preset.name}</h4>
               {preset.printers && preset.printers.length > 0 && (
                 <div className="flex items-center gap-1.5 flex-wrap">
                   {preset.printers.map((printer) => (
@@ -808,34 +818,38 @@ const PresetCard: React.FC<PresetCardProps> = ({ preset, onEdit, onView, onDelet
                 </div>
               )}
               {preset.source === 'saved' && (
-                <span className="px-2 py-0.5 bg-blue-600/30 rounded text-blue-300 text-xs font-medium">
+                <span className="px-2 py-0.5 bg-blue-600/30 rounded text-blue-300 text-xs font-medium whitespace-nowrap">
                   Из каталога
+                </span>
+              )}
+              {preset.is_weighted && (
+                <span className="px-2 py-0.5 bg-green-600/30 rounded text-green-300 text-xs font-medium whitespace-nowrap">
+                  Генеративный
                 </span>
               )}
             </div>
           {filament && (
-            <div 
-              className="flex items-center space-x-2 mt-1 cursor-pointer hover:opacity-80 transition-opacity"
-              onClick={() => navigate(`/filaments/${filament.id}`, { state: { from: 'profile' } })}
-            >
-              {brand && (
-                <>
-                  <span className={`text-sm font-medium ${brand.verified ? 'text-green-400' : 'text-gray-300'}`}>
+            <div className="mt-1 cursor-pointer hover:opacity-80 transition-opacity" onClick={() => navigate(`/filaments/${filament.id}`, { state: { from: 'profile' } })}>
+              <div className="flex items-baseline gap-x-2">
+                {brand && (
+                  <span className={`text-sm font-medium ${brand.verified ? 'text-green-400' : 'text-gray-300'} break-words inline-block max-w-[calc(100%-250px)]`}>
                     {brand.name}
                   </span>
-                  <span className="text-gray-500">•</span>
-                </>
-              )}
-              <span className="text-gray-400 text-sm">{filament.name}</span>
-              {filament.color_name && (
-                <>
-                  <span className="text-gray-500">•</span>
-                  <span className="text-gray-400 text-sm">{filament.color_name}</span>
-                </>
-              )}
-              <span className="px-2 py-0.5 bg-purple-600/30 rounded text-purple-300 text-xs font-medium">
-                {filament.material_type}
-              </span>
+                )}
+                <div className="flex items-center gap-x-2 flex-shrink-0 whitespace-nowrap">
+                  {brand && <span className="text-gray-500">•</span>}
+                  <span className="text-gray-400 text-sm">{filament.name}</span>
+                  {filament.color_name && (
+                    <>
+                      <span className="text-gray-500">•</span>
+                      <span className="text-gray-400 text-sm">{filament.color_name}</span>
+                    </>
+                  )}
+                  <span className="px-2 py-0.5 bg-purple-600/30 rounded text-purple-300 text-xs font-medium">
+                    {filament.material_type}
+                  </span>
+                </div>
+              </div>
             </div>
           )}
         </div>
@@ -1000,114 +1014,815 @@ const HistoryItem: React.FC<HistoryItemProps> = ({ item }) => (
   </div>
 );
 
-// ЗАГЛУШКА: Калькулятор - простая математика, без G-code парсинга
+// Калькулятор стоимости печати с поддержкой трех методов расчета
 const CalculatorComponent: React.FC = () => {
-  const [weight, setWeight] = useState<number>(100);
-  const [timeHours, setTimeHours] = useState<number>(1);
-  const [pricePerKg, setPricePerKg] = useState<number>(500);
-  const [electricityCost, setElectricityCost] = useState<number>(5);
-  const [printerPower, setPrinterPower] = useState<number>(200);
+  const [pricingMethod, setPricingMethod] = useState<PricingMethod>('combined');
+  
+  // Параметры материала
+  const [weightG, setWeightG] = useState<number>(531);
+  const [supportsWeightG, setSupportsWeightG] = useState<number>(0);
+  const [supportsLossCoefficient, setSupportsLossCoefficient] = useState<number>(1.2);
+  const [spoolPrice, setSpoolPrice] = useState<number>(1200);
+  const [spoolWeightKg, setSpoolWeightKg] = useState<number>(1);
+  const [deliveryCost, setDeliveryCost] = useState<number>(0);
+  
+  // Параметры времени печати
+  const [timeHours, setTimeHours] = useState<number>(13);
+  const [timeMinutes, setTimeMinutes] = useState<number>(40);
+  const [timeSec, setTimeSec] = useState<number>(0);
+  
+  // Почасовая ставка печати (для by_time)
+  const [pricePerHour, setPricePerHour] = useState<number>(170);
+  
+  // Электроэнергия
+  const [electricityCostPerKwh, setElectricityCostPerKwh] = useState<number>(6);
+  const [printerPowerW, setPrinterPowerW] = useState<number>(350);
+  
+  // Дополнительные услуги
+  const [modelingHours, setModelingHours] = useState<number>(0);
+  const [modelingMinutes, setModelingMinutes] = useState<number>(0);
+  const [modelingRatePerHour, setModelingRatePerHour] = useState<number>(934);
+  
+  const [postprocessingHours, setPostprocessingHours] = useState<number>(0);
+  const [postprocessingMinutes, setPostprocessingMinutes] = useState<number>(2);
+  const [postprocessingRatePerHour, setPostprocessingRatePerHour] = useState<number>(100);
+  
+  const [printingRatePerHour, setPrintingRatePerHour] = useState<number>(170);
+  const [amortizationRatePerHour, setAmortizationRatePerHour] = useState<number>(16);
+  
+  // Количество деталей
+  const [quantity, setQuantity] = useState<number>(4);
+  
+  // Накладные расходы и наценка
+  const [overheadPercent, setOverheadPercent] = useState<number>(20);
+  const [markupPercent, setMarkupPercent] = useState<number>(30);
+  
+  // Коэффициенты корректировки
+  const [urgencyCoefficient, setUrgencyCoefficient] = useState<number>(1.0);
+  const [complexityCoefficient, setComplexityCoefficient] = useState<number>(1.0);
+  const [volumeDiscountCoefficient, setVolumeDiscountCoefficient] = useState<number>(1.0);
+  
+  // Фиксированные расходы и минимальная цена
+  const [fixedCosts, setFixedCosts] = useState<number>(0);
+  const [minOrderPrice, setMinOrderPrice] = useState<number>(0);
+  
+  // Округление
+  const [roundToNearest, setRoundToNearest] = useState<number>(10);
 
-  const calculateCost = () => {
-    const filamentCost = (weight / 1000) * pricePerKg;
-    const electricityCostTotal = (printerPower / 1000) * timeHours * electricityCost;
-    const total = filamentCost + electricityCostTotal;
+  // Мутация для расчета
+  const calculateMutation = useMutation({
+    mutationFn: (data: CalculatorEstimateRequest) => calculatorAPI.estimate(data),
+  });
 
-    return {
-      filament: filamentCost,
-      electricity: electricityCostTotal,
-      total,
+  const handleCalculate = () => {
+    const requestData: CalculatorEstimateRequest = {
+      pricing_method: pricingMethod,
+      quantity,
+      round_to_nearest: roundToNearest || undefined,
     };
+
+    // Добавляем параметры в зависимости от метода
+    if (pricingMethod === 'by_weight' || pricingMethod === 'combined') {
+      requestData.weight_g = weightG;
+      requestData.supports_weight_g = supportsWeightG || undefined;
+      requestData.supports_loss_coefficient = supportsLossCoefficient || undefined;
+      requestData.spool_price = spoolPrice;
+      requestData.spool_weight_kg = spoolWeightKg;
+      requestData.delivery_cost = deliveryCost;
+    }
+
+    if (pricingMethod === 'by_time' || pricingMethod === 'combined') {
+      requestData.time_hours = timeHours;
+      requestData.time_minutes = timeMinutes;
+      requestData.time_sec = timeSec || undefined;
+    }
+
+    if (pricingMethod === 'by_time') {
+      requestData.price_per_hour = pricePerHour;
+    }
+
+    if (electricityCostPerKwh && printerPowerW) {
+      requestData.electricity_cost_per_kwh = electricityCostPerKwh;
+      requestData.printer_power_w = printerPowerW;
+    }
+
+    if (pricingMethod === 'combined') {
+      if (modelingRatePerHour) {
+        requestData.modeling_hours = modelingHours;
+        requestData.modeling_minutes = modelingMinutes;
+        requestData.modeling_rate_per_hour = modelingRatePerHour;
+      }
+      if (postprocessingRatePerHour) {
+        requestData.postprocessing_hours = postprocessingHours;
+        requestData.postprocessing_minutes = postprocessingMinutes;
+        requestData.postprocessing_rate_per_hour = postprocessingRatePerHour;
+      }
+      if (printingRatePerHour) {
+        requestData.printing_rate_per_hour = printingRatePerHour;
+      }
+      if (amortizationRatePerHour) {
+        requestData.amortization_rate_per_hour = amortizationRatePerHour;
+      }
+      
+      // Накладные расходы и наценка
+      requestData.overhead_percent = overheadPercent || undefined;
+      requestData.markup_percent = markupPercent || undefined;
+      
+      // Коэффициенты корректировки
+      requestData.urgency_coefficient = urgencyCoefficient !== 1.0 ? urgencyCoefficient : undefined;
+      requestData.complexity_coefficient = complexityCoefficient !== 1.0 ? complexityCoefficient : undefined;
+      requestData.volume_discount_coefficient = volumeDiscountCoefficient !== 1.0 ? volumeDiscountCoefficient : undefined;
+      
+      // Фиксированные расходы и минимальная цена
+      requestData.fixed_costs = fixedCosts || undefined;
+      requestData.min_order_price = minOrderPrice || undefined;
+    }
+
+    calculateMutation.mutate(requestData);
   };
 
-  const costs = calculateCost();
+  const result = calculateMutation.data;
 
   return (
-    <div className="bg-white/10 backdrop-blur-sm rounded-2xl p-8 border border-white/20 shadow-xl">
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
-        <div>
-          <label className="block text-gray-300 mb-3 text-sm font-medium">Вес детали (г)</label>
-          <input
-            type="number"
-            value={weight}
-            onChange={(e) => setWeight(Number(e.target.value))}
-            className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all"
-            placeholder="100"
-          />
-        </div>
-        <div>
-          <label className="block text-gray-300 mb-3 text-sm font-medium">
-            Стоимость электроэнергии (₽/кВт·ч)
-          </label>
-          <input
-            type="number"
-            step="0.1"
-            value={electricityCost}
-            onChange={(e) => setElectricityCost(Number(e.target.value))}
-            className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all"
-            placeholder="5"
-          />
-        </div>
-        <div>
-          <label className="block text-gray-300 mb-3 text-sm font-medium">
-            Цена материала (₽/кг)
-          </label>
-          <input
-            type="number"
-            value={pricePerKg}
-            onChange={(e) => setPricePerKg(Number(e.target.value))}
-            className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all"
-            placeholder="500"
-          />
-        </div>
-        <div>
-          <label className="block text-gray-300 mb-3 text-sm font-medium">Время печати (часы)</label>
-          <input
-            type="number"
-            step="0.1"
-            value={timeHours}
-            onChange={(e) => setTimeHours(Number(e.target.value))}
-            className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all"
-            placeholder="1"
-          />
-        </div>
-        <div>
-          <label className="block text-gray-300 mb-3 text-sm font-medium">Мощность принтера (Вт)</label>
-          <input
-            type="number"
-            value={printerPower}
-            onChange={(e) => setPrinterPower(Number(e.target.value))}
-            className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all"
-            placeholder="200"
-          />
+    <div className="space-y-6">
+      {/* Переключатель методов */}
+      <div className="bg-white/10 backdrop-blur-sm rounded-2xl p-6 border border-white/20 shadow-xl">
+        <label className="block text-gray-300 mb-4 text-sm font-medium">Метод расчета</label>
+        <div className="flex flex-wrap gap-3">
+          {[
+            { value: 'by_weight', label: 'По граммам' },
+            { value: 'by_time', label: 'По часам' },
+            { value: 'combined', label: 'Комбинированный' },
+          ].map((method) => (
+            <button
+              key={method.value}
+              onClick={() => setPricingMethod(method.value as PricingMethod)}
+              className={`px-4 py-2 rounded-lg transition-all ${
+                pricingMethod === method.value
+                  ? 'bg-purple-600 text-white shadow-lg shadow-purple-500/25'
+                  : 'bg-white/10 text-gray-300 hover:text-white hover:bg-white/20'
+              }`}
+            >
+              {method.label}
+            </button>
+          ))}
         </div>
       </div>
 
-      {/* Results */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-        <ResultCard
-          label="Пластик"
-          value={costs.filament.toFixed(2)}
-          icon={Package}
-          color="from-purple-500/20 to-pink-500/20"
-          borderColor="border-purple-500/30"
-        />
-        <ResultCard
-          label="Электроэнергия"
-          value={costs.electricity.toFixed(2)}
-          icon={Gauge}
-          color="from-blue-500/20 to-cyan-500/20"
-          borderColor="border-blue-500/30"
-        />
-        <ResultCard
-          label="Итого"
-          value={costs.total.toFixed(2)}
-          icon={Calculator}
-          color="from-green-500/20 to-emerald-500/20"
-          borderColor="border-green-500/30"
-          isTotal
-        />
+      {/* Параметры материала */}
+      {(pricingMethod === 'by_weight' || pricingMethod === 'combined') && (
+        <div className="bg-white/10 backdrop-blur-sm rounded-2xl p-6 border border-white/20 shadow-xl">
+          <h3 className="text-xl font-bold text-white mb-4 flex items-center">
+            <Package className="w-5 h-5 mr-2" />
+            Параметры материала
+          </h3>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-gray-300 mb-2 text-sm font-medium">Вес детали (г)</label>
+              <input
+                type="number"
+                value={weightG}
+                onChange={(e) => setWeightG(Number(e.target.value) || 0)}
+                className="w-full px-4 py-2 bg-white/10 border border-white/20 rounded-xl text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500"
+                placeholder="531"
+              />
+            </div>
+            <div>
+              <label className="block text-gray-300 mb-2 text-sm font-medium">Вес поддержек (г)</label>
+              <input
+                type="number"
+                value={supportsWeightG}
+                onChange={(e) => setSupportsWeightG(Number(e.target.value) || 0)}
+                className="w-full px-4 py-2 bg-white/10 border border-white/20 rounded-xl text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500"
+                placeholder="0"
+              />
+              <p className="text-xs text-gray-400 mt-1">Обычно 15-30% от веса детали</p>
+            </div>
+            <div>
+              <label className="block text-gray-300 mb-2 text-sm font-medium">Коэффициент потерь на поддержки</label>
+              <input
+                type="number"
+                step="0.1"
+                min="1.0"
+                max="2.0"
+                value={supportsLossCoefficient}
+                onChange={(e) => setSupportsLossCoefficient(Number(e.target.value) || 1.2)}
+                className="w-full px-4 py-2 bg-white/10 border border-white/20 rounded-xl text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500"
+                placeholder="1.2"
+              />
+              <p className="text-xs text-gray-400 mt-1">Обычно 1.2-1.3</p>
+            </div>
+            <div>
+              <label className="block text-gray-300 mb-2 text-sm font-medium">Цена катушки (₽)</label>
+              <input
+                type="number"
+                value={spoolPrice}
+                onChange={(e) => setSpoolPrice(Number(e.target.value) || 0)}
+                className="w-full px-4 py-2 bg-white/10 border border-white/20 rounded-xl text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500"
+                placeholder="1200"
+              />
+            </div>
+            <div>
+              <label className="block text-gray-300 mb-2 text-sm font-medium">Вес катушки (кг)</label>
+              <input
+                type="number"
+                step="0.1"
+                value={spoolWeightKg}
+                onChange={(e) => setSpoolWeightKg(Number(e.target.value) || 0)}
+                className="w-full px-4 py-2 bg-white/10 border border-white/20 rounded-xl text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500"
+                placeholder="1"
+              />
+            </div>
+            <div>
+              <label className="block text-gray-300 mb-2 text-sm font-medium">Доставка (₽)</label>
+              <input
+                type="number"
+                value={deliveryCost}
+                onChange={(e) => setDeliveryCost(Number(e.target.value) || 0)}
+                className="w-full px-4 py-2 bg-white/10 border border-white/20 rounded-xl text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500"
+                placeholder="0"
+              />
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Параметры времени печати */}
+      {(pricingMethod === 'by_time' || pricingMethod === 'combined') && (
+        <div className="bg-white/10 backdrop-blur-sm rounded-2xl p-6 border border-white/20 shadow-xl">
+          <h3 className="text-xl font-bold text-white mb-4 flex items-center">
+            <Gauge className="w-5 h-5 mr-2" />
+            Время печати
+          </h3>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div>
+              <label className="block text-gray-300 mb-2 text-sm font-medium">Часы</label>
+              <input
+                type="number"
+                value={timeHours}
+                onChange={(e) => setTimeHours(Number(e.target.value) || 0)}
+                className="w-full px-4 py-2 bg-white/10 border border-white/20 rounded-xl text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500"
+                placeholder="13"
+              />
+            </div>
+            <div>
+              <label className="block text-gray-300 mb-2 text-sm font-medium">Минуты</label>
+              <input
+                type="number"
+                value={timeMinutes}
+                onChange={(e) => setTimeMinutes(Number(e.target.value) || 0)}
+                className="w-full px-4 py-2 bg-white/10 border border-white/20 rounded-xl text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500"
+                placeholder="40"
+              />
+            </div>
+            <div>
+              <label className="block text-gray-300 mb-2 text-sm font-medium">Секунды</label>
+              <input
+                type="number"
+                value={timeSec}
+                onChange={(e) => setTimeSec(Number(e.target.value) || 0)}
+                className="w-full px-4 py-2 bg-white/10 border border-white/20 rounded-xl text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500"
+                placeholder="0"
+              />
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Почасовая ставка (для by_time) */}
+      {pricingMethod === 'by_time' && (
+        <div className="bg-white/10 backdrop-blur-sm rounded-2xl p-6 border border-white/20 shadow-xl">
+          <h3 className="text-xl font-bold text-white mb-4">Почасовая ставка</h3>
+          <div>
+            <label className="block text-gray-300 mb-2 text-sm font-medium">Цена за час печати (₽/ч)</label>
+            <input
+              type="number"
+              value={pricePerHour}
+              onChange={(e) => setPricePerHour(Number(e.target.value) || 0)}
+              className="w-full px-4 py-2 bg-white/10 border border-white/20 rounded-xl text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500"
+              placeholder="170"
+            />
+          </div>
+        </div>
+      )}
+
+      {/* Электроэнергия */}
+      <div className="bg-white/10 backdrop-blur-sm rounded-2xl p-6 border border-white/20 shadow-xl">
+        <h3 className="text-xl font-bold text-white mb-4 flex items-center">
+          <Wind className="w-5 h-5 mr-2" />
+          Электроэнергия
+        </h3>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div>
+            <label className="block text-gray-300 mb-2 text-sm font-medium">Стоимость 1 кВт·ч (₽)</label>
+            <input
+              type="number"
+              step="0.1"
+              value={electricityCostPerKwh}
+              onChange={(e) => setElectricityCostPerKwh(Number(e.target.value) || 0)}
+              className="w-full px-4 py-2 bg-white/10 border border-white/20 rounded-xl text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500"
+              placeholder="6"
+            />
+          </div>
+          <div>
+            <label className="block text-gray-300 mb-2 text-sm font-medium">Мощность принтера (Вт)</label>
+            <input
+              type="number"
+              value={printerPowerW}
+              onChange={(e) => setPrinterPowerW(Number(e.target.value) || 0)}
+              className="w-full px-4 py-2 bg-white/10 border border-white/20 rounded-xl text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500"
+              placeholder="350"
+            />
+          </div>
+        </div>
       </div>
+
+      {/* Дополнительные услуги (только для combined) */}
+      {pricingMethod === 'combined' && (
+        <>
+          <div className="bg-white/10 backdrop-blur-sm rounded-2xl p-6 border border-white/20 shadow-xl">
+            <h3 className="text-xl font-bold text-white mb-4 flex items-center">
+              <Settings className="w-5 h-5 mr-2" />
+              Дополнительные услуги
+            </h3>
+            <div className="space-y-4">
+              {/* Моделирование */}
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div>
+                  <label className="block text-gray-300 mb-2 text-sm font-medium">Моделирование (ч)</label>
+                  <input
+                    type="number"
+                    value={modelingHours}
+                    onChange={(e) => setModelingHours(Number(e.target.value) || 0)}
+                    className="w-full px-4 py-2 bg-white/10 border border-white/20 rounded-xl text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500"
+                    placeholder="0"
+                  />
+                </div>
+                <div>
+                  <label className="block text-gray-300 mb-2 text-sm font-medium">Моделирование (мин)</label>
+                  <input
+                    type="number"
+                    value={modelingMinutes}
+                    onChange={(e) => setModelingMinutes(Number(e.target.value) || 0)}
+                    className="w-full px-4 py-2 bg-white/10 border border-white/20 rounded-xl text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500"
+                    placeholder="0"
+                  />
+                </div>
+                <div>
+                  <label className="block text-gray-300 mb-2 text-sm font-medium">Ставка (₽/ч)</label>
+                  <input
+                    type="number"
+                    value={modelingRatePerHour}
+                    onChange={(e) => setModelingRatePerHour(Number(e.target.value) || 0)}
+                    className="w-full px-4 py-2 bg-white/10 border border-white/20 rounded-xl text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500"
+                    placeholder="934"
+                  />
+                </div>
+              </div>
+
+              {/* Печать */}
+              <div>
+                <label className="block text-gray-300 mb-2 text-sm font-medium">Ставка печати (₽/ч)</label>
+                <input
+                  type="number"
+                  value={printingRatePerHour}
+                  onChange={(e) => setPrintingRatePerHour(Number(e.target.value) || 0)}
+                  className="w-full px-4 py-2 bg-white/10 border border-white/20 rounded-xl text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500"
+                  placeholder="170"
+                />
+              </div>
+
+              {/* Постобработка */}
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div>
+                  <label className="block text-gray-300 mb-2 text-sm font-medium">Постобработка (ч)</label>
+                  <input
+                    type="number"
+                    value={postprocessingHours}
+                    onChange={(e) => setPostprocessingHours(Number(e.target.value) || 0)}
+                    className="w-full px-4 py-2 bg-white/10 border border-white/20 rounded-xl text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500"
+                    placeholder="0"
+                  />
+                </div>
+                <div>
+                  <label className="block text-gray-300 mb-2 text-sm font-medium">Постобработка (мин)</label>
+                  <input
+                    type="number"
+                    value={postprocessingMinutes}
+                    onChange={(e) => setPostprocessingMinutes(Number(e.target.value) || 0)}
+                    className="w-full px-4 py-2 bg-white/10 border border-white/20 rounded-xl text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500"
+                    placeholder="2"
+                  />
+                </div>
+                <div>
+                  <label className="block text-gray-300 mb-2 text-sm font-medium">Ставка (₽/ч)</label>
+                  <input
+                    type="number"
+                    value={postprocessingRatePerHour}
+                    onChange={(e) => setPostprocessingRatePerHour(Number(e.target.value) || 0)}
+                    className="w-full px-4 py-2 bg-white/10 border border-white/20 rounded-xl text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500"
+                    placeholder="100"
+                  />
+                </div>
+              </div>
+
+              {/* Амортизация */}
+              <div>
+                <label className="block text-gray-300 mb-2 text-sm font-medium">Ставка амортизации (₽/ч)</label>
+                <input
+                  type="number"
+                  value={amortizationRatePerHour}
+                  onChange={(e) => setAmortizationRatePerHour(Number(e.target.value) || 0)}
+                  className="w-full px-4 py-2 bg-white/10 border border-white/20 rounded-xl text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500"
+                  placeholder="16"
+                />
+              </div>
+            </div>
+          </div>
+        </>
+      )}
+
+      {/* Накладные расходы и наценка (только для combined) */}
+      {pricingMethod === 'combined' && (
+        <div className="bg-white/10 backdrop-blur-sm rounded-2xl p-6 border border-white/20 shadow-xl">
+          <h3 className="text-xl font-bold text-white mb-4 flex items-center">
+            <TrendingUp className="w-5 h-5 mr-2" />
+            Накладные расходы и наценка
+          </h3>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-gray-300 mb-2 text-sm font-medium">Накладные расходы (%)</label>
+              <input
+                type="number"
+                step="0.1"
+                min="0"
+                max="100"
+                value={overheadPercent}
+                onChange={(e) => setOverheadPercent(Number(e.target.value) || 0)}
+                className="w-full px-4 py-2 bg-white/10 border border-white/20 rounded-xl text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500"
+                placeholder="20"
+              />
+              <p className="text-xs text-gray-400 mt-1">Обычно 20-30%</p>
+            </div>
+            <div>
+              <label className="block text-gray-300 mb-2 text-sm font-medium">Наценка (%)</label>
+              <input
+                type="number"
+                step="0.1"
+                min="0"
+                max="200"
+                value={markupPercent}
+                onChange={(e) => setMarkupPercent(Number(e.target.value) || 0)}
+                className="w-full px-4 py-2 bg-white/10 border border-white/20 rounded-xl text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500"
+                placeholder="30"
+              />
+              <p className="text-xs text-gray-400 mt-1">Эконом: 20-30%, Стандарт: 35-45%, Премиум: 50-70%</p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Коэффициенты корректировки (только для combined) */}
+      {pricingMethod === 'combined' && (
+        <div className="bg-white/10 backdrop-blur-sm rounded-2xl p-6 border border-white/20 shadow-xl">
+          <h3 className="text-xl font-bold text-white mb-4 flex items-center">
+            <Settings className="w-5 h-5 mr-2" />
+            Коэффициенты корректировки
+          </h3>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div>
+              <label className="block text-gray-300 mb-2 text-sm font-medium">Срочность</label>
+              <input
+                type="number"
+                step="0.1"
+                min="1.0"
+                max="2.0"
+                value={urgencyCoefficient}
+                onChange={(e) => setUrgencyCoefficient(Number(e.target.value) || 1.0)}
+                className="w-full px-4 py-2 bg-white/10 border border-white/20 rounded-xl text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500"
+                placeholder="1.0"
+              />
+              <p className="text-xs text-gray-400 mt-1">1.0 = стандарт, 1.2-1.5 = срочно (+20-50%)</p>
+            </div>
+            <div>
+              <label className="block text-gray-300 mb-2 text-sm font-medium">Сложность</label>
+              <input
+                type="number"
+                step="0.1"
+                min="1.0"
+                max="3.0"
+                value={complexityCoefficient}
+                onChange={(e) => setComplexityCoefficient(Number(e.target.value) || 1.0)}
+                className="w-full px-4 py-2 bg-white/10 border border-white/20 rounded-xl text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500"
+                placeholder="1.0"
+              />
+              <p className="text-xs text-gray-400 mt-1">1.0 = просто, 1.2-2.5 = сложно (+15-30%)</p>
+            </div>
+            <div>
+              <label className="block text-gray-300 mb-2 text-sm font-medium">Скидка за объем</label>
+              <input
+                type="number"
+                step="0.01"
+                min="0.85"
+                max="1.0"
+                value={volumeDiscountCoefficient}
+                onChange={(e) => setVolumeDiscountCoefficient(Number(e.target.value) || 1.0)}
+                className="w-full px-4 py-2 bg-white/10 border border-white/20 rounded-xl text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500"
+                placeholder="1.0"
+              />
+              <p className="text-xs text-gray-400 mt-1">1.0 = без скидки, 0.85-0.95 = скидка 5-15%</p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Количество, фиксированные расходы и округление */}
+      <div className="bg-white/10 backdrop-blur-sm rounded-2xl p-6 border border-white/20 shadow-xl">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div>
+            <label className="block text-gray-300 mb-2 text-sm font-medium">Количество деталей</label>
+            <input
+              type="number"
+              value={quantity}
+              onChange={(e) => setQuantity(Number(e.target.value) || 1)}
+              className="w-full px-4 py-2 bg-white/10 border border-white/20 rounded-xl text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500"
+              placeholder="4"
+              min="1"
+            />
+          </div>
+          {pricingMethod === 'combined' && (
+            <>
+              <div>
+                <label className="block text-gray-300 mb-2 text-sm font-medium">Фиксированные расходы (₽)</label>
+                <input
+                  type="number"
+                  value={fixedCosts}
+                  onChange={(e) => setFixedCosts(Number(e.target.value) || 0)}
+                  className="w-full px-4 py-2 bg-white/10 border border-white/20 rounded-xl text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500"
+                  placeholder="0"
+                />
+                <p className="text-xs text-gray-400 mt-1">Упаковка, доставка до ПВЗ (обычно 50-100 ₽)</p>
+              </div>
+              <div>
+                <label className="block text-gray-300 mb-2 text-sm font-medium">Минимальная цена заказа (₽)</label>
+                <input
+                  type="number"
+                  value={minOrderPrice}
+                  onChange={(e) => setMinOrderPrice(Number(e.target.value) || 0)}
+                  className="w-full px-4 py-2 bg-white/10 border border-white/20 rounded-xl text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500"
+                  placeholder="0"
+                />
+                <p className="text-xs text-gray-400 mt-1">Если цена меньше, устанавливается минимум (обычно 300-500 ₽)</p>
+              </div>
+              <div>
+                <label className="block text-gray-300 mb-2 text-sm font-medium">Округлить до (₽)</label>
+                <input
+                  type="number"
+                  value={roundToNearest}
+                  onChange={(e) => setRoundToNearest(Number(e.target.value) || 0)}
+                  className="w-full px-4 py-2 bg-white/10 border border-white/20 rounded-xl text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500"
+                  placeholder="10"
+                />
+              </div>
+            </>
+          )}
+        </div>
+      </div>
+
+      {/* Кнопка расчета */}
+      <div className="flex justify-center">
+        <button
+          onClick={handleCalculate}
+          disabled={calculateMutation.isPending}
+          className="px-8 py-4 bg-purple-600 hover:bg-purple-700 text-white rounded-xl font-semibold text-lg shadow-lg shadow-purple-500/25 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center space-x-2"
+        >
+          {calculateMutation.isPending ? (
+            <>
+              <Loader2 className="w-5 h-5 animate-spin" />
+              <span>Расчет...</span>
+            </>
+          ) : (
+            <>
+              <Calculator className="w-5 h-5" />
+              <span>Рассчитать</span>
+            </>
+          )}
+        </button>
+      </div>
+
+      {/* Результаты */}
+      {result && (
+        <div className="space-y-4">
+          {/* Компоненты стоимости */}
+          <div className="bg-white/10 backdrop-blur-sm rounded-2xl p-6 border border-white/20 shadow-xl">
+            <h3 className="text-xl font-bold text-white mb-4">Компоненты стоимости</h3>
+            <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+              {result.cost_material > 0 && (
+                <ResultCard
+                  label="Материал"
+                  value={result.cost_material.toFixed(2)}
+                  icon={Package}
+                  color="from-purple-500/20 to-pink-500/20"
+                  borderColor="border-purple-500/30"
+                />
+              )}
+              {result.cost_electricity > 0 && (
+                <ResultCard
+                  label="Электроэнергия"
+                  value={result.cost_electricity.toFixed(2)}
+                  icon={Wind}
+                  color="from-blue-500/20 to-cyan-500/20"
+                  borderColor="border-blue-500/30"
+                />
+              )}
+              {result.cost_modeling > 0 && (
+                <ResultCard
+                  label="Моделирование"
+                  value={result.cost_modeling.toFixed(2)}
+                  icon={Settings}
+                  color="from-orange-500/20 to-red-500/20"
+                  borderColor="border-orange-500/30"
+                />
+              )}
+              {result.cost_printing > 0 && (
+                <ResultCard
+                  label="Печать"
+                  value={result.cost_printing.toFixed(2)}
+                  icon={Printer}
+                  color="from-indigo-500/20 to-purple-500/20"
+                  borderColor="border-indigo-500/30"
+                />
+              )}
+              {result.cost_postprocessing > 0 && (
+                <ResultCard
+                  label="Постобработка"
+                  value={result.cost_postprocessing.toFixed(2)}
+                  icon={Fan}
+                  color="from-teal-500/20 to-green-500/20"
+                  borderColor="border-teal-500/30"
+                />
+              )}
+              {result.cost_amortization > 0 && (
+                <ResultCard
+                  label="Амортизация"
+                  value={result.cost_amortization.toFixed(2)}
+                  icon={Gauge}
+                  color="from-gray-500/20 to-slate-500/20"
+                  borderColor="border-gray-500/30"
+                />
+              )}
+            </div>
+          </div>
+
+          {/* Промежуточные расчеты (только для combined) */}
+          {pricingMethod === 'combined' && result.cost_direct > 0 && (
+            <div className="bg-white/10 backdrop-blur-sm rounded-2xl p-6 border border-white/20 shadow-xl">
+              <h3 className="text-xl font-bold text-white mb-4">Промежуточные расчеты</h3>
+              <div className="space-y-3">
+                <div className="flex justify-between items-center py-2 border-b border-white/10">
+                  <span className="text-gray-300">Прямые затраты</span>
+                  <span className="text-white font-semibold">{result.cost_direct.toFixed(2)} ₽</span>
+                </div>
+                {result.cost_overhead > 0 && (
+                  <div className="flex justify-between items-center py-2 border-b border-white/10">
+                    <span className="text-gray-300">Накладные расходы</span>
+                    <span className="text-white font-semibold">{result.cost_overhead.toFixed(2)} ₽</span>
+                  </div>
+                )}
+                <div className="flex justify-between items-center py-2 border-b border-white/10">
+                  <span className="text-gray-300">Стоимость до наценки</span>
+                  <span className="text-white font-semibold">{result.cost_before_markup.toFixed(2)} ₽</span>
+                </div>
+                {result.cost_markup > 0 && (
+                  <div className="flex justify-between items-center py-2 border-b border-white/10">
+                    <span className="text-gray-300">Наценка</span>
+                    <span className="text-white font-semibold">{result.cost_markup.toFixed(2)} ₽</span>
+                  </div>
+                )}
+                {(result.applied_urgency_coefficient || result.applied_complexity_coefficient || result.applied_volume_discount) && (
+                  <div className="pt-2 space-y-1">
+                    <p className="text-sm text-gray-400">Примененные коэффициенты:</p>
+                    {result.applied_urgency_coefficient && result.applied_urgency_coefficient !== 1.0 && (
+                      <div className="flex justify-between items-center text-sm">
+                        <span className="text-gray-300">Срочность</span>
+                        <span className="text-white">×{result.applied_urgency_coefficient.toFixed(2)}</span>
+                      </div>
+                    )}
+                    {result.applied_complexity_coefficient && result.applied_complexity_coefficient !== 1.0 && (
+                      <div className="flex justify-between items-center text-sm">
+                        <span className="text-gray-300">Сложность</span>
+                        <span className="text-white">×{result.applied_complexity_coefficient.toFixed(2)}</span>
+                      </div>
+                    )}
+                    {result.applied_volume_discount && result.applied_volume_discount !== 1.0 && (
+                      <div className="flex justify-between items-center text-sm">
+                        <span className="text-gray-300">Скидка за объем</span>
+                        <span className="text-white">×{result.applied_volume_discount.toFixed(2)}</span>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* Финансовые показатели и время (только для combined) */}
+          {pricingMethod === 'combined' && (result.profit_margin !== undefined || result.total_time_hours) && (
+            <div className="bg-white/10 backdrop-blur-sm rounded-2xl p-6 border border-white/20 shadow-xl">
+              <h3 className="text-xl font-bold text-white mb-4 flex items-center">
+                <TrendingUp className="w-5 h-5 mr-2" />
+                Финансовые показатели
+              </h3>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {result.cost_of_goods_sold !== undefined && result.cost_of_goods_sold !== null && (
+                  <div className="bg-white/5 rounded-xl p-4 border border-white/10">
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="text-gray-300 text-sm">Себестоимость</span>
+                      <DollarSign className="w-4 h-4 text-gray-400" />
+                    </div>
+                    <div className="text-2xl font-bold text-white">{result.cost_of_goods_sold.toFixed(2)} ₽</div>
+                    <p className="text-xs text-gray-400 mt-1">Прямые затраты + накладные + фиксированные</p>
+                  </div>
+                )}
+                {result.profit_margin !== undefined && result.profit_margin !== null && (
+                  <div className="bg-green-500/10 rounded-xl p-4 border border-green-500/30">
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="text-green-300 text-sm">Маржа (прибыль)</span>
+                      <TrendingUp className="w-4 h-4 text-green-400" />
+                    </div>
+                    <div className="text-2xl font-bold text-green-400">
+                      {result.profit_margin.toFixed(2)} ₽
+                      {result.profit_margin_percent !== undefined && result.profit_margin_percent !== null && (
+                        <span className="text-lg ml-2">({result.profit_margin_percent.toFixed(1)}%)</span>
+                      )}
+                    </div>
+                    <p className="text-xs text-green-200 mt-1">Финальная цена - Себестоимость</p>
+                  </div>
+                )}
+                {result.total_time_hours && (
+                  <div className="bg-blue-500/10 rounded-xl p-4 border border-blue-500/30 md:col-span-2">
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="text-blue-300 text-sm">Общее время работы</span>
+                      <Clock className="w-4 h-4 text-blue-400" />
+                    </div>
+                    <div className="text-2xl font-bold text-blue-400">
+                      {result.total_time_hours.toFixed(2)} ч
+                      {result.total_time_hours >= 1 && (
+                        <span className="text-lg ml-2">
+                          ({Math.floor(result.total_time_hours)} ч {Math.round((result.total_time_hours % 1) * 60)} мин)
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-xs text-blue-200 mt-1">Печать + подготовка + постобработка</p>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* Итоговые суммы */}
+          <div className="bg-white/10 backdrop-blur-sm rounded-2xl p-6 border border-white/20 shadow-xl">
+            <h3 className="text-xl font-bold text-white mb-4">Итоговые суммы</h3>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              {result.quantity > 1 && (
+                <>
+                  <ResultCard
+                    label="Цена первой детали"
+                    value={result.cost_first_part.toFixed(2)}
+                    icon={Star}
+                    color="from-yellow-500/20 to-orange-500/20"
+                    borderColor="border-yellow-500/30"
+                  />
+                  <ResultCard
+                    label="Цена последующих"
+                    value={result.cost_subsequent_parts.toFixed(2)}
+                    icon={Package}
+                    color="from-blue-500/20 to-indigo-500/20"
+                    borderColor="border-blue-500/30"
+                  />
+                </>
+              )}
+              <ResultCard
+                label={result.quantity > 1 ? 'Общая стоимость' : 'Итого'}
+                value={result.cost_final ? result.cost_final.toFixed(2) : result.cost_total.toFixed(2)}
+                icon={Calculator}
+                color="from-green-500/20 to-emerald-500/20"
+                borderColor="border-green-500/30"
+                isTotal
+              />
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Ошибка */}
+      {calculateMutation.isError && (
+        <div className="bg-red-500/10 border border-red-500/30 rounded-xl p-4">
+          <p className="text-red-300">
+            Ошибка расчета: {calculateMutation.error instanceof Error ? calculateMutation.error.message : 'Неизвестная ошибка'}
+          </p>
+        </div>
+      )}
     </div>
   );
 };

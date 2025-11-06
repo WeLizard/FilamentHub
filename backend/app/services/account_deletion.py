@@ -227,10 +227,8 @@ async def delete_user_account(
                 # Можно добавить флаг в Brand: managed_by_admin
                 pass
         
-        # Отвязываем пользователя от бренда
+        # Отвязываем пользователя от бренда (роль не меняем)
         user.brand_id = None
-        if user.role == UserRole.BRAND:
-            user.role = UserRole.USER
     
     # 6. Деактивация аккаунта (мягкое удаление)
     # Устанавливаем active=False вместо полного удаления

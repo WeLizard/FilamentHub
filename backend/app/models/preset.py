@@ -51,6 +51,8 @@ class Preset(Base):
     # Type
     is_official: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
     # is_official=True - от производителя, False - от пользователя
+    is_weighted: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
+    # is_weighted=True - динамический взвешенный пресет, автоматически пересчитывается системой
 
     # Print settings
     extruder_temp: Mapped[float] = mapped_column(Float)

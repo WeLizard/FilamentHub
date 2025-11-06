@@ -308,7 +308,7 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
   // Загружаем принтеры для выбора
   const { data: printersData } = useQuery({
     queryKey: ['printers', 'for-preset'],
-    queryFn: () => printersAPI.list({ active_only: true, page: 1, size: 200 }),
+    queryFn: () => printersAPI.list({ active_only: true, page: 1, size: 100 }),
     enabled: isOpen,
   });
 
@@ -793,7 +793,9 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
   const createBrandMutation = useMutation({
     mutationFn: (data: { name: string; slug: string; website?: string }) => brandsAPI.create(data),
     onError: (err: any) => {
-      setError(err.response?.data?.detail || 'Ошибка при создании производителя');
+      const errorMessage = err?.response?.data?.detail || err?.message || 'Ошибка при создании производителя';
+      setError(errorMessage);
+      console.error('Ошибка при создании производителя:', err);
     },
   });
   
@@ -819,7 +821,9 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
       queryClient.invalidateQueries({ queryKey: ['filaments'] });
     },
     onError: (err: any) => {
-      setError(err.response?.data?.detail || 'Ошибка при создании материала');
+      const errorMessage = err?.response?.data?.detail || err?.message || 'Ошибка при создании материала';
+      setError(errorMessage);
+      console.error('Ошибка при создании материала:', err);
     },
   });
 
@@ -856,7 +860,9 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
       onClose();
     },
     onError: (err: any) => {
-      setError(err.response?.data?.detail || 'Ошибка при создании пресета');
+      const errorMessage = err?.response?.data?.detail || err?.message || 'Ошибка при создании пресета';
+      setError(errorMessage);
+      console.error('Ошибка при создании пресета:', err);
     },
   });
 
@@ -893,7 +899,9 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
       onClose();
     },
     onError: (err: any) => {
-      setError(err.response?.data?.detail || 'Ошибка при обновлении пресета');
+      const errorMessage = err?.response?.data?.detail || err?.message || 'Ошибка при обновлении пресета';
+      setError(errorMessage);
+      console.error('Ошибка при обновлении пресета:', err);
     },
   });
 
@@ -1227,29 +1235,39 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
           spool_weight: canCreateOfficial && filamentSpoolWeight !== '' ? Number(filamentSpoolWeight) : undefined,
           description: filamentDescription.trim() || undefined,
         });
+        // Валидация обязательных полей пресета
+        if (!name.trim()) {
+          setError('Введите название пресета');
+          return;
+        }
+
         // Используем созданный филамент для пресета
         // Формируем JSON расширенных параметров из UI полей
         // Передаём цвет филамента для синхронизации с default_filament_colour
         const orcaslicerSettings = buildOrcaslicerSettings(filamentColorHex);
         
-        createMutation.mutate({
-          filament_id: newFilament.id,
-          name,
-          description: description || undefined,
-          is_official: isOfficial,
-          extruder_temp: extruderTemp,
-          bed_temp: bedTemp,
-          print_speed: printSpeed,
-          travel_speed: travelSpeed,
-          layer_height: layerHeight,
-          first_layer_height: firstLayerHeight !== '' ? Number(firstLayerHeight) : undefined,
-          flow_rate: flowRate,
-          fan_speed: fanSpeed,
-          retraction_length: retractionLength,
-          retraction_speed: retractionSpeed,
-          orcaslicer_settings: orcaslicerSettings,
-          printer_ids: selectedPrinterIds.length > 0 ? selectedPrinterIds : undefined,
-        });
+        try {
+          await createMutation.mutateAsync({
+            filament_id: newFilament.id,
+            name,
+            description: description || undefined,
+            is_official: isOfficial,
+            extruder_temp: extruderTemp,
+            bed_temp: bedTemp,
+            print_speed: printSpeed,
+            travel_speed: travelSpeed,
+            layer_height: layerHeight,
+            first_layer_height: firstLayerHeight !== '' ? Number(firstLayerHeight) : undefined,
+            flow_rate: flowRate,
+            fan_speed: fanSpeed,
+            retraction_length: retractionLength,
+            retraction_speed: retractionSpeed,
+            orcaslicer_settings: orcaslicerSettings,
+            printer_ids: selectedPrinterIds.length > 0 ? selectedPrinterIds : undefined,
+          });
+        } catch (err) {
+          // Ошибка уже обработана в createMutation.onError
+        }
       } catch (err) {
         // Ошибка уже обработана в createFilamentMutation.onError
       }
@@ -1258,6 +1276,12 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
 
     if (!selectedFilamentId) {
       setError('Выберите материал');
+      return;
+    }
+
+    // Валидация обязательных полей
+    if (!name.trim()) {
+      setError('Введите название пресета');
       return;
     }
 
@@ -1290,7 +1314,7 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
           retraction_length: retractionLength,
           retraction_speed: retractionSpeed,
           orcaslicer_settings: orcaslicerSettings,
-          printer_ids: selectedPrinterIds.length > 0 ? selectedPrinterIds : [],
+          printer_ids: selectedPrinterIds.length > 0 ? selectedPrinterIds : undefined,
         },
       });
     } else {
@@ -1316,18 +1340,26 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
     }
   };
 
-  if (!isOpen) return null;
-
   const isLoading = createMutation.isPending || updateMutation.isPending || createFilamentMutation.isPending;
   const isHeaderVisible = useHeaderVisible();
 
+  if (!isOpen) return null;
+
   return (
-    <div className={`fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm ${isHeaderVisible ? 'pt-[88px]' : ''}`}>
+    <div className={`fixed inset-0 z-[100] ${isHeaderVisible ? 'pt-[88px]' : ''}`}>
+      {/* Backdrop - покрывает весь экран, включая хэдер */}
       <div 
-        className="bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900 rounded-2xl w-full max-w-5xl max-h-[90vh] overflow-hidden flex flex-col border border-white/20 shadow-2xl"
-        onClick={(e) => e.stopPropagation()}
-        onMouseDown={(e) => e.stopPropagation()}
-      >
+        className="fixed inset-0 bg-black/50 backdrop-blur-sm"
+        onClick={onClose}
+      />
+      {/* Modal Container */}
+      <div className="fixed inset-0 flex items-center justify-center pointer-events-none" style={{ top: isHeaderVisible ? '88px' : '0' }}>
+        {/* Modal */}
+        <div 
+          className={`bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900 rounded-2xl w-full max-w-5xl overflow-hidden flex flex-col border border-white/20 shadow-2xl pointer-events-auto ${isHeaderVisible ? 'max-h-[calc(100vh-100px)]' : 'max-h-[90vh]'}`}
+          onClick={(e) => e.stopPropagation()}
+          onMouseDown={(e) => e.stopPropagation()}
+        >
         {/* Header */}
         <div className="flex items-center justify-between p-6 border-b border-white/10">
           <h2 className="text-2xl font-bold text-white">
@@ -4285,8 +4317,8 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
           </div>
         </form>
         </div>
+        </div>
       </div>
-
     </div>
   );
 };

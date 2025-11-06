@@ -82,9 +82,27 @@ backend/static/uploads/*
 # Docs folder - exclude large reference folders, keep essential files
 docs/Spoolman-master/
 docs/orcaSlicer-main/
+docs/OrcaSlicer/
 docs/3dcalc/
 docs/awesome-cursor-best-practices-main/
 docs/spoolman2slicer-main/
+docs/*.sql
+docs/imgs/
+
+# Backend test files and scripts
+backend/test_*.py
+backend/check_*.py
+backend/create_*.py
+backend/export_*.py
+backend/link_*.sql
+backend/test_output.txt
+backend/node_modules/
+backend/package-lock.json
+backend/package.json
+backend/scripts/
+backend/uploads/
+backend/docs/
+backend/database_dumps/
 
 # MCP configuration (may contain passwords)
 .cursor/mcp-config.json

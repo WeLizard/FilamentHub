@@ -41,6 +41,7 @@ class BrandResponse(BrandBase):
     active: bool
     created_at: datetime
     updated_at: datetime
+    employees_count: int | None = Field(None, description="Количество сотрудников (только при запросе)")
 
     model_config = ConfigDict(from_attributes=True)
 

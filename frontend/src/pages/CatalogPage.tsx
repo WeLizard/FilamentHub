@@ -1,6 +1,6 @@
 /** Страница каталога материалов */
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 import {
@@ -19,9 +19,11 @@ import {
   Shield,
   TrendingUp,
   Flame,
+  ChevronLeft,
+  ChevronRight,
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
-import { filamentsAPI, brandsAPI, presetsAPI, savedPresetsAPI, filamentReviewsAPI } from '../api/client';
+import { filamentsAPI, brandsAPI, presetsAPI, savedPresetsAPI, filamentReviewsAPI, qrAPI } from '../api/client';
 import { Dropdown } from '../components/Dropdown';
 import { FilamentPreview } from '../components/FilamentPreview';
 import type { Filament, Preset } from '../types/api';
@@ -309,12 +311,69 @@ const MaterialCard: React.FC<MaterialCardProps> = ({
     enabled: true,
   });
 
-  // Получаем официальный пресет и пресеты сообщества
+  // Получаем официальный пресет, пресеты сообщества и взвешенный пресет
   const officialPreset = presetsData?.items?.find((p) => p.is_official);
-  const communityPresets = presetsData?.items?.filter((p) => !p.is_official).slice(0, 3) || [];
+  const weightedPreset = presetsData?.items?.find((p) => p.is_weighted);
+  const communityPresets = presetsData?.items?.filter((p) => !p.is_official && !p.is_weighted).slice(0, 3) || [];
   
-  // Fallback: если нет официального, берём самый популярный community preset
-  const displayPreset = officialPreset || (communityPresets.length > 0 ? communityPresets[0] : null);
+  // Состояние для типа отображаемого пресета (карусель)
+  type PresetType = 'official' | 'popular' | 'weighted';
+  const [presetType, setPresetType] = useState<PresetType>(() => {
+    if (officialPreset) return 'official';
+    if (weightedPreset) return 'weighted';
+    if (communityPresets.length > 0) return 'popular';
+    return 'official'; // fallback
+  });
+  
+  // Определяем доступные типы пресетов
+  const availablePresetTypes: PresetType[] = [];
+  if (officialPreset) availablePresetTypes.push('official');
+  if (communityPresets.length > 0) availablePresetTypes.push('popular');
+  if (weightedPreset) availablePresetTypes.push('weighted');
+  
+  // Обновляем presetType, если текущий тип недоступен
+  useEffect(() => {
+    if (availablePresetTypes.length > 0 && !availablePresetTypes.includes(presetType)) {
+      setPresetType(availablePresetTypes[0]);
+    }
+  }, [availablePresetTypes.length, presetType]);
+  
+  // Функция переключения пресетов
+  const switchPreset = (direction: 'prev' | 'next') => {
+    const currentIndex = availablePresetTypes.indexOf(presetType);
+    if (currentIndex === -1) return;
+    
+    if (direction === 'next') {
+      const nextIndex = (currentIndex + 1) % availablePresetTypes.length;
+      setPresetType(availablePresetTypes[nextIndex]);
+    } else {
+      const prevIndex = (currentIndex - 1 + availablePresetTypes.length) % availablePresetTypes.length;
+      setPresetType(availablePresetTypes[prevIndex]);
+    }
+  };
+  
+  // Определяем отображаемый пресет в зависимости от типа
+  let displayPreset: Preset | null = null;
+  let presetTitle = '';
+  let presetSubtitle = '';
+  let presetBgClass = '';
+  
+  if (presetType === 'official' && officialPreset) {
+    displayPreset = officialPreset;
+    presetTitle = 'Официальный пресет';
+    presetSubtitle = 'Производитель';
+    presetBgClass = 'bg-gradient-to-r from-purple-500/20 to-pink-500/20 border-purple-500/30';
+  } else if (presetType === 'popular' && communityPresets.length > 0) {
+    displayPreset = communityPresets[0];
+    presetTitle = 'Популярный пресет';
+    presetSubtitle = 'Сообщество';
+    presetBgClass = 'bg-gradient-to-r from-blue-500/20 to-cyan-500/20 border-blue-500/30';
+  } else if (presetType === 'weighted' && weightedPreset) {
+    displayPreset = weightedPreset;
+    presetTitle = 'Взвешенный пресет';
+    presetSubtitle = weightedPreset.description || 'Генеративно вычисляется';
+    presetBgClass = 'bg-gradient-to-r from-green-500/20 to-emerald-500/20 border-green-500/30';
+  }
   
   // Проверяем, сохранён ли пресет
   const isPresetSaved = displayPreset ? savedPresetIds.has(displayPreset.id) : false;
@@ -445,7 +504,7 @@ const MaterialCard: React.FC<MaterialCardProps> = ({
         </div>
       )}
 
-      {/* Display Preset (Official or Fallback to Popular Community) */}
+      {/* Display Preset (Official / Popular / Weighted) с каруселью */}
       {isLoadingPresets && (
         <div className="mb-4 p-4 bg-white/5 rounded-xl border border-white/10 text-gray-400 text-center text-sm">
           Загрузка пресетов...
@@ -453,20 +512,62 @@ const MaterialCard: React.FC<MaterialCardProps> = ({
       )}
 
       {displayPreset && (
-        <div className={`mb-4 p-4 rounded-xl border ${
-          officialPreset 
-            ? 'bg-gradient-to-r from-purple-500/20 to-pink-500/20 border-purple-500/30' 
-            : 'bg-gradient-to-r from-blue-500/20 to-cyan-500/20 border-blue-500/30'
-        }`}>
-          <div className="flex items-center justify-between mb-2">
+        <div className={`mb-4 p-4 rounded-xl border ${presetBgClass} relative`}>
+          {/* Кнопки переключения */}
+          {availablePresetTypes.length > 1 && (
+            <div className="absolute top-4 right-4 flex items-center gap-2">
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  switchPreset('prev');
+                }}
+                className="p-1.5 bg-white/10 hover:bg-white/20 rounded-md border border-white/20 transition-all"
+                title="Предыдущий пресет"
+              >
+                <ChevronLeft className="w-4 h-4 text-white" />
+              </button>
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  switchPreset('next');
+                }}
+                className="p-1.5 bg-white/10 hover:bg-white/20 rounded-md border border-white/20 transition-all"
+                title="Следующий пресет"
+              >
+                <ChevronRight className="w-4 h-4 text-white" />
+              </button>
+            </div>
+          )}
+          
+          <div className="flex items-center justify-between mb-2 pr-20">
             <h4 className="font-semibold text-white flex items-center">
               <Settings className="w-4 h-4 mr-2" />
-              {officialPreset ? 'Официальный пресет' : 'Популярный пресет'}
+              {presetTitle}
             </h4>
-            <span className={officialPreset ? 'text-purple-300 text-sm' : 'text-blue-300 text-sm'}>
-              {officialPreset ? 'Производитель' : 'Сообщество'}
-            </span>
+            <div className="flex items-center gap-2">
+              {displayPreset.printers && displayPreset.printers.length > 0 && (
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  {displayPreset.printers.map((printer) => (
+                    <span
+                      key={printer.id}
+                      className="px-2 py-0.5 bg-white/10 rounded-md text-xs text-gray-300 border border-white/20"
+                      title={`${printer.manufacturer} ${printer.model}`}
+                    >
+                      {printer.name}
+                    </span>
+                  ))}
+                </div>
+              )}
+              <span className={`text-sm ${
+                presetType === 'official' ? 'text-purple-300' : 
+                presetType === 'popular' ? 'text-blue-300' : 
+                'text-green-300'
+              }`}>
+                {presetSubtitle}
+              </span>
+            </div>
           </div>
+          
           <div className="grid grid-cols-2 md:grid-cols-3 gap-3 text-sm">
             <div className="flex items-center space-x-2">
               <Thermometer className="w-4 h-4 text-red-400" />
@@ -480,23 +581,28 @@ const MaterialCard: React.FC<MaterialCardProps> = ({
               <Gauge className="w-4 h-4 text-blue-400" />
               <span className="text-gray-300">Скорость: {displayPreset.print_speed}mm/s</span>
             </div>
-            <div className="flex items-center space-x-2">
-              <Ruler className="w-4 h-4 text-green-400" />
-              <span className="text-gray-300">
-                Слой: {displayPreset.layer_height ? `${displayPreset.layer_height}mm` : '0.2mm'}
-              </span>
-            </div>
-            <div className="flex items-center space-x-2">
-              <Gauge className="w-4 h-4 text-yellow-400" />
-              <span className="text-gray-300">
-                Поток: {displayPreset.flow_rate ? `${displayPreset.flow_rate}%` : '100%'}
-              </span>
-            </div>
+            {displayPreset.layer_height && (
+              <div className="flex items-center space-x-2">
+                <Ruler className="w-4 h-4 text-green-400" />
+                <span className="text-gray-300">
+                  Слой: {displayPreset.layer_height}mm
+                </span>
+              </div>
+            )}
+            {displayPreset.flow_rate && (
+              <div className="flex items-center space-x-2">
+                <Gauge className="w-4 h-4 text-yellow-400" />
+                <span className="text-gray-300">
+                  Поток: {displayPreset.flow_rate}%
+                </span>
+              </div>
+            )}
           </div>
         </div>
       )}
 
       {/* Community Presets - показываем только если есть official preset (тогда все community), или если есть ещё пресеты кроме fallback */}
+      {/* Исключаем взвешенный пресет из списка community пресетов */}
       {communityPresets && ((officialPreset && communityPresets.length > 0) || (!officialPreset && communityPresets.length > 1)) && (
         <div className="mb-4">
           <h4 className="font-semibold text-white mb-2 flex items-center text-sm">
@@ -504,33 +610,86 @@ const MaterialCard: React.FC<MaterialCardProps> = ({
             Популярные пресеты сообщества
           </h4>
           <div className="space-y-2">
-            {communityPresets.filter((preset) => !officialPreset ? preset.id !== displayPreset?.id : true).map((preset) => (
+            {communityPresets.filter((preset) => {
+              // Исключаем взвешенный пресет из списка (он уже отображается в карусели)
+              if (preset.is_weighted) return false;
+              // Исключаем текущий отображаемый пресет, если это не официальный
+              if (!officialPreset && displayPreset) {
+                return preset.id !== displayPreset.id;
+              }
+              return true;
+            }).map((preset) => (
               <div
                 key={preset.id}
-                className="p-3 bg-white/5 rounded-lg mb-2 last:mb-0 border border-white/10"
+                className="p-2 bg-white/5 rounded-lg mb-1.5 last:mb-0 border border-white/10"
               >
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center space-x-3">
+                {/* Первая строка: название, сокращённое описание, параметры, статистика */}
+                <div className="flex items-center justify-between gap-2 mb-1">
+                  <div className="flex items-center space-x-2 flex-1 min-w-0">
                     {preset.moderation_status === 'approved' && (
-                      <CheckCircle className="w-4 h-4 text-green-400" />
+                      <CheckCircle className="w-3.5 h-3.5 text-green-400 flex-shrink-0" />
                     )}
-                    <div>
-                      <p className="text-white font-medium">{preset.name}</p>
-                      <p className="text-gray-400 text-sm">Ender 3 Pro</p>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2">
+                        <p className="text-white font-medium text-sm flex-shrink-0">{preset.name}</p>
+                        {preset.description && (
+                          <span className="text-gray-400 text-xs truncate" title={preset.description}>
+                            {preset.description}
+                          </span>
+                        )}
+                      </div>
                     </div>
                   </div>
-                  <div className="text-right">
-                    {/* Рейтинг пресета (отдельный от рейтинга материала) */}
-                    {preset.rating !== null && preset.rating !== undefined ? (
-                      <div className="flex items-center space-x-1 mb-1" title="Рейтинг этого пресета настроек">
-                      <Star className="w-3 h-3 text-yellow-400 fill-current" />
-                        <span className="text-white text-sm">{preset.rating.toFixed(1)}</span>
+                  <div className="flex items-center gap-3 flex-shrink-0">
+                    {/* Основные параметры печати */}
+                    <div className="flex items-center gap-2 text-xs">
+                      <div className="flex items-center gap-0.5">
+                        <Thermometer className="w-3 h-3 text-red-400" />
+                        <span className="text-gray-300">{preset.extruder_temp}°C</span>
+                      </div>
+                      <div className="flex items-center gap-0.5">
+                        <Thermometer className="w-3 h-3 text-red-400" />
+                        <span className="text-gray-300">{preset.bed_temp}°C</span>
+                      </div>
+                      <div className="flex items-center gap-0.5">
+                        <Gauge className="w-3 h-3 text-blue-400" />
+                        <span className="text-gray-300">{preset.print_speed}</span>
+                      </div>
                     </div>
-                    ) : (
-                      <div className="mb-1 text-gray-500 text-xs">Нет рейтинга</div>
-                    )}
+                    {/* Рейтинг и статистика */}
+                    <div className="flex items-center gap-2 text-xs">
+                      {preset.rating !== null && preset.rating !== undefined && (
+                        <div className="flex items-center gap-0.5" title="Рейтинг этого пресета настроек">
+                          <Star className="w-3 h-3 text-yellow-400 fill-current" />
+                          <span className="text-white">{preset.rating.toFixed(1)}</span>
+                        </div>
+                      )}
+                      {preset.success_rate !== null && preset.success_rate !== undefined && (
+                        <div className="flex items-center gap-0.5" title="Процент успешных печатей">
+                          <CheckCircle className="w-3 h-3 text-green-400" />
+                          <span className="text-green-400">{preset.success_rate.toFixed(0)}%</span>
+                        </div>
+                      )}
+                      {preset.usage_count > 0 && (
+                        <span className="text-gray-400" title="Количество использований">{preset.usage_count}</span>
+                      )}
+                    </div>
                   </div>
                 </div>
+                {/* Вторая строка: принтеры */}
+                {preset.printers && preset.printers.length > 0 && (
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    {preset.printers.map((printer) => (
+                      <span
+                        key={printer.id}
+                        className="px-1.5 py-0.5 bg-white/10 rounded text-xs text-gray-400 border border-white/20"
+                        title={`${printer.manufacturer} ${printer.model}`}
+                      >
+                        {printer.name}
+                      </span>
+                    ))}
+                  </div>
+                )}
               </div>
             ))}
           </div>
@@ -538,66 +697,81 @@ const MaterialCard: React.FC<MaterialCardProps> = ({
       )}
 
       {/* Actions */}
-      <div className="flex space-x-3 mt-4">
-        {!user ? (
-          <button
-            disabled
-            className="flex-1 bg-gray-600/50 text-white py-3 px-6 rounded-xl cursor-not-allowed flex items-center justify-center"
-            title="Необходимо войти в систему"
-          >
-            Войдите, чтобы добавить
-          </button>
-        ) : isPresetOwn ? (
-          <button
-            disabled
-            className="flex-1 bg-purple-600/50 text-white py-3 px-6 rounded-xl cursor-not-allowed flex items-center justify-center"
-          >
-            <CheckCircle className="w-5 h-5 mr-2" />
-            Ваш пресет
-          </button>
-        ) : isPresetSaved ? (
-          <button
-            disabled
-            className="flex-1 bg-green-600/50 text-white py-3 px-6 rounded-xl cursor-not-allowed flex items-center justify-center"
-          >
-            <CheckCircle className="w-5 h-5 mr-2" />
-            Добавлено
-          </button>
-        ) : (
-          <button
+      {/* Кнопка "Добавить в профиль" для всех пресетов (включая взвешенный) */}
+      {displayPreset && (
+        <div className="flex space-x-3 mt-4">
+          {!user ? (
+            <button
+              disabled
+              className="flex-1 bg-gray-600/50 text-white py-3 px-6 rounded-xl cursor-not-allowed flex items-center justify-center"
+              title="Необходимо войти в систему"
+            >
+              Войдите, чтобы добавить
+            </button>
+          ) : isPresetOwn ? (
+            <button
+              disabled
+              className="flex-1 bg-purple-600/50 text-white py-3 px-6 rounded-xl cursor-not-allowed flex items-center justify-center"
+            >
+              <CheckCircle className="w-5 h-5 mr-2" />
+              Ваш пресет
+            </button>
+          ) : isPresetSaved ? (
+            <button
+              disabled
+              className="flex-1 bg-green-600/50 text-white py-3 px-6 rounded-xl cursor-not-allowed flex items-center justify-center"
+            >
+              <CheckCircle className="w-5 h-5 mr-2" />
+              Добавлено
+            </button>
+          ) : (
+            <button
             onClick={(e) => {
               e.stopPropagation();
               if (displayPreset) {
                 savePresetMutation.mutate(displayPreset.id);
               }
             }}
-            disabled={savePresetMutation.isPending}
-            className="flex-1 bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white py-3 px-6 rounded-xl transition-all duration-300 shadow-lg shadow-purple-500/25 hover:shadow-purple-500/40 disabled:opacity-50 disabled:cursor-not-allowed"
+              disabled={savePresetMutation.isPending}
+              className="flex-1 bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white py-3 px-6 rounded-xl transition-all duration-300 shadow-lg shadow-purple-500/25 hover:shadow-purple-500/40 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {savePresetMutation.isPending ? 'Сохранение...' : 'Добавить в профиль'}
+            </button>
+          )}
+          <button
+            onClick={onShowQR}
+            className="px-4 py-3 bg-white/10 hover:bg-white/20 text-white rounded-xl transition-all border border-white/20"
           >
-            {savePresetMutation.isPending ? 'Сохранение...' : 'Добавить в профиль'}
+            <QrCode className="w-5 h-5" />
           </button>
-        )}
-        <button
-          onClick={onShowQR}
-          className="px-4 py-3 bg-white/10 hover:bg-white/20 text-white rounded-xl transition-all border border-white/20"
-        >
-          <QrCode className="w-5 h-5" />
-        </button>
-      </div>
+        </div>
+      )}
 
-      {/* ЗАГЛУШКА: QR Code */}
+      {/* QR Code */}
       {showQR && (
         <div className="mt-4 p-4 bg-white/5 rounded-xl border border-white/10">
           <div className="text-center">
-            <div className="w-24 h-24 bg-white/20 rounded-lg mx-auto mb-2 flex items-center justify-center">
-              <div className="grid grid-cols-4 gap-1">
-                {[...Array(16)].map((_, i) => (
-                  <div key={i} className="w-2 h-2 bg-white rounded-sm"></div>
-                ))}
+            {filament.qr_code ? (
+              <>
+                <img
+                  src={qrAPI.getQRCodeURL(filament.id, 200)}
+                  alt={`QR-код для ${filament.name}`}
+                  className="w-48 h-48 mx-auto mb-3 rounded-lg bg-white p-2"
+                />
+                <p className="text-gray-300 text-sm font-medium mb-1">QR-код: {filament.qr_code}</p>
+                <p className="text-gray-400 text-xs">Сканируйте для быстрого импорта настроек</p>
+                <p className="text-gray-500 text-xs mt-1">
+                  Сканирований: {filament.scans_count || 0}
+                </p>
+              </>
+            ) : (
+              <div className="py-8">
+                <QrCode className="w-16 h-16 mx-auto mb-3 text-gray-500" />
+                <p className="text-gray-400 text-sm">
+                  QR-код доступен только для верифицированных брендов
+                </p>
               </div>
-            </div>
-            <p className="text-gray-300 text-sm">QR-код для материала {filament.id} [ЗАГЛУШКА]</p>
-            <p className="text-gray-400 text-xs">Сканируйте для быстрого импорта</p>
+            )}
           </div>
         </div>
       )}

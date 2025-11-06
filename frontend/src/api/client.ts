@@ -1,7 +1,7 @@
 /** API Client для интеграции с бэкендом */
 
 import axios from 'axios';
-import type { Brand, BrandRequest, BrandRequestStatus, Filament, FilamentVisualSettings, FilamentReview, FilamentRatingStats, Preset, Printer, PrinterRequest, User, Token, RefreshTokenRequest, RefreshTokenResponse, ListResponse, AccountDeletionStats, UserSavedPreset } from '../types/api';
+import type { Brand, BrandRequest, BrandRequestStatus, Filament, FilamentVisualSettings, FilamentReview, FilamentRatingStats, Notification, NotificationListResponse, Preset, RecommendedPreset, Printer, PrinterRequest, User, Token, RefreshTokenRequest, RefreshTokenResponse, ListResponse, AccountDeletionStats, UserSavedPreset, CalculatorEstimateRequest, CalculatorEstimateResponse } from '../types/api';
 import { getRefreshToken, setToken, removeToken } from '../utils/auth';
 
 const API_BASE_URL = '/api/v1';
@@ -24,14 +24,25 @@ api.interceptors.request.use((config) => {
 
 // Переменная для предотвращения множественных запросов refresh
 let isRefreshing = false;
-let failedQueue: Array<{ resolve: (value?: any) => void; reject: (reason?: any) => void }> = [];
+let failedQueue: Array<{ 
+  resolve: (value?: any) => void; 
+  reject: (reason?: any) => void;
+  config: any;
+}> = [];
 
 const processQueue = (error: any, token: string | null = null) => {
   failedQueue.forEach((prom) => {
     if (error) {
       prom.reject(error);
     } else {
-      prom.resolve(token);
+      // Обновляем заголовок каждого запроса в очереди
+      if (token) {
+        prom.config.headers.Authorization = `Bearer ${token}`;
+        // Повторяем запрос с новым токеном
+        prom.resolve(api(prom.config));
+      } else {
+        prom.reject(new Error('Token refresh failed: no token received'));
+      }
     }
   });
   
@@ -47,18 +58,15 @@ api.interceptors.response.use(
     // Если токен истек или невалидный (401), пытаемся обновить
     // НО: не обрабатываем ошибки авторизации (login/register) - они должны обрабатываться в компонентах
     const isAuthEndpoint = originalRequest?.url?.includes('/auth/login') || 
-                            originalRequest?.url?.includes('/auth/register');
+                            originalRequest?.url?.includes('/auth/register') ||
+                            originalRequest?.url?.includes('/auth/refresh');
     
+    // Не обрабатываем повторно запросы, которые уже были повторены
     if (error.response?.status === 401 && !originalRequest._retry && !isAuthEndpoint) {
       if (isRefreshing) {
         // Если уже обновляем токен, ждем результата
         return new Promise((resolve, reject) => {
-          failedQueue.push({ resolve, reject });
-        }).then((token) => {
-          originalRequest.headers.Authorization = `Bearer ${token}`;
-          return api(originalRequest);
-        }).catch((err) => {
-          return Promise.reject(err);
+          failedQueue.push({ resolve, reject, config: originalRequest });
         });
       }
 
@@ -89,6 +97,11 @@ api.interceptors.response.use(
         );
         
         const { access_token } = response.data;
+        
+        if (!access_token) {
+          throw new Error('No access token received from refresh endpoint');
+        }
+        
         setToken(access_token);
         
         // Обновляем заголовок оригинального запроса
@@ -189,8 +202,10 @@ export const brandsAPI = {
     return response.data;
   },
 
-  get: async (id: number) => {
-    const response = await api.get<Brand>(`/brands/${id}`);
+  get: async (id: number, includeEmployeesCount?: boolean) => {
+    const response = await api.get<Brand>(`/brands/${id}`, { 
+      params: includeEmployeesCount ? { include_employees_count: true } : undefined 
+    });
     return response.data;
   },
 
@@ -405,8 +420,8 @@ export const presetsAPI = {
     return response.data;
   },
 
-  recommend: async (filament_id: number) => {
-    const response = await api.get(`/presets/recommend`, { params: { filament_id } });
+  getRecommended: async (filament_id: number) => {
+    const response = await api.get<RecommendedPreset>(`/presets/recommended/${filament_id}`);
     return response.data;
   },
 
@@ -547,14 +562,8 @@ export const brandRequestsAPI = {
 };
 
 export const calculatorAPI = {
-  estimate: async (data: {
-    weight_g: number;
-    time_sec: number;
-    price_per_kg: number;
-    electricity_cost_per_kwh?: number;
-    printer_power_w?: number;
-  }) => {
-    const response = await api.post('/calculator/estimate', data);
+  estimate: async (data: CalculatorEstimateRequest) => {
+    const response = await api.post<CalculatorEstimateResponse>('/calculator/estimate', data);
     return response.data;
   },
 };
@@ -688,7 +697,7 @@ export const adminAPI = {
   },
 
   // Users
-  listUsers: async (params?: { page?: number; size?: number; role?: string; active_only?: boolean }): Promise<User[]> => {
+  listUsers: async (params?: { page?: number; size?: number; role?: string; active_only?: boolean; with_brand?: boolean }): Promise<User[]> => {
     const response = await api.get<User[]>('/admin/users', { params });
     return response.data;
   },
@@ -705,6 +714,16 @@ export const adminAPI = {
   
   promoteToAdmin: async (userId: number): Promise<User> => {
     const response = await api.post<User>(`/admin/users/${userId}/promote-admin`);
+    return response.data;
+  },
+
+  demoteToUser: async (userId: number): Promise<User> => {
+    const response = await api.post<User>(`/admin/users/${userId}/demote-to-user`);
+    return response.data;
+  },
+
+  linkUserToBrand: async (userId: number, brandId: number): Promise<User> => {
+    const response = await api.post<User>(`/admin/users/${userId}/link-brand?brand_id=${brandId}`, {});
     return response.data;
   },
 
@@ -896,6 +915,33 @@ export const adminAPI = {
     pages: number;
   }> => {
     const response = await api.get(`/admin/database/tables/${tableName}/data`, { params });
+    return response.data;
+  },
+};
+
+// Notifications API
+export const notificationsAPI = {
+  // Получить список уведомлений
+  list: async (params?: { page?: number; size?: number; unread_only?: boolean }): Promise<NotificationListResponse> => {
+    const response = await api.get('/notifications/', { params });
+    return response.data;
+  },
+
+  // Получить количество непрочитанных уведомлений
+  getUnreadCount: async (): Promise<{ unread_count: number }> => {
+    const response = await api.get('/notifications/unread-count');
+    return response.data;
+  },
+
+  // Отметить уведомление как прочитанное
+  markAsRead: async (notificationId: number): Promise<Notification> => {
+    const response = await api.patch(`/notifications/${notificationId}/read`);
+    return response.data;
+  },
+
+  // Отметить все уведомления как прочитанные
+  markAllAsRead: async (): Promise<{ marked_count: number }> => {
+    const response = await api.post('/notifications/mark-all-read');
     return response.data;
   },
 };

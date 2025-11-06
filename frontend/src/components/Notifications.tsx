@@ -1,46 +1,45 @@
 /** Компонент уведомлений с колокольчиком */
 
 import { useState, useRef, useEffect } from 'react';
-import { Bell, X, CheckCircle, XCircle, AlertCircle, Info } from 'lucide-react';
+import { Bell, CheckCircle, XCircle, AlertCircle, Info, Settings } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-
-interface Notification {
-  id: number;
-  type: 'success' | 'error' | 'warning' | 'info';
-  title: string;
-  message: string;
-  read: boolean;
-  created_at: string;
-  link?: string;
-}
-
-// TODO: Создать API endpoint для уведомлений
-const mockNotifications: Notification[] = [
-  {
-    id: 1,
-    type: 'info',
-    title: 'Заявка на верификацию',
-    message: 'Ваша заявка на создание бренда "ThermPlast" находится на рассмотрении',
-    read: false,
-    created_at: new Date().toISOString(),
-  },
-];
+import { notificationsAPI } from '../api/client';
+import type { Notification, NotificationType } from '../types/api';
 
 export function Notifications() {
   const { user } = useAuth();
+  const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const [isOpen, setIsOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
-  // TODO: Заменить на реальный API
-  const { data: notifications = [] } = useQuery<Notification[]>({
+  // Загружаем уведомления
+  const { data: notificationsData, refetch } = useQuery({
     queryKey: ['notifications', user?.id],
-    queryFn: async () => {
-      // Временный мок
-      if (!user) return [];
-      return mockNotifications;
-    },
+    queryFn: () => notificationsAPI.list({ page: 1, size: 50 }),
     enabled: !!user,
+    refetchInterval: 30000, // Обновляем каждые 30 секунд
+  });
+
+  const notifications = notificationsData?.items || [];
+  const unreadCount = notificationsData?.unread_count || 0;
+
+  // Мутация для отметки как прочитанное
+  const markAsReadMutation = useMutation({
+    mutationFn: (notificationId: number) => notificationsAPI.markAsRead(notificationId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['notifications', user?.id] });
+    },
+  });
+
+  // Мутация для отметки всех как прочитанные
+  const markAllAsReadMutation = useMutation({
+    mutationFn: () => notificationsAPI.markAllAsRead(),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['notifications', user?.id] });
+    },
   });
 
   // Закрытие при клике вне компонента
@@ -64,19 +63,38 @@ export function Notifications() {
     return null;
   }
 
-  const unreadCount = notifications.filter(n => !n.read).length;
-
-  const getNotificationIcon = (type: Notification['type']) => {
+  const getNotificationIcon = (type: NotificationType) => {
     switch (type) {
-      case 'success':
-        return <CheckCircle className="w-5 h-5 text-green-400" />;
-      case 'error':
+      case 'preset_updated':
+        return <Settings className="w-5 h-5 text-blue-400" />;
+      case 'preset_deleted':
         return <XCircle className="w-5 h-5 text-red-400" />;
-      case 'warning':
+      case 'brand_verified':
+        return <CheckCircle className="w-5 h-5 text-green-400" />;
+      case 'brand_request_approved':
+        return <CheckCircle className="w-5 h-5 text-green-400" />;
+      case 'brand_request_rejected':
         return <AlertCircle className="w-5 h-5 text-yellow-400" />;
-      case 'info':
+      default:
         return <Info className="w-5 h-5 text-blue-400" />;
     }
+  };
+
+  const handleNotificationClick = (notification: Notification) => {
+    // Отмечаем как прочитанное при клике
+    if (!notification.read) {
+      markAsReadMutation.mutate(notification.id);
+    }
+    
+    // Переходим по ссылке, если есть
+    if (notification.link) {
+      navigate(notification.link);
+      setIsOpen(false);
+    }
+  };
+
+  const handleMarkAllAsRead = () => {
+    markAllAsReadMutation.mutate();
   };
 
   const formatTime = (dateString: string) => {
@@ -133,6 +151,7 @@ export function Notifications() {
                 {notifications.map((notification) => (
                   <div
                     key={notification.id}
+                    onClick={() => handleNotificationClick(notification)}
                     className={`p-4 hover:bg-white/5 transition-all cursor-pointer ${
                       !notification.read ? 'bg-white/5' : ''
                     }`}
@@ -163,16 +182,16 @@ export function Notifications() {
           </div>
 
           {/* Footer */}
-          {notifications.length > 0 && (
+          {notifications.length > 0 && unreadCount > 0 && (
             <div className="p-3 border-t border-white/10">
               <button
                 className="w-full text-center text-sm text-purple-400 hover:text-purple-300 transition-all"
                 onClick={() => {
-                  // TODO: Mark all as read
-                  setIsOpen(false);
+                  handleMarkAllAsRead();
                 }}
+                disabled={markAllAsReadMutation.isPending}
               >
-                Отметить все как прочитанные
+                {markAllAsReadMutation.isPending ? 'Обработка...' : 'Отметить все как прочитанные'}
               </button>
             </div>
           )}

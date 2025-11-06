@@ -11,6 +11,7 @@ export interface Brand {
   active: boolean;
   created_at: string;
   updated_at: string;
+  employees_count?: number | null; // Количество сотрудников (только при запросе)
 }
 
 export interface FilamentVisualSettings {
@@ -94,6 +95,7 @@ export interface Preset {
   name: string;
   description: string | null;
   is_official: boolean;
+  is_weighted: boolean; // Динамический взвешенный пресет, автоматически пересчитывается системой
   extruder_temp: number;
   bed_temp: number;
   print_speed: number;
@@ -116,6 +118,22 @@ export interface Preset {
   user_id?: number | null;
   printers?: Printer[]; // Список принтеров, для которых подходит этот пресет
   is_saved?: boolean; // Для UI: сохранен ли пресет пользователем (из available-presets эндпоинта)
+}
+
+export interface RecommendedPreset {
+  filament_id: number;
+  extruder_temp: number;
+  bed_temp: number;
+  print_speed: number;
+  travel_speed: number | null;
+  layer_height: number | null;
+  first_layer_height: number | null;
+  flow_rate: number | null;
+  fan_speed: number | null;
+  retraction_length: number | null;
+  retraction_speed: number | null;
+  presets_count: number; // Количество пресетов, использованных для расчета
+  avg_rating: number | null;
 }
 
 export interface User {
@@ -228,9 +246,133 @@ export interface FilamentRatingStats {
   rating_distribution: Record<number, number>; // {1: count, 2: count, ...}
 }
 
+export type NotificationType = 'preset_updated' | 'preset_deleted' | 'brand_verified' | 'brand_request_approved' | 'brand_request_rejected';
+
+export interface Notification {
+  id: number;
+  user_id: number;
+  type: NotificationType;
+  title: string;
+  message: string;
+  link: string | null;
+  extra_data: Record<string, any> | null;
+  read: boolean;
+  read_at: string | null;
+  created_at: string;
+}
+
+export interface NotificationListResponse {
+  items: Notification[];
+  total: number;
+  page: number;
+  size: number;
+  pages: number;
+  unread_count: number;
+}
+
 export interface UserSavedPreset {
   id: number;
   user_id: number;
   preset_id: number;
   saved_at: string; // ISO 8601 datetime string
+}
+
+export type PricingMethod = 'by_weight' | 'by_time' | 'combined';
+
+export interface CalculatorEstimateRequest {
+  pricing_method?: PricingMethod;
+  
+  // Параметры материала
+  weight_g?: number | null;
+  supports_weight_g?: number | null;
+  supports_loss_coefficient?: number | null;
+  spool_price?: number | null;
+  spool_weight_kg?: number | null;
+  delivery_cost?: number | null;
+  
+  // Параметры времени печати
+  time_sec?: number | null;
+  time_hours?: number | null;
+  time_minutes?: number | null;
+  
+  // Почасовая ставка печати (для метода by_time)
+  price_per_hour?: number | null;
+  
+  // Электроэнергия
+  electricity_cost_per_kwh?: number | null;
+  printer_power_w?: number | null;
+  
+  // Дополнительные услуги
+  modeling_hours?: number | null;
+  modeling_minutes?: number | null;
+  modeling_rate_per_hour?: number | null;
+  
+  postprocessing_hours?: number | null;
+  postprocessing_minutes?: number | null;
+  postprocessing_rate_per_hour?: number | null;
+  
+  printing_rate_per_hour?: number | null;
+  amortization_rate_per_hour?: number | null;
+  
+  // Количество деталей
+  quantity?: number;
+  
+  // Накладные расходы и наценка
+  overhead_percent?: number | null;
+  markup_percent?: number | null;
+  
+  // Коэффициенты корректировки
+  urgency_coefficient?: number | null;
+  complexity_coefficient?: number | null;
+  volume_discount_coefficient?: number | null;
+  
+  // Фиксированные расходы
+  fixed_costs?: number | null;
+  
+  // Минимальная цена заказа
+  min_order_price?: number | null;
+  
+  // Округление
+  round_to_nearest?: number | null;
+}
+
+export interface CalculatorEstimateResponse {
+  // Компоненты стоимости
+  cost_material: number;
+  cost_electricity: number;
+  cost_modeling: number;
+  cost_printing: number;
+  cost_postprocessing: number;
+  cost_amortization: number;
+  
+  // Промежуточные расчеты
+  cost_direct: number;
+  cost_overhead: number;
+  cost_before_markup: number;
+  cost_markup: number;
+  
+  // Итоговые суммы
+  cost_first_part: number;
+  cost_subsequent_parts: number;
+  cost_total: number;
+  cost_final: number;
+  
+  // Статистика
+  weight_kg: number | null;
+  time_hours: number | null;
+  total_time_hours?: number | null;
+  quantity: number;
+  
+  // Финансовые показатели (только для combined)
+  cost_of_goods_sold?: number | null;
+  profit_margin?: number | null;
+  profit_margin_percent?: number | null;
+  
+  // Метод расчета
+  pricing_method: PricingMethod;
+  
+  // Примененные коэффициенты
+  applied_urgency_coefficient?: number | null;
+  applied_complexity_coefficient?: number | null;
+  applied_volume_discount?: number | null;
 }

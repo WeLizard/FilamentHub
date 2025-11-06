@@ -245,8 +245,8 @@ async def download_filament_qr_code(
     if not brand:
         raise HTTPException(status_code=404, detail="Brand not found")
 
-    # Проверяем права доступа
-    if current_user.role != 'admin' and (not current_user.brand_id or current_user.brand_id != brand.id):
+    # Проверяем права доступа (админ или пользователь привязан к этому бренду)
+    if current_user.role.value != 'admin' and (not current_user.brand_id or current_user.brand_id != brand.id):
         raise HTTPException(status_code=403, detail="Access denied")
 
     if not filament.qr_code:

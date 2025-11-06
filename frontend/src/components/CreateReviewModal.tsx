@@ -75,6 +75,12 @@ export const CreateReviewModal: React.FC<CreateReviewModalProps> = ({
       queryClient.invalidateQueries({ queryKey: ['filament-reviews', filamentId] });
       queryClient.invalidateQueries({ queryKey: ['filament-rating-stats', filamentId] });
       queryClient.invalidateQueries({ queryKey: ['filament', filamentId] });
+      // Обновляем кэш отзывов пользователя (для профиля)
+      if (user?.id) {
+        queryClient.invalidateQueries({ queryKey: ['user-reviews', user.id] });
+      }
+      // Обновляем все запросы отзывов (на случай если есть другие страницы)
+      queryClient.invalidateQueries({ queryKey: ['filament-reviews'] });
       
       if (onSuccess) {
         onSuccess();

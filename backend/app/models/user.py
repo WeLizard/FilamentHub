@@ -13,6 +13,7 @@ from app.db.base import Base
 if TYPE_CHECKING:
     from app.models.brand import Brand
     from app.models.filament_review import FilamentReview
+    from app.models.notification import Notification
     from app.models.preset import Preset
     from app.models.user_saved_preset import UserSavedPreset
 
@@ -75,6 +76,9 @@ class User(Base):
     )
     saved_presets: Mapped[list["UserSavedPreset"]] = relationship(
         "UserSavedPreset", back_populates="user", cascade="all, delete-orphan"
+    )
+    notifications: Mapped[list["Notification"]] = relationship(
+        "Notification", back_populates="user", cascade="all, delete-orphan", order_by="Notification.created_at.desc()"
     )
 
     def __repr__(self) -> str:

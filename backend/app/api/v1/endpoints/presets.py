@@ -1,5 +1,6 @@
 """Preset endpoints."""
 
+import logging
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
@@ -8,6 +9,8 @@ import json
 from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
+
+logger = logging.getLogger(__name__)
 
 from app.core.dependencies import get_current_active_user, get_current_brand_user, get_current_active_user_optional
 from app.db.session import get_db
@@ -24,7 +27,10 @@ from app.schemas.preset import (
     RecommendedPresetResponse,
 )
 from app.schemas.printer import PrinterResponse
+from app.services.notification_service import notify_preset_deleted, notify_preset_updated
 from app.services.orcaslicer_exporter import export_preset_to_orcaslicer, generate_profile_info, preset_to_orcaslicer_json
+from app.services.preset_recommender import get_recommended_preset_values
+from app.services.weighted_preset_service import create_or_update_weighted_preset
 
 router = APIRouter(prefix="/presets", tags=["presets"])
 
@@ -97,8 +103,18 @@ async def list_presets(
     result = await db.execute(query)
     presets = result.scalars().unique().all()
 
+    # Преобразуем пресеты в ответ с принтерами
+    preset_responses = []
+    for preset in presets:
+        preset_dict = PresetResponse.model_validate(preset).model_dump()
+        preset_dict["printers"] = [
+            PrinterResponse.model_validate(link.printer).model_dump()
+            for link in preset.printer_links
+        ]
+        preset_responses.append(PresetResponse(**preset_dict))
+
     return PresetListResponse(
-        items=[PresetResponse.model_validate(p) for p in presets],
+        items=preset_responses,
         total=total,
         page=page,
         size=size,
@@ -174,14 +190,14 @@ async def create_preset(
     
     # Проверка прав на создание официального пресета
     if data.is_official:
-        # Только верифицированные производители могут создавать официальные пресеты
-        if current_user.role.value != "brand" and current_user.role.value != "admin":
+        # Только пользователи, привязанные к бренду (или админы), могут создавать официальные пресеты
+        if not current_user.brand_id and current_user.role.value != "admin":
             raise HTTPException(
                 status_code=403,
-                detail="Only verified brands can create official presets"
+                detail="Only users linked to a brand can create official presets"
             )
-        # Проверяем, что filament принадлежит бренду пользователя
-        if current_user.role.value == "brand" and filament.brand_id != current_user.brand_id:
+        # Проверяем, что filament принадлежит бренду пользователя (админы могут создавать для любого бренда)
+        if current_user.brand_id and filament.brand_id != current_user.brand_id:
             raise HTTPException(
                 status_code=403,
                 detail="You can only create official presets for your brand's filaments"
@@ -244,6 +260,13 @@ async def create_preset(
     await db.commit()
     await db.refresh(preset, ["printer_links"])
     
+    # Обновляем взвешенный пресет для этого филамента (если достаточно пресетов)
+    try:
+        await create_or_update_weighted_preset(preset.filament_id, db, min_presets_count=4)
+    except Exception as e:
+        # Логируем ошибку, но не прерываем создание пресета
+        logger.error(f"Failed to update weighted preset for filament {preset.filament_id}: {e}")
+    
     # Загружаем принтеры для ответа
     result = await db.execute(
         select(Preset)
@@ -274,6 +297,13 @@ async def update_preset(
 
     if not preset:
         raise HTTPException(status_code=404, detail="Preset not found")
+    
+    # Взвешенные пресеты нельзя редактировать (они автоматически обновляются системой)
+    if preset.is_weighted:
+        raise HTTPException(
+            status_code=403,
+            detail="Weighted presets cannot be edited. They are automatically updated by the system."
+        )
 
     # Проверка прав: пользователь может редактировать только свои пресеты (или админ)
     if preset.user_id != current_user.id and current_user.role.value != "admin":
@@ -318,6 +348,23 @@ async def update_preset(
 
     await db.commit()
     
+    # Обновляем взвешенный пресет для этого филамента (если достаточно пресетов)
+    try:
+        await create_or_update_weighted_preset(preset.filament_id, db, min_presets_count=4)
+    except Exception as e:
+        logger.error(f"Failed to update weighted preset for filament {preset.filament_id}: {e}")
+    
+    # Создаем уведомления для пользователей, у которых сохранен этот пресет
+    try:
+        await notify_preset_updated(
+            preset_id=preset.id,
+            preset_name=preset.name,
+            filament_id=preset.filament_id,
+            db=db,
+        )
+    except Exception as e:
+        logger.error(f"Failed to create notifications for preset {preset.id} update: {e}")
+    
     # Загружаем принтеры для ответа
     result = await db.execute(
         select(Preset)
@@ -341,6 +388,13 @@ async def delete_preset(
 
     if not preset:
         raise HTTPException(status_code=404, detail="Preset not found")
+    
+    # Взвешенные пресеты нельзя удалять (они автоматически управляются системой)
+    if preset.is_weighted:
+        raise HTTPException(
+            status_code=403,
+            detail="Weighted presets cannot be deleted. They are automatically managed by the system."
+        )
 
     # Проверка: пользователь может удалять только свои пресеты (или админ)
     if preset.user_id != current_user.id and current_user.role.value != "admin":
@@ -348,9 +402,31 @@ async def delete_preset(
             status_code=403,
             detail="You can only delete your own presets"
         )
+    
+    # Сохраняем данные перед удалением для уведомлений и обновления взвешенного пресета
+    filament_id = preset.filament_id
+    preset_name = preset.name
+    preset_id_for_notification = preset.id
 
     await db.delete(preset)
     await db.commit()
+    
+    # Создаем уведомления для пользователей, у которых сохранен этот пресет
+    try:
+        await notify_preset_deleted(
+            preset_id=preset_id_for_notification,
+            preset_name=preset_name,
+            filament_id=filament_id,
+            db=db,
+        )
+    except Exception as e:
+        logger.error(f"Failed to create notifications for preset {preset_id_for_notification} deletion: {e}")
+    
+    # Обновляем взвешенный пресет для этого филамента (если достаточно пресетов)
+    try:
+        await create_or_update_weighted_preset(filament_id, db, min_presets_count=4)
+    except Exception as e:
+        logger.error(f"Failed to update weighted preset for filament {filament_id}: {e}")
 
 
 @router.post("/{preset_id}/increment-usage", response_model=PresetResponse)
@@ -401,8 +477,6 @@ async def export_preset_json(
     try:
         profile_dict = await preset_to_orcaslicer_json(preset, preset.filament, db)
     except Exception as e:
-        import logging
-        logger = logging.getLogger(__name__)
         logger.error(f"Error exporting preset {preset_id}: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Error exporting preset: {str(e)}")
     
@@ -505,3 +579,19 @@ async def export_preset_info(
             "Content-Disposition": f'attachment; filename="{filename}"',
         }
     )
+
+
+@router.get("/recommended/{filament_id}", response_model=RecommendedPresetResponse)
+async def get_recommended_preset(
+    filament_id: int,
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> RecommendedPresetResponse:
+    """Получить взвешенный пресет для материала (weighted average всех пресетов)."""
+    try:
+        recommended_values = await get_recommended_preset_values(filament_id, db)
+        return RecommendedPresetResponse(
+            filament_id=filament_id,
+            **recommended_values
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))

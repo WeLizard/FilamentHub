@@ -1,4 +1,10 @@
-"""Preset recommender service (weighted average algorithm)."""
+"""
+Preset recommender service (weighted average algorithm).
+
+Применяет:
+- Закон больших чисел: взвешенное среднее стремится к истинному значению при увеличении выборки
+- Метод Ферми: оценка недостающих данных через порядки величин и приближения
+"""
 
 from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -9,18 +15,22 @@ from app.models.filament import Filament
 
 def calculate_preset_weight(preset: Preset) -> float:
     """
-    Вычислить вес пресета для weighted average.
+    Вычислить вес пресета для weighted average (закон больших чисел).
     
     Формула: base_weight * usage_factor * official_bonus
     
-    - base_weight: rating (если есть) или usage_count / 10
-    - usage_factor: 1 + (usage_count / 100)
+    - base_weight: rating (если есть) или usage_count / 10 (метод Ферми: оценка через порядок величины)
+    - usage_factor: 1 + (usage_count / 100) - больше использований = больше доверия
     - official_bonus: 1.5 для официальных, 1.0 для пользовательских
+    
+    Метод Ферми: если нет рейтинга, оцениваем через порядок величины usage_count / 10
     """
+    # Метод Ферми: оценка веса через порядок величины
     base_weight = preset.rating if preset.rating is not None else (preset.usage_count / 10.0)
     if base_weight <= 0:
         base_weight = 1.0  # Минимальный вес для участия в расчете
     
+    # Закон больших чисел: больше использований = больше доверия
     usage_factor = 1 + (preset.usage_count / 100.0)
     official_bonus = 1.5 if preset.is_official else 1.0
     
@@ -49,7 +59,15 @@ async def get_recommended_preset_values(
     db: AsyncSession,
 ) -> dict[str, float | int | None]:
     """
-    Получить рекомендованные значения настроек для материала (weighted average).
+    Получить рекомендованные значения настроек для материала.
+    
+    Применяет закон больших чисел через weighted average:
+    - Чем больше пресетов, тем точнее результат
+    - Взвешенное среднее стремится к истинному значению при n → ∞
+    
+    Применяет метод Ферми для оценки недостающих данных:
+    - Оценка через порядки величин
+    - Минимальный порог 4 пресета для статистической значимости
     
     Returns:
         dict с ключами: extruder_temp, bed_temp, print_speed, travel_speed,
@@ -64,9 +82,11 @@ async def get_recommended_preset_values(
         raise ValueError(f"Filament {filament_id} not found")
     
     # Получаем все одобренные пресеты для материала
+    # Исключаем взвешенные пресеты (is_weighted=True), чтобы избежать рекурсии
     query = select(Preset).where(
         Preset.filament_id == filament_id,
         Preset.active == True,
+        Preset.is_weighted == False,  # Исключаем взвешенные пресеты
         or_(
             Preset.moderation_status == PresetModerationStatus.APPROVED,
             Preset.is_official == True
@@ -78,7 +98,13 @@ async def get_recommended_preset_values(
     if not presets:
         raise ValueError(f"No approved presets found for filament {filament_id}")
     
-    # Вычисляем веса
+    # Метод Ферми: минимальный порог для статистической значимости
+    # При малом количестве данных оценка менее точна
+    # Порог 4 пресета - компромисс между точностью и доступностью данных
+    # (проверка на минимум выполняется в weighted_preset_service, здесь только комментарий)
+    
+    # Закон больших чисел: вычисляем веса для взвешенного среднего
+    # Чем больше пресетов, тем точнее будет результат (n → ∞ → точность ↑)
     weights = [calculate_preset_weight(p) for p in presets]
     total_weight = sum(weights)
     

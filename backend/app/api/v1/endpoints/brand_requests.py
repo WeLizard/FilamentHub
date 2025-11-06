@@ -47,7 +47,7 @@ async def create_brand_request(
                 detail="brand_id is required for JOIN requests",
             )
         
-        # Проверяем, что бренд существует и верифицирован
+        # Проверяем, что бренд существует
         result = await db.execute(select(Brand).where(Brand.id == data.brand_id))
         brand = result.scalar_one_or_none()
         if not brand:
@@ -55,11 +55,36 @@ async def create_brand_request(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="Brand not found",
             )
-        if not brand.verified:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Can only join verified brands",
+        
+        # Проверяем, есть ли у бренда сотрудники (пользователи с brand_id = brand.id)
+        from app.models.user import User
+        employees_count_result = await db.execute(
+            select(func.count(User.id)).where(User.brand_id == brand.id)
+        )
+        employees_count = employees_count_result.scalar() or 0
+        has_employees = employees_count > 0
+        
+        # Если бренд не верифицирован ИЛИ у бренда нет сотрудников - требуем полную заявку как для CREATE
+        if not brand.verified or not has_employees:
+            # Нормализуем URL сайта перед проверкой
+            normalized_website = None
+            if data.company_website:
+                normalized_website = normalize_website_url(data.company_website)
+            
+            # Проверяем, требуются ли документы для email
+            requires_documents = is_email_requiring_documents(
+                email=data.company_email or "",
+                website=normalized_website,
             )
+            
+            # Если требуются документы → описание обязательно
+            if requires_documents:
+                if not data.proof_text or not data.proof_text.strip():
+                    brand_type = "неверифицированного" if not brand.verified else "верифицированного без сотрудников"
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail=f"Для {brand_type} бренда необходимо указать описание подтверждающих документов. Пожалуйста, укажите описание документов, подтверждающих, что вы представляете этот бренд.",
+                    )
         
         # Проверяем, что у пользователя еще нет активной заявки на этот бренд
         existing_request = await db.execute(
@@ -109,7 +134,7 @@ async def create_brand_request(
             )
     
     # Валидация: для CREATE заявок проверяем корпоративность email и обязательность документов
-    # Для JOIN заявок подтверждающие документы не требуются - админ уточнит у существующих представителей
+    # Для JOIN заявок: если у бренда есть сотрудники - упрощенная заявка, если нет - полная как для CREATE
     if data.request_type == BrandRequestType.CREATE:
         # Нормализуем URL сайта перед проверкой
         normalized_website = None
@@ -334,8 +359,8 @@ async def update_brand_request(
         if request.request_type == BrandRequestType.JOIN:
             user = await db.get(User, request.user_id)
             if user:
+                # Просто привязываем к бренду, роль не меняем
                 user.brand_id = request.brand_id
-                user.role = UserRole.BRAND
         elif request.request_type == BrandRequestType.CREATE:
             # Создаем бренд и привязываем пользователя
             new_brand = Brand(
@@ -351,8 +376,8 @@ async def update_brand_request(
             
             user = await db.get(User, request.user_id)
             if user:
+                # Просто привязываем к бренду, роль не меняем
                 user.brand_id = new_brand.id
-                user.role = UserRole.BRAND
     
     await db.commit()
     await db.refresh(request)

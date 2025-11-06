@@ -9,6 +9,7 @@ from app.models.preset import Preset, PresetModerationStatus
 from app.models.preset_printer import PresetPrinter
 from app.models.printer import Printer
 from app.models.printer_request import PrinterRequest, PrinterRequestStatus
+from app.models.notification import Notification, NotificationType
 from app.models.user import User, UserRole
 from app.models.user_saved_preset import UserSavedPreset
 
@@ -21,6 +22,8 @@ __all__ = [
     "FilamentReview",
     "MaterialMapping",
     "MaterialMappingPriority",
+    "Notification",
+    "NotificationType",
     "Preset",
     "PresetModerationStatus",
     "PresetPrinter",

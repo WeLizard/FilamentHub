@@ -67,6 +67,7 @@ async def list_brands(
 async def get_brand(
     brand_id: int,
     db: Annotated[AsyncSession, Depends(get_db)],
+    include_employees_count: bool = Query(False, description="Включить количество сотрудников"),
 ) -> BrandResponse:
     """Получить производителя по ID."""
     result = await db.execute(select(Brand).where(Brand.id == brand_id))
@@ -75,7 +76,18 @@ async def get_brand(
     if not brand:
         raise HTTPException(status_code=404, detail="Brand not found")
 
-    return BrandResponse.model_validate(brand)
+    response = BrandResponse.model_validate(brand)
+    
+    # Если запрошено количество сотрудников - добавляем его
+    if include_employees_count:
+        from app.models.user import User
+        employees_count_result = await db.execute(
+            select(func.count(User.id)).where(User.brand_id == brand.id)
+        )
+        employees_count = employees_count_result.scalar() or 0
+        response.employees_count = employees_count
+    
+    return response
 
 
 @router.post("/", response_model=BrandResponse, status_code=201)

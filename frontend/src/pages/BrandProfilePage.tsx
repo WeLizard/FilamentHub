@@ -30,6 +30,9 @@ import {
   XCircle,
   FileText,
   Fan,
+  AlertTriangle,
+  Grid3x3,
+  List,
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { authAPI, brandsAPI, filamentsAPI, brandRequestsAPI, presetsAPI, qrAPI } from '../api/client';
@@ -47,6 +50,7 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({ onBack }) =>
   const { user } = useAuth();
   const queryClient = useQueryClient();
   const [brandTab, setBrandTab] = useState<'materials' | 'presets' | 'qr' | 'analytics' | 'usage'>('materials');
+  const [materialsViewMode, setMaterialsViewMode] = useState<'grid' | 'list'>('grid');
   const [isCreateFilamentModalOpen, setIsCreateFilamentModalOpen] = useState(false);
   const [isCreatePresetModalOpen, setIsCreatePresetModalOpen] = useState(false);
   const [editingFilament, setEditingFilament] = useState<Filament | null>(null);
@@ -239,14 +243,41 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({ onBack }) =>
         <div className="space-y-6">
           <div className="flex items-center justify-between">
             <h3 className="text-2xl font-bold text-white">Мои материалы</h3>
-            <button
-              onClick={handleCreateFilament}
-              disabled={isLoadingFilaments}
-              className="bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700 text-white px-4 py-2 rounded-xl transition-all shadow-lg shadow-green-500/25 hover:shadow-green-500/40 disabled:opacity-50 disabled:cursor-not-allowed flex items-center space-x-2"
-            >
-              <Plus className="w-4 h-4" />
-              <span>Новый материал</span>
-            </button>
+            <div className="flex items-center space-x-3">
+              {/* View Mode Toggle */}
+              <div className="flex items-center bg-white/10 rounded-lg p-1 border border-white/20">
+                <button
+                  onClick={() => setMaterialsViewMode('grid')}
+                  className={`p-2 rounded transition-all ${
+                    materialsViewMode === 'grid'
+                      ? 'bg-purple-600 text-white'
+                      : 'text-gray-400 hover:text-white'
+                  }`}
+                  title="Сетка"
+                >
+                  <Grid3x3 className="w-4 h-4" />
+                </button>
+                <button
+                  onClick={() => setMaterialsViewMode('list')}
+                  className={`p-2 rounded transition-all ${
+                    materialsViewMode === 'list'
+                      ? 'bg-purple-600 text-white'
+                      : 'text-gray-400 hover:text-white'
+                  }`}
+                  title="Список"
+                >
+                  <List className="w-4 h-4" />
+                </button>
+              </div>
+              <button
+                onClick={handleCreateFilament}
+                disabled={isLoadingFilaments}
+                className="bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700 text-white px-4 py-2 rounded-xl transition-all shadow-lg shadow-green-500/25 hover:shadow-green-500/40 disabled:opacity-50 disabled:cursor-not-allowed flex items-center space-x-2"
+              >
+                <Plus className="w-4 h-4" />
+                <span>Новый материал</span>
+              </button>
+            </div>
           </div>
 
           {/* Loading State */}
@@ -267,21 +298,37 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({ onBack }) =>
             </div>
           )}
 
-          {/* Materials Grid */}
+          {/* Materials Grid/List */}
           {!isLoadingFilaments && !filamentsError && (
             <>
               {filaments.length > 0 ? (
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                  {filaments.map((filament) => (
-                    <FilamentCard
-                      key={filament.id}
-                      filament={filament}
-                      onEdit={handleEditFilament}
-                      onDelete={handleDeleteFilament}
-                      onShowQR={(filament) => setShowQRFilament(filament)}
-                    />
-                  ))}
-                </div>
+                materialsViewMode === 'grid' ? (
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                    {filaments.map((filament) => (
+                      <FilamentCard
+                        key={filament.id}
+                        filament={filament}
+                        onEdit={handleEditFilament}
+                        onDelete={handleDeleteFilament}
+                        onShowQR={(filament) => setShowQRFilament(filament)}
+                        viewMode="grid"
+                      />
+                    ))}
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    {filaments.map((filament) => (
+                      <FilamentCard
+                        key={filament.id}
+                        filament={filament}
+                        onEdit={handleEditFilament}
+                        onDelete={handleDeleteFilament}
+                        onShowQR={(filament) => setShowQRFilament(filament)}
+                        viewMode="list"
+                      />
+                    ))}
+                  </div>
+                )
               ) : (
                 <div className="text-center py-12">
                   <Package className="w-16 h-16 text-gray-400 mx-auto mb-4" />
@@ -740,17 +787,27 @@ const BrandSelectionForm: React.FC = () => {
     }
   }, [myRequests, submittedRequest]);
 
-  // Загружаем список брендов с поиском (только верифицированные для выбора)
+  // Загружаем список брендов с поиском (все бренды)
   const { data: brandsData, isLoading: isLoadingBrands } = useQuery({
     queryKey: ['brands', 'selection', { search: brandSearch }],
     queryFn: () => brandsAPI.list({ active_only: true, page: 1, size: 100, search: brandSearch || undefined }),
   });
 
-  // Фильтруем только верифицированные бренды для выбора
-  const verifiedBrands = brandsData?.items.filter((brand: Brand) => brand.verified) || [];
+  // Все бренды для выбора
+  const allBrands = brandsData?.items || [];
 
   // Находим выбранный бренд для отображения
-  const selectedBrand = selectedBrandId ? verifiedBrands.find((b: Brand) => b.id === selectedBrandId) : null;
+  const selectedBrand = selectedBrandId ? allBrands.find((b: Brand) => b.id === selectedBrandId) : null;
+  
+  // Загружаем информацию о выбранном бренде с количеством сотрудников
+  const { data: selectedBrandInfo } = useQuery({
+    queryKey: ['brand', selectedBrandId, 'employees'],
+    queryFn: () => brandsAPI.get(selectedBrandId!, true),
+    enabled: !!selectedBrandId,
+  });
+  
+  // Определяем, есть ли у выбранного бренда сотрудники
+  const hasEmployees = selectedBrandInfo?.employees_count ? selectedBrandInfo.employees_count > 0 : false;
 
   // Мутация для создания заявки на создание бренда
   const createRequestMutation = useMutation({
@@ -901,6 +958,30 @@ const BrandSelectionForm: React.FC = () => {
     e.target.value = ''; // Сбрасываем input
   };
 
+  // Обработчик выбора файлов для формы JOIN (если у бренда нет сотрудников)
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files || []);
+    const allowedExtensions = ['.pdf', '.jpg', '.jpeg', '.png', '.doc', '.docx'];
+    const validFiles = files.filter((file) => {
+      const fileExt = '.' + file.name.split('.').pop()?.toLowerCase();
+      return allowedExtensions.includes(fileExt) && file.size <= 50 * 1024 * 1024;
+    });
+    
+    if (validFiles.length !== files.length) {
+      setError('Некоторые файлы не были добавлены. Разрешены только PDF, JPG, PNG, DOC, DOCX (макс. 50 MB)');
+    } else {
+      setError(null);
+    }
+    
+    if (localFiles.length + validFiles.length > 10) {
+      setError('Максимум 10 файлов');
+      return;
+    }
+    
+    setLocalFiles([...localFiles, ...validFiles]);
+    e.target.value = ''; // Сбрасываем input
+  };
+
   // Нормализация URL сайта: убрать http/https/www., оставить только домен
   const normalizeWebsiteUrl = (website: string | null): string | null => {
     if (!website) return null;
@@ -1041,6 +1122,32 @@ const BrandSelectionForm: React.FC = () => {
       setError('Необходимо подтвердить достоверность предоставленных данных');
       return;
     }
+    
+    // Если бренд не верифицирован ИЛИ у бренда нет сотрудников - требуем полную заявку как для CREATE
+    if (!selectedBrand?.verified || !hasEmployees) {
+      // Проверяем корпоративность email
+      const userEmail = user?.email || '';
+      const isCorporate = isCorporateEmail(companyEmail || userEmail, companyWebsite);
+      
+      // Если email указан И не корпоративный → документы и описание обязательны
+      if (companyEmail && !isCorporate) {
+        if (!proofText.trim()) {
+          setError('Опишите подтверждающие документы (обязательно при использовании личной почты)');
+          return;
+        }
+        if (localFiles.length === 0) {
+          setError('При использовании личной почты обязательно прикрепите подтверждающие документы');
+          return;
+        }
+      }
+      
+      // Если требуются документы → описание обязательно
+      if (!proofText.trim()) {
+        setError('Для верифицированного бренда без сотрудников необходимо указать описание подтверждающих документов');
+        return;
+      }
+    }
+    
     setError(null);
     await createRequestMutation.mutateAsync({
       request_type: 'join',
@@ -1049,9 +1156,9 @@ const BrandSelectionForm: React.FC = () => {
       company_email: companyEmail.trim() || undefined,
       company_website: companyWebsite.trim() || undefined,
       social_media_urls: socialMediaUrls.length > 0 ? socialMediaUrls : undefined,
-      // Для JOIN заявок не требуем подтверждающих документов - админ уточнит у существующих представителей
-      proof_text: message.trim() || 'Заявка на вступление в бренд',
-      files: undefined,
+      // Если у бренда нет сотрудников - требуем полную заявку с документами
+      proof_text: hasEmployees ? (message.trim() || 'Заявка на вступление в бренд') : proofText.trim(),
+      files: hasEmployees ? undefined : (localFiles.length > 0 ? localFiles : undefined),
     });
   };
 
@@ -1890,7 +1997,7 @@ const BrandSelectionForm: React.FC = () => {
               const id = val === '' ? null : Number(val);
               setSelectedBrandId(id);
               if (id) {
-                const brand = verifiedBrands.find((b) => b.id === id);
+                const brand = allBrands.find((b) => b.id === id);
                 if (brand) {
                   setBrandSearch(brand.name);
                 }
@@ -1898,75 +2005,126 @@ const BrandSelectionForm: React.FC = () => {
                 setBrandSearch('');
               }
             }}
-            options={verifiedBrands.map((brand: Brand) => ({
+            options={allBrands.map((brand: Brand) => ({
               value: brand.id,
               label: brand.name,
-              icon: <Shield className="w-4 h-4 text-green-400 flex-shrink-0" />,
+              icon: brand.verified ? (
+                <Shield className="w-4 h-4 text-green-400 flex-shrink-0" />
+              ) : (
+                <Factory className="w-4 h-4 text-gray-400 flex-shrink-0" />
+              ),
             }))}
             placeholder="Начните вводить название бренда..."
             filterable
             filterValue={brandSearch}
             onFilterChange={setBrandSearch}
             emptyMessage="Бренды не найдены"
-            renderOption={(option) => (
-              <>
-                <span className="flex items-center gap-2">
-                  <Shield className="w-4 h-4 text-green-400 flex-shrink-0" />
-                  <span>{option.label}</span>
-                  <span className="text-gray-400 text-xs">(верифицирован)</span>
-                </span>
-                {selectedBrandId === option.value && (
-                  <Check className="w-5 h-5 text-purple-400 flex-shrink-0" />
-                )}
-              </>
-            )}
+            renderOption={(option) => {
+              const brand = allBrands.find((b) => b.id === option.value);
+              return (
+                <>
+                  <span className="flex items-center gap-2">
+                    {brand?.verified ? (
+                      <Shield className="w-4 h-4 text-green-400 flex-shrink-0" />
+                    ) : (
+                      <Factory className="w-4 h-4 text-gray-400 flex-shrink-0" />
+                    )}
+                    <span>{option.label}</span>
+                    {brand?.verified ? (
+                      <span className="text-gray-400 text-xs">(верифицирован)</span>
+                    ) : (
+                      <span className="text-gray-500 text-xs">(не верифицирован)</span>
+                    )}
+                  </span>
+                  {selectedBrandId === option.value && (
+                    <Check className="w-5 h-5 text-purple-400 flex-shrink-0" />
+                  )}
+                </>
+              );
+            }}
           />
           {selectedBrandId && (
             <div className="space-y-4">
-              <div className="bg-blue-500/10 border border-blue-500/30 rounded-xl p-4">
-                <div className="flex items-start space-x-3">
-                  <Shield className="w-5 h-5 text-blue-400 flex-shrink-0 mt-0.5" />
-                  <div className="flex-1">
-                    <p className="text-xs text-blue-200">
-                      После подачи заявки администратор свяжется с существующими представителями бренда <strong className="text-blue-300">{selectedBrand?.name}</strong> для подтверждения вашего членства. Убедитесь, что они ожидают ваш запрос. Подтверждающие документы предоставлять не требуется.
-                    </p>
+              {selectedBrand?.verified && hasEmployees ? (
+                <div className="bg-blue-500/10 border border-blue-500/30 rounded-xl p-4">
+                  <div className="flex items-start space-x-3">
+                    <Shield className="w-5 h-5 text-blue-400 flex-shrink-0 mt-0.5" />
+                    <div className="flex-1">
+                      <p className="text-xs text-blue-200">
+                        После подачи заявки администратор свяжется с существующими представителями бренда <strong className="text-blue-300">{selectedBrand?.name}</strong> для подтверждения вашего членства. Убедитесь, что они ожидают ваш запрос. Подтверждающие документы предоставлять не требуется.
+                      </p>
+                    </div>
                   </div>
                 </div>
-              </div>
+              ) : (
+                <div className="bg-yellow-500/10 border border-yellow-500/30 rounded-xl p-4">
+                  <div className="flex items-start space-x-3">
+                    <AlertTriangle className="w-5 h-5 text-yellow-400 flex-shrink-0 mt-0.5" />
+                    <div className="flex-1">
+                      <p className="text-xs text-yellow-200">
+                        {!selectedBrand?.verified ? (
+                          <>Бренд <strong className="text-yellow-300">{selectedBrand?.name}</strong> не верифицирован. Для присоединения необходимо предоставить подтверждающие документы, как при создании нового бренда.</>
+                        ) : (
+                          <>У бренда <strong className="text-yellow-300">{selectedBrand?.name}</strong> пока нет сотрудников. Для присоединения необходимо предоставить подтверждающие документы, как при создании нового бренда.</>
+                        )}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              )}
 
-              {/* Контактные данные */}
-              <div className="grid grid-cols-2 gap-4">
+              {/* Контактная информация */}
+              <div className="space-y-4">
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-gray-300 mb-2 text-sm font-medium">
+                      Email компании
+                    </label>
+                    <div className="space-y-1">
+                      <input
+                        type="email"
+                        value={companyEmail}
+                        onChange={(e) => setCompanyEmail(e.target.value)}
+                        className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all"
+                        placeholder="info@example.com"
+                      />
+                      {user?.email && user.email !== companyEmail && (
+                        <button
+                          type="button"
+                          onClick={() => setCompanyEmail(user.email)}
+                          className="text-xs text-green-400 hover:text-green-300 transition-colors"
+                        >
+                          Использовать мой email
+                        </button>
+                      )}
+                      {companyEmail && isPersonalEmail(companyEmail) && (
+                        <div className="mt-1 p-2 bg-yellow-500/20 border border-yellow-500/30 rounded-lg">
+                          <p className="text-xs text-yellow-300">
+                            ⚠️ Вы используете личную почту. Обязательно прикрепите подтверждающие документы.
+                          </p>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-gray-300 mb-2 text-sm font-medium">
+                      Сайт компании
+                    </label>
+                    <input
+                      type="text"
+                      value={companyWebsite}
+                      onChange={(e) => setCompanyWebsite(e.target.value)}
+                      className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all"
+                      placeholder="example.com"
+                    />
+                  </div>
+                </div>
+
                 <div>
                   <label className="block text-gray-300 mb-2 text-sm font-medium">
-                    Email для связи (необязательно)
+                    Соцсети бренда
                   </label>
-                  <input
-                    type="email"
-                    value={companyEmail}
-                    onChange={(e) => setCompanyEmail(e.target.value)}
-                    className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all"
-                    placeholder={user?.email || "email@example.com"}
-                  />
-                </div>
-                <div>
-                  <label className="block text-gray-300 mb-2 text-sm font-medium">
-                    Сайт компании (необязательно)
-                  </label>
-                  <input
-                    type="text"
-                    value={companyWebsite}
-                    onChange={(e) => setCompanyWebsite(e.target.value)}
-                    className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all"
-                    placeholder="example.com"
-                  />
-                </div>
-              </div>
-
-              {/* Социальные сети */}
-              <div>
-                <label className="block text-gray-300 mb-2 text-sm font-medium">
-                  Социальные сети (необязательно)
-                </label>
                 <div className="space-y-2">
                   <div className="flex space-x-2">
                     <input
@@ -2021,21 +2179,137 @@ const BrandSelectionForm: React.FC = () => {
                   )}
                 </div>
               </div>
+            </div>
+
+            {/* Поля для подтверждающих документов - показываем если бренд не верифицирован ИЛИ у бренда нет сотрудников */}
+              {(!selectedBrand?.verified || !hasEmployees) && (
+                <>
+                  <div>
+                    <label className="block text-gray-300 mb-2 text-sm font-medium">
+                      Описание подтверждающих документов
+                      {(() => {
+                        const userEmail = user?.email || '';
+                        const isCorporate = isCorporateEmail(companyEmail || userEmail, companyWebsite);
+                        return (!companyEmail || !isCorporate) ? (
+                          <span className="text-red-400"> *</span>
+                        ) : (
+                          <span className="text-gray-400 text-xs"> (необязательно для корпоративной почты)</span>
+                        );
+                      })()}
+                    </label>
+                    <textarea
+                      value={proofText}
+                      onChange={(e) => setProofText(e.target.value)}
+                      required={(() => {
+                        const userEmail = user?.email || '';
+                        const isCorporate = isCorporateEmail(companyEmail || userEmail, companyWebsite);
+                        return !isCorporate && !!companyEmail;
+                      })()}
+                      rows={4}
+                      className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all resize-none"
+                      placeholder={(() => {
+                        const userEmail = user?.email || '';
+                        const isCorporate = isCorporateEmail(companyEmail || userEmail, companyWebsite);
+                        if (isCorporate && companyEmail) {
+                          return "Опционально: опишите подтверждающие документы для ускорения верификации (доверенность, выписка из ЕГРЮЛ/ЕГРИП и т.д.)";
+                        }
+                        return "При использовании личной почты (например, @gmail.com) обязательно прикрепите подтверждающие документы и опишите их содержание: доверенность, выписку из ЕГРЮЛ/ЕГРИП (для ИП), ссылки на соцсети, маркетплейсы или фото продукции с логотипом или упаковкой";
+                      })()}
+                    />
+                    {(() => {
+                      const userEmail = user?.email || '';
+                      const isCorporate = isCorporateEmail(companyEmail || userEmail, companyWebsite);
+                      if (!isCorporate && companyEmail) {
+                        return (
+                          <p className="mt-1 text-xs text-red-300">
+                            Текстовое описание не заменяет документы — оно лишь поясняет их содержание.
+                          </p>
+                        );
+                      }
+                      return null;
+                    })()}
+                  </div>
+
+                  <div>
+                    <label className="block text-gray-300 mb-2 text-sm font-medium">
+                      Прикрепить документы
+                      {(() => {
+                        const userEmail = user?.email || '';
+                        const isCorporate = isCorporateEmail(companyEmail || userEmail, companyWebsite);
+                        return !isCorporate && companyEmail ? (
+                          <span className="text-red-400"> *</span>
+                        ) : (
+                          <span className="text-gray-400 text-xs"> (необязательно для корпоративной почты)</span>
+                        );
+                      })()}
+                    </label>
+                    <div className="bg-white/5 rounded-xl p-4 border border-white/10 border-dashed">
+                      <input
+                        type="file"
+                        multiple
+                        onChange={handleFileSelect}
+                        accept=".pdf,.jpg,.jpeg,.png,.doc,.docx"
+                        className="hidden"
+                        id="file-upload-join"
+                      />
+                      <label
+                        htmlFor="file-upload-join"
+                        className="flex flex-col items-center justify-center space-y-2 cursor-pointer py-4"
+                      >
+                        <Paperclip className="w-6 h-6 text-green-400" />
+                        <span className="text-sm text-gray-300">
+                          {(() => {
+                            const userEmail = user?.email || '';
+                            const isCorporate = isCorporateEmail(companyEmail || userEmail, companyWebsite);
+                            if (!isCorporate && companyEmail && localFiles.length === 0) {
+                              return 'Обязательно: нажмите для выбора файлов';
+                            }
+                            return 'Нажмите для выбора файлов';
+                          })()}
+                        </span>
+                        <span className="text-xs text-gray-400">PDF, JPG, PNG, DOC, DOCX (макс. 50 MB)</span>
+                      </label>
+                      {localFiles.length > 0 && (
+                        <div className="mt-4 space-y-2">
+                          {localFiles.map((file, index) => (
+                            <div
+                              key={index}
+                              className="flex items-center justify-between bg-white/10 rounded-lg p-2 border border-white/20"
+                            >
+                              <div className="flex items-center space-x-2 flex-1 min-w-0">
+                                <FileText className="w-4 h-4 text-green-400 flex-shrink-0" />
+                                <span className="text-white text-sm truncate">{file.name}</span>
+                                <span className="text-gray-400 text-xs">({(file.size / 1024 / 1024).toFixed(2)} MB)</span>
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setLocalFiles(localFiles.filter((_, i) => i !== index));
+                                }}
+                                className="ml-2 p-1 text-red-400 hover:text-red-300 transition-colors"
+                              >
+                                <XCircle className="w-4 h-4" />
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </>
+              )}
 
               <div>
                 <label className="block text-gray-300 mb-2 text-sm font-medium">
-                  Дополнительное сообщение (необязательно)
+                  Дополнительное сообщение <span className="text-gray-400 text-xs">(необязательно)</span>
                 </label>
                 <textarea
                   value={message}
                   onChange={(e) => setMessage(e.target.value)}
-                  rows={3}
+                  rows={2}
                   className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all resize-none"
-                  placeholder="Любая дополнительная информация для администратора или представителей бренда (например: ваше имя, должность, контакты для связи)"
+                  placeholder="Любая дополнительная информация для администратора..."
                 />
-                <p className="mt-1 text-xs text-gray-400">
-                  Вы можете указать свою должность, контакты или любую другую информацию, которая поможет подтвердить ваше членство.
-                </p>
               </div>
 
               {/* Обязательное подтверждение достоверности данных */}
@@ -2143,9 +2417,10 @@ interface FilamentCardProps {
   onEdit: (filament: Filament) => void;
   onDelete: (filament: Filament) => void;
   onShowQR: (filament: Filament) => void;
+  viewMode?: 'grid' | 'list';
 }
 
-const FilamentCard: React.FC<FilamentCardProps> = ({ filament, onEdit, onDelete, onShowQR }) => {
+const FilamentCard: React.FC<FilamentCardProps> = ({ filament, onEdit, onDelete, onShowQR, viewMode = 'grid' }) => {
   // Загружаем пресеты для материала
   const { data: presetsData } = useQuery({
     queryKey: ['filament-presets', filament.id],
@@ -2156,6 +2431,104 @@ const FilamentCard: React.FC<FilamentCardProps> = ({ filament, onEdit, onDelete,
   const officialPreset = presets.find((p) => p.is_official);
   const communityPresets = presets.filter((p) => !p.is_official);
   const totalPresets = presets.length;
+
+  if (viewMode === 'list') {
+    return (
+      <div className="p-2 bg-white/5 rounded-lg border border-white/10 hover:bg-white/10 transition-all group">
+        <div className="flex items-center gap-3">
+          {/* Filament Preview - компактный, прямоугольный */}
+          <div className="flex-shrink-0">
+            <div className="w-20 h-12 bg-white/5 rounded-lg border border-white/10 flex items-center justify-center overflow-hidden">
+              <div style={{ transform: 'scale(0.4)', transformOrigin: 'center center' }}>
+                <FilamentPreview
+                  colorHex={filament.color_hex || '#FFFFFF'}
+                  visualSettings={(filament as any).visual_settings}
+                  size="medium"
+                />
+              </div>
+            </div>
+          </div>
+          
+          {/* Main Info - компактное горизонтальное расположение */}
+          <div className="flex-1 min-w-0 flex items-center gap-3">
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center gap-2 mb-0.5">
+                <h4 className="text-white font-medium text-sm truncate group-hover:text-purple-300 transition-colors">
+                  {filament.name}
+                </h4>
+                {filament.color_name && (
+                  <span className="text-gray-400 text-xs truncate" title={filament.color_name}>
+                    {filament.color_name}
+                  </span>
+                )}
+              </div>
+              <div className="flex items-center gap-3 text-xs text-gray-400">
+                {officialPreset && (
+                  <div className="flex items-center space-x-1">
+                    <CheckCircle className="w-3 h-3 text-green-400" />
+                    <span>Официальный</span>
+                  </div>
+                )}
+                <div className="flex items-center space-x-1">
+                  <Settings className="w-3 h-3" />
+                  <span>{totalPresets}</span>
+                </div>
+                {filament.qr_code && (
+                  <div className="flex items-center space-x-1">
+                    <QrCode className="w-3 h-3" />
+                  </div>
+                )}
+              </div>
+            </div>
+            
+            {/* Badges */}
+            <div className="flex items-center gap-1.5 flex-shrink-0">
+              <span className="px-2 py-0.5 bg-purple-500/20 text-purple-300 text-xs rounded-full">
+                {filament.material_type}
+              </span>
+              {filament.diameter && (
+                <span className="px-2 py-0.5 bg-blue-500/20 text-blue-300 text-xs rounded-full">
+                  ⌀ {filament.diameter}
+                </span>
+              )}
+              {filament.active === false && (
+                <span className="px-2 py-0.5 bg-gray-500/20 text-gray-400 text-xs rounded-full">
+                  Неактивен
+                </span>
+              )}
+            </div>
+          </div>
+          
+          {/* Actions - компактные */}
+          <div className="flex items-center gap-1 flex-shrink-0">
+            {filament.qr_code && (
+              <button
+                onClick={() => onShowQR(filament)}
+                className="p-1.5 bg-white/10 hover:bg-green-500/20 rounded-md text-white transition-all"
+                title="QR-код"
+              >
+                <QrCode className="w-3.5 h-3.5" />
+              </button>
+            )}
+            <button
+              onClick={() => onEdit(filament)}
+              className="p-1.5 bg-white/10 hover:bg-purple-500/20 rounded-md text-white transition-all"
+              title="Редактировать"
+            >
+              <Edit className="w-3.5 h-3.5" />
+            </button>
+            <button
+              onClick={() => onDelete(filament)}
+              className="p-1.5 bg-white/10 hover:bg-red-500/20 rounded-md text-white transition-all"
+              title="Удалить"
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="bg-white/10 backdrop-blur-sm rounded-2xl p-6 border border-white/20 shadow-xl hover:shadow-2xl hover:border-white/30 transition-all group">

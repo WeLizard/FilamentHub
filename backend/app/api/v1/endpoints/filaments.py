@@ -1,5 +1,6 @@
 """Filament endpoints."""
 
+import logging
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -7,8 +8,12 @@ from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+logger = logging.getLogger(__name__)
+
+from app.core.dependencies import get_current_user
 from app.db.session import get_db
 from app.models.filament import Filament
+from app.models.user import User, UserRole
 from app.schemas.filament import (
     FilamentCreate,
     FilamentListResponse,
@@ -173,8 +178,12 @@ async def get_filament_presets(
 
     # Build query - показываем только активные пресеты (все пресеты автоматически одобрены)
     from app.models.preset import PresetModerationStatus
+    from app.models.preset_printer import PresetPrinter
+    from app.schemas.printer import PrinterResponse
     
-    query = select(Preset).where(
+    query = select(Preset).options(
+        selectinload(Preset.printer_links).selectinload(PresetPrinter.printer)
+    ).where(
         Preset.filament_id == filament_id,
         Preset.active == True,
         Preset.moderation_status == PresetModerationStatus.APPROVED  # Все пресеты автоматически APPROVED
@@ -203,12 +212,27 @@ async def get_filament_presets(
 
     # Execute
     result = await db.execute(query)
-    presets = result.scalars().all()
+    presets = result.scalars().unique().all()
+
+    # Преобразуем пресеты в ответ с принтерами
+    preset_items = []
+    for preset in presets:
+        try:
+            preset_dict = PresetResponse.model_validate(preset).model_dump()
+            preset_dict["printers"] = [
+                PrinterResponse.model_validate(link.printer).model_dump()
+                for link in preset.printer_links
+            ]
+            preset_items.append(preset_dict)
+        except Exception as e:
+            logger.error(f"Error serializing preset {preset.id}: {e}", exc_info=True)
+            # Пропускаем проблемный пресет, но продолжаем обработку остальных
+            continue
 
     pages = (total + size - 1) // size if total > 0 else 0
 
     return {
-        "items": [PresetResponse.model_validate(preset).model_dump() for preset in presets],
+        "items": preset_items,
         "total": total,
         "page": page,
         "size": size,
@@ -220,6 +244,7 @@ async def get_filament_presets(
 async def create_filament(
     data: FilamentCreate,
     db: Annotated[AsyncSession, Depends(get_db)],
+    current_user: Annotated[User, Depends(get_current_user)],
 ) -> FilamentResponse:
     """Создать материал."""
     # Check if brand exists
@@ -234,6 +259,13 @@ async def create_filament(
     brand = brand_result.scalar_one_or_none()
     if not brand:
         raise HTTPException(status_code=404, detail="Brand not found")
+    
+    # Проверка прав доступа: только админ или сотрудник бренда может создавать материалы
+    if current_user.role != UserRole.ADMIN and current_user.brand_id != data.brand_id:
+        raise HTTPException(
+            status_code=403,
+            detail="Not enough permissions. You can only create materials for your own brand."
+        )
 
     # Create filament
     filament = Filament(**data.model_dump())
@@ -306,6 +338,7 @@ async def update_filament(
     filament_id: int,
     data: FilamentUpdate,
     db: Annotated[AsyncSession, Depends(get_db)],
+    current_user: Annotated[User, Depends(get_current_user)],
 ) -> FilamentResponse:
     """Обновить материал."""
     result = await db.execute(select(Filament).where(Filament.id == filament_id))
@@ -313,6 +346,13 @@ async def update_filament(
 
     if not filament:
         raise HTTPException(status_code=404, detail="Filament not found")
+    
+    # Проверка прав доступа: только админ или сотрудник бренда может редактировать материалы
+    if current_user.role != UserRole.ADMIN and current_user.brand_id != filament.brand_id:
+        raise HTTPException(
+            status_code=403,
+            detail="Not enough permissions. You can only edit materials from your own brand."
+        )
 
     # Update fields
     update_data = data.model_dump(exclude_unset=True)
@@ -329,6 +369,7 @@ async def update_filament(
 async def delete_filament(
     filament_id: int,
     db: Annotated[AsyncSession, Depends(get_db)],
+    current_user: Annotated[User, Depends(get_current_user)],
 ) -> None:
     """Удалить материал."""
     result = await db.execute(select(Filament).where(Filament.id == filament_id))
@@ -336,49 +377,13 @@ async def delete_filament(
 
     if not filament:
         raise HTTPException(status_code=404, detail="Filament not found")
-
-    await db.delete(filament)
-    await db.commit()
-
-
-    return FilamentResponse.model_validate(filament)
-
-
-@router.patch("/{filament_id}", response_model=FilamentResponse)
-async def update_filament(
-    filament_id: int,
-    data: FilamentUpdate,
-    db: Annotated[AsyncSession, Depends(get_db)],
-) -> FilamentResponse:
-    """Обновить материал."""
-    result = await db.execute(select(Filament).where(Filament.id == filament_id))
-    filament = result.scalar_one_or_none()
-
-    if not filament:
-        raise HTTPException(status_code=404, detail="Filament not found")
-
-    # Update fields
-    update_data = data.model_dump(exclude_unset=True)
-    for field, value in update_data.items():
-        setattr(filament, field, value)
-
-    await db.commit()
-    await db.refresh(filament)
-
-    return FilamentResponse.model_validate(filament)
-
-
-@router.delete("/{filament_id}", status_code=204)
-async def delete_filament(
-    filament_id: int,
-    db: Annotated[AsyncSession, Depends(get_db)],
-) -> None:
-    """Удалить материал."""
-    result = await db.execute(select(Filament).where(Filament.id == filament_id))
-    filament = result.scalar_one_or_none()
-
-    if not filament:
-        raise HTTPException(status_code=404, detail="Filament not found")
+    
+    # Проверка прав доступа: только админ или сотрудник бренда может удалять материалы
+    if current_user.role != UserRole.ADMIN and current_user.brand_id != filament.brand_id:
+        raise HTTPException(
+            status_code=403,
+            detail="Not enough permissions. You can only delete materials from your own brand."
+        )
 
     await db.delete(filament)
     await db.commit()

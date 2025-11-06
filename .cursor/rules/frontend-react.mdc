@@ -11,11 +11,14 @@ alwaysApply: false
 
 ## ⚠️ Важно
 
-**Этот модуль пока НЕ в разработке!**
+**Frontend в активной разработке! (~85% готов)**
 
-Фокус сейчас: **Backend API (Python FastAPI)**
+**Dev окружение:**
+- **Frontend порт:** 3000 (http://localhost:3000)
+- **Backend порт:** 8000 (http://localhost:8000)
+- **Vite proxy:** `/api` и `/uploads` проксируются на backend
 
-Frontend начнем после готовности MVP Backend.
+**⚠️ КРИТИЧНО:** Всегда используй порт **3000** для фронтенда в dev режиме, не 5000+!
 
 ---
 

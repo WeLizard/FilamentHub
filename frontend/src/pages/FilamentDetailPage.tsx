@@ -22,7 +22,7 @@ import {
   Fan,
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
-import { filamentsAPI, brandsAPI, savedPresetsAPI, filamentReviewsAPI } from '../api/client';
+import { filamentsAPI, brandsAPI, savedPresetsAPI, filamentReviewsAPI, qrAPI } from '../api/client';
 import { FilamentPreview } from '../components/FilamentPreview';
 import { ReviewCard } from '../components/ReviewCard';
 import { CreateReviewModal } from '../components/CreateReviewModal';
@@ -98,7 +98,7 @@ export const FilamentDetailPage: React.FC = () => {
   });
 
   // Загружаем отзывы
-  const { data: reviewsData, isLoading: isLoadingReviews } = useQuery({
+  const { data: reviewsData, isLoading: isLoadingReviews, refetch: refetchReviews } = useQuery({
     queryKey: ['filament-reviews', id, reviewsPage],
     queryFn: () => filamentReviewsAPI.list(Number(id), { page: reviewsPage, size: 20, active_only: true }),
     enabled: !!id,
@@ -367,19 +367,57 @@ export const FilamentDetailPage: React.FC = () => {
           </button>
         </div>
 
-        {/* QR Code [ЗАГЛУШКА] */}
+        {/* QR Code */}
         {showQR && (
           <div className="mt-6 p-6 bg-white/5 rounded-xl border border-white/10">
             <div className="text-center">
-              <div className="w-32 h-32 bg-white/20 rounded-lg mx-auto mb-3 flex items-center justify-center">
-                <div className="grid grid-cols-4 gap-1">
-                  {[...Array(16)].map((_, i) => (
-                    <div key={i} className="w-3 h-3 bg-white rounded-sm"></div>
-                  ))}
+              {filament.qr_code ? (
+                <>
+                  <img
+                    src={qrAPI.getQRCodeURL(filament.id, 256)}
+                    alt={`QR-код для ${filament.name}`}
+                    className="w-64 h-64 mx-auto mb-4 rounded-lg bg-white p-3"
+                  />
+                  <p className="text-gray-300 text-base font-medium mb-1">QR-код: {filament.qr_code}</p>
+                  <p className="text-gray-400 text-sm mb-2">Сканируйте для быстрого импорта настроек</p>
+                  <div className="flex items-center justify-center gap-2 text-gray-500 text-xs">
+                    <QrCode className="w-4 h-4" />
+                    <span>Сканирований: {filament.scans_count || 0}</span>
+                  </div>
+                  <div className="mt-4 flex gap-2 justify-center">
+                    <button
+                      onClick={() => qrAPI.downloadQRCode(filament.id, 300)}
+                      className="px-4 py-2 bg-white/10 hover:bg-white/20 text-white rounded-lg text-sm transition-all border border-white/20"
+                    >
+                      Скачать 300px
+                    </button>
+                    <button
+                      onClick={() => qrAPI.downloadQRCode(filament.id, 600)}
+                      className="px-4 py-2 bg-white/10 hover:bg-white/20 text-white rounded-lg text-sm transition-all border border-white/20"
+                    >
+                      Скачать 600px
+                    </button>
+                    <button
+                      onClick={() => qrAPI.downloadQRCode(filament.id, 1200)}
+                      className="px-4 py-2 bg-white/10 hover:bg-white/20 text-white rounded-lg text-sm transition-all border border-white/20"
+                    >
+                      Скачать 1200px
+                    </button>
+                  </div>
+                </>
+              ) : (
+                <div className="py-8">
+                  <QrCode className="w-20 h-20 mx-auto mb-3 text-gray-500" />
+                  <p className="text-gray-400 text-sm mb-1">
+                    QR-код доступен только для верифицированных брендов
+                  </p>
+                  {brandData && (
+                    <p className="text-gray-500 text-xs">
+                      Бренд: {brandData.name} {brandData.verified ? '✓' : '(не верифицирован)'}
+                    </p>
+                  )}
                 </div>
-              </div>
-              <p className="text-gray-300">QR-код для материала {filament.id} [ЗАГЛУШКА]</p>
-              <p className="text-gray-400 text-sm">Сканируйте для быстрого импорта</p>
+              )}
             </div>
           </div>
         )}
@@ -960,6 +998,8 @@ export const FilamentDetailPage: React.FC = () => {
             }}
             onSuccess={() => {
               setReviewsPage(1); // Возвращаемся на первую страницу
+              // Явно обновляем отзывы после создания
+              refetchReviews();
             }}
           />
         )}

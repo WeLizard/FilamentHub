@@ -19,6 +19,7 @@ class PresetBase(BaseModel):
     name: str = Field(..., min_length=1, max_length=200)
     description: str | None = Field(None, max_length=1000)
     is_official: bool = Field(False)
+    is_weighted: bool = Field(False, description="Динамический взвешенный пресет, автоматически пересчитывается системой")
 
     # Print settings (required)
     extruder_temp: float = Field(..., ge=0, le=400)

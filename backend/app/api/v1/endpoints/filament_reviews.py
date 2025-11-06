@@ -517,7 +517,7 @@ async def update_review(
         raise HTTPException(status_code=404, detail="Отзыв не найден")
 
     # Проверяем права: только автор или админ
-    if review.user_id != current_user.id and current_user.role != "admin":
+    if review.user_id != current_user.id and current_user.role.value != "admin":
         raise HTTPException(status_code=403, detail="Нет прав на изменение этого отзыва")
 
     # Сохраняем старый preset_id для обновления рейтингов
@@ -576,7 +576,7 @@ async def delete_review(
         raise HTTPException(status_code=404, detail="Отзыв не найден")
 
     # Проверяем права: только автор или админ
-    if review.user_id != current_user.id and current_user.role != "admin":
+    if review.user_id != current_user.id and current_user.role.value != "admin":
         raise HTTPException(status_code=403, detail="Нет прав на удаление этого отзыва")
 
     # Сохраняем preset_id перед деактивацией

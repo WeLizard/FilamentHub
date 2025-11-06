@@ -47,6 +47,11 @@ from app.schemas.printer_request import (
     PrinterRequestUpdate,
 )
 from app.schemas.user import UserResponse
+from app.services.notification_service import (
+    notify_brand_request_approved,
+    notify_brand_request_rejected,
+    notify_brand_verified,
+)
 from app.services.database_service import (
     apply_migration as apply_migration_service,
     delete_database_dump as delete_database_dump_service,
@@ -147,6 +152,26 @@ async def verify_brand(
     brand.verified = True
     await db.commit()
     await db.refresh(brand)
+    
+    # Создаем уведомления для всех пользователей, связанных с этим брендом
+    try:
+        users_result = await db.execute(
+            select(User).where(User.brand_id == brand.id)
+        )
+        users = users_result.scalars().all()
+        
+        for user in users:
+            try:
+                await notify_brand_verified(
+                    user_id=user.id,
+                    brand_name=brand.name,
+                    brand_id=brand.id,
+                    db=db,
+                )
+            except Exception as e:
+                logger.error(f"Failed to create notification for user {user.id} (brand {brand.id}): {e}")
+    except Exception as e:
+        logger.error(f"Failed to create notifications for brand {brand.id} verification: {e}")
     
     return BrandResponse.model_validate(brand)
 
@@ -268,8 +293,9 @@ async def list_users(
     db: Annotated[AsyncSession, Depends(get_db)],
     page: int = Query(1, ge=1),
     size: int = Query(50, ge=1, le=100),
-    role: UserRole | None = Query(None),
+    role: UserRole | None = Query(None, description="Фильтр по роли (user/admin)"),
     active_only: bool = Query(True),
+    with_brand: bool | None = Query(None, description="Фильтр по привязке к бренду (True=только с брендом, False=только без бренда)"),
 ) -> list[UserResponse]:
     """Получить список пользователей."""
     from sqlalchemy.orm import selectinload
@@ -280,6 +306,11 @@ async def list_users(
         query = query.where(User.active == True)
     if role:
         query = query.where(User.role == role)
+    if with_brand is not None:
+        if with_brand:
+            query = query.where(User.brand_id.isnot(None))
+        else:
+            query = query.where(User.brand_id.is_(None))
     
     offset = (page - 1) * size
     result = await db.execute(
@@ -360,6 +391,7 @@ async def promote_to_admin(
             detail="User not found",
         )
     
+    # Админ может оставаться привязанным к бренду, поэтому brand_id не обнуляем
     user.role = UserRole.ADMIN
     await db.commit()
     await db.refresh(user)
@@ -367,13 +399,13 @@ async def promote_to_admin(
     return UserResponse.model_validate(user)
 
 
-@router.post("/users/{user_id}/unlink-brand", response_model=UserResponse)
-async def unlink_user_from_brand(
+@router.post("/users/{user_id}/demote-to-user", response_model=UserResponse)
+async def demote_to_user(
     user_id: int,
     admin: Annotated[User, Depends(get_current_admin_user)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> UserResponse:
-    """Отвязать пользователя от бренда (убрать brand_id, вернуть роль user)."""
+    """Изменить роль пользователя на USER."""
     result = await db.execute(select(User).where(User.id == user_id))
     user = result.scalar_one_or_none()
     
@@ -383,15 +415,89 @@ async def unlink_user_from_brand(
             detail="User not found",
         )
     
-    if user.role != UserRole.BRAND or not user.brand_id:
+    # Меняем только роль, привязка к бренду остается без изменений
+    user.role = UserRole.USER
+    await db.commit()
+    await db.refresh(user)
+    
+    return UserResponse.model_validate(user)
+
+
+@router.post("/users/{user_id}/link-brand", response_model=UserResponse)
+async def link_user_to_brand(
+    user_id: int,
+    admin: Annotated[User, Depends(get_current_admin_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+    brand_id: int = Query(..., description="ID бренда для привязки"),
+) -> UserResponse:
+    """Привязать пользователя к бренду."""
+    result = await db.execute(select(User).where(User.id == user_id))
+    user = result.scalar_one_or_none()
+    
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User not found",
+        )
+    
+    if user.brand_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="User is already linked to a brand",
+        )
+    
+    # Проверяем существование бренда
+    brand_result = await db.execute(select(Brand).where(Brand.id == brand_id))
+    brand = brand_result.scalar_one_or_none()
+    
+    if not brand:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Brand not found",
+        )
+    
+    # Привязываем к бренду (роль не меняем)
+    user.brand_id = brand_id
+    await db.commit()
+    
+    # Загружаем пользователя с брендом для корректной сериализации
+    from sqlalchemy.orm import selectinload
+    result = await db.execute(
+        select(User).where(User.id == user_id).options(selectinload(User.brand))
+    )
+    user = result.scalar_one()
+    
+    response = UserResponse.model_validate(user)
+    if user.brand:
+        response.brand_name = user.brand.name  # type: ignore
+    
+    return response
+
+
+@router.post("/users/{user_id}/unlink-brand", response_model=UserResponse)
+async def unlink_user_from_brand(
+    user_id: int,
+    admin: Annotated[User, Depends(get_current_admin_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> UserResponse:
+    """Отвязать пользователя от бренда."""
+    result = await db.execute(select(User).where(User.id == user_id))
+    user = result.scalar_one_or_none()
+    
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User not found",
+        )
+    
+    if not user.brand_id:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="User is not linked to a brand",
         )
     
-    # Отвязываем от бренда и возвращаем роль user
+    # Отвязываем от бренда (роль не меняем)
     user.brand_id = None
-    user.role = UserRole.USER
     await db.commit()
     await db.refresh(user)
     
@@ -406,7 +512,7 @@ async def get_admin_stats(
     """Получить статистику для админки."""
     # Users
     users_total = await db.scalar(select(func.count(User.id)))
-    users_brands = await db.scalar(select(func.count(User.id)).where(User.role == UserRole.BRAND))
+    users_brands = await db.scalar(select(func.count(User.id)).where(User.brand_id.isnot(None)))
     users_admins = await db.scalar(select(func.count(User.id)).where(User.role == UserRole.ADMIN))
     
     # Brands
@@ -601,8 +707,7 @@ async def update_brand_request(
                 detail="User not found",
             )
         
-        # Изменяем роль пользователя на brand
-        user.role = UserRole.BRAND
+        # Просто привязываем к бренду, роль не меняем (админ может быть привязан к бренду, но оставаться админом)
         
         if request.request_type == BrandRequestType.JOIN:
             # Для JOIN: привязываем пользователя к существующему бренду
@@ -648,6 +753,43 @@ async def update_brand_request(
     
     await db.commit()
     await db.refresh(request)
+    
+    # Создаем уведомления для пользователя
+    if request.user_id:
+        try:
+            if data.status == BrandRequestStatus.APPROVED:
+                # Определяем brand_id для уведомления
+                brand_id_for_notification = None
+                if request.request_type == BrandRequestType.JOIN and request.brand_id:
+                    brand_id_for_notification = request.brand_id
+                elif request.request_type == BrandRequestType.CREATE:
+                    # После flush() new_brand.id уже доступен
+                    if request.request_type == BrandRequestType.CREATE:
+                        brand_result = await db.execute(
+                            select(Brand).where(Brand.slug == request.new_brand_slug)
+                        )
+                        created_brand = brand_result.scalar_one_or_none()
+                        if created_brand:
+                            brand_id_for_notification = created_brand.id
+                
+                brand_name = request.brand.name if request.brand else (request.new_brand_name or "бренд")
+                if brand_id_for_notification:
+                    await notify_brand_request_approved(
+                        user_id=request.user_id,
+                        brand_name=brand_name,
+                        brand_id=brand_id_for_notification,
+                        db=db,
+                    )
+            elif data.status == BrandRequestStatus.REJECTED:
+                brand_name = request.brand.name if request.brand else (request.new_brand_name or "бренд")
+                await notify_brand_request_rejected(
+                    user_id=request.user_id,
+                    brand_name=brand_name,
+                    reason=data.rejection_reason,
+                    db=db,
+                )
+        except Exception as e:
+            logger.error(f"Failed to create notification for brand request {request.id}: {e}")
     
     response = BrandRequestResponse.model_validate(request)
     # Добавляем email пользователя

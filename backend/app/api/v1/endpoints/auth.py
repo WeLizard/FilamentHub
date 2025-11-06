@@ -492,13 +492,11 @@ async def verify_email(
                     # Нормализуем сайт бренда и сравниваем с доменом email
                     brand_website_domain = normalize_website_url(brand.website)
                     if brand_website_domain and email_domain == brand_website_domain:
-                        # Нашли совпадение! Автоматически присваиваем роль brand и привязываем к бренду
-                        user.role = UserRole.BRAND
+                        # Нашли совпадение! Привязываем к бренду (роль не меняем)
                         user.brand_id = brand.id
                         logger.info(
-                            f"Auto-assigned brand role to user {user.email} (id={user.id}) "
-                            f"after email verification - matched brand {brand.name} "
-                            f"(email domain: {email_domain}, brand website: {brand_website_domain})"
+                            f"Auto-linked user {user.email} (id={user.id}) to brand {brand.name} "
+                            f"after email verification (email domain: {email_domain}, brand website: {brand_website_domain})"
                         )
                         break
     
