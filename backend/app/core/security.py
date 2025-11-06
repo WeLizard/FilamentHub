@@ -109,3 +109,26 @@ def decode_email_verification_token(token: str) -> dict[str, Any] | None:
     except JWTError:
         return None
 
+
+def generate_password_reset_token(user_id: int, email: str) -> str:
+    """Generate a password reset token."""
+    payload = {
+        "user_id": user_id,
+        "email": email,
+        "type": "password_reset",
+        "exp": datetime.utcnow() + timedelta(hours=1),  # Токен действителен 1 час
+    }
+    return jwt.encode(payload, settings.SECRET_KEY, algorithm=ALGORITHM)
+
+
+def decode_password_reset_token(token: str) -> dict[str, Any] | None:
+    """Decode a password reset token."""
+    try:
+        payload = jwt.decode(token, settings.SECRET_KEY, algorithms=[ALGORITHM])
+        # Проверяем тип токена
+        if payload.get("type") != "password_reset":
+            return None
+        return payload
+    except JWTError:
+        return None
+

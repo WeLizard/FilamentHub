@@ -36,55 +36,46 @@ def upgrade() -> None:
         END $$;
     """)
     
-    # Check if table exists before creating it
-    conn = op.get_bind()
-    inspector = sa.inspect(conn)
-    
-    if 'brand_requests' not in inspector.get_table_names():
-        op.create_table('brand_requests',
-            sa.Column('id', sa.Integer(), nullable=False),
-            sa.Column('user_id', sa.Integer(), nullable=False),
-            sa.Column('request_type', sa.Enum('join', 'create', name='brandrequesttype', create_type=False), nullable=False),
-            sa.Column('brand_id', sa.Integer(), nullable=True),
-            sa.Column('new_brand_name', sa.String(length=100), nullable=True),
-            sa.Column('new_brand_slug', sa.String(length=100), nullable=True),
-            sa.Column('new_brand_description', sa.Text(), nullable=True),
-            sa.Column('new_brand_website', sa.String(length=255), nullable=True),
-            sa.Column('message', sa.Text(), nullable=True),
-            sa.Column('proof_text', sa.Text(), nullable=True),
-            sa.Column('company_email', sa.String(length=255), nullable=True),
-            sa.Column('company_website', sa.String(length=500), nullable=True),
-            sa.Column('social_media_urls', sa.Text(), nullable=True),
-            sa.Column('proof_files', sa.Text(), nullable=True),
-            sa.Column('status', sa.Enum('pending', 'approved', 'rejected', name='brandrequeststatus', create_type=False), nullable=False, server_default='pending'),
-            sa.Column('processed_by_id', sa.Integer(), nullable=True),
-            sa.Column('processed_at', sa.DateTime(), nullable=True),
-            sa.Column('rejection_reason', sa.Text(), nullable=True),
-            sa.Column('created_at', sa.DateTime(), server_default=sa.text('now()'), nullable=False),
-            sa.Column('updated_at', sa.DateTime(), server_default=sa.text('now()'), nullable=False),
-            sa.ForeignKeyConstraint(['user_id'], ['users.id'], ),
-            sa.ForeignKeyConstraint(['brand_id'], ['brands.id'], ),
-            sa.ForeignKeyConstraint(['processed_by_id'], ['users.id'], ),
-            sa.PrimaryKeyConstraint('id')
-        )
-        op.create_index(op.f('ix_brand_requests_id'), 'brand_requests', ['id'], unique=False)
-        op.create_index(op.f('ix_brand_requests_user_id'), 'brand_requests', ['user_id'], unique=False)
-        op.create_index(op.f('ix_brand_requests_request_type'), 'brand_requests', ['request_type'], unique=False)
-        op.create_index(op.f('ix_brand_requests_brand_id'), 'brand_requests', ['brand_id'], unique=False)
-        op.create_index(op.f('ix_brand_requests_status'), 'brand_requests', ['status'], unique=False)
-    else:
-        # Table exists, but check indexes
-        existing_indexes = [idx['name'] for idx in inspector.get_indexes('brand_requests')]
-        if 'ix_brand_requests_id' not in existing_indexes:
-            op.create_index(op.f('ix_brand_requests_id'), 'brand_requests', ['id'], unique=False)
-        if 'ix_brand_requests_user_id' not in existing_indexes:
-            op.create_index(op.f('ix_brand_requests_user_id'), 'brand_requests', ['user_id'], unique=False)
-        if 'ix_brand_requests_request_type' not in existing_indexes:
-            op.create_index(op.f('ix_brand_requests_request_type'), 'brand_requests', ['request_type'], unique=False)
-        if 'ix_brand_requests_brand_id' not in existing_indexes:
-            op.create_index(op.f('ix_brand_requests_brand_id'), 'brand_requests', ['brand_id'], unique=False)
-        if 'ix_brand_requests_status' not in existing_indexes:
-            op.create_index(op.f('ix_brand_requests_status'), 'brand_requests', ['status'], unique=False)
+    # Создаем таблицу через SQL для надежности (как в статье на Хабре)
+    # Используем DO блок для проверки существования таблицы
+    op.execute("""
+        DO $$ BEGIN
+            IF NOT EXISTS (
+                SELECT FROM information_schema.tables 
+                WHERE table_schema = 'public' 
+                AND table_name = 'brand_requests'
+            ) THEN
+                CREATE TABLE brand_requests (
+                    id SERIAL PRIMARY KEY,
+                    user_id INTEGER NOT NULL REFERENCES users(id),
+                    request_type brandrequesttype NOT NULL,
+                    brand_id INTEGER REFERENCES brands(id),
+                    new_brand_name VARCHAR(100),
+                    new_brand_slug VARCHAR(100),
+                    new_brand_description TEXT,
+                    new_brand_website VARCHAR(255),
+                    message TEXT,
+                    proof_text TEXT,
+                    company_email VARCHAR(255),
+                    company_website VARCHAR(500),
+                    social_media_urls TEXT,
+                    proof_files TEXT,
+                    status brandrequeststatus NOT NULL DEFAULT 'pending',
+                    processed_by_id INTEGER REFERENCES users(id),
+                    processed_at TIMESTAMP,
+                    rejection_reason TEXT,
+                    created_at TIMESTAMP NOT NULL DEFAULT now(),
+                    updated_at TIMESTAMP NOT NULL DEFAULT now()
+                );
+                
+                CREATE INDEX IF NOT EXISTS ix_brand_requests_id ON brand_requests(id);
+                CREATE INDEX IF NOT EXISTS ix_brand_requests_user_id ON brand_requests(user_id);
+                CREATE INDEX IF NOT EXISTS ix_brand_requests_request_type ON brand_requests(request_type);
+                CREATE INDEX IF NOT EXISTS ix_brand_requests_brand_id ON brand_requests(brand_id);
+                CREATE INDEX IF NOT EXISTS ix_brand_requests_status ON brand_requests(status);
+            END IF;
+        END $$;
+    """)
     # ### end Alembic commands ###
 
 

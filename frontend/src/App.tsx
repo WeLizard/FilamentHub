@@ -9,6 +9,7 @@ import { BrandDetailPage } from './pages/BrandDetailPage';
 import { AdminPanel } from './pages/AdminPanel';
 import { TermsPage } from './pages/TermsPage';
 import { ConsentPage } from './pages/ConsentPage';
+import { ResetPasswordPage } from './pages/ResetPasswordPage';
 
 function App() {
   return (
@@ -58,6 +59,7 @@ function App() {
         />
         <Route path="/user-agreement" element={<TermsPage />} />
         <Route path="/personal-data-consent" element={<ConsentPage />} />
+        <Route path="/reset-password" element={<ResetPasswordPage />} />
       </Routes>
     </AuthProvider>
   );

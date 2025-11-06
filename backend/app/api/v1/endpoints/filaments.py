@@ -171,16 +171,13 @@ async def get_filament_presets(
     if not filament:
         raise HTTPException(status_code=404, detail="Filament not found")
 
-    # Build query - показываем только одобренные пресеты (официальные автоматически одобрены)
+    # Build query - показываем только активные пресеты (все пресеты автоматически одобрены)
     from app.models.preset import PresetModerationStatus
     
     query = select(Preset).where(
         Preset.filament_id == filament_id,
         Preset.active == True,
-        or_(
-            Preset.moderation_status == PresetModerationStatus.APPROVED,
-            Preset.is_official == True  # Официальные всегда видимы
-        )
+        Preset.moderation_status == PresetModerationStatus.APPROVED  # Все пресеты автоматически APPROVED
     )
     if is_official is not None:
         query = query.where(Preset.is_official == is_official)
@@ -189,10 +186,7 @@ async def get_filament_presets(
     count_query = select(func.count()).select_from(Preset).where(
         Preset.filament_id == filament_id,
         Preset.active == True,
-        or_(
-            Preset.moderation_status == PresetModerationStatus.APPROVED,
-            Preset.is_official == True
-        )
+        Preset.moderation_status == PresetModerationStatus.APPROVED
     )
     if is_official is not None:
         count_query = count_query.where(Preset.is_official == is_official)

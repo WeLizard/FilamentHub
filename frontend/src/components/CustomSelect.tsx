@@ -15,6 +15,7 @@ interface CustomSelectProps {
   options: Option[];
   placeholder?: string;
   className?: string;
+  disabled?: boolean;
 }
 
 export const CustomSelect: React.FC<CustomSelectProps> = ({
@@ -23,6 +24,7 @@ export const CustomSelect: React.FC<CustomSelectProps> = ({
   options,
   placeholder = 'Выберите...',
   className = '',
+  disabled = false,
 }) => {
   const [isOpen, setIsOpen] = useState(false);
   const [position, setPosition] = useState<{ top: number; left: number; width: number } | null>(null);
@@ -86,8 +88,9 @@ export const CustomSelect: React.FC<CustomSelectProps> = ({
         <button
           ref={buttonRef}
           type="button"
-          onClick={() => setIsOpen(!isOpen)}
-          className="w-full px-4 py-4 bg-white/10 border border-white/20 rounded-xl text-white focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all flex items-center justify-between"
+          onClick={() => { if (!disabled) setIsOpen(!isOpen); }}
+          disabled={disabled}
+          className={`w-full px-4 py-4 bg-white/10 border border-white/20 rounded-xl text-white focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all flex items-center justify-between ${disabled ? 'opacity-60 cursor-not-allowed' : ''}`}
         >
           <span className={selectedOption ? 'text-white' : 'text-gray-400'}>
             {selectedOption ? selectedOption.label : placeholder}

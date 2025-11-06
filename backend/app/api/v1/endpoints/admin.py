@@ -1,11 +1,15 @@
 """Admin endpoints for moderation and verification."""
 
+import logging
 from datetime import datetime
-from typing import Annotated
+from typing import Annotated, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status, UploadFile, File
+from fastapi.responses import FileResponse
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
+
+logger = logging.getLogger(__name__)
 
 from app.core.dependencies import get_current_admin_user
 from app.db.session import get_db
@@ -17,6 +21,24 @@ from app.models.printer_request import PrinterRequest, PrinterRequestStatus
 from app.models.user import User, UserRole
 from app.schemas.brand import BrandListResponse, BrandResponse
 from app.schemas.brand_request import BrandRequestListResponse, BrandRequestResponse, BrandRequestUpdate
+from app.schemas.database import (
+    DatabaseDumpDeleteResponse,
+    DatabaseDumpInfo,
+    DatabaseDumpListResponse,
+    DatabaseExportRequest,
+    DatabaseExportResponse,
+    DatabaseImportRequest,
+    DatabaseImportResponse,
+    DatabaseIntegrityResponse,
+    DatabaseStatsResponse,
+    MigrationApplyRequest,
+    MigrationApplyResponse,
+    MigrationHistoryResponse,
+    RecreateTablesResponse,
+    TableStructureResponse,
+    TableDataRequest,
+    TableDataResponse,
+)
 from app.schemas.preset import PresetResponse
 from app.schemas.printer import PrinterCreate, PrinterListResponse, PrinterResponse, PrinterUpdate
 from app.schemas.printer_request import (
@@ -25,6 +47,20 @@ from app.schemas.printer_request import (
     PrinterRequestUpdate,
 )
 from app.schemas.user import UserResponse
+from app.services.database_service import (
+    apply_migration as apply_migration_service,
+    delete_database_dump as delete_database_dump_service,
+    downgrade_migration as downgrade_migration_service,
+    export_database as export_database_service,
+    get_database_stats as get_database_stats_service,
+    get_migration_history as get_migration_history_service,
+    get_table_data as get_table_data_service,
+    get_table_structure as get_table_structure_service,
+    import_database as import_database_service,
+    list_database_dumps as list_database_dumps_service,
+    recreate_missing_tables as recreate_missing_tables_service,
+    validate_migration_integrity as validate_migration_integrity_service,
+)
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 
@@ -903,4 +939,316 @@ async def update_printer_request_admin(
         from app.services.file_service import parse_proof_files
         response.proof_files = parse_proof_files(request.proof_files)
     return response
+
+
+# ==================== Database Management ====================
+
+
+@router.get("/database/migrations", response_model=MigrationHistoryResponse)
+async def get_migration_history(
+    admin: Annotated[User, Depends(get_current_admin_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> MigrationHistoryResponse:
+    """Получить историю миграций Alembic."""
+    history = await get_migration_history_service(db)
+    return MigrationHistoryResponse(**history)
+
+
+@router.post("/database/migrations/apply", response_model=MigrationApplyResponse)
+async def apply_migration(
+    data: MigrationApplyRequest,
+    admin: Annotated[User, Depends(get_current_admin_user)],
+    db: AsyncSession = Depends(get_db),
+) -> MigrationApplyResponse:
+    """Применить миграцию Alembic с валидацией и записью в историю."""
+    applied_by = f"{admin.email} ({admin.id})"
+    success, message, current_revision, validation_errors = await apply_migration_service(data.revision, applied_by=applied_by)
+    return MigrationApplyResponse(
+        success=success,
+        message=message,
+        current_revision=current_revision,
+        validation_errors=validation_errors,
+    )
+
+
+@router.post("/database/migrations/downgrade", response_model=MigrationApplyResponse)
+async def downgrade_migration(
+    data: MigrationApplyRequest,
+    admin: Annotated[User, Depends(get_current_admin_user)],
+) -> MigrationApplyResponse:
+    """Откатить миграцию Alembic с записью в историю."""
+    downgraded_by = f"{admin.email} ({admin.id})"
+    success, message, current_revision = await downgrade_migration_service(data.revision, downgraded_by=downgraded_by)
+    return MigrationApplyResponse(
+        success=success,
+        message=message,
+        current_revision=current_revision,
+    )
+
+
+@router.get("/database/stats", response_model=DatabaseStatsResponse)
+async def get_database_stats(
+    admin: Annotated[User, Depends(get_current_admin_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> DatabaseStatsResponse:
+    """Получить статистику базы данных."""
+    stats = await get_database_stats_service(db)
+    return DatabaseStatsResponse(**stats)
+
+
+@router.post("/database/export", response_model=DatabaseExportResponse)
+async def export_database(
+    data: DatabaseExportRequest,
+    admin: Annotated[User, Depends(get_current_admin_user)],
+) -> DatabaseExportResponse:
+    """Экспортировать базу данных."""
+    success, message, filename, size = await export_database_service(
+        format=data.format,
+        include_data=data.include_data,
+        tables=data.tables,
+    )
+    
+    download_url = None
+    if success and filename:
+        # Формируем полный URL для скачивания
+        # В продакшене нужно использовать settings.BACKEND_URL или определять из запроса
+        download_url = f"/api/v1/admin/database/download/{filename}"
+    
+    return DatabaseExportResponse(
+        success=success,
+        message=message,
+        filename=filename,
+        download_url=download_url,
+        size=size,
+    )
+
+
+@router.get("/database/download/{filename}")
+async def download_database_dump(
+    filename: str,
+    admin: Annotated[User, Depends(get_current_admin_user)],
+) -> FileResponse:
+    """Скачать файл дампа базы данных."""
+    from pathlib import Path
+    from app.core.config import settings
+    
+    dump_file = Path(settings.UPLOAD_DIR) / "database_dumps" / filename
+    
+    if not dump_file.exists():
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Файл дампа не найден",
+        )
+    
+    return FileResponse(
+        path=str(dump_file),
+        filename=filename,
+        media_type="application/octet-stream",
+    )
+
+
+@router.post("/database/import", response_model=DatabaseImportResponse)
+async def import_database(
+    admin: Annotated[User, Depends(get_current_admin_user)],
+    file: UploadFile = File(...),
+    format: str = Query("custom", description="Формат импорта: custom, plain, tar"),
+    clean: bool = Query(False, description="Очистить базу перед импортом"),
+    create: bool = Query(False, description="Создать базу если не существует"),
+) -> DatabaseImportResponse:
+    """Импортировать базу данных из файла дампа."""
+    from pathlib import Path
+    from app.core.config import settings
+    
+    # Валидация файла
+    if not file.filename:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Имя файла не указано",
+        )
+    
+    # Проверяем расширение файла
+    valid_extensions = {
+        'custom': ['.dump'],
+        'plain': ['.sql'],
+        'tar': ['.tar'],
+    }
+    file_ext = Path(file.filename).suffix.lower()
+    if file_ext not in valid_extensions.get(format, []):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Неверное расширение файла для формата {format}. Ожидается: {', '.join(valid_extensions.get(format, []))}",
+        )
+    
+    # Проверяем размер файла (максимум 1GB)
+    MAX_FILE_SIZE = 1024 * 1024 * 1024  # 1GB
+    content = await file.read()
+    if len(content) > MAX_FILE_SIZE:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Файл слишком большой. Максимальный размер: 1GB",
+        )
+    
+    # Сохраняем загруженный файл
+    dumps_dir = Path(settings.UPLOAD_DIR) / "database_dumps"
+    dumps_dir.mkdir(parents=True, exist_ok=True)
+    
+    # Используем оригинальное имя файла с timestamp для избежания конфликтов
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    safe_filename = f"{timestamp}_{file.filename}"
+    filepath = dumps_dir / safe_filename
+    
+    with open(filepath, "wb") as f:
+        f.write(content)
+    
+    # Импортируем базу данных
+    logger.info(f"Начинаем импорт базы данных: файл={safe_filename}, формат={format}, clean={clean}, create={create}")
+    try:
+        success, message = await import_database_service(
+            filepath=safe_filename,
+            format=format,
+            clean=clean,
+            create=create,
+        )
+        logger.info(f"Импорт завершён: success={success}, message={message}")
+    except Exception as e:
+        logger.error(f"Ошибка при импорте базы данных: {e}", exc_info=True)
+        # Удаляем временный файл при ошибке
+        if filepath.exists():
+            filepath.unlink()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Ошибка импорта: {str(e)}",
+        )
+    
+    # Удаляем временный файл после импорта
+    if filepath.exists():
+        filepath.unlink()
+    
+    return DatabaseImportResponse(
+        success=success,
+        message=message,
+    )
+
+
+@router.get("/database/dumps", response_model=DatabaseDumpListResponse)
+async def list_database_dumps(
+    admin: Annotated[User, Depends(get_current_admin_user)],
+) -> DatabaseDumpListResponse:
+    """Получить список всех дампов базы данных."""
+    dumps = await list_database_dumps_service()
+    return DatabaseDumpListResponse(dumps=[DatabaseDumpInfo(**dump) for dump in dumps])
+
+
+@router.delete("/database/dumps/{filename}", response_model=DatabaseDumpDeleteResponse)
+async def delete_database_dump(
+    filename: str,
+    admin: Annotated[User, Depends(get_current_admin_user)],
+) -> DatabaseDumpDeleteResponse:
+    """Удалить файл дампа базы данных."""
+    # Безопасность: проверяем, что filename не содержит путь
+    if '/' in filename or '\\' in filename or '..' in filename:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Недопустимое имя файла",
+        )
+    
+    success, message = await delete_database_dump_service(filename)
+    
+    if not success:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=message,
+        )
+    
+    return DatabaseDumpDeleteResponse(success=success, message=message)
+
+
+@router.get("/database/tables/{table_name}/structure", response_model=TableStructureResponse)
+async def get_table_structure(
+    table_name: str,
+    admin: Annotated[User, Depends(get_current_admin_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+    schema_name: str = Query("public", description="Имя схемы"),
+) -> TableStructureResponse:
+    """Получить структуру таблицы (колонки, индексы, ограничения)."""
+    try:
+        structure = await get_table_structure_service(db, table_name, schema_name)
+        return TableStructureResponse(**structure)
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Ошибка получения структуры таблицы: {str(e)}",
+        )
+
+
+@router.get("/database/integrity", response_model=DatabaseIntegrityResponse)
+async def check_database_integrity(
+    admin: Annotated[User, Depends(get_current_admin_user)],
+    db: AsyncSession = Depends(get_db),
+) -> DatabaseIntegrityResponse:
+    """Проверить целостность базы данных."""
+    is_valid, missing_tables = await validate_migration_integrity_service(db)
+    
+    if is_valid:
+        message = "База данных в порядке: все необходимые таблицы существуют"
+    else:
+        message = f"Обнаружены проблемы: отсутствуют таблицы {', '.join(missing_tables)}"
+    
+    return DatabaseIntegrityResponse(
+        is_valid=is_valid,
+        missing_tables=missing_tables,
+        message=message,
+    )
+
+
+@router.post("/database/recreate-tables", response_model=RecreateTablesResponse)
+async def recreate_tables(
+    admin: Annotated[User, Depends(get_current_admin_user)],
+    db: AsyncSession = Depends(get_db),
+) -> RecreateTablesResponse:
+    """Восстановить все недостающие таблицы на основе моделей SQLAlchemy."""
+    success, message, created_tables = await recreate_missing_tables_service(db)
+    
+    return RecreateTablesResponse(
+        success=success,
+        message=message,
+        created_tables=created_tables,
+    )
+
+
+@router.get("/database/tables/{table_name}/data", response_model=TableDataResponse)
+async def get_table_data(
+    table_name: str,
+    admin: Annotated[User, Depends(get_current_admin_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+    schema_name: str = Query("public", description="Имя схемы"),
+    page: int = Query(1, ge=1, description="Номер страницы"),
+    size: int = Query(50, ge=1, le=1000, description="Размер страницы"),
+    order_by: Optional[str] = Query(None, description="Колонка для сортировки"),
+    order_desc: bool = Query(False, description="Сортировка по убыванию"),
+    search: Optional[str] = Query(None, description="Поиск по всем колонкам"),
+) -> TableDataResponse:
+    """Получить данные из таблицы с пагинацией."""
+    try:
+        table_data = await get_table_data_service(
+            db,
+            table_name=table_name,
+            schema_name=schema_name,
+            page=page,
+            size=size,
+            order_by=order_by,
+            order_desc=order_desc,
+            search=search,
+        )
+        return TableDataResponse(**table_data)
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=str(e),
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Ошибка получения данных таблицы: {str(e)}",
+        )
 

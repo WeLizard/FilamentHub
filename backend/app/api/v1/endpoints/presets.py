@@ -207,11 +207,8 @@ async def create_preset(
         active=True,
     )
     
-    # Модерация: официальные пресеты автоматически одобрены
-    if preset.is_official:
-        preset.moderation_status = PresetModerationStatus.APPROVED
-    else:
-        preset.moderation_status = PresetModerationStatus.PENDING
+    # Все пресеты автоматически одобрены - модерация не нужна, плохие пресеты отфильтрует рейтинг
+    preset.moderation_status = PresetModerationStatus.APPROVED
     
     db.add(preset)
     await db.flush()  # Получаем ID пресета

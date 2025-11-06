@@ -5,6 +5,8 @@ from datetime import datetime
 from typing import Annotated
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Query, Request, status
+
+from app.core.config import settings
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
@@ -18,8 +20,10 @@ from app.core.security import (
     create_refresh_token,
     decode_refresh_token,
     decode_email_verification_token,
+    decode_password_reset_token,
     generate_api_key,
     generate_email_verification_token,
+    generate_password_reset_token,
     get_password_hash,
     verify_password,
 )
@@ -33,10 +37,14 @@ from app.schemas.user import (
     APIKeyResponse,
     AccountDeleteRequest,
     AccountDeletionStats,
+    ForgotPasswordRequest,
+    ForgotPasswordResponse,
     LoginRequest,
     RefreshTokenRequest,
     RefreshTokenResponse,
     RegisterRequest,
+    ResetPasswordRequest,
+    ResetPasswordResponse,
     Token,
     UserCreate,
     UserResponse,
@@ -527,4 +535,112 @@ async def delete_account(
         delete_brand_if_sole_representative=data.delete_brand_if_sole_representative,
         db=db,
     )
+
+
+@router.post("/forgot-password", response_model=ForgotPasswordResponse)
+@limiter.limit("5/hour")  # Rate limiting: 5 запросов в час
+async def forgot_password(
+    request: Request,
+    data: ForgotPasswordRequest,
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> ForgotPasswordResponse:
+    """
+    Запрос на восстановление пароля.
+    
+    Отправляет токен восстановления на email пользователя (если email существует).
+    Для безопасности всегда возвращает успешный ответ, даже если email не найден.
+    """
+    import logging
+    logger = logging.getLogger(__name__)
+    
+    # Ищем пользователя по email
+    result = await db.execute(select(User).where(User.email == data.email))
+    user = result.scalar_one_or_none()
+    
+    if user and user.active:
+        # Генерируем токен восстановления пароля
+        reset_token = generate_password_reset_token(user.id, user.email)
+        
+        # TODO: Отправить email с токеном восстановления
+        # Ссылка: {FRONTEND_URL}/reset-password?token={reset_token}
+        logger.info(f"Password reset token generated for user {user.email}: {reset_token[:20]}...")
+        logger.info(f"Reset link: {settings.BASE_URL}/reset-password?token={reset_token}")
+    
+    # Всегда возвращаем успешный ответ для безопасности (чтобы не раскрывать существование email)
+    return ForgotPasswordResponse()
+
+
+@router.post("/reset-password", response_model=ResetPasswordResponse)
+@limiter.limit("5/hour")  # Rate limiting: 5 попыток в час
+async def reset_password(
+    request: Request,
+    data: ResetPasswordRequest,
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> ResetPasswordResponse:
+    """
+    Установка нового пароля по токену восстановления.
+    
+    Токен должен быть получен через /forgot-password и действителен (не истёк).
+    """
+    import logging
+    logger = logging.getLogger(__name__)
+    
+    # Декодируем токен восстановления
+    payload = decode_password_reset_token(data.token)
+    if not payload:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Неверный или истёкший токен восстановления пароля",
+        )
+    
+    user_id: int | None = payload.get("user_id")
+    email: str | None = payload.get("email")
+    
+    if not user_id or not email:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Неверный токен восстановления пароля",
+        )
+    
+    # Получаем пользователя
+    result = await db.execute(select(User).where(User.id == user_id))
+    user = result.scalar_one_or_none()
+    
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Пользователь не найден",
+        )
+    
+    # Проверяем, что email совпадает
+    if user.email != email:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Несоответствие email в токене",
+        )
+    
+    # Проверяем, что аккаунт активен
+    if not user.active:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Аккаунт заблокирован",
+        )
+    
+    # Хешируем новый пароль
+    try:
+        password_hash = get_password_hash(data.new_password)
+    except Exception as e:
+        logger.error(f"Error hashing password: {str(e)}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Ошибка обработки пароля",
+        )
+    
+    # Обновляем пароль
+    user.password_hash = password_hash
+    await db.commit()
+    
+    logger.info(f"Password reset successful for user {user.email} (id={user.id})")
+    
+    return ResetPasswordResponse()
 

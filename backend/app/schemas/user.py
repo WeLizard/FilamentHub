@@ -142,3 +142,31 @@ class AccountDeletionStats(BaseModel):
     is_brand_representative: bool = Field(description="Является ли пользователь представителем бренда")
     brand_other_representatives_count: int = Field(description="Количество других представителей бренда (если есть)")
 
+
+class ForgotPasswordRequest(BaseModel):
+    """Schema for forgot password request."""
+    
+    email: EmailStr = Field(..., description="Email пользователя для восстановления пароля")
+
+
+class ForgotPasswordResponse(BaseModel):
+    """Schema for forgot password response."""
+    
+    message: str = Field(
+        default="Если указанный email существует в системе, на него будет отправлена инструкция по восстановлению пароля.",
+        description="Сообщение о результате запроса"
+    )
+
+
+class ResetPasswordRequest(BaseModel):
+    """Schema for reset password request."""
+    
+    token: str = Field(..., description="Токен восстановления пароля")
+    new_password: str = Field(..., min_length=8, max_length=100, description="Новый пароль")
+
+
+class ResetPasswordResponse(BaseModel):
+    """Schema for reset password response."""
+    
+    message: str = Field(default="Пароль успешно изменён", description="Сообщение о результате")
+

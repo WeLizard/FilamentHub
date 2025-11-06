@@ -29,56 +29,47 @@ def upgrade() -> None:
         END $$;
     """)
     
-    # Check if table exists before creating it
-    conn = op.get_bind()
-    inspector = sa.inspect(conn)
-    
-    if 'printer_requests' not in inspector.get_table_names():
-        op.create_table('printer_requests',
-            sa.Column('id', sa.Integer(), nullable=False),
-            sa.Column('user_id', sa.Integer(), nullable=False),
-            
-            # Printer data (without new_printer_ prefix)
-            sa.Column('name', sa.String(length=200), nullable=False),
-            sa.Column('manufacturer', sa.String(length=100), nullable=False),
-            sa.Column('model', sa.String(length=100), nullable=False),
-            sa.Column('slug', sa.String(length=200), nullable=False),
-            sa.Column('description', sa.Text(), nullable=True),
-            
-            # Optional printer specs
-            sa.Column('build_volume_x', sa.Float(), nullable=True),
-            sa.Column('build_volume_y', sa.Float(), nullable=True),
-            sa.Column('build_volume_z', sa.Float(), nullable=True),
-            sa.Column('nozzle_diameter', sa.Float(), nullable=True),
-            sa.Column('max_extruder_temp', sa.Integer(), nullable=True),
-            sa.Column('max_bed_temp', sa.Integer(), nullable=True),
-            sa.Column('image_url', sa.String(length=500), nullable=True),
-            
-            # Request message
-            sa.Column('message', sa.Text(), nullable=True),
-            
-            # Status
-            sa.Column('status', sa.String(length=20), nullable=False, server_default='pending'),
-            
-            # Admin who processed the request
-            sa.Column('processed_by_id', sa.Integer(), nullable=True),
-            sa.Column('processed_at', sa.DateTime(), nullable=True),
-            
-            # Rejection reason
-            sa.Column('rejection_reason', sa.Text(), nullable=True),
-            
-            # Timestamps
-            sa.Column('created_at', sa.DateTime(), server_default=sa.text('now()'), nullable=False),
-            sa.Column('updated_at', sa.DateTime(), server_default=sa.text('now()'), nullable=False),
-            
-            sa.PrimaryKeyConstraint('id'),
-            sa.ForeignKeyConstraint(['user_id'], ['users.id'], ),
-            sa.ForeignKeyConstraint(['processed_by_id'], ['users.id'], ),
-        )
-        op.create_index(op.f('ix_printer_requests_id'), 'printer_requests', ['id'], unique=False)
-        op.create_index(op.f('ix_printer_requests_user_id'), 'printer_requests', ['user_id'], unique=False)
-        op.create_index(op.f('ix_printer_requests_status'), 'printer_requests', ['status'], unique=False)
-        op.create_index(op.f('ix_printer_requests_slug'), 'printer_requests', ['slug'], unique=False)
+    # Создаем таблицу через SQL для надежности (как в статье на Хабре)
+    # Используем DO блок для проверки существования таблицы
+    op.execute("""
+        DO $$ BEGIN
+            IF NOT EXISTS (
+                SELECT FROM information_schema.tables 
+                WHERE table_schema = 'public' 
+                AND table_name = 'printer_requests'
+            ) THEN
+                CREATE TABLE printer_requests (
+                    id SERIAL PRIMARY KEY,
+                    user_id INTEGER NOT NULL REFERENCES users(id),
+                    name VARCHAR(200) NOT NULL,
+                    manufacturer VARCHAR(100) NOT NULL,
+                    model VARCHAR(100) NOT NULL,
+                    slug VARCHAR(200) NOT NULL,
+                    description TEXT,
+                    build_volume_x DOUBLE PRECISION,
+                    build_volume_y DOUBLE PRECISION,
+                    build_volume_z DOUBLE PRECISION,
+                    nozzle_diameter DOUBLE PRECISION,
+                    max_extruder_temp INTEGER,
+                    max_bed_temp INTEGER,
+                    image_url VARCHAR(500),
+                    message TEXT,
+                    proof_files TEXT,
+                    status VARCHAR(20) NOT NULL DEFAULT 'pending',
+                    processed_by_id INTEGER REFERENCES users(id),
+                    processed_at TIMESTAMP,
+                    rejection_reason TEXT,
+                    created_at TIMESTAMP NOT NULL DEFAULT now(),
+                    updated_at TIMESTAMP NOT NULL DEFAULT now()
+                );
+                
+                CREATE INDEX IF NOT EXISTS ix_printer_requests_id ON printer_requests(id);
+                CREATE INDEX IF NOT EXISTS ix_printer_requests_user_id ON printer_requests(user_id);
+                CREATE INDEX IF NOT EXISTS ix_printer_requests_status ON printer_requests(status);
+                CREATE INDEX IF NOT EXISTS ix_printer_requests_slug ON printer_requests(slug);
+            END IF;
+        END $$;
+    """)
 
 
 def downgrade() -> None:

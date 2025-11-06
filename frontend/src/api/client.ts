@@ -45,7 +45,11 @@ api.interceptors.response.use(
     const originalRequest = error.config;
     
     // Если токен истек или невалидный (401), пытаемся обновить
-    if (error.response?.status === 401 && !originalRequest._retry) {
+    // НО: не обрабатываем ошибки авторизации (login/register) - они должны обрабатываться в компонентах
+    const isAuthEndpoint = originalRequest?.url?.includes('/auth/login') || 
+                            originalRequest?.url?.includes('/auth/register');
+    
+    if (error.response?.status === 401 && !originalRequest._retry && !isAuthEndpoint) {
       if (isRefreshing) {
         // Если уже обновляем токен, ждем результата
         return new Promise((resolve, reject) => {
@@ -65,8 +69,10 @@ api.interceptors.response.use(
       
       if (!refreshToken) {
         // Нет refresh token, удаляем токены и перенаправляем
+        // Только если это не запрос авторизации и не админ панель
         removeToken();
-        if (!window.location.pathname.includes('/auth')) {
+        const isAdminPage = window.location.pathname.includes('/admin');
+        if (!window.location.pathname.includes('/auth') && !isAdminPage) {
           window.location.reload();
         }
         processQueue(error, null);
@@ -100,7 +106,9 @@ api.interceptors.response.use(
         processQueue(refreshError, null);
         isRefreshing = false;
         
-        if (!window.location.pathname.includes('/auth')) {
+        // Не перезагружаем страницу если мы в админке или на странице авторизации
+        const isAdminPage = window.location.pathname.includes('/admin');
+        if (!window.location.pathname.includes('/auth') && !isAdminPage) {
           window.location.reload();
         }
         return Promise.reject(refreshError);
@@ -158,6 +166,19 @@ export const authAPI = {
     await api.delete('/auth/me', {
       data,
     });
+  },
+
+  forgotPassword: async (email: string) => {
+    const response = await api.post<{ message: string }>('/auth/forgot-password', { email });
+    return response.data;
+  },
+
+  resetPassword: async (token: string, newPassword: string) => {
+    const response = await api.post<{ message: string }>('/auth/reset-password', {
+      token,
+      new_password: newPassword,
+    });
+    return response.data;
   },
 };
 
@@ -699,6 +720,182 @@ export const adminAPI = {
     presets: { total: number; pending_moderation: number; approved: number; rejected: number };
   }> => {
     const response = await api.get('/admin/stats');
+    return response.data;
+  },
+
+  // Database Management
+  getMigrationHistory: async (): Promise<{
+    current_revision: string | null;
+    heads: string[];
+    migrations: Array<{
+      revision: string;
+      down_revision: string | null;
+      branch_labels: string | null;
+      is_head: boolean;
+      is_applied: boolean;
+      applied_at: string | null;
+      description: string | null;
+    }>;
+  }> => {
+    const response = await api.get('/admin/database/migrations');
+    return response.data;
+  },
+
+  checkDatabaseIntegrity: async (): Promise<{
+    is_valid: boolean;
+    missing_tables: string[];
+    message: string;
+  }> => {
+    const response = await api.get('/admin/database/integrity');
+    return response.data;
+  },
+
+  recreateTables: async (): Promise<{
+    success: boolean;
+    message: string;
+    created_tables: string[];
+  }> => {
+    const response = await api.post('/admin/database/recreate-tables');
+    return response.data;
+  },
+
+  applyMigration: async (data: { revision: string }): Promise<{
+    success: boolean;
+    message: string;
+    current_revision: string | null;
+    validation_errors?: string[] | null;
+  }> => {
+    const response = await api.post('/admin/database/migrations/apply', data);
+    return response.data;
+  },
+
+  downgradeMigration: async (data: { revision: string }): Promise<{
+    success: boolean;
+    message: string;
+    current_revision: string | null;
+  }> => {
+    const response = await api.post('/admin/database/migrations/downgrade', data);
+    return response.data;
+  },
+
+  getDatabaseStats: async (): Promise<{
+    database_name: string;
+    database_size: string;
+    database_size_bytes: number;
+    table_stats: Array<{
+      schema: string;
+      table: string;
+      size: string;
+      size_bytes: number;
+      column_count: number;
+      row_count: number;
+    }>;
+  }> => {
+    const response = await api.get('/admin/database/stats');
+    return response.data;
+  },
+
+  exportDatabase: async (data: {
+    format: string;
+    include_data: boolean;
+    tables?: string[];
+  }): Promise<{
+    success: boolean;
+    filename: string | null;
+    download_url: string | null;
+    size: number | null;
+    message: string;
+  }> => {
+    const response = await api.post('/admin/database/export', data);
+    return response.data;
+  },
+
+  listDatabaseDumps: async (): Promise<{
+    dumps: Array<{
+      filename: string;
+      size: number;
+      created_at: string;
+      modified_at: string;
+      format: string;
+    }>;
+  }> => {
+    const response = await api.get('/admin/database/dumps');
+    return response.data;
+  },
+
+  deleteDatabaseDump: async (filename: string): Promise<{
+    success: boolean;
+    message: string;
+  }> => {
+    const response = await api.delete(`/admin/database/dumps/${filename}`);
+    return response.data;
+  },
+
+  importDatabase: async (
+    file: File,
+    format: string,
+    clean: boolean,
+    create?: boolean
+  ): Promise<{
+    success: boolean;
+    message: string;
+  }> => {
+    const formData = new FormData();
+    formData.append('file', file);
+    const response = await api.post('/admin/database/import', formData, {
+      params: {
+        format,
+        clean,
+        create: create || false,
+      },
+      headers: {
+        'Content-Type': 'multipart/form-data',
+      },
+      timeout: 600000, // 10 минут таймаут для больших файлов
+    });
+    return response.data;
+  },
+
+  getTableStructure: async (tableName: string, schemaName: string = 'public'): Promise<{
+    table_name: string;
+    schema_name: string;
+    columns: Array<{
+      column_name: string;
+      data_type: string;
+      is_nullable: boolean;
+      column_default: string | null;
+      character_maximum_length: number | null;
+    }>;
+    indexes: Array<{ name: string; definition: string }>;
+    constraints: Array<{ name: string; type: string }>;
+  }> => {
+    const response = await api.get(`/admin/database/tables/${tableName}/structure`, {
+      params: { schema_name: schemaName },
+    });
+    return response.data;
+  },
+
+  getTableData: async (
+    tableName: string,
+    params?: {
+      schema_name?: string;
+      page?: number;
+      size?: number;
+      order_by?: string;
+      order_desc?: boolean;
+      search?: string;
+    }
+  ): Promise<{
+    table_name: string;
+    schema_name: string;
+    columns: string[];
+    rows: Array<Record<string, any>>;
+    total: number;
+    page: number;
+    size: number;
+    pages: number;
+  }> => {
+    const response = await api.get(`/admin/database/tables/${tableName}/data`, { params });
     return response.data;
   },
 };
