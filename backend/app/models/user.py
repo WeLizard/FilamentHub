@@ -15,6 +15,8 @@ if TYPE_CHECKING:
     from app.models.filament_review import FilamentReview
     from app.models.notification import Notification
     from app.models.preset import Preset
+    from app.models.print_profile import PrintProfile
+    from app.models.printer_profile import PrinterProfile
     from app.models.user_saved_preset import UserSavedPreset
 
 
@@ -79,6 +81,12 @@ class User(Base):
     )
     notifications: Mapped[list["Notification"]] = relationship(
         "Notification", back_populates="user", cascade="all, delete-orphan", order_by="Notification.created_at.desc()"
+    )
+    printer_profiles: Mapped[list["PrinterProfile"]] = relationship(
+        "PrinterProfile", back_populates="owner", cascade="all, delete-orphan"
+    )
+    print_profiles: Mapped[list["PrintProfile"]] = relationship(
+        "PrintProfile", back_populates="owner", cascade="all, delete-orphan"
     )
 
     def __repr__(self) -> str:

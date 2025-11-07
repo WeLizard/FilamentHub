@@ -13,12 +13,14 @@ logger = logging.getLogger(__name__)
 
 from app.core.dependencies import get_current_admin_user
 from app.db.session import get_db
+# BadWord импортируется лениво в функциях, где используется
 from app.models.brand import Brand
 from app.models.brand_request import BrandRequest, BrandRequestStatus
 from app.models.preset import Preset, PresetModerationStatus
 from app.models.printer import Printer
 from app.models.printer_request import PrinterRequest, PrinterRequestStatus
 from app.models.user import User, UserRole
+from app.schemas.bad_word import BadWordCreate, BadWordListResponse, BadWordResponse, BadWordUpdate
 from app.schemas.brand import BrandListResponse, BrandResponse
 from app.schemas.brand_request import BrandRequestListResponse, BrandRequestResponse, BrandRequestUpdate
 from app.schemas.database import (
@@ -1393,4 +1395,206 @@ async def get_table_data(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Ошибка получения данных таблицы: {str(e)}",
         )
+
+
+# ==================== Bad Words Management ====================
+
+
+@router.get("/bad-words", response_model=BadWordListResponse)
+async def list_bad_words(
+    admin: Annotated[User, Depends(get_current_admin_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+    page: int = Query(1, ge=1),
+    size: int = Query(50, ge=1, le=100),
+    language: str | None = Query(None, description="Фильтр по языку (ru, en)"),
+    search: str | None = Query(None, description="Поиск по слову"),
+) -> BadWordListResponse:
+    """Получить список запрещенных слов."""
+    # Ленивый импорт, чтобы не падать при отсутствии таблицы
+    from app.models.bad_word import BadWord
+    
+    query = select(BadWord)
+    
+    # Language filter
+    if language:
+        query = query.where(BadWord.language == language)
+    
+    # Search filter
+    if search:
+        search_term = f"%{search.lower()}%"
+        query = query.where(BadWord.word.ilike(search_term))
+    
+    # Count total
+    count_query = select(func.count()).select_from(BadWord)
+    if language:
+        count_query = count_query.where(BadWord.language == language)
+    if search:
+        search_term = f"%{search.lower()}%"
+        count_query = count_query.where(BadWord.word.ilike(search_term))
+    
+    total_result = await db.execute(count_query)
+    total = total_result.scalar() or 0
+    
+    # Paginate
+    offset = (page - 1) * size
+    query = query.offset(offset).limit(size).order_by(BadWord.word)
+    
+    # Execute
+    result = await db.execute(query)
+    words = result.scalars().all()
+    
+    pages = (total + size - 1) // size if total > 0 else 0
+    
+    return BadWordListResponse(
+        items=[BadWordResponse.model_validate(word) for word in words],
+        total=total,
+        page=page,
+        size=size,
+        pages=pages,
+    )
+
+
+@router.post("/bad-words", response_model=BadWordResponse, status_code=status.HTTP_201_CREATED)
+async def create_bad_word(
+    data: BadWordCreate,
+    admin: Annotated[User, Depends(get_current_admin_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> BadWordResponse:
+    """Добавить запрещенное слово."""
+    # Ленивый импорт, чтобы не падать при отсутствии таблицы
+    from app.models.bad_word import BadWord
+    
+    # Проверяем, существует ли уже такое слово
+    result = await db.execute(
+        select(BadWord).where(
+            BadWord.word.ilike(data.word.lower()),
+            BadWord.language == data.language,
+        )
+    )
+    existing = result.scalar_one_or_none()
+    
+    if existing:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Слово '{data.word}' уже существует в базе для языка '{data.language}'",
+        )
+    
+    bad_word = BadWord(word=data.word.lower(), language=data.language)
+    db.add(bad_word)
+    await db.commit()
+    await db.refresh(bad_word)
+    
+    # Сбрасываем кэш в сервисе модерации
+    from app.services.preset_moderation import _BAD_WORDS_CACHE
+    _BAD_WORDS_CACHE.clear()
+    
+    return BadWordResponse.model_validate(bad_word)
+
+
+@router.get("/bad-words/{word_id}", response_model=BadWordResponse)
+async def get_bad_word(
+    word_id: int,
+    admin: Annotated[User, Depends(get_current_admin_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> BadWordResponse:
+    # Ленивый импорт, чтобы не падать при отсутствии таблицы
+    from app.models.bad_word import BadWord
+    """Получить информацию о запрещенном слове."""
+    result = await db.execute(select(BadWord).where(BadWord.id == word_id))
+    word = result.scalar_one_or_none()
+    
+    if not word:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Запрещенное слово не найдено",
+        )
+    
+    return BadWordResponse.model_validate(word)
+
+
+@router.patch("/bad-words/{word_id}", response_model=BadWordResponse)
+async def update_bad_word(
+    word_id: int,
+    data: BadWordUpdate,
+    admin: Annotated[User, Depends(get_current_admin_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> BadWordResponse:
+    """Обновить запрещенное слово."""
+    # Ленивый импорт, чтобы не падать при отсутствии таблицы
+    from app.models.bad_word import BadWord
+    
+    result = await db.execute(select(BadWord).where(BadWord.id == word_id))
+    word = result.scalar_one_or_none()
+    
+    if not word:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Запрещенное слово не найдено",
+        )
+    
+    # Проверяем уникальность, если меняем слово или язык
+    update_data = data.model_dump(exclude_unset=True)
+    
+    if "word" in update_data or "language" in update_data:
+        new_word = update_data.get("word", word.word).lower()
+        new_language = update_data.get("language", word.language)
+        
+        # Проверяем, не существует ли уже такое слово
+        check_result = await db.execute(
+            select(BadWord).where(
+                BadWord.word.ilike(new_word),
+                BadWord.language == new_language,
+                BadWord.id != word_id,
+            )
+        )
+        existing = check_result.scalar_one_or_none()
+        
+        if existing:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Слово '{new_word}' уже существует в базе для языка '{new_language}'",
+            )
+    
+    # Обновляем поля
+    for field, value in update_data.items():
+        if field == "word":
+            setattr(word, field, value.lower())
+        else:
+            setattr(word, field, value)
+    
+    await db.commit()
+    await db.refresh(word)
+    
+    # Сбрасываем кэш в сервисе модерации
+    from app.services.preset_moderation import _BAD_WORDS_CACHE
+    _BAD_WORDS_CACHE.clear()
+    
+    return BadWordResponse.model_validate(word)
+
+
+@router.delete("/bad-words/{word_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_bad_word(
+    word_id: int,
+    admin: Annotated[User, Depends(get_current_admin_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> None:
+    """Удалить запрещенное слово."""
+    # Ленивый импорт, чтобы не падать при отсутствии таблицы
+    from app.models.bad_word import BadWord
+    
+    result = await db.execute(select(BadWord).where(BadWord.id == word_id))
+    word = result.scalar_one_or_none()
+    
+    if not word:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Запрещенное слово не найдено",
+        )
+    
+    await db.delete(word)
+    await db.commit()
+    
+    # Сбрасываем кэш в сервисе модерации
+    from app.services.preset_moderation import _BAD_WORDS_CACHE
+    _BAD_WORDS_CACHE.clear()
 

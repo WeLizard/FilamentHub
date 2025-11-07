@@ -1,7 +1,7 @@
 /** API Client для интеграции с бэкендом */
 
 import axios from 'axios';
-import type { Brand, BrandRequest, BrandRequestStatus, Filament, FilamentVisualSettings, FilamentReview, FilamentRatingStats, Notification, NotificationListResponse, Preset, RecommendedPreset, Printer, PrinterRequest, User, Token, RefreshTokenRequest, RefreshTokenResponse, ListResponse, AccountDeletionStats, UserSavedPreset, CalculatorEstimateRequest, CalculatorEstimateResponse } from '../types/api';
+import type { Brand, BrandRequest, BrandRequestStatus, Filament, FilamentVisualSettings, FilamentReview, FilamentRatingStats, Notification, NotificationListResponse, Preset, RecommendedPreset, Printer, PrinterProfile, PrintProfile, PrinterRequest, User, Token, RefreshTokenRequest, RefreshTokenResponse, ListResponse, AccountDeletionStats, UserSavedPreset, CalculatorEstimateRequest, CalculatorEstimateResponse } from '../types/api';
 import { getRefreshToken, setToken, removeToken } from '../utils/auth';
 
 const API_BASE_URL = '/api/v1';
@@ -487,6 +487,104 @@ export const savedPresetsAPI = {
 
   unsave: async (preset_id: number) => {
     await api.delete(`/saved-presets/${preset_id}`);
+  },
+};
+
+// Printer Profiles API
+type CreatePrinterProfilePayload = {
+  name: string;
+  slug: string;
+  description?: string | null;
+  printer_id?: number | null;
+  owner_user_id?: number | null;
+  is_official?: boolean;
+  active?: boolean;
+  orcaslicer_settings?: Record<string, any>;
+  start_gcode?: string | null;
+  end_gcode?: string | null;
+  notes?: string | null;
+};
+
+export const printerProfilesAPI = {
+  list: async (params?: {
+    page?: number;
+    size?: number;
+    active_only?: boolean;
+    is_official?: boolean;
+    printer_id?: number;
+    owner_user_id?: number;
+    search?: string;
+  }) => {
+    const response = await api.get<ListResponse<PrinterProfile>>('/printer-profiles/', { params });
+    return response.data;
+  },
+
+  get: async (id: number) => {
+    const response = await api.get<PrinterProfile>(`/printer-profiles/${id}`);
+    return response.data;
+  },
+
+  create: async (data: CreatePrinterProfilePayload) => {
+    const response = await api.post<PrinterProfile>('/printer-profiles/', data);
+    return response.data;
+  },
+
+  update: async (id: number, data: Partial<CreatePrinterProfilePayload>) => {
+    const response = await api.patch<PrinterProfile>(`/printer-profiles/${id}`, data);
+    return response.data;
+  },
+
+  delete: async (id: number) => {
+    await api.delete(`/printer-profiles/${id}`);
+  },
+};
+
+// Print Profiles API
+type CreatePrintProfilePayload = {
+  name: string;
+  slug: string;
+  description?: string | null;
+  category?: string | null;
+  owner_user_id?: number | null;
+  is_official?: boolean;
+  active?: boolean;
+  compatible_printers?: string[] | null;
+  compatible_filaments?: string[] | null;
+  orcaslicer_settings?: Record<string, any>;
+  notes?: string | null;
+};
+
+export const printProfilesAPI = {
+  list: async (params?: {
+    page?: number;
+    size?: number;
+    active_only?: boolean;
+    is_official?: boolean;
+    owner_user_id?: number;
+    search?: string;
+    category?: string;
+  }) => {
+    const response = await api.get<ListResponse<PrintProfile>>('/print-profiles/', { params });
+    return response.data;
+  },
+
+  get: async (id: number) => {
+    const response = await api.get<PrintProfile>(`/print-profiles/${id}`);
+    return response.data;
+  },
+
+  create: async (data: CreatePrintProfilePayload) => {
+    const response = await api.post<PrintProfile>('/print-profiles/', data);
+    return response.data;
+  },
+
+  update: async (id: number, data: Partial<CreatePrintProfilePayload>) => {
+    const response = await api.patch<PrintProfile>(`/print-profiles/${id}`, data);
+    return response.data;
+  },
+
+  delete: async (id: number) => {
+    await api.delete(`/print-profiles/${id}`);
   },
 };
 

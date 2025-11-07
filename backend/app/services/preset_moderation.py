@@ -1,0 +1,433 @@
+"""Сервис автоматической модерации пресетов."""
+
+import re
+from typing import Optional
+
+from better_profanity import profanity
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+# BadWord импортируется лениво в _load_bad_words_from_db, чтобы не падать при отсутствии таблицы
+from app.models.preset import Preset, PresetModerationStatus
+from app.models.filament import Filament
+
+# Инициализируем библиотеку better-profanity
+# По умолчанию она работает с английским языком
+try:
+    profanity.load_censor_words()
+except Exception:
+    pass  # Если не удалось загрузить, используем пустой список
+
+
+# Справочные данные для типов материалов (температуры в градусах Цельсия)
+# Структура: {"min": минимальное значение (жёсткое ограничение), 
+#            "max": максимальное значение (жёсткое ограничение),
+#            "soft_min": мягкое ограничение (предупреждение),
+#            "soft_max": мягкое ограничение (предупреждение),
+#            "typical": типичное значение}
+
+MATERIAL_SETTINGS_RANGES = {
+    "PLA": {
+        "extruder_temp": {"min": 150, "max": 280, "soft_min": 170, "soft_max": 250, "typical": 200},
+        "bed_temp": {"min": 0, "max": 100, "soft_min": 40, "soft_max": 80, "typical": 60},
+        "print_speed": {"min": 10, "max": 200, "soft_min": 20, "soft_max": 150, "typical": 60},
+        "fan_speed": {"min": 0, "max": 100, "soft_min": 30, "soft_max": 100, "typical": 100},
+        "retraction_length": {"min": 0, "max": 15, "soft_min": 0.5, "soft_max": 10, "typical": 5.0},
+        "retraction_speed": {"min": 10, "max": 150, "soft_min": 20, "soft_max": 120, "typical": 45},
+    },
+    "PLA+": {
+        "extruder_temp": {"min": 170, "max": 290, "soft_min": 190, "soft_max": 260, "typical": 215},
+        "bed_temp": {"min": 0, "max": 100, "soft_min": 45, "soft_max": 80, "typical": 60},
+        "print_speed": {"min": 10, "max": 200, "soft_min": 25, "soft_max": 150, "typical": 60},
+        "fan_speed": {"min": 0, "max": 100, "soft_min": 40, "soft_max": 100, "typical": 100},
+        "retraction_length": {"min": 0, "max": 15, "soft_min": 0.5, "soft_max": 10, "typical": 5.0},
+        "retraction_speed": {"min": 10, "max": 150, "soft_min": 20, "soft_max": 120, "typical": 45},
+    },
+    "ABS": {
+        "extruder_temp": {"min": 200, "max": 320, "soft_min": 220, "soft_max": 290, "typical": 250},
+        "bed_temp": {"min": 50, "max": 130, "soft_min": 75, "soft_max": 115, "typical": 90},
+        "print_speed": {"min": 10, "max": 150, "soft_min": 25, "soft_max": 120, "typical": 50},
+        "fan_speed": {"min": 0, "max": 100, "soft_min": 0, "soft_max": 40, "typical": 0},
+        "retraction_length": {"min": 0, "max": 15, "soft_min": 0.8, "soft_max": 10, "typical": 5.0},
+        "retraction_speed": {"min": 10, "max": 150, "soft_min": 25, "soft_max": 120, "typical": 40},
+    },
+    "ABS+": {
+        "extruder_temp": {"min": 210, "max": 320, "soft_min": 225, "soft_max": 290, "typical": 250},
+        "bed_temp": {"min": 50, "max": 130, "soft_min": 75, "soft_max": 115, "typical": 90},
+        "print_speed": {"min": 10, "max": 150, "soft_min": 25, "soft_max": 120, "typical": 50},
+        "fan_speed": {"min": 0, "max": 100, "soft_min": 0, "soft_max": 40, "typical": 0},
+        "retraction_length": {"min": 0, "max": 15, "soft_min": 0.8, "soft_max": 10, "typical": 5.0},
+        "retraction_speed": {"min": 10, "max": 150, "soft_min": 25, "soft_max": 120, "typical": 40},
+    },
+    "PETG": {
+        "extruder_temp": {"min": 200, "max": 300, "soft_min": 215, "soft_max": 270, "typical": 240},
+        "bed_temp": {"min": 50, "max": 110, "soft_min": 65, "soft_max": 95, "typical": 80},
+        "print_speed": {"min": 10, "max": 150, "soft_min": 25, "soft_max": 120, "typical": 50},
+        "fan_speed": {"min": 0, "max": 100, "soft_min": 15, "soft_max": 90, "typical": 50},
+        "retraction_length": {"min": 0, "max": 15, "soft_min": 0.8, "soft_max": 10, "typical": 3.0},
+        "retraction_speed": {"min": 10, "max": 150, "soft_min": 20, "soft_max": 100, "typical": 35},
+    },
+    "PETG+": {
+        "extruder_temp": {"min": 210, "max": 300, "soft_min": 225, "soft_max": 270, "typical": 245},
+        "bed_temp": {"min": 50, "max": 110, "soft_min": 65, "soft_max": 95, "typical": 80},
+        "print_speed": {"min": 10, "max": 150, "soft_min": 25, "soft_max": 120, "typical": 50},
+        "fan_speed": {"min": 0, "max": 100, "soft_min": 15, "soft_max": 90, "typical": 50},
+        "retraction_length": {"min": 0, "max": 15, "soft_min": 0.8, "soft_max": 10, "typical": 3.0},
+        "retraction_speed": {"min": 10, "max": 150, "soft_min": 20, "soft_max": 100, "typical": 35},
+    },
+    "TPU": {
+        "extruder_temp": {"min": 190, "max": 280, "soft_min": 205, "soft_max": 260, "typical": 230},
+        "bed_temp": {"min": 0, "max": 90, "soft_min": 35, "soft_max": 75, "typical": 50},
+        "print_speed": {"min": 5, "max": 80, "soft_min": 10, "soft_max": 60, "typical": 30},
+        "fan_speed": {"min": 0, "max": 100, "soft_min": 0, "soft_max": 60, "typical": 30},
+        "retraction_length": {"min": 0, "max": 10, "soft_min": 0.3, "soft_max": 5, "typical": 1.0},
+        "retraction_speed": {"min": 5, "max": 80, "soft_min": 10, "soft_max": 60, "typical": 20},
+    },
+    "ASA": {
+        "extruder_temp": {"min": 220, "max": 320, "soft_min": 235, "soft_max": 290, "typical": 260},
+        "bed_temp": {"min": 50, "max": 130, "soft_min": 75, "soft_max": 115, "typical": 90},
+        "print_speed": {"min": 10, "max": 150, "soft_min": 25, "soft_max": 120, "typical": 50},
+        "fan_speed": {"min": 0, "max": 100, "soft_min": 0, "soft_max": 40, "typical": 0},
+        "retraction_length": {"min": 0, "max": 15, "soft_min": 0.8, "soft_max": 10, "typical": 5.0},
+        "retraction_speed": {"min": 10, "max": 150, "soft_min": 25, "soft_max": 120, "typical": 40},
+    },
+    "PC": {
+        "extruder_temp": {"min": 240, "max": 350, "soft_min": 255, "soft_max": 320, "typical": 280},
+        "bed_temp": {"min": 70, "max": 140, "soft_min": 85, "soft_max": 125, "typical": 100},
+        "print_speed": {"min": 5, "max": 120, "soft_min": 15, "soft_max": 100, "typical": 40},
+        "fan_speed": {"min": 0, "max": 100, "soft_min": 0, "soft_max": 60, "typical": 30},
+        "retraction_length": {"min": 0, "max": 15, "soft_min": 0.8, "soft_max": 10, "typical": 4.0},
+        "retraction_speed": {"min": 10, "max": 150, "soft_min": 25, "soft_max": 120, "typical": 40},
+    },
+    "PA": {
+        "extruder_temp": {"min": 220, "max": 320, "soft_min": 235, "soft_max": 290, "typical": 260},
+        "bed_temp": {"min": 50, "max": 120, "soft_min": 65, "soft_max": 105, "typical": 80},
+        "print_speed": {"min": 10, "max": 150, "soft_min": 25, "soft_max": 120, "typical": 50},
+        "fan_speed": {"min": 0, "max": 100, "soft_min": 0, "soft_max": 60, "typical": 30},
+        "retraction_length": {"min": 0, "max": 15, "soft_min": 0.8, "soft_max": 10, "typical": 4.0},
+        "retraction_speed": {"min": 10, "max": 150, "soft_min": 25, "soft_max": 120, "typical": 40},
+    },
+    "PA-CF": {
+        "extruder_temp": {"min": 230, "max": 330, "soft_min": 245, "soft_max": 300, "typical": 270},
+        "bed_temp": {"min": 60, "max": 130, "soft_min": 75, "soft_max": 115, "typical": 90},
+        "print_speed": {"min": 10, "max": 150, "soft_min": 25, "soft_max": 120, "typical": 50},
+        "fan_speed": {"min": 0, "max": 100, "soft_min": 0, "soft_max": 60, "typical": 30},
+        "retraction_length": {"min": 0, "max": 15, "soft_min": 0.8, "soft_max": 10, "typical": 4.0},
+        "retraction_speed": {"min": 10, "max": 150, "soft_min": 25, "soft_max": 120, "typical": 40},
+    },
+    "PLA-CF": {
+        "extruder_temp": {"min": 180, "max": 280, "soft_min": 195, "soft_max": 250, "typical": 220},
+        "bed_temp": {"min": 0, "max": 100, "soft_min": 45, "soft_max": 80, "typical": 60},
+        "print_speed": {"min": 10, "max": 150, "soft_min": 25, "soft_max": 120, "typical": 50},
+        "fan_speed": {"min": 0, "max": 100, "soft_min": 40, "soft_max": 100, "typical": 100},
+        "retraction_length": {"min": 0, "max": 15, "soft_min": 0.5, "soft_max": 10, "typical": 5.0},
+        "retraction_speed": {"min": 10, "max": 150, "soft_min": 20, "soft_max": 120, "typical": 45},
+    },
+    "PEEK": {
+        "extruder_temp": {"min": 340, "max": 450, "soft_min": 350, "soft_max": 430, "typical": 390},
+        "bed_temp": {"min": 100, "max": 170, "soft_min": 115, "soft_max": 155, "typical": 130},
+        "print_speed": {"min": 5, "max": 80, "soft_min": 10, "soft_max": 60, "typical": 30},
+        "fan_speed": {"min": 0, "max": 100, "soft_min": 0, "soft_max": 40, "typical": 0},
+        "retraction_length": {"min": 0, "max": 15, "soft_min": 0.8, "soft_max": 10, "typical": 3.0},
+        "retraction_speed": {"min": 10, "max": 150, "soft_min": 20, "soft_max": 100, "typical": 40},
+    },
+    "HIPS": {
+        "extruder_temp": {"min": 200, "max": 300, "soft_min": 215, "soft_max": 270, "typical": 240},
+        "bed_temp": {"min": 50, "max": 130, "soft_min": 75, "soft_max": 115, "typical": 90},
+        "print_speed": {"min": 10, "max": 150, "soft_min": 25, "soft_max": 120, "typical": 50},
+        "fan_speed": {"min": 0, "max": 100, "soft_min": 0, "soft_max": 60, "typical": 30},
+        "retraction_length": {"min": 0, "max": 15, "soft_min": 0.8, "soft_max": 10, "typical": 5.0},
+        "retraction_speed": {"min": 10, "max": 150, "soft_min": 25, "soft_max": 120, "typical": 40},
+    },
+    "PP": {
+        "extruder_temp": {"min": 200, "max": 300, "soft_min": 215, "soft_max": 270, "typical": 240},
+        "bed_temp": {"min": 50, "max": 120, "soft_min": 65, "soft_max": 105, "typical": 80},
+        "print_speed": {"min": 10, "max": 150, "soft_min": 25, "soft_max": 120, "typical": 50},
+        "fan_speed": {"min": 0, "max": 100, "soft_min": 0, "soft_max": 60, "typical": 30},
+        "retraction_length": {"min": 0, "max": 15, "soft_min": 0.8, "soft_max": 10, "typical": 3.0},
+        "retraction_speed": {"min": 10, "max": 150, "soft_min": 20, "soft_max": 100, "typical": 35},
+    },
+    "PVA": {
+        "extruder_temp": {"min": 160, "max": 250, "soft_min": 175, "soft_max": 230, "typical": 200},
+        "bed_temp": {"min": 0, "max": 80, "soft_min": 35, "soft_max": 65, "typical": 50},
+        "print_speed": {"min": 10, "max": 120, "soft_min": 25, "soft_max": 100, "typical": 50},
+        "fan_speed": {"min": 0, "max": 100, "soft_min": 40, "soft_max": 100, "typical": 80},
+        "retraction_length": {"min": 0, "max": 15, "soft_min": 0.5, "soft_max": 10, "typical": 4.0},
+        "retraction_speed": {"min": 10, "max": 150, "soft_min": 20, "soft_max": 120, "typical": 40},
+    },
+}
+
+# Кэш для слов из БД (чтобы не грузить каждый раз)
+_BAD_WORDS_CACHE: dict[str, list[str]] = {}
+
+
+async def _load_bad_words_from_db(db: AsyncSession) -> tuple[list[str], list[str]]:
+    """Загрузить списки плохих слов из БД (с кэшированием)."""
+    global _BAD_WORDS_CACHE
+    
+    # Если кэш не пустой, возвращаем из кэша
+    if "ru" in _BAD_WORDS_CACHE and "en" in _BAD_WORDS_CACHE:
+        return _BAD_WORDS_CACHE["ru"], _BAD_WORDS_CACHE["en"]
+    
+    # Загружаем из БД с обработкой ошибок (на случай, если таблица еще не создана)
+    try:
+        # Ленивый импорт модели, чтобы не падать при инициализации модуля
+        from app.models.bad_word import BadWord
+        
+        result = await db.execute(select(BadWord))
+        bad_words = result.scalars().all()
+        
+        bad_words_ru = []
+        bad_words_en = []
+        
+        for word in bad_words:
+            if word.language == "ru":
+                bad_words_ru.append(word.word.lower())
+            elif word.language == "en":
+                bad_words_en.append(word.word.lower())
+        
+        # Кэшируем результаты
+        _BAD_WORDS_CACHE["ru"] = bad_words_ru
+        _BAD_WORDS_CACHE["en"] = bad_words_en
+        
+        return bad_words_ru, bad_words_en
+    except Exception as e:
+        # Если таблицы нет или произошла ошибка, возвращаем пустые списки и кэшируем их
+        # Это предотвращает повторные попытки запроса к несуществующей таблице
+        # Логируем ошибку для отладки, но не падаем
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.warning(f"Не удалось загрузить плохие слова из БД: {e}. Используются пустые списки.")
+        
+        _BAD_WORDS_CACHE["ru"] = []
+        _BAD_WORDS_CACHE["en"] = []
+        return [], []
+
+
+async def validate_text_field(text: str | None, db: AsyncSession, field_name: str = "Поле") -> tuple[bool, Optional[str]]:
+    """
+    Универсальная функция для проверки текстового поля на плохие слова.
+    
+    Args:
+        text: Текст для проверки (может быть None)
+        db: Сессия БД для загрузки слов из базы
+        field_name: Название поля (для сообщения об ошибке)
+    
+    Returns:
+        (is_valid, reason): (True, None) если всё ок, (False, reason) если найдены проблемы
+    """
+    if not text:
+        return True, None
+    
+    return await check_bad_words(text, db, field_name)
+
+
+async def check_bad_words(text: str, db: AsyncSession, field_name: str = "Поле") -> tuple[bool, Optional[str]]:
+    """
+    Проверить текст на наличие плохих слов.
+    
+    Использует библиотеку better-profanity для английского языка
+    и пользовательский список из БД для русского и английского.
+    
+    Args:
+        text: Текст для проверки
+        db: Сессия БД для загрузки слов из базы
+    
+    Returns:
+        (is_valid, reason): (True, None) если всё ок, (False, reason) если найдены плохие слова
+    """
+    if not text:
+        return True, None
+    
+    text_lower = text.lower()
+    
+    # 1. Проверяем через библиотеку better-profanity (английский язык)
+    try:
+        if profanity.contains_profanity(text):
+            return False, f"{field_name} содержит запрещенные слова"
+    except Exception:
+        pass  # Если библиотека не работает, пропускаем
+    
+    # 2. Загружаем пользовательские слова из БД
+    bad_words_ru, bad_words_en = await _load_bad_words_from_db(db)
+    
+    # 3. Проверяем русские плохие слова из БД
+    for word in bad_words_ru:
+        # Проверяем точное вхождение слова (word boundaries)
+        pattern = r'\b' + re.escape(word) + r'\b'
+        if re.search(pattern, text_lower, re.IGNORECASE):
+            return False, f"{field_name} содержит запрещенные слова"
+    
+    # 4. Проверяем английские плохие слова из БД (дополнительно к библиотеке)
+    for word in bad_words_en:
+        pattern = r'\b' + re.escape(word) + r'\b'
+        if re.search(pattern, text_lower, re.IGNORECASE):
+            return False, f"{field_name} содержит запрещенные слова"
+    
+    # 5. Проверка на спам (повторяющиеся символы)
+    if re.search(r'(.)\1{4,}', text):  # 5+ одинаковых символов подряд
+        return False, f"{field_name} содержит повторяющиеся символы"
+    
+    # 6. Проверка на только спецсимволы (только для полей с обязательным текстом)
+    if not re.search(r'[a-zA-Zа-яА-Я0-9]', text):
+        return False, f"{field_name} должно содержать буквы или цифры"
+    
+    return True, None
+
+
+def validate_preset_settings(
+    preset: Preset, filament: Filament
+) -> tuple[bool, Optional[str]]:
+    """
+    Проверить настройки пресета на разумность для типа материала.
+    
+    Returns:
+        (is_valid, reason): (True, None) если всё ок, (False, reason) если найдены проблемы
+    """
+    material_type = filament.material_type.upper() if filament.material_type else None
+    
+    # Если тип материала не найден в справочнике, используем общие ограничения
+    if material_type not in MATERIAL_SETTINGS_RANGES:
+        # Общие ограничения (жёсткие) - отсекаем только совсем абсурдные значения
+        ranges = {
+            "extruder_temp": {"min": 100, "max": 500},  # Ниже 100°C пластик не плавится, выше 500°C - явно ошибка
+            "bed_temp": {"min": 0, "max": 200},  # Выше 200°C стол обычно не нагревается
+            "print_speed": {"min": 1, "max": 300},  # Меньше 1 мм/с - слишком медленно, больше 300 - абсурдно
+            "fan_speed": {"min": 0, "max": 100},  # Вентилятор всегда 0-100%
+            "retraction_length": {"min": 0, "max": 20},  # Больше 20 мм - явно ошибка
+            "retraction_speed": {"min": 1, "max": 200},  # Абсурдные значения
+        }
+    else:
+        ranges = MATERIAL_SETTINGS_RANGES[material_type]
+    
+    # Проверка температуры экструдера (жёсткие ограничения - только совсем абсурдные значения)
+    if preset.extruder_temp:
+        if preset.extruder_temp < ranges["extruder_temp"]["min"]:
+            return False, (
+                f"Температура сопла слишком низкая ({preset.extruder_temp}°C). "
+                f"Минимальная допустимая температура: {ranges['extruder_temp']['min']}°C"
+            )
+        if preset.extruder_temp > ranges["extruder_temp"]["max"]:
+            return False, (
+                f"Температура сопла слишком высокая ({preset.extruder_temp}°C). "
+                f"Максимальная допустимая температура: {ranges['extruder_temp']['max']}°C. "
+                f"Проверьте, возможно, вы ввели значение в неправильных единицах измерения."
+            )
+    
+    # Проверка температуры стола (жёсткие ограничения)
+    if preset.bed_temp:
+        if preset.bed_temp < ranges["bed_temp"]["min"]:
+            return False, (
+                f"Температура стола слишком низкая ({preset.bed_temp}°C). "
+                f"Минимальная допустимая температура: {ranges['bed_temp']['min']}°C"
+            )
+        if preset.bed_temp > ranges["bed_temp"]["max"]:
+            return False, (
+                f"Температура стола слишком высокая ({preset.bed_temp}°C). "
+                f"Максимальная допустимая температура: {ranges['bed_temp']['max']}°C"
+            )
+    
+    # Проверка скорости печати (жёсткие ограничения)
+    if preset.print_speed:
+        if preset.print_speed < ranges["print_speed"]["min"]:
+            return False, (
+                f"Скорость печати слишком низкая ({preset.print_speed} мм/с). "
+                f"Минимальная допустимая скорость: {ranges['print_speed']['min']} мм/с"
+            )
+        if preset.print_speed > ranges["print_speed"]["max"]:
+            return False, (
+                f"Скорость печати слишком высокая ({preset.print_speed} мм/с). "
+                f"Максимальная допустимая скорость: {ranges['print_speed']['max']} мм/с"
+            )
+    
+    # Проверка скорости вентилятора (всегда 0-100%)
+    if preset.fan_speed is not None:
+        if preset.fan_speed < ranges["fan_speed"]["min"]:
+            return False, (
+                f"Скорость вентилятора не может быть отрицательной ({preset.fan_speed}%). "
+                f"Допустимый диапазон: {ranges['fan_speed']['min']}-{ranges['fan_speed']['max']}%"
+            )
+        if preset.fan_speed > ranges["fan_speed"]["max"]:
+            return False, (
+                f"Скорость вентилятора не может превышать 100% ({preset.fan_speed}%). "
+                f"Допустимый диапазон: {ranges['fan_speed']['min']}-{ranges['fan_speed']['max']}%"
+            )
+    
+    # Проверка длины ретракта (жёсткие ограничения)
+    if preset.retraction_length is not None:
+        if preset.retraction_length < ranges["retraction_length"]["min"]:
+            return False, (
+                f"Длина ретракта не может быть отрицательной ({preset.retraction_length} мм). "
+                f"Допустимый диапазон: {ranges['retraction_length']['min']}-{ranges['retraction_length']['max']} мм"
+            )
+        if preset.retraction_length > ranges["retraction_length"]["max"]:
+            return False, (
+                f"Длина ретракта слишком велика ({preset.retraction_length} мм). "
+                f"Максимальная допустимая длина: {ranges['retraction_length']['max']} мм. "
+                f"Возможно, вы ввели значение в неправильных единицах измерения."
+            )
+    
+    # Проверка скорости ретракта (жёсткие ограничения)
+    if preset.retraction_speed is not None:
+        if preset.retraction_speed < ranges["retraction_speed"]["min"]:
+            return False, (
+                f"Скорость ретракта слишком низкая ({preset.retraction_speed} мм/с). "
+                f"Минимальная допустимая скорость: {ranges['retraction_speed']['min']} мм/с"
+            )
+        if preset.retraction_speed > ranges["retraction_speed"]["max"]:
+            return False, (
+                f"Скорость ретракта слишком высокая ({preset.retraction_speed} мм/с). "
+                f"Максимальная допустимая скорость: {ranges['retraction_speed']['max']} мм/с"
+            )
+    
+    # Дополнительные проверки на абсурдные значения
+    # Температура стола значительно выше температуры экструдера (абсурдно)
+    if preset.bed_temp and preset.extruder_temp:
+        if preset.bed_temp > preset.extruder_temp + 80:  # Допускаем разницу до 80°C (для некоторых экзотических материалов)
+            return False, (
+                f"Температура стола ({preset.bed_temp}°C) значительно выше температуры сопла ({preset.extruder_temp}°C). "
+                f"Это технически невозможно для обычных принтеров."
+            )
+    
+    return True, None
+
+
+async def moderate_preset(
+    preset: Preset, filament: Filament, db: AsyncSession, is_official: bool = False
+) -> tuple[PresetModerationStatus, Optional[str]]:
+    """
+    Автоматическая модерация пресета.
+    
+    Args:
+        preset: Пресет для модерации
+        filament: Материал пресета
+        db: Сессия БД для проверки плохих слов
+        is_official: Является ли пресет официальным (от производителя)
+    
+    Returns:
+        (status, reason): Статус модерации и причина (если отклонен)
+    """
+    # Официальные пресеты всегда одобряются автоматически (доверяем производителям)
+    if is_official:
+        return PresetModerationStatus.APPROVED, None
+    
+    # Проверка названия на плохие слова
+    if preset.name:
+        is_valid_name, name_reason = await check_bad_words(preset.name, db)
+        if not is_valid_name:
+            return PresetModerationStatus.REJECTED, name_reason
+    
+    # Проверка описания на плохие слова (если есть)
+    if preset.description:
+        is_valid_desc, desc_reason = await check_bad_words(preset.description, db)
+        if not is_valid_desc:
+            return PresetModerationStatus.REJECTED, desc_reason
+    
+    # Проверка настроек на разумность
+    is_valid_settings, settings_reason = validate_preset_settings(preset, filament)
+    if not is_valid_settings:
+        return PresetModerationStatus.REJECTED, settings_reason
+    
+    # Всё ок, одобряем
+    return PresetModerationStatus.APPROVED, None
+

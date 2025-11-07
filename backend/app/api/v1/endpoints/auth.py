@@ -88,6 +88,22 @@ async def register(
             detail="Username already taken",
         )
     
+    # Проверка текстовых полей на плохие слова
+    from app.services.preset_moderation import validate_text_field
+    is_valid, error_msg = await validate_text_field(data.username, db, "Имя пользователя")
+    if not is_valid:
+        raise HTTPException(status_code=400, detail=error_msg)
+    
+    if data.full_name:
+        is_valid, error_msg = await validate_text_field(data.full_name, db, "Полное имя")
+        if not is_valid:
+            raise HTTPException(status_code=400, detail=error_msg)
+    
+    if data.bio:
+        is_valid, error_msg = await validate_text_field(data.bio, db, "Биография")
+        if not is_valid:
+            raise HTTPException(status_code=400, detail=error_msg)
+    
     # Роль всегда "user" при регистрации - роль "brand" присваивается только после верификации email
     # если email совпадает с доменом существующего верифицированного бренда
     user_role = UserRole.USER
@@ -366,6 +382,23 @@ async def update_current_user(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Username already taken",
             )
+    
+    # Проверка текстовых полей на плохие слова
+    from app.services.preset_moderation import validate_text_field
+    if "username" in update_data:
+        is_valid, error_msg = await validate_text_field(update_data["username"], db, "Имя пользователя")
+        if not is_valid:
+            raise HTTPException(status_code=400, detail=error_msg)
+    
+    if "full_name" in update_data and update_data["full_name"]:
+        is_valid, error_msg = await validate_text_field(update_data["full_name"], db, "Полное имя")
+        if not is_valid:
+            raise HTTPException(status_code=400, detail=error_msg)
+    
+    if "bio" in update_data and update_data["bio"]:
+        is_valid, error_msg = await validate_text_field(update_data["bio"], db, "Биография")
+        if not is_valid:
+            raise HTTPException(status_code=400, detail=error_msg)
     
     # Если обновляется brand_id, проверяем что бренд существует
     if "brand_id" in update_data and update_data["brand_id"]:

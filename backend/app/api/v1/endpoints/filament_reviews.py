@@ -443,6 +443,18 @@ async def create_review(
                 detail="Вы можете оставить отзыв только на сохраненные вами пресеты или официальный пресет",
             )
     
+    # Проверка текстовых полей на плохие слова
+    from app.services.preset_moderation import validate_text_field
+    if review_data.comment:
+        is_valid, error_msg = await validate_text_field(review_data.comment, db, "Комментарий к отзыву")
+        if not is_valid:
+            raise HTTPException(status_code=400, detail=error_msg)
+    
+    if review_data.printer_model:
+        is_valid, error_msg = await validate_text_field(review_data.printer_model, db, "Модель принтера")
+        if not is_valid:
+            raise HTTPException(status_code=400, detail=error_msg)
+    
     # Проверяем, не оставил ли пользователь уже отзыв для этого пресета
     existing_review_result = await db.execute(
         select(FilamentReview).where(
@@ -519,12 +531,25 @@ async def update_review(
     # Проверяем права: только автор или админ
     if review.user_id != current_user.id and current_user.role.value != "admin":
         raise HTTPException(status_code=403, detail="Нет прав на изменение этого отзыва")
+    
+    # Проверка текстовых полей на плохие слова
+    from app.services.preset_moderation import validate_text_field
+    update_data = review_data.model_dump(exclude_unset=True)
+    
+    if "comment" in update_data:
+        is_valid, error_msg = await validate_text_field(update_data["comment"], db, "Комментарий к отзыву")
+        if not is_valid:
+            raise HTTPException(status_code=400, detail=error_msg)
+    
+    if "printer_model" in update_data:
+        is_valid, error_msg = await validate_text_field(update_data["printer_model"], db, "Модель принтера")
+        if not is_valid:
+            raise HTTPException(status_code=400, detail=error_msg)
 
     # Сохраняем старый preset_id для обновления рейтингов
     old_preset_id = review.preset_id
     
     # Обновляем поля
-    update_data = review_data.model_dump(exclude_unset=True)
     for key, value in update_data.items():
         setattr(review, key, value)
 

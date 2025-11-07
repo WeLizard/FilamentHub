@@ -112,6 +112,17 @@ async def create_printer(
     if existing:
         raise HTTPException(status_code=400, detail="Printer with this slug already exists")
     
+    # Проверка текстовых полей на плохие слова
+    from app.services.preset_moderation import validate_text_field
+    is_valid, error_msg = await validate_text_field(data.name, db, "Название принтера")
+    if not is_valid:
+        raise HTTPException(status_code=400, detail=error_msg)
+    
+    if data.description:
+        is_valid, error_msg = await validate_text_field(data.description, db, "Описание принтера")
+        if not is_valid:
+            raise HTTPException(status_code=400, detail=error_msg)
+    
     # Create printer
     printer = Printer(**data.model_dump())
     db.add(printer)
@@ -142,8 +153,21 @@ async def update_printer(
         if existing:
             raise HTTPException(status_code=400, detail="Printer with this slug already exists")
     
-    # Update fields
+    # Проверка текстовых полей на плохие слова
+    from app.services.preset_moderation import validate_text_field
     update_data = data.model_dump(exclude_unset=True)
+    
+    if "name" in update_data:
+        is_valid, error_msg = await validate_text_field(update_data["name"], db, "Название принтера")
+        if not is_valid:
+            raise HTTPException(status_code=400, detail=error_msg)
+    
+    if "description" in update_data:
+        is_valid, error_msg = await validate_text_field(update_data["description"], db, "Описание принтера")
+        if not is_valid:
+            raise HTTPException(status_code=400, detail=error_msg)
+    
+    # Update fields
     for field, value in update_data.items():
         setattr(printer, field, value)
     

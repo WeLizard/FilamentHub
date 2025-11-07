@@ -60,6 +60,22 @@ async def create_printer_request(
             detail="Запрос на добавление этого принтера уже существует и ожидает рассмотрения"
         )
     
+    # Проверка текстовых полей на плохие слова
+    from app.services.preset_moderation import validate_text_field
+    is_valid, error_msg = await validate_text_field(data.name, db, "Название принтера")
+    if not is_valid:
+        raise HTTPException(status_code=400, detail=error_msg)
+    
+    if data.description:
+        is_valid, error_msg = await validate_text_field(data.description, db, "Описание принтера")
+        if not is_valid:
+            raise HTTPException(status_code=400, detail=error_msg)
+    
+    if data.message:
+        is_valid, error_msg = await validate_text_field(data.message, db, "Сообщение")
+        if not is_valid:
+            raise HTTPException(status_code=400, detail=error_msg)
+    
     # Сериализуем файлы если они есть
     proof_files_str = serialize_proof_files(data.proof_files) if data.proof_files else None
     

@@ -24,6 +24,7 @@ dependencies = [
     "python-dotenv~=1.0.0",
     "slowapi~=0.1.9",
     "qrcode[pil]~=7.4.2",  # Генерация QR-кодов
+    "better-profanity~=0.7.0",  # Проверка плохих слов
 ]
 
 [project.optional-dependencies]

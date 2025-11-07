@@ -132,6 +132,29 @@ async def create_brand_request(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="You already have a pending request to create this brand",
             )
+        
+        # Проверка текстовых полей на плохие слова
+        from app.services.preset_moderation import validate_text_field
+        if data.new_brand_name:
+            is_valid, error_msg = await validate_text_field(data.new_brand_name, db, "Название бренда")
+            if not is_valid:
+                raise HTTPException(status_code=400, detail=error_msg)
+        
+        if data.new_brand_description:
+            is_valid, error_msg = await validate_text_field(data.new_brand_description, db, "Описание бренда")
+            if not is_valid:
+                raise HTTPException(status_code=400, detail=error_msg)
+    
+    # Проверка текстовых полей на плохие слова (для всех типов заявок)
+    if data.message:
+        is_valid, error_msg = await validate_text_field(data.message, db, "Сообщение")
+        if not is_valid:
+            raise HTTPException(status_code=400, detail=error_msg)
+    
+    if data.proof_text:
+        is_valid, error_msg = await validate_text_field(data.proof_text, db, "Описание документов")
+        if not is_valid:
+            raise HTTPException(status_code=400, detail=error_msg)
     
     # Валидация: для CREATE заявок проверяем корпоративность email и обязательность документов
     # Для JOIN заявок: если у бренда есть сотрудники - упрощенная заявка, если нет - полная как для CREATE

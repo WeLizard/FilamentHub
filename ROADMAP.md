@@ -348,6 +348,8 @@
 - [x] Автосинхронизация после авторизации
 - [x] Кнопка "Синхронизировать" для ручного обновления
 - [x] Инкрементальная синхронизация (через `updated_since` параметр)
+- [ ] Реализовать обратный импорт профилей из OrcaSlicer (принтер, печать, филамент) как черновиков в FilamentHub
+- [ ] Создать эндпоинты импорта (`POST /api/v1/printer-profiles/import`, `POST /api/v1/print-profiles/import`, `POST /api/v1/filaments/import`) и обработку черновиков
 - [ ] Обновление уже импортированных пресетов (проверка `updated_at`)
 - [ ] Удаление пресетов из OrcaSlicer если они удалены на FilamentHub
 - [ ] Визуальная пометка профилей FilamentHub в dropdown (иконка/метка)
@@ -646,6 +648,9 @@
 - [ ] Интеграция с Prometheus для истории печатей
 - [ ] Интеграция с OctoPrint/Moonraker
 - [ ] Экспорт в 3D-модели платформы (Thingiverse, Printables)
+
+### 💡 Идеи / Backlog
+- 📌 **Портировать словарный фильтр RussianBadWords** — адаптировать подход из PHP-пакета для выявления русской обсценной лексики с учётом подмены символов и интегрировать в текущую систему модерации [[RussianBadWords](https://github.com/Vasiliy-Makogon/RussianBadWords?ysclid=mhooojzlfs706587399)]
 
 ---
 

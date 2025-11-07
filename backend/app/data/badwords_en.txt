@@ -1,0 +1,20 @@
+# Список запрещенных слов (английский язык)
+# Each word on a new line
+
+# Profanity (examples, add real words)
+# fuck
+# shit
+# damn
+# ass
+
+# Insults
+# idiot
+# stupid
+# dumb
+
+# Spam keywords
+# buy
+# sell
+# spam
+# advertisement
+

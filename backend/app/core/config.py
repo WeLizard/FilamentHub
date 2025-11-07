@@ -16,6 +16,10 @@ class Settings(BaseSettings):
     # Database
     DATABASE_URL: str
     DATABASE_ECHO: bool = False
+    DATABASE_POOL_SIZE: int = 10
+    DATABASE_MAX_OVERFLOW: int = 20
+    DATABASE_POOL_TIMEOUT: int = 30  # seconds
+    DATABASE_POOL_RECYCLE: int = 1800  # seconds (30 minutes)
 
     # Redis
     REDIS_URL: str = "redis://localhost:6379/0"

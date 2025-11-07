@@ -47,8 +47,8 @@ async def list_filaments(
         query = query.where(Filament.material_type == material_type)
     if search:
         search_term = f"%{search.lower()}%"
-        # Search in filament name AND brand name
-        query = query.join(Brand).where(
+        # Search in filament name AND brand name (LEFT JOIN чтобы не потерять филаменты без бренда)
+        query = query.outerjoin(Brand).where(
             or_(
                 Filament.name.ilike(search_term),
                 Brand.name.ilike(search_term)
@@ -65,8 +65,8 @@ async def list_filaments(
         count_query = count_query.where(Filament.material_type == material_type)
     if search:
         search_term = f"%{search.lower()}%"
-        # Search in filament name AND brand name
-        count_query = count_query.join(Brand).where(
+        # Search in filament name AND brand name (LEFT JOIN чтобы не потерять филаменты без бренда)
+        count_query = count_query.outerjoin(Brand).where(
             or_(
                 Filament.name.ilike(search_term),
                 Brand.name.ilike(search_term)
@@ -266,6 +266,22 @@ async def create_filament(
             status_code=403,
             detail="Not enough permissions. You can only create materials for your own brand."
         )
+    
+    # Проверка текстовых полей на плохие слова
+    from app.services.preset_moderation import validate_text_field
+    is_valid, error_msg = await validate_text_field(data.name, db, "Название материала")
+    if not is_valid:
+        raise HTTPException(status_code=400, detail=error_msg)
+    
+    if data.description:
+        is_valid, error_msg = await validate_text_field(data.description, db, "Описание материала")
+        if not is_valid:
+            raise HTTPException(status_code=400, detail=error_msg)
+    
+    if data.color_name:
+        is_valid, error_msg = await validate_text_field(data.color_name, db, "Название цвета")
+        if not is_valid:
+            raise HTTPException(status_code=400, detail=error_msg)
 
     # Create filament
     filament = Filament(**data.model_dump())
@@ -353,9 +369,27 @@ async def update_filament(
             status_code=403,
             detail="Not enough permissions. You can only edit materials from your own brand."
         )
+    
+    # Проверка текстовых полей на плохие слова
+    from app.services.preset_moderation import validate_text_field
+    update_data = data.model_dump(exclude_unset=True)
+    
+    if "name" in update_data:
+        is_valid, error_msg = await validate_text_field(update_data["name"], db, "Название материала")
+        if not is_valid:
+            raise HTTPException(status_code=400, detail=error_msg)
+    
+    if "description" in update_data:
+        is_valid, error_msg = await validate_text_field(update_data["description"], db, "Описание материала")
+        if not is_valid:
+            raise HTTPException(status_code=400, detail=error_msg)
+    
+    if "color_name" in update_data:
+        is_valid, error_msg = await validate_text_field(update_data["color_name"], db, "Название цвета")
+        if not is_valid:
+            raise HTTPException(status_code=400, detail=error_msg)
 
     # Update fields
-    update_data = data.model_dump(exclude_unset=True)
     for field, value in update_data.items():
         setattr(filament, field, value)
 

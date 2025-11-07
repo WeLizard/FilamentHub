@@ -96,6 +96,17 @@ async def create_brand(
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> BrandResponse:
     """Создать производителя."""
+    # Проверка текстовых полей на плохие слова
+    from app.services.preset_moderation import validate_text_field
+    is_valid, error_msg = await validate_text_field(data.name, db, "Название бренда")
+    if not is_valid:
+        raise HTTPException(status_code=400, detail=error_msg)
+    
+    if data.description:
+        is_valid, error_msg = await validate_text_field(data.description, db, "Описание бренда")
+        if not is_valid:
+            raise HTTPException(status_code=400, detail=error_msg)
+    
     # Check if slug exists
     existing = await db.execute(select(Brand).where(Brand.slug == data.slug))
     if existing.scalar_one_or_none():
@@ -122,9 +133,22 @@ async def update_brand(
 
     if not brand:
         raise HTTPException(status_code=404, detail="Brand not found")
+    
+    # Проверка текстовых полей на плохие слова
+    from app.services.preset_moderation import validate_text_field
+    update_data = data.model_dump(exclude_unset=True)
+    
+    if "name" in update_data:
+        is_valid, error_msg = await validate_text_field(update_data["name"], db, "Название бренда")
+        if not is_valid:
+            raise HTTPException(status_code=400, detail=error_msg)
+    
+    if "description" in update_data:
+        is_valid, error_msg = await validate_text_field(update_data["description"], db, "Описание бренда")
+        if not is_valid:
+            raise HTTPException(status_code=400, detail=error_msg)
 
     # Update fields
-    update_data = data.model_dump(exclude_unset=True)
     for field, value in update_data.items():
         setattr(brand, field, value)
 

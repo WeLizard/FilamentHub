@@ -11,6 +11,7 @@ from app.db.base import Base
 
 if TYPE_CHECKING:
     from app.models.preset_printer import PresetPrinter
+    from app.models.printer_profile import PrinterProfile
 
 
 class Printer(Base):
@@ -66,6 +67,9 @@ class Printer(Base):
     # Relationships
     preset_links: Mapped[list["PresetPrinter"]] = relationship(
         "PresetPrinter", back_populates="printer", cascade="all, delete-orphan"
+    )
+    profiles: Mapped[list["PrinterProfile"]] = relationship(
+        "PrinterProfile", back_populates="printer", cascade="all, delete-orphan"
     )
 
     def __repr__(self) -> str:

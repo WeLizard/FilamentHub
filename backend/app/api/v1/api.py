@@ -12,8 +12,10 @@ from app.api.v1.endpoints import (
     filaments,
     notifications,
     presets,
+    printer_profiles,
     printer_requests,
     printers,
+    print_profiles,
     qr,
     saved_presets,
     spoolman,
@@ -29,6 +31,8 @@ api_router.include_router(filaments.router)
 api_router.include_router(presets.router)
 api_router.include_router(qr.router)
 api_router.include_router(printers.router)
+api_router.include_router(printer_profiles.router)
+api_router.include_router(print_profiles.router)
 api_router.include_router(printer_requests.router)
 api_router.include_router(calculator.router)
 api_router.include_router(spoolman.router)

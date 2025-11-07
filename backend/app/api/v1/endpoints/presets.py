@@ -28,6 +28,7 @@ from app.schemas.preset import (
 )
 from app.schemas.printer import PrinterResponse
 from app.services.notification_service import notify_preset_deleted, notify_preset_updated
+from app.services.preset_moderation import moderate_preset
 from app.services.orcaslicer_exporter import export_preset_to_orcaslicer, generate_profile_info, preset_to_orcaslicer_json
 from app.services.preset_recommender import get_recommended_preset_values
 from app.services.weighted_preset_service import create_or_update_weighted_preset
@@ -223,8 +224,21 @@ async def create_preset(
         active=True,
     )
     
-    # Все пресеты автоматически одобрены - модерация не нужна, плохие пресеты отфильтрует рейтинг
-    preset.moderation_status = PresetModerationStatus.APPROVED
+    # Автоматическая модерация пресета (только для пользовательских пресетов)
+    if not data.is_official:
+        moderation_status, moderation_reason = await moderate_preset(
+            preset, filament, db, is_official=False
+        )
+        if moderation_status == PresetModerationStatus.REJECTED:
+            # Не сохраняем пресет, возвращаем ошибку сразу
+            raise HTTPException(
+                status_code=400,
+                detail=f"Пресет отклонён автоматической модерацией: {moderation_reason}. Пожалуйста, исправьте настройки и попробуйте снова."
+            )
+        preset.moderation_status = moderation_status
+    else:
+        # Официальные пресеты автоматически одобряются
+        preset.moderation_status = PresetModerationStatus.APPROVED
     
     db.add(preset)
     await db.flush()  # Получаем ID пресета
@@ -312,12 +326,34 @@ async def update_preset(
             detail="You can only update your own presets"
         )
 
+    # Получаем filament для автомодерации
+    filament_result = await db.execute(select(Filament).where(Filament.id == preset.filament_id))
+    filament = filament_result.scalar_one_or_none()
+    if not filament:
+        raise HTTPException(status_code=404, detail="Filament not found")
+    
     # Обновляем только переданные поля
     update_data = data.model_dump(exclude_unset=True)
     printer_ids = update_data.pop("printer_ids", None)
     
     for field, value in update_data.items():
         setattr(preset, field, value)
+    
+    # Автоматическая модерация при обновлении (только для пользовательских пресетов)
+    if not preset.is_official:
+        moderation_status, moderation_reason = await moderate_preset(
+            preset, filament, db, is_official=preset.is_official
+        )
+        # Если пресет был одобрен, а теперь отклонён - меняем статус
+        if moderation_status == PresetModerationStatus.REJECTED:
+            preset.moderation_status = moderation_status
+            preset.moderation_reason = moderation_reason
+            preset.active = False
+        # Если пресет был отклонён, но теперь проходит проверку - одобряем
+        elif preset.moderation_status == PresetModerationStatus.REJECTED and moderation_status == PresetModerationStatus.APPROVED:
+            preset.moderation_status = moderation_status
+            preset.moderation_reason = None
+            preset.active = True
     
     # Обновляем связи с принтерами, если указаны
     if printer_ids is not None:

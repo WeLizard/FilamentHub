@@ -1,6 +1,6 @@
 /** Страница профиля пользователя */
 
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo, useEffect, type ReactNode } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 import {
@@ -32,14 +32,14 @@ import {
   Clock,
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
-import { presetsAPI, filamentsAPI, brandsAPI, savedPresetsAPI, filamentReviewsAPI, calculatorAPI } from '../api/client';
+import { presetsAPI, filamentsAPI, brandsAPI, savedPresetsAPI, filamentReviewsAPI, calculatorAPI, printerProfilesAPI, printProfilesAPI } from '../api/client';
 import api from '../api/client';
 import { CreatePresetModal } from '../components/CreatePresetModal';
 import { ViewPresetModal } from '../components/ViewPresetModal';
 import { CreatePrinterRequestModal } from '../components/CreatePrinterRequestModal';
 import { DeleteAccountModal } from '../components/DeleteAccountModal';
 import { BrandProfilePage } from './BrandProfilePage';
-import type { Preset, PricingMethod, CalculatorEstimateRequest } from '../types/api';
+import type { Preset, PricingMethod, CalculatorEstimateRequest, PrinterProfile, PrintProfile } from '../types/api';
 
 export const ProfilePage: React.FC = () => {
   const { user, refreshUser } = useAuth();
@@ -53,7 +53,10 @@ export const ProfilePage: React.FC = () => {
   const [isCreatePrinterRequestModalOpen, setIsCreatePrinterRequestModalOpen] = useState(false);
   const [editingPreset, setEditingPreset] = useState<Preset | null>(null);
   const [viewingPreset, setViewingPreset] = useState<Preset | null>(null);
+  const [selectedPrinterProfile, setSelectedPrinterProfile] = useState<PrinterProfile | null>(null);
+  const [selectedPrintProfile, setSelectedPrintProfile] = useState<PrintProfile | null>(null);
   const [isDeleteAccountModalOpen, setIsDeleteAccountModalOpen] = useState(false);
+  const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
 
   // Загружаем пресеты пользователя (созданные им)
   const { data: userPresetsData } = useQuery({
@@ -105,6 +108,30 @@ export const ProfilePage: React.FC = () => {
     enabled: savedPresetIds.length > 0,
   });
 
+  const { data: printerProfilesData, isLoading: isLoadingPrinterProfiles } = useQuery({
+    queryKey: ['printer-profiles', user?.id],
+    queryFn: () =>
+      printerProfilesAPI.list({
+        owner_user_id: user!.id,
+        page: 1,
+        size: 50,
+        active_only: false,
+      }),
+    enabled: !!user?.id,
+  });
+
+  const { data: printProfilesData, isLoading: isLoadingPrintProfiles } = useQuery({
+    queryKey: ['print-profiles', user?.id],
+    queryFn: () =>
+      printProfilesAPI.list({
+        owner_user_id: user!.id,
+        page: 1,
+        size: 50,
+        active_only: false,
+      }),
+    enabled: !!user?.id,
+  });
+
   // Объединяем пресеты: созданные пользователем + сохранённые из каталога
   // Исключаем из сохранённых те, которые уже есть в созданных (чтобы не было дублей)
   const allMyPresets = useMemo(() => {
@@ -117,6 +144,9 @@ export const ProfilePage: React.FC = () => {
   }, [userPresetsData, savedPresetsDetails]);
 
   const userPresets = allMyPresets;
+
+  const myPrinterProfiles = useMemo(() => printerProfilesData?.items ?? [], [printerProfilesData]);
+  const myPrintProfiles = useMemo(() => printProfilesData?.items ?? [], [printProfilesData]);
 
   // Загружаем отзывы пользователя
   const { data: userReviewsData } = useQuery({
@@ -214,6 +244,52 @@ export const ProfilePage: React.FC = () => {
     notes: string;
   }> = [];
 
+  const formatDateTime = (value: string) =>
+    new Date(value).toLocaleString('ru-RU', {
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+    });
+
+  const safeFileName = (value: string) =>
+    (value || '')
+      .trim()
+      .normalize('NFKD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/[\s/\\:]+/g, '-')
+      .replace(/[^a-zA-Z0-9а-яА-ЯёЁ_.-]+/g, '-')
+      .replace(/-+/g, '-')
+      .replace(/^-|-$/g, '')
+      .toLowerCase();
+
+  const downloadJSONFile = (payload: Record<string, any>, filename: string) => {
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  };
+
+  const handleDownloadPrinterProfile = (profile: PrinterProfile) => {
+    const base = safeFileName(profile.slug || profile.name || `printer-profile-${profile.id}`);
+    const filename = `${base || 'printer-profile'}.orca_printer.json`;
+    downloadJSONFile(profile.orcaslicer_settings ?? {}, filename);
+  };
+
+  const handleDownloadPrintProfile = (profile: PrintProfile) => {
+    const base = safeFileName(profile.slug || profile.name || `print-profile-${profile.id}`);
+    const filename = `${base || 'print-profile'}.orca_process.json`;
+    downloadJSONFile(profile.orcaslicer_settings ?? {}, filename);
+  };
+
+  const combinationsDraftCount = 0;
+
   if (!user) {
     return null; // ProtectedRoute должен это обработать
   }
@@ -248,7 +324,7 @@ export const ProfilePage: React.FC = () => {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-10">
       {/* Переключатель профилей */}
       <div className="flex justify-center mb-6">
         <div className="flex bg-white/10 rounded-lg p-1 border border-white/20">
@@ -462,8 +538,130 @@ export const ProfilePage: React.FC = () => {
         onClose={() => setIsDeleteAccountModalOpen(false)}
       />
 
+      {/* Printer Profiles Section */}
+      <section className="mt-12 space-y-6">
+        <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+          <div>
+            <h2 className="text-2xl font-bold text-white">Мои профили принтера</h2>
+            <p className="text-sm text-gray-400">
+              Настройки принтеров, которые можно синхронизировать между FilamentHub и OrcaSlicer.
+            </p>
+          </div>
+          <div className="flex items-center gap-3">
+            <StatusBadge label={`${myPrinterProfiles.length} шт.`} variant="accent" />
+            <button
+              type="button"
+              className="px-4 py-2 rounded-lg border border-white/20 text-sm text-gray-400 bg-white/5 cursor-not-allowed"
+              disabled
+              title="Импорт из OrcaSlicer появится вместе с плагином"
+            >
+              Импорт из OrcaSlicer (скоро)
+            </button>
+          </div>
+        </div>
+
+        {isLoadingPrinterProfiles ? (
+          <ProfileSectionLoader />
+        ) : myPrinterProfiles.length > 0 ? (
+          <div className="grid gap-6 md:grid-cols-2">
+            {myPrinterProfiles.map((profile) => (
+              <PrinterProfileCard
+                key={profile.id}
+                profile={profile}
+                formatDateTime={formatDateTime}
+                onView={(item) => setSelectedPrinterProfile(item)}
+                onDownload={handleDownloadPrinterProfile}
+              />
+            ))}
+          </div>
+        ) : (
+          <EmptyState
+            icon={Printer}
+            title="Пока нет профилей принтера"
+            description="Как только вы импортируете профиль из OrcaSlicer или создадите его вручную, он появится здесь."
+            actionLabel="Запросить добавление принтера"
+            onAction={() => setIsCreatePrinterRequestModalOpen(true)}
+          />
+        )}
+      </section>
+
+      {/* Print Profiles Section */}
+      <section className="mt-12 space-y-6">
+        <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+          <div>
+            <h2 className="text-2xl font-bold text-white">Мои профили печати</h2>
+            <p className="text-sm text-gray-400">
+              Наборы настроек (Print Settings) для разных задач. Их тоже будем синхронизировать с OrcaSlicer.
+            </p>
+          </div>
+          <div className="flex items-center gap-3">
+            <StatusBadge label={`${myPrintProfiles.length} шт.`} variant="accent" />
+            <button
+              type="button"
+              className="px-4 py-2 rounded-lg border border-white/20 text-sm text-gray-400 bg-white/5 cursor-not-allowed"
+              disabled
+              title="Редактор появится после запуска импорта из OrcaSlicer"
+            >
+              Добавить вручную (скоро)
+            </button>
+          </div>
+        </div>
+
+        {isLoadingPrintProfiles ? (
+          <ProfileSectionLoader />
+        ) : myPrintProfiles.length > 0 ? (
+          <div className="grid gap-6 md:grid-cols-2">
+            {myPrintProfiles.map((profile) => (
+              <PrintProfileCard
+                key={profile.id}
+                profile={profile}
+                formatDateTime={formatDateTime}
+                onView={(item) => setSelectedPrintProfile(item)}
+                onDownload={handleDownloadPrintProfile}
+              />
+            ))}
+          </div>
+        ) : (
+          <EmptyState
+            icon={Settings}
+            title="Пока нет профилей печати"
+            description="Импортируйте настройки из OrcaSlicer или создайте их на базе FilamentHub, чтобы ускорить подготовку печати."
+          />
+        )}
+      </section>
+
+      {/* Combined Profiles Section */}
+      <section className="mt-12 space-y-5">
+        <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+          <div>
+            <h2 className="text-2xl font-bold text-white">Комбинации профилей</h2>
+            <p className="text-sm text-gray-400">
+              В планах — собирать связки «принтер + профиль печати + материал» и применять их в один клик.
+            </p>
+          </div>
+          <StatusBadge label="в разработке" variant="muted" />
+        </div>
+
+        <div className="bg-white/5 border border-dashed border-white/20 rounded-2xl p-6 text-gray-200">
+          <p className="text-lg text-white font-semibold mb-2">Конструктор сетапов готовится к запуску.</p>
+          <p className="text-sm text-gray-300">
+            После внедрения обратного импорта OrcaSlicer вы сможете сохранять готовые наборы и делиться ими с командой или друзьями.
+          </p>
+
+          <div className="mt-4 grid gap-4 md:grid-cols-3">
+            <InfoSummary label="Черновиков профилей принтера" value={myPrinterProfiles.length} />
+            <InfoSummary label="Черновиков профилей печати" value={myPrintProfiles.length} />
+            <InfoSummary label="Доступных пресетов" value={userPresets.length} />
+          </div>
+
+          <p className="mt-4 text-xs text-gray-400 uppercase tracking-wide">
+            Комбинаций пока: {combinationsDraftCount}
+          </p>
+        </div>
+      </section>
+
       {/* Кнопка удаления аккаунта */}
-      <div className="mt-8 pt-6 border-t border-white/20">
+      <div className="mt-12 pt-6 border-t border-white/20">
         <div className="max-w-2xl mx-auto">
           <div className="bg-red-500/10 border border-red-500/30 rounded-xl p-4">
             <div className="flex items-center justify-between">
@@ -487,6 +685,22 @@ export const ProfilePage: React.FC = () => {
           </div>
         </div>
       </div>
+
+      {selectedPrinterProfile && (
+        <PrinterProfileModal
+          profile={selectedPrinterProfile}
+          onClose={() => setSelectedPrinterProfile(null)}
+          formatDateTime={formatDateTime}
+        />
+      )}
+
+      {selectedPrintProfile && (
+        <PrintProfileModal
+          profile={selectedPrintProfile}
+          onClose={() => setSelectedPrintProfile(null)}
+          formatDateTime={formatDateTime}
+        />
+      )}
     </div>
   );
 };
@@ -599,7 +813,7 @@ const RecentHistory: React.FC<RecentHistoryProps> = ({ history }) => (
           </div>
         ))
       ) : (
-        <p className="text-gray-400 text-center py-4">Нет истории</p>
+        <p className="text-gray-400 text-center py-4">Пока нет истории печати</p>
       )}
     </div>
   </div>
@@ -1847,4 +2061,363 @@ const ResultCard: React.FC<ResultCardProps> = ({ label, value, icon: Icon, color
     </div>
   </div>
 );
+
+const ProfileSectionLoader: React.FC = () => (
+  <div className="flex items-center justify-center gap-3 py-12 text-gray-300">
+    <Loader2 className="w-5 h-5 animate-spin" />
+    <span>Загружаем профили...</span>
+  </div>
+);
+
+type StatusVariant = 'default' | 'accent' | 'success' | 'warning' | 'muted';
+
+const STATUS_BADGE_STYLES: Record<StatusVariant, string> = {
+  default: 'bg-white/10 text-gray-200 border border-white/20',
+  accent: 'bg-purple-500/15 text-purple-200 border border-purple-500/30',
+  success: 'bg-green-500/15 text-green-200 border border-green-500/30',
+  warning: 'bg-yellow-500/15 text-yellow-200 border border-yellow-500/30',
+  muted: 'bg-white/5 text-gray-400 border border-white/10',
+};
+
+interface StatusBadgeProps {
+  label: string;
+  variant?: StatusVariant;
+}
+
+const StatusBadge: React.FC<StatusBadgeProps> = ({ label, variant = 'default' }) => (
+  <span className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-medium uppercase tracking-wide ${STATUS_BADGE_STYLES[variant]}`}>
+    {label}
+  </span>
+);
+
+interface EmptyStateProps {
+  icon: React.ComponentType<{ className?: string }>;
+  title: string;
+  description: string;
+  actionLabel?: string;
+  onAction?: () => void;
+}
+
+const EmptyState: React.FC<EmptyStateProps> = ({ icon: Icon, title, description, actionLabel, onAction }) => (
+  <div className="bg-white/5 border border-white/10 rounded-2xl p-10 text-center flex flex-col items-center gap-4">
+    <Icon className="w-12 h-12 text-gray-400" />
+    <div>
+      <h3 className="text-xl font-semibold text-white">{title}</h3>
+      <p className="text-sm text-gray-300 mt-1 max-w-xl">{description}</p>
+    </div>
+    {actionLabel && onAction && (
+      <button
+        type="button"
+        onClick={onAction}
+        className="px-4 py-2 rounded-lg bg-white/10 hover:bg-white/15 border border-white/20 text-sm text-white transition-all"
+      >
+        {actionLabel}
+      </button>
+    )}
+  </div>
+);
+
+interface InfoSummaryProps {
+  label: string;
+  value: number | string;
+}
+
+const InfoSummary: React.FC<InfoSummaryProps> = ({ label, value }) => (
+  <div className="bg-white/5 border border-white/10 rounded-xl p-4">
+    <p className="text-xs uppercase tracking-wide text-gray-400">{label}</p>
+    <p className="text-lg font-semibold text-white mt-1">{value}</p>
+  </div>
+);
+
+interface InfoRowProps {
+  label: string;
+  value: ReactNode;
+}
+
+const InfoRow: React.FC<InfoRowProps> = ({ label, value }) => (
+  <div>
+    <p className="text-xs uppercase tracking-wide text-gray-400">{label}</p>
+    <p className="text-sm text-white mt-1 break-words">{value ?? '—'}</p>
+  </div>
+);
+
+interface PrinterProfileCardProps {
+  profile: PrinterProfile;
+  formatDateTime: (value: string) => string;
+  onView: (profile: PrinterProfile) => void;
+  onDownload: (profile: PrinterProfile) => void;
+}
+
+const PrinterProfileCard: React.FC<PrinterProfileCardProps> = ({ profile, formatDateTime, onView, onDownload }) => (
+  <div className="bg-white/10 backdrop-blur-sm border border-white/15 rounded-2xl p-6 shadow-xl">
+    <div className="flex items-start justify-between gap-3">
+      <div>
+        <h3 className="text-xl font-semibold text-white">{profile.name}</h3>
+        <p className="text-sm text-gray-400">Slug: {profile.slug}</p>
+      </div>
+      <div className="flex flex-wrap gap-2 justify-end">
+        <StatusBadge label={profile.active ? 'Активен' : 'Отключен'} variant={profile.active ? 'success' : 'muted'} />
+        {profile.is_official && <StatusBadge label="Официальный" variant="accent" />}
+      </div>
+    </div>
+    {profile.description && (
+      <p className="mt-3 text-sm text-gray-300 line-clamp-3">{profile.description}</p>
+    )}
+    <div className="mt-4 grid gap-3 sm:grid-cols-2">
+      <InfoRow label="Привязка к принтеру" value={profile.printer_id ? `ID ${profile.printer_id}` : 'не указана'} />
+      <InfoRow label="Обновлён" value={formatDateTime(profile.updated_at)} />
+      <InfoRow label="Стартовый G-code" value={profile.start_gcode ? 'задан' : '—'} />
+      <InfoRow label="Финальный G-code" value={profile.end_gcode ? 'задан' : '—'} />
+    </div>
+    <div className="mt-4 flex flex-wrap gap-2">
+      <button
+        type="button"
+        onClick={() => onView(profile)}
+        className="px-4 py-2 rounded-lg border border-white/20 text-sm text-white/90 hover:bg-white/10 transition-all flex items-center gap-2"
+      >
+        <Eye className="w-4 h-4" />
+        Смотреть JSON
+      </button>
+      <button
+        type="button"
+        onClick={() => onDownload(profile)}
+        className="px-4 py-2 rounded-lg border border-white/20 text-sm text-white/90 hover:bg-white/10 transition-all flex items-center gap-2"
+      >
+        <Download className="w-4 h-4" />
+        Скачать JSON
+      </button>
+    </div>
+  </div>
+);
+
+interface PrintProfileCardProps {
+  profile: PrintProfile;
+  formatDateTime: (value: string) => string;
+  onView: (profile: PrintProfile) => void;
+  onDownload: (profile: PrintProfile) => void;
+}
+
+const PrintProfileCard: React.FC<PrintProfileCardProps> = ({ profile, formatDateTime, onView, onDownload }) => {
+  const printersCount = profile.compatible_printers?.length ?? 0;
+  const filamentsCount = profile.compatible_filaments?.length ?? 0;
+
+  return (
+    <div className="bg-white/10 backdrop-blur-sm border border-white/15 rounded-2xl p-6 shadow-xl">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <h3 className="text-xl font-semibold text-white">{profile.name}</h3>
+          <p className="text-sm text-gray-400">Slug: {profile.slug}</p>
+        </div>
+        <div className="flex flex-wrap gap-2 justify-end">
+          <StatusBadge label={profile.active ? 'Активен' : 'Отключен'} variant={profile.active ? 'success' : 'muted'} />
+          {profile.is_official && <StatusBadge label="Официальный" variant="accent" />}
+        </div>
+      </div>
+      {profile.description && (
+        <p className="mt-3 text-sm text-gray-300 line-clamp-3">{profile.description}</p>
+      )}
+      <div className="mt-4 grid gap-3 sm:grid-cols-2">
+        <InfoRow label="Категория" value={profile.category || 'не указана'} />
+        <InfoRow label="Обновлён" value={formatDateTime(profile.updated_at)} />
+        <InfoRow label="Совместимые принтеры" value={`${printersCount} шт.`} />
+        <InfoRow label="Совместимые филаменты" value={`${filamentsCount} шт.`} />
+      </div>
+      <div className="mt-4 flex flex-wrap gap-2">
+        <button
+          type="button"
+          onClick={() => onView(profile)}
+          className="px-4 py-2 rounded-lg border border-white/20 text-sm text-white/90 hover:bg-white/10 transition-all flex items-center gap-2"
+        >
+          <Eye className="w-4 h-4" />
+          Смотреть JSON
+        </button>
+        <button
+          type="button"
+          onClick={() => onDownload(profile)}
+          className="px-4 py-2 rounded-lg border border-white/20 text-sm text-white/90 hover:bg-white/10 transition-all flex items-center gap-2"
+        >
+          <Download className="w-4 h-4" />
+          Скачать JSON
+        </button>
+      </div>
+    </div>
+  );
+};
+
+interface PrinterProfileModalProps {
+  profile: PrinterProfile;
+  onClose: () => void;
+  formatDateTime: (value: string) => string;
+}
+
+const PrinterProfileModal: React.FC<PrinterProfileModalProps> = ({ profile, onClose, formatDateTime }) => {
+  useEffect(() => {
+    const handleKey = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        onClose();
+      }
+    };
+    window.addEventListener('keydown', handleKey);
+    return () => window.removeEventListener('keydown', handleKey);
+  }, [onClose]);
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose} />
+      <div className="relative w-full max-w-4xl max-h-[85vh] overflow-hidden rounded-2xl border border-white/20 bg-white/10 backdrop-blur-md shadow-2xl">
+        <div className="flex items-start justify-between gap-4 px-6 pt-6 pb-4 border-b border-white/10">
+          <div>
+            <h3 className="text-2xl font-semibold text-white">{profile.name}</h3>
+            <p className="text-sm text-gray-300">Slug: {profile.slug}</p>
+          </div>
+          <button
+            type="button"
+            className="text-gray-300 hover:text-white transition-colors"
+            onClick={onClose}
+          >
+            <XCircle className="w-5 h-5" />
+          </button>
+        </div>
+        <div className="px-6 pb-6 pt-2 space-y-6 overflow-y-auto max-h-[70vh] custom-scrollbar">
+          <div className="grid gap-4 sm:grid-cols-2">
+            <InfoRow label="ID профиля" value={`#${profile.id}`} />
+            <InfoRow label="Привязка к принтеру" value={profile.printer_id ? `ID ${profile.printer_id}` : 'не указана'} />
+            <InfoRow label="Создан" value={formatDateTime(profile.created_at)} />
+            <InfoRow label="Обновлён" value={formatDateTime(profile.updated_at)} />
+            <InfoRow label="Тип" value={profile.is_official ? 'Официальный' : 'Пользовательский'} />
+            <InfoRow label="Статус" value={profile.active ? 'Активен' : 'Отключен'} />
+          </div>
+          {profile.description && (
+            <div>
+              <h4 className="text-sm font-semibold text-white mb-2">Описание</h4>
+              <p className="text-sm text-gray-200 whitespace-pre-wrap">{profile.description}</p>
+            </div>
+          )}
+          {profile.notes && (
+            <div>
+              <h4 className="text-sm font-semibold text-white mb-2">Заметки</h4>
+              <p className="text-sm text-gray-200 whitespace-pre-wrap">{profile.notes}</p>
+            </div>
+          )}
+          {profile.start_gcode && (
+            <div>
+              <h4 className="text-sm font-semibold text-white mb-2">Стартовый G-code</h4>
+              <pre className="bg-black/40 border border-white/10 rounded-xl p-4 text-xs text-gray-200 overflow-auto max-h-60 whitespace-pre-wrap">
+                {profile.start_gcode}
+              </pre>
+            </div>
+          )}
+          {profile.end_gcode && (
+            <div>
+              <h4 className="text-sm font-semibold text-white mb-2">Финальный G-code</h4>
+              <pre className="bg-black/40 border border-white/10 rounded-xl p-4 text-xs text-gray-200 overflow-auto max-h-60 whitespace-pre-wrap">
+                {profile.end_gcode}
+              </pre>
+            </div>
+          )}
+          <div>
+            <h4 className="text-sm font-semibold text-white mb-2">Настройки OrcaSlicer</h4>
+            <pre className="bg-black/40 border border-white/10 rounded-xl p-4 text-xs text-gray-200 overflow-auto max-h-72 whitespace-pre">
+              {JSON.stringify(profile.orcaslicer_settings ?? {}, null, 2)}
+            </pre>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+interface PrintProfileModalProps {
+  profile: PrintProfile;
+  onClose: () => void;
+  formatDateTime: (value: string) => string;
+}
+
+const PrintProfileModal: React.FC<PrintProfileModalProps> = ({ profile, onClose, formatDateTime }) => {
+  useEffect(() => {
+    const handleKey = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        onClose();
+      }
+    };
+    window.addEventListener('keydown', handleKey);
+    return () => window.removeEventListener('keydown', handleKey);
+  }, [onClose]);
+
+  const printersList = profile.compatible_printers ?? [];
+  const filamentsList = profile.compatible_filaments ?? [];
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose} />
+      <div className="relative w-full max-w-4xl max-h-[85vh] overflow-hidden rounded-2xl border border-white/20 bg-white/10 backdrop-blur-md shadow-2xl">
+        <div className="flex items-start justify-between gap-4 px-6 pt-6 pb-4 border-b border-white/10">
+          <div>
+            <h3 className="text-2xl font-semibold text-white">{profile.name}</h3>
+            <p className="text-sm text-gray-300">Slug: {profile.slug}</p>
+          </div>
+          <button
+            type="button"
+            className="text-gray-300 hover:text-white transition-colors"
+            onClick={onClose}
+          >
+            <XCircle className="w-5 h-5" />
+          </button>
+        </div>
+        <div className="px-6 pb-6 pt-2 space-y-6 overflow-y-auto max-h-[70vh] custom-scrollbar">
+          <div className="grid gap-4 sm:grid-cols-2">
+            <InfoRow label="ID профиля" value={`#${profile.id}`} />
+            <InfoRow label="Создан" value={formatDateTime(profile.created_at)} />
+            <InfoRow label="Обновлён" value={formatDateTime(profile.updated_at)} />
+            <InfoRow label="Категория" value={profile.category || 'не указана'} />
+            <InfoRow label="Тип" value={profile.is_official ? 'Официальный' : 'Пользовательский'} />
+            <InfoRow label="Статус" value={profile.active ? 'Активен' : 'Отключен'} />
+          </div>
+          {profile.description && (
+            <div>
+              <h4 className="text-sm font-semibold text-white mb-2">Описание</h4>
+              <p className="text-sm text-gray-200 whitespace-pre-wrap">{profile.description}</p>
+            </div>
+          )}
+          {profile.notes && (
+            <div>
+              <h4 className="text-sm font-semibold text-white mb-2">Заметки</h4>
+              <p className="text-sm text-gray-200 whitespace-pre-wrap">{profile.notes}</p>
+            </div>
+          )}
+          {printersList.length > 0 && (
+            <div>
+              <h4 className="text-sm font-semibold text-white mb-2">Совместимые принтеры</h4>
+              <div className="flex flex-wrap gap-2">
+                {printersList.map((item) => (
+                  <span key={item} className="px-2 py-1 bg-white/10 border border-white/15 rounded-lg text-xs text-gray-100">
+                    {item}
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
+          {filamentsList.length > 0 && (
+            <div>
+              <h4 className="text-sm font-semibold text-white mb-2">Совместимые филаменты</h4>
+              <div className="flex flex-wrap gap-2">
+                {filamentsList.map((item) => (
+                  <span key={item} className="px-2 py-1 bg-white/10 border border-white/15 rounded-lg text-xs text-gray-100">
+                    {item}
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
+          <div>
+            <h4 className="text-sm font-semibold text-white mb-2">Настройки OrcaSlicer</h4>
+            <pre className="bg-black/40 border border-white/10 rounded-xl p-4 text-xs text-gray-200 overflow-auto max-h-72 whitespace-pre">
+              {JSON.stringify(profile.orcaslicer_settings ?? {}, null, 2)}
+            </pre>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
 

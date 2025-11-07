@@ -63,6 +63,40 @@ export interface Printer {
   updated_at: string;
 }
 
+export interface PrinterProfile {
+  id: number;
+  printer_id: number | null;
+  owner_user_id: number | null;
+  name: string;
+  slug: string;
+  description: string | null;
+  is_official: boolean;
+  active: boolean;
+  orcaslicer_settings: Record<string, any>;
+  start_gcode: string | null;
+  end_gcode: string | null;
+  notes: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface PrintProfile {
+  id: number;
+  owner_user_id: number | null;
+  name: string;
+  slug: string;
+  description: string | null;
+  category: string | null;
+  is_official: boolean;
+  active: boolean;
+  compatible_printers: string[] | null;
+  compatible_filaments: string[] | null;
+  orcaslicer_settings: Record<string, any>;
+  notes: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface PrinterRequest {
   id: number;
   user_id: number;

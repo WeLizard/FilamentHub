@@ -205,7 +205,7 @@ export const ViewPresetModal: React.FC<ViewPresetModalProps> = ({
   const completePrintExhaustFanSpeed = getNumberValue('complete_print_exhaust_fan_speed');
   const activateAirFiltration = getBoolValue('activate_air_filtration');
 
-  // Ретракция
+  // Ретракт
   const deretractionSpeed = getNumberValue('filament_deretraction_speed');
   const retractionMinimumTravel = getNumberValue('filament_retraction_minimum_travel');
   const retractBeforeWipe = getPercentValue('filament_retract_before_wipe');
@@ -364,7 +364,7 @@ export const ViewPresetModal: React.FC<ViewPresetModalProps> = ({
                     : 'text-gray-400 hover:text-white hover:bg-white/5'
                 }`}
               >
-                Ретракты
+                Ретракт
               </button>
               <button
                 type="button"
@@ -618,7 +618,7 @@ export const ViewPresetModal: React.FC<ViewPresetModalProps> = ({
 
               {activeTab === 'retraction' && (
                 <div className="space-y-4">
-                  {/* Основные параметры ретракции */}
+                  {/* Основные параметры ретракта */}
                   <div>
                     <h4 className="text-xs font-semibold text-white/70 mb-2 pb-1 border-b border-white/10">Основные параметры</h4>
                     <div className="grid grid-cols-3 gap-x-3 gap-y-2 mt-2">
@@ -646,17 +646,17 @@ export const ViewPresetModal: React.FC<ViewPresetModalProps> = ({
                     </div>
                   </div>
 
-                  {/* Дополнительные параметры ретракции */}
+                  {/* Дополнительные параметры ретракта */}
                   <div>
-                    <h4 className="text-xs font-semibold text-white/70 mb-2 pb-1 border-b border-white/10">Дополнительные параметры ретракции</h4>
+                    <h4 className="text-xs font-semibold text-white/70 mb-2 pb-1 border-b border-white/10">Дополнительные параметры ретракта</h4>
                     <div className="grid grid-cols-3 gap-x-3 gap-y-2 mt-2">
-                      <ViewField label="Ретракция при обрезке" value={retractionDistancesWhenCut} />
-                      <ViewField label="Длинные ретракции при обрезке" value={longRetractionsWhenCut} />
+                      <ViewField label="Ретракт при обрезке" value={retractionDistancesWhenCut} />
+                      <ViewField label="Длинные ретракты при обрезке" value={longRetractionsWhenCut} />
                       <div></div>
                       <ViewCheckbox label="Длинный ретракт при смене экстр." checked={longRetractionsWhenEC} />
                       {longRetractionsWhenEC && (
                         <>
-                          <ViewField label="Расстояния ретракции при смене экструдера" value={retractionDistancesWhenEC} unit="mm" />
+                          <ViewField label="Расстояния ретракта при смене экструдера" value={retractionDistancesWhenEC} unit="mm" />
                           <div></div>
                         </>
                       )}

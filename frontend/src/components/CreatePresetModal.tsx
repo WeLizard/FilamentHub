@@ -412,7 +412,7 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
         setFilamentSoluble(settings.filament_soluble?.[0] === '1' || settings.filament_soluble?.[0] === 1);
         setFilamentPrintable(settings.filament_printable?.[0] ? Number(settings.filament_printable[0]) : '');
         
-        // Ретракция (дополнительные параметры)
+        // Ретракт (дополнительные параметры)
         setDeretractionSpeed(settings.filament_deretraction_speed?.[0] ? Number(settings.filament_deretraction_speed[0]) : '');
         setRetractionMinimumTravel(settings.filament_retraction_minimum_travel?.[0] ? Number(settings.filament_retraction_minimum_travel[0]) : '');
         const retractBeforeWipeVal = settings.filament_retract_before_wipe?.[0];
@@ -965,7 +965,7 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
     addBoolParam('filament_soluble', filamentSoluble);
     addParam('filament_printable', filamentPrintable);
 
-    // Ретракция
+    // Ретракт
     addParam('filament_deretraction_speed', deretractionSpeed);
     addParam('filament_retraction_minimum_travel', retractionMinimumTravel);
     addPercentParam('filament_retract_before_wipe', retractBeforeWipe);
@@ -1057,7 +1057,7 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
     addParam('slow_down_min_speed', slowDownMinSpeed); // Минимальная скорость печати при замедлении
     addBoolParam('dont_slow_down_outer_wall', dontSlowDownOuterWall);
 
-    // Дополнительные параметры ретракции
+    // Дополнительные параметры ретракта
     addParam('filament_retraction_distances_when_cut', retractionDistancesWhenCut);
     addParam('filament_long_retractions_when_cut', longRetractionsWhenCut);
     addBoolParam('long_retractions_when_ec', longRetractionsWhenEC);
@@ -2438,7 +2438,7 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
             </div>
             <div>
               <label className="block text-gray-300 mb-2 text-sm font-medium">
-                Длина ретракции (mm)
+                Длина ретракта (mm)
               </label>
               <input
                 type="number"
@@ -2452,7 +2452,7 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
             </div>
             <div>
               <label className="block text-gray-300 mb-2 text-sm font-medium">
-                Скорость ретракции (mm/s)
+                Скорость ретракта (mm/s)
               </label>
               <input
                 type="number"
@@ -3754,15 +3754,15 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                     </div>
                   </div>
 
-                  {/* Дополнительные параметры ретракции */}
+                  {/* Дополнительные параметры ретракта */}
                   <div>
-                    <h4 className="text-sm font-semibold text-white mb-3 pb-2 border-b border-white/10">Дополнительные параметры ретракции</h4>
+                    <h4 className="text-sm font-semibold text-white mb-3 pb-2 border-b border-white/10">Дополнительные параметры ретракта</h4>
                     
                     <div className="space-y-4">
-                      {/* Первая строка: Расстояния при обрезке / Длинные ретракции при обрезке */}
+                      {/* Первая строка: Расстояния при обрезке / Длинные ретракты при обрезке */}
                       <div className="grid grid-cols-2 gap-4">
                         <div>
-                          <label className="block text-gray-300 mb-1 text-sm">Расстояния ретракции при обрезке</label>
+                          <label className="block text-gray-300 mb-1 text-sm">Расстояния ретракта при обрезке</label>
                           <input
                             type="text"
                             value={retractionDistancesWhenCut}
@@ -3773,7 +3773,7 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                           <p className="text-xs text-gray-500 mt-1">Список значений через запятую</p>
                         </div>
                         <div>
-                          <label className="block text-gray-300 mb-1 text-sm">Длинные ретракции при обрезке</label>
+                          <label className="block text-gray-300 mb-1 text-sm">Длинные ретракты при обрезке</label>
                           <input
                             type="text"
                             value={longRetractionsWhenCut}
@@ -3784,7 +3784,7 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                         </div>
                       </div>
 
-                      {/* Длинные ретракции при смене экструдера */}
+                      {/* Длинные ретракты при смене экструдера */}
                       <div className="flex items-center space-x-3">
                         <input
                           type="checkbox"
@@ -3794,14 +3794,14 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                           className="w-4 h-4 rounded border-white/20 bg-white/10 text-purple-500 focus:ring-purple-500"
                         />
                         <label htmlFor="longRetractionsWhenEC" className="text-gray-300 text-sm">
-                          Длинные ретракции при смене экструдера
+                          Длинные ретракты при смене экструдера
                         </label>
                       </div>
 
-                      {/* Расстояния ретракции при смене экструдера */}
+                      {/* Расстояния ретракта при смене экструдера */}
                       {longRetractionsWhenEC && (
                         <div>
-                          <label className="block text-gray-300 mb-1 text-sm">Расстояния ретракции при смене экструдера</label>
+                          <label className="block text-gray-300 mb-1 text-sm">Расстояния ретракта при смене экструдера</label>
                           <div className="relative">
                             <input
                               type="number"

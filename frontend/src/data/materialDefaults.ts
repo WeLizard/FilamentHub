@@ -39,7 +39,7 @@ export interface MaterialDefaults {
     overhang_fan_speed?: number;
     close_fan_the_first_x_layers?: number;
 
-    // Ретракция (расширенная)
+    // Ретракт (расширенная)
     filament_deretraction_speed?: number;
     filament_retraction_minimum_travel?: number;
     filament_retract_when_changing_layer?: boolean;

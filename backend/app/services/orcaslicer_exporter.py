@@ -186,7 +186,7 @@ async def preset_to_orcaslicer_json(
     # Итоговая структура JSON:
     # - Обязательные поля: version, name, from, inherits, filament_settings_id
     # - Уникальные идентификаторы: setting_id, filament_id
-    # - Параметры печати: температуры, вентилятор, ретракция и т.д.
+    # - Параметры печати: температуры, вентилятор, ретракт и т.д.
     # - Расширенные параметры: orcaslicer_settings (если есть)
     #
     # При импорте в OrcaSlicer:
