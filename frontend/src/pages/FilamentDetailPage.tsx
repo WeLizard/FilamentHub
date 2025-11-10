@@ -20,6 +20,8 @@ import {
   Wind,
   ExternalLink,
   Fan,
+  Flame,
+  Hammer,
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { filamentsAPI, brandsAPI, savedPresetsAPI, filamentReviewsAPI, qrAPI } from '../api/client';
@@ -164,6 +166,38 @@ export const FilamentDetailPage: React.FC = () => {
   // РЕЙТИНГ ПРЕСЕТА: отдельно для каждого пресета (preset.rating)
   // Это оценка качества настроек печати для конкретного пресета
   // Показывается у каждого пресета индивидуально
+
+  const getOrcaNumber = (
+    settings: Record<string, any> | null | undefined,
+    key: string,
+  ): number | null => {
+    if (!settings) {
+      return null;
+    }
+    const rawValue = settings[key];
+    if (rawValue === undefined || rawValue === null) {
+      return null;
+    }
+    const baseValue = Array.isArray(rawValue) ? rawValue[0] : rawValue;
+    if (baseValue === undefined || baseValue === null || baseValue === '') {
+      return null;
+    }
+    const normalized =
+      typeof baseValue === 'string'
+        ? baseValue.replace(',', '.').replace(/[^0-9.\-]/g, '')
+        : baseValue;
+    const parsed =
+      typeof normalized === 'string' ? parseFloat(normalized) : Number(normalized);
+    return Number.isNaN(parsed) ? null : parsed;
+  };
+
+  const officialSofteningTemperature = officialPreset
+    ? getOrcaNumber(officialPreset.orcaslicer_settings, 'temperature_vitrification')
+    : null;
+  const officialRequiredNozzleHRC = officialPreset
+    ? getOrcaNumber(officialPreset.orcaslicer_settings, 'required_nozzle_HRC') ??
+      getOrcaNumber(officialPreset.orcaslicer_settings, 'required_nozzle_hrc')
+    : null;
 
   return (
     <div className="space-y-6">
@@ -529,24 +563,6 @@ export const FilamentDetailPage: React.FC = () => {
                       </div>
                     </div>
                   )}
-                  {officialPreset.layer_height && (
-                    <div className="flex items-center space-x-2">
-                      <Ruler className="w-5 h-5 text-green-400" />
-                      <div>
-                        <div className="text-gray-400 text-sm">Слой</div>
-                        <div className="text-white font-semibold">{officialPreset.layer_height}mm</div>
-                      </div>
-                    </div>
-                  )}
-                  {officialPreset.first_layer_height && (
-                    <div className="flex items-center space-x-2">
-                      <Ruler className="w-5 h-5 text-green-300" />
-                      <div>
-                        <div className="text-gray-400 text-sm">Перв. слой</div>
-                        <div className="text-white font-semibold">{officialPreset.first_layer_height}mm</div>
-                      </div>
-                    </div>
-                  )}
                   {officialPreset.flow_rate && (
                     <div className="flex items-center space-x-2">
                       <Gauge className="w-5 h-5 text-yellow-400" />
@@ -560,7 +576,7 @@ export const FilamentDetailPage: React.FC = () => {
                     <div className="flex items-center space-x-2">
                       <Fan className="w-5 h-5 text-orange-400" />
                       <div>
-                        <div className="text-gray-400 text-sm">Вентилятор</div>
+                        <div className="text-gray-400 text-sm">Обдув</div>
                         <div className="text-white font-semibold">{officialPreset.fan_speed}%</div>
                       </div>
                     </div>
@@ -580,6 +596,24 @@ export const FilamentDetailPage: React.FC = () => {
                       <div>
                         <div className="text-gray-400 text-sm">Ск. ретракт</div>
                         <div className="text-white font-semibold">{officialPreset.retraction_speed}mm/s</div>
+                      </div>
+                    </div>
+                  )}
+                  {officialSofteningTemperature !== null && (
+                    <div className="flex items-center space-x-2">
+                      <Flame className="w-5 h-5 text-orange-400" />
+                      <div>
+                        <div className="text-gray-400 text-sm">Темп. стеклования</div>
+                        <div className="text-white font-semibold">{officialSofteningTemperature}°C</div>
+                      </div>
+                    </div>
+                  )}
+                  {officialRequiredNozzleHRC !== null && (
+                    <div className="flex items-center space-x-2">
+                      <Hammer className="w-5 h-5 text-amber-400" />
+                      <div>
+                        <div className="text-gray-400 text-sm">Твёрдость сопла</div>
+                        <div className="text-white font-semibold">{officialRequiredNozzleHRC} HRC</div>
                       </div>
                     </div>
                   )}
@@ -616,7 +650,7 @@ export const FilamentDetailPage: React.FC = () => {
                         <div className="flex items-center space-x-2">
                           <Fan className="w-4 h-4 text-cyan-400" />
                           <div>
-                            <div className="text-gray-400 text-xs">Вентилятор</div>
+                            <div className="text-gray-400 text-xs">Обдув</div>
                             <div className="text-white text-sm font-semibold">
                               {officialPreset.orcaslicer_settings.fan_min_speed[0]}–{officialPreset.orcaslicer_settings.fan_max_speed[0]}%
                             </div>
@@ -651,6 +685,13 @@ export const FilamentDetailPage: React.FC = () => {
                   {communityPresets.map((preset) => {
                     const isPresetSaved = savedPresetIds.has(preset.id);
                     const isPresetOwn = user ? preset.user_id === user.id : false;
+                    const presetSofteningTemperature = getOrcaNumber(
+                      preset.orcaslicer_settings,
+                      'temperature_vitrification',
+                    );
+                    const presetRequiredNozzleHRC =
+                      getOrcaNumber(preset.orcaslicer_settings, 'required_nozzle_HRC') ??
+                      getOrcaNumber(preset.orcaslicer_settings, 'required_nozzle_hrc');
                     return (
                       <div
                         key={preset.id}
@@ -737,24 +778,6 @@ export const FilamentDetailPage: React.FC = () => {
                             </div>
                           </div>
                         )}
-                        {preset.layer_height && (
-                          <div className="flex items-center space-x-2">
-                            <Ruler className="w-4 h-4 text-green-400" />
-                            <div>
-                              <div className="text-gray-400 text-xs">Слой</div>
-                              <div className="text-white text-sm font-semibold">{preset.layer_height}mm</div>
-                            </div>
-                          </div>
-                        )}
-                        {preset.first_layer_height && (
-                          <div className="flex items-center space-x-2">
-                            <Ruler className="w-4 h-4 text-green-300" />
-                            <div>
-                              <div className="text-gray-400 text-xs">Перв. слой</div>
-                              <div className="text-white text-sm font-semibold">{preset.first_layer_height}mm</div>
-                            </div>
-                          </div>
-                        )}
                         {preset.flow_rate && (
                           <div className="flex items-center space-x-2">
                             <Gauge className="w-4 h-4 text-yellow-400" />
@@ -768,7 +791,7 @@ export const FilamentDetailPage: React.FC = () => {
                           <div className="flex items-center space-x-2">
                             <Fan className="w-4 h-4 text-orange-400" />
                             <div>
-                              <div className="text-gray-400 text-xs">Вентилятор</div>
+                              <div className="text-gray-400 text-xs">Обдув</div>
                               <div className="text-white text-sm font-semibold">{preset.fan_speed}%</div>
                             </div>
                           </div>
@@ -788,6 +811,24 @@ export const FilamentDetailPage: React.FC = () => {
                             <div>
                               <div className="text-gray-400 text-xs">Ск. ретракт</div>
                               <div className="text-white text-sm font-semibold">{preset.retraction_speed}mm/s</div>
+                            </div>
+                          </div>
+                        )}
+                        {presetSofteningTemperature !== null && (
+                          <div className="flex items-center space-x-2">
+                            <Flame className="w-4 h-4 text-orange-400" />
+                            <div>
+                              <div className="text-gray-400 text-xs">Темп. стеклования</div>
+                              <div className="text-white text-sm font-semibold">{presetSofteningTemperature}°C</div>
+                            </div>
+                          </div>
+                        )}
+                        {presetRequiredNozzleHRC !== null && (
+                          <div className="flex items-center space-x-2">
+                            <Hammer className="w-4 h-4 text-amber-400" />
+                            <div>
+                              <div className="text-gray-400 text-xs">Твёрдость сопла</div>
+                              <div className="text-white text-sm font-semibold">{presetRequiredNozzleHRC} HRC</div>
                             </div>
                           </div>
                         )}
@@ -823,7 +864,7 @@ export const FilamentDetailPage: React.FC = () => {
                               <div className="flex items-center space-x-2">
                                 <Fan className="w-4 h-4 text-cyan-400" />
                                 <div>
-                                  <div className="text-gray-400 text-xs">Вентилятор</div>
+                                  <div className="text-gray-400 text-xs">Обдув</div>
                                   <div className="text-white text-sm font-semibold">
                                     {preset.orcaslicer_settings.fan_min_speed[0]}–{preset.orcaslicer_settings.fan_max_speed[0]}%
                                   </div>

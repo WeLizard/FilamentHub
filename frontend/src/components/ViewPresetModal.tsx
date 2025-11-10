@@ -307,11 +307,11 @@ export const ViewPresetModal: React.FC<ViewPresetModalProps> = ({
                 <ViewField label="Перемещение" value={travelSpeed} unit="mm/s" />
                 <ViewField label="Обдув" value={fanSpeed} unit="%" />
                 
-                <ViewField label="Высота слоя" value={layerHeight} unit="mm" />
-                <ViewField label="Высота первого слоя" value={firstLayerHeight} unit="mm" />
                 <ViewField label="Поток" value={flowRate} unit="%" />
                 <ViewField label="Длина ретракта" value={retractionLength} unit="mm" />
                 <ViewField label="Скорость ретракта" value={retractionSpeed} unit="mm/s" />
+                <ViewField label="Темп. стеклования" value={softeningTemperature} unit="°C" />
+                <ViewField label="Твёрдость сопла" value={requiredNozzleHRC} unit="HRC" />
               </div>
             </div>
           </div>
@@ -534,9 +534,9 @@ export const ViewPresetModal: React.FC<ViewPresetModalProps> = ({
                     <ViewField label="Слой полной скорости" value={fullFanSpeedLayer} />
                     <ViewField label="Время охлаждения слоя" value={fanCoolingLayerTime} unit="s" />
                     <ViewField label="Время макс. скорости" value={fanMaxSpeedLayerTime} unit="s" />
-                    <ViewField label="Мин. скорость вентилятора" value={fanMinSpeed} unit="%" />
-                    <ViewField label="Макс. скорость вентилятора" value={fanMaxSpeed} unit="%" />
-                    <ViewCheckbox label="Вентилятор всегда включён" checked={reduceFanStopStartFreq} />
+                    <ViewField label="Мин. скорость обдува" value={fanMinSpeed} unit="%" />
+                    <ViewField label="Макс. скорость обдува" value={fanMaxSpeed} unit="%" />
+                    <ViewCheckbox label="Обдув всегда включён" checked={reduceFanStopStartFreq} />
                     <ViewCheckbox label="Замедлять для охлаждения" checked={slowDownForLayerCooling} />
                     <ViewCheckbox label="Не замедлять периметр" checked={dontSlowDownOuterWall} />
                     {slowDownForLayerCooling && (
@@ -558,7 +558,7 @@ export const ViewPresetModal: React.FC<ViewPresetModalProps> = ({
                         )}
                         <ViewField label="Вент. при глажке" value={ironingFanSpeed} unit="%" />
                         <ViewField label="Вент. интерфейса поддержки" value={supportMaterialInterfaceFanSpeed} unit="%" />
-                        <ViewField label="Доп. скорость вентилятора" value={additionalCoolingFanSpeed} unit="%" />
+                        <ViewField label="Доп. скорость обдува" value={additionalCoolingFanSpeed} unit="%" />
                       </>
                     )}
                     <ViewCheckbox label="Вытяжной вентилятор" checked={enableExhaustFan} />
