@@ -1,0 +1,11 @@
+{
+    "default_acceleration": "0",
+    "from": "User",
+    "inherits": "0.20mm Standard @MyKlipper",
+    "name": "0.20mm Standard @Klipper",
+    "outer_wall_speed": "80",
+    "print_settings_id": "0.20mm Standard @Klipper",
+    "seam_position": "back",
+    "version": "1.6.0.0",
+    "wall_sequence": "outer wall/inner wall"
+}

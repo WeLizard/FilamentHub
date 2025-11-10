@@ -5,6 +5,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.core.dependencies import get_current_active_user
 from app.db.session import get_db
@@ -33,7 +34,7 @@ async def list_printer_profiles(
 ) -> PrinterProfileListResponse:
     """List printer profiles with optional filtering."""
 
-    query = select(PrinterProfile)
+    query = select(PrinterProfile).options(selectinload(PrinterProfile.printer))
 
     if active_only:
         query = query.where(PrinterProfile.active.is_(True))
@@ -80,7 +81,9 @@ async def get_printer_profile(
 ) -> PrinterProfileResponse:
     """Get printer profile by ID."""
 
-    result = await db.execute(select(PrinterProfile).where(PrinterProfile.id == profile_id))
+    result = await db.execute(
+        select(PrinterProfile).options(selectinload(PrinterProfile.printer)).where(PrinterProfile.id == profile_id)
+    )
     profile = result.scalar_one_or_none()
 
     if profile is None:
@@ -128,7 +131,16 @@ async def create_printer_profile(
         owner_user_id=owner_user_id,
         is_official=data.is_official if current_user.role == UserRole.ADMIN else False,
         active=data.active,
-        orcaslicer_settings=data.orcaslicer_settings,
+        source=data.source,
+        vendor=data.vendor,
+        external_id=data.external_id,
+        setting_id=data.setting_id,
+        nozzle_diameters=data.nozzle_diameters,
+        printable_area=data.printable_area,
+        printable_height_mm=data.printable_height_mm,
+        default_print_profile_slug=data.default_print_profile_slug,
+        orcaslicer_settings=data.orcaslicer_settings or {},
+        extra_metadata=data.extra_metadata,
         start_gcode=data.start_gcode,
         end_gcode=data.end_gcode,
         notes=data.notes,

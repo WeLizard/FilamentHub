@@ -1,0 +1,26 @@
+{
+    "bed_custom_model": "C:\\\\OrcaSlicer\\\\resources\\\\meshes\\\\ulti_steel_platform.stl",
+    "from": "User",
+    "inherits": "MyKlipper 0.4 nozzle",
+    "machine_end_gcode": "END_PRINT\n",
+    "machine_start_gcode": "G28\nM190 S[bed_temperature_initial_layer_single]\nM109 S[nozzle_temperature_initial_layer]\nSTART_PRINT EXTRUDER_TEMP=[nozzle_temperature_initial_layer] BED_TEMP=[bed_temperature_initial_layer_single]\n",
+    "name": "Ulti 0.4 nozzle",
+    "print_host": "http://188.227.14.160:81/",
+    "printable_area": [
+        "0x0",
+        "197x0",
+        "197x195",
+        "0x195"
+    ],
+    "printable_height": "220",
+    "printer_settings_id": "Ulti 0.4 nozzle",
+    "retraction_length": [
+        "6"
+    ],
+    "thumbnails": "220x220",
+    "use_firmware_retraction": "1",
+    "version": "1.6.0.0",
+    "wipe": [
+        "0"
+    ]
+}

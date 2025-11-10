@@ -1,0 +1,57 @@
+{
+    "default_filament_colour": [
+        "#BDD1D5"
+    ],
+    "fan_min_speed": [
+        "60"
+    ],
+    "filament_cooling_final_speed": [
+        "0"
+    ],
+    "filament_cooling_initial_speed": [
+        "0"
+    ],
+    "filament_cooling_moves": [
+        "0"
+    ],
+    "filament_cost": [
+        "800"
+    ],
+    "filament_loading_speed": [
+        "0"
+    ],
+    "filament_loading_speed_start": [
+        "0"
+    ],
+    "filament_settings_id": [
+        "HTP - PETG Silver"
+    ],
+    "filament_unloading_speed": [
+        "0"
+    ],
+    "filament_unloading_speed_start": [
+        "0"
+    ],
+    "filament_vendor": [
+        "HTP"
+    ],
+    "from": "User",
+    "hot_plate_temp": [
+        "85"
+    ],
+    "hot_plate_temp_initial_layer": [
+        "85"
+    ],
+    "inherits": "Voron Generic PETG",
+    "name": "HTP - PETG Silver",
+    "nozzle_temperature": [
+        "243"
+    ],
+    "nozzle_temperature_initial_layer": [
+        "243"
+    ],
+    "overhang_fan_speed": [
+        "100"
+    ],
+    "version": "1.8.0.0"
+}

@@ -353,7 +353,6 @@ export function applyMaterialDefaults(
     setBedTemp: (value: number) => void;
     setPrintSpeed: (value: number) => void;
     setTravelSpeed: (value: number) => void;
-    setLayerHeight: (value: number) => void;
     setFlowRate: (value: number) => void;
     setFanSpeed: (value: number) => void;
     setRetractionLength: (value: number) => void;
@@ -389,7 +388,6 @@ export function applyMaterialDefaults(
   setters.setBedTemp(defaults.bed_temp);
   setters.setPrintSpeed(defaults.print_speed);
   setters.setTravelSpeed(defaults.travel_speed);
-  setters.setLayerHeight(defaults.layer_height);
   setters.setFlowRate(defaults.flow_rate);
   setters.setFanSpeed(defaults.fan_speed);
   setters.setRetractionLength(defaults.retraction_length);

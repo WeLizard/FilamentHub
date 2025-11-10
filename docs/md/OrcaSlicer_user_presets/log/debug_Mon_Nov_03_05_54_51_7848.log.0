@@ -1,0 +1,140 @@
+[warning]	2025-11-03 05:54:51.677364[Thread 0x000043e4]:Slic3r::NetworkAgent::get_network_function, can not find function bambu_network_get_model_id_from_desgin_id
+[warning]	2025-11-03 05:54:51.678364[Thread 0x000043e4]:Slic3r::NetworkAgent::get_network_function, can not find function bambu_network_get_profile_3mf
+[error]	2025-11-03 05:54:55.900748[Thread 0x000043e4]:Slic3r::GUI::PartPlate::calc_exclude_triangles:Unable to create exclude triangles
+[error]	2025-11-03 05:54:55.902747[Thread 0x000043e4]:Unable to load bed texture: C:\Program Files\OrcaSlicer\resources/profiles/Voron/voron_logo.svg
+[error]	2025-11-03 05:54:56.065562[Thread 0x00008810]:Unable to open the fileC:\Users\Lizard\Desktop\123titled.stl
+[error]	2025-11-03 05:54:56.065562[Thread 0x00005114]:Unable to open the fileC:\Users\Lizard\Downloads\Miyabi\Lhand.stl
+[error]	2025-11-03 05:54:56.065562[Thread 0x00008810]:Unable to open the fileC:\Users\Lizard\Downloads\Miyabi.3mf
+[error]	2025-11-03 05:54:56.065562[Thread 0x00005114]:Unable to open the fileC:\Users\Lizard\Downloads\Trashbag Holder - 6043568\Trashbag_Holder.stl
+[error]	2025-11-03 05:54:56.065562[Thread 0x000060e8]:Unable to open the fileC:\Users\Lizard\Desktop\geek.stl
+[error]	2025-11-03 05:54:56.065562[Thread 0x00008810]:Unable to open the fileC:\Users\Lizard\Downloads\Miyabi.stl
+[error]	2025-11-03 05:54:56.065562[Thread 0x00005114]:Unable to open the fileC:\Users\Lizard\Desktop\2124124v.STL
+[error]	2025-11-03 05:54:56.065562[Thread 0x000060e8]:Unable to open the fileC:\Users\Lizard\Desktop\чего мне не хватает\frostmourn-3.3mf
+[error]	2025-11-03 05:54:56.065562[Thread 0x00008810]:Unable to open the fileC:\Users\Lizard\Downloads\Pico4洞洞板支架_stls\PICO手柄支架.3mf
+[error]	2025-11-03 05:54:56.065562[Thread 0x00007ff8]:Unable to open the fileF:\Ilya\VENOM\venomNewbot.stl
+[error]	2025-11-03 05:54:56.065562[Thread 0x000060e8]:Unable to open the fileC:\Users\Lizard\Downloads\Профиль.3mf
+[error]	2025-11-03 05:54:56.065562[Thread 0x00005828]:Unable to open the fileC:\Users\Lizard\Downloads\Case.3mf
+[error]	2025-11-03 05:54:56.065562[Thread 0x00007ff8]:Unable to open the fileC:\Users\Lizard\Downloads\untitled.stl
+[error]	2025-11-03 05:54:56.065562[Thread 0x000060e8]:Unable to open the fileC:\Users\Lizard\Downloads\Miyabi\Miyabi.3mf
+[error]	2025-11-03 05:54:56.065562[Thread 0x00008810]:Unable to open the fileC:\Users\Lizard\Downloads\winchrack\WinchRack_custom\Нью печать\Красный ролик ведущий.3mf
+[error]	2025-11-03 05:54:56.338121[Thread 0x000043e4]:Unable to load bed texture: C:\Program Files\OrcaSlicer\resources/profiles/Voron/voron_logo.svg
+[error]	2025-11-03 05:54:58.104034[Thread 0x000043e4]:Slic3r::GUI::PartPlate::calc_exclude_triangles:Unable to create exclude triangles
+[error]	2025-11-03 05:54:58.192401[Thread 0x000043e4]:Unable to load bed texture: C:\Program Files\OrcaSlicer\resources/profiles/Voron/voron_logo.svg
+[error]	2025-11-03 05:54:59.704666[Thread 0x000043d8]:[install_plugin]: 1385, got 7 files
+[warning]	2025-11-03 05:55:00.509235[Thread 0x000043e4]:Slic3r::NetworkAgent::get_network_function, can not find function bambu_network_get_model_id_from_desgin_id
+[warning]	2025-11-03 05:55:00.509235[Thread 0x000043e4]:Slic3r::NetworkAgent::get_network_function, can not find function bambu_network_get_profile_3mf
+[error]	2025-11-03 05:55:00.540328[Thread 0x000043e4]:can not find parent for config C:\Users\Lizard\AppData\Roaming\OrcaSlicer\user\2136879404\process\0.20mm Standard @Creality Ender3V2 - Копировать.json!
+[warning]	2025-11-03 05:55:16.117597[Thread 0x000043e4]:Slic3r::PresetCollection::load_user_preset, can not find inherit preset for user preset 0.20mm Standard @BBL X1C - Копия, just skip
+[warning]	2025-11-03 05:55:16.117597[Thread 0x000043e4]:Slic3r::PresetCollection::load_user_preset, can not find inherit preset for user preset 0.20mm Standard @Creality Ender3V2 - Копировать, just skip
+[warning]	2025-11-03 05:55:16.117597[Thread 0x000043e4]:Slic3r::PresetCollection::load_user_preset, can not find inherit preset for user preset ABS (НИТ), just skip
+[warning]	2025-11-03 05:55:16.118597[Thread 0x000043e4]:Slic3r::PresetCollection::load_user_preset, can not find inherit preset for user preset ABS-5 (HTP), just skip
+[warning]	2025-11-03 05:55:16.118597[Thread 0x000043e4]:Slic3r::PresetCollection::load_user_preset, can not find inherit preset for user preset CARBEX LARETC, just skip
+[warning]	2025-11-03 05:55:16.118597[Thread 0x000043e4]:Slic3r::PresetCollection::load_user_preset, can not find inherit preset for user preset CarbeX, just skip
+[warning]	2025-11-03 05:55:16.118597[Thread 0x000043e4]:Slic3r::PresetCollection::load_user_preset, can not find inherit preset for user preset Creality Generic PETG , just skip
+[warning]	2025-11-03 05:55:16.118597[Thread 0x000043e4]:Slic3r::PresetCollection::load_user_preset, can not find inherit preset for user preset ERYONE - PLA Silk, just skip
+[warning]	2025-11-03 05:55:16.118597[Thread 0x000043e4]:Slic3r::PresetCollection::load_user_preset, can not find inherit preset for user preset FDPlast - ABS, just skip
+[warning]	2025-11-03 05:55:16.119596[Thread 0x000043e4]:Slic3r::PresetCollection::load_user_preset, can not find inherit preset for user preset FLEX HARD, just skip
+[warning]	2025-11-03 05:55:16.119596[Thread 0x000043e4]:Slic3r::PresetCollection::load_user_preset, can not find inherit preset for user preset FormaX, just skip
+[warning]	2025-11-03 05:55:16.119596[Thread 0x000043e4]:Slic3r::PresetCollection::load_user_preset, can not find inherit preset for user preset HTP - ABS-5, just skip
+[warning]	2025-11-03 05:55:16.119596[Thread 0x000043e4]:Slic3r::PresetCollection::load_user_preset, can not find inherit preset for user preset HTP - ABS-6, just skip
+[warning]	2025-11-03 05:55:16.119596[Thread 0x000043e4]:Slic3r::PresetCollection::load_user_preset, can not find inherit preset for user preset HTP - PET.htp, just skip
+[warning]	2025-11-03 05:55:16.119596[Thread 0x000043e4]:Slic3r::PresetCollection::load_user_preset, can not find inherit preset for user preset HTP - PETG Black, just skip
+[warning]	2025-11-03 05:55:16.119596[Thread 0x000043e4]:Slic3r::PresetCollection::load_user_preset, can not find inherit preset for user preset HTP - PETG Gold, just skip
+[warning]	2025-11-03 05:55:16.119596[Thread 0x000043e4]:Slic3r::PresetCollection::load_user_preset, can not find inherit preset for user preset HTP - PETG Silver, just skip
+[warning]	2025-11-03 05:55:16.119596[Thread 0x000043e4]:Slic3r::PresetCollection::load_user_preset, can not find inherit preset for user preset Kingroon TPU Black, just skip
+[warning]	2025-11-03 05:55:16.120597[Thread 0x000043e4]:Slic3r::PresetCollection::load_user_preset, can not find inherit preset for user preset NYLON LARETC, just skip
+[warning]	2025-11-03 05:55:16.120597[Thread 0x000043e4]:Slic3r::PresetCollection::load_user_preset, can not find inherit preset for user preset NYLON MOD LARETC, just skip
+[warning]	2025-11-03 05:55:16.120597[Thread 0x000043e4]:Slic3r::PresetCollection::load_user_preset, can not find inherit preset for user preset PA66 GF-30, just skip
+[warning]	2025-11-03 05:55:16.120597[Thread 0x000043e4]:Slic3r::PresetCollection::load_user_preset, can not find inherit preset for user preset PET-Gun Transparent, just skip
+[warning]	2025-11-03 05:55:16.120597[Thread 0x000043e4]:Slic3r::PresetCollection::load_user_preset, can not find inherit preset for user preset PET.htp, just skip
+[warning]	2025-11-03 05:55:16.120597[Thread 0x000043e4]:Slic3r::PresetCollection::load_user_preset, can not find inherit preset for user preset PET.htp (HTP), just skip
+[warning]	2025-11-03 05:55:16.120597[Thread 0x000043e4]:Slic3r::PresetCollection::load_user_preset, can not find inherit preset for user preset PETG (Syntech), just skip
+[warning]	2025-11-03 05:55:16.120597[Thread 0x000043e4]:Slic3r::PresetCollection::load_user_preset, can not find inherit preset for user preset PETG Transparrent LARETC, just skip
+[warning]	2025-11-03 05:55:16.120597[Thread 0x000043e4]:Slic3r::PresetCollection::load_user_preset, can not find inherit preset for user preset PETG h.t.p, just skip
+[warning]	2025-11-03 05:55:16.120597[Thread 0x000043e4]:Slic3r::PresetCollection::load_user_preset, can not find inherit preset for user preset PETG h.t.p., just skip
+[warning]	2025-11-03 05:55:16.120597[Thread 0x000043e4]:Slic3r::PresetCollection::load_user_preset, can not find inherit preset for user preset PETG-1 (HTP), just skip
+[warning]	2025-11-03 05:55:16.120597[Thread 0x000043e4]:Slic3r::PresetCollection::load_user_preset, can not find inherit preset for user preset PETG-3 (HTP), just skip
+[warning]	2025-11-03 05:55:16.120597[Thread 0x000043e4]:Slic3r::PresetCollection::load_user_preset, can not find inherit preset for user preset PLA ERYONE, just skip
+[warning]	2025-11-03 05:55:16.121597[Thread 0x000043e4]:Slic3r::PresetCollection::load_user_preset, can not find inherit preset for user preset PP LARETC, just skip
+[warning]	2025-11-03 05:55:16.121597[Thread 0x000043e4]:Slic3r::PresetCollection::load_user_preset, can not find inherit preset for user preset PritProduct - PETG Transparent, just skip
+[warning]	2025-11-03 05:55:16.121597[Thread 0x000043e4]:Slic3r::PresetCollection::load_user_preset, can not find inherit preset for user preset TOTAL GF-10, just skip
+[warning]	2025-11-03 05:55:16.121597[Thread 0x000043e4]:Slic3r::PresetCollection::load_user_preset, can not find inherit preset for user preset TOTAL GF-30, just skip
+[warning]	2025-11-03 05:55:16.121597[Thread 0x000043e4]:Slic3r::PresetCollection::load_user_preset, can not find inherit preset for user preset Voron Generic TPU - Копировать, just skip
+[warning]	2025-11-03 05:55:16.121597[Thread 0x000043e4]:Slic3r::PresetCollection::load_user_preset, can not find inherit preset for user preset НИТ - PETG Transparent, just skip
+[error]	2025-11-03 05:55:19.583109[Thread 0x000043e4]:Slic3r::NetworkAgent::connect_server error: network_agent=0000027FC18C3020, ret=-2
+[warning]	2025-11-03 05:55:20.245845[Thread 0x00008e24]:[Orca Updater]: online version=1.10.1.9, current_version=1.10.1.9, no need to download
+[error]	2025-11-03 05:55:20.267582[Thread 0x000043e4]:Slic3r::GUI::PartPlate::calc_exclude_triangles:Unable to create exclude triangles
+[error]	2025-11-03 05:55:20.348837[Thread 0x000043e4]:Unable to load bed texture: C:\Program Files\OrcaSlicer\resources/profiles/Voron/voron_logo.svg
+[error]	2025-11-03 05:55:26.712167[Thread 0x000043e4]:Slic3r::GUI::PartPlate::calc_exclude_triangles:Unable to create exclude triangles
+[error]	2025-11-03 05:55:26.731164[Thread 0x000043e4]:Slic3r::GUI::PartPlate::calc_exclude_triangles:Unable to create exclude triangles
+[error]	2025-11-03 05:55:26.749164[Thread 0x000043e4]:Slic3r::GUI::PartPlate::calc_exclude_triangles:Unable to create exclude triangles
+[error]	2025-11-03 05:55:26.767166[Thread 0x000043e4]:Slic3r::GUI::PartPlate::calc_exclude_triangles:Unable to create exclude triangles
+[error]	2025-11-03 05:55:26.784164[Thread 0x000043e4]:Slic3r::GUI::PartPlate::calc_exclude_triangles:Unable to create exclude triangles
+[error]	2025-11-03 05:55:26.785165[Thread 0x000043e4]:Slic3r::GUI::PartPlate::calc_exclude_triangles:Unable to create exclude triangles
+[error]	2025-11-03 05:55:26.785165[Thread 0x000043e4]:Slic3r::GUI::PartPlate::calc_exclude_triangles:Unable to create exclude triangles
+[error]	2025-11-03 05:55:26.803164[Thread 0x000043e4]:Slic3r::GUI::PartPlate::calc_exclude_triangles:Unable to create exclude triangles
+[error]	2025-11-03 05:55:26.821165[Thread 0x000043e4]:Slic3r::GUI::PartPlate::calc_exclude_triangles:Unable to create exclude triangles
+[error]	2025-11-03 05:55:26.839163[Thread 0x000043e4]:Slic3r::GUI::PartPlate::calc_exclude_triangles:Unable to create exclude triangles
+[error]	2025-11-03 05:55:26.856679[Thread 0x000043e4]:Slic3r::GUI::PartPlate::calc_exclude_triangles:Unable to create exclude triangles
+[error]	2025-11-03 05:55:26.874682[Thread 0x000043e4]:Slic3r::GUI::PartPlate::calc_exclude_triangles:Unable to create exclude triangles
+[error]	2025-11-03 05:55:26.875682[Thread 0x000043e4]:Slic3r::GUI::PartPlate::calc_exclude_triangles:Unable to create exclude triangles
+[error]	2025-11-03 05:55:26.875682[Thread 0x000043e4]:Slic3r::GUI::PartPlate::calc_exclude_triangles:Unable to create exclude triangles
+[error]	2025-11-03 05:55:26.875682[Thread 0x000043e4]:Slic3r::GUI::PartPlate::calc_exclude_triangles:Unable to create exclude triangles
+[error]	2025-11-03 05:55:26.876681[Thread 0x000043e4]:Slic3r::GUI::PartPlate::calc_exclude_triangles:Unable to create exclude triangles
+[error]	2025-11-03 05:55:26.876681[Thread 0x000043e4]:Slic3r::GUI::PartPlate::calc_exclude_triangles:Unable to create exclude triangles
+[error]	2025-11-03 05:55:26.876681[Thread 0x000043e4]:Slic3r::GUI::PartPlate::calc_exclude_triangles:Unable to create exclude triangles
+[error]	2025-11-03 05:55:31.239204[Thread 0x000043e4]:Unable to load bed texture: C:\Program Files\OrcaSlicer\resources/profiles/Voron/voron_logo.svg
+[error]	2025-11-03 05:55:33.232848[Thread 0x000043e4]:Slic3r::GUI::Tab::tree_sel_change_delayedcan not find page with current selection 
+[error]	2025-11-03 05:55:43.623278[Thread 0x000043e4]:Slic3r::GUI::Tab::tree_sel_change_delayedcan not find page with current selection 
+[error]	2025-11-03 05:55:44.134391[Thread 0x000043e4]:Slic3r::GUI::Tab::tree_sel_change_delayedcan not find page with current selection 
+[error]	2025-11-03 05:55:45.599924[Thread 0x000043e4]:Slic3r::GUI::Tab::tree_sel_change_delayedcan not find page with current selection 
+[error]	2025-11-03 05:55:46.387420[Thread 0x000043e4]:Slic3r::GUI::Tab::tree_sel_change_delayedcan not find page with current selection 
+[error]	2025-11-03 05:55:47.021209[Thread 0x000043e4]:Slic3r::GUI::Tab::tree_sel_change_delayedcan not find page with current selection 
+[error]	2025-11-03 05:55:47.230215[Thread 0x000043e4]:Slic3r::GUI::Tab::tree_sel_change_delayedcan not find page with current selection 
+[error]	2025-11-03 05:55:49.423380[Thread 0x000043e4]:Slic3r::GUI::Tab::tree_sel_change_delayedcan not find page with current selection 
+[error]	2025-11-03 05:55:49.707459[Thread 0x000043e4]:Slic3r::GUI::Tab::tree_sel_change_delayedcan not find page with current selection 
+[error]	2025-11-03 05:55:51.682277[Thread 0x000043e4]:Slic3r::GUI::PartPlate::calc_exclude_triangles:Unable to create exclude triangles
+[error]	2025-11-03 05:55:51.683282[Thread 0x000043e4]:Slic3r::GUI::PartPlate::calc_exclude_triangles:Unable to create exclude triangles
+[error]	2025-11-03 05:55:51.684277[Thread 0x000043e4]:Slic3r::GUI::PartPlate::calc_exclude_triangles:Unable to create exclude triangles
+[error]	2025-11-03 05:55:51.684277[Thread 0x000043e4]:Slic3r::GUI::PartPlate::calc_exclude_triangles:Unable to create exclude triangles
+[error]	2025-11-03 05:55:51.685277[Thread 0x000043e4]:Slic3r::GUI::PartPlate::calc_exclude_triangles:Unable to create exclude triangles
+[error]	2025-11-03 05:55:51.685277[Thread 0x000043e4]:Slic3r::GUI::PartPlate::calc_exclude_triangles:Unable to create exclude triangles
+[error]	2025-11-03 05:55:51.686276[Thread 0x000043e4]:Slic3r::GUI::PartPlate::calc_exclude_triangles:Unable to create exclude triangles
+[error]	2025-11-03 05:55:51.686276[Thread 0x000043e4]:Slic3r::GUI::PartPlate::calc_exclude_triangles:Unable to create exclude triangles
+[error]	2025-11-03 05:55:51.687276[Thread 0x000043e4]:Slic3r::GUI::PartPlate::calc_exclude_triangles:Unable to create exclude triangles
+[error]	2025-11-03 05:55:51.687276[Thread 0x000043e4]:Slic3r::GUI::PartPlate::calc_exclude_triangles:Unable to create exclude triangles
+[error]	2025-11-03 05:55:51.806482[Thread 0x000043e4]:Slic3r::GUI::Tab::tree_sel_change_delayedcan not find page with current selection 
+[error]	2025-11-03 05:55:59.399199[Thread 0x000043e4]:Slic3r::GUI::Tab::tree_sel_change_delayedcan not find page with current selection 
+[error]	2025-11-03 05:55:59.603956[Thread 0x000043e4]:Slic3r::GUI::Tab::tree_sel_change_delayedcan not find page with current selection 
+[error]	2025-11-03 05:55:59.957308[Thread 0x000043e4]:Slic3r::GUI::Tab::tree_sel_change_delayedcan not find page with current selection 
+[error]	2025-11-03 05:56:00.369237[Thread 0x000043e4]:Slic3r::GUI::Tab::tree_sel_change_delayedcan not find page with current selection 
+[error]	2025-11-03 05:56:00.586147[Thread 0x000043e4]:Slic3r::GUI::Tab::tree_sel_change_delayedcan not find page with current selection 
+[error]	2025-11-03 05:56:00.933755[Thread 0x000043e4]:Slic3r::GUI::Tab::tree_sel_change_delayedcan not find page with current selection 
+[error]	2025-11-03 05:56:01.183818[Thread 0x000043e4]:Slic3r::GUI::Tab::tree_sel_change_delayedcan not find page with current selection 
+[error]	2025-11-03 05:56:01.423613[Thread 0x000043e4]:Slic3r::GUI::Tab::tree_sel_change_delayedcan not find page with current selection 
+[error]	2025-11-03 05:56:01.678359[Thread 0x000043e4]:Slic3r::GUI::Tab::tree_sel_change_delayedcan not find page with current selection 
+[error]	2025-11-03 05:56:10.727128[Thread 0x000043e4]:Slic3r::GUI::Tab::tree_sel_change_delayedcan not find page with current selection 
+[error]	2025-11-03 05:56:16.299776[Thread 0x000043e4]:Slic3r::GUI::Tab::tree_sel_change_delayedcan not find page with current selection 
+[warning]	2025-11-03 05:56:16.444168[Thread 0x000078ec]:Arrange full params: {"min_obj_distance":0,"accuracy":1,000000,"parallel":1,"allow_rotations":0,"do_final_align":1,"allow_multi_materials_on_same_plate":1,"avoid_extrusion_cali_region":1,"is_seq_print":0,"bed_shrink_x":1,000000,"bed_shrink_y":1,000000,"brim_skirt_distance":0,000000,"clearance_height_to_rod":36,000000,"clearance_height_to_lid":140,000000,"clearance_radius":65,000000,"printable_height":325,000000,
+[error]	2025-11-03 05:56:18.975217[Thread 0x000043e4]:Slic3r::GUI::Tab::tree_sel_change_delayedcan not find page with current selection 
+[error]	2025-11-03 05:56:20.375637[Thread 0x000043e4]:Slic3r::GUI::Tab::tree_sel_change_delayedcan not find page with current selection 
+[warning]	2025-11-03 05:56:21.750390[Thread 0x000078ec]:Arrange full params: {"min_obj_distance":0,"accuracy":1,000000,"parallel":1,"allow_rotations":0,"do_final_align":1,"allow_multi_materials_on_same_plate":1,"avoid_extrusion_cali_region":1,"is_seq_print":0,"bed_shrink_x":1,000000,"bed_shrink_y":1,000000,"brim_skirt_distance":0,000000,"clearance_height_to_rod":36,000000,"clearance_height_to_lid":140,000000,"clearance_radius":65,000000,"printable_height":325,000000,
+[error]	2025-11-03 05:56:27.289440[Thread 0x000043e4]:Slic3r::GUI::Tab::tree_sel_change_delayedcan not find page with current selection 
+[warning]	2025-11-03 05:56:32.248775[Thread 0x00008e50]:SupportSpotsGenerator does not currently handle different materials properly, only first will be used
+[warning]	2025-11-03 05:56:32.357703[Thread 0x00008e50]:SupportSpotsGenerator does not currently handle different materials properly, only first will be used
+[warning]	2025-11-03 05:56:32.444845[Thread 0x00008e50]:SupportSpotsGenerator does not currently handle different materials properly, only first will be used
+[warning]	2025-11-03 05:56:32.530657[Thread 0x00008e50]:SupportSpotsGenerator does not currently handle different materials properly, only first will be used
+[warning]	2025-11-03 05:56:32.554858[Thread 0x00008e50]:SupportSpotsGenerator does not currently handle different materials properly, only first will be used
+[warning]	2025-11-03 05:56:32.570420[Thread 0x00008e50]:SupportSpotsGenerator does not currently handle different materials properly, only first will be used
+[warning]	2025-11-03 05:56:32.586032[Thread 0x00008e50]:SupportSpotsGenerator does not currently handle different materials properly, only first will be used
+[warning]	2025-11-03 05:56:32.590999[Thread 0x00008e50]:SupportSpotsGenerator does not currently handle different materials properly, only first will be used
+[warning]	2025-11-03 05:56:32.603536[Thread 0x00008e50]:SupportSpotsGenerator does not currently handle different materials properly, only first will be used
+[warning]	2025-11-03 05:56:32.606536[Thread 0x00008e50]:SupportSpotsGenerator does not currently handle different materials properly, only first will be used
+[warning]	2025-11-03 05:56:32.614352[Thread 0x00008e50]:SupportSpotsGenerator does not currently handle different materials properly, only first will be used
+[warning]	2025-11-03 05:56:32.617352[Thread 0x00008e50]:SupportSpotsGenerator does not currently handle different materials properly, only first will be used
+[error]	2025-11-03 05:56:57.526380[Thread 0x00008e50]:Failed to apply the print statistics to the export file name: Parsing error at line 1: Non-ASCII7 characters are only allowed inside text blocks and string literals, not inside code blocks.
+Красное колесо большое 2шт_ABS_6h38m
+^
+[error]	2025-11-03 06:00:10.125426[Thread 0x000043e4]:Slic3r::GUI::PartPlate::calc_exclude_triangles:Unable to create exclude triangles
+[error]	2025-11-03 06:00:11.059463[Thread 0x000043e4]:Slic3r::GUI::Tab::tree_sel_change_delayedcan not find page with current selection 
+[error]	2025-11-03 06:00:12.111627[Thread 0x000043e4]:Unable to load bed texture: C:\Program Files\OrcaSlicer\resources/profiles/Voron/voron_logo.svg

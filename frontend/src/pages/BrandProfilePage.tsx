@@ -269,14 +269,14 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({ onBack }) =>
                   <List className="w-4 h-4" />
                 </button>
               </div>
-              <button
-                onClick={handleCreateFilament}
-                disabled={isLoadingFilaments}
-                className="bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700 text-white px-4 py-2 rounded-xl transition-all shadow-lg shadow-green-500/25 hover:shadow-green-500/40 disabled:opacity-50 disabled:cursor-not-allowed flex items-center space-x-2"
-              >
-                <Plus className="w-4 h-4" />
-                <span>Новый материал</span>
-              </button>
+            <button
+              onClick={handleCreateFilament}
+              disabled={isLoadingFilaments}
+              className="bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700 text-white px-4 py-2 rounded-xl transition-all shadow-lg shadow-green-500/25 hover:shadow-green-500/40 disabled:opacity-50 disabled:cursor-not-allowed flex items-center space-x-2"
+            >
+              <Plus className="w-4 h-4" />
+              <span>Новый материал</span>
+            </button>
             </div>
           </div>
 
@@ -303,18 +303,18 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({ onBack }) =>
             <>
               {filaments.length > 0 ? (
                 materialsViewMode === 'grid' ? (
-                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                    {filaments.map((filament) => (
-                      <FilamentCard
-                        key={filament.id}
-                        filament={filament}
-                        onEdit={handleEditFilament}
-                        onDelete={handleDeleteFilament}
-                        onShowQR={(filament) => setShowQRFilament(filament)}
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                  {filaments.map((filament) => (
+                    <FilamentCard
+                      key={filament.id}
+                      filament={filament}
+                      onEdit={handleEditFilament}
+                      onDelete={handleDeleteFilament}
+                      onShowQR={(filament) => setShowQRFilament(filament)}
                         viewMode="grid"
-                      />
-                    ))}
-                  </div>
+                    />
+                  ))}
+                </div>
                 ) : (
                   <div className="space-y-3">
                     {filaments.map((filament) => (
@@ -456,7 +456,7 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({ onBack }) =>
                     {preset.fan_speed !== null && (
                       <div className="flex items-center space-x-1">
                         <Fan className="w-4 h-4 text-green-400" />
-                        <span className="text-gray-300">Вентилятор: {preset.fan_speed}%</span>
+                        <span className="text-gray-300">Обдув: {preset.fan_speed}%</span>
                       </div>
                     )}
                   </div>
@@ -2022,40 +2022,40 @@ const BrandSelectionForm: React.FC = () => {
             renderOption={(option) => {
               const brand = allBrands.find((b) => b.id === option.value);
               return (
-                <>
-                  <span className="flex items-center gap-2">
+              <>
+                <span className="flex items-center gap-2">
                     {brand?.verified ? (
-                      <Shield className="w-4 h-4 text-green-400 flex-shrink-0" />
+                  <Shield className="w-4 h-4 text-green-400 flex-shrink-0" />
                     ) : (
                       <Factory className="w-4 h-4 text-gray-400 flex-shrink-0" />
                     )}
-                    <span>{option.label}</span>
+                  <span>{option.label}</span>
                     {brand?.verified ? (
-                      <span className="text-gray-400 text-xs">(верифицирован)</span>
+                  <span className="text-gray-400 text-xs">(верифицирован)</span>
                     ) : (
                       <span className="text-gray-500 text-xs">(не верифицирован)</span>
                     )}
-                  </span>
-                  {selectedBrandId === option.value && (
-                    <Check className="w-5 h-5 text-purple-400 flex-shrink-0" />
-                  )}
-                </>
+                </span>
+                {selectedBrandId === option.value && (
+                  <Check className="w-5 h-5 text-purple-400 flex-shrink-0" />
+                )}
+              </>
               );
             }}
           />
           {selectedBrandId && (
             <div className="space-y-4">
               {selectedBrand?.verified && hasEmployees ? (
-                <div className="bg-blue-500/10 border border-blue-500/30 rounded-xl p-4">
-                  <div className="flex items-start space-x-3">
-                    <Shield className="w-5 h-5 text-blue-400 flex-shrink-0 mt-0.5" />
-                    <div className="flex-1">
-                      <p className="text-xs text-blue-200">
-                        После подачи заявки администратор свяжется с существующими представителями бренда <strong className="text-blue-300">{selectedBrand?.name}</strong> для подтверждения вашего членства. Убедитесь, что они ожидают ваш запрос. Подтверждающие документы предоставлять не требуется.
-                      </p>
-                    </div>
+              <div className="bg-blue-500/10 border border-blue-500/30 rounded-xl p-4">
+                <div className="flex items-start space-x-3">
+                  <Shield className="w-5 h-5 text-blue-400 flex-shrink-0 mt-0.5" />
+                  <div className="flex-1">
+                    <p className="text-xs text-blue-200">
+                      После подачи заявки администратор свяжется с существующими представителями бренда <strong className="text-blue-300">{selectedBrand?.name}</strong> для подтверждения вашего членства. Убедитесь, что они ожидают ваш запрос. Подтверждающие документы предоставлять не требуется.
+                    </p>
                   </div>
                 </div>
+              </div>
               ) : (
                 <div className="bg-yellow-500/10 border border-yellow-500/30 rounded-xl p-4">
                   <div className="flex items-start space-x-3">
@@ -2075,17 +2075,17 @@ const BrandSelectionForm: React.FC = () => {
 
               {/* Контактная информация */}
               <div className="space-y-4">
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-gray-300 mb-2 text-sm font-medium">
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-gray-300 mb-2 text-sm font-medium">
                       Email компании
-                    </label>
+                  </label>
                     <div className="space-y-1">
-                      <input
-                        type="email"
-                        value={companyEmail}
-                        onChange={(e) => setCompanyEmail(e.target.value)}
-                        className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all"
+                  <input
+                    type="email"
+                    value={companyEmail}
+                    onChange={(e) => setCompanyEmail(e.target.value)}
+                    className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all"
                         placeholder="info@example.com"
                       />
                       {user?.email && user.email !== companyEmail && (
@@ -2102,29 +2102,29 @@ const BrandSelectionForm: React.FC = () => {
                           <p className="text-xs text-yellow-300">
                             ⚠️ Вы используете личную почту. Обязательно прикрепите подтверждающие документы.
                           </p>
-                        </div>
+                </div>
                       )}
                     </div>
                   </div>
 
-                  <div>
-                    <label className="block text-gray-300 mb-2 text-sm font-medium">
-                      Сайт компании
-                    </label>
-                    <input
-                      type="text"
-                      value={companyWebsite}
-                      onChange={(e) => setCompanyWebsite(e.target.value)}
-                      className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all"
-                      placeholder="example.com"
-                    />
-                  </div>
-                </div>
-
                 <div>
                   <label className="block text-gray-300 mb-2 text-sm font-medium">
-                    Соцсети бренда
+                      Сайт компании
                   </label>
+                  <input
+                    type="text"
+                    value={companyWebsite}
+                    onChange={(e) => setCompanyWebsite(e.target.value)}
+                    className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all"
+                    placeholder="example.com"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-gray-300 mb-2 text-sm font-medium">
+                    Соцсети бренда
+                </label>
                 <div className="space-y-2">
                   <div className="flex space-x-2">
                     <input
@@ -2178,14 +2178,14 @@ const BrandSelectionForm: React.FC = () => {
                     </div>
                   )}
                 </div>
+                </div>
               </div>
-            </div>
 
             {/* Поля для подтверждающих документов - показываем если бренд не верифицирован ИЛИ у бренда нет сотрудников */}
               {(!selectedBrand?.verified || !hasEmployees) && (
                 <>
-                  <div>
-                    <label className="block text-gray-300 mb-2 text-sm font-medium">
+              <div>
+                <label className="block text-gray-300 mb-2 text-sm font-medium">
                       Описание подтверждающих документов
                       {(() => {
                         const userEmail = user?.email || '';
@@ -2625,7 +2625,7 @@ const FilamentCard: React.FC<FilamentCardProps> = ({ filament, onEdit, onDelete,
             {officialPreset.fan_speed !== undefined && (
               <div className="flex items-center space-x-1">
                 <Settings className="w-3 h-3 text-yellow-400" />
-                <span className="text-gray-300">Вентилятор: {officialPreset.fan_speed}%</span>
+                <span className="text-gray-300">Обдув: {officialPreset.fan_speed}%</span>
               </div>
             )}
           </div>

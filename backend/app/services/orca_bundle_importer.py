@@ -15,6 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.models import (
+    Filament,
     PrintProfile,
     PrintProfileFilament,
     PrintProfilePrinter,
@@ -42,6 +43,9 @@ class OrcaBundleImporter:
             configured_path = (project_root / configured_path).resolve()
         self.root_path = configured_path
         self.project_root = project_root
+        self._printer_cache: dict[tuple[str, str], Printer] = {}
+        self._printer_profile_cache: dict[tuple[str, str], PrinterProfile] = {}
+        self._filament_cache: dict[str, Filament | None] = {}
 
     async def import_all(self, db: AsyncSession) -> dict[str, Any]:
         """Import all vendor bundles."""
@@ -99,6 +103,7 @@ class OrcaBundleImporter:
             machine_model = self._load_json(model_path, OrcaMachineModel)
             printer = await self._upsert_printer(db=db, vendor_name=vendor.name, machine_model=machine_model)
             result[machine_model.name] = printer
+            self._printer_cache[(vendor.name, machine_model.name)] = printer
         await db.flush()
         return result
 
@@ -152,6 +157,7 @@ class OrcaBundleImporter:
                 default_print_profile_slug=process_lookup.get(preset.default_print_profile or ""),
             )
             count += 1
+            self._printer_profile_cache[(vendor.name, preset.name)] = profile
         await db.flush()
         return count
 
@@ -317,9 +323,130 @@ class OrcaBundleImporter:
         extra_metadata["compatible_printers_condition"] = process.compatible_printers_condition
         profile.extra_metadata = extra_metadata if extra_metadata else None
 
-        # For now, we do not populate PrintProfilePrinter/Filament junctions.
+        await self._sync_print_profile_links(
+            db=db,
+            profile=profile,
+            vendor_name=vendor_name,
+            compatible_printers=profile.compatible_printers,
+            compatible_printers_condition=process.compatible_printers_condition,
+            compatible_filaments=profile.compatible_filaments,
+        )
 
         return profile
+
+    async def _sync_print_profile_links(
+        self,
+        *,
+        db: AsyncSession,
+        profile: PrintProfile,
+        vendor_name: str,
+        compatible_printers: list[str] | None,
+        compatible_printers_condition: str | None,
+        compatible_filaments: list[str] | None,
+    ) -> None:
+        """Synchronise junction tables for printer/filament compatibility."""
+        profile.printer_links.clear()
+        profile.filament_links.clear()
+
+        printer_slugs: set[str] = set()
+        if compatible_printers:
+            for entry in compatible_printers:
+                name = (entry or "").strip()
+                if not name:
+                    continue
+
+                printer_profile = self._printer_profile_cache.get((vendor_name, name))
+                if not printer_profile:
+                    result = await db.execute(select(PrinterProfile).where(PrinterProfile.name == name))
+                    printer_profile = result.scalar_one_or_none()
+
+                printer: Printer | None = None
+                if printer_profile:
+                    if printer_profile.printer is not None:
+                        printer = printer_profile.printer
+                    elif printer_profile.printer_id:
+                        printer = await db.get(Printer, printer_profile.printer_id)
+
+                if not printer:
+                    base_name = _extract_base_printer_name(name)
+                    if base_name:
+                        printer = self._printer_cache.get((vendor_name, base_name))
+                        if not printer:
+                            result = await db.execute(select(Printer).where(Printer.name == base_name))
+                            printer = result.scalar_one_or_none()
+                        if not printer:
+                            result = await db.execute(select(Printer).where(Printer.model == base_name))
+                            printer = result.scalar_one_or_none()
+
+                printer_slug = (printer.slug if printer else _slugify_string(name))[:200]
+                if printer_slug in printer_slugs:
+                    continue
+                printer_slugs.add(printer_slug)
+
+                profile.printer_links.append(
+                    PrintProfilePrinter(
+                        printer_id=printer.id if printer else None,
+                        printer_slug=printer_slug,
+                        relation_type="explicit",
+                    )
+                )
+
+        condition = (compatible_printers_condition or "").strip()
+        if condition:
+            condition_slug = _slugify_string(condition, fallback="condition")[:200]
+            if condition_slug in printer_slugs:
+                condition_slug = f"{condition_slug}-{len(printer_slugs)+1}"[:200]
+            profile.printer_links.append(
+                PrintProfilePrinter(
+                    printer_id=None,
+                    printer_slug=condition_slug,
+                    relation_type="condition",
+                    condition=condition,
+                )
+            )
+
+        filament_slugs: set[str] = set()
+        if compatible_filaments:
+            for entry in compatible_filaments:
+                name = (entry or "").strip()
+                if not name:
+                    continue
+                filament_slug = _slugify_string(name)[:200]
+                if filament_slug in filament_slugs:
+                    continue
+
+                filament = await self._resolve_filament(db=db, identifier=name)
+                profile.filament_links.append(
+                    PrintProfileFilament(
+                        filament_id=filament.id if filament else None,
+                        filament_slug=filament_slug,
+                        relation_type="explicit",
+                    )
+                )
+                filament_slugs.add(filament_slug)
+
+        await db.flush()
+
+    async def _resolve_filament(self, *, db: AsyncSession, identifier: str) -> Filament | None:
+        """Try to find filament by full name or trimmed variant, cached for speed."""
+        if identifier in self._filament_cache:
+            return self._filament_cache[identifier]
+
+        candidates = [identifier]
+        if "@" in identifier:
+            candidates.append(identifier.split("@", 1)[0].strip())
+
+        for candidate in candidates:
+            if not candidate:
+                continue
+            result = await db.execute(select(Filament).where(Filament.name == candidate))
+            filament = result.scalar_one_or_none()
+            if filament:
+                self._filament_cache[identifier] = filament
+                return filament
+
+        self._filament_cache[identifier] = None
+        return None
 
     async def _find_printer(
         self, *, db: AsyncSession, vendor_name: str, model_id: str | None, name: str
@@ -524,6 +651,22 @@ def _merge_unique(existing: Iterable[Any] | None, new_values: Iterable[Any]) -> 
         if value not in result:
             result.append(value)
     return result
+
+
+def _extract_base_printer_name(name: str) -> str:
+    """Return base printer name without nozzle suffixes or speed qualifiers."""
+    stripped = re.sub(r"\([^)]*nozzle[^)]*\)", "", name, flags=re.IGNORECASE)
+    stripped = re.sub(r"\b\d+(\.\d+)?\s*nozzle\b", "", stripped, flags=re.IGNORECASE)
+    stripped = re.sub(r"\bdual\b", "", stripped, flags=re.IGNORECASE)
+    stripped = re.sub(r"\s+", " ", stripped).strip()
+    return stripped
+
+
+def _slugify_string(value: str, fallback: str = "item") -> str:
+    normalized = value.strip().lower()
+    normalized = re.sub(r"[^a-z0-9]+", "-", normalized)
+    normalized = normalized.strip("-")
+    return normalized or fallback
 
 
 async def run_import() -> dict[str, Any]:

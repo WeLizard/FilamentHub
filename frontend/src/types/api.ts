@@ -22,6 +22,24 @@ export interface FilamentVisualSettings {
   transparency?: boolean; // Прозрачный/непрозрачный (да/нет)
 }
 
+export interface FilamentPresetSummary {
+  id: number;
+  name: string;
+  is_official: boolean;
+  is_weighted: boolean;
+  extruder_temp: number | null;
+  bed_temp: number | null;
+  print_speed: number | null;
+  fan_speed: number | null;
+  flow_rate: number | null;
+  layer_height?: number | null;
+  first_layer_height?: number | null;
+  rating: number | null;
+  success_rate: number | null;
+  updated_at: string | null;
+  preset_type: 'official' | 'weighted' | 'community';
+}
+
 export interface Filament {
   id: number;
   brand_id: number;
@@ -42,6 +60,11 @@ export interface Filament {
   active: boolean;
   created_at: string;
   updated_at: string;
+  presets_count?: number | null;
+  official_presets_count?: number | null;
+  community_presets_count?: number | null;
+  official_preset?: FilamentPresetSummary | null;
+  preset_summaries?: FilamentPresetSummary[];
 }
 
 export interface Printer {
@@ -50,14 +73,22 @@ export interface Printer {
   manufacturer: string;
   model: string;
   slug: string;
+  model_id: string | null;
+  family: string | null;
+  technology: string | null;
+  source: string;
+  vendor: string | null;
   build_volume_x: number | null;
   build_volume_y: number | null;
   build_volume_z: number | null;
   nozzle_diameter: number | null;
+  nozzle_options: number[] | null;
   max_extruder_temp: number | null;
   max_bed_temp: number | null;
   description: string | null;
   image_url: string | null;
+  default_materials: string[] | null;
+  extra_metadata: Record<string, any> | null;
   active: boolean;
   created_at: string;
   updated_at: string;
@@ -72,12 +103,36 @@ export interface PrinterProfile {
   description: string | null;
   is_official: boolean;
   active: boolean;
+  source: string;
+  vendor: string | null;
+  external_id: string | null;
+  setting_id: string | null;
+  nozzle_diameters: number[] | null;
+  printable_area: Record<string, number> | null;
+  printable_height_mm: number | null;
+  default_print_profile_slug: string | null;
   orcaslicer_settings: Record<string, any>;
+  extra_metadata: Record<string, any> | null;
   start_gcode: string | null;
   end_gcode: string | null;
   notes: string | null;
+  printer_slug: string | null;
+  printer_name: string | null;
   created_at: string;
   updated_at: string;
+}
+
+export interface PrintProfilePrinterLink {
+  printer_id: number | null;
+  printer_slug: string;
+  relation_type: string;
+  condition?: string | null;
+}
+
+export interface PrintProfileFilamentLink {
+  filament_id: number | null;
+  filament_slug: string;
+  relation_type: string;
 }
 
 export interface PrintProfile {
@@ -89,10 +144,20 @@ export interface PrintProfile {
   category: string | null;
   is_official: boolean;
   active: boolean;
+  source: string;
+  vendor: string | null;
+  external_id: string | null;
+  setting_id: string | null;
+  quality_tier: string | null;
+  default_nozzle: string | null;
+  layer_height_mm: number | null;
   compatible_printers: string[] | null;
   compatible_filaments: string[] | null;
   orcaslicer_settings: Record<string, any>;
+  extra_metadata: Record<string, any> | null;
   notes: string | null;
+  printer_links: PrintProfilePrinterLink[];
+  filament_links: PrintProfileFilamentLink[];
   created_at: string;
   updated_at: string;
 }

@@ -1,0 +1,9 @@
+{
+    "enable_support": "1",
+    "from": "User",
+    "inherits": "0.20mm Standard @Voron",
+    "name": "0.20mm Standard @Voron2.4",
+    "print_settings_id": "0.20mm Standard @Voron2.4",
+    "reduce_crossing_wall": "1",
+    "version": "2.1.1.0"
+}

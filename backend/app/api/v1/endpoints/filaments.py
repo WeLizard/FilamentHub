@@ -4,7 +4,7 @@ import logging
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import func, or_, select
+from sqlalchemy import case, desc, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -82,14 +82,118 @@ async def list_filaments(
     # Execute
     result = await db.execute(query)
     filaments = result.scalars().all()
+    filament_ids = [filament.id for filament in filaments]
 
     pages = (total + size - 1) // size if total > 0 else 0
 
-    # Serialize with brand_name
+    preset_stats: dict[int, dict[str, int]] = {}
+    preset_summary_map: dict[int, dict[str, object]] = {}
+
+    if filament_ids:
+        from app.models.preset import Preset, PresetModerationStatus
+
+        stats_query = (
+            select(
+                Preset.filament_id,
+                func.count().label("total"),
+                func.sum(case((Preset.is_official.is_(True), 1), else_=0)).label("official_count"),
+                func.sum(case((Preset.is_official.is_(False), 1), else_=0)).label("community_count"),
+            )
+            .where(
+                Preset.filament_id.in_(filament_ids),
+                Preset.active.is_(True),
+                Preset.moderation_status == PresetModerationStatus.APPROVED,
+            )
+            .group_by(Preset.filament_id)
+        )
+        stats_rows = await db.execute(stats_query)
+        for row in stats_rows:
+            preset_stats[row.filament_id] = {
+                "total": int(row.total or 0),
+                "official": int(row.official_count or 0),
+                "community": int(row.community_count or 0),
+            }
+
+        preset_query = (
+            select(Preset)
+            .where(
+                Preset.filament_id.in_(filament_ids),
+                Preset.active.is_(True),
+                Preset.moderation_status == PresetModerationStatus.APPROVED,
+            )
+            .order_by(
+                Preset.filament_id,
+                desc(Preset.is_weighted),
+                desc(Preset.rating),
+                desc(Preset.updated_at),
+            )
+        )
+        presets = await db.execute(preset_query)
+        for preset in presets.scalars():
+            bucket = preset_summary_map.setdefault(preset.filament_id, {})
+            if preset.is_official and "official" not in bucket:
+                bucket["official"] = preset
+            if preset.is_weighted and "weighted" not in bucket:
+                bucket["weighted"] = preset
+            if not preset.is_official and not preset.is_weighted and "community" not in bucket:
+                bucket["community"] = preset
+
+    # Serialize with brand_name and preset summary
     filament_responses = []
     for filament in filaments:
         filament_dict = FilamentResponse.model_validate(filament).model_dump()
         filament_dict["brand_name"] = filament.brand.name if filament.brand else None
+
+        stats = preset_stats.get(filament.id)
+        if stats:
+            filament_dict["presets_count"] = stats["total"]
+            filament_dict["official_presets_count"] = stats["official"]
+            filament_dict["community_presets_count"] = stats["community"]
+        else:
+            filament_dict["presets_count"] = 0
+            filament_dict["official_presets_count"] = 0
+            filament_dict["community_presets_count"] = 0
+
+        summaries: list[dict] = []
+        summary_bucket = preset_summary_map.get(filament.id, {})
+
+        def serialize_preset(preset_obj, preset_type: str) -> dict:
+            return {
+                "id": preset_obj.id,
+                "name": preset_obj.name,
+                "is_official": preset_obj.is_official,
+                "is_weighted": preset_obj.is_weighted,
+                "extruder_temp": preset_obj.extruder_temp,
+                "bed_temp": preset_obj.bed_temp,
+                "fan_speed": preset_obj.fan_speed,
+                "flow_rate": preset_obj.flow_rate,
+                "print_speed": preset_obj.print_speed,
+                "layer_height": preset_obj.layer_height,
+                "rating": preset_obj.rating,
+                "success_rate": preset_obj.success_rate,
+                "updated_at": preset_obj.updated_at,
+                "preset_type": preset_type,
+            }
+
+        if "official" in summary_bucket:
+            official_preset = summary_bucket["official"]
+            filament_dict["official_preset"] = serialize_preset(official_preset, "official")
+            summaries.append(filament_dict["official_preset"])
+        else:
+            filament_dict["official_preset"] = None
+
+        if "weighted" in summary_bucket:
+            weighted_preset = summary_bucket["weighted"]
+            # Avoid duplicating if weighted preset already marked as official
+            if filament_dict["official_preset"] is None or weighted_preset.id != filament_dict["official_preset"]["id"]:
+                summaries.append(serialize_preset(weighted_preset, "weighted"))
+
+        if "community" in summary_bucket:
+            community_preset = summary_bucket["community"]
+            summaries.append(serialize_preset(community_preset, "community"))
+
+        filament_dict["preset_summaries"] = summaries
+
         filament_responses.append(filament_dict)
 
     return FilamentListResponse(

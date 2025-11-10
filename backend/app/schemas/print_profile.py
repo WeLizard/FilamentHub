@@ -30,6 +30,31 @@ class PrintProfileBase(BaseModel):
     notes: str | None = Field(None, max_length=10_000)
 
 
+class PrintProfilePrinterLink(BaseModel):
+    """Link schema for printers compatible with print profile."""
+
+    printer_id: int | None = None
+    printer_slug: str
+    relation_type: str
+    condition: str | None = None
+
+    model_config = {
+        "from_attributes": True,
+    }
+
+
+class PrintProfileFilamentLink(BaseModel):
+    """Link schema for filaments compatible with print profile."""
+
+    filament_id: int | None = None
+    filament_slug: str
+    relation_type: str
+
+    model_config = {
+        "from_attributes": True,
+    }
+
+
 class PrintProfileCreate(PrintProfileBase):
     """Schema for creating print profile."""
 
@@ -66,9 +91,12 @@ class PrintProfileResponse(PrintProfileBase):
     id: int
     created_at: datetime
     updated_at: datetime
+    printer_links: list[PrintProfilePrinterLink] = Field(default_factory=list)
+    filament_links: list[PrintProfileFilamentLink] = Field(default_factory=list)
 
     model_config = {
         "from_attributes": True,
+        "populate_by_name": True,
     }
 
 

@@ -1,0 +1,57 @@
+{
+    "cool_plate_temp": [
+        "60"
+    ],
+    "cool_plate_temp_initial_layer": [
+        "60"
+    ],
+    "eng_plate_temp": [
+        "60"
+    ],
+    "eng_plate_temp_initial_layer": [
+        "60"
+    ],
+    "filament_cost": [
+        "120"
+    ],
+    "filament_extruder_variant": [
+        "Direct Drive Standard"
+    ],
+    "filament_flow_ratio": [
+        "1"
+    ],
+    "filament_retraction_length": [
+        "5"
+    ],
+    "filament_retraction_speed": [
+        "45"
+    ],
+    "filament_settings_id": [
+        "Официальный пресет Polymaker"
+    ],
+    "filament_vendor": [
+        "Polymaker"
+    ],
+    "from": "User",
+    "hot_plate_temp": [
+        "60"
+    ],
+    "hot_plate_temp_initial_layer": [
+        "60"
+    ],
+    "inherits": "Generic PLA @System",
+    "name": "Официальный пресет Polymaker [FilamentHub]",
+    "nozzle_temperature": [
+        "205"
+    ],
+    "nozzle_temperature_initial_layer": [
+        "205"
+    ],
+    "textured_plate_temp": [
+        "60"
+    ],
+    "textured_plate_temp_initial_layer": [
+        "60"
+    ],
+    "version": "2.3.0.0"
+}

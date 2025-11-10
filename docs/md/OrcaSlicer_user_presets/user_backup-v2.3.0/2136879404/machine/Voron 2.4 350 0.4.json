@@ -1,0 +1,34 @@
+{
+    "cooling_tube_length": "0.01",
+    "cooling_tube_retraction": "0",
+    "deretraction_speed": [
+        "35"
+    ],
+    "extra_loading_move": "0",
+    "from": "User",
+    "inherits": "Voron 2.4 350 0.4 nozzle",
+    "layer_change_gcode": ";AFTER_LAYER_CHANGE\n_MMU_UPDATE_HEIGHT\n\n; If you want enhanced pausing feature with Happy Hare client macros also add this\nSET_PRINT_STATS_INFO CURRENT_LAYER={layer_num} ; For pause at layer functionality and better print stats\n;[layer_z]",
+    "machine_end_gcode": "MMU_END\nPRINT_END",
+    "machine_start_gcode": "MMU_START_SETUP INITIAL_TOOL={initial_tool} REFERENCED_TOOLS=!referenced_tools! TOOL_COLORS=!colors! TOOL_TEMPS=!temperatures! TOOL_MATERIALS=!materials! FILAMENT_NAMES=!filament_names! PURGE_VOLUMES=!purge_volumes!\nMMU_START_CHECK\nM104 S0\nM140 S0\nprint_start EXTRUDER=[first_layer_temperature] BED=[first_layer_bed_temperature] CHAMBER=[chamber_temperature]\nMMU_START_LOAD_INITIAL_TOOL\nSET_PRINT_STATS_INFO TOTAL_LAYER={total_layer_count} ; For pause at layer functionality and better print stats",
+    "name": "Voron 2.4 350 0.4",
+    "parking_pos_retraction": "0",
+    "print_host": "192.168.0.122:80",
+    "printer_settings_id": "Voron 2.4 350 0.4",
+    "purge_in_prime_tower": "0",
+    "retract_length_toolchange": [
+        "0"
+    ],
+    "retract_when_changing_layer": [
+        "0"
+    ],
+    "retraction_speed": [
+        "35"
+    ],
+    "version": "1.8.0.0",
+    "wipe": [
+        "0"
+    ],
+    "z_hop": [
+        "0"
+    ]
+}

@@ -61,8 +61,6 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
   const [bedTemp, setBedTemp] = useState(60);
   const [printSpeed, setPrintSpeed] = useState(50);
   const [travelSpeed, setTravelSpeed] = useState(150);
-  const [layerHeight, setLayerHeight] = useState(0.2);
-  const [firstLayerHeight, setFirstLayerHeight] = useState<number | ''>('');
   const [flowRate, setFlowRate] = useState(100);
   const [fanSpeed, setFanSpeed] = useState(100);
   const [retractionLength, setRetractionLength] = useState(5.0);
@@ -342,8 +340,6 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
       setBedTemp(preset.bed_temp);
       setPrintSpeed(preset.print_speed);
       setTravelSpeed(preset.travel_speed || 150);
-      setLayerHeight(preset.layer_height || 0.2);
-      setFirstLayerHeight(preset.first_layer_height || '');
       setFlowRate(preset.flow_rate || 100);
       setFanSpeed(preset.fan_speed || 100);
       setRetractionLength(preset.retraction_length || 5.0);
@@ -591,8 +587,6 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
       setBedTemp(60);
       setPrintSpeed(50);
       setTravelSpeed(150);
-      setLayerHeight(0.2);
-      setFirstLayerHeight('');
       setFlowRate(100);
       setFanSpeed(100);
       setRetractionLength(5.0);
@@ -838,8 +832,6 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
       bed_temp: number;
       print_speed: number;
       travel_speed?: number;
-      layer_height?: number;
-      first_layer_height?: number;
       flow_rate?: number;
       fan_speed?: number;
       retraction_length?: number;
@@ -877,8 +869,6 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
         bed_temp?: number;
         print_speed?: number;
         travel_speed?: number;
-        layer_height?: number;
-        first_layer_height?: number;
         flow_rate?: number;
         fan_speed?: number;
         retraction_length?: number;
@@ -994,7 +984,7 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
 
     // === ВКЛАДКА "ОХЛАЖДЕНИЕ" ===
     
-    // Вентилятор обдува модели
+    // Обдув модели
     addParam('fan_min_speed', fanMinSpeed);
     addParam('fan_max_speed', fanMaxSpeed);
     addParam('fan_cooling_layer_time', fanCoolingLayerTime); // Время слоя для мин. скорости (порог мин. скорости)
@@ -1256,8 +1246,6 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
             bed_temp: bedTemp,
             print_speed: printSpeed,
             travel_speed: travelSpeed,
-            layer_height: layerHeight,
-            first_layer_height: firstLayerHeight !== '' ? Number(firstLayerHeight) : undefined,
             flow_rate: flowRate,
             fan_speed: fanSpeed,
             retraction_length: retractionLength,
@@ -1307,8 +1295,6 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
           bed_temp: bedTemp,
           print_speed: printSpeed,
           travel_speed: travelSpeed,
-          layer_height: layerHeight,
-          first_layer_height: firstLayerHeight !== '' ? Number(firstLayerHeight) : undefined,
           flow_rate: flowRate,
           fan_speed: fanSpeed,
           retraction_length: retractionLength,
@@ -1328,8 +1314,6 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
         bed_temp: bedTemp,
         print_speed: printSpeed,
         travel_speed: travelSpeed,
-        layer_height: layerHeight,
-        first_layer_height: firstLayerHeight !== '' ? Number(firstLayerHeight) : undefined,
         flow_rate: flowRate,
         fan_speed: fanSpeed,
         retraction_length: retractionLength,
@@ -1492,7 +1476,6 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                                 setBedTemp,
                                 setPrintSpeed,
                                 setTravelSpeed,
-                                setLayerHeight,
                                 setFlowRate,
                                 setFanSpeed,
                                 setRetractionLength,
@@ -1712,7 +1695,6 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                                       setBedTemp,
                                       setPrintSpeed,
                                       setTravelSpeed,
-                                      setLayerHeight,
                                       setFlowRate,
                                       setFanSpeed,
                                       setRetractionLength,
@@ -2381,46 +2363,21 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
               </div>
             </div>
 
-          {/* Layer and Flow Settings */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <div>
-                <label className="block text-gray-300 mb-2 text-sm font-medium">Высота слоя (mm)</label>
-                <input
-                  type="number"
-                  value={layerHeight}
-                  onChange={(e) => { setLayerHeight(Number(e.target.value)); }}
-                  min={0.05}
-                  max={0.5}
-                  step="0.05"
-                  className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all"
-                />
-              </div>
-              <div>
-                <label className="block text-gray-300 mb-2 text-sm font-medium">Высота первого слоя (mm)</label>
-                <input
-                  type="number"
-                  value={firstLayerHeight !== '' ? firstLayerHeight : ''}
-                  onChange={(e) => { setFirstLayerHeight(e.target.value === '' ? '' : Number(e.target.value)); }}
-                  min={0.05}
-                  max={0.5}
-                  step="0.05"
-                  placeholder="0.25"
-                  className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all"
-                />
-              </div>
-              <div>
-                <label className="block text-gray-300 mb-2 text-sm font-medium">Поток (%)</label>
-                <input
-                  type="number"
-                  value={flowRate}
-                  onChange={(e) => { setFlowRate(Number(e.target.value)); }}
-                  min={50}
-                  max={150}
-                step="1"
-                className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all"
-              />
-            </div>
+        {/* Flow Settings */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div>
+            <label className="block text-gray-300 mb-2 text-sm font-medium">Поток (%)</label>
+            <input
+              type="number"
+              value={flowRate}
+              onChange={(e) => { setFlowRate(Number(e.target.value)); }}
+              min={50}
+              max={150}
+              step="1"
+              className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all"
+            />
           </div>
+        </div>
 
           {/* Cooling and Retraction */}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -3106,9 +3063,9 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                     </div>
                   </div>
 
-                  {/* Вентилятор обдува модели */}
+                  {/* Обдув модели */}
                   <div>
-                    <h4 className="text-sm font-semibold text-white mb-3 pb-2 border-b border-white/10">Вентилятор обдува модели</h4>
+                    <h4 className="text-sm font-semibold text-white mb-3 pb-2 border-b border-white/10">Обдув модели</h4>
                     
                     <div className="space-y-4">
                       {/* Порог мин. скорости вентилятора */}
@@ -3187,7 +3144,7 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                         </div>
                       </div>
 
-                      {/* Вентилятор включён всегда (reduce_fan_stop_start_freq в OrcaSlicer) */}
+                      {/* Обдув включён всегда (reduce_fan_stop_start_freq в OrcaSlicer) */}
                       <div className="flex items-center space-x-3">
                         <input
                           type="checkbox"
@@ -3197,7 +3154,7 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                           className="w-4 h-4 rounded border-white/20 bg-white/10 text-purple-500 focus:ring-purple-500"
                         />
                         <label htmlFor="reduceFanStopStartFreq" className="text-gray-300 text-sm">
-                          Вентилятор включён всегда
+                          Обдув включён всегда
                         </label>
                       </div>
 

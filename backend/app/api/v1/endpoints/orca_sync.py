@@ -53,6 +53,17 @@ async def _ensure_printer_id(
     return None
 
 
+def _merge_extra_metadata(
+    metadata: dict[str, Any] | None,
+    condition: str | None,
+) -> dict[str, Any] | None:
+    """Merge metadata dict with compatibility condition, returning None if empty."""
+    merged: dict[str, Any] = dict(metadata or {})
+    if condition:
+        merged["compatible_printers_condition"] = condition
+    return merged or None
+
+
 async def _upsert_printer_profile(
     *,
     payload,
@@ -135,6 +146,21 @@ async def _upsert_printer_profile(
         profile.printer_id = printer_id
         profile.owner_user_id = profile.owner_user_id or current_user.id
         profile.active = payload.active if payload.active is not None else profile.active
+        profile.source = payload.source or profile.source
+        profile.vendor = payload.vendor or profile.vendor
+        profile.setting_id = payload.setting_id or profile.setting_id
+        profile.external_id = payload.external_id or profile.external_id
+        profile.default_print_profile_slug = (
+            payload.default_print_profile_slug or profile.default_print_profile_slug
+        )
+        if payload.nozzle_diameters is not None:
+            profile.nozzle_diameters = payload.nozzle_diameters
+        if payload.printable_area is not None:
+            profile.printable_area = payload.printable_area
+        if payload.printable_height_mm is not None:
+            profile.printable_height_mm = payload.printable_height_mm
+        if payload.extra_metadata:
+            profile.extra_metadata = payload.extra_metadata
         profile.orcaslicer_settings = payload.orcaslicer_settings or {}
         profile.start_gcode = payload.start_gcode
         profile.end_gcode = payload.end_gcode
@@ -164,6 +190,15 @@ async def _upsert_printer_profile(
         owner_user_id=current_user.id,
         is_official=False,
         active=payload.active if payload.active is not None else False,
+        source=payload.source or "system",
+        vendor=payload.vendor,
+        setting_id=payload.setting_id,
+        external_id=payload.external_id,
+        default_print_profile_slug=payload.default_print_profile_slug,
+        nozzle_diameters=payload.nozzle_diameters,
+        printable_area=payload.printable_area,
+        printable_height_mm=payload.printable_height_mm,
+        extra_metadata=payload.extra_metadata,
         orcaslicer_settings=payload.orcaslicer_settings or {},
         start_gcode=payload.start_gcode,
         end_gcode=payload.end_gcode,
@@ -263,9 +298,23 @@ async def _upsert_print_profile(
         profile.category = payload.category
         profile.owner_user_id = profile.owner_user_id or current_user.id
         profile.active = payload.active if payload.active is not None else profile.active
+        profile.source = payload.source or profile.source
+        profile.vendor = payload.vendor or profile.vendor
+        profile.setting_id = payload.setting_id or profile.setting_id
+        profile.external_id = payload.external_id or profile.external_id
+        profile.quality_tier = payload.quality_tier or profile.quality_tier
+        profile.default_nozzle = payload.default_nozzle or profile.default_nozzle
+        if payload.layer_height_mm is not None:
+            profile.layer_height_mm = payload.layer_height_mm
         profile.compatible_printers = compatible_printers
         profile.compatible_filaments = compatible_filaments
         profile.orcaslicer_settings = payload.orcaslicer_settings or {}
+        if payload.extra_metadata:
+            profile.extra_metadata = payload.extra_metadata
+        if payload.compatible_printers_condition:
+            extra = dict(profile.extra_metadata or {})
+            extra["compatible_printers_condition"] = payload.compatible_printers_condition
+            profile.extra_metadata = extra
         profile.notes = payload.notes
         profile.is_official = profile.is_official if current_user.role != UserRole.ADMIN else profile.is_official
 
@@ -292,9 +341,17 @@ async def _upsert_print_profile(
         owner_user_id=current_user.id,
         is_official=False,
         active=payload.active if payload.active is not None else False,
+        source=payload.source or "system",
+        vendor=payload.vendor,
+        external_id=payload.external_id,
+        setting_id=payload.setting_id,
+        quality_tier=payload.quality_tier,
+        default_nozzle=payload.default_nozzle,
+        layer_height_mm=payload.layer_height_mm,
         compatible_printers=compatible_printers,
         compatible_filaments=compatible_filaments,
         orcaslicer_settings=payload.orcaslicer_settings or {},
+        extra_metadata=_merge_extra_metadata(payload.extra_metadata, payload.compatible_printers_condition),
         notes=payload.notes,
     )
     db.add(profile)

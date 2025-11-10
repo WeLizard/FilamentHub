@@ -50,6 +50,14 @@ class OrcaPrinterProfilePayload(BaseModel):
         description="Включен ли профиль после импорта. По умолчанию черновик (False).",
     )
     orcaslicer_settings: dict[str, Any] = Field(default_factory=dict)
+    source: str | None = Field(default=None, max_length=50)
+    vendor: str | None = Field(default=None, max_length=100)
+    setting_id: str | None = Field(default=None, max_length=100)
+    default_print_profile_slug: str | None = Field(default=None, max_length=200)
+    nozzle_diameters: list[float] | None = Field(default=None)
+    printable_area: dict[str, Any] | None = Field(default=None)
+    printable_height_mm: float | None = Field(default=None)
+    extra_metadata: dict[str, Any] | None = Field(default=None)
     start_gcode: str | None = None
     end_gcode: str | None = None
     notes: str | None = Field(default=None, max_length=10_000)
@@ -80,6 +88,12 @@ class OrcaPrintProfilePayload(BaseModel):
         default=None,
         description="Флаг активности. По умолчанию импортируется как черновик (False).",
     )
+    source: str | None = Field(default=None, max_length=50)
+    vendor: str | None = Field(default=None, max_length=100)
+    setting_id: str | None = Field(default=None, max_length=100)
+    quality_tier: str | None = Field(default=None, max_length=50)
+    default_nozzle: str | None = Field(default=None, max_length=20)
+    layer_height_mm: float | None = Field(default=None)
     compatible_printers: list[str] | None = Field(
         default=None,
         description="Список slug или внутренних ID принтеров, совместимых с профилем.",
@@ -88,7 +102,9 @@ class OrcaPrintProfilePayload(BaseModel):
         default=None,
         description="Список slug или внутренних ID материалов, совместимых с профилем.",
     )
+    compatible_printers_condition: str | None = Field(default=None, description="Логические условия совместимости.")
     orcaslicer_settings: dict[str, Any] = Field(default_factory=dict)
+    extra_metadata: dict[str, Any] | None = Field(default=None)
     notes: str | None = Field(default=None, max_length=10_000)
 
 

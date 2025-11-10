@@ -72,7 +72,7 @@ async def estimate_cost(
                 cost_electricity = time_hours * power_kw * data.electricity_cost_per_kwh
         
         cost_total = cost_material + cost_electricity
-        
+    
         return CalculatorEstimateResponse(
             cost_material=round(cost_material, 2),
             cost_electricity=round(cost_electricity, 2),
@@ -311,5 +311,5 @@ async def estimate_cost(
         raise HTTPException(
             status_code=400,
             detail=f"Неподдерживаемый метод расчета: {data.pricing_method}"
-        )
+    )
 

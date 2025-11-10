@@ -1,0 +1,73 @@
+[error]	2025-11-03 13:40:10.785531[Thread 0x000004d4]:can not find parent 0.20mm Standard @Creality Ender3V2 for config C:\Users\Lizard\AppData\Roaming\OrcaSlicer\user\2136879404\process\0.20mm Standard @Creality Ender3V2 - Копировать.json!
+[warning]	2025-11-03 13:40:13.317362[Thread 0x000004d4]:FilamentHub: Could not add script message handler on init (will retry on load)
+[error]	2025-11-03 13:40:13.347484[Thread 0x000004d4]:FilamentHub: Get current user failed. Error: , Status: 401
+[warning]	2025-11-03 13:40:13.347484[Thread 0x000004d4]:FilamentHub: Failed to get user info. Error: 
+[error]	2025-11-03 13:40:13.365528[Thread 0x000004d4]:Slic3r::GUI::PartPlate::calc_exclude_triangles:Unable to create exclude triangles
+[error]	2025-11-03 13:40:13.507387[Thread 0x00003374]:Unable to open the fileC:\Users\Lizard\Desktop\123titled.stl
+[error]	2025-11-03 13:40:13.507387[Thread 0x00003374]:Unable to open the fileC:\Users\Lizard\Downloads\Miyabi.3mf
+[error]	2025-11-03 13:40:13.507387[Thread 0x00003374]:Unable to open the fileC:\Users\Lizard\Downloads\Miyabi.stl
+[error]	2025-11-03 13:40:13.507387[Thread 0x00003374]:Unable to open the fileF:\Ilya\VENOM\venomNewbot.stl
+[error]	2025-11-03 13:40:13.507387[Thread 0x00008390]:Unable to open the fileC:\Users\Lizard\Downloads\Miyabi\Lhand.stl
+[error]	2025-11-03 13:40:13.507387[Thread 0x00003374]:Unable to open the fileC:\Users\Lizard\Downloads\Pico4洞洞板支架_stls\PICO手柄支架.3mf
+[error]	2025-11-03 13:40:13.507387[Thread 0x00008390]:Unable to open the fileC:\Users\Lizard\Downloads\Trashbag Holder - 6043568\Trashbag_Holder.stl
+[error]	2025-11-03 13:40:13.507387[Thread 0x00003374]:Unable to open the fileC:\Users\Lizard\Downloads\Профиль.3mf
+[error]	2025-11-03 13:40:13.507387[Thread 0x00008390]:Unable to open the fileC:\Users\Lizard\Desktop\geek.stl
+[error]	2025-11-03 13:40:13.507387[Thread 0x00003374]:Unable to open the fileC:\Users\Lizard\Downloads\Case.3mf
+[error]	2025-11-03 13:40:13.507387[Thread 0x00005d88]:Unable to open the fileC:\Users\Lizard\Desktop\2124124v.STL
+[error]	2025-11-03 13:40:13.508387[Thread 0x00008390]:Unable to open the fileC:\Users\Lizard\Downloads\untitled.stl
+[error]	2025-11-03 13:40:13.508387[Thread 0x00003374]:Unable to open the fileC:\Users\Lizard\Downloads\Miyabi\Miyabi.3mf
+[error]	2025-11-03 13:40:13.508387[Thread 0x00005d88]:Unable to open the fileC:\Users\Lizard\Desktop\чего мне не хватает\frostmourn-3.3mf
+[error]	2025-11-03 13:40:13.508387[Thread 0x000004d4]:Unable to open the fileC:\Users\Lizard\Downloads\winchrack\WinchRack_custom\Нью печать\Красный ролик ведущий.3mf
+[error]	2025-11-03 13:40:14.236595[Thread 0x000004d4]:FilamentHub: Get my presets failed. Error: , Status: 401
+[error]	2025-11-03 13:40:14.237596[Thread 0x000004d4]:FilamentHub: Failed to get presets list. Error: , Status: 401
+[error]	2025-11-03 13:40:14.745154[Thread 0x000004d4]:FilamentHub: Could not add script message handler after load
+[error]	2025-11-03 13:40:16.454294[Thread 0x000004d4]:Slic3r::GUI::PartPlate::calc_exclude_triangles:Unable to create exclude triangles
+[error]	2025-11-03 13:40:16.612841[Thread 0x000004d4]:Slic3r::NetworkAgent::connect_server error: network_agent=000001F965A790E0, ret=-2
+[error]	2025-11-03 13:40:16.949752[Thread 0x00004fd4]:Slic3r::DevPrinterConfigUtil::get_all_subseries: result= empty
+[warning]	2025-11-03 13:40:17.385181[Thread 0x00006684]:[Orca Updater]: online version=2.1.1.52, current_version=2.1.1.52, no need to download
+[error]	2025-11-03 13:40:23.422996[Thread 0x000004d4]:FilamentHub: Could not add script message handler after load
+[error]	2025-11-03 13:40:25.719142[Thread 0x000004d4]:FilamentHub: Could not add script message handler after load
+[warning]	2025-11-03 13:40:32.877373[Thread 0x000004d4]:Slic3r::PresetCollection::load_user_preset, can not find inherit preset for user preset 0.20mm Standard @BBL X1C - Копия, just skip
+[warning]	2025-11-03 13:40:32.877373[Thread 0x000004d4]:Slic3r::PresetCollection::load_user_preset, can not find inherit preset for user preset 0.20mm Standard @Creality Ender3V2 - Копировать, just skip
+[warning]	2025-11-03 13:40:32.877373[Thread 0x000004d4]:Slic3r::PresetCollection::load_user_preset, can not find inherit preset for user preset ABS (НИТ), just skip
+[warning]	2025-11-03 13:40:32.878372[Thread 0x000004d4]:Slic3r::PresetCollection::load_user_preset, can not find inherit preset for user preset ABS-5 (HTP), just skip
+[warning]	2025-11-03 13:40:32.878372[Thread 0x000004d4]:Slic3r::PresetCollection::load_user_preset, can not find inherit preset for user preset CARBEX LARETC, just skip
+[warning]	2025-11-03 13:40:32.878372[Thread 0x000004d4]:Slic3r::PresetCollection::load_user_preset, can not find inherit preset for user preset CarbeX, just skip
+[warning]	2025-11-03 13:40:32.878372[Thread 0x000004d4]:Slic3r::PresetCollection::load_user_preset, can not find inherit preset for user preset Creality Generic PETG , just skip
+[warning]	2025-11-03 13:40:32.879373[Thread 0x000004d4]:Slic3r::PresetCollection::load_user_preset, can not find inherit preset for user preset ERYONE - PLA Silk, just skip
+[warning]	2025-11-03 13:40:32.879373[Thread 0x000004d4]:Slic3r::PresetCollection::load_user_preset, can not find inherit preset for user preset FDPlast - ABS, just skip
+[warning]	2025-11-03 13:40:32.879373[Thread 0x000004d4]:Slic3r::PresetCollection::load_user_preset, can not find inherit preset for user preset FLEX HARD, just skip
+[warning]	2025-11-03 13:40:32.879373[Thread 0x000004d4]:Slic3r::PresetCollection::load_user_preset, can not find inherit preset for user preset FormaX, just skip
+[warning]	2025-11-03 13:40:32.879373[Thread 0x000004d4]:Slic3r::PresetCollection::load_user_preset, can not find inherit preset for user preset HTP - ABS-5, just skip
+[warning]	2025-11-03 13:40:32.879373[Thread 0x000004d4]:Slic3r::PresetCollection::load_user_preset, can not find inherit preset for user preset HTP - ABS-6, just skip
+[warning]	2025-11-03 13:40:32.879373[Thread 0x000004d4]:Slic3r::PresetCollection::load_user_preset, can not find inherit preset for user preset HTP - PET.htp, just skip
+[warning]	2025-11-03 13:40:32.879373[Thread 0x000004d4]:Slic3r::PresetCollection::load_user_preset, can not find inherit preset for user preset HTP - PETG Black, just skip
+[warning]	2025-11-03 13:40:32.880372[Thread 0x000004d4]:Slic3r::PresetCollection::load_user_preset, can not find inherit preset for user preset HTP - PETG Gold, just skip
+[warning]	2025-11-03 13:40:32.880372[Thread 0x000004d4]:Slic3r::PresetCollection::load_user_preset, can not find inherit preset for user preset HTP - PETG Silver, just skip
+[warning]	2025-11-03 13:40:32.880372[Thread 0x000004d4]:Slic3r::PresetCollection::load_user_preset, can not find inherit preset for user preset Kingroon TPU Black, just skip
+[warning]	2025-11-03 13:40:32.880372[Thread 0x000004d4]:Slic3r::PresetCollection::load_user_preset, can not find inherit preset for user preset NYLON LARETC, just skip
+[warning]	2025-11-03 13:40:32.880372[Thread 0x000004d4]:Slic3r::PresetCollection::load_user_preset, can not find inherit preset for user preset NYLON MOD LARETC, just skip
+[warning]	2025-11-03 13:40:32.880372[Thread 0x000004d4]:Slic3r::PresetCollection::load_user_preset, can not find inherit preset for user preset PA66 GF-30, just skip
+[warning]	2025-11-03 13:40:32.881378[Thread 0x000004d4]:Slic3r::PresetCollection::load_user_preset, can not find inherit preset for user preset PET-Gun Transparent, just skip
+[warning]	2025-11-03 13:40:32.881378[Thread 0x000004d4]:Slic3r::PresetCollection::load_user_preset, can not find inherit preset for user preset PET.htp, just skip
+[warning]	2025-11-03 13:40:32.881378[Thread 0x000004d4]:Slic3r::PresetCollection::load_user_preset, can not find inherit preset for user preset PET.htp (HTP), just skip
+[warning]	2025-11-03 13:40:32.881378[Thread 0x000004d4]:Slic3r::PresetCollection::load_user_preset, can not find inherit preset for user preset PETG (Syntech), just skip
+[warning]	2025-11-03 13:40:32.881378[Thread 0x000004d4]:Slic3r::PresetCollection::load_user_preset, can not find inherit preset for user preset PETG Transparrent LARETC, just skip
+[warning]	2025-11-03 13:40:32.881378[Thread 0x000004d4]:Slic3r::PresetCollection::load_user_preset, can not find inherit preset for user preset PETG h.t.p, just skip
+[warning]	2025-11-03 13:40:32.881378[Thread 0x000004d4]:Slic3r::PresetCollection::load_user_preset, can not find inherit preset for user preset PETG h.t.p., just skip
+[warning]	2025-11-03 13:40:32.881378[Thread 0x000004d4]:Slic3r::PresetCollection::load_user_preset, can not find inherit preset for user preset PETG-1 (HTP), just skip
+[warning]	2025-11-03 13:40:32.881378[Thread 0x000004d4]:Slic3r::PresetCollection::load_user_preset, can not find inherit preset for user preset PETG-3 (HTP), just skip
+[warning]	2025-11-03 13:40:32.881378[Thread 0x000004d4]:Slic3r::PresetCollection::load_user_preset, can not find inherit preset for user preset PLA ERYONE, just skip
+[warning]	2025-11-03 13:40:32.881378[Thread 0x000004d4]:Slic3r::PresetCollection::load_user_preset, can not find inherit preset for user preset PP LARETC, just skip
+[warning]	2025-11-03 13:40:32.881378[Thread 0x000004d4]:Slic3r::PresetCollection::load_user_preset, can not find inherit preset for user preset PritProduct - PETG Transparent, just skip
+[warning]	2025-11-03 13:40:32.881378[Thread 0x000004d4]:Slic3r::PresetCollection::load_user_preset, can not find inherit preset for user preset TOTAL GF-10, just skip
+[warning]	2025-11-03 13:40:32.881378[Thread 0x000004d4]:Slic3r::PresetCollection::load_user_preset, can not find inherit preset for user preset TOTAL GF-30, just skip
+[warning]	2025-11-03 13:40:32.881378[Thread 0x000004d4]:Slic3r::PresetCollection::load_user_preset, can not find inherit preset for user preset Voron Generic TPU - Копировать, just skip
+[warning]	2025-11-03 13:40:32.882372[Thread 0x000004d4]:Slic3r::PresetCollection::load_user_preset, can not find inherit preset for user preset НИТ - PETG Transparent, just skip
+[warning]	2025-11-03 14:43:31.864048[Thread 0x000004d4]:FilamentHub: Parent preset 'fdm_filament_common' not found in system presets
+[warning]	2025-11-03 14:43:31.865046[Thread 0x000004d4]:FilamentHub: Replaced inherits with fallback: 'AliZ PLA @System'
+[error]	2025-11-03 17:01:08.643263[Thread 0x000004d4]:FilamentHub: Get my presets failed. Error: , Status: 500
+[error]	2025-11-03 17:01:08.643263[Thread 0x000004d4]:FilamentHub: Failed to get presets count. Error: , Status: 500
+[error]	2025-11-03 17:01:08.686264[Thread 0x000004d4]:FilamentHub: Get my presets failed. Error: , Status: 500
+[error]	2025-11-03 17:01:08.686264[Thread 0x000004d4]:FilamentHub: Failed to get presets list. Error: , Status: 500
+[error]	2025-11-03 17:01:14.686306[Thread 0x000004d4]:Slic3r::GUI::PartPlate::calc_exclude_triangles:Unable to create exclude triangles

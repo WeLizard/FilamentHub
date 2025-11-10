@@ -142,12 +142,12 @@ export const ColorMaterialSection: React.FC<ColorMaterialSectionProps> = ({
                       transform: 'translateX(-50%)',
                     }}
                   >
-                    <HSLColorPicker
-                      color={colorHex}
-                      onChange={(hex) => onColorHexChange?.(hex)}
-                      isOpen={isColorPickerOpen}
-                      onToggle={setIsColorPickerOpen}
-                    />
+                  <HSLColorPicker
+                    color={colorHex}
+                    onChange={(hex) => onColorHexChange?.(hex)}
+                    isOpen={isColorPickerOpen}
+                    onToggle={setIsColorPickerOpen}
+                  />
                   </div>,
                   document.body
                 )}

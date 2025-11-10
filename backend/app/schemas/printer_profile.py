@@ -3,7 +3,7 @@
 from datetime import datetime
 from typing import Any
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, computed_field
 
 
 class PrinterProfileBase(BaseModel):
@@ -71,7 +71,22 @@ class PrinterProfileResponse(PrinterProfileBase):
 
     model_config = {
         "from_attributes": True,
+        "populate_by_name": True,
     }
+
+    @computed_field(return_type=str | None, alias="printer_slug")
+    def printer_slug(self) -> str | None:  # pragma: no cover - simple accessor
+        printer = getattr(self, "printer", None)
+        if printer is not None:
+            return getattr(printer, "slug", None)
+        return None
+
+    @computed_field(return_type=str | None, alias="printer_name")
+    def printer_name(self) -> str | None:  # pragma: no cover - simple accessor
+        printer = getattr(self, "printer", None)
+        if printer is not None:
+            return getattr(printer, "name", None)
+        return None
 
 
 class PrinterProfileListResponse(BaseModel):

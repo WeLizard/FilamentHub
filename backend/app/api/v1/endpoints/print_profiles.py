@@ -5,6 +5,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.core.dependencies import get_current_active_user
 from app.db.session import get_db
@@ -33,7 +34,10 @@ async def list_print_profiles(
 ) -> PrintProfileListResponse:
     """List print profiles."""
 
-    query = select(PrintProfile)
+    query = select(PrintProfile).options(
+        selectinload(PrintProfile.printer_links),
+        selectinload(PrintProfile.filament_links),
+    )
 
     if active_only:
         query = query.where(PrintProfile.active.is_(True))
@@ -77,7 +81,16 @@ async def get_print_profile(
 ) -> PrintProfileResponse:
     """Get print profile by ID."""
 
-    profile = (await db.execute(select(PrintProfile).where(PrintProfile.id == profile_id))).scalar_one_or_none()
+    profile = (
+        await db.execute(
+            select(PrintProfile)
+            .options(
+                selectinload(PrintProfile.printer_links),
+                selectinload(PrintProfile.filament_links),
+            )
+            .where(PrintProfile.id == profile_id)
+        )
+    ).scalar_one_or_none()
     if profile is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Print profile not found")
     return PrintProfileResponse.model_validate(profile)
@@ -122,9 +135,17 @@ async def create_print_profile(
         owner_user_id=owner_user_id,
         is_official=data.is_official if current_user.role == UserRole.ADMIN else False,
         active=data.active,
+        source=data.source,
+        vendor=data.vendor,
+        external_id=data.external_id,
+        setting_id=data.setting_id,
+        quality_tier=data.quality_tier,
+        default_nozzle=data.default_nozzle,
+        layer_height_mm=data.layer_height_mm,
         compatible_printers=data.compatible_printers,
         compatible_filaments=data.compatible_filaments,
-        orcaslicer_settings=data.orcaslicer_settings,
+        orcaslicer_settings=data.orcaslicer_settings or {},
+        extra_metadata=data.extra_metadata,
         notes=data.notes,
     )
 

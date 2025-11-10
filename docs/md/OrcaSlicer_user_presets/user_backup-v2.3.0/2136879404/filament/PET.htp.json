@@ -1,0 +1,27 @@
+{
+    "default_filament_colour": [
+        "#3A3A3A"
+    ],
+    "fan_max_speed": [
+        "98"
+    ],
+    "filament_cost": [
+        "1000"
+    ],
+    "filament_settings_id": [
+        "PET.htp"
+    ],
+    "from": "User",
+    "inherits": "My Generic PETG",
+    "name": "PET.htp",
+    "nozzle_temperature": [
+        "241"
+    ],
+    "nozzle_temperature_initial_layer": [
+        "245"
+    ],
+    "nozzle_temperature_range_low": [
+        "240"
+    ],
+    "version": "1.6.0.0"
+}

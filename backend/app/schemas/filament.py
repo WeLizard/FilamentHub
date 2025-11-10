@@ -77,6 +77,27 @@ class FilamentUpdate(BaseModel):
     active: bool | None = None
 
 
+class FilamentPresetSummary(BaseModel):
+    """Compact preset information for catalog cards."""
+
+    id: int
+    name: str
+    is_official: bool = True
+    is_weighted: bool = False
+    extruder_temp: float | None = None
+    bed_temp: float | None = None
+    print_speed: float | None = None
+    fan_speed: float | None = None
+    flow_rate: float | None = None
+    layer_height: float | None = None
+    rating: float | None = None
+    success_rate: float | None = None
+    updated_at: datetime | None = None
+    preset_type: Literal["official", "weighted", "community"]
+
+    model_config = ConfigDict(from_attributes=True)
+
+
 class FilamentResponse(FilamentBase):
     """Schema for Filament response."""
 
@@ -89,6 +110,11 @@ class FilamentResponse(FilamentBase):
     active: bool
     created_at: datetime
     updated_at: datetime
+    presets_count: int | None = Field(None, ge=0)
+    official_presets_count: int | None = Field(None, ge=0)
+    community_presets_count: int | None = Field(None, ge=0)
+    official_preset: FilamentPresetSummary | None = None
+    preset_summaries: list[FilamentPresetSummary] = Field(default_factory=list)
 
     model_config = ConfigDict(from_attributes=True)
 

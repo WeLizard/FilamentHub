@@ -1,0 +1,22 @@
+{
+    "filament_flow_ratio": [
+        "0.95"
+    ],
+    "filament_settings_id": [
+        "ERYONE - PLA Silk"
+    ],
+    "filament_vendor": [
+        "ERYONE"
+    ],
+    "from": "User",
+    "inherits": "Voron Generic PLA",
+    "is_custom_defined": "0",
+    "name": "ERYONE - PLA Silk",
+    "nozzle_temperature": [
+        "210"
+    ],
+    "nozzle_temperature_initial_layer": [
+        "210"
+    ],
+    "version": "2.2.0.4"
+}

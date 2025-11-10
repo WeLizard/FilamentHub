@@ -12,7 +12,6 @@ import {
   Settings,
   Users,
   Thermometer,
-  Gauge,
   Ruler,
   QrCode,
   LucideIcon,
@@ -21,6 +20,9 @@ import {
   Flame,
   ChevronLeft,
   ChevronRight,
+  Droplet,
+  Palette,
+  Fan,
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { filamentsAPI, brandsAPI, presetsAPI, savedPresetsAPI, filamentReviewsAPI, qrAPI } from '../api/client';
@@ -275,6 +277,22 @@ const MaterialCard: React.FC<MaterialCardProps> = ({
   savedPresetIds,
 }) => {
   const navigate = useNavigate();
+  const [currentPresetIndex, setCurrentPresetIndex] = useState(0);
+  const presetSummaries = filament.preset_summaries && filament.preset_summaries.length > 0
+    ? filament.preset_summaries
+    : filament.official_preset
+      ? [{ ...filament.official_preset }]
+      : [];
+  const hasCarousel = presetSummaries.length > 1;
+  const currentPreset = presetSummaries[currentPresetIndex] ?? null;
+  const presetsCount = filament.presets_count ?? 0;
+  const officialCount = filament.official_presets_count ?? 0;
+  const communityCount = filament.community_presets_count ?? 0;
+  const isPresetSaved = currentPreset ? savedPresetIds.has(currentPreset.id) : false;
+
+  useEffect(() => {
+    setCurrentPresetIndex(0);
+  }, [filament.id]);
   
   // УБРАЛИ загрузку пресетов и статистики в каталоге для оптимизации
   // Детальная информация загружается только на странице материала
@@ -289,6 +307,63 @@ const MaterialCard: React.FC<MaterialCardProps> = ({
     onClick();
   };
 
+  const canShowQR = Boolean(filament.qr_code && brand?.verified);
+
+  const formatPresetValue = (value: number | null | undefined, suffix: string) => {
+    if (value === null || value === undefined) return '—';
+    return `${Math.round(value)}${suffix}`;
+  };
+
+  const formatFanSpeed = (value: number | null | undefined) => {
+    if (value === null || value === undefined) return 'нет';
+    const rounded = Math.round(value);
+    return rounded > 0 ? `${rounded}%` : 'нет';
+  };
+
+  const formatFlowRate = (value: number | null | undefined) => {
+    if (value === null || value === undefined) return '—';
+    return `${Math.round(value)}%`;
+  };
+
+  const formatUpdatedAt = (value: string | null | undefined) => {
+    if (!value) return '—';
+    try {
+      return new Date(value).toLocaleDateString('ru-RU');
+    } catch {
+      return '—';
+    }
+  };
+
+  const getPresetTypeBadge = (presetType: string | undefined, isOfficial: boolean, isWeighted: boolean) => {
+    if (presetType === 'official' || isOfficial) {
+      return { label: 'Официальный', className: 'bg-green-500/20 text-green-200 border-green-500/30' };
+    }
+    if (presetType === 'weighted' || isWeighted) {
+      return { label: 'Генеративный', className: 'bg-yellow-500/20 text-yellow-200 border-yellow-500/30' };
+    }
+    return { label: 'Сообщество', className: 'bg-blue-500/20 text-blue-200 border-blue-500/30' };
+  };
+
+  const handleSavePreset = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (currentPreset) {
+      onSelect(currentPreset.id);
+    }
+  };
+
+  const handleCyclePreset = (direction: 'prev' | 'next') => {
+    if (!hasCarousel) return;
+    const total = presetSummaries.length;
+    setCurrentPresetIndex((prev) => {
+      if (direction === 'prev') {
+        return (prev - 1 + total) % total;
+      }
+      return (prev + 1) % total;
+    });
+  };
+
+  const presetBadge = currentPreset ? getPresetTypeBadge(currentPreset.preset_type, currentPreset.is_official, currentPreset.is_weighted) : null;
+
   return (
     <div 
       onClick={handleCardClick}
@@ -297,7 +372,7 @@ const MaterialCard: React.FC<MaterialCardProps> = ({
       {/* Header с названием, ценой и рейтингом */}
       <div className="flex items-start justify-between mb-4">
         <div className="flex-1">
-          <div className="flex items-center space-x-3 mb-2">
+          <div className="flex items-center gap-3 mb-2">
             {brand && (
               <>
                 <span
@@ -317,9 +392,22 @@ const MaterialCard: React.FC<MaterialCardProps> = ({
             <h3 className="text-xl font-bold text-white group-hover:text-purple-300 transition-colors">
               {filament.name}
             </h3>
-            <span className="px-2 py-1 bg-purple-500/20 text-purple-300 text-xs rounded-full border border-purple-500/30">
-              {filament.material_type}
-            </span>
+            <div className="flex items-center gap-2">
+              <span className="px-2 py-1 bg-purple-500/20 text-purple-300 text-xs rounded-full border border-purple-500/30">
+                {filament.material_type}
+              </span>
+              {(filament.color_hex || filament.visual_settings) && (
+                <span className="inline-flex items-center justify-center w-24">
+                  <div style={{ transform: 'scale(0.45)', transformOrigin: 'center center' }}>
+                    <FilamentPreview
+                      colorHex={filament.color_hex || '#FFFFFF'}
+                      visualSettings={filament.visual_settings}
+                      size="medium"
+                    />
+                  </div>
+                </span>
+              )}
+            </div>
           </div>
           {/* Рейтинг материала - убран из каталога для оптимизации, показывается на детальной странице */}
         </div>
@@ -339,78 +427,163 @@ const MaterialCard: React.FC<MaterialCardProps> = ({
         )}
       </div>
 
-      {/* Детали материала */}
-      <div className="grid grid-cols-2 gap-4 mb-4 text-sm">
+      {/* Детали материала в компактном виде */}
+      <div className="mb-4 flex flex-wrap items-center gap-4 text-xs text-gray-300">
         {filament.diameter && (
-          <div className="flex items-center text-gray-300">
-            <span className="font-medium mr-2">Диаметр:</span>
-            <span className="text-white">{filament.diameter}mm</span>
+          <div className="flex items-center gap-1 bg-white/5 border border-white/10 rounded-full px-3 py-1">
+            <Ruler className="w-3.5 h-3.5 text-purple-300" />
+            <span className="uppercase tracking-wide text-[11px]">Диаметр</span>
+            <span className="text-white font-semibold">{filament.diameter} мм</span>
           </div>
         )}
         {filament.density && (
-          <div className="flex items-center text-gray-300">
-            <span className="font-medium mr-2">Плотность:</span>
-            <span className="text-white">{filament.density}g/cm³</span>
+          <div className="flex items-center gap-1 bg-white/5 border border-white/10 rounded-full px-3 py-1">
+            <Droplet className="w-3.5 h-3.5 text-blue-300" />
+            <span className="uppercase tracking-wide text-[11px]">Плотность</span>
+            <span className="text-white font-semibold">{filament.density} г/см³</span>
+          </div>
+        )}
+        {(filament.color_hex || filament.color_name) && (
+          <div className="flex items-center gap-2 bg-white/5 border border-white/10 rounded-full px-3 py-1">
+            <Palette className="w-3.5 h-3.5 text-amber-300" />
+            <span className="uppercase tracking-wide text-[11px]">Цвет</span>
+            {filament.color_name && <span className="text-white font-semibold">{filament.color_name}</span>}
           </div>
         )}
       </div>
 
-      {/* Color Indicator */}
-      {(filament.color_hex || filament.color_name) && (
-        <div className="mb-4">
-          <div className="flex items-center space-x-2">
-            <span className="text-gray-300 text-sm font-medium">Цвет:</span>
-            <div style={{ transform: 'scale(0.4)', transformOrigin: 'left center', marginRight: '-80px' }}>
-              <FilamentPreview
-                colorHex={filament.color_hex || '#FFFFFF'}
-                visualSettings={filament.visual_settings}
-                size="medium"
-              />
+      {/* Пресеты и детальная информация загружаются только на странице материала для оптимизации */}
+      {currentPreset && (
+        <div className="mt-6 bg-white/5 border border-white/10 rounded-xl p-5 space-y-4">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="flex items-center gap-2 text-sm text-gray-300">
+              {presetBadge && (
+                <span className={`px-2 py-1 text-xs rounded-full border ${presetBadge.className}`}>
+                  {presetBadge.label}
+                </span>
+              )}
+              <h4 className="text-base font-semibold text-white">{currentPreset.name}</h4>
+              <span className="text-gray-400">· обновлён {formatUpdatedAt(currentPreset.updated_at)}</span>
             </div>
-            {filament.color_name && (
-              <span className="text-white text-sm">{filament.color_name}</span>
-            )}
+            <div className="flex items-center gap-3 text-sm text-gray-300">
+              <span>
+                Рейтинг:{' '}
+                <span className="text-white font-semibold">
+                  {currentPreset.rating ? currentPreset.rating.toFixed(1) : '—'}
+                </span>
+              </span>
+              <span>
+                Успех:{' '}
+                <span className="text-white font-semibold">
+                  {currentPreset.success_rate ? `${currentPreset.success_rate.toFixed(0)}%` : '—'}
+                </span>
+              </span>
+            </div>
+          </div>
+
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
+              <div className="space-y-1 text-center flex flex-col items-center">
+                <div className="flex items-center gap-1 text-gray-400 uppercase tracking-wide">
+                  <Thermometer className="w-3.5 h-3.5 text-orange-300" />
+                  <span>Сопло</span>
+                </div>
+                <div className="text-white font-semibold">
+                  {formatPresetValue(currentPreset.extruder_temp, '°C')}
+                </div>
+              </div>
+              <div className="space-y-1 text-center flex flex-col items-center">
+                <div className="flex items-center gap-1 text-gray-400 uppercase tracking-wide">
+                  <Thermometer className="w-3.5 h-3.5 text-blue-300" />
+                  <span>Стол</span>
+                </div>
+                <div className="text-white font-semibold">
+                  {formatPresetValue(currentPreset.bed_temp, '°C')}
+                </div>
+              </div>
+              <div className="space-y-1 text-center flex flex-col items-center">
+                <div className="flex items-center gap-1 text-gray-400 uppercase tracking-wide">
+                  <Fan className="w-3.5 h-3.5 text-sky-300" />
+                  <span>Обдув</span>
+                </div>
+                <div className="text-white font-semibold">
+                  {formatFanSpeed(currentPreset.fan_speed)}
+                </div>
+              </div>
+              <div className="space-y-1 text-center flex flex-col items-center">
+                <div className="flex items-center gap-1 text-gray-400 uppercase tracking-wide">
+                  <Droplet className="w-3.5 h-3.5 text-emerald-300" />
+                  <span>Поток</span>
+                </div>
+                <div className="text-white font-semibold">
+                  {formatFlowRate(currentPreset.flow_rate)}
+                </div>
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
+              {hasCarousel && (
+                <>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleCyclePreset('prev');
+                    }}
+                    className="p-2 rounded-full border border-white/20 text-white hover:bg-white/10 transition-colors"
+                  >
+                    <ChevronLeft className="w-4 h-4" />
+                  </button>
+                  <span className="text-xs text-gray-400">
+                    {currentPresetIndex + 1} / {presetSummaries.length}
+                  </span>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleCyclePreset('next');
+                    }}
+                    className="p-2 rounded-full border border-white/20 text-white hover:bg-white/10 transition-colors"
+                  >
+                    <ChevronRight className="w-4 h-4" />
+                  </button>
+                </>
+              )}
+              <button
+                onClick={handleSavePreset}
+                className="px-4 py-2 rounded-lg border border-white/20 text-sm text-white hover:bg-white/10 transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
+                disabled={isPresetSaved}
+              >
+                {isPresetSaved ? 'Добавлено' : 'В профиль'}
+              </button>
+            </div>
           </div>
         </div>
       )}
-
-      {/* Пресеты и детальная информация загружаются только на странице материала для оптимизации */}
       
       {/* Actions */}
       <div className="flex space-x-3 mt-4">
-        <button
-          onClick={onShowQR}
-          className="px-4 py-3 bg-white/10 hover:bg-white/20 text-white rounded-xl transition-all border border-white/20"
-        >
-          <QrCode className="w-5 h-5" />
-        </button>
+        {canShowQR && (
+          <button
+            onClick={onShowQR}
+            className="px-4 py-3 bg-white/10 hover:bg-white/20 text-white rounded-xl transition-all border border-white/20"
+          >
+            <QrCode className="w-5 h-5" />
+          </button>
+        )}
       </div>
 
       {/* QR Code */}
-      {showQR && (
+      {canShowQR && showQR && (
         <div className="mt-4 p-4 bg-white/5 rounded-xl border border-white/10">
           <div className="text-center">
-            {filament.qr_code ? (
-              <>
-                <img
-                  src={qrAPI.getQRCodeURL(filament.id, 200)}
-                  alt={`QR-код для ${filament.name}`}
-                  className="w-48 h-48 mx-auto mb-3 rounded-lg bg-white p-2"
-                />
-                <p className="text-gray-300 text-sm font-medium mb-1">QR-код: {filament.qr_code}</p>
-                <p className="text-gray-400 text-xs">Сканируйте для быстрого импорта настроек</p>
-                <p className="text-gray-500 text-xs mt-1">
-                  Сканирований: {filament.scans_count || 0}
-                </p>
-              </>
-            ) : (
-              <div className="py-8">
-                <QrCode className="w-16 h-16 mx-auto mb-3 text-gray-500" />
-                <p className="text-gray-400 text-sm">
-                  QR-код доступен только для верифицированных брендов
-                </p>
-              </div>
-            )}
+            <img
+              src={qrAPI.getQRCodeURL(filament.id, 200)}
+              alt={`QR-код для ${filament.name}`}
+              className="w-48 h-48 mx-auto mb-3 rounded-lg bg-white p-2"
+            />
+            <p className="text-gray-300 text-sm font-medium mb-1">QR-код: {filament.qr_code}</p>
+            <p className="text-gray-400 text-xs">Сканируйте для быстрого импорта настроек</p>
+            <p className="text-gray-500 text-xs mt-1">
+              Сканирований: {filament.scans_count || 0}
+            </p>
           </div>
         </div>
       )}
@@ -433,4 +606,3 @@ const PresetParam: React.FC<PresetParamProps> = ({ icon: Icon, label, value, col
     </span>
   </div>
 );
-

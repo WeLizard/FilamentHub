@@ -1,0 +1,54 @@
+{
+    "eng_plate_temp": [
+        "60"
+    ],
+    "eng_plate_temp_initial_layer": [
+        "60"
+    ],
+    "fan_min_speed": [
+        "100"
+    ],
+    "filament_cost": [
+        "120"
+    ],
+    "filament_density": [
+        "1.24"
+    ],
+    "filament_extruder_variant": [
+        "Direct Drive Standard"
+    ],
+    "filament_retraction_length": [
+        "5"
+    ],
+    "filament_retraction_speed": [
+        "45"
+    ],
+    "filament_settings_id": [
+        "PETG ZERO"
+    ],
+    "filament_vendor": [
+        "Bestfilament"
+    ],
+    "from": "User",
+    "hot_plate_temp": [
+        "60"
+    ],
+    "hot_plate_temp_initial_layer": [
+        "60"
+    ],
+    "inherits": "Generic PETG @System",
+    "name": "PETG ZERO [FilamentHub]",
+    "nozzle_temperature": [
+        "250"
+    ],
+    "nozzle_temperature_initial_layer": [
+        "250"
+    ],
+    "textured_plate_temp": [
+        "60"
+    ],
+    "textured_plate_temp_initial_layer": [
+        "60"
+    ],
+    "version": "2.3.0.0"
+}

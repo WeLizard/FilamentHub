@@ -30,6 +30,8 @@ import {
   Eye,
   DollarSign,
   Clock,
+  Filter,
+  RotateCcw,
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { presetsAPI, filamentsAPI, brandsAPI, savedPresetsAPI, filamentReviewsAPI, calculatorAPI, printerProfilesAPI, printProfilesAPI } from '../api/client';
@@ -147,6 +149,130 @@ export const ProfilePage: React.FC = () => {
 
   const myPrinterProfiles = useMemo(() => printerProfilesData?.items ?? [], [printerProfilesData]);
   const myPrintProfiles = useMemo(() => printProfilesData?.items ?? [], [printProfilesData]);
+
+  const [printProfileQualityFilter, setPrintProfileQualityFilter] = useState<string | null>(null);
+  const [printProfileNozzleFilter, setPrintProfileNozzleFilter] = useState<string | null>(null);
+  const [printProfilePrinterFilter, setPrintProfilePrinterFilter] = useState<string | null>(null);
+  const [printProfileOnlyOfficial, setPrintProfileOnlyOfficial] = useState<boolean>(false);
+  const [printProfileOnlyActive, setPrintProfileOnlyActive] = useState<boolean>(false);
+
+  const printProfileQualityOptions = useMemo(() => {
+    const order = ['superdraft', 'draft', 'standard', 'optimal', 'fine', 'highdetail'];
+    const unique = new Set<string>();
+    myPrintProfiles.forEach(profile => {
+      if (profile.quality_tier) {
+        unique.add(profile.quality_tier.toLowerCase());
+      }
+    });
+    const sorted = Array.from(unique);
+    sorted.sort((a, b) => {
+      const indexA = order.indexOf(a);
+      const indexB = order.indexOf(b);
+      const safeA = indexA === -1 ? order.length : indexA;
+      const safeB = indexB === -1 ? order.length : indexB;
+      if (safeA === safeB) {
+        return a.localeCompare(b);
+      }
+      return safeA - safeB;
+    });
+    return sorted;
+  }, [myPrintProfiles]);
+
+  const printProfileNozzleOptions = useMemo(() => {
+    const unique = new Set<string>();
+    myPrintProfiles.forEach(profile => {
+      if (profile.default_nozzle) {
+        unique.add(profile.default_nozzle.trim());
+      }
+    });
+    const sorted = Array.from(unique).sort((a, b) => {
+      const numA = parseFloat(a);
+      const numB = parseFloat(b);
+      const isNumA = Number.isFinite(numA);
+      const isNumB = Number.isFinite(numB);
+      if (isNumA && isNumB) {
+        return numA - numB;
+      }
+      if (isNumA) {
+        return -1;
+      }
+      if (isNumB) {
+        return 1;
+      }
+      return a.localeCompare(b);
+    });
+    return sorted;
+  }, [myPrintProfiles]);
+
+  const printProfilePrinterOptions = useMemo(() => {
+    const unique = new Set<string>();
+    myPrintProfiles.forEach(profile => {
+      profile.printer_links?.forEach(link => {
+        if (link.printer_slug) {
+          unique.add(link.printer_slug);
+        }
+      });
+    });
+    return Array.from(unique).sort();
+  }, [myPrintProfiles]);
+
+  const filteredPrintProfiles = useMemo(() => {
+    return myPrintProfiles.filter(profile => {
+      if (printProfileOnlyOfficial && !profile.is_official) {
+        return false;
+      }
+      if (printProfileOnlyActive && !profile.active) {
+        return false;
+      }
+      if (printProfileQualityFilter && (profile.quality_tier || '').toLowerCase() !== printProfileQualityFilter) {
+        return false;
+      }
+      if (printProfileNozzleFilter && profile.default_nozzle?.trim() !== printProfileNozzleFilter) {
+        return false;
+      }
+      if (printProfilePrinterFilter) {
+        const hasPrinter = profile.printer_links?.some(link => link.printer_slug === printProfilePrinterFilter);
+        if (!hasPrinter) {
+          return false;
+        }
+      }
+      return true;
+    });
+  }, [
+    myPrintProfiles,
+    printProfileOnlyOfficial,
+    printProfileOnlyActive,
+    printProfileQualityFilter,
+    printProfileNozzleFilter,
+    printProfilePrinterFilter,
+  ]);
+
+  const resetPrintProfileFilters = () => {
+    setPrintProfileQualityFilter(null);
+    setPrintProfileNozzleFilter(null);
+    setPrintProfilePrinterFilter(null);
+    setPrintProfileOnlyOfficial(false);
+    setPrintProfileOnlyActive(false);
+  };
+
+  useEffect(() => {
+    if (printProfileQualityFilter && !printProfileQualityOptions.includes(printProfileQualityFilter)) {
+      setPrintProfileQualityFilter(null);
+    }
+    if (printProfileNozzleFilter && !printProfileNozzleOptions.includes(printProfileNozzleFilter)) {
+      setPrintProfileNozzleFilter(null);
+    }
+    if (printProfilePrinterFilter && !printProfilePrinterOptions.includes(printProfilePrinterFilter)) {
+      setPrintProfilePrinterFilter(null);
+    }
+  }, [
+    printProfileQualityFilter,
+    printProfileNozzleFilter,
+    printProfilePrinterFilter,
+    printProfileQualityOptions,
+    printProfileNozzleOptions,
+    printProfilePrinterOptions,
+  ]);
 
   // Загружаем отзывы пользователя
   const { data: userReviewsData } = useQuery({
@@ -595,7 +721,18 @@ export const ProfilePage: React.FC = () => {
             </p>
           </div>
           <div className="flex items-center gap-3">
-            <StatusBadge label={`${myPrintProfiles.length} шт.`} variant="accent" />
+            <StatusBadge
+              label={
+                printProfileQualityFilter ||
+                printProfileNozzleFilter ||
+                printProfilePrinterFilter ||
+                printProfileOnlyOfficial ||
+                printProfileOnlyActive
+                  ? `${filteredPrintProfiles.length}/${myPrintProfiles.length} шт.`
+                  : `${myPrintProfiles.length} шт.`
+              }
+              variant="accent"
+            />
             <button
               type="button"
               className="px-4 py-2 rounded-lg border border-white/20 text-sm text-gray-400 bg-white/5 cursor-not-allowed"
@@ -610,17 +747,52 @@ export const ProfilePage: React.FC = () => {
         {isLoadingPrintProfiles ? (
           <ProfileSectionLoader />
         ) : myPrintProfiles.length > 0 ? (
-          <div className="grid gap-6 md:grid-cols-2">
-            {myPrintProfiles.map((profile) => (
-              <PrintProfileCard
-                key={profile.id}
-                profile={profile}
-                formatDateTime={formatDateTime}
-                onView={(item) => setSelectedPrintProfile(item)}
-                onDownload={handleDownloadPrintProfile}
+          <>
+            <PrintProfileFilters
+              qualityOptions={printProfileQualityOptions}
+              nozzleOptions={printProfileNozzleOptions}
+              printerOptions={printProfilePrinterOptions}
+              qualityFilter={printProfileQualityFilter}
+              nozzleFilter={printProfileNozzleFilter}
+              printerFilter={printProfilePrinterFilter}
+              onlyOfficial={printProfileOnlyOfficial}
+              onlyActive={printProfileOnlyActive}
+              onQualityChange={value =>
+                setPrintProfileQualityFilter(prev => (prev === value ? null : value))
+              }
+              onNozzleChange={value =>
+                setPrintProfileNozzleFilter(prev => (prev === value ? null : value))
+              }
+              onPrinterChange={value =>
+                setPrintProfilePrinterFilter(prev => (prev === value ? null : value))
+              }
+              onToggleOfficial={() => setPrintProfileOnlyOfficial(prev => !prev)}
+              onToggleActive={() => setPrintProfileOnlyActive(prev => !prev)}
+              onReset={resetPrintProfileFilters}
+            />
+
+            {filteredPrintProfiles.length > 0 ? (
+              <div className="grid gap-6 md:grid-cols-2">
+                {filteredPrintProfiles.map(profile => (
+                  <PrintProfileCard
+                    key={profile.id}
+                    profile={profile}
+                    formatDateTime={formatDateTime}
+                    onView={item => setSelectedPrintProfile(item)}
+                    onDownload={handleDownloadPrintProfile}
+                  />
+                ))}
+              </div>
+            ) : (
+              <EmptyState
+                icon={Filter}
+                title="Нет профилей под выбранные фильтры"
+                description="Попробуйте изменить параметры или сбросить фильтры, чтобы увидеть остальные профили."
+                actionLabel="Сбросить фильтры"
+                onAction={resetPrintProfileFilters}
               />
-            ))}
-          </div>
+            )}
+          </>
         ) : (
           <EmptyState
             icon={Settings}
@@ -1147,7 +1319,7 @@ const PresetCard: React.FC<PresetCardProps> = ({ preset, onEdit, onView, onDelet
         {preset.fan_speed !== null && (
           <div className="flex items-center space-x-2">
             <Fan className="w-4 h-4 text-orange-400" />
-            <span className="text-gray-300">Вентилятор: {preset.fan_speed}%</span>
+            <span className="text-gray-300">Обдув: {preset.fan_speed}%</span>
           </div>
         )}
         {preset.retraction_length && (
@@ -2154,6 +2326,9 @@ const PrinterProfileCard: React.FC<PrinterProfileCardProps> = ({ profile, format
       <div>
         <h3 className="text-xl font-semibold text-white">{profile.name}</h3>
         <p className="text-sm text-gray-400">Slug: {profile.slug}</p>
+        {profile.printer_slug && (
+          <p className="text-xs text-gray-400 mt-1">Принтер: {profile.printer_name ?? profile.printer_slug}</p>
+        )}
       </div>
       <div className="flex flex-wrap gap-2 justify-end">
         <StatusBadge label={profile.active ? 'Активен' : 'Отключен'} variant={profile.active ? 'success' : 'muted'} />
@@ -2163,9 +2338,20 @@ const PrinterProfileCard: React.FC<PrinterProfileCardProps> = ({ profile, format
     {profile.description && (
       <p className="mt-3 text-sm text-gray-300 line-clamp-3">{profile.description}</p>
     )}
-    <div className="mt-4 grid gap-3 sm:grid-cols-2">
+    <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
       <InfoRow label="Привязка к принтеру" value={profile.printer_id ? `ID ${profile.printer_id}` : 'не указана'} />
       <InfoRow label="Обновлён" value={formatDateTime(profile.updated_at)} />
+      <InfoRow label="Default Print Profile" value={profile.default_print_profile_slug || 'не задан'} />
+      <InfoRow
+        label="Диаметры сопел"
+        value={profile.nozzle_diameters && profile.nozzle_diameters.length > 0 ? profile.nozzle_diameters.join(', ') : 'не указаны'}
+      />
+      <InfoRow
+        label="Высота печати"
+        value={
+          typeof profile.printable_height_mm === 'number' ? `${profile.printable_height_mm.toFixed(0)} мм` : 'не указана'
+        }
+      />
       <InfoRow label="Стартовый G-code" value={profile.start_gcode ? 'задан' : '—'} />
       <InfoRow label="Финальный G-code" value={profile.end_gcode ? 'задан' : '—'} />
     </div>
@@ -2198,8 +2384,11 @@ interface PrintProfileCardProps {
 }
 
 const PrintProfileCard: React.FC<PrintProfileCardProps> = ({ profile, formatDateTime, onView, onDownload }) => {
-  const printersCount = profile.compatible_printers?.length ?? 0;
-  const filamentsCount = profile.compatible_filaments?.length ?? 0;
+  const printersCount = profile.printer_links?.length ?? 0;
+  const filamentsCount = profile.filament_links?.length ?? 0;
+  const defaultNozzle = profile.default_nozzle ? `${profile.default_nozzle} мм` : 'не указано';
+  const layerHeight =
+    typeof profile.layer_height_mm === 'number' ? `${profile.layer_height_mm.toFixed(2)} мм` : 'не указана';
 
   return (
     <div className="bg-white/10 backdrop-blur-sm border border-white/15 rounded-2xl p-6 shadow-xl">
@@ -2216,9 +2405,12 @@ const PrintProfileCard: React.FC<PrintProfileCardProps> = ({ profile, formatDate
       {profile.description && (
         <p className="mt-3 text-sm text-gray-300 line-clamp-3">{profile.description}</p>
       )}
-      <div className="mt-4 grid gap-3 sm:grid-cols-2">
+      <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
         <InfoRow label="Категория" value={profile.category || 'не указана'} />
+        <InfoRow label="Качество" value={profile.quality_tier || 'не указано'} />
         <InfoRow label="Обновлён" value={formatDateTime(profile.updated_at)} />
+        <InfoRow label="Сопло (по умолчанию)" value={defaultNozzle} />
+        <InfoRow label="Высота слоя" value={layerHeight} />
         <InfoRow label="Совместимые принтеры" value={`${printersCount} шт.`} />
         <InfoRow label="Совместимые филаменты" value={`${filamentsCount} шт.`} />
       </div>
@@ -2239,6 +2431,158 @@ const PrintProfileCard: React.FC<PrintProfileCardProps> = ({ profile, formatDate
           <Download className="w-4 h-4" />
           Скачать JSON
         </button>
+      </div>
+    </div>
+  );
+};
+
+interface FilterChipProps {
+  label: string;
+  active: boolean;
+  onClick: () => void;
+}
+
+const FilterChip: React.FC<FilterChipProps> = ({ label, active, onClick }) => (
+  <button
+    type="button"
+    onClick={onClick}
+    className={`px-3 py-1.5 rounded-lg border transition-all text-xs sm:text-sm ${
+      active
+        ? 'border-purple-400 bg-purple-500/20 text-white shadow-[0_0_18px_rgba(168,85,247,0.2)]'
+        : 'border-white/10 bg-white/5 text-gray-300 hover:border-purple-400 hover:text-white'
+    }`}
+  >
+    {label}
+  </button>
+);
+
+const formatQualityLabel = (value: string) => {
+  const map: Record<string, string> = {
+    superdraft: 'Супер Draft',
+    draft: 'Draft',
+    standard: 'Standard',
+    optimal: 'Optimal',
+    fine: 'Fine',
+    highdetail: 'High Detail',
+  };
+  return map[value] ?? value;
+};
+
+const formatPrinterLabel = (slug: string) => slug.replace(/-/g, ' ');
+
+interface PrintProfileFiltersProps {
+  qualityOptions: string[];
+  nozzleOptions: string[];
+  printerOptions: string[];
+  qualityFilter: string | null;
+  nozzleFilter: string | null;
+  printerFilter: string | null;
+  onlyOfficial: boolean;
+  onlyActive: boolean;
+  onQualityChange: (value: string) => void;
+  onNozzleChange: (value: string) => void;
+  onPrinterChange: (value: string) => void;
+  onToggleOfficial: () => void;
+  onToggleActive: () => void;
+  onReset: () => void;
+}
+
+const PrintProfileFilters: React.FC<PrintProfileFiltersProps> = ({
+  qualityOptions,
+  nozzleOptions,
+  printerOptions,
+  qualityFilter,
+  nozzleFilter,
+  printerFilter,
+  onlyOfficial,
+  onlyActive,
+  onQualityChange,
+  onNozzleChange,
+  onPrinterChange,
+  onToggleOfficial,
+  onToggleActive,
+  onReset,
+}) => {
+  const hasActiveFilters =
+    !!qualityFilter || !!nozzleFilter || !!printerFilter || onlyOfficial || onlyActive;
+
+  return (
+    <div className="bg-white/5 border border-white/10 rounded-2xl p-4 space-y-4">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex items-center gap-2 text-sm font-medium uppercase tracking-wide text-gray-300">
+          <Filter className="w-4 h-4" />
+          Фильтры
+        </div>
+        <button
+          type="button"
+          onClick={onReset}
+          disabled={!hasActiveFilters}
+          className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-lg border text-xs font-medium transition-all ${
+            hasActiveFilters
+              ? 'border-purple-400 text-purple-200 hover:bg-purple-500/10'
+              : 'border-white/10 text-gray-500 cursor-not-allowed'
+          }`}
+        >
+          <RotateCcw className="w-4 h-4" />
+          Сбросить
+        </button>
+      </div>
+
+      {qualityOptions.length > 0 && (
+        <div className="space-y-2">
+          <p className="text-xs text-gray-400 uppercase tracking-wide">Класс качества</p>
+          <div className="flex flex-wrap gap-2">
+            {qualityOptions.map(option => (
+              <FilterChip
+                key={option}
+                label={formatQualityLabel(option)}
+                active={qualityFilter === option}
+                onClick={() => onQualityChange(option)}
+              />
+            ))}
+          </div>
+        </div>
+      )}
+
+      {nozzleOptions.length > 0 && (
+        <div className="space-y-2">
+          <p className="text-xs text-gray-400 uppercase tracking-wide">Сопло</p>
+          <div className="flex flex-wrap gap-2">
+            {nozzleOptions.map(option => (
+              <FilterChip
+                key={option}
+                label={`${option} мм`}
+                active={nozzleFilter === option}
+                onClick={() => onNozzleChange(option)}
+              />
+            ))}
+          </div>
+        </div>
+      )}
+
+      {printerOptions.length > 0 && (
+        <div className="space-y-2">
+          <p className="text-xs text-gray-400 uppercase tracking-wide">Принтер</p>
+          <div className="flex flex-wrap gap-2">
+            {printerOptions.map(option => (
+              <FilterChip
+                key={option}
+                label={formatPrinterLabel(option)}
+                active={printerFilter === option}
+                onClick={() => onPrinterChange(option)}
+              />
+            ))}
+          </div>
+        </div>
+      )}
+
+      <div className="flex flex-wrap gap-2">
+        <FilterChip
+          label="Только официальные"
+          active={onlyOfficial}
+          onClick={onToggleOfficial}
+        />
+        <FilterChip label="Только активные" active={onlyActive} onClick={onToggleActive} />
       </div>
     </div>
   );
@@ -2279,13 +2623,28 @@ const PrinterProfileModal: React.FC<PrinterProfileModalProps> = ({ profile, onCl
           </button>
         </div>
         <div className="px-6 pb-6 pt-2 space-y-6 overflow-y-auto max-h-[70vh] custom-scrollbar">
-          <div className="grid gap-4 sm:grid-cols-2">
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             <InfoRow label="ID профиля" value={`#${profile.id}`} />
             <InfoRow label="Привязка к принтеру" value={profile.printer_id ? `ID ${profile.printer_id}` : 'не указана'} />
             <InfoRow label="Создан" value={formatDateTime(profile.created_at)} />
             <InfoRow label="Обновлён" value={formatDateTime(profile.updated_at)} />
             <InfoRow label="Тип" value={profile.is_official ? 'Официальный' : 'Пользовательский'} />
             <InfoRow label="Статус" value={profile.active ? 'Активен' : 'Отключен'} />
+            <InfoRow label="Источник" value={profile.source || 'не указан'} />
+            <InfoRow label="Вендор" value={profile.vendor || 'не указан'} />
+            <InfoRow label="Setting ID" value={profile.setting_id || '—'} />
+            <InfoRow label="External ID" value={profile.external_id || '—'} />
+            <InfoRow
+              label="Диаметры сопел"
+              value={profile.nozzle_diameters && profile.nozzle_diameters.length > 0 ? profile.nozzle_diameters.join(', ') : 'не указаны'}
+            />
+            <InfoRow
+              label="Высота печати"
+              value={
+                typeof profile.printable_height_mm === 'number' ? `${profile.printable_height_mm.toFixed(0)} мм` : 'не указана'
+              }
+            />
+            <InfoRow label="Default Print Profile" value={profile.default_print_profile_slug || 'не задан'} />
           </div>
           {profile.description && (
             <div>
@@ -2344,8 +2703,11 @@ const PrintProfileModal: React.FC<PrintProfileModalProps> = ({ profile, onClose,
     return () => window.removeEventListener('keydown', handleKey);
   }, [onClose]);
 
-  const printersList = profile.compatible_printers ?? [];
-  const filamentsList = profile.compatible_filaments ?? [];
+  const printersList = profile.printer_links ?? [];
+  const filamentsList = profile.filament_links ?? [];
+  const defaultNozzle = profile.default_nozzle ? `${profile.default_nozzle} мм` : 'не указано';
+  const layerHeight =
+    typeof profile.layer_height_mm === 'number' ? `${profile.layer_height_mm.toFixed(2)} мм` : 'не указана';
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
@@ -2365,13 +2727,20 @@ const PrintProfileModal: React.FC<PrintProfileModalProps> = ({ profile, onClose,
           </button>
         </div>
         <div className="px-6 pb-6 pt-2 space-y-6 overflow-y-auto max-h-[70vh] custom-scrollbar">
-          <div className="grid gap-4 sm:grid-cols-2">
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             <InfoRow label="ID профиля" value={`#${profile.id}`} />
             <InfoRow label="Создан" value={formatDateTime(profile.created_at)} />
             <InfoRow label="Обновлён" value={formatDateTime(profile.updated_at)} />
             <InfoRow label="Категория" value={profile.category || 'не указана'} />
             <InfoRow label="Тип" value={profile.is_official ? 'Официальный' : 'Пользовательский'} />
             <InfoRow label="Статус" value={profile.active ? 'Активен' : 'Отключен'} />
+            <InfoRow label="Источник" value={profile.source || 'не указан'} />
+            <InfoRow label="Вендор" value={profile.vendor || 'не указан'} />
+            <InfoRow label="Setting ID" value={profile.setting_id || '—'} />
+            <InfoRow label="External ID" value={profile.external_id || '—'} />
+            <InfoRow label="Класс качества" value={profile.quality_tier || '—'} />
+            <InfoRow label="Сопло (по умолчанию)" value={defaultNozzle} />
+            <InfoRow label="Высота слоя" value={layerHeight} />
           </div>
           {profile.description && (
             <div>
@@ -2390,8 +2759,12 @@ const PrintProfileModal: React.FC<PrintProfileModalProps> = ({ profile, onClose,
               <h4 className="text-sm font-semibold text-white mb-2">Совместимые принтеры</h4>
               <div className="flex flex-wrap gap-2">
                 {printersList.map((item) => (
-                  <span key={item} className="px-2 py-1 bg-white/10 border border-white/15 rounded-lg text-xs text-gray-100">
-                    {item}
+                  <span
+                    key={`${item.printer_slug}-${item.relation_type}-${item.condition ?? 'explicit'}`}
+                    className="px-2 py-1 bg-white/10 border border-white/15 rounded-lg text-xs text-gray-100"
+                  >
+                    {item.printer_slug}
+                    {item.relation_type === 'condition' && item.condition ? ` (условие: ${item.condition})` : null}
                   </span>
                 ))}
               </div>
@@ -2402,8 +2775,11 @@ const PrintProfileModal: React.FC<PrintProfileModalProps> = ({ profile, onClose,
               <h4 className="text-sm font-semibold text-white mb-2">Совместимые филаменты</h4>
               <div className="flex flex-wrap gap-2">
                 {filamentsList.map((item) => (
-                  <span key={item} className="px-2 py-1 bg-white/10 border border-white/15 rounded-lg text-xs text-gray-100">
-                    {item}
+                  <span
+                    key={`${item.filament_slug}-${item.relation_type}`}
+                    className="px-2 py-1 bg-white/10 border border-white/15 rounded-lg text-xs text-gray-100"
+                  >
+                    {item.filament_slug}
                   </span>
                 ))}
               </div>
