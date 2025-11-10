@@ -12,6 +12,7 @@ from app.db.base import Base
 if TYPE_CHECKING:
     from app.models.brand import Brand
     from app.models.filament_review import FilamentReview
+    from app.models.print_profile_filament import PrintProfileFilament
 
 
 class Filament(Base):
@@ -94,6 +95,9 @@ class Filament(Base):
     )
     reviews: Mapped[list["FilamentReview"]] = relationship(
         "FilamentReview", back_populates="filament", cascade="all, delete-orphan"
+    )
+    print_profile_links: Mapped[list["PrintProfileFilament"]] = relationship(
+        "PrintProfileFilament", back_populates="filament", cascade="all, delete-orphan"
     )
 
     def __repr__(self) -> str:

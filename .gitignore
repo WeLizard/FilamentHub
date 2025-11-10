@@ -87,7 +87,9 @@ docs/3dcalc/
 docs/awesome-cursor-best-practices-main/
 docs/spoolman2slicer-main/
 docs/*.sql
-docs/imgs/
+# Keep useful documentation assets
+!docs/imgs/
+!docs/orca_bundles/
 
 # Backend test files and scripts
 backend/test_*.py

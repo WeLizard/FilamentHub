@@ -49,6 +49,9 @@ class Settings(BaseSettings):
     # Автоматическая очистка файлов от завершенных/отклоненных заявок через N дней
     CLEANUP_FILES_AFTER_DAYS: int = 30
 
+    # OrcaSlicer bundles
+    ORCA_SYSTEM_PRESETS_PATH: str = "docs/orca_bundles/system_presets"
+
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",

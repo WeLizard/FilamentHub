@@ -13,6 +13,7 @@ from . import (
     qr,
     saved_presets,
     spoolman,
+    orca_sync,
 )
 
 __all__ = [
@@ -28,4 +29,5 @@ __all__ = [
     "qr",
     "saved_presets",
     "spoolman",
+    "orca_sync",
 ]

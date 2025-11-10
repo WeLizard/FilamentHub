@@ -3,7 +3,7 @@
 from datetime import datetime
 from typing import TYPE_CHECKING
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, JSON, String, Text
+from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Integer, JSON, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.sql import func
 
@@ -31,10 +31,18 @@ class PrintProfile(Base):
 
     is_official: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
     active: Mapped[bool] = mapped_column(Boolean, default=True, index=True)
+    source: Mapped[str] = mapped_column(String(50), default="user", server_default="user", index=True)
+    vendor: Mapped[str | None] = mapped_column(String(100), nullable=True, index=True)
+    external_id: Mapped[str | None] = mapped_column(String(200), nullable=True, index=True)
+    setting_id: Mapped[str | None] = mapped_column(String(100), nullable=True, index=True)
+    quality_tier: Mapped[str | None] = mapped_column(String(50), nullable=True, index=True)
+    default_nozzle: Mapped[str | None] = mapped_column(String(20), nullable=True, index=True)
+    layer_height_mm: Mapped[float | None] = mapped_column(Float, nullable=True, index=True)
 
     compatible_printers: Mapped[list[str] | None] = mapped_column(JSON, nullable=True)
     compatible_filaments: Mapped[list[str] | None] = mapped_column(JSON, nullable=True)
     orcaslicer_settings: Mapped[dict] = mapped_column(JSON, default=dict)
+    extra_metadata: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(
@@ -45,6 +53,16 @@ class PrintProfile(Base):
     )
 
     owner: Mapped["User | None"] = relationship("User", back_populates="print_profiles")
+    printer_links: Mapped[list["PrintProfilePrinter"]] = relationship(
+        "PrintProfilePrinter",
+        back_populates="profile",
+        cascade="all, delete-orphan",
+    )
+    filament_links: Mapped[list["PrintProfileFilament"]] = relationship(
+        "PrintProfileFilament",
+        back_populates="profile",
+        cascade="all, delete-orphan",
+    )
 
     def __repr__(self) -> str:
         status = "official" if self.is_official else "user"

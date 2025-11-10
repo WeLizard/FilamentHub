@@ -11,6 +11,7 @@ from app.api.v1.endpoints import (
     filament_reviews,
     filaments,
     notifications,
+    orca_sync,
     presets,
     printer_profiles,
     printer_requests,
@@ -40,4 +41,5 @@ api_router.include_router(admin.router)
 api_router.include_router(saved_presets.router)
 api_router.include_router(filament_reviews.router)
 api_router.include_router(notifications.router)
+api_router.include_router(orca_sync.router)
 

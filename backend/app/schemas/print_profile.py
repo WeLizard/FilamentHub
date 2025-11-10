@@ -16,9 +16,17 @@ class PrintProfileBase(BaseModel):
     owner_user_id: int | None = Field(None, ge=1)
     is_official: bool = False
     active: bool = True
+    source: str = "user"
+    vendor: str | None = Field(None, max_length=100)
+    external_id: str | None = Field(None, max_length=200)
+    setting_id: str | None = Field(None, max_length=100)
+    quality_tier: str | None = Field(None, max_length=50)
+    default_nozzle: str | None = Field(None, max_length=20)
+    layer_height_mm: float | None = None
     compatible_printers: list[str] | None = None
     compatible_filaments: list[str] | None = None
     orcaslicer_settings: dict[str, Any] = Field(default_factory=dict)
+    extra_metadata: dict[str, Any] | None = None
     notes: str | None = Field(None, max_length=10_000)
 
 
@@ -38,9 +46,17 @@ class PrintProfileUpdate(BaseModel):
     owner_user_id: int | None = Field(None, ge=1)
     is_official: bool | None = None
     active: bool | None = None
+    source: str | None = Field(None, max_length=50)
+    vendor: str | None = Field(None, max_length=100)
+    external_id: str | None = Field(None, max_length=200)
+    setting_id: str | None = Field(None, max_length=100)
+    quality_tier: str | None = Field(None, max_length=50)
+    default_nozzle: str | None = Field(None, max_length=20)
+    layer_height_mm: float | None = None
     compatible_printers: list[str] | None = None
     compatible_filaments: list[str] | None = None
     orcaslicer_settings: dict[str, Any] | None = None
+    extra_metadata: dict[str, Any] | None = None
     notes: str | None = Field(None, max_length=10_000)
 
 

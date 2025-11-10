@@ -3,7 +3,7 @@
 from datetime import datetime
 from typing import TYPE_CHECKING
 
-from sqlalchemy import Boolean, DateTime, Float, Integer, String, Text
+from sqlalchemy import Boolean, DateTime, Float, Integer, JSON, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.sql import func
 
@@ -32,6 +32,11 @@ class Printer(Base):
     manufacturer: Mapped[str] = mapped_column(String(100), index=True)
     model: Mapped[str] = mapped_column(String(100))
     slug: Mapped[str] = mapped_column(String(200), unique=True, index=True)
+    model_id: Mapped[str | None] = mapped_column(String(120), nullable=True, index=True)
+    family: Mapped[str | None] = mapped_column(String(100), nullable=True, index=True)
+    technology: Mapped[str | None] = mapped_column(String(30), nullable=True, index=True)
+    source: Mapped[str] = mapped_column(String(50), default="user", server_default="user", index=True)
+    vendor: Mapped[str | None] = mapped_column(String(100), nullable=True, index=True)
     
     # Build volume (optional)
     build_volume_x: Mapped[float | None] = mapped_column(Float, nullable=True)
@@ -41,6 +46,7 @@ class Printer(Base):
     
     # Nozzle diameter (FDM only)
     nozzle_diameter: Mapped[float | None] = mapped_column(Float, nullable=True)
+    nozzle_options: Mapped[list[float] | None] = mapped_column(JSON, nullable=True)
     # Диаметр сопла в мм (0.2, 0.4, 0.6, 0.8 и т.д.)
     
     # Temperature limits
@@ -52,6 +58,9 @@ class Printer(Base):
     
     # Image/Logo
     image_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
+
+    default_materials: Mapped[list[str] | None] = mapped_column(JSON, nullable=True)
+    extra_metadata: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     
     # Status
     active: Mapped[bool] = mapped_column(Boolean, default=True, index=True)
@@ -70,6 +79,9 @@ class Printer(Base):
     )
     profiles: Mapped[list["PrinterProfile"]] = relationship(
         "PrinterProfile", back_populates="printer", cascade="all, delete-orphan"
+    )
+    print_profile_links: Mapped[list["PrintProfilePrinter"]] = relationship(
+        "PrintProfilePrinter", back_populates="printer", cascade="all, delete-orphan"
     )
 
     def __repr__(self) -> str:

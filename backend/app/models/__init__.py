@@ -13,6 +13,8 @@ from app.models.printer import Printer
 from app.models.printer_request import PrinterRequest, PrinterRequestStatus
 from app.models.printer_profile import PrinterProfile
 from app.models.print_profile import PrintProfile
+from app.models.print_profile_printer import PrintProfilePrinter
+from app.models.print_profile_filament import PrintProfileFilament
 from app.models.notification import Notification, NotificationType
 from app.models.user import User, UserRole
 from app.models.user_saved_preset import UserSavedPreset
@@ -37,6 +39,8 @@ __all__ = [
     "PrinterRequestStatus",
     "PrinterProfile",
     "PrintProfile",
+    "PrintProfilePrinter",
+    "PrintProfileFilament",
     "User",
     "UserRole",
     "UserSavedPreset",

@@ -2,7 +2,7 @@
 
 from typing import Annotated
 
-from fastapi import Depends, HTTPException, Request, status
+from fastapi import Depends, Header, HTTPException, Request, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -124,5 +124,24 @@ async def get_user_by_api_key(
     """Get user by API key (for OrcaSlicer integration)."""
     result = await db.execute(select(User).where(User.api_key == api_key))
     user = result.scalar_one_or_none()
+    return user
+
+
+async def get_current_user_by_api_key(
+    api_key: Annotated[str, Header(alias="X-API-Key")],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> User:
+    """Validate API key from header and return active user for OrcaSlicer integration."""
+    user = await get_user_by_api_key(api_key, db)
+    if user is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid or expired API key",
+        )
+    if not user.active:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="User account is inactive",
+        )
     return user
 

@@ -3,7 +3,7 @@
 from datetime import datetime
 from typing import TYPE_CHECKING
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, JSON, String, Text
+from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Integer, JSON, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.sql import func
 
@@ -34,8 +34,18 @@ class PrinterProfile(Base):
 
     is_official: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
     active: Mapped[bool] = mapped_column(Boolean, default=True, index=True)
+    source: Mapped[str] = mapped_column(String(50), default="user", server_default="user", index=True)
+    vendor: Mapped[str | None] = mapped_column(String(100), nullable=True, index=True)
+    external_id: Mapped[str | None] = mapped_column(String(200), nullable=True, index=True)
+    setting_id: Mapped[str | None] = mapped_column(String(100), nullable=True, index=True)
+
+    nozzle_diameters: Mapped[list[float] | None] = mapped_column(JSON, nullable=True)
+    printable_area: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    printable_height_mm: Mapped[float | None] = mapped_column(Float, nullable=True)
+    default_print_profile_slug: Mapped[str | None] = mapped_column(String(200), nullable=True, index=True)
 
     orcaslicer_settings: Mapped[dict] = mapped_column(JSON, default=dict)
+    extra_metadata: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     start_gcode: Mapped[str | None] = mapped_column(Text, nullable=True)
     end_gcode: Mapped[str | None] = mapped_column(Text, nullable=True)
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
