@@ -6,6 +6,7 @@ import { useQuery } from '@tanstack/react-query';
 import { presetsAPI, filamentsAPI } from '../api/client';
 import type { Preset, Filament } from '../types/api';
 import { useHeaderVisible } from '../hooks/useHeaderVisible';
+import { FilamentSummaryCard } from './FilamentSummaryCard';
 
 // Вспомогательные компоненты для отображения значений
 interface ViewFieldProps {
@@ -15,16 +16,14 @@ interface ViewFieldProps {
 }
 
 const ViewField: React.FC<ViewFieldProps> = ({ label, value, unit }) => {
-  // Показываем все значения, включая 0 (по требованию пользователя)
-  if (value === null || value === undefined || value === '') {
-    return null;
-  }
+  const hasContent = value !== null && value !== undefined && value !== '';
+  const displayValue = hasContent ? value : '—';
   
   return (
     <div className="flex flex-col py-1">
       <span className="text-gray-400 text-xs mb-0.5">{label}</span>
       <span className="text-white font-medium text-sm">
-        {value}
+        {displayValue}
         {unit && <span className="text-gray-400 ml-1 text-xs">{unit}</span>}
       </span>
     </div>
@@ -157,7 +156,7 @@ export const ViewPresetModal: React.FC<ViewPresetModalProps> = ({
   const adaptivePAModel = getArrayValue('adaptive_pressure_advance_model') || getStringValue('adaptive_pressure_advance_model');
   const filamentShrink = getPercentValue('filament_shrink');
   const filamentShrinkageCompensationZ = getPercentValue('filament_shrinkage_compensation_z');
-  const defaultFilamentColour = getStringValue('default_filament_colour');
+  const defaultFilamentColour = editingFilament?.color_hex || getStringValue('default_filament_colour');
   const filamentIsSupport = getBoolValue('filament_is_support');
   const filamentSoluble = getBoolValue('filament_soluble');
   const filamentAdhesivenessCategory = getNumberValue('filament_adhesiveness_category');
@@ -272,8 +271,8 @@ export const ViewPresetModal: React.FC<ViewPresetModalProps> = ({
   if (!isOpen || !preset) return null;
 
   return (
-    <div className={`fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm ${isHeaderVisible ? 'pt-[88px]' : ''}`}>
-      <div className="bg-gradient-to-br from-gray-900 via-purple-900/20 to-gray-900 rounded-2xl shadow-2xl border border-white/10 w-full max-w-4xl max-h-[90vh] overflow-hidden flex flex-col">
+    <div className={`fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm ${isHeaderVisible ? 'pt-[88px]' : ''}`}>
+      <div className={`bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900 rounded-2xl w-full max-w-5xl overflow-hidden flex flex-col border border-white/20 shadow-2xl pointer-events-auto ${isHeaderVisible ? 'max-h-[calc(100vh-100px)]' : 'max-h-[90vh]'}`}>
         {/* Header */}
         <div className="flex items-center justify-between p-6 border-b border-white/10">
           <h2 className="text-2xl font-bold text-white">Просмотр пресета</h2>
@@ -288,10 +287,21 @@ export const ViewPresetModal: React.FC<ViewPresetModalProps> = ({
         {/* Content */}
         <div className="flex-1 overflow-y-auto p-6 custom-scrollbar">
           {/* Основная информация */}
-          <div className="mb-6">
-            <h3 className="text-xl font-semibold text-white mb-4">{preset.name}</h3>
+          <div className="space-y-6">
+            <div className="bg-white/5 border border-white/10 rounded-2xl p-6">
+              <div className="flex flex-col gap-3">
+                <h3 className="text-2xl font-bold text-white">{preset.name}</h3>
             {preset.description && (
-              <p className="text-gray-300 mb-4">{preset.description}</p>
+                  <p className="text-gray-300">{preset.description}</p>
+                )}
+              </div>
+            </div>
+
+            {editingFilament && (
+              <div>
+                <label className="block text-gray-300 mb-2 text-sm font-medium">Филамент</label>
+                <FilamentSummaryCard filament={editingFilament} />
+              </div>
             )}
           </div>
 

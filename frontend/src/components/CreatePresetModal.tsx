@@ -17,6 +17,7 @@ import { useHeaderVisible } from '../hooks/useHeaderVisible';
 import { ColorMaterialSection } from './ColorMaterialSection';
 import { HSLColorPicker } from './HSLColorPicker';
 import { FilamentPreview } from './FilamentPreview';
+import { FilamentSummaryCard } from './FilamentSummaryCard';
 
 // Список стандартных типов материалов (FDM/FFF)
 const MATERIAL_TYPES = [
@@ -1372,49 +1373,7 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
           {preset && editingFilament && (
             <div>
               <label className="block text-gray-300 mb-2 text-sm font-medium">Филамент</label>
-              <div className="px-4 pt-4 pb-2 bg-white/5 rounded-xl border border-white/10">
-                <div className="flex items-center justify-between mb-2">
-                  <div className="flex-shrink-0">
-                    <h4 className="text-lg font-bold text-white">{editingFilament.name}</h4>
-                  </div>
-                  <div className="flex-1 grid grid-cols-3 grid-rows-2 gap-x-3 gap-y-0.5 text-sm px-4" style={{ gridTemplateRows: 'auto auto' }}>
-                    {/* Первая строка */}
-                    {editingFilament.color_name && (
-                      <div className="col-span-1 flex items-center gap-1.5">
-                        <span className="text-gray-400">Цвет:</span>
-                        <div style={{ transform: 'scale(0.4)', transformOrigin: 'left center' }}>
-                          <FilamentPreview
-                            colorHex={editingFilament.color_hex || '#FF0000'}
-                            visualSettings={editingFilament.visual_settings}
-                            size="medium"
-                          />
-                        </div>
-                      </div>
-                    )}
-                    {editingFilament.diameter && (
-                      <div className="col-span-1 flex items-center">
-                        <span className="text-gray-400">Диаметр:</span>
-                        <span className="text-white ml-1">{editingFilament.diameter}mm</span>
-                      </div>
-                    )}
-                    {editingFilament.density && (
-                      <div className="col-span-1 flex items-center">
-                        <span className="text-gray-400">Плотность:</span>
-                        <span className="text-white ml-1">{editingFilament.density}g/cm³</span>
-                      </div>
-                    )}
-                    {/* Вторая строка */}
-                    {editingFilament.color_name && (
-                      <div className="col-span-1 flex items-center">
-                        <span className="text-white">{editingFilament.color_name}</span>
-                      </div>
-                    )}
-                  </div>
-                  <span className="px-3 py-1 bg-purple-600 rounded-lg text-white text-sm font-medium flex-shrink-0">
-                    {editingFilament.material_type}
-                  </span>
-                </div>
-              </div>
+              <FilamentSummaryCard filament={editingFilament} />
             </div>
           )}
 
@@ -1944,13 +1903,26 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                                 onClick={() => {
                                   setFilamentVisualColorType(type);
                                   const requiredColors = type === 'single' ? 1 : type === 'two' ? 2 : type === 'three' ? 3 : type === 'transition' || type === 'thermochromic' ? 2 : 5;
-                                  if (filamentVisualColors.length < requiredColors) {
-                                    const newColors = [...filamentVisualColors];
-                                    while (newColors.length < requiredColors) {
-                                      newColors.push(filamentVisualColors[0] || '#FF0000');
+                                  setFilamentVisualColors((prevColors) => {
+                                    const base = filamentColorHex || prevColors[0] || '#FF0000';
+                                    const nextColors = [...prevColors];
+
+                                    if (nextColors.length === 0) {
+                                      nextColors.push(base);
                                     }
-                                    setFilamentVisualColors(newColors);
-                                  }
+
+                                    if (nextColors.length < requiredColors) {
+                                      const seed = nextColors[0] || base;
+                                      while (nextColors.length < requiredColors) {
+                                        nextColors.push(seed);
+                                      }
+                                    }
+
+                                    nextColors[0] = base;
+
+                                    return nextColors;
+                                  });
+                                  setOpenColorPickers([]);
                                 }}
                                 className={`px-4 py-2 rounded-lg border transition-all ${
                                   filamentVisualColorType === type
@@ -2365,19 +2337,19 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
 
         {/* Flow Settings */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <div>
-            <label className="block text-gray-300 mb-2 text-sm font-medium">Поток (%)</label>
-            <input
-              type="number"
-              value={flowRate}
-              onChange={(e) => { setFlowRate(Number(e.target.value)); }}
-              min={50}
-              max={150}
-              step="1"
-              className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all"
-            />
+              <div>
+                <label className="block text-gray-300 mb-2 text-sm font-medium">Поток (%)</label>
+                <input
+                  type="number"
+                  value={flowRate}
+                  onChange={(e) => { setFlowRate(Number(e.target.value)); }}
+                  min={50}
+                  max={150}
+                step="1"
+                className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all"
+              />
+            </div>
           </div>
-        </div>
 
           {/* Cooling and Retraction */}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">

@@ -179,6 +179,11 @@ async def preset_to_orcaslicer_json(
                     # Пропускаем проблемный ключ
                     continue
 
+    # Если цвет не был выставлен расширенными настройками, берём его из данных филамента
+    if "default_filament_colour" not in profile:
+        if filament.color_hex:
+            profile["default_filament_colour"] = [filament.color_hex]
+
     # Совместимые принтеры (пусто по умолчанию = совместим со всеми)
     # Можно расширить в будущем для специфических принтеров
     profile["compatible_printers"] = []

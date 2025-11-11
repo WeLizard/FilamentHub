@@ -690,15 +690,26 @@ export const CreateFilamentModal: React.FC<CreateFilamentModalProps> = ({
                         type="button"
                         onClick={() => {
                           setVisualColorType(type);
-                          // Автоматически добавляем цвета если нужно
                           const requiredColors = type === 'single' ? 1 : type === 'two' ? 2 : type === 'three' ? 3 : type === 'transition' || type === 'thermochromic' ? 2 : 5;
-                          if (visualColors.length < requiredColors) {
-                            const newColors = [...visualColors];
-                            while (newColors.length < requiredColors) {
-                              newColors.push(visualColors[0] || '#FFFFFF');
+                          setVisualColors((prevColors) => {
+                            const base = colorHex || prevColors[0] || '#FFFFFF';
+                            const nextColors = [...prevColors];
+
+                            if (nextColors.length === 0) {
+                              nextColors.push(base);
                             }
-                            setVisualColors(newColors);
-                          }
+
+                            if (nextColors.length < requiredColors) {
+                              const seed = nextColors[0] || base;
+                              while (nextColors.length < requiredColors) {
+                                nextColors.push(seed);
+                              }
+                            }
+
+                            nextColors[0] = base;
+
+                            return nextColors;
+                          });
                           // Сбрасываем состояние открытых пикеров при смене типа
                           setOpenColorPickers([]);
                         }}

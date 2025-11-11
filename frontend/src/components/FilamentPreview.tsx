@@ -1,13 +1,516 @@
-/** Компонент визуального превью прутка филамента с поддержкой расширенных эффектов */
-
-import React from 'react';
+import React, { useMemo, useId } from 'react';
 import { Thermometer } from 'lucide-react';
 import type { FilamentVisualSettings } from '../types/api';
+
+type SizeKey = 'small' | 'medium' | 'large';
+
+const SIZE_CONFIG: Record<SizeKey, { height: number; bodyLength: number; strokeWidth: number }> = {
+  small: { height: 40, bodyLength: 90, strokeWidth: 2 },
+  medium: { height: 60, bodyLength: 120, strokeWidth: 3 },
+  large: { height: 90, bodyLength: 200, strokeWidth: 4 },
+};
+
+const sanitizeColor = (value?: string | null, fallback = '#FFFFFF'): string => {
+  if (!value) return fallback;
+  let color = value.trim();
+  if (!color) return fallback;
+  if (!color.startsWith('#')) {
+    color = `#${color}`;
+  }
+  if (color.length === 4) {
+    const [r, g, b] = color.slice(1);
+    color = `#${r}${r}${g}${g}${b}${b}`;
+  }
+  if (color.length !== 7) {
+    return fallback;
+  }
+  return color.toUpperCase();
+};
+
+const clamp = (value: number, min: number, max: number) => Math.min(Math.max(value, min), max);
+
+const hexToRgb = (hex: string): [number, number, number] => {
+  const sanitized = sanitizeColor(hex);
+  const r = parseInt(sanitized.slice(1, 3), 16);
+  const g = parseInt(sanitized.slice(3, 5), 16);
+  const b = parseInt(sanitized.slice(5, 7), 16);
+  return [r, g, b];
+};
+
+const rgbToHex = (r: number, g: number, b: number): string => {
+  const toHex = (c: number) => clamp(Math.round(c), 0, 255).toString(16).padStart(2, '0');
+  return `#${toHex(r)}${toHex(g)}${toHex(b)}`.toUpperCase();
+};
+
+const rgbToHsl = (r: number, g: number, b: number): [number, number, number] => {
+  r /= 255;
+  g /= 255;
+  b /= 255;
+  const max = Math.max(r, g, b);
+  const min = Math.min(r, g, b);
+  let h = 0;
+  let s = 0;
+  const l = (max + min) / 2;
+
+  if (max !== min) {
+    const d = max - min;
+    s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+    switch (max) {
+      case r:
+        h = (g - b) / d + (g < b ? 6 : 0);
+        break;
+      case g:
+        h = (b - r) / d + 2;
+        break;
+      case b:
+      default:
+        h = (r - g) / d + 4;
+        break;
+    }
+    h /= 6;
+  }
+
+  return [h, s, l];
+};
+
+const hslToRgb = (h: number, s: number, l: number): [number, number, number] => {
+  if (s === 0) {
+    const gray = Math.round(l * 255);
+    return [gray, gray, gray];
+  }
+
+  const hue2rgb = (p: number, q: number, t: number) => {
+    if (t < 0) t += 1;
+    if (t > 1) t -= 1;
+    if (t < 1 / 6) return p + (q - p) * 6 * t;
+    if (t < 1 / 2) return q;
+    if (t < 2 / 3) return p + (q - p) * (2 / 3 - t) * 6;
+    return p;
+  };
+
+  const q = l < 0.5 ? l * (1 + s) : l + s - l * s;
+  const p = 2 * l - q;
+
+  const r = hue2rgb(p, q, h + 1 / 3);
+  const g = hue2rgb(p, q, h);
+  const b = hue2rgb(p, q, h - 1 / 3);
+
+  return [Math.round(r * 255), Math.round(g * 255), Math.round(b * 255)];
+};
+
+const adjustLightness = (hex: string, amount: number): string => {
+  const [r, g, b] = hexToRgb(hex);
+  const [h, s, l] = rgbToHsl(r, g, b);
+  const newL = clamp(l + amount, 0, 1);
+  const [nr, ng, nb] = hslToRgb(h, s, newL);
+  return rgbToHex(nr, ng, nb);
+};
+
+const getLuminance = (hex: string): number => {
+  const r = parseInt(hex.slice(1, 3), 16);
+  const g = parseInt(hex.slice(3, 5), 16);
+  const b = parseInt(hex.slice(5, 7), 16);
+  return (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+};
+
+type ExtraEndSegment = {
+  startAngle: number;
+  endAngle: number;
+  color: string;
+};
+
+type ColorDefResult = {
+  defs: React.ReactNode[];
+  bodyFill: string;
+  endFill: string;
+  extraEndSegments?: ExtraEndSegment[];
+};
+
+const createColorDefinitions = (
+  colors: string[],
+  colorType: string,
+  idPrefix: string,
+  baseHexValue: string,
+  bodyLength: number,
+  bodyStart: number,
+  bodyEnd: number,
+  radius: number,
+): ColorDefResult => {
+  const defs: React.ReactNode[] = [];
+  const normalizedPrimary = sanitizeColor(baseHexValue);
+  const palette = colors.length > 0 ? colors : [normalizedPrimary];
+  const bodyStartCoord = bodyEnd - bodyLength;
+  const rawPaletteForType = (() => {
+    switch (colorType) {
+      case 'single':
+        return [palette[0]];
+      case 'two':
+        return palette.slice(0, 2);
+      case 'three':
+        return palette.slice(0, 3);
+      case 'transition':
+      case 'thermochromic':
+        return palette.slice(0, 2);
+      case 'gradient':
+        return palette.slice(0, Math.min(palette.length, 5));
+      default:
+        return palette;
+    }
+  })();
+  const paletteForType = rawPaletteForType.length > 0
+    ? [normalizedPrimary, ...rawPaletteForType.slice(1)]
+    : [normalizedPrimary];
+  let bodyFill = paletteForType[0];
+  let endFill = paletteForType[0];
+  let extraEndSegments: ExtraEndSegment[] | undefined;
+  const ensure = (index: number) =>
+    paletteForType[Math.min(index, paletteForType.length - 1)] ?? normalizedPrimary;
+  const makeId = (name: string) => `${idPrefix}-${name}`;
+
+  switch (colorType) {
+    case 'two': {
+      const gradId = makeId('body-two');
+      defs.push(
+        <linearGradient id={gradId} key={gradId} x1="0%" y1="0%" x2="0%" y2="100%">
+          <stop offset="0%" stopColor={ensure(0)} />
+          <stop offset="50%" stopColor={ensure(0)} />
+          <stop offset="50%" stopColor={ensure(1)} />
+          <stop offset="100%" stopColor={ensure(1)} />
+        </linearGradient>,
+      );
+      bodyFill = `url(#${gradId})`;
+
+      const endId = makeId('end-two');
+      defs.push(
+        <linearGradient id={endId} key={endId} x1="0%" y1="0%" x2="0%" y2="100%">
+          <stop offset="0%" stopColor={ensure(0)} />
+          <stop offset="50%" stopColor={ensure(0)} />
+          <stop offset="50%" stopColor={ensure(1)} />
+          <stop offset="100%" stopColor={ensure(1)} />
+        </linearGradient>,
+      );
+      endFill = `url(#${endId})`;
+      break;
+    }
+    case 'three': {
+      const segmentId = makeId('three-segments');
+      defs.push(
+        <linearGradient id={segmentId} key={segmentId} x1="0%" y1="0%" x2="0%" y2="100%">
+          <stop offset="0%" stopColor={ensure(0)} />
+          <stop offset="72.5%" stopColor={ensure(0)} />
+          <stop offset="72.5%" stopColor={ensure(1)} />
+          <stop offset="100%" stopColor={ensure(1)} />
+        </linearGradient>,
+      );
+      bodyFill = `url(#${segmentId})`;
+      endFill = ensure(0);
+      extraEndSegments = [
+        { startAngle: 0, endAngle: 120, color: ensure(2) },
+        { startAngle: 120, endAngle: 240, color: ensure(1) },
+      ];
+      break;
+    }
+    case 'gradient': {
+      const gradientColors = paletteForType;
+      if (gradientColors.length > 1) {
+        const gradId = makeId('body-gradient');
+        defs.push(
+          <radialGradient
+            id={gradId}
+            key={gradId}
+            cx={bodyEnd}
+            cy={radius}
+            r={bodyLength + radius}
+            gradientUnits="userSpaceOnUse"
+          >
+            {gradientColors.map((color, index) => {
+              const offset =
+                gradientColors.length === 1
+                  ? 1
+                  : index === 0
+                    ? 0
+                    : 0.2 + ((index - 1) / (gradientColors.length - 1)) * 0.8;
+              return (
+                <stop key={`${gradId}-${index}`} offset={`${Math.min(offset, 1) * 100}%`} stopColor={color} />
+              );
+            })}
+          </radialGradient>,
+        );
+        bodyFill = `url(#${gradId})`;
+      } else {
+        bodyFill = gradientColors[0];
+      }
+      endFill = gradientColors[0];
+      break;
+    }
+    case 'transition': {
+      const primary = ensure(0);
+      const secondary = ensure(1);
+      const gradId = makeId('transition-body');
+      defs.push(
+        <linearGradient
+          id={gradId}
+          key={gradId}
+          x1={bodyEnd}
+          y1={radius}
+          x2={bodyStartCoord}
+          y2={radius}
+          gradientUnits="userSpaceOnUse"
+        >
+          <stop offset="0%" stopColor={primary} />
+          <stop offset="100%" stopColor={secondary} />
+        </linearGradient>,
+      );
+      bodyFill = `url(#${gradId})`;
+      endFill = primary;
+      break;
+    }
+    case 'thermochromic': {
+      const primary = ensure(0);
+      const secondary = ensure(1);
+      const gradId = makeId(`${colorType}-body`);
+      defs.push(
+        <radialGradient id={gradId} key={gradId} cx="100%" cy="50%" r="120%">
+          <stop offset="0%" stopColor={primary} />
+          <stop offset="100%" stopColor={secondary} />
+        </radialGradient>,
+      );
+      bodyFill = `url(#${gradId})`;
+
+      const endId = makeId(`${colorType}-end`);
+      defs.push(
+        <radialGradient id={endId} key={endId} cx="35%" cy="35%" r="75%">
+          <stop offset="0%" stopColor={primary} />
+          <stop offset="100%" stopColor={secondary} />
+        </radialGradient>,
+      );
+      endFill = `url(#${endId})`;
+      break;
+    }
+    default: {
+      bodyFill = ensure(0);
+      endFill = ensure(paletteForType.length - 1);
+    }
+  }
+
+  return { defs, bodyFill, endFill, extraEndSegments };
+};
+
+type FillerDefResult = {
+  defs: React.ReactNode[];
+  bodyPatternFill: string | null;
+  endPatternFill: string | null;
+  patternOpacity: number;
+  glowFilterId: string | null;
+};
+
+const createFillerDefinitions = (filler: string, colors: string[], idPrefix: string): FillerDefResult => {
+  const defs: React.ReactNode[] = [];
+  let bodyPatternFill: string | null = null;
+  let endPatternFill: string | null = null;
+  let patternOpacity = 0.35;
+  let glowFilterId: string | null = null;
+  const makeId = (name: string) => `${idPrefix}-${name}`;
+
+  const addStripePattern = (
+    id: string,
+    width: number,
+    gap: number,
+    angle: number,
+    opacity = 0.25,
+  ) => (
+    <pattern
+      id={id}
+      key={id}
+      width={width + gap}
+      height={width + gap}
+      patternUnits="userSpaceOnUse"
+      patternTransform={`rotate(${angle})`}
+    >
+      <rect width={width} height={width + gap} fill="#FFFFFF" fillOpacity={opacity} />
+    </pattern>
+  );
+
+  switch (filler) {
+    case 'none':
+      return { defs, bodyPatternFill, endPatternFill, patternOpacity, glowFilterId };
+    case 'carbon': {
+      const patternId = makeId('carbon');
+      defs.push(
+        <pattern id={patternId} key={patternId} width="8" height="8" patternUnits="userSpaceOnUse">
+          <rect width="8" height="8" fill="#1A1A1A" />
+          <path d="M0 0 L8 8 M8 0 L0 8" stroke="#2E2E2E" strokeWidth="1" strokeOpacity="0.6" fill="none" />
+          <path d="M0 4 L8 4" stroke="#0F0F0F" strokeWidth="1" strokeOpacity="0.4" />
+        </pattern>,
+      );
+      bodyPatternFill = `url(#${patternId})`;
+      endPatternFill = bodyPatternFill;
+      patternOpacity = 0.55;
+      break;
+    }
+    case 'glass': {
+      const patternId = makeId('glass');
+      defs.push(
+        <pattern
+          id={patternId}
+          key={patternId}
+          width="6"
+          height="8"
+          patternUnits="userSpaceOnUse"
+          patternTransform="rotate(-26)"
+        >
+          <rect width="2" height="8" fill="#FFFFFF" fillOpacity="0.25" />
+        </pattern>,
+      );
+      bodyPatternFill = `url(#${patternId})`;
+      endPatternFill = bodyPatternFill;
+      patternOpacity = 0.45;
+      break;
+    }
+    case 'metallic': {
+      const base = sanitizeColor(colors[0] ?? '#999999');
+      const light1 = adjustLightness(base, 0.18);
+      const dark1 = adjustLightness(base, -0.18);
+      const dark2 = adjustLightness(base, -0.35);
+      const bodyGradient = makeId('metallic-body');
+      const endGradient = makeId('metallic-end');
+      defs.push(
+        <linearGradient id={bodyGradient} key={bodyGradient} x1="0%" y1="0%" x2="0%" y2="100%">
+          <stop offset="0%" stopColor={light1} />
+          <stop offset="25%" stopColor={dark1} />
+          <stop offset="55%" stopColor={base} />
+          <stop offset="100%" stopColor={dark2} />
+        </linearGradient>,
+      );
+      defs.push(
+        <radialGradient id={endGradient} key={endGradient} cx="45%" cy="45%" r="80%">
+          <stop offset="0%" stopColor={light1} />
+          <stop offset="40%" stopColor={dark1} />
+          <stop offset="70%" stopColor={base} />
+          <stop offset="100%" stopColor={dark2} />
+        </radialGradient>,
+      );
+      bodyPatternFill = `url(#${bodyGradient})`;
+      endPatternFill = `url(#${endGradient})`;
+      patternOpacity = 1;
+      break;
+    }
+    case 'wood': {
+      const patternId = makeId('wood');
+      defs.push(
+        <pattern id={patternId} key={patternId} width="20" height="20" patternUnits="userSpaceOnUse">
+          <rect width="20" height="20" fill="none" />
+          <path d="M0 10 Q10 4 20 10" stroke="#a1887f" strokeWidth="2" strokeOpacity="0.35" fill="none" />
+          <path d="M0 6 Q10 0 20 6" stroke="#d7ccc8" strokeWidth="1" strokeOpacity="0.25" fill="none" />
+          <circle cx="6" cy="6" r="2" fill="#8d6e63" fillOpacity="0.25" />
+          <circle cx="14" cy="14" r="3" fill="#6d4c41" fillOpacity="0.25" />
+        </pattern>,
+      );
+      bodyPatternFill = `url(#${patternId})`;
+      endPatternFill = bodyPatternFill;
+      patternOpacity = 0.5;
+      break;
+    }
+    case 'glitter': {
+      const patternId = makeId('glitter');
+      defs.push(
+        <pattern id={patternId} key={patternId} width="24" height="24" patternUnits="userSpaceOnUse">
+          <circle cx="6" cy="6" r="1.6" fill="#FFFFFF" fillOpacity="0.85" />
+          <circle cx="18" cy="9" r="1.2" fill="#FFD700" fillOpacity="0.8" />
+          <circle cx="12" cy="18" r="1.1" fill="#FFA500" fillOpacity="0.7" />
+          <circle cx="20" cy="20" r="0.9" fill="#FFFFFF" fillOpacity="0.6" />
+          <circle cx="4" cy="16" r="1" fill="#FFE066" fillOpacity="0.75" />
+        </pattern>,
+      );
+      bodyPatternFill = `url(#${patternId})`;
+      endPatternFill = bodyPatternFill;
+      patternOpacity = 1;
+      break;
+    }
+    case 'fibers': {
+      const patternId = makeId('fibers');
+      defs.push(
+        <pattern
+          id={patternId}
+          key={patternId}
+          width="6"
+          height="6"
+          patternUnits="userSpaceOnUse"
+          patternTransform="rotate(45)"
+        >
+          <rect width="2" height="6" fill="#6d4c41" fillOpacity="0.6" />
+        </pattern>,
+      );
+      bodyPatternFill = `url(#${patternId})`;
+      endPatternFill = bodyPatternFill;
+      patternOpacity = 0.55;
+      break;
+    }
+    case 'stone': {
+      const patternId = makeId('stone');
+      defs.push(
+        <pattern id={patternId} key={patternId} width="40" height="40" patternUnits="userSpaceOnUse">
+          <rect width="40" height="40" fill="none" />
+          <path d="M0 20 Q10 10 20 20 T40 20" stroke="#FFFFFF" strokeOpacity="0.2" strokeWidth="2" fill="none" />
+          <path d="M0 30 Q15 24 30 30 T40 30" stroke="#C8C8C8" strokeOpacity="0.2" strokeWidth="3" fill="none" />
+          <ellipse cx="12" cy="14" rx="6" ry="3" fill="#FFFFFF" fillOpacity="0.12" />
+          <ellipse cx="30" cy="28" rx="8" ry="4" fill="#D0D0D0" fillOpacity="0.12" />
+        </pattern>,
+      );
+      bodyPatternFill = `url(#${patternId})`;
+      endPatternFill = bodyPatternFill;
+      patternOpacity = 0.7;
+      break;
+    }
+    case 'luminescent': {
+      const filterId = makeId('glow');
+      defs.push(
+        <filter id={filterId} key={filterId} x="-50%" y="-50%" width="200%" height="200%">
+          <feGaussianBlur in="SourceGraphic" stdDeviation="6" result="blur" />
+          <feMerge>
+            <feMergeNode in="blur" />
+            <feMergeNode in="SourceGraphic" />
+          </feMerge>
+        </filter>,
+      );
+      glowFilterId = filterId;
+      patternOpacity = 0;
+      break;
+    }
+    default: {
+      const patternMap: Record<string, [number, number, number]> = {
+        pattern1: [-45, 1, 5],
+        pattern2: [-45, 1, 3],
+        pattern3: [-26, 2, 5],
+        pattern4: [0, 1, 3],
+        pattern5: [90, 1, 5],
+        pattern6: [11, 1, 3],
+        pattern7: [-214, 1, 6],
+        pattern8: [-319, 1, 4],
+        pattern9: [315, 2, 4],
+        pattern10: [233, 1, 5],
+        pattern11: [223, 1, 9],
+        pattern12: [36, 1, 4],
+      };
+      const config = patternMap[filler];
+      if (config) {
+        const [angle, width, gap] = config;
+        const patternId = makeId(filler);
+        defs.push(addStripePattern(patternId, width, gap, angle));
+        bodyPatternFill = `url(#${patternId})`;
+        endPatternFill = bodyPatternFill;
+        patternOpacity = 0.4;
+      }
+    }
+  }
+
+  return { defs, bodyPatternFill, endPatternFill, patternOpacity, glowFilterId };
+};
 
 interface FilamentPreviewProps {
   colorHex?: string | null;
   visualSettings?: FilamentVisualSettings | null;
-  size?: 'small' | 'medium' | 'large';
+  size?: SizeKey;
   className?: string;
 }
 
@@ -17,516 +520,294 @@ export const FilamentPreview: React.FC<FilamentPreviewProps> = ({
   size = 'medium',
   className = '',
 }) => {
-  // Размеры в зависимости от пропса size - без отрицательных margin (используем flexbox)
-  const sizes = {
-    small: { height: 36, rodWidth: 80, rodHeight: 36, endSize: 36, borderRadius: 18 },
-    medium: { height: 60, rodWidth: 150, rodHeight: 60, endSize: 60, borderRadius: 30 }, // rodWidth увеличен до 150px
-    large: { height: 90, rodWidth: 180, rodHeight: 90, endSize: 90, borderRadius: 45 },
-  };
-
-  const { height, rodWidth, rodHeight, endSize, borderRadius } = sizes[size];
-  const borderWidth = size === 'small' ? 2 : 3; // Толщина рамки зависит от размера
-  
-  // Нормализация цвета
-  const normalizeColor = (color: string): string => {
-    const hex = color.replace('#', '').toUpperCase();
-    if (hex.length === 3) {
-      return hex.split('').map(c => c + c).join('');
-    }
-    return hex;
-  };
-
-  // Получение цветов для рендеринга
-  const getColors = (): string[] => {
-    if (visualSettings?.colors && visualSettings.colors.length > 0) {
-      return visualSettings.colors;
-    }
-    return [colorHex || '#FFFFFF'];
-  };
-
-  const colors = getColors();
-  const color1 = colors[0] || '#FFFFFF';
-  
-  // Парсим RGB для определения яркости
-  const hexColor = normalizeColor(color1);
-  const r = parseInt(hexColor.substring(0, 2), 16);
-  const g = parseInt(hexColor.substring(2, 4), 16);
-  const b = parseInt(hexColor.substring(4, 6), 16);
-  const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
-  const borderColor = luminance > 0.85 ? '#9CA3AF' : '#FFFFFF';
-
-  // Получаем тип цвета
+  const svgId = useId().replace(/:/g, '_');
+  const config = SIZE_CONFIG[size];
+  const radius = config.height / 2;
+  const width = config.bodyLength + radius * 2;
+  const height = config.height;
+  const strokeWidth = config.strokeWidth;
+  const canvasPadding = strokeWidth / 2;
+  const svgWidth = width + canvasPadding * 2;
+  const svgHeight = height + canvasPadding * 2;
+  const colors = useMemo(
+    () =>
+      (visualSettings?.colors?.length ? visualSettings.colors : [colorHex]).map((c) =>
+        sanitizeColor(c),
+      ),
+    [visualSettings?.colors, colorHex],
+  );
   const colorType = visualSettings?.color_type || 'single';
-  
-  // Получаем финиш
   const finish = visualSettings?.finish || 'matte';
-  const isGlossy = finish === 'glossy';
-  
-  // Получаем наполнитель
   const filler = visualSettings?.filler || 'none';
-  
-  // Получаем прозрачность (теперь boolean)
+  const isGlossy = finish === 'glossy';
   const isTransparent = visualSettings?.transparency ?? false;
-  const opacity = isTransparent ? 0.5 : 1.0; // Полупрозрачный если true
+  const mainColor = colors[0] ?? '#FFFFFF';
+  const luminance = getLuminance(mainColor);
+  const borderColor = luminance > 0.85 ? '#9CA3AF' : '#FFFFFF';
+  const baseHex = colors[0] ?? sanitizeColor(colorHex);
+  const bodyLength = config.bodyLength;
+  const bodyStart = radius;
+  const bodyEnd = radius + bodyLength;
+  const centerX = bodyEnd;
+  const centerY = radius;
 
-  // Вычисляем background для rod-body
-  const getRodBodyBackground = (): string => {
-    const baseColors = colors.map(c => c || '#FFFFFF');
-    
-    if (colorType === 'single') {
-      return baseColors[0];
-    } else if (colorType === 'two') {
-      const c1 = baseColors[0];
-      const c2 = baseColors[1] || c1;
-      return `linear-gradient(to top, ${c1} 50%, ${c2} 50%)`; // Горизонтальный градиент для длинного прутка (слева направо)
-    } else if (colorType === 'three') {
-      const c1 = baseColors[0];
-      const c2 = baseColors[1] || c1;
-      const c3 = baseColors[2] || c2;
-      // Для трёхцветного типа при виде сбоку на цилиндр видны только 2 цвета:
-      // верхняя часть (видна сверху) = третий цвет (c3)
-      // нижняя часть (видна снизу) = второй цвет (c2)
-      // Первый цвет (c1) находится в центре цилиндра и не виден сбоку
-      // Показываем только верхнюю и нижнюю трети, среднюю скрываем (используем тот же цвет, что и верх/низ)
-      return `linear-gradient(to bottom, ${c3} 0%, ${c3} 33.3%, ${c3} 33.3%, ${c3} 76.6%, ${c2} 76.6%, ${c2} 100%)`;
-    } else if (colorType === 'gradient') {
-      // Многоцветный градиент — используем до 5 цветов
-      // Используем радиальный градиент с концентрическими кругами, центрированный на кружке справа (Rod End)
-      // Эффект: большой круг (снаружи) -> поменьше -> ещё меньше -> самый маленький (у центра справа)
-      // Всё это ограничено прямоугольной формой прутка
-      const steps: string[] = [];
-      // Распределяем цвета от центра (справа) к краю (слева)
-      // Первый цвет - самый внешний (левый край), последний - самый внутренний (у кружка справа)
-      for (let i = 0; i < baseColors.length; i++) {
-        const percent = (i / (baseColors.length - 1)) * 100;
-        steps.push(`${baseColors[baseColors.length - 1 - i]} ${percent}%`);
-      }
-      // Радиальный градиент с центром справа, создающий концентрические круги
-      // Размер градиента достаточно большой, чтобы покрыть всю ширину прутка
-      return `radial-gradient(circle at right center, ${steps.join(', ')})`;
-    } else if (colorType === 'transition') {
-      // Переходной цвет — используем только 2 цвета для плавного перехода
-      // Берём только первые 2 цвета, игнорируем остальные
-      const c1 = baseColors[0];
-      const c2 = baseColors[1] || baseColors[0] || '#FFFFFF';
-      // Радиальный градиент с концентрическими кругами, центрированный на кружке справа (Rod End)
-      // Первый цвет (c1) в центре справа (где кружок), радиальный градиент во второй цвет (c2) слева
-      return `radial-gradient(circle at right center, ${c1} 0%, ${c2} 100%)`;
-    } else if (colorType === 'thermochromic') {
-      // Термохромный — аналогично transition (меняет цвет при нагреве)
-      // Используем только 2 цвета для плавного перехода
-      const c1 = baseColors[0];
-      const c2 = baseColors[1] || baseColors[0] || '#FFFFFF';
-      // Радиальный градиент с концентрическими кругами, центрированный на кружке справа (Rod End)
-      return `radial-gradient(circle at right center, ${c1} 0%, ${c2} 100%)`;
-    }
-    return baseColors[0];
-  };
+  const { defs: colorDefs, bodyFill, endFill, extraEndSegments } = useMemo(
+    () =>
+      createColorDefinitions(
+        colors,
+        colorType,
+        svgId,
+        baseHex,
+        bodyLength,
+        bodyStart,
+        bodyEnd,
+        radius,
+      ),
+    [colors, colorType, svgId, baseHex, bodyLength, bodyStart, bodyEnd, radius],
+  );
 
-  // Вычисляем background для rod-end
-  const getRodEndBackground = (): string => {
-    const baseColors = colors.map(c => c || '#FFFFFF');
-    
-    if (colorType === 'single') {
-      return baseColors[0];
-    } else if (colorType === 'two') {
-      const c1 = baseColors[0];
-      const c2 = baseColors[1] || c1;
-      return `conic-gradient(from 90deg, ${c1} 0% 50%, ${c2} 50% 100%)`; // Повернуто на 90 градусов (from 90deg вместо from 0deg)
-    } else if (colorType === 'three') {
-      const c1 = baseColors[0];
-      const c2 = baseColors[1] || c1;
-      const c3 = baseColors[2] || c2;
-      return `conic-gradient(from 0deg, ${c1} 0% 33.3%, ${c2} 33.3% 66.6%, ${c3} 66.6% 100%)`;
-    } else if (colorType === 'gradient') {
-      // Для градиента используем последний цвет на конце
-      return baseColors[baseColors.length - 1] || baseColors[0];
-    } else if (colorType === 'transition') {
-      // Переходной цвет — используем первый цвет (центр справа, где кружок)
-      return baseColors[0];
-    } else if (colorType === 'thermochromic') {
-      // Термохромный — используем первый цвет (центр справа, где кружок)
-      return baseColors[0];
-    }
-    return baseColors[0];
-  };
+  const { defs: fillerDefs, bodyPatternFill, endPatternFill, patternOpacity, glowFilterId } =
+    useMemo(() => createFillerDefinitions(filler, colors, svgId), [filler, colors, svgId]);
 
-  // Получаем стили для наполнителя
-  const getFillerStyles = (elementType: 'body' | 'end' = 'body'): React.CSSProperties => {
-    if (filler === 'none') {
-      return {};
-    }
-
-    // Получаем цвет для цветного металлика (используем первый цвет из массива)
-    const baseColor = colors[0] || '#808080';
-    
-    // Конвертируем HEX в RGB для манипуляций с яркостью
-    const hexToRgb = (hex: string): [number, number, number] => {
-      const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
-      return result 
-        ? [parseInt(result[1], 16), parseInt(result[2], 16), parseInt(result[3], 16)]
-        : [128, 128, 128];
-    };
-    
-    const [r, g, b] = hexToRgb(baseColor);
-    
-    // Создаём оттенки металлика на основе базового цвета (смещение бликов)
-    const dark = `rgb(${Math.max(0, r - 60)}, ${Math.max(0, g - 60)}, ${Math.max(0, b - 60)})`;
-    const light = `rgb(${Math.min(255, r + 80)}, ${Math.min(255, g + 80)}, ${Math.min(255, b + 80)})`;
-    const mediumDark = `rgb(${Math.max(0, r - 30)}, ${Math.max(0, g - 30)}, ${Math.max(0, b - 30)})`;
-    const mediumLight = `rgb(${Math.min(255, r + 40)}, ${Math.min(255, g + 40)}, ${Math.min(255, b + 40)})`;
-    const baseRgb = `rgb(${r}, ${g}, ${b})`;
-
-    // Для дерева разные стили для Rod Body и Rod End
-    if (filler === 'wood') {
-      if (elementType === 'end') {
-        // Для Rod End (кружок) - радиальный градиент
-        return {
-          background: `
-            radial-gradient(circle at center, #d7ccc8, #bcaaa4 50%, #a1887f 100%)
-          `,
-        };
-      } else {
-        // Для Rod Body (длинный пруток) - поворот на 90 градусов (to bottom вместо to right)
-        return {
-          background: `
-            repeating-linear-gradient(to bottom, #d7ccc8, #d7ccc8 4px, #bcaaa4 4px, #bcaaa4 8px),
-            linear-gradient(to right, #d7ccc8, #a1887f)
-          `,
-        };
-      }
-    }
-
-    // Для металлика разные стили для Rod Body и Rod End
-    if (filler === 'metallic') {
-      if (elementType === 'end') {
-        // Для Rod End (кружок) - радиальный градиент с бликами (смещёнными)
-        return {
-          background: `radial-gradient(circle at 30% 30%, ${light} 0%, ${mediumLight} 25%, ${baseRgb} 40%, ${mediumDark} 60%, ${dark} 100%)`,
-        };
-      } else {
-        // Для Rod Body (длинный пруток) - поворот на 90 градусов (to bottom) с правильными бликами
-        return {
-          background: `linear-gradient(to bottom, ${dark} 0%, ${mediumDark} 20%, ${light} 40%, ${mediumLight} 50%, ${light} 60%, ${mediumDark} 80%, ${dark} 100%)`,
-        };
-      }
-    }
-
-    // Для CF (Carbon Fiber) - реалистичная текстура углеродного волокна
-    // Обычно чёрный матовый с характерной текстурой плетения
-    if (filler === 'carbon') {
-      if (elementType === 'end') {
-        // Для Rod End (кружок) - радиальный градиент с текстурой плетения
-        return {
-          background: `
-            repeating-conic-gradient(from 0deg, #1a1a1a 0deg 10deg, #2e2e2e 10deg 20deg),
-            radial-gradient(circle at center, #2e2e2e 0%, #1a1a1a 100%)
-          `,
-          backgroundSize: '8px 8px, 100% 100%',
-        };
-      } else {
-        // Для Rod Body (длинный пруток) - текстура плетения углеродного волокна (твил, 2x2)
-        return {
-          background: `
-            repeating-linear-gradient(45deg, #1a1a1a 0px, #1a1a1a 2px, #2e2e2e 2px, #2e2e2e 4px),
-            repeating-linear-gradient(-45deg, #2e2e2e 0px, #2e2e2e 2px, #1a1a1a 2px, #1a1a1a 4px),
-            repeating-linear-gradient(to bottom, #1f1f1f 0px, #1f1f1f 1px, #2e2e2e 1px, #2e2e2e 2px)
-          `,
-          backgroundSize: '4px 4px, 4px 4px, 100% 2px',
-        };
-      }
-    }
-
-    // Для GF (Glass Fiber) - используем паттерн 3 с цветом из visualSettings
-    // Доступны цвета: чёрный, белый, серый, красный, синий, зелёный, жёлтый, оранжевый, фиолетовый
-    // Цвет материала находится в rodBodyBg/rodEndBg, паттерн накладывается поверх как текстура
-    if (filler === 'glass') {
-      // Используем паттерн 3 для стекловолокна
-      // Паттерн 3: repeating-linear-gradient(-26deg, ...) с белым цветом для видимости текстуры
-      // Цвет материала уже установлен в rodBodyBg/rodEndBg, поэтому паттерн накладывается поверх
+  const highlightDefs = useMemo(() => {
+    if (!isGlossy) {
       return {
-        backgroundImage: 'repeating-linear-gradient(-26deg, rgba(255,255,255, 0.3), rgba(255,255,255, 0.3) 2px, transparent 3px, transparent 7px)',
-        backgroundSize: '6px 8px',
-        backgroundBlendMode: 'overlay', // Смешиваем паттерн с цветом материала
+        defs: [] as React.ReactNode[],
+        bodyHighlightId: null as string | null,
+        endHighlightId: null as string | null,
+        bodySpecularId: null as string | null,
+        endSpecularId: null as string | null,
+        bodyShadowId: null as string | null,
+        endShadowId: null as string | null,
       };
     }
 
-    const fillerTextures: Record<string, React.CSSProperties> = {
-      // CF и GF обрабатываются отдельно выше
-      glitter: {
-        background: `
-          radial-gradient(circle at 15% 25%, rgba(255,255,255,0.9) 2px, transparent 2px),
-          radial-gradient(circle at 85% 75%, rgba(255,215,0,0.8) 2px, transparent 2px),
-          radial-gradient(circle at 45% 15%, rgba(255,255,255,0.7) 1.5px, transparent 1.5px),
-          radial-gradient(circle at 75% 45%, rgba(255,255,200,0.6) 2px, transparent 2px),
-          radial-gradient(circle at 25% 65%, rgba(255,255,255,0.8) 1.5px, transparent 1.5px),
-          radial-gradient(circle at 55% 85%, rgba(255,220,100,0.7) 2px, transparent 2px),
-          radial-gradient(circle at 90% 30%, rgba(255,255,255,0.6) 1.5px, transparent 1.5px),
-          radial-gradient(circle at 35% 80%, rgba(255,215,50,0.7) 2px, transparent 2px)
-        `,
-        backgroundSize: '25px 25px, 28px 28px, 22px 22px, 26px 26px, 24px 24px, 27px 27px, 23px 23px, 25px 25px',
-      },
-      luminescent: {
-        // Люминофор не имеет текстуры - используется свечение границы вместо этого
-        background: 'transparent',
-      },
-      fibers: {
-        background: 'repeating-linear-gradient(45deg, #8d6e63, #8d6e63 1px, #6d4c41 1px, #6d4c41 3px)',
-      },
-      stone: {
-        // Мрамор - волнистые прожилки с плавными переходами
-        background: `
-          repeating-linear-gradient(75deg, rgba(255,255,255,0.4) 0px, rgba(255,255,255,0.4) 2px, rgba(200,200,200,0.3) 2px, rgba(200,200,200,0.3) 4px, rgba(180,180,180,0.2) 4px, rgba(180,180,180,0.2) 6px, transparent 6px, transparent 15px),
-          repeating-linear-gradient(-15deg, rgba(220,220,220,0.3) 0px, rgba(220,220,220,0.3) 3px, rgba(160,160,160,0.25) 3px, rgba(160,160,160,0.25) 5px, transparent 5px, transparent 12px),
-          radial-gradient(ellipse at 30% 40%, rgba(255,255,255,0.5) 0%, transparent 50%),
-          radial-gradient(ellipse at 70% 60%, rgba(200,200,200,0.4) 0%, transparent 50%),
-          linear-gradient(to bottom, rgba(240,240,240,0.8), rgba(200,200,200,0.6))
-        `,
-        backgroundSize: '40px 60px, 35px 50px, 100px 80px, 120px 100px, 100% 100%',
-      },
-      glass: {
-        background: 'repeating-linear-gradient(to right, #b3e5fc, #b3e5fc 2px, #81d4fa 2px, #81d4fa 4px)',
-      },
-      pattern1: {
-        backgroundImage: 'repeating-linear-gradient(-45deg, rgba(255,255,255, 0.25), rgba(255,255,255, 0.25) 1px, transparent 1px, transparent 6px)',
-        backgroundSize: '8px 8px',
-      },
-      pattern2: {
-        backgroundImage: 'repeating-linear-gradient(-45deg, rgba(255,255,255, 0.25), rgba(255,255,255, 0.25) 1px, transparent 1px, transparent 6px)',
-        backgroundSize: '4px 4px',
-      },
-      pattern3: {
-        backgroundImage: 'repeating-linear-gradient(-26deg, rgba(255,255,255, 0.25), rgba(255,255,255, 0.25) 2px, transparent 3px, transparent 7px)',
-        backgroundSize: '6px 8px',
-      },
-      pattern4: {
-        backgroundImage: 'repeating-linear-gradient(0deg, rgba(255,255,255, 0.25), rgba(255,255,255, 0.25) 1px, transparent 1px, transparent 7px)',
-        backgroundSize: '2px 2px',
-      },
-      pattern5: {
-        backgroundImage: 'repeating-linear-gradient(90deg, rgba(255,255,255, 0.25), rgba(255,255,255, 0.25) 1px, transparent 1px, transparent 7px)',
-        backgroundSize: '16px 16px',
-      },
-      pattern6: {
-        backgroundImage: 'repeating-linear-gradient(11deg, rgba(255,255,255, 0.25), rgba(255,255,255, 0.25) 1px, transparent 0px, transparent 4px)',
-        backgroundSize: '8px 8px',
-      },
-      pattern7: {
-        backgroundImage: 'repeating-linear-gradient(-214deg, rgba(255,255,255, 0.25), rgba(255,255,255, 0.25) 1px, transparent 0px, transparent 13px)',
-        backgroundSize: '9px 9px',
-      },
-      pattern8: {
-        backgroundImage: 'repeating-linear-gradient(-319deg, rgba(255,255,255, 0.25), rgba(255,255,255, 0.25) 1px, transparent 3px, transparent 15px)',
-        backgroundSize: '4px 4px',
-      },
-      pattern9: {
-        backgroundImage: 'repeating-linear-gradient(315deg, rgba(255,255,255, 0.25), rgba(255,255,255, 0.25) 3px, transparent -19px, transparent 5px)',
-        backgroundSize: '6px 6px',
-      },
-      pattern10: {
-        backgroundImage: 'repeating-linear-gradient(233deg, rgba(255,255,255, 0.25), rgba(255,255,255, 0.25) 1px, transparent -19px, transparent 2px)',
-        backgroundSize: '10px 10px',
-      },
-      pattern11: {
-        backgroundImage: 'repeating-linear-gradient(223deg, rgba(255,255,255, 0.25), rgba(255,255,255, 0.25) 1px, transparent 0px, transparent 2px)',
-        backgroundSize: '20px 20px',
-      },
-      pattern12: {
-        backgroundImage: 'repeating-linear-gradient(36deg, rgba(255,255,255, 0.25), rgba(255,255,255, 0.25) 1px, transparent 0px, transparent 2px)',
-        backgroundSize: '12px 12px',
-      },
+    const bodyHighlightId = `${svgId}-body-highlight`;
+    const endHighlightId = `${svgId}-end-highlight`;
+    const bodySpecularId = `${svgId}-body-specular`;
+    const endSpecularId = `${svgId}-end-specular`;
+    const bodyShadowId = `${svgId}-body-shadow`;
+    const endShadowId = `${svgId}-end-shadow`;
+    return {
+      bodyHighlightId,
+      endHighlightId,
+      bodySpecularId,
+      endSpecularId,
+      bodyShadowId,
+      endShadowId,
+      defs: [
+        <linearGradient id={bodyHighlightId} key={bodyHighlightId} x1="0%" y1="0%" x2="0%" y2="100%">
+          <stop offset="0%" stopColor="#FFFFFF" stopOpacity="0.35" />
+          <stop offset="42%" stopColor="#FFFFFF" stopOpacity="0.18" />
+          <stop offset="65%" stopColor="#FFFFFF" stopOpacity="0.05" />
+          <stop offset="100%" stopColor="#FFFFFF" stopOpacity="0" />
+        </linearGradient>,
+        <radialGradient id={endHighlightId} key={endHighlightId} cx="25%" cy="25%" r="100%">
+          <stop offset="0%" stopColor="#FFFFFF" stopOpacity="0.35" />
+          <stop offset="55%" stopColor="#FFFFFF" stopOpacity="0.12" />
+          <stop offset="100%" stopColor="#FFFFFF" stopOpacity="0" />
+        </radialGradient>,
+        <radialGradient
+          id={bodySpecularId}
+          key={bodySpecularId}
+          cx={bodyEnd - radius * 1.2}
+          cy={radius * 0.4}
+          r={radius * 1.6}
+          gradientUnits="userSpaceOnUse"
+        >
+          <stop offset="0%" stopColor="#FFFFFF" stopOpacity="0.6" />
+          <stop offset="45%" stopColor="#FFFFFF" stopOpacity="0.18" />
+          <stop offset="100%" stopColor="#FFFFFF" stopOpacity="0" />
+        </radialGradient>,
+        <radialGradient
+          id={endSpecularId}
+          key={endSpecularId}
+          cx={bodyEnd + radius * 0.35}
+          cy={radius * 0.25}
+          r={radius * 0.9}
+          gradientUnits="userSpaceOnUse"
+        >
+          <stop offset="0%" stopColor="#FFFFFF" stopOpacity="0.6" />
+          <stop offset="60%" stopColor="#FFFFFF" stopOpacity="0.2" />
+          <stop offset="100%" stopColor="#FFFFFF" stopOpacity="0" />
+        </radialGradient>,
+        <linearGradient id={bodyShadowId} key={bodyShadowId} x1="0%" y1="0%" x2="0%" y2="100%">
+          <stop offset="0%" stopColor="#000000" stopOpacity="0" />
+          <stop offset="65%" stopColor="#000000" stopOpacity="0" />
+          <stop offset="100%" stopColor="#000000" stopOpacity="0.25" />
+        </linearGradient>,
+        <radialGradient
+          id={endShadowId}
+          key={endShadowId}
+          cx={bodyEnd - radius * 0.1}
+          cy={radius * 1.05}
+          r={radius * 1.2}
+          gradientUnits="userSpaceOnUse"
+        >
+          <stop offset="0%" stopColor="#000000" stopOpacity="0" />
+          <stop offset="75%" stopColor="#000000" stopOpacity="0.15" />
+          <stop offset="100%" stopColor="#000000" stopOpacity="0.35" />
+        </radialGradient>,
+      ],
     };
+  }, [isGlossy, svgId, bodyEnd, radius]);
 
-    return fillerTextures[filler] || {};
+  const defs = useMemo(
+    () => [...colorDefs, ...fillerDefs, ...highlightDefs.defs],
+    [colorDefs, fillerDefs, highlightDefs.defs],
+  );
+
+  const bodyPath = useMemo(() => {
+    const left = bodyStart;
+    const right = bodyEnd;
+    const c = radius * 0.5523;
+    return [
+      `M ${left} 0`,
+      `H ${right}`,
+      `C ${right + c} 0 ${right + radius} ${radius - c} ${right + radius} ${radius}`,
+      `C ${right + radius} ${radius + c} ${right + c} ${height} ${right} ${height}`,
+      `H ${left}`,
+      `C ${left - c} ${height} ${left - radius} ${radius + c} ${left - radius} ${radius}`,
+      `C ${left - radius} ${radius - c} ${left - c} 0 ${left} 0`,
+      'Z',
+    ].join(' ');
+  }, [bodyStart, bodyEnd, radius, height]);
+
+  const bodyFillOpacity = isTransparent ? 0.6 : 1;
+
+  const createEndSegmentPath = (startAngle: number, endAngle: number): string => {
+    const startRad = ((startAngle - 90) * Math.PI) / 180;
+    const endRad = ((endAngle - 90) * Math.PI) / 180;
+    const startX = centerX + radius * Math.cos(startRad);
+    const startY = centerY + radius * Math.sin(startRad);
+    const endX = centerX + radius * Math.cos(endRad);
+    const endY = centerY + radius * Math.sin(endRad);
+    const delta =
+      ((endAngle - startAngle) % 360 + 360) % 360; // нормализуем диапазон в [0, 360)
+    const largeArcFlag = delta > 180 ? 1 : 0;
+    const sweepFlag = 1;
+    return `M ${centerX} ${centerY} L ${startX} ${startY} A ${radius} ${radius} 0 ${largeArcFlag} ${sweepFlag} ${endX} ${endY} Z`;
   };
 
-  const rodBodyBg = getRodBodyBackground();
-  const rodEndBg = getRodEndBackground();
-  const fillerStylesBody = getFillerStyles('body');
-  const fillerStylesEnd = getFillerStyles('end');
-
-  // Вычисляем общую ширину для контейнера
-  // Для medium: Rod End смещен на -60px (влево), перекрывает Rod Body больше, поэтому общая ширина = rodWidth - 60 + endSize
-  // Для других размеров: Rod End перекрывает Rod Body на половину, поэтому = rodWidth + endSize/2
-  const totalWidth = size === 'medium' 
-    ? rodWidth - 60 + endSize 
-    : rodWidth + endSize / 2;
-
   return (
-    <div className={`flex items-center ${isGlossy ? 'glossy' : ''} ${className}`} style={{ width: `${totalWidth}px`, height: `${height}px`, overflow: 'visible' }}>
-      {/* Контейнер filament-rod - используем flexbox вместо абсолютного позиционирования */}
-      <div
-        className="relative flex items-center"
-        style={{
-          width: `${totalWidth}px`,
-          height: `${height}px`,
-        }}
+    <div
+      className={`relative flex items-center justify-center ${className}`}
+      style={{ width: svgWidth + radius, height: svgHeight }}
+    >
+      <svg
+        width={svgWidth}
+        height={svgHeight}
+        viewBox={`0 0 ${svgWidth} ${svgHeight}`}
+        style={{ overflow: 'visible' }}
       >
-        {/* Задняя обводка для прозрачного материала - создаёт эффект глубины цилиндра */}
-        {isTransparent && (
-          <>
-            {/* Задняя обводка Rod Body - выровнена по левому краю цилиндра */}
-            <div
-              className="absolute"
-              style={{
-                width: `${rodWidth}px`,
-                height: `${rodHeight}px`,
-                borderRadius: `${borderRadius}px`,
-                border: `${borderWidth}px solid ${borderColor}`,
-                left: 0, // Выровнена по левому краю контейнера
-                background: 'transparent',
-                zIndex: 0,
-              }}
-            />
-            {/* Задняя обводка Rod End - выровнена по левому краю */}
-            <div
-              className="absolute rounded-full"
-              style={{
-                width: `${endSize}px`,
-                height: `${endSize}px`,
-                border: `${borderWidth}px solid ${borderColor}`,
-                left: 0, // Выровнена по левому краю контейнера
-                background: 'transparent',
-                zIndex: 0,
-              }}
-            />
-          </>
-        )}
-        
-        {/* Rod Body - основная цилиндрическая часть */}
-        <div
-          className="relative overflow-hidden flex-shrink-0"
-          style={{
-            width: `${rodWidth}px`,
-            height: `${rodHeight}px`,
-            background: rodBodyBg,
-            borderRadius: `${borderRadius}px`,
-            border: `${borderWidth}px solid ${borderColor}`,
-            opacity: opacity < 1 ? opacity : undefined,
-            zIndex: 1,
-            // Добавляем радиальный градиент для объема цилиндра (светлая полоса сверху)
-            boxShadow: isTransparent 
-              ? 'none' 
-              : filler === 'luminescent'
-              ? `inset 0 ${-rodHeight * 0.15}px ${rodHeight * 0.3}px -${rodHeight * 0.15}px rgba(255,255,255,0.2), 0 0 10px ${colors[0] || '#FFEB3B'}40, 0 0 20px ${colors[0] || '#FFEB3B'}30`
-              : `inset 0 ${-rodHeight * 0.15}px ${rodHeight * 0.3}px -${rodHeight * 0.15}px rgba(255,255,255,0.2)`,
-          }}
-        >
-          {/* Объемный эффект - радиальный градиент для цилиндра */}
-          <div
-            className="absolute inset-0 pointer-events-none"
-            style={{
-              background: `radial-gradient(ellipse at center 20%, rgba(255,255,255,0.15) 0%, transparent 50%)`,
-              zIndex: 1,
-            }}
-          />
-          
-          {/* Glossy effect (если включен) */}
-          {isGlossy && (
+        <defs>{defs}</defs>
+        <g transform={`translate(${canvasPadding}, ${canvasPadding})`}>
+          {isTransparent && (
             <>
-              {/* Основной блик сверху */}
-              <div
-                style={{
-                  position: 'absolute',
-                  top: 0,
-                  left: 0,
-                  width: '100%',
-                  height: `${rodHeight * 0.3}px`,
-                  background: 'linear-gradient(to bottom, rgba(255,255,255,0.5) 0%, rgba(255,255,255,0.3) 50%, transparent 100%)',
-                  filter: 'blur(2px)',
-                  zIndex: 3,
-                }}
+              <path
+                d={bodyPath}
+                fill="none"
+                stroke={borderColor}
+                strokeWidth={strokeWidth}
+                opacity={0.35}
               />
-              {/* Дополнительный боковой блик для объёма */}
-              <div
-                style={{
-                  position: 'absolute',
-                  top: `${rodHeight * 0.1}px`,
-                  left: `${rodWidth * 0.05}px`,
-                  width: `${rodWidth * 0.3}px`,
-                  height: `${rodHeight * 0.5}px`,
-                  background: 'linear-gradient(to right, rgba(255,255,255,0.4) 0%, transparent 100%)',
-                  borderRadius: `${borderRadius}px`,
-                  filter: 'blur(3px)',
-                  zIndex: 3,
-                }}
+              <circle
+                cx={bodyStart}
+                cy={radius}
+                r={radius}
+                fill="none"
+                stroke={borderColor}
+                strokeWidth={strokeWidth}
+                opacity={0.35}
               />
             </>
           )}
-          
-          {/* Filler overlay (если наполнитель не none) */}
-          {filler !== 'none' && (
-            <div
-              className="absolute inset-0 pointer-events-none"
-              style={{
-                ...fillerStylesBody,
-                zIndex: 2,
-                opacity: opacity < 1 ? opacity : 1,
-              }}
+          <g filter={glowFilterId ? `url(#${glowFilterId})` : undefined}>
+            <path d={bodyPath} fill={bodyFill} fillOpacity={bodyFillOpacity} />
+            {bodyPatternFill && patternOpacity > 0 && (
+              <path d={bodyPath} fill={bodyPatternFill} fillOpacity={patternOpacity} />
+            )}
+            {highlightDefs.bodyHighlightId && (
+              <path
+                d={bodyPath}
+                fill={`url(#${highlightDefs.bodyHighlightId})`}
+                opacity={isTransparent ? 0.4 : 0.75}
+              />
+            )}
+            {highlightDefs.bodySpecularId && (
+              <path
+                d={bodyPath}
+                fill={`url(#${highlightDefs.bodySpecularId})`}
+                opacity={isTransparent ? 0.25 : 0.55}
+              />
+            )}
+            <path d={bodyPath} fill="none" stroke={borderColor} strokeWidth={strokeWidth} />
+            <circle
+              cx={bodyEnd}
+              cy={radius}
+              r={radius}
+              fill={endFill}
             />
-          )}
-        </div>
-
-        {/* Rod End - круглая часть на конце, частично перекрывает Rod Body */}
+            {extraEndSegments?.map((segment, index) => (
+              <path
+                key={`segment-${index}`}
+                d={createEndSegmentPath(segment.startAngle, segment.endAngle)}
+                fill={segment.color}
+              />
+            ))}
+            {endPatternFill && patternOpacity > 0 && (
+              <circle
+                cx={bodyEnd}
+                cy={radius}
+                r={radius}
+                fill={endPatternFill}
+                fillOpacity={patternOpacity}
+              />
+            )}
+            {highlightDefs.endHighlightId && (
+              <circle
+                cx={bodyEnd}
+                cy={radius}
+                r={radius}
+                fill={`url(#${highlightDefs.endHighlightId})`}
+                opacity={isTransparent ? 0.35 : 0.7}
+              />
+            )}
+            {highlightDefs.endSpecularId && (
+              <circle
+                cx={bodyEnd}
+                cy={radius}
+                r={radius}
+                fill={`url(#${highlightDefs.endSpecularId})`}
+                opacity={isTransparent ? 0.15 : 0.4}
+              />
+            )}
+            <circle
+              cx={bodyEnd}
+              cy={radius}
+              r={radius}
+              fill="none"
+              stroke={borderColor}
+              strokeWidth={strokeWidth}
+            />
+          </g>
+        </g>
+      </svg>
+      {colorType === 'thermochromic' && (
         <div
-          className="relative rounded-full overflow-hidden flex-shrink-0"
+          className="pointer-events-none absolute flex items-center justify-center"
           style={{
-            width: `${endSize}px`,
-            height: `${endSize}px`,
-            background: rodEndBg,
-            border: `${borderWidth}px solid ${borderColor}`,
-            marginLeft: size === 'medium' ? '-60px' : `-${endSize / 2}px`, // Для medium смещаем на -60px (влево), для других - перекрываем на половину диаметра
-            zIndex: 1,
-            // Кружок всегда непрозрачен, даже при активной прозрачности
-            // Объемный эффект для торца цилиндра - внутренняя тень для объёмности
-            // Для люминофора добавляем свечение границы
-            boxShadow: isTransparent 
-              ? filler === 'luminescent'
-                ? `inset 0 0 15px rgba(0,0,0,0.2), 0 0 10px ${colors[0] || '#FFEB3B'}40, 0 0 20px ${colors[0] || '#FFEB3B'}30`
-                : 'inset 0 0 15px rgba(0,0,0,0.2)'
-              : filler === 'luminescent'
-              ? `inset 0 0 ${endSize * 0.15}px rgba(0,0,0,0.3), inset 0 0 ${endSize * 0.3}px -${endSize * 0.15}px rgba(255,255,255,0.15), 0 0 10px ${colors[0] || '#FFEB3B'}40, 0 0 20px ${colors[0] || '#FFEB3B'}30`
-              : `inset 0 0 ${endSize * 0.15}px rgba(0,0,0,0.3), inset 0 0 ${endSize * 0.3}px -${endSize * 0.15}px rgba(255,255,255,0.15)`,
+            left: canvasPadding + bodyEnd - radius - strokeWidth / 2,
+            width: radius * 3 + strokeWidth
           }}
         >
-          {/* Объемный эффект - радиальный градиент для торца */}
-          <div
-            className="absolute inset-0 rounded-full pointer-events-none"
-            style={{
-              background: `radial-gradient(circle at 30% 30%, rgba(255,255,255,0.15) 0%, transparent 60%)`,
-              zIndex: 1,
-            }}
+          <Thermometer
+            size={radius}
+            color={borderColor}
+            strokeWidth={strokeWidth}
           />
-          
-          {/* Filler overlay (если наполнитель не none) */}
-          {filler !== 'none' && (
-            <div
-              className="absolute inset-0 rounded-full pointer-events-none"
-              style={{
-                ...fillerStylesEnd,
-                zIndex: 2,
-                opacity: opacity < 1 ? opacity : 1,
-              }}
-            />
-          )}
-          
-          {/* Иконка градусника для термохромного типа */}
-          {colorType === 'thermochromic' && (
-            <div
-              className="absolute inset-0 flex items-center justify-center pointer-events-none"
-              style={{
-                zIndex: 3,
-              }}
-            >
-              <Thermometer
-                size={size === 'small' ? 14 : size === 'medium' ? 20 : 28}
-                color={luminance > 0.5 ? '#1a1a1a' : '#FFFFFF'}
-                strokeWidth={2.5}
-              />
-            </div>
-          )}
         </div>
-      </div>
+      )}
     </div>
   );
 };
