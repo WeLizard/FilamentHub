@@ -707,13 +707,20 @@ export const adminAPI = {
     manufacturer: string;
     model: string;
     slug: string;
+    model_id?: string;
+    family?: string;
+    technology?: string;
+    vendor?: string;
     description?: string;
     build_volume_x?: number;
     build_volume_y?: number;
     build_volume_z?: number;
     nozzle_diameter?: number;
+    nozzle_options?: number[];
     max_extruder_temp?: number;
     max_bed_temp?: number;
+    default_materials?: string[];
+    extra_metadata?: Record<string, any>;
     image_url?: string;
   }): Promise<Printer> => {
     const response = await api.post<Printer>('/admin/printers', data);
@@ -725,13 +732,20 @@ export const adminAPI = {
     manufacturer?: string;
     model?: string;
     slug?: string;
+    model_id?: string;
+    family?: string;
+    technology?: string;
+    vendor?: string;
     description?: string;
     build_volume_x?: number;
     build_volume_y?: number;
     build_volume_z?: number;
     nozzle_diameter?: number;
+    nozzle_options?: number[];
     max_extruder_temp?: number;
     max_bed_temp?: number;
+    default_materials?: string[];
+    extra_metadata?: Record<string, any>;
     image_url?: string;
     active?: boolean;
   }): Promise<Printer> => {

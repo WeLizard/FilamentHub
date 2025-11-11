@@ -174,6 +174,8 @@ class OrcaBundleImporter:
             model_id=machine_model.model_id,
             name=machine_model.name,
         )
+        display_name, model_name = _normalize_model_name(vendor_name, machine_model.name)
+
         if printer is None:
             slug_source = f"{vendor_name} {machine_model.name}"
             slug = await generate_unique_slug(
@@ -183,9 +185,9 @@ class OrcaBundleImporter:
                 fallback="printer",
             )
             printer = Printer(
-                name=machine_model.name,
+                name=display_name,
                 manufacturer=vendor_name,
-                model=machine_model.name,
+                model=model_name,
                 slug=slug,
                 source="system",
                 vendor=vendor_name,
@@ -193,7 +195,8 @@ class OrcaBundleImporter:
             db.add(printer)
 
         printer.manufacturer = vendor_name
-        printer.model = machine_model.name
+        printer.name = display_name
+        printer.model = model_name
         printer.model_id = machine_model.model_id
         printer.family = machine_model.family or printer.family
         printer.technology = machine_model.machine_tech or printer.technology
@@ -210,7 +213,9 @@ class OrcaBundleImporter:
             printer.nozzle_options = _merge_unique(printer.nozzle_options, [nozzle_value])
 
         if machine_model.metadata:
-            printer.extra_metadata = machine_model.metadata
+            merged_metadata = dict(printer.extra_metadata or {})
+            merged_metadata.update(machine_model.metadata)
+            printer.extra_metadata = merged_metadata or None
 
         return printer
 
@@ -264,12 +269,47 @@ class OrcaBundleImporter:
         profile.printable_area = _parse_printable_area(preset.printable_area)
         profile.printable_height_mm = _to_float(preset.printable_height)
 
-        profile.start_gcode = preset.parameters.get("start_gcode") or profile.start_gcode
-        profile.end_gcode = preset.parameters.get("end_gcode") or profile.end_gcode
+        if profile.printable_area:
+            x_min = profile.printable_area.get("x_min", 0.0)
+            x_max = profile.printable_area.get("x_max", 0.0)
+            y_min = profile.printable_area.get("y_min", 0.0)
+            y_max = profile.printable_area.get("y_max", 0.0)
+            width = max(0.0, x_max - x_min)
+            depth = max(0.0, y_max - y_min)
+            if width > 0:
+                printer.build_volume_x = width
+            if depth > 0:
+                printer.build_volume_y = depth
+
+        if profile.printable_height_mm and profile.printable_height_mm > 0:
+            printer.build_volume_z = profile.printable_height_mm
+
+        machine_start_gcode = (
+            preset.parameters.get("machine_start_gcode")
+            or preset.parameters.get("start_gcode")
+        )
+        start_gcode_value = _normalize_gcode(machine_start_gcode)
+        if start_gcode_value:
+            profile.start_gcode = start_gcode_value
+
+        machine_end_gcode = (
+            preset.parameters.get("machine_end_gcode")
+            or preset.parameters.get("end_gcode")
+        )
+        end_gcode_value = _normalize_gcode(machine_end_gcode)
+        if end_gcode_value:
+            profile.end_gcode = end_gcode_value
 
         profile.orcaslicer_settings = _build_machine_settings_dict(preset)
-        extra_metadata = dict(preset.parameters)
-        profile.extra_metadata = extra_metadata if extra_metadata else None
+    full_metadata = dict(profile.extra_metadata or {})
+    full_metadata.update(preset.parameters)
+    if preset.default_print_profile:
+        full_metadata.setdefault("default_print_profile", preset.default_print_profile)
+    if preset.printer_model:
+        full_metadata.setdefault("printer_model", preset.printer_model)
+    if preset.nozzle_diameter:
+        full_metadata.setdefault("nozzle_diameter", preset.nozzle_diameter)
+    profile.extra_metadata = full_metadata or None
 
         return profile
 
@@ -345,6 +385,8 @@ class OrcaBundleImporter:
         compatible_filaments: list[str] | None,
     ) -> None:
         """Synchronise junction tables for printer/filament compatibility."""
+        await profile.awaitable_attrs.printer_links
+        await profile.awaitable_attrs.filament_links
         profile.printer_links.clear()
         profile.filament_links.clear()
 
@@ -553,6 +595,36 @@ def _parse_printable_area(area: Iterable[str] | None) -> dict[str, float] | None
     return {"x_min": min(xs), "x_max": max(xs), "y_min": min(ys), "y_max": max(ys)}
 
 
+def _normalize_gcode(value: Any) -> str | None:
+    if value is None:
+        return None
+    if isinstance(value, list):
+        lines = [str(item).strip() for item in value if item not in (None, "")]
+        filtered = [line for line in lines if line]
+        return "\n".join(filtered) or None
+    text = str(value).strip()
+    return text or None
+
+
+def _normalize_model_name(vendor: str | None, raw_name: str | None) -> tuple[str, str]:
+    """Вернуть пару (display_name, model_name) без дублирования производителя."""
+    vendor = (vendor or "").strip()
+    name = (raw_name or "").strip()
+    if not name:
+        return vendor or "Unknown Printer", raw_name or "Unknown"
+
+    simplified = re.sub(r"\s+", " ", name)
+    model_only = simplified
+    if vendor:
+        vendor_lower = vendor.lower()
+        simplified_lower = simplified.lower()
+        if simplified_lower.startswith(vendor_lower):
+            model_only = simplified[len(vendor):].strip()
+    model_only = re.sub(r"\s+", " ", model_only).strip()
+    display = f"{vendor} {model_only}".strip() if vendor else simplified
+    return display or simplified, model_only or simplified
+
+
 def _build_machine_settings_dict(preset: OrcaMachinePreset) -> dict[str, Any]:
     settings: dict[str, Any] = {
         "type": preset.type,
@@ -568,6 +640,58 @@ def _build_machine_settings_dict(preset: OrcaMachinePreset) -> dict[str, Any]:
         "printable_height": preset.printable_height,
     }
     settings.update(preset.parameters)
+
+    REQUIRED_MACHINE_KEYS = {
+        "bed_shape": [],
+        "bed_exclude_area": [],
+        "bed_custom_rectangle": ["0x0", "0x0", "0x0", "0x0"],
+        "default_print_profile": None,
+        "default_filament_profile": [],
+        "machine_start_gcode": "",
+        "machine_end_gcode": "",
+        "change_filament_gcode": "",
+        "time_lapse_gcode": "",
+        "layer_change_gcode": "",
+        "machine_pause_gcode": "",
+        "machine_resume_gcode": "",
+        "machine_cancel_gcode": "",
+        "machine_custom_gcode": "",
+        "machine_max_acceleration_x": [],
+        "machine_max_acceleration_y": [],
+        "machine_max_acceleration_z": [],
+        "machine_max_acceleration_e": [],
+        "machine_max_jerk_x": [],
+        "machine_max_jerk_y": [],
+        "machine_max_jerk_z": [],
+        "machine_max_jerk_e": [],
+        "machine_max_speed_x": [],
+        "machine_max_speed_y": [],
+        "machine_max_speed_z": [],
+        "machine_max_speed_e": [],
+        "machine_min_extruding_rate": [],
+        "machine_min_travel_rate": [],
+        "extruder_variant_list": [],
+        "physical_extruder_map": [],
+        "printer_extruder_variant": [],
+        "printer_extruder_id": [],
+        "extruder_type": [],
+        "extruder_clearance_height_to_lid": "0",
+        "extruder_clearance_max_radius": "0",
+        "retraction_length": [],
+        "retraction_minimum_travel": [],
+        "retraction_speed": [],
+        "deretraction_speed": [],
+        "retract_before_wipe": [],
+        "retract_length_toolchange": [],
+        "wipe_distance": [],
+        "z_hop": [],
+        "z_hop_types": [],
+        "enable_long_retraction_when_cut": [],
+    }
+
+    for key, default in REQUIRED_MACHINE_KEYS.items():
+        settings.setdefault(key, default)
+
     return settings
 
 

@@ -14,6 +14,7 @@ import type { FilamentVisualSettings } from '../types/api';
 import { Dropdown } from './Dropdown';
 import { useClickOutside } from '../hooks/useClickOutside';
 import { useHeaderVisible } from '../hooks/useHeaderVisible';
+import { useDebounce } from '../hooks/useDebounce';
 import { ColorMaterialSection } from './ColorMaterialSection';
 import { HSLColorPicker } from './HSLColorPicker';
 import { FilamentPreview } from './FilamentPreview';
@@ -72,6 +73,7 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
   const [tempRangeLow, setTempRangeLow] = useState<number | ''>('');
   const [tempRangeHigh, setTempRangeHigh] = useState<number | ''>('');
   const [nozzleTempInitialLayer, setNozzleTempInitialLayer] = useState<number | ''>('');
+  const [bedTempInitialLayer, setBedTempInitialLayer] = useState<number | ''>('');
   const [idleTemperature, setIdleTemperature] = useState<number | ''>(''); // Температура ожидания
   const [softeningTemperature, setSofteningTemperature] = useState<number | ''>(''); // Температура размягчения
   const [volumetricSpeed, setVolumetricSpeed] = useState<number | ''>('');
@@ -210,6 +212,9 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
   const [showBrandDropdown, setShowBrandDropdown] = useState(false); // Показывать выпадающий список брендов
   const [showMaterialTypeDropdown, setShowMaterialTypeDropdown] = useState(false); // Показывать выпадающий список типов
   const [selectedPrinterIds, setSelectedPrinterIds] = useState<number[]>([]); // Выбранные принтеры
+  const [printersCache, setPrintersCache] = useState<Record<number, Printer>>({});
+  const [printerSearch, setPrinterSearch] = useState('');
+  const debouncedPrinterSearch = useDebounce(printerSearch, 250);
   
   // Маппинг плотности по типам материалов (г/см³)
   const MATERIAL_DENSITY_MAP: Record<string, number> = {
@@ -306,10 +311,27 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
 
   // Загружаем принтеры для выбора
   const { data: printersData } = useQuery({
-    queryKey: ['printers', 'for-preset'],
-    queryFn: () => printersAPI.list({ active_only: true, page: 1, size: 100 }),
+    queryKey: ['printers', 'for-preset', { search: debouncedPrinterSearch }],
+    queryFn: () => printersAPI.list({
+      active_only: true,
+      page: 1,
+      size: 20,
+      search: debouncedPrinterSearch || undefined,
+    }),
     enabled: isOpen,
   });
+
+  useEffect(() => {
+    if (printersData?.items) {
+      setPrintersCache((prev) => {
+        const next = { ...prev };
+        printersData.items.forEach((printer) => {
+          next[printer.id] = printer;
+        });
+        return next;
+      });
+    }
+  }, [printersData]);
 
   // Закрываем выпадающий список при клике вне его
   // Универсальные хуки для закрытия выпадающих списков при клике вне
@@ -395,7 +417,26 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
         }
         
         // === ВКЛАДКА "ПРОФИЛЬ ПРУТКА" - дополнительные параметры ===
-        setNozzleTempInitialLayer(settings.nozzle_temperature_initial_layer?.[0] ? Number(settings.nozzle_temperature_initial_layer[0]) : '');
+        const parseNumericSetting = (raw: unknown): number | '' => {
+          if (raw === undefined || raw === null) {
+            return '';
+          }
+          const rawStr = String(raw).trim();
+          if (rawStr === '' || rawStr.toLowerCase() === 'nil') {
+            return '';
+          }
+          const parsed = Number(rawStr);
+          return Number.isNaN(parsed) ? '' : parsed;
+        };
+        setNozzleTempInitialLayer(parseNumericSetting(settings.nozzle_temperature_initial_layer?.[0]));
+        const bedInitialLayerValue =
+          settings.hot_plate_temp_initial_layer?.[0] ??
+          settings.cool_plate_temp_initial_layer?.[0] ??
+          settings.eng_plate_temp_initial_layer?.[0] ??
+          settings.textured_plate_temp_initial_layer?.[0] ??
+          '';
+        setBedTempInitialLayer(parseNumericSetting(bedInitialLayerValue));
+        setBedTempInitialLayer(settings.bed_temperature_initial_layer?.[0] ? Number(settings.bed_temperature_initial_layer[0]) : '');
         setAdaptiveVolumetricSpeed(settings.filament_adaptive_volumetric_speed?.[0] === '1' || settings.filament_adaptive_volumetric_speed?.[0] === 1);
         setVolumetricSpeedCoefficients(settings.volumetric_speed_coefficients?.[0] ? String(settings.volumetric_speed_coefficients[0]) : '');
         // Процентные значения (убираем % при загрузке)
@@ -576,7 +617,18 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
       }
       setSelectedFilamentId(preset.filament_id);
       // Инициализируем выбранные принтеры
-      setSelectedPrinterIds(preset.printers?.map(p => p.id) || []);
+      const presetPrinters = preset.printers?.map(p => p.id) || [];
+      setSelectedPrinterIds(presetPrinters);
+      if (preset.printers && preset.printers.length > 0) {
+        setPrintersCache((prev) => {
+          const next = { ...prev };
+          preset.printers?.forEach((printer) => {
+            next[printer.id] = printer;
+          });
+          return next;
+        });
+      }
+      setPrinterSearch('');
       // При редактировании отключаем форму создания нового материала
       setShowFilamentForm(false);
     } else {
@@ -602,6 +654,7 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
       setTempRangeLow('');
       setTempRangeHigh('');
       setNozzleTempInitialLayer('');
+      setBedTempInitialLayer('');
       setIdleTemperature('');
       setSofteningTemperature('');
       setVolumetricSpeed('');
@@ -684,6 +737,8 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
       setCompatiblePrintersCondition('');
       setCompatiblePrints('');
       setCompatiblePrintsCondition('');
+      setPrintersCache({});
+      setPrinterSearch('');
       setFilamentNotes(''); // Сброс заметок при создании нового пресета
       // showAdvancedSettings - устаревшая переменная, больше не используется (используем вкладки)
       
@@ -840,9 +895,13 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
       orcaslicer_settings?: Record<string, any> | null;
       printer_ids?: number[];
     }) => presetsAPI.create(data),
-    onSuccess: () => {
+    onSuccess: (createdPreset) => {
       queryClient.invalidateQueries({ queryKey: ['presets'] });
-      queryClient.invalidateQueries({ queryKey: ['filament-presets'] });
+      if (createdPreset?.filament_id) {
+        queryClient.invalidateQueries({ queryKey: ['filament-presets', createdPreset.filament_id] });
+      } else {
+        queryClient.invalidateQueries({ queryKey: ['filament-presets'] });
+      }
       queryClient.invalidateQueries({ queryKey: ['user-presets'] });
       // Инвалидируем кэш пресетов бренда (если создавался из профиля бренда)
       if (brandId) {
@@ -879,9 +938,15 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
         active?: boolean;
       }>
     }) => presetsAPI.update(id, data),
-    onSuccess: () => {
+    onSuccess: (updatedPreset) => {
       queryClient.invalidateQueries({ queryKey: ['presets'] });
-      queryClient.invalidateQueries({ queryKey: ['filament-presets'] });
+      if (updatedPreset?.filament_id) {
+        queryClient.invalidateQueries({ queryKey: ['filament-presets', updatedPreset.filament_id] });
+      } else if (preset?.filament_id) {
+        queryClient.invalidateQueries({ queryKey: ['filament-presets', preset.filament_id] });
+      } else {
+        queryClient.invalidateQueries({ queryKey: ['filament-presets'] });
+      }
       queryClient.invalidateQueries({ queryKey: ['user-presets'] });
       // Инвалидируем кэш пресетов бренда (если редактировался из профиля бренда)
       if (brandId) {
@@ -932,6 +997,12 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
     addParam('nozzle_temperature_range_low', tempRangeLow);
     addParam('nozzle_temperature_range_high', tempRangeHigh);
     addParam('nozzle_temperature_initial_layer', nozzleTempInitialLayer);
+    const bedInitialTemp =
+      bedTempInitialLayer !== '' && bedTempInitialLayer !== null ? bedTempInitialLayer : bedTemp;
+    addParam('hot_plate_temp_initial_layer', bedInitialTemp);
+    addParam('cool_plate_temp_initial_layer', bedInitialTemp);
+    addParam('eng_plate_temp_initial_layer', bedInitialTemp);
+    addParam('textured_plate_temp_initial_layer', bedInitialTemp);
     addParam('idle_temperature', idleTemperature); // Температура ожидания
     addParam('temperature_vitrification', softeningTemperature); // Температура витрификации (размягчения)
     addParam('chamber_temperature', chamberTemp);
@@ -1301,7 +1372,7 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
           retraction_length: retractionLength,
           retraction_speed: retractionSpeed,
           orcaslicer_settings: orcaslicerSettings,
-          printer_ids: selectedPrinterIds.length > 0 ? selectedPrinterIds : undefined,
+          printer_ids: selectedPrinterIds.length > 0 ? selectedPrinterIds : [],
         },
       });
     } else {
@@ -1442,6 +1513,7 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                                 setTempRangeLow,
                                 setTempRangeHigh,
                                 setNozzleTempInitialLayer,
+                                setBedTempInitialLayer,
                                 setIdleTemperature,
                                 setChamberTemp,
                                 setEnableChamberControl,
@@ -1494,51 +1566,8 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                   
                   {/* Информация о выбранном филаменте */}
                   {selectedFilament && (
-                    <div className="mt-4 px-4 pt-4 pb-2 bg-white/5 rounded-xl border border-white/10">
-                      <div className="flex items-center justify-between mb-2">
-                        <div className="flex-shrink-0">
-                          {selectedFilament.brand_name && (
-                            <span className="text-gray-300 text-sm">{selectedFilament.brand_name}</span>
-                          )}
-                          <h4 className="text-lg font-bold text-white">{selectedFilament.name}</h4>
-                        </div>
-                        <div className="flex-1 grid grid-cols-3 grid-rows-2 gap-x-3 gap-y-0.5 text-sm px-4" style={{ gridTemplateRows: 'auto auto' }}>
-                          {/* Первая строка */}
-                          {selectedFilament.color_name && (
-                            <div className="col-span-1 flex items-center gap-1.5">
-                              <span className="text-gray-400">Цвет:</span>
-                              <div style={{ transform: 'scale(0.4)', transformOrigin: 'left center' }}>
-                                <FilamentPreview
-                                  colorHex={selectedFilament.color_hex || '#FF0000'}
-                                  visualSettings={selectedFilament.visual_settings}
-                                  size="medium"
-                                />
-                              </div>
-                            </div>
-                          )}
-                          {selectedFilament.diameter && (
-                            <div className="col-span-1 flex items-center">
-                              <span className="text-gray-400">Диаметр:</span>
-                              <span className="text-white ml-1">{selectedFilament.diameter}mm</span>
-                            </div>
-                          )}
-                          {selectedFilament.density && (
-                            <div className="col-span-1 flex items-center">
-                              <span className="text-gray-400">Плотность:</span>
-                              <span className="text-white ml-1">{selectedFilament.density}g/cm³</span>
-                            </div>
-                          )}
-                          {/* Вторая строка */}
-                          {selectedFilament.color_name && (
-                            <div className="col-span-1 flex items-center">
-                              <span className="text-white">{selectedFilament.color_name}</span>
-                            </div>
-                          )}
-                        </div>
-                        <span className="px-3 py-1 bg-purple-600 rounded-lg text-white text-sm font-medium flex-shrink-0">
-                          {selectedFilament.material_type}
-                        </span>
-                      </div>
+                    <div className="mt-4">
+                      <FilamentSummaryCard filament={selectedFilament} />
                     </div>
                   )}
                 </div>
@@ -1661,6 +1690,7 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                                       setTempRangeLow,
                                       setTempRangeHigh,
                                       setNozzleTempInitialLayer,
+                                      setBedTempInitialLayer,
                                       setIdleTemperature,
                                       setChamberTemp,
                                       setEnableChamberControl,
@@ -2181,51 +2211,67 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
             </div>
             <div>
               <label className="block text-gray-300 mb-2 text-sm font-medium">Принтеры (опционально)</label>
-              <div className="space-y-2">
-                {selectedPrinterIds.length > 0 && (
-                  <div className="flex flex-wrap gap-2">
-                    {selectedPrinterIds.map((printerId) => {
-                      const printer = printersData?.items.find(p => p.id === printerId);
-                      if (!printer) return null;
-                      return (
-                        <span
-                          key={printerId}
-                          className="px-3 py-1.5 bg-purple-600/30 text-white rounded-lg text-sm flex items-center gap-2 border border-purple-500/30"
-                        >
-                          {printer.name}
-                          <button
-                            type="button"
-                            onClick={() => setSelectedPrinterIds(selectedPrinterIds.filter(id => id !== printerId))}
-                            className="hover:text-red-400 transition-colors"
-                          >
-                            <X className="w-4 h-4" />
-                          </button>
-                        </span>
-                      );
-                    })}
-                  </div>
-                )}
-                <Dropdown
-                  label=""
-                  value=""
-                  options={[
-                    { value: '', label: 'Выберите принтер' },
-                    ...(printersData?.items
-                      .filter(p => !selectedPrinterIds.includes(p.id))
-                      .map((printer: Printer) => ({
-                        value: printer.id,
-                        label: `${printer.manufacturer} ${printer.model} (${printer.name})`,
-                      })) || []),
-                  ]}
-                  onChange={(val) => {
-                    if (val && typeof val === 'number' && !selectedPrinterIds.includes(val)) {
-                      setSelectedPrinterIds([...selectedPrinterIds, val]);
-                    }
-                  }}
-                  placeholder="Добавить принтер"
-                />
-              </div>
-              {printersData?.items.length === 0 && (
+          <Dropdown
+            label=""
+            value=""
+            options={
+              printersData?.items
+                .filter((p) => !selectedPrinterIds.includes(p.id))
+                .map((printer: Printer) => ({
+                  value: printer.id,
+                  label: `${printer.manufacturer} ${printer.model} (${printer.name})`,
+                })) || []
+            }
+            onChange={(val) => {
+              if (val && typeof val === 'number' && !selectedPrinterIds.includes(val)) {
+                const selectedPrinter =
+                  printersData?.items.find((p) => p.id === val) || printersCache[val];
+                if (selectedPrinter) {
+                  setPrintersCache((prev) => ({ ...prev, [selectedPrinter.id]: selectedPrinter }));
+                }
+                setSelectedPrinterIds([...selectedPrinterIds, val]);
+                setPrinterSearch('');
+              }
+            }}
+            placeholder="Добавить принтер"
+            filterable
+            filterValue={printerSearch}
+            onFilterChange={setPrinterSearch}
+            emptyMessage="Принтер не найден"
+          />
+          {selectedPrinterIds.length > 0 && (
+            <div className="mt-2 flex flex-wrap items-center gap-2">
+              {selectedPrinterIds.slice(0, 3).map((printerId) => {
+                const printer =
+                  printersCache[printerId] ||
+                  printersData?.items.find((p) => p.id === printerId);
+                if (!printer) {
+                  return null;
+                }
+                return (
+                  <span
+                    key={printerId}
+                    className="px-3 py-1.5 bg-purple-600/30 text-white rounded-lg text-sm flex items-center gap-2 border border-purple-500/30"
+                  >
+                    {printer.name}
+                    <button
+                      type="button"
+                      onClick={() => setSelectedPrinterIds(selectedPrinterIds.filter((id) => id !== printerId))}
+                      className="hover:text-red-400 transition-colors"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+                  </span>
+                );
+              })}
+              {selectedPrinterIds.length > 3 && (
+                <span className="px-3 py-1.5 bg-white/10 text-gray-300 rounded-lg text-sm border border-white/20">
+                  + ещё {selectedPrinterIds.length - 3}
+                </span>
+              )}
+            </div>
+          )}
+              {printerSearch && printersData?.items.length === 0 && (
                 <p className="text-gray-400 text-xs mt-2">Принтеры не найдены в базе</p>
               )}
             </div>
@@ -2270,96 +2316,84 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
             </div>
           )}
 
-          {/* Temperature Settings */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div>
-                <label className="block text-gray-300 mb-2 text-sm font-medium">
-                  Температура сопла (°C) *
-                </label>
-                <input
-                  type="number"
-                  value={extruderTemp}
-                  onChange={(e) => { setExtruderTemp(Number(e.target.value)); }}
-                  required
-                  min={150}
-                  max={300}
-                  step="1"
-                  className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all"
-                />
-              </div>
-              <div>
-                <label className="block text-gray-300 mb-2 text-sm font-medium">
-                  Температура стола (°C) *
-                </label>
-                <input
-                  type="number"
-                  value={bedTemp}
-                  onChange={(e) => { setBedTemp(Number(e.target.value)); }}
-                  required
-                  min={0}
-                  max={120}
-                  step="1"
-                  className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all"
-                />
-              </div>
-            </div>
-
-          {/* Speed Settings */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div>
-                <label className="block text-gray-300 mb-2 text-sm font-medium">Скорость печати (mm/s) *</label>
-                <input
-                  type="number"
-                  value={printSpeed}
-                  onChange={(e) => { setPrintSpeed(Number(e.target.value)); }}
-                  required
-                  min={10}
-                  max={300}
-                  step="1"
-                  className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all"
-                />
-              </div>
-              <div>
-                <label className="block text-gray-300 mb-2 text-sm font-medium">
-                  Скорость перемещений (mm/s)
-                </label>
-                <input
-                  type="number"
-                  value={travelSpeed}
-                  onChange={(e) => { setTravelSpeed(Number(e.target.value)); }}
-                  min={50}
-                  max={300}
-                  step="1"
-                  className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all"
-                />
-              </div>
-            </div>
-
-        {/* Flow Settings */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div>
-                <label className="block text-gray-300 mb-2 text-sm font-medium">Поток (%)</label>
-                <input
-                  type="number"
-                  value={flowRate}
-                  onChange={(e) => { setFlowRate(Number(e.target.value)); }}
-                  min={50}
-                  max={150}
+          {/* Основные настройки */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+            <div>
+              <label className="block text-gray-300 mb-2 text-sm font-medium">
+                Температура сопла (°C) *
+              </label>
+              <input
+                type="number"
+                value={extruderTemp}
+                onChange={(e) => { setExtruderTemp(Number(e.target.value)); }}
+                required
+                min={150}
+                max={300}
                 step="1"
                 className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all"
               />
             </div>
-          </div>
-
-          {/* Cooling and Retraction */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <div>
-                <label className="block text-gray-300 mb-2 text-sm font-medium">Скорость вентилятора (%)</label>
-                <input
-                  type="number"
-                  value={fanSpeed}
-                  onChange={(e) => { setFanSpeed(Number(e.target.value)); }}
-                  min={0}
+            <div>
+              <label className="block text-gray-300 mb-2 text-sm font-medium">
+                Температура стола (°C) *
+              </label>
+              <input
+                type="number"
+                value={bedTemp}
+                onChange={(e) => { setBedTemp(Number(e.target.value)); }}
+                required
+                min={0}
+                max={120}
+                step="1"
+                className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all"
+              />
+            </div>
+            <div>
+              <label className="block text-gray-300 mb-2 text-sm font-medium">Скорость печати (mm/s) *</label>
+              <input
+                type="number"
+                value={printSpeed}
+                onChange={(e) => { setPrintSpeed(Number(e.target.value)); }}
+                required
+                min={10}
+                max={300}
+                step="1"
+                className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all"
+              />
+            </div>
+            <div>
+              <label className="block text-gray-300 mb-2 text-sm font-medium">
+                Скорость перемещений (mm/s)
+              </label>
+              <input
+                type="number"
+                value={travelSpeed}
+                onChange={(e) => { setTravelSpeed(Number(e.target.value)); }}
+                min={50}
+                max={300}
+                step="1"
+                className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all"
+              />
+            </div>
+            <div>
+              <label className="block text-gray-300 mb-2 text-sm font-medium">Поток (%)</label>
+              <input
+                type="number"
+                value={flowRate}
+                onChange={(e) => { setFlowRate(Number(e.target.value)); }}
+                min={50}
+                max={150}
+                step="1"
+                className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all"
+              />
+            </div>
+            <div>
+              <label className="block text-gray-300 mb-2 text-sm font-medium">Скорость вентилятора (%)</label>
+              <input
+                type="number"
+                value={fanSpeed}
+                onChange={(e) => { setFanSpeed(Number(e.target.value)); }}
+                min={0}
                 max={100}
                 step="1"
                 className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all"
@@ -2919,32 +2953,34 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                         <div>
                           <label className="block text-gray-400 mb-1 text-xs">Первый слой</label>
                           <div className="relative">
-                            <input
-                              type="number"
-                              value={bedTemp}
-                              onChange={(e) => { setBedTemp(Number(e.target.value)); }}
-                              min={0}
-                              max={120}
-                              step="1"
-                              placeholder="90"
-                              className={`w-full pl-3 pr-10 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-gray-500 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all `}
-                            />
+                          <input
+                            type="number"
+                            value={bedTempInitialLayer !== '' ? bedTempInitialLayer : bedTemp}
+                            onChange={(e) => {
+                              setBedTempInitialLayer(e.target.value === '' ? '' : Number(e.target.value));
+                            }}
+                            min={0}
+                            max={120}
+                            step="1"
+                            placeholder="90"
+                            className={`w-full pl-3 pr-10 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-gray-500 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all `}
+                          />
                             <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400 pointer-events-none">°C</span>
                           </div>
                         </div>
                         <div>
                           <label className="block text-gray-400 mb-1 text-xs">Последующие слои</label>
                           <div className="relative">
-                            <input
-                              type="number"
-                              value={bedTemp}
-                              onChange={(e) => { setBedTemp(Number(e.target.value)); }}
-                              min={0}
-                              max={120}
-                              step="1"
-                              placeholder="90"
-                              className={`w-full pl-3 pr-10 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-gray-500 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all `}
-                            />
+                          <input
+                            type="number"
+                            value={bedTemp}
+                            onChange={(e) => { setBedTemp(Number(e.target.value)); }}
+                            min={0}
+                            max={120}
+                            step="1"
+                            placeholder="90"
+                            className={`w-full pl-3 pr-10 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-gray-500 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all `}
+                          />
                             <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400 pointer-events-none">°C</span>
                           </div>
                         </div>

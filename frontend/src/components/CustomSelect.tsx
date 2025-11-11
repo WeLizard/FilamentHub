@@ -90,7 +90,7 @@ export const CustomSelect: React.FC<CustomSelectProps> = ({
           type="button"
           onClick={() => { if (!disabled) setIsOpen(!isOpen); }}
           disabled={disabled}
-          className={`w-full px-4 py-4 bg-white/10 border border-white/20 rounded-xl text-white focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all flex items-center justify-between ${disabled ? 'opacity-60 cursor-not-allowed' : ''}`}
+          className={`w-full px-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all flex items-center justify-between ${disabled ? 'opacity-60 cursor-not-allowed' : ''}`}
         >
           <span className={selectedOption ? 'text-white' : 'text-gray-400'}>
             {selectedOption ? selectedOption.label : placeholder}
@@ -106,7 +106,7 @@ export const CustomSelect: React.FC<CustomSelectProps> = ({
         createPortal(
           <div
             ref={dropdownRef}
-            className="absolute z-[9999] max-h-60 overflow-y-auto bg-white/5 backdrop-blur-sm rounded-xl border border-white/10 shadow-xl custom-scrollbar"
+            className="absolute z-[9999] bg-white/5 backdrop-blur-sm rounded-xl border border-white/10 shadow-xl overflow-hidden"
             style={{
               top: `${position.top}px`,
               left: `${position.left}px`,
@@ -114,22 +114,24 @@ export const CustomSelect: React.FC<CustomSelectProps> = ({
               position: 'fixed',
             }}
           >
-            {options.map((option) => (
-              <button
-                key={option.value}
-                type="button"
-                onClick={() => {
-                  onChange(option.value);
-                  setIsOpen(false);
-                }}
-                className={`w-full px-4 py-3 text-left hover:bg-white/10 transition-all border-b border-white/5 last:border-b-0 flex items-center justify-between ${
-                  value === option.value ? 'bg-purple-600/20 text-purple-300' : 'text-white'
-                }`}
-              >
-                <span>{option.label}</span>
-                {value === option.value && <Check className="w-5 h-5 text-purple-400" />}
-              </button>
-            ))}
+            <div className="max-h-60 overflow-y-auto custom-scrollbar">
+              {options.map((option) => (
+                <button
+                  key={option.value}
+                  type="button"
+                  onClick={() => {
+                    onChange(option.value);
+                    setIsOpen(false);
+                  }}
+                  className={`w-full px-4 py-3 text-left hover:bg-white/10 transition-all border-b border-white/5 last:border-b-0 flex items-center justify-between ${
+                    value === option.value ? 'bg-purple-600/20 text-purple-300' : 'text-white'
+                  }`}
+                >
+                  <span>{option.label}</span>
+                  {value === option.value && <Check className="w-5 h-5 text-purple-400" />}
+                </button>
+              ))}
+            </div>
           </div>,
           document.body
         )}

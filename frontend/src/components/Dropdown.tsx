@@ -1,6 +1,6 @@
 /** Универсальный компонент выпадающего списка для всего сайта */
 
-import { useState, useRef, ReactNode, useEffect } from 'react';
+import { useState, useRef, ReactNode, useEffect, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { Check, X } from 'lucide-react';
 
@@ -46,6 +46,14 @@ export const Dropdown: React.FC<DropdownProps> = ({
   const dropdownRef = useRef<HTMLDivElement>(null);
   const [isOpen, setIsOpen] = useState(false);
   const [filter, setFilter] = useState(filterValue || '');
+  useEffect(() => {
+    if (!filterable) {
+      return;
+    }
+    if ((filterValue ?? '') !== filter) {
+      setFilter(filterValue ?? '');
+    }
+  }, [filterValue, filterable]); 
   const [position, setPosition] = useState<{ top: number; left: number; width: number } | null>(null);
 
   // Вычисляем позицию выпадающего списка
@@ -106,12 +114,16 @@ export const Dropdown: React.FC<DropdownProps> = ({
   }, [isOpen, filterable, onFilterChange]);
 
   // Фильтруем опции если включена фильтрация
-  const filteredOptions = filterable && filter
-    ? options.filter(opt => 
-        opt.label.toLowerCase().includes(filter.toLowerCase()) ||
-        String(opt.value).toLowerCase().includes(filter.toLowerCase())
-      )
-    : options;
+  const filteredOptions = useMemo(() => {
+    if (!filterable || !filter) {
+      return options;
+    }
+    const lowered = filter.toLowerCase();
+    return options.filter((opt) => 
+      opt.label.toLowerCase().includes(lowered) ||
+      String(opt.value).toLowerCase().includes(lowered)
+    );
+  }, [filter, filterable, options]);
 
   const selectedOption = options.find(opt => opt.value === value);
 
@@ -174,6 +186,12 @@ export const Dropdown: React.FC<DropdownProps> = ({
                 // Если нажали Escape и поле пустое - очищаем выбор
                 if (e.key === 'Escape' && filter === '' && value !== '') {
                   handleClear();
+                }
+                if (e.key === 'Enter') {
+                  e.preventDefault();
+                  if (filteredOptions.length > 0) {
+                    handleOptionClick(filteredOptions[0].value);
+                  }
                 }
               }}
               placeholder={placeholder}
