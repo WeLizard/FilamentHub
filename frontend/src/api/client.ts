@@ -1084,5 +1084,56 @@ export const notificationsAPI = {
   },
 };
 
+// OrcaSlicer Deleted Presets API
+export const orcaslicerDeletedPresetsAPI = {
+  // Сообщить об удалённых пресетах
+  reportDeletedPresets: async (data: {
+    deleted_presets: Array<{
+      preset_id: number;
+      preset_name: string;
+      bundle_preset_name?: string | null;
+    }>;
+  }): Promise<{
+    message: string;
+    notification_id?: number | null;
+    preset_count?: number | null;
+    created_count?: number | null;
+    saved_count?: number | null;
+    rule?: string | null;
+  }> => {
+    const response = await api.post('/orcaslicer/deleted-presets', data);
+    return response.data;
+  },
+
+  // Обработать действие пользователя для удалённого пресета
+  handleAction: async (
+    notificationId: number,
+    data: {
+      action: 'restore' | 'delete' | 'skip';
+      preset_ids?: number[] | null;
+      apply_to_all?: boolean;
+      save_rule?: boolean;
+    }
+  ): Promise<{
+    message: string;
+    action: string;
+    processed_count: number;
+    total_count: number;
+  }> => {
+    const response = await api.post(`/orcaslicer/deleted-presets/${notificationId}/action`, data);
+    return response.data;
+  },
+
+  // Автоматически обработать удалённые уведомления
+  autoProcess: async (): Promise<{
+    message: string;
+    processed_count: number;
+    notifications_processed: number;
+  }> => {
+    const response = await api.post('/orcaslicer/deleted-presets/auto-process');
+    return response.data;
+  },
+};
+
 export default api;
 

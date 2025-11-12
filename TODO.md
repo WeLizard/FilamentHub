@@ -1,10 +1,10 @@
 # FilamentHub - TODO List
 
-> **Последнее обновление:** 2025-11-06  
+> **Последнее обновление:** 2025-11-12  
 > **Текущий фокус:** 
 > - ✅ Backend API ~95% (завершение мелких задач, уведомления, weighted presets)
 > - 🔥 Frontend Integration ~85% (улучшение UX, админ-панель, уведомления, weighted presets)
-> - 🔥 OrcaSlicer Integration ~80% (FilamentHubPanel, WebView, авторизация, синхронизация пресетов)
+> - 🔥 OrcaSlicer Integration ~83% (FilamentHubPanel, WebView, авторизация, синхронизация пресетов, badge уведомлений)
 
 ---
 
@@ -14,14 +14,14 @@
 ✅ Фаза 0: Планирование                 [████████████████████] 100%
 ✅ Фаза 1: Backend API                  [███████████████████░]  95%
 🔥 Фаза 3: Web UI                       [██████████████████░░]  85%
-🔥 Фаза 2: OrcaSlicer Integration       [████████████████░░░░]  80%
+🔥 Фаза 2: OrcaSlicer Integration       [█████████████████░░░]  83%
 ⏳ Фаза 4: Публичный запуск             [░░░░░░░░░░░░░░░░░░░░]   0%
 ```
 
 **Детализация прогресса:**
-- ✅ Backend: Все основные эндпоинты, модели, миграции, тесты, OrcaSlicer экспорт, Brand Requests система, уведомления, weighted presets
+- ✅ Backend: Все основные эндпоинты, модели, миграции, тесты, OrcaSlicer экспорт, Brand Requests система, уведомления, weighted presets, API для количества непрочитанных уведомлений
 - ✅ Frontend: Каталог, создание материалов/пресетов, профиль, админ панель, полный UI для OrcaSlicer параметров, Brand Requests система, Brand Profile Page, уведомления, weighted presets в UI
-- 🔥 OrcaSlicer: Изучен код, собран локально, экспорт работает, интеграция в UI ~80% (FilamentHubPanel, WebView, авторизация, синхронизация)
+- 🔥 OrcaSlicer: Изучен код, собран локально, экспорт работает, интеграция в UI ~83% (FilamentHubPanel, WebView, авторизация, синхронизация пресетов, badge уведомлений, исправление проблемы с обновлением не-FilamentHub пресетов)
 
 **Статус:**
 - ✅ Completed (Завершено)
@@ -182,6 +182,8 @@
 - [x] `POST /api/v1/presets/{id}/increment-usage` (увеличение счетчика использования)
 - [x] `GET /api/v1/presets/{id}/export/orcaslicer.json` (экспорт профиля OrcaSlicer)
 - [x] `GET /api/v1/presets/{id}/export/orcaslicer.info` (экспорт .info файла)
+- [x] `POST /api/v1/orcaslicer/deleted-presets` (отправка локально удалённых пресетов из OrcaSlicer)
+- [x] `GET /api/v1/notifications/unread-count` (количество непрочитанных уведомлений)
 
 #### Printers ✅
 - [x] `GET /api/v1/printers/` (список с пагинацией)
@@ -209,14 +211,19 @@
 - [x] UI для отображения и скачивания QR-кодов в профиле бренда
 
 #### Notifications ✅
-- [x] Модель `Notification` с типами (preset_updated, preset_deleted, brand_verified, brand_request_approved, brand_request_rejected)
+- [x] Модель `Notification` с типами (preset_updated, preset_deleted, preset_locally_deleted, brand_verified, brand_request_approved, brand_request_rejected)
 - [x] Сервис `notification_service.py` для создания уведомлений
+- [x] Сервис `orcaslicer_service.py` для обработки локально удалённых пресетов
 - [x] `GET /api/v1/notifications/` (список уведомлений пользователя)
 - [x] `GET /api/v1/notifications/unread-count` (количество непрочитанных)
 - [x] `POST /api/v1/notifications/{id}/mark-read` (отметить как прочитанное)
 - [x] `POST /api/v1/notifications/mark-all-read` (отметить все как прочитанные)
+- [x] `POST /api/v1/orcaslicer/deleted-presets` (отправка локально удалённых пресетов из OrcaSlicer)
 - [x] Интеграция в endpoints (presets, admin) для автоматической отправки уведомлений
 - [x] Frontend компонент `Notifications.tsx` с отображением и навигацией
+- [x] Frontend компонент `DeletedPresetsModal.tsx` для обработки локально удалённых пресетов
+- [x] OrcaSlicer: API метод `get_unread_notifications_count()` для получения количества непрочитанных уведомлений
+- [x] OrcaSlicer: Badge с количеством непрочитанных уведомлений на кнопке уведомлений
 
 #### Weighted Presets ✅
 - [x] Поле `is_weighted` в модели `Preset` (Boolean, индекс)
@@ -252,6 +259,7 @@
 - [x] `app/services/account_deletion.py` (удаление аккаунтов)
 - [x] `app/services/qr_service.py` (генерация QR-кодов и коротких кодов)
 - [x] `app/services/notification_service.py` (создание и управление уведомлениями)
+- [x] `app/services/orcaslicer_service.py` (обработка локально удалённых пресетов из OrcaSlicer)
 - [x] `app/services/weighted_preset_service.py` (автоматическое создание/обновление взвешенных пресетов)
 - [x] `app/core/security.py` (JWT, password hashing, email verification tokens)
 
@@ -301,9 +309,9 @@
 
 ---
 
-## 👀 ФАЗА 2: OrcaSlicer Integration (Месяц 3-6) ⭐
+## 🔥 ФАЗА 2: OrcaSlicer Integration (Месяц 3-6) ⭐
 
-**Прогресс:** 25% (изучен код, собран локально, экспорт работает, форк создан и настроен, интеграция в UI не начата)
+**Прогресс:** 83% (изучен код, собран локально, экспорт работает, форк создан и настроен, интеграция в UI ~83%: FilamentHubPanel, WebView, авторизация, синхронизация пресетов, badge уведомлений)
 
 ### 2.1 Изучение OrcaSlicer ✅
 
@@ -343,57 +351,77 @@
 - [ ] Создать пустой FilamentHub tab (skeleton)
 - [ ] Протестировать базовую интеграцию
 
-### 2.3 FilamentHub Authorization Integration ⏳
+### 2.3 FilamentHub Authorization Integration ✅ ~90%
 **Цель:** Реализовать авторизацию в OrcaSlicer через FilamentHub (аналогично BambuLab)
 
 **Задачи:**
-- [ ] Изучить существующую интеграцию BambuLab в OrcaSlicer
-- [ ] Создать `src/slic3r/GUI/FilamentHubAuth.cpp/.h`
-- [ ] UI авторизации:
-  - [ ] Поле для email/username
-  - [ ] Поле для пароля
-  - [ ] Кнопка "Войти"
-  - [ ] Сохранение JWT токена локально
-  - [ ] Отображение статуса авторизации
-- [ ] HTTP клиент:
-  - [ ] POST /api/v1/auth/login
-  - [ ] GET /api/v1/auth/me
-  - [ ] POST /api/v1/auth/refresh
+- [x] Изучить существующую интеграцию BambuLab в OrcaSlicer
+- [x] Создать `src/slic3r/Utils/FilamentHubClient.cpp/.h` для HTTP клиента
+- [x] UI авторизации через WebView:
+  - [x] Авторизация через WebView (открытие модального окна во фронтенде)
+  - [x] Автоматическое сохранение токена доступа (JWT) в AppConfig
+  - [x] Сохранение user_id в AppConfig
+  - [x] Отображение статуса авторизации (авторизован/не авторизован) в UI
+  - [x] Кнопка "Login/Logout" в верхней панели FilamentHub tab
+- [x] HTTP клиент для FilamentHub API:
+  - [x] POST /api/v1/auth/login (авторизация) - через фронтенд
+  - [x] GET /api/v1/auth/me (проверка статуса, получение user info)
+  - [x] GET /api/v1/auth/my-presets (получение пресетов пользователя)
+- [x] Сохранение настроек авторизации в конфиге OrcaSlicer (AppConfig)
+- [ ] POST /api/v1/auth/refresh (обновление токена) - не реализовано (не критично)
 
-### 2.4 FilamentHub Tab Implementation ⏳
+### 2.4 FilamentHub Tab Implementation ✅ ~85%
 **Цель:** Добавить таб "FilamentHub" в главный UI (рядом с "Подготовка", "Принтер", "Проект")
 
 **Задачи:**
-- [ ] Создать `src/slic3r/GUI/FilamentHubPanel.cpp/.h`
-- [ ] Добавить таб "FilamentHub" в главное окно
-- [ ] UI компоненты:
-  - [ ] Статус авторизации
-  - [ ] Поиск материалов
-  - [ ] Список результатов
-  - [ ] Детали материала и пресетов
-  - [ ] Кнопка "Импортировать в профили"
-  - [ ] Список "Мои профили из FilamentHub"
-- [ ] HTTP клиент:
-  - [ ] GET /api/v1/filaments (поиск)
-  - [ ] GET /api/v1/filaments/{id}
-  - [ ] GET /api/v1/filaments/{id}/presets
-  - [ ] GET /api/v1/presets/{id}/export/orcaslicer.json
+- [x] Создать `src/slic3r/GUI/FilamentHubPanel.cpp/.h`
+- [x] Добавить таб "FilamentHub" в главное окно (рядом с существующими табами)
+- [x] UI компоненты через WebView:
+  - [x] WebView с React фронтендом (http://localhost:3000)
+  - [x] Отображение статуса авторизации (если не авторизован - предложить войти)
+  - [x] Поиск материалов по бренду, типу, цвету (через фронтенд)
+  - [x] Просмотр деталей материала (через фронтенд)
+  - [x] Просмотр пресетов для материала (через фронтенд)
+  - [x] Кнопка "Скачать" для пресета (скачивание JSON файла)
+  - [x] Навигация (Catalog, Profile) в верхней панели
+  - [x] Кнопка "Уведомления" с badge непрочитанных уведомлений
+  - [x] Кнопка "Админ" (только для админов)
+  - [x] Кнопка "Обновить" для перезагрузки WebView
+- [x] HTTP клиент для FilamentHub API:
+  - [x] GET /api/v1/presets/{id}/export/orcaslicer.json (экспорт профиля)
+  - [x] GET /api/v1/auth/my-presets (получение пресетов пользователя)
+  - [x] GET /api/v1/notifications/unread-count (количество непрочитанных уведомлений)
+- [ ] GET /api/v1/filaments (поиск с фильтрами) - не требуется (через фронтенд)
+- [ ] GET /api/v1/filaments/{id} (детали материала) - не требуется (через фронтенд)
+- [ ] GET /api/v1/filaments/{id}/presets (пресеты материала) - не требуется (через фронтенд)
 
-### 2.5 Profile Synchronization ⏳
-**Цель:** Отображать профили пользователя в "Профиль прутка" dropdown после авторизации
+### 2.5 Profile Synchronization ✅ ~83%
+**Цель:** Отображать профили пользователя из FilamentHub в dropdown "Профиль прутка" после авторизации
 
 **Задачи:**
-- [ ] Найти код формирования dropdown "Профиль прутка"
-- [ ] Добавить секцию "FilamentHub" в dropdown:
-  - [ ] Подсекция "Мои профили"
-  - [ ] Подсекция "Рекомендованные"
-- [ ] Синхронизация профилей:
-  - [ ] Получение списка профилей при авторизации
-  - [ ] Скачивание .json профилей и сохранение локально
-  - [ ] Обновление списка в dropdown
-- [ ] Визуальная пометка профилей FilamentHub
-- [ ] Автосинхронизация при старте
-- [ ] Кнопка "Синхронизировать" для ручного обновления
+- [x] Найти код где формируется dropdown "Профиль прутка" (Filament Profile)
+- [x] Реализовать синхронизацию профилей:
+  - [x] При авторизации получать список профилей пользователя через API (`/api/v1/auth/my-presets`)
+  - [x] Скачивать .json профили и импортировать через `PresetBundle::import_json_presets`
+  - [x] Сохранение маппинга `preset_id → bundle_preset_name` в AppConfig
+  - [x] Добавление постфикса `[FilamentHub]` к именам пресетов
+  - [x] Проверка и исправление родительских пресетов (`ensure_parent_preset_exists`)
+- [x] Автосинхронизация при открытии FilamentHub tab (если пользователь авторизован) - отключена для предотвращения проблем с истёкшими токенами
+- [x] Автосинхронизация после авторизации
+- [x] Кнопка "Синхронизировать" для ручного обновления
+- [x] Инкрементальная синхронизация (через `updated_since` параметр)
+- [x] Исправлена проблема с обновлением не-FilamentHub пресетов (убран вызов `load_current_presets` после каждого импорта, вызов только один раз в конце)
+- [x] Реализована асинхронная очередь для импорта пресетов (предотвращение deadlock при использовании `perform_sync()`)
+- [x] Реализована система обнаружения локально удалённых пресетов и отправка их на бэкенд (`POST /api/v1/orcaslicer/deleted-presets`)
+- [x] Добавлен badge с количеством непрочитанных уведомлений на кнопку уведомлений
+- [x] Добавлен API метод `get_unread_notifications_count()` для получения количества непрочитанных уведомлений
+- [x] Добавлено обновление количества уведомлений при входе и после синхронизации
+- [ ] Реализовать обратный импорт профилей из OrcaSlicer (принтер, печать, филамент) как черновиков в FilamentHub
+- [ ] Обновление уже импортированных пресетов (проверка `updated_at`)
+- [ ] Удаление пресетов из OrcaSlicer если они удалены на FilamentHub (частично реализовано - обнаружение работает, восстановление работает)
+- [ ] Визуальная пометка профилей FilamentHub в dropdown (иконка/метка)
+- [ ] Реализовать выпадающее меню уведомлений в WebView (временно открывает страницу уведомлений)
+- [ ] Протестировать синхронизацию и обновить `material_type_base_map` с реальными именами системных пресетов
 
 ### 2.6 Testing & Release ⏳
 
@@ -527,13 +555,18 @@
 3. ⏳ Усилить валидацию паролей (цифры + буквы + спецсимволы)
 4. ⏳ Добавить endpoint `/api/v1/auth/logout`
 
-### Приоритет 3: OrcaSlicer Integration 💤 ОТЛОЖЕНО
-**Статус:** Интеграция не реализована в текущей копии проекта. Отложено на будущее.
+### Приоритет 3: OrcaSlicer Integration 🔥 В РАБОТЕ
+**Статус:** Интеграция активно разрабатывается, прогресс ~83%
 1. ✅ Реализовать экспорт профилей в формате OrcaSlicer (готово в backend)
-2. ⏳ Создать форк или локальную ветку для разработки
-3. ⏳ Реализовать авторизацию в OrcaSlicer через FilamentHub
-4. ⏳ Добавить таб "FilamentHub" в главный UI OrcaSlicer
-5. ⏳ Реализовать синхронизацию профилей в "Профиль прутка" dropdown
+2. ✅ Создать форк или локальную ветку для разработки (lizardjazz1/OrcaSlicer, ветка filamenthub-integration)
+3. ✅ Реализовать авторизацию в OrcaSlicer через FilamentHub (через WebView, токен сохраняется в AppConfig)
+4. ✅ Добавить таб "FilamentHub" в главный UI OrcaSlicer (FilamentHubPanel с WebView)
+5. ✅ Реализовать синхронизацию профилей в "Профиль прутка" dropdown (асинхронная очередь, обнаружение удалённых пресетов)
+6. ✅ Исправить проблему с обновлением не-FilamentHub пресетов (убран множественный вызов load_current_presets)
+7. ✅ Добавить badge с количеством непрочитанных уведомлений на кнопку уведомлений
+8. ⏳ Реализовать выпадающее меню уведомлений в WebView (временно открывает страницу)
+9. ⏳ Визуальная пометка профилей FilamentHub в dropdown (иконка/метка)
+10. ⏳ Тестирование и отладка синхронизации
 
 ---
 

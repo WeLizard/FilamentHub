@@ -19,6 +19,7 @@ class NotificationType(str, Enum):
 
     PRESET_UPDATED = "preset_updated"  # Пресет изменен
     PRESET_DELETED = "preset_deleted"  # Пресет удален
+    PRESET_LOCALLY_DELETED = "preset_locally_deleted"  # Пресет удалён локально в OrcaSlicer
     BRAND_VERIFIED = "brand_verified"  # Бренд верифицирован
     BRAND_REQUEST_APPROVED = "brand_request_approved"  # Заявка на бренд одобрена
     BRAND_REQUEST_REJECTED = "brand_request_rejected"  # Заявка на бренд отклонена

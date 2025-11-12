@@ -1,5 +1,6 @@
 """FastAPI dependencies for authentication."""
 
+import logging
 from typing import Annotated
 
 from fastapi import Depends, Header, HTTPException, Request, status
@@ -12,6 +13,8 @@ from app.db.session import get_db
 from app.models.user import User, UserRole
 from app.schemas.user import TokenData
 
+logger = logging.getLogger(__name__)
+
 security = HTTPBearer()
 
 
@@ -21,9 +24,12 @@ async def get_current_user(
 ) -> User:
     """Get current authenticated user from JWT token."""
     token = credentials.credentials
+    token_preview = token[:20] + "..." if len(token) > 20 else token
+    
     payload = decode_access_token(token)
     
     if payload is None:
+        logger.warning("Failed to decode JWT token (preview: %s) - token is invalid, expired, or malformed", token_preview)
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Could not validate credentials",
@@ -32,6 +38,7 @@ async def get_current_user(
     
     email: str | None = payload.get("sub")
     if email is None:
+        logger.warning("JWT token payload missing 'sub' field (preview: %s)", token_preview)
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Could not validate credentials",
@@ -42,6 +49,7 @@ async def get_current_user(
     user = result.scalar_one_or_none()
     
     if user is None:
+        logger.warning("User not found for email: %s (from JWT token)", email)
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="User not found",
@@ -49,6 +57,7 @@ async def get_current_user(
         )
     
     if not user.active:
+        logger.warning("User account is inactive: %s (id: %d)", email, user.id)
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="User is inactive",

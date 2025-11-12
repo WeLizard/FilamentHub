@@ -82,7 +82,7 @@ backend/static/uploads/*
 # Docs folder - exclude large reference folders, keep essential files
 docs/Spoolman-master/
 docs/orcaSlicer-main/
-docs/OrcaSlicer/
+# docs/OrcaSlicer/ - Now a Git submodule, do not ignore
 docs/3dcalc/
 docs/awesome-cursor-best-practices-main/
 docs/spoolman2slicer-main/

@@ -7,6 +7,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { notificationsAPI } from '../api/client';
 import type { Notification, NotificationType } from '../types/api';
+import { DeletedPresetsModal } from './DeletedPresetsModal';
 
 export function Notifications() {
   const { user } = useAuth();
@@ -14,6 +15,7 @@ export function Notifications() {
   const queryClient = useQueryClient();
   const [isOpen, setIsOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
+  const [selectedNotification, setSelectedNotification] = useState<Notification | null>(null);
 
   // Загружаем уведомления
   const { data: notificationsData, refetch } = useQuery({
@@ -69,6 +71,8 @@ export function Notifications() {
         return <Settings className="w-5 h-5 text-blue-400" />;
       case 'preset_deleted':
         return <XCircle className="w-5 h-5 text-red-400" />;
+      case 'preset_locally_deleted':
+        return <XCircle className="w-5 h-5 text-yellow-400" />;
       case 'brand_verified':
         return <CheckCircle className="w-5 h-5 text-green-400" />;
       case 'brand_request_approved':
@@ -84,6 +88,13 @@ export function Notifications() {
     // Отмечаем как прочитанное при клике
     if (!notification.read) {
       markAsReadMutation.mutate(notification.id);
+    }
+    
+    // Для уведомлений о локально удалённых пресетах открываем модалку
+    if (notification.type === 'preset_locally_deleted') {
+      setSelectedNotification(notification);
+      setIsOpen(false);
+      return;
     }
     
     // Переходим по ссылке, если есть
@@ -196,6 +207,18 @@ export function Notifications() {
             </div>
           )}
         </div>
+      )}
+
+      {/* Modal for deleted presets */}
+      {selectedNotification && (
+        <DeletedPresetsModal
+          isOpen={!!selectedNotification}
+          onClose={() => {
+            setSelectedNotification(null);
+            queryClient.invalidateQueries({ queryKey: ['notifications', user?.id] });
+          }}
+          notification={selectedNotification}
+        />
       )}
     </div>
   );

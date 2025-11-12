@@ -350,7 +350,7 @@ export interface FilamentRatingStats {
   rating_distribution: Record<number, number>; // {1: count, 2: count, ...}
 }
 
-export type NotificationType = 'preset_updated' | 'preset_deleted' | 'brand_verified' | 'brand_request_approved' | 'brand_request_rejected';
+export type NotificationType = 'preset_updated' | 'preset_deleted' | 'preset_locally_deleted' | 'brand_verified' | 'brand_request_approved' | 'brand_request_rejected';
 
 export interface Notification {
   id: number;

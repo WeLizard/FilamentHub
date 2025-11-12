@@ -56,6 +56,11 @@ class User(Base):
     allow_print_profiles_import: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     allow_print_profiles_export: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     
+    # Deleted preset rule (правило обработки удалённых пресетов)
+    deleted_preset_rule: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    # deleted_preset_rule: "always_restore", "always_delete", "always_ask", 
+    # "restore_created_delete_saved", "restore_created_ask_saved"
+    
     # Status
     active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     email_verified: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)

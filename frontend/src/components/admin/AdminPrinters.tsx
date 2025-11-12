@@ -679,7 +679,7 @@ function PrinterModal({ printer, onClose, onSave, isLoading }: PrinterModalProps
       { key: 'thumbnails_format', label: 'Формат миниатюр', placeholder: 'png,gcode,ufp...' },
     ];
 
-    return (
+  return (
       <div className="space-y-8">
         <section className="space-y-4 bg-white/5 border border-white/10 rounded-2xl p-6 shadow-inner shadow-indigo-900/30">
           <div>
@@ -687,7 +687,7 @@ function PrinterModal({ printer, onClose, onSave, isLoading }: PrinterModalProps
             <p className="text-xs text-gray-400 mt-1">
               Имя принтера, производитель и slug совпадают с тем, что получает OrcaSlicer.
             </p>
-          </div>
+        </div>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
               <label className="block text-gray-300 mb-2 text-sm font-medium">Название *</label>
@@ -747,7 +747,7 @@ function PrinterModal({ printer, onClose, onSave, isLoading }: PrinterModalProps
       </section>
 
       <section className="space-y-4 bg-white/5 border border-white/10 rounded-2xl p-6 shadow-inner shadow-indigo-900/30">
-        <div>
+          <div>
           <h4 className="text-sm font-semibold text-white uppercase tracking-wide">Идентификаторы</h4>
           <p className="text-xs text-gray-400 mt-1">
             Эти поля подтягиваются из system preset и помогают автоматически сопоставлять профили.
@@ -794,7 +794,7 @@ function PrinterModal({ printer, onClose, onSave, isLoading }: PrinterModalProps
       </section>
 
       <section className="space-y-4 bg-white/5 border border-white/10 rounded-2xl p-6 shadow-inner shadow-indigo-900/30">
-        <div>
+            <div>
           <h4 className="text-sm font-semibold text-white uppercase tracking-wide">Рабочая область</h4>
           <p className="text-xs text-gray-400 mt-1">
             Значения в миллиметрах. Используются при связке с профилями печати и визуализации стола.
@@ -835,7 +835,7 @@ function PrinterModal({ printer, onClose, onSave, isLoading }: PrinterModalProps
       </section>
 
       <section className="space-y-4 bg-white/5 border border-white/10 rounded-2xl p-6 shadow-inner shadow-indigo-900/30">
-        <div>
+            <div>
           <h4 className="text-sm font-semibold text-white uppercase tracking-wide">Материалы и медиа</h4>
           <p className="text-xs text-gray-400 mt-1">
             Здесь можно добавить рекомендуемые материалы, обложку принтера и служебные данные.
@@ -1255,37 +1255,37 @@ function PrinterModal({ printer, onClose, onSave, isLoading }: PrinterModalProps
             <div>
               <label className="block text-gray-300 mb-2 text-sm font-medium">Диаметр сопла</label>
               <div className="relative">
-                <input
-                  type="number"
-                  step="0.1"
-                  value={formData.nozzle_diameter}
-                  onChange={(e) => setFormData({ ...formData, nozzle_diameter: e.target.value })}
+              <input
+                type="number"
+                step="0.1"
+                value={formData.nozzle_diameter}
+                onChange={(e) => setFormData({ ...formData, nozzle_diameter: e.target.value })}
                   placeholder="0.4"
                   className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500 pr-16"
-                />
+              />
                 <span className="absolute inset-y-0 right-4 flex items-center text-xs text-gray-400 pointer-events-none">мм</span>
               </div>
             </div>
             <div>
               <label className="block text-gray-300 mb-2 text-sm font-medium">Макс. температура сопла</label>
               <div className="relative">
-                <input
-                  type="number"
-                  value={formData.max_extruder_temp}
-                  onChange={(e) => setFormData({ ...formData, max_extruder_temp: e.target.value })}
+              <input
+                type="number"
+                value={formData.max_extruder_temp}
+                onChange={(e) => setFormData({ ...formData, max_extruder_temp: e.target.value })}
                   placeholder="300"
                   className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500 pr-16"
-                />
+              />
                 <span className="absolute inset-y-0 right-4 flex items-center text-xs text-gray-400 pointer-events-none">°C</span>
               </div>
             </div>
             <div>
               <label className="block text-gray-300 mb-2 text-sm font-medium">Макс. температура стола</label>
               <div className="relative">
-                <input
-                  type="number"
-                  value={formData.max_bed_temp}
-                  onChange={(e) => setFormData({ ...formData, max_bed_temp: e.target.value })}
+              <input
+                type="number"
+                value={formData.max_bed_temp}
+                onChange={(e) => setFormData({ ...formData, max_bed_temp: e.target.value })}
                   placeholder="120"
                   className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500 pr-16"
                 />
@@ -1376,7 +1376,7 @@ function PrinterModal({ printer, onClose, onSave, isLoading }: PrinterModalProps
                 options={nozzleTypeOptions.map((option) => ({ value: option, label: option }))}
                 placeholder="Выберите тип"
               />
-            </div>
+          </div>
             <div>
               <label className="block text-gray-300 mb-2 text-sm font-medium">Объем сопла</label>
               <div className="relative">
@@ -1481,16 +1481,16 @@ function PrinterModal({ printer, onClose, onSave, isLoading }: PrinterModalProps
           </p>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
+          <div>
               <label className="block text-gray-300 mb-2 text-sm font-medium">Ретракция (мм)</label>
-              <input
+            <input
                 type="text"
                 value={getMetadataListString('retraction_length')}
                 onChange={(e) => handleMetadataListChange('retraction_length', e.target.value)}
                 placeholder="0.8"
-                className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500"
-              />
-            </div>
+              className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500"
+            />
+          </div>
             <div>
               <label className="block text-gray-300 mb-2 text-sm font-medium">Скорость ретракции (мм/с)</label>
               <input
@@ -1872,8 +1872,8 @@ function PrinterModal({ printer, onClose, onSave, isLoading }: PrinterModalProps
               />
             </div>
           </div>
-        </div>
-      )}
+            </div>
+          )}
     </section>
   );
 
@@ -2010,23 +2010,23 @@ function PrinterModal({ printer, onClose, onSave, isLoading }: PrinterModalProps
               </div>
 
               <div className="flex items-center justify-end gap-3 pt-4 border-t border-white/10 mt-auto">
-                <button
-                  type="button"
-                  onClick={onClose}
-                  className="px-6 py-3 bg-white/10 hover:bg-white/20 text-white rounded-xl transition-all"
-                >
-                  Отмена
-                </button>
-                <button
-                  type="submit"
-                  disabled={isLoading}
+            <button
+              type="button"
+              onClick={onClose}
+              className="px-6 py-3 bg-white/10 hover:bg-white/20 text-white rounded-xl transition-all"
+            >
+              Отмена
+            </button>
+            <button
+              type="submit"
+              disabled={isLoading}
                   className="flex items-center gap-2 px-6 py-3 bg-purple-600 hover:bg-purple-700 text-white rounded-xl transition-all disabled:opacity-50"
-                >
-                  <Save className="w-5 h-5" />
-                  <span>{printer ? 'Сохранить' : 'Создать'}</span>
-                </button>
-              </div>
-            </form>
+            >
+              <Save className="w-5 h-5" />
+              <span>{printer ? 'Сохранить' : 'Создать'}</span>
+            </button>
+          </div>
+        </form>
           </div>
         </div>
       </div>

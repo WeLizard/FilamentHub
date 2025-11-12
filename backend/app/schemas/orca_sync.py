@@ -120,3 +120,54 @@ class PrintProfileSyncResponse(BaseModel):
     results: list[OrcaSyncResult]
 
 
+class DeletedPresetData(BaseModel):
+    """Данные об удалённом пресете."""
+
+    preset_id: int = Field(..., description="ID пресета в FilamentHub")
+    preset_name: str = Field(..., description="Название пресета")
+    bundle_preset_name: str | None = Field(
+        default=None, description="Название пресета в OrcaSlicer bundle (если было)"
+    )
+
+
+class DeletedPresetsRequest(BaseModel):
+    """Запрос на сообщение об удалённых пресетах."""
+
+    deleted_presets: list[DeletedPresetData] = Field(..., description="Список удалённых пресетов")
+
+
+class DeletedPresetAction(BaseModel):
+    """Действие пользователя для удалённого пресета."""
+
+    action: Literal["restore", "delete", "skip"] = Field(..., description="Действие: восстановить, удалить, пропустить")
+    preset_ids: list[int] | None = Field(
+        default=None, description="ID пресетов для обработки (если не указано, применяется ко всем)"
+    )
+    apply_to_all: bool = Field(
+        default=False, description="Применить действие ко всем пресетам в уведомлении"
+    )
+    save_rule: bool = Field(
+        default=False, description="Сохранить это действие как правило для будущих удалений"
+    )
+
+
+class DeletedPresetsResponse(BaseModel):
+    """Ответ на сообщение об удалённых пресетах."""
+
+    message: str
+    notification_id: int | None = Field(default=None, description="ID созданного уведомления")
+    preset_count: int | None = Field(default=None, description="Количество удалённых пресетов")
+    created_count: int | None = Field(default=None, description="Количество созданных пользователем пресетов")
+    saved_count: int | None = Field(default=None, description="Количество сохранённых пресетов")
+    rule: str | None = Field(default=None, description="Применённое правило пользователя")
+
+
+class DeletedPresetActionResponse(BaseModel):
+    """Ответ на обработку действия пользователя."""
+
+    message: str
+    action: str
+    processed_count: int
+    total_count: int
+
+

@@ -1,13 +1,16 @@
 """Security utilities (JWT, password hashing)."""
 
+import logging
 import secrets
 from datetime import datetime, timedelta
 from typing import Any
 
-from jose import JWTError, jwt
+from jose import JWTError, ExpiredSignatureError, jwt
 from passlib.context import CryptContext
 
 from app.core.config import settings
+
+logger = logging.getLogger(__name__)
 
 # Algorithm for JWT
 ALGORITHM = settings.ALGORITHM
@@ -64,9 +67,17 @@ def decode_access_token(token: str) -> dict[str, Any] | None:
         payload = jwt.decode(token, settings.SECRET_KEY, algorithms=[ALGORITHM])
         # Проверяем тип токена
         if payload.get("type") != "access":
+            logger.warning("JWT token type mismatch: expected 'access', got '%s'", payload.get("type"))
             return None
         return payload
-    except JWTError:
+    except ExpiredSignatureError as e:
+        logger.warning("JWT token expired: %s", str(e))
+        return None
+    except JWTError as e:
+        logger.warning("JWT token validation failed: %s (error type: %s)", str(e), type(e).__name__)
+        return None
+    except Exception as e:
+        logger.error("Unexpected error decoding JWT token: %s", str(e), exc_info=True)
         return None
 
 
@@ -76,9 +87,17 @@ def decode_refresh_token(token: str) -> dict[str, Any] | None:
         payload = jwt.decode(token, settings.SECRET_KEY, algorithms=[ALGORITHM])
         # Проверяем тип токена
         if payload.get("type") != "refresh":
+            logger.warning("JWT refresh token type mismatch: expected 'refresh', got '%s'", payload.get("type"))
             return None
         return payload
-    except JWTError:
+    except ExpiredSignatureError:
+        logger.warning("JWT refresh token expired")
+        return None
+    except JWTError as e:
+        logger.warning("JWT refresh token validation failed: %s", str(e))
+        return None
+    except Exception as e:
+        logger.error("Unexpected error decoding JWT refresh token: %s", str(e), exc_info=True)
         return None
 
 
