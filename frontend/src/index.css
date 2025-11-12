@@ -139,3 +139,15 @@ input[type="range"].slider-thumb::-moz-range-track {
   height: 12px;
 }
 
+/* Анимация для Toast уведомлений */
+@keyframes slideIn {
+  from {
+    transform: translateX(100%);
+    opacity: 0;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+

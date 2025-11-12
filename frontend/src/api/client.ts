@@ -193,6 +193,32 @@ export const authAPI = {
     });
     return response.data;
   },
+
+  updateSettings: async (data: {
+    allow_printer_profiles_import?: boolean;
+    allow_printer_profiles_export?: boolean;
+    allow_print_profiles_import?: boolean;
+    allow_print_profiles_export?: boolean;
+  }) => {
+    const response = await api.patch<User>('/auth/me/settings', data);
+    return response.data;
+  },
+
+  updatePassword: async (data: {
+    current_password: string;
+    new_password: string;
+  }) => {
+    const response = await api.patch<User>('/auth/me/password', data);
+    return response.data;
+  },
+
+  updateEmail: async (data: {
+    new_email: string;
+    password: string;
+  }) => {
+    const response = await api.patch<User>('/auth/me/email', data);
+    return response.data;
+  },
 };
 
 // Brands API

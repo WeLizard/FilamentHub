@@ -26,9 +26,35 @@ def _merge_settings(base: Mapping[str, Any] | None) -> dict[str, Any]:
 
 def printer_profile_to_orca_json(profile: PrinterProfile) -> dict[str, Any]:
     """Преобразовать `PrinterProfile` в JSON-формат OrcaSlicer (`machine`)."""
+    # Начинаем с настроек из профиля
     settings = _merge_settings(profile.orcaslicer_settings)
+    
+    # УМНАЯ СИСТЕМА: Если orcaslicer_settings пуст или содержит только базовые поля,
+    # используем данные из printer.extra_metadata
+    # Это позволяет экспортировать принтеры, созданные через админку, в валидный формат OrcaSlicer
+    # Проверяем, что в settings нет важных полей OrcaSlicer (например, printer_structure, gcode_flavor)
+    important_fields = {
+        "printer_structure", "gcode_flavor", "printer_technology",
+        "machine_max_speed_x", "machine_max_speed_y", "machine_max_speed_z",
+        "machine_start_gcode", "machine_end_gcode",
+    }
+    has_important_fields = any(key in settings for key in important_fields)
+    
+    # Если нет важных полей, пробуем взять из printer.extra_metadata
+    if not has_important_fields and profile.printer and profile.printer.extra_metadata:
+        printer_metadata = dict(profile.printer.extra_metadata)
+        # Исключаем поля, которые не относятся к OrcaSlicer
+        EXCLUDE_FIELDS = {"_inherits_chain"}  # Служебные поля
+        for key in EXCLUDE_FIELDS:
+            printer_metadata.pop(key, None)
+        # Объединяем: сначала printer.extra_metadata, затем orcaslicer_settings (приоритет)
+        # Это означает, что если в orcaslicer_settings есть поле, оно перезапишет значение из extra_metadata
+        merged = {}
+        merged.update(printer_metadata)
+        merged.update(settings)
+        settings = merged
 
-    # Базовые поля
+    # Базовые поля (обязательные для OrcaSlicer)
     settings["type"] = "machine"
     settings["name"] = profile.name
     settings["from"] = "system" if profile.is_official else profile.source or "user"
@@ -44,6 +70,9 @@ def printer_profile_to_orca_json(profile: PrinterProfile) -> dict[str, Any]:
     # Nozzle options
     if profile.nozzle_diameters:
         settings["nozzle_diameter"] = [str(v) for v in profile.nozzle_diameters]
+    # Если нет в профиле, пробуем взять из принтера
+    elif profile.printer and profile.printer.nozzle_diameter:
+        settings["nozzle_diameter"] = [str(profile.printer.nozzle_diameter)]
 
     # Printable area / height
     if profile.printable_area:
@@ -54,6 +83,19 @@ def printer_profile_to_orca_json(profile: PrinterProfile) -> dict[str, Any]:
             f"{area['x_max']}x{area['y_max']}",
             f"{area['x_min']}x{area['y_max']}",
         ]
+    # Если нет в профиле, пробуем построить из build_volume принтера
+    elif profile.printer:
+        printer = profile.printer
+        if printer.build_volume_x and printer.build_volume_y:
+            settings["printable_area"] = [
+                "0x0",
+                f"{printer.build_volume_x}x0",
+                f"{printer.build_volume_x}x{printer.build_volume_y}",
+                f"0x{printer.build_volume_y}",
+            ]
+        if printer.build_volume_z:
+            settings["printable_height"] = str(printer.build_volume_z)
+    
     if profile.printable_height_mm:
         settings["printable_height"] = str(profile.printable_height_mm)
 

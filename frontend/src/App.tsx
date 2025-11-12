@@ -10,10 +10,16 @@ import { AdminPanel } from './pages/AdminPanel';
 import { TermsPage } from './pages/TermsPage';
 import { ConsentPage } from './pages/ConsentPage';
 import { ResetPasswordPage } from './pages/ResetPasswordPage';
+import { ToastContainer } from './components/Toast';
+import { useOrcaSlicerNotifications } from './hooks/useOrcaSlicerNotifications';
 
-function App() {
+function AppContent() {
+  // Обработчик уведомлений от OrcaSlicer
+  useOrcaSlicerNotifications();
+
   return (
-    <AuthProvider>
+    <>
+      <ToastContainer />
       <Routes>
         <Route
           path="/"
@@ -61,6 +67,14 @@ function App() {
         <Route path="/personal-data-consent" element={<ConsentPage />} />
         <Route path="/reset-password" element={<ResetPasswordPage />} />
       </Routes>
+    </>
+  );
+}
+
+function App() {
+  return (
+    <AuthProvider>
+      <AppContent />
     </AuthProvider>
   );
 }

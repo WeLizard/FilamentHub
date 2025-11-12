@@ -32,6 +32,8 @@ import {
   Clock,
   Filter,
   RotateCcw,
+  Cog,
+  Layers,
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { presetsAPI, filamentsAPI, brandsAPI, savedPresetsAPI, filamentReviewsAPI, calculatorAPI, printerProfilesAPI, printProfilesAPI } from '../api/client';
@@ -40,6 +42,7 @@ import { CreatePresetModal } from '../components/CreatePresetModal';
 import { ViewPresetModal } from '../components/ViewPresetModal';
 import { CreatePrinterRequestModal } from '../components/CreatePrinterRequestModal';
 import { DeleteAccountModal } from '../components/DeleteAccountModal';
+import { SettingsTab } from '../components/SettingsTab';
 import { BrandProfilePage } from './BrandProfilePage';
 import type { Preset, PricingMethod, CalculatorEstimateRequest, PrinterProfile, PrintProfile } from '../types/api';
 
@@ -47,7 +50,7 @@ export const ProfilePage: React.FC = () => {
   const { user, refreshUser } = useAuth();
   const queryClient = useQueryClient();
   const [showBrandCabinet, setShowBrandCabinet] = useState(false); // Показывать ли кабинет производителя
-  const [userTab, setUserTab] = useState<'dashboard' | 'presets' | 'history' | 'calculator'>(
+  const [userTab, setUserTab] = useState<'dashboard' | 'presets' | 'history' | 'calculator' | 'settings' | 'printer-profiles' | 'print-profiles'>(
     'dashboard'
   );
   const [isCreatePresetModalOpen, setIsCreatePresetModalOpen] = useState(false);
@@ -498,8 +501,11 @@ export const ProfilePage: React.FC = () => {
           {[
             { id: 'dashboard', label: 'Дашборд', icon: Play },
             { id: 'presets', label: 'Мои пресеты', icon: Settings },
+            { id: 'printer-profiles', label: 'Профили принтера', icon: Printer },
+            { id: 'print-profiles', label: 'Профили печати', icon: Layers },
             { id: 'history', label: 'История', icon: TrendingUp },
             { id: 'calculator', label: 'Калькулятор', icon: Calculator },
+            { id: 'settings', label: 'Настройки', icon: Cog },
           ].map((tab) => (
             <button
               key={tab.id}
@@ -635,6 +641,153 @@ export const ProfilePage: React.FC = () => {
         </div>
       )}
 
+      {/* Printer Profiles Tab */}
+      {userTab === 'printer-profiles' && (
+        <div className="space-y-6">
+          <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+            <div>
+              <h2 className="text-2xl font-bold text-white">Мои профили принтера</h2>
+              <p className="text-sm text-gray-400">
+                Настройки принтеров, которые можно синхронизировать между FilamentHub и OrcaSlicer.
+              </p>
+            </div>
+            <div className="flex items-center gap-3">
+              <StatusBadge label={`${myPrinterProfiles.length} шт.`} variant="accent" />
+              <button
+                type="button"
+                className="px-4 py-2 rounded-lg border border-white/20 text-sm text-gray-400 bg-white/5 cursor-not-allowed"
+                disabled
+                title="Импорт из OrcaSlicer появится вместе с плагином"
+              >
+                Импорт из OrcaSlicer (скоро)
+              </button>
+            </div>
+          </div>
+
+          {isLoadingPrinterProfiles ? (
+            <ProfileSectionLoader />
+          ) : myPrinterProfiles.length > 0 ? (
+            <div className="grid gap-6 md:grid-cols-2">
+              {myPrinterProfiles.map((profile) => (
+                <PrinterProfileCard
+                  key={profile.id}
+                  profile={profile}
+                  formatDateTime={formatDateTime}
+                  onView={(item) => setSelectedPrinterProfile(item)}
+                  onDownload={handleDownloadPrinterProfile}
+                />
+              ))}
+            </div>
+          ) : (
+            <EmptyState
+              icon={Printer}
+              title="Пока нет профилей принтера"
+              description="Как только вы импортируете профиль из OrcaSlicer или создадите его вручную, он появится здесь."
+              actionLabel="Запросить добавление принтера"
+              onAction={() => setIsCreatePrinterRequestModalOpen(true)}
+            />
+          )}
+        </div>
+      )}
+
+      {/* Print Profiles Tab */}
+      {userTab === 'print-profiles' && (
+        <div className="space-y-6">
+          <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+            <div>
+              <h2 className="text-2xl font-bold text-white">Мои профили печати</h2>
+              <p className="text-sm text-gray-400">
+                Наборы настроек (Print Settings) для разных задач. Их тоже будем синхронизировать с OrcaSlicer.
+              </p>
+            </div>
+            <div className="flex items-center gap-3">
+              <StatusBadge
+                label={
+                  printProfileQualityFilter ||
+                  printProfileNozzleFilter ||
+                  printProfilePrinterFilter ||
+                  printProfileOnlyOfficial ||
+                  printProfileOnlyActive
+                    ? `${filteredPrintProfiles.length}/${myPrintProfiles.length} шт.`
+                    : `${myPrintProfiles.length} шт.`
+                }
+                variant="accent"
+              />
+              <button
+                type="button"
+                className="px-4 py-2 rounded-lg border border-white/20 text-sm text-gray-400 bg-white/5 cursor-not-allowed"
+                disabled
+                title="Редактор появится после запуска импорта из OrcaSlicer"
+              >
+                Добавить вручную (скоро)
+              </button>
+            </div>
+          </div>
+
+          {isLoadingPrintProfiles ? (
+            <ProfileSectionLoader />
+          ) : myPrintProfiles.length > 0 ? (
+            <>
+              <PrintProfileFilters
+                qualityOptions={printProfileQualityOptions}
+                nozzleOptions={printProfileNozzleOptions}
+                printerOptions={printProfilePrinterOptions}
+                qualityFilter={printProfileQualityFilter}
+                nozzleFilter={printProfileNozzleFilter}
+                printerFilter={printProfilePrinterFilter}
+                onlyOfficial={printProfileOnlyOfficial}
+                onlyActive={printProfileOnlyActive}
+                onQualityChange={value =>
+                  setPrintProfileQualityFilter(prev => (prev === value ? null : value))
+                }
+                onNozzleChange={value =>
+                  setPrintProfileNozzleFilter(prev => (prev === value ? null : value))
+                }
+                onPrinterChange={value =>
+                  setPrintProfilePrinterFilter(prev => (prev === value ? null : value))
+                }
+                onToggleOfficial={() => setPrintProfileOnlyOfficial(prev => !prev)}
+                onToggleActive={() => setPrintProfileOnlyActive(prev => !prev)}
+                onReset={resetPrintProfileFilters}
+              />
+
+              {filteredPrintProfiles.length > 0 ? (
+                <div className="grid gap-6 md:grid-cols-2">
+                  {filteredPrintProfiles.map(profile => (
+                    <PrintProfileCard
+                      key={profile.id}
+                      profile={profile}
+                      formatDateTime={formatDateTime}
+                      onView={item => setSelectedPrintProfile(item)}
+                      onDownload={handleDownloadPrintProfile}
+                    />
+                  ))}
+                </div>
+              ) : (
+                <EmptyState
+                  icon={Filter}
+                  title="Нет профилей под выбранные фильтры"
+                  description="Попробуйте изменить параметры или сбросить фильтры, чтобы увидеть остальные профили."
+                  actionLabel="Сбросить фильтры"
+                  onAction={resetPrintProfileFilters}
+                />
+              )}
+            </>
+          ) : (
+            <EmptyState
+              icon={Settings}
+              title="Пока нет профилей печати"
+              description="Импортируйте настройки из OrcaSlicer или создайте их на базе FilamentHub, чтобы ускорить подготовку печати."
+            />
+          )}
+        </div>
+      )}
+
+      {/* Settings Tab */}
+      {userTab === 'settings' && user && (
+        <SettingsTab user={user} onUserUpdate={refreshUser} />
+      )}
+
       {/* Create/Edit Preset Modal */}
       <CreatePresetModal
         isOpen={isCreatePresetModalOpen}
@@ -664,173 +817,37 @@ export const ProfilePage: React.FC = () => {
         onClose={() => setIsDeleteAccountModalOpen(false)}
       />
 
-      {/* Printer Profiles Section */}
-      <section className="mt-12 space-y-6">
-        <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-          <div>
-            <h2 className="text-2xl font-bold text-white">Мои профили принтера</h2>
-            <p className="text-sm text-gray-400">
-              Настройки принтеров, которые можно синхронизировать между FilamentHub и OrcaSlicer.
+      {/* Combined Profiles Section (только на dashboard) */}
+      {userTab === 'dashboard' && (
+        <section className="mt-12 space-y-5">
+          <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+            <div>
+              <h2 className="text-2xl font-bold text-white">Комбинации профилей</h2>
+              <p className="text-sm text-gray-400">
+                В планах — собирать связки «принтер + профиль печати + материал» и применять их в один клик.
+              </p>
+            </div>
+            <StatusBadge label="в разработке" variant="muted" />
+          </div>
+
+          <div className="bg-white/5 border border-dashed border-white/20 rounded-2xl p-6 text-gray-200">
+            <p className="text-lg text-white font-semibold mb-2">Конструктор сетапов готовится к запуску.</p>
+            <p className="text-sm text-gray-300">
+              После внедрения обратного импорта OrcaSlicer вы сможете сохранять готовые наборы и делиться ими с командой или друзьями.
+            </p>
+
+            <div className="mt-4 grid gap-4 md:grid-cols-3">
+              <InfoSummary label="Черновиков профилей принтера" value={myPrinterProfiles.length} />
+              <InfoSummary label="Черновиков профилей печати" value={myPrintProfiles.length} />
+              <InfoSummary label="Доступных пресетов" value={userPresets.length} />
+            </div>
+
+            <p className="mt-4 text-xs text-gray-400 uppercase tracking-wide">
+              Комбинаций пока: {combinationsDraftCount}
             </p>
           </div>
-          <div className="flex items-center gap-3">
-            <StatusBadge label={`${myPrinterProfiles.length} шт.`} variant="accent" />
-            <button
-              type="button"
-              className="px-4 py-2 rounded-lg border border-white/20 text-sm text-gray-400 bg-white/5 cursor-not-allowed"
-              disabled
-              title="Импорт из OrcaSlicer появится вместе с плагином"
-            >
-              Импорт из OrcaSlicer (скоро)
-            </button>
-          </div>
-        </div>
-
-        {isLoadingPrinterProfiles ? (
-          <ProfileSectionLoader />
-        ) : myPrinterProfiles.length > 0 ? (
-          <div className="grid gap-6 md:grid-cols-2">
-            {myPrinterProfiles.map((profile) => (
-              <PrinterProfileCard
-                key={profile.id}
-                profile={profile}
-                formatDateTime={formatDateTime}
-                onView={(item) => setSelectedPrinterProfile(item)}
-                onDownload={handleDownloadPrinterProfile}
-              />
-            ))}
-          </div>
-        ) : (
-          <EmptyState
-            icon={Printer}
-            title="Пока нет профилей принтера"
-            description="Как только вы импортируете профиль из OrcaSlicer или создадите его вручную, он появится здесь."
-            actionLabel="Запросить добавление принтера"
-            onAction={() => setIsCreatePrinterRequestModalOpen(true)}
-          />
-        )}
-      </section>
-
-      {/* Print Profiles Section */}
-      <section className="mt-12 space-y-6">
-        <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-          <div>
-            <h2 className="text-2xl font-bold text-white">Мои профили печати</h2>
-            <p className="text-sm text-gray-400">
-              Наборы настроек (Print Settings) для разных задач. Их тоже будем синхронизировать с OrcaSlicer.
-            </p>
-          </div>
-          <div className="flex items-center gap-3">
-            <StatusBadge
-              label={
-                printProfileQualityFilter ||
-                printProfileNozzleFilter ||
-                printProfilePrinterFilter ||
-                printProfileOnlyOfficial ||
-                printProfileOnlyActive
-                  ? `${filteredPrintProfiles.length}/${myPrintProfiles.length} шт.`
-                  : `${myPrintProfiles.length} шт.`
-              }
-              variant="accent"
-            />
-            <button
-              type="button"
-              className="px-4 py-2 rounded-lg border border-white/20 text-sm text-gray-400 bg-white/5 cursor-not-allowed"
-              disabled
-              title="Редактор появится после запуска импорта из OrcaSlicer"
-            >
-              Добавить вручную (скоро)
-            </button>
-          </div>
-        </div>
-
-        {isLoadingPrintProfiles ? (
-          <ProfileSectionLoader />
-        ) : myPrintProfiles.length > 0 ? (
-          <>
-            <PrintProfileFilters
-              qualityOptions={printProfileQualityOptions}
-              nozzleOptions={printProfileNozzleOptions}
-              printerOptions={printProfilePrinterOptions}
-              qualityFilter={printProfileQualityFilter}
-              nozzleFilter={printProfileNozzleFilter}
-              printerFilter={printProfilePrinterFilter}
-              onlyOfficial={printProfileOnlyOfficial}
-              onlyActive={printProfileOnlyActive}
-              onQualityChange={value =>
-                setPrintProfileQualityFilter(prev => (prev === value ? null : value))
-              }
-              onNozzleChange={value =>
-                setPrintProfileNozzleFilter(prev => (prev === value ? null : value))
-              }
-              onPrinterChange={value =>
-                setPrintProfilePrinterFilter(prev => (prev === value ? null : value))
-              }
-              onToggleOfficial={() => setPrintProfileOnlyOfficial(prev => !prev)}
-              onToggleActive={() => setPrintProfileOnlyActive(prev => !prev)}
-              onReset={resetPrintProfileFilters}
-            />
-
-            {filteredPrintProfiles.length > 0 ? (
-              <div className="grid gap-6 md:grid-cols-2">
-                {filteredPrintProfiles.map(profile => (
-                  <PrintProfileCard
-                    key={profile.id}
-                    profile={profile}
-                    formatDateTime={formatDateTime}
-                    onView={item => setSelectedPrintProfile(item)}
-                    onDownload={handleDownloadPrintProfile}
-                  />
-                ))}
-              </div>
-            ) : (
-              <EmptyState
-                icon={Filter}
-                title="Нет профилей под выбранные фильтры"
-                description="Попробуйте изменить параметры или сбросить фильтры, чтобы увидеть остальные профили."
-                actionLabel="Сбросить фильтры"
-                onAction={resetPrintProfileFilters}
-              />
-            )}
-          </>
-        ) : (
-          <EmptyState
-            icon={Settings}
-            title="Пока нет профилей печати"
-            description="Импортируйте настройки из OrcaSlicer или создайте их на базе FilamentHub, чтобы ускорить подготовку печати."
-          />
-        )}
-      </section>
-
-      {/* Combined Profiles Section */}
-      <section className="mt-12 space-y-5">
-        <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-          <div>
-            <h2 className="text-2xl font-bold text-white">Комбинации профилей</h2>
-            <p className="text-sm text-gray-400">
-              В планах — собирать связки «принтер + профиль печати + материал» и применять их в один клик.
-            </p>
-          </div>
-          <StatusBadge label="в разработке" variant="muted" />
-        </div>
-
-        <div className="bg-white/5 border border-dashed border-white/20 rounded-2xl p-6 text-gray-200">
-          <p className="text-lg text-white font-semibold mb-2">Конструктор сетапов готовится к запуску.</p>
-          <p className="text-sm text-gray-300">
-            После внедрения обратного импорта OrcaSlicer вы сможете сохранять готовые наборы и делиться ими с командой или друзьями.
-          </p>
-
-          <div className="mt-4 grid gap-4 md:grid-cols-3">
-            <InfoSummary label="Черновиков профилей принтера" value={myPrinterProfiles.length} />
-            <InfoSummary label="Черновиков профилей печати" value={myPrintProfiles.length} />
-            <InfoSummary label="Доступных пресетов" value={userPresets.length} />
-          </div>
-
-          <p className="mt-4 text-xs text-gray-400 uppercase tracking-wide">
-            Комбинаций пока: {combinationsDraftCount}
-          </p>
-        </div>
-      </section>
+        </section>
+      )}
 
       {/* Кнопка удаления аккаунта */}
       <div className="mt-12 pt-6 border-t border-white/20">

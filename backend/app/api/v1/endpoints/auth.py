@@ -47,7 +47,10 @@ from app.schemas.user import (
     ResetPasswordResponse,
     Token,
     UserCreate,
+    UserEmailUpdate,
+    UserPasswordUpdate,
     UserResponse,
+    UserSettingsUpdate,
     UserUpdate,
 )
 from app.schemas.preset import PresetListResponse, PresetResponse
@@ -674,4 +677,98 @@ async def reset_password(
     logger.info(f"Password reset successful for user {user.email} (id={user.id})")
     
     return ResetPasswordResponse()
+
+
+@router.patch("/me/settings", response_model=UserResponse)
+async def update_user_settings(
+    data: UserSettingsUpdate,
+    current_user: Annotated[User, Depends(get_current_active_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> UserResponse:
+    """Обновить настройки синхронизации текущего пользователя."""
+    update_data = data.model_dump(exclude_unset=True)
+    
+    # Обновляем только поля настроек
+    for key, value in update_data.items():
+        if hasattr(current_user, key):
+            setattr(current_user, key, value)
+    
+    await db.commit()
+    await db.refresh(current_user)
+    
+    return UserResponse.model_validate(current_user)
+
+
+@router.patch("/me/password", response_model=UserResponse)
+async def update_user_password(
+    data: UserPasswordUpdate,
+    current_user: Annotated[User, Depends(get_current_active_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> UserResponse:
+    """Изменить пароль текущего пользователя."""
+    # Проверяем текущий пароль
+    if not verify_password(data.current_password, current_user.password_hash):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Неверный текущий пароль",
+        )
+    
+    # Хешируем новый пароль
+    try:
+        password_hash = get_password_hash(data.new_password)
+    except Exception as e:
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.error(f"Error hashing password: {str(e)}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Ошибка обработки пароля",
+        )
+    
+    # Обновляем пароль
+    current_user.password_hash = password_hash
+    await db.commit()
+    await db.refresh(current_user)
+    
+    return UserResponse.model_validate(current_user)
+
+
+@router.patch("/me/email", response_model=UserResponse)
+async def update_user_email(
+    data: UserEmailUpdate,
+    current_user: Annotated[User, Depends(get_current_active_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> UserResponse:
+    """Изменить email текущего пользователя."""
+    # Проверяем пароль
+    if not verify_password(data.password, current_user.password_hash):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Неверный пароль",
+        )
+    
+    # Проверяем уникальность нового email
+    result = await db.execute(select(User).where(User.email == data.new_email))
+    existing_user = result.scalar_one_or_none()
+    if existing_user and existing_user.id != current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Email уже зарегистрирован",
+        )
+    
+    # Обновляем email и сбрасываем верификацию (требуется повторная верификация)
+    current_user.email = data.new_email
+    current_user.email_verified = False
+    
+    # Генерируем новый токен верификации
+    import logging
+    logger = logging.getLogger(__name__)
+    verification_token = generate_email_verification_token(current_user.id, current_user.email)
+    logger.info(f"Email verification token generated for user {current_user.email}: {verification_token[:20]}...")
+    # TODO: Отправить email с токеном верификации
+    
+    await db.commit()
+    await db.refresh(current_user)
+    
+    return UserResponse.model_validate(current_user)
 

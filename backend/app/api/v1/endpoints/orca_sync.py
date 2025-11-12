@@ -4,13 +4,13 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime
-from typing import Annotated
+from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.dependencies import get_current_user_by_api_key
+from app.core.dependencies import get_current_active_user
 from app.db.session import get_db
 from app.models.print_profile import PrintProfile
 from app.models.printer import Printer
@@ -38,8 +38,13 @@ async def _ensure_printer_id(
     db: AsyncSession,
     printer_id: int | None,
     printer_slug: str | None,
+    profile_name: str | None = None,
+    profile_metadata: dict[str, Any] | None = None,
 ) -> int | None:
-    """Resolve printer ID either by explicit ID or by slug."""
+    """
+    Resolve printer ID either by explicit ID or by slug.
+    Если принтер не существует, создаем его на основе данных профиля.
+    """
     if printer_id:
         printer = await db.get(Printer, printer_id)
         if printer:
@@ -49,6 +54,38 @@ async def _ensure_printer_id(
         result = await db.execute(select(Printer).where(Printer.slug == printer_slug))
         printer = result.scalar_one_or_none()
         if printer:
+            return printer.id
+        
+        # УМНАЯ СИСТЕМА: Если принтер не существует, создаем его на основе данных профиля
+        # Это позволяет импортировать пользовательские принтеры из OrcaSlicer
+        if profile_name and profile_metadata:
+            # Извлекаем базовые данные из metadata профиля
+            # Пытаемся определить manufacturer и model из имени профиля или metadata
+            name_parts = profile_name.split()
+            manufacturer = name_parts[0] if name_parts else "Custom"
+            model = " ".join(name_parts[1:]) if len(name_parts) > 1 else profile_name
+            
+            # Пытаемся взять из metadata, если есть
+            if profile_metadata.get("printer_model"):
+                model = profile_metadata["printer_model"]
+            if profile_metadata.get("printer_vendor"):
+                manufacturer = profile_metadata["printer_vendor"]
+            
+            # Создаем принтер
+            from app.services.slug_service import generate_unique_slug
+            
+            printer = Printer(
+                name=profile_name,
+                manufacturer=manufacturer,
+                model=model,
+                slug=printer_slug,
+                source="user",  # Пользовательский принтер
+                vendor=profile_metadata.get("printer_vendor"),
+                extra_metadata=profile_metadata,  # Сохраняем metadata из профиля
+                active=True,
+            )
+            db.add(printer)
+            await db.flush()  # Получаем ID принтера
             return printer.id
     return None
 
@@ -121,6 +158,8 @@ async def _upsert_printer_profile(
         db=db,
         printer_id=payload.printer_id,
         printer_slug=payload.printer_slug,
+        profile_name=payload.name,
+        profile_metadata=payload.orcaslicer_settings or payload.extra_metadata,
     )
 
     if profile:
@@ -367,7 +406,7 @@ async def _upsert_print_profile(
 
 @router.get("/printer-profiles", response_model=PrinterProfileListResponse)
 async def list_printer_profiles_for_sync(
-    current_user: Annotated[User, Depends(get_current_user_by_api_key)],
+    current_user: Annotated[User, Depends(get_current_active_user)],
     db: Annotated[AsyncSession, Depends(get_db)],
     updated_since: datetime | None = Query(
         default=None,
@@ -379,6 +418,13 @@ async def list_printer_profiles_for_sync(
     ),
 ) -> PrinterProfileListResponse:
     """Return printer profiles for OrcaSlicer synchronisation."""
+    # Проверяем разрешение на экспорт профилей принтера
+    if not current_user.allow_printer_profiles_export:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Экспорт профилей принтера отключен в настройках пользователя",
+        )
+    
     query = select(PrinterProfile)
     if include_official:
         query = query.where(
@@ -411,7 +457,7 @@ async def list_printer_profiles_for_sync(
 
 @router.get("/print-profiles", response_model=PrintProfileListResponse)
 async def list_print_profiles_for_sync(
-    current_user: Annotated[User, Depends(get_current_user_by_api_key)],
+    current_user: Annotated[User, Depends(get_current_active_user)],
     db: Annotated[AsyncSession, Depends(get_db)],
     updated_since: datetime | None = Query(
         default=None,
@@ -423,6 +469,13 @@ async def list_print_profiles_for_sync(
     ),
 ) -> PrintProfileListResponse:
     """Return print profiles for OrcaSlicer synchronisation."""
+    # Проверяем разрешение на экспорт профилей печати
+    if not current_user.allow_print_profiles_export:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Экспорт профилей печати отключен в настройках пользователя",
+        )
+    
     query = select(PrintProfile)
     if include_official:
         query = query.where(
@@ -460,10 +513,17 @@ async def list_print_profiles_for_sync(
 )
 async def import_printer_profiles(
     payload: PrinterProfileSyncRequest,
-    current_user: Annotated[User, Depends(get_current_user_by_api_key)],
+    current_user: Annotated[User, Depends(get_current_active_user)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> PrinterProfileSyncResponse:
     """Import or update printer profiles submitted by OrcaSlicer."""
+    # Проверяем разрешение на импорт профилей принтера
+    if not current_user.allow_printer_profiles_import:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Импорт профилей принтера отключен в настройках пользователя",
+        )
+    
     results: list[OrcaSyncResult] = []
 
     for item in payload.profiles:
@@ -502,10 +562,17 @@ async def import_printer_profiles(
 )
 async def import_print_profiles(
     payload: PrintProfileSyncRequest,
-    current_user: Annotated[User, Depends(get_current_user_by_api_key)],
+    current_user: Annotated[User, Depends(get_current_active_user)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> PrintProfileSyncResponse:
     """Import or update print profiles submitted by OrcaSlicer."""
+    # Проверяем разрешение на импорт профилей печати
+    if not current_user.allow_print_profiles_import:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Импорт профилей печати отключен в настройках пользователя",
+        )
+    
     results: list[OrcaSyncResult] = []
 
     for item in payload.profiles:

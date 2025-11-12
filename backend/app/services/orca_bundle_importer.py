@@ -52,7 +52,13 @@ class OrcaBundleImporter:
         if not self.root_path.exists():
             raise FileNotFoundError(f"Orca presets path not found: {self.root_path}")
 
-        summary: dict[str, Any] = {"vendors": 0, "printers": 0, "printer_profiles": 0, "print_profiles": 0}
+        summary: dict[str, Any] = {
+            "vendors": 0,
+            "printers": 0,
+            "printer_profiles": 0,
+            "print_profiles": 0,
+            "common_profiles": 0,
+        }
         vendor_files = sorted(self.root_path.glob("*.json"))
         for vendor_file in vendor_files:
             bundle = self._load_json(vendor_file, OrcaVendorBundle)
@@ -63,6 +69,20 @@ class OrcaBundleImporter:
             summary["printers"] += vendor_result["printers"]
             summary["printer_profiles"] += vendor_result["printer_profiles"]
             summary["print_profiles"] += vendor_result["print_profiles"]
+            summary["common_profiles"] += vendor_result.get("common_profiles", 0)
+        
+        # ВАЖНО: Синхронизируем ВСЕ системные принтеры после импорта всех vendor'ов
+        # Это гарантирует, что все принтеры получат правильные данные из профилей
+        # даже если они были созданы в одном vendor, а профили - в другом
+        LOG.info("Синхронизация метаданных для всех системных принтеров...")
+        all_system_printers = await db.execute(
+            select(Printer).where(Printer.source == "system")
+        )
+        all_printers = all_system_printers.scalars().all()
+        printer_lookup_all = {printer.name: printer for printer in all_printers}
+        await self._sync_printer_metadata_from_profiles(db, printer_lookup_all)
+        LOG.info("Синхронизация завершена для %d принтеров", len(printer_lookup_all))
+        
         return summary
 
     async def _import_vendor(
@@ -72,10 +92,18 @@ class OrcaBundleImporter:
         vendor: OrcaVendorBundle,
         vendor_dir: Path,
     ) -> dict[str, int]:
-        counters = {"printers": 0, "printer_profiles": 0, "print_profiles": 0}
+        counters = {"printers": 0, "printer_profiles": 0, "print_profiles": 0, "common_profiles": 0}
         if not vendor_dir.exists():
             LOG.warning("Vendor directory missing: %s", vendor_dir)
             return counters
+
+        # Сначала импортируем common-профили (они нужны для наследования)
+        common_profile_count = await self._import_common_profiles(
+            db=db,
+            vendor=vendor,
+            vendor_dir=vendor_dir,
+        )
+        counters["common_profiles"] = common_profile_count
 
         printer_lookup = await self._import_machine_models(db, vendor, vendor_dir)
         counters["printers"] = len(printer_lookup)
@@ -91,6 +119,9 @@ class OrcaBundleImporter:
             process_lookup=process_slug_lookup,
         )
         counters["printer_profiles"] = printer_profile_count
+
+        # Обновляем printer.extra_metadata данными из printer_profiles (с разрешением наследования)
+        await self._sync_printer_metadata_from_profiles(db, printer_lookup)
 
         return counters
 
@@ -128,6 +159,29 @@ class OrcaBundleImporter:
         await db.flush()
         return slug_lookup
 
+    async def _import_common_profiles(
+        self,
+        *,
+        db: AsyncSession,
+        vendor: OrcaVendorBundle,
+        vendor_dir: Path,
+    ) -> int:
+        """Импортировать common-профили (fdm_machine_common, fdm_klipper_common, и т.д.)."""
+        count = 0
+        for preset_path in self._iter_machine_preset_paths(vendor_dir):
+            preset = self._load_json(preset_path, OrcaMachinePreset)
+            # Common-профили имеют instantiation="false" или отсутствует printer_model
+            if preset.instantiation == "false" or not preset.printer_model:
+                profile = await self._upsert_common_profile(
+                    db=db,
+                    vendor_name=vendor.name,
+                    preset=preset,
+                )
+                count += 1
+                self._printer_profile_cache[(vendor.name, preset.name)] = profile
+        await db.flush()
+        return count
+
     async def _import_machine_presets(
         self,
         *,
@@ -137,9 +191,13 @@ class OrcaBundleImporter:
         printer_lookup: Mapping[str, Printer],
         process_lookup: Mapping[str, str],
     ) -> int:
+        """Импортировать обычные профили принтеров (с printer_model)."""
         count = 0
         for preset_path in self._iter_machine_preset_paths(vendor_dir):
             preset = self._load_json(preset_path, OrcaMachinePreset)
+            # Пропускаем common-профили (они уже импортированы)
+            if preset.instantiation == "false" or not preset.printer_model:
+                continue
             printer = printer_lookup.get(preset.printer_model or "")
             if not printer:
                 LOG.warning(
@@ -301,15 +359,104 @@ class OrcaBundleImporter:
             profile.end_gcode = end_gcode_value
 
         profile.orcaslicer_settings = _build_machine_settings_dict(preset)
-    full_metadata = dict(profile.extra_metadata or {})
-    full_metadata.update(preset.parameters)
-    if preset.default_print_profile:
-        full_metadata.setdefault("default_print_profile", preset.default_print_profile)
-    if preset.printer_model:
-        full_metadata.setdefault("printer_model", preset.printer_model)
-    if preset.nozzle_diameter:
-        full_metadata.setdefault("nozzle_diameter", preset.nozzle_diameter)
-    profile.extra_metadata = full_metadata or None
+        full_metadata = dict(profile.extra_metadata or {})
+        full_metadata.update(preset.parameters)
+        if preset.default_print_profile:
+            full_metadata.setdefault("default_print_profile", preset.default_print_profile)
+        if preset.printer_model:
+            full_metadata.setdefault("printer_model", preset.printer_model)
+        if preset.nozzle_diameter:
+            full_metadata.setdefault("nozzle_diameter", preset.nozzle_diameter)
+        profile.extra_metadata = full_metadata or None
+
+        return profile
+
+    async def _upsert_common_profile(
+        self,
+        *,
+        db: AsyncSession,
+        vendor_name: str,
+        preset: OrcaMachinePreset,
+    ) -> PrinterProfile:
+        """Создать или обновить common-профиль (без привязки к принтеру)."""
+        # Для common-профилей ищем по имени в ЛЮБОМ vendor'е
+        # (common-профили могут быть одинаковыми в разных vendor'ах)
+        # Предпочитаем Custom vendor, затем первый найденный
+        result = await db.execute(
+            select(PrinterProfile)
+            .where(
+                PrinterProfile.name == preset.name,
+                PrinterProfile.source == "system",
+                PrinterProfile.printer_id.is_(None),  # Только common-профили (без принтера)
+            )
+            .order_by(
+                (PrinterProfile.vendor == "Custom").desc(),  # Custom в первую очередь
+                PrinterProfile.vendor.asc(),  # Затем по алфавиту
+                PrinterProfile.id.asc(),  # Затем по ID
+            )
+        )
+        profile = result.scalars().first()
+        
+        if profile is None:
+            # Профиль не найден - создаем новый
+            slug = await generate_unique_slug(
+                db=db,
+                model=PrinterProfile,
+                source=preset.name,
+                fallback="printer-profile",
+            )
+            profile = PrinterProfile(
+                name=preset.name,
+                slug=slug,
+                printer_id=None,  # Common-профили не привязаны к принтеру
+                source="system",
+                vendor=vendor_name,
+                setting_id=preset.setting_id,
+            )
+            db.add(profile)
+        else:
+            # Профиль уже существует - обновляем его, если он из того же vendor'а
+            # Или оставляем как есть, если он из другого vendor'а (предпочитаем Custom)
+            # Обновляем vendor только если текущий профиль не из Custom
+            if profile.vendor != "Custom" and vendor_name == "Custom":
+                # Обновляем vendor на Custom (более предпочтительный)
+                profile.vendor = vendor_name
+
+        profile.printer_id = None  # Убеждаемся, что common-профиль не привязан к принтеру
+        profile.source = "system"
+        profile.vendor = vendor_name
+        profile.setting_id = preset.setting_id
+        profile.external_id = preset.parameters.get("external_id")
+        profile.is_official = True
+        profile.active = True
+
+        # Для common-профилей не устанавливаем printable_area и printable_height
+        # (они могут различаться для разных принтеров)
+
+        machine_start_gcode = (
+            preset.parameters.get("machine_start_gcode")
+            or preset.parameters.get("start_gcode")
+        )
+        start_gcode_value = _normalize_gcode(machine_start_gcode)
+        if start_gcode_value:
+            profile.start_gcode = start_gcode_value
+
+        machine_end_gcode = (
+            preset.parameters.get("machine_end_gcode")
+            or preset.parameters.get("end_gcode")
+        )
+        end_gcode_value = _normalize_gcode(machine_end_gcode)
+        if end_gcode_value:
+            profile.end_gcode = end_gcode_value
+
+        profile.orcaslicer_settings = _build_machine_settings_dict(preset)
+        full_metadata = dict(profile.extra_metadata or {})
+        full_metadata.update(preset.parameters)
+        if preset.default_print_profile:
+            full_metadata.setdefault("default_print_profile", preset.default_print_profile)
+        if preset.nozzle_diameter:
+            full_metadata.setdefault("nozzle_diameter", preset.nozzle_diameter)
+        profile.extra_metadata = full_metadata or None
 
         return profile
 
@@ -490,6 +637,207 @@ class OrcaBundleImporter:
         self._filament_cache[identifier] = None
         return None
 
+    async def _resolve_inheritance(
+        self,
+        db: AsyncSession,
+        profile: PrinterProfile,
+        visited: set[str] | None = None,
+    ) -> dict[str, Any]:
+        """
+        Рекурсивно разрешить наследование профиля.
+        
+        Объединяет настройки из всех родительских профилей в порядке наследования:
+        - fdm_machine_common (базовый)
+        - fdm_klipper_common (наследуется от fdm_machine_common)
+        - fdm_toolchanger_common (наследуется от fdm_klipper_common)
+        - MyKlipper 0.2 nozzle (наследуется от fdm_klipper_common)
+        
+        Возвращает объединенный словарь настроек.
+        """
+        if visited is None:
+            visited = set()
+        
+        # Предотвращаем циклические зависимости
+        profile_key = f"{profile.vendor}:{profile.name}"
+        if profile_key in visited:
+            LOG.warning(
+                "Circular inheritance detected for profile '%s' (vendor: '%s')",
+                profile.name,
+                profile.vendor,
+            )
+            return {}
+        visited.add(profile_key)
+
+        # Начинаем с настроек текущего профиля
+        merged_settings = dict(profile.orcaslicer_settings or {})
+        
+        # Получаем имя родительского профиля из поля inherits
+        parent_name = merged_settings.get("inherits")
+        if not parent_name:
+            # Нет родителя - возвращаем настройки текущего профиля
+            # Удаляем служебное поле _inherits_chain, если оно есть
+            merged_settings.pop("_inherits_chain", None)
+            return merged_settings
+        
+        # Ищем родительский профиль в базе данных
+        # Родительский профиль может быть в том же vendor или в другом
+        # Сначала ищем в том же vendor, потом ищем без vendor (общие профили)
+        parent_profile: PrinterProfile | None = None
+        
+        # Поиск 1: В том же vendor
+        result = await db.execute(
+            select(PrinterProfile)
+            .where(
+                PrinterProfile.vendor == profile.vendor,
+                PrinterProfile.name == parent_name,
+                PrinterProfile.source == "system",
+            )
+        )
+        parent_profile = result.scalar_one_or_none()
+        
+        # Поиск 2: В любом vendor (общие профили типа fdm_machine_common)
+        # Может быть несколько профилей с одним именем в разных vendor'ах
+        # Предпочитаем "Custom" vendor, затем по алфавиту
+        if not parent_profile:
+            result = await db.execute(
+                select(PrinterProfile)
+                .where(
+                    PrinterProfile.name == parent_name,
+                    PrinterProfile.source == "system",
+                )
+                .order_by(
+                    (PrinterProfile.vendor == "Custom").desc(),  # Custom в первую очередь
+                    PrinterProfile.vendor.asc(),  # Затем по алфавиту
+                    PrinterProfile.id.asc(),  # Затем по ID (стабильный порядок)
+                )
+            )
+            parent_profile = result.scalars().first()  # Берем первый из отсортированных
+        
+        if not parent_profile:
+            LOG.warning(
+                "Parent profile '%s' not found for profile '%s' (vendor: '%s')",
+                parent_name,
+                profile.name,
+                profile.vendor,
+            )
+            return merged_settings
+        
+        # Рекурсивно разрешаем наследование для родительского профиля
+        parent_settings = await self._resolve_inheritance(db, parent_profile, visited)
+        
+        # Объединяем настройки: родительские настройки внизу, дочерние настройки поверх
+        # (дочерние настройки перезаписывают родительские)
+        final_settings = {}
+        final_settings.update(parent_settings)
+        final_settings.update(merged_settings)
+        
+        # Сохраняем информацию о наследовании для отладки
+        final_settings["_inherits_chain"] = parent_settings.get("_inherits_chain", []) + [parent_name]
+        
+        return final_settings
+
+    async def _sync_printer_metadata_from_profiles(
+        self,
+        db: AsyncSession,
+        printer_lookup: Mapping[str, Printer],
+    ) -> None:
+        """Синхронизировать printer.extra_metadata данными из printer_profiles с разрешением наследования."""
+        # Служебные поля, которые НЕ нужно переносить в printer.extra_metadata
+        # (это поля для внутренней работы OrcaSlicer, не используются в форме)
+        EXCLUDE_FIELDS = {
+            "type",  # Всегда "machine"
+            "name",  # Имя профиля принтера (не принтера)
+            "inherits",  # Наследование профилей (уже разрешено)
+            "from",  # Источник профиля
+            "setting_id",  # ID настроек
+            "instantiation",  # Флаг инстанцирования
+            "printer_model",  # Уже есть в printer.model
+            "default_print_profile",  # Уже есть в printer_profile.default_print_profile_slug
+            "nozzle_diameter",  # Уже есть в printer.nozzle_diameter и printer.nozzle_options
+            "printable_area",  # Уже есть в printer_profile.printable_area
+            "printable_height",  # Уже есть в printer_profile.printable_height_mm и printer.build_volume_z
+            "_inherits_chain",  # Служебное поле для отладки
+        }
+
+
+        for printer in printer_lookup.values():
+            # Получаем все printer_profiles для этого принтера
+            result = await db.execute(
+                select(PrinterProfile)
+                .where(PrinterProfile.printer_id == printer.id, PrinterProfile.source == "system")
+                .order_by(PrinterProfile.id.asc())
+            )
+            profiles = result.scalars().all()
+
+            # УМНАЯ СИСТЕМА: Обрабатываем принтеры с профилями и без профилей
+            if not profiles:
+                # У принтера нет профилей - устанавливаем значения по умолчанию
+                # Это гарантирует, что все принтеры будут автозаполнены
+                merged_metadata = dict(printer.extra_metadata or {})
+                if 'printer_structure' not in merged_metadata:
+                    merged_metadata['printer_structure'] = 'undefine'
+                printer.extra_metadata = merged_metadata if merged_metadata else None
+                continue
+
+            # Берем данные из первого профиля и разрешаем наследование
+            first_profile = profiles[0]
+            
+            # Разрешаем наследование: рекурсивно объединяем с родительскими профилями
+            # Теперь resolved_settings содержит ВСЕ поля из профиля и всех его родительских профилей
+            resolved_settings = await self._resolve_inheritance(db, first_profile)
+            
+            # УМНАЯ СИСТЕМА: Создаем merged_metadata ИЗ resolved_settings
+            # НЕ используем существующий printer.extra_metadata, чтобы не потерять данные из исходников
+            # Если поле есть в resolved_settings, это означает, что оно явно задано в исходниках
+            # (даже если это пустая строка "" или пустой массив [])
+            # 
+            # Принцип: система должна быть "умной" и заполнять все значения из исходников,
+            # независимо от типа данных или значения
+            merged_metadata = {}
+            for key, value in resolved_settings.items():
+                # Пропускаем служебные поля
+                if key in EXCLUDE_FIELDS:
+                    continue
+
+                # Пропускаем None значения - это означает отсутствие поля
+                if value is None:
+                    continue
+
+                # УМНАЯ ЛОГИКА: сохраняем ВСЕ поля из resolved_settings
+                # Это позволяет системе автоматически заполнять все значения из исходников
+                # независимо от типа данных (строка, массив, число, булево, и т.д.)
+                merged_metadata[key] = value
+
+            # Переносим поля из extra_metadata профиля (если их еще нет в merged_metadata)
+            # Это дополнительные поля, которые могут быть заданы в профиле напрямую
+            profile_metadata = first_profile.extra_metadata or {}
+            for key, value in profile_metadata.items():
+                if key in EXCLUDE_FIELDS:
+                    continue
+                if key in merged_metadata:
+                    # Уже есть в merged_metadata (из resolved_settings), не перезаписываем
+                    continue
+                if value is None:
+                    # None означает отсутствие значения
+                    continue
+                # УМНАЯ ЛОГИКА: сохраняем все значения из extra_metadata профиля
+                # Если поле есть в extra_metadata, оно должно попадать в printer.extra_metadata
+                merged_metadata[key] = value
+
+            # УМНАЯ СИСТЕМА: Заполняем обязательные поля значениями по умолчанию, если их нет в исходниках
+            # Это гарантирует, что все принтеры будут автозаполнены, даже если некоторые поля
+            # отсутствуют в исходниках OrcaSlicer
+            #
+            # printer_structure - если не задано в исходниках, используем "undefine" (как в OrcaSlicer)
+            # Это значение используется в OrcaSlicer для принтеров без явно заданной структуры
+            if 'printer_structure' not in merged_metadata:
+                merged_metadata['printer_structure'] = 'undefine'
+
+            # Обновляем printer.extra_metadata
+            printer.extra_metadata = merged_metadata if merged_metadata else None
+
+        await db.flush()
+
     async def _find_printer(
         self, *, db: AsyncSession, vendor_name: str, model_id: str | None, name: str
     ) -> Printer | None:
@@ -641,56 +989,12 @@ def _build_machine_settings_dict(preset: OrcaMachinePreset) -> dict[str, Any]:
     }
     settings.update(preset.parameters)
 
-    REQUIRED_MACHINE_KEYS = {
-        "bed_shape": [],
-        "bed_exclude_area": [],
-        "bed_custom_rectangle": ["0x0", "0x0", "0x0", "0x0"],
-        "default_print_profile": None,
-        "default_filament_profile": [],
-        "machine_start_gcode": "",
-        "machine_end_gcode": "",
-        "change_filament_gcode": "",
-        "time_lapse_gcode": "",
-        "layer_change_gcode": "",
-        "machine_pause_gcode": "",
-        "machine_resume_gcode": "",
-        "machine_cancel_gcode": "",
-        "machine_custom_gcode": "",
-        "machine_max_acceleration_x": [],
-        "machine_max_acceleration_y": [],
-        "machine_max_acceleration_z": [],
-        "machine_max_acceleration_e": [],
-        "machine_max_jerk_x": [],
-        "machine_max_jerk_y": [],
-        "machine_max_jerk_z": [],
-        "machine_max_jerk_e": [],
-        "machine_max_speed_x": [],
-        "machine_max_speed_y": [],
-        "machine_max_speed_z": [],
-        "machine_max_speed_e": [],
-        "machine_min_extruding_rate": [],
-        "machine_min_travel_rate": [],
-        "extruder_variant_list": [],
-        "physical_extruder_map": [],
-        "printer_extruder_variant": [],
-        "printer_extruder_id": [],
-        "extruder_type": [],
-        "extruder_clearance_height_to_lid": "0",
-        "extruder_clearance_max_radius": "0",
-        "retraction_length": [],
-        "retraction_minimum_travel": [],
-        "retraction_speed": [],
-        "deretraction_speed": [],
-        "retract_before_wipe": [],
-        "retract_length_toolchange": [],
-        "wipe_distance": [],
-        "z_hop": [],
-        "z_hop_types": [],
-        "enable_long_retraction_when_cut": [],
-    }
-
-    for key, default in REQUIRED_MACHINE_KEYS.items():
-        settings.setdefault(key, default)
+    # НЕ добавляем значения по умолчанию для полей, которых нет в JSON
+    # Это важно для наследования: если поле отсутствует в JSON, оно должно
+    # браться из родительского профиля через наследование, а не заменяться значением по умолчанию
+    # 
+    # OrcaSlicer сам обработает отсутствующие поля через механизм наследования
+    # Мы сохраняем только те поля, которые явно указаны в JSON профиле
 
     return settings
 

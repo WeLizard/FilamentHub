@@ -1,6 +1,6 @@
 /** Компонент для управления принтерами в админке */
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Printer, Plus, Edit, Trash2, X, Save } from 'lucide-react';
@@ -256,13 +256,18 @@ type PrinterTabKey = 'general' | 'motion' | 'extruders' | 'multimaterial' | 'gco
 const PRINTER_GCODE_FIELDS = [
   { key: 'machine_start_gcode', label: 'Machine start G-code' },
   { key: 'machine_end_gcode', label: 'Machine end G-code' },
+  { key: 'machine_resume_gcode', label: 'Machine resume G-code' },
+  { key: 'machine_pause_gcode', label: 'Machine pause G-code' },
+  { key: 'machine_cancel_gcode', label: 'Machine cancel G-code' },
+  { key: 'machine_custom_gcode', label: 'Machine custom G-code' },
   { key: 'printing_by_object_gcode', label: 'Printing by object G-code' },
   { key: 'before_layer_change_gcode', label: 'Before layer change G-code' },
   { key: 'layer_change_gcode', label: 'Layer change G-code' },
   { key: 'time_lapse_gcode', label: 'Time-lapse G-code' },
   { key: 'change_filament_gcode', label: 'Change filament G-code' },
+  { key: 'change_extrusion_role_gcode', label: 'Change extrusion role G-code' },
   { key: 'wrapping_detection_gcode', label: 'Wrapping detection G-code' },
-  { key: 'machine_pause_gcode', label: 'Machine pause G-code' },
+  { key: 'toolchange_gcode', label: 'Toolchange G-code' },
   { key: 'template_custom_gcode', label: 'Template custom G-code' },
 ] as const;
 
@@ -294,6 +299,62 @@ function PrinterModal({ printer, onClose, onSave, isLoading }: PrinterModalProps
   const [newNozzleOption, setNewNozzleOption] = useState('');
   const [newMaterial, setNewMaterial] = useState('');
   const [activeTab, setActiveTab] = useState<PrinterTabKey>('general');
+
+  // Обновляем форму при изменении printer
+  useEffect(() => {
+    if (printer) {
+      setFormData({
+        name: printer.name || '',
+        manufacturer: printer.manufacturer || '',
+        model: printer.model || '',
+        slug: printer.slug || '',
+        model_id: printer.model_id || '',
+        vendor: printer.vendor || '',
+        family: printer.family || '',
+        technology: printer.technology || '',
+        description: printer.description || '',
+        build_volume_x: printer.build_volume_x ? printer.build_volume_x.toString() : '',
+        build_volume_y: printer.build_volume_y ? printer.build_volume_y.toString() : '',
+        build_volume_z: printer.build_volume_z ? printer.build_volume_z.toString() : '',
+        nozzle_diameter: printer.nozzle_diameter ? printer.nozzle_diameter.toString() : '',
+        nozzle_options: printer.nozzle_options ? printer.nozzle_options.map((value) => value.toString()) : [],
+        max_extruder_temp: printer.max_extruder_temp ? printer.max_extruder_temp.toString() : '',
+        max_bed_temp: printer.max_bed_temp ? printer.max_bed_temp.toString() : '',
+        default_materials: printer.default_materials ? [...printer.default_materials] : [],
+        extra_metadata: printer.extra_metadata ? JSON.stringify(printer.extra_metadata, null, 2) : '',
+        image_url: printer.image_url || '',
+        active: printer.active ?? true,
+      });
+    } else {
+      // Сброс формы при создании нового принтера
+      setFormData({
+        name: '',
+        manufacturer: '',
+        model: '',
+        slug: '',
+        model_id: '',
+        vendor: '',
+        family: '',
+        technology: '',
+        description: '',
+        build_volume_x: '',
+        build_volume_y: '',
+        build_volume_z: '',
+        nozzle_diameter: '',
+        nozzle_options: [],
+        max_extruder_temp: '',
+        max_bed_temp: '',
+        default_materials: [],
+        extra_metadata: '',
+        image_url: '',
+        active: true,
+      });
+    }
+    setJsonError(null);
+    setNewNozzleOption('');
+    setNewMaterial('');
+    setActiveTab('general');
+  }, [printer]);
 
   const parsedMetadata = useMemo(() => {
     if (!formData.extra_metadata.trim()) {
@@ -346,6 +407,8 @@ function PrinterModal({ printer, onClose, onSave, isLoading }: PrinterModalProps
   const getMetadataListString = (key: string): string => {
     const value = getMetadataValue(key);
     if (Array.isArray(value)) {
+      // Для пустого массива возвращаем пустую строку
+      // Это правильно, так как пустой массив [] - это валидное значение для некоторых полей
       return value.join(', ');
     }
     if (value === undefined || value === null) {
@@ -393,6 +456,20 @@ function PrinterModal({ printer, onClose, onSave, isLoading }: PrinterModalProps
     }
   };
 
+  // Специальные поля, для которых пустой массив [] - это валидное значение
+  // (явно заданное в профиле, а не отсутствие значения)
+  // Эти поля могут быть пустыми массивами для single-extruder принтеров или когда значение не задано
+  const ARRAY_FIELDS_WITH_EMPTY_VALID = [
+    'printer_extruder_id',
+    'printer_extruder_variant',
+    'physical_extruder_map',
+    'extruder_variant_list',
+    'nozzle_type',
+    'z_hop_types',
+    'retract_length_toolchange',
+    'enable_long_retraction_when_cut',
+  ];
+
   const updateMetadataValue = (key: string, value: any) => {
     let base: Record<string, any> = {};
     try {
@@ -400,14 +477,20 @@ function PrinterModal({ printer, onClose, onSave, isLoading }: PrinterModalProps
     } catch (error) {
       base = {};
     }
+    
+    // Для специальных полей пустой массив [] - это валидное значение, сохраняем его
+    const isSpecialArrayField = ARRAY_FIELDS_WITH_EMPTY_VALID.includes(key);
+    
     if (
       value === undefined ||
       value === null ||
       (typeof value === 'string' && value.trim() === '') ||
-      (Array.isArray(value) && value.length === 0)
+      (Array.isArray(value) && value.length === 0 && !isSpecialArrayField)
     ) {
+      // Удаляем поле только если это не специальное поле с пустым массивом
       delete base[key];
     } else {
+      // Сохраняем значение (включая пустые массивы для специальных полей)
       base[key] = value;
     }
     setJsonError(null);
@@ -422,7 +505,20 @@ function PrinterModal({ printer, onClose, onSave, isLoading }: PrinterModalProps
       .split(',')
       .map((item) => item.trim())
       .filter((item) => item.length > 0);
-    updateMetadataValue(key, normalized.length ? normalized : undefined);
+    
+    // Для специальных полей пустой массив [] - это валидное значение
+    const isSpecialArrayField = ARRAY_FIELDS_WITH_EMPTY_VALID.includes(key);
+    
+    if (normalized.length > 0) {
+      // Если есть значения, сохраняем массив
+      updateMetadataValue(key, normalized);
+    } else if (isSpecialArrayField) {
+      // Для специальных полей сохраняем пустой массив []
+      updateMetadataValue(key, []);
+    } else {
+      // Для остальных полей удаляем поле (undefined)
+      updateMetadataValue(key, undefined);
+    }
   };
 
   const handleMetadataStringChange = (key: string, rawValue: string) => {
@@ -545,7 +641,7 @@ function PrinterModal({ printer, onClose, onSave, isLoading }: PrinterModalProps
       { key: 'disable_m73', label: 'Отключить отчёт времени M73' },
       { key: 'bbl_use_printhost', label: 'Использовать PrintHost' },
     ];
-    const printerStructureOptions = ['corexy', 'cartesian', 'i3', 'delta', 'belt', 'polar', 'scara'];
+    const printerStructureOptions = ['corexy', 'cartesian', 'i3', 'delta', 'belt', 'polar', 'scara', 'undefine'];
     const gcodeFlavorOptions = ['marlin', 'marlin2', 'klipper', 'reprapfirmware'];
     const printerTechnologyOptions = ['FFF', 'FDM', 'CoreXY enclosed'];
     const defaultBedTypeOptions = [
@@ -970,6 +1066,28 @@ function PrinterModal({ printer, onClose, onSave, isLoading }: PrinterModalProps
                   className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500"
                 />
               </div>
+              <div>
+                <label className="block text-gray-300 mb-2 text-sm font-medium">Профиль филамента по умолчанию</label>
+                <input
+                  type="text"
+                  value={getMetadataListString('default_filament_profile')}
+                  onChange={(e) => handleMetadataListChange('default_filament_profile', e.target.value)}
+                  placeholder="Generic PLA"
+                  className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500"
+                />
+                <p className="text-xs text-gray-500 mt-1">Имя профиля филамента по умолчанию</p>
+              </div>
+              <div>
+                <label className="block text-gray-300 mb-2 text-sm font-medium">Вариант принтера</label>
+                <input
+                  type="text"
+                  value={getMetadataListString('printer_variant')}
+                  onChange={(e) => handleMetadataListChange('printer_variant', e.target.value)}
+                  placeholder="0.4"
+                  className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500"
+                />
+                <p className="text-xs text-gray-500 mt-1">Вариант принтера (например, диаметр сопла)</p>
+              </div>
             </div>
 
             <div>
@@ -1298,6 +1416,59 @@ function PrinterModal({ printer, onClose, onSave, isLoading }: PrinterModalProps
                 <span className="absolute inset-y-0 right-4 flex items-center text-xs text-gray-400 pointer-events-none">мм</span>
               </div>
             </div>
+            <div>
+              <label className="block text-gray-300 mb-2 text-sm font-medium">ID экструдера принтера</label>
+              <input
+                type="text"
+                value={getMetadataListString('printer_extruder_id')}
+                onChange={(e) => handleMetadataListChange('printer_extruder_id', e.target.value)}
+                placeholder="0"
+                className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500"
+              />
+              <p className="text-xs text-gray-500 mt-1">Идентификатор экструдера принтера (для multi-extruder)</p>
+            </div>
+            <div>
+              <label className="block text-gray-300 mb-2 text-sm font-medium">Вариант экструдера принтера</label>
+              <input
+                type="text"
+                value={getMetadataListString('printer_extruder_variant')}
+                onChange={(e) => handleMetadataListChange('printer_extruder_variant', e.target.value)}
+                placeholder="0"
+                className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500"
+              />
+              <p className="text-xs text-gray-500 mt-1">Вариант экструдера принтера</p>
+            </div>
+            <div>
+              <label className="block text-gray-300 mb-2 text-sm font-medium">Физическая карта экструдеров</label>
+              <input
+                type="text"
+                value={getMetadataListString('physical_extruder_map')}
+                onChange={(e) => handleMetadataListChange('physical_extruder_map', e.target.value)}
+                placeholder="0, 1"
+                className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500"
+              />
+              <p className="text-xs text-gray-500 mt-1">Карта физических экструдеров (для multi-extruder)</p>
+            </div>
+            <div>
+              <label className="block text-gray-300 mb-2 text-sm font-medium">Макс. высота слоя (мм)</label>
+              <input
+                type="text"
+                value={getMetadataString('max_layer_height')}
+                onChange={(e) => handleMetadataStringChange('max_layer_height', e.target.value)}
+                placeholder="0.3"
+                className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500"
+              />
+            </div>
+            <div>
+              <label className="block text-gray-300 mb-2 text-sm font-medium">Мин. высота слоя (мм)</label>
+              <input
+                type="text"
+                value={getMetadataString('min_layer_height')}
+                onChange={(e) => handleMetadataStringChange('min_layer_height', e.target.value)}
+                placeholder="0.1"
+                className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500"
+              />
+            </div>
           </div>
         )}
       </section>
@@ -1389,6 +1560,31 @@ function PrinterModal({ printer, onClose, onSave, isLoading }: PrinterModalProps
                 placeholder="Auto Lift"
                 className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500"
               />
+            </div>
+            <div>
+              <label className="block text-gray-300 mb-2 text-sm font-medium">Ретракт при смене инструмента (мм)</label>
+              <input
+                type="text"
+                value={getMetadataListString('retract_length_toolchange')}
+                onChange={(e) => handleMetadataListChange('retract_length_toolchange', e.target.value)}
+                placeholder="0.8"
+                className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500"
+              />
+            </div>
+            <div className="flex items-start gap-3">
+              <input
+                type="checkbox"
+                id="enable_long_retraction_when_cut"
+                checked={getMetadataBoolean('enable_long_retraction_when_cut')}
+                onChange={(e) => handleMetadataBooleanChange('enable_long_retraction_when_cut', e.target.checked)}
+                className="w-4 h-4 mt-1 rounded border-white/30 bg-white/10"
+              />
+              <div>
+                <label htmlFor="enable_long_retraction_when_cut" className="text-gray-300 text-sm font-medium">
+                  Длинная ретракция при резке
+                </label>
+                <p className="text-xs text-gray-500">Включает длинную ретракцию при резке нити</p>
+              </div>
             </div>
           </div>
         )}

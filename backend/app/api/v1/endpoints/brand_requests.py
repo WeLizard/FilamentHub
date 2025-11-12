@@ -132,7 +132,7 @@ async def create_brand_request(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="You already have a pending request to create this brand",
             )
-        
+    
         # Проверка текстовых полей на плохие слова
         from app.services.preset_moderation import validate_text_field
         if data.new_brand_name:

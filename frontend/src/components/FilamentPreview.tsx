@@ -702,8 +702,8 @@ export const FilamentPreview: React.FC<FilamentPreviewProps> = ({
       >
         <defs>{defs}</defs>
         <g transform={`translate(${canvasPadding}, ${canvasPadding})`}>
-          {isTransparent && (
-            <>
+        {isTransparent && (
+          <>
               <path
                 d={bodyPath}
                 fill="none"
@@ -771,8 +771,8 @@ export const FilamentPreview: React.FC<FilamentPreviewProps> = ({
                 r={radius}
                 fill={`url(#${highlightDefs.endHighlightId})`}
                 opacity={isTransparent ? 0.35 : 0.7}
-              />
-            )}
+            />
+          )}
             {highlightDefs.endSpecularId && (
               <circle
                 cx={bodyEnd}
@@ -799,13 +799,13 @@ export const FilamentPreview: React.FC<FilamentPreviewProps> = ({
           style={{
             left: canvasPadding + bodyEnd - radius - strokeWidth / 2,
             width: radius * 3 + strokeWidth
-          }}
-        >
-          <Thermometer
+              }}
+            >
+              <Thermometer
             size={radius}
             color={borderColor}
             strokeWidth={strokeWidth}
-          />
+              />
         </div>
       )}
     </div>

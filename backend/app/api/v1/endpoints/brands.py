@@ -133,7 +133,7 @@ async def update_brand(
 
     if not brand:
         raise HTTPException(status_code=404, detail="Brand not found")
-    
+
     # Проверка текстовых полей на плохие слова
     from app.services.preset_moderation import validate_text_field
     update_data = data.model_dump(exclude_unset=True)

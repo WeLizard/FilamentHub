@@ -1,8 +1,9 @@
 """Print profile endpoints."""
 
+import logging
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -17,6 +18,9 @@ from app.schemas.print_profile import (
     PrintProfileResponse,
     PrintProfileUpdate,
 )
+from app.services.orcaslicer_machine_exporter import export_print_profile
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/print-profiles", tags=["print-profiles"])
 
@@ -230,3 +234,54 @@ async def delete_print_profile(
 
     await db.delete(profile)
     await db.commit()
+
+
+@router.get("/{profile_id}/export/orcaslicer.json")
+async def export_print_profile_json(
+    profile_id: int,
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> Response:
+    """
+    Экспортировать профиль печати в формате OrcaSlicer (.json).
+    
+    Returns:
+        JSONResponse: JSON файл профиля печати OrcaSlicer
+    """
+    # Получаем print profile
+    result = await db.execute(
+        select(PrintProfile).where(PrintProfile.id == profile_id, PrintProfile.active == True)
+    )
+    profile = result.scalar_one_or_none()
+    
+    if not profile:
+        raise HTTPException(status_code=404, detail="Print profile not found")
+    
+    # Экспортируем в JSON
+    try:
+        profile_json = export_print_profile(profile)
+    except Exception as e:
+        logger.error(f"Error exporting print profile {profile_id}: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Error exporting print profile: {str(e)}")
+    
+    # Формируем безопасное имя файла
+    def to_safe_filename(text: str) -> str:
+        """Преобразует текст в безопасное имя файла, сохраняя кириллицу и пробелы."""
+        if not text:
+            return ""
+        safe = text.replace("<", "_").replace(">", "_").replace(":", "_")
+        safe = safe.replace('"', "_").replace("/", "_").replace("\\", "_")
+        safe = safe.replace("|", "_").replace("?", "_").replace("*", "_")
+        while "__" in safe:
+            safe = safe.replace("__", "_")
+        return safe.strip(" _")
+    
+    filename = to_safe_filename(profile.name) + ".json"
+    
+    # Возвращаем JSON файл
+    return Response(
+        content=profile_json,
+        media_type="application/json",
+        headers={
+            "Content-Disposition": f'attachment; filename="{filename}"',
+        },
+    )

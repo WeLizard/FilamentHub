@@ -50,6 +50,12 @@ class User(Base):
     full_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
     bio: Mapped[str | None] = mapped_column(Text, nullable=True)
     
+    # Sync settings (разрешения на импорт/экспорт профилей)
+    allow_printer_profiles_import: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    allow_printer_profiles_export: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    allow_print_profiles_import: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    allow_print_profiles_export: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    
     # Status
     active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     email_verified: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)

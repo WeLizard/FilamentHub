@@ -34,6 +34,34 @@ class UserUpdate(BaseModel):
     bio: str | None = None
     password: str | None = Field(None, min_length=8, max_length=100)
     brand_id: int | None = Field(None, gt=0, description="ID бренда, который представляет пользователь")
+    # Sync settings
+    allow_printer_profiles_import: bool | None = None
+    allow_printer_profiles_export: bool | None = None
+    allow_print_profiles_import: bool | None = None
+    allow_print_profiles_export: bool | None = None
+
+
+class UserSettingsUpdate(BaseModel):
+    """Schema for updating user sync settings."""
+
+    allow_printer_profiles_import: bool | None = None
+    allow_printer_profiles_export: bool | None = None
+    allow_print_profiles_import: bool | None = None
+    allow_print_profiles_export: bool | None = None
+
+
+class UserPasswordUpdate(BaseModel):
+    """Schema for updating user password."""
+
+    current_password: str = Field(..., min_length=1, description="Текущий пароль")
+    new_password: str = Field(..., min_length=8, max_length=100, description="Новый пароль")
+
+
+class UserEmailUpdate(BaseModel):
+    """Schema for updating user email."""
+
+    new_email: EmailStr = Field(..., description="Новый email")
+    password: str = Field(..., min_length=1, description="Пароль для подтверждения")
 
 
 class UserResponse(UserBase):
@@ -46,6 +74,11 @@ class UserResponse(UserBase):
     email_verified: bool
     brand_id: int | None = None
     brand_name: str | None = None  # Название бренда (для админки)
+    # Sync settings
+    allow_printer_profiles_import: bool = True
+    allow_printer_profiles_export: bool = True
+    allow_print_profiles_import: bool = True
+    allow_print_profiles_export: bool = True
     created_at: datetime
     updated_at: datetime
     last_login: datetime | None = None
