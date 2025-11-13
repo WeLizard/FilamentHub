@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
@@ -12,8 +12,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.dependencies import get_current_active_user
 from app.db.session import get_db
+from app.models.brand import Brand
+from app.models.filament import Filament
 from app.models.notification import Notification, NotificationType
-from app.models.preset import Preset
+from app.models.preset import Preset, PresetModerationStatus
 from app.models.print_profile import PrintProfile
 from app.models.printer import Printer
 from app.models.printer_profile import PrinterProfile
@@ -24,6 +26,8 @@ from app.schemas.orca_sync import (
     DeletedPresetActionResponse,
     DeletedPresetsRequest,
     DeletedPresetsResponse,
+    FilamentPresetSyncRequest,
+    FilamentPresetSyncResponse,
     OrcaSyncResult,
     PrintProfileSyncRequest,
     PrintProfileSyncResponse,
@@ -617,6 +621,340 @@ async def import_print_profiles(
 
     await db.commit()
     return PrintProfileSyncResponse(results=results)
+
+
+async def _upsert_filament_preset(
+    *,
+    payload,
+    current_user: User,
+    db: AsyncSession,
+) -> OrcaSyncResult:
+    """Создать или обновить Filament Preset из OrcaSlicer."""
+    from app.schemas.orca_sync import OrcaFilamentPresetPayload
+
+    if not isinstance(payload, OrcaFilamentPresetPayload):
+        raise ValueError("Invalid payload type for filament preset import")
+
+    # Валидация текстовых полей
+    is_valid, error_msg = await validate_text_field(payload.name, db, "Название пресета")
+    if not is_valid:
+        return OrcaSyncResult(
+            external_id=payload.external_id,
+            fhub_id=payload.fhub_id,
+            status="error",
+            message=error_msg,
+        )
+
+    for field_value, label in [
+        (payload.description, "Описание пресета"),
+        (payload.notes, "Заметки к пресету"),
+        (payload.filament_name, "Название материала"),
+    ]:
+        if field_value:
+            is_valid, error_msg = await validate_text_field(field_value, db, label)
+            if not is_valid:
+                return OrcaSyncResult(
+                    external_id=payload.external_id,
+                    fhub_id=payload.fhub_id,
+                    status="error",
+                    message=error_msg,
+                )
+
+    # Служебный бренд "User Materials" (id=1) для черновиков
+    USER_MATERIALS_BRAND_ID = 1
+
+    # 1. Найти или создать Filament (черновик)
+    filament: Filament | None = None
+    if payload.filament_id:
+        filament = await db.get(Filament, payload.filament_id)
+        if filament is None:
+            return OrcaSyncResult(
+                external_id=payload.external_id,
+                fhub_id=payload.fhub_id,
+                status="error",
+                message="Filament not found in FilamentHub",
+            )
+        # Проверяем права доступа
+        if (
+            filament.brand_id != USER_MATERIALS_BRAND_ID
+            and current_user.brand_id != filament.brand_id
+            and current_user.role != UserRole.ADMIN
+        ):
+            return OrcaSyncResult(
+                external_id=payload.external_id,
+                fhub_id=payload.fhub_id,
+                status="error",
+                message="Недостаточно прав для доступа к этому материалу",
+            )
+    elif payload.filament_name:
+        # Ищем по имени в служебном бренде (несколько пользователей могут иметь Filament с одинаковым именем)
+        result = await db.execute(
+            select(Filament).where(
+                Filament.name == payload.filament_name,
+                Filament.brand_id == USER_MATERIALS_BRAND_ID,
+            )
+        )
+        filament = result.scalar_one_or_none()
+
+    if not filament:
+        # Создаем новый Filament (черновик) в служебном бренде
+        # Проверяем, что служебный бренд существует
+        brand = await db.get(Brand, USER_MATERIALS_BRAND_ID)
+        if brand is None:
+            logger.error("User Materials brand (id=1) not found in database")
+            return OrcaSyncResult(
+                external_id=payload.external_id,
+                fhub_id=payload.fhub_id,
+                status="error",
+                message="User Materials brand not found. Please run database migrations.",
+            )
+
+        filament_name = payload.filament_name or f"Imported from OrcaSlicer"
+        material_type = payload.material_type or "PLA"
+
+        # Генерируем уникальный slug для Filament
+        filament_slug_source = filament_name
+        filament_slug = await generate_unique_slug(
+            db=db,
+            model=Filament,
+            source=filament_slug_source,
+            fallback=f"filament-{current_user.id}-{int(datetime.now(timezone.utc).timestamp())}",
+        )
+
+        filament = Filament(
+            name=filament_name,
+            slug=filament_slug,
+            material_type=material_type,
+            brand_id=USER_MATERIALS_BRAND_ID,  # Служебный бренд "User Materials" (id=1)
+            diameter=1.75,  # По умолчанию
+            active=False,  # Черновик - пользователь может активировать и привязать к своему бренду через UI
+        )
+        db.add(filament)
+        await db.flush()  # Получаем ID филамента
+
+        logger.info(
+            f"Created draft Filament (id={filament.id}, name='{filament_name}') "
+            f"for user {current_user.id}. User can activate and assign to their brand via UI."
+        )
+
+    # 2. Найти или создать Preset
+    preset: Preset | None = None
+    if payload.fhub_id:
+        preset = await db.get(Preset, payload.fhub_id)
+        if preset is None:
+            return OrcaSyncResult(
+                external_id=payload.external_id,
+                fhub_id=payload.fhub_id,
+                status="error",
+                message="Preset not found in FilamentHub",
+            )
+        # Проверяем права доступа
+        if (
+            preset.user_id != current_user.id
+            and current_user.role != UserRole.ADMIN
+        ):
+            return OrcaSyncResult(
+                external_id=payload.external_id,
+                fhub_id=payload.fhub_id,
+                status="error",
+                message="Недостаточно прав для обновления этого пресета",
+            )
+    elif payload.external_id:
+        # Ищем по external_id
+        result = await db.execute(
+            select(Preset).where(
+                Preset.external_id == payload.external_id,
+                Preset.user_id == current_user.id,
+            )
+        )
+        preset = result.scalar_one_or_none()
+
+    if preset:
+        # Обновляем существующий пресет
+        # Проверяем конфликты (timestamp-based resolution)
+        # Если payload.updated_at не передан, обновляем всегда (для обратной совместимости)
+        # Если передан, обновляем только если версия из OrcaSlicer новее
+        should_update = True
+        if payload.orcaslicer_settings and preset.orcaslicer_settings:
+            # Если есть updated_at в orcaslicer_settings, проверяем его
+            payload_updated_at = payload.orcaslicer_settings.get("updated_at")
+            preset_updated_at = preset.orcaslicer_settings.get("updated_at")
+            if payload_updated_at and preset_updated_at:
+                # Сравниваем timestamps
+                try:
+                    from datetime import datetime as dt
+                    payload_dt = dt.fromisoformat(payload_updated_at.replace("Z", "+00:00"))
+                    preset_dt = dt.fromisoformat(preset_updated_at.replace("Z", "+00:00"))
+                    if preset_dt > payload_dt:
+                        # FilamentHub версия новее - не обновляем
+                        should_update = False
+                        logger.info(
+                            f"Preset {preset.id} not updated: FilamentHub version is newer "
+                            f"(FilamentHub: {preset_dt}, OrcaSlicer: {payload_dt})"
+                        )
+                except (ValueError, AttributeError) as e:
+                    logger.warning(f"Failed to parse updated_at timestamps: {e}")
+                    # Если не удалось распарсить, обновляем (для безопасности)
+
+        if should_update:
+            preset.name = payload.name
+            if payload.description is not None:
+                preset.description = payload.description
+            if payload.extruder_temp is not None:
+                preset.extruder_temp = payload.extruder_temp
+            if payload.bed_temp is not None:
+                preset.bed_temp = payload.bed_temp
+            if payload.print_speed is not None:
+                preset.print_speed = payload.print_speed
+            if payload.travel_speed is not None:
+                preset.travel_speed = payload.travel_speed
+            if payload.layer_height is not None:
+                preset.layer_height = payload.layer_height
+            if payload.first_layer_height is not None:
+                preset.first_layer_height = payload.first_layer_height
+            if payload.flow_rate is not None:
+                preset.flow_rate = payload.flow_rate
+            if payload.fan_speed is not None:
+                preset.fan_speed = payload.fan_speed
+            if payload.retraction_length is not None:
+                preset.retraction_length = payload.retraction_length
+            if payload.retraction_speed is not None:
+                preset.retraction_speed = payload.retraction_speed
+            if payload.orcaslicer_settings:
+                preset.orcaslicer_settings = payload.orcaslicer_settings
+            if payload.notes is not None:
+                preset.notes = payload.notes
+            if payload.source:
+                preset.source = payload.source
+            if payload.external_id:
+                preset.external_id = payload.external_id
+            # Обновляем updated_at вручную, чтобы отметить, что пресет был изменен
+            preset.updated_at = datetime.now(timezone.utc)
+
+            return OrcaSyncResult(
+                external_id=payload.external_id,
+                fhub_id=preset.id,
+                status="updated",
+                message="Preset updated",
+            )
+        else:
+            return OrcaSyncResult(
+                external_id=payload.external_id,
+                fhub_id=preset.id,
+                status="skipped",
+                message="Preset not updated: FilamentHub version is newer",
+            )
+    else:
+        # Создаем новый пресет (черновик)
+        slug_source = payload.slug or payload.name
+        slug = await generate_unique_slug(
+            db=db,
+            model=Preset,
+            source=slug_source,
+            fallback=f"preset-{current_user.id}-{int(datetime.now(timezone.utc).timestamp())}",
+        )
+
+        # Значения по умолчанию
+        extruder_temp = payload.extruder_temp or 210.0
+        bed_temp = payload.bed_temp or 60.0
+        print_speed = payload.print_speed or 80.0
+        travel_speed = payload.travel_speed or 150.0
+
+        preset = Preset(
+            name=payload.name,
+            slug=slug,
+            description=payload.description,
+            filament_id=filament.id,
+            user_id=current_user.id,
+            extruder_temp=extruder_temp,
+            bed_temp=bed_temp,
+            print_speed=print_speed,
+            travel_speed=travel_speed,
+            layer_height=payload.layer_height,
+            first_layer_height=payload.first_layer_height,
+            flow_rate=payload.flow_rate,
+            fan_speed=payload.fan_speed,
+            retraction_length=payload.retraction_length,
+            retraction_speed=payload.retraction_speed,
+            orcaslicer_settings=payload.orcaslicer_settings or {},
+            is_official=False,
+            active=payload.active if payload.active is not None else False,  # Черновик
+            moderation_status=PresetModerationStatus.PENDING,
+            source=payload.source or "orcaslicer",
+            external_id=payload.external_id,
+            notes=payload.notes,
+        )
+        db.add(preset)
+        await db.flush()  # Получаем ID пресета
+
+        logger.info(
+            f"Created draft Preset (id={preset.id}, name='{payload.name}') "
+            f"for user {current_user.id}. Filament: {filament.name} (id={filament.id})"
+        )
+
+        return OrcaSyncResult(
+            external_id=payload.external_id,
+            fhub_id=preset.id,
+            status="created",
+            message="Preset created as draft",
+        )
+
+
+@router.post(
+    "/filaments/import",
+    response_model=FilamentPresetSyncResponse,
+    status_code=status.HTTP_200_OK,
+)
+async def import_filament_presets(
+    payload: FilamentPresetSyncRequest,
+    current_user: Annotated[User, Depends(get_current_active_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> FilamentPresetSyncResponse:
+    """Import or update filament presets submitted by OrcaSlicer."""
+    # Проверяем разрешение на импорт filament presets
+    if not current_user.allow_filament_presets_import:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Импорт пресетов филаментов отключен в настройках пользователя",
+        )
+
+    # Лимит на количество профилей (50 для MVP)
+    MAX_PROFILES_PER_REQUEST = 50
+    if len(payload.profiles) > MAX_PROFILES_PER_REQUEST:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Too many profiles: {len(payload.profiles)} (max {MAX_PROFILES_PER_REQUEST})",
+        )
+
+    results: list[OrcaSyncResult] = []
+
+    for item in payload.profiles:
+        try:
+            result = await _upsert_filament_preset(
+                payload=item,
+                current_user=current_user,
+                db=db,
+            )
+        except HTTPException as exc:
+            logger.warning("Failed to sync filament preset: %s", exc.detail)
+            result = OrcaSyncResult(
+                external_id=getattr(item, "external_id", None),
+                fhub_id=getattr(item, "fhub_id", None),
+                status="error",
+                message=exc.detail,
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.exception("Unexpected error while syncing filament preset")
+            result = OrcaSyncResult(
+                external_id=getattr(item, "external_id", None),
+                fhub_id=getattr(item, "fhub_id", None),
+                status="error",
+                message=f"Unexpected error: {exc}",
+            )
+        results.append(result)
+
+    await db.commit()
+    return FilamentPresetSyncResponse(results=results)
 
 
 @router.post("/deleted-presets", response_model=DeletedPresetsResponse, status_code=status.HTTP_200_OK)

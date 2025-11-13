@@ -120,6 +120,77 @@ class PrintProfileSyncResponse(BaseModel):
     results: list[OrcaSyncResult]
 
 
+class OrcaFilamentPresetPayload(BaseModel):
+    """Payload для импорта пресета филамента из OrcaSlicer."""
+
+    external_id: str | None = Field(
+        default=None, description="Уникальный ID профиля в OrcaSlicer (полезно для сопоставления)."
+    )
+    fhub_id: int | None = Field(
+        default=None, ge=1, description="ID существующего пресета в FilamentHub (если обновляем)."
+    )
+    name: str = Field(..., max_length=200)
+    slug: str | None = Field(
+        default=None,
+        max_length=200,
+        description="Slug пресета. Если не передан, будет сгенерирован автоматически.",
+    )
+    description: str | None = Field(default=None, max_length=10_000)
+
+    # Filament данные
+    filament_id: int | None = Field(
+        default=None, ge=1, description="ID существующего материала в FilamentHub (если обновляем)."
+    )
+    filament_name: str | None = Field(
+        default=None, max_length=200, description="Название материала (если создаем новый)."
+    )
+    material_type: str | None = Field(
+        default=None, max_length=50, description="Тип материала (PLA, ABS, PETG, etc.)."
+    )
+
+    # Базовые параметры печати
+    extruder_temp: float | None = Field(default=None, description="Температура экструдера (°C).")
+    bed_temp: float | None = Field(default=None, description="Температура стола (°C).")
+    print_speed: float | None = Field(default=None, description="Скорость печати (мм/с).")
+    travel_speed: float | None = Field(default=None, description="Скорость перемещения (мм/с).")
+
+    # Advanced settings (optional)
+    layer_height: float | None = Field(default=None, description="Высота слоя (мм).")
+    first_layer_height: float | None = Field(default=None, description="Высота первого слоя (мм).")
+    flow_rate: float | None = Field(default=None, description="Поток материала (%).")
+    fan_speed: int | None = Field(default=None, ge=0, le=100, description="Скорость вентилятора (0-100%).")
+    retraction_length: float | None = Field(default=None, description="Длина ретракции (мм).")
+    retraction_speed: float | None = Field(default=None, description="Скорость ретракции (мм/с).")
+
+    # OrcaSlicer JSON формат
+    orcaslicer_settings: dict[str, Any] = Field(
+        default_factory=dict, description="Полный JSON профиль OrcaSlicer со всеми параметрами."
+    )
+
+    # Метаданные
+    source: str | None = Field(
+        default=None, max_length=50, description="Источник пресета (orcaslicer, user, system, etc.)."
+    )
+    active: bool | None = Field(
+        default=False, description="Флаг активности. По умолчанию импортируется как черновик (False)."
+    )
+    notes: str | None = Field(default=None, max_length=10_000, description="Заметки к пресету.")
+
+
+class FilamentPresetSyncRequest(BaseModel):
+    """Запрос на импорт пресетов филаментов."""
+
+    profiles: list[OrcaFilamentPresetPayload] = Field(
+        ..., description="Список пресетов филаментов для импорта (максимум 50)."
+    )
+
+
+class FilamentPresetSyncResponse(BaseModel):
+    """Результат импорта пресетов филаментов."""
+
+    results: list[OrcaSyncResult]
+
+
 class DeletedPresetData(BaseModel):
     """Данные об удалённом пресете."""
 

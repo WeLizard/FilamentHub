@@ -4,7 +4,7 @@
 > **Текущий фокус:** 
 > - ✅ Backend API ~95% (завершение мелких задач, уведомления, weighted presets)
 > - 🔥 Frontend Integration ~85% (улучшение UX, админ-панель, уведомления, weighted presets)
-> - 🔥 OrcaSlicer Integration ~83% (FilamentHubPanel, WebView, авторизация, синхронизация пресетов, badge уведомлений)
+> - 🔥 OrcaSlicer Integration ~87% (FilamentHubPanel, WebView, авторизация, синхронизация пресетов, badge уведомлений, экспорт filament/printer/print profiles)
 
 ---
 
@@ -14,14 +14,14 @@
 ✅ Фаза 0: Планирование                 [████████████████████] 100%
 ✅ Фаза 1: Backend API                  [███████████████████░]  95%
 🔥 Фаза 3: Web UI                       [██████████████████░░]  85%
-🔥 Фаза 2: OrcaSlicer Integration       [█████████████████░░░]  83%
+🔥 Фаза 2: OrcaSlicer Integration       [██████████████████░░]  87%
 ⏳ Фаза 4: Публичный запуск             [░░░░░░░░░░░░░░░░░░░░]   0%
 ```
 
 **Детализация прогресса:**
 - ✅ Backend: Все основные эндпоинты, модели, миграции, тесты, OrcaSlicer экспорт, Brand Requests система, уведомления, weighted presets, API для количества непрочитанных уведомлений
 - ✅ Frontend: Каталог, создание материалов/пресетов, профиль, админ панель, полный UI для OrcaSlicer параметров, Brand Requests система, Brand Profile Page, уведомления, weighted presets в UI
-- 🔥 OrcaSlicer: Изучен код, собран локально, экспорт работает, интеграция в UI ~83% (FilamentHubPanel, WebView, авторизация, синхронизация пресетов, badge уведомлений, исправление проблемы с обновлением не-FilamentHub пресетов)
+- 🔥 OrcaSlicer: Изучен код, собран локально, экспорт работает, интеграция в UI ~87% (FilamentHubPanel, WebView, авторизация, синхронизация пресетов, badge уведомлений, исправление проблемы с обновлением не-FilamentHub пресетов, экспорт filament/printer/print profiles)
 
 **Статус:**
 - ✅ Completed (Завершено)
@@ -311,7 +311,7 @@
 
 ## 🔥 ФАЗА 2: OrcaSlicer Integration (Месяц 3-6) ⭐
 
-**Прогресс:** 83% (изучен код, собран локально, экспорт работает, форк создан и настроен, интеграция в UI ~83%: FilamentHubPanel, WebView, авторизация, синхронизация пресетов, badge уведомлений)
+**Прогресс:** 85% (изучен код, собран локально, экспорт работает, форк создан и настроен, интеграция в UI ~85%: FilamentHubPanel, WebView, авторизация, синхронизация пресетов, badge уведомлений, экспорт filament presets)
 
 ### 2.1 Изучение OrcaSlicer ✅
 
@@ -416,7 +416,32 @@
 - [x] Добавлен badge с количеством непрочитанных уведомлений на кнопку уведомлений
 - [x] Добавлен API метод `get_unread_notifications_count()` для получения количества непрочитанных уведомлений
 - [x] Добавлено обновление количества уведомлений при входе и после синхронизации
-- [ ] Реализовать обратный импорт профилей из OrcaSlicer (принтер, печать, филамент) как черновиков в FilamentHub
+- [x] **Двусторонняя синхронизация (OrcaSlicer → FilamentHub)** (частично - filament presets):
+  - [x] Backend: Добавить поле `allow_filament_presets_import` в модель `User`
+  - [x] Backend: Добавить поля `external_id` и `source` в модель `Preset`
+  - [x] Backend: Создать служебный бренд "User Materials" (id=1) для черновиков из OrcaSlicer
+  - [x] Backend: Создать Pydantic схемы `OrcaFilamentPresetPayload`, `FilamentPresetSyncRequest`, `FilamentPresetSyncResponse`
+  - [x] Backend: Реализовать эндпоинт `POST /api/v1/orcaslicer/filaments/import`
+  - [x] Backend: Реализовать функцию `_upsert_filament_preset()` с логикой создания Filament при импорте
+  - [x] Backend: Реализовать разрешение конфликтов на основе timestamp (новее версия выигрывает)
+  - [x] C++ Client: Добавить метод `import_filament_presets()` в `FilamentHubClient`
+  - [x] C++ Panel: Реализовать экспорт Filament Preset в JSON (`export_filament_presets_to_filamenthub()`)
+  - [x] C++ Panel: Добавить проверку разрешений на импорт перед экспортом filament presets
+  - [x] C++ Panel: Сохранять маппинги `external_id → fhub_id` для filament presets
+  - [x] Документация: Создать подробную инструкцию по реализации (✅ создано в `docs/md/ORCASLICER_BIDIRECTIONAL_SYNC_IMPLEMENTATION.md`)
+  - [x] C++ Panel: Добавить обработку команды `export_filament_presets` в `OnScriptMessage`
+  - [x] C++ Panel: Добавить JavaScript API функцию `exportFilamentPresets` в `setup_javascript_api`
+  - [x] Frontend: Реализовать компонент `ExportFromOrcaSlicerButton` для экспорта профилей из OrcaSlicer в FilamentHub
+  - [x] Frontend: Интегрировать компонент экспорта в `ProfilePage.tsx`
+  - [x] C++ Panel: Реализовать экспорт Printer Profile в JSON (`export_printer_profiles_to_filamenthub()`)
+  - [x] C++ Panel: Реализовать экспорт Print Profile в JSON (`export_print_profiles_to_filamenthub()`)
+  - [x] C++ Panel: Добавить проверку разрешений на импорт перед экспортом printer/print profiles
+  - [x] C++ Panel: Сохранять маппинги `external_id → fhub_id` для printer/print profiles
+  - [x] C++ Panel: Добавить обработку команд `export_printer_profiles` и `export_print_profiles` в `OnScriptMessage`
+  - [x] C++ Panel: Добавить JavaScript API функции `exportPrinterProfiles` и `exportPrintProfiles` в `setup_javascript_api`
+  - [ ] C++ Panel: Реализовать функцию `export_profiles_to_filamenthub()` для экспорта всех 3 типов профилей
+  - [ ] C++ Panel: Реализовать определение бандлов (если есть все 3 типа профилей)
+  - [ ] C++ Panel: Реализовать автоматический экспорт при первой синхронизации
 - [ ] Обновление уже импортированных пресетов (проверка `updated_at`)
 - [ ] Удаление пресетов из OrcaSlicer если они удалены на FilamentHub (частично реализовано - обнаружение работает, восстановление работает)
 - [ ] Визуальная пометка профилей FilamentHub в dropdown (иконка/метка)
@@ -556,7 +581,7 @@
 4. ⏳ Добавить endpoint `/api/v1/auth/logout`
 
 ### Приоритет 3: OrcaSlicer Integration 🔥 В РАБОТЕ
-**Статус:** Интеграция активно разрабатывается, прогресс ~83%
+**Статус:** Интеграция активно разрабатывается, прогресс ~85%
 1. ✅ Реализовать экспорт профилей в формате OrcaSlicer (готово в backend)
 2. ✅ Создать форк или локальную ветку для разработки (lizardjazz1/OrcaSlicer, ветка filamenthub-integration)
 3. ✅ Реализовать авторизацию в OrcaSlicer через FilamentHub (через WebView, токен сохраняется в AppConfig)
@@ -564,9 +589,15 @@
 5. ✅ Реализовать синхронизацию профилей в "Профиль прутка" dropdown (асинхронная очередь, обнаружение удалённых пресетов)
 6. ✅ Исправить проблему с обновлением не-FilamentHub пресетов (убран множественный вызов load_current_presets)
 7. ✅ Добавить badge с количеством непрочитанных уведомлений на кнопку уведомлений
-8. ⏳ Реализовать выпадающее меню уведомлений в WebView (временно открывает страницу)
-9. ⏳ Визуальная пометка профилей FilamentHub в dropdown (иконка/метка)
-10. ⏳ Тестирование и отладка синхронизации
+8. ✅ Реализовать экспорт filament presets из OrcaSlicer в FilamentHub (C++ метод `export_filament_presets_to_filamenthub()`)
+9. ✅ Добавить проверку разрешений на импорт перед экспортом filament presets
+10. ✅ Добавить JavaScript API функцию `exportFilamentPresets` в C++ для вызова экспорта из Frontend
+11. ✅ Реализовать Frontend компонент `ExportFromOrcaSlicerButton` для экспорта профилей из OrcaSlicer в FilamentHub
+12. ✅ Интегрировать компонент экспорта в `ProfilePage.tsx` (отображается только внутри OrcaSlicer)
+13. ⏳ Реализовать выпадающее меню уведомлений в WebView (временно открывает страницу)
+14. ⏳ Визуальная пометка профилей FilamentHub в dropdown (иконка/метка)
+15. ⏳ Реализовать экспорт printer и print profiles (в дополнение к filament presets)
+16. ⏳ Тестирование и отладка синхронизации
 
 ---
 

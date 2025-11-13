@@ -43,6 +43,7 @@ import { ViewPresetModal } from '../components/ViewPresetModal';
 import { CreatePrinterRequestModal } from '../components/CreatePrinterRequestModal';
 import { DeleteAccountModal } from '../components/DeleteAccountModal';
 import { SettingsTab } from '../components/SettingsTab';
+import { ExportFromOrcaSlicerButton } from '../components/ExportFromOrcaSlicerButton';
 import { BrandProfilePage } from './BrandProfilePage';
 import type { Preset, PricingMethod, CalculatorEstimateRequest, PrinterProfile, PrintProfile } from '../types/api';
 
@@ -575,13 +576,19 @@ export const ProfilePage: React.FC = () => {
         <div className="space-y-6">
           <div className="flex items-center justify-between">
             <h3 className="text-2xl font-bold text-white">Мои пресеты</h3>
-            <button
-              onClick={handleCreatePreset}
-              className="bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white px-4 py-2 rounded-xl transition-all shadow-lg shadow-purple-500/25 hover:shadow-purple-500/40"
-            >
-              <Plus className="w-4 h-4 inline mr-2" />
-              Новый пресет
-            </button>
+            <div className="flex items-center gap-3">
+              {/* Кнопка экспорта из OrcaSlicer (только если запущено внутри OrcaSlicer) */}
+              {typeof window !== 'undefined' && (window as any).filamenthub?.exportFilamentPresets && (
+                <ExportFromOrcaSlicerButton />
+              )}
+              <button
+                onClick={handleCreatePreset}
+                className="bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white px-4 py-2 rounded-xl transition-all shadow-lg shadow-purple-500/25 hover:shadow-purple-500/40"
+              >
+                <Plus className="w-4 h-4 inline mr-2" />
+                Новый пресет
+              </button>
+            </div>
           </div>
 
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">

@@ -55,6 +55,8 @@ class User(Base):
     allow_printer_profiles_export: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     allow_print_profiles_import: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     allow_print_profiles_export: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    allow_filament_presets_import: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    # allow_filament_presets_import: Разрешение на импорт filament presets из OrcaSlicer
     
     # Deleted preset rule (правило обработки удалённых пресетов)
     deleted_preset_rule: Mapped[str | None] = mapped_column(String(50), nullable=True)

@@ -105,6 +105,12 @@ class Preset(Base):
     # Status
     active: Mapped[bool] = mapped_column(Boolean, default=True, index=True)
 
+    # External ID and source (для синхронизации с OrcaSlicer)
+    external_id: Mapped[str | None] = mapped_column(String(200), nullable=True, index=True)
+    # external_id: Уникальный ID профиля в OrcaSlicer (для маппинга)
+    source: Mapped[str | None] = mapped_column(String(50), nullable=True, index=True)
+    # source: Источник пресета ("orcaslicer", "user", "system", etc.)
+
     # Timestamps
     created_at: Mapped[datetime] = mapped_column(
         default=func.now(), server_default=func.now()
