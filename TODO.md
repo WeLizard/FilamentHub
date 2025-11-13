@@ -184,6 +184,8 @@
 - [x] `GET /api/v1/presets/{id}/export/orcaslicer.info` (экспорт .info файла)
 - [x] `POST /api/v1/orcaslicer/deleted-presets` (отправка локально удалённых пресетов из OrcaSlicer)
 - [x] `GET /api/v1/notifications/unread-count` (количество непрочитанных уведомлений)
+- [x] `DELETE /api/v1/notifications/{id}` (удаление уведомления)
+- [x] `PATCH /api/v1/saved-presets/{preset_id}/sync` (переключение синхронизации пресета)
 
 #### Printers ✅
 - [x] `GET /api/v1/printers/` (список с пагинацией)
@@ -311,7 +313,7 @@
 
 ## 🔥 ФАЗА 2: OrcaSlicer Integration (Месяц 3-6) ⭐
 
-**Прогресс:** 85% (изучен код, собран локально, экспорт работает, форк создан и настроен, интеграция в UI ~85%: FilamentHubPanel, WebView, авторизация, синхронизация пресетов, badge уведомлений, экспорт filament presets)
+**Прогресс:** 87% (изучен код, собран локально, экспорт работает, форк создан и настроен, интеграция в UI ~87%: FilamentHubPanel, WebView, авторизация, синхронизация пресетов, badge уведомлений, экспорт filament/printer/print profiles, управление синхронизацией через `sync_enabled`)
 
 ### 2.1 Изучение OrcaSlicer ✅
 
@@ -439,6 +441,16 @@
   - [x] C++ Panel: Сохранять маппинги `external_id → fhub_id` для printer/print profiles
   - [x] C++ Panel: Добавить обработку команд `export_printer_profiles` и `export_print_profiles` в `OnScriptMessage`
   - [x] C++ Panel: Добавить JavaScript API функции `exportPrinterProfiles` и `exportPrintProfiles` в `setup_javascript_api`
+  - [x] Backend: Реализовать систему `sync_enabled` в `user_saved_presets` для управления синхронизацией пресетов на уровне пользователя
+  - [x] Backend: Добавить поле `sync_enabled` в модель `UserSavedPreset`
+  - [x] Backend: Создать миграцию для добавления `sync_enabled` в `user_saved_presets`
+  - [x] Backend: Автоматически создавать `UserSavedPreset` при создании пользователем пресета
+  - [x] Backend: Добавить эндпоинт `PATCH /saved-presets/{preset_id}/sync` для переключения синхронизации
+  - [x] Frontend: Реализовать компонент `PresetSyncToggle` для управления синхронизацией пресетов
+  - [x] Frontend: Интегрировать `PresetSyncToggle` в `PresetCard` (отображается для всех пресетов в "Мои пресеты")
+  - [x] Backend: Исправить проблему с дублирующимися уведомлениями (обновление существующего уведомления вместо создания нового)
+  - [x] Backend: Добавить возможность удаления уведомлений через `DELETE /notifications/{id}`
+  - [x] Frontend: Добавить кнопку удаления уведомлений в компонент `Notifications`
   - [ ] C++ Panel: Реализовать функцию `export_profiles_to_filamenthub()` для экспорта всех 3 типов профилей
   - [ ] C++ Panel: Реализовать определение бандлов (если есть все 3 типа профилей)
   - [ ] C++ Panel: Реализовать автоматический экспорт при первой синхронизации

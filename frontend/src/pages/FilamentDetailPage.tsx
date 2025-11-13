@@ -28,6 +28,7 @@ import { filamentsAPI, brandsAPI, savedPresetsAPI, filamentReviewsAPI, qrAPI } f
 import { FilamentPreview } from '../components/FilamentPreview';
 import { ReviewCard } from '../components/ReviewCard';
 import { CreateReviewModal } from '../components/CreateReviewModal';
+import { PresetSyncToggle } from '../components/PresetSyncToggle';
 import { FilamentReview } from '../types/api';
 
 export const FilamentDetailPage: React.FC = () => {
@@ -725,6 +726,12 @@ export const FilamentDetailPage: React.FC = () => {
                             </div>
                           )}
                           <div className="text-right ml-4">
+                            {/* Переключатель синхронизации - показываем для всех пресетов пользователя (если авторизован) */}
+                            {user && (
+                              <div className="mb-2 flex justify-end">
+                                <PresetSyncToggle preset={preset} size="sm" />
+                              </div>
+                            )}
                             {/* Рейтинг пресета (отдельный от рейтинга материала) */}
                             {preset.rating !== null && preset.rating !== undefined ? (
                               <div className="flex items-center space-x-2 mb-2" title="Рейтинг этого пресета настроек">

@@ -2,7 +2,7 @@
 
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -71,6 +71,7 @@ async def save_preset(
     saved_preset = UserSavedPreset(
         user_id=current_user.id,
         preset_id=data.preset_id,
+        sync_enabled=True,  # По умолчанию синхронизация включена
     )
     db.add(saved_preset)
     await db.commit()
@@ -101,4 +102,32 @@ async def unsave_preset(
     # Удаляем
     await db.delete(saved_preset)
     await db.commit()
+
+
+@router.patch("/{preset_id}/sync", response_model=UserSavedPresetResponse)
+async def toggle_saved_preset_sync(
+    preset_id: int,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    current_user: Annotated[User, Depends(get_current_active_user)],
+    sync_enabled: bool = Query(..., description="Включить или выключить синхронизацию"),
+) -> UserSavedPresetResponse:
+    """Переключить синхронизацию сохраненного пресета."""
+    # Находим сохранённый пресет
+    result = await db.execute(
+        select(UserSavedPreset).where(
+            UserSavedPreset.user_id == current_user.id,
+            UserSavedPreset.preset_id == preset_id,
+        )
+    )
+    saved_preset = result.scalar_one_or_none()
+
+    if not saved_preset:
+        raise HTTPException(status_code=404, detail="Saved preset not found")
+
+    # Обновляем sync_enabled
+    saved_preset.sync_enabled = sync_enabled
+    await db.commit()
+    await db.refresh(saved_preset)
+
+    return UserSavedPresetResponse.model_validate(saved_preset)
 

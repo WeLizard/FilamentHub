@@ -110,6 +110,9 @@ class Preset(Base):
     # external_id: Уникальный ID профиля в OrcaSlicer (для маппинга)
     source: Mapped[str | None] = mapped_column(String(50), nullable=True, index=True)
     # source: Источник пресета ("orcaslicer", "user", "system", etc.)
+    sync_enabled: Mapped[bool] = mapped_column(Boolean, default=True, index=True)
+    # sync_enabled: Включена ли синхронизация с OrcaSlicer (по умолчанию True)
+    # Если False, пресет не будет синхронизироваться при синхронизации
 
     # Timestamps
     created_at: Mapped[datetime] = mapped_column(

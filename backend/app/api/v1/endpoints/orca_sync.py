@@ -882,6 +882,7 @@ async def _upsert_filament_preset(
             moderation_status=PresetModerationStatus.PENDING,
             source=payload.source or "orcaslicer",
             external_id=payload.external_id,
+            sync_enabled=True,  # По умолчанию синхронизация включена для новых пресетов
             notes=payload.notes,
         )
         db.add(preset)
@@ -1037,16 +1038,65 @@ async def report_deleted_presets(
             saved_count=len(saved_preset_ids),
         )
 
-    # Если правило "always_ask" или другое, создаём уведомление
-    notification = await create_notification(
-        user_id=current_user.id,
-        notification_type=NotificationType.PRESET_LOCALLY_DELETED,
-        title=title,
-        message=message,
-        db=db,
-        link=None,  # Не переходим по ссылке, открываем модалку
-        extra_data=extra_data,
+    # Если правило "always_ask" или другое, проверяем, есть ли уже необработанное уведомление
+    # Если есть - обновляем его, если нет - создаём новое
+    existing_notification_result = await db.execute(
+        select(Notification).where(
+            Notification.user_id == current_user.id,
+            Notification.type == NotificationType.PRESET_LOCALLY_DELETED,
+            Notification.read.is_(False),
+        ).order_by(Notification.created_at.desc())
     )
+    existing_notification = existing_notification_result.scalar_one_or_none()
+
+    if existing_notification:
+        # Обновляем существующее уведомление
+        # Объединяем списки пресетов, избегая дубликатов
+        existing_preset_ids = {p["preset_id"] for p in existing_notification.extra_data.get("deleted_presets", [])}
+        
+        # Добавляем только новые пресеты (которых еще нет в существующем уведомлении)
+        new_presets = [
+            {
+                "preset_id": preset.preset_id,
+                "preset_name": preset.preset_name,
+                "bundle_preset_name": preset.bundle_preset_name,
+                "is_created": preset.preset_id in created_preset_ids,
+                "is_saved": preset.preset_id in saved_preset_ids,
+            }
+            for preset in request.deleted_presets
+            if preset.preset_id not in existing_preset_ids
+        ]
+        
+        if new_presets:
+            # Обновляем extra_data, добавляя новые пресеты
+            all_presets = existing_notification.extra_data.get("deleted_presets", []) + new_presets
+            existing_notification.extra_data = {
+                "deleted_presets": all_presets,
+                "created_count": sum(1 for p in all_presets if p.get("is_created", False)),
+                "saved_count": sum(1 for p in all_presets if p.get("is_saved", False)),
+            }
+            existing_notification.title = f"Обнаружено {len(all_presets)} удалённых пресетов"
+            existing_notification.message = (
+                f"В OrcaSlicer обнаружено {len(all_presets)} пресетов, которые были удалены локально, "
+                "но остаются в FilamentHub."
+            )
+            await db.commit()
+            await db.refresh(existing_notification)
+            notification = existing_notification
+        else:
+            # Все пресеты уже есть в уведомлении - ничего не делаем
+            notification = existing_notification
+    else:
+        # Создаём новое уведомление
+        notification = await create_notification(
+            user_id=current_user.id,
+            notification_type=NotificationType.PRESET_LOCALLY_DELETED,
+            title=title,
+            message=message,
+            db=db,
+            link=None,  # Не переходим по ссылке, открываем модалку
+            extra_data=extra_data,
+        )
 
     return DeletedPresetsResponse(
         message="Notification created",
@@ -1118,9 +1168,24 @@ async def handle_deleted_preset_action(
                 processed_count += 1
 
     elif action.action == "skip":
-        # Пропускаем (просто удаляем маппинг)
-        # Маппинг удаляется на стороне OrcaSlicer (C++), бэкенд просто подтверждает действие
-        processed_count = len(deleted_presets)
+        # Пропускаем (отключаем синхронизацию, но НЕ удаляем маппинг)
+        # Устанавливаем sync_enabled=False в user_saved_presets для пресетов пользователя
+        from app.models.user_saved_preset import UserSavedPreset
+        for preset_data in deleted_presets:
+            preset_id = preset_data["preset_id"]
+            # Находим запись в user_saved_presets для этого пользователя и пресета
+            result = await db.execute(
+                select(UserSavedPreset).where(
+                    UserSavedPreset.user_id == current_user.id,
+                    UserSavedPreset.preset_id == preset_id,
+                )
+            )
+            saved_preset = result.scalar_one_or_none()
+            if saved_preset:
+                saved_preset.sync_enabled = False
+                processed_count += 1
+        
+        await db.commit()
 
     # Сохраняем правило пользователя, если задано
     if action.save_rule:
@@ -1132,11 +1197,25 @@ async def handle_deleted_preset_action(
         rule = rule_mapping.get(action.action, "always_ask")
         await save_user_deleted_preset_rule(current_user.id, rule, db)
 
-    # Отмечаем уведомление как прочитанное
-    from datetime import datetime, timezone
+    # Удаляем обработанные пресеты из extra_data
+    if notification.extra_data:
+        processed_preset_ids = {p["preset_id"] for p in deleted_presets}
+        remaining_presets = [
+            p for p in notification.extra_data.get("deleted_presets", [])
+            if p["preset_id"] not in processed_preset_ids
+        ]
+        notification.extra_data["deleted_presets"] = remaining_presets
+        
+        # Обновляем счетчики
+        notification.extra_data["created_count"] = sum(1 for p in remaining_presets if p.get("is_created", False))
+        notification.extra_data["saved_count"] = sum(1 for p in remaining_presets if p.get("is_saved", False))
+        
+        # Если все пресеты обработаны, отмечаем уведомление как прочитанное
+        if len(remaining_presets) == 0:
+            from datetime import datetime, timezone
+            notification.read = True
+            notification.read_at = datetime.now(timezone.utc)
 
-    notification.read = True
-    notification.read_at = datetime.now(timezone.utc)
     await db.commit()
 
     return DeletedPresetActionResponse(

@@ -85,6 +85,7 @@ class PresetUpdate(BaseModel):
     # Rating
     rating: float | None = Field(None, ge=1, le=5)
     active: bool | None = None
+    sync_enabled: bool | None = Field(None, description="Включена ли синхронизация с OrcaSlicer")
     
     # Printers
     printer_ids: list[int] | None = Field(None, description="Список ID принтеров, для которых подходит этот пресет")
@@ -98,6 +99,9 @@ class PresetResponse(PresetBase):
     user_id: int | None = None
     active: bool
     moderation_status: str  # pending, approved, rejected
+    sync_enabled: bool = Field(True, description="Включена ли синхронизация с OrcaSlicer")
+    external_id: str | None = Field(None, description="ID пресета в OrcaSlicer (для маппинга)")
+    source: str | None = Field(None, description="Источник пресета (orcaslicer, user, system, etc.)")
     moderation_reason: str | None = None
     moderated_by: int | None = None
     moderated_at: datetime | None = None

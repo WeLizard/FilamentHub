@@ -211,9 +211,11 @@ export interface Preset {
   usage_count: number;
   active: boolean;
   moderation_status: string;
+  sync_enabled: boolean; // Включена ли синхронизация с OrcaSlicer (по умолчанию true)
+  external_id?: string | null; // ID пресета в OrcaSlicer (для маппинга)
+  source?: string | null; // Источник пресета ("orcaslicer", "user", "system", etc.) или 'own' | 'saved' для UI
   created_at: string;
   updated_at: string;
-  source?: 'own' | 'saved'; // For UI: 'own' = created by user, 'saved' = added from catalog
   user_id?: number | null;
   printers?: Printer[]; // Список принтеров, для которых подходит этот пресет
   is_saved?: boolean; // Для UI: сохранен ли пресет пользователем (из available-presets эндпоинта)
@@ -379,6 +381,7 @@ export interface UserSavedPreset {
   user_id: number;
   preset_id: number;
   saved_at: string; // ISO 8601 datetime string
+  sync_enabled: boolean; // Включена ли синхронизация с OrcaSlicer для этого пресета у этого пользователя
 }
 
 export type PricingMethod = 'by_weight' | 'by_time' | 'combined';

@@ -489,6 +489,7 @@ export const presetsAPI = {
     orcaslicer_settings?: Record<string, any> | null; // Расширенные параметры OrcaSlicer
     printer_ids?: number[]; // Список ID принтеров, для которых подходит этот пресет
     active?: boolean;
+    sync_enabled?: boolean; // Включена ли синхронизация с OrcaSlicer
   }>) => {
     const response = await api.patch<Preset>(`/presets/${id}`, data);
     return response.data;
@@ -513,6 +514,11 @@ export const savedPresetsAPI = {
 
   unsave: async (preset_id: number) => {
     await api.delete(`/saved-presets/${preset_id}`);
+  },
+
+  toggleSync: async (preset_id: number, sync_enabled: boolean) => {
+    const response = await api.patch<UserSavedPreset>(`/saved-presets/${preset_id}/sync?sync_enabled=${sync_enabled}`);
+    return response.data;
   },
 };
 
@@ -1080,6 +1086,12 @@ export const notificationsAPI = {
   // Отметить все уведомления как прочитанные
   markAllAsRead: async (): Promise<{ marked_count: number }> => {
     const response = await api.post('/notifications/mark-all-read');
+    return response.data;
+  },
+
+  // Удалить уведомление
+  delete: async (notificationId: number): Promise<{ message: string }> => {
+    const response = await api.delete(`/notifications/${notificationId}`);
     return response.data;
   },
 };

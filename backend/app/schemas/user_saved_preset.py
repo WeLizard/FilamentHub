@@ -18,6 +18,7 @@ class UserSavedPresetResponse(BaseModel):
     user_id: int
     preset_id: int
     saved_at: datetime
+    sync_enabled: bool = Field(True, description="Включена ли синхронизация с OrcaSlicer для этого пресета у этого пользователя")
 
     model_config = ConfigDict(from_attributes=True)
 

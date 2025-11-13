@@ -38,6 +38,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { authAPI, brandsAPI, filamentsAPI, brandRequestsAPI, presetsAPI, qrAPI } from '../api/client';
 import { CreateFilamentModal } from '../components/CreateFilamentModal';
 import { CreatePresetModal } from '../components/CreatePresetModal';
+import { PresetSyncToggle } from '../components/PresetSyncToggle';
 import { Dropdown } from '../components/Dropdown';
 import { FilamentPreview } from '../components/FilamentPreview';
 import type { Filament, Brand, BrandRequest, Preset } from '../types/api';
@@ -463,6 +464,8 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({ onBack }) =>
                   <div className="flex items-center justify-between text-xs text-gray-400">
                     <span>{new Date(preset.created_at).toLocaleDateString('ru-RU')}</span>
                     <div className="flex items-center space-x-2">
+                      {/* Переключатель синхронизации - показываем для всех пресетов бренда */}
+                      <PresetSyncToggle preset={preset} size="sm" className="p-1" />
                       <button
                         onClick={(e) => {
                           e.stopPropagation();

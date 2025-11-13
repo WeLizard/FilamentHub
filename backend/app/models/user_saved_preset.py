@@ -3,7 +3,7 @@
 from datetime import datetime
 from typing import TYPE_CHECKING
 
-from sqlalchemy import DateTime, ForeignKey, Integer
+from sqlalchemy import Boolean, DateTime, ForeignKey, Integer
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.sql import func
 
@@ -30,6 +30,11 @@ class UserSavedPreset(Base):
     saved_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )
+
+    # Sync settings
+    sync_enabled: Mapped[bool] = mapped_column(Boolean, default=True, index=True)
+    # sync_enabled: Включена ли синхронизация с OrcaSlicer для этого пресета у этого пользователя
+    # Каждый пользователь имеет свою настройку синхронизации для каждого пресета в "Мои пресеты"
 
     # Relationships
     user: Mapped["User"] = relationship("User", back_populates="saved_presets")

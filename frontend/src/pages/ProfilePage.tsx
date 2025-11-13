@@ -44,6 +44,7 @@ import { CreatePrinterRequestModal } from '../components/CreatePrinterRequestMod
 import { DeleteAccountModal } from '../components/DeleteAccountModal';
 import { SettingsTab } from '../components/SettingsTab';
 import { ExportFromOrcaSlicerButton } from '../components/ExportFromOrcaSlicerButton';
+import { PresetSyncToggle } from '../components/PresetSyncToggle';
 import { BrandProfilePage } from './BrandProfilePage';
 import type { Preset, PricingMethod, CalculatorEstimateRequest, PrinterProfile, PrintProfile } from '../types/api';
 
@@ -1281,6 +1282,8 @@ const PresetCard: React.FC<PresetCardProps> = ({ preset, onEdit, onView, onDelet
               <Eye className="w-4 h-4" />
             </button>
           )}
+          {/* Переключатель синхронизации - показываем для всех пресетов */}
+          <PresetSyncToggle preset={preset} size="sm" className="p-2 bg-white/10 hover:bg-white/20 rounded-lg" />
           <button
             onClick={handleDownload}
             disabled={isDownloading}

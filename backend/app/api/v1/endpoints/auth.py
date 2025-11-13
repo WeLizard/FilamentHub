@@ -288,40 +288,29 @@ async def get_my_presets(
     Используется для синхронизации пресетов в OrcaSlicer.
     Поддерживает инкрементальную синхронизацию через параметр updated_since.
     """
+    from app.models.user_saved_preset import UserSavedPreset
+    
     preset_ids: set[int] = set()
     presets_dict: dict[int, Preset] = {}
     
-    # 1. Получаем созданные пресеты (где user_id == current_user.id)
-    created_query = select(Preset).where(
-        Preset.user_id == current_user.id,
-        Preset.active == True,
-    )
-    
-    if updated_since:
-        created_query = created_query.where(Preset.updated_at >= updated_since)
-    
-    created_result = await db.execute(created_query.options(selectinload(Preset.filament)))
-    created_presets = created_result.scalars().all()
-    
-    for preset in created_presets:
-        preset_ids.add(preset.id)
-        presets_dict[preset.id] = preset
-    
-    # 2. Получаем сохраненные пресеты (из каталога)
+    # Получаем ВСЕ пресеты пользователя из user_saved_presets (созданные автоматически сохраняются, сохраненные тоже там)
+    # Теперь вся логика синхронизации в одном месте - user_saved_presets.sync_enabled
     saved_query = select(UserSavedPreset).where(
         UserSavedPreset.user_id == current_user.id,
+        UserSavedPreset.sync_enabled == True,  # Только пресеты с включенной синхронизацией
     )
     
     if updated_since:
-        # Для сохраненных пресетов проверяем либо saved_at, либо updated_at самого пресета
+        # Проверяем либо saved_at, либо updated_at самого пресета
         saved_query = saved_query.join(Preset).where(
+            Preset.active == True,  # Пресет должен быть активен
             or_(
                 UserSavedPreset.saved_at >= updated_since,
                 Preset.updated_at >= updated_since,
             ),
         )
     else:
-        saved_query = saved_query.join(Preset)
+        saved_query = saved_query.join(Preset).where(Preset.active == True)
     
     saved_result = await db.execute(
         saved_query.options(selectinload(UserSavedPreset.preset).selectinload(Preset.filament))
@@ -332,9 +321,8 @@ async def get_my_presets(
         preset = saved_preset_relation.preset
         if preset.active:  # Проверяем, что пресет активен
             preset_id = preset.id
-            if preset_id not in preset_ids:  # Убираем дубликаты (если пресет и создан, и сохранен)
-                preset_ids.add(preset_id)
-                presets_dict[preset_id] = preset
+            preset_ids.add(preset_id)
+            presets_dict[preset_id] = preset
     
     # 3. Формируем список пресетов
     presets_list = [presets_dict[pid] for pid in sorted(preset_ids)]

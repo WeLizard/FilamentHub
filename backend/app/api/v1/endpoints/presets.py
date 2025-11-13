@@ -243,6 +243,16 @@ async def create_preset(
     db.add(preset)
     await db.flush()  # Получаем ID пресета
     
+    # Автоматически создаём запись в user_saved_presets (самосохранение)
+    # Это нужно для единой логики синхронизации - все пресеты в "Мои пресеты" хранят sync_enabled в user_saved_presets
+    from app.models.user_saved_preset import UserSavedPreset
+    saved_preset = UserSavedPreset(
+        user_id=current_user.id,
+        preset_id=preset.id,
+        sync_enabled=True,  # По умолчанию синхронизация включена
+    )
+    db.add(saved_preset)
+    
     # Создаём связи с принтерами
     if data.printer_ids:
         for printer_id in data.printer_ids:

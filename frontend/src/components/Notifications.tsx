@@ -1,7 +1,7 @@
 /** Компонент уведомлений с колокольчиком */
 
 import { useState, useRef, useEffect } from 'react';
-import { Bell, CheckCircle, XCircle, AlertCircle, Info, Settings } from 'lucide-react';
+import { Bell, CheckCircle, XCircle, AlertCircle, Info, Settings, X } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
@@ -39,6 +39,14 @@ export function Notifications() {
   // Мутация для отметки всех как прочитанные
   const markAllAsReadMutation = useMutation({
     mutationFn: () => notificationsAPI.markAllAsRead(),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['notifications', user?.id] });
+    },
+  });
+
+  // Мутация для удаления уведомления
+  const deleteNotificationMutation = useMutation({
+    mutationFn: (notificationId: number) => notificationsAPI.delete(notificationId),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['notifications', user?.id] });
     },
@@ -162,29 +170,47 @@ export function Notifications() {
                 {notifications.map((notification) => (
                   <div
                     key={notification.id}
-                    onClick={() => handleNotificationClick(notification)}
-                    className={`p-4 hover:bg-white/5 transition-all cursor-pointer ${
+                    className={`p-4 hover:bg-white/5 transition-all ${
                       !notification.read ? 'bg-white/5' : ''
                     }`}
                   >
                     <div className="flex items-start space-x-3">
-                      <div className="flex-shrink-0 mt-0.5">
-                        {getNotificationIcon(notification.type)}
+                      <div
+                        className="flex-1 min-w-0 cursor-pointer"
+                        onClick={() => handleNotificationClick(notification)}
+                      >
+                        <div className="flex items-start space-x-3">
+                          <div className="flex-shrink-0 mt-0.5">
+                            {getNotificationIcon(notification.type)}
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm font-semibold text-white mb-1">
+                              {notification.title}
+                            </p>
+                            <p className="text-sm text-gray-300 mb-2">
+                              {notification.message}
+                            </p>
+                            <p className="text-xs text-gray-400">
+                              {formatTime(notification.created_at)}
+                            </p>
+                          </div>
+                          {!notification.read && (
+                            <div className="w-2 h-2 bg-blue-400 rounded-full flex-shrink-0 mt-2"></div>
+                          )}
+                        </div>
                       </div>
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm font-semibold text-white mb-1">
-                          {notification.title}
-                        </p>
-                        <p className="text-sm text-gray-300 mb-2">
-                          {notification.message}
-                        </p>
-                        <p className="text-xs text-gray-400">
-                          {formatTime(notification.created_at)}
-                        </p>
-                      </div>
-                      {!notification.read && (
-                        <div className="w-2 h-2 bg-blue-400 rounded-full flex-shrink-0 mt-2"></div>
-                      )}
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          deleteNotificationMutation.mutate(notification.id);
+                        }}
+                        disabled={deleteNotificationMutation.isPending}
+                        className="flex-shrink-0 p-1 rounded hover:bg-white/10 text-gray-400 hover:text-red-400 transition-all"
+                        title="Удалить уведомление"
+                        aria-label="Удалить уведомление"
+                      >
+                        <X className="w-4 h-4" />
+                      </button>
                     </div>
                   </div>
                 ))}
