@@ -253,6 +253,7 @@ export interface User {
   email_verified: boolean;
   brand_id: number | null;
   brand_name: string | null; // Название бренда (для админки)
+  badges: string[] | null; // Бейджи пользователя (founder, beta_tester, contributor, verified, early_adopter, supporter)
   created_at: string;
   updated_at: string;
 }
@@ -336,6 +337,7 @@ export interface FilamentReview {
   preset_id: number | null;
   preset_name: string | null;
   username: string | null;
+  user_badges: string[] | null; // Бейджи пользователя
   success: boolean;
   rating: number; // 1.0 - 5.0
   comment: string | null;

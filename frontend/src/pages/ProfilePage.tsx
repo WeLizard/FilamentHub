@@ -49,6 +49,7 @@ import { ExportPrintProfilesButton } from '../components/ExportPrintProfilesButt
 import { CreatePrinterProfileModal } from '../components/CreatePrinterProfileModal';
 import { CreatePrintProfileModal } from '../components/CreatePrintProfileModal';
 import { PresetSyncToggle } from '../components/PresetSyncToggle';
+import { BadgeList } from '../components/Badge';
 import { BrandProfilePage } from './BrandProfilePage';
 import type { Preset, PricingMethod, CalculatorEstimateRequest, PrinterProfile, PrintProfile } from '../types/api';
 
@@ -546,10 +547,15 @@ export const ProfilePage: React.FC = () => {
             <User className="w-8 h-8 text-white" />
           </div>
           <div>
-            <h2 className="text-3xl font-bold text-white">Мой профиль</h2>
-            <p className="text-gray-300">
-              {user.full_name || user.username} • 3D печатник
-            </p>
+            <h2 className="text-3xl font-bold text-white mb-1">Мой профиль</h2>
+            <div className="flex items-center gap-2">
+              <p className="text-gray-300">
+                {user.full_name || user.username} • 3D печатник
+              </p>
+              {user.badges && user.badges.length > 0 && (
+                <BadgeList badges={user.badges as any} size="sm" />
+              )}
+            </div>
           </div>
         </div>
 
@@ -584,7 +590,7 @@ export const ProfilePage: React.FC = () => {
       {userTab === 'dashboard' && (
         <div className="space-y-6">
           {/* Stats Cards */}
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-6">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
             <StatCard
               icon={CheckCircle}
               label="Успешных печатей"
@@ -593,22 +599,19 @@ export const ProfilePage: React.FC = () => {
               borderColor="border-purple-500/30"
               iconColor="text-green-400"
             />
-            <StatCard
-              icon={Settings}
-              label="Всего пресетов"
-              value={presetsStats?.total_presets?.toString() || userPresets.length.toString()}
-              color="from-blue-500/20 to-cyan-500/20"
-              borderColor="border-blue-500/30"
-              iconColor="text-blue-400"
-            />
-            <StatCard
-              icon={Package}
-              label="К синхронизации"
-              value={presetsStats?.synced_presets?.toString() || '0'}
-              color="from-green-500/20 to-emerald-500/20"
-              borderColor="border-green-500/30"
-              iconColor="text-green-400"
-            />
+            {/* Объединённая плашка для пресетов */}
+            <div className="bg-gradient-to-r from-blue-500/20 to-cyan-500/20 p-6 rounded-2xl border border-blue-500/30 shadow-xl">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-gray-300 text-sm mb-1">Пресеты</p>
+                  <p className="text-3xl font-bold text-white">
+                    {presetsStats?.total_presets?.toString() || userPresets.length.toString()}/{presetsStats?.synced_presets?.toString() || '0'}
+                  </p>
+                  <p className="text-xs text-gray-400 mt-1">всего / к синхронизации</p>
+                </div>
+                <Settings className="w-8 h-8 text-blue-400" />
+              </div>
+            </div>
             <StatCard
               icon={Star}
               label="Оставлено отзывов"

@@ -4,7 +4,7 @@ from datetime import datetime
 from enum import Enum
 from typing import TYPE_CHECKING
 
-from sqlalchemy import Boolean, DateTime, Enum as SQLEnum, ForeignKey, Integer, String, Text
+from sqlalchemy import Boolean, DateTime, Enum as SQLEnum, ForeignKey, Integer, JSON, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.sql import func
 
@@ -66,6 +66,16 @@ class User(Base):
     # Status
     active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     email_verified: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    
+    # Badges (список строк: ["founder", "beta_tester", "contributor", "verified"])
+    badges: Mapped[list[str] | None] = mapped_column(JSON, nullable=True)
+    # badges: 
+    # - "founder" - основатель (первые пользователи)
+    # - "beta_tester" - бета-тестер
+    # - "contributor" - контрибьютор (помог с разработкой)
+    # - "verified" - верифицированный (производитель)
+    # - "early_adopter" - ранний последователь
+    # - "supporter" - поддержал проект
     
     # Brand relationship (if user is a brand)
     brand_id: Mapped[int | None] = mapped_column(

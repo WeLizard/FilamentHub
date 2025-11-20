@@ -61,7 +61,12 @@ class UserEmailUpdate(BaseModel):
     """Schema for updating user email."""
 
     new_email: EmailStr = Field(..., description="Новый email")
-    password: str = Field(..., min_length=1, description="Пароль для подтверждения")
+
+
+class UserUsernameUpdate(BaseModel):
+    """Schema for updating user username."""
+
+    new_username: str = Field(..., min_length=3, max_length=100, description="Новый username")
 
 
 class UserResponse(UserBase):
@@ -74,6 +79,7 @@ class UserResponse(UserBase):
     email_verified: bool
     brand_id: int | None = None
     brand_name: str | None = None  # Название бренда (для админки)
+    badges: list[str] | None = None  # Бейджи пользователя
     # Sync settings
     allow_printer_profiles_import: bool = True
     allow_printer_profiles_export: bool = True
@@ -92,6 +98,7 @@ class UserPublic(UserBase):
     id: int
     username: str
     full_name: str | None = None
+    badges: list[str] | None = None  # Бейджи пользователя (публично видны)
 
     model_config = ConfigDict(from_attributes=True)
 

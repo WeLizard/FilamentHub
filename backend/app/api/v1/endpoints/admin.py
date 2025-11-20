@@ -1688,3 +1688,67 @@ async def send_notification_to_users(
         "sent_to": valid_user_ids,
     }
 
+
+@router.patch(
+    "/users/{user_id}/badges",
+    response_model=dict,
+    summary="Управление бейджами пользователя",
+    description="Добавить или удалить бейджи пользователя. Доступные бейджи: founder, beta_tester, contributor, verified, early_adopter, supporter",
+)
+async def manage_user_badges(
+    user_id: int,
+    badges: list[str] = Body(..., description="Список бейджей пользователя"),
+    admin: User = Depends(get_current_admin_user),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """
+    Управление бейджами пользователя (только для администраторов).
+    
+    Доступные бейджи:
+    - founder: Основатель (первые пользователи)
+    - beta_tester: Бета-тестер
+    - contributor: Контрибьютор (помог с разработкой)
+    - verified: Верифицированный (производитель)
+    - early_adopter: Ранний последователь
+    - supporter: Поддержал проект
+    """
+    # Валидация бейджей
+    valid_badges = {"founder", "beta_tester", "contributor", "verified", "early_adopter", "supporter"}
+    invalid_badges = [b for b in badges if b not in valid_badges]
+    
+    if invalid_badges:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Недопустимые бейджи: {', '.join(invalid_badges)}. Доступные: {', '.join(valid_badges)}"
+        )
+    
+    # Получаем пользователя
+    result = await db.execute(
+        select(User).where(User.id == user_id)
+    )
+    user = result.scalar_one_or_none()
+    
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Пользователь не найден"
+        )
+    
+    # Обновляем бейджи
+    old_badges = user.badges or []
+    user.badges = badges if badges else None
+    await db.commit()
+    await db.refresh(user)
+    
+    logger.info(
+        f"Admin {admin.id} updated badges for user {user_id} "
+        f"(from {old_badges} to {badges})"
+    )
+    
+    return {
+        "success": True,
+        "message": "Бейджи обновлены",
+        "user_id": user_id,
+        "badges": user.badges,
+    }
+

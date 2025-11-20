@@ -229,9 +229,15 @@ export const authAPI = {
 
   updateEmail: async (data: {
     new_email: string;
-    password: string;
   }) => {
     const response = await api.patch<User>('/auth/me/email', data);
+    return response.data;
+  },
+
+  updateUsername: async (data: {
+    new_username: string;
+  }) => {
+    const response = await api.patch<User>('/auth/me/username', data);
     return response.data;
   },
 };

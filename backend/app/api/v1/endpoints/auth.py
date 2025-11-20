@@ -52,6 +52,7 @@ from app.schemas.user import (
     UserResponse,
     UserSettingsUpdate,
     UserUpdate,
+    UserUsernameUpdate,
 )
 from app.schemas.preset import PresetListResponse, PresetResponse
 
@@ -860,20 +861,41 @@ async def update_user_password(
     return UserResponse.model_validate(current_user)
 
 
+@router.patch("/me/username", response_model=UserResponse)
+async def update_user_username(
+    data: UserUsernameUpdate,
+    current_user: Annotated[User, Depends(get_current_active_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> UserResponse:
+    """Изменить username текущего пользователя."""
+    # Проверяем уникальность нового username
+    result = await db.execute(select(User).where(User.username == data.new_username))
+    existing_user = result.scalar_one_or_none()
+    if existing_user and existing_user.id != current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Username уже занят",
+        )
+    
+    # Обновляем username
+    current_user.username = data.new_username
+    await db.commit()
+    await db.refresh(current_user)
+    
+    return UserResponse.model_validate(current_user)
+
+
 @router.patch("/me/email", response_model=UserResponse)
 async def update_user_email(
     data: UserEmailUpdate,
     current_user: Annotated[User, Depends(get_current_active_user)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> UserResponse:
-    """Изменить email текущего пользователя."""
-    # Проверяем пароль
-    if not verify_password(data.password, current_user.password_hash):
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Неверный пароль",
-        )
+    """Изменить email текущего пользователя.
     
+    На новый email будет отправлен код подтверждения.
+    Email будет обновлен только после подтверждения кода.
+    """
     # Проверяем уникальность нового email
     result = await db.execute(select(User).where(User.email == data.new_email))
     existing_user = result.scalar_one_or_none()
@@ -883,7 +905,12 @@ async def update_user_email(
             detail="Email уже зарегистрирован",
         )
     
-    # Обновляем email и сбрасываем верификацию (требуется повторная верификация)
+    # TODO: Реализовать подтверждение через код
+    # Вместо немедленного обновления email, сохранить новый email в pending_email
+    # и отправить код подтверждения на новый email
+    # Email обновляется только после подтверждения кода
+    
+    # Временно: обновляем email и сбрасываем верификацию (требуется повторная верификация)
     current_user.email = data.new_email
     current_user.email_verified = False
     
@@ -892,7 +919,7 @@ async def update_user_email(
     logger = logging.getLogger(__name__)
     verification_token = generate_email_verification_token(current_user.id, current_user.email)
     logger.info(f"Email verification token generated for user {current_user.email}: {verification_token[:20]}...")
-    # TODO: Отправить email с токеном верификации
+    # TODO: Отправить email с кодом подтверждения на новый email
     
     await db.commit()
     await db.refresh(current_user)

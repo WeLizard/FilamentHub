@@ -4,6 +4,7 @@ import React from 'react';
 import { Star, CheckCircle, XCircle, Printer, Calendar, Edit, Trash2, Settings } from 'lucide-react';
 import { FilamentReview } from '../types/api';
 import { StarRating } from './StarRating';
+import { BadgeList } from './Badge';
 
 interface ReviewCardProps {
   review: FilamentReview;
@@ -36,6 +37,9 @@ export const ReviewCard: React.FC<ReviewCardProps> = ({
             <h3 className="text-white font-semibold text-lg">
               {review.username || 'Анонимный пользователь'}
             </h3>
+            {review.user_badges && review.user_badges.length > 0 && (
+              <BadgeList badges={review.user_badges as any} size="sm" />
+            )}
             {isOwn && (
               <span className="px-2 py-1 bg-blue-500/20 text-blue-300 text-xs rounded-full border border-blue-500/30">
                 Ваш отзыв
