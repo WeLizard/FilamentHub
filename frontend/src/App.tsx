@@ -10,14 +10,24 @@ import { AdminPanel } from './pages/AdminPanel';
 import { TermsPage } from './pages/TermsPage';
 import { ConsentPage } from './pages/ConsentPage';
 import { ResetPasswordPage } from './pages/ResetPasswordPage';
+import { DownloadPage } from './pages/DownloadPage';
 import { ToastContainer } from './components/Toast';
 import { useOrcaSlicerNotifications } from './hooks/useOrcaSlicerNotifications';
 import { useEffect } from 'react';
+import { Notifications } from './components/Notifications';
+import { useAuth } from './contexts/AuthContext';
 
 function AppContent() {
   // Обработчик уведомлений от OrcaSlicer
   useOrcaSlicerNotifications();
   const navigate = useNavigate();
+  const { user } = useAuth();
+  
+  // Проверяем, запущен ли frontend внутри OrcaSlicer
+  const isInOrcaSlicer = typeof window !== 'undefined' && (
+    (window as any).filamenthub?.importProfile ||
+    (window as any).wx?.postMessage
+  );
   
   // Добавляем глобальную функцию для навигации из OrcaSlicer без перезагрузки страницы
   useEffect(() => {
@@ -37,6 +47,8 @@ function AppContent() {
   return (
     <>
       <ToastContainer />
+      {/* Плавающая кнопка уведомлений для OrcaSlicer (когда нет хедера) */}
+      {isInOrcaSlicer && user && <Notifications floating={true} />}
       <Routes>
         <Route
           path="/"
@@ -78,6 +90,14 @@ function AppContent() {
             <ProtectedRoute requiredRole="admin">
               <AdminPanel />
             </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/download"
+          element={
+            <Layout>
+              <DownloadPage />
+            </Layout>
           }
         />
         <Route path="/user-agreement" element={<TermsPage />} />

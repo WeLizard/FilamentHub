@@ -1,7 +1,7 @@
 /** API Client для интеграции с бэкендом */
 
 import axios from 'axios';
-import type { Brand, BrandRequest, BrandRequestStatus, Filament, FilamentVisualSettings, FilamentReview, FilamentRatingStats, Notification, NotificationListResponse, Preset, RecommendedPreset, Printer, PrinterProfile, PrintProfile, PrinterRequest, User, Token, RefreshTokenRequest, RefreshTokenResponse, ListResponse, AccountDeletionStats, UserSavedPreset, CalculatorEstimateRequest, CalculatorEstimateResponse } from '../types/api';
+import type { Brand, BrandRequest, BrandRequestStatus, Filament, FilamentVisualSettings, FilamentReview, FilamentRatingStats, Notification, NotificationListResponse, Preset, RecommendedPreset, Printer, PrinterProfile, PrintProfile, PrinterRequest, User, Token, RefreshTokenRequest, RefreshTokenResponse, ListResponse, AccountDeletionStats, UserSavedPreset, CalculatorEstimateRequest, CalculatorEstimateResponse, Feedback, FeedbackListResponse, FeedbackType } from '../types/api';
 import { getRefreshToken, setToken, removeToken } from '../utils/auth';
 
 const API_BASE_URL = '/api/v1';
@@ -61,8 +61,18 @@ api.interceptors.response.use(
                             originalRequest?.url?.includes('/auth/register') ||
                             originalRequest?.url?.includes('/auth/refresh');
     
+    // Для /auth/me: если токена нет, это нормально (пользователь не авторизован)
+    // Не показываем ошибку в консоли и не пытаемся обновить токен
+    const isMeEndpoint = originalRequest?.url?.includes('/auth/me');
+    const hasToken = localStorage.getItem('access_token');
+    
+    if (isMeEndpoint && !hasToken) {
+      // Токена нет - это нормально, просто возвращаем ошибку без логирования
+      return Promise.reject(error);
+    }
+    
     // Не обрабатываем повторно запросы, которые уже были повторены
-    if (error.response?.status === 401 && !originalRequest._retry && !isAuthEndpoint) {
+    if (error.response?.status === 401 && !originalRequest._retry && !isAuthEndpoint && !isMeEndpoint) {
       if (isRefreshing) {
         // Если уже обновляем токен, ждем результата
         return new Promise((resolve, reject) => {
@@ -168,6 +178,11 @@ export const authAPI = {
 
   getDeletionStats: async (): Promise<AccountDeletionStats> => {
     const response = await api.get<AccountDeletionStats>('/auth/deletion-stats');
+    return response.data;
+  },
+
+  getPresetsStats: async (): Promise<{ total_presets: number; synced_presets: number }> => {
+    const response = await api.get<{ total_presets: number; synced_presets: number }>('/auth/me/presets-stats');
     return response.data;
   },
 
@@ -876,6 +891,17 @@ export const adminAPI = {
     return response.data;
   },
 
+  // Notifications
+  sendNotification: async (data: {
+    user_ids: number[];
+    title: string;
+    message: string;
+    link?: string | null;
+  }): Promise<{ success: boolean; message: string; count: number; sent_to: number[] }> => {
+    const response = await api.post('/admin/notifications/send', data);
+    return response.data;
+  },
+
   // Stats
   getStats: async (): Promise<{
     users: { total: number; brands: number; admins: number };
@@ -1094,6 +1120,13 @@ export const notificationsAPI = {
     const response = await api.delete(`/notifications/${notificationId}`);
     return response.data;
   },
+
+  deleteAll: async (readOnly?: boolean): Promise<{ deleted_count: number; message: string }> => {
+    const response = await api.delete('/notifications/all', {
+      params: readOnly ? { read_only: true } : undefined,
+    });
+    return response.data;
+  },
 };
 
 // OrcaSlicer Deleted Presets API
@@ -1143,6 +1176,74 @@ export const orcaslicerDeletedPresetsAPI = {
     notifications_processed: number;
   }> => {
     const response = await api.post('/orcaslicer/deleted-presets/auto-process');
+    return response.data;
+  },
+};
+
+// Feedback API
+export const feedbackAPI = {
+  // Создать обратную связь (можно анонимно)
+  create: async (data: {
+    type: FeedbackType;
+    subject: string;
+    message: string;
+    email?: string | null;
+  }): Promise<Feedback> => {
+    const response = await api.post<Feedback>('/feedback/', data);
+    return response.data;
+  },
+
+  // Получить список своей обратной связи
+  listMy: async (params?: { page?: number; size?: number }): Promise<FeedbackListResponse> => {
+    const response = await api.get<FeedbackListResponse>('/feedback/my/list', { params });
+    return response.data;
+  },
+};
+
+// Admin Feedback API (только для админов)
+export const adminFeedbackAPI = {
+  // Получить список всей обратной связи
+  list: async (params?: {
+    page?: number;
+    size?: number;
+    status?: string;
+    type?: FeedbackType;
+  }): Promise<FeedbackListResponse> => {
+    const response = await api.get<FeedbackListResponse>('/feedback/', { params });
+    return response.data;
+  },
+
+  // Получить обратную связь по ID
+  get: async (feedbackId: number): Promise<Feedback> => {
+    const response = await api.get<Feedback>(`/feedback/${feedbackId}`);
+    return response.data;
+  },
+
+  // Обновить обратную связь (ответить, изменить статус)
+  update: async (feedbackId: number, data: {
+    status?: string;
+    admin_response?: string | null;
+  }): Promise<Feedback> => {
+    const response = await api.patch<Feedback>(`/feedback/${feedbackId}`, data);
+    return response.data;
+  },
+};
+
+// Admin Notifications API (только для админов)
+export const adminNotificationsAPI = {
+  // Массовая рассылка уведомлений
+  broadcast: async (data: {
+    title: string;
+    message: string;
+    link?: string | null;
+    active_only?: boolean;
+  }): Promise<{ success: boolean; message: string; count: number }> => {
+    const response = await api.post('/admin/notifications/broadcast', {
+      title: data.title,
+      message: data.message,
+      link: data.link || null,
+      active_only: data.active_only !== false,
+    });
     return response.data;
   },
 };

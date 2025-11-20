@@ -52,6 +52,13 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/orcaslicer", tags=["orcaslicer"])
 
 
+def _normalize_for_match(value: str | None) -> str:
+    """Нормализовать строку для сопоставления (lowercase, убрать лишние пробелы)."""
+    if not value:
+        return ""
+    return " ".join(str(value).lower().strip().split())
+
+
 async def _ensure_printer_id(
     *,
     db: AsyncSession,
@@ -59,53 +66,174 @@ async def _ensure_printer_id(
     printer_slug: str | None,
     profile_name: str | None = None,
     profile_metadata: dict[str, Any] | None = None,
+    profile_settings: dict[str, Any] | None = None,
+    profile_vendor: str | None = None,
 ) -> int | None:
     """
-    Resolve printer ID either by explicit ID or by slug.
-    Если принтер не существует, создаем его на основе данных профиля.
+    Автоматическое сопоставление принтера с существующим в базе.
+    
+    Алгоритм поиска (в порядке приоритета):
+    1. По printer_id (если указан явно)
+    2. По printer_slug (если указан)
+    3. По model_id из metadata/settings (самый надежный способ)
+    4. По manufacturer + model (нормализованные)
+    5. По vendor + name (нормализованные)
+    6. По vendor + model из metadata (нормализованные)
+    
+    Если принтер не найден, создается новый на основе данных профиля.
     """
+    # Объединяем все источники metadata
+    combined_metadata = {}
+    if profile_metadata:
+        combined_metadata.update(profile_metadata)
+    if profile_settings:
+        combined_metadata.update(profile_settings)
+    
+    # 1. Поиск по явному printer_id
     if printer_id:
         printer = await db.get(Printer, printer_id)
         if printer:
             return printer.id
-        return None
+    
+    # 2. Поиск по printer_slug
     if printer_slug:
         result = await db.execute(select(Printer).where(Printer.slug == printer_slug))
         printer = result.scalar_one_or_none()
         if printer:
             return printer.id
-        
-        # УМНАЯ СИСТЕМА: Если принтер не существует, создаем его на основе данных профиля
-        # Это позволяет импортировать пользовательские принтеры из OrcaSlicer
-        if profile_name and profile_metadata:
-            # Извлекаем базовые данные из metadata профиля
-            # Пытаемся определить manufacturer и model из имени профиля или metadata
-            name_parts = profile_name.split()
-            manufacturer = name_parts[0] if name_parts else "Custom"
-            model = " ".join(name_parts[1:]) if len(name_parts) > 1 else profile_name
-            
-            # Пытаемся взять из metadata, если есть
-            if profile_metadata.get("printer_model"):
-                model = profile_metadata["printer_model"]
-            if profile_metadata.get("printer_vendor"):
-                manufacturer = profile_metadata["printer_vendor"]
-            
-            # Создаем принтер
-            from app.services.slug_service import generate_unique_slug
-            
-            printer = Printer(
-                name=profile_name,
-                manufacturer=manufacturer,
-                model=model,
-                slug=printer_slug,
-                source="user",  # Пользовательский принтер
-                vendor=profile_metadata.get("printer_vendor"),
-                extra_metadata=profile_metadata,  # Сохраняем metadata из профиля
-                active=True,
-            )
-            db.add(printer)
-            await db.flush()  # Получаем ID принтера
+    
+    # 3. Поиск по model_id (самый надежный способ сопоставления)
+    model_id = combined_metadata.get("model_id") or combined_metadata.get("printer_model_id")
+    if model_id:
+        result = await db.execute(select(Printer).where(Printer.model_id == str(model_id)))
+        printer = result.scalar_one_or_none()
+        if printer:
             return printer.id
+    
+    # 4. Извлекаем данные для сопоставления
+    vendor_name = (
+        profile_vendor
+        or combined_metadata.get("printer_vendor")
+        or combined_metadata.get("vendor")
+        or ""
+    )
+    printer_model = combined_metadata.get("printer_model") or ""
+    
+    # Пытаемся определить manufacturer и model из имени профиля
+    name_parts = (profile_name or "").split()
+    manufacturer_from_name = name_parts[0] if name_parts else ""
+    model_from_name = " ".join(name_parts[1:]) if len(name_parts) > 1 else (profile_name or "")
+    
+    # Используем данные из metadata, если есть, иначе из имени
+    manufacturer = vendor_name or manufacturer_from_name or "Custom"
+    model = printer_model or model_from_name or profile_name or "Unknown"
+    
+    # Нормализуем для сопоставления
+    manufacturer_normalized = _normalize_for_match(manufacturer)
+    model_normalized = _normalize_for_match(model)
+    vendor_normalized = _normalize_for_match(vendor_name)
+    name_normalized = _normalize_for_match(profile_name)
+    
+    # 5. Поиск по manufacturer + model (case-insensitive через SQL LIKE)
+    if manufacturer_normalized and model_normalized:
+        # Точное совпадение (case-insensitive)
+        result = await db.execute(
+            select(Printer).where(
+                or_(
+                    # Точное совпадение manufacturer + model (через ILIKE для PostgreSQL)
+                    or_(
+                        Printer.manufacturer.ilike(f"%{manufacturer}%"),
+                        Printer.manufacturer.ilike(f"%{vendor_name}%"),
+                    ),
+                    Printer.model.ilike(f"%{model}%"),
+                )
+            )
+        )
+        printers = result.scalars().all()
+        
+        # Фильтруем в памяти для точного сопоставления (SQL не может нормализовать так же точно)
+        for printer in printers:
+            printer_manufacturer = _normalize_for_match(printer.manufacturer)
+            printer_model_norm = _normalize_for_match(printer.model)
+            
+            # Точное совпадение manufacturer и model
+            if (
+                (printer_manufacturer == manufacturer_normalized or printer_manufacturer == vendor_normalized)
+                and printer_model_norm == model_normalized
+            ):
+                return printer.id
+            
+            # Частичное совпадение (если manufacturer совпадает, а model содержит искомую модель)
+            if (
+                (printer_manufacturer == manufacturer_normalized or printer_manufacturer == vendor_normalized)
+                and model_normalized in printer_model_norm
+            ):
+                return printer.id
+    
+    # 6. Поиск по vendor + name (нормализованные)
+    if vendor_normalized and name_normalized:
+        result = await db.execute(
+            select(Printer).where(
+                Printer.vendor.ilike(f"%{vendor_name}%"),
+                Printer.name.ilike(f"%{profile_name}%"),
+            )
+        )
+        printers = result.scalars().all()
+        
+        for printer in printers:
+            printer_vendor = _normalize_for_match(printer.vendor)
+            printer_name = _normalize_for_match(printer.name)
+            
+            if printer_vendor == vendor_normalized and printer_name == name_normalized:
+                return printer.id
+    
+    # 7. Поиск по vendor + model из metadata
+    if vendor_normalized and model_normalized:
+        result = await db.execute(
+            select(Printer).where(
+                Printer.vendor.ilike(f"%{vendor_name}%"),
+                Printer.model.ilike(f"%{model}%"),
+            )
+        )
+        printers = result.scalars().all()
+        
+        for printer in printers:
+            printer_vendor = _normalize_for_match(printer.vendor)
+            printer_model_norm = _normalize_for_match(printer.model)
+            
+            if printer_vendor == vendor_normalized and printer_model_norm == model_normalized:
+                return printer.id
+    
+    # Принтер не найден - создаем новый
+    if profile_name:
+        from app.services.slug_service import generate_unique_slug
+        
+        # Используем printer_slug если есть, иначе генерируем
+        final_slug = printer_slug
+        if not final_slug:
+            slug_source = f"{manufacturer} {model}".strip()
+            final_slug = await generate_unique_slug(
+                db=db,
+                model=Printer,
+                source=slug_source,
+                fallback="printer",
+            )
+        
+        printer = Printer(
+            name=profile_name,
+            manufacturer=manufacturer,
+            model=model,
+            slug=final_slug,
+            source="user",
+            vendor=vendor_name or None,
+            model_id=model_id or None,
+            extra_metadata=combined_metadata if combined_metadata else None,
+            active=True,
+        )
+        db.add(printer)
+        await db.flush()
+        return printer.id
+    
     return None
 
 
@@ -178,7 +306,9 @@ async def _upsert_printer_profile(
         printer_id=payload.printer_id,
         printer_slug=payload.printer_slug,
         profile_name=payload.name,
-        profile_metadata=payload.orcaslicer_settings or payload.extra_metadata,
+        profile_metadata=payload.extra_metadata,
+        profile_settings=payload.orcaslicer_settings,
+        profile_vendor=payload.vendor,
     )
 
     if profile:
@@ -846,13 +976,7 @@ async def _upsert_filament_preset(
             )
     else:
         # Создаем новый пресет (черновик)
-        slug_source = payload.slug or payload.name
-        slug = await generate_unique_slug(
-            db=db,
-            model=Preset,
-            source=slug_source,
-            fallback=f"preset-{current_user.id}-{int(datetime.now(timezone.utc).timestamp())}",
-        )
+        # Примечание: Preset не имеет поля slug (только Filament имеет slug)
 
         # Значения по умолчанию
         extruder_temp = payload.extruder_temp or 210.0
@@ -862,7 +986,6 @@ async def _upsert_filament_preset(
 
         preset = Preset(
             name=payload.name,
-            slug=slug,
             description=payload.description,
             filament_id=filament.id,
             user_id=current_user.id,
@@ -883,7 +1006,7 @@ async def _upsert_filament_preset(
             source=payload.source or "orcaslicer",
             external_id=payload.external_id,
             sync_enabled=True,  # По умолчанию синхронизация включена для новых пресетов
-            notes=payload.notes,
+            # Примечание: Preset не имеет поля notes
         )
         db.add(preset)
         await db.flush()  # Получаем ID пресета
@@ -1022,7 +1145,7 @@ async def report_deleted_presets(
         )
 
     elif user_rule == "always_delete":
-        # Удаляем сохранённые пресеты из "Мои пресеты"
+        # Удаляем сохранённые пресеты из "Профили филамента"
         # Созданные пресеты не трогаем
         for preset_id in saved_preset_ids:
             await remove_saved_preset(current_user.id, preset_id, db)
@@ -1152,7 +1275,7 @@ async def handle_deleted_preset_action(
         processed_count = len(deleted_presets)
 
     elif action.action == "delete":
-        # Удаляем пресеты из "Мои пресеты"
+        # Удаляем пресеты из "Профили филамента"
         for preset_data in deleted_presets:
             preset_id = preset_data["preset_id"]
             is_created = preset_data.get("is_created", False)
@@ -1163,7 +1286,7 @@ async def handle_deleted_preset_action(
                 # Просто пропускаем
                 continue
             elif is_saved:
-                # Пресет сохранён пользователем - удаляем из "Мои пресеты" (убираем из избранного)
+                # Пресет сохранён пользователем - удаляем из "Профили филамента" (убираем из избранного)
                 await remove_saved_preset(current_user.id, preset_id, db)
                 processed_count += 1
 
@@ -1234,7 +1357,7 @@ async def auto_process_deleted_presets(
     """
     Автоматически обработать удалённые уведомления (вызывается при синхронизации).
     
-    Для сохранённых пресетов: удалить из "Мои пресеты" через 7 дней или при следующей синхронизации.
+    Для сохранённых пресетов: удалить из "Профили филамента" через 7 дней или при следующей синхронизации.
     Для созданных пресетов: ничего не делать.
     """
     from datetime import datetime, timedelta, timezone
@@ -1269,7 +1392,7 @@ async def auto_process_deleted_presets(
                 # Пресет создан пользователем - НЕ удаляем из FilamentHub
                 continue
             elif is_saved:
-                # Пресет сохранён пользователем - удаляем из "Мои пресеты"
+                # Пресет сохранён пользователем - удаляем из "Профили филамента"
                 await remove_saved_preset(current_user.id, preset_id, db)
                 processed_count += 1
 

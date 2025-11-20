@@ -23,6 +23,7 @@ class NotificationType(str, Enum):
     BRAND_VERIFIED = "brand_verified"  # Бренд верифицирован
     BRAND_REQUEST_APPROVED = "brand_request_approved"  # Заявка на бренд одобрена
     BRAND_REQUEST_REJECTED = "brand_request_rejected"  # Заявка на бренд отклонена
+    ADMIN_MESSAGE = "admin_message"  # Сообщение от админа (массовая рассылка)
 
 
 class Notification(Base):

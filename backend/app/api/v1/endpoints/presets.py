@@ -244,7 +244,7 @@ async def create_preset(
     await db.flush()  # Получаем ID пресета
     
     # Автоматически создаём запись в user_saved_presets (самосохранение)
-    # Это нужно для единой логики синхронизации - все пресеты в "Мои пресеты" хранят sync_enabled в user_saved_presets
+    # Это нужно для единой логики синхронизации - все пресеты в "Профили филамента" хранят sync_enabled в user_saved_presets
     from app.models.user_saved_preset import UserSavedPreset
     saved_preset = UserSavedPreset(
         user_id=current_user.id,

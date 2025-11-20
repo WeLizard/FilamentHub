@@ -1,13 +1,13 @@
-/** Кнопка экспорта filament presets из OrcaSlicer в FilamentHub */
+/** Кнопка экспорта print profiles из OrcaSlicer в FilamentHub */
 
 import { useState, useEffect } from 'react';
 import { Upload, Loader2, CheckCircle, AlertCircle } from 'lucide-react';
 
-interface ExportFromOrcaSlicerButtonProps {
+interface ExportPrintProfilesButtonProps {
   onExportComplete?: (result: { success: boolean; message?: string }) => void;
 }
 
-export const ExportFromOrcaSlicerButton: React.FC<ExportFromOrcaSlicerButtonProps> = ({ onExportComplete }) => {
+export const ExportPrintProfilesButton: React.FC<ExportPrintProfilesButtonProps> = ({ onExportComplete }) => {
   const [isExporting, setIsExporting] = useState(false);
   const [exportStatus, setExportStatus] = useState<'idle' | 'success' | 'error'>('idle');
   const [statusMessage, setStatusMessage] = useState<string>('');
@@ -17,7 +17,7 @@ export const ExportFromOrcaSlicerButton: React.FC<ExportFromOrcaSlicerButtonProp
   useEffect(() => {
     const checkOrcaSlicer = () => {
       const inOrca = typeof window !== 'undefined' && (
-        (window as any).filamenthub?.exportFilamentPresets ||
+        (window as any).filamenthub?.exportPrintProfiles ||
         (window as any).wx?.postMessage
       );
       setIsInOrcaSlicer(inOrca || false);
@@ -30,7 +30,7 @@ export const ExportFromOrcaSlicerButton: React.FC<ExportFromOrcaSlicerButtonProp
     return () => clearInterval(interval);
   }, []);
 
-  // Обработчик экспорта filament presets
+  // Обработчик экспорта print profiles
   const handleExport = async () => {
     if (isExporting || !isInOrcaSlicer) {
       return;
@@ -42,12 +42,12 @@ export const ExportFromOrcaSlicerButton: React.FC<ExportFromOrcaSlicerButtonProp
 
     try {
       // Проверяем наличие API
-      if (!(window as any).filamenthub?.exportFilamentPresets) {
+      if (!(window as any).filamenthub?.exportPrintProfiles) {
         throw new Error('OrcaSlicer API не доступно. Убедитесь, что вы используете FilamentHub внутри OrcaSlicer.');
       }
 
       // Вызываем экспорт через JavaScript API
-      const result = await (window as any).filamenthub.exportFilamentPresets();
+      const result = await (window as any).filamenthub.exportPrintProfiles();
       
       setExportStatus('success');
       setStatusMessage(result.message || 'Экспорт начат. Результат будет показан в уведомлениях.');
@@ -63,10 +63,10 @@ export const ExportFromOrcaSlicerButton: React.FC<ExportFromOrcaSlicerButtonProp
         setStatusMessage('');
       }, 3000);
     } catch (error: any) {
-      console.error('Ошибка экспорта filament presets:', error);
+      console.error('Ошибка экспорта print profiles:', error);
       
       setExportStatus('error');
-      setStatusMessage(error.message || 'Ошибка при экспорте профилей. Проверьте логи для деталей.');
+      setStatusMessage(error.message || 'Ошибка при экспорте профилей печати. Проверьте логи для деталей.');
       
       // Вызываем callback, если передан
       if (onExportComplete) {
@@ -83,48 +83,47 @@ export const ExportFromOrcaSlicerButton: React.FC<ExportFromOrcaSlicerButtonProp
     }
   };
 
-  // Если не в OrcaSlicer, не показываем кнопку
-  if (!isInOrcaSlicer) {
-    return null;
-  }
-
   return (
-    <div className="flex flex-col gap-2">
+    <div className="flex flex-col gap-1">
       <button
         onClick={handleExport}
-        disabled={isExporting}
+        disabled={isExporting || !isInOrcaSlicer}
         className={`
-          px-4 py-2 rounded-lg border text-sm font-medium transition-all
-          ${isExporting
-            ? 'bg-white/10 border-white/20 text-gray-400 cursor-not-allowed'
+          px-3 py-1.5 rounded-lg border text-xs font-medium transition-all
+          ${isExporting || !isInOrcaSlicer
+            ? 'bg-white/5 border-white/10 text-gray-400 cursor-not-allowed opacity-50'
             : exportStatus === 'success'
-            ? 'bg-green-500/20 border-green-500/50 text-green-400 hover:bg-green-500/30'
+            ? 'bg-green-500/20 border-green-500/40 text-green-400 hover:bg-green-500/30'
             : exportStatus === 'error'
-            ? 'bg-red-500/20 border-red-500/50 text-red-400 hover:bg-red-500/30'
-            : 'bg-white/10 border-white/20 text-white hover:bg-white/20'
+            ? 'bg-red-500/20 border-red-500/40 text-red-400 hover:bg-red-500/30'
+            : 'bg-white/5 border-white/10 text-gray-300 hover:bg-white/10 hover:text-white'
           }
         `}
-        title="Экспортировать filament presets из OrcaSlicer в FilamentHub"
+        title={
+          !isInOrcaSlicer
+            ? "Экспорт доступен только внутри OrcaSlicer"
+            : "Экспортировать print profiles из OrcaSlicer в FilamentHub"
+        }
       >
         {isExporting ? (
           <>
-            <Loader2 className="w-4 h-4 inline mr-2 animate-spin" />
+            <Loader2 className="w-3 h-3 inline mr-1.5 animate-spin" />
             Экспорт...
           </>
         ) : exportStatus === 'success' ? (
           <>
-            <CheckCircle className="w-4 h-4 inline mr-2" />
-            Экспорт начат
+            <CheckCircle className="w-3 h-3 inline mr-1.5" />
+            Готово
           </>
         ) : exportStatus === 'error' ? (
           <>
-            <AlertCircle className="w-4 h-4 inline mr-2" />
+            <AlertCircle className="w-3 h-3 inline mr-1.5" />
             Ошибка
           </>
         ) : (
           <>
-            <Upload className="w-4 h-4 inline mr-2" />
-            Экспортировать из OrcaSlicer
+            <Upload className="w-3 h-3 inline mr-1.5" />
+            Из OrcaSlicer
           </>
         )}
       </button>
@@ -142,7 +141,4 @@ export const ExportFromOrcaSlicerButton: React.FC<ExportFromOrcaSlicerButtonProp
     </div>
   );
 };
-
-
-
 

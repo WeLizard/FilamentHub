@@ -34,7 +34,7 @@ class UserSavedPreset(Base):
     # Sync settings
     sync_enabled: Mapped[bool] = mapped_column(Boolean, default=True, index=True)
     # sync_enabled: Включена ли синхронизация с OrcaSlicer для этого пресета у этого пользователя
-    # Каждый пользователь имеет свою настройку синхронизации для каждого пресета в "Мои пресеты"
+    # Каждый пользователь имеет свою настройку синхронизации для каждого пресета в "Профили филамента"
 
     # Relationships
     user: Mapped["User"] = relationship("User", back_populates="saved_presets")

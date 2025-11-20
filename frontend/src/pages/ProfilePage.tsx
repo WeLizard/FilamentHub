@@ -36,7 +36,7 @@ import {
   Layers,
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
-import { presetsAPI, filamentsAPI, brandsAPI, savedPresetsAPI, filamentReviewsAPI, calculatorAPI, printerProfilesAPI, printProfilesAPI } from '../api/client';
+import { presetsAPI, filamentsAPI, brandsAPI, savedPresetsAPI, filamentReviewsAPI, calculatorAPI, printerProfilesAPI, printProfilesAPI, authAPI } from '../api/client';
 import api from '../api/client';
 import { CreatePresetModal } from '../components/CreatePresetModal';
 import { ViewPresetModal } from '../components/ViewPresetModal';
@@ -44,6 +44,10 @@ import { CreatePrinterRequestModal } from '../components/CreatePrinterRequestMod
 import { DeleteAccountModal } from '../components/DeleteAccountModal';
 import { SettingsTab } from '../components/SettingsTab';
 import { ExportFromOrcaSlicerButton } from '../components/ExportFromOrcaSlicerButton';
+import { ExportPrinterProfilesButton } from '../components/ExportPrinterProfilesButton';
+import { ExportPrintProfilesButton } from '../components/ExportPrintProfilesButton';
+import { CreatePrinterProfileModal } from '../components/CreatePrinterProfileModal';
+import { CreatePrintProfileModal } from '../components/CreatePrintProfileModal';
 import { PresetSyncToggle } from '../components/PresetSyncToggle';
 import { BrandProfilePage } from './BrandProfilePage';
 import type { Preset, PricingMethod, CalculatorEstimateRequest, PrinterProfile, PrintProfile } from '../types/api';
@@ -62,6 +66,10 @@ export const ProfilePage: React.FC = () => {
   const [viewingPreset, setViewingPreset] = useState<Preset | null>(null);
   const [selectedPrinterProfile, setSelectedPrinterProfile] = useState<PrinterProfile | null>(null);
   const [selectedPrintProfile, setSelectedPrintProfile] = useState<PrintProfile | null>(null);
+  const [isCreatePrinterProfileModalOpen, setIsCreatePrinterProfileModalOpen] = useState(false);
+  const [isCreatePrintProfileModalOpen, setIsCreatePrintProfileModalOpen] = useState(false);
+  const [editingPrinterProfile, setEditingPrinterProfile] = useState<PrinterProfile | null>(null);
+  const [editingPrintProfile, setEditingPrintProfile] = useState<PrintProfile | null>(null);
   const [isDeleteAccountModalOpen, setIsDeleteAccountModalOpen] = useState(false);
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
 
@@ -307,6 +315,13 @@ export const ProfilePage: React.FC = () => {
     };
   }, [userReviewsData]);
 
+  // Загружаем статистику пресетов
+  const { data: presetsStats } = useQuery({
+    queryKey: ['presets-stats', user?.id],
+    queryFn: () => authAPI.getPresetsStats(),
+    enabled: !!user?.id,
+  });
+
   // Мутация для удаления пресета (созданного пользователем)
   const deletePresetMutation = useMutation({
     mutationFn: (id: number) => presetsAPI.delete(id),
@@ -407,16 +422,56 @@ export const ProfilePage: React.FC = () => {
     setTimeout(() => URL.revokeObjectURL(url), 1000);
   };
 
-  const handleDownloadPrinterProfile = (profile: PrinterProfile) => {
-    const base = safeFileName(profile.slug || profile.name || `printer-profile-${profile.id}`);
-    const filename = `${base || 'printer-profile'}.orca_printer.json`;
-    downloadJSONFile(profile.orcaslicer_settings ?? {}, filename);
+  const handleDownloadPrinterProfile = async (profile: PrinterProfile) => {
+    try {
+      const response = await api.get(`/printer-profiles/${profile.id}/export/orcaslicer.json`, {
+        responseType: 'blob',
+      });
+      
+      const blob = new Blob([response.data], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      
+      const base = safeFileName(profile.slug || profile.name || `printer-profile-${profile.id}`);
+      const filename = `${base || 'printer-profile'}.orca_printer.json`;
+      
+      link.href = url;
+      link.download = filename;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    } catch (error: any) {
+      console.error('Ошибка скачивания printer profile:', error);
+      const errorMessage = error?.response?.data?.detail || error?.message || 'Неизвестная ошибка';
+      alert(`Не удалось скачать профиль принтера: ${errorMessage}`);
+    }
   };
 
-  const handleDownloadPrintProfile = (profile: PrintProfile) => {
-    const base = safeFileName(profile.slug || profile.name || `print-profile-${profile.id}`);
-    const filename = `${base || 'print-profile'}.orca_process.json`;
-    downloadJSONFile(profile.orcaslicer_settings ?? {}, filename);
+  const handleDownloadPrintProfile = async (profile: PrintProfile) => {
+    try {
+      const response = await api.get(`/print-profiles/${profile.id}/export/orcaslicer.json`, {
+        responseType: 'blob',
+      });
+      
+      const blob = new Blob([response.data], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      
+      const base = safeFileName(profile.slug || profile.name || `print-profile-${profile.id}`);
+      const filename = `${base || 'print-profile'}.orca_process.json`;
+      
+      link.href = url;
+      link.download = filename;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    } catch (error: any) {
+      console.error('Ошибка скачивания print profile:', error);
+      const errorMessage = error?.response?.data?.detail || error?.message || 'Неизвестная ошибка';
+      alert(`Не удалось скачать профиль печати: ${errorMessage}`);
+    }
   };
 
   const combinationsDraftCount = 0;
@@ -502,7 +557,7 @@ export const ProfilePage: React.FC = () => {
         <div className="flex justify-center space-x-2 mt-4">
           {[
             { id: 'dashboard', label: 'Дашборд', icon: Play },
-            { id: 'presets', label: 'Мои пресеты', icon: Settings },
+            { id: 'presets', label: 'Профили филамента', icon: Settings },
             { id: 'printer-profiles', label: 'Профили принтера', icon: Printer },
             { id: 'print-profiles', label: 'Профили печати', icon: Layers },
             { id: 'history', label: 'История', icon: TrendingUp },
@@ -529,7 +584,7 @@ export const ProfilePage: React.FC = () => {
       {userTab === 'dashboard' && (
         <div className="space-y-6">
           {/* Stats Cards */}
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-6">
             <StatCard
               icon={CheckCircle}
               label="Успешных печатей"
@@ -540,19 +595,27 @@ export const ProfilePage: React.FC = () => {
             />
             <StatCard
               icon={Settings}
-              label="Сохраненных пресетов"
-              value={userPresets.length.toString()}
+              label="Всего пресетов"
+              value={presetsStats?.total_presets?.toString() || userPresets.length.toString()}
               color="from-blue-500/20 to-cyan-500/20"
               borderColor="border-blue-500/30"
               iconColor="text-blue-400"
             />
             <StatCard
               icon={Package}
-              label="Оставлено отзывов"
-              value={reviewsStats.totalReviews.toString()}
+              label="К синхронизации"
+              value={presetsStats?.synced_presets?.toString() || '0'}
               color="from-green-500/20 to-emerald-500/20"
               borderColor="border-green-500/30"
               iconColor="text-green-400"
+            />
+            <StatCard
+              icon={Star}
+              label="Оставлено отзывов"
+              value={reviewsStats.totalReviews.toString()}
+              color="from-purple-500/20 to-pink-500/20"
+              borderColor="border-purple-500/30"
+              iconColor="text-purple-400"
             />
             <StatCard
               icon={Star}
@@ -576,7 +639,7 @@ export const ProfilePage: React.FC = () => {
       {userTab === 'presets' && (
         <div className="space-y-6">
           <div className="flex items-center justify-between">
-            <h3 className="text-2xl font-bold text-white">Мои пресеты</h3>
+            <h3 className="text-2xl font-bold text-white">Профили филамента</h3>
             <div className="flex items-center gap-3">
               {/* Кнопка экспорта из OrcaSlicer (только если запущено внутри OrcaSlicer) */}
               {typeof window !== 'undefined' && (window as any).filamenthub?.exportFilamentPresets && (
@@ -661,13 +724,19 @@ export const ProfilePage: React.FC = () => {
             </div>
             <div className="flex items-center gap-3">
               <StatusBadge label={`${myPrinterProfiles.length} шт.`} variant="accent" />
+              {/* Кнопка экспорта из OrcaSlicer */}
+              <ExportPrinterProfilesButton />
               <button
                 type="button"
-                className="px-4 py-2 rounded-lg border border-white/20 text-sm text-gray-400 bg-white/5 cursor-not-allowed"
-                disabled
-                title="Импорт из OrcaSlicer появится вместе с плагином"
+                className="px-4 py-2 rounded-lg border border-white/20 text-sm text-white hover:bg-white/10 transition-all"
+                onClick={() => {
+                  setEditingPrinterProfile(null);
+                  setIsCreatePrinterProfileModalOpen(true);
+                }}
+                title="Создать профиль принтера"
               >
-                Импорт из OrcaSlicer (скоро)
+                <Plus className="w-4 h-4 inline mr-2" />
+                Добавить вручную
               </button>
             </div>
           </div>
@@ -690,9 +759,12 @@ export const ProfilePage: React.FC = () => {
             <EmptyState
               icon={Printer}
               title="Пока нет профилей принтера"
-              description="Как только вы импортируете профиль из OrcaSlicer или создадите его вручную, он появится здесь."
-              actionLabel="Запросить добавление принтера"
-              onAction={() => setIsCreatePrinterRequestModalOpen(true)}
+              description="Импортируйте профиль из OrcaSlicer или создайте его вручную - он появится здесь."
+              actionLabel="Создать профиль принтера"
+              onAction={() => {
+                setEditingPrinterProfile(null);
+                setIsCreatePrinterProfileModalOpen(true);
+              }}
             />
           )}
         </div>
@@ -721,13 +793,19 @@ export const ProfilePage: React.FC = () => {
                 }
                 variant="accent"
               />
+              {/* Кнопка экспорта из OrcaSlicer */}
+              <ExportPrintProfilesButton />
               <button
                 type="button"
-                className="px-4 py-2 rounded-lg border border-white/20 text-sm text-gray-400 bg-white/5 cursor-not-allowed"
-                disabled
-                title="Редактор появится после запуска импорта из OrcaSlicer"
+                onClick={() => {
+                  setEditingPrintProfile(null);
+                  setIsCreatePrintProfileModalOpen(true);
+                }}
+                className="px-4 py-2 rounded-lg border border-white/20 text-sm text-white hover:bg-white/10 transition-all"
+                title="Создать профиль печати"
               >
-                Добавить вручную (скоро)
+                <Plus className="w-4 h-4 inline mr-2" />
+                Добавить вручную
               </button>
             </div>
           </div>
@@ -823,6 +901,31 @@ export const ProfilePage: React.FC = () => {
       <DeleteAccountModal
         isOpen={isDeleteAccountModalOpen}
         onClose={() => setIsDeleteAccountModalOpen(false)}
+      />
+
+      {/* Create/Edit Printer Profile Modal */}
+      <CreatePrinterProfileModal
+        isOpen={isCreatePrinterProfileModalOpen}
+        onClose={() => {
+          setIsCreatePrinterProfileModalOpen(false);
+          setEditingPrinterProfile(null);
+        }}
+        profile={editingPrinterProfile}
+        onRequestPrinter={() => {
+          // Закрываем текущую модалку и открываем модалку создания заявки
+          setIsCreatePrinterProfileModalOpen(false);
+          setIsCreatePrinterRequestModalOpen(true);
+        }}
+      />
+
+      {/* Create/Edit Print Profile Modal */}
+      <CreatePrintProfileModal
+        isOpen={isCreatePrintProfileModalOpen}
+        onClose={() => {
+          setIsCreatePrintProfileModalOpen(false);
+          setEditingPrintProfile(null);
+        }}
+        profile={editingPrintProfile}
       />
 
       {/* Combined Profiles Section (только на dashboard) */}
@@ -1323,18 +1426,6 @@ const PresetCard: React.FC<PresetCardProps> = ({ preset, onEdit, onView, onDelet
           <div className="flex items-center space-x-2">
             <Wind className="w-4 h-4 text-cyan-400" />
             <span className="text-gray-300">Перемещение: {preset.travel_speed}mm/s</span>
-          </div>
-        )}
-        {preset.layer_height && (
-          <div className="flex items-center space-x-2">
-            <Ruler className="w-4 h-4 text-green-400" />
-            <span className="text-gray-300">Слой: {preset.layer_height}mm</span>
-          </div>
-        )}
-        {preset.first_layer_height && (
-          <div className="flex items-center space-x-2">
-            <Ruler className="w-4 h-4 text-green-300" />
-            <span className="text-gray-300">Перв. слой: {preset.first_layer_height}mm</span>
           </div>
         )}
         {preset.flow_rate && (

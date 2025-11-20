@@ -273,6 +273,107 @@ async def get_current_user_info(
     return UserResponse.model_validate(current_user)
 
 
+@router.get("/me/presets-stats", response_model=dict)
+async def get_my_presets_stats(
+    current_user: Annotated[User, Depends(get_current_active_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> dict:
+    """
+    Получить статистику пресетов пользователя.
+    
+    Возвращает:
+    - total_presets: всего пресетов (созданные + добавленные из каталога)
+    - synced_presets: количество пресетов с включенной синхронизацией (sync_enabled=True)
+    """
+    from sqlalchemy import func
+    
+    # 1. Подсчитываем пресеты, созданные напрямую пользователем
+    direct_presets_count = await db.scalar(
+        select(func.count(Preset.id)).where(
+            Preset.user_id == current_user.id,
+            Preset.active == True,
+        )
+    ) or 0
+    
+    # 2. Подсчитываем пресеты из user_saved_presets (добавленные из каталога)
+    # Нужно исключить те, которые уже созданы пользователем напрямую
+    saved_presets_query = (
+        select(func.count(UserSavedPreset.id))
+        .join(Preset)
+        .where(
+            UserSavedPreset.user_id == current_user.id,
+            Preset.active == True,
+            ~Preset.user_id.in_([current_user.id]),  # Исключаем пресеты, созданные пользователем
+        )
+    )
+    saved_presets_count = await db.scalar(saved_presets_query) or 0
+    
+    # Но на самом деле нужно считать иначе:
+    # Всего = все пресеты, связанные с пользователем (созданные + сохранённые)
+    # Для этого лучше использовать другой подход:
+    # - Все созданные пресеты пользователя
+    # - Все сохранённые пресеты (включая те, которые созданы пользователем, но были также сохранены)
+    
+    # Пересчитываем более точно:
+    # Получаем все ID пресетов из user_saved_presets
+    saved_preset_ids_query = select(UserSavedPreset.preset_id).where(
+        UserSavedPreset.user_id == current_user.id
+    ).join(Preset).where(Preset.active == True)
+    saved_preset_ids_result = await db.execute(saved_preset_ids_query)
+    saved_preset_ids = set(row[0] for row in saved_preset_ids_result.all())
+    
+    # Получаем все ID пресетов, созданных пользователем
+    direct_preset_ids_query = select(Preset.id).where(
+        Preset.user_id == current_user.id,
+        Preset.active == True,
+    )
+    direct_preset_ids_result = await db.execute(direct_preset_ids_query)
+    direct_preset_ids = set(row[0] for row in direct_preset_ids_result.all())
+    
+    # Объединяем множества - это и есть общее количество пресетов
+    total_preset_ids = saved_preset_ids | direct_preset_ids
+    total_presets = len(total_preset_ids)
+    
+    # 3. Подсчитываем пресеты с включенной синхронизацией (sync_enabled=True)
+    synced_presets_count = await db.scalar(
+        select(func.count(UserSavedPreset.id))
+        .join(Preset)
+        .where(
+            UserSavedPreset.user_id == current_user.id,
+            UserSavedPreset.sync_enabled == True,
+            Preset.active == True,
+        )
+    ) or 0
+    
+    # Также нужно добавить созданные пресеты, которые могут быть не в user_saved_presets
+    # Но по логике, если пресет создан пользователем, он должен быть доступен для синхронизации
+    # Однако sync_enabled относится только к user_saved_presets
+    # Поэтому для полной картины считаем так:
+    # synced_presets = пресеты из user_saved_presets с sync_enabled=True + созданные пресеты (если они не в user_saved_presets)
+    
+    # Пересчитываем synced_presets более точно:
+    synced_from_saved = await db.scalar(
+        select(func.count(UserSavedPreset.id))
+        .join(Preset)
+        .where(
+            UserSavedPreset.user_id == current_user.id,
+            UserSavedPreset.sync_enabled == True,
+            Preset.active == True,
+        )
+    ) or 0
+    
+    # Созданные пресеты, которых нет в user_saved_presets, тоже считаются доступными для синхронизации
+    # (потому что они автоматически доступны в /my-presets)
+    created_not_in_saved = len(direct_preset_ids - saved_preset_ids)
+    
+    synced_presets = synced_from_saved + created_not_in_saved
+    
+    return {
+        "total_presets": total_presets,
+        "synced_presets": synced_presets,
+    }
+
+
 @router.get("/my-presets", response_model=PresetListResponse)
 async def get_my_presets(
     current_user: Annotated[User, Depends(get_current_active_user)],
@@ -293,8 +394,13 @@ async def get_my_presets(
     preset_ids: set[int] = set()
     presets_dict: dict[int, Preset] = {}
     
-    # Получаем ВСЕ пресеты пользователя из user_saved_presets (созданные автоматически сохраняются, сохраненные тоже там)
-    # Теперь вся логика синхронизации в одном месте - user_saved_presets.sync_enabled
+    # Получаем пресеты из двух источников:
+    # 1. Из user_saved_presets с sync_enabled=True (основной путь - для синхронизации)
+    # 2. Прямо созданные пользователем пресеты (preset.user_id == current_user.id)
+    #    Это нужно для случаев, когда пресет был создан до добавления логики user_saved_presets
+    #    или если по какой-то причине запись в user_saved_presets отсутствует
+    
+    # 1. Пресеты из user_saved_presets с включенной синхронизацией
     saved_query = select(UserSavedPreset).where(
         UserSavedPreset.user_id == current_user.id,
         UserSavedPreset.sync_enabled == True,  # Только пресеты с включенной синхронизацией
@@ -320,6 +426,39 @@ async def get_my_presets(
     for saved_preset_relation in saved_presets_relations:
         preset = saved_preset_relation.preset
         if preset.active:  # Проверяем, что пресет активен
+            preset_id = preset.id
+            preset_ids.add(preset_id)
+            presets_dict[preset_id] = preset
+    
+    # 2. Пресеты, созданные напрямую пользователем (для совместимости и покрытия всех случаев)
+    # ВАЖНО: Проверяем только те, которых нет в user_saved_presets,
+    # чтобы не дублировать пресеты из пункта 1
+    if preset_ids:
+        # Исключаем уже найденные пресеты
+        direct_presets_query = select(Preset).where(
+            Preset.user_id == current_user.id,
+            Preset.active == True,
+            ~Preset.id.in_(list(preset_ids))  # Исключаем уже найденные пресеты
+        )
+    else:
+        # Если нет пресетов из user_saved_presets, получаем все прямые пресеты пользователя
+        direct_presets_query = select(Preset).where(
+            Preset.user_id == current_user.id,
+            Preset.active == True,
+        )
+    
+    if updated_since:
+        direct_presets_query = direct_presets_query.where(
+            Preset.updated_at >= updated_since
+        )
+    
+    direct_result = await db.execute(
+        direct_presets_query.options(selectinload(Preset.filament))
+    )
+    direct_presets = direct_result.scalars().all()
+    
+    for preset in direct_presets:
+        if preset.active and preset.id not in preset_ids:
             preset_id = preset.id
             preset_ids.add(preset_id)
             presets_dict[preset_id] = preset

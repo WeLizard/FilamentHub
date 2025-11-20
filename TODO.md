@@ -441,6 +441,9 @@
   - [x] C++ Panel: Сохранять маппинги `external_id → fhub_id` для printer/print profiles
   - [x] C++ Panel: Добавить обработку команд `export_printer_profiles` и `export_print_profiles` в `OnScriptMessage`
   - [x] C++ Panel: Добавить JavaScript API функции `exportPrinterProfiles` и `exportPrintProfiles` в `setup_javascript_api`
+  - [x] Frontend: Реализовать компоненты `ExportPrinterProfilesButton` и `ExportPrintProfilesButton` для экспорта printer/print profiles
+  - [x] Frontend: Интегрировать кнопки экспорта в разделы "Профили принтера" и "Профили печати" в `ProfilePage.tsx`
+  - [x] Frontend: Переименовать "Мои пресеты" → "Профили филамента" для единообразия терминологии
   - [x] Backend: Реализовать систему `sync_enabled` в `user_saved_presets` для управления синхронизацией пресетов на уровне пользователя
   - [x] Backend: Добавить поле `sync_enabled` в модель `UserSavedPreset`
   - [x] Backend: Создать миграцию для добавления `sync_enabled` в `user_saved_presets`

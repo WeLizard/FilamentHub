@@ -2,10 +2,11 @@
 
 import { ReactNode, useState, useEffect, useRef } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
-import { Package, User, LogOut, Shield } from 'lucide-react';
+import { Package, User, LogOut, Shield, MessageCircle, Download } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { AuthModal } from './AuthModal';
 import { Notifications } from './Notifications';
+import { FeedbackModal } from './FeedbackModal';
 
 interface LayoutProps {
   children: ReactNode;
@@ -16,6 +17,7 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
   const location = useLocation();
   const navigate = useNavigate();
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
+  const [isFeedbackModalOpen, setIsFeedbackModalOpen] = useState(false);
   const hasOpenedLoginModalRef = useRef(false);
 
   // Обработка URL параметра ?auth=login для автоматического открытия модального окна
@@ -64,19 +66,34 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
       <header className="relative bg-black/20 backdrop-blur-sm border-b border-white/10 z-50">
         <div className="max-w-7xl mx-auto px-6 py-4">
           <div className="flex items-center justify-between">
-            <Link to="/" className="flex items-center space-x-4">
-              <div className="w-12 h-12 flex items-center justify-center">
-                <img 
-                  src="/logo.svg" 
-                  alt="FilamentHub Logo" 
-                  className="w-12 h-12 object-contain"
-                />
-              </div>
-              <div>
-                <h1 className="text-2xl font-bold text-white">FilamentHub</h1>
-                <p className="text-sm text-gray-400">Интеллектуальный каталог материалов</p>
-              </div>
-            </Link>
+            <div className="flex items-center space-x-4">
+              <Link to="/" className="flex items-center space-x-4">
+                <div className="w-12 h-12 flex items-center justify-center">
+                  <img 
+                    src="/logo.svg" 
+                    alt="FilamentHub Logo" 
+                    className="w-12 h-12 object-contain"
+                  />
+                </div>
+                <div>
+                  <h1 className="text-2xl font-bold text-white">FilamentHub</h1>
+                  <p className="text-sm text-gray-400">Интеллектуальный каталог материалов</p>
+                </div>
+              </Link>
+              
+              {/* Кнопка обратной связи для бетатестеров (временно справа от лого) - только для авторизованных */}
+              {user && (
+                <button
+                  onClick={() => setIsFeedbackModalOpen(true)}
+                  className="ml-4 px-3 py-1.5 rounded-lg bg-purple-600/20 hover:bg-purple-600/30 border border-purple-500/30 text-purple-300 hover:text-purple-200 text-xs font-medium transition-all flex items-center gap-1.5"
+                  title="Обратная связь для бетатестеров"
+                >
+                  <MessageCircle className="w-3.5 h-3.5" />
+                  <span className="hidden sm:inline">Бета-фидбек</span>
+                  <span className="sm:hidden">Фидбек</span>
+                </button>
+              )}
+            </div>
 
             <nav className="flex items-center space-x-2 relative z-[100]">
               {/* Notifications - только для авторизованных */}
@@ -84,17 +101,29 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
                 <Notifications />
               )}
 
-              <Link
-                to="/"
-                className={`flex items-center space-x-2 px-4 py-2 rounded-lg transition-all ${
-                  isActive('/')
-                    ? 'bg-purple-600 text-white shadow-lg shadow-purple-500/25'
-                    : 'text-gray-300 hover:text-white hover:bg-white/10'
-                }`}
-              >
-                <Package className="w-4 h-4" />
-                <span>Каталог</span>
-              </Link>
+                    <Link
+                      to="/"
+                      className={`flex items-center space-x-2 px-4 py-2 rounded-lg transition-all ${
+                        isActive('/')
+                          ? 'bg-purple-600 text-white shadow-lg shadow-purple-500/25'
+                          : 'text-gray-300 hover:text-white hover:bg-white/10'
+                      }`}
+                    >
+                      <Package className="w-4 h-4" />
+                      <span>Каталог</span>
+                    </Link>
+
+                    <Link
+                      to="/download"
+                      className={`flex items-center space-x-2 px-4 py-2 rounded-lg transition-all ${
+                        isActive('/download')
+                          ? 'bg-purple-600 text-white shadow-lg shadow-purple-500/25'
+                          : 'text-gray-300 hover:text-white hover:bg-white/10'
+                      }`}
+                    >
+                      <Download className="w-4 h-4" />
+                      <span>Скачать</span>
+                    </Link>
 
               {/* Admin Panel - только для админов */}
               {user?.role === 'admin' && (
@@ -159,6 +188,12 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
           hasOpenedLoginModalRef.current = false; // Сбрасываем флаг при закрытии
         }}
         initialMode="login"
+      />
+
+      {/* Feedback Modal */}
+      <FeedbackModal
+        isOpen={isFeedbackModalOpen}
+        onClose={() => setIsFeedbackModalOpen(false)}
       />
     </div>
   );

@@ -161,3 +161,31 @@ async def delete_notification(
     await db.commit()
     
     return {"message": "Notification deleted successfully"}
+
+
+@router.delete("/all")
+async def delete_all_notifications(
+    current_user: Annotated[User, Depends(get_current_active_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+    read_only: bool = Query(False, description="Удалить только прочитанные уведомления"),
+) -> dict[str, int]:
+    """Удалить все уведомления пользователя (или только прочитанные)."""
+    query = select(Notification).where(Notification.user_id == current_user.id)
+    
+    if read_only:
+        query = query.where(Notification.read == True)
+    
+    result = await db.execute(query)
+    notifications = result.scalars().all()
+    
+    count = 0
+    for notification in notifications:
+        await db.delete(notification)
+        count += 1
+    
+    await db.commit()
+    
+    return {
+        "deleted_count": count,
+        "message": f"Удалено {count} уведомлений" if count > 0 else "Нет уведомлений для удаления",
+    }

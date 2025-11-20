@@ -132,11 +132,11 @@ export const DeletedPresetsModal: React.FC<DeletedPresetsModalProps> = ({
       // Показываем сообщение об успехе
       const actionLabels = {
         restore: 'возвращены в OrcaSlicer',
-        delete: 'убран из "Мои пресеты"',
+        delete: 'убран из "Профили филамента"',
         skip: 'обработаны',
       };
       const currentAction = action; // Сохраняем action до сброса
-      const actionLabel = actionLabels[currentAction] || 'обработаны';
+      const actionLabel = currentAction ? actionLabels[currentAction] || 'обработаны' : 'обработаны';
       const count = processedIds.length;
       setSuccessMessage(`${count} ${count === 1 ? 'пресет' : count < 5 ? 'пресета' : 'пресетов'} ${actionLabel}`);
       
@@ -261,10 +261,10 @@ export const DeletedPresetsModal: React.FC<DeletedPresetsModalProps> = ({
       },
       delete: {
         icon: <Trash2 className="w-4 h-4" />,
-        label: 'Убрать из "Мои пресеты"',
+        label: 'Убрать из "Профили филамента"',
         bg: 'bg-red-600 hover:bg-red-700',
         shortDescription: 'Пресет исчезнет из вашего профиля',
-        fullDescription: 'Пресет будет убран из раздела "Мои пресеты". Останется доступен в каталоге FilamentHub. Пресеты, созданные вами, не удаляются.',
+        fullDescription: 'Пресет будет убран из раздела "Профили филамента". Останется доступен в каталоге FilamentHub. Пресеты, созданные вами, не удаляются.',
       },
       skip: {
         icon: <SkipForward className="w-4 h-4" />,
@@ -439,12 +439,12 @@ export const DeletedPresetsModal: React.FC<DeletedPresetsModalProps> = ({
                 <div className="mt-3 p-3 bg-blue-500/10 border border-blue-500/30 rounded-lg">
                   <p className="text-sm text-blue-300 font-medium mb-1">
                     {action === 'restore' && 'Вернуть в OrcaSlicer'}
-                    {action === 'delete' && 'Убрать из "Мои пресеты"'}
+                    {action === 'delete' && 'Убрать из "Профили филамента"'}
                     {action === 'skip' && 'Оставить как есть'}
                   </p>
                   <p className="text-xs text-blue-200/80">
                     {action === 'restore' && 'Пресет вернётся в OrcaSlicer при следующей синхронизации. Останется доступен в FilamentHub.'}
-                    {action === 'delete' && 'Пресет будет убран из раздела "Мои пресеты" на сайте. Останется доступен в каталоге FilamentHub. ⚠️ Пресеты, созданные вами, не удаляются.'}
+                    {action === 'delete' && 'Пресет будет убран из раздела "Профили филамента" на сайте. Останется доступен в каталоге FilamentHub. ⚠️ Пресеты, созданные вами, не удаляются.'}
                     {action === 'skip' && 'Пресет останется в FilamentHub, но больше не будет автоматически синхронизироваться с OrcaSlicer.'}
                   </p>
                 </div>

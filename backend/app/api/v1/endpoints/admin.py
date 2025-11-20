@@ -4,7 +4,7 @@ import logging
 from datetime import datetime
 from typing import Annotated, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status, UploadFile, File
+from fastapi import APIRouter, Body, Depends, HTTPException, Query, status, UploadFile, File
 from fastapi.responses import FileResponse
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -50,10 +50,12 @@ from app.schemas.printer_request import (
 )
 from app.schemas.user import UserResponse
 from app.services.notification_service import (
+    notify_all_users,
     notify_brand_request_approved,
     notify_brand_request_rejected,
     notify_brand_verified,
 )
+from app.models.notification import NotificationType
 from app.services.database_service import (
     apply_migration as apply_migration_service,
     delete_database_dump as delete_database_dump_service,
@@ -1597,4 +1599,92 @@ async def delete_bad_word(
     # Сбрасываем кэш в сервисе модерации
     from app.services.preset_moderation import _BAD_WORDS_CACHE
     _BAD_WORDS_CACHE.clear()
+
+
+# ==================== Notifications ====================
+
+
+@router.post("/notifications/broadcast", response_model=dict)
+async def broadcast_notification(
+    admin: Annotated[User, Depends(get_current_admin_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+    title: str = Body(..., description="Заголовок сообщения"),
+    message: str = Body(..., description="Текст сообщения"),
+    link: str | None = Body(None, description="Ссылка (опционально)"),
+    active_only: bool = Body(True, description="Отправлять только активным пользователям"),
+) -> dict:
+    """
+    Массовая рассылка уведомлений всем пользователям (только для админов).
+    
+    Создает уведомление типа ADMIN_MESSAGE для всех активных пользователей.
+    """
+    count = await notify_all_users(
+        notification_type=NotificationType.ADMIN_MESSAGE,
+        title=title,
+        message=message,
+        db=db,
+        link=link,
+        active_only=active_only,
+    )
+    
+    logger.info(f"Admin {admin.id} sent broadcast notification to {count} users. Title: {title}")
+    
+    return {
+        "success": True,
+        "message": f"Уведомление отправлено {count} пользователям",
+        "count": count,
+    }
+
+
+@router.post("/notifications/send", response_model=dict)
+async def send_notification_to_users(
+    admin: Annotated[User, Depends(get_current_admin_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+    user_ids: list[int] = Body(..., description="Список ID пользователей для отправки"),
+    title: str = Body(..., description="Заголовок сообщения"),
+    message: str = Body(..., description="Текст сообщения"),
+    link: str | None = Body(None, description="Ссылка (опционально)"),
+) -> dict:
+    """
+    Отправить уведомление конкретным пользователям (только для админов).
+    
+    Создает уведомление типа ADMIN_MESSAGE для указанных пользователей.
+    """
+    if not user_ids:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="User IDs list cannot be empty",
+        )
+    
+    # Проверяем, что пользователи существуют и активны
+    existing_users = await db.execute(
+        select(User.id).where(User.id.in_(user_ids), User.active == True)
+    )
+    valid_user_ids = list(existing_users.scalars().all())
+    
+    if not valid_user_ids:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="No active users found with provided IDs",
+        )
+    
+    from app.services.notification_service import create_bulk_notifications
+    
+    count = await create_bulk_notifications(
+        user_ids=valid_user_ids,
+        notification_type=NotificationType.ADMIN_MESSAGE,
+        title=title,
+        message=message,
+        db=db,
+        link=link,
+    )
+    
+    logger.info(f"Admin {admin.id} sent notification to {count} users (IDs: {valid_user_ids}). Title: {title}")
+    
+    return {
+        "success": True,
+        "message": f"Уведомление отправлено {count} пользователям",
+        "count": count,
+        "sent_to": valid_user_ids,
+    }
 

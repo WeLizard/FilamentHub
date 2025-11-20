@@ -352,7 +352,33 @@ export interface FilamentRatingStats {
   rating_distribution: Record<number, number>; // {1: count, 2: count, ...}
 }
 
-export type NotificationType = 'preset_updated' | 'preset_deleted' | 'preset_locally_deleted' | 'brand_verified' | 'brand_request_approved' | 'brand_request_rejected';
+export type NotificationType = 'preset_updated' | 'preset_deleted' | 'preset_locally_deleted' | 'brand_verified' | 'brand_request_approved' | 'brand_request_rejected' | 'admin_message';
+
+export type FeedbackType = 'bug' | 'feature' | 'question' | 'other';
+export type FeedbackStatus = 'open' | 'in_progress' | 'resolved' | 'closed';
+
+export interface Feedback {
+  id: number;
+  user_id: number | null;
+  type: FeedbackType;
+  subject: string;
+  message: string;
+  email: string | null;
+  status: FeedbackStatus;
+  admin_response: string | null;
+  admin_response_at: string | null;
+  responded_by: number | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface FeedbackListResponse {
+  items: Feedback[];
+  total: number;
+  page: number;
+  size: number;
+  pages: number;
+}
 
 export interface Notification {
   id: number;

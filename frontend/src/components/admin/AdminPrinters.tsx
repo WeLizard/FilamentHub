@@ -608,7 +608,8 @@ function PrinterModal({ printer, onClose, onSave, isLoading }: PrinterModalProps
       model: formData.model,
       slug: formData.slug,
       model_id: formData.model_id || undefined,
-      vendor: formData.vendor || undefined,
+      // vendor автоматически заполняется из manufacturer (они дублируют друг друга)
+      vendor: formData.vendor || formData.manufacturer || undefined,
       family: formData.family || undefined,
       technology: formData.technology || undefined,
       description: formData.description || undefined,
@@ -685,7 +686,7 @@ function PrinterModal({ printer, onClose, onSave, isLoading }: PrinterModalProps
           <div>
             <h4 className="text-sm font-semibold text-white uppercase tracking-wide">Общие сведения</h4>
             <p className="text-xs text-gray-400 mt-1">
-              Имя принтера, производитель и slug совпадают с тем, что получает OrcaSlicer.
+              Основная информация о принтере. Slug генерируется автоматически из производителя и модели.
             </p>
         </div>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -704,7 +705,15 @@ function PrinterModal({ printer, onClose, onSave, isLoading }: PrinterModalProps
               <input
                 type="text"
                 value={formData.manufacturer}
-                onChange={(e) => setFormData({ ...formData, manufacturer: e.target.value })}
+                onChange={(e) => {
+                  const manufacturer = e.target.value;
+                  setFormData({ 
+                    ...formData, 
+                    manufacturer,
+                    // Автоматически заполняем vendor тем же значением (они дублируют друг друга)
+                    vendor: manufacturer || formData.vendor,
+                  });
+                }}
                 required
                 className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500"
               />
@@ -746,52 +755,53 @@ function PrinterModal({ printer, onClose, onSave, isLoading }: PrinterModalProps
         </div>
       </section>
 
-      <section className="space-y-4 bg-white/5 border border-white/10 rounded-2xl p-6 shadow-inner shadow-indigo-900/30">
+      {/* Технические поля (скрыты для пользователя, заполняются автоматически при импорте) */}
+      {/* vendor и model_id автоматически заполняются из manufacturer при создании */}
+      {/* family и technology - опциональные поля для системных принтеров */}
+      {(formData.family || formData.technology || formData.model_id || (printer && printer.source === 'system')) && (
+        <section className="space-y-4 bg-white/5 border border-white/10 rounded-2xl p-6 shadow-inner shadow-indigo-900/30">
           <div>
-          <h4 className="text-sm font-semibold text-white uppercase tracking-wide">Идентификаторы</h4>
-          <p className="text-xs text-gray-400 mt-1">
-            Эти поля подтягиваются из system preset и помогают автоматически сопоставлять профили.
-          </p>
-        </div>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <div>
-            <label className="block text-gray-300 mb-2 text-sm font-medium">Model ID</label>
-            <input
-              type="text"
-              value={formData.model_id}
-              onChange={(e) => setFormData({ ...formData, model_id: e.target.value })}
-              className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500"
-            />
+            <h4 className="text-sm font-semibold text-white uppercase tracking-wide">Дополнительно</h4>
+            <p className="text-xs text-gray-400 mt-1">
+              Дополнительные поля для системных принтеров (заполняются автоматически при импорте).
+            </p>
           </div>
-          <div>
-            <label className="block text-gray-300 mb-2 text-sm font-medium">Вендор</label>
-            <input
-              type="text"
-              value={formData.vendor}
-              onChange={(e) => setFormData({ ...formData, vendor: e.target.value })}
-              className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500"
-            />
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {(formData.model_id || (printer && printer.source === 'system')) && (
+              <div>
+                <label className="block text-gray-300 mb-2 text-sm font-medium">Model ID</label>
+                <input
+                  type="text"
+                  value={formData.model_id}
+                  onChange={(e) => setFormData({ ...formData, model_id: e.target.value })}
+                  placeholder="Автоматически заполняется при импорте"
+                  className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500"
+                />
+              </div>
+            )}
+            <div>
+              <label className="block text-gray-300 mb-2 text-sm font-medium">Семейство</label>
+              <input
+                type="text"
+                value={formData.family}
+                onChange={(e) => setFormData({ ...formData, family: e.target.value })}
+                placeholder="Опционально (например: X1, P1S)"
+                className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500"
+              />
+            </div>
+            <div>
+              <label className="block text-gray-300 mb-2 text-sm font-medium">Технология</label>
+              <input
+                type="text"
+                value={formData.technology}
+                onChange={(e) => setFormData({ ...formData, technology: e.target.value })}
+                placeholder="Опционально (например: FDM, SLA)"
+                className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500"
+              />
+            </div>
           </div>
-          <div>
-            <label className="block text-gray-300 mb-2 text-sm font-medium">Семейство</label>
-            <input
-              type="text"
-              value={formData.family}
-              onChange={(e) => setFormData({ ...formData, family: e.target.value })}
-              className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500"
-            />
-          </div>
-          <div>
-            <label className="block text-gray-300 mb-2 text-sm font-medium">Технология</label>
-            <input
-              type="text"
-              value={formData.technology}
-              onChange={(e) => setFormData({ ...formData, technology: e.target.value })}
-              className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500"
-            />
-          </div>
-        </div>
-      </section>
+        </section>
+      )}
 
       <section className="space-y-4 bg-white/5 border border-white/10 rounded-2xl p-6 shadow-inner shadow-indigo-900/30">
             <div>

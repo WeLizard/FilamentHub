@@ -101,6 +101,9 @@ class User(Base):
     print_profiles: Mapped[list["PrintProfile"]] = relationship(
         "PrintProfile", back_populates="owner", cascade="all, delete-orphan"
     )
+    feedback_messages: Mapped[list["Feedback"]] = relationship(
+        "Feedback", foreign_keys="Feedback.user_id", back_populates="user", cascade="all, delete-orphan"
+    )
 
     def __repr__(self) -> str:
         return f"<User(id={self.id}, email={self.email}, role={self.role.value})>"

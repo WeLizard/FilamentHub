@@ -127,8 +127,8 @@ export const ToastContainer: React.FC = () => {
 
   return (
     <div className="fixed top-4 right-4 z-[99999] flex flex-col items-end">
-      {currentToasts.map((toast) => (
-        <ToastItem key={toast.id} toast={toast} onClose={toast.remove} />
+      {currentToasts.map((toastItem) => (
+        <ToastItem key={toastItem.id} toast={toastItem} onClose={(id) => toast.remove(id)} />
       ))}
     </div>
   );

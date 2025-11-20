@@ -80,8 +80,20 @@ export function CreatePrinterRequestModal({ isOpen, onClose }: CreatePrinterRequ
   if (!isOpen) return null;
 
   return (
-    <div className={`fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4 z-50 ${isHeaderVisible ? 'pt-[88px]' : ''}`}>
-      <div className="bg-gradient-to-br from-purple-900 to-indigo-900 rounded-2xl max-w-2xl w-full max-h-[90vh] overflow-hidden flex flex-col border border-white/20">
+    <div className={`fixed inset-0 z-[100] ${isHeaderVisible ? 'pt-[88px]' : ''}`}>
+      {/* Backdrop - покрывает весь экран, включая хэдер */}
+      <div 
+        className="fixed inset-0 bg-black/50 backdrop-blur-sm"
+        onClick={onClose}
+      />
+      {/* Modal Container */}
+      <div className="fixed inset-0 flex items-center justify-center pointer-events-none p-4" style={{ top: isHeaderVisible ? '88px' : '0' }}>
+        {/* Modal */}
+        <div 
+          className={`bg-gradient-to-br from-purple-900 to-indigo-900 rounded-2xl shadow-2xl border border-white/20 max-w-2xl w-full ${isHeaderVisible ? 'max-h-[calc(100vh-120px)]' : 'max-h-[85vh]'} overflow-hidden flex flex-col pointer-events-auto`}
+          onClick={(e) => e.stopPropagation()}
+          onMouseDown={(e) => e.stopPropagation()}
+        >
         {/* Header */}
         <div className="flex items-center justify-between p-6 border-b border-white/10">
           <div className="flex items-center space-x-3">
@@ -103,43 +115,58 @@ export function CreatePrinterRequestModal({ isOpen, onClose }: CreatePrinterRequ
           </p>
 
           <form onSubmit={handleSubmit} className="space-y-4">
-          <div className="grid grid-cols-2 gap-4">
+          <div className="space-y-4">
             <div>
               <label className="block text-gray-300 mb-2 text-sm font-medium">Название принтера *</label>
               <input
                 type="text"
                 value={formData.name}
-                onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                onChange={(e) => {
+                  const name = e.target.value;
+                  setFormData({ 
+                    ...formData, 
+                    name,
+                    // Автогенерация slug из названия
+                    slug: name
+                      .toLowerCase()
+                      .trim()
+                      .replace(/[^a-z0-9\s-]/g, '')
+                      .replace(/\s+/g, '-')
+                      .replace(/-+/g, '-')
+                      .replace(/^-|-$/g, ''),
+                  });
+                }}
                 required
-                placeholder="Например: Ender 3 Pro"
+                placeholder="Например: Bambu Lab X1 Carbon"
                 className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500"
               />
             </div>
-            <div>
-              <label className="block text-gray-300 mb-2 text-sm font-medium">Производитель *</label>
-              <input
-                type="text"
-                value={formData.manufacturer}
-                onChange={(e) => setFormData({ ...formData, manufacturer: e.target.value })}
-                required
-                placeholder="Например: Creality"
-                className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500"
-              />
+            
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="block text-gray-300 mb-2 text-sm font-medium">Производитель *</label>
+                <input
+                  type="text"
+                  value={formData.manufacturer}
+                  onChange={(e) => setFormData({ ...formData, manufacturer: e.target.value })}
+                  required
+                  placeholder="Например: Bambu Lab"
+                  className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500"
+                />
+              </div>
+              <div>
+                <label className="block text-gray-300 mb-2 text-sm font-medium">Модель *</label>
+                <input
+                  type="text"
+                  value={formData.model}
+                  onChange={(e) => setFormData({ ...formData, model: e.target.value })}
+                  required
+                  placeholder="Например: X1 Carbon"
+                  className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500"
+                />
+              </div>
             </div>
-          </div>
 
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="block text-gray-300 mb-2 text-sm font-medium">Модель *</label>
-              <input
-                type="text"
-                value={formData.model}
-                onChange={(e) => setFormData({ ...formData, model: e.target.value })}
-                required
-                placeholder="Например: Ender 3"
-                className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500"
-              />
-            </div>
             <div>
               <label className="block text-gray-300 mb-2 text-sm font-medium">Slug *</label>
               <input
@@ -147,10 +174,12 @@ export function CreatePrinterRequestModal({ isOpen, onClose }: CreatePrinterRequ
                 value={formData.slug}
                 onChange={(e) => setFormData({ ...formData, slug: e.target.value })}
                 required
-                placeholder="Например: creality-ender-3-pro"
+                placeholder="Автоматически генерируется из названия"
                 className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500"
               />
-              <p className="text-gray-400 text-xs mt-1">Уникальный идентификатор (латиница, дефисы, без пробелов)</p>
+              <p className="text-xs text-gray-400 mt-1">
+                URL-friendly идентификатор принтера (генерируется автоматически из названия)
+              </p>
             </div>
           </div>
 
@@ -276,6 +305,7 @@ export function CreatePrinterRequestModal({ isOpen, onClose }: CreatePrinterRequ
           </div>
         </form>
         </div>
+      </div>
       </div>
     </div>
   );

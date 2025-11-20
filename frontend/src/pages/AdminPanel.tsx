@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { Shield, FileText, Building2, Users, BarChart3, CheckCircle, Home, Printer as PrinterIcon, Package, User, LogOut, Database } from 'lucide-react';
+import { Shield, FileText, Building2, Users, BarChart3, CheckCircle, Home, Printer as PrinterIcon, Package, User, LogOut, Database, MessageCircle, Send } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { AdminBrandRequests } from '../components/admin/AdminBrandRequests';
 import { AdminBrands } from '../components/admin/AdminBrands';
@@ -12,8 +12,10 @@ import { AdminStats } from '../components/admin/AdminStats';
 import { AdminPrinters } from '../components/admin/AdminPrinters';
 import { AdminPrinterRequests } from '../components/admin/AdminPrinterRequests';
 import { AdminDatabase } from '../components/admin/AdminDatabase';
+import { AdminFeedback } from '../components/admin/AdminFeedback';
+import { AdminNotifications } from '../components/admin/AdminNotifications';
 
-type AdminTab = 'requests' | 'brands' | 'presets' | 'users' | 'stats' | 'printers' | 'printer-requests' | 'database';
+type AdminTab = 'requests' | 'brands' | 'presets' | 'users' | 'stats' | 'printers' | 'printer-requests' | 'feedback' | 'notifications' | 'database';
 
 export function AdminPanel() {
   const { user, logout } = useAuth();
@@ -45,6 +47,8 @@ export function AdminPanel() {
     { id: 'printers' as AdminTab, label: 'Принтеры', icon: PrinterIcon, count: null },
     { id: 'printer-requests' as AdminTab, label: 'Заявки на принтеры', icon: Package, count: null },
     { id: 'users' as AdminTab, label: 'Пользователи', icon: Users, count: null },
+    { id: 'feedback' as AdminTab, label: 'Обратная связь', icon: MessageCircle, count: null },
+    { id: 'notifications' as AdminTab, label: 'Уведомления', icon: Send, count: null },
     { id: 'stats' as AdminTab, label: 'Статистика', icon: BarChart3, count: null },
     { id: 'database' as AdminTab, label: 'База данных', icon: Database, count: null },
   ];
@@ -126,6 +130,8 @@ export function AdminPanel() {
           {activeTab === 'printers' && <AdminPrinters />}
           {activeTab === 'printer-requests' && <AdminPrinterRequests />}
           {activeTab === 'users' && <AdminUsers />}
+          {activeTab === 'feedback' && <AdminFeedback />}
+          {activeTab === 'notifications' && <AdminNotifications />}
           {activeTab === 'stats' && <AdminStats />}
           {activeTab === 'database' && <AdminDatabase />}
         </div>

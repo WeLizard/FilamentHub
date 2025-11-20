@@ -32,6 +32,8 @@ class Filament(Base):
 
     # Basic info
     name: Mapped[str] = mapped_column(String(200), index=True)
+    slug: Mapped[str] = mapped_column(String(200), unique=True, index=True)
+    # slug: URL-friendly identifier for filament pages (e.g., "thermoplast-pla-red")
     material_type: Mapped[str] = mapped_column(String(50), index=True)
     # material_type: PLA, ABS, PETG, TPU, Nylon, ASA, PC, etc.
 

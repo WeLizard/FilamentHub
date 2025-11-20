@@ -18,6 +18,7 @@ from app.models.print_profile_filament import PrintProfileFilament
 from app.models.notification import Notification, NotificationType
 from app.models.user import User, UserRole
 from app.models.user_saved_preset import UserSavedPreset
+from app.models.feedback import Feedback, FeedbackType, FeedbackStatus
 
 __all__ = [
     # "BadWord",  # Убрано из экспорта, чтобы не падать при отсутствии таблицы
@@ -25,6 +26,9 @@ __all__ = [
     "BrandRequest",
     "BrandRequestStatus",
     "BrandRequestType",
+    "Feedback",
+    "FeedbackType",
+    "FeedbackStatus",
     "Filament",
     "FilamentReview",
     "MaterialMapping",

@@ -137,8 +137,8 @@ export const ViewPresetModal: React.FC<ViewPresetModalProps> = ({
   const bedTemp = preset?.bed_temp || 0;
   const printSpeed = preset?.print_speed || 0;
   const travelSpeed = preset?.travel_speed || 0;
-  const layerHeight = preset?.layer_height || 0;
-  const firstLayerHeight = preset?.first_layer_height || null;
+  // Примечание: layer_height и first_layer_height - это параметры профилей печати (Print Profile),
+  // а не профилей филамента (Preset), поэтому не отображаются здесь
   const flowRate = preset?.flow_rate || 0;
   const fanSpeed = preset?.fan_speed || 0;
   const retractionLength = preset?.retraction_length || 0;
