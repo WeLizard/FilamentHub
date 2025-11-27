@@ -68,7 +68,7 @@ export const Notifications: React.FC<NotificationsProps> = ({ floating = false }
 
   // Мутация для удаления всех уведомлений
   const deleteAllNotificationsMutation = useMutation({
-    mutationFn: (readOnly?: boolean) => notificationsAPI.deleteAll(readOnly),
+    mutationFn: () => notificationsAPI.deleteAll(),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['notifications', user?.id] });
       setIsOpen(false);

@@ -153,6 +153,11 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({ user, onUserUpdate }) 
     setPasswordSuccess(false);
 
     // Валидация
+    if (passwordForm.current_password.length === 0) {
+      setPasswordError('Введите текущий пароль');
+      return;
+    }
+
     if (passwordForm.new_password.length < 8) {
       setPasswordError('Пароль должен содержать минимум 8 символов');
       return;
@@ -330,7 +335,7 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({ user, onUserUpdate }) 
                   onChange={(e) => setPasswordForm({ ...passwordForm, current_password: e.target.value })}
                   required
                   className="w-full px-3 py-2 pr-10 bg-white/10 border border-white/20 rounded-lg text-white text-sm placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500"
-                  placeholder="Введите текущий"
+                  placeholder="Введите текущий пароль"
                 />
                 <button
                   type="button"
@@ -425,7 +430,7 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({ user, onUserUpdate }) 
               ) : (
                 <>
                   <Save className="w-4 h-4" />
-                  <span>Изменить</span>
+                  <span>Изменить пароль</span>
                 </>
               )}
             </button>

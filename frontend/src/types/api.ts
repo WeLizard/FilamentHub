@@ -94,6 +94,25 @@ export interface Printer {
   updated_at: string;
 }
 
+export interface CompatiblePrinter {
+  id: number;
+  slug: string;
+  name: string;
+  manufacturer: string | null;
+  relation_source: string; // 'via_preset', 'via_print_profile', etc.
+  confidence_score: number; // 0.0-1.0
+}
+
+export interface CompatibleFilament {
+  id: number;
+  slug: string;
+  name: string;
+  material_type: string;
+  brand_name: string | null;
+  relation_source: string; // 'via_preset', 'via_print_profile', etc.
+  confidence_score: number; // 0.0-1.0
+}
+
 export interface PrinterProfile {
   id: number;
   printer_id: number | null;
@@ -118,6 +137,8 @@ export interface PrinterProfile {
   notes: string | null;
   printer_slug: string | null;
   printer_name: string | null;
+  printer_manufacturer: string | null;
+  printer_model: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -211,7 +232,7 @@ export interface Preset {
   usage_count: number;
   active: boolean;
   moderation_status: string;
-  sync_enabled: boolean; // Включена ли синхронизация с OrcaSlicer (по умолчанию true)
+  // УДАЛЕНО: sync_enabled - теперь управляется через user_saved_presets.sync
   external_id?: string | null; // ID пресета в OrcaSlicer (для маппинга)
   source?: string | null; // Источник пресета ("orcaslicer", "user", "system", etc.) или 'own' | 'saved' для UI
   created_at: string;
@@ -409,7 +430,7 @@ export interface UserSavedPreset {
   user_id: number;
   preset_id: number;
   saved_at: string; // ISO 8601 datetime string
-  sync_enabled: boolean; // Включена ли синхронизация с OrcaSlicer для этого пресета у этого пользователя
+  sync: boolean; // Включена ли синхронизация с OrcaSlicer для этого пресета у этого пользователя
 }
 
 export type PricingMethod = 'by_weight' | 'by_time' | 'combined';

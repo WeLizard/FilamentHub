@@ -1,7 +1,7 @@
 /** API Client для интеграции с бэкендом */
 
 import axios from 'axios';
-import type { Brand, BrandRequest, BrandRequestStatus, Filament, FilamentVisualSettings, FilamentReview, FilamentRatingStats, Notification, NotificationListResponse, Preset, RecommendedPreset, Printer, PrinterProfile, PrintProfile, PrinterRequest, User, Token, RefreshTokenRequest, RefreshTokenResponse, ListResponse, AccountDeletionStats, UserSavedPreset, CalculatorEstimateRequest, CalculatorEstimateResponse, Feedback, FeedbackListResponse, FeedbackType } from '../types/api';
+import type { Brand, BrandRequest, BrandRequestStatus, Filament, FilamentVisualSettings, FilamentReview, FilamentRatingStats, Notification, NotificationListResponse, Preset, RecommendedPreset, Printer, PrinterProfile, PrintProfile, PrinterRequest, User, Token, RefreshTokenRequest, RefreshTokenResponse, ListResponse, AccountDeletionStats, UserSavedPreset, CalculatorEstimateRequest, CalculatorEstimateResponse, Feedback, FeedbackListResponse, FeedbackType, CompatiblePrinter, CompatibleFilament } from '../types/api';
 import { getRefreshToken, setToken, removeToken } from '../utils/auth';
 
 const API_BASE_URL = '/api/v1';
@@ -328,6 +328,14 @@ export const filamentsAPI = {
     await api.delete(`/filaments/${id}`);
   },
 
+  // Получить совместимые принтеры для филамента
+  getCompatiblePrinters: async (id: number, minConfidence: number = 0.5) => {
+    const response = await api.get<CompatiblePrinter[]>(`/filaments/${id}/compatible-printers`, {
+      params: { min_confidence: minConfidence },
+    });
+    return response.data;
+  },
+
   // Reviews
   getReviews: async (id: number, params?: { page?: number; size?: number; active_only?: boolean }) => {
     const response = await api.get<ListResponse<FilamentReview>>(`/filament-reviews/filament/${id}`, { params });
@@ -472,8 +480,32 @@ export const presetsAPI = {
     return response.data;
   },
 
+  update: async (id: number, data: Partial<{
+    name?: string;
+    description?: string;
+    is_official?: boolean;
+    filament_id?: number | null; // Может быть null для черновиков
+    extruder_temp?: number;
+    bed_temp?: number;
+    print_speed?: number;
+    travel_speed?: number;
+    layer_height?: number;
+    first_layer_height?: number;
+    flow_rate?: number;
+    fan_speed?: number;
+    retraction_length?: number;
+    retraction_speed?: number;
+    orcaslicer_settings?: any;
+    rating?: number;
+    active?: boolean;
+    // УДАЛЕНО: sync_enabled - теперь управляется через user_saved_presets.sync
+  }>) => {
+    const response = await api.patch<Preset>(`/presets/${id}`, data);
+    return response.data;
+  },
+
   create: async (data: {
-    filament_id: number;
+    filament_id?: number | null; // Может быть null для черновиков
     name: string;
     description?: string;
     is_official: boolean;
@@ -491,28 +523,6 @@ export const presetsAPI = {
     printer_ids?: number[]; // Список ID принтеров, для которых подходит этот пресет
   }) => {
     const response = await api.post<Preset>('/presets/', data);
-    return response.data;
-  },
-
-  update: async (id: number, data: Partial<{
-    name?: string;
-    description?: string;
-    extruder_temp?: number;
-    bed_temp?: number;
-    print_speed?: number;
-    travel_speed?: number;
-    layer_height?: number;
-    first_layer_height?: number;
-    flow_rate?: number;
-    fan_speed?: number;
-    retraction_length?: number;
-    retraction_speed?: number;
-    orcaslicer_settings?: Record<string, any> | null; // Расширенные параметры OrcaSlicer
-    printer_ids?: number[]; // Список ID принтеров, для которых подходит этот пресет
-    active?: boolean;
-    sync_enabled?: boolean; // Включена ли синхронизация с OrcaSlicer
-  }>) => {
-    const response = await api.patch<Preset>(`/presets/${id}`, data);
     return response.data;
   },
 
@@ -537,8 +547,8 @@ export const savedPresetsAPI = {
     await api.delete(`/saved-presets/${preset_id}`);
   },
 
-  toggleSync: async (preset_id: number, sync_enabled: boolean) => {
-    const response = await api.patch<UserSavedPreset>(`/saved-presets/${preset_id}/sync?sync_enabled=${sync_enabled}`);
+  toggleSync: async (preset_id: number, sync: boolean) => {
+    const response = await api.patch<UserSavedPreset>(`/saved-presets/${preset_id}/sync?sync=${sync}`);
     return response.data;
   },
 };
@@ -658,6 +668,14 @@ export const printersAPI = {
     const response = await api.get<Printer>(`/printers/${id}`);
     return response.data;
   },
+
+  // Получить совместимые филаменты для принтера
+  getCompatibleFilaments: async (id: number, minConfidence: number = 0.5) => {
+    const response = await api.get<CompatibleFilament[]>(`/printers/${id}/compatible-filaments`, {
+      params: { min_confidence: minConfidence },
+    });
+    return response.data;
+  },
 };
 
 // Calculator API
@@ -751,6 +769,19 @@ export const adminAPI = {
     search?: string;
   }): Promise<{ items: Brand[]; total: number; page: number; size: number; pages: number }> => {
     const response = await api.get<{ items: Brand[]; total: number; page: number; size: number; pages: number }>('/admin/brands', { params });
+    return response.data;
+  },
+
+  updateBrand: async (id: number, data: {
+    name?: string;
+    slug?: string;
+    description?: string | null;
+    website?: string | null;
+    logo_url?: string | null;
+    verified?: boolean;
+    active?: boolean;
+  }): Promise<Brand> => {
+    const response = await api.patch<Brand>(`/admin/brands/${id}`, data);
     return response.data;
   },
 
@@ -897,6 +928,11 @@ export const adminAPI = {
     return response.data;
   },
 
+  updateUserBadges: async (userId: number, badges: string[]): Promise<User> => {
+    const response = await api.patch<User>(`/admin/users/${userId}/badges`, badges);
+    return response.data;
+  },
+
   // Notifications
   sendNotification: async (data: {
     user_ids: number[];
@@ -960,7 +996,9 @@ export const adminAPI = {
     current_revision: string | null;
     validation_errors?: string[] | null;
   }> => {
-    const response = await api.post('/admin/database/migrations/apply', data);
+    const response = await api.post('/admin/database/migrations/apply', data, {
+      timeout: 180000, // 3 минуты для применения миграций
+    });
     return response.data;
   },
 
@@ -969,7 +1007,9 @@ export const adminAPI = {
     message: string;
     current_revision: string | null;
   }> => {
-    const response = await api.post('/admin/database/migrations/downgrade', data);
+    const response = await api.post('/admin/database/migrations/downgrade', data, {
+      timeout: 180000, // 3 минуты для отката миграций
+    });
     return response.data;
   },
 
@@ -1091,6 +1131,20 @@ export const adminAPI = {
     pages: number;
   }> => {
     const response = await api.get(`/admin/database/tables/${tableName}/data`, { params });
+    return response.data;
+  },
+
+  updateTableData: async (
+    tableName: string,
+    data: {
+      primary_key: Record<string, any>;
+      data: Record<string, any>;
+    },
+    schemaName?: string
+  ): Promise<{ success: boolean; message: string }> => {
+    const response = await api.patch(`/admin/database/tables/${tableName}/data`, data, {
+      params: { schema_name: schemaName || 'public' },
+    });
     return response.data;
   },
 };

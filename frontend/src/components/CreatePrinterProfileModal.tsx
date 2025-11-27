@@ -86,6 +86,30 @@ export const CreatePrinterProfileModal: React.FC<CreatePrinterProfileModalProps>
   const [imageUrl, setImageUrl] = useState('');
   const [showGcodeModals, setShowGcodeModals] = useState<Record<string, boolean>>({});
 
+  // Флаг для отслеживания, было ли имя изменено пользователем вручную
+  const [nameManuallyChanged, setNameManuallyChanged] = useState(false);
+
+  // Автогенерация имени в формате OrcaSlicer при выборе принтера и сопла
+  // Срабатывает только если имя не было изменено пользователем вручную
+  useEffect(() => {
+    if (!profile && !baseProfile && !nameManuallyChanged && printerId && nozzleDiameters.length > 0) {
+      const selectedPrinter = printersCache[printerId];
+      if (selectedPrinter) {
+        const firstNozzle = nozzleDiameters[0];
+        const nozzleStr = parseFloat(firstNozzle).toString().replace(/\.?0+$/, '');
+        const generatedName = `${selectedPrinter.name} ${nozzleStr} nozzle`;
+        setName(generatedName);
+      }
+    }
+  }, [printerId, nozzleDiameters, profile, baseProfile, printersCache, nameManuallyChanged]);
+
+  // Сбрасываем флаг при изменении режима (редактирование/создание)
+  useEffect(() => {
+    if (isOpen) {
+      setNameManuallyChanged(false);
+    }
+  }, [isOpen, profile, baseProfile]);
+
   // Генерируем slug из name при изменении
   useEffect(() => {
     if (!profile && !baseProfile && name) {
@@ -532,6 +556,9 @@ export const CreatePrinterProfileModal: React.FC<CreatePrinterProfileModalProps>
 
   // Render functions для табов
   const renderGeneralTab = () => {
+    // Получаем выбранный принтер для использования в UI
+    const selectedPrinter = printerId ? (printers.find(p => p.id === printerId) || printersCache[printerId]) : null;
+    
     const printerStructureOptions = ['corexy', 'cartesian', 'i3', 'delta', 'belt', 'polar', 'scara', 'undefine'];
     const gcodeFlavorOptions = ['marlin', 'marlin2', 'klipper', 'reprapfirmware'];
     const printerTechnologyOptions = ['FFF', 'FDM', 'CoreXY enclosed'];
@@ -587,15 +614,30 @@ export const CreatePrinterProfileModal: React.FC<CreatePrinterProfileModalProps>
         <div>
           <label className="block text-sm font-medium text-gray-300 mb-2">
             Название <span className="text-red-400">*</span>
+            {selectedPrinter && nozzleDiameters.length > 0 && (
+              <span className="text-xs text-gray-400 ml-2">
+                (Рекомендуемый формат для OrcaSlicer: &quot;{selectedPrinter.name} {nozzleDiameters[0]} nozzle&quot;)
+              </span>
+            )}
           </label>
           <input
             type="text"
             value={name}
-            onChange={(e) => setName(e.target.value)}
+            onChange={(e) => {
+              setName(e.target.value);
+              setNameManuallyChanged(true); // Отмечаем, что имя изменено вручную
+            }}
             className="w-full bg-white/5 border border-white/10 rounded-lg px-4 py-2 text-white placeholder-gray-500 focus:outline-none focus:border-purple-500"
-            placeholder="Например: Ender 3 Pro - Standard"
+            placeholder={selectedPrinter && nozzleDiameters.length > 0 
+              ? `${selectedPrinter.name} ${nozzleDiameters[0]} nozzle`
+              : "Например: Voron 2.4 350 0.4 nozzle"}
             required
           />
+          {selectedPrinter && nozzleDiameters.length > 0 && !name.match(/nozzle$/i) && name && (
+            <p className="text-xs text-amber-400 mt-1">
+              💡 Рекомендуется формат для совместимости с OrcaSlicer: &quot;{selectedPrinter.name} {nozzleDiameters[0]} nozzle&quot;
+            </p>
+          )}
         </div>
 
         <div>

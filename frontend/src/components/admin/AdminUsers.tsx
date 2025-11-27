@@ -3,10 +3,11 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { createPortal } from 'react-dom';
-import { Users, Shield, CheckCircle, XCircle, Unlink, Link2, Factory, Check } from 'lucide-react';
+import { Users, Shield, CheckCircle, XCircle, Unlink, Link2, Factory, Check, Award } from 'lucide-react';
 import { adminAPI, brandsAPI } from '../../api/client';
 import { Dropdown } from '../Dropdown';
 import { ConfirmModal } from '../ConfirmModal';
+import { BadgeList, BADGE_CONFIG, type BadgeType } from '../Badge';
 import type { User, Brand } from '../../types/api';
 
 export function AdminUsers() {
@@ -92,6 +93,18 @@ export function AdminUsers() {
     },
   });
 
+  // Обновление бейджей
+  const updateBadgesMutation = useMutation({
+    mutationFn: ({ userId, badges }: { userId: number; badges: string[] }) => {
+      return adminAPI.updateUserBadges(userId, badges);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['admin-users'] });
+      setSelectedUserIdForBadges(null);
+      setSelectedUserBadges([]);
+    },
+  });
+
   // Загрузка брендов для выбора
   const { data: brandsData } = useQuery({
     queryKey: ['brands-for-link'],
@@ -107,6 +120,8 @@ export function AdminUsers() {
   const [confirmPromote, setConfirmPromote] = useState<{ userId: number; username: string } | null>(null);
   const [confirmDemote, setConfirmDemote] = useState<{ userId: number; username: string } | null>(null);
   const [confirmUnlink, setConfirmUnlink] = useState<{ userId: number; username: string; brandName: string } | null>(null);
+  const [selectedUserIdForBadges, setSelectedUserIdForBadges] = useState<number | null>(null);
+  const [selectedUserBadges, setSelectedUserBadges] = useState<BadgeType[]>([]);
 
   if (isLoading) {
     return <div className="text-center py-12 text-gray-400">Загрузка пользователей...</div>;
@@ -188,6 +203,9 @@ export function AdminUsers() {
                     <Users className="w-5 h-5 text-purple-400" />
                     <h3 className="text-lg font-semibold text-white">{user.username}</h3>
                     {getRoleBadge(user)}
+                    {user.badges && user.badges.length > 0 && (
+                      <BadgeList badges={user.badges as BadgeType[]} size="sm" />
+                    )}
                     {!user.active && (
                       <span className="px-2 py-1 rounded bg-red-500/20 text-red-400 text-xs font-semibold">
                         Деактивирован
@@ -217,12 +235,13 @@ export function AdminUsers() {
                     Создан: {new Date(user.created_at).toLocaleString('ru-RU')}
                   </p>
                 </div>
-                <div className="flex items-center space-x-2">
+                <div className="flex items-center gap-2 flex-wrap">
                   {!user.active ? (
                     <button
                       onClick={() => setConfirmActivate({ userId: user.id, username: user.username })}
                       disabled={activateMutation.isPending}
-                      className="flex items-center space-x-2 px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg transition-all disabled:opacity-50"
+                      className="flex items-center gap-1.5 px-3 py-1.5 bg-green-600 hover:bg-green-700 text-white rounded-lg transition-all disabled:opacity-50 text-sm"
+                      title="Активировать пользователя"
                     >
                       <CheckCircle className="w-4 h-4" />
                       <span>Активировать</span>
@@ -231,7 +250,8 @@ export function AdminUsers() {
                     <button
                       onClick={() => setConfirmDeactivate({ userId: user.id, username: user.username })}
                       disabled={deactivateMutation.isPending}
-                      className="flex items-center space-x-2 px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg transition-all disabled:opacity-50"
+                      className="flex items-center gap-1.5 px-3 py-1.5 bg-red-600 hover:bg-red-700 text-white rounded-lg transition-all disabled:opacity-50 text-sm"
+                      title="Деактивировать пользователя"
                     >
                       <XCircle className="w-4 h-4" />
                       <span>Деактивировать</span>
@@ -241,33 +261,46 @@ export function AdminUsers() {
                     <button
                       onClick={() => setConfirmPromote({ userId: user.id, username: user.username })}
                       disabled={promoteMutation.isPending}
-                      className="flex items-center space-x-2 px-4 py-2 bg-yellow-600 hover:bg-yellow-700 text-white rounded-lg transition-all disabled:opacity-50"
+                      className="flex items-center gap-1.5 px-3 py-1.5 bg-yellow-600 hover:bg-yellow-700 text-white rounded-lg transition-all disabled:opacity-50 text-sm"
+                      title="Сделать администратором"
                     >
                       <Shield className="w-4 h-4" />
-                      <span>Сделать админом</span>
+                      <span>Админ</span>
                     </button>
                   )}
                   {user.role === 'admin' && (
                     <button
                       onClick={() => setConfirmDemote({ userId: user.id, username: user.username })}
                       disabled={demoteMutation.isPending}
-                      className="flex items-center space-x-2 px-4 py-2 bg-gray-600 hover:bg-gray-700 text-white rounded-lg transition-all disabled:opacity-50"
+                      className="flex items-center gap-1.5 px-3 py-1.5 bg-gray-600 hover:bg-gray-700 text-white rounded-lg transition-all disabled:opacity-50 text-sm"
                       title="Отозвать права администратора"
                     >
                       <Shield className="w-4 h-4" />
-                      <span>Отозвать админку</span>
+                      <span>Убрать админ</span>
                     </button>
                   )}
+                  <button
+                    onClick={() => {
+                      setSelectedUserIdForBadges(user.id);
+                      setSelectedUserBadges((user.badges as BadgeType[]) || []);
+                    }}
+                    className="flex items-center gap-1.5 px-3 py-1.5 bg-amber-600 hover:bg-amber-700 text-white rounded-lg transition-all text-sm"
+                    title="Управление бейджами"
+                  >
+                    <Award className="w-4 h-4" />
+                    <span>Бейджи</span>
+                  </button>
                   {!user.brand_id ? (
                     <button
                       onClick={() => {
                         setSelectedUserIdForBrand(user.id);
                         setSelectedBrandId(null);
                       }}
-                      className="flex items-center space-x-2 px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg transition-all"
+                      className="flex items-center gap-1.5 px-3 py-1.5 bg-green-600 hover:bg-green-700 text-white rounded-lg transition-all text-sm"
+                      title="Привязать к бренду"
                     >
                       <Link2 className="w-4 h-4" />
-                      <span>Привязать к бренду</span>
+                      <span>Бренд</span>
                     </button>
                   ) : (
                     <button
@@ -277,10 +310,11 @@ export function AdminUsers() {
                         brandName: user.brand_name || `#${user.brand_id}`
                       })}
                       disabled={unlinkBrandMutation.isPending}
-                      className="flex items-center space-x-2 px-4 py-2 bg-orange-600 hover:bg-orange-700 text-white rounded-lg transition-all disabled:opacity-50"
+                      className="flex items-center gap-1.5 px-3 py-1.5 bg-orange-600 hover:bg-orange-700 text-white rounded-lg transition-all disabled:opacity-50 text-sm"
+                      title="Отвязать от бренда"
                     >
                       <Unlink className="w-4 h-4" />
-                      <span>Отвязать от бренда</span>
+                      <span>Отвязать</span>
                     </button>
                   )}
                 </div>
@@ -437,6 +471,103 @@ export function AdminUsers() {
         variant="warning"
         icon={<Unlink className="w-5 h-5" />}
       />
+
+      {/* Модальное окно для управления бейджами */}
+      {selectedUserIdForBadges && createPortal(
+        <div 
+          className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) {
+              setSelectedUserIdForBadges(null);
+              setSelectedUserBadges([]);
+            }
+          }}
+        >
+          <div 
+            className="bg-gray-800 rounded-xl p-6 max-w-md w-full border border-white/10 shadow-xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 className="text-xl font-bold text-white mb-4">Управление бейджами</h3>
+            <p className="text-gray-400 mb-4">Выберите бейджи для пользователя. Бейджи отображаются в профиле, отзывах и комментариях.</p>
+            
+            <div className="space-y-2 mb-4 max-h-96 overflow-y-auto">
+              {(Object.keys(BADGE_CONFIG) as BadgeType[]).map((badgeType) => {
+                const config = BADGE_CONFIG[badgeType];
+                const Icon = config.icon;
+                const isSelected = selectedUserBadges.includes(badgeType);
+                
+                // Подробные описания для каждого бейджа
+                const descriptions: Record<BadgeType, string> = {
+                  founder: 'Основатель проекта. Присваивается первым пользователям, которые присоединились к FilamentHub на раннем этапе развития платформы.',
+                  beta_tester: 'Бета-тестер. Пользователь, который активно тестирует новые функции и помогает улучшать платформу, сообщая об ошибках и предлагая улучшения.',
+                  contributor: 'Контрибьютор. Пользователь, который внес значительный вклад в развитие проекта: код, документация, переводы, дизайн или другие полезные материалы.',
+                  verified: 'Верифицированный производитель. Официальный представитель бренда материалов для 3D-печати, подтвердивший свою принадлежность к компании.',
+                  early_adopter: 'Ранний последователь. Пользователь, который начал использовать FilamentHub в первые месяцы после запуска и активно участвует в сообществе.',
+                  supporter: 'Поддержал проект. Пользователь, который финансово или иным способом поддержал развитие FilamentHub.',
+                };
+                
+                return (
+                  <label
+                    key={badgeType}
+                    className={`flex items-start space-x-3 p-3 rounded-lg cursor-pointer transition-all ${
+                      isSelected 
+                        ? 'bg-purple-500/20 border border-purple-500/50' 
+                        : 'bg-white/5 border border-white/10 hover:bg-white/10'
+                    }`}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={isSelected}
+                      onChange={(e) => {
+                        if (e.target.checked) {
+                          setSelectedUserBadges([...selectedUserBadges, badgeType]);
+                        } else {
+                          setSelectedUserBadges(selectedUserBadges.filter(b => b !== badgeType));
+                        }
+                      }}
+                      className="w-4 h-4 text-purple-600 bg-gray-700 border-gray-600 rounded focus:ring-purple-500 mt-0.5"
+                    />
+                    <Icon className={`w-5 h-5 ${config.color} flex-shrink-0 mt-0.5`} />
+                    <div className="flex-1 min-w-0">
+                      <div className="text-white font-medium mb-1">{config.label}</div>
+                      <div className="text-xs text-gray-300 leading-relaxed">{descriptions[badgeType]}</div>
+                    </div>
+                  </label>
+                );
+              })}
+            </div>
+
+            <div className="flex gap-2 justify-end">
+              <button
+                onClick={() => {
+                  setSelectedUserIdForBadges(null);
+                  setSelectedUserBadges([]);
+                }}
+                disabled={updateBadgesMutation.isPending}
+                className="px-4 py-2 bg-white/5 hover:bg-white/10 text-white rounded-lg transition-all disabled:opacity-50"
+              >
+                Отмена
+              </button>
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  if (selectedUserIdForBadges) {
+                    updateBadgesMutation.mutate({
+                      userId: selectedUserIdForBadges,
+                      badges: selectedUserBadges,
+                    });
+                  }
+                }}
+                disabled={updateBadgesMutation.isPending}
+                className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg transition-all disabled:opacity-50"
+              >
+                {updateBadgesMutation.isPending ? 'Сохранение...' : 'Сохранить'}
+              </button>
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
     </div>
   );
 }

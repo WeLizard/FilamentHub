@@ -10,7 +10,7 @@ interface BadgeConfig {
   title: string;
 }
 
-const BADGE_CONFIG: Record<BadgeType, BadgeConfig> = {
+export const BADGE_CONFIG: Record<BadgeType, BadgeConfig> = {
   founder: {
     icon: Star,
     label: 'Founder',

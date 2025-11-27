@@ -11,7 +11,6 @@ import {
   Calculator,
   Play,
   Star,
-  CheckCircle,
   XCircle,
   Plus,
   Download,
@@ -34,6 +33,9 @@ import {
   RotateCcw,
   Cog,
   Layers,
+  ChevronDown,
+  ChevronUp,
+  CheckCircle,
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { presetsAPI, filamentsAPI, brandsAPI, savedPresetsAPI, filamentReviewsAPI, calculatorAPI, printerProfilesAPI, printProfilesAPI, authAPI } from '../api/client';
@@ -41,7 +43,6 @@ import api from '../api/client';
 import { CreatePresetModal } from '../components/CreatePresetModal';
 import { ViewPresetModal } from '../components/ViewPresetModal';
 import { CreatePrinterRequestModal } from '../components/CreatePrinterRequestModal';
-import { DeleteAccountModal } from '../components/DeleteAccountModal';
 import { SettingsTab } from '../components/SettingsTab';
 import { ExportFromOrcaSlicerButton } from '../components/ExportFromOrcaSlicerButton';
 import { ExportPrinterProfilesButton } from '../components/ExportPrinterProfilesButton';
@@ -57,7 +58,7 @@ export const ProfilePage: React.FC = () => {
   const { user, refreshUser } = useAuth();
   const queryClient = useQueryClient();
   const [showBrandCabinet, setShowBrandCabinet] = useState(false); // Показывать ли кабинет производителя
-  const [userTab, setUserTab] = useState<'dashboard' | 'presets' | 'history' | 'calculator' | 'settings' | 'printer-profiles' | 'print-profiles'>(
+  const [userTab, setUserTab] = useState<'dashboard' | 'presets' | 'history' | 'calculator' | 'settings' | 'printer-profiles'>(
     'dashboard'
   );
   const [isCreatePresetModalOpen, setIsCreatePresetModalOpen] = useState(false);
@@ -67,17 +68,18 @@ export const ProfilePage: React.FC = () => {
   const [viewingPreset, setViewingPreset] = useState<Preset | null>(null);
   const [selectedPrinterProfile, setSelectedPrinterProfile] = useState<PrinterProfile | null>(null);
   const [selectedPrintProfile, setSelectedPrintProfile] = useState<PrintProfile | null>(null);
+  const [expandedPrinterId, setExpandedPrinterId] = useState<number | string | null>(null); // ID или slug принтера, для которого показываем профили
+  const [expandedPrinterProfileId, setExpandedPrinterProfileId] = useState<number | null>(null); // ID профиля принтера, для которого показываем профили печати
   const [isCreatePrinterProfileModalOpen, setIsCreatePrinterProfileModalOpen] = useState(false);
   const [isCreatePrintProfileModalOpen, setIsCreatePrintProfileModalOpen] = useState(false);
   const [editingPrinterProfile, setEditingPrinterProfile] = useState<PrinterProfile | null>(null);
   const [editingPrintProfile, setEditingPrintProfile] = useState<PrintProfile | null>(null);
-  const [isDeleteAccountModalOpen, setIsDeleteAccountModalOpen] = useState(false);
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
 
-  // Загружаем пресеты пользователя (созданные им)
+  // Загружаем все пресеты пользователя (активные + черновики)
   const { data: userPresetsData } = useQuery({
     queryKey: ['user-presets', user?.id],
-    queryFn: () => presetsAPI.list({ active_only: true, page: 1, size: 100, user_id: user?.id }),
+    queryFn: () => presetsAPI.list({ active_only: false, page: 1, size: 100, user_id: user?.id }),
     enabled: !!user?.id,
   });
 
@@ -87,6 +89,7 @@ export const ProfilePage: React.FC = () => {
     queryFn: () => savedPresetsAPI.list(),
     enabled: !!user?.id,
   });
+
 
   // Загружаем детали сохранённых пресетов
   const savedPresetIds = useMemo(() => {
@@ -163,6 +166,77 @@ export const ProfilePage: React.FC = () => {
 
   const myPrinterProfiles = useMemo(() => printerProfilesData?.items ?? [], [printerProfilesData]);
   const myPrintProfiles = useMemo(() => printProfilesData?.items ?? [], [printProfilesData]);
+
+  // Lookup map для PrintProfile по slug -> name (для отображения вместо slug)
+  const printProfileNameBySlug = useMemo(() => {
+    const map = new Map<string, string>();
+    myPrintProfiles.forEach((profile) => {
+      if (profile.slug && profile.name) {
+        map.set(profile.slug, profile.name);
+      }
+    });
+    return map;
+  }, [myPrintProfiles]);
+
+  // Lookup map для PrinterProfile по slug -> name (для отображения вместо slug)
+  const printerProfileNameBySlug = useMemo(() => {
+    const map = new Map<string, string>();
+    myPrinterProfiles.forEach((profile) => {
+      if (profile.slug && profile.name) {
+        map.set(profile.slug, profile.name);
+      }
+    });
+    return map;
+  }, [myPrinterProfiles]);
+
+  // Группируем профили принтера по принтерам (по printer_id)
+  const printersWithProfiles = useMemo(() => {
+    const printerMap = new Map<number, {
+      id: number;
+      slug: string | null;
+      name: string;
+      manufacturer: string | null;
+      model: string | null;
+      profiles: PrinterProfile[];
+    }>();
+
+    myPrinterProfiles.forEach((profile) => {
+      // Группируем только по printer_id (реальные принтеры из базы)
+      if (!profile.printer_id) {
+        return; // Пропускаем профили без привязанного принтера
+      }
+      
+      if (!printerMap.has(profile.printer_id)) {
+        // Формируем название из manufacturer и model
+        const displayName = profile.printer_manufacturer && profile.printer_model
+          ? `${profile.printer_manufacturer} ${profile.printer_model}`
+          : profile.printer_name || profile.printer_slug || `Принтер ${profile.printer_id}`;
+        
+        printerMap.set(profile.printer_id, {
+          id: profile.printer_id,
+          slug: profile.printer_slug,
+          name: displayName,
+          manufacturer: profile.printer_manufacturer,
+          model: profile.printer_model,
+          profiles: [],
+        });
+      }
+      
+      printerMap.get(profile.printer_id)!.profiles.push(profile);
+    });
+
+    return Array.from(printerMap.values()).sort((a, b) => {
+      // Сортируем сначала по производителю, затем по модели
+      const manufacturerA = a.manufacturer || '';
+      const manufacturerB = b.manufacturer || '';
+      if (manufacturerA !== manufacturerB) {
+        return manufacturerA.localeCompare(manufacturerB);
+      }
+      const modelA = a.model || '';
+      const modelB = b.model || '';
+      return modelA.localeCompare(modelB);
+    });
+  }, [myPrinterProfiles]);
 
   const [printProfileQualityFilter, setPrintProfileQualityFilter] = useState<string | null>(null);
   const [printProfileNozzleFilter, setPrintProfileNozzleFilter] = useState<string | null>(null);
@@ -369,6 +443,8 @@ export const ProfilePage: React.FC = () => {
     setIsViewPresetModalOpen(true);
   };
 
+
+
   const handleCreatePreset = () => {
     setEditingPreset(null);
     setIsCreatePresetModalOpen(true);
@@ -564,8 +640,7 @@ export const ProfilePage: React.FC = () => {
           {[
             { id: 'dashboard', label: 'Дашборд', icon: Play },
             { id: 'presets', label: 'Профили филамента', icon: Settings },
-            { id: 'printer-profiles', label: 'Профили принтера', icon: Printer },
-            { id: 'print-profiles', label: 'Профили печати', icon: Layers },
+            { id: 'printer-profiles', label: 'Мои принтеры', icon: Printer },
             { id: 'history', label: 'История', icon: TrendingUp },
             { id: 'calculator', label: 'Калькулятор', icon: Calculator },
             { id: 'settings', label: 'Настройки', icon: Cog },
@@ -720,13 +795,13 @@ export const ProfilePage: React.FC = () => {
         <div className="space-y-6">
           <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
             <div>
-              <h2 className="text-2xl font-bold text-white">Мои профили принтера</h2>
+              <h2 className="text-2xl font-bold text-white">Мои принтеры</h2>
               <p className="text-sm text-gray-400">
-                Настройки принтеров, которые можно синхронизировать между FilamentHub и OrcaSlicer.
+                Управление принтерами и их профилями. Синхронизация с OrcaSlicer.
               </p>
             </div>
             <div className="flex items-center gap-3">
-              <StatusBadge label={`${myPrinterProfiles.length} шт.`} variant="accent" />
+              <StatusBadge label={`${printersWithProfiles.length} принтеров`} variant="accent" />
               {/* Кнопка экспорта из OrcaSlicer */}
               <ExportPrinterProfilesButton />
               <button
@@ -739,30 +814,229 @@ export const ProfilePage: React.FC = () => {
                 title="Создать профиль принтера"
               >
                 <Plus className="w-4 h-4 inline mr-2" />
-                Добавить вручную
+                Добавить профиль
               </button>
             </div>
           </div>
 
           {isLoadingPrinterProfiles ? (
             <ProfileSectionLoader />
-          ) : myPrinterProfiles.length > 0 ? (
-            <div className="grid gap-6 md:grid-cols-2">
-              {myPrinterProfiles.map((profile) => (
-                <PrinterProfileCard
-                  key={profile.id}
-                  profile={profile}
-                  formatDateTime={formatDateTime}
-                  onView={(item) => setSelectedPrinterProfile(item)}
-                  onDownload={handleDownloadPrinterProfile}
-                />
-              ))}
+          ) : printersWithProfiles.length > 0 ? (
+            <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
+              {printersWithProfiles.map((printer) => {
+                const isPrinterExpanded = expandedPrinterId === printer.id;
+                
+                return (
+                  <div key={printer.id} className="bg-white/10 backdrop-blur-sm border border-white/15 rounded-2xl p-6 shadow-xl">
+                    {/* Заголовок принтера */}
+                    <div className="flex items-start justify-between gap-3 mb-4">
+                      <div className="flex-1">
+                        <div className="flex items-center gap-3 mb-2">
+                          <Printer className="w-6 h-6 text-purple-400 flex-shrink-0" />
+                          <div>
+                            {printer.manufacturer && (
+                              <p className="text-xs text-gray-400">{printer.manufacturer}</p>
+                            )}
+                            <h3 className="text-lg font-semibold text-white">{printer.model || printer.name}</h3>
+                          </div>
+                        </div>
+                        {printer.slug && (
+                          <p className="text-xs text-gray-500">Slug: {printer.slug}</p>
+                        )}
+                      </div>
+                      <StatusBadge label={`${printer.profiles.length} профилей`} variant="accent" />
+                    </div>
+
+                    {/* Профили принтера */}
+                    <div className="space-y-2 mt-4 pt-4 border-t border-white/10">
+                      {printer.profiles.map((profile) => {
+                          // Фильтруем профили печати для этого профиля принтера
+                          const printProfilesForPrinterProfile = profile.printer_slug
+                            ? myPrintProfiles.filter((pp) => {
+                                const hasPrinterLink = pp.printer_links?.some(
+                                  (link) => link.printer_slug === profile.printer_slug
+                                );
+                                const hasCompatiblePrinter = pp.compatible_printers?.includes(profile.printer_slug || '');
+                                return hasPrinterLink || hasCompatiblePrinter;
+                              })
+                            : [];
+
+                          const isProfileExpanded = expandedPrinterProfileId === profile.id;
+
+                          return (
+                            <div key={profile.id} className="bg-white/5 rounded-xl border border-white/10 p-3">
+                              {/* Заголовок профиля принтера */}
+                              <div className="flex items-start justify-between gap-3 mb-2">
+                                <div className="flex-1">
+                                  <div className="flex items-center gap-2 mb-1">
+                                    <Settings className="w-4 h-4 text-blue-400 flex-shrink-0" />
+                                    <h4 className="text-sm font-semibold text-white">{profile.name}</h4>
+                                  </div>
+                                  {profile.nozzle_diameters && profile.nozzle_diameters.length > 0 && (
+                                    <p className="text-xs text-gray-400 ml-6">
+                                      Сопла: {profile.nozzle_diameters.join(', ')} мм
+                                    </p>
+                                  )}
+                                </div>
+                                {printProfilesForPrinterProfile.length > 0 && (
+                                  <StatusBadge label={`${printProfilesForPrinterProfile.length} профилей печати`} variant="accent" />
+                                )}
+                              </div>
+                              
+                              {/* Кнопка раскрытия деталей */}
+                              <button
+                                type="button"
+                                onClick={() => setExpandedPrinterProfileId(isProfileExpanded ? null : profile.id)}
+                                className="w-full mt-2 px-3 py-1.5 rounded-lg border border-white/20 text-xs text-gray-400 hover:text-white hover:bg-white/10 transition-all flex items-center justify-center gap-2"
+                              >
+                                {isProfileExpanded ? (
+                                  <>
+                                    <ChevronUp className="w-3 h-3" />
+                                    Скрыть детали
+                                  </>
+                                ) : (
+                                  <>
+                                    <ChevronDown className="w-3 h-3" />
+                                    Показать детали
+                                  </>
+                                )}
+                              </button>
+
+                              {/* Детали профиля принтера и профили печати */}
+                              {isProfileExpanded && (
+                                <div className="mt-3 pt-3 space-y-3 border-t border-white/10 px-2">
+                                  {/* Краткая информация о профиле принтера */}
+                                  <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3 text-xs">
+                                    <div>
+                                      <span className="text-gray-400">Обновлён:</span>{' '}
+                                      <span className="text-white">{formatDateTime(profile.updated_at)}</span>
+                                    </div>
+                                    {profile.default_print_profile_slug && (
+                                      <div>
+                                        <span className="text-gray-400">Default Profile:</span>{' '}
+                                        <span className="text-white" title={profile.default_print_profile_slug}>
+                                          {printProfileNameBySlug.get(profile.default_print_profile_slug) || profile.default_print_profile_slug}
+                                        </span>
+                                      </div>
+                                    )}
+                                    {typeof profile.printable_height_mm === 'number' && (
+                                      <div>
+                                        <span className="text-gray-400">Высота:</span>{' '}
+                                        <span className="text-white">{profile.printable_height_mm.toFixed(0)} мм</span>
+                                      </div>
+                                    )}
+                                  </div>
+
+                                  {/* Кнопки действий профиля принтера */}
+                                  <div className="flex flex-wrap gap-2">
+                                    <button
+                                      type="button"
+                                      onClick={() => setSelectedPrinterProfile(profile)}
+                                      className="px-3 py-1.5 rounded-lg border border-white/20 text-xs text-white/90 hover:bg-white/10 transition-all flex items-center gap-1.5"
+                                    >
+                                      <Eye className="w-3 h-3" />
+                                      Просмотр
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => handleDownloadPrinterProfile(profile)}
+                                      className="px-3 py-1.5 rounded-lg border border-white/20 text-xs text-white/90 hover:bg-white/10 transition-all flex items-center gap-1.5"
+                                    >
+                                      <Download className="w-3 h-3" />
+                                      Скачать JSON
+                                    </button>
+                                  </div>
+
+                                  {/* Профили печати для этого профиля принтера */}
+                                  {printProfilesForPrinterProfile.length > 0 && (
+                                    <div className="pt-2 border-t border-white/10">
+                                      <p className="text-xs text-gray-400 mb-2">Профили печати:</p>
+                                      <div className="space-y-2">
+                                        {printProfilesForPrinterProfile.map((printProfile) => (
+                                          <div
+                                            key={printProfile.id}
+                                            className="bg-white/5 rounded-lg p-3 border border-white/10"
+                                          >
+                                            <div className="flex items-start justify-between gap-3">
+                                              <div className="flex-1">
+                                                <h5 className="text-xs font-semibold text-white">{printProfile.name}</h5>
+                                                {printProfile.quality_tier && (
+                                                  <p className="text-xs text-gray-400 mt-0.5">
+                                                    Качество: {printProfile.quality_tier}
+                                                  </p>
+                                                )}
+                                                {printProfile.layer_height_mm && (
+                                                  <p className="text-xs text-gray-400">
+                                                    Высота слоя: {printProfile.layer_height_mm.toFixed(2)} мм
+                                                  </p>
+                                                )}
+                                              </div>
+                                              <div className="flex items-center gap-2">
+                                                {printProfile.is_official && (
+                                                  <StatusBadge label="Системный" variant="accent" />
+                                                )}
+                                                <StatusBadge
+                                                  label={printProfile.active ? 'Активен' : 'Отключен'}
+                                                  variant={printProfile.active ? 'success' : 'muted'}
+                                                />
+                                              </div>
+                                            </div>
+                                            {printProfile.description && (
+                                              <p className="mt-1.5 text-xs text-gray-300 line-clamp-2">
+                                                {printProfile.description}
+                                              </p>
+                                            )}
+                                            <div className="mt-2 flex flex-wrap gap-2">
+                                              <button
+                                                type="button"
+                                                onClick={() => setSelectedPrintProfile(printProfile)}
+                                                className="px-2 py-1 rounded border border-white/20 text-xs text-white/90 hover:bg-white/10 transition-all flex items-center gap-1"
+                                              >
+                                                <Eye className="w-3 h-3" />
+                                                Просмотр
+                                              </button>
+                                              <button
+                                                type="button"
+                                                onClick={() => handleDownloadPrintProfile(printProfile)}
+                                                className="px-2 py-1 rounded border border-white/20 text-xs text-white/90 hover:bg-white/10 transition-all flex items-center gap-1"
+                                              >
+                                                <Download className="w-3 h-3" />
+                                                Скачать
+                                              </button>
+                                            </div>
+                                          </div>
+                                        ))}
+                                      </div>
+                                    </div>
+                                  )}
+
+                                  {/* Кнопка добавления профиля печати */}
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setEditingPrintProfile(null);
+                                      setIsCreatePrintProfileModalOpen(true);
+                                    }}
+                                    className="w-full px-3 py-2 rounded-lg border border-dashed border-white/20 text-xs text-gray-400 hover:text-white hover:border-white/40 transition-all flex items-center justify-center gap-2"
+                                  >
+                                    <Plus className="w-3 h-3" />
+                                    Добавить профиль печати
+                                  </button>
+                                </div>
+                              )}
+                            </div>
+                          );
+                      })}
+                    </div>
+                  </div>
+                );
+              })}
             </div>
           ) : (
             <EmptyState
               icon={Printer}
-              title="Пока нет профилей принтера"
-              description="Импортируйте профиль из OrcaSlicer или создайте его вручную - он появится здесь."
+              title="Пока нет принтеров"
+              description="Импортируйте профили из OrcaSlicer или создайте их вручную - они появятся здесь."
               actionLabel="Создать профиль принтера"
               onAction={() => {
                 setEditingPrinterProfile(null);
@@ -774,104 +1048,6 @@ export const ProfilePage: React.FC = () => {
       )}
 
       {/* Print Profiles Tab */}
-      {userTab === 'print-profiles' && (
-        <div className="space-y-6">
-          <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-            <div>
-              <h2 className="text-2xl font-bold text-white">Мои профили печати</h2>
-              <p className="text-sm text-gray-400">
-                Наборы настроек (Print Settings) для разных задач. Их тоже будем синхронизировать с OrcaSlicer.
-              </p>
-            </div>
-            <div className="flex items-center gap-3">
-              <StatusBadge
-                label={
-                  printProfileQualityFilter ||
-                  printProfileNozzleFilter ||
-                  printProfilePrinterFilter ||
-                  printProfileOnlyOfficial ||
-                  printProfileOnlyActive
-                    ? `${filteredPrintProfiles.length}/${myPrintProfiles.length} шт.`
-                    : `${myPrintProfiles.length} шт.`
-                }
-                variant="accent"
-              />
-              {/* Кнопка экспорта из OrcaSlicer */}
-              <ExportPrintProfilesButton />
-              <button
-                type="button"
-                onClick={() => {
-                  setEditingPrintProfile(null);
-                  setIsCreatePrintProfileModalOpen(true);
-                }}
-                className="px-4 py-2 rounded-lg border border-white/20 text-sm text-white hover:bg-white/10 transition-all"
-                title="Создать профиль печати"
-              >
-                <Plus className="w-4 h-4 inline mr-2" />
-                Добавить вручную
-              </button>
-            </div>
-          </div>
-
-          {isLoadingPrintProfiles ? (
-            <ProfileSectionLoader />
-          ) : myPrintProfiles.length > 0 ? (
-            <>
-              <PrintProfileFilters
-                qualityOptions={printProfileQualityOptions}
-                nozzleOptions={printProfileNozzleOptions}
-                printerOptions={printProfilePrinterOptions}
-                qualityFilter={printProfileQualityFilter}
-                nozzleFilter={printProfileNozzleFilter}
-                printerFilter={printProfilePrinterFilter}
-                onlyOfficial={printProfileOnlyOfficial}
-                onlyActive={printProfileOnlyActive}
-                onQualityChange={value =>
-                  setPrintProfileQualityFilter(prev => (prev === value ? null : value))
-                }
-                onNozzleChange={value =>
-                  setPrintProfileNozzleFilter(prev => (prev === value ? null : value))
-                }
-                onPrinterChange={value =>
-                  setPrintProfilePrinterFilter(prev => (prev === value ? null : value))
-                }
-                onToggleOfficial={() => setPrintProfileOnlyOfficial(prev => !prev)}
-                onToggleActive={() => setPrintProfileOnlyActive(prev => !prev)}
-                onReset={resetPrintProfileFilters}
-              />
-
-              {filteredPrintProfiles.length > 0 ? (
-                <div className="grid gap-6 md:grid-cols-2">
-                  {filteredPrintProfiles.map(profile => (
-                    <PrintProfileCard
-                      key={profile.id}
-                      profile={profile}
-                      formatDateTime={formatDateTime}
-                      onView={item => setSelectedPrintProfile(item)}
-                      onDownload={handleDownloadPrintProfile}
-                    />
-                  ))}
-                </div>
-              ) : (
-                <EmptyState
-                  icon={Filter}
-                  title="Нет профилей под выбранные фильтры"
-                  description="Попробуйте изменить параметры или сбросить фильтры, чтобы увидеть остальные профили."
-                  actionLabel="Сбросить фильтры"
-                  onAction={resetPrintProfileFilters}
-                />
-              )}
-            </>
-          ) : (
-            <EmptyState
-              icon={Settings}
-              title="Пока нет профилей печати"
-              description="Импортируйте настройки из OrcaSlicer или создайте их на базе FilamentHub, чтобы ускорить подготовку печати."
-            />
-          )}
-        </div>
-      )}
-
       {/* Settings Tab */}
       {userTab === 'settings' && user && (
         <SettingsTab user={user} onUserUpdate={refreshUser} />
@@ -898,12 +1074,6 @@ export const ProfilePage: React.FC = () => {
       <CreatePrinterRequestModal
         isOpen={isCreatePrinterRequestModalOpen}
         onClose={() => setIsCreatePrinterRequestModalOpen(false)}
-      />
-
-      {/* Delete Account Modal */}
-      <DeleteAccountModal
-        isOpen={isDeleteAccountModalOpen}
-        onClose={() => setIsDeleteAccountModalOpen(false)}
       />
 
       {/* Create/Edit Printer Profile Modal */}
@@ -963,37 +1133,13 @@ export const ProfilePage: React.FC = () => {
         </section>
       )}
 
-      {/* Кнопка удаления аккаунта */}
-      <div className="mt-12 pt-6 border-t border-white/20">
-        <div className="max-w-2xl mx-auto">
-          <div className="bg-red-500/10 border border-red-500/30 rounded-xl p-4">
-            <div className="flex items-center justify-between">
-              <div className="flex items-start space-x-3 flex-1">
-                <AlertTriangle className="w-5 h-5 text-red-400 flex-shrink-0 mt-0.5" />
-                <div className="flex-1">
-                  <h3 className="text-sm font-semibold text-red-300 mb-1">Опасная зона</h3>
-                  <p className="text-xs text-red-200 mb-2">
-                    Удаление аккаунта приведёт к деактивации вашего профиля. Это действие необратимо.
-                  </p>
-                </div>
-              </div>
-              <button
-                onClick={() => setIsDeleteAccountModalOpen(true)}
-                className="px-4 py-2 bg-red-600/20 hover:bg-red-600/30 text-red-400 rounded-lg transition-all border border-red-500/30 flex items-center space-x-2"
-              >
-                <Trash2 className="w-4 h-4" />
-                <span>Удалить аккаунт</span>
-              </button>
-            </div>
-          </div>
-        </div>
-      </div>
 
       {selectedPrinterProfile && (
         <PrinterProfileModal
           profile={selectedPrinterProfile}
           onClose={() => setSelectedPrinterProfile(null)}
           formatDateTime={formatDateTime}
+          printProfileNameBySlug={printProfileNameBySlug}
         />
       )}
 
@@ -1337,6 +1483,11 @@ const PresetCard: React.FC<PresetCardProps> = ({ preset, onEdit, onView, onDelet
               {preset.source === 'saved' && (
                 <span className="px-2 py-0.5 bg-blue-600/30 rounded text-blue-300 text-xs font-medium whitespace-nowrap">
                   Из каталога
+                </span>
+              )}
+              {!preset.active && preset.source === 'own' && !preset.name?.includes('@FilamentHub') && (
+                <span className="px-2 py-0.5 bg-orange-600/30 rounded text-orange-300 text-xs font-medium whitespace-nowrap">
+                  Заготовка
                 </span>
               )}
               {preset.is_weighted && (
@@ -2436,12 +2587,34 @@ const InfoRow: React.FC<InfoRowProps> = ({ label, value }) => (
 
 interface PrinterProfileCardProps {
   profile: PrinterProfile;
+  printProfiles?: PrintProfile[];
+  isExpanded?: boolean;
+  onExpand?: () => void;
   formatDateTime: (value: string) => string;
   onView: (profile: PrinterProfile) => void;
   onDownload: (profile: PrinterProfile) => void;
+  onViewPrintProfile?: (profile: PrintProfile) => void;
+  onDownloadPrintProfile?: (profile: PrintProfile) => void;
+  onCreatePrintProfile?: () => void;
+  printProfileNameBySlug?: Map<string, string>;
 }
 
-const PrinterProfileCard: React.FC<PrinterProfileCardProps> = ({ profile, formatDateTime, onView, onDownload }) => (
+const PrinterProfileCard: React.FC<PrinterProfileCardProps> = ({ 
+  profile, 
+  printProfiles = [],
+  isExpanded = false,
+  onExpand,
+  formatDateTime, 
+  onView, 
+  onDownload,
+  onViewPrintProfile,
+  onDownloadPrintProfile,
+  onCreatePrintProfile,
+  printProfileNameBySlug,
+}) => {
+  const printProfilesCount = printProfiles.length;
+  
+  return (
   <div className="bg-white/10 backdrop-blur-sm border border-white/15 rounded-2xl p-6 shadow-xl">
     <div className="flex items-start justify-between gap-3">
       <div>
@@ -2454,6 +2627,9 @@ const PrinterProfileCard: React.FC<PrinterProfileCardProps> = ({ profile, format
       <div className="flex flex-wrap gap-2 justify-end">
         <StatusBadge label={profile.active ? 'Активен' : 'Отключен'} variant={profile.active ? 'success' : 'muted'} />
         {profile.is_official && <StatusBadge label="Официальный" variant="accent" />}
+        {printProfilesCount > 0 && (
+          <StatusBadge label={`${printProfilesCount} профилей печати`} variant="accent" />
+        )}
       </div>
     </div>
     {profile.description && (
@@ -2462,7 +2638,12 @@ const PrinterProfileCard: React.FC<PrinterProfileCardProps> = ({ profile, format
     <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
       <InfoRow label="Привязка к принтеру" value={profile.printer_id ? `ID ${profile.printer_id}` : 'не указана'} />
       <InfoRow label="Обновлён" value={formatDateTime(profile.updated_at)} />
-      <InfoRow label="Default Print Profile" value={profile.default_print_profile_slug || 'не задан'} />
+      <InfoRow 
+        label="Default Print Profile" 
+        value={profile.default_print_profile_slug 
+          ? (printProfileNameBySlug?.get(profile.default_print_profile_slug) || profile.default_print_profile_slug)
+          : 'не задан'} 
+      />
       <InfoRow
         label="Диаметры сопел"
         value={profile.nozzle_diameters && profile.nozzle_diameters.length > 0 ? profile.nozzle_diameters.join(', ') : 'не указаны'}
@@ -2476,6 +2657,108 @@ const PrinterProfileCard: React.FC<PrinterProfileCardProps> = ({ profile, format
       <InfoRow label="Стартовый G-code" value={profile.start_gcode ? 'задан' : '—'} />
       <InfoRow label="Финальный G-code" value={profile.end_gcode ? 'задан' : '—'} />
     </div>
+    
+    {/* Профили печати для этого принтера */}
+    {printProfilesCount > 0 && onExpand && (
+      <div className="mt-4 pt-4 border-t border-white/10">
+        <button
+          type="button"
+          onClick={onExpand}
+          className="w-full flex items-center justify-between px-4 py-2 rounded-lg border border-white/20 text-sm text-white/90 hover:bg-white/10 transition-all"
+        >
+          <div className="flex items-center gap-2">
+            <Layers className="w-4 h-4" />
+            <span>Профили печати ({printProfilesCount})</span>
+          </div>
+          {isExpanded ? (
+            <ChevronUp className="w-4 h-4" />
+          ) : (
+            <ChevronDown className="w-4 h-4" />
+          )}
+        </button>
+        
+        {isExpanded && (
+          <div className="mt-4 space-y-3">
+            {printProfiles.map((printProfile) => (
+              <div
+                key={printProfile.id}
+                className="bg-white/5 rounded-lg p-4 border border-white/10"
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div className="flex-1">
+                    <h4 className="text-sm font-semibold text-white">{printProfile.name}</h4>
+                    {printProfile.quality_tier && (
+                      <p className="text-xs text-gray-400 mt-1">Качество: {printProfile.quality_tier}</p>
+                    )}
+                    {printProfile.layer_height_mm && (
+                      <p className="text-xs text-gray-400">Высота слоя: {printProfile.layer_height_mm.toFixed(2)} мм</p>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-2">
+                    {printProfile.is_official && (
+                      <StatusBadge label="Системный" variant="accent" />
+                    )}
+                    <StatusBadge 
+                      label={printProfile.active ? 'Активен' : 'Отключен'} 
+                      variant={printProfile.active ? 'success' : 'muted'}
+                    />
+                  </div>
+                </div>
+                {printProfile.description && (
+                  <p className="mt-2 text-xs text-gray-300 line-clamp-2">{printProfile.description}</p>
+                )}
+                <div className="mt-3 flex flex-wrap gap-2">
+                  {onViewPrintProfile && (
+                    <button
+                      type="button"
+                      onClick={() => onViewPrintProfile(printProfile)}
+                      className="px-3 py-1.5 rounded-lg border border-white/20 text-xs text-white/90 hover:bg-white/10 transition-all flex items-center gap-1.5"
+                    >
+                      <Eye className="w-3 h-3" />
+                      Просмотр
+                    </button>
+                  )}
+                  {onDownloadPrintProfile && (
+                    <button
+                      type="button"
+                      onClick={() => onDownloadPrintProfile(printProfile)}
+                      className="px-3 py-1.5 rounded-lg border border-white/20 text-xs text-white/90 hover:bg-white/10 transition-all flex items-center gap-1.5"
+                    >
+                      <Download className="w-3 h-3" />
+                      Скачать
+                    </button>
+                  )}
+                </div>
+              </div>
+            ))}
+            {onCreatePrintProfile && (
+              <button
+                type="button"
+                onClick={onCreatePrintProfile}
+                className="w-full px-4 py-2 rounded-lg border border-dashed border-white/20 text-sm text-gray-400 hover:text-white hover:border-white/40 transition-all flex items-center justify-center gap-2"
+              >
+                <Plus className="w-4 h-4" />
+                Добавить профиль печати
+              </button>
+            )}
+          </div>
+        )}
+      </div>
+    )}
+    
+    {printProfilesCount === 0 && onCreatePrintProfile && (
+      <div className="mt-4 pt-4 border-t border-white/10">
+        <button
+          type="button"
+          onClick={onCreatePrintProfile}
+          className="w-full px-4 py-2 rounded-lg border border-dashed border-white/20 text-sm text-gray-400 hover:text-white hover:border-white/40 transition-all flex items-center justify-center gap-2"
+        >
+          <Plus className="w-4 h-4" />
+          Добавить профиль печати
+        </button>
+      </div>
+    )}
+    
     <div className="mt-4 flex flex-wrap gap-2">
       <button
         type="button"
@@ -2495,7 +2778,8 @@ const PrinterProfileCard: React.FC<PrinterProfileCardProps> = ({ profile, format
       </button>
     </div>
   </div>
-);
+  );
+};
 
 interface PrintProfileCardProps {
   profile: PrintProfile;
@@ -2713,9 +2997,10 @@ interface PrinterProfileModalProps {
   profile: PrinterProfile;
   onClose: () => void;
   formatDateTime: (value: string) => string;
+  printProfileNameBySlug?: Map<string, string>;
 }
 
-const PrinterProfileModal: React.FC<PrinterProfileModalProps> = ({ profile, onClose, formatDateTime }) => {
+const PrinterProfileModal: React.FC<PrinterProfileModalProps> = ({ profile, onClose, formatDateTime, printProfileNameBySlug }) => {
   useEffect(() => {
     const handleKey = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
@@ -2765,7 +3050,12 @@ const PrinterProfileModal: React.FC<PrinterProfileModalProps> = ({ profile, onCl
                 typeof profile.printable_height_mm === 'number' ? `${profile.printable_height_mm.toFixed(0)} мм` : 'не указана'
               }
             />
-            <InfoRow label="Default Print Profile" value={profile.default_print_profile_slug || 'не задан'} />
+            <InfoRow 
+        label="Default Print Profile" 
+        value={profile.default_print_profile_slug 
+          ? (printProfileNameBySlug?.get(profile.default_print_profile_slug) || profile.default_print_profile_slug)
+          : 'не задан'} 
+      />
           </div>
           {profile.description && (
             <div>

@@ -33,6 +33,39 @@ export const CreatePrintProfileModal: React.FC<CreatePrintProfileModalProps> = (
   const [layerHeight, setLayerHeight] = useState<number | ''>('');
   const [notes, setNotes] = useState('');
 
+  // Маппинг quality tier для отображения
+  const qualityTierMap: Record<string, string> = {
+    superdraft: 'Extra Draft',
+    draft: 'Draft',
+    standard: 'Standard',
+    optimal: 'Optimal',
+    fine: 'Fine',
+    highdetail: 'Extra Fine',
+  };
+
+  // Флаг для отслеживания, было ли имя изменено пользователем вручную
+  const [nameManuallyChanged, setNameManuallyChanged] = useState(false);
+
+  // Автогенерация имени в формате OrcaSlicer при изменении layer_height и quality_tier
+  // Срабатывает только если имя не было изменено пользователем вручную
+  useEffect(() => {
+    if (!profile && !baseProfile && !nameManuallyChanged && layerHeight && qualityTier) {
+      const layerStr = typeof layerHeight === 'number' 
+        ? layerHeight.toFixed(2).replace(/\.?0+$/, '')
+        : String(layerHeight);
+      const qualityDisplay = qualityTierMap[qualityTier.toLowerCase()] || qualityTier.charAt(0).toUpperCase() + qualityTier.slice(1);
+      const generatedName = `${layerStr}mm ${qualityDisplay} @FilamentHub`;
+      setName(generatedName);
+    }
+  }, [layerHeight, qualityTier, profile, baseProfile, nameManuallyChanged]);
+
+  // Сбрасываем флаг при изменении режима (редактирование/создание)
+  useEffect(() => {
+    if (isOpen) {
+      setNameManuallyChanged(false);
+    }
+  }, [isOpen, profile, baseProfile]);
+
   // Генерируем slug из name при изменении
   useEffect(() => {
     if (!profile && !baseProfile && name) {
@@ -163,15 +196,30 @@ export const CreatePrintProfileModal: React.FC<CreatePrintProfileModalProps> = (
           <div>
             <label className="block text-sm font-medium text-gray-300 mb-2">
               Название <span className="text-red-400">*</span>
+              {layerHeight && qualityTier && (
+                <span className="text-xs text-gray-400 ml-2">
+                  (Рекомендуемый формат для OrcaSlicer: &quot;{typeof layerHeight === 'number' ? layerHeight.toFixed(2).replace(/\.?0+$/, '') : layerHeight}mm {qualityTierMap[qualityTier.toLowerCase()] || qualityTier.charAt(0).toUpperCase() + qualityTier.slice(1)} @FilamentHub&quot;)
+                </span>
+              )}
             </label>
             <input
               type="text"
               value={name}
-              onChange={(e) => setName(e.target.value)}
+              onChange={(e) => {
+                setName(e.target.value);
+                setNameManuallyChanged(true); // Отмечаем, что имя изменено вручную
+              }}
               className="w-full bg-white/5 border border-white/10 rounded-lg px-4 py-2 text-white placeholder-gray-500 focus:outline-none focus:border-purple-500"
-              placeholder="Например: Standard 0.4mm"
+              placeholder={layerHeight && qualityTier 
+                ? `${typeof layerHeight === 'number' ? layerHeight.toFixed(2).replace(/\.?0+$/, '') : layerHeight}mm ${qualityTierMap[qualityTier.toLowerCase()] || qualityTier.charAt(0).toUpperCase() + qualityTier.slice(1)} @FilamentHub`
+                : "Например: 0.20mm Standard @Voron"}
               required
             />
+            {layerHeight && qualityTier && !name.match(/@\w+$/i) && name && (
+              <p className="text-xs text-amber-400 mt-1">
+                💡 Рекомендуется формат для совместимости с OrcaSlicer: &quot;{typeof layerHeight === 'number' ? layerHeight.toFixed(2).replace(/\.?0+$/, '') : layerHeight}mm {qualityTierMap[qualityTier.toLowerCase()] || qualityTier.charAt(0).toUpperCase() + qualityTier.slice(1)} @FilamentHub&quot;
+              </p>
+            )}
           </div>
 
           {/* Slug */}

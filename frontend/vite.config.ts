@@ -12,10 +12,12 @@ export default defineConfig({
       '/api': {
         target: 'http://localhost:8000',
         changeOrigin: true,
+        timeout: 180000, // 3 минуты для длительных операций (миграции)
       },
       '/uploads': {
         target: 'http://localhost:8000',
         changeOrigin: true,
+        timeout: 180000, // 3 минуты для загрузки файлов
       },
     },
   },

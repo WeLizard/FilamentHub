@@ -28,7 +28,9 @@ import {
   X,
   Eye,
   ChevronLeft,
-  ChevronRight as ChevronRightIcon
+  ChevronRight as ChevronRightIcon,
+  Edit,
+  Save
 } from 'lucide-react';
 import { adminAPI } from '../../api/client';
 
@@ -203,6 +205,9 @@ export function AdminDatabase() {
   const [tableDataSearch, setTableDataSearch] = useState('');
   const [tableDataOrderBy, setTableDataOrderBy] = useState<string | null>(null);
   const [tableDataOrderDesc, setTableDataOrderDesc] = useState(false);
+  const [editingRow, setEditingRow] = useState<{ row: Record<string, any>; primaryKey: Record<string, any> } | null>(null);
+  const [editFormData, setEditFormData] = useState<Record<string, any>>({});
+  const [editError, setEditError] = useState<string | null>(null);
 
   // Загрузка истории миграций
   const { data: migrationHistory, isLoading: loadingHistory, refetch: refetchMigrations } = useQuery({
@@ -260,6 +265,24 @@ export function AdminDatabase() {
     },
   });
 
+  // Обновление строки таблицы
+  const updateTableRowMutation = useMutation({
+    mutationFn: ({ tableName, primaryKey, data, schemaName }: {
+      tableName: string;
+      primaryKey: Record<string, any>;
+      data: Record<string, any>;
+      schemaName?: string;
+    }) => adminAPI.updateTableData(tableName, { primary_key: primaryKey, data }, schemaName),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['admin-table-data'] });
+      setEditingRow(null);
+      setEditError(null);
+    },
+    onError: (error: any) => {
+      setEditError(error?.response?.data?.detail || 'Ошибка при обновлении строки');
+    },
+  });
+
   // Фильтрация и сортировка миграций
   const filteredMigrations = useMemo(() => {
     if (!migrationHistory?.migrations) return [];
@@ -277,9 +300,11 @@ export function AdminDatabase() {
     
     // Фильтр по статусу
     if (migrationFilter === 'applied') {
-      filtered = filtered.filter((m: any) => m.is_applied);
+      // Применённые: есть is_applied ИЛИ есть applied_at
+      filtered = filtered.filter((m: any) => m.is_applied || m.applied_at);
     } else if (migrationFilter === 'pending') {
-      filtered = filtered.filter((m: any) => !m.is_applied && !m.is_head);
+      // Неприменённые: нет is_applied И нет applied_at И не head
+      filtered = filtered.filter((m: any) => !m.is_applied && !m.applied_at && !m.is_head);
     }
     
     // Правильная сортировка: строим порядок от base до head
@@ -340,8 +365,11 @@ export function AdminDatabase() {
     
     // Если есть применённые и неприменённые, сортируем: применённые сначала
     ordered.sort((a: any, b: any) => {
-      if (a.is_applied !== b.is_applied) {
-        return a.is_applied ? -1 : 1;
+      // Сравниваем по статусу применения (is_applied ИЛИ applied_at)
+      const aApplied = a.is_applied || a.applied_at;
+      const bApplied = b.is_applied || b.applied_at;
+      if (aApplied !== bApplied) {
+        return aApplied ? -1 : 1;
       }
       // Если оба применены или оба не применены, сохраняем порядок
       return 0;
@@ -1025,7 +1053,8 @@ export function AdminDatabase() {
                           `}
                         >
                           <td className="py-3 px-4">
-                            {migration.is_applied ? (
+                            {/* Миграция применена, если is_applied=true ИЛИ есть applied_at */}
+                            {(migration.is_applied || migration.applied_at) ? (
                               <span className="flex items-center space-x-1 text-green-400">
                                 <CheckCircle className="w-4 h-4" />
                                 <span className="text-xs">Применена</span>
@@ -1066,7 +1095,8 @@ export function AdminDatabase() {
                           </td>
                           <td className="py-3 px-4">
                             <div className="flex items-center justify-center space-x-2">
-                              {!migration.is_applied ? (
+                              {/* Показываем кнопку "Применить" только если миграция НЕ применена (нет is_applied И нет applied_at) */}
+                              {!migration.is_applied && !migration.applied_at ? (
                                 <button
                                   onClick={() => handleApplyMigration(migration.revision)}
                                   disabled={applyMigrationMutation.isPending}
@@ -1431,25 +1461,42 @@ export function AdminDatabase() {
                             </td>
                           </tr>
                         ) : (
-                          tableData.rows.map((row: any, idx: number) => (
-                            <tr key={idx} className="border-b border-white/5 hover:bg-white/5 transition-colors">
-                              {tableData.columns.map((col: string) => (
-                                <td key={col} className="py-2 px-4 text-gray-300 text-xs">
-                                  <div className="max-w-xs truncate" title={String(row[col] ?? 'NULL')}>
-                                    {row[col] === null ? (
-                                      <span className="text-gray-500 italic">NULL</span>
-                                    ) : typeof row[col] === 'boolean' ? (
-                                      <span className={row[col] ? 'text-green-400' : 'text-red-400'}>
-                                        {row[col] ? 'true' : 'false'}
-                                      </span>
-                                    ) : (
-                                      String(row[col])
-                                    )}
-                                  </div>
-                                </td>
-                              ))}
-                            </tr>
-                          ))
+                          tableData.rows.map((row: any, idx: number) => {
+                            // Определяем первичный ключ (обычно это первая колонка или колонка 'id')
+                            const primaryKeyCol = tableData.columns.find((col: string) => 
+                              col.toLowerCase() === 'id' || col.toLowerCase().endsWith('_id')
+                            ) || tableData.columns[0];
+                            const primaryKey = { [primaryKeyCol]: row[primaryKeyCol] };
+                            
+                            return (
+                              <tr 
+                                key={idx} 
+                                className="border-b border-white/5 hover:bg-white/10 transition-colors cursor-pointer"
+                                onClick={() => {
+                                  setEditingRow({ row, primaryKey });
+                                  setEditFormData({ ...row });
+                                  setEditError(null);
+                                }}
+                                title="Кликните для редактирования"
+                              >
+                                {tableData.columns.map((col: string) => (
+                                  <td key={col} className="py-2 px-4 text-gray-300 text-xs">
+                                    <div className="max-w-xs truncate" title={String(row[col] ?? 'NULL')}>
+                                      {row[col] === null ? (
+                                        <span className="text-gray-500 italic">NULL</span>
+                                      ) : typeof row[col] === 'boolean' ? (
+                                        <span className={row[col] ? 'text-green-400' : 'text-red-400'}>
+                                          {row[col] ? 'true' : 'false'}
+                                        </span>
+                                      ) : (
+                                        String(row[col])
+                                      )}
+                                    </div>
+                                  </td>
+                                ))}
+                              </tr>
+                            );
+                          })
                         )}
                       </tbody>
                     </table>
@@ -1494,6 +1541,139 @@ export function AdminDatabase() {
         </div>
       </div>,
       document.body
+      )}
+
+      {/* Модальное окно редактирования строки */}
+      {editingRow && selectedTable && createPortal(
+        <div className={`fixed inset-0 bg-black/50 backdrop-blur-sm z-[60] overflow-y-auto ${isHeaderVisible ? 'pt-[88px]' : ''}`}>
+          <div className="min-h-full flex items-center justify-center p-4">
+            <div className="bg-gradient-to-br from-purple-900 to-indigo-900 rounded-2xl max-w-4xl w-full max-h-[90vh] my-8 overflow-hidden flex flex-col border border-white/20">
+              {/* Header */}
+              <div className="flex items-center justify-between p-6 border-b border-white/10">
+                <h3 className="text-2xl font-bold text-white flex items-center space-x-2">
+                  <Edit className="w-6 h-6" />
+                  <span>Редактировать строку</span>
+                </h3>
+                <button
+                  onClick={() => {
+                    setEditingRow(null);
+                    setEditError(null);
+                  }}
+                  className="text-gray-400 hover:text-white transition-colors"
+                >
+                  <X className="w-6 h-6" />
+                </button>
+              </div>
+
+              {/* Content */}
+              <div className="flex-1 overflow-y-auto p-6">
+                {editError && (
+                  <div className="bg-red-500/20 border border-red-500/50 rounded-lg p-3 text-red-400 text-sm mb-4">
+                    {editError}
+                  </div>
+                )}
+
+                <div className="space-y-4">
+                  {tableData?.columns.map((col: string) => {
+                    // Пропускаем первичный ключ - его нельзя редактировать
+                    const isPrimaryKey = Object.keys(editingRow.primaryKey).includes(col);
+                    const value = editFormData[col];
+                    
+                    return (
+                      <div key={col}>
+                        <label className="block text-sm font-medium text-gray-300 mb-2">
+                          {col}
+                          {isPrimaryKey && <span className="text-gray-500 ml-2">(первичный ключ)</span>}
+                        </label>
+                        {isPrimaryKey ? (
+                          <input
+                            type="text"
+                            value={value ?? ''}
+                            disabled
+                            className="w-full bg-white/5 border border-white/10 rounded-lg px-4 py-2 text-white text-sm disabled:opacity-50 disabled:cursor-not-allowed"
+                          />
+                        ) : (
+                          <input
+                            type="text"
+                            value={value ?? ''}
+                            onChange={(e) => {
+                              const newValue = e.target.value;
+                              setEditFormData(prev => ({
+                                ...prev,
+                                [col]: newValue === '' ? null : (newValue === 'true' ? true : newValue === 'false' ? false : newValue)
+                              }));
+                            }}
+                            className="w-full bg-white/5 border border-white/10 rounded-lg px-4 py-2 text-white text-sm focus:outline-none focus:border-purple-500"
+                            placeholder={value === null ? 'NULL' : ''}
+                          />
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Footer */}
+              <div className="flex items-center justify-end space-x-4 p-6 border-t border-white/10">
+                <button
+                  onClick={() => {
+                    setEditingRow(null);
+                    setEditError(null);
+                  }}
+                  className="px-4 py-2 bg-white/5 hover:bg-white/10 text-gray-300 rounded-lg transition-all"
+                >
+                  Отмена
+                </button>
+                <button
+                  onClick={async () => {
+                    setEditError(null);
+                    if (!selectedTable) return;
+                    
+                    // Убираем первичный ключ из данных для обновления
+                    const updateData = { ...editFormData };
+                    Object.keys(editingRow.primaryKey).forEach(key => {
+                      delete updateData[key];
+                    });
+                    
+                    // Убираем пустые значения
+                    Object.keys(updateData).forEach(key => {
+                      if (updateData[key] === '' || updateData[key] === null) {
+                        delete updateData[key];
+                      }
+                    });
+                    
+                    if (Object.keys(updateData).length === 0) {
+                      setEditError('Нет данных для обновления');
+                      return;
+                    }
+                    
+                    await updateTableRowMutation.mutateAsync({
+                      tableName: selectedTable.name,
+                      primaryKey: editingRow.primaryKey,
+                      data: updateData,
+                      schemaName: selectedTable.schema,
+                    });
+                  }}
+                  disabled={updateTableRowMutation.isPending}
+                  className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg transition-all disabled:opacity-50 flex items-center space-x-2"
+                >
+                  {updateTableRowMutation.isPending ? (
+                    <>
+                      <Loader className="w-4 h-4 animate-spin" />
+                      <span>Сохранение...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Save className="w-4 h-4" />
+                      <span>Сохранить</span>
+                    </>
+                  )}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>,
+        document.body
       )}
     </div>
   );
