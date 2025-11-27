@@ -70,7 +70,3 @@ async def root() -> dict[str, str]:
 from app.api.v1.api import api_router
 
 app.include_router(api_router, prefix=settings.API_V1_PREFIX)
-
-
-# FilamentWithBrand and PresetWithFilament временно отключены
-# TODO: Восстановить после исправления проблемы с forward references

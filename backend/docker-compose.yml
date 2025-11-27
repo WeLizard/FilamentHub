@@ -47,7 +47,7 @@ services:
         condition: service_healthy
     environment:
       # Переопределяем только те переменные, которые отличаются в Docker
-      DATABASE_URL: postgresql+asyncpg://filamenthub:filamenthub_dev_password@postgres:5432/filamenthub
+      DATABASE_URL: postgresql+asyncpg://filamenthub:filamenthub_dev_password@filamenthub_postgres:5432/filamenthub
       REDIS_URL: redis://redis:6379/0
     env_file:
       - .env

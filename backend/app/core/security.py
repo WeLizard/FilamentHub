@@ -73,7 +73,7 @@ def decode_access_token(token: str) -> dict[str, Any] | None:
     """Decode a JWT access token."""
     # ДИАГНОСТИКА: Декодируем токен без проверки подписи для просмотра содержимого
     try:
-        unverified_payload = jwt.decode(token, options={"verify_signature": False, "verify_exp": False})
+        unverified_payload = jwt.decode(token, key="", options={"verify_signature": False, "verify_exp": False})
         exp_timestamp = unverified_payload.get("exp")
         current_timestamp = calendar.timegm(datetime.now(timezone.utc).utctimetuple())
         
@@ -116,7 +116,7 @@ def decode_access_token(token: str) -> dict[str, Any] | None:
     except ExpiredSignatureError as e:
         # ДИАГНОСТИКА: Показываем подробную информацию об истекшем токене
         try:
-            unverified_payload = jwt.decode(token, options={"verify_signature": False, "verify_exp": False})
+            unverified_payload = jwt.decode(token, key="", options={"verify_signature": False, "verify_exp": False})
             exp_timestamp = unverified_payload.get("exp")
             current_timestamp = calendar.timegm(datetime.now(timezone.utc).utctimetuple())
             
