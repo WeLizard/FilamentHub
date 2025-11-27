@@ -1,7 +1,7 @@
 """Add badges to users
 
 Revision ID: add_badges_to_users
-Revises: add_preset_locally_deleted_to_notificationtype
+Revises: f2b7c90864d4
 Create Date: 2025-11-20 12:00:00.000000
 
 """
@@ -14,7 +14,7 @@ from sqlalchemy.dialects.postgresql import JSON
 
 # revision identifiers, used by Alembic.
 revision: str = 'add_badges_to_users'
-down_revision: Union[str, None] = 'add_preset_locally_deleted_to_notificationtype'
+down_revision: Union[str, None] = 'f2b7c90864d4'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
@@ -28,4 +28,6 @@ def upgrade() -> None:
 def downgrade() -> None:
     """Downgrade database schema."""
     op.drop_column('users', 'badges')
+
+
 

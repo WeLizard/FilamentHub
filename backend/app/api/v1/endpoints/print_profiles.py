@@ -247,9 +247,14 @@ async def export_print_profile_json(
     Returns:
         JSONResponse: JSON файл профиля печати OrcaSlicer
     """
-    # Получаем print profile
+    # Получаем print profile с связями для правильного экспорта
     result = await db.execute(
-        select(PrintProfile).where(PrintProfile.id == profile_id, PrintProfile.active == True)
+        select(PrintProfile)
+        .options(
+            selectinload(PrintProfile.printer_links),
+            selectinload(PrintProfile.filament_links),
+        )
+        .where(PrintProfile.id == profile_id, PrintProfile.active == True)
     )
     profile = result.scalar_one_or_none()
     
@@ -258,7 +263,7 @@ async def export_print_profile_json(
     
     # Экспортируем в JSON
     try:
-        profile_json = export_print_profile(profile)
+        profile_json = await export_print_profile(profile, db)
     except Exception as e:
         logger.error(f"Error exporting print profile {profile_id}: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Error exporting print profile: {str(e)}")

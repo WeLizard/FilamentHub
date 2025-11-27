@@ -13,6 +13,61 @@ from app.services.material_mapping_service import get_material_preset
 logger = logging.getLogger(__name__)
 
 
+def preset_to_orcaslicer_info(preset: Preset) -> str:
+    """
+    Генерировать .info файл для пресета FilamentHub.
+    
+    Формат .info файла (используется OrcaSlicer для metadata):
+    sync_info = fhub:<preset_id>:<source>  # Метка FilamentHub (приоритетный источник истины)
+    user_id = <orcaslicer_user_id>         # Заполняется OrcaSlicer
+    setting_id = FHUB<preset_id_padded>    # FilamentHub preset ID
+    base_id = <base_preset_name>           # Родительский пресет
+    updated_time = <unix_timestamp>        # Время обновления
+    
+    Args:
+        preset: Preset из FilamentHub
+        
+    Returns:
+        str: Содержимое .info файла
+    """
+    # sync_info: Метка FilamentHub (приоритетный источник истины)
+    # Формат: fhub:<preset_id>:<source>
+    sync_info = f"fhub:{preset.id}:filamenthub"
+    
+    # setting_id: FilamentHub preset ID в формате FHUB + zero-padded
+    # Используется как уникальный идентификатор в OrcaSlicer
+    setting_id = f"FHUB{preset.id:06d}"
+    
+    # base_id: Базовый профиль (из inherits в orcaslicer_settings)
+    # Извлекаем из orcaslicer_settings если есть, иначе используем умолчание
+    orcaslicer_settings = preset.orcaslicer_settings or {}
+    inherits = orcaslicer_settings.get("inherits", "fdm_filament_common")
+    base_id = inherits
+    
+    # updated_time: Unix timestamp обновления
+    import time
+    from datetime import timezone
+    if preset.updated_at:
+        # Конвертируем datetime в unix timestamp
+        if preset.updated_at.tzinfo is None:
+            # Если naive datetime, предполагаем UTC
+            updated_time = int(preset.updated_at.replace(tzinfo=timezone.utc).timestamp())
+        else:
+            updated_time = int(preset.updated_at.timestamp())
+    else:
+        updated_time = int(time.time())
+    
+    # user_id: Оставляем пустым (OrcaSlicer заполнит сам)
+    # Это позволяет OrcaSlicer отслеживать к какому пользователю относится пресет
+    
+    return f"""sync_info = {sync_info}
+user_id = 
+setting_id = {setting_id}
+base_id = {base_id}
+updated_time = {updated_time}
+"""
+
+
 async def preset_to_orcaslicer_json(
     preset: Preset,
     filament: Filament,
@@ -188,17 +243,39 @@ async def preset_to_orcaslicer_json(
     # Можно расширить в будущем для специфических принтеров
     profile["compatible_printers"] = []
 
+    # Метаданные FilamentHub для синхронизации
+    # Добавляем метки в корень JSON профиля для идентификации "наших" пресетов
+    # Эти метки безопасны и не конфликтуют с BambuLab синхронизацией
+    # ВАЖНО: OrcaSlicer ожидает строки для fhub_id, не числа!
+    profile["fhub_id"] = str(preset.id)
+    profile["fhub_source"] = "filamenthub"
+    
+    # Для черновиков добавляем fhub_draft_id в корень JSON
+    # Это позволяет найти черновик при следующей синхронизации
+    if not preset.active and preset.orcaslicer_settings and isinstance(preset.orcaslicer_settings, dict):
+        fhub_draft_id = preset.orcaslicer_settings.get("fhub_draft_id")
+        if fhub_draft_id:
+            # Убеждаемся, что fhub_draft_id - строка
+            profile["fhub_draft_id"] = str(fhub_draft_id)
+    
+    # ВАЖНО: НЕ обновляем orcaslicer_settings в базе при экспорте!
+    # Это вызывает изменение updated_at и бесконечный цикл экспорта.
+    # Метки fhub_id и fhub_source обновляются только при импорте из OrcaSlicer.
+    # При экспорте мы просто читаем существующие метки и добавляем их в JSON.
+
     # Итоговая структура JSON:
     # - Обязательные поля: version, name, from, inherits, filament_settings_id
     # - Уникальные идентификаторы: setting_id, filament_id
     # - Параметры печати: температуры, вентилятор, ретракт и т.д.
     # - Расширенные параметры: orcaslicer_settings (если есть)
+    # - Метаданные FilamentHub: fhub_id, fhub_source (для синхронизации)
     #
     # При импорте в OrcaSlicer:
     # 1. Находит родительский пресет через inherits
     # 2. Копирует весь конфиг родителя
     # 3. Применяет параметры из этого JSON поверх родительского конфига
     # 4. Сохраняет как пользовательский пресет
+    # 5. Метаданные fhub_id и fhub_source сохраняются в JSON профиля для обратной синхронизации
     
     return profile
 
@@ -251,8 +328,12 @@ def generate_profile_info(preset: Preset, filament: Filament) -> str:
     # user_id - ID пользователя из FilamentHub (если есть)
     user_id = str(preset.user_id) if preset.user_id else ""
     
-    # sync_info - обычно пустая строка для локальных профилей
-    sync_info = ""
+    # sync_info - для FilamentHub пресетов указываем источник синхронизации
+    # Формат: "filamenthub:preset:{preset_id}"
+    if preset.user_id:  # Если пресет принадлежит пользователю (не системный)
+        sync_info = f"filamenthub:preset:{preset.id}"
+    else:
+        sync_info = ""
     
     # updated_time - timestamp последнего обновления
     if preset.updated_at:

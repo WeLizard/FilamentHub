@@ -38,7 +38,8 @@ class Preset(Base):
     id: Mapped[int] = mapped_column(primary_key=True, index=True)
 
     # Filament relationship
-    filament_id: Mapped[int] = mapped_column(ForeignKey("filaments.id"), index=True)
+    # КРИТИЧНО: nullable=True для черновиков из OrcaSlicer (еще не привязаны к филаменту)
+    filament_id: Mapped[int | None] = mapped_column(ForeignKey("filaments.id"), index=True, nullable=True)
 
     # User relationship (кто создал пресет)
     user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), index=True, nullable=True)
@@ -110,20 +111,18 @@ class Preset(Base):
     # external_id: Уникальный ID профиля в OrcaSlicer (для маппинга)
     source: Mapped[str | None] = mapped_column(String(50), nullable=True, index=True)
     # source: Источник пресета ("orcaslicer", "user", "system", etc.)
-    sync_enabled: Mapped[bool] = mapped_column(Boolean, default=True, index=True)
-    # sync_enabled: Включена ли синхронизация с OrcaSlicer (по умолчанию True)
-    # Если False, пресет не будет синхронизироваться при синхронизации
+    # УДАЛЕНО: sync_enabled - теперь синхронизация управляется через user_saved_presets.sync
 
     # Timestamps
     created_at: Mapped[datetime] = mapped_column(
-        default=func.now(), server_default=func.now()
+        DateTime(timezone=True), default=func.now(), server_default=func.now()
     )
     updated_at: Mapped[datetime] = mapped_column(
-        default=func.now(), onupdate=func.now(), server_default=func.now()
+        DateTime(timezone=True), default=func.now(), onupdate=func.now(), server_default=func.now()
     )
 
     # Relationships
-    filament: Mapped["Filament"] = relationship("Filament", back_populates="presets")
+    filament: Mapped["Filament | None"] = relationship("Filament", back_populates="presets")
     user: Mapped["User"] = relationship("User", back_populates="presets")
     saved_by_users: Mapped[list["UserSavedPreset"]] = relationship(
         "UserSavedPreset", back_populates="preset", cascade="all, delete-orphan"

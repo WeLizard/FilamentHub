@@ -14,7 +14,7 @@ class MigrationStatus(BaseModel):
     branch_labels: Optional[str] = Field(None, description="Метки веток")
     is_head: bool = Field(False, description="Является ли головной миграцией")
     is_applied: bool = Field(False, description="Применена ли миграция")
-    applied_at: Optional[datetime] = Field(None, description="Дата применения")
+    applied_at: Optional[str] = Field(None, description="Дата применения (ISO строка)")
     description: Optional[str] = Field(None, description="Описание миграции")
 
 
@@ -165,4 +165,11 @@ class TableDataResponse(BaseModel):
     page: int = Field(..., description="Текущая страница")
     size: int = Field(..., description="Размер страницы")
     pages: int = Field(..., description="Всего страниц")
+
+
+class TableDataUpdateRequest(BaseModel):
+    """Запрос на обновление данных таблицы."""
+
+    primary_key: dict[str, Any] = Field(..., description="Значения первичного ключа для идентификации строки")
+    data: dict[str, Any] = Field(..., description="Новые значения полей")
 

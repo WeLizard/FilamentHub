@@ -21,7 +21,7 @@ from app.models.printer import Printer
 from app.models.printer_request import PrinterRequest, PrinterRequestStatus
 from app.models.user import User, UserRole
 from app.schemas.bad_word import BadWordCreate, BadWordListResponse, BadWordResponse, BadWordUpdate
-from app.schemas.brand import BrandListResponse, BrandResponse
+from app.schemas.brand import BrandListResponse, BrandResponse, BrandUpdate
 from app.schemas.brand_request import BrandRequestListResponse, BrandRequestResponse, BrandRequestUpdate
 from app.schemas.database import (
     DatabaseDumpDeleteResponse,
@@ -200,6 +200,58 @@ async def unverify_brand(
     await db.commit()
     await db.refresh(brand)
     
+    return BrandResponse.model_validate(brand)
+
+
+@router.patch("/brands/{brand_id}", response_model=BrandResponse)
+async def update_brand_admin(
+    brand_id: int,
+    data: BrandUpdate,
+    admin: Annotated[User, Depends(get_current_admin_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> BrandResponse:
+    """Обновить бренд (только для админа)."""
+    result = await db.execute(select(Brand).where(Brand.id == brand_id))
+    brand = result.scalar_one_or_none()
+
+    if not brand:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Brand not found",
+        )
+
+    # Проверка текстовых полей на плохие слова
+    from app.services.preset_moderation import validate_text_field
+    update_data = data.model_dump(exclude_unset=True)
+    
+    if "name" in update_data:
+        is_valid, error_msg = await validate_text_field(update_data["name"], db, "Название бренда")
+        if not is_valid:
+            raise HTTPException(status_code=400, detail=error_msg)
+    
+    if "description" in update_data and update_data["description"]:
+        is_valid, error_msg = await validate_text_field(update_data["description"], db, "Описание бренда")
+        if not is_valid:
+            raise HTTPException(status_code=400, detail=error_msg)
+    
+    # Проверка уникальности slug, если он изменяется
+    if "slug" in update_data and update_data["slug"] != brand.slug:
+        existing_brand = await db.execute(
+            select(Brand).where(Brand.slug == update_data["slug"]).where(Brand.id != brand_id)
+        )
+        if existing_brand.scalar_one_or_none():
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Brand with this slug already exists"
+            )
+
+    # Update fields
+    for field, value in update_data.items():
+        setattr(brand, field, value)
+
+    await db.commit()
+    await db.refresh(brand)
+
     return BrandResponse.model_validate(brand)
 
 
@@ -1396,6 +1448,58 @@ async def get_table_data(
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Ошибка получения данных таблицы: {str(e)}",
+        )
+
+
+@router.patch("/database/tables/{table_name}/data", response_model=dict)
+async def update_table_data(
+    table_name: str,
+    data: dict,
+    admin: Annotated[User, Depends(get_current_admin_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+    schema_name: str = Query("public", description="Имя схемы"),
+) -> dict:
+    """Обновить данные в таблице."""
+    from app.services.database_service import update_table_row_service as update_table_row_service_func
+    
+    try:
+        # Ожидаем формат: { "primary_key": {...}, "data": {...} }
+        primary_key = data.get("primary_key", {})
+        update_data = data.get("data", {})
+        
+        if not primary_key:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="primary_key обязателен для идентификации строки",
+            )
+        
+        if not update_data:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="data обязателен и не может быть пустым",
+            )
+        
+        success, message = await update_table_row_service_func(
+            db,
+            table_name=table_name,
+            schema_name=schema_name,
+            primary_key=primary_key,
+            update_data=update_data,
+        )
+        
+        if not success:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=message,
+            )
+        
+        return {"success": True, "message": message}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Ошибка обновления данных таблицы: {str(e)}",
         )
 
 

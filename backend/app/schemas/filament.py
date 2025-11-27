@@ -119,14 +119,6 @@ class FilamentResponse(FilamentBase):
     model_config = ConfigDict(from_attributes=True)
 
 
-# FilamentWithBrand - временно закомментирован из-за проблем с forward references в OpenAPI
-# TODO: Восстановить после исправления проблемы
-# class FilamentWithBrand(FilamentResponse):
-#     """Schema for Filament with Brand info."""
-#     brand: "BrandResponse"
-#     model_config = ConfigDict(from_attributes=True)
-
-
 class FilamentListResponse(BaseModel):
     """Schema for Filament list response."""
 
@@ -135,5 +127,32 @@ class FilamentListResponse(BaseModel):
     page: int
     size: int
     pages: int
+
+
+class CompatiblePrinter(BaseModel):
+    """Schema for compatible printer."""
+
+    id: int
+    slug: str
+    name: str
+    manufacturer: str | None = None
+    relation_source: str = Field(..., description="Источник связи: via_preset, via_print_profile, etc.")
+    confidence_score: float = Field(..., ge=0.0, le=1.0, description="Уверенность в совместимости (0.0-1.0)")
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class CompatibleFilament(BaseModel):
+    """Schema for compatible filament."""
+
+    id: int
+    slug: str
+    name: str
+    material_type: str
+    brand_name: str | None = None
+    relation_source: str = Field(..., description="Источник связи: via_preset, via_print_profile, etc.")
+    confidence_score: float = Field(..., ge=0.0, le=1.0, description="Уверенность в совместимости (0.0-1.0)")
+
+    model_config = ConfigDict(from_attributes=True)
 
 

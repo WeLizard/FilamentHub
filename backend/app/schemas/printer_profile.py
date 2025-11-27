@@ -21,7 +21,7 @@ class PrinterProfileBase(BaseModel):
     external_id: str | None = Field(None, max_length=200)
     setting_id: str | None = Field(None, max_length=100)
     nozzle_diameters: list[float] | None = None
-    printable_area: dict | None = None
+    printable_area: dict | list | None = None
     printable_height_mm: float | None = None
     default_print_profile_slug: str | None = Field(None, max_length=200)
     orcaslicer_settings: dict[str, Any] = Field(default_factory=dict)
@@ -52,7 +52,7 @@ class PrinterProfileUpdate(BaseModel):
     external_id: str | None = Field(None, max_length=200)
     setting_id: str | None = Field(None, max_length=100)
     nozzle_diameters: list[float] | None = None
-    printable_area: dict | None = None
+    printable_area: dict | list | None = None
     printable_height_mm: float | None = None
     default_print_profile_slug: str | None = Field(None, max_length=200)
     orcaslicer_settings: dict[str, Any] | None = None
@@ -86,6 +86,20 @@ class PrinterProfileResponse(PrinterProfileBase):
         printer = getattr(self, "printer", None)
         if printer is not None:
             return getattr(printer, "name", None)
+        return None
+
+    @computed_field(return_type=str | None, alias="printer_manufacturer")
+    def printer_manufacturer(self) -> str | None:  # pragma: no cover - simple accessor
+        printer = getattr(self, "printer", None)
+        if printer is not None:
+            return getattr(printer, "manufacturer", None)
+        return None
+
+    @computed_field(return_type=str | None, alias="printer_model")
+    def printer_model(self) -> str | None:  # pragma: no cover - simple accessor
+        printer = getattr(self, "printer", None)
+        if printer is not None:
+            return getattr(printer, "model", None)
         return None
 
 

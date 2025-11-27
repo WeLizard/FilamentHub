@@ -144,8 +144,8 @@ async def register(
         # Генерируем токен для верификации email
         verification_token = generate_email_verification_token(user.id, user.email)
         
-        # TODO: Отправить email с токеном верификации
-        # Ссылка: {FRONTEND_URL}/verify-email?token={verification_token}
+        # Примечание: Отправка email с токеном верификации будет реализована при добавлении email-сервиса
+        # Ссылка для верификации: {FRONTEND_URL}/verify-email?token={verification_token}
         logger.info(f"Email verification token generated for user {user.email}: {verification_token[:20]}...")
     except Exception as e:
         await db.rollback()
@@ -335,13 +335,13 @@ async def get_my_presets_stats(
     total_preset_ids = saved_preset_ids | direct_preset_ids
     total_presets = len(total_preset_ids)
     
-    # 3. Подсчитываем пресеты с включенной синхронизацией (sync_enabled=True)
+    # 3. Подсчитываем пресеты с включенной синхронизацией (sync=True)
     synced_presets_count = await db.scalar(
         select(func.count(UserSavedPreset.id))
         .join(Preset)
         .where(
             UserSavedPreset.user_id == current_user.id,
-            UserSavedPreset.sync_enabled == True,
+            UserSavedPreset.sync == True,
             Preset.active == True,
         )
     ) or 0
@@ -358,7 +358,7 @@ async def get_my_presets_stats(
         .join(Preset)
         .where(
             UserSavedPreset.user_id == current_user.id,
-            UserSavedPreset.sync_enabled == True,
+            UserSavedPreset.sync == True,
             Preset.active == True,
         )
     ) or 0
@@ -404,7 +404,7 @@ async def get_my_presets(
     # 1. Пресеты из user_saved_presets с включенной синхронизацией
     saved_query = select(UserSavedPreset).where(
         UserSavedPreset.user_id == current_user.id,
-        UserSavedPreset.sync_enabled == True,  # Только пресеты с включенной синхронизацией
+        UserSavedPreset.sync == True,  # Только пресеты с включенной синхронизацией
     )
     
     if updated_since:
@@ -431,38 +431,10 @@ async def get_my_presets(
             preset_ids.add(preset_id)
             presets_dict[preset_id] = preset
     
-    # 2. Пресеты, созданные напрямую пользователем (для совместимости и покрытия всех случаев)
-    # ВАЖНО: Проверяем только те, которых нет в user_saved_presets,
-    # чтобы не дублировать пресеты из пункта 1
-    if preset_ids:
-        # Исключаем уже найденные пресеты
-        direct_presets_query = select(Preset).where(
-            Preset.user_id == current_user.id,
-            Preset.active == True,
-            ~Preset.id.in_(list(preset_ids))  # Исключаем уже найденные пресеты
-        )
-    else:
-        # Если нет пресетов из user_saved_presets, получаем все прямые пресеты пользователя
-        direct_presets_query = select(Preset).where(
-            Preset.user_id == current_user.id,
-            Preset.active == True,
-        )
-    
-    if updated_since:
-        direct_presets_query = direct_presets_query.where(
-            Preset.updated_at >= updated_since
-        )
-    
-    direct_result = await db.execute(
-        direct_presets_query.options(selectinload(Preset.filament))
-    )
-    direct_presets = direct_result.scalars().all()
-    
-    for preset in direct_presets:
-        if preset.active and preset.id not in preset_ids:
-            preset_id = preset.id
-            preset_ids.add(preset_id)
-            presets_dict[preset_id] = preset
+    # 2. УДАЛЕНО: Старая логика проверки presets.sync_enabled
+    # Теперь ВСЕ пресеты (свои + чужие) управляются через user_saved_presets.sync_enabled
+    # При создании своего пресета автоматически создаётся запись в user_saved_presets (см. presets.py:249)
+    # Поэтому НЕ нужно дополнительно проверять Preset.user_id и Preset.sync_enabled
     
     # 3. Формируем список пресетов
     presets_list = [presets_dict[pid] for pid in sorted(preset_ids)]
@@ -723,8 +695,8 @@ async def forgot_password(
         # Генерируем токен восстановления пароля
         reset_token = generate_password_reset_token(user.id, user.email)
         
-        # TODO: Отправить email с токеном восстановления
-        # Ссылка: {FRONTEND_URL}/reset-password?token={reset_token}
+        # Примечание: Отправка email с токеном восстановления будет реализована при добавлении email-сервиса
+        # Ссылка для восстановления: {FRONTEND_URL}/reset-password?token={reset_token}
         logger.info(f"Password reset token generated for user {user.email}: {reset_token[:20]}...")
         logger.info(f"Reset link: {settings.BASE_URL}/reset-password?token={reset_token}")
     
@@ -834,7 +806,7 @@ async def update_user_password(
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> UserResponse:
     """Изменить пароль текущего пользователя."""
-    # Проверяем текущий пароль
+    # Проверяем текущий пароль (для безопасности критичных операций)
     if not verify_password(data.current_password, current_user.password_hash):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -905,12 +877,9 @@ async def update_user_email(
             detail="Email уже зарегистрирован",
         )
     
-    # TODO: Реализовать подтверждение через код
-    # Вместо немедленного обновления email, сохранить новый email в pending_email
-    # и отправить код подтверждения на новый email
-    # Email обновляется только после подтверждения кода
-    
-    # Временно: обновляем email и сбрасываем верификацию (требуется повторная верификация)
+    # Обновляем email и сбрасываем верификацию (требуется повторная верификация)
+    # Примечание: В будущих версиях планируется добавить подтверждение через код,
+    # но на текущий момент email обновляется сразу с требованием повторной верификации
     current_user.email = data.new_email
     current_user.email_verified = False
     
@@ -919,10 +888,16 @@ async def update_user_email(
     logger = logging.getLogger(__name__)
     verification_token = generate_email_verification_token(current_user.id, current_user.email)
     logger.info(f"Email verification token generated for user {current_user.email}: {verification_token[:20]}...")
-    # TODO: Отправить email с кодом подтверждения на новый email
+    # Примечание: Отправка email с токеном верификации будет реализована при добавлении email-сервиса
     
     await db.commit()
     await db.refresh(current_user)
     
     return UserResponse.model_validate(current_user)
+
+
+
+
+
+
 

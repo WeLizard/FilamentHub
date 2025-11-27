@@ -147,6 +147,11 @@ class OrcaFilamentPresetPayload(BaseModel):
     material_type: str | None = Field(
         default=None, max_length=50, description="Тип материала (PLA, ABS, PETG, etc.)."
     )
+    inherits: str | None = Field(
+        default=None,
+        max_length=200,
+        description="Родительский пресет из OrcaSlicer (например, 'Generic PLA @System'). Используется для определения material_type.",
+    )
 
     # Базовые параметры печати
     extruder_temp: float | None = Field(default=None, description="Температура экструдера (°C).")
@@ -165,6 +170,12 @@ class OrcaFilamentPresetPayload(BaseModel):
     # OrcaSlicer JSON формат
     orcaslicer_settings: dict[str, Any] = Field(
         default_factory=dict, description="Полный JSON профиль OrcaSlicer со всеми параметрами."
+    )
+    
+    # .info файл содержимое (для идентификации пресета)
+    info_content: str | None = Field(
+        default=None,
+        description="Содержимое .info файла OrcaSlicer. Используется для извлечения меток FilamentHub (fhub_id, setting_id)."
     )
 
     # Метаданные

@@ -71,7 +71,7 @@ async def save_preset(
     saved_preset = UserSavedPreset(
         user_id=current_user.id,
         preset_id=data.preset_id,
-        sync_enabled=True,  # По умолчанию синхронизация включена
+        sync=True,  # По умолчанию синхронизация включена
     )
     db.add(saved_preset)
     await db.commit()
@@ -109,7 +109,7 @@ async def toggle_saved_preset_sync(
     preset_id: int,
     db: Annotated[AsyncSession, Depends(get_db)],
     current_user: Annotated[User, Depends(get_current_active_user)],
-    sync_enabled: bool = Query(..., description="Включить или выключить синхронизацию"),
+    sync: bool = Query(..., description="Включить или выключить синхронизацию"),
 ) -> UserSavedPresetResponse:
     """Переключить синхронизацию сохраненного пресета."""
     # Находим сохранённый пресет
@@ -124,8 +124,8 @@ async def toggle_saved_preset_sync(
     if not saved_preset:
         raise HTTPException(status_code=404, detail="Saved preset not found")
 
-    # Обновляем sync_enabled
-    saved_preset.sync_enabled = sync_enabled
+    # Обновляем sync
+    saved_preset.sync = sync
     await db.commit()
     await db.refresh(saved_preset)
 

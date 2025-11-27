@@ -6,6 +6,10 @@ import json
 from datetime import datetime
 from typing import Any, Mapping
 
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.models.printer import Printer
 from app.models.printer_profile import PrinterProfile
 from app.models.print_profile import PrintProfile
 
@@ -24,7 +28,177 @@ def _merge_settings(base: Mapping[str, Any] | None) -> dict[str, Any]:
     return dict(base or {})
 
 
-def printer_profile_to_orca_json(profile: PrinterProfile) -> dict[str, Any]:
+def _generate_orca_tag(printer: Printer | None, vendor: str | None) -> str:
+    """
+    Генерировать тег для OrcaSlicer на основе принтера или vendor.
+    
+    Примеры:
+    - @Voron (из printer.manufacturer)
+    - @BambuLab (из printer.manufacturer)
+    - @Arena (из vendor или printer.vendor)
+    - @FilamentHub (по умолчанию для пользовательских)
+    """
+    if printer:
+        # Приоритет: manufacturer принтера
+        if printer.manufacturer:
+            # Нормализуем: убираем лишние пробелы, делаем короткий тег
+            tag = printer.manufacturer.strip()
+            # Убираем суффиксы типа "Lab", "Labs" для краткости
+            if tag.endswith(" Lab"):
+                tag = tag[:-4]
+            elif tag.endswith(" Labs"):
+                tag = tag[:-5]
+            return tag
+        
+        # Если нет manufacturer, используем vendor
+        if printer.vendor:
+            return printer.vendor.strip()
+    
+    # Используем vendor из профиля
+    if vendor:
+        return vendor.strip()
+    
+    # По умолчанию для пользовательских профилей
+    return "FilamentHub"
+
+
+def _format_printer_profile_name_for_orca(
+    profile: PrinterProfile,
+    printer: Printer | None,
+    nozzle: float | None = None,
+) -> str:
+    """
+    Сформировать имя PrinterProfile в формате OrcaSlicer.
+    
+    Формат: "{Printer.name} {nozzle} nozzle"
+    Примеры:
+    - "Voron 2.4 350 0.4 nozzle"
+    - "Bambu Lab X1 Carbon 0.4 nozzle"
+    
+    Если printer не указан или nozzle не указан, использует profile.name как есть.
+    """
+    # Определяем правильное имя принтера
+    printer_name = None
+    if printer:
+        # Если printer.name содержит "Принтер 1234" или похожее - используем manufacturer + model
+        if printer.name and (printer.name.startswith("Принтер ") or printer.name.startswith("Printer ")):
+            # Пытаемся сформировать из manufacturer и model
+            if printer.manufacturer and printer.model:
+                printer_name = f"{printer.manufacturer} {printer.model}".strip()
+            elif printer.manufacturer:
+                printer_name = printer.manufacturer.strip()
+            elif printer.model:
+                printer_name = printer.model.strip()
+            else:
+                # Если ничего нет, используем текущее имя профиля (без "Принтер 1234")
+                if profile.name and not (profile.name.startswith("Принтер ") or profile.name.startswith("Printer ")):
+                    printer_name = profile.name.rsplit(" ", 1)[0] if " " in profile.name else profile.name
+        else:
+            # Используем printer.name как есть
+            printer_name = printer.name
+    
+    if not printer_name:
+        # Если нет принтера или имени, используем текущее имя профиля
+        return profile.name
+    
+    # Получаем диаметр сопла
+    nozzle_diameter = nozzle
+    if nozzle_diameter is None:
+        # Пытаемся взять из nozzle_diameters (первый элемент)
+        if profile.nozzle_diameters and len(profile.nozzle_diameters) > 0:
+            nozzle_diameter = profile.nozzle_diameters[0]
+        # Если нет, берем из printer
+        elif printer and printer.nozzle_diameter:
+            nozzle_diameter = printer.nozzle_diameter
+    
+    if nozzle_diameter is None:
+        # Если всё равно нет сопла, используем имя принтера без "nozzle"
+        return printer_name
+    
+    # Форматируем: "{Printer.name} {nozzle} nozzle"
+    # Преобразуем 0.4 в "0.4", 0.6 в "0.6" и т.д.
+    nozzle_str = str(nozzle_diameter).rstrip("0").rstrip(".")
+    return f"{printer_name} {nozzle_str} nozzle"
+
+
+def _format_print_profile_name_for_orca(
+    profile: PrintProfile,
+    tag: str | None = None,
+) -> str:
+    """
+    Сформировать имя PrintProfile в формате OrcaSlicer.
+    
+    Формат: "{layer_height}mm {quality} @{tag}"
+    Примеры:
+    - "0.20mm Standard @Voron"
+    - "0.12mm Fine @BBL X1C"
+    - "0.24mm Draft @Arena X1C"
+    
+    Если tag не указан, пытается извлечь из profile.name или использовать vendor.
+    Если layer_height или quality не указаны, использует profile.name как есть.
+    """
+    # Определяем tag
+    if not tag:
+        # Пытаемся извлечь tag из текущего имени (если там есть @tag)
+        if "@" in profile.name:
+            parts = profile.name.split("@", 1)
+            if len(parts) > 1:
+                tag = parts[1].strip()
+        # Если нет в имени, используем vendor
+        if not tag:
+            tag = profile.vendor or "FilamentHub"
+    
+    # Определяем layer_height и quality
+    layer_height = profile.layer_height_mm
+    quality = profile.quality_tier
+    
+    # Если есть layer_height и quality, формируем стандартное имя
+    if layer_height is not None and quality:
+        # Форматируем layer_height: 0.2 -> "0.20mm", 0.12 -> "0.12mm"
+        layer_str = f"{layer_height:.2f}".rstrip("0").rstrip(".")
+        if "." in layer_str:
+            # Оставляем минимум 2 знака после запятой
+            if len(layer_str.split(".")[1]) < 2:
+                layer_str = f"{layer_height:.2f}".rstrip("0").rstrip(".")
+        layer_str = f"{layer_str}mm"
+        
+        # Нормализуем quality tier
+        quality_map = {
+            "superdraft": "Extra Draft",
+            "draft": "Draft",
+            "standard": "Standard",
+            "optimal": "Optimal",
+            "fine": "Fine",
+            "highdetail": "Extra Fine",
+        }
+        quality_display = quality_map.get(quality.lower(), quality.capitalize())
+        
+        return f"{layer_str} {quality_display} @{tag}"
+    
+    # Если нет layer_height или quality, проверяем текущее имя
+    # Если оно уже в формате OrcaSlicer, используем его
+    if profile.name and ("mm" in profile.name or "@" in profile.name):
+        # Обновляем tag если нужно
+        if "@" not in profile.name:
+            return f"{profile.name} @{tag}"
+        # Если tag уже есть, но другой - заменяем
+        if "@" in profile.name:
+            parts = profile.name.rsplit("@", 1)
+            if len(parts) == 2:
+                return f"{parts[0].rstrip()} @{tag}"
+        return profile.name
+    
+    # Если ничего не подходит, используем текущее имя и добавляем tag
+    if tag and tag != "FilamentHub":
+        return f"{profile.name} @{tag}"
+    
+    return profile.name
+
+
+async def printer_profile_to_orca_json(
+    profile: PrinterProfile,
+    db: AsyncSession | None = None,
+) -> dict[str, Any]:
     """Преобразовать `PrinterProfile` в JSON-формат OrcaSlicer (`machine`)."""
     # Начинаем с настроек из профиля
     settings = _merge_settings(profile.orcaslicer_settings)
@@ -54,9 +228,19 @@ def printer_profile_to_orca_json(profile: PrinterProfile) -> dict[str, Any]:
         merged.update(settings)
         settings = merged
 
+    # Генерируем имя в формате OrcaSlicer
+    printer = profile.printer
+    nozzle = None
+    if profile.nozzle_diameters and len(profile.nozzle_diameters) > 0:
+        nozzle = profile.nozzle_diameters[0]
+    elif printer and printer.nozzle_diameter:
+        nozzle = printer.nozzle_diameter
+    
+    orca_name = _format_printer_profile_name_for_orca(profile, printer, nozzle)
+    
     # Базовые поля (обязательные для OrcaSlicer)
     settings["type"] = "machine"
-    settings["name"] = profile.name
+    settings["name"] = orca_name
     settings["from"] = "system" if profile.is_official else profile.source or "user"
     # OrcaSlicer ожидает строку "true"/"false"
     settings["instantiation"] = str(settings.get("instantiation", "true")).lower()
@@ -67,62 +251,119 @@ def printer_profile_to_orca_json(profile: PrinterProfile) -> dict[str, Any]:
         # Запасной идентификатор
         settings.setdefault("setting_id", f"FHUB_M_{profile.id}")
 
-    # Nozzle options
-    if profile.nozzle_diameters:
-        settings["nozzle_diameter"] = [str(v) for v in profile.nozzle_diameters]
-    # Если нет в профиле, пробуем взять из принтера
-    elif profile.printer and profile.printer.nozzle_diameter:
-        settings["nozzle_diameter"] = [str(profile.printer.nozzle_diameter)]
+    # Nozzle options - используем значения из orcaslicer_settings (приоритет), если нет - из отдельных колонок
+    if "nozzle_diameter" not in settings:
+        if profile.nozzle_diameters:
+            settings["nozzle_diameter"] = [str(v) for v in profile.nozzle_diameters]
+        # Если нет в профиле, пробуем взять из принтера
+        elif profile.printer and profile.printer.nozzle_diameter:
+            settings["nozzle_diameter"] = [str(profile.printer.nozzle_diameter)]
 
-    # Printable area / height
-    if profile.printable_area:
-        area = profile.printable_area
-        settings["printable_area"] = [
-            f"{area['x_min']}x{area['y_min']}",
-            f"{area['x_max']}x{area['y_min']}",
-            f"{area['x_max']}x{area['y_max']}",
-            f"{area['x_min']}x{area['y_max']}",
-        ]
-    # Если нет в профиле, пробуем построить из build_volume принтера
-    elif profile.printer:
-        printer = profile.printer
-        if printer.build_volume_x and printer.build_volume_y:
-            settings["printable_area"] = [
-                "0x0",
-                f"{printer.build_volume_x}x0",
-                f"{printer.build_volume_x}x{printer.build_volume_y}",
-                f"0x{printer.build_volume_y}",
-            ]
-        if printer.build_volume_z:
-            settings["printable_height"] = str(printer.build_volume_z)
+    # Printable area / height - используем значения из orcaslicer_settings (приоритет), если нет - из отдельных колонок
+    if "printable_area" not in settings:
+        if profile.printable_area:
+            area = profile.printable_area
+            # Поддерживаем оба формата: {x, y} и {x_min, y_min, x_max, y_max}
+            if isinstance(area, dict):
+                if "x" in area and "y" in area:
+                    # Новый формат: {x, y} - ширина и глубина
+                    x_size = float(area.get("x", 0))
+                    y_size = float(area.get("y", 0))
+                    settings["printable_area"] = [
+                        "0x0",
+                        f"{x_size}x0",
+                        f"{x_size}x{y_size}",
+                        f"0x{y_size}",
+                    ]
+                elif "x_min" in area and "y_min" in area and "x_max" in area and "y_max" in area:
+                    # Старый формат: {x_min, y_min, x_max, y_max}
+                    settings["printable_area"] = [
+                        f"{area['x_min']}x{area['y_min']}",
+                        f"{area['x_max']}x{area['y_min']}",
+                        f"{area['x_max']}x{area['y_max']}",
+                        f"{area['x_min']}x{area['y_max']}",
+                    ]
+        # Если нет в профиле, пробуем построить из build_volume принтера
+        elif profile.printer:
+            printer = profile.printer
+            if printer.build_volume_x and printer.build_volume_y:
+                settings["printable_area"] = [
+                    "0x0",
+                    f"{printer.build_volume_x}x0",
+                    f"{printer.build_volume_x}x{printer.build_volume_y}",
+                    f"0x{printer.build_volume_y}",
+                ]
+            if printer.build_volume_z:
+                settings["printable_height"] = str(printer.build_volume_z)
     
-    if profile.printable_height_mm:
+    if "printable_height" not in settings and profile.printable_height_mm:
         settings["printable_height"] = str(profile.printable_height_mm)
 
+    # printer_model - используем значения из orcaslicer_settings (приоритет), если нет - из printer.name
+    if "printer_model" not in settings:
+        if printer and printer.name:
+            settings["printer_model"] = printer.name
+        elif profile.extra_metadata and profile.extra_metadata.get("printer_model"):
+            settings["printer_model"] = profile.extra_metadata["printer_model"]
+
     # Старт/финишный G-code из отдельного поля модели имеют приоритет
-    if profile.start_gcode:
+    # Используем значения из orcaslicer_settings (приоритет), если нет - из отдельных колонок
+    if "machine_start_gcode" not in settings and profile.start_gcode:
         settings["machine_start_gcode"] = profile.start_gcode
-    if profile.end_gcode:
+    if "machine_end_gcode" not in settings and profile.end_gcode:
         settings["machine_end_gcode"] = profile.end_gcode
 
-    # Default print profile
+    # Printer notes - используем значения из orcaslicer_settings (приоритет), если нет - из отдельных колонок
+    if "printer_notes" not in settings and profile.notes:
+        settings["printer_notes"] = profile.notes
+
+    # Default print profile - преобразуем slug в name
+    default_print_profile_name = None
     if profile.extra_metadata:
-        default_print_profile = profile.extra_metadata.get("default_print_profile")
-        if default_print_profile:
-            settings["default_print_profile"] = default_print_profile
-    if (
-        "default_print_profile" not in settings
-        and profile.default_print_profile_slug
-    ):
-        settings["default_print_profile"] = profile.default_print_profile_slug
+        default_print_profile_name = profile.extra_metadata.get("default_print_profile")
+    
+    # Если в extra_metadata есть name, используем его
+    if not default_print_profile_name and profile.default_print_profile_slug and db:
+        # Ищем PrintProfile по slug и берем его name
+        result = await db.execute(
+            select(PrintProfile).where(PrintProfile.slug == profile.default_print_profile_slug)
+        )
+        print_profile = result.scalar_one_or_none()
+        if print_profile:
+            # Генерируем name в формате OrcaSlicer для PrintProfile
+            tag = _generate_orca_tag(printer, profile.vendor)
+            default_print_profile_name = _format_print_profile_name_for_orca(print_profile, tag)
+    
+    # Если всё равно нет, используем slug как есть (fallback)
+    if not default_print_profile_name and profile.default_print_profile_slug:
+        default_print_profile_name = profile.default_print_profile_slug
+    
+    # default_print_profile - используем значения из orcaslicer_settings (приоритет), если нет - из преобразованного slug
+    if "default_print_profile" not in settings and default_print_profile_name:
+        settings["default_print_profile"] = default_print_profile_name
+
+    # Метаданные FilamentHub для синхронизации
+    # Добавляем метки в корень JSON профиля для идентификации "наших" профилей
+    # Эти метки безопасны и не конфликтуют с BambuLab синхронизацией
+    # ВАЖНО: OrcaSlicer ожидает строки для fhub_id, не числа!
+    settings["fhub_id"] = str(profile.id)
+    settings["fhub_source"] = "filamenthub"
+    
+    # ВАЖНО: НЕ обновляем orcaslicer_settings в базе при экспорте!
+    # Это вызывает изменение updated_at и бесконечный цикл экспорта.
+    # Метки fhub_id и fhub_source обновляются только при импорте из OrcaSlicer.
+    # При экспорте мы просто читаем существующие метки и добавляем их в JSON.
 
     return settings
 
 
-def export_printer_profile(profile: PrinterProfile) -> str:
+async def export_printer_profile(
+    profile: PrinterProfile,
+    db: AsyncSession | None = None,
+) -> str:
     """Вернуть JSON-строку с профилем принтера."""
     return json.dumps(
-        printer_profile_to_orca_json(profile),
+        await printer_profile_to_orca_json(profile, db),
         indent=4,
         ensure_ascii=False,
     )
@@ -142,12 +383,35 @@ def printer_profile_info(profile: PrinterProfile) -> str:
     return "\n".join(lines)
 
 
-def print_profile_to_orca_json(profile: PrintProfile) -> dict[str, Any]:
+async def print_profile_to_orca_json(
+    profile: PrintProfile,
+    db: AsyncSession | None = None,
+) -> dict[str, Any]:
     """Преобразовать `PrintProfile` (process) в JSON OrcaSlicer."""
     settings = _merge_settings(profile.orcaslicer_settings)
 
+    # Генерируем tag для OrcaSlicer
+    # Пытаемся взять из связанных принтеров (приоритет), иначе из vendor
+    tag = None
+    if db and profile.printer_links:
+        # Берем первый связанный принтер для генерации tag
+        printer_ids = [link.printer_id for link in profile.printer_links if link.printer_id]
+        if printer_ids:
+            result = await db.execute(
+                select(Printer).where(Printer.id == printer_ids[0])
+            )
+            printer = result.scalar_one_or_none()
+            if printer:
+                tag = _generate_orca_tag(printer, profile.vendor)
+    
+    if not tag:
+        tag = _generate_orca_tag(None, profile.vendor)
+    
+    # Генерируем имя в формате OrcaSlicer
+    orca_name = _format_print_profile_name_for_orca(profile, tag)
+
     settings["type"] = "process"
-    settings["name"] = profile.name
+    settings["name"] = orca_name
     settings["from"] = "system" if profile.is_official else profile.source or "user"
     settings["instantiation"] = (
         settings.get("instantiation", "true")
@@ -160,11 +424,50 @@ def print_profile_to_orca_json(profile: PrintProfile) -> dict[str, Any]:
     else:
         settings.setdefault("setting_id", f"FHUB_P_{profile.id}")
 
-    # Совместимые принтеры/филаменты
-    if profile.compatible_printers:
+    # Совместимые принтеры - преобразуем из slug в name PrinterProfile
+    if db and profile.printer_links:
+        compatible_printer_names = []
+        for link in profile.printer_links:
+            if link.printer_id:
+                # Ищем Printer по ID
+                result = await db.execute(
+                    select(Printer).where(Printer.id == link.printer_id)
+                )
+                printer = result.scalar_one_or_none()
+                if printer:
+                    # Ищем PrinterProfile для этого принтера (берем первый активный)
+                    pp_result = await db.execute(
+                        select(PrinterProfile)
+                        .where(PrinterProfile.printer_id == printer.id)
+                        .where(PrinterProfile.active == True)
+                        .order_by(PrinterProfile.id.asc())
+                        .limit(1)
+                    )
+                    printer_profile = pp_result.scalar_one_or_none()
+                    if printer_profile:
+                        # Генерируем name в формате OrcaSlicer
+                        nozzle = None
+                        if printer_profile.nozzle_diameters and len(printer_profile.nozzle_diameters) > 0:
+                            nozzle = printer_profile.nozzle_diameters[0]
+                        elif printer.nozzle_diameter:
+                            nozzle = printer.nozzle_diameter
+                        printer_profile_name = _format_printer_profile_name_for_orca(
+                            printer_profile, printer, nozzle
+                        )
+                        compatible_printer_names.append(printer_profile_name)
+            elif link.printer_slug:
+                # Fallback: используем printer_slug как есть (для условий)
+                compatible_printer_names.append(link.printer_slug)
+        
+        if compatible_printer_names:
+            settings["compatible_printers"] = compatible_printer_names
+    elif profile.compatible_printers:
+        # Fallback: используем как есть (если нет доступа к БД)
         settings["compatible_printers"] = [
             printer for printer in profile.compatible_printers if printer
         ]
+    
+    # Совместимые филаменты - оставляем как есть (slug или name)
     if profile.compatible_filaments:
         settings["compatible_filaments"] = [
             filament for filament in profile.compatible_filaments if filament
@@ -182,13 +485,28 @@ def print_profile_to_orca_json(profile: PrintProfile) -> dict[str, Any]:
         if condition:
             settings["compatible_printers_condition"] = condition
 
+    # Метаданные FilamentHub для синхронизации
+    # Добавляем метки в корень JSON профиля для идентификации "наших" профилей
+    # Эти метки безопасны и не конфликтуют с BambuLab синхронизацией
+    # ВАЖНО: OrcaSlicer ожидает строки для fhub_id, не числа!
+    settings["fhub_id"] = str(profile.id)
+    settings["fhub_source"] = "filamenthub"
+    
+    # ВАЖНО: НЕ обновляем orcaslicer_settings в базе при экспорте!
+    # Это вызывает изменение updated_at и бесконечный цикл экспорта.
+    # Метки fhub_id и fhub_source обновляются только при импорте из OrcaSlicer.
+    # При экспорте мы просто читаем существующие метки и добавляем их в JSON.
+
     return settings
 
 
-def export_print_profile(profile: PrintProfile) -> str:
+async def export_print_profile(
+    profile: PrintProfile,
+    db: AsyncSession | None = None,
+) -> str:
     """Вернуть JSON-строку с профилем печати."""
     return json.dumps(
-        print_profile_to_orca_json(profile),
+        await print_profile_to_orca_json(profile, db),
         indent=4,
         ensure_ascii=False,
     )

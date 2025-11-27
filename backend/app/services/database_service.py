@@ -118,8 +118,12 @@ async def get_migration_history(db: AsyncSession) -> dict:
             WHERE downgraded_at IS NULL
         """))
         for row in result.fetchall():
+            # Конвертируем datetime в ISO строку для Pydantic
+            applied_at = row[1]
+            if applied_at and isinstance(applied_at, datetime):
+                applied_at = applied_at.isoformat()
             migration_history_map[row[0]] = {
-                "applied_at": row[1],
+                "applied_at": applied_at,
                 "applied_by": row[2],
             }
     except Exception as e:
@@ -135,9 +139,14 @@ async def get_migration_history(db: AsyncSession) -> dict:
         all_revisions_map[rev.revision] = rev
         # Получаем дату применения из истории, если есть
         history = migration_history_map.get(rev.revision, {})
+        # down_revision может быть tuple (merge миграции) - конвертируем в строку
+        down_rev = rev.down_revision
+        if isinstance(down_rev, tuple):
+            down_rev = ",".join(down_rev)
+        
         migration = {
             "revision": rev.revision,
-            "down_revision": rev.down_revision,
+            "down_revision": down_rev,
             "branch_labels": ",".join(rev.branch_labels) if rev.branch_labels else None,
             "is_head": rev.revision in heads,
             "is_applied": False,  # Будет обновлено ниже

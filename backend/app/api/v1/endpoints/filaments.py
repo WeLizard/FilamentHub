@@ -13,6 +13,7 @@ logger = logging.getLogger(__name__)
 from app.core.dependencies import get_current_user
 from app.db.session import get_db
 from app.models.filament import Filament
+from app.models.printer import Printer
 from app.models.user import User, UserRole
 from app.schemas.filament import (
     FilamentCreate,
@@ -525,5 +526,69 @@ async def delete_filament(
 
     await db.delete(filament)
     await db.commit()
+
+
+@router.get("/{filament_id}/compatible-printers", response_model=list[dict])
+async def get_compatible_printers(
+    filament_id: int,
+    min_confidence: float = Query(0.5, ge=0.0, le=1.0),
+    db: Annotated[AsyncSession, Depends(get_db)] = None,
+) -> list[dict]:
+    """
+    Получить список принтеров, совместимых с филаментом.
+    
+    Использует VIEW filament_printer_compatibility_view для вывода совместимости
+    на основе существующих связей через Preset и PrintProfile.
+    """
+    from sqlalchemy import text
+    
+    # Проверяем существование филамента
+    filament = await db.get(Filament, filament_id)
+    if not filament:
+        raise HTTPException(status_code=404, detail="Филамент не найден")
+    
+    # Используем VIEW для получения совместимых принтеров
+    query = text("""
+        SELECT DISTINCT
+            printer_id,
+            printer_slug,
+            printer_name,
+            relation_source,
+            MAX(confidence_score) as confidence_score
+        FROM filament_printer_compatibility_view
+        WHERE filament_id = :filament_id
+          AND confidence_score >= :min_confidence
+        GROUP BY printer_id, printer_slug, printer_name, relation_source
+        ORDER BY confidence_score DESC, printer_name
+    """)
+    
+    result = await db.execute(query, {"filament_id": filament_id, "min_confidence": min_confidence})
+    rows = result.fetchall()
+    
+    # Получаем дополнительную информацию о принтерах
+    printer_ids = [row[0] for row in rows]
+    if not printer_ids:
+        return []
+    
+    printers_query = select(Printer).where(Printer.id.in_(printer_ids))
+    printers_result = await db.execute(printers_query)
+    printers = {p.id: p for p in printers_result.scalars().all()}
+    
+    # Формируем ответ
+    compatible_printers = []
+    for row in rows:
+        printer_id, printer_slug, printer_name, relation_source, confidence_score = row
+        printer = printers.get(printer_id)
+        if printer:
+            compatible_printers.append({
+                "id": printer.id,
+                "slug": printer.slug,
+                "name": printer.name,
+                "manufacturer": printer.manufacturer,
+                "relation_source": relation_source,
+                "confidence_score": float(confidence_score),
+            })
+    
+    return compatible_printers
 
 

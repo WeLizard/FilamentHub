@@ -64,7 +64,7 @@ async def list_printer_profiles(
     offset = (page - 1) * size
     query = query.order_by(PrinterProfile.created_at.desc()).offset(offset).limit(size)
 
-    result = await db.execute(query)
+    result = await db.execute(query.options(selectinload(PrinterProfile.printer)))
     profiles = result.scalars().all()
 
     pages = (total + size - 1) // size if total else 0
@@ -258,7 +258,7 @@ async def export_printer_profile_json(
     
     # Экспортируем в JSON
     try:
-        profile_json = export_printer_profile(profile)
+        profile_json = await export_printer_profile(profile, db)
     except Exception as e:
         logger.error(f"Error exporting printer profile {profile_id}: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Error exporting printer profile: {str(e)}")

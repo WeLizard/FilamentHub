@@ -5,6 +5,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.core.dependencies import get_current_admin_user
 from app.db.session import get_db
@@ -192,4 +193,71 @@ async def delete_printer(
     
     await db.delete(printer)
     await db.commit()
+
+
+@router.get("/{printer_id}/compatible-filaments", response_model=list[dict])
+async def get_compatible_filaments(
+    printer_id: int,
+    min_confidence: float = Query(0.5, ge=0.0, le=1.0),
+    db: Annotated[AsyncSession, Depends(get_db)] = None,
+) -> list[dict]:
+    """
+    Получить список филаментов, совместимых с принтером.
+    
+    Использует VIEW filament_printer_compatibility_view для вывода совместимости
+    на основе существующих связей через Preset и PrintProfile.
+    """
+    from sqlalchemy import text
+    from app.models.filament import Filament
+    from app.models.brand import Brand
+    
+    # Проверяем существование принтера
+    printer = await db.get(Printer, printer_id)
+    if not printer:
+        raise HTTPException(status_code=404, detail="Принтер не найден")
+    
+    # Используем VIEW для получения совместимых филаментов
+    query = text("""
+        SELECT DISTINCT
+            filament_id,
+            filament_slug,
+            filament_name,
+            relation_source,
+            MAX(confidence_score) as confidence_score
+        FROM filament_printer_compatibility_view
+        WHERE printer_id = :printer_id
+          AND confidence_score >= :min_confidence
+        GROUP BY filament_id, filament_slug, filament_name, relation_source
+        ORDER BY confidence_score DESC, filament_name
+    """)
+    
+    result = await db.execute(query, {"printer_id": printer_id, "min_confidence": min_confidence})
+    rows = result.fetchall()
+    
+    # Получаем дополнительную информацию о филаментах
+    filament_ids = [row[0] for row in rows]
+    if not filament_ids:
+        return []
+    
+    filaments_query = select(Filament).options(selectinload(Filament.brand)).where(Filament.id.in_(filament_ids))
+    filaments_result = await db.execute(filaments_query)
+    filaments = {f.id: f for f in filaments_result.scalars().all()}
+    
+    # Формируем ответ
+    compatible_filaments = []
+    for row in rows:
+        filament_id, filament_slug, filament_name, relation_source, confidence_score = row
+        filament = filaments.get(filament_id)
+        if filament:
+            compatible_filaments.append({
+                "id": filament.id,
+                "slug": filament.slug,
+                "name": filament.name,
+                "material_type": filament.material_type,
+                "brand_name": filament.brand.name if filament.brand else None,
+                "relation_source": relation_source,
+                "confidence_score": float(confidence_score),
+            })
+    
+    return compatible_filaments
 
