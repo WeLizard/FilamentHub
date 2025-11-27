@@ -1,6 +1,6 @@
 # FilamentHub - TODO List
 
-> **Последнее обновление:** 2025-11-12  
+> **Последнее обновление:** 2025-11-23  
 > **Текущий фокус:** 
 > - ✅ Backend API ~95% (завершение мелких задач, уведомления, weighted presets)
 > - 🔥 Frontend Integration ~85% (улучшение UX, админ-панель, уведомления, weighted presets)
@@ -645,3 +645,85 @@
 
 - [ ] (🛰️) Исследовать и при необходимости портировать идею фильтрации из RussianBadWords на Python — https://github.com/Vasiliy-Makogon/RussianBadWords
 - [ ] (🛰️) Спланировать региональные фильтры брендов по странам (добавить `country_code`, автоопределение региона, fallback на глобальные бренды)
+
+---
+
+## 📋 Доработка 100% поддержки полей OrcaSlicer Filament Presets
+
+**Статус:** ⏳ Pending  
+**Приоритет:** Средний  
+**Прогресс:** ~69% (78 из 113 полей собираются в UI)  
+**Источник:** `docs/md/FILAMENT_FIELDS_COMPLETE_COMPARISON.md`
+
+### Задачи для полного покрытия всех 113 полей:
+
+#### 1. Температуры стола (4 поля) - Приоритет: Средний
+**Файл:** `frontend/src/components/CreatePresetModal.tsx`
+
+- [ ] Добавить state переменные для `textured_cool_plate_temp`, `textured_cool_plate_temp_initial_layer`, `supertack_plate_temp`, `supertack_plate_temp_initial_layer`
+- [ ] Добавить UI поля во вкладку "Профиль прутка" (секция "Температуры стола")
+- [ ] Добавить в `buildOrcaslicerSettings()` (после строки 1005)
+- [ ] Добавить загрузку из `orcaslicer_settings` при редактировании
+
+**Оценка:** ~2-3 часа
+
+#### 2. Adaptive Pressure Advance Model (1 поле) - Приоритет: Низкий
+**Файл:** `frontend/src/components/CreatePresetModal.tsx`
+
+- [ ] Добавить state переменную `adaptivePressureAdvanceModel` (string)
+- [ ] Добавить UI поле во вкладку "Профиль прутка" (секция "Pressure Advance") - текстовое поле или JSON редактор
+- [ ] Добавить в `buildOrcaslicerSettings()` (после строки 1055)
+- [ ] Добавить загрузку из `orcaslicer_settings` при редактировании
+
+**Оценка:** ~1-1.5 часа
+
+#### 3. Filament Ramming Parameters (1 поле) - Приоритет: Низкий
+**Файл:** `frontend/src/components/CreatePresetModal.tsx`
+
+- [ ] Добавить state переменную `filamentRammingParameters` (string)
+- [ ] Добавить UI поле во вкладку "Дополнительно" (секция "Мультитул") - текстовое поле или JSON редактор
+- [ ] Добавить в `buildOrcaslicerSettings()` (после строки 1152)
+- [ ] Добавить загрузку из `orcaslicer_settings` при редактировании
+
+**Оценка:** ~1-1.5 часа
+
+#### 4. Pellet Flow Coefficient - Приоритет: Низкий
+**Файл:** `frontend/src/components/CreatePresetModal.tsx`
+
+- [ ] Проверить наличие state переменной `pelletFlowCoefficient` (строка 165)
+- [ ] Проверить наличие UI поля (возможно уже есть, но не отображается)
+- [ ] Если нет UI поля - добавить во вкладку "Дополнительно"
+- [ ] Убедиться что поле добавляется в `buildOrcaslicerSettings()` (строка 1174)
+
+**Оценка:** ~30 минут
+
+#### 5. Filament Notes - Приоритет: Средний
+**Файл:** `backend/app/services/orcaslicer_exporter.py`
+
+- [ ] Добавить экспорт `presets.description` → `filament_notes` в функцию `preset_to_orcaslicer_json()`
+  - После строки 156 (после flow_ratio):
+  ```python
+  # Заметки пользователя
+  if preset.description:
+      profile["filament_notes"] = to_array(preset.description)
+  ```
+
+**Оценка:** ~15 минут
+
+#### 6. Полная проверка покрытия - Приоритет: Высокий
+**Файл:** `docs/md/FILAMENT_FIELDS_COMPLETE_COMPARISON.md`
+
+- [ ] Провести полную проверку всех 113 полей:
+  - Сравнить каждое поле из `ORCASLICER_PROFILE_FIELDS_TEMPLATE.md` (строки 40-184)
+  - С полями в `buildOrcaslicerSettings()` (строки 966-1196)
+  - Убедиться что каждое поле либо:
+    - Есть в UI и собирается
+    - Явно пропущено по причине (с комментарием)
+    - Добавлено в TODO для доработки
+- [ ] Обновить таблицы в документе с колонкой "Собирается в UI" для всех 113 полей
+
+**Оценка:** ~2-3 часа
+
+**Итого:** ~7-10 часов работы
+
+**Примечание:** Технически все 113 полей уже поддерживаются (хранятся в `orcaslicer_settings`, сохраняются при импорте, экспортируются обратно). Задачи направлены на добавление UI полей для ручного редактирования пользователями.
