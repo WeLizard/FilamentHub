@@ -56,6 +56,10 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
   brandId,
 }) => {
   const { user } = useAuth();
+  
+  // Определяем, является ли пресет черновиком (заготовкой)
+  // Черновик = пресет без привязки к филаменту ИЛИ неактивный пресет без @FilamentHub в имени
+  const isDraft = preset && (!preset.filament_id || (!preset.active && !preset.name?.includes('@FilamentHub')));
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
   const [isOfficial, setIsOfficial] = useState(false);
@@ -1358,22 +1362,46 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
 
     if (preset) {
       // Обновление существующего пресета
+      // Для черновиков (заготовок) также передаём filament_id и активируем пресет
+      const updateData: {
+        name: string;
+        description?: string;
+        extruder_temp: number;
+        bed_temp: number;
+        print_speed: number;
+        travel_speed: number;
+        flow_rate: number;
+        fan_speed: number;
+        retraction_length: number;
+        retraction_speed: number;
+        orcaslicer_settings: Record<string, unknown>;
+        printer_ids: number[];
+        filament_id?: number;
+        active?: boolean;
+      } = {
+        name,
+        description: description || undefined,
+        extruder_temp: extruderTemp,
+        bed_temp: bedTemp,
+        print_speed: printSpeed,
+        travel_speed: travelSpeed,
+        flow_rate: flowRate,
+        fan_speed: fanSpeed,
+        retraction_length: retractionLength,
+        retraction_speed: retractionSpeed,
+        orcaslicer_settings: orcaslicerSettings,
+        printer_ids: selectedPrinterIds.length > 0 ? selectedPrinterIds : [],
+      };
+      
+      // Если это черновик и выбран филамент - активируем пресет
+      if (isDraft && selectedFilamentId) {
+        updateData.filament_id = selectedFilamentId;
+        updateData.active = true;
+      }
+      
       updateMutation.mutate({
         id: preset.id,
-        data: {
-          name,
-          description: description || undefined,
-          extruder_temp: extruderTemp,
-          bed_temp: bedTemp,
-          print_speed: printSpeed,
-          travel_speed: travelSpeed,
-          flow_rate: flowRate,
-          fan_speed: fanSpeed,
-          retraction_length: retractionLength,
-          retraction_speed: retractionSpeed,
-          orcaslicer_settings: orcaslicerSettings,
-          printer_ids: selectedPrinterIds.length > 0 ? selectedPrinterIds : [],
-        },
+        data: updateData,
       });
     } else {
       // Создание нового пресета для существующего филамента
@@ -1419,7 +1447,10 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
         {/* Header */}
         <div className="flex items-center justify-between p-6 border-b border-white/10">
           <h2 className="text-2xl font-bold text-white">
-            {preset ? 'Редактировать пресет' : 'Создать новый пресет'}
+            {preset 
+              ? (isDraft ? 'Доработать заготовку' : 'Редактировать пресет')
+              : 'Создать новый пресет'
+            }
           </h2>
           <button
             onClick={onClose}
@@ -1440,16 +1471,16 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
 
           {/* Form */}
           <form onSubmit={handleSubmit} className="space-y-6">
-          {/* Отображение филамента при редактировании */}
-          {preset && editingFilament && (
+          {/* Отображение филамента при редактировании (только если не черновик) */}
+          {preset && editingFilament && !isDraft && (
             <div>
               <label className="block text-gray-300 mb-2 text-sm font-medium">Филамент</label>
               <FilamentSummaryCard filament={editingFilament} />
             </div>
           )}
 
-          {/* Material Selection (только при создании) */}
-          {!preset && (
+          {/* Material Selection (при создании ИЛИ при редактировании черновика) */}
+          {(!preset || isDraft) && (
             <div>
               <label className="block text-gray-300 mb-2 text-sm font-medium">Филамент *</label>
               {!showFilamentForm ? (

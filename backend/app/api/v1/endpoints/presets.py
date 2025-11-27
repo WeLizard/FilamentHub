@@ -244,12 +244,12 @@ async def create_preset(
     await db.flush()  # Получаем ID пресета
     
     # Автоматически создаём запись в user_saved_presets (самосохранение)
-    # Это нужно для единой логики синхронизации - все пресеты в "Профили филамента" хранят sync_enabled в user_saved_presets
+    # Это нужно для единой логики синхронизации - все пресеты в "Профили филамента" хранят sync в user_saved_presets
     from app.models.user_saved_preset import UserSavedPreset
     saved_preset = UserSavedPreset(
         user_id=current_user.id,
         preset_id=preset.id,
-        sync_enabled=True,  # По умолчанию синхронизация включена
+        sync=True,  # По умолчанию синхронизация включена
     )
     db.add(saved_preset)
     
@@ -336,21 +336,50 @@ async def update_preset(
             detail="You can only update your own presets"
         )
 
-    # Получаем filament для автомодерации
-    filament_result = await db.execute(select(Filament).where(Filament.id == preset.filament_id))
-    filament = filament_result.scalar_one_or_none()
-    if not filament:
-        raise HTTPException(status_code=404, detail="Filament not found")
-    
     # Обновляем только переданные поля
     update_data = data.model_dump(exclude_unset=True)
     printer_ids = update_data.pop("printer_ids", None)
     
+    # Определяем filament_id: из update_data (если передан) или из preset
+    # Для черновиков filament_id может быть None, и мы его обновляем через update_data
+    target_filament_id = update_data.get("filament_id") or preset.filament_id
+    
+    # Получаем filament для автомодерации (только если есть filament_id)
+    filament = None
+    if target_filament_id:
+        filament_result = await db.execute(select(Filament).where(Filament.id == target_filament_id))
+        filament = filament_result.scalar_one_or_none()
+        if not filament:
+            raise HTTPException(status_code=404, detail="Filament not found")
+    
+    # Сохраняем старое состояние для проверки активации черновика
+    was_draft = not preset.active or not preset.filament_id
+    old_sync_enabled = preset.sync_enabled
+    
     for field, value in update_data.items():
         setattr(preset, field, value)
     
-    # Автоматическая модерация при обновлении (только для пользовательских пресетов)
-    if not preset.is_official:
+    # Логика замены меток при активации черновика
+    # Если черновик активируется (active становится True) или включается синхронизация
+    if (was_draft and preset.active) or (not old_sync_enabled and preset.sync_enabled):
+        # Инициализируем orcaslicer_settings если его нет
+        if preset.orcaslicer_settings is None:
+            preset.orcaslicer_settings = {}
+        elif not isinstance(preset.orcaslicer_settings, dict):
+            preset.orcaslicer_settings = {}
+        
+        # Убираем метку черновика, добавляем метки "нашего" пресета
+        preset.orcaslicer_settings.pop("fhub_draft_id", None)
+        preset.orcaslicer_settings["fhub_id"] = preset.id
+        preset.orcaslicer_settings["fhub_source"] = "filamenthub"
+        
+        logger.info(
+            f"Activated draft preset {preset.id}: removed fhub_draft_id, "
+            f"added fhub_id={preset.id} and fhub_source='filamenthub'"
+        )
+    
+    # Автоматическая модерация при обновлении (только для пользовательских пресетов с filament)
+    if not preset.is_official and filament:
         moderation_status, moderation_reason = await moderate_preset(
             preset, filament, db, is_official=preset.is_official
         )
@@ -394,22 +423,23 @@ async def update_preset(
 
     await db.commit()
     
-    # Обновляем взвешенный пресет для этого филамента (если достаточно пресетов)
-    try:
-        await create_or_update_weighted_preset(preset.filament_id, db, min_presets_count=4)
-    except Exception as e:
-        logger.error(f"Failed to update weighted preset for filament {preset.filament_id}: {e}")
-    
-    # Создаем уведомления для пользователей, у которых сохранен этот пресет
-    try:
-        await notify_preset_updated(
-            preset_id=preset.id,
-            preset_name=preset.name,
-            filament_id=preset.filament_id,
-            db=db,
-        )
-    except Exception as e:
-        logger.error(f"Failed to create notifications for preset {preset.id} update: {e}")
+    # Обновляем взвешенный пресет для этого филамента (если достаточно пресетов и есть filament_id)
+    if preset.filament_id:
+        try:
+            await create_or_update_weighted_preset(preset.filament_id, db, min_presets_count=4)
+        except Exception as e:
+            logger.error(f"Failed to update weighted preset for filament {preset.filament_id}: {e}")
+        
+        # Создаем уведомления для пользователей, у которых сохранен этот пресет
+        try:
+            await notify_preset_updated(
+                preset_id=preset.id,
+                preset_name=preset.name,
+                filament_id=preset.filament_id,
+                db=db,
+            )
+        except Exception as e:
+            logger.error(f"Failed to create notifications for preset {preset.id} update: {e}")
     
     # Загружаем принтеры для ответа
     result = await db.execute(

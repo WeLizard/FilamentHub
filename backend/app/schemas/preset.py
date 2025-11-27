@@ -64,6 +64,9 @@ class PresetUpdate(BaseModel):
     name: str | None = Field(None, min_length=1, max_length=200)
     description: str | None = Field(None, max_length=1000)
     is_official: bool | None = None
+    
+    # Filament (для активации черновиков/заготовок)
+    filament_id: int | None = Field(None, gt=0, description="ID филамента (для привязки черновика)")
 
     # Print settings
     extruder_temp: float | None = Field(None, ge=0, le=400)
@@ -85,7 +88,7 @@ class PresetUpdate(BaseModel):
     # Rating
     rating: float | None = Field(None, ge=1, le=5)
     active: bool | None = None
-    sync_enabled: bool | None = Field(None, description="Включена ли синхронизация с OrcaSlicer")
+    # УДАЛЕНО: sync_enabled - теперь управляется через user_saved_presets.sync
     
     # Printers
     printer_ids: list[int] | None = Field(None, description="Список ID принтеров, для которых подходит этот пресет")
@@ -99,7 +102,7 @@ class PresetResponse(PresetBase):
     user_id: int | None = None
     active: bool
     moderation_status: str  # pending, approved, rejected
-    sync_enabled: bool = Field(True, description="Включена ли синхронизация с OrcaSlicer")
+    # УДАЛЕНО: sync_enabled - теперь управляется через user_saved_presets.sync
     external_id: str | None = Field(None, description="ID пресета в OrcaSlicer (для маппинга)")
     source: str | None = Field(None, description="Источник пресета (orcaslicer, user, system, etc.)")
     moderation_reason: str | None = None
@@ -111,13 +114,6 @@ class PresetResponse(PresetBase):
 
     model_config = ConfigDict(from_attributes=True)
 
-
-# PresetWithFilament - временно закомментирован из-за проблем с forward references
-# TODO: Восстановить после исправления проблемы с OpenAPI
-# class PresetWithFilament(PresetResponse):
-#     """Schema for Preset with Filament info."""
-#     filament: "FilamentResponse"
-#     model_config = ConfigDict(from_attributes=True)
 
 
 class PresetListResponse(BaseModel):
@@ -154,10 +150,6 @@ class RecommendedPresetResponse(BaseModel):
     avg_rating: float | None = Field(None, ge=0, le=5, description="Average rating of used presets")
     
     model_config = ConfigDict(from_attributes=True)
-
-
-# PresetWithFilament временно отключен из-за проблем с forward references в OpenAPI
-# TODO: Восстановить после исправления проблемы
 
 
 

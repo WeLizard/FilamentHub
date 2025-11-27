@@ -31,9 +31,9 @@ export const PresetSyncToggle: React.FC<PresetSyncToggleProps> = ({
     enabled: !!user?.id,
   });
   
-  // Находим сохраненный пресет для получения sync_enabled
+  // Находим сохраненный пресет для получения sync
   const savedPreset = savedPresets?.items.find(sp => sp.preset_id === preset.id);
-  const isSyncEnabled = savedPreset?.sync_enabled ?? true; // По умолчанию true
+  const isSyncEnabled = savedPreset?.sync ?? true; // По умолчанию true
 
   // Размеры иконки
   const iconSizes = {
