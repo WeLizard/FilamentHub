@@ -3,6 +3,7 @@
 from fastapi import APIRouter
 
 from app.api.v1.endpoints import (
+    feedback,
     admin,
     auth,
     brand_requests,
@@ -42,4 +43,5 @@ api_router.include_router(saved_presets.router)
 api_router.include_router(filament_reviews.router)
 api_router.include_router(notifications.router)
 api_router.include_router(orca_sync.router)
+api_router.include_router(feedback.router)
 
