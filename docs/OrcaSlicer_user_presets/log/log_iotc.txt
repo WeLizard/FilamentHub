@@ -1,0 +1,9 @@
+[25-11-23 12:46:15.603135][D][39B0][IOTC] [IOTC_Check_Session_Status] Error: Not Initialized!
+[25-11-23 12:46:15.604136][D][39B0][IOTC] @@@@@ IOTC_DeInitialize called
+[25-11-23 12:46:15.604136][D][39B0][IOTC] @ErrCode -12 - Line (13010)
+[25-11-23 21:59:06.171888][D][4BC0][IOTC] [IOTC_Check_Session_Status] Error: Not Initialized!
+[25-11-23 21:59:06.172888][D][4BC0][IOTC] @@@@@ IOTC_DeInitialize called
+[25-11-23 21:59:06.172888][D][4BC0][IOTC] @ErrCode -12 - Line (13010)
+[25-11-23 22:20:19.857115][D][78CC][IOTC] [IOTC_Check_Session_Status] Error: Not Initialized!
+[25-11-23 22:20:19.858118][D][78CC][IOTC] @@@@@ IOTC_DeInitialize called
+[25-11-23 22:20:19.858118][D][78CC][IOTC] @ErrCode -12 - Line (13010)

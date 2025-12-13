@@ -1,0 +1,52 @@
+{
+    "cooling_tube_length": "0.01",
+    "cooling_tube_retraction": "0",
+    "deretraction_speed": [
+        "35"
+    ],
+    "extra_loading_move": "0",
+    "from": "User",
+    "inherits": "Voron 2.4 350 0.4 nozzle",
+    "layer_change_gcode": ";AFTER_LAYER_CHANGE\nMMU_UPDATE_HEIGHT HEIGHT=[layer_z]\nSET_PRINT_STATS_INFO CURRENT_LAYER={layer_num}\n;[layer_z]",
+    "machine_end_gcode": "MMU_END\nPRINT_END",
+    "machine_max_acceleration_extruding": [
+        "15000",
+        "20000"
+    ],
+    "machine_max_acceleration_x": [
+        "15000",
+        "20000"
+    ],
+    "machine_max_acceleration_y": [
+        "15000",
+        "20000"
+    ],
+    "machine_start_gcode": "MMU_START_SETUP INITIAL_TOOL={initial_tool} TOTAL_TOOLCHANGES=!total_toolchanges! REFERENCED_TOOLS=!referenced_tools! TOOL_COLORS=!colors! TOOL_TEMPS=!temperatures! TOOL_MATERIALS=!materials! FILAMENT_NAMES=!filament_names! PURGE_VOLUMES=!purge_volumes!\nMMU_START_CHECK\nprint_start EXTRUDER=[first_layer_temperature] BED=[first_layer_bed_temperature] CHAMBER=[chamber_temperature]\nMMU_START_LOAD_INITIAL_TOOL\nSET_PRINT_STATS_INFO TOTAL_LAYER={total_layer_count}",
+    "name": "Voron 2.4 350",
+    "parking_pos_retraction": "0",
+    "print_host": "192.168.0.122:80",
+    "printer_extruder_id": [
+        "1"
+    ],
+    "printer_extruder_variant": [
+        "Direct Drive Standard"
+    ],
+    "printer_settings_id": "Voron 2.4 350",
+    "purge_in_prime_tower": "0",
+    "retract_length_toolchange": [
+        "0"
+    ],
+    "retract_when_changing_layer": [
+        "0"
+    ],
+    "retraction_speed": [
+        "35"
+    ],
+    "version": "1.8.0.0",
+    "wipe": [
+        "0"
+    ],
+    "z_hop": [
+        "0"
+    ]
+}

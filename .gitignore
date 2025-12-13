@@ -39,7 +39,9 @@ backend/.venv/
 .env
 .env.local
 .env.*.local
+.env.prod
 backend/.env
+backend/.env.prod
 
 # Database
 *.db

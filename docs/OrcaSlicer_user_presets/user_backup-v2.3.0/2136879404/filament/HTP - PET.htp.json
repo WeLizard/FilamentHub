@@ -1,0 +1,69 @@
+{
+    "default_filament_colour": [
+        "#292727"
+    ],
+    "fan_max_speed": [
+        "55"
+    ],
+    "fan_min_speed": [
+        "85"
+    ],
+    "filament_cooling_final_speed": [
+        "0"
+    ],
+    "filament_cooling_initial_speed": [
+        "0"
+    ],
+    "filament_cooling_moves": [
+        "0"
+    ],
+    "filament_cost": [
+        "852"
+    ],
+    "filament_end_gcode": [
+        "; filament end gcode \nSET_FAN_SPEED FAN=Nevermore SPEED=0"
+    ],
+    "filament_loading_speed": [
+        "0"
+    ],
+    "filament_loading_speed_start": [
+        "0"
+    ],
+    "filament_settings_id": [
+        "HTP - PET.htp"
+    ],
+    "filament_start_gcode": [
+        "; Filament gcode\nSET_FAN_SPEED FAN=Nevermore SPEED=1"
+    ],
+    "filament_type": [
+        "PET"
+    ],
+    "filament_unloading_speed": [
+        "0"
+    ],
+    "filament_unloading_speed_start": [
+        "0"
+    ],
+    "filament_vendor": [
+        "PET.htp"
+    ],
+    "from": "User",
+    "hot_plate_temp": [
+        "95"
+    ],
+    "hot_plate_temp_initial_layer": [
+        "95"
+    ],
+    "inherits": "Voron Generic ABS",
+    "name": "HTP - PET.htp",
+    "nozzle_temperature": [
+        "250"
+    ],
+    "nozzle_temperature_initial_layer": [
+        "250"
+    ],
+    "nozzle_temperature_range_high": [
+        "260"
+    ],
+    "version": "1.8.0.0"
+}

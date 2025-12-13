@@ -1,0 +1,29 @@
+{
+    "from": "User",
+    "gcode_flavor": "reprapfirmware",
+    "host_type": "duet",
+    "inherits": "MyMarlin 0.4 nozzle",
+    "machine_end_gcode": "G91 ;relative positioning\nM83 ;relative positioning\nG1 E-1 F300  ;retract the filament a bit before lifting the nozzle, to release some of the pressure\nG1 Z+0.5 X-20 Y-20 F9000 ;move Z up a bit and retract filament even more\nG28 X0 Y0 ;move X/Y to min endstops, so the head is out of the way\nM84 ;steppers off\nG90 ;absolute positioning'\nM82 ;absolute positioning'",
+    "machine_start_gcode": "G21 ;установить единицы измерения в миллиметры\nM82 ;установить абсолютное позиционирование\nM107 ; выкл вентилятор \nG28\nM190 S[bed_temperature_initial_layer_single]\nM109 S[nozzle_temperature_initial_layer]\nG0 Z1 X10 Y8 F1000 ;немного сдвинуться вверх и в передний угол\nG92 E0; сбросить экструдер\nG1 X60.0 Z0.2 E9.0 F1000.0; вступительная строка\nG1 X100.0 E21.5 F1000.0; продолжить строку\nG92 E0; снова сбросить экструдер",
+    "name": "B2Bee",
+    "nozzle_type": "brass",
+    "print_host": "192.168.0.104",
+    "print_host_webui": "http://192.168.0.104",
+    "printable_area": [
+        "0x0",
+        "220x0",
+        "220x220",
+        "0x220"
+    ],
+    "printable_height": "220",
+    "printer_settings_id": "B2Bee",
+    "printhost_apikey": "Kuzmin",
+    "retraction_length": [
+        "2.2"
+    ],
+    "retraction_speed": [
+        "50"
+    ],
+    "use_firmware_retraction": "1",
+    "version": "1.6.1.0"
+}

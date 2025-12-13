@@ -1,0 +1,13 @@
+{
+    "filament_settings_id": [
+        "Voron Generic TPU - Копировать"
+    ],
+    "filament_start_gcode": [
+        "MMU_SELECT BYPASS=1"
+    ],
+    "from": "User",
+    "inherits": "Voron Generic TPU",
+    "is_custom_defined": "0",
+    "name": "Voron Generic TPU - Копировать",
+    "version": "2.2.0.4"
+}

@@ -20,18 +20,12 @@ depends_on: Union[str, Sequence[str], None] = None
 
 def upgrade() -> None:
     """Upgrade database schema."""
-    # Проверяем, существует ли колонка visual_settings
-    conn = op.get_bind()
-    inspector = sa.inspect(conn)
-    
-    columns = [col['name'] for col in inspector.get_columns('filaments')]
-    
-    # Добавляем поле visual_settings (JSON) для расширенных визуальных эффектов, если его еще нет
-    if 'visual_settings' not in columns:
-        op.add_column(
-            'filaments',
-            sa.Column('visual_settings', sa.JSON(), nullable=True)
-        )
+    # Добавляем поле visual_settings (JSON) для расширенных визуальных эффектов
+    # Используем прямой SQL для надежности и идемпотентности
+    op.execute("""
+        ALTER TABLE filaments 
+        ADD COLUMN IF NOT EXISTS visual_settings JSONB;
+    """)
 
 
 def downgrade() -> None:

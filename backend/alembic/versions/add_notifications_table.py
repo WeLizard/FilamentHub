@@ -20,33 +20,37 @@ depends_on: Union[str, Sequence[str], None] = None
 
 def upgrade() -> None:
     """Upgrade database schema."""
-    # Используем существующий enum (он уже создан ранее)
-    notification_type_enum = sa.Enum(
-        'preset_updated',
-        'preset_deleted',
-        'brand_verified',
-        'brand_request_approved',
-        'brand_request_rejected',
-        name='notificationtype',
-        create_type=False  # Не создаем enum, используем существующий
-    )
+    # Создаем enum notificationtype с проверкой существования
+    op.execute("""
+        DO $$ BEGIN
+            CREATE TYPE notificationtype AS ENUM (
+                'preset_updated',
+                'preset_deleted',
+                'brand_verified',
+                'brand_request_approved',
+                'brand_request_rejected'
+            );
+        EXCEPTION
+            WHEN duplicate_object THEN null;
+        END $$;
+    """)
     
-    # Создаем таблицу notifications
-    op.create_table(
-        'notifications',
-        sa.Column('id', sa.Integer(), nullable=False),
-        sa.Column('user_id', sa.Integer(), nullable=False),
-        sa.Column('type', notification_type_enum, nullable=False),
-        sa.Column('title', sa.String(length=200), nullable=False),
-        sa.Column('message', sa.Text(), nullable=False),
-        sa.Column('link', sa.String(length=500), nullable=True),
-        sa.Column('extra_data', sa.JSON(), nullable=True),
-        sa.Column('read', sa.Boolean(), nullable=False, server_default='false'),
-        sa.Column('read_at', sa.DateTime(timezone=True), nullable=True),
-        sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
-        sa.ForeignKeyConstraint(['user_id'], ['users.id'], ),
-        sa.PrimaryKeyConstraint('id')
-    )
+    # Создаем таблицу notifications через SQL напрямую, чтобы избежать проблем с ENUM
+    # SQLAlchemy не видит ENUM, созданный через op.execute() в той же транзакции
+    op.execute("""
+        CREATE TABLE IF NOT EXISTS notifications (
+            id SERIAL PRIMARY KEY,
+            user_id INTEGER NOT NULL REFERENCES users(id),
+            type notificationtype NOT NULL,
+            title VARCHAR(200) NOT NULL,
+            message TEXT NOT NULL,
+            link VARCHAR(500),
+            extra_data JSONB,
+            read BOOLEAN NOT NULL DEFAULT false,
+            read_at TIMESTAMP WITH TIME ZONE,
+            created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now()
+        )
+    """)
     
     # Создаем индексы
     op.create_index('ix_notifications_id', 'notifications', ['id'])
@@ -65,6 +69,6 @@ def downgrade() -> None:
     op.drop_index('ix_notifications_id', table_name='notifications')
     op.drop_table('notifications')
     
-    # Удаляем enum
-    sa.Enum(name='notificationtype').drop(op.get_bind(), checkfirst=True)
+    # Удаляем enum (только если не используется другими таблицами)
+    op.execute("DROP TYPE IF EXISTS notificationtype")
 

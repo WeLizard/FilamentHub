@@ -1,0 +1,51 @@
+[warning]	2025-11-23 21:14:40.313576[Thread 0x000076e0]:Slic3r::NetworkAgent::get_network_function, can not find function bambu_network_update_cert
+[warning]	2025-11-23 21:14:40.314093[Thread 0x000076e0]:Slic3r::NetworkAgent::get_network_function, can not find function bambu_network_install_device_cert
+[warning]	2025-11-23 21:14:44.758501[Thread 0x000076e0]:FilamentHub: Could not add script message handler on init (will retry on load)
+[error]	2025-11-23 21:14:44.759500[Thread 0x000076e0]:FilamentHub: ========== load_auth_token() CALLED ==========
+[error]	2025-11-23 21:14:44.759500[Thread 0x000076e0]:FilamentHub: app_config is not null. Loading token...
+[error]	2025-11-23 21:14:44.759500[Thread 0x000076e0]:FilamentHub: CONFIG_SECTION_FILAMENTHUB: filamenthub
+[error]	2025-11-23 21:14:44.759500[Thread 0x000076e0]:FilamentHub: CONFIG_KEY_ACCESS_TOKEN: access_token
+[error]	2025-11-23 21:14:44.759500[Thread 0x000076e0]:FilamentHub: CONFIG_KEY_USER_ID: user_id
+[error]	2025-11-23 21:14:44.759500[Thread 0x000076e0]:FilamentHub: Loading auth token - token length: 201, user_id_str: '6'
+[error]	2025-11-23 21:14:44.759500[Thread 0x000076e0]:FilamentHub: Loaded auth token for user_id=6, token length: 201, token preview: eyJhbGciOiJIUzI1NiIs...
+[error]	2025-11-23 21:14:44.759500[Thread 0x000076e0]:FilamentHub: load_auth_token: About to return true
+[error]	2025-11-23 21:14:44.759500[Thread 0x000076e0]:FilamentHub: ========== load_auth_token() CALLED ==========
+[error]	2025-11-23 21:14:44.759500[Thread 0x000076e0]:FilamentHub: app_config is not null. Loading token...
+[error]	2025-11-23 21:14:44.759500[Thread 0x000076e0]:FilamentHub: CONFIG_SECTION_FILAMENTHUB: filamenthub
+[error]	2025-11-23 21:14:44.759500[Thread 0x000076e0]:FilamentHub: CONFIG_KEY_ACCESS_TOKEN: access_token
+[error]	2025-11-23 21:14:44.759500[Thread 0x000076e0]:FilamentHub: CONFIG_KEY_USER_ID: user_id
+[error]	2025-11-23 21:14:44.759500[Thread 0x000076e0]:FilamentHub: Loading auth token - token length: 201, user_id_str: '6'
+[error]	2025-11-23 21:14:44.759500[Thread 0x000076e0]:FilamentHub: Loaded auth token for user_id=6, token length: 201, token preview: eyJhbGciOiJIUzI1NiIs...
+[error]	2025-11-23 21:14:44.759500[Thread 0x000076e0]:FilamentHub: load_auth_token: About to return true
+[error]	2025-11-23 21:14:44.768451[Thread 0x000076e0]:FilamentHub: Failed to get unread notifications count. Error: , Status: 401
+[warning]	2025-11-23 21:14:44.768451[Thread 0x000076e0]:FilamentHub: Error getting unread notifications count: , HTTP status: 401
+[error]	2025-11-23 21:14:44.778004[Thread 0x000076e0]:FilamentHub: Get current user failed. Error: , Status: 401
+[warning]	2025-11-23 21:14:44.778004[Thread 0x000076e0]:FilamentHub: Failed to get user info. Error: 
+[error]	2025-11-23 21:14:44.778517[Thread 0x000076e0]:FilamentHub: ========== load_auth_token() CALLED ==========
+[error]	2025-11-23 21:14:44.778517[Thread 0x000076e0]:FilamentHub: app_config is not null. Loading token...
+[error]	2025-11-23 21:14:44.778517[Thread 0x000076e0]:FilamentHub: CONFIG_SECTION_FILAMENTHUB: filamenthub
+[error]	2025-11-23 21:14:44.778517[Thread 0x000076e0]:FilamentHub: CONFIG_KEY_ACCESS_TOKEN: access_token
+[error]	2025-11-23 21:14:44.778517[Thread 0x000076e0]:FilamentHub: CONFIG_KEY_USER_ID: user_id
+[error]	2025-11-23 21:14:44.778517[Thread 0x000076e0]:FilamentHub: Loading auth token - token length: 201, user_id_str: '6'
+[error]	2025-11-23 21:14:44.778517[Thread 0x000076e0]:FilamentHub: Loaded auth token for user_id=6, token length: 201, token preview: eyJhbGciOiJIUzI1NiIs...
+[error]	2025-11-23 21:14:44.778517[Thread 0x000076e0]:FilamentHub: load_auth_token: About to return true
+[error]	2025-11-23 21:14:44.784612[Thread 0x000076e0]:Slic3r::GUI::PartPlate::calc_exclude_triangles:Unable to create exclude triangles
+[error]	2025-11-23 21:14:45.003153[Thread 0x000029dc]:Unable to open the fileC:\Users\Lizard\Downloads\Case.3mf
+[error]	2025-11-23 21:14:45.003153[Thread 0x000029dc]:Unable to open the fileC:\Users\Lizard\Downloads\untitled.stl
+[error]	2025-11-23 21:14:45.003153[Thread 0x00006de0]:Unable to open the fileC:\Users\Lizard\Downloads\Miyabi.3mf
+[error]	2025-11-23 21:14:45.003153[Thread 0x000029dc]:Unable to open the fileC:\Users\Lizard\Downloads\Miyabi\Miyabi.3mf
+[error]	2025-11-23 21:14:45.003153[Thread 0x00005520]:Unable to open the fileC:\Users\Lizard\Downloads\winchrack\WinchRack_custom\Нью печать\Красный ролик ведущий.3mf
+[error]	2025-11-23 21:14:45.003153[Thread 0x000055dc]:Unable to open the fileC:\Users\Lizard\Desktop\123titled.stl
+[error]	2025-11-23 21:14:45.004155[Thread 0x00006c3c]:Unable to open the fileF:\Ilya\VENOM\venomNewbot.stl
+[error]	2025-11-23 21:14:45.004155[Thread 0x0000776c]:Unable to open the fileC:\Users\Lizard\Downloads\Miyabi\Lhand.stl
+[error]	2025-11-23 21:14:45.004155[Thread 0x00006de0]:Unable to open the fileC:\Users\Lizard\Downloads\Miyabi.stl
+[error]	2025-11-23 21:14:45.004155[Thread 0x00006090]:Unable to open the fileC:\Users\Lizard\Downloads\Pico4洞洞板支架_stls\PICO手柄支架.3mf
+[error]	2025-11-23 21:14:45.004155[Thread 0x00005520]:Unable to open the fileC:\Users\Lizard\Downloads\Профиль.3mf
+[error]	2025-11-23 21:14:45.004155[Thread 0x000029dc]:Unable to open the fileC:\Users\Lizard\Downloads\Trashbag Holder - 6043568\Trashbag_Holder.stl
+[error]	2025-11-23 21:14:48.474078[Thread 0x000076e0]:Slic3r::GUI::PartPlate::calc_exclude_triangles:Unable to create exclude triangles
+[error]	2025-11-23 21:14:49.640561[Thread 0x00004574]:[install_plugin]: 1419, got 7 files
+[error]	2025-11-23 21:14:49.641561[Thread 0x00004574]:[install_plugin]Archive read exception:boost::filesystem::remove: Отказано в доступе [system:5]: "C:\Users\Lizard\AppData\Roaming\OrcaSlicer\plugins\BambuSource.dll"
+[warning]	2025-11-23 21:14:51.410651[Thread 0x000076e0]:Slic3r::NetworkAgent::get_version, get_version not supported,return 00.00.00.00!
+[error]	2025-11-23 21:14:51.743555[Thread 0x000063c4]:Error getting: `check_new_version_sf`: HTTP 503, 
+[error]	2025-11-23 21:14:52.015797[Thread 0x000076e0]:Slic3r::GUI::PartPlate::calc_exclude_triangles:Unable to create exclude triangles
+[error]	2025-11-23 21:14:52.764527[Thread 0x000076e0]:Failed to clean up encrypt bbl network log file

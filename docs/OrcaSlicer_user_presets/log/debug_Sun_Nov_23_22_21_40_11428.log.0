@@ -1,0 +1,1095 @@
+[error]	2025-11-23 22:21:41.539226[Thread 0x00004094]:can not find parent 0.20mm Standard @Creality Ender3V2 for config C:\Users\Lizard\AppData\Roaming\OrcaSlicer\user\2136879404\process\0.20mm Standard @Creality Ender3V2 - Копировать.json!
+[warning]	2025-11-23 22:21:43.998939[Thread 0x00004094]:FilamentHub: Could not add script message handler on init (will retry on load)
+[error]	2025-11-23 22:21:43.999462[Thread 0x00004094]:FilamentHub: ========== load_auth_token() CALLED ==========
+[error]	2025-11-23 22:21:43.999462[Thread 0x00004094]:FilamentHub: app_config is not null. Loading token...
+[error]	2025-11-23 22:21:43.999462[Thread 0x00004094]:FilamentHub: CONFIG_SECTION_FILAMENTHUB: filamenthub
+[error]	2025-11-23 22:21:43.999462[Thread 0x00004094]:FilamentHub: CONFIG_KEY_ACCESS_TOKEN: access_token
+[error]	2025-11-23 22:21:43.999462[Thread 0x00004094]:FilamentHub: CONFIG_KEY_USER_ID: user_id
+[error]	2025-11-23 22:21:43.999462[Thread 0x00004094]:FilamentHub: Loading auth token - token length: 4, user_id_str: 'true'
+[error]	2025-11-23 22:21:43.999462[Thread 0x00004094]:FilamentHub: user_id_str contains non-digit characters: 'true'
+[error]	2025-11-23 22:21:43.999462[Thread 0x00004094]:FilamentHub: ========== load_auth_token() CALLED ==========
+[error]	2025-11-23 22:21:43.999462[Thread 0x00004094]:FilamentHub: app_config is not null. Loading token...
+[error]	2025-11-23 22:21:43.999462[Thread 0x00004094]:FilamentHub: CONFIG_SECTION_FILAMENTHUB: filamenthub
+[error]	2025-11-23 22:21:43.999462[Thread 0x00004094]:FilamentHub: CONFIG_KEY_ACCESS_TOKEN: access_token
+[error]	2025-11-23 22:21:43.999462[Thread 0x00004094]:FilamentHub: CONFIG_KEY_USER_ID: user_id
+[error]	2025-11-23 22:21:43.999462[Thread 0x00004094]:FilamentHub: Loading auth token - token length: 4, user_id_str: 'true'
+[error]	2025-11-23 22:21:43.999462[Thread 0x00004094]:FilamentHub: user_id_str contains non-digit characters: 'true'
+[error]	2025-11-23 22:21:44.008844[Thread 0x00004094]:Slic3r::GUI::PartPlate::calc_exclude_triangles:Unable to create exclude triangles
+[error]	2025-11-23 22:21:44.149914[Thread 0x00007200]:Unable to open the fileC:\Users\Lizard\Downloads\Case.3mf
+[error]	2025-11-23 22:21:44.149914[Thread 0x00007200]:Unable to open the fileC:\Users\Lizard\Downloads\untitled.stl
+[error]	2025-11-23 22:21:44.149914[Thread 0x00007200]:Unable to open the fileC:\Users\Lizard\Downloads\Miyabi\Miyabi.3mf
+[error]	2025-11-23 22:21:44.150919[Thread 0x00007200]:Unable to open the fileC:\Users\Lizard\Desktop\123titled.stl
+[error]	2025-11-23 22:21:44.150919[Thread 0x00007200]:Unable to open the fileC:\Users\Lizard\Downloads\Miyabi.3mf
+[error]	2025-11-23 22:21:44.150919[Thread 0x00007200]:Unable to open the fileC:\Users\Lizard\Downloads\Miyabi.stl
+[error]	2025-11-23 22:21:44.150919[Thread 0x00007200]:Unable to open the fileF:\Ilya\VENOM\venomNewbot.stl
+[error]	2025-11-23 22:21:44.150919[Thread 0x00007200]:Unable to open the fileC:\Users\Lizard\Downloads\Miyabi\Lhand.stl
+[error]	2025-11-23 22:21:44.150919[Thread 0x00007200]:Unable to open the fileC:\Users\Lizard\Downloads\Trashbag Holder - 6043568\Trashbag_Holder.stl
+[error]	2025-11-23 22:21:44.150919[Thread 0x00007200]:Unable to open the fileC:\Users\Lizard\Downloads\winchrack\WinchRack_custom\Нью печать\Красный ролик ведущий.3mf
+[error]	2025-11-23 22:21:44.150919[Thread 0x00007c30]:Unable to open the fileC:\Users\Lizard\Downloads\Pico4洞洞板支架_stls\PICO手柄支架.3mf
+[error]	2025-11-23 22:21:44.150919[Thread 0x00007200]:Unable to open the fileC:\Users\Lizard\Downloads\Профиль.3mf
+[error]	2025-11-23 22:21:45.970310[Thread 0x00004094]:Slic3r::GUI::PartPlate::calc_exclude_triangles:Unable to create exclude triangles
+[error]	2025-11-23 22:21:46.135239[Thread 0x00004094]:Slic3r::NetworkAgent::connect_server error: network_agent=000001CB41A50BA0, ret=-2
+[error]	2025-11-23 22:21:46.455084[Thread 0x00006620]:Slic3r::DevPrinterConfigUtil::get_all_subseries: result= empty
+[error]	2025-11-23 22:21:46.509305[Thread 0x00001ddc]:Error getting: `check_new_version_sf`: HTTP 503, 
+[warning]	2025-11-23 22:21:46.803603[Thread 0x00006180]:[Orca Updater]: online version=2.1.1.52, current_version=2.1.1.52, no need to download
+[warning]	2025-11-23 22:22:03.519336[Thread 0x00004094]:Slic3r::PresetCollection::load_user_preset, can not find inherit preset for user preset 0.20mm Standard @BBL X1C - Копия, just skip
+[warning]	2025-11-23 22:22:03.519336[Thread 0x00004094]:Slic3r::PresetCollection::load_user_preset, can not find inherit preset for user preset 0.20mm Standard @Creality Ender3V2 - Копировать, just skip
+[warning]	2025-11-23 22:22:03.519336[Thread 0x00004094]:Slic3r::PresetCollection::load_user_preset, can not find inherit preset for user preset ABS (НИТ), just skip
+[warning]	2025-11-23 22:22:03.520335[Thread 0x00004094]:Slic3r::PresetCollection::load_user_preset, can not find inherit preset for user preset ABS-5 (HTP), just skip
+[warning]	2025-11-23 22:22:03.520335[Thread 0x00004094]:Slic3r::PresetCollection::load_user_preset, can not find inherit preset for user preset CARBEX LARETC, just skip
+[warning]	2025-11-23 22:22:03.520335[Thread 0x00004094]:Slic3r::PresetCollection::load_user_preset, can not find inherit preset for user preset CarbeX, just skip
+[warning]	2025-11-23 22:22:03.520335[Thread 0x00004094]:Slic3r::PresetCollection::load_user_preset, can not find inherit preset for user preset Creality Generic PETG , just skip
+[warning]	2025-11-23 22:22:03.520335[Thread 0x00004094]:Slic3r::PresetCollection::load_user_preset, can not find inherit preset for user preset ERYONE - PLA Silk, just skip
+[warning]	2025-11-23 22:22:03.520335[Thread 0x00004094]:Slic3r::PresetCollection::load_user_preset, can not find inherit preset for user preset FDPlast - ABS, just skip
+[warning]	2025-11-23 22:22:03.520335[Thread 0x00004094]:Slic3r::PresetCollection::load_user_preset, can not find inherit preset for user preset FLEX HARD, just skip
+[warning]	2025-11-23 22:22:03.520335[Thread 0x00004094]:Slic3r::PresetCollection::load_user_preset, can not find inherit preset for user preset FormaX, just skip
+[warning]	2025-11-23 22:22:03.520335[Thread 0x00004094]:Slic3r::PresetCollection::load_user_preset, can not find inherit preset for user preset HTP - ABS-5, just skip
+[warning]	2025-11-23 22:22:03.520335[Thread 0x00004094]:Slic3r::PresetCollection::load_user_preset, can not find inherit preset for user preset HTP - ABS-6, just skip
+[warning]	2025-11-23 22:22:03.520335[Thread 0x00004094]:Slic3r::PresetCollection::load_user_preset, can not find inherit preset for user preset HTP - PET.htp, just skip
+[warning]	2025-11-23 22:22:03.521336[Thread 0x00004094]:Slic3r::PresetCollection::load_user_preset, can not find inherit preset for user preset HTP - PETG Black, just skip
+[warning]	2025-11-23 22:22:03.521336[Thread 0x00004094]:Slic3r::PresetCollection::load_user_preset, can not find inherit preset for user preset HTP - PETG Gold, just skip
+[warning]	2025-11-23 22:22:03.521336[Thread 0x00004094]:Slic3r::PresetCollection::load_user_preset, can not find inherit preset for user preset HTP - PETG Silver, just skip
+[warning]	2025-11-23 22:22:03.521336[Thread 0x00004094]:Slic3r::PresetCollection::load_user_preset, can not find inherit preset for user preset Kingroon TPU Black, just skip
+[warning]	2025-11-23 22:22:03.521336[Thread 0x00004094]:Slic3r::PresetCollection::load_user_preset, can not find inherit preset for user preset NYLON LARETC, just skip
+[warning]	2025-11-23 22:22:03.521336[Thread 0x00004094]:Slic3r::PresetCollection::load_user_preset, can not find inherit preset for user preset NYLON MOD LARETC, just skip
+[warning]	2025-11-23 22:22:03.521336[Thread 0x00004094]:Slic3r::PresetCollection::load_user_preset, can not find inherit preset for user preset PA66 GF-30, just skip
+[warning]	2025-11-23 22:22:03.521336[Thread 0x00004094]:Slic3r::PresetCollection::load_user_preset, can not find inherit preset for user preset PET-Gun Transparent, just skip
+[warning]	2025-11-23 22:22:03.521336[Thread 0x00004094]:Slic3r::PresetCollection::load_user_preset, can not find inherit preset for user preset PET.htp, just skip
+[warning]	2025-11-23 22:22:03.521336[Thread 0x00004094]:Slic3r::PresetCollection::load_user_preset, can not find inherit preset for user preset PET.htp (HTP), just skip
+[warning]	2025-11-23 22:22:03.521336[Thread 0x00004094]:Slic3r::PresetCollection::load_user_preset, can not find inherit preset for user preset PETG (Syntech), just skip
+[warning]	2025-11-23 22:22:03.521336[Thread 0x00004094]:Slic3r::PresetCollection::load_user_preset, can not find inherit preset for user preset PETG Transparrent LARETC, just skip
+[warning]	2025-11-23 22:22:03.521336[Thread 0x00004094]:Slic3r::PresetCollection::load_user_preset, can not find inherit preset for user preset PETG h.t.p, just skip
+[warning]	2025-11-23 22:22:03.521336[Thread 0x00004094]:Slic3r::PresetCollection::load_user_preset, can not find inherit preset for user preset PETG h.t.p., just skip
+[warning]	2025-11-23 22:22:03.521336[Thread 0x00004094]:Slic3r::PresetCollection::load_user_preset, can not find inherit preset for user preset PETG-1 (HTP), just skip
+[warning]	2025-11-23 22:22:03.521336[Thread 0x00004094]:Slic3r::PresetCollection::load_user_preset, can not find inherit preset for user preset PETG-3 (HTP), just skip
+[warning]	2025-11-23 22:22:03.521336[Thread 0x00004094]:Slic3r::PresetCollection::load_user_preset, can not find inherit preset for user preset PLA ERYONE, just skip
+[warning]	2025-11-23 22:22:03.521336[Thread 0x00004094]:Slic3r::PresetCollection::load_user_preset, can not find inherit preset for user preset PP LARETC, just skip
+[warning]	2025-11-23 22:22:03.522336[Thread 0x00004094]:Slic3r::PresetCollection::load_user_preset, can not find inherit preset for user preset PritProduct - PETG Transparent, just skip
+[warning]	2025-11-23 22:22:03.522336[Thread 0x00004094]:Slic3r::PresetCollection::load_user_preset, can not find inherit preset for user preset TOTAL GF-10, just skip
+[warning]	2025-11-23 22:22:03.522336[Thread 0x00004094]:Slic3r::PresetCollection::load_user_preset, can not find inherit preset for user preset TOTAL GF-30, just skip
+[warning]	2025-11-23 22:22:03.522336[Thread 0x00004094]:Slic3r::PresetCollection::load_user_preset, can not find inherit preset for user preset Voron Generic TPU - Копировать, just skip
+[warning]	2025-11-23 22:22:03.522336[Thread 0x00004094]:Slic3r::PresetCollection::load_user_preset, can not find inherit preset for user preset НИТ - PETG Transparent, just skip
+[error]	2025-11-23 22:22:03.869131[Thread 0x00004094]:FilamentHub: ========== load_auth_token() CALLED ==========
+[error]	2025-11-23 22:22:03.869131[Thread 0x00004094]:FilamentHub: app_config is not null. Loading token...
+[error]	2025-11-23 22:22:03.869131[Thread 0x00004094]:FilamentHub: CONFIG_SECTION_FILAMENTHUB: filamenthub
+[error]	2025-11-23 22:22:03.869131[Thread 0x00004094]:FilamentHub: CONFIG_KEY_ACCESS_TOKEN: access_token
+[error]	2025-11-23 22:22:03.869131[Thread 0x00004094]:FilamentHub: CONFIG_KEY_USER_ID: user_id
+[error]	2025-11-23 22:22:03.869131[Thread 0x00004094]:FilamentHub: Loading auth token - token length: 201, user_id_str: '6'
+[error]	2025-11-23 22:22:03.869131[Thread 0x00004094]:FilamentHub: Loaded auth token for user_id=6, token length: 201, token preview: eyJhbGciOiJIUzI1NiIs...
+[error]	2025-11-23 22:22:03.869131[Thread 0x00004094]:FilamentHub: load_auth_token: About to return true
+[error]	2025-11-23 22:22:03.873131[Thread 0x00004094]:FilamentHub: ========== load_auth_token() CALLED ==========
+[error]	2025-11-23 22:22:03.873131[Thread 0x00004094]:FilamentHub: app_config is not null. Loading token...
+[error]	2025-11-23 22:22:03.873131[Thread 0x00004094]:FilamentHub: CONFIG_SECTION_FILAMENTHUB: filamenthub
+[error]	2025-11-23 22:22:03.873131[Thread 0x00004094]:FilamentHub: CONFIG_KEY_ACCESS_TOKEN: access_token
+[error]	2025-11-23 22:22:03.873131[Thread 0x00004094]:FilamentHub: CONFIG_KEY_USER_ID: user_id
+[error]	2025-11-23 22:22:03.873131[Thread 0x00004094]:FilamentHub: Loading auth token - token length: 201, user_id_str: '6'
+[error]	2025-11-23 22:22:03.873131[Thread 0x00004094]:FilamentHub: Loaded auth token for user_id=6, token length: 201, token preview: eyJhbGciOiJIUzI1NiIs...
+[error]	2025-11-23 22:22:03.873131[Thread 0x00004094]:FilamentHub: load_auth_token: About to return true
+[error]	2025-11-23 22:22:03.891839[Thread 0x00004094]:FilamentHub: ========== load_auth_token() CALLED ==========
+[error]	2025-11-23 22:22:03.891839[Thread 0x00004094]:FilamentHub: app_config is not null. Loading token...
+[error]	2025-11-23 22:22:03.891839[Thread 0x00004094]:FilamentHub: CONFIG_SECTION_FILAMENTHUB: filamenthub
+[error]	2025-11-23 22:22:03.891839[Thread 0x00004094]:FilamentHub: CONFIG_KEY_ACCESS_TOKEN: access_token
+[error]	2025-11-23 22:22:03.891839[Thread 0x00004094]:FilamentHub: CONFIG_KEY_USER_ID: user_id
+[error]	2025-11-23 22:22:03.891839[Thread 0x00004094]:FilamentHub: Loading auth token - token length: 201, user_id_str: '6'
+[error]	2025-11-23 22:22:03.891839[Thread 0x00004094]:FilamentHub: Loaded auth token for user_id=6, token length: 201, token preview: eyJhbGciOiJIUzI1NiIs...
+[error]	2025-11-23 22:22:03.891839[Thread 0x00004094]:FilamentHub: load_auth_token: About to return true
+[error]	2025-11-23 22:22:03.906554[Thread 0x00004094]:FilamentHub: ========== load_auth_token() CALLED ==========
+[error]	2025-11-23 22:22:03.906554[Thread 0x00004094]:FilamentHub: app_config is not null. Loading token...
+[error]	2025-11-23 22:22:03.906554[Thread 0x00004094]:FilamentHub: CONFIG_SECTION_FILAMENTHUB: filamenthub
+[error]	2025-11-23 22:22:03.906554[Thread 0x00004094]:FilamentHub: CONFIG_KEY_ACCESS_TOKEN: access_token
+[error]	2025-11-23 22:22:03.906554[Thread 0x00004094]:FilamentHub: CONFIG_KEY_USER_ID: user_id
+[error]	2025-11-23 22:22:03.906554[Thread 0x00004094]:FilamentHub: Loading auth token - token length: 201, user_id_str: '6'
+[error]	2025-11-23 22:22:03.906554[Thread 0x00004094]:FilamentHub: Loaded auth token for user_id=6, token length: 201, token preview: eyJhbGciOiJIUzI1NiIs...
+[error]	2025-11-23 22:22:03.906554[Thread 0x00004094]:FilamentHub: load_auth_token: About to return true
+[error]	2025-11-23 22:22:03.911788[Thread 0x00004094]:FilamentHub: ========== get_my_presets() CALLED ==========
+[error]	2025-11-23 22:22:03.911788[Thread 0x00004094]:FilamentHub: URL: http://localhost:8000/api/v1/auth/my-presets
+[error]	2025-11-23 22:22:03.911788[Thread 0x00004094]:FilamentHub: updated_since: (empty)
+[error]	2025-11-23 22:22:03.911788[Thread 0x00004094]:FilamentHub: access_token length: 201
+[error]	2025-11-23 22:22:03.911788[Thread 0x00004094]:FilamentHub: API base URL: http://localhost:8000
+[error]	2025-11-23 22:22:03.946944[Thread 0x00004094]:FilamentHub: Get my presets successful. Status: 200, Body size: 5261 bytes
+[error]	2025-11-23 22:22:03.946944[Thread 0x00004094]:FilamentHub: on_complete callback: checking if on_complete function is valid...
+[error]	2025-11-23 22:22:03.946944[Thread 0x00004094]:FilamentHub: on_complete callback: calling user's on_complete function...
+[error]	2025-11-23 22:22:03.946944[Thread 0x00004094]:FilamentHub: [SYNC STEP 9] ========== on_complete CALLBACK (get_my_presets) ==========
+[error]	2025-11-23 22:22:03.946944[Thread 0x00004094]:FilamentHub: [SYNC STEP 9.0] Lambda function called from FilamentHubPanel!
+[error]	2025-11-23 22:22:03.946944[Thread 0x00004094]:FilamentHub: [SYNC STEP 9.1] HTTP status: 200, Body size: 5261 bytes
+[warning]	2025-11-23 22:22:03.946944[Thread 0x00004094]:FilamentHub: [SYNC STEP 13.1] Preset 15 (ТЕСТПРЕСЕТ) is mapped to 'ТЕСТПРЕСЕТ [FilamentHub]' but preset not found in bundle (deleted locally)
+[warning]	2025-11-23 22:22:03.946944[Thread 0x00004094]:FilamentHub: [SYNC STEP 13.1] Preset 16 (100проц печать) is mapped to '100проц печать [FilamentHub]' but preset not found in bundle (deleted locally)
+[warning]	2025-11-23 22:22:03.946944[Thread 0x00004094]:FilamentHub: [SYNC STEP 13.1] Preset 17 (ТЫЛох) is mapped to 'ТЫЛох [FilamentHub]' but preset not found in bundle (deleted locally)
+[warning]	2025-11-23 22:22:03.946944[Thread 0x00004094]:FilamentHub: [SYNC STEP 13.1] Preset 18 (Золотище) is mapped to 'Золотище [FilamentHub]' but preset not found in bundle (deleted locally)
+[error]	2025-11-23 22:22:03.946944[Thread 0x00004094]:FilamentHub: [SYNC STEP 13.2] Found 4 deleted presets (deleted locally, but exist on server)
+[error]	2025-11-23 22:22:03.946944[Thread 0x00004094]:FilamentHub: [SYNC STEP 15.0] Checking deleted_presets_list. Size: 4
+[error]	2025-11-23 22:22:03.946944[Thread 0x00004094]:FilamentHub: [SYNC STEP 15] Found 4 deleted presets. Reporting to backend...
+[error]	2025-11-23 22:22:03.946944[Thread 0x00004094]:FilamentHub: on_complete callback: user's on_complete function returned successfully
+[error]	2025-11-23 22:22:03.946944[Thread 0x00004094]:FilamentHub: get_my_presets: perform_sync() RETURNED (request completed or failed)
+[error]	2025-11-23 22:22:03.946944[Thread 0x00004094]:FilamentHub: get_my_presets: After perform_sync(), callbacks should be called
+[error]	2025-11-23 22:22:03.947460[Thread 0x00004094]:FilamentHub: get_my_presets: FUNCTION END
+[error]	2025-11-23 22:22:03.947468[Thread 0x00004094]:FilamentHub: synchronize_presets: client.get_my_presets() CALLED (function returned, waiting for callback)
+[error]	2025-11-23 22:22:04.020206[Thread 0x00005d40]:FilamentHub: .info file download failed. Error: , Status: 500
+[error]	2025-11-23 22:22:04.020206[Thread 0x00005d40]:FilamentHub: Failed to download .info file for preset 'ТЕСТПРЕСЕТ [FilamentHub]'. Error: , Status: 500
+[error]	2025-11-23 22:22:04.066450[Thread 0x0000379c]:FilamentHub: .info file download failed. Error: , Status: 500
+[error]	2025-11-23 22:22:04.066450[Thread 0x0000379c]:FilamentHub: Failed to download .info file for preset '100проц печать [FilamentHub]'. Error: , Status: 500
+[warning]	2025-11-23 22:22:04.083481[Thread 0x0000059c]:FilamentHub: Parent preset 'fdm_filament_common' not found in system presets
+[warning]	2025-11-23 22:22:04.083481[Thread 0x0000059c]:FilamentHub: Replaced inherits with fallback: 'AliZ PLA @System'
+[error]	2025-11-23 22:22:04.112029[Thread 0x00007c54]:FilamentHub: .info file download failed. Error: , Status: 500
+[error]	2025-11-23 22:22:04.112029[Thread 0x00007c54]:FilamentHub: Failed to download .info file for preset 'ТЫЛох [FilamentHub]'. Error: , Status: 500
+[error]	2025-11-23 22:22:04.126027[Thread 0x00004094]:FilamentHub: ========== load_auth_token() CALLED ==========
+[error]	2025-11-23 22:22:04.126027[Thread 0x00004094]:FilamentHub: app_config is not null. Loading token...
+[error]	2025-11-23 22:22:04.126027[Thread 0x00004094]:FilamentHub: CONFIG_SECTION_FILAMENTHUB: filamenthub
+[error]	2025-11-23 22:22:04.126027[Thread 0x00004094]:FilamentHub: CONFIG_KEY_ACCESS_TOKEN: access_token
+[error]	2025-11-23 22:22:04.126027[Thread 0x00004094]:FilamentHub: CONFIG_KEY_USER_ID: user_id
+[error]	2025-11-23 22:22:04.126027[Thread 0x00004094]:FilamentHub: Loading auth token - token length: 201, user_id_str: '6'
+[error]	2025-11-23 22:22:04.126027[Thread 0x00004094]:FilamentHub: Loaded auth token for user_id=6, token length: 201, token preview: eyJhbGciOiJIUzI1NiIs...
+[error]	2025-11-23 22:22:04.126027[Thread 0x00004094]:FilamentHub: load_auth_token: About to return true
+[error]	2025-11-23 22:22:04.161642[Thread 0x00008194]:FilamentHub: .info file download failed. Error: , Status: 500
+[error]	2025-11-23 22:22:04.161642[Thread 0x00008194]:FilamentHub: Failed to download .info file for preset 'Золотище [FilamentHub]'. Error: , Status: 500
+[error]	2025-11-23 22:22:04.208239[Thread 0x00004094]:FilamentHub: ========== load_auth_token() CALLED ==========
+[error]	2025-11-23 22:22:04.208239[Thread 0x00004094]:FilamentHub: app_config is not null. Loading token...
+[error]	2025-11-23 22:22:04.208239[Thread 0x00004094]:FilamentHub: CONFIG_SECTION_FILAMENTHUB: filamenthub
+[error]	2025-11-23 22:22:04.208239[Thread 0x00004094]:FilamentHub: CONFIG_KEY_ACCESS_TOKEN: access_token
+[error]	2025-11-23 22:22:04.208239[Thread 0x00004094]:FilamentHub: CONFIG_KEY_USER_ID: user_id
+[error]	2025-11-23 22:22:04.208239[Thread 0x00004094]:FilamentHub: Loading auth token - token length: 201, user_id_str: '6'
+[error]	2025-11-23 22:22:04.208239[Thread 0x00004094]:FilamentHub: Loaded auth token for user_id=6, token length: 201, token preview: eyJhbGciOiJIUzI1NiIs...
+[error]	2025-11-23 22:22:04.208239[Thread 0x00004094]:FilamentHub: load_auth_token: About to return true
+[error]	2025-11-23 22:22:04.208239[Thread 0x00004094]:FilamentHub: ========== load_auth_token() CALLED ==========
+[error]	2025-11-23 22:22:04.208239[Thread 0x00004094]:FilamentHub: app_config is not null. Loading token...
+[error]	2025-11-23 22:22:04.208239[Thread 0x00004094]:FilamentHub: CONFIG_SECTION_FILAMENTHUB: filamenthub
+[error]	2025-11-23 22:22:04.208239[Thread 0x00004094]:FilamentHub: CONFIG_KEY_ACCESS_TOKEN: access_token
+[error]	2025-11-23 22:22:04.208239[Thread 0x00004094]:FilamentHub: CONFIG_KEY_USER_ID: user_id
+[error]	2025-11-23 22:22:04.208239[Thread 0x00004094]:FilamentHub: Loading auth token - token length: 201, user_id_str: '6'
+[error]	2025-11-23 22:22:04.208239[Thread 0x00004094]:FilamentHub: Loaded auth token for user_id=6, token length: 201, token preview: eyJhbGciOiJIUzI1NiIs...
+[error]	2025-11-23 22:22:04.208239[Thread 0x00004094]:FilamentHub: load_auth_token: About to return true
+[error]	2025-11-23 22:22:04.220516[Thread 0x00004094]:FilamentHub: ========== load_auth_token() CALLED ==========
+[error]	2025-11-23 22:22:04.220516[Thread 0x00004094]:FilamentHub: app_config is not null. Loading token...
+[error]	2025-11-23 22:22:04.220516[Thread 0x00004094]:FilamentHub: CONFIG_SECTION_FILAMENTHUB: filamenthub
+[error]	2025-11-23 22:22:04.220516[Thread 0x00004094]:FilamentHub: CONFIG_KEY_ACCESS_TOKEN: access_token
+[error]	2025-11-23 22:22:04.220516[Thread 0x00004094]:FilamentHub: CONFIG_KEY_USER_ID: user_id
+[error]	2025-11-23 22:22:04.220516[Thread 0x00004094]:FilamentHub: Loading auth token - token length: 201, user_id_str: '6'
+[error]	2025-11-23 22:22:04.220516[Thread 0x00004094]:FilamentHub: Loaded auth token for user_id=6, token length: 201, token preview: eyJhbGciOiJIUzI1NiIs...
+[error]	2025-11-23 22:22:04.220516[Thread 0x00004094]:FilamentHub: load_auth_token: About to return true
+[error]	2025-11-23 22:22:04.251149[Thread 0x00004094]:FilamentHub: ========== load_auth_token() CALLED ==========
+[error]	2025-11-23 22:22:04.251149[Thread 0x00004094]:FilamentHub: app_config is not null. Loading token...
+[error]	2025-11-23 22:22:04.251149[Thread 0x00004094]:FilamentHub: CONFIG_SECTION_FILAMENTHUB: filamenthub
+[error]	2025-11-23 22:22:04.251149[Thread 0x00004094]:FilamentHub: CONFIG_KEY_ACCESS_TOKEN: access_token
+[error]	2025-11-23 22:22:04.251149[Thread 0x00004094]:FilamentHub: CONFIG_KEY_USER_ID: user_id
+[error]	2025-11-23 22:22:04.251149[Thread 0x00004094]:FilamentHub: Loading auth token - token length: 201, user_id_str: '6'
+[error]	2025-11-23 22:22:04.251149[Thread 0x00004094]:FilamentHub: Loaded auth token for user_id=6, token length: 201, token preview: eyJhbGciOiJIUzI1NiIs...
+[error]	2025-11-23 22:22:04.251149[Thread 0x00004094]:FilamentHub: load_auth_token: About to return true
+[error]	2025-11-23 22:22:04.278032[Thread 0x00004094]:FilamentHub: ========== load_auth_token() CALLED ==========
+[error]	2025-11-23 22:22:04.278032[Thread 0x00004094]:FilamentHub: app_config is not null. Loading token...
+[error]	2025-11-23 22:22:04.278032[Thread 0x00004094]:FilamentHub: CONFIG_SECTION_FILAMENTHUB: filamenthub
+[error]	2025-11-23 22:22:04.278032[Thread 0x00004094]:FilamentHub: CONFIG_KEY_ACCESS_TOKEN: access_token
+[error]	2025-11-23 22:22:04.278032[Thread 0x00004094]:FilamentHub: CONFIG_KEY_USER_ID: user_id
+[error]	2025-11-23 22:22:04.278032[Thread 0x00004094]:FilamentHub: Loading auth token - token length: 201, user_id_str: '6'
+[error]	2025-11-23 22:22:04.278032[Thread 0x00004094]:FilamentHub: Loaded auth token for user_id=6, token length: 201, token preview: eyJhbGciOiJIUzI1NiIs...
+[error]	2025-11-23 22:22:04.278032[Thread 0x00004094]:FilamentHub: load_auth_token: About to return true
+[error]	2025-11-23 22:22:04.278032[Thread 0x00004094]:FilamentHub: load_last_sync_time: Called with user_id=6
+[error]	2025-11-23 22:22:04.286945[Thread 0x00004094]:FilamentHub: ========== load_auth_token() CALLED ==========
+[error]	2025-11-23 22:22:04.286945[Thread 0x00004094]:FilamentHub: app_config is not null. Loading token...
+[error]	2025-11-23 22:22:04.286945[Thread 0x00004094]:FilamentHub: CONFIG_SECTION_FILAMENTHUB: filamenthub
+[error]	2025-11-23 22:22:04.286945[Thread 0x00004094]:FilamentHub: CONFIG_KEY_ACCESS_TOKEN: access_token
+[error]	2025-11-23 22:22:04.286945[Thread 0x00004094]:FilamentHub: CONFIG_KEY_USER_ID: user_id
+[error]	2025-11-23 22:22:04.286945[Thread 0x00004094]:FilamentHub: Loading auth token - token length: 201, user_id_str: '6'
+[error]	2025-11-23 22:22:04.286945[Thread 0x00004094]:FilamentHub: Loaded auth token for user_id=6, token length: 201, token preview: eyJhbGciOiJIUzI1NiIs...
+[error]	2025-11-23 22:22:04.286945[Thread 0x00004094]:FilamentHub: load_auth_token: About to return true
+[error]	2025-11-23 22:22:04.286945[Thread 0x00004094]:FilamentHub: load_last_sync_time: Called with user_id=6
+[error]	2025-11-23 22:22:04.830117[Thread 0x00004094]:FilamentHub: ========== load_auth_token() CALLED ==========
+[error]	2025-11-23 22:22:04.830117[Thread 0x00004094]:FilamentHub: app_config is not null. Loading token...
+[error]	2025-11-23 22:22:04.830117[Thread 0x00004094]:FilamentHub: CONFIG_SECTION_FILAMENTHUB: filamenthub
+[error]	2025-11-23 22:22:04.830117[Thread 0x00004094]:FilamentHub: CONFIG_KEY_ACCESS_TOKEN: access_token
+[error]	2025-11-23 22:22:04.830117[Thread 0x00004094]:FilamentHub: CONFIG_KEY_USER_ID: user_id
+[error]	2025-11-23 22:22:04.830117[Thread 0x00004094]:FilamentHub: Loading auth token - token length: 201, user_id_str: '6'
+[error]	2025-11-23 22:22:04.830117[Thread 0x00004094]:FilamentHub: Loaded auth token for user_id=6, token length: 201, token preview: eyJhbGciOiJIUzI1NiIs...
+[error]	2025-11-23 22:22:04.830117[Thread 0x00004094]:FilamentHub: load_auth_token: About to return true
+[error]	2025-11-23 22:22:04.830117[Thread 0x00004094]:FilamentHub: ========== load_auth_token() CALLED ==========
+[error]	2025-11-23 22:22:04.830117[Thread 0x00004094]:FilamentHub: app_config is not null. Loading token...
+[error]	2025-11-23 22:22:04.830117[Thread 0x00004094]:FilamentHub: CONFIG_SECTION_FILAMENTHUB: filamenthub
+[error]	2025-11-23 22:22:04.830117[Thread 0x00004094]:FilamentHub: CONFIG_KEY_ACCESS_TOKEN: access_token
+[error]	2025-11-23 22:22:04.830117[Thread 0x00004094]:FilamentHub: CONFIG_KEY_USER_ID: user_id
+[error]	2025-11-23 22:22:04.830117[Thread 0x00004094]:FilamentHub: Loading auth token - token length: 201, user_id_str: '6'
+[error]	2025-11-23 22:22:04.830117[Thread 0x00004094]:FilamentHub: Loaded auth token for user_id=6, token length: 201, token preview: eyJhbGciOiJIUzI1NiIs...
+[error]	2025-11-23 22:22:04.830117[Thread 0x00004094]:FilamentHub: load_auth_token: About to return true
+[error]	2025-11-23 22:22:04.859633[Thread 0x00004094]:FilamentHub: ========== load_auth_token() CALLED ==========
+[error]	2025-11-23 22:22:04.859633[Thread 0x00004094]:FilamentHub: app_config is not null. Loading token...
+[error]	2025-11-23 22:22:04.859633[Thread 0x00004094]:FilamentHub: CONFIG_SECTION_FILAMENTHUB: filamenthub
+[error]	2025-11-23 22:22:04.859633[Thread 0x00004094]:FilamentHub: CONFIG_KEY_ACCESS_TOKEN: access_token
+[error]	2025-11-23 22:22:04.859633[Thread 0x00004094]:FilamentHub: CONFIG_KEY_USER_ID: user_id
+[error]	2025-11-23 22:22:04.859633[Thread 0x00004094]:FilamentHub: Loading auth token - token length: 201, user_id_str: '6'
+[error]	2025-11-23 22:22:04.859633[Thread 0x00004094]:FilamentHub: Loaded auth token for user_id=6, token length: 201, token preview: eyJhbGciOiJIUzI1NiIs...
+[error]	2025-11-23 22:22:04.859633[Thread 0x00004094]:FilamentHub: load_auth_token: About to return true
+[error]	2025-11-23 22:22:04.868098[Thread 0x00004094]:FilamentHub: ========== load_auth_token() CALLED ==========
+[error]	2025-11-23 22:22:04.868098[Thread 0x00004094]:FilamentHub: app_config is not null. Loading token...
+[error]	2025-11-23 22:22:04.868098[Thread 0x00004094]:FilamentHub: CONFIG_SECTION_FILAMENTHUB: filamenthub
+[error]	2025-11-23 22:22:04.868098[Thread 0x00004094]:FilamentHub: CONFIG_KEY_ACCESS_TOKEN: access_token
+[error]	2025-11-23 22:22:04.868098[Thread 0x00004094]:FilamentHub: CONFIG_KEY_USER_ID: user_id
+[error]	2025-11-23 22:22:04.868098[Thread 0x00004094]:FilamentHub: Loading auth token - token length: 201, user_id_str: '6'
+[error]	2025-11-23 22:22:04.868098[Thread 0x00004094]:FilamentHub: Loaded auth token for user_id=6, token length: 201, token preview: eyJhbGciOiJIUzI1NiIs...
+[error]	2025-11-23 22:22:04.868098[Thread 0x00004094]:FilamentHub: load_auth_token: About to return true
+[error]	2025-11-23 22:22:04.872999[Thread 0x00004094]:FilamentHub: ========== get_my_presets() CALLED ==========
+[error]	2025-11-23 22:22:04.872999[Thread 0x00004094]:FilamentHub: URL: http://localhost:8000/api/v1/auth/my-presets
+[error]	2025-11-23 22:22:04.872999[Thread 0x00004094]:FilamentHub: updated_since: (empty)
+[error]	2025-11-23 22:22:04.872999[Thread 0x00004094]:FilamentHub: access_token length: 201
+[error]	2025-11-23 22:22:04.872999[Thread 0x00004094]:FilamentHub: API base URL: http://localhost:8000
+[error]	2025-11-23 22:22:04.881693[Thread 0x00004094]:FilamentHub: Get my presets successful. Status: 200, Body size: 5261 bytes
+[error]	2025-11-23 22:22:04.881693[Thread 0x00004094]:FilamentHub: on_complete callback: checking if on_complete function is valid...
+[error]	2025-11-23 22:22:04.881693[Thread 0x00004094]:FilamentHub: on_complete callback: calling user's on_complete function...
+[error]	2025-11-23 22:22:04.881693[Thread 0x00004094]:FilamentHub: [SYNC STEP 9] ========== on_complete CALLBACK (get_my_presets) ==========
+[error]	2025-11-23 22:22:04.881693[Thread 0x00004094]:FilamentHub: [SYNC STEP 9.0] Lambda function called from FilamentHubPanel!
+[error]	2025-11-23 22:22:04.881693[Thread 0x00004094]:FilamentHub: [SYNC STEP 9.1] HTTP status: 200, Body size: 5261 bytes
+[error]	2025-11-23 22:22:04.881693[Thread 0x00004094]:FilamentHub: [SYNC STEP 13.2] Found 0 deleted presets (deleted locally, but exist on server)
+[error]	2025-11-23 22:22:04.881693[Thread 0x00004094]:FilamentHub: [SYNC STEP 15.0] Checking deleted_presets_list. Size: 0
+[error]	2025-11-23 22:22:04.882224[Thread 0x00004094]:FilamentHub: on_complete callback: user's on_complete function returned successfully
+[error]	2025-11-23 22:22:04.882224[Thread 0x00004094]:FilamentHub: get_my_presets: perform_sync() RETURNED (request completed or failed)
+[error]	2025-11-23 22:22:04.882224[Thread 0x00004094]:FilamentHub: get_my_presets: After perform_sync(), callbacks should be called
+[error]	2025-11-23 22:22:04.882224[Thread 0x00004094]:FilamentHub: get_my_presets: FUNCTION END
+[error]	2025-11-23 22:22:04.882224[Thread 0x00004094]:FilamentHub: synchronize_presets: client.get_my_presets() CALLED (function returned, waiting for callback)
+[error]	2025-11-23 22:22:04.945888[Thread 0x0000531c]:FilamentHub: .info file download failed. Error: , Status: 500
+[error]	2025-11-23 22:22:04.945888[Thread 0x0000531c]:FilamentHub: Failed to download .info file for preset 'ТЕСТПРЕСЕТ [FilamentHub]'. Error: , Status: 500
+[error]	2025-11-23 22:22:04.975785[Thread 0x00006688]:FilamentHub: .info file download failed. Error: , Status: 500
+[error]	2025-11-23 22:22:04.975785[Thread 0x00006688]:FilamentHub: Failed to download .info file for preset '100проц печать [FilamentHub]'. Error: , Status: 500
+[warning]	2025-11-23 22:22:04.976305[Thread 0x00007084]:FilamentHub: Parent preset 'fdm_filament_common' not found in system presets
+[warning]	2025-11-23 22:22:04.976305[Thread 0x00007084]:FilamentHub: Replaced inherits with fallback: 'AliZ PLA @System'
+[error]	2025-11-23 22:22:05.031248[Thread 0x000073c0]:FilamentHub: .info file download failed. Error: , Status: 500
+[error]	2025-11-23 22:22:05.031248[Thread 0x000073c0]:FilamentHub: Failed to download .info file for preset 'ТЫЛох [FilamentHub]'. Error: , Status: 500
+[error]	2025-11-23 22:22:05.045077[Thread 0x00004094]:FilamentHub: ========== load_auth_token() CALLED ==========
+[error]	2025-11-23 22:22:05.045077[Thread 0x00004094]:FilamentHub: app_config is not null. Loading token...
+[error]	2025-11-23 22:22:05.045077[Thread 0x00004094]:FilamentHub: CONFIG_SECTION_FILAMENTHUB: filamenthub
+[error]	2025-11-23 22:22:05.045077[Thread 0x00004094]:FilamentHub: CONFIG_KEY_ACCESS_TOKEN: access_token
+[error]	2025-11-23 22:22:05.045077[Thread 0x00004094]:FilamentHub: CONFIG_KEY_USER_ID: user_id
+[error]	2025-11-23 22:22:05.045077[Thread 0x00004094]:FilamentHub: Loading auth token - token length: 201, user_id_str: '6'
+[error]	2025-11-23 22:22:05.045077[Thread 0x00004094]:FilamentHub: Loaded auth token for user_id=6, token length: 201, token preview: eyJhbGciOiJIUzI1NiIs...
+[error]	2025-11-23 22:22:05.045077[Thread 0x00004094]:FilamentHub: load_auth_token: About to return true
+[error]	2025-11-23 22:22:05.058738[Thread 0x000076a8]:FilamentHub: .info file download failed. Error: , Status: 500
+[error]	2025-11-23 22:22:05.058738[Thread 0x000076a8]:FilamentHub: Failed to download .info file for preset 'Золотище [FilamentHub]'. Error: , Status: 500
+[error]	2025-11-23 22:22:05.152428[Thread 0x00004094]:FilamentHub: ========== load_auth_token() CALLED ==========
+[error]	2025-11-23 22:22:05.152428[Thread 0x00004094]:FilamentHub: app_config is not null. Loading token...
+[error]	2025-11-23 22:22:05.152428[Thread 0x00004094]:FilamentHub: CONFIG_SECTION_FILAMENTHUB: filamenthub
+[error]	2025-11-23 22:22:05.152428[Thread 0x00004094]:FilamentHub: CONFIG_KEY_ACCESS_TOKEN: access_token
+[error]	2025-11-23 22:22:05.152428[Thread 0x00004094]:FilamentHub: CONFIG_KEY_USER_ID: user_id
+[error]	2025-11-23 22:22:05.152428[Thread 0x00004094]:FilamentHub: Loading auth token - token length: 201, user_id_str: '6'
+[error]	2025-11-23 22:22:05.152428[Thread 0x00004094]:FilamentHub: Loaded auth token for user_id=6, token length: 201, token preview: eyJhbGciOiJIUzI1NiIs...
+[error]	2025-11-23 22:22:05.152428[Thread 0x00004094]:FilamentHub: load_auth_token: About to return true
+[error]	2025-11-23 22:22:05.152428[Thread 0x00004094]:FilamentHub: ========== load_auth_token() CALLED ==========
+[error]	2025-11-23 22:22:05.152428[Thread 0x00004094]:FilamentHub: app_config is not null. Loading token...
+[error]	2025-11-23 22:22:05.152428[Thread 0x00004094]:FilamentHub: CONFIG_SECTION_FILAMENTHUB: filamenthub
+[error]	2025-11-23 22:22:05.152428[Thread 0x00004094]:FilamentHub: CONFIG_KEY_ACCESS_TOKEN: access_token
+[error]	2025-11-23 22:22:05.152428[Thread 0x00004094]:FilamentHub: CONFIG_KEY_USER_ID: user_id
+[error]	2025-11-23 22:22:05.152428[Thread 0x00004094]:FilamentHub: Loading auth token - token length: 201, user_id_str: '6'
+[error]	2025-11-23 22:22:05.152428[Thread 0x00004094]:FilamentHub: Loaded auth token for user_id=6, token length: 201, token preview: eyJhbGciOiJIUzI1NiIs...
+[error]	2025-11-23 22:22:05.152428[Thread 0x00004094]:FilamentHub: load_auth_token: About to return true
+[error]	2025-11-23 22:22:05.169912[Thread 0x00004094]:FilamentHub: ========== load_auth_token() CALLED ==========
+[error]	2025-11-23 22:22:05.169912[Thread 0x00004094]:FilamentHub: app_config is not null. Loading token...
+[error]	2025-11-23 22:22:05.169912[Thread 0x00004094]:FilamentHub: CONFIG_SECTION_FILAMENTHUB: filamenthub
+[error]	2025-11-23 22:22:05.169912[Thread 0x00004094]:FilamentHub: CONFIG_KEY_ACCESS_TOKEN: access_token
+[error]	2025-11-23 22:22:05.169912[Thread 0x00004094]:FilamentHub: CONFIG_KEY_USER_ID: user_id
+[error]	2025-11-23 22:22:05.169912[Thread 0x00004094]:FilamentHub: Loading auth token - token length: 201, user_id_str: '6'
+[error]	2025-11-23 22:22:05.169912[Thread 0x00004094]:FilamentHub: Loaded auth token for user_id=6, token length: 201, token preview: eyJhbGciOiJIUzI1NiIs...
+[error]	2025-11-23 22:22:05.169912[Thread 0x00004094]:FilamentHub: load_auth_token: About to return true
+[error]	2025-11-23 22:22:05.182204[Thread 0x00004094]:FilamentHub: ========== load_auth_token() CALLED ==========
+[error]	2025-11-23 22:22:05.182204[Thread 0x00004094]:FilamentHub: app_config is not null. Loading token...
+[error]	2025-11-23 22:22:05.182204[Thread 0x00004094]:FilamentHub: CONFIG_SECTION_FILAMENTHUB: filamenthub
+[error]	2025-11-23 22:22:05.182728[Thread 0x00004094]:FilamentHub: CONFIG_KEY_ACCESS_TOKEN: access_token
+[error]	2025-11-23 22:22:05.182728[Thread 0x00004094]:FilamentHub: CONFIG_KEY_USER_ID: user_id
+[error]	2025-11-23 22:22:05.182728[Thread 0x00004094]:FilamentHub: Loading auth token - token length: 201, user_id_str: '6'
+[error]	2025-11-23 22:22:05.182728[Thread 0x00004094]:FilamentHub: Loaded auth token for user_id=6, token length: 201, token preview: eyJhbGciOiJIUzI1NiIs...
+[error]	2025-11-23 22:22:05.182728[Thread 0x00004094]:FilamentHub: load_auth_token: About to return true
+[error]	2025-11-23 22:22:05.205718[Thread 0x00004094]:FilamentHub: ========== load_auth_token() CALLED ==========
+[error]	2025-11-23 22:22:05.205718[Thread 0x00004094]:FilamentHub: app_config is not null. Loading token...
+[error]	2025-11-23 22:22:05.205718[Thread 0x00004094]:FilamentHub: CONFIG_SECTION_FILAMENTHUB: filamenthub
+[error]	2025-11-23 22:22:05.205718[Thread 0x00004094]:FilamentHub: CONFIG_KEY_ACCESS_TOKEN: access_token
+[error]	2025-11-23 22:22:05.205718[Thread 0x00004094]:FilamentHub: CONFIG_KEY_USER_ID: user_id
+[error]	2025-11-23 22:22:05.205718[Thread 0x00004094]:FilamentHub: Loading auth token - token length: 201, user_id_str: '6'
+[error]	2025-11-23 22:22:05.205718[Thread 0x00004094]:FilamentHub: Loaded auth token for user_id=6, token length: 201, token preview: eyJhbGciOiJIUzI1NiIs...
+[error]	2025-11-23 22:22:05.205718[Thread 0x00004094]:FilamentHub: load_auth_token: About to return true
+[error]	2025-11-23 22:22:05.205718[Thread 0x00004094]:FilamentHub: load_last_sync_time: Called with user_id=6
+[error]	2025-11-23 22:22:05.237949[Thread 0x00004094]:FilamentHub: ========== load_auth_token() CALLED ==========
+[error]	2025-11-23 22:22:05.237949[Thread 0x00004094]:FilamentHub: app_config is not null. Loading token...
+[error]	2025-11-23 22:22:05.237949[Thread 0x00004094]:FilamentHub: CONFIG_SECTION_FILAMENTHUB: filamenthub
+[error]	2025-11-23 22:22:05.237949[Thread 0x00004094]:FilamentHub: CONFIG_KEY_ACCESS_TOKEN: access_token
+[error]	2025-11-23 22:22:05.237949[Thread 0x00004094]:FilamentHub: CONFIG_KEY_USER_ID: user_id
+[error]	2025-11-23 22:22:05.237949[Thread 0x00004094]:FilamentHub: Loading auth token - token length: 201, user_id_str: '6'
+[error]	2025-11-23 22:22:05.237949[Thread 0x00004094]:FilamentHub: Loaded auth token for user_id=6, token length: 201, token preview: eyJhbGciOiJIUzI1NiIs...
+[error]	2025-11-23 22:22:05.237949[Thread 0x00004094]:FilamentHub: load_auth_token: About to return true
+[error]	2025-11-23 22:22:05.237949[Thread 0x00004094]:FilamentHub: load_last_sync_time: Called with user_id=6
+[error]	2025-11-23 22:22:10.864524[Thread 0x00004094]:FilamentHub: ========== load_auth_token() CALLED ==========
+[error]	2025-11-23 22:22:10.864524[Thread 0x00004094]:FilamentHub: app_config is not null. Loading token...
+[error]	2025-11-23 22:22:10.864524[Thread 0x00004094]:FilamentHub: CONFIG_SECTION_FILAMENTHUB: filamenthub
+[error]	2025-11-23 22:22:10.864524[Thread 0x00004094]:FilamentHub: CONFIG_KEY_ACCESS_TOKEN: access_token
+[error]	2025-11-23 22:22:10.864524[Thread 0x00004094]:FilamentHub: CONFIG_KEY_USER_ID: user_id
+[error]	2025-11-23 22:22:10.864524[Thread 0x00004094]:FilamentHub: Loading auth token - token length: 201, user_id_str: '6'
+[error]	2025-11-23 22:22:10.864524[Thread 0x00004094]:FilamentHub: Loaded auth token for user_id=6, token length: 201, token preview: eyJhbGciOiJIUzI1NiIs...
+[error]	2025-11-23 22:22:10.864524[Thread 0x00004094]:FilamentHub: load_auth_token: About to return true
+[error]	2025-11-23 22:22:10.983351[Thread 0x00004094]:FilamentHub: ========== load_auth_token() CALLED ==========
+[error]	2025-11-23 22:22:10.983351[Thread 0x00004094]:FilamentHub: app_config is not null. Loading token...
+[error]	2025-11-23 22:22:10.983351[Thread 0x00004094]:FilamentHub: CONFIG_SECTION_FILAMENTHUB: filamenthub
+[error]	2025-11-23 22:22:10.983351[Thread 0x00004094]:FilamentHub: CONFIG_KEY_ACCESS_TOKEN: access_token
+[error]	2025-11-23 22:22:10.983351[Thread 0x00004094]:FilamentHub: CONFIG_KEY_USER_ID: user_id
+[error]	2025-11-23 22:22:10.983351[Thread 0x00004094]:FilamentHub: Loading auth token - token length: 201, user_id_str: '6'
+[error]	2025-11-23 22:22:10.983351[Thread 0x00004094]:FilamentHub: Loaded auth token for user_id=6, token length: 201, token preview: eyJhbGciOiJIUzI1NiIs...
+[error]	2025-11-23 22:22:10.983351[Thread 0x00004094]:FilamentHub: load_auth_token: About to return true
+[error]	2025-11-23 22:22:11.102697[Thread 0x00004094]:FilamentHub: ========== load_auth_token() CALLED ==========
+[error]	2025-11-23 22:22:11.102697[Thread 0x00004094]:FilamentHub: app_config is not null. Loading token...
+[error]	2025-11-23 22:22:11.102697[Thread 0x00004094]:FilamentHub: CONFIG_SECTION_FILAMENTHUB: filamenthub
+[error]	2025-11-23 22:22:11.102697[Thread 0x00004094]:FilamentHub: CONFIG_KEY_ACCESS_TOKEN: access_token
+[error]	2025-11-23 22:22:11.102697[Thread 0x00004094]:FilamentHub: CONFIG_KEY_USER_ID: user_id
+[error]	2025-11-23 22:22:11.102697[Thread 0x00004094]:FilamentHub: Loading auth token - token length: 201, user_id_str: '6'
+[error]	2025-11-23 22:22:11.102697[Thread 0x00004094]:FilamentHub: Loaded auth token for user_id=6, token length: 201, token preview: eyJhbGciOiJIUzI1NiIs...
+[error]	2025-11-23 22:22:11.102697[Thread 0x00004094]:FilamentHub: load_auth_token: About to return true
+[error]	2025-11-23 22:22:11.173702[Thread 0x00004094]:FilamentHub: ========== load_auth_token() CALLED ==========
+[error]	2025-11-23 22:22:11.173702[Thread 0x00004094]:FilamentHub: app_config is not null. Loading token...
+[error]	2025-11-23 22:22:11.173702[Thread 0x00004094]:FilamentHub: CONFIG_SECTION_FILAMENTHUB: filamenthub
+[error]	2025-11-23 22:22:11.173702[Thread 0x00004094]:FilamentHub: CONFIG_KEY_ACCESS_TOKEN: access_token
+[error]	2025-11-23 22:22:11.173702[Thread 0x00004094]:FilamentHub: CONFIG_KEY_USER_ID: user_id
+[error]	2025-11-23 22:22:11.173702[Thread 0x00004094]:FilamentHub: Loading auth token - token length: 201, user_id_str: '6'
+[error]	2025-11-23 22:22:11.173702[Thread 0x00004094]:FilamentHub: Loaded auth token for user_id=6, token length: 201, token preview: eyJhbGciOiJIUzI1NiIs...
+[error]	2025-11-23 22:22:11.173702[Thread 0x00004094]:FilamentHub: load_auth_token: About to return true
+[error]	2025-11-23 22:22:11.876277[Thread 0x00004094]:FilamentHub: ========== load_auth_token() CALLED ==========
+[error]	2025-11-23 22:22:11.876277[Thread 0x00004094]:FilamentHub: app_config is not null. Loading token...
+[error]	2025-11-23 22:22:11.876277[Thread 0x00004094]:FilamentHub: CONFIG_SECTION_FILAMENTHUB: filamenthub
+[error]	2025-11-23 22:22:11.876277[Thread 0x00004094]:FilamentHub: CONFIG_KEY_ACCESS_TOKEN: access_token
+[error]	2025-11-23 22:22:11.876277[Thread 0x00004094]:FilamentHub: CONFIG_KEY_USER_ID: user_id
+[error]	2025-11-23 22:22:11.876277[Thread 0x00004094]:FilamentHub: Loading auth token - token length: 201, user_id_str: '6'
+[error]	2025-11-23 22:22:11.876277[Thread 0x00004094]:FilamentHub: Loaded auth token for user_id=6, token length: 201, token preview: eyJhbGciOiJIUzI1NiIs...
+[error]	2025-11-23 22:22:11.876277[Thread 0x00004094]:FilamentHub: load_auth_token: About to return true
+[error]	2025-11-23 22:22:11.948817[Thread 0x00004094]:FilamentHub: ========== load_auth_token() CALLED ==========
+[error]	2025-11-23 22:22:11.948817[Thread 0x00004094]:FilamentHub: app_config is not null. Loading token...
+[error]	2025-11-23 22:22:11.948817[Thread 0x00004094]:FilamentHub: CONFIG_SECTION_FILAMENTHUB: filamenthub
+[error]	2025-11-23 22:22:11.948817[Thread 0x00004094]:FilamentHub: CONFIG_KEY_ACCESS_TOKEN: access_token
+[error]	2025-11-23 22:22:11.948817[Thread 0x00004094]:FilamentHub: CONFIG_KEY_USER_ID: user_id
+[error]	2025-11-23 22:22:11.948817[Thread 0x00004094]:FilamentHub: Loading auth token - token length: 201, user_id_str: '6'
+[error]	2025-11-23 22:22:11.948817[Thread 0x00004094]:FilamentHub: Loaded auth token for user_id=6, token length: 201, token preview: eyJhbGciOiJIUzI1NiIs...
+[error]	2025-11-23 22:22:11.948817[Thread 0x00004094]:FilamentHub: load_auth_token: About to return true
+[error]	2025-11-23 22:22:12.527602[Thread 0x00004094]:FilamentHub: ========== load_auth_token() CALLED ==========
+[error]	2025-11-23 22:22:12.527602[Thread 0x00004094]:FilamentHub: app_config is not null. Loading token...
+[error]	2025-11-23 22:22:12.527602[Thread 0x00004094]:FilamentHub: CONFIG_SECTION_FILAMENTHUB: filamenthub
+[error]	2025-11-23 22:22:12.527602[Thread 0x00004094]:FilamentHub: CONFIG_KEY_ACCESS_TOKEN: access_token
+[error]	2025-11-23 22:22:12.527602[Thread 0x00004094]:FilamentHub: CONFIG_KEY_USER_ID: user_id
+[error]	2025-11-23 22:22:12.527602[Thread 0x00004094]:FilamentHub: Loading auth token - token length: 201, user_id_str: '6'
+[error]	2025-11-23 22:22:12.527602[Thread 0x00004094]:FilamentHub: Loaded auth token for user_id=6, token length: 201, token preview: eyJhbGciOiJIUzI1NiIs...
+[error]	2025-11-23 22:22:12.527602[Thread 0x00004094]:FilamentHub: load_auth_token: About to return true
+[error]	2025-11-23 22:22:12.633729[Thread 0x00004094]:FilamentHub: ========== load_auth_token() CALLED ==========
+[error]	2025-11-23 22:22:12.633729[Thread 0x00004094]:FilamentHub: app_config is not null. Loading token...
+[error]	2025-11-23 22:22:12.633729[Thread 0x00004094]:FilamentHub: CONFIG_SECTION_FILAMENTHUB: filamenthub
+[error]	2025-11-23 22:22:12.633729[Thread 0x00004094]:FilamentHub: CONFIG_KEY_ACCESS_TOKEN: access_token
+[error]	2025-11-23 22:22:12.633729[Thread 0x00004094]:FilamentHub: CONFIG_KEY_USER_ID: user_id
+[error]	2025-11-23 22:22:12.633729[Thread 0x00004094]:FilamentHub: Loading auth token - token length: 201, user_id_str: '6'
+[error]	2025-11-23 22:22:12.633729[Thread 0x00004094]:FilamentHub: Loaded auth token for user_id=6, token length: 201, token preview: eyJhbGciOiJIUzI1NiIs...
+[error]	2025-11-23 22:22:12.633729[Thread 0x00004094]:FilamentHub: load_auth_token: About to return true
+[error]	2025-11-23 22:22:12.752185[Thread 0x00004094]:FilamentHub: ========== load_auth_token() CALLED ==========
+[error]	2025-11-23 22:22:12.752185[Thread 0x00004094]:FilamentHub: app_config is not null. Loading token...
+[error]	2025-11-23 22:22:12.752185[Thread 0x00004094]:FilamentHub: CONFIG_SECTION_FILAMENTHUB: filamenthub
+[error]	2025-11-23 22:22:12.752185[Thread 0x00004094]:FilamentHub: CONFIG_KEY_ACCESS_TOKEN: access_token
+[error]	2025-11-23 22:22:12.752185[Thread 0x00004094]:FilamentHub: CONFIG_KEY_USER_ID: user_id
+[error]	2025-11-23 22:22:12.752706[Thread 0x00004094]:FilamentHub: Loading auth token - token length: 201, user_id_str: '6'
+[error]	2025-11-23 22:22:12.752706[Thread 0x00004094]:FilamentHub: Loaded auth token for user_id=6, token length: 201, token preview: eyJhbGciOiJIUzI1NiIs...
+[error]	2025-11-23 22:22:12.752706[Thread 0x00004094]:FilamentHub: load_auth_token: About to return true
+[warning]	2025-11-23 22:22:12.895708[Thread 0x00004094]:FilamentHub: [EXPORT SKIP] Export already in progress (m_is_syncing=true), skipping duplicate call #4
+[error]	2025-11-23 22:22:13.530576[Thread 0x00004094]:FilamentHub: ========== load_auth_token() CALLED ==========
+[error]	2025-11-23 22:22:13.531576[Thread 0x00004094]:FilamentHub: app_config is not null. Loading token...
+[error]	2025-11-23 22:22:13.531576[Thread 0x00004094]:FilamentHub: CONFIG_SECTION_FILAMENTHUB: filamenthub
+[error]	2025-11-23 22:22:13.531576[Thread 0x00004094]:FilamentHub: CONFIG_KEY_ACCESS_TOKEN: access_token
+[error]	2025-11-23 22:22:13.531576[Thread 0x00004094]:FilamentHub: CONFIG_KEY_USER_ID: user_id
+[error]	2025-11-23 22:22:13.531576[Thread 0x00004094]:FilamentHub: Loading auth token - token length: 201, user_id_str: '6'
+[error]	2025-11-23 22:22:13.531576[Thread 0x00004094]:FilamentHub: Loaded auth token for user_id=6, token length: 201, token preview: eyJhbGciOiJIUzI1NiIs...
+[error]	2025-11-23 22:22:13.531576[Thread 0x00004094]:FilamentHub: load_auth_token: About to return true
+[error]	2025-11-23 22:22:13.655647[Thread 0x00004094]:FilamentHub: ========== load_auth_token() CALLED ==========
+[error]	2025-11-23 22:22:13.655647[Thread 0x00004094]:FilamentHub: app_config is not null. Loading token...
+[error]	2025-11-23 22:22:13.655647[Thread 0x00004094]:FilamentHub: CONFIG_SECTION_FILAMENTHUB: filamenthub
+[error]	2025-11-23 22:22:13.655647[Thread 0x00004094]:FilamentHub: CONFIG_KEY_ACCESS_TOKEN: access_token
+[error]	2025-11-23 22:22:13.655647[Thread 0x00004094]:FilamentHub: CONFIG_KEY_USER_ID: user_id
+[error]	2025-11-23 22:22:13.655647[Thread 0x00004094]:FilamentHub: Loading auth token - token length: 201, user_id_str: '6'
+[error]	2025-11-23 22:22:13.655647[Thread 0x00004094]:FilamentHub: Loaded auth token for user_id=6, token length: 201, token preview: eyJhbGciOiJIUzI1NiIs...
+[error]	2025-11-23 22:22:13.655647[Thread 0x00004094]:FilamentHub: load_auth_token: About to return true
+[error]	2025-11-23 22:22:14.534246[Thread 0x00004094]:FilamentHub: ========== load_auth_token() CALLED ==========
+[error]	2025-11-23 22:22:14.534246[Thread 0x00004094]:FilamentHub: app_config is not null. Loading token...
+[error]	2025-11-23 22:22:14.534246[Thread 0x00004094]:FilamentHub: CONFIG_SECTION_FILAMENTHUB: filamenthub
+[error]	2025-11-23 22:22:14.534246[Thread 0x00004094]:FilamentHub: CONFIG_KEY_ACCESS_TOKEN: access_token
+[error]	2025-11-23 22:22:14.534246[Thread 0x00004094]:FilamentHub: CONFIG_KEY_USER_ID: user_id
+[error]	2025-11-23 22:22:14.534246[Thread 0x00004094]:FilamentHub: Loading auth token - token length: 201, user_id_str: '6'
+[error]	2025-11-23 22:22:14.534246[Thread 0x00004094]:FilamentHub: Loaded auth token for user_id=6, token length: 201, token preview: eyJhbGciOiJIUzI1NiIs...
+[error]	2025-11-23 22:22:14.534246[Thread 0x00004094]:FilamentHub: load_auth_token: About to return true
+[error]	2025-11-23 22:22:14.630313[Thread 0x00004094]:FilamentHub: ========== load_auth_token() CALLED ==========
+[error]	2025-11-23 22:22:14.630313[Thread 0x00004094]:FilamentHub: app_config is not null. Loading token...
+[error]	2025-11-23 22:22:14.630313[Thread 0x00004094]:FilamentHub: CONFIG_SECTION_FILAMENTHUB: filamenthub
+[error]	2025-11-23 22:22:14.630313[Thread 0x00004094]:FilamentHub: CONFIG_KEY_ACCESS_TOKEN: access_token
+[error]	2025-11-23 22:22:14.630313[Thread 0x00004094]:FilamentHub: CONFIG_KEY_USER_ID: user_id
+[error]	2025-11-23 22:22:14.630313[Thread 0x00004094]:FilamentHub: Loading auth token - token length: 201, user_id_str: '6'
+[error]	2025-11-23 22:22:14.630313[Thread 0x00004094]:FilamentHub: Loaded auth token for user_id=6, token length: 201, token preview: eyJhbGciOiJIUzI1NiIs...
+[error]	2025-11-23 22:22:14.630313[Thread 0x00004094]:FilamentHub: load_auth_token: About to return true
+[error]	2025-11-23 22:22:15.538494[Thread 0x00004094]:FilamentHub: ========== load_auth_token() CALLED ==========
+[error]	2025-11-23 22:22:15.538494[Thread 0x00004094]:FilamentHub: app_config is not null. Loading token...
+[error]	2025-11-23 22:22:15.538494[Thread 0x00004094]:FilamentHub: CONFIG_SECTION_FILAMENTHUB: filamenthub
+[error]	2025-11-23 22:22:15.538494[Thread 0x00004094]:FilamentHub: CONFIG_KEY_ACCESS_TOKEN: access_token
+[error]	2025-11-23 22:22:15.538494[Thread 0x00004094]:FilamentHub: CONFIG_KEY_USER_ID: user_id
+[error]	2025-11-23 22:22:15.538494[Thread 0x00004094]:FilamentHub: Loading auth token - token length: 201, user_id_str: '6'
+[error]	2025-11-23 22:22:15.538494[Thread 0x00004094]:FilamentHub: Loaded auth token for user_id=6, token length: 201, token preview: eyJhbGciOiJIUzI1NiIs...
+[error]	2025-11-23 22:22:15.538494[Thread 0x00004094]:FilamentHub: load_auth_token: About to return true
+[error]	2025-11-23 22:22:15.657330[Thread 0x00004094]:FilamentHub: ========== load_auth_token() CALLED ==========
+[error]	2025-11-23 22:22:15.657330[Thread 0x00004094]:FilamentHub: app_config is not null. Loading token...
+[error]	2025-11-23 22:22:15.657330[Thread 0x00004094]:FilamentHub: CONFIG_SECTION_FILAMENTHUB: filamenthub
+[error]	2025-11-23 22:22:15.657330[Thread 0x00004094]:FilamentHub: CONFIG_KEY_ACCESS_TOKEN: access_token
+[error]	2025-11-23 22:22:15.657330[Thread 0x00004094]:FilamentHub: CONFIG_KEY_USER_ID: user_id
+[error]	2025-11-23 22:22:15.657330[Thread 0x00004094]:FilamentHub: Loading auth token - token length: 201, user_id_str: '6'
+[error]	2025-11-23 22:22:15.657330[Thread 0x00004094]:FilamentHub: Loaded auth token for user_id=6, token length: 201, token preview: eyJhbGciOiJIUzI1NiIs...
+[error]	2025-11-23 22:22:15.657330[Thread 0x00004094]:FilamentHub: load_auth_token: About to return true
+[error]	2025-11-23 22:22:16.543731[Thread 0x00004094]:FilamentHub: ========== load_auth_token() CALLED ==========
+[error]	2025-11-23 22:22:16.543731[Thread 0x00004094]:FilamentHub: app_config is not null. Loading token...
+[error]	2025-11-23 22:22:16.543731[Thread 0x00004094]:FilamentHub: CONFIG_SECTION_FILAMENTHUB: filamenthub
+[error]	2025-11-23 22:22:16.543731[Thread 0x00004094]:FilamentHub: CONFIG_KEY_ACCESS_TOKEN: access_token
+[error]	2025-11-23 22:22:16.543731[Thread 0x00004094]:FilamentHub: CONFIG_KEY_USER_ID: user_id
+[error]	2025-11-23 22:22:16.543731[Thread 0x00004094]:FilamentHub: Loading auth token - token length: 201, user_id_str: '6'
+[error]	2025-11-23 22:22:16.543731[Thread 0x00004094]:FilamentHub: Loaded auth token for user_id=6, token length: 201, token preview: eyJhbGciOiJIUzI1NiIs...
+[error]	2025-11-23 22:22:16.543731[Thread 0x00004094]:FilamentHub: load_auth_token: About to return true
+[error]	2025-11-23 22:22:16.643044[Thread 0x00004094]:FilamentHub: ========== load_auth_token() CALLED ==========
+[error]	2025-11-23 22:22:16.643044[Thread 0x00004094]:FilamentHub: app_config is not null. Loading token...
+[error]	2025-11-23 22:22:16.643044[Thread 0x00004094]:FilamentHub: CONFIG_SECTION_FILAMENTHUB: filamenthub
+[error]	2025-11-23 22:22:16.643044[Thread 0x00004094]:FilamentHub: CONFIG_KEY_ACCESS_TOKEN: access_token
+[error]	2025-11-23 22:22:16.643044[Thread 0x00004094]:FilamentHub: CONFIG_KEY_USER_ID: user_id
+[error]	2025-11-23 22:22:16.643044[Thread 0x00004094]:FilamentHub: Loading auth token - token length: 201, user_id_str: '6'
+[error]	2025-11-23 22:22:16.643044[Thread 0x00004094]:FilamentHub: Loaded auth token for user_id=6, token length: 201, token preview: eyJhbGciOiJIUzI1NiIs...
+[error]	2025-11-23 22:22:16.643044[Thread 0x00004094]:FilamentHub: load_auth_token: About to return true
+[error]	2025-11-23 22:22:17.936721[Thread 0x00004094]:FilamentHub: ========== load_auth_token() CALLED ==========
+[error]	2025-11-23 22:22:17.936721[Thread 0x00004094]:FilamentHub: app_config is not null. Loading token...
+[error]	2025-11-23 22:22:17.936721[Thread 0x00004094]:FilamentHub: CONFIG_SECTION_FILAMENTHUB: filamenthub
+[error]	2025-11-23 22:22:17.936721[Thread 0x00004094]:FilamentHub: CONFIG_KEY_ACCESS_TOKEN: access_token
+[error]	2025-11-23 22:22:17.936721[Thread 0x00004094]:FilamentHub: CONFIG_KEY_USER_ID: user_id
+[error]	2025-11-23 22:22:17.936721[Thread 0x00004094]:FilamentHub: Loading auth token - token length: 201, user_id_str: '6'
+[error]	2025-11-23 22:22:17.936721[Thread 0x00004094]:FilamentHub: Loaded auth token for user_id=6, token length: 201, token preview: eyJhbGciOiJIUzI1NiIs...
+[error]	2025-11-23 22:22:17.936721[Thread 0x00004094]:FilamentHub: load_auth_token: About to return true
+[error]	2025-11-23 22:22:18.062170[Thread 0x00004094]:FilamentHub: ========== load_auth_token() CALLED ==========
+[error]	2025-11-23 22:22:18.062170[Thread 0x00004094]:FilamentHub: app_config is not null. Loading token...
+[error]	2025-11-23 22:22:18.062170[Thread 0x00004094]:FilamentHub: CONFIG_SECTION_FILAMENTHUB: filamenthub
+[error]	2025-11-23 22:22:18.062170[Thread 0x00004094]:FilamentHub: CONFIG_KEY_ACCESS_TOKEN: access_token
+[error]	2025-11-23 22:22:18.062170[Thread 0x00004094]:FilamentHub: CONFIG_KEY_USER_ID: user_id
+[error]	2025-11-23 22:22:18.062170[Thread 0x00004094]:FilamentHub: Loading auth token - token length: 201, user_id_str: '6'
+[error]	2025-11-23 22:22:18.062170[Thread 0x00004094]:FilamentHub: Loaded auth token for user_id=6, token length: 201, token preview: eyJhbGciOiJIUzI1NiIs...
+[error]	2025-11-23 22:22:18.062170[Thread 0x00004094]:FilamentHub: load_auth_token: About to return true
+[error]	2025-11-23 22:22:18.162430[Thread 0x00004094]:FilamentHub: ========== load_auth_token() CALLED ==========
+[error]	2025-11-23 22:22:18.162430[Thread 0x00004094]:FilamentHub: app_config is not null. Loading token...
+[error]	2025-11-23 22:22:18.162430[Thread 0x00004094]:FilamentHub: CONFIG_SECTION_FILAMENTHUB: filamenthub
+[error]	2025-11-23 22:22:18.162430[Thread 0x00004094]:FilamentHub: CONFIG_KEY_ACCESS_TOKEN: access_token
+[error]	2025-11-23 22:22:18.162430[Thread 0x00004094]:FilamentHub: CONFIG_KEY_USER_ID: user_id
+[error]	2025-11-23 22:22:18.162430[Thread 0x00004094]:FilamentHub: Loading auth token - token length: 201, user_id_str: '6'
+[error]	2025-11-23 22:22:18.162430[Thread 0x00004094]:FilamentHub: Loaded auth token for user_id=6, token length: 201, token preview: eyJhbGciOiJIUzI1NiIs...
+[error]	2025-11-23 22:22:18.162430[Thread 0x00004094]:FilamentHub: load_auth_token: About to return true
+[warning]	2025-11-23 22:22:18.262467[Thread 0x00004094]:FilamentHub: [EXPORT SKIP] Export already in progress (m_is_syncing=true), skipping duplicate call #16
+[error]	2025-11-23 22:22:18.940468[Thread 0x00004094]:FilamentHub: ========== load_auth_token() CALLED ==========
+[error]	2025-11-23 22:22:18.940468[Thread 0x00004094]:FilamentHub: app_config is not null. Loading token...
+[error]	2025-11-23 22:22:18.940468[Thread 0x00004094]:FilamentHub: CONFIG_SECTION_FILAMENTHUB: filamenthub
+[error]	2025-11-23 22:22:18.940468[Thread 0x00004094]:FilamentHub: CONFIG_KEY_ACCESS_TOKEN: access_token
+[error]	2025-11-23 22:22:18.940468[Thread 0x00004094]:FilamentHub: CONFIG_KEY_USER_ID: user_id
+[error]	2025-11-23 22:22:18.940468[Thread 0x00004094]:FilamentHub: Loading auth token - token length: 201, user_id_str: '6'
+[error]	2025-11-23 22:22:18.940468[Thread 0x00004094]:FilamentHub: Loaded auth token for user_id=6, token length: 201, token preview: eyJhbGciOiJIUzI1NiIs...
+[error]	2025-11-23 22:22:18.940468[Thread 0x00004094]:FilamentHub: load_auth_token: About to return true
+[error]	2025-11-23 22:22:19.084414[Thread 0x00004094]:FilamentHub: ========== load_auth_token() CALLED ==========
+[error]	2025-11-23 22:22:19.084414[Thread 0x00004094]:FilamentHub: app_config is not null. Loading token...
+[error]	2025-11-23 22:22:19.084414[Thread 0x00004094]:FilamentHub: CONFIG_SECTION_FILAMENTHUB: filamenthub
+[error]	2025-11-23 22:22:19.084414[Thread 0x00004094]:FilamentHub: CONFIG_KEY_ACCESS_TOKEN: access_token
+[error]	2025-11-23 22:22:19.084414[Thread 0x00004094]:FilamentHub: CONFIG_KEY_USER_ID: user_id
+[error]	2025-11-23 22:22:19.084414[Thread 0x00004094]:FilamentHub: Loading auth token - token length: 201, user_id_str: '6'
+[error]	2025-11-23 22:22:19.084414[Thread 0x00004094]:FilamentHub: Loaded auth token for user_id=6, token length: 201, token preview: eyJhbGciOiJIUzI1NiIs...
+[error]	2025-11-23 22:22:19.084414[Thread 0x00004094]:FilamentHub: load_auth_token: About to return true
+[error]	2025-11-23 22:22:19.940369[Thread 0x00004094]:FilamentHub: ========== load_auth_token() CALLED ==========
+[error]	2025-11-23 22:22:19.940369[Thread 0x00004094]:FilamentHub: app_config is not null. Loading token...
+[error]	2025-11-23 22:22:19.940369[Thread 0x00004094]:FilamentHub: CONFIG_SECTION_FILAMENTHUB: filamenthub
+[error]	2025-11-23 22:22:19.940369[Thread 0x00004094]:FilamentHub: CONFIG_KEY_ACCESS_TOKEN: access_token
+[error]	2025-11-23 22:22:19.940369[Thread 0x00004094]:FilamentHub: CONFIG_KEY_USER_ID: user_id
+[error]	2025-11-23 22:22:19.940369[Thread 0x00004094]:FilamentHub: Loading auth token - token length: 201, user_id_str: '6'
+[error]	2025-11-23 22:22:19.940369[Thread 0x00004094]:FilamentHub: Loaded auth token for user_id=6, token length: 201, token preview: eyJhbGciOiJIUzI1NiIs...
+[error]	2025-11-23 22:22:19.940369[Thread 0x00004094]:FilamentHub: load_auth_token: About to return true
+[error]	2025-11-23 22:22:20.044847[Thread 0x00004094]:FilamentHub: ========== load_auth_token() CALLED ==========
+[error]	2025-11-23 22:22:20.044847[Thread 0x00004094]:FilamentHub: app_config is not null. Loading token...
+[error]	2025-11-23 22:22:20.044847[Thread 0x00004094]:FilamentHub: CONFIG_SECTION_FILAMENTHUB: filamenthub
+[error]	2025-11-23 22:22:20.044847[Thread 0x00004094]:FilamentHub: CONFIG_KEY_ACCESS_TOKEN: access_token
+[error]	2025-11-23 22:22:20.044847[Thread 0x00004094]:FilamentHub: CONFIG_KEY_USER_ID: user_id
+[error]	2025-11-23 22:22:20.044847[Thread 0x00004094]:FilamentHub: Loading auth token - token length: 201, user_id_str: '6'
+[error]	2025-11-23 22:22:20.044847[Thread 0x00004094]:FilamentHub: Loaded auth token for user_id=6, token length: 201, token preview: eyJhbGciOiJIUzI1NiIs...
+[error]	2025-11-23 22:22:20.044847[Thread 0x00004094]:FilamentHub: load_auth_token: About to return true
+[error]	2025-11-23 22:22:20.940318[Thread 0x00004094]:FilamentHub: ========== load_auth_token() CALLED ==========
+[error]	2025-11-23 22:22:20.940318[Thread 0x00004094]:FilamentHub: app_config is not null. Loading token...
+[error]	2025-11-23 22:22:20.940318[Thread 0x00004094]:FilamentHub: CONFIG_SECTION_FILAMENTHUB: filamenthub
+[error]	2025-11-23 22:22:20.940318[Thread 0x00004094]:FilamentHub: CONFIG_KEY_ACCESS_TOKEN: access_token
+[error]	2025-11-23 22:22:20.940318[Thread 0x00004094]:FilamentHub: CONFIG_KEY_USER_ID: user_id
+[error]	2025-11-23 22:22:20.940318[Thread 0x00004094]:FilamentHub: Loading auth token - token length: 201, user_id_str: '6'
+[error]	2025-11-23 22:22:20.940318[Thread 0x00004094]:FilamentHub: Loaded auth token for user_id=6, token length: 201, token preview: eyJhbGciOiJIUzI1NiIs...
+[error]	2025-11-23 22:22:20.940318[Thread 0x00004094]:FilamentHub: load_auth_token: About to return true
+[error]	2025-11-23 22:22:21.040636[Thread 0x00004094]:FilamentHub: ========== load_auth_token() CALLED ==========
+[error]	2025-11-23 22:22:21.041158[Thread 0x00004094]:FilamentHub: app_config is not null. Loading token...
+[error]	2025-11-23 22:22:21.041158[Thread 0x00004094]:FilamentHub: CONFIG_SECTION_FILAMENTHUB: filamenthub
+[error]	2025-11-23 22:22:21.041158[Thread 0x00004094]:FilamentHub: CONFIG_KEY_ACCESS_TOKEN: access_token
+[error]	2025-11-23 22:22:21.041158[Thread 0x00004094]:FilamentHub: CONFIG_KEY_USER_ID: user_id
+[error]	2025-11-23 22:22:21.041158[Thread 0x00004094]:FilamentHub: Loading auth token - token length: 201, user_id_str: '6'
+[error]	2025-11-23 22:22:21.041158[Thread 0x00004094]:FilamentHub: Loaded auth token for user_id=6, token length: 201, token preview: eyJhbGciOiJIUzI1NiIs...
+[error]	2025-11-23 22:22:21.041158[Thread 0x00004094]:FilamentHub: load_auth_token: About to return true
+[error]	2025-11-23 22:22:21.943947[Thread 0x00004094]:FilamentHub: ========== load_auth_token() CALLED ==========
+[error]	2025-11-23 22:22:21.943947[Thread 0x00004094]:FilamentHub: app_config is not null. Loading token...
+[error]	2025-11-23 22:22:21.943947[Thread 0x00004094]:FilamentHub: CONFIG_SECTION_FILAMENTHUB: filamenthub
+[error]	2025-11-23 22:22:21.943947[Thread 0x00004094]:FilamentHub: CONFIG_KEY_ACCESS_TOKEN: access_token
+[error]	2025-11-23 22:22:21.943947[Thread 0x00004094]:FilamentHub: CONFIG_KEY_USER_ID: user_id
+[error]	2025-11-23 22:22:21.943947[Thread 0x00004094]:FilamentHub: Loading auth token - token length: 201, user_id_str: '6'
+[error]	2025-11-23 22:22:21.943947[Thread 0x00004094]:FilamentHub: Loaded auth token for user_id=6, token length: 201, token preview: eyJhbGciOiJIUzI1NiIs...
+[error]	2025-11-23 22:22:21.943947[Thread 0x00004094]:FilamentHub: load_auth_token: About to return true
+[error]	2025-11-23 22:22:22.144433[Thread 0x00004094]:FilamentHub: ========== load_auth_token() CALLED ==========
+[error]	2025-11-23 22:22:22.144433[Thread 0x00004094]:FilamentHub: app_config is not null. Loading token...
+[error]	2025-11-23 22:22:22.144433[Thread 0x00004094]:FilamentHub: CONFIG_SECTION_FILAMENTHUB: filamenthub
+[error]	2025-11-23 22:22:22.144433[Thread 0x00004094]:FilamentHub: CONFIG_KEY_ACCESS_TOKEN: access_token
+[error]	2025-11-23 22:22:22.144467[Thread 0x00004094]:FilamentHub: CONFIG_KEY_USER_ID: user_id
+[error]	2025-11-23 22:22:22.144467[Thread 0x00004094]:FilamentHub: Loading auth token - token length: 201, user_id_str: '6'
+[error]	2025-11-23 22:22:22.144467[Thread 0x00004094]:FilamentHub: Loaded auth token for user_id=6, token length: 201, token preview: eyJhbGciOiJIUzI1NiIs...
+[error]	2025-11-23 22:22:22.144467[Thread 0x00004094]:FilamentHub: load_auth_token: About to return true
+[error]	2025-11-23 22:22:22.944115[Thread 0x00004094]:FilamentHub: ========== load_auth_token() CALLED ==========
+[error]	2025-11-23 22:22:22.944115[Thread 0x00004094]:FilamentHub: app_config is not null. Loading token...
+[error]	2025-11-23 22:22:22.944115[Thread 0x00004094]:FilamentHub: CONFIG_SECTION_FILAMENTHUB: filamenthub
+[error]	2025-11-23 22:22:22.944115[Thread 0x00004094]:FilamentHub: CONFIG_KEY_ACCESS_TOKEN: access_token
+[error]	2025-11-23 22:22:22.944115[Thread 0x00004094]:FilamentHub: CONFIG_KEY_USER_ID: user_id
+[error]	2025-11-23 22:22:22.944115[Thread 0x00004094]:FilamentHub: Loading auth token - token length: 201, user_id_str: '6'
+[error]	2025-11-23 22:22:22.944115[Thread 0x00004094]:FilamentHub: Loaded auth token for user_id=6, token length: 201, token preview: eyJhbGciOiJIUzI1NiIs...
+[error]	2025-11-23 22:22:22.944115[Thread 0x00004094]:FilamentHub: load_auth_token: About to return true
+[error]	2025-11-23 22:22:23.095216[Thread 0x00004094]:FilamentHub: ========== load_auth_token() CALLED ==========
+[error]	2025-11-23 22:22:23.095216[Thread 0x00004094]:FilamentHub: app_config is not null. Loading token...
+[error]	2025-11-23 22:22:23.095216[Thread 0x00004094]:FilamentHub: CONFIG_SECTION_FILAMENTHUB: filamenthub
+[error]	2025-11-23 22:22:23.095216[Thread 0x00004094]:FilamentHub: CONFIG_KEY_ACCESS_TOKEN: access_token
+[error]	2025-11-23 22:22:23.095216[Thread 0x00004094]:FilamentHub: CONFIG_KEY_USER_ID: user_id
+[error]	2025-11-23 22:22:23.095216[Thread 0x00004094]:FilamentHub: Loading auth token - token length: 201, user_id_str: '6'
+[error]	2025-11-23 22:22:23.095216[Thread 0x00004094]:FilamentHub: Loaded auth token for user_id=6, token length: 201, token preview: eyJhbGciOiJIUzI1NiIs...
+[error]	2025-11-23 22:22:23.095216[Thread 0x00004094]:FilamentHub: load_auth_token: About to return true
+[error]	2025-11-23 22:22:23.944224[Thread 0x00004094]:FilamentHub: ========== load_auth_token() CALLED ==========
+[error]	2025-11-23 22:22:23.944224[Thread 0x00004094]:FilamentHub: app_config is not null. Loading token...
+[error]	2025-11-23 22:22:23.944224[Thread 0x00004094]:FilamentHub: CONFIG_SECTION_FILAMENTHUB: filamenthub
+[error]	2025-11-23 22:22:23.944224[Thread 0x00004094]:FilamentHub: CONFIG_KEY_ACCESS_TOKEN: access_token
+[error]	2025-11-23 22:22:23.944224[Thread 0x00004094]:FilamentHub: CONFIG_KEY_USER_ID: user_id
+[error]	2025-11-23 22:22:23.944224[Thread 0x00004094]:FilamentHub: Loading auth token - token length: 201, user_id_str: '6'
+[error]	2025-11-23 22:22:23.944224[Thread 0x00004094]:FilamentHub: Loaded auth token for user_id=6, token length: 201, token preview: eyJhbGciOiJIUzI1NiIs...
+[error]	2025-11-23 22:22:23.944224[Thread 0x00004094]:FilamentHub: load_auth_token: About to return true
+[error]	2025-11-23 22:22:24.044387[Thread 0x00004094]:FilamentHub: ========== load_auth_token() CALLED ==========
+[error]	2025-11-23 22:22:24.044400[Thread 0x00004094]:FilamentHub: app_config is not null. Loading token...
+[error]	2025-11-23 22:22:24.044400[Thread 0x00004094]:FilamentHub: CONFIG_SECTION_FILAMENTHUB: filamenthub
+[error]	2025-11-23 22:22:24.044400[Thread 0x00004094]:FilamentHub: CONFIG_KEY_ACCESS_TOKEN: access_token
+[error]	2025-11-23 22:22:24.044400[Thread 0x00004094]:FilamentHub: CONFIG_KEY_USER_ID: user_id
+[error]	2025-11-23 22:22:24.044400[Thread 0x00004094]:FilamentHub: Loading auth token - token length: 201, user_id_str: '6'
+[error]	2025-11-23 22:22:24.044400[Thread 0x00004094]:FilamentHub: Loaded auth token for user_id=6, token length: 201, token preview: eyJhbGciOiJIUzI1NiIs...
+[error]	2025-11-23 22:22:24.044400[Thread 0x00004094]:FilamentHub: load_auth_token: About to return true
+[error]	2025-11-23 22:22:24.944064[Thread 0x00004094]:FilamentHub: ========== load_auth_token() CALLED ==========
+[error]	2025-11-23 22:22:24.944064[Thread 0x00004094]:FilamentHub: app_config is not null. Loading token...
+[error]	2025-11-23 22:22:24.944064[Thread 0x00004094]:FilamentHub: CONFIG_SECTION_FILAMENTHUB: filamenthub
+[error]	2025-11-23 22:22:24.944064[Thread 0x00004094]:FilamentHub: CONFIG_KEY_ACCESS_TOKEN: access_token
+[error]	2025-11-23 22:22:24.944064[Thread 0x00004094]:FilamentHub: CONFIG_KEY_USER_ID: user_id
+[error]	2025-11-23 22:22:24.944064[Thread 0x00004094]:FilamentHub: Loading auth token - token length: 201, user_id_str: '6'
+[error]	2025-11-23 22:22:24.944064[Thread 0x00004094]:FilamentHub: Loaded auth token for user_id=6, token length: 201, token preview: eyJhbGciOiJIUzI1NiIs...
+[error]	2025-11-23 22:22:24.944064[Thread 0x00004094]:FilamentHub: load_auth_token: About to return true
+[error]	2025-11-23 22:22:25.056627[Thread 0x00004094]:FilamentHub: ========== load_auth_token() CALLED ==========
+[error]	2025-11-23 22:22:25.056637[Thread 0x00004094]:FilamentHub: app_config is not null. Loading token...
+[error]	2025-11-23 22:22:25.056637[Thread 0x00004094]:FilamentHub: CONFIG_SECTION_FILAMENTHUB: filamenthub
+[error]	2025-11-23 22:22:25.056637[Thread 0x00004094]:FilamentHub: CONFIG_KEY_ACCESS_TOKEN: access_token
+[error]	2025-11-23 22:22:25.056637[Thread 0x00004094]:FilamentHub: CONFIG_KEY_USER_ID: user_id
+[error]	2025-11-23 22:22:25.056659[Thread 0x00004094]:FilamentHub: Loading auth token - token length: 201, user_id_str: '6'
+[error]	2025-11-23 22:22:25.056659[Thread 0x00004094]:FilamentHub: Loaded auth token for user_id=6, token length: 201, token preview: eyJhbGciOiJIUzI1NiIs...
+[error]	2025-11-23 22:22:25.056659[Thread 0x00004094]:FilamentHub: load_auth_token: About to return true
+[error]	2025-11-23 22:22:25.944599[Thread 0x00004094]:FilamentHub: ========== load_auth_token() CALLED ==========
+[error]	2025-11-23 22:22:25.944599[Thread 0x00004094]:FilamentHub: app_config is not null. Loading token...
+[error]	2025-11-23 22:22:25.944599[Thread 0x00004094]:FilamentHub: CONFIG_SECTION_FILAMENTHUB: filamenthub
+[error]	2025-11-23 22:22:25.944599[Thread 0x00004094]:FilamentHub: CONFIG_KEY_ACCESS_TOKEN: access_token
+[error]	2025-11-23 22:22:25.944599[Thread 0x00004094]:FilamentHub: CONFIG_KEY_USER_ID: user_id
+[error]	2025-11-23 22:22:25.944599[Thread 0x00004094]:FilamentHub: Loading auth token - token length: 201, user_id_str: '6'
+[error]	2025-11-23 22:22:25.944599[Thread 0x00004094]:FilamentHub: Loaded auth token for user_id=6, token length: 201, token preview: eyJhbGciOiJIUzI1NiIs...
+[error]	2025-11-23 22:22:25.944599[Thread 0x00004094]:FilamentHub: load_auth_token: About to return true
+[error]	2025-11-23 22:22:26.045099[Thread 0x00004094]:FilamentHub: ========== load_auth_token() CALLED ==========
+[error]	2025-11-23 22:22:26.045099[Thread 0x00004094]:FilamentHub: app_config is not null. Loading token...
+[error]	2025-11-23 22:22:26.045099[Thread 0x00004094]:FilamentHub: CONFIG_SECTION_FILAMENTHUB: filamenthub
+[error]	2025-11-23 22:22:26.045099[Thread 0x00004094]:FilamentHub: CONFIG_KEY_ACCESS_TOKEN: access_token
+[error]	2025-11-23 22:22:26.045099[Thread 0x00004094]:FilamentHub: CONFIG_KEY_USER_ID: user_id
+[error]	2025-11-23 22:22:26.045099[Thread 0x00004094]:FilamentHub: Loading auth token - token length: 201, user_id_str: '6'
+[error]	2025-11-23 22:22:26.045099[Thread 0x00004094]:FilamentHub: Loaded auth token for user_id=6, token length: 201, token preview: eyJhbGciOiJIUzI1NiIs...
+[error]	2025-11-23 22:22:26.045616[Thread 0x00004094]:FilamentHub: load_auth_token: About to return true
+[error]	2025-11-23 22:22:26.944857[Thread 0x00004094]:FilamentHub: ========== load_auth_token() CALLED ==========
+[error]	2025-11-23 22:22:26.944857[Thread 0x00004094]:FilamentHub: app_config is not null. Loading token...
+[error]	2025-11-23 22:22:26.944857[Thread 0x00004094]:FilamentHub: CONFIG_SECTION_FILAMENTHUB: filamenthub
+[error]	2025-11-23 22:22:26.944857[Thread 0x00004094]:FilamentHub: CONFIG_KEY_ACCESS_TOKEN: access_token
+[error]	2025-11-23 22:22:26.944857[Thread 0x00004094]:FilamentHub: CONFIG_KEY_USER_ID: user_id
+[error]	2025-11-23 22:22:26.944857[Thread 0x00004094]:FilamentHub: Loading auth token - token length: 201, user_id_str: '6'
+[error]	2025-11-23 22:22:26.944857[Thread 0x00004094]:FilamentHub: Loaded auth token for user_id=6, token length: 201, token preview: eyJhbGciOiJIUzI1NiIs...
+[error]	2025-11-23 22:22:26.944857[Thread 0x00004094]:FilamentHub: load_auth_token: About to return true
+[error]	2025-11-23 22:22:27.084361[Thread 0x00004094]:FilamentHub: ========== load_auth_token() CALLED ==========
+[error]	2025-11-23 22:22:27.084361[Thread 0x00004094]:FilamentHub: app_config is not null. Loading token...
+[error]	2025-11-23 22:22:27.084361[Thread 0x00004094]:FilamentHub: CONFIG_SECTION_FILAMENTHUB: filamenthub
+[error]	2025-11-23 22:22:27.084361[Thread 0x00004094]:FilamentHub: CONFIG_KEY_ACCESS_TOKEN: access_token
+[error]	2025-11-23 22:22:27.084361[Thread 0x00004094]:FilamentHub: CONFIG_KEY_USER_ID: user_id
+[error]	2025-11-23 22:22:27.084361[Thread 0x00004094]:FilamentHub: Loading auth token - token length: 201, user_id_str: '6'
+[error]	2025-11-23 22:22:27.084361[Thread 0x00004094]:FilamentHub: Loaded auth token for user_id=6, token length: 201, token preview: eyJhbGciOiJIUzI1NiIs...
+[error]	2025-11-23 22:22:27.084361[Thread 0x00004094]:FilamentHub: load_auth_token: About to return true
+[error]	2025-11-23 22:22:27.944841[Thread 0x00004094]:FilamentHub: ========== load_auth_token() CALLED ==========
+[error]	2025-11-23 22:22:27.944841[Thread 0x00004094]:FilamentHub: app_config is not null. Loading token...
+[error]	2025-11-23 22:22:27.944841[Thread 0x00004094]:FilamentHub: CONFIG_SECTION_FILAMENTHUB: filamenthub
+[error]	2025-11-23 22:22:27.944841[Thread 0x00004094]:FilamentHub: CONFIG_KEY_ACCESS_TOKEN: access_token
+[error]	2025-11-23 22:22:27.944841[Thread 0x00004094]:FilamentHub: CONFIG_KEY_USER_ID: user_id
+[error]	2025-11-23 22:22:27.944841[Thread 0x00004094]:FilamentHub: Loading auth token - token length: 201, user_id_str: '6'
+[error]	2025-11-23 22:22:27.944841[Thread 0x00004094]:FilamentHub: Loaded auth token for user_id=6, token length: 201, token preview: eyJhbGciOiJIUzI1NiIs...
+[error]	2025-11-23 22:22:27.944841[Thread 0x00004094]:FilamentHub: load_auth_token: About to return true
+[error]	2025-11-23 22:22:28.066207[Thread 0x00004094]:FilamentHub: ========== load_auth_token() CALLED ==========
+[error]	2025-11-23 22:22:28.066207[Thread 0x00004094]:FilamentHub: app_config is not null. Loading token...
+[error]	2025-11-23 22:22:28.066207[Thread 0x00004094]:FilamentHub: CONFIG_SECTION_FILAMENTHUB: filamenthub
+[error]	2025-11-23 22:22:28.066207[Thread 0x00004094]:FilamentHub: CONFIG_KEY_ACCESS_TOKEN: access_token
+[error]	2025-11-23 22:22:28.066207[Thread 0x00004094]:FilamentHub: CONFIG_KEY_USER_ID: user_id
+[error]	2025-11-23 22:22:28.066207[Thread 0x00004094]:FilamentHub: Loading auth token - token length: 201, user_id_str: '6'
+[error]	2025-11-23 22:22:28.066207[Thread 0x00004094]:FilamentHub: Loaded auth token for user_id=6, token length: 201, token preview: eyJhbGciOiJIUzI1NiIs...
+[error]	2025-11-23 22:22:28.066207[Thread 0x00004094]:FilamentHub: load_auth_token: About to return true
+[error]	2025-11-23 22:22:28.945355[Thread 0x00004094]:FilamentHub: ========== load_auth_token() CALLED ==========
+[error]	2025-11-23 22:22:28.945355[Thread 0x00004094]:FilamentHub: app_config is not null. Loading token...
+[error]	2025-11-23 22:22:28.945355[Thread 0x00004094]:FilamentHub: CONFIG_SECTION_FILAMENTHUB: filamenthub
+[error]	2025-11-23 22:22:28.945355[Thread 0x00004094]:FilamentHub: CONFIG_KEY_ACCESS_TOKEN: access_token
+[error]	2025-11-23 22:22:28.945355[Thread 0x00004094]:FilamentHub: CONFIG_KEY_USER_ID: user_id
+[error]	2025-11-23 22:22:28.945355[Thread 0x00004094]:FilamentHub: Loading auth token - token length: 201, user_id_str: '6'
+[error]	2025-11-23 22:22:28.945355[Thread 0x00004094]:FilamentHub: Loaded auth token for user_id=6, token length: 201, token preview: eyJhbGciOiJIUzI1NiIs...
+[error]	2025-11-23 22:22:28.945355[Thread 0x00004094]:FilamentHub: load_auth_token: About to return true
+[error]	2025-11-23 22:22:29.070220[Thread 0x00004094]:FilamentHub: ========== load_auth_token() CALLED ==========
+[error]	2025-11-23 22:22:29.070220[Thread 0x00004094]:FilamentHub: app_config is not null. Loading token...
+[error]	2025-11-23 22:22:29.070220[Thread 0x00004094]:FilamentHub: CONFIG_SECTION_FILAMENTHUB: filamenthub
+[error]	2025-11-23 22:22:29.070220[Thread 0x00004094]:FilamentHub: CONFIG_KEY_ACCESS_TOKEN: access_token
+[error]	2025-11-23 22:22:29.070220[Thread 0x00004094]:FilamentHub: CONFIG_KEY_USER_ID: user_id
+[error]	2025-11-23 22:22:29.070220[Thread 0x00004094]:FilamentHub: Loading auth token - token length: 201, user_id_str: '6'
+[error]	2025-11-23 22:22:29.070220[Thread 0x00004094]:FilamentHub: Loaded auth token for user_id=6, token length: 201, token preview: eyJhbGciOiJIUzI1NiIs...
+[error]	2025-11-23 22:22:29.070220[Thread 0x00004094]:FilamentHub: load_auth_token: About to return true
+[error]	2025-11-23 22:22:29.945482[Thread 0x00004094]:FilamentHub: ========== load_auth_token() CALLED ==========
+[error]	2025-11-23 22:22:29.945482[Thread 0x00004094]:FilamentHub: app_config is not null. Loading token...
+[error]	2025-11-23 22:22:29.945482[Thread 0x00004094]:FilamentHub: CONFIG_SECTION_FILAMENTHUB: filamenthub
+[error]	2025-11-23 22:22:29.945482[Thread 0x00004094]:FilamentHub: CONFIG_KEY_ACCESS_TOKEN: access_token
+[error]	2025-11-23 22:22:29.945482[Thread 0x00004094]:FilamentHub: CONFIG_KEY_USER_ID: user_id
+[error]	2025-11-23 22:22:29.945482[Thread 0x00004094]:FilamentHub: Loading auth token - token length: 201, user_id_str: '6'
+[error]	2025-11-23 22:22:29.945482[Thread 0x00004094]:FilamentHub: Loaded auth token for user_id=6, token length: 201, token preview: eyJhbGciOiJIUzI1NiIs...
+[error]	2025-11-23 22:22:29.945482[Thread 0x00004094]:FilamentHub: load_auth_token: About to return true
+[error]	2025-11-23 22:22:30.044688[Thread 0x00004094]:FilamentHub: ========== load_auth_token() CALLED ==========
+[error]	2025-11-23 22:22:30.044688[Thread 0x00004094]:FilamentHub: app_config is not null. Loading token...
+[error]	2025-11-23 22:22:30.044688[Thread 0x00004094]:FilamentHub: CONFIG_SECTION_FILAMENTHUB: filamenthub
+[error]	2025-11-23 22:22:30.044688[Thread 0x00004094]:FilamentHub: CONFIG_KEY_ACCESS_TOKEN: access_token
+[error]	2025-11-23 22:22:30.044688[Thread 0x00004094]:FilamentHub: CONFIG_KEY_USER_ID: user_id
+[error]	2025-11-23 22:22:30.044688[Thread 0x00004094]:FilamentHub: Loading auth token - token length: 201, user_id_str: '6'
+[error]	2025-11-23 22:22:30.044688[Thread 0x00004094]:FilamentHub: Loaded auth token for user_id=6, token length: 201, token preview: eyJhbGciOiJIUzI1NiIs...
+[error]	2025-11-23 22:22:30.045200[Thread 0x00004094]:FilamentHub: load_auth_token: About to return true
+[error]	2025-11-23 22:22:30.944382[Thread 0x00004094]:FilamentHub: ========== load_auth_token() CALLED ==========
+[error]	2025-11-23 22:22:30.944382[Thread 0x00004094]:FilamentHub: app_config is not null. Loading token...
+[error]	2025-11-23 22:22:30.944382[Thread 0x00004094]:FilamentHub: CONFIG_SECTION_FILAMENTHUB: filamenthub
+[error]	2025-11-23 22:22:30.944382[Thread 0x00004094]:FilamentHub: CONFIG_KEY_ACCESS_TOKEN: access_token
+[error]	2025-11-23 22:22:30.944382[Thread 0x00004094]:FilamentHub: CONFIG_KEY_USER_ID: user_id
+[error]	2025-11-23 22:22:30.944382[Thread 0x00004094]:FilamentHub: Loading auth token - token length: 201, user_id_str: '6'
+[error]	2025-11-23 22:22:30.944382[Thread 0x00004094]:FilamentHub: Loaded auth token for user_id=6, token length: 201, token preview: eyJhbGciOiJIUzI1NiIs...
+[error]	2025-11-23 22:22:30.944382[Thread 0x00004094]:FilamentHub: load_auth_token: About to return true
+[error]	2025-11-23 22:22:31.068072[Thread 0x00004094]:FilamentHub: ========== load_auth_token() CALLED ==========
+[error]	2025-11-23 22:22:31.068072[Thread 0x00004094]:FilamentHub: app_config is not null. Loading token...
+[error]	2025-11-23 22:22:31.068072[Thread 0x00004094]:FilamentHub: CONFIG_SECTION_FILAMENTHUB: filamenthub
+[error]	2025-11-23 22:22:31.068072[Thread 0x00004094]:FilamentHub: CONFIG_KEY_ACCESS_TOKEN: access_token
+[error]	2025-11-23 22:22:31.068072[Thread 0x00004094]:FilamentHub: CONFIG_KEY_USER_ID: user_id
+[error]	2025-11-23 22:22:31.068072[Thread 0x00004094]:FilamentHub: Loading auth token - token length: 201, user_id_str: '6'
+[error]	2025-11-23 22:22:31.068072[Thread 0x00004094]:FilamentHub: Loaded auth token for user_id=6, token length: 201, token preview: eyJhbGciOiJIUzI1NiIs...
+[error]	2025-11-23 22:22:31.068072[Thread 0x00004094]:FilamentHub: load_auth_token: About to return true
+[error]	2025-11-23 22:22:31.941470[Thread 0x00004094]:FilamentHub: ========== load_auth_token() CALLED ==========
+[error]	2025-11-23 22:22:31.941984[Thread 0x00004094]:FilamentHub: app_config is not null. Loading token...
+[error]	2025-11-23 22:22:31.941984[Thread 0x00004094]:FilamentHub: CONFIG_SECTION_FILAMENTHUB: filamenthub
+[error]	2025-11-23 22:22:31.941984[Thread 0x00004094]:FilamentHub: CONFIG_KEY_ACCESS_TOKEN: access_token
+[error]	2025-11-23 22:22:31.941984[Thread 0x00004094]:FilamentHub: CONFIG_KEY_USER_ID: user_id
+[error]	2025-11-23 22:22:31.941984[Thread 0x00004094]:FilamentHub: Loading auth token - token length: 201, user_id_str: '6'
+[error]	2025-11-23 22:22:31.941984[Thread 0x00004094]:FilamentHub: Loaded auth token for user_id=6, token length: 201, token preview: eyJhbGciOiJIUzI1NiIs...
+[error]	2025-11-23 22:22:31.941984[Thread 0x00004094]:FilamentHub: load_auth_token: About to return true
+[error]	2025-11-23 22:22:32.056896[Thread 0x00004094]:FilamentHub: ========== load_auth_token() CALLED ==========
+[error]	2025-11-23 22:22:32.056896[Thread 0x00004094]:FilamentHub: app_config is not null. Loading token...
+[error]	2025-11-23 22:22:32.057405[Thread 0x00004094]:FilamentHub: CONFIG_SECTION_FILAMENTHUB: filamenthub
+[error]	2025-11-23 22:22:32.057405[Thread 0x00004094]:FilamentHub: CONFIG_KEY_ACCESS_TOKEN: access_token
+[error]	2025-11-23 22:22:32.057405[Thread 0x00004094]:FilamentHub: CONFIG_KEY_USER_ID: user_id
+[error]	2025-11-23 22:22:32.057426[Thread 0x00004094]:FilamentHub: Loading auth token - token length: 201, user_id_str: '6'
+[error]	2025-11-23 22:22:32.057426[Thread 0x00004094]:FilamentHub: Loaded auth token for user_id=6, token length: 201, token preview: eyJhbGciOiJIUzI1NiIs...
+[error]	2025-11-23 22:22:32.057426[Thread 0x00004094]:FilamentHub: load_auth_token: About to return true
+[error]	2025-11-23 22:22:32.646524[Thread 0x00004094]:FilamentHub: ========== load_auth_token() CALLED ==========
+[error]	2025-11-23 22:22:32.646524[Thread 0x00004094]:FilamentHub: app_config is not null. Loading token...
+[error]	2025-11-23 22:22:32.646524[Thread 0x00004094]:FilamentHub: CONFIG_SECTION_FILAMENTHUB: filamenthub
+[error]	2025-11-23 22:22:32.646524[Thread 0x00004094]:FilamentHub: CONFIG_KEY_ACCESS_TOKEN: access_token
+[error]	2025-11-23 22:22:32.646524[Thread 0x00004094]:FilamentHub: CONFIG_KEY_USER_ID: user_id
+[error]	2025-11-23 22:22:32.646524[Thread 0x00004094]:FilamentHub: Loading auth token - token length: 201, user_id_str: '6'
+[error]	2025-11-23 22:22:32.646524[Thread 0x00004094]:FilamentHub: Loaded auth token for user_id=6, token length: 201, token preview: eyJhbGciOiJIUzI1NiIs...
+[error]	2025-11-23 22:22:32.646524[Thread 0x00004094]:FilamentHub: load_auth_token: About to return true
+[error]	2025-11-23 22:22:32.675533[Thread 0x00004094]:FilamentHub: load_last_sync_time: Called with user_id=6
+[error]	2025-11-23 22:22:32.675533[Thread 0x00004094]:FilamentHub: ========== get_my_presets() CALLED ==========
+[error]	2025-11-23 22:22:32.675533[Thread 0x00004094]:FilamentHub: URL: http://localhost:8000/api/v1/auth/my-presets?updated_since=2025-11-23T19%3A22%3A05.000000
+[error]	2025-11-23 22:22:32.675533[Thread 0x00004094]:FilamentHub: updated_since: 2025-11-23T19:22:05.000000
+[error]	2025-11-23 22:22:32.675533[Thread 0x00004094]:FilamentHub: access_token length: 201
+[error]	2025-11-23 22:22:32.675533[Thread 0x00004094]:FilamentHub: API base URL: http://localhost:8000
+[error]	2025-11-23 22:22:32.685553[Thread 0x00004094]:FilamentHub: Get my presets successful. Status: 200, Body size: 50 bytes
+[error]	2025-11-23 22:22:32.685567[Thread 0x00004094]:FilamentHub: on_complete callback: checking if on_complete function is valid...
+[error]	2025-11-23 22:22:32.685567[Thread 0x00004094]:FilamentHub: on_complete callback: calling user's on_complete function...
+[error]	2025-11-23 22:22:32.685567[Thread 0x00004094]:FilamentHub: [SYNC STEP 9] ========== on_complete CALLBACK (get_my_presets) ==========
+[error]	2025-11-23 22:22:32.685567[Thread 0x00004094]:FilamentHub: [SYNC STEP 9.0] Lambda function called from FilamentHubPanel!
+[error]	2025-11-23 22:22:32.685567[Thread 0x00004094]:FilamentHub: [SYNC STEP 9.1] HTTP status: 200, Body size: 50 bytes
+[warning]	2025-11-23 22:22:32.685567[Thread 0x00004094]:FilamentHub: [SYNC STEP 12] API returned empty list, but last_sync_time exists. This might indicate locally deleted presets. Performing full sync to restore all presets...
+[error]	2025-11-23 22:22:32.695996[Thread 0x00004094]:FilamentHub: on_complete callback: user's on_complete function returned successfully
+[error]	2025-11-23 22:22:32.695996[Thread 0x00004094]:FilamentHub: get_my_presets: perform_sync() RETURNED (request completed or failed)
+[error]	2025-11-23 22:22:32.695996[Thread 0x00004094]:FilamentHub: get_my_presets: After perform_sync(), callbacks should be called
+[error]	2025-11-23 22:22:32.695996[Thread 0x00004094]:FilamentHub: get_my_presets: FUNCTION END
+[error]	2025-11-23 22:22:32.695996[Thread 0x00004094]:FilamentHub: synchronize_presets: client.get_my_presets() CALLED (function returned, waiting for callback)
+[error]	2025-11-23 22:22:32.695996[Thread 0x00004094]:FilamentHub: ========== load_auth_token() CALLED ==========
+[error]	2025-11-23 22:22:32.695996[Thread 0x00004094]:FilamentHub: app_config is not null. Loading token...
+[error]	2025-11-23 22:22:32.695996[Thread 0x00004094]:FilamentHub: CONFIG_SECTION_FILAMENTHUB: filamenthub
+[error]	2025-11-23 22:22:32.695996[Thread 0x00004094]:FilamentHub: CONFIG_KEY_ACCESS_TOKEN: access_token
+[error]	2025-11-23 22:22:32.695996[Thread 0x00004094]:FilamentHub: CONFIG_KEY_USER_ID: user_id
+[error]	2025-11-23 22:22:32.695996[Thread 0x00004094]:FilamentHub: Loading auth token - token length: 201, user_id_str: '6'
+[error]	2025-11-23 22:22:32.695996[Thread 0x00004094]:FilamentHub: Loaded auth token for user_id=6, token length: 201, token preview: eyJhbGciOiJIUzI1NiIs...
+[error]	2025-11-23 22:22:32.695996[Thread 0x00004094]:FilamentHub: load_auth_token: About to return true
+[error]	2025-11-23 22:22:32.701997[Thread 0x00004094]:FilamentHub: ========== get_my_presets() CALLED ==========
+[error]	2025-11-23 22:22:32.701997[Thread 0x00004094]:FilamentHub: URL: http://localhost:8000/api/v1/auth/my-presets
+[error]	2025-11-23 22:22:32.701997[Thread 0x00004094]:FilamentHub: updated_since: (empty)
+[error]	2025-11-23 22:22:32.701997[Thread 0x00004094]:FilamentHub: access_token length: 201
+[error]	2025-11-23 22:22:32.701997[Thread 0x00004094]:FilamentHub: API base URL: http://localhost:8000
+[error]	2025-11-23 22:22:32.726521[Thread 0x00004094]:FilamentHub: Get my presets successful. Status: 200, Body size: 6040 bytes
+[error]	2025-11-23 22:22:32.726521[Thread 0x00004094]:FilamentHub: on_complete callback: checking if on_complete function is valid...
+[error]	2025-11-23 22:22:32.726521[Thread 0x00004094]:FilamentHub: on_complete callback: calling user's on_complete function...
+[error]	2025-11-23 22:22:32.726521[Thread 0x00004094]:FilamentHub: [SYNC STEP 9] ========== on_complete CALLBACK (get_my_presets) ==========
+[error]	2025-11-23 22:22:32.726521[Thread 0x00004094]:FilamentHub: [SYNC STEP 9.0] Lambda function called from FilamentHubPanel!
+[error]	2025-11-23 22:22:32.726521[Thread 0x00004094]:FilamentHub: [SYNC STEP 9.1] HTTP status: 200, Body size: 6040 bytes
+[warning]	2025-11-23 22:22:32.726521[Thread 0x00004094]:FilamentHub: [SYNC STEP 13.1] Preset 14 (PolyTerra Green Standard) is mapped to 'PolyTerra Green Standard [FilamentHub]' but preset not found in bundle (deleted locally)
+[error]	2025-11-23 22:22:32.726521[Thread 0x00004094]:FilamentHub: [SYNC STEP 13.2] Found 1 deleted presets (deleted locally, but exist on server)
+[error]	2025-11-23 22:22:32.726521[Thread 0x00004094]:FilamentHub: [SYNC STEP 15.0] Checking deleted_presets_list. Size: 1
+[error]	2025-11-23 22:22:32.726521[Thread 0x00004094]:FilamentHub: [SYNC STEP 15] Found 1 deleted presets. Reporting to backend...
+[error]	2025-11-23 22:22:32.726521[Thread 0x00004094]:FilamentHub: on_complete callback: user's on_complete function returned successfully
+[error]	2025-11-23 22:22:32.726521[Thread 0x00004094]:FilamentHub: get_my_presets: perform_sync() RETURNED (request completed or failed)
+[error]	2025-11-23 22:22:32.726521[Thread 0x00004094]:FilamentHub: get_my_presets: After perform_sync(), callbacks should be called
+[error]	2025-11-23 22:22:32.726521[Thread 0x00004094]:FilamentHub: get_my_presets: FUNCTION END
+[error]	2025-11-23 22:22:32.726521[Thread 0x00004094]:FilamentHub: synchronize_presets: client.get_my_presets() CALLED (function returned, waiting for callback)
+[error]	2025-11-23 22:22:32.794370[Thread 0x000078a4]:FilamentHub: .info file download failed. Error: , Status: 500
+[error]	2025-11-23 22:22:32.794370[Thread 0x000078a4]:FilamentHub: Failed to download .info file for preset 'ТЕСТПРЕСЕТ [FilamentHub]'. Error: , Status: 500
+[error]	2025-11-23 22:22:32.827631[Thread 0x00006b40]:FilamentHub: .info file download failed. Error: , Status: 500
+[error]	2025-11-23 22:22:32.827631[Thread 0x00006b40]:FilamentHub: Failed to download .info file for preset '100проц печать [FilamentHub]'. Error: , Status: 500
+[warning]	2025-11-23 22:22:32.828167[Thread 0x00007a14]:FilamentHub: Parent preset 'fdm_filament_common' not found in system presets
+[warning]	2025-11-23 22:22:32.828167[Thread 0x00007a14]:FilamentHub: Replaced inherits with fallback: 'AliZ PLA @System'
+[error]	2025-11-23 22:22:32.855515[Thread 0x00008228]:FilamentHub: .info file download failed. Error: , Status: 500
+[error]	2025-11-23 22:22:32.855515[Thread 0x00008228]:FilamentHub: Failed to download .info file for preset 'ТЫЛох [FilamentHub]'. Error: , Status: 500
+[error]	2025-11-23 22:22:32.874110[Thread 0x00004094]:FilamentHub: ========== load_auth_token() CALLED ==========
+[error]	2025-11-23 22:22:32.874110[Thread 0x00004094]:FilamentHub: app_config is not null. Loading token...
+[error]	2025-11-23 22:22:32.874110[Thread 0x00004094]:FilamentHub: CONFIG_SECTION_FILAMENTHUB: filamenthub
+[error]	2025-11-23 22:22:32.874110[Thread 0x00004094]:FilamentHub: CONFIG_KEY_ACCESS_TOKEN: access_token
+[error]	2025-11-23 22:22:32.874110[Thread 0x00004094]:FilamentHub: CONFIG_KEY_USER_ID: user_id
+[error]	2025-11-23 22:22:32.874110[Thread 0x00004094]:FilamentHub: Loading auth token - token length: 201, user_id_str: '6'
+[error]	2025-11-23 22:22:32.874110[Thread 0x00004094]:FilamentHub: Loaded auth token for user_id=6, token length: 201, token preview: eyJhbGciOiJIUzI1NiIs...
+[error]	2025-11-23 22:22:32.874110[Thread 0x00004094]:FilamentHub: load_auth_token: About to return true
+[error]	2025-11-23 22:22:32.896421[Thread 0x00007b04]:FilamentHub: .info file download failed. Error: , Status: 500
+[error]	2025-11-23 22:22:32.896421[Thread 0x00007b04]:FilamentHub: Failed to download .info file for preset 'Золотище [FilamentHub]'. Error: , Status: 500
+[error]	2025-11-23 22:22:32.962564[Thread 0x00004094]:FilamentHub: ========== load_auth_token() CALLED ==========
+[error]	2025-11-23 22:22:32.962564[Thread 0x00004094]:FilamentHub: app_config is not null. Loading token...
+[error]	2025-11-23 22:22:32.962564[Thread 0x00004094]:FilamentHub: CONFIG_SECTION_FILAMENTHUB: filamenthub
+[error]	2025-11-23 22:22:32.962564[Thread 0x00004094]:FilamentHub: CONFIG_KEY_ACCESS_TOKEN: access_token
+[error]	2025-11-23 22:22:32.962564[Thread 0x00004094]:FilamentHub: CONFIG_KEY_USER_ID: user_id
+[error]	2025-11-23 22:22:32.962564[Thread 0x00004094]:FilamentHub: Loading auth token - token length: 201, user_id_str: '6'
+[error]	2025-11-23 22:22:32.962564[Thread 0x00004094]:FilamentHub: Loaded auth token for user_id=6, token length: 201, token preview: eyJhbGciOiJIUzI1NiIs...
+[error]	2025-11-23 22:22:32.962564[Thread 0x00004094]:FilamentHub: load_auth_token: About to return true
+[error]	2025-11-23 22:22:32.962564[Thread 0x00004094]:FilamentHub: ========== load_auth_token() CALLED ==========
+[error]	2025-11-23 22:22:32.962564[Thread 0x00004094]:FilamentHub: app_config is not null. Loading token...
+[error]	2025-11-23 22:22:32.962564[Thread 0x00004094]:FilamentHub: CONFIG_SECTION_FILAMENTHUB: filamenthub
+[error]	2025-11-23 22:22:32.962564[Thread 0x00004094]:FilamentHub: CONFIG_KEY_ACCESS_TOKEN: access_token
+[error]	2025-11-23 22:22:32.962564[Thread 0x00004094]:FilamentHub: CONFIG_KEY_USER_ID: user_id
+[error]	2025-11-23 22:22:32.962564[Thread 0x00004094]:FilamentHub: Loading auth token - token length: 201, user_id_str: '6'
+[error]	2025-11-23 22:22:32.962564[Thread 0x00004094]:FilamentHub: Loaded auth token for user_id=6, token length: 201, token preview: eyJhbGciOiJIUzI1NiIs...
+[error]	2025-11-23 22:22:32.962564[Thread 0x00004094]:FilamentHub: load_auth_token: About to return true
+[error]	2025-11-23 22:22:32.990224[Thread 0x00004094]:FilamentHub: ========== load_auth_token() CALLED ==========
+[error]	2025-11-23 22:22:32.990224[Thread 0x00004094]:FilamentHub: app_config is not null. Loading token...
+[error]	2025-11-23 22:22:32.990224[Thread 0x00004094]:FilamentHub: CONFIG_SECTION_FILAMENTHUB: filamenthub
+[error]	2025-11-23 22:22:32.990224[Thread 0x00004094]:FilamentHub: CONFIG_KEY_ACCESS_TOKEN: access_token
+[error]	2025-11-23 22:22:32.990224[Thread 0x00004094]:FilamentHub: CONFIG_KEY_USER_ID: user_id
+[error]	2025-11-23 22:22:32.990224[Thread 0x00004094]:FilamentHub: Loading auth token - token length: 201, user_id_str: '6'
+[error]	2025-11-23 22:22:32.990224[Thread 0x00004094]:FilamentHub: Loaded auth token for user_id=6, token length: 201, token preview: eyJhbGciOiJIUzI1NiIs...
+[error]	2025-11-23 22:22:32.990224[Thread 0x00004094]:FilamentHub: load_auth_token: About to return true
+[error]	2025-11-23 22:22:33.018790[Thread 0x00004094]:FilamentHub: ========== load_auth_token() CALLED ==========
+[error]	2025-11-23 22:22:33.018790[Thread 0x00004094]:FilamentHub: app_config is not null. Loading token...
+[error]	2025-11-23 22:22:33.018790[Thread 0x00004094]:FilamentHub: CONFIG_SECTION_FILAMENTHUB: filamenthub
+[error]	2025-11-23 22:22:33.018790[Thread 0x00004094]:FilamentHub: CONFIG_KEY_ACCESS_TOKEN: access_token
+[error]	2025-11-23 22:22:33.018790[Thread 0x00004094]:FilamentHub: CONFIG_KEY_USER_ID: user_id
+[error]	2025-11-23 22:22:33.018790[Thread 0x00004094]:FilamentHub: Loading auth token - token length: 201, user_id_str: '6'
+[error]	2025-11-23 22:22:33.018790[Thread 0x00004094]:FilamentHub: Loaded auth token for user_id=6, token length: 201, token preview: eyJhbGciOiJIUzI1NiIs...
+[error]	2025-11-23 22:22:33.018790[Thread 0x00004094]:FilamentHub: load_auth_token: About to return true
+[error]	2025-11-23 22:22:33.046089[Thread 0x00004094]:FilamentHub: ========== load_auth_token() CALLED ==========
+[error]	2025-11-23 22:22:33.046089[Thread 0x00004094]:FilamentHub: app_config is not null. Loading token...
+[error]	2025-11-23 22:22:33.046089[Thread 0x00004094]:FilamentHub: CONFIG_SECTION_FILAMENTHUB: filamenthub
+[error]	2025-11-23 22:22:33.046089[Thread 0x00004094]:FilamentHub: CONFIG_KEY_ACCESS_TOKEN: access_token
+[error]	2025-11-23 22:22:33.046089[Thread 0x00004094]:FilamentHub: CONFIG_KEY_USER_ID: user_id
+[error]	2025-11-23 22:22:33.046089[Thread 0x00004094]:FilamentHub: Loading auth token - token length: 201, user_id_str: '6'
+[error]	2025-11-23 22:22:33.046089[Thread 0x00004094]:FilamentHub: Loaded auth token for user_id=6, token length: 201, token preview: eyJhbGciOiJIUzI1NiIs...
+[error]	2025-11-23 22:22:33.046089[Thread 0x00004094]:FilamentHub: load_auth_token: About to return true
+[error]	2025-11-23 22:22:33.046089[Thread 0x00004094]:FilamentHub: load_last_sync_time: Called with user_id=6
+[error]	2025-11-23 22:22:33.052949[Thread 0x00004094]:FilamentHub: ========== load_auth_token() CALLED ==========
+[error]	2025-11-23 22:22:33.052949[Thread 0x00004094]:FilamentHub: app_config is not null. Loading token...
+[error]	2025-11-23 22:22:33.052949[Thread 0x00004094]:FilamentHub: CONFIG_SECTION_FILAMENTHUB: filamenthub
+[error]	2025-11-23 22:22:33.052949[Thread 0x00004094]:FilamentHub: CONFIG_KEY_ACCESS_TOKEN: access_token
+[error]	2025-11-23 22:22:33.052949[Thread 0x00004094]:FilamentHub: CONFIG_KEY_USER_ID: user_id
+[error]	2025-11-23 22:22:33.052949[Thread 0x00004094]:FilamentHub: Loading auth token - token length: 201, user_id_str: '6'
+[error]	2025-11-23 22:22:33.052949[Thread 0x00004094]:FilamentHub: Loaded auth token for user_id=6, token length: 201, token preview: eyJhbGciOiJIUzI1NiIs...
+[error]	2025-11-23 22:22:33.052949[Thread 0x00004094]:FilamentHub: load_auth_token: About to return true
+[error]	2025-11-23 22:22:33.052949[Thread 0x00004094]:FilamentHub: load_last_sync_time: Called with user_id=6
+[error]	2025-11-23 22:22:33.082910[Thread 0x00004094]:FilamentHub: ========== load_auth_token() CALLED ==========
+[error]	2025-11-23 22:22:33.082910[Thread 0x00004094]:FilamentHub: app_config is not null. Loading token...
+[error]	2025-11-23 22:22:33.082910[Thread 0x00004094]:FilamentHub: CONFIG_SECTION_FILAMENTHUB: filamenthub
+[error]	2025-11-23 22:22:33.082910[Thread 0x00004094]:FilamentHub: CONFIG_KEY_ACCESS_TOKEN: access_token
+[error]	2025-11-23 22:22:33.082910[Thread 0x00004094]:FilamentHub: CONFIG_KEY_USER_ID: user_id
+[error]	2025-11-23 22:22:33.082910[Thread 0x00004094]:FilamentHub: Loading auth token - token length: 201, user_id_str: '6'
+[error]	2025-11-23 22:22:33.082910[Thread 0x00004094]:FilamentHub: Loaded auth token for user_id=6, token length: 201, token preview: eyJhbGciOiJIUzI1NiIs...
+[error]	2025-11-23 22:22:33.082910[Thread 0x00004094]:FilamentHub: load_auth_token: About to return true
+[error]	2025-11-23 22:22:33.205567[Thread 0x00004094]:FilamentHub: ========== load_auth_token() CALLED ==========
+[error]	2025-11-23 22:22:33.205567[Thread 0x00004094]:FilamentHub: app_config is not null. Loading token...
+[error]	2025-11-23 22:22:33.205567[Thread 0x00004094]:FilamentHub: CONFIG_SECTION_FILAMENTHUB: filamenthub
+[error]	2025-11-23 22:22:33.205567[Thread 0x00004094]:FilamentHub: CONFIG_KEY_ACCESS_TOKEN: access_token
+[error]	2025-11-23 22:22:33.205567[Thread 0x00004094]:FilamentHub: CONFIG_KEY_USER_ID: user_id
+[error]	2025-11-23 22:22:33.205567[Thread 0x00004094]:FilamentHub: Loading auth token - token length: 201, user_id_str: '6'
+[error]	2025-11-23 22:22:33.205567[Thread 0x00004094]:FilamentHub: Loaded auth token for user_id=6, token length: 201, token preview: eyJhbGciOiJIUzI1NiIs...
+[error]	2025-11-23 22:22:33.205567[Thread 0x00004094]:FilamentHub: load_auth_token: About to return true
+[error]	2025-11-23 22:22:33.941431[Thread 0x00004094]:FilamentHub: ========== load_auth_token() CALLED ==========
+[error]	2025-11-23 22:22:33.941431[Thread 0x00004094]:FilamentHub: app_config is not null. Loading token...
+[error]	2025-11-23 22:22:33.941431[Thread 0x00004094]:FilamentHub: CONFIG_SECTION_FILAMENTHUB: filamenthub
+[error]	2025-11-23 22:22:33.941431[Thread 0x00004094]:FilamentHub: CONFIG_KEY_ACCESS_TOKEN: access_token
+[error]	2025-11-23 22:22:33.941431[Thread 0x00004094]:FilamentHub: CONFIG_KEY_USER_ID: user_id
+[error]	2025-11-23 22:22:33.941431[Thread 0x00004094]:FilamentHub: Loading auth token - token length: 201, user_id_str: '6'
+[error]	2025-11-23 22:22:33.941938[Thread 0x00004094]:FilamentHub: Loaded auth token for user_id=6, token length: 201, token preview: eyJhbGciOiJIUzI1NiIs...
+[error]	2025-11-23 22:22:33.941946[Thread 0x00004094]:FilamentHub: load_auth_token: About to return true
+[error]	2025-11-23 22:22:34.043235[Thread 0x00004094]:FilamentHub: ========== load_auth_token() CALLED ==========
+[error]	2025-11-23 22:22:34.043755[Thread 0x00004094]:FilamentHub: app_config is not null. Loading token...
+[error]	2025-11-23 22:22:34.043767[Thread 0x00004094]:FilamentHub: CONFIG_SECTION_FILAMENTHUB: filamenthub
+[error]	2025-11-23 22:22:34.043767[Thread 0x00004094]:FilamentHub: CONFIG_KEY_ACCESS_TOKEN: access_token
+[error]	2025-11-23 22:22:34.043767[Thread 0x00004094]:FilamentHub: CONFIG_KEY_USER_ID: user_id
+[error]	2025-11-23 22:22:34.043767[Thread 0x00004094]:FilamentHub: Loading auth token - token length: 201, user_id_str: '6'
+[error]	2025-11-23 22:22:34.043767[Thread 0x00004094]:FilamentHub: Loaded auth token for user_id=6, token length: 201, token preview: eyJhbGciOiJIUzI1NiIs...
+[error]	2025-11-23 22:22:34.043767[Thread 0x00004094]:FilamentHub: load_auth_token: About to return true
+[error]	2025-11-23 22:22:34.945533[Thread 0x00004094]:FilamentHub: ========== load_auth_token() CALLED ==========
+[error]	2025-11-23 22:22:34.945533[Thread 0x00004094]:FilamentHub: app_config is not null. Loading token...
+[error]	2025-11-23 22:22:34.945533[Thread 0x00004094]:FilamentHub: CONFIG_SECTION_FILAMENTHUB: filamenthub
+[error]	2025-11-23 22:22:34.945533[Thread 0x00004094]:FilamentHub: CONFIG_KEY_ACCESS_TOKEN: access_token
+[error]	2025-11-23 22:22:34.945533[Thread 0x00004094]:FilamentHub: CONFIG_KEY_USER_ID: user_id
+[error]	2025-11-23 22:22:34.945533[Thread 0x00004094]:FilamentHub: Loading auth token - token length: 201, user_id_str: '6'
+[error]	2025-11-23 22:22:34.945533[Thread 0x00004094]:FilamentHub: Loaded auth token for user_id=6, token length: 201, token preview: eyJhbGciOiJIUzI1NiIs...
+[error]	2025-11-23 22:22:34.945533[Thread 0x00004094]:FilamentHub: load_auth_token: About to return true
+[error]	2025-11-23 22:22:35.062061[Thread 0x00004094]:FilamentHub: ========== load_auth_token() CALLED ==========
+[error]	2025-11-23 22:22:35.062061[Thread 0x00004094]:FilamentHub: app_config is not null. Loading token...
+[error]	2025-11-23 22:22:35.062061[Thread 0x00004094]:FilamentHub: CONFIG_SECTION_FILAMENTHUB: filamenthub
+[error]	2025-11-23 22:22:35.062061[Thread 0x00004094]:FilamentHub: CONFIG_KEY_ACCESS_TOKEN: access_token
+[error]	2025-11-23 22:22:35.062061[Thread 0x00004094]:FilamentHub: CONFIG_KEY_USER_ID: user_id
+[error]	2025-11-23 22:22:35.062061[Thread 0x00004094]:FilamentHub: Loading auth token - token length: 201, user_id_str: '6'
+[error]	2025-11-23 22:22:35.062061[Thread 0x00004094]:FilamentHub: Loaded auth token for user_id=6, token length: 201, token preview: eyJhbGciOiJIUzI1NiIs...
+[error]	2025-11-23 22:22:35.062061[Thread 0x00004094]:FilamentHub: load_auth_token: About to return true
+[error]	2025-11-23 22:22:35.942907[Thread 0x00004094]:FilamentHub: ========== load_auth_token() CALLED ==========
+[error]	2025-11-23 22:22:35.942915[Thread 0x00004094]:FilamentHub: app_config is not null. Loading token...
+[error]	2025-11-23 22:22:35.942915[Thread 0x00004094]:FilamentHub: CONFIG_SECTION_FILAMENTHUB: filamenthub
+[error]	2025-11-23 22:22:35.942915[Thread 0x00004094]:FilamentHub: CONFIG_KEY_ACCESS_TOKEN: access_token
+[error]	2025-11-23 22:22:35.942915[Thread 0x00004094]:FilamentHub: CONFIG_KEY_USER_ID: user_id
+[error]	2025-11-23 22:22:35.942915[Thread 0x00004094]:FilamentHub: Loading auth token - token length: 201, user_id_str: '6'
+[error]	2025-11-23 22:22:35.942915[Thread 0x00004094]:FilamentHub: Loaded auth token for user_id=6, token length: 201, token preview: eyJhbGciOiJIUzI1NiIs...
+[error]	2025-11-23 22:22:35.942915[Thread 0x00004094]:FilamentHub: load_auth_token: About to return true
+[error]	2025-11-23 22:22:36.059087[Thread 0x00004094]:FilamentHub: ========== load_auth_token() CALLED ==========
+[error]	2025-11-23 22:22:36.059614[Thread 0x00004094]:FilamentHub: app_config is not null. Loading token...
+[error]	2025-11-23 22:22:36.059614[Thread 0x00004094]:FilamentHub: CONFIG_SECTION_FILAMENTHUB: filamenthub
+[error]	2025-11-23 22:22:36.059614[Thread 0x00004094]:FilamentHub: CONFIG_KEY_ACCESS_TOKEN: access_token
+[error]	2025-11-23 22:22:36.059614[Thread 0x00004094]:FilamentHub: CONFIG_KEY_USER_ID: user_id
+[error]	2025-11-23 22:22:36.059614[Thread 0x00004094]:FilamentHub: Loading auth token - token length: 201, user_id_str: '6'
+[error]	2025-11-23 22:22:36.059614[Thread 0x00004094]:FilamentHub: Loaded auth token for user_id=6, token length: 201, token preview: eyJhbGciOiJIUzI1NiIs...
+[error]	2025-11-23 22:22:36.059614[Thread 0x00004094]:FilamentHub: load_auth_token: About to return true
+[error]	2025-11-23 22:22:36.945272[Thread 0x00004094]:FilamentHub: ========== load_auth_token() CALLED ==========
+[error]	2025-11-23 22:22:36.945272[Thread 0x00004094]:FilamentHub: app_config is not null. Loading token...
+[error]	2025-11-23 22:22:36.945272[Thread 0x00004094]:FilamentHub: CONFIG_SECTION_FILAMENTHUB: filamenthub
+[error]	2025-11-23 22:22:36.945272[Thread 0x00004094]:FilamentHub: CONFIG_KEY_ACCESS_TOKEN: access_token
+[error]	2025-11-23 22:22:36.945272[Thread 0x00004094]:FilamentHub: CONFIG_KEY_USER_ID: user_id
+[error]	2025-11-23 22:22:36.945272[Thread 0x00004094]:FilamentHub: Loading auth token - token length: 201, user_id_str: '6'
+[error]	2025-11-23 22:22:36.945272[Thread 0x00004094]:FilamentHub: Loaded auth token for user_id=6, token length: 201, token preview: eyJhbGciOiJIUzI1NiIs...
+[error]	2025-11-23 22:22:36.945272[Thread 0x00004094]:FilamentHub: load_auth_token: About to return true
+[error]	2025-11-23 22:22:37.044422[Thread 0x00004094]:FilamentHub: ========== load_auth_token() CALLED ==========
+[error]	2025-11-23 22:22:37.044422[Thread 0x00004094]:FilamentHub: app_config is not null. Loading token...
+[error]	2025-11-23 22:22:37.044422[Thread 0x00004094]:FilamentHub: CONFIG_SECTION_FILAMENTHUB: filamenthub
+[error]	2025-11-23 22:22:37.044422[Thread 0x00004094]:FilamentHub: CONFIG_KEY_ACCESS_TOKEN: access_token
+[error]	2025-11-23 22:22:37.044422[Thread 0x00004094]:FilamentHub: CONFIG_KEY_USER_ID: user_id
+[error]	2025-11-23 22:22:37.044422[Thread 0x00004094]:FilamentHub: Loading auth token - token length: 201, user_id_str: '6'
+[error]	2025-11-23 22:22:37.044422[Thread 0x00004094]:FilamentHub: Loaded auth token for user_id=6, token length: 201, token preview: eyJhbGciOiJIUzI1NiIs...
+[error]	2025-11-23 22:22:37.044422[Thread 0x00004094]:FilamentHub: load_auth_token: About to return true
+[error]	2025-11-23 22:22:37.951424[Thread 0x00004094]:FilamentHub: ========== load_auth_token() CALLED ==========
+[error]	2025-11-23 22:22:37.951424[Thread 0x00004094]:FilamentHub: app_config is not null. Loading token...
+[error]	2025-11-23 22:22:37.951424[Thread 0x00004094]:FilamentHub: CONFIG_SECTION_FILAMENTHUB: filamenthub
+[error]	2025-11-23 22:22:37.951424[Thread 0x00004094]:FilamentHub: CONFIG_KEY_ACCESS_TOKEN: access_token
+[error]	2025-11-23 22:22:37.951424[Thread 0x00004094]:FilamentHub: CONFIG_KEY_USER_ID: user_id
+[error]	2025-11-23 22:22:37.951424[Thread 0x00004094]:FilamentHub: Loading auth token - token length: 201, user_id_str: '6'
+[error]	2025-11-23 22:22:37.951424[Thread 0x00004094]:FilamentHub: Loaded auth token for user_id=6, token length: 201, token preview: eyJhbGciOiJIUzI1NiIs...
+[error]	2025-11-23 22:22:37.951424[Thread 0x00004094]:FilamentHub: load_auth_token: About to return true
+[error]	2025-11-23 22:22:38.068896[Thread 0x00004094]:FilamentHub: ========== load_auth_token() CALLED ==========
+[error]	2025-11-23 22:22:38.068896[Thread 0x00004094]:FilamentHub: app_config is not null. Loading token...
+[error]	2025-11-23 22:22:38.068896[Thread 0x00004094]:FilamentHub: CONFIG_SECTION_FILAMENTHUB: filamenthub
+[error]	2025-11-23 22:22:38.068896[Thread 0x00004094]:FilamentHub: CONFIG_KEY_ACCESS_TOKEN: access_token
+[error]	2025-11-23 22:22:38.068896[Thread 0x00004094]:FilamentHub: CONFIG_KEY_USER_ID: user_id
+[error]	2025-11-23 22:22:38.068896[Thread 0x00004094]:FilamentHub: Loading auth token - token length: 201, user_id_str: '6'
+[error]	2025-11-23 22:22:38.068896[Thread 0x00004094]:FilamentHub: Loaded auth token for user_id=6, token length: 201, token preview: eyJhbGciOiJIUzI1NiIs...
+[error]	2025-11-23 22:22:38.068896[Thread 0x00004094]:FilamentHub: load_auth_token: About to return true
+[error]	2025-11-23 22:22:38.945840[Thread 0x00004094]:FilamentHub: ========== load_auth_token() CALLED ==========
+[error]	2025-11-23 22:22:38.945840[Thread 0x00004094]:FilamentHub: app_config is not null. Loading token...
+[error]	2025-11-23 22:22:38.945840[Thread 0x00004094]:FilamentHub: CONFIG_SECTION_FILAMENTHUB: filamenthub
+[error]	2025-11-23 22:22:38.945840[Thread 0x00004094]:FilamentHub: CONFIG_KEY_ACCESS_TOKEN: access_token
+[error]	2025-11-23 22:22:38.945840[Thread 0x00004094]:FilamentHub: CONFIG_KEY_USER_ID: user_id
+[error]	2025-11-23 22:22:38.945840[Thread 0x00004094]:FilamentHub: Loading auth token - token length: 201, user_id_str: '6'
+[error]	2025-11-23 22:22:38.945840[Thread 0x00004094]:FilamentHub: Loaded auth token for user_id=6, token length: 201, token preview: eyJhbGciOiJIUzI1NiIs...
+[error]	2025-11-23 22:22:38.945840[Thread 0x00004094]:FilamentHub: load_auth_token: About to return true
+[error]	2025-11-23 22:22:39.045665[Thread 0x00004094]:FilamentHub: ========== load_auth_token() CALLED ==========
+[error]	2025-11-23 22:22:39.046182[Thread 0x00004094]:FilamentHub: app_config is not null. Loading token...
+[error]	2025-11-23 22:22:39.046182[Thread 0x00004094]:FilamentHub: CONFIG_SECTION_FILAMENTHUB: filamenthub
+[error]	2025-11-23 22:22:39.046182[Thread 0x00004094]:FilamentHub: CONFIG_KEY_ACCESS_TOKEN: access_token
+[error]	2025-11-23 22:22:39.046182[Thread 0x00004094]:FilamentHub: CONFIG_KEY_USER_ID: user_id
+[error]	2025-11-23 22:22:39.046198[Thread 0x00004094]:FilamentHub: Loading auth token - token length: 201, user_id_str: '6'
+[error]	2025-11-23 22:22:39.046198[Thread 0x00004094]:FilamentHub: Loaded auth token for user_id=6, token length: 201, token preview: eyJhbGciOiJIUzI1NiIs...
+[error]	2025-11-23 22:22:39.046198[Thread 0x00004094]:FilamentHub: load_auth_token: About to return true
+[error]	2025-11-23 22:22:39.943543[Thread 0x00004094]:FilamentHub: ========== load_auth_token() CALLED ==========
+[error]	2025-11-23 22:22:39.943543[Thread 0x00004094]:FilamentHub: app_config is not null. Loading token...
+[error]	2025-11-23 22:22:39.943543[Thread 0x00004094]:FilamentHub: CONFIG_SECTION_FILAMENTHUB: filamenthub
+[error]	2025-11-23 22:22:39.943543[Thread 0x00004094]:FilamentHub: CONFIG_KEY_ACCESS_TOKEN: access_token
+[error]	2025-11-23 22:22:39.943543[Thread 0x00004094]:FilamentHub: CONFIG_KEY_USER_ID: user_id
+[error]	2025-11-23 22:22:39.943543[Thread 0x00004094]:FilamentHub: Loading auth token - token length: 201, user_id_str: '6'
+[error]	2025-11-23 22:22:39.943543[Thread 0x00004094]:FilamentHub: Loaded auth token for user_id=6, token length: 201, token preview: eyJhbGciOiJIUzI1NiIs...
+[error]	2025-11-23 22:22:39.943543[Thread 0x00004094]:FilamentHub: load_auth_token: About to return true
+[error]	2025-11-23 22:22:40.065900[Thread 0x00004094]:FilamentHub: ========== load_auth_token() CALLED ==========
+[error]	2025-11-23 22:22:40.065900[Thread 0x00004094]:FilamentHub: app_config is not null. Loading token...
+[error]	2025-11-23 22:22:40.065900[Thread 0x00004094]:FilamentHub: CONFIG_SECTION_FILAMENTHUB: filamenthub
+[error]	2025-11-23 22:22:40.065900[Thread 0x00004094]:FilamentHub: CONFIG_KEY_ACCESS_TOKEN: access_token
+[error]	2025-11-23 22:22:40.065900[Thread 0x00004094]:FilamentHub: CONFIG_KEY_USER_ID: user_id
+[error]	2025-11-23 22:22:40.065900[Thread 0x00004094]:FilamentHub: Loading auth token - token length: 201, user_id_str: '6'
+[error]	2025-11-23 22:22:40.065900[Thread 0x00004094]:FilamentHub: Loaded auth token for user_id=6, token length: 201, token preview: eyJhbGciOiJIUzI1NiIs...
+[error]	2025-11-23 22:22:40.065900[Thread 0x00004094]:FilamentHub: load_auth_token: About to return true
+[error]	2025-11-23 22:22:40.945522[Thread 0x00004094]:FilamentHub: ========== load_auth_token() CALLED ==========
+[error]	2025-11-23 22:22:40.945522[Thread 0x00004094]:FilamentHub: app_config is not null. Loading token...
+[error]	2025-11-23 22:22:40.945522[Thread 0x00004094]:FilamentHub: CONFIG_SECTION_FILAMENTHUB: filamenthub
+[error]	2025-11-23 22:22:40.945522[Thread 0x00004094]:FilamentHub: CONFIG_KEY_ACCESS_TOKEN: access_token
+[error]	2025-11-23 22:22:40.945522[Thread 0x00004094]:FilamentHub: CONFIG_KEY_USER_ID: user_id
+[error]	2025-11-23 22:22:40.945522[Thread 0x00004094]:FilamentHub: Loading auth token - token length: 201, user_id_str: '6'
+[error]	2025-11-23 22:22:40.945522[Thread 0x00004094]:FilamentHub: Loaded auth token for user_id=6, token length: 201, token preview: eyJhbGciOiJIUzI1NiIs...
+[error]	2025-11-23 22:22:40.945522[Thread 0x00004094]:FilamentHub: load_auth_token: About to return true
+[error]	2025-11-23 22:22:41.086550[Thread 0x00004094]:FilamentHub: ========== load_auth_token() CALLED ==========
+[error]	2025-11-23 22:22:41.086550[Thread 0x00004094]:FilamentHub: app_config is not null. Loading token...
+[error]	2025-11-23 22:22:41.086550[Thread 0x00004094]:FilamentHub: CONFIG_SECTION_FILAMENTHUB: filamenthub
+[error]	2025-11-23 22:22:41.086550[Thread 0x00004094]:FilamentHub: CONFIG_KEY_ACCESS_TOKEN: access_token
+[error]	2025-11-23 22:22:41.086550[Thread 0x00004094]:FilamentHub: CONFIG_KEY_USER_ID: user_id
+[error]	2025-11-23 22:22:41.086550[Thread 0x00004094]:FilamentHub: Loading auth token - token length: 201, user_id_str: '6'
+[error]	2025-11-23 22:22:41.086550[Thread 0x00004094]:FilamentHub: Loaded auth token for user_id=6, token length: 201, token preview: eyJhbGciOiJIUzI1NiIs...
+[error]	2025-11-23 22:22:41.086550[Thread 0x00004094]:FilamentHub: load_auth_token: About to return true
+[error]	2025-11-23 22:22:41.946514[Thread 0x00004094]:FilamentHub: ========== load_auth_token() CALLED ==========
+[error]	2025-11-23 22:22:41.946514[Thread 0x00004094]:FilamentHub: app_config is not null. Loading token...
+[error]	2025-11-23 22:22:41.946514[Thread 0x00004094]:FilamentHub: CONFIG_SECTION_FILAMENTHUB: filamenthub
+[error]	2025-11-23 22:22:41.946514[Thread 0x00004094]:FilamentHub: CONFIG_KEY_ACCESS_TOKEN: access_token
+[error]	2025-11-23 22:22:41.946514[Thread 0x00004094]:FilamentHub: CONFIG_KEY_USER_ID: user_id
+[error]	2025-11-23 22:22:41.946514[Thread 0x00004094]:FilamentHub: Loading auth token - token length: 201, user_id_str: '6'
+[error]	2025-11-23 22:22:41.946514[Thread 0x00004094]:FilamentHub: Loaded auth token for user_id=6, token length: 201, token preview: eyJhbGciOiJIUzI1NiIs...
+[error]	2025-11-23 22:22:41.946514[Thread 0x00004094]:FilamentHub: load_auth_token: About to return true
+[error]	2025-11-23 22:22:42.082432[Thread 0x00004094]:FilamentHub: ========== load_auth_token() CALLED ==========
+[error]	2025-11-23 22:22:42.082432[Thread 0x00004094]:FilamentHub: app_config is not null. Loading token...
+[error]	2025-11-23 22:22:42.082432[Thread 0x00004094]:FilamentHub: CONFIG_SECTION_FILAMENTHUB: filamenthub
+[error]	2025-11-23 22:22:42.082432[Thread 0x00004094]:FilamentHub: CONFIG_KEY_ACCESS_TOKEN: access_token
+[error]	2025-11-23 22:22:42.082432[Thread 0x00004094]:FilamentHub: CONFIG_KEY_USER_ID: user_id
+[error]	2025-11-23 22:22:42.082432[Thread 0x00004094]:FilamentHub: Loading auth token - token length: 201, user_id_str: '6'
+[error]	2025-11-23 22:22:42.082432[Thread 0x00004094]:FilamentHub: Loaded auth token for user_id=6, token length: 201, token preview: eyJhbGciOiJIUzI1NiIs...
+[error]	2025-11-23 22:22:42.082432[Thread 0x00004094]:FilamentHub: load_auth_token: About to return true
+[error]	2025-11-23 22:22:42.941232[Thread 0x00004094]:FilamentHub: ========== load_auth_token() CALLED ==========
+[error]	2025-11-23 22:22:42.941232[Thread 0x00004094]:FilamentHub: app_config is not null. Loading token...
+[error]	2025-11-23 22:22:42.941232[Thread 0x00004094]:FilamentHub: CONFIG_SECTION_FILAMENTHUB: filamenthub
+[error]	2025-11-23 22:22:42.941232[Thread 0x00004094]:FilamentHub: CONFIG_KEY_ACCESS_TOKEN: access_token
+[error]	2025-11-23 22:22:42.941232[Thread 0x00004094]:FilamentHub: CONFIG_KEY_USER_ID: user_id
+[error]	2025-11-23 22:22:42.941232[Thread 0x00004094]:FilamentHub: Loading auth token - token length: 201, user_id_str: '6'
+[error]	2025-11-23 22:22:42.941232[Thread 0x00004094]:FilamentHub: Loaded auth token for user_id=6, token length: 201, token preview: eyJhbGciOiJIUzI1NiIs...
+[error]	2025-11-23 22:22:42.941232[Thread 0x00004094]:FilamentHub: load_auth_token: About to return true
+[error]	2025-11-23 22:22:43.042016[Thread 0x00004094]:FilamentHub: ========== load_auth_token() CALLED ==========
+[error]	2025-11-23 22:22:43.042016[Thread 0x00004094]:FilamentHub: app_config is not null. Loading token...
+[error]	2025-11-23 22:22:43.042016[Thread 0x00004094]:FilamentHub: CONFIG_SECTION_FILAMENTHUB: filamenthub
+[error]	2025-11-23 22:22:43.042016[Thread 0x00004094]:FilamentHub: CONFIG_KEY_ACCESS_TOKEN: access_token
+[error]	2025-11-23 22:22:43.042016[Thread 0x00004094]:FilamentHub: CONFIG_KEY_USER_ID: user_id
+[error]	2025-11-23 22:22:43.042016[Thread 0x00004094]:FilamentHub: Loading auth token - token length: 201, user_id_str: '6'
+[error]	2025-11-23 22:22:43.042016[Thread 0x00004094]:FilamentHub: Loaded auth token for user_id=6, token length: 201, token preview: eyJhbGciOiJIUzI1NiIs...
+[error]	2025-11-23 22:22:43.042523[Thread 0x00004094]:FilamentHub: load_auth_token: About to return true
+[error]	2025-11-23 22:22:45.172144[Thread 0x00004094]:FilamentHub: ========== load_auth_token() CALLED ==========
+[error]	2025-11-23 22:22:45.172144[Thread 0x00004094]:FilamentHub: app_config is not null. Loading token...
+[error]	2025-11-23 22:22:45.172144[Thread 0x00004094]:FilamentHub: CONFIG_SECTION_FILAMENTHUB: filamenthub
+[error]	2025-11-23 22:22:45.172144[Thread 0x00004094]:FilamentHub: CONFIG_KEY_ACCESS_TOKEN: access_token
+[error]	2025-11-23 22:22:45.172144[Thread 0x00004094]:FilamentHub: CONFIG_KEY_USER_ID: user_id
+[error]	2025-11-23 22:22:45.172144[Thread 0x00004094]:FilamentHub: Loading auth token - token length: 201, user_id_str: '6'
+[error]	2025-11-23 22:22:45.172144[Thread 0x00004094]:FilamentHub: Loaded auth token for user_id=6, token length: 201, token preview: eyJhbGciOiJIUzI1NiIs...
+[error]	2025-11-23 22:22:45.172144[Thread 0x00004094]:FilamentHub: load_auth_token: About to return true
+[error]	2025-11-23 22:22:45.179193[Thread 0x00004094]:FilamentHub: load_last_sync_time: Called with user_id=6
+[error]	2025-11-23 22:22:45.179193[Thread 0x00004094]:FilamentHub: ========== get_my_presets() CALLED ==========
+[error]	2025-11-23 22:22:45.179193[Thread 0x00004094]:FilamentHub: URL: http://localhost:8000/api/v1/auth/my-presets?updated_since=2025-11-23T19%3A22%3A32.000000
+[error]	2025-11-23 22:22:45.179193[Thread 0x00004094]:FilamentHub: updated_since: 2025-11-23T19:22:32.000000
+[error]	2025-11-23 22:22:45.179193[Thread 0x00004094]:FilamentHub: access_token length: 201
+[error]	2025-11-23 22:22:45.179193[Thread 0x00004094]:FilamentHub: API base URL: http://localhost:8000
+[error]	2025-11-23 22:22:45.186587[Thread 0x00004094]:FilamentHub: Get my presets successful. Status: 200, Body size: 50 bytes
+[error]	2025-11-23 22:22:45.186587[Thread 0x00004094]:FilamentHub: on_complete callback: checking if on_complete function is valid...
+[error]	2025-11-23 22:22:45.186587[Thread 0x00004094]:FilamentHub: on_complete callback: calling user's on_complete function...
+[error]	2025-11-23 22:22:45.186587[Thread 0x00004094]:FilamentHub: [SYNC STEP 9] ========== on_complete CALLBACK (get_my_presets) ==========
+[error]	2025-11-23 22:22:45.186587[Thread 0x00004094]:FilamentHub: [SYNC STEP 9.0] Lambda function called from FilamentHubPanel!
+[error]	2025-11-23 22:22:45.186587[Thread 0x00004094]:FilamentHub: [SYNC STEP 9.1] HTTP status: 200, Body size: 50 bytes
+[warning]	2025-11-23 22:22:45.186587[Thread 0x00004094]:FilamentHub: [SYNC STEP 12] API returned empty list, but last_sync_time exists. This might indicate locally deleted presets. Performing full sync to restore all presets...
+[error]	2025-11-23 22:22:45.197614[Thread 0x00004094]:FilamentHub: on_complete callback: user's on_complete function returned successfully
+[error]	2025-11-23 22:22:45.197614[Thread 0x00004094]:FilamentHub: get_my_presets: perform_sync() RETURNED (request completed or failed)
+[error]	2025-11-23 22:22:45.197614[Thread 0x00004094]:FilamentHub: get_my_presets: After perform_sync(), callbacks should be called
+[error]	2025-11-23 22:22:45.197614[Thread 0x00004094]:FilamentHub: get_my_presets: FUNCTION END
+[error]	2025-11-23 22:22:45.197614[Thread 0x00004094]:FilamentHub: synchronize_presets: client.get_my_presets() CALLED (function returned, waiting for callback)
+[error]	2025-11-23 22:22:45.198137[Thread 0x00004094]:FilamentHub: ========== load_auth_token() CALLED ==========
+[error]	2025-11-23 22:22:45.198137[Thread 0x00004094]:FilamentHub: app_config is not null. Loading token...
+[error]	2025-11-23 22:22:45.198137[Thread 0x00004094]:FilamentHub: CONFIG_SECTION_FILAMENTHUB: filamenthub
+[error]	2025-11-23 22:22:45.198137[Thread 0x00004094]:FilamentHub: CONFIG_KEY_ACCESS_TOKEN: access_token
+[error]	2025-11-23 22:22:45.198137[Thread 0x00004094]:FilamentHub: CONFIG_KEY_USER_ID: user_id
+[error]	2025-11-23 22:22:45.198137[Thread 0x00004094]:FilamentHub: Loading auth token - token length: 201, user_id_str: '6'
+[error]	2025-11-23 22:22:45.198137[Thread 0x00004094]:FilamentHub: Loaded auth token for user_id=6, token length: 201, token preview: eyJhbGciOiJIUzI1NiIs...
+[error]	2025-11-23 22:22:45.198137[Thread 0x00004094]:FilamentHub: load_auth_token: About to return true
+[error]	2025-11-23 22:22:45.205105[Thread 0x00004094]:FilamentHub: ========== get_my_presets() CALLED ==========
+[error]	2025-11-23 22:22:45.205105[Thread 0x00004094]:FilamentHub: URL: http://localhost:8000/api/v1/auth/my-presets
+[error]	2025-11-23 22:22:45.205105[Thread 0x00004094]:FilamentHub: updated_since: (empty)
+[error]	2025-11-23 22:22:45.205105[Thread 0x00004094]:FilamentHub: access_token length: 201
+[error]	2025-11-23 22:22:45.205105[Thread 0x00004094]:FilamentHub: API base URL: http://localhost:8000
+[error]	2025-11-23 22:22:45.215634[Thread 0x00004094]:FilamentHub: Get my presets successful. Status: 200, Body size: 6712 bytes
+[error]	2025-11-23 22:22:45.215634[Thread 0x00004094]:FilamentHub: on_complete callback: checking if on_complete function is valid...
+[error]	2025-11-23 22:22:45.215634[Thread 0x00004094]:FilamentHub: on_complete callback: calling user's on_complete function...
+[error]	2025-11-23 22:22:45.215634[Thread 0x00004094]:FilamentHub: [SYNC STEP 9] ========== on_complete CALLBACK (get_my_presets) ==========
+[error]	2025-11-23 22:22:45.215634[Thread 0x00004094]:FilamentHub: [SYNC STEP 9.0] Lambda function called from FilamentHubPanel!
+[error]	2025-11-23 22:22:45.215634[Thread 0x00004094]:FilamentHub: [SYNC STEP 9.1] HTTP status: 200, Body size: 6712 bytes
+[warning]	2025-11-23 22:22:45.216158[Thread 0x00004094]:FilamentHub: [SYNC STEP 13.1] Preset 10 (PETG ZERO) is mapped to 'PETG ZERO [FilamentHub]' but preset not found in bundle (deleted locally)
+[error]	2025-11-23 22:22:45.216158[Thread 0x00004094]:FilamentHub: [SYNC STEP 13.2] Found 1 deleted presets (deleted locally, but exist on server)
+[error]	2025-11-23 22:22:45.216158[Thread 0x00004094]:FilamentHub: [SYNC STEP 15.0] Checking deleted_presets_list. Size: 1
+[error]	2025-11-23 22:22:45.216158[Thread 0x00004094]:FilamentHub: [SYNC STEP 15] Found 1 deleted presets. Reporting to backend...
+[error]	2025-11-23 22:22:45.216158[Thread 0x00004094]:FilamentHub: on_complete callback: user's on_complete function returned successfully
+[error]	2025-11-23 22:22:45.216158[Thread 0x00004094]:FilamentHub: get_my_presets: perform_sync() RETURNED (request completed or failed)
+[error]	2025-11-23 22:22:45.216158[Thread 0x00004094]:FilamentHub: get_my_presets: After perform_sync(), callbacks should be called
+[error]	2025-11-23 22:22:45.216158[Thread 0x00004094]:FilamentHub: get_my_presets: FUNCTION END
+[error]	2025-11-23 22:22:45.216158[Thread 0x00004094]:FilamentHub: synchronize_presets: client.get_my_presets() CALLED (function returned, waiting for callback)
+[error]	2025-11-23 22:22:45.334382[Thread 0x00005f04]:FilamentHub: .info file download failed. Error: , Status: 500
+[error]	2025-11-23 22:22:45.334914[Thread 0x00005f04]:FilamentHub: Failed to download .info file for preset 'ТЕСТПРЕСЕТ [FilamentHub]'. Error: , Status: 500
+[error]	2025-11-23 22:22:45.375834[Thread 0x00000fa4]:FilamentHub: .info file download failed. Error: , Status: 500
+[error]	2025-11-23 22:22:45.375834[Thread 0x00000fa4]:FilamentHub: Failed to download .info file for preset '100проц печать [FilamentHub]'. Error: , Status: 500
+[warning]	2025-11-23 22:22:45.375834[Thread 0x00005608]:FilamentHub: Parent preset 'fdm_filament_common' not found in system presets
+[warning]	2025-11-23 22:22:45.376352[Thread 0x00005608]:FilamentHub: Replaced inherits with fallback: 'AliZ PLA @System'
+[error]	2025-11-23 22:22:45.411850[Thread 0x00004094]:FilamentHub: ========== load_auth_token() CALLED ==========
+[error]	2025-11-23 22:22:45.411850[Thread 0x00004094]:FilamentHub: app_config is not null. Loading token...
+[error]	2025-11-23 22:22:45.411850[Thread 0x00004094]:FilamentHub: CONFIG_SECTION_FILAMENTHUB: filamenthub
+[error]	2025-11-23 22:22:45.411850[Thread 0x00004094]:FilamentHub: CONFIG_KEY_ACCESS_TOKEN: access_token
+[error]	2025-11-23 22:22:45.412373[Thread 0x00004094]:FilamentHub: CONFIG_KEY_USER_ID: user_id
+[error]	2025-11-23 22:22:45.412390[Thread 0x00004094]:FilamentHub: Loading auth token - token length: 201, user_id_str: '6'
+[error]	2025-11-23 22:22:45.412390[Thread 0x00004094]:FilamentHub: Loaded auth token for user_id=6, token length: 201, token preview: eyJhbGciOiJIUzI1NiIs...
+[error]	2025-11-23 22:22:45.412390[Thread 0x00004094]:FilamentHub: load_auth_token: About to return true
+[error]	2025-11-23 22:22:45.424611[Thread 0x00006e6c]:FilamentHub: .info file download failed. Error: , Status: 500
+[error]	2025-11-23 22:22:45.424611[Thread 0x00006e6c]:FilamentHub: Failed to download .info file for preset 'ТЫЛох [FilamentHub]'. Error: , Status: 500
+[error]	2025-11-23 22:22:45.438821[Thread 0x0000775c]:FilamentHub: .info file download failed. Error: , Status: 500
+[error]	2025-11-23 22:22:45.438821[Thread 0x0000775c]:FilamentHub: Failed to download .info file for preset 'Золотище [FilamentHub]'. Error: , Status: 500
+[error]	2025-11-23 22:22:45.563230[Thread 0x00004094]:FilamentHub: ========== load_auth_token() CALLED ==========
+[error]	2025-11-23 22:22:45.563230[Thread 0x00004094]:FilamentHub: app_config is not null. Loading token...
+[error]	2025-11-23 22:22:45.563230[Thread 0x00004094]:FilamentHub: CONFIG_SECTION_FILAMENTHUB: filamenthub
+[error]	2025-11-23 22:22:45.563230[Thread 0x00004094]:FilamentHub: CONFIG_KEY_ACCESS_TOKEN: access_token
+[error]	2025-11-23 22:22:45.563230[Thread 0x00004094]:FilamentHub: CONFIG_KEY_USER_ID: user_id
+[error]	2025-11-23 22:22:45.563230[Thread 0x00004094]:FilamentHub: Loading auth token - token length: 201, user_id_str: '6'
+[error]	2025-11-23 22:22:45.563230[Thread 0x00004094]:FilamentHub: Loaded auth token for user_id=6, token length: 201, token preview: eyJhbGciOiJIUzI1NiIs...
+[error]	2025-11-23 22:22:45.563230[Thread 0x00004094]:FilamentHub: load_auth_token: About to return true
+[error]	2025-11-23 22:22:45.563230[Thread 0x00004094]:FilamentHub: ========== load_auth_token() CALLED ==========
+[error]	2025-11-23 22:22:45.563230[Thread 0x00004094]:FilamentHub: app_config is not null. Loading token...
+[error]	2025-11-23 22:22:45.563230[Thread 0x00004094]:FilamentHub: CONFIG_SECTION_FILAMENTHUB: filamenthub
+[error]	2025-11-23 22:22:45.563230[Thread 0x00004094]:FilamentHub: CONFIG_KEY_ACCESS_TOKEN: access_token
+[error]	2025-11-23 22:22:45.563230[Thread 0x00004094]:FilamentHub: CONFIG_KEY_USER_ID: user_id
+[error]	2025-11-23 22:22:45.563230[Thread 0x00004094]:FilamentHub: Loading auth token - token length: 201, user_id_str: '6'
+[error]	2025-11-23 22:22:45.563230[Thread 0x00004094]:FilamentHub: Loaded auth token for user_id=6, token length: 201, token preview: eyJhbGciOiJIUzI1NiIs...
+[error]	2025-11-23 22:22:45.563230[Thread 0x00004094]:FilamentHub: load_auth_token: About to return true
+[error]	2025-11-23 22:22:45.577676[Thread 0x00004094]:FilamentHub: ========== load_auth_token() CALLED ==========
+[error]	2025-11-23 22:22:45.577676[Thread 0x00004094]:FilamentHub: app_config is not null. Loading token...
+[error]	2025-11-23 22:22:45.577676[Thread 0x00004094]:FilamentHub: CONFIG_SECTION_FILAMENTHUB: filamenthub
+[error]	2025-11-23 22:22:45.577676[Thread 0x00004094]:FilamentHub: CONFIG_KEY_ACCESS_TOKEN: access_token
+[error]	2025-11-23 22:22:45.577676[Thread 0x00004094]:FilamentHub: CONFIG_KEY_USER_ID: user_id
+[error]	2025-11-23 22:22:45.577676[Thread 0x00004094]:FilamentHub: Loading auth token - token length: 201, user_id_str: '6'
+[error]	2025-11-23 22:22:45.577676[Thread 0x00004094]:FilamentHub: Loaded auth token for user_id=6, token length: 201, token preview: eyJhbGciOiJIUzI1NiIs...
+[error]	2025-11-23 22:22:45.577676[Thread 0x00004094]:FilamentHub: load_auth_token: About to return true
+[error]	2025-11-23 22:22:45.587383[Thread 0x00004094]:FilamentHub: ========== load_auth_token() CALLED ==========
+[error]	2025-11-23 22:22:45.587383[Thread 0x00004094]:FilamentHub: app_config is not null. Loading token...
+[error]	2025-11-23 22:22:45.587383[Thread 0x00004094]:Filamen

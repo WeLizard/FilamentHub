@@ -20,11 +20,12 @@ depends_on: Union[str, Sequence[str], None] = None
 
 def upgrade() -> None:
     """Upgrade database schema."""
-    # Добавляем поля настроек синхронизации в таблицу users
-    op.add_column('users', sa.Column('allow_printer_profiles_import', sa.Boolean(), nullable=False, server_default='true'))
-    op.add_column('users', sa.Column('allow_printer_profiles_export', sa.Boolean(), nullable=False, server_default='true'))
-    op.add_column('users', sa.Column('allow_print_profiles_import', sa.Boolean(), nullable=False, server_default='true'))
-    op.add_column('users', sa.Column('allow_print_profiles_export', sa.Boolean(), nullable=False, server_default='true'))
+    # Добавляем поля настроек синхронизации в таблицу users, используя прямой SQL для надежности
+    # Разделяем на отдельные команды, т.к. asyncpg не поддерживает множественные команды в одном prepared statement
+    op.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS allow_printer_profiles_import BOOLEAN NOT NULL DEFAULT true;")
+    op.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS allow_printer_profiles_export BOOLEAN NOT NULL DEFAULT true;")
+    op.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS allow_print_profiles_import BOOLEAN NOT NULL DEFAULT true;")
+    op.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS allow_print_profiles_export BOOLEAN NOT NULL DEFAULT true;")
 
 
 def downgrade() -> None:

@@ -20,7 +20,11 @@ depends_on: Union[str, Sequence[str], None] = None
 
 def upgrade() -> None:
     """Upgrade database schema."""
-    op.add_column('users', sa.Column('deleted_preset_rule', sa.String(length=50), nullable=True))
+    # Добавляем колонку deleted_preset_rule, используя прямой SQL
+    op.execute("""
+        ALTER TABLE users 
+        ADD COLUMN IF NOT EXISTS deleted_preset_rule VARCHAR(50);
+    """)
 
 
 def downgrade() -> None:

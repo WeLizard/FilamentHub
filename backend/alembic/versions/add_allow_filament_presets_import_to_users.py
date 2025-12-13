@@ -20,9 +20,12 @@ depends_on: Union[str, Sequence[str], None] = None
 
 def upgrade() -> None:
     """Upgrade database schema."""
-    # Добавляем поле allow_filament_presets_import в таблицу users
+    # Добавляем поле allow_filament_presets_import в таблицу users, используя прямой SQL
     # По умолчанию True (разрешено импортировать filament presets)
-    op.add_column('users', sa.Column('allow_filament_presets_import', sa.Boolean(), nullable=False, server_default='true'))
+    op.execute("""
+        ALTER TABLE users 
+        ADD COLUMN IF NOT EXISTS allow_filament_presets_import BOOLEAN NOT NULL DEFAULT true;
+    """)
 
 
 def downgrade() -> None:

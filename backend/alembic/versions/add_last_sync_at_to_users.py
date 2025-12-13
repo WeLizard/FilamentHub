@@ -20,16 +20,17 @@ depends_on: Union[str, Sequence[str], None] = None
 
 def upgrade() -> None:
     """Upgrade database schema."""
-    # Добавляем колонку last_sync_at в таблицу users
-    op.add_column(
-        'users',
-        sa.Column(
-            'last_sync_at',
-            sa.DateTime(timezone=True),
-            nullable=True,
-            comment='Время последней синхронизации с OrcaSlicer'
-        )
-    )
+    # Добавляем колонку last_sync_at в таблицу users, используя прямой SQL
+    # Разделяем на отдельные команды, т.к. asyncpg не поддерживает множественные команды в одном prepared statement
+    op.execute("""
+        ALTER TABLE users 
+        ADD COLUMN IF NOT EXISTS last_sync_at TIMESTAMP WITH TIME ZONE;
+    """)
+    
+    # Добавляем комментарий отдельной командой
+    op.execute("""
+        COMMENT ON COLUMN users.last_sync_at IS 'Время последней синхронизации с OrcaSlicer';
+    """)
 
 
 def downgrade() -> None:

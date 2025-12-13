@@ -21,8 +21,11 @@ depends_on: Union[str, Sequence[str], None] = None
 
 def upgrade() -> None:
     """Upgrade database schema."""
-    # Добавляем колонку badges в таблицу users
-    op.add_column('users', sa.Column('badges', JSON, nullable=True))
+    # Добавляем колонку badges в таблицу users, используя прямой SQL
+    op.execute("""
+        ALTER TABLE users 
+        ADD COLUMN IF NOT EXISTS badges JSONB;
+    """)
 
 
 def downgrade() -> None:

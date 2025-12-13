@@ -36,6 +36,8 @@ env/
 # Environment variables
 .env
 .env.local
+.env.prod
+.env.*.local
 
 # Database
 *.db
@@ -52,6 +54,15 @@ alembic/versions/*.pyc
 
 # Logs
 *.log
+
+# Test files and scripts (should not be in repo or Docker)
+test_*.py
+check_*.py
+debug_*.py
+create_*.py
+export_*.py
+link_*.sql
+test_output.txt
 
 # OS
 .DS_Store

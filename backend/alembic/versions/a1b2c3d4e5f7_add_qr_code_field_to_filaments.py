@@ -20,8 +20,18 @@ depends_on: Union[str, Sequence[str], None] = None
 
 def upgrade() -> None:
     """Upgrade database schema."""
-    op.add_column('filaments', sa.Column('qr_code', sa.String(length=50), nullable=True))
-    op.create_index(op.f('ix_filaments_qr_code'), 'filaments', ['qr_code'], unique=True)
+    # Добавляем колонку qr_code, используя прямой SQL для надежности
+    op.execute("""
+        ALTER TABLE filaments 
+        ADD COLUMN IF NOT EXISTS qr_code VARCHAR(50);
+    """)
+    
+    # Создаем уникальный индекс, если его еще нет
+    op.execute("""
+        CREATE UNIQUE INDEX IF NOT EXISTS ix_filaments_qr_code 
+        ON filaments (qr_code) 
+        WHERE qr_code IS NOT NULL;
+    """)
 
 
 def downgrade() -> None:

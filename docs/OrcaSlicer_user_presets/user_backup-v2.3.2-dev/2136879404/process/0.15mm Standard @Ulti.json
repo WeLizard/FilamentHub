@@ -1,0 +1,20 @@
+{
+    "default_acceleration": "0",
+    "from": "User",
+    "gap_infill_speed": "80",
+    "infill_wall_overlap": "50%",
+    "inherits": "0.20mm Standard @MyKlipper",
+    "initial_layer_infill_speed": "80",
+    "inner_wall_speed": "80",
+    "internal_solid_infill_speed": "100",
+    "layer_height": "0.15",
+    "name": "0.15mm Standard @Ulti",
+    "outer_wall_speed": "60",
+    "print_settings_id": "0.15mm Standard @Ulti",
+    "sparse_infill_density": "50%",
+    "sparse_infill_speed": "100",
+    "top_surface_line_width": "0.6",
+    "top_surface_speed": "60",
+    "travel_speed": "250",
+    "version": "1.6.0.0"
+}

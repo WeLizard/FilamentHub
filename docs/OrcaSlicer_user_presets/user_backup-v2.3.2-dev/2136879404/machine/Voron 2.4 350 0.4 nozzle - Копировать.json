@@ -1,0 +1,9 @@
+{
+    "from": "User",
+    "inherits": "Voron 2.4 350 0.4 nozzle",
+    "is_custom_defined": "0",
+    "name": "Voron 2.4 350 0.4 nozzle - Копировать",
+    "print_host": "http://192.168.0.122",
+    "printer_settings_id": "Voron 2.4 350 0.4 nozzle - Копировать",
+    "version": "2.3.0.3"
+}

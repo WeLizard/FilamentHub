@@ -47,25 +47,24 @@ def upgrade() -> None:
         END $$;
     """)
     
-    # 4. Создаем таблицу feedback
-    op.create_table(
-        'feedback',
-        sa.Column('id', sa.Integer(), nullable=False),
-        sa.Column('user_id', sa.Integer(), nullable=True),
-        sa.Column('type', sa.Enum('bug', 'feature', 'question', 'other', name='feedbacktype'), nullable=False),
-        sa.Column('subject', sa.String(length=200), nullable=False),
-        sa.Column('message', sa.Text(), nullable=False),
-        sa.Column('email', sa.String(length=255), nullable=True),
-        sa.Column('status', sa.Enum('open', 'in_progress', 'resolved', 'closed', name='feedbackstatus'), nullable=False, server_default='open'),
-        sa.Column('admin_response', sa.Text(), nullable=True),
-        sa.Column('admin_response_at', sa.DateTime(timezone=True), nullable=True),
-        sa.Column('responded_by', sa.Integer(), nullable=True),
-        sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
-        sa.Column('updated_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
-        sa.ForeignKeyConstraint(['user_id'], ['users.id'], ),
-        sa.ForeignKeyConstraint(['responded_by'], ['users.id'], ),
-        sa.PrimaryKeyConstraint('id')
-    )
+    # 4. Создаем таблицу feedback через SQL напрямую, чтобы избежать проблем с ENUM
+    # SQLAlchemy не видит ENUM, созданный через op.execute() в той же транзакции
+    op.execute("""
+        CREATE TABLE IF NOT EXISTS feedback (
+            id SERIAL PRIMARY KEY,
+            user_id INTEGER REFERENCES users(id),
+            type feedbacktype NOT NULL,
+            subject VARCHAR(200) NOT NULL,
+            message TEXT NOT NULL,
+            email VARCHAR(255),
+            status feedbackstatus NOT NULL DEFAULT 'open',
+            admin_response TEXT,
+            admin_response_at TIMESTAMP WITH TIME ZONE,
+            responded_by INTEGER REFERENCES users(id),
+            created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(),
+            updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now()
+        )
+    """)
     
     # 5. Создаем индексы
     op.create_index('ix_feedback_id', 'feedback', ['id'])

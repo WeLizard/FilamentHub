@@ -1,0 +1,14 @@
+{
+    "bottom_shell_layers": "2",
+    "enable_support": "1",
+    "from": "User",
+    "inherits": "0.12mm Fine @Voron",
+    "name": "0.12mm Fine @25%",
+    "print_settings_id": "0.12mm Fine @25%",
+    "sparse_infill_density": "25%",
+    "sparse_infill_pattern": "grid",
+    "support_type": "tree(auto)",
+    "top_shell_layers": "2",
+    "version": "2.1.1.0",
+    "wall_sequence": "outer wall/inner wall"
+}

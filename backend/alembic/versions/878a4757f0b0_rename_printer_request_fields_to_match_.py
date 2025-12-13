@@ -55,7 +55,7 @@ def upgrade() -> None:
                     image_url VARCHAR(500),
                     message TEXT,
                     proof_files TEXT,
-                    status VARCHAR(20) NOT NULL DEFAULT 'pending',
+                    status printerrequeststatus NOT NULL DEFAULT 'pending',
                     processed_by_id INTEGER REFERENCES users(id),
                     processed_at TIMESTAMP,
                     rejection_reason TEXT,

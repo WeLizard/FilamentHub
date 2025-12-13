@@ -43,6 +43,7 @@ def upgrade() -> None:
     sa.Column('id', sa.Integer(), nullable=False),
     sa.Column('brand_id', sa.Integer(), nullable=False),
     sa.Column('name', sa.String(length=200), nullable=False),
+    sa.Column('slug', sa.String(length=200), nullable=False),
     sa.Column('material_type', sa.String(length=50), nullable=False),
     sa.Column('color_name', sa.String(length=100), nullable=True),
     sa.Column('color_hex', sa.String(length=7), nullable=True),
@@ -62,6 +63,7 @@ def upgrade() -> None:
     op.create_index(op.f('ix_filaments_id'), 'filaments', ['id'], unique=False)
     op.create_index(op.f('ix_filaments_material_type'), 'filaments', ['material_type'], unique=False)
     op.create_index(op.f('ix_filaments_name'), 'filaments', ['name'], unique=False)
+    op.create_index(op.f('ix_filaments_slug'), 'filaments', ['slug'], unique=True)
     op.create_table('presets',
     sa.Column('id', sa.Integer(), nullable=False),
     sa.Column('filament_id', sa.Integer(), nullable=False),
