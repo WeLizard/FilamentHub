@@ -9,6 +9,7 @@ from app.api.v1.endpoints import (
     brand_requests,
     brands,
     calculator,
+    downloads,
     filament_reviews,
     filaments,
     notifications,
@@ -44,4 +45,5 @@ api_router.include_router(filament_reviews.router)
 api_router.include_router(notifications.router)
 api_router.include_router(orca_sync.router)
 api_router.include_router(feedback.router)
+api_router.include_router(downloads.router)
 

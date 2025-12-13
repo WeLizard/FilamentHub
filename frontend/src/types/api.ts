@@ -532,3 +532,18 @@ export interface CalculatorEstimateResponse {
   applied_complexity_coefficient?: number | null;
   applied_volume_discount?: number | null;
 }
+
+export interface DownloadVersion {
+  platform: 'windows' | 'macos' | 'linux';
+  architecture: 'x64' | 'arm64';
+  version: string;
+  download_url: string | null;
+  file_size: string | null;
+  checksum: string | null;
+  available: boolean;
+}
+
+export interface DownloadVersionsResponse {
+  versions: DownloadVersion[];
+  latest_version: string;
+}

@@ -1,7 +1,7 @@
 /** API Client для интеграции с бэкендом */
 
 import axios from 'axios';
-import type { Brand, BrandRequest, BrandRequestStatus, Filament, FilamentVisualSettings, FilamentReview, FilamentRatingStats, Notification, NotificationListResponse, Preset, RecommendedPreset, Printer, PrinterProfile, PrintProfile, PrinterRequest, User, Token, RefreshTokenRequest, RefreshTokenResponse, ListResponse, AccountDeletionStats, UserSavedPreset, CalculatorEstimateRequest, CalculatorEstimateResponse, Feedback, FeedbackListResponse, FeedbackType, CompatiblePrinter, CompatibleFilament } from '../types/api';
+import type { Brand, BrandRequest, BrandRequestStatus, Filament, FilamentVisualSettings, FilamentReview, FilamentRatingStats, Notification, NotificationListResponse, Preset, RecommendedPreset, Printer, PrinterProfile, PrintProfile, PrinterRequest, User, Token, RefreshTokenRequest, RefreshTokenResponse, ListResponse, AccountDeletionStats, UserSavedPreset, CalculatorEstimateRequest, CalculatorEstimateResponse, Feedback, FeedbackListResponse, FeedbackType, CompatiblePrinter, CompatibleFilament, DownloadVersion, DownloadVersionsResponse } from '../types/api';
 import { getRefreshToken, setToken, removeToken } from '../utils/auth';
 
 const API_BASE_URL = '/api/v1';
@@ -1304,6 +1304,23 @@ export const adminNotificationsAPI = {
       link: data.link || null,
       active_only: data.active_only !== false,
     });
+    return response.data;
+  },
+};
+
+// Downloads API
+export const downloadsAPI = {
+  getOrcaSlicerDownloads: async (platform?: 'windows' | 'macos' | 'linux'): Promise<DownloadVersionsResponse> => {
+    const params = platform ? { platform } : {};
+    const response = await api.get('/downloads/orcaslicer', { params });
+    return response.data;
+  },
+
+  getOrcaSlicerDownload: async (
+    platform: 'windows' | 'macos' | 'linux',
+    architecture: 'x64' | 'arm64'
+  ): Promise<DownloadVersion> => {
+    const response = await api.get(`/downloads/orcaslicer/${platform}/${architecture}`);
     return response.data;
   },
 };

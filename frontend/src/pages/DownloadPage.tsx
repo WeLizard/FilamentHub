@@ -1,60 +1,43 @@
 /** Страница для скачивания OrcaSlicer с интегрированным FilamentHub */
 
-import { useState } from 'react';
-import { Download, CheckCircle, Package, Code, Zap, Globe, Monitor, Smartphone, Terminal, Image as ImageIcon, Play } from 'lucide-react';
-
-interface DownloadVersion {
-  platform: 'windows' | 'macos' | 'linux';
-  architecture: 'x64' | 'arm64';
-  downloadUrl: string;
-  fileSize: string;
-  checksum?: string;
-  version: string;
-}
+import { useState, useEffect } from 'react';
+import { Download, CheckCircle, Package, Code, Zap, Globe, Monitor, Smartphone, Terminal, Image as ImageIcon, Play, Loader2 } from 'lucide-react';
+import { downloadsAPI } from '../api/client';
+import type { DownloadVersion, DownloadVersionsResponse } from '../types/api';
 
 export function DownloadPage() {
   const [selectedPlatform, setSelectedPlatform] = useState<'windows' | 'macos' | 'linux'>('windows');
   const [selectedArch, setSelectedArch] = useState<'x64' | 'arm64'>('x64');
+  const [downloadsData, setDownloadsData] = useState<DownloadVersionsResponse | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
-  // TODO: Загружать с API
-  const versions: DownloadVersion[] = [
-    {
-      platform: 'windows',
-      architecture: 'x64',
-      downloadUrl: '#',
-      fileSize: '~250 MB',
-      version: '2.0.0-fh',
-    },
-    {
-      platform: 'macos',
-      architecture: 'x64',
-      downloadUrl: '#',
-      fileSize: '~280 MB',
-      version: '2.0.0-fh',
-    },
-    {
-      platform: 'macos',
-      architecture: 'arm64',
-      downloadUrl: '#',
-      fileSize: '~280 MB',
-      version: '2.0.0-fh',
-    },
-    {
-      platform: 'linux',
-      architecture: 'x64',
-      downloadUrl: '#',
-      fileSize: '~250 MB',
-      version: '2.0.0-fh',
-    },
-  ];
+  // Загружаем данные с API
+  useEffect(() => {
+    const loadDownloads = async () => {
+      try {
+        setIsLoading(true);
+        setError(null);
+        const data = await downloadsAPI.getOrcaSlicerDownloads();
+        setDownloadsData(data);
+      } catch (err) {
+        console.error('Failed to load downloads:', err);
+        setError('Не удалось загрузить информацию о сборках');
+      } finally {
+        setIsLoading(false);
+      }
+    };
 
-  const currentVersion = versions.find(
+    loadDownloads();
+  }, []);
+
+  const currentVersion = downloadsData?.versions.find(
     (v) => v.platform === selectedPlatform && v.architecture === selectedArch
   );
 
   const handleDownload = () => {
-    if (currentVersion?.downloadUrl && currentVersion.downloadUrl !== '#') {
-      window.open(currentVersion.downloadUrl, '_blank');
+    if (currentVersion?.download_url && currentVersion.available) {
+      window.open(currentVersion.download_url, '_blank');
     } else {
       alert('Сборка ещё не доступна. Скоро будет доступна для скачивания!');
     }
@@ -334,7 +317,18 @@ export function DownloadPage() {
         )}
 
         {/* Download Info */}
-        {currentVersion ? (
+        {isLoading ? (
+          <div className="bg-white/5 rounded-xl p-6 border border-white/10 mb-6">
+            <div className="flex items-center justify-center gap-3 py-8">
+              <Loader2 className="w-6 h-6 animate-spin text-purple-400" />
+              <span className="text-gray-300">Загрузка информации о сборках...</span>
+            </div>
+          </div>
+        ) : error ? (
+          <div className="bg-red-900/20 border border-red-500/30 rounded-xl p-6 mb-6">
+            <p className="text-red-300">{error}</p>
+          </div>
+        ) : currentVersion ? (
           <div className="bg-white/5 rounded-xl p-6 border border-white/10 mb-6">
             <div className="flex items-start justify-between mb-4">
               <div>
@@ -348,7 +342,7 @@ export function DownloadPage() {
                   {' · '}
                   {currentVersion.architecture.toUpperCase()}
                   {' · '}
-                  Размер: {currentVersion.fileSize}
+                  Размер: {currentVersion.file_size || 'N/A'}
                 </p>
               </div>
             </div>
@@ -356,7 +350,8 @@ export function DownloadPage() {
             {/* Download Button */}
             <button
               onClick={handleDownload}
-              className="w-full flex items-center justify-center gap-3 px-6 py-4 bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white font-semibold rounded-xl transition-all shadow-lg shadow-purple-500/25 hover:shadow-xl hover:shadow-purple-500/30"
+              disabled={!currentVersion.available}
+              className="w-full flex items-center justify-center gap-3 px-6 py-4 bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white font-semibold rounded-xl transition-all shadow-lg shadow-purple-500/25 hover:shadow-xl hover:shadow-purple-500/30 disabled:opacity-50 disabled:cursor-not-allowed"
             >
               <Download className="w-5 h-5" />
               <span>Скачать OrcaSlicer FilamentHub Edition</span>
