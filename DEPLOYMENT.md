@@ -307,3 +307,64 @@ docker-compose exec [service_name] sh
 - Проверь что миграции выполнены: `docker-compose exec backend alembic current`
 - Проверь логи: `docker-compose logs postgres`
 
+---
+
+## 🐧 Сборка OrcaSlicer для Linux (на Debian сервере)
+
+После развертывания можно собрать Linux AppImage прямо на сервере:
+
+### 1. Убедись что Docker установлен и запущен:
+
+```bash
+docker --version
+sudo systemctl status docker
+```
+
+### 2. Перейди в директорию проекта:
+
+```bash
+cd ~/FilamentHub
+```
+
+### 3. Запусти скрипт сборки:
+
+```bash
+chmod +x scripts/build_linux_docker.sh
+./scripts/build_linux_docker.sh
+```
+
+**⚠️ ВНИМАНИЕ:** Сборка может занять **1-2 часа** (компиляция C++ кода).
+
+### 4. После сборки:
+
+AppImage будет автоматически скопирован в:
+```
+backend/distributions/orcaslicer/OrcaSlicer-FilamentHub-2.0.0-fh-linux-x64.AppImage
+```
+
+### 5. Проверь что файл доступен:
+
+```bash
+ls -lh backend/distributions/orcaslicer/
+```
+
+Файл будет доступен через:
+- API: `https://filamenthub.ru/api/v1/downloads/orcaslicer?platform=linux&architecture=x64`
+- Прямая ссылка: `https://filamenthub.ru/distributions/orcaslicer/OrcaSlicer-FilamentHub-2.0.0-fh-linux-x64.AppImage`
+
+### Если сборка не работает:
+
+1. **Проверь что OrcaSlicer submodule инициализирован:**
+   ```bash
+   git submodule update --init --recursive
+   ```
+
+2. **Проверь что Docker имеет достаточно ресурсов:**
+   - Минимум 4GB RAM
+   - Минимум 20GB свободного места на диске
+
+3. **Проверь логи Docker:**
+   ```bash
+   docker logs <container_id>
+   ```
+
