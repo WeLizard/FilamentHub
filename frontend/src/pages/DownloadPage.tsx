@@ -1,7 +1,7 @@
 /** Страница для скачивания OrcaSlicer с интегрированным FilamentHub */
 
 import { useState, useEffect } from 'react';
-import { Download, CheckCircle, Package, Code, Zap, Globe, Monitor, Smartphone, Terminal, Image as ImageIcon, Play, Loader2 } from 'lucide-react';
+import { Download, CheckCircle, Package, Code, Zap, Globe, Monitor, Smartphone, Terminal, Image as ImageIcon, Play, Loader2, ExternalLink } from 'lucide-react';
 import { downloadsAPI } from '../api/client';
 import type { DownloadVersion, DownloadVersionsResponse } from '../types/api';
 
@@ -31,13 +31,56 @@ export function DownloadPage() {
     loadDownloads();
   }, []);
 
+  // Находим версию (приоритет: installer, потом portable)
   const currentVersion = downloadsData?.versions.find(
+    (v) => v.platform === selectedPlatform && 
+           v.architecture === selectedArch &&
+           (v.download_type === 'installer' || (!v.download_type && v.available))
+  ) || downloadsData?.versions.find(
+    (v) => v.platform === selectedPlatform && 
+           v.architecture === selectedArch &&
+           v.download_type === 'portable'
+  ) || downloadsData?.versions.find(
     (v) => v.platform === selectedPlatform && v.architecture === selectedArch
   );
 
-  const handleDownload = () => {
+  const handleDownload = (downloadType?: 'installer' | 'portable' | 'github') => {
+    if (!downloadsData?.versions || downloadsData.versions.length === 0) {
+      alert('Информация о сборках ещё загружается. Пожалуйста, подождите...');
+      return;
+    }
+
+    // Если указан тип, ищем соответствующую версию
+    if (downloadType) {
+      const version = downloadsData.versions.find(
+        (v) => v.platform === selectedPlatform && 
+               v.architecture === selectedArch && 
+               v.download_type === downloadType
+      );
+      
+      if (version?.download_url && version.available) {
+        window.open(version.download_url, '_blank');
+        return;
+      }
+      
+      if (downloadType === 'github') {
+        // Ищем любую версию с github_url
+        const githubVersion = downloadsData.versions.find(v => v.github_url);
+        if (githubVersion?.github_url) {
+          window.open(githubVersion.github_url, '_blank');
+          return;
+        }
+        // Fallback на наш репозиторий
+        window.open('https://github.com/lizardjazz1/OrcaSlicer/releases', '_blank');
+        return;
+      }
+    }
+
+    // По умолчанию используем текущую версию (если есть)
     if (currentVersion?.download_url && currentVersion.available) {
       window.open(currentVersion.download_url, '_blank');
+    } else if (currentVersion?.github_url) {
+      window.open(currentVersion.github_url, '_blank');
     } else {
       alert('Сборка ещё не доступна. Скоро будет доступна для скачивания!');
     }
@@ -347,20 +390,107 @@ export function DownloadPage() {
               </div>
             </div>
 
-            {/* Download Button */}
-            <button
-              onClick={handleDownload}
-              disabled={!currentVersion.available}
-              className="w-full flex items-center justify-center gap-3 px-6 py-4 bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white font-semibold rounded-xl transition-all shadow-lg shadow-purple-500/25 hover:shadow-xl hover:shadow-purple-500/30 disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              <Download className="w-5 h-5" />
-              <span>Скачать OrcaSlicer FilamentHub Edition</span>
-            </button>
+            {/* Download Buttons */}
+            <div className="space-y-3">
+              {/* Для Windows показываем оба варианта */}
+              {selectedPlatform === 'windows' && downloadsData?.versions ? (
+                <>
+                  {/* Установщик */}
+                  {downloadsData.versions.find(
+                    v => v.platform === 'windows' && 
+                         v.architecture === selectedArch && 
+                         v.download_type === 'installer' && 
+                         v.available
+                  ) && (
+                    <button
+                      onClick={() => handleDownload('installer')}
+                      className="w-full flex items-center justify-center gap-3 px-6 py-4 bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white font-semibold rounded-xl transition-all shadow-lg shadow-purple-500/25 hover:shadow-xl hover:shadow-purple-500/30"
+                    >
+                      <Download className="w-5 h-5" />
+                      <span>Скачать Installer (.exe)</span>
+                    </button>
+                  )}
+
+                  {/* Portable версия */}
+                  {downloadsData.versions.find(
+                    v => v.platform === 'windows' && 
+                         v.architecture === selectedArch && 
+                         v.download_type === 'portable' && 
+                         v.available
+                  ) && (
+                    <button
+                      onClick={() => handleDownload('portable')}
+                      className="w-full flex items-center justify-center gap-3 px-6 py-4 bg-white/10 hover:bg-white/20 border border-white/20 text-white font-semibold rounded-xl transition-all"
+                    >
+                      <Package className="w-5 h-5" />
+                      <span>Скачать Portable (ZIP)</span>
+                    </button>
+                  )}
+
+                  {/* GitHub ссылка */}
+                  <button
+                    onClick={() => handleDownload('github')}
+                    className="w-full flex items-center justify-center gap-3 px-6 py-4 bg-white/10 hover:bg-white/20 border border-white/20 text-white font-semibold rounded-xl transition-all"
+                  >
+                    <Globe className="w-5 h-5" />
+                    <span>Скачать с GitHub Releases</span>
+                  </button>
+                </>
+              ) : (
+                /* Для других платформ - основная кнопка */
+                currentVersion.available && currentVersion.download_url ? (
+                  <button
+                    onClick={() => handleDownload()}
+                    className="w-full flex items-center justify-center gap-3 px-6 py-4 bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white font-semibold rounded-xl transition-all shadow-lg shadow-purple-500/25 hover:shadow-xl hover:shadow-purple-500/30"
+                  >
+                    <Download className="w-5 h-5" />
+                    <span>
+                      Скачать {currentVersion.download_type === 'portable' ? 'Portable' : 'Installer'} 
+                      {currentVersion.download_type === 'portable' && ' (ZIP)'}
+                    </span>
+                  </button>
+                ) : null
+              )}
+
+              {/* Если нет доступных версий, показываем GitHub */}
+              {!currentVersion.available && currentVersion.github_url && (
+                <button
+                  onClick={() => handleDownload('github')}
+                  className="w-full flex items-center justify-center gap-3 px-6 py-4 bg-white/10 hover:bg-white/20 border border-white/20 text-white font-semibold rounded-xl transition-all"
+                >
+                  <Globe className="w-5 h-5" />
+                  <span>Скачать с GitHub Releases</span>
+                </button>
+              )}
+            </div>
 
             {currentVersion.checksum && (
               <p className="text-xs text-gray-400 mt-4 text-center">
                 SHA256: {currentVersion.checksum}
               </p>
+            )}
+
+            {/* Информация о типах дистрибутивов */}
+            {selectedPlatform === 'windows' && (
+              <div className="mt-4 pt-4 border-t border-white/10">
+                <p className="text-xs text-gray-400 mb-2">
+                  <strong className="text-gray-300">Installer:</strong> Установщик для Windows (.exe)
+                </p>
+                <p className="text-xs text-gray-400 mb-3">
+                  <strong className="text-gray-300">Portable:</strong> Портативная версия в ZIP архиве — не требует установки
+                </p>
+                {/* GitHub ссылка */}
+                <a
+                  href="https://github.com/lizardjazz1/OrcaSlicer/releases"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center justify-center gap-2 text-gray-300 hover:text-white transition-colors text-sm pt-2 border-t border-white/5"
+                >
+                  <Globe className="w-4 h-4" />
+                  <span>Также доступно на GitHub Releases</span>
+                  <ExternalLink className="w-3 h-3" />
+                </a>
+              </div>
             )}
           </div>
         ) : (

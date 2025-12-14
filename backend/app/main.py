@@ -42,6 +42,11 @@ upload_dir = Path(__file__).parent.parent / settings.UPLOAD_DIR
 upload_dir.mkdir(parents=True, exist_ok=True)
 app.mount("/uploads", StaticFiles(directory=str(upload_dir)), name="uploads")
 
+# Static files for distributions (OrcaSlicer builds)
+distributions_dir = Path(__file__).parent.parent / settings.DISTRIBUTIONS_DIR
+distributions_dir.mkdir(parents=True, exist_ok=True)
+app.mount("/distributions", StaticFiles(directory=str(distributions_dir)), name="distributions")
+
 
 # Health check endpoint
 @app.get("/health")

@@ -541,6 +541,8 @@ export interface DownloadVersion {
   file_size: string | null;
   checksum: string | null;
   available: boolean;
+  download_type?: 'installer' | 'portable' | 'github';
+  github_url?: string | null;
 }
 
 export interface DownloadVersionsResponse {

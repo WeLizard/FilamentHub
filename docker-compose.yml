@@ -42,6 +42,7 @@ services:
     volumes:
       - ./backend/uploads:/app/uploads
       - ./backend/logs:/app/logs
+      - ./backend/distributions:/app/distributions
     ports:
       - "${BACKEND_PORT:-8000}:8000"
     depends_on:
@@ -50,13 +51,15 @@ services:
       redis:
         condition: service_healthy
     environment:
-      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-filamenthub}:${POSTGRES_PASSWORD:-filamenthub_prod_password}@postgres:5432/${POSTGRES_DB:-filamenthub}
-      REDIS_URL: redis://redis:6379/0
+      # Формируем DATABASE_URL с правильным экранированием пароля
+      # Используем отдельные переменные для избежания проблем с @ в пароле
+      # НЕ задаем DATABASE_URL здесь - он будет сформирован в config.py с правильным экранированием
       POSTGRES_HOST: postgres
       POSTGRES_PORT: 5432
       POSTGRES_USER: ${POSTGRES_USER:-filamenthub}
-      POSTGRES_DB: ${POSTGRES_DB:-filamenthub}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-filamenthub_prod_password}
+      POSTGRES_DB: ${POSTGRES_DB:-filamenthub}
+      REDIS_URL: redis://redis:6379/0
     env_file:
       - .env
     restart: unless-stopped

@@ -20,7 +20,9 @@ from app.models import Brand, BrandRequest, Filament, Preset, Printer, User  # n
 config = context.config
 
 # Override sqlalchemy.url with settings from .env
-config.set_main_option("sqlalchemy.url", settings.DATABASE_URL)
+# Экранируем % для Alembic (он интерпретирует % как интерполяцию)
+database_url_escaped = settings.DATABASE_URL.replace('%', '%%')
+config.set_main_option("sqlalchemy.url", database_url_escaped)
 
 # Interpret the config file for Python logging.
 if config.config_file_name is not None:

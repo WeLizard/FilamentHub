@@ -89,6 +89,8 @@ docs/3dcalc/
 docs/awesome-cursor-best-practices-main/
 docs/spoolman2slicer-main/
 docs/*.sql
+# OrcaSlicer user presets (should not be in repo - personal settings)
+docs/OrcaSlicer_user_presets/
 # Keep useful documentation assets
 !docs/imgs/
 !docs/orca_bundles/
@@ -107,6 +109,7 @@ backend/scripts/
 backend/uploads/
 backend/docs/
 backend/database_dumps/
+backend/uploads/database_dumps/
 
 # MCP configuration (may contain passwords)
 .cursor/mcp-config.json
@@ -116,4 +119,12 @@ backend/database_dumps/
 
 # Cursor config examples
 .cursor/mcp-config.json.example
+
+# Distributions (OrcaSlicer builds - too large for Git)
+backend/distributions/orcaslicer/*
+!backend/distributions/orcaslicer/.gitkeep
+!backend/distributions/.gitkeep
+
+# SSL certificates (не коммитить!)
+certbot/
 

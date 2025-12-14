@@ -1,5 +1,7 @@
 """Application configuration."""
 
+from urllib.parse import quote_plus
+from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -14,7 +16,13 @@ class Settings(BaseSettings):
     BASE_URL: str = "https://filamenthub.ru"  # Базовый URL для QR-кодов
 
     # Database
-    DATABASE_URL: str
+    # Если DATABASE_URL задан напрямую - используем его, иначе формируем из отдельных переменных
+    DATABASE_URL: str | None = None
+    POSTGRES_HOST: str = "localhost"
+    POSTGRES_PORT: int = 5432
+    POSTGRES_USER: str = "filamenthub"
+    POSTGRES_PASSWORD: str = "filamenthub"
+    POSTGRES_DB: str = "filamenthub"
     DATABASE_ECHO: bool = False
     DATABASE_POOL_SIZE: int = 10
     DATABASE_MAX_OVERFLOW: int = 20
@@ -51,12 +59,28 @@ class Settings(BaseSettings):
 
     # OrcaSlicer bundles
     ORCA_SYSTEM_PRESETS_PATH: str = "docs/orca_bundles/system_presets"
+    
+    # Distributions (downloadable files)
+    DISTRIBUTIONS_DIR: str = "distributions"
+    ORCASLICER_DISTRIBUTIONS_DIR: str = "distributions/orcaslicer"
 
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",
         case_sensitive=True,
     )
+
+    @model_validator(mode='after')
+    def build_database_url(self) -> 'Settings':
+        """Формируем DATABASE_URL из отдельных переменных с правильным экранированием пароля."""
+        # ВСЕГДА формируем DATABASE_URL из отдельных переменных
+        # с правильным URL-encoding пароля (для поддержки паролей с @, #, и т.д.)
+        encoded_password = quote_plus(self.POSTGRES_PASSWORD)
+        self.DATABASE_URL = (
+            f"postgresql+asyncpg://{self.POSTGRES_USER}:{encoded_password}"
+            f"@{self.POSTGRES_HOST}:{self.POSTGRES_PORT}/{self.POSTGRES_DB}"
+        )
+        return self
 
 
 # Global settings instance

@@ -26,26 +26,43 @@ ALEMBIC_VERSIONS_PATH = Path(__file__).parent.parent.parent / "alembic" / "versi
 def get_alembic_config() -> Config:
     """Получить конфигурацию Alembic."""
     config = Config(str(ALEMBIC_CONFIG_PATH))
-    config.set_main_option("sqlalchemy.url", settings.DATABASE_URL)
+    # Экранируем % для Alembic (он интерпретирует % как интерполяцию)
+    database_url_escaped = settings.DATABASE_URL.replace('%', '%%')
+    config.set_main_option("sqlalchemy.url", database_url_escaped)
     return config
 
 
 async def _ensure_migration_history_table(db: AsyncSession) -> None:
     """Создать таблицу для истории миграций, если её нет."""
     try:
-        await db.execute(text("""
-            CREATE TABLE IF NOT EXISTS alembic_migration_history (
-                revision VARCHAR(50) PRIMARY KEY,
-                applied_at TIMESTAMP NOT NULL DEFAULT now(),
-                applied_by VARCHAR(255),
-                downgraded_at TIMESTAMP,
-                downgraded_by VARCHAR(255)
+        # Проверяем существование таблицы перед созданием
+        result = await db.execute(text("""
+            SELECT EXISTS (
+                SELECT FROM information_schema.tables 
+                WHERE table_schema = 'public' 
+                AND table_name = 'alembic_migration_history'
             )
         """))
-        await db.commit()
+        exists = result.scalar()
+        
+        if not exists:
+            logger.info("Создаем таблицу alembic_migration_history...")
+            await db.execute(text("""
+                CREATE TABLE alembic_migration_history (
+                    revision VARCHAR(50) PRIMARY KEY,
+                    applied_at TIMESTAMP NOT NULL DEFAULT now(),
+                    applied_by VARCHAR(255),
+                    downgraded_at TIMESTAMP,
+                    downgraded_by VARCHAR(255)
+                )
+            """))
+            logger.info("✅ Таблица alembic_migration_history создана")
+        else:
+            logger.debug("Таблица alembic_migration_history уже существует")
     except Exception as e:
-        logger.warning(f"Не удалось создать таблицу истории миграций: {e}")
+        logger.error(f"❌ Не удалось создать таблицу истории миграций: {e}", exc_info=True)
         await db.rollback()
+        raise  # Пробрасываем исключение дальше, чтобы вызывающий код знал об ошибке
 
 
 async def _record_migration_application(db: AsyncSession, revision: str, applied_by: str | None = None) -> None:
@@ -111,7 +128,11 @@ async def get_migration_history(db: AsyncSession) -> dict:
     # Получаем историю применения миграций
     migration_history_map = {}
     try:
+        # Создаем таблицу истории миграций, если её нет
         await _ensure_migration_history_table(db)
+        # Коммитим создание таблицы отдельно, чтобы она была доступна для запросов
+        await db.commit()
+        
         result = await db.execute(text("""
             SELECT revision, applied_at, applied_by, downgraded_at, downgraded_by
             FROM alembic_migration_history

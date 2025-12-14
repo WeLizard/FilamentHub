@@ -165,8 +165,7 @@ def upgrade() -> None:
                 }
             )
     
-    # Коммитим изменения
-    connection.commit()
+    # НЕ коммитим вручную - Alembic управляет транзакциями через context.begin_transaction()
 
 
 def downgrade() -> None:
@@ -186,5 +185,4 @@ def downgrade() -> None:
                 {"material_type": material_type}
             )
     
-    # Коммитим изменения
-    connection.commit()
+    # НЕ коммитим вручную - Alembic управляет транзакциями через context.begin_transaction()
