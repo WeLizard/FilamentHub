@@ -76,7 +76,7 @@ nslookup filamenthub.ru
 ```bash
 sudo ufw allow 80/tcp
 sudo ufw allow 443/tcp
-sudo ufw allow 8000/tcp  # если backend должен быть доступен напрямую
+# Порт 8000 НЕ нужен - backend доступен только через nginx (frontend)
 sudo ufw enable
 ```
 
