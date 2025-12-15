@@ -63,8 +63,8 @@ class WikiArticle(Base):
     content: Mapped[str] = mapped_column(Text, nullable=False)
     # content: полный текст статьи в Markdown формате
     
-    tags: Mapped[str | None] = mapped_column(String(500), nullable=True)
-    # tags: теги через запятую (например, "PLA,температура,новичкам")
+    tags: Mapped[list[str] | None] = mapped_column(JSON, nullable=True)
+    # tags: массив тегов (например, ["PLA", "температура", "новичкам"])
     
     # Metadata
     author: Mapped[str | None] = mapped_column(String(100), nullable=True)
