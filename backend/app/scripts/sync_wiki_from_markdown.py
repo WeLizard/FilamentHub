@@ -171,6 +171,12 @@ async def sync_all_articles() -> None:
     backend_dir = script_dir.parent.parent  # backend/app/scripts -> backend
     wiki_content_path = backend_dir / "wiki_content"
     
+    # Debug: print paths
+    print(f"Script dir: {script_dir}")
+    print(f"Backend dir: {backend_dir}")
+    print(f"Wiki content path: {wiki_content_path}")
+    print(f"Wiki content exists: {wiki_content_path.exists()}")
+    
     if not wiki_content_path.exists():
         print(f"❌ Wiki content directory not found: {wiki_content_path}")
         return
