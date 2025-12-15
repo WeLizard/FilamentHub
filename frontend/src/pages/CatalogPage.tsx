@@ -259,7 +259,8 @@ export const CatalogPage: React.FC = () => {
           <p className="text-gray-400 text-xl">Материалы не найдены</p>
         </div>
       )}
-    </div>
+      </div>
+    </>
   );
 };
 
