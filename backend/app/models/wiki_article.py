@@ -109,7 +109,7 @@ class WikiArticle(Base):
 
     # Relationships
     category: Mapped["WikiCategory"] = relationship("WikiCategory", back_populates="articles")
-    created_by: Mapped["User"] = relationship("User", foreign_keys=[created_by_id], back_populates="wiki_articles_created")
+    created_by: Mapped["User"] = relationship("User", foreign_keys=[created_by_id])
     updated_by: Mapped["User"] = relationship("User", foreign_keys=[updated_by_id])
     reviewed_by: Mapped["User"] = relationship("User", foreign_keys=[reviewed_by_id])
 
