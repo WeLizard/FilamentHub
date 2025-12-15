@@ -168,7 +168,7 @@ export function WikiArticlePage() {
             {article.tags.map((tag, idx) => (
               <span
                 key={idx}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-white/10 text-white rounded-full text-xs font-semibold border border-white/20 hover:bg-white/15 transition-colors"
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-white/10 text-white rounded-full text-xs font-semibold border border-white/20"
               >
                 <Tag className="w-3 h-3" />
                 {tag}
