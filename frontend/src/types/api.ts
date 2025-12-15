@@ -549,3 +549,55 @@ export interface DownloadVersionsResponse {
   versions: DownloadVersion[];
   latest_version: string;
 }
+
+// ============================================================================
+// Wiki Types
+// ============================================================================
+
+export interface WikiCategory {
+  id: number;
+  name: string;
+  slug: string;
+  description: string;
+  icon: string | null;
+  order: number;
+  created_at: string;
+  updated_at: string;
+  articles_count: number;
+}
+
+export interface WikiCategoryListResponse {
+  items: WikiCategory[];
+  total: number;
+  page: number;
+  page_size: number;
+  total_pages: number;
+}
+
+export interface WikiArticleSummary {
+  id: number;
+  category_id: number;
+  title: string;
+  slug: string;
+  summary: string;
+  tags: string | null;
+  author: string | null;
+  published: boolean;
+  views: number;
+  order: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface WikiArticle extends WikiArticleSummary {
+  content: string;
+  category_name: string | null;
+}
+
+export interface WikiArticleListResponse {
+  items: WikiArticleSummary[];
+  total: number;
+  page: number;
+  page_size: number;
+  total_pages: number;
+}

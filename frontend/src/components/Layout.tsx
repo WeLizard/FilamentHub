@@ -2,7 +2,7 @@
 
 import { ReactNode, useState, useEffect, useRef } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
-import { Package, User, LogOut, Shield, MessageCircle, Download, Menu, X } from 'lucide-react';
+import { Package, User, LogOut, Shield, MessageCircle, Download, Menu, X, BookOpen } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { AuthModal } from './AuthModal';
 import { Notifications } from './Notifications';
@@ -127,6 +127,18 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
               >
                 <Download className="w-4 h-4" />
                 <span>Скачать</span>
+              </Link>
+
+              <Link
+                to="/wiki"
+                className={`flex items-center space-x-2 px-4 py-2 rounded-lg transition-all ${
+                  isActive('/wiki')
+                    ? 'bg-purple-600 text-white shadow-lg shadow-purple-500/25'
+                    : 'text-gray-300 hover:text-white hover:bg-white/10'
+                }`}
+              >
+                <BookOpen className="w-4 h-4" />
+                <span>Wiki</span>
               </Link>
 
               {user?.role === 'admin' && (

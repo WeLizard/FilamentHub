@@ -11,6 +11,7 @@ import { TermsPage } from './pages/TermsPage';
 import { ConsentPage } from './pages/ConsentPage';
 import { ResetPasswordPage } from './pages/ResetPasswordPage';
 import { DownloadPage } from './pages/DownloadPage';
+import { WikiPage } from './pages/WikiPage';
 import { ToastContainer } from './components/Toast';
 import { useOrcaSlicerNotifications } from './hooks/useOrcaSlicerNotifications';
 import { useEffect } from 'react';
@@ -115,6 +116,14 @@ function AppContent() {
           element={
             <Layout>
               <DownloadPage />
+            </Layout>
+          }
+        />
+        <Route
+          path="/wiki"
+          element={
+            <Layout>
+              <WikiPage />
             </Layout>
           }
         />

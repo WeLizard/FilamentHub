@@ -1336,5 +1336,41 @@ export const downloadsAPI = {
   },
 };
 
+// Wiki API
+export const wikiAPI = {
+  // Categories
+  listCategories: async (params?: { page?: number; page_size?: number }): Promise<WikiCategoryListResponse> => {
+    const response = await api.get('/wiki/categories', { params });
+    return response.data;
+  },
+  
+  getCategory: async (slug: string): Promise<WikiCategory> => {
+    const response = await api.get(`/wiki/categories/${slug}`);
+    return response.data;
+  },
+  
+  // Articles
+  listArticles: async (params?: {
+    page?: number;
+    page_size?: number;
+    category_slug?: string;
+    search?: string;
+    published_only?: boolean;
+  }): Promise<WikiArticleListResponse> => {
+    const response = await api.get('/wiki/articles', { params });
+    return response.data;
+  },
+  
+  getArticle: async (slug: string): Promise<WikiArticle> => {
+    const response = await api.get(`/wiki/articles/${slug}`);
+    return response.data;
+  },
+  
+  searchArticles: async (q: string, params?: { page?: number; page_size?: number }): Promise<WikiArticleListResponse> => {
+    const response = await api.get('/wiki/search', { params: { q, ...params } });
+    return response.data;
+  },
+};
+
 export default api;
 
