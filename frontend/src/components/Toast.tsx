@@ -77,15 +77,47 @@ let toastIdCounter = 0;
 const toasts: Toast[] = [];
 let listeners: Array<(toasts: Toast[]) => void> = [];
 
+// Дедупликация на всю сессию: одинаковые сообщения показываются только 1 раз
+const shownMessages = new Set<string>();
+
+// Логирование (включается в режиме разработчика)
+const isDeveloperMode = () => {
+  try {
+    return localStorage.getItem('developerMode') === 'true' || 
+           (typeof window !== 'undefined' && (window as any).filamenthub?.developerMode);
+  } catch {
+    return false;
+  }
+};
+
+const logToast = (action: string, message: string, type: string, extra?: string) => {
+  if (isDeveloperMode()) {
+    const timestamp = new Date().toISOString().split('T')[1].slice(0, 12);
+    console.log(`[Toast ${timestamp}] ${action}: type=${type}, msg="${message.slice(0, 50)}..."${extra ? `, ${extra}` : ''}`);
+  }
+};
+
 const notifyListeners = () => {
   listeners.forEach((listener) => listener([...toasts]));
 };
 
 export const toast = {
   show: (message: string, type: ToastType = 'info', duration?: number) => {
+    // Дедупликация: не показывать одинаковые сообщения в рамках сессии
+    const dedupKey = `${type}:${message}`;
+    
+    if (shownMessages.has(dedupKey)) {
+      logToast('SKIP (duplicate)', message, type, `already shown in session`);
+      return null; // Пропускаем дубликат
+    }
+    
+    // Отмечаем сообщение как показанное
+    shownMessages.add(dedupKey);
+    logToast('SHOW', message, type, `total unique: ${shownMessages.size}`);
+    
     const id = `toast-${++toastIdCounter}`;
-    const toast: Toast = { id, message, type, duration };
-    toasts.push(toast);
+    const toastItem: Toast = { id, message, type, duration };
+    toasts.push(toastItem);
     notifyListeners();
     return id;
   },
@@ -104,6 +136,17 @@ export const toast = {
     toasts.length = 0;
     notifyListeners();
   },
+  // Сбросить дедупликацию (вызывать при логауте или смене пользователя)
+  resetDedup: () => {
+    const count = shownMessages.size;
+    shownMessages.clear();
+    logToast('RESET', 'Deduplication cleared', 'info', `cleared ${count} entries`);
+  },
+  // Получить статистику (для отладки)
+  getStats: () => ({
+    uniqueMessages: shownMessages.size,
+    activeToasts: toasts.length,
+  }),
 };
 
 export const ToastContainer: React.FC = () => {

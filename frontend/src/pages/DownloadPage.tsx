@@ -319,17 +319,15 @@ export function DownloadPage() {
               setSelectedPlatform('linux');
               setSelectedArch('x64');
             }}
-            className={`flex flex-col items-center gap-2 p-3 rounded-xl border transition-all relative opacity-60 cursor-not-allowed ${
+            className={`flex flex-col items-center gap-2 p-3 rounded-xl border transition-all relative ${
               selectedPlatform === 'linux'
                 ? 'bg-purple-600/30 border-purple-500 text-white'
-                : 'bg-white/5 border-white/10 text-gray-300'
+                : 'bg-white/5 border-white/10 text-gray-300 hover:bg-white/10'
             }`}
-            disabled
-            title="Сборка для Linux в разработке"
           >
             <Terminal className="w-8 h-8" />
             <span className="font-medium">Linux</span>
-            <span className="absolute top-2 right-2 px-1.5 py-0.5 bg-yellow-500/30 border border-yellow-500/50 rounded text-xs text-yellow-300">Скоро</span>
+            <span className="absolute top-2 right-2 px-1.5 py-0.5 bg-green-500/30 border border-green-500/50 rounded text-xs text-green-300">Доступно</span>
           </button>
         </div>
 
@@ -575,22 +573,19 @@ export function DownloadPage() {
 
           {selectedPlatform === 'linux' && (
             <div>
-              <h3 className="text-lg font-semibold text-white mb-3">Linux (в разработке)</h3>
-              <div className="bg-yellow-900/20 border border-yellow-500/30 rounded-lg p-4 mb-3">
-                <p className="text-yellow-300 text-sm">
-                  Сборка для Linux в разработке. Для компиляции требуется Linux система с установленными зависимостями.
-                </p>
-              </div>
-              <p className="text-gray-400 text-sm mb-3">
-                После релиза инструкции будут такими:
-              </p>
-              <ol className="list-decimal list-inside space-y-2 text-gray-300 opacity-60">
+              <h3 className="text-lg font-semibold text-white mb-3">Linux</h3>
+              <ol className="list-decimal list-inside space-y-2 text-gray-300">
                 <li>Скачайте .AppImage файл</li>
                 <li>Сделайте файл исполняемым: <code className="bg-white/10 px-2 py-1 rounded text-purple-300">chmod +x OrcaSlicer*.AppImage</code></li>
                 <li>Запустите файл: <code className="bg-white/10 px-2 py-1 rounded text-purple-300">./OrcaSlicer*.AppImage</code></li>
                 <li>Откройте OrcaSlicer — вкладка FilamentHub будет доступна в главном окне</li>
                 <li>Войдите в свой аккаунт FilamentHub через вкладку FilamentHub</li>
               </ol>
+              <div className="mt-4 bg-blue-900/20 border border-blue-500/30 rounded-lg p-3">
+                <p className="text-blue-300 text-sm">
+                  <strong>Примечание:</strong> AppImage не требует установки — просто скачайте, сделайте исполняемым и запустите. Для интеграции в систему можете использовать AppImageLauncher.
+                </p>
+              </div>
             </div>
           )}
         </div>
@@ -669,13 +664,13 @@ export function DownloadPage() {
               Работает ли это на всех платформах?
             </h3>
             <p className="text-gray-300 mb-2">
-              FilamentHub Edition будет доступна для <strong className="text-white">Windows</strong> (10/11), 
-              <strong className="text-white"> macOS</strong> (Intel и Apple Silicon) и <strong className="text-white">Linux</strong> (x64). 
+              FilamentHub Edition доступна для <strong className="text-white">Windows</strong> (10/11) и <strong className="text-white">Linux</strong> (x64 AppImage).
+              Сборка для <strong className="text-white">macOS</strong> (Intel и Apple Silicon) появится позже.
             </p>
             <p className="text-gray-300">
-              <strong className="text-white">Статус сборок:</strong> Сейчас доступна сборка для Windows. 
-              Сборки для macOS и Linux появятся позже (для сборки требуются соответствующие системы и настройка CI/CD). 
-              Вы также можете собрать версию для своей платформы самостоятельно из исходного кода — инструкции будут в репозитории.
+              <strong className="text-white">Статус сборок:</strong> Windows (installer + portable) и Linux (AppImage) готовы к использованию.
+              macOS появится позже (для сборки требуется соответствующая система).
+              Вы также можете собрать версию для своей платформы самостоятельно из исходного кода — инструкции в репозитории.
             </p>
           </div>
         </div>

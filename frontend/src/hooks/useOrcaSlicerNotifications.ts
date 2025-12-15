@@ -3,6 +3,23 @@
 import { useEffect } from 'react';
 import { toast } from '../components/Toast';
 
+// Логирование (включается в режиме разработчика)
+const isDeveloperMode = () => {
+  try {
+    return localStorage.getItem('developerMode') === 'true' || 
+           (typeof window !== 'undefined' && (window as any).filamenthub?.developerMode);
+  } catch {
+    return false;
+  }
+};
+
+const logNotification = (action: string, data: any) => {
+  if (isDeveloperMode()) {
+    const timestamp = new Date().toISOString().split('T')[1].slice(0, 12);
+    console.log(`[OrcaNotification ${timestamp}] ${action}:`, data);
+  }
+};
+
 export const useOrcaSlicerNotifications = () => {
   useEffect(() => {
     // Проверяем, запущен ли frontend внутри OrcaSlicer
@@ -15,6 +32,8 @@ export const useOrcaSlicerNotifications = () => {
       return;
     }
 
+    logNotification('INIT', { isInOrcaSlicer: true, currentPath: window.location.pathname });
+
     // Обработчик сообщений от OrcaSlicer
     const handleMessage = (event: MessageEvent) => {
       try {
@@ -26,22 +45,35 @@ export const useOrcaSlicerNotifications = () => {
           const message = data.message || 'Уведомление';
           const type = data.type || 'info';
           
+          // Логируем получение уведомления от C++
+          logNotification('RECEIVED', { 
+            command: data.command, 
+            type, 
+            message: message.slice(0, 80),
+            currentPath: window.location.pathname,
+            timestamp: Date.now()
+          });
+          
           // Показываем toast-уведомление
+          let result: string | null = null;
           switch (type) {
             case 'success':
-              toast.success(message);
+              result = toast.success(message);
               break;
             case 'error':
-              toast.error(message);
+              result = toast.error(message);
               break;
             case 'warning':
-              toast.warning(message);
+              result = toast.warning(message);
               break;
             case 'info':
             default:
-              toast.info(message);
+              result = toast.info(message);
               break;
           }
+          
+          // Логируем результат (показан или отфильтрован)
+          logNotification(result ? 'SHOWN' : 'FILTERED', { type, shown: !!result });
         }
       } catch (e) {
         // Игнорируем сообщения, которые не являются уведомлениями от OrcaSlicer

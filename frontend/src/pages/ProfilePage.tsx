@@ -207,10 +207,22 @@ export const ProfilePage: React.FC = () => {
       }
       
       if (!printerMap.has(profile.printer_id)) {
-        // Формируем название из manufacturer и model
-        const displayName = profile.printer_manufacturer && profile.printer_model
-          ? `${profile.printer_manufacturer} ${profile.printer_model}`
-          : profile.printer_name || profile.printer_slug || `Принтер ${profile.printer_id}`;
+        // Формируем название принтера:
+        // 1. Приоритет: printer_name (имя из OrcaSlicer профиля, например "B2Bee", "Voron 2.4 350")
+        // 2. Если printer_name пустой или выглядит как placeholder, используем manufacturer + model
+        // 3. Fallback: printer_slug или "Принтер {id}"
+        let displayName = '';
+        
+        // Сначала проверяем printer_name - это наиболее точное имя для пользовательских принтеров
+        if (profile.printer_name && !profile.printer_name.startsWith('Принтер ')) {
+          displayName = profile.printer_name;
+        } else if (profile.printer_manufacturer && profile.printer_model) {
+          // Если есть manufacturer и model, используем их (для официальных принтеров)
+          displayName = `${profile.printer_manufacturer} ${profile.printer_model}`;
+        } else {
+          // Fallback
+          displayName = profile.printer_name || profile.printer_slug || `Принтер ${profile.printer_id}`;
+        }
         
         printerMap.set(profile.printer_id, {
           id: profile.printer_id,
