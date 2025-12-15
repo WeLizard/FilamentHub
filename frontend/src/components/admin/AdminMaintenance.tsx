@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { Settings, AlertTriangle, CheckCircle, Loader2 } from 'lucide-react';
-import { api } from '../../api/client';
+import api from '../../api/client';
 
 interface MaintenanceInfo {
   enabled: boolean;

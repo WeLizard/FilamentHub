@@ -63,6 +63,9 @@ class Settings(BaseSettings):
     # Distributions (downloadable files)
     DISTRIBUTIONS_DIR: str = "distributions"
     ORCASLICER_DISTRIBUTIONS_DIR: str = "distributions/orcaslicer"
+    
+    # QR codes
+    QR_CODES_DIR: str = "uploads/qr_codes"  # Изображения QR-кодов для печати
 
     model_config = SettingsConfigDict(
         env_file=".env",

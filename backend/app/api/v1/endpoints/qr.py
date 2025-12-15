@@ -12,7 +12,12 @@ from app.db.session import get_db
 from app.models.filament import Filament
 from app.models.user import User
 from app.schemas.filament import FilamentResponse
-from app.services.qr_service import generate_qr_code_image, generate_short_code
+from app.services.qr_service import (
+    generate_qr_code_image,
+    generate_short_code,
+    get_qr_code_path,
+    save_qr_code_image,
+)
 
 router = APIRouter(prefix="/qr", tags=["qr"])
 
@@ -201,8 +206,25 @@ async def get_filament_qr_code(
 
         filament.qr_code = short_code
         await db.commit()
+        
+        # Сохраняем изображения QR-кода на диск (если еще не сохранены)
+        save_qr_code_image(short_code, sizes=[300, 600, 1200])
 
-    # Генерируем изображение QR-кода
+    # Проверяем, есть ли сохраненное изображение нужного размера
+    saved_path = get_qr_code_path(filament.qr_code, size)
+    
+    if saved_path:
+        # Используем сохраненное изображение
+        from fastapi.responses import FileResponse
+        return FileResponse(
+            str(saved_path),
+            media_type='image/png',
+            headers={
+                'Cache-Control': 'public, max-age=31536000',  # Кэшируем на 1 год
+            }
+        )
+    
+    # Если сохраненного нет - генерируем на лету (fallback)
     qr_buffer = generate_qr_code_image(filament.qr_code, size=size)
 
     # Возвращаем напрямую через StreamingResponse
@@ -252,7 +274,22 @@ async def download_filament_qr_code(
     if not filament.qr_code:
         raise HTTPException(status_code=404, detail="QR code not found")
 
-    # Генерируем изображение QR-кода
+    # Проверяем, есть ли сохраненное изображение нужного размера
+    saved_path = get_qr_code_path(filament.qr_code, size)
+    
+    if saved_path:
+        # Используем сохраненное изображение
+        from fastapi.responses import FileResponse
+        return FileResponse(
+            str(saved_path),
+            media_type='image/png',
+            headers={
+                'Content-Disposition': f'attachment; filename="qr-{filament.qr_code}-{size}x{size}.png"',
+                'Cache-Control': 'public, max-age=31536000',
+            }
+        )
+    
+    # Если сохраненного нет - генерируем на лету (fallback)
     qr_buffer = generate_qr_code_image(filament.qr_code, size=size)
 
     # Возвращаем напрямую через StreamingResponse с заголовком для скачивания

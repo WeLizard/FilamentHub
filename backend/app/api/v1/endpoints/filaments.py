@@ -395,7 +395,7 @@ async def create_filament(
     
     # Если бренд верифицирован - автоматически генерируем QR-код
     if brand.verified:
-        from app.services.qr_service import generate_short_code
+        from app.services.qr_service import generate_short_code, save_qr_code_image
         
         # Генерируем короткий код
         short_code = generate_short_code(filament.id)
@@ -409,6 +409,10 @@ async def create_filament(
             short_code = f"{short_code}-{filament.id % 1000}"
         
         filament.qr_code = short_code
+        
+        # Сохраняем изображения QR-кода на диск (для печати на этикетках)
+        # Размеры: 300px (веб), 600px (стандартная печать), 1200px (высокое качество)
+        save_qr_code_image(short_code, sizes=[300, 600, 1200])
     
     await db.commit()
     await db.refresh(filament)
