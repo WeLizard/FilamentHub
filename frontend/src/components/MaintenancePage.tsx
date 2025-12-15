@@ -1,13 +1,14 @@
 import { useState } from 'react';
 import { Settings, LogIn, AlertTriangle } from 'lucide-react';
+import { AuthModal } from './AuthModal';
 
 interface MaintenancePageProps {
   message?: string;
-  onLogin?: () => void;
+  onLoginSuccess?: () => void;
 }
 
-export function MaintenancePage({ message, onLogin }: MaintenancePageProps) {
-  const [showLogin, setShowLogin] = useState(false);
+export function MaintenancePage({ message, onLoginSuccess }: MaintenancePageProps) {
+  const [showAuthModal, setShowAuthModal] = useState(false);
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900 flex items-center justify-center p-4">
@@ -48,27 +49,27 @@ export function MaintenancePage({ message, onLogin }: MaintenancePageProps) {
         </div>
 
         {/* Admin login button */}
-        {!showLogin && (
-          <button
-            onClick={() => {
-              setShowLogin(true);
-              if (onLogin) {
-                onLogin();
-              }
-            }}
-            className="text-gray-500 hover:text-gray-300 text-sm flex items-center gap-2 mx-auto transition-colors"
-          >
-            <LogIn className="w-4 h-4" />
-            Вход для администратора
-          </button>
-        )}
-
-        {showLogin && (
-          <div className="mt-4 text-gray-400 text-sm">
-            Используйте форму входа в шапке сайта
-          </div>
-        )}
+        <button
+          onClick={() => setShowAuthModal(true)}
+          className="text-gray-500 hover:text-gray-300 text-sm flex items-center gap-2 mx-auto transition-colors"
+        >
+          <LogIn className="w-4 h-4" />
+          Вход для администратора
+        </button>
       </div>
+
+      {/* Auth Modal */}
+      <AuthModal
+        isOpen={showAuthModal}
+        onClose={() => {
+          setShowAuthModal(false);
+          // Если onLoginSuccess передан — вызываем его для обновления состояния
+          if (onLoginSuccess) {
+            onLoginSuccess();
+          }
+        }}
+        initialMode="login"
+      />
 
       <style>{`
         @keyframes spin-slow {
@@ -86,4 +87,3 @@ export function MaintenancePage({ message, onLogin }: MaintenancePageProps) {
     </div>
   );
 }
-

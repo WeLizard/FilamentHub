@@ -13,7 +13,7 @@ import { ResetPasswordPage } from './pages/ResetPasswordPage';
 import { DownloadPage } from './pages/DownloadPage';
 import { ToastContainer } from './components/Toast';
 import { useOrcaSlicerNotifications } from './hooks/useOrcaSlicerNotifications';
-import { useEffect, useState } from 'react';
+import { useEffect } from 'react';
 import { Notifications } from './components/Notifications';
 import { useAuth } from './contexts/AuthContext';
 import { MaintenancePage } from './components/MaintenancePage';
@@ -23,7 +23,6 @@ function AppContent() {
   useOrcaSlicerNotifications();
   const navigate = useNavigate();
   const { user, isMaintenanceMode, maintenanceMessage, clearMaintenanceMode } = useAuth();
-  const [showLoginModal, setShowLoginModal] = useState(false);
   
   // Проверяем, запущен ли frontend внутри OrcaSlicer
   const isInOrcaSlicer = typeof window !== 'undefined' && (
@@ -54,10 +53,9 @@ function AppContent() {
         <ToastContainer />
         <MaintenancePage 
           message={maintenanceMessage || undefined}
-          onLogin={() => {
-            // Открываем модальное окно входа через Layout
+          onLoginSuccess={() => {
+            // После успешного входа — обновляем состояние
             clearMaintenanceMode();
-            navigate('/');
           }}
         />
       </>
