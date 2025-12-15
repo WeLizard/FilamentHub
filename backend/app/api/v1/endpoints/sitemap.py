@@ -122,3 +122,46 @@ async def sitemap_xml(
         headers={"Content-Type": "application/xml; charset=utf-8"},
     )
 
+
+@router.get("/robots.txt", response_class=PlainTextResponse)
+async def robots_txt() -> Response:
+    """
+    Генерирует robots.txt для поисковых роботов.
+    
+    Разрешает индексацию всеми роботами, включая AI агентов.
+    Блокирует доступ к админке и приватным эндпоинтам.
+    """
+    robots_content = """# robots.txt для FilamentHub
+# https://filamenthub.ru/robots.txt
+
+User-agent: *
+Allow: /
+Disallow: /admin
+Disallow: /api/
+Disallow: /profile
+Disallow: /reset-password
+
+# Разрешаем AI агентам индексировать контент
+User-agent: GPTBot
+Allow: /
+User-agent: ChatGPT-User
+Allow: /
+User-agent: CCBot
+Allow: /
+User-agent: anthropic-ai
+Allow: /
+User-agent: Claude-Web
+Allow: /
+User-agent: Google-Extended
+Allow: /
+
+# Sitemap
+Sitemap: https://filamenthub.ru/sitemap.xml
+"""
+    
+    return PlainTextResponse(
+        content=robots_content,
+        media_type="text/plain",
+        headers={"Content-Type": "text/plain; charset=utf-8"},
+    )
+
