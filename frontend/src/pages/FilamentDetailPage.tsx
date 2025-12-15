@@ -237,28 +237,43 @@ export const FilamentDetailPage: React.FC = () => {
 
             {/* Статистика материала */}
             <div className="flex flex-wrap items-center gap-3 md:gap-6 text-xs md:text-lg mb-3 md:mb-4">
+              {/* Рейтинг материала (из отзывов) */}
               {filamentRating !== null && (
                 <span className="flex items-center text-gray-300" title="Рейтинг материала">
                   <Star className="w-3.5 h-3.5 md:w-5 md:h-5 mr-1 md:mr-2 text-yellow-400 fill-current" />
                   <span className="font-bold text-white">{filamentRating.toFixed(1)}</span>
+                  {ratingStats && ratingStats.total_reviews > 0 && (
+                    <span className="text-gray-400 text-xs md:text-sm ml-1">({ratingStats.total_reviews})</span>
+                  )}
                 </span>
               )}
+              {/* Успешность печати (из отзывов) */}
               {filamentSuccessRate !== null && (
-                <span className="flex items-center text-gray-300" title="Успешность печати">
+                <span className="flex items-center text-gray-300" title="Процент успешных печатей с этим материалом">
                   <CheckCircle className="w-3.5 h-3.5 md:w-5 md:h-5 mr-1 md:mr-2 text-green-400" />
-                  <span className="font-bold text-green-400">{filamentSuccessRate.toFixed(0)}%</span>
+                  <span className="font-bold text-green-400">{filamentSuccessRate.toFixed(1)}<span className="hidden md:inline">% успеха</span><span className="md:hidden">%</span></span>
+                  {ratingStats && ratingStats.total_reviews > 0 && (
+                    <span className="hidden md:inline text-gray-400 text-sm ml-1">из {ratingStats.total_reviews} отзывов</span>
+                  )}
                 </span>
               )}
-              <span className="flex items-center text-gray-300">
+              {/* Количество пресетов */}
+              <span className="flex items-center text-gray-300" title="Количество пресетов настроек">
                 <TrendingUp className="w-3.5 h-3.5 md:w-5 md:h-5 mr-1 md:mr-2 text-blue-400" />
-                <span className="font-bold text-white">{presetsData?.total || 0}</span>
-                <span className="hidden md:inline ml-1">пресетов</span>
+                <span className="font-bold text-white">{presetsData?.total || 0} <span className="hidden md:inline">пресетов</span></span>
               </span>
-              <span className="flex items-center text-gray-300">
+              {/* Просмотры */}
+              <span className="flex items-center text-gray-300" title="Количество просмотров">
                 <Package className="w-3.5 h-3.5 md:w-5 md:h-5 mr-1 md:mr-2 text-purple-400" />
-                <span className="font-bold text-white">{filament.views_count || 0}</span>
-                <span className="hidden md:inline ml-1">просмотров</span>
+                <span className="font-bold text-white">{filament.views_count || 0} <span className="hidden md:inline">просмотров</span></span>
               </span>
+              {/* Количество отзывов */}
+              {ratingStats && ratingStats.total_reviews > 0 && (
+                <span className="hidden md:flex items-center text-gray-300" title="Количество отзывов о материале">
+                  <MessageCircle className="w-5 h-5 mr-2 text-purple-400" />
+                  <span className="font-bold text-white">{ratingStats.total_reviews} отзывов</span>
+                </span>
+              )}
             </div>
 
             {/* Описание */}
@@ -267,9 +282,23 @@ export const FilamentDetailPage: React.FC = () => {
             )}
           </div>
 
-          <div className="flex md:flex-col items-center md:items-end gap-3 md:gap-0 md:text-right">
+          <div className="flex md:flex-col items-center md:items-end gap-3 md:gap-0 md:text-right md:ml-8">
+            {brandData?.website && (
+              <a
+                href={brandData.website}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="hidden md:inline-flex items-center justify-end space-x-2 text-purple-400 hover:text-purple-300 transition-colors mb-2"
+                title={brandData.website}
+              >
+                <ExternalLink className="w-5 h-5" />
+                <span className="text-sm">
+                  {brandData.website.replace(/^https?:\/\/(www\.)?/, '').replace(/\/$/, '')}
+                </span>
+              </a>
+            )}
             {filament.price_per_kg && (
-              <p className="text-2xl md:text-4xl font-bold text-green-400">
+              <p className="text-2xl md:text-4xl font-bold text-green-400 md:mb-2">
                 {Math.round(filament.price_per_kg)}₽
               </p>
             )}

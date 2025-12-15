@@ -502,7 +502,8 @@ export const Notifications: React.FC<NotificationsProps> = ({ floating = false }
             ) : (
               <div className="divide-y divide-white/10">
                 {notifications.map((notification) => {
-                  const previewLength = 100; // Shorter on mobile
+                  // Обрезаем текст для предпросмотра (максимум 150 символов)
+                  const previewLength = 150;
                   const messagePreview = notification.message.length > previewLength
                     ? notification.message.substring(0, previewLength) + '...'
                     : notification.message;
@@ -512,30 +513,55 @@ export const Notifications: React.FC<NotificationsProps> = ({ floating = false }
                   return (
                     <div
                       key={notification.id}
-                      className={`p-3 md:p-4 transition-all hover:bg-white/10 active:bg-white/15 cursor-pointer ${
+                      className={`p-3 md:p-4 transition-all hover:bg-white/10 cursor-pointer ${
                         !notification.read ? 'bg-white/5' : ''
                       }`}
                       onClick={() => handleNotificationClick(notification)}
                     >
-                      <div className="flex items-start gap-2 md:gap-3">
-                        <div className="flex-shrink-0 mt-0.5">
-                          {getNotificationIcon(notification.type)}
-                        </div>
+                      <div className="flex items-start space-x-3">
                         <div className="flex-1 min-w-0">
-                          <div className="flex items-start justify-between gap-2 mb-1">
-                            <p className="text-xs md:text-sm font-semibold text-white line-clamp-2">
-                              {notification.title}
-                            </p>
-                            {!notification.read && (
-                              <div className="w-2 h-2 bg-blue-400 rounded-full flex-shrink-0 mt-1"></div>
-                            )}
+                          <div className="flex items-start space-x-2 md:space-x-3">
+                            <div className="flex-shrink-0 mt-0.5">
+                              {getNotificationIcon(notification.type)}
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-start justify-between gap-2 mb-1">
+                                <p className="text-xs md:text-sm font-semibold text-white">
+                                  {notification.title}
+                                </p>
+                                {!notification.read && (
+                                  <div className="w-2 h-2 bg-blue-400 rounded-full flex-shrink-0 mt-1.5"></div>
+                                )}
+                              </div>
+                              <p className="text-xs md:text-sm text-gray-300 mb-2">
+                                {messagePreview}
+                                {isLongMessage && (
+                                  <span className="text-purple-400 ml-1">(нажмите для полного текста)</span>
+                                )}
+                              </p>
+                              <div className="flex items-center justify-between gap-2">
+                                <p className="text-[10px] md:text-xs text-gray-400">
+                                  {formatTime(notification.created_at)}
+                                </p>
+                              </div>
+                              {hasLink && (
+                                <a
+                                  href={notification.link || '#'}
+                                  onClick={(e) => {
+                                    e.preventDefault();
+                                    e.stopPropagation();
+                                    handleOpenLink(notification.link!);
+                                  }}
+                                  className="block text-xs text-purple-400 hover:text-purple-300 hover:underline mt-1 truncate max-w-full transition-colors"
+                                  title={notification.link || undefined}
+                                  onMouseEnter={(e) => e.stopPropagation()}
+                                  onMouseLeave={(e) => e.stopPropagation()}
+                                >
+                                  {notification.link}
+                                </a>
+                              )}
+                            </div>
                           </div>
-                          <p className="text-xs md:text-sm text-gray-300 mb-1.5 md:mb-2 line-clamp-2">
-                            {messagePreview}
-                          </p>
-                          <p className="text-[10px] md:text-xs text-gray-400">
-                            {formatTime(notification.created_at)}
-                          </p>
                         </div>
                         <button
                           onClick={(e) => {
@@ -543,8 +569,9 @@ export const Notifications: React.FC<NotificationsProps> = ({ floating = false }
                             deleteNotificationMutation.mutate(notification.id);
                           }}
                           disabled={deleteNotificationMutation.isPending}
-                          className="flex-shrink-0 p-1.5 rounded-lg hover:bg-white/10 active:bg-white/20 text-gray-400 hover:text-red-400 transition-all"
-                          aria-label="Удалить"
+                          className="flex-shrink-0 p-1 rounded hover:bg-white/10 text-gray-400 hover:text-red-400 transition-all"
+                          title="Удалить уведомление"
+                          aria-label="Удалить уведомление"
                         >
                           <X className="w-4 h-4" />
                         </button>
@@ -558,23 +585,36 @@ export const Notifications: React.FC<NotificationsProps> = ({ floating = false }
 
           {/* Footer */}
           {notifications.length > 0 && (
-            <div className="p-2 md:p-3 border-t border-white/10 flex flex-col sm:flex-row gap-2">
+            <div className="p-2 md:p-3 border-t border-white/10 space-y-2">
               {unreadCount > 0 && (
                 <button
-                  className="flex-1 text-center text-xs md:text-sm text-purple-400 hover:text-purple-300 active:text-purple-200 transition-all py-2 rounded-lg hover:bg-white/5"
-                  onClick={handleMarkAllAsRead}
+                  className="w-full text-center text-xs md:text-sm text-purple-400 hover:text-purple-300 transition-all py-2"
+                  onClick={() => {
+                    handleMarkAllAsRead();
+                  }}
                   disabled={markAllAsReadMutation.isPending}
                 >
-                  {markAllAsReadMutation.isPending ? '...' : 'Прочитать все'}
+                  {markAllAsReadMutation.isPending ? 'Обработка...' : 'Отметить все как прочитанные'}
                 </button>
               )}
               <button
-                className="flex-1 flex items-center justify-center gap-1.5 text-center text-xs md:text-sm text-red-400 hover:text-red-300 active:text-red-200 transition-all py-2 rounded-lg hover:bg-red-500/10 disabled:opacity-50"
-                onClick={() => deleteAllNotificationsMutation.mutate()}
+                className="w-full flex items-center justify-center gap-2 text-center text-xs md:text-sm text-red-400 hover:text-red-300 transition-all py-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                onClick={() => {
+                  deleteAllNotificationsMutation.mutate();
+                }}
                 disabled={deleteAllNotificationsMutation.isPending}
               >
-                <Trash2 className="w-3.5 h-3.5" />
-                <span>{deleteAllNotificationsMutation.isPending ? '...' : 'Очистить'}</span>
+                {deleteAllNotificationsMutation.isPending ? (
+                  <>
+                    <div className="w-4 h-4 border-2 border-red-400/30 border-t-red-400 rounded-full animate-spin" />
+                    Очистка...
+                  </>
+                ) : (
+                  <>
+                    <Trash2 className="w-4 h-4" />
+                    Очистить уведомления
+                  </>
+                )}
               </button>
             </div>
           )}
@@ -611,12 +651,12 @@ export const Notifications: React.FC<NotificationsProps> = ({ floating = false }
             >
               {/* Header */}
               <div className="flex items-start justify-between p-4 md:p-6 border-b border-white/10">
-                <div className="flex items-start gap-3 flex-1 min-w-0">
+                <div className="flex items-start space-x-3 md:space-x-4 flex-1">
                   <div className="flex-shrink-0 mt-0.5">
                     {getNotificationIcon(viewNotification.type)}
                   </div>
                   <div className="flex-1 min-w-0">
-                    <h3 className="text-base md:text-xl font-bold text-white mb-1 line-clamp-2">
+                    <h3 className="text-base md:text-xl font-bold text-white mb-1">
                       {viewNotification.title}
                     </h3>
                     <p className="text-[10px] md:text-xs text-gray-400">
@@ -624,32 +664,57 @@ export const Notifications: React.FC<NotificationsProps> = ({ floating = false }
                     </p>
                   </div>
                 </div>
-                <button
-                  onClick={() => setViewNotification(null)}
-                  className="flex-shrink-0 text-gray-400 hover:text-white transition-colors p-2 -mt-1 -mr-1"
-                >
-                  <X className="w-5 h-5" />
-                </button>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      deleteNotificationMutation.mutate(viewNotification.id);
+                      setViewNotification(null);
+                    }}
+                    disabled={deleteNotificationMutation.isPending}
+                    className="flex-shrink-0 flex items-center gap-1.5 px-3 py-1.5 text-xs text-red-400 hover:text-red-300 hover:bg-red-500/10 rounded-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                    title="Удалить это уведомление"
+                  >
+                    {deleteNotificationMutation.isPending ? (
+                      <>
+                        <div className="w-3 h-3 border-2 border-red-400/30 border-t-red-400 rounded-full animate-spin" />
+                        Удаление...
+                      </>
+                    ) : (
+                      <>
+                        <Trash2 className="w-3.5 h-3.5" />
+                        <span className="hidden md:inline">Удалить</span>
+                      </>
+                    )}
+                  </button>
+                  <button
+                    onClick={() => setViewNotification(null)}
+                    className="flex-shrink-0 text-gray-400 hover:text-white transition-colors p-2 -mt-1 -mr-1"
+                  >
+                    <X className="w-5 h-5" />
+                  </button>
+                </div>
               </div>
 
               {/* Content */}
-              <div className="flex-1 overflow-y-auto p-4 md:p-6">
+              <div className="flex-1 overflow-y-auto p-4 md:p-6 custom-scrollbar">
                 <div className="text-sm md:text-base text-gray-300 whitespace-pre-wrap break-words">
                   {viewNotification.message}
                 </div>
 
+                {/* Link section */}
                 {viewNotification.link && (
                   <div className="mt-4 md:mt-6 pt-4 md:pt-6 border-t border-white/10">
+                    <p className="text-xs md:text-sm text-gray-400 mb-2">Ссылка:</p>
                     <a
                       href={viewNotification.link}
                       onClick={(e) => {
                         e.preventDefault();
                         handleOpenLink(viewNotification.link!);
                       }}
-                      className="inline-flex items-center gap-2 text-sm text-purple-400 hover:text-purple-300 active:text-purple-200 break-all transition-colors"
+                      className="inline-block text-xs md:text-sm text-purple-400 hover:text-purple-300 hover:underline break-all transition-colors"
                     >
-                      <ExternalLink className="w-4 h-4 flex-shrink-0" />
-                      <span className="underline">{viewNotification.link}</span>
+                      {viewNotification.link}
                     </a>
                   </div>
                 )}

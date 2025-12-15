@@ -628,7 +628,7 @@ export const ProfilePage: React.FC = () => {
             <h2 className="text-xl md:text-3xl font-bold text-white mb-0.5 md:mb-1">Мой профиль</h2>
             <div className="flex flex-wrap items-center gap-1 md:gap-2">
               <p className="text-gray-300 text-xs md:text-base">
-                {user.full_name || user.username}
+                {user.full_name || user.username}<span className="hidden md:inline"> • 3D печатник</span>
               </p>
               {user.badges && user.badges.length > 0 && (
                 <BadgeList badges={user.badges as any} size="sm" />
@@ -687,7 +687,10 @@ export const ProfilePage: React.FC = () => {
                   <p className="text-xl md:text-3xl font-bold text-white">
                     {presetsStats?.total_presets?.toString() || userPresets.length.toString()}/{presetsStats?.synced_presets?.toString() || '0'}
                   </p>
-                  <p className="text-[10px] md:text-xs text-gray-400 mt-0.5 md:mt-1">всего / синхр.</p>
+                  <p className="text-[10px] md:text-xs text-gray-400 mt-0.5 md:mt-1">
+                    <span className="md:hidden">всего / синхр.</span>
+                    <span className="hidden md:inline">всего / к синхронизации</span>
+                  </p>
                 </div>
                 <Settings className="w-5 h-5 md:w-8 md:h-8 text-blue-400" />
               </div>
@@ -753,7 +756,10 @@ export const ProfilePage: React.FC = () => {
           {userPresets.length === 0 && (
             <div className="text-center py-8 md:py-12">
               <Settings className="w-12 h-12 md:w-16 md:h-16 text-gray-400 mx-auto mb-3 md:mb-4" />
-              <p className="text-gray-400 text-base md:text-xl">Нет сохраненных пресетов</p>
+              <p className="text-gray-400 text-base md:text-xl">
+                <span className="md:hidden">Нет сохраненных пресетов</span>
+                <span className="hidden md:inline">У вас пока нет сохраненных пресетов</span>
+              </p>
             </div>
           )}
         </div>
@@ -785,9 +791,10 @@ export const ProfilePage: React.FC = () => {
       {userTab === 'calculator' && (
         <div className="max-w-4xl mx-auto">
           <div className="text-center mb-4 md:mb-8">
-            <h2 className="text-xl md:text-4xl font-bold text-white mb-2 md:mb-4">Калькулятор стоимости</h2>
+            <h2 className="text-xl md:text-4xl font-bold text-white mb-2 md:mb-4">Калькулятор стоимости печати</h2>
             <p className="text-sm md:text-xl text-gray-300">
-              Рассчитайте стоимость детали
+              <span className="md:hidden">Рассчитайте стоимость детали</span>
+              <span className="hidden md:inline">Рассчитайте точную стоимость детали с учётом региональных особенностей</span>
             </p>
           </div>
 

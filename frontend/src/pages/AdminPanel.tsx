@@ -42,17 +42,17 @@ export function AdminPanel() {
   }
 
   const tabs = [
-    { id: 'requests' as AdminTab, label: 'Заявки на верификацию', icon: FileText, count: null },
-    { id: 'brands' as AdminTab, label: 'Бренды', icon: Building2, count: null },
-    { id: 'presets' as AdminTab, label: 'Модерация пресетов', icon: CheckCircle, count: null },
-    { id: 'printers' as AdminTab, label: 'Принтеры', icon: PrinterIcon, count: null },
-    { id: 'printer-requests' as AdminTab, label: 'Заявки на принтеры', icon: Package, count: null },
-    { id: 'users' as AdminTab, label: 'Пользователи', icon: Users, count: null },
-    { id: 'feedback' as AdminTab, label: 'Обратная связь', icon: MessageCircle, count: null },
-    { id: 'notifications' as AdminTab, label: 'Уведомления', icon: Send, count: null },
-    { id: 'stats' as AdminTab, label: 'Статистика', icon: BarChart3, count: null },
-    { id: 'database' as AdminTab, label: 'База данных', icon: Database, count: null },
-    { id: 'maintenance' as AdminTab, label: 'Технические работы', icon: Settings, count: null },
+    { id: 'requests' as AdminTab, label: 'Заявки на верификацию', shortLabel: 'Верификация', icon: FileText, count: null },
+    { id: 'brands' as AdminTab, label: 'Бренды', shortLabel: 'Бренды', icon: Building2, count: null },
+    { id: 'presets' as AdminTab, label: 'Модерация пресетов', shortLabel: 'Пресеты', icon: CheckCircle, count: null },
+    { id: 'printers' as AdminTab, label: 'Принтеры', shortLabel: 'Принтеры', icon: PrinterIcon, count: null },
+    { id: 'printer-requests' as AdminTab, label: 'Заявки на принтеры', shortLabel: 'Заявки', icon: Package, count: null },
+    { id: 'users' as AdminTab, label: 'Пользователи', shortLabel: 'Юзеры', icon: Users, count: null },
+    { id: 'feedback' as AdminTab, label: 'Обратная связь', shortLabel: 'Фидбек', icon: MessageCircle, count: null },
+    { id: 'notifications' as AdminTab, label: 'Уведомления', shortLabel: 'Уведомления', icon: Send, count: null },
+    { id: 'stats' as AdminTab, label: 'Статистика', shortLabel: 'Стат.', icon: BarChart3, count: null },
+    { id: 'database' as AdminTab, label: 'База данных', shortLabel: 'БД', icon: Database, count: null },
+    { id: 'maintenance' as AdminTab, label: 'Технические работы', shortLabel: 'Тех.работы', icon: Settings, count: null },
   ];
 
   return (
@@ -112,7 +112,7 @@ export function AdminPanel() {
                 >
                   <Icon className="w-3.5 h-3.5 md:w-4 md:h-4" />
                   <span className="hidden md:inline">{tab.label}</span>
-                  <span className="md:hidden">{tab.label.split(' ')[0]}</span>
+                  <span className="md:hidden">{tab.shortLabel}</span>
                   {tab.count !== null && tab.count > 0 && (
                     <span className={`
                       ml-1 md:ml-2 px-1.5 md:px-2 py-0.5 rounded-full text-[10px] md:text-xs font-semibold
