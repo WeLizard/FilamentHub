@@ -260,22 +260,19 @@ export function WikiArticlePage() {
               table(props: any) {
                 const {children, ...rest} = props;
                 return (
-                  <div className="overflow-x-auto -mx-6 md:-mx-8 my-6">
-                    <div className="inline-block min-w-full align-middle px-6 md:px-8">
-                      <div className="overflow-hidden rounded-lg border border-white/20">
-                        <table 
-                          className="min-w-full divide-y divide-white/20 border-collapse
-                            [&_thead]:bg-white/10
-                            [&_th]:border [&_th]:border-white/30 [&_th]:px-4 [&_th]:py-3 [&_th]:text-left [&_th]:text-white [&_th]:font-semibold [&_th]:whitespace-nowrap
-                            [&_tbody]:bg-white/5
-                            [&_td]:border [&_td]:border-white/20 [&_td]:px-4 [&_td]:py-3 [&_td]:text-gray-300 [&_td]:whitespace-nowrap
-                            [&_tr:hover]:bg-white/10" 
-                          {...rest}
-                        >
-                          {children}
-                        </table>
-                      </div>
-                    </div>
+                  <div className="overflow-x-auto my-6 -mx-2 px-2">
+                    <table 
+                      className="w-full border-collapse rounded-lg overflow-hidden text-sm
+                        [&_thead]:bg-white/10
+                        [&_th]:px-3 [&_th]:py-2.5 [&_th]:text-left [&_th]:text-white [&_th]:font-semibold [&_th]:border-b [&_th]:border-white/20
+                        [&_tbody]:bg-white/5
+                        [&_td]:px-3 [&_td]:py-2.5 [&_td]:text-gray-200 [&_td]:border-b [&_td]:border-white/10
+                        [&_tr:hover]:bg-white/10
+                        [&_tr:last-child_td]:border-b-0" 
+                      {...rest}
+                    >
+                      {children}
+                    </table>
                   </div>
                 );
               },
