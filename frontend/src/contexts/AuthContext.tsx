@@ -9,10 +9,13 @@ interface AuthContextType {
   user: User | null;
   isLoading: boolean;
   isAuthenticated: boolean;
+  isMaintenanceMode: boolean;
+  maintenanceMessage: string | null;
   login: (email: string, password: string) => Promise<void>;
   register: (data: { email: string; username: string; password: string; role: string }) => Promise<void>;
   logout: () => void;
   refreshUser: () => Promise<void>;
+  clearMaintenanceMode: () => void;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -32,6 +35,8 @@ interface AuthProviderProps {
 export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const [user, setUser] = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [isMaintenanceMode, setIsMaintenanceMode] = useState(false);
+  const [maintenanceMessage, setMaintenanceMessage] = useState<string | null>(null);
 
   // Загружаем пользователя при монтировании (если есть токен)
   useEffect(() => {
@@ -41,10 +46,19 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         try {
           const userData = await authAPI.me();
           setUser(userData);
+          // Если успешно загрузили - сбрасываем maintenance mode
+          setIsMaintenanceMode(false);
+          setMaintenanceMessage(null);
         } catch (error: any) {
-          // Токен невалидный или истек, удаляем
-          removeToken();
-          setUser(null);
+          // Проверяем на maintenance mode (503)
+          if (error.response?.status === 503 && error.response?.data?.maintenance_mode) {
+            setIsMaintenanceMode(true);
+            setMaintenanceMessage(error.response?.data?.message || null);
+          } else {
+            // Токен невалидный или истек, удаляем
+            removeToken();
+            setUser(null);
+          }
           // Не логируем ошибку - это нормально при первом заходе или истекшем токене
         }
       } else {
@@ -120,20 +134,37 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       try {
         const userData = await authAPI.me();
         setUser(userData);
-      } catch (error) {
-        logout();
+        // Успешно загрузили - сбрасываем maintenance mode
+        setIsMaintenanceMode(false);
+        setMaintenanceMessage(null);
+      } catch (error: any) {
+        // Проверяем на maintenance mode (503)
+        if (error.response?.status === 503 && error.response?.data?.maintenance_mode) {
+          setIsMaintenanceMode(true);
+          setMaintenanceMessage(error.response?.data?.message || null);
+        } else {
+          logout();
+        }
       }
     }
+  };
+
+  const clearMaintenanceMode = () => {
+    setIsMaintenanceMode(false);
+    setMaintenanceMessage(null);
   };
 
   const value: AuthContextType = {
     user,
     isLoading,
     isAuthenticated: !!user,
+    isMaintenanceMode,
+    maintenanceMessage,
     login,
     register,
     logout,
     refreshUser,
+    clearMaintenanceMode,
   };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

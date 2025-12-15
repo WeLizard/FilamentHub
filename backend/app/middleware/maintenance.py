@@ -24,11 +24,13 @@ class MaintenanceMiddleware(BaseHTTPMiddleware):
             path = request.url.path
             
             # Разрешенные пути (не блокируются)
+            # Админы должны иметь возможность войти и управлять сайтом!
             allowed_paths = [
                 "/health",
-                "/api/v1/admin/maintenance",
-                "/api/v1/auth/login",
-                "/api/v1/auth/refresh",
+                "/api/v1/admin",        # Вся админка
+                "/api/v1/auth/login",   # Вход
+                "/api/v1/auth/refresh", # Обновление токена
+                "/api/v1/users/me",     # Проверка текущего пользователя
             ]
             
             # Проверяем, является ли путь разрешенным

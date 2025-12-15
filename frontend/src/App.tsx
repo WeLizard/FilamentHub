@@ -13,15 +13,17 @@ import { ResetPasswordPage } from './pages/ResetPasswordPage';
 import { DownloadPage } from './pages/DownloadPage';
 import { ToastContainer } from './components/Toast';
 import { useOrcaSlicerNotifications } from './hooks/useOrcaSlicerNotifications';
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { Notifications } from './components/Notifications';
 import { useAuth } from './contexts/AuthContext';
+import { MaintenancePage } from './components/MaintenancePage';
 
 function AppContent() {
   // Обработчик уведомлений от OrcaSlicer
   useOrcaSlicerNotifications();
   const navigate = useNavigate();
-  const { user } = useAuth();
+  const { user, isMaintenanceMode, maintenanceMessage, clearMaintenanceMode } = useAuth();
+  const [showLoginModal, setShowLoginModal] = useState(false);
   
   // Проверяем, запущен ли frontend внутри OrcaSlicer
   const isInOrcaSlicer = typeof window !== 'undefined' && (
@@ -43,6 +45,24 @@ function AppContent() {
       };
     }
   }, [navigate]);
+
+  // Показываем страницу технических работ если включён maintenance mode
+  // НО: если пользователь уже авторизован как админ — показываем сайт
+  if (isMaintenanceMode && (!user || user.role !== 'admin')) {
+    return (
+      <>
+        <ToastContainer />
+        <MaintenancePage 
+          message={maintenanceMessage || undefined}
+          onLogin={() => {
+            // Открываем модальное окно входа через Layout
+            clearMaintenanceMode();
+            navigate('/');
+          }}
+        />
+      </>
+    );
+  }
 
   return (
     <>
