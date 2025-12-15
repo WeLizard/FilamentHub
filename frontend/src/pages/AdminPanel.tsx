@@ -60,36 +60,36 @@ export function AdminPanel() {
       <div className="max-w-7xl mx-auto">
         {/* Header */}
         <div className="mb-4 md:mb-8">
-          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-2">
-            <div className="flex items-center gap-2 md:gap-3">
+          <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
+            <div className="flex items-center space-x-2 md:space-x-3">
               <Shield className="w-6 h-6 md:w-8 md:h-8 text-yellow-400" />
               <h1 className="text-xl md:text-3xl font-bold text-white">Админ-панель</h1>
             </div>
-            <div className="flex items-center gap-2 md:gap-3">
+            <div className="flex flex-wrap items-center gap-2 md:gap-3">
               <Link
                 to="/"
-                className="flex items-center gap-1.5 px-2.5 md:px-4 py-1.5 md:py-2 rounded-lg transition-all text-gray-300 hover:text-white hover:bg-white/10 text-xs md:text-base"
+                className="flex items-center space-x-1.5 md:space-x-2 px-2.5 md:px-4 py-1.5 md:py-2 rounded-lg transition-all text-gray-300 hover:text-white hover:bg-white/10 text-xs md:text-base"
               >
                 <Home className="w-4 h-4 md:w-5 md:h-5" />
-                <span className="hidden sm:inline">Главная</span>
+                <span className="hidden sm:inline">На главную</span>
               </Link>
               <Link
                 to="/profile"
-                className="flex items-center gap-1.5 px-2.5 md:px-4 py-1.5 md:py-2 rounded-lg transition-all text-gray-300 hover:text-white hover:bg-white/10 text-xs md:text-base"
+                className="flex items-center space-x-1.5 md:space-x-2 px-2.5 md:px-4 py-1.5 md:py-2 rounded-lg transition-all text-gray-300 hover:text-white hover:bg-white/10 text-xs md:text-base"
               >
                 <User className="w-4 h-4 md:w-5 md:h-5" />
                 <span className="hidden sm:inline">Профиль</span>
               </Link>
               <button
                 onClick={handleLogout}
-                className="flex items-center gap-1.5 px-2.5 md:px-4 py-1.5 md:py-2 bg-red-600/20 hover:bg-red-600/30 active:bg-red-600/40 text-red-400 rounded-lg transition-all text-xs md:text-base"
+                className="flex items-center space-x-1.5 md:space-x-2 px-2.5 md:px-4 py-1.5 md:py-2 bg-red-600/20 hover:bg-red-600/30 text-red-400 rounded-lg transition-all text-xs md:text-base"
               >
                 <LogOut className="w-4 h-4 md:w-5 md:h-5" />
                 <span className="hidden sm:inline">Выход</span>
               </button>
             </div>
           </div>
-          <p className="text-gray-300 text-xs md:text-base">Управление FilamentHub</p>
+          <p className="text-gray-300 text-xs md:text-base">Управление платформой FilamentHub</p>
         </div>
 
         {/* Tabs - горизонтальный скролл на мобильных */}
