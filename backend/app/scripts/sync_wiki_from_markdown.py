@@ -217,9 +217,13 @@ async def main() -> None:
     print()
     
     try:
+        print("DEBUG: Starting sync_all_articles()")
         await sync_all_articles()
+        print("DEBUG: sync_all_articles() completed")
     except Exception as e:
         print(f"\n❌ Sync failed: {e}")
+        import traceback
+        traceback.print_exc()
         raise
 
 
