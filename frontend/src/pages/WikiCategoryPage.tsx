@@ -31,7 +31,7 @@ export function WikiCategoryPage() {
 
       // Загружаем категорию
       const categoriesData = await wikiAPI.listCategories({ page: 1, page_size: 100 });
-      const foundCategory = categoriesData.items.find((cat) => cat.slug === slug);
+      const foundCategory = categoriesData.items.find((cat: WikiCategory) => cat.slug === slug);
 
       if (!foundCategory) {
         setError('Категория не найдена');
@@ -42,7 +42,7 @@ export function WikiCategoryPage() {
 
       // Загружаем статьи категории
       const articlesData = await wikiAPI.listArticles({
-        category_id: foundCategory.id,
+        category_slug: foundCategory.slug,
         published_only: true,
         page: currentPage,
         page_size: 12,

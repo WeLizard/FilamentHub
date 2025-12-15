@@ -580,7 +580,7 @@ export interface WikiArticleSummary {
   title: string;
   slug: string;
   summary: string;
-  tags: string | null;
+  tags: string[];
   author: string | null;
   published: boolean;
   views: number;
