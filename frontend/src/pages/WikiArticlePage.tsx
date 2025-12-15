@@ -20,6 +20,34 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { vscDarkPlus } from 'react-syntax-highlighter/dist/esm/styles/prism';
+import { useEffect, useRef } from 'react';
+import mermaid from 'mermaid';
+
+// Mermaid диаграмма компонент
+function MermaidDiagram({ chart, id }: { chart: string; id: string }) {
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (ref.current && chart) {
+      mermaid.initialize({ 
+        startOnLoad: false,
+        theme: 'dark',
+        themeVariables: {
+          background: '#1a1a1a',
+          primaryColor: '#6366f1',
+          primaryTextColor: '#fff',
+          primaryBorderColor: '#818cf8',
+          lineColor: '#9ca3af',
+          secondaryColor: '#374151',
+          tertiaryColor: '#111827',
+        }
+      });
+      mermaid.run({ nodes: [ref.current] });
+    }
+  }, [chart]);
+
+  return <div ref={ref} className="mermaid my-6">{chart}</div>;
+}
 
 export function WikiArticlePage() {
   const { slug } = useParams<{ slug: string }>();
@@ -209,18 +237,48 @@ export function WikiArticlePage() {
               code(props: any) {
                 const {node, inline, className, children, ...rest} = props;
                 const match = /language-(\w+)/.exec(className || '');
-                return !inline && match ? (
-                  <SyntaxHighlighter
-                    style={vscDarkPlus as any}
-                    language={match[1]}
-                    PreTag="div"
-                  >
-                    {String(children).replace(/\n$/, '')}
-                  </SyntaxHighlighter>
-                ) : (
+                
+                // Mermaid диаграммы
+                if (!inline && match && match[1] === 'mermaid') {
+                  const id = `mermaid-${Math.random().toString(36).substr(2, 9)}`;
+                  return <MermaidDiagram chart={String(children).replace(/\n$/, '')} id={id} />;
+                }
+                
+                // Обычный code блок
+                if (!inline && match) {
+                  return (
+                    <SyntaxHighlighter
+                      style={vscDarkPlus as any}
+                      language={match[1]}
+                      PreTag="div"
+                    >
+                      {String(children).replace(/\n$/, '')}
+                    </SyntaxHighlighter>
+                  );
+                }
+                
+                // Inline code
+                return (
                   <code className={className} {...rest}>
                     {children}
                   </code>
+                );
+              },
+              img(props: any) {
+                const {src, alt, ...rest} = props;
+                // Если путь относительный, добавляем базовый URL для изображений
+                let imageSrc = src;
+                if (src && !src.startsWith('http') && !src.startsWith('/')) {
+                  // Относительный путь - ищем в uploads или используем абсолютный
+                  imageSrc = src.startsWith('uploads/') ? `/api/v1/${src}` : src;
+                }
+                return (
+                  <img 
+                    src={imageSrc} 
+                    alt={alt || ''} 
+                    className="max-w-full h-auto rounded-xl shadow-xl my-6"
+                    {...rest}
+                  />
                 );
               },
             }}
