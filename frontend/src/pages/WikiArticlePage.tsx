@@ -206,13 +206,13 @@ export function WikiArticlePage() {
       </div>
 
       {/* Article Content (Markdown) */}
-      <article className="bg-white/5 backdrop-blur-sm border border-white/10 rounded-2xl p-6 md:p-8 mb-8">
-        <div className="prose prose-invert prose-lg max-w-none
+      <article className="bg-white/5 backdrop-blur-sm border border-white/10 rounded-2xl p-6 md:p-8 mb-8 overflow-hidden">
+        <div className="prose prose-invert prose-lg max-w-none break-words
           prose-headings:text-white prose-headings:font-bold prose-headings:mt-8 prose-headings:mb-4
           prose-h1:text-3xl prose-h1:border-b prose-h1:border-white/20 prose-h1:pb-3
           prose-h2:text-2xl prose-h2:mt-8 prose-h2:mb-4
           prose-h3:text-xl prose-h3:mt-6 prose-h3:mb-3
-          prose-p:text-gray-300 prose-p:leading-7 prose-p:my-4
+          prose-p:text-gray-300 prose-p:leading-7 prose-p:my-4 prose-p:break-words
           prose-a:text-blue-400 prose-a:no-underline hover:prose-a:text-blue-300 hover:prose-a:underline
           prose-strong:text-white prose-strong:font-semibold
           prose-code:text-cyan-300 prose-code:bg-black/40 prose-code:px-1.5 prose-code:py-0.5 prose-code:rounded prose-code:text-sm
@@ -221,13 +221,7 @@ export function WikiArticlePage() {
           prose-ul:text-gray-300 prose-ul:my-4 prose-ul:space-y-2
           prose-ol:text-gray-300 prose-ol:my-4 prose-ol:space-y-2
           prose-li:text-gray-300 prose-li:marker:text-blue-400 prose-li:pl-2
-          prose-table:w-full prose-table:my-6 prose-table:border-collapse
-          prose-thead:bg-white/10
-          prose-th:border prose-th:border-white/30 prose-th:px-4 prose-th:py-3 prose-th:text-left prose-th:text-white prose-th:font-semibold
-          prose-tbody:bg-white/5
-          prose-td:border prose-td:border-white/20 prose-td:px-4 prose-td:py-3 prose-td:text-gray-300
-          prose-tr:hover:bg-white/10
-          prose-img:rounded-xl prose-img:shadow-xl prose-img:my-6
+          prose-img:rounded-xl prose-img:shadow-xl prose-img:my-6 prose-img:max-w-full prose-img:h-auto
           prose-hr:border-white/20 prose-hr:my-8
         ">
           <ReactMarkdown
@@ -261,6 +255,28 @@ export function WikiArticlePage() {
                   <code className={className} {...rest}>
                     {children}
                   </code>
+                );
+              },
+              table(props: any) {
+                const {children, ...rest} = props;
+                return (
+                  <div className="overflow-x-auto -mx-6 md:-mx-8 my-6">
+                    <div className="inline-block min-w-full align-middle px-6 md:px-8">
+                      <div className="overflow-hidden rounded-lg border border-white/20">
+                        <table 
+                          className="min-w-full divide-y divide-white/20 border-collapse
+                            [&_thead]:bg-white/10
+                            [&_th]:border [&_th]:border-white/30 [&_th]:px-4 [&_th]:py-3 [&_th]:text-left [&_th]:text-white [&_th]:font-semibold [&_th]:whitespace-nowrap
+                            [&_tbody]:bg-white/5
+                            [&_td]:border [&_td]:border-white/20 [&_td]:px-4 [&_td]:py-3 [&_td]:text-gray-300 [&_td]:whitespace-nowrap
+                            [&_tr:hover]:bg-white/10" 
+                          {...rest}
+                        >
+                          {children}
+                        </table>
+                      </div>
+                    </div>
+                  </div>
                 );
               },
               img(props: any) {
