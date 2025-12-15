@@ -1,3 +1,0 @@
-[25-11-12 22:56:52.740356][D][61B0][IOTC] [IOTC_Check_Session_Status] Error: Not Initialized!
-[25-11-12 22:56:52.741356][D][61B0][IOTC] @@@@@ IOTC_DeInitialize called
-[25-11-12 22:56:52.741356][D][61B0][IOTC] @ErrCode -12 - Line (13010)

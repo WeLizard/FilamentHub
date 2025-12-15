@@ -33,10 +33,10 @@ param(
     [string]$Command
 )
 
-# Проверяем, существует ли docker-compose
-$dockerComposePath = Get-Command docker-compose -ErrorAction SilentlyContinue
-if (-not $dockerComposePath) {
-    Write-Error "Команда 'docker-compose' не найдена. Убедитесь, что Docker Desktop установлен и запущен."
+# Проверяем, существует ли docker
+$dockerPath = Get-Command docker -ErrorAction SilentlyContinue
+if (-not $dockerPath) {
+    Write-Error "Команда 'docker' не найдена. Убедитесь, что Docker Desktop установлен и запущен."
     exit 1
 }
 
@@ -65,12 +65,12 @@ try {
             }
 
             Write-Log "Запуск сборки и подъема всех сервисов в фоновом режиме..." -Color "Cyan"
-            docker-compose up --build -d
+            docker compose up --build -d
             Write-Log "Приложение запущено. Веб-интерфейс должен быть доступен по адресу http://localhost" -Color "Green"
         }
         "down" {
             Write-Log "Остановка всех сервисов..." -Color "Cyan"
-            docker-compose down
+            docker compose down
             Write-Log "Все сервисы остановлены." -Color "Green"
         }
         "clean" {
@@ -78,7 +78,7 @@ try {
             $confirmation = Read-Host "Вы уверены, что хотите продолжить? (y/n)"
             if ($confirmation -eq 'y') {
                 Write-Log "Остановка сервисов и удаление томов данных..." -Color "Red"
-                docker-compose down -v
+                docker compose down -v
                 Write-Log "Все сервисы и данные были удалены." -Color "Green"
             } else {
                 Write-Log "Операция отменена." -Color "Yellow"
@@ -86,11 +86,11 @@ try {
         }
         "logs" {
             Write-Log "Вывод логов всех сервисов. Нажмите Ctrl+C для выхода." -Color "Cyan"
-            docker-compose logs -f
+            docker compose logs -f
         }
         "ps" {
             Write-Log "Статус запущенных контейнеров:" -Color "Cyan"
-            docker-compose ps
+            docker compose ps
         }
     }
 }

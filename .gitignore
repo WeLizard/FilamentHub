@@ -127,4 +127,11 @@ backend/distributions/orcaslicer/*
 
 # SSL certificates (не коммитить!)
 certbot/
+certbot-conf.tar.gz
+
+# Root log folder (debug logs, iotc logs)
+log/
+
+# One-time setup scripts (already executed)
+setup_orcaslicer_*.ps1
 
