@@ -133,13 +133,12 @@ export const CatalogPage: React.FC = () => {
   return (
     <div className="space-y-6">
       {/* Hero Section */}
-      <div className="text-center mb-8">
-        <h2 className="text-4xl font-bold text-white mb-4">
+      <div className="text-center mb-6 sm:mb-8">
+        <h2 className="text-2xl sm:text-3xl md:text-4xl font-bold text-white mb-3 sm:mb-4 px-2">
           Найдите идеальные настройки для вашего пластика
         </h2>
-        <p className="text-xl text-gray-300 max-w-3xl mx-auto">
-          База данных материалов с официальными пресетами от производителей и проверенными
-          настройками от сообщества
+        <p className="text-base sm:text-lg md:text-xl text-gray-300 max-w-3xl mx-auto px-2">
+          База данных материалов с официальными пресетами от производителей и проверенными настройками от сообщества
         </p>
       </div>
 
@@ -189,20 +188,22 @@ export const CatalogPage: React.FC = () => {
       )} */}
 
       {/* Search Bar */}
-      <div className="bg-white/10 backdrop-blur-sm rounded-2xl p-6 border border-white/20 shadow-xl">
-        <div className="flex flex-col lg:flex-row gap-4">
-          <div className="flex-1 relative">
-            <Search className="absolute left-4 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
+      <div className="bg-white/10 backdrop-blur-sm rounded-xl sm:rounded-2xl p-4 sm:p-6 border border-white/20 shadow-xl">
+        <div className="flex flex-col gap-3 sm:gap-4">
+          {/* Search Input */}
+          <div className="relative">
+            <Search className="absolute left-3 sm:left-4 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
             <input
               type="text"
-              placeholder="Поиск по бренду, типу или названию..."
+              placeholder="Поиск..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full pl-12 pr-4 py-4 bg-white/10 border border-white/20 rounded-xl text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all"
+              className="w-full pl-10 sm:pl-12 pr-4 py-3 sm:py-4 bg-white/10 border border-white/20 rounded-xl text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all text-sm sm:text-base"
             />
           </div>
 
-          <div className="min-w-48">
+          {/* Filters - stack on mobile, row on desktop */}
+          <div className="grid grid-cols-2 lg:grid-cols-2 gap-2 sm:gap-4">
             <Dropdown
               value={materialTypeFilter || ''}
               onChange={(val) => setMaterialTypeFilter(val === '' ? null : (val as string))}
@@ -212,9 +213,6 @@ export const CatalogPage: React.FC = () => {
               ]}
               placeholder="Все типы"
             />
-          </div>
-
-          <div className="min-w-48">
             <Dropdown
               value={brandFilter || ''}
               onChange={(val) => setBrandFilter(val === '' ? null : Number(val))}
@@ -367,59 +365,68 @@ const MaterialCard: React.FC<MaterialCardProps> = ({
   return (
     <div 
       onClick={handleCardClick}
-      className="bg-white/10 backdrop-blur-sm rounded-2xl p-6 border border-white/20 hover:bg-white/15 transition-all duration-300 group shadow-xl cursor-pointer"
+      className="bg-white/10 backdrop-blur-sm rounded-xl sm:rounded-2xl p-4 sm:p-6 border border-white/20 hover:bg-white/15 transition-all duration-300 group shadow-xl cursor-pointer"
     >
       {/* Header с названием, ценой и рейтингом */}
-      <div className="flex items-start justify-between mb-4">
-        <div className="flex-1">
-          <div className="flex items-center gap-3 mb-2">
-            {brand && (
-              <>
-                <span
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    navigate(`/brands/${brand.id}`);
-                  }}
-                  className={`${brand.verified ? "text-green-400" : "text-purple-300"} font-semibold hover:underline cursor-pointer transition-colors`}
-                >
-                  {brand.name}
-                </span>
-                {brand.verified && (
-                  <Shield className="w-4 h-4 text-green-400"/>
-                )}
-              </>
-            )}
-            <h3 className="text-xl font-bold text-white group-hover:text-purple-300 transition-colors">
-              {filament.name}
-            </h3>
-            <div className="flex items-center gap-2">
-              <span className="px-2 py-1 bg-purple-500/20 text-purple-300 text-xs rounded-full border border-purple-500/30">
-                {filament.material_type}
-              </span>
-              {(filament.color_hex || filament.visual_settings) && (
-                <span className="inline-flex items-center justify-center w-24">
-                  <div style={{ transform: 'scale(0.45)', transformOrigin: 'center center' }}>
-                    <FilamentPreview
-                      colorHex={filament.color_hex || '#FFFFFF'}
-                      visualSettings={filament.visual_settings}
-                      size="medium"
-                    />
-                  </div>
-                </span>
+      <div className="flex items-start justify-between mb-3 sm:mb-4">
+        <div className="flex-1 min-w-0">
+          {/* Mobile: Stack brand/name vertically, Desktop: inline */}
+          <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-3 mb-2">
+            <div className="flex items-center gap-2 flex-wrap">
+              {brand && (
+                <>
+                  <span
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      navigate(`/brands/${brand.id}`);
+                    }}
+                    className={`${brand.verified ? "text-green-400" : "text-purple-300"} font-semibold hover:underline cursor-pointer transition-colors text-sm sm:text-base`}
+                  >
+                    {brand.name}
+                  </span>
+                  {brand.verified && (
+                    <Shield className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-green-400"/>
+                  )}
+                </>
               )}
             </div>
+            <h3 className="text-lg sm:text-xl font-bold text-white group-hover:text-purple-300 transition-colors truncate">
+              {filament.name}
+            </h3>
           </div>
-          {/* Рейтинг материала - убран из каталога для оптимизации, показывается на детальной странице */}
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="px-2 py-0.5 sm:py-1 bg-purple-500/20 text-purple-300 text-xs rounded-full border border-purple-500/30">
+              {filament.material_type}
+            </span>
+            {(filament.color_hex || filament.visual_settings) && (
+              <span className="inline-flex items-center justify-center w-16 sm:w-24">
+                <div style={{ transform: 'scale(0.35)', transformOrigin: 'center center' }} className="sm:hidden">
+                  <FilamentPreview
+                    colorHex={filament.color_hex || '#FFFFFF'}
+                    visualSettings={filament.visual_settings}
+                    size="medium"
+                  />
+                </div>
+                <div style={{ transform: 'scale(0.45)', transformOrigin: 'center center' }} className="hidden sm:block">
+                  <FilamentPreview
+                    colorHex={filament.color_hex || '#FFFFFF'}
+                    visualSettings={filament.visual_settings}
+                    size="medium"
+                  />
+                </div>
+              </span>
+            )}
+          </div>
         </div>
         {(filament.price_per_kg || filament.spool_weight) && (
-          <div className="text-right ml-4">
+          <div className="text-right ml-2 sm:ml-4 flex-shrink-0">
             {filament.price_per_kg && (
-              <p className="text-3xl font-bold text-green-400 mb-1">
+              <p className="text-xl sm:text-3xl font-bold text-green-400 mb-0.5 sm:mb-1">
                 {Math.round(filament.price_per_kg)}₽
               </p>
             )}
             {filament.spool_weight && (
-              <p className="text-sm text-gray-400">
+              <p className="text-xs sm:text-sm text-gray-400">
                 {Math.round(filament.spool_weight)}g
               </p>
             )}
@@ -428,130 +435,118 @@ const MaterialCard: React.FC<MaterialCardProps> = ({
       </div>
 
       {/* Детали материала в компактном виде */}
-      <div className="mb-4 flex flex-wrap items-center gap-4 text-xs text-gray-300">
+      <div className="mb-3 sm:mb-4 flex flex-wrap items-center gap-2 sm:gap-4 text-xs text-gray-300">
         {filament.diameter && (
-          <div className="flex items-center gap-1 bg-white/5 border border-white/10 rounded-full px-3 py-1">
-            <Ruler className="w-3.5 h-3.5 text-purple-300" />
-            <span className="uppercase tracking-wide text-[11px]">Диаметр</span>
-            <span className="text-white font-semibold">{filament.diameter} мм</span>
+          <div className="flex items-center gap-1 bg-white/5 border border-white/10 rounded-full px-2 sm:px-3 py-0.5 sm:py-1">
+            <Ruler className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-purple-300" />
+            <span className="hidden sm:inline uppercase tracking-wide text-[11px]">Диаметр</span>
+            <span className="text-white font-semibold text-[10px] sm:text-xs">{filament.diameter} мм</span>
           </div>
         )}
         {filament.density && (
-          <div className="flex items-center gap-1 bg-white/5 border border-white/10 rounded-full px-3 py-1">
-            <Droplet className="w-3.5 h-3.5 text-blue-300" />
-            <span className="uppercase tracking-wide text-[11px]">Плотность</span>
-            <span className="text-white font-semibold">{filament.density} г/см³</span>
+          <div className="flex items-center gap-1 bg-white/5 border border-white/10 rounded-full px-2 sm:px-3 py-0.5 sm:py-1">
+            <Droplet className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-blue-300" />
+            <span className="hidden sm:inline uppercase tracking-wide text-[11px]">Плотность</span>
+            <span className="text-white font-semibold text-[10px] sm:text-xs">{filament.density} г/см³</span>
           </div>
         )}
-        {(filament.color_hex || filament.color_name) && (
-          <div className="flex items-center gap-2 bg-white/5 border border-white/10 rounded-full px-3 py-1">
-            <Palette className="w-3.5 h-3.5 text-amber-300" />
-            <span className="uppercase tracking-wide text-[11px]">Цвет</span>
-            {filament.color_name && <span className="text-white font-semibold">{filament.color_name}</span>}
+        {filament.color_name && (
+          <div className="flex items-center gap-1 sm:gap-2 bg-white/5 border border-white/10 rounded-full px-2 sm:px-3 py-0.5 sm:py-1">
+            <Palette className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-amber-300" />
+            <span className="text-white font-semibold text-[10px] sm:text-xs truncate max-w-[80px] sm:max-w-none">{filament.color_name}</span>
           </div>
         )}
       </div>
 
       {/* Пресеты и детальная информация загружаются только на странице материала для оптимизации */}
       {currentPreset && (
-        <div className="mt-6 bg-white/5 border border-white/10 rounded-xl p-5 space-y-4">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div className="flex items-center gap-2 text-sm text-gray-300">
+        <div className="mt-4 sm:mt-6 bg-white/5 border border-white/10 rounded-lg sm:rounded-xl p-3 sm:p-5 space-y-3 sm:space-y-4">
+          {/* Header: Badge, Name, Date */}
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 sm:gap-3">
+            <div className="flex items-center gap-2 text-xs sm:text-sm text-gray-300 flex-wrap">
               {presetBadge && (
-                <span className={`px-2 py-1 text-xs rounded-full border ${presetBadge.className}`}>
+                <span className={`px-2 py-0.5 sm:py-1 text-[10px] sm:text-xs rounded-full border ${presetBadge.className}`}>
                   {presetBadge.label}
                 </span>
               )}
-              <h4 className="text-base font-semibold text-white">{currentPreset.name}</h4>
-              <span className="text-gray-400">· обновлён {formatUpdatedAt(currentPreset.updated_at)}</span>
+              <h4 className="text-sm sm:text-base font-semibold text-white truncate max-w-[150px] sm:max-w-none">{currentPreset.name}</h4>
+              <span className="text-gray-400 text-[10px] sm:text-xs hidden sm:inline">· обновлён {formatUpdatedAt(currentPreset.updated_at)}</span>
             </div>
-            <div className="flex items-center gap-3 text-sm text-gray-300">
+            <div className="flex items-center gap-2 sm:gap-3 text-[10px] sm:text-sm text-gray-300">
               <span>
-                Рейтинг:{' '}
                 <span className="text-white font-semibold">
-                  {currentPreset.rating ? currentPreset.rating.toFixed(1) : '—'}
+                  ★ {currentPreset.rating ? currentPreset.rating.toFixed(1) : '—'}
                 </span>
               </span>
               <span>
-                Успех:{' '}
                 <span className="text-white font-semibold">
-                  {currentPreset.success_rate ? `${currentPreset.success_rate.toFixed(0)}%` : '—'}
+                  ✓ {currentPreset.success_rate ? `${currentPreset.success_rate.toFixed(0)}%` : '—'}
                 </span>
               </span>
             </div>
           </div>
 
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
-              <div className="space-y-1 text-center flex flex-col items-center">
-                <div className="flex items-center gap-1 text-gray-400 uppercase tracking-wide">
-                  <Thermometer className="w-3.5 h-3.5 text-orange-300" />
-                  <span>Сопло</span>
-                </div>
+          {/* Params Grid + Actions */}
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+            <div className="grid grid-cols-4 gap-2 sm:gap-3 text-[10px] sm:text-xs">
+              <div className="text-center flex flex-col items-center">
+                <Thermometer className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-orange-300 mb-0.5" />
                 <div className="text-white font-semibold">
-                  {formatPresetValue(currentPreset.extruder_temp, '°C')}
+                  {formatPresetValue(currentPreset.extruder_temp, '°')}
                 </div>
               </div>
-              <div className="space-y-1 text-center flex flex-col items-center">
-                <div className="flex items-center gap-1 text-gray-400 uppercase tracking-wide">
-                  <Thermometer className="w-3.5 h-3.5 text-blue-300" />
-                  <span>Стол</span>
-                </div>
+              <div className="text-center flex flex-col items-center">
+                <Thermometer className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-blue-300 mb-0.5" />
                 <div className="text-white font-semibold">
-                  {formatPresetValue(currentPreset.bed_temp, '°C')}
+                  {formatPresetValue(currentPreset.bed_temp, '°')}
                 </div>
               </div>
-              <div className="space-y-1 text-center flex flex-col items-center">
-                <div className="flex items-center gap-1 text-gray-400 uppercase tracking-wide">
-                  <Fan className="w-3.5 h-3.5 text-sky-300" />
-                  <span>Обдув</span>
-                </div>
+              <div className="text-center flex flex-col items-center">
+                <Fan className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-sky-300 mb-0.5" />
                 <div className="text-white font-semibold">
                   {formatFanSpeed(currentPreset.fan_speed)}
                 </div>
               </div>
-              <div className="space-y-1 text-center flex flex-col items-center">
-                <div className="flex items-center gap-1 text-gray-400 uppercase tracking-wide">
-                  <Droplet className="w-3.5 h-3.5 text-emerald-300" />
-                  <span>Поток</span>
-                </div>
+              <div className="text-center flex flex-col items-center">
+                <Droplet className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-emerald-300 mb-0.5" />
                 <div className="text-white font-semibold">
                   {formatFlowRate(currentPreset.flow_rate)}
                 </div>
               </div>
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center justify-between sm:justify-end gap-2">
               {hasCarousel && (
-                <>
+                <div className="flex items-center gap-1 sm:gap-2">
                   <button
                     onClick={(e) => {
                       e.stopPropagation();
                       handleCyclePreset('prev');
                     }}
-                    className="p-2 rounded-full border border-white/20 text-white hover:bg-white/10 transition-colors"
+                    className="p-1.5 sm:p-2 rounded-full border border-white/20 text-white hover:bg-white/10 transition-colors"
                   >
-                    <ChevronLeft className="w-4 h-4" />
+                    <ChevronLeft className="w-3 h-3 sm:w-4 sm:h-4" />
                   </button>
-                  <span className="text-xs text-gray-400">
-                    {currentPresetIndex + 1} / {presetSummaries.length}
+                  <span className="text-[10px] sm:text-xs text-gray-400 min-w-[40px] text-center">
+                    {currentPresetIndex + 1}/{presetSummaries.length}
                   </span>
                   <button
                     onClick={(e) => {
                       e.stopPropagation();
                       handleCyclePreset('next');
                     }}
-                    className="p-2 rounded-full border border-white/20 text-white hover:bg-white/10 transition-colors"
+                    className="p-1.5 sm:p-2 rounded-full border border-white/20 text-white hover:bg-white/10 transition-colors"
                   >
-                    <ChevronRight className="w-4 h-4" />
+                    <ChevronRight className="w-3 h-3 sm:w-4 sm:h-4" />
                   </button>
-                </>
+                </div>
               )}
               <button
                 onClick={handleSavePreset}
-                className="px-4 py-2 rounded-lg border border-white/20 text-sm text-white hover:bg-white/10 transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
+                className="px-3 sm:px-4 py-1.5 sm:py-2 rounded-lg border border-white/20 text-xs sm:text-sm text-white hover:bg-white/10 transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
                 disabled={isPresetSaved}
               >
-                {isPresetSaved ? 'Добавлено' : 'В профиль'}
+                {isPresetSaved ? '✓' : '+'}
+                <span className="hidden sm:inline ml-1">{isPresetSaved ? 'Добавлено' : 'В профиль'}</span>
               </button>
             </div>
           </div>

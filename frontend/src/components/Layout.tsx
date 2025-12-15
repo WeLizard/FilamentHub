@@ -2,7 +2,7 @@
 
 import { ReactNode, useState, useEffect, useRef } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
-import { Package, User, LogOut, Shield, MessageCircle, Download } from 'lucide-react';
+import { Package, User, LogOut, Shield, MessageCircle, Download, Menu, X } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { AuthModal } from './AuthModal';
 import { Notifications } from './Notifications';
@@ -18,7 +18,13 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
   const navigate = useNavigate();
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
   const [isFeedbackModalOpen, setIsFeedbackModalOpen] = useState(false);
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const hasOpenedLoginModalRef = useRef(false);
+
+  // Закрываем мобильное меню при переходе на другую страницу
+  useEffect(() => {
+    setIsMobileMenuOpen(false);
+  }, [location.pathname]);
 
   // Обработка URL параметра ?auth=login для автоматического открытия модального окна
   useEffect(() => {
@@ -64,68 +70,65 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
       {/* Header - скрываем если открыто через OrcaSlicer */}
       {!isInOrcaSlicer && (
       <header className="relative bg-black/20 backdrop-blur-sm border-b border-white/10 z-50">
-        <div className="max-w-7xl mx-auto px-6 py-4">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 py-3 sm:py-4">
           <div className="flex items-center justify-between">
-            <div className="flex items-center space-x-4">
-              <Link to="/" className="flex items-center space-x-4">
-                <div className="w-12 h-12 flex items-center justify-center">
+            {/* Logo */}
+            <div className="flex items-center space-x-2 sm:space-x-4">
+              <Link to="/" className="flex items-center space-x-2 sm:space-x-4">
+                <div className="w-10 h-10 sm:w-12 sm:h-12 flex items-center justify-center">
                   <img 
                     src="/logo.svg" 
                     alt="FilamentHub Logo" 
-                    className="w-12 h-12 object-contain"
+                    className="w-10 h-10 sm:w-12 sm:h-12 object-contain"
                   />
                 </div>
-                <div>
-                  <h1 className="text-2xl font-bold text-white">FilamentHub</h1>
-                  <p className="text-sm text-gray-400">Интеллектуальный каталог материалов</p>
+                <div className="hidden xs:block">
+                  <h1 className="text-lg sm:text-2xl font-bold text-white">FilamentHub</h1>
+                  <p className="text-xs sm:text-sm text-gray-400 hidden sm:block">Интеллектуальный каталог материалов</p>
                 </div>
               </Link>
               
-              {/* Кнопка обратной связи для бетатестеров (временно справа от лого) - только для авторизованных */}
+              {/* Кнопка обратной связи - скрыта на мобильных, показывается в меню */}
               {user && (
                 <button
                   onClick={() => setIsFeedbackModalOpen(true)}
-                  className="ml-4 px-3 py-1.5 rounded-lg bg-purple-600/20 hover:bg-purple-600/30 border border-purple-500/30 text-purple-300 hover:text-purple-200 text-xs font-medium transition-all flex items-center gap-1.5"
+                  className="hidden md:flex ml-4 px-3 py-1.5 rounded-lg bg-purple-600/20 hover:bg-purple-600/30 border border-purple-500/30 text-purple-300 hover:text-purple-200 text-xs font-medium transition-all items-center gap-1.5"
                   title="Обратная связь для бетатестеров"
                 >
                   <MessageCircle className="w-3.5 h-3.5" />
-                  <span className="hidden sm:inline">Бета-фидбек</span>
-                  <span className="sm:hidden">Фидбек</span>
+                  <span>Бета-фидбек</span>
                 </button>
               )}
             </div>
 
-            <nav className="flex items-center space-x-2 relative z-[100]">
-              {/* Notifications - только для авторизованных */}
-              {user && (
-                <Notifications />
-              )}
+            {/* Desktop Navigation */}
+            <nav className="hidden md:flex items-center space-x-2 relative z-[100]">
+              {user && <Notifications />}
 
-                    <Link
-                      to="/"
-                      className={`flex items-center space-x-2 px-4 py-2 rounded-lg transition-all ${
-                        isActive('/')
-                          ? 'bg-purple-600 text-white shadow-lg shadow-purple-500/25'
-                          : 'text-gray-300 hover:text-white hover:bg-white/10'
-                      }`}
-                    >
-                      <Package className="w-4 h-4" />
-                      <span>Каталог</span>
-                    </Link>
+              <Link
+                to="/"
+                className={`flex items-center space-x-2 px-4 py-2 rounded-lg transition-all ${
+                  isActive('/')
+                    ? 'bg-purple-600 text-white shadow-lg shadow-purple-500/25'
+                    : 'text-gray-300 hover:text-white hover:bg-white/10'
+                }`}
+              >
+                <Package className="w-4 h-4" />
+                <span>Каталог</span>
+              </Link>
 
-                    <Link
-                      to="/download"
-                      className={`flex items-center space-x-2 px-4 py-2 rounded-lg transition-all ${
-                        isActive('/download')
-                          ? 'bg-purple-600 text-white shadow-lg shadow-purple-500/25'
-                          : 'text-gray-300 hover:text-white hover:bg-white/10'
-                      }`}
-                    >
-                      <Download className="w-4 h-4" />
-                      <span>Скачать</span>
-                    </Link>
+              <Link
+                to="/download"
+                className={`flex items-center space-x-2 px-4 py-2 rounded-lg transition-all ${
+                  isActive('/download')
+                    ? 'bg-purple-600 text-white shadow-lg shadow-purple-500/25'
+                    : 'text-gray-300 hover:text-white hover:bg-white/10'
+                }`}
+              >
+                <Download className="w-4 h-4" />
+                <span>Скачать</span>
+              </Link>
 
-              {/* Admin Panel - только для админов */}
               {user?.role === 'admin' && (
                 <Link
                   to="/admin"
@@ -172,13 +175,117 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
                 </button>
               )}
             </nav>
+
+            {/* Mobile: Notifications + Hamburger */}
+            <div className="flex md:hidden items-center space-x-2">
+              {user && <Notifications />}
+              <button
+                onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
+                className="p-2 text-gray-300 hover:text-white hover:bg-white/10 rounded-lg transition-all"
+                aria-label="Меню"
+              >
+                {isMobileMenuOpen ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
+              </button>
+            </div>
           </div>
         </div>
+
+        {/* Mobile Menu */}
+        {isMobileMenuOpen && (
+          <div className="md:hidden bg-black/40 backdrop-blur-md border-t border-white/10">
+            <div className="px-4 py-3 space-y-2">
+              <Link
+                to="/"
+                className={`flex items-center space-x-3 px-4 py-3 rounded-lg transition-all ${
+                  isActive('/')
+                    ? 'bg-purple-600 text-white'
+                    : 'text-gray-300 hover:text-white hover:bg-white/10'
+                }`}
+              >
+                <Package className="w-5 h-5" />
+                <span className="font-medium">Каталог</span>
+              </Link>
+
+              <Link
+                to="/download"
+                className={`flex items-center space-x-3 px-4 py-3 rounded-lg transition-all ${
+                  isActive('/download')
+                    ? 'bg-purple-600 text-white'
+                    : 'text-gray-300 hover:text-white hover:bg-white/10'
+                }`}
+              >
+                <Download className="w-5 h-5" />
+                <span className="font-medium">Скачать</span>
+              </Link>
+
+              {user?.role === 'admin' && (
+                <Link
+                  to="/admin"
+                  className={`flex items-center space-x-3 px-4 py-3 rounded-lg transition-all ${
+                    isActive('/admin')
+                      ? 'bg-yellow-600 text-white'
+                      : 'text-gray-300 hover:text-white hover:bg-white/10'
+                  }`}
+                >
+                  <Shield className="w-5 h-5" />
+                  <span className="font-medium">Админка</span>
+                </Link>
+              )}
+
+              {user && (
+                <>
+                  <Link
+                    to="/profile"
+                    className={`flex items-center space-x-3 px-4 py-3 rounded-lg transition-all ${
+                      isActive('/profile')
+                        ? 'bg-purple-600 text-white'
+                        : 'text-gray-300 hover:text-white hover:bg-white/10'
+                    }`}
+                  >
+                    <User className="w-5 h-5" />
+                    <span className="font-medium">Профиль</span>
+                  </Link>
+
+                  <button
+                    onClick={() => setIsFeedbackModalOpen(true)}
+                    className="w-full flex items-center space-x-3 px-4 py-3 rounded-lg text-purple-300 hover:text-purple-200 hover:bg-purple-600/20 transition-all"
+                  >
+                    <MessageCircle className="w-5 h-5" />
+                    <span className="font-medium">Бета-фидбек</span>
+                  </button>
+
+                  <div className="border-t border-white/10 pt-2 mt-2">
+                    <button
+                      onClick={handleLogout}
+                      className="w-full flex items-center space-x-3 px-4 py-3 rounded-lg text-red-400 hover:bg-red-600/20 transition-all"
+                    >
+                      <LogOut className="w-5 h-5" />
+                      <span className="font-medium">Выйти</span>
+                    </button>
+                  </div>
+                </>
+              )}
+
+              {!user && (
+                <button
+                  onClick={() => {
+                    setIsAuthModalOpen(true);
+                    setIsMobileMenuOpen(false);
+                  }}
+                  className="w-full flex items-center justify-center space-x-2 px-4 py-3 bg-purple-600 hover:bg-purple-700 text-white rounded-lg transition-all font-medium"
+                >
+                  <User className="w-5 h-5" />
+                  <span>Войти</span>
+                </button>
+              )}
+            </div>
+          </div>
+        )}
       </header>
       )}
 
       {/* Main Content */}
-      <main className="relative max-w-7xl mx-auto px-6 py-8 z-10">{children}</main>
+      <main className="relative max-w-7xl mx-auto px-4 sm:px-6 py-4 sm:py-8 z-10">{children}</main>
 
       {/* Auth Modal */}
       <AuthModal
