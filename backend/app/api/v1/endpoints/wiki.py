@@ -8,7 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.dependencies import get_current_user, get_current_admin_user
 from app.db.session import get_db
 from app.models.user import User
-from app.models.wiki_article import WikiArticle
+from app.models.wiki_article import WikiArticle, WikiArticleStatus
 from app.models.wiki_category import WikiCategory
 from app.schemas.wiki import (
     WikiArticleCreate,
@@ -50,7 +50,7 @@ async def list_categories(
             WikiCategory,
             func.count(WikiArticle.id).label("articles_count")
         )
-        .outerjoin(WikiArticle, (WikiArticle.category_id == WikiCategory.id) & (WikiArticle.published == True))
+        .outerjoin(WikiArticle, (WikiArticle.category_id == WikiCategory.id) & (WikiArticle.status == WikiArticleStatus.PUBLISHED))
         .group_by(WikiCategory.id)
         .order_by(WikiCategory.order.asc(), WikiCategory.name.asc())
         .offset((page - 1) * page_size)
@@ -97,7 +97,7 @@ async def get_category(
             WikiCategory,
             func.count(WikiArticle.id).label("articles_count")
         )
-        .outerjoin(WikiArticle, (WikiArticle.category_id == WikiCategory.id) & (WikiArticle.published == True))
+        .outerjoin(WikiArticle, (WikiArticle.category_id == WikiCategory.id) & (WikiArticle.status == WikiArticleStatus.PUBLISHED))
         .where(WikiCategory.slug == category_slug)
         .group_by(WikiCategory.id)
     )
@@ -200,7 +200,7 @@ async def update_category(
     # Получаем количество статей
     count_result = await db.execute(
         select(func.count(WikiArticle.id)).where(
-            (WikiArticle.category_id == category.id) & (WikiArticle.published == True)
+            (WikiArticle.category_id == category.id) & (WikiArticle.status == WikiArticleStatus.PUBLISHED)
         )
     )
     articles_count = count_result.scalar_one()
@@ -272,16 +272,18 @@ async def list_articles(
     
     # Фильтр по публикации
     if published_only:
-        query = query.where(WikiArticle.published == True)
+        query = query.where(WikiArticle.status == WikiArticleStatus.PUBLISHED)
     
     # Поиск
     if search:
         search_pattern = f"%{search}%"
+        # tags это JSON поле, поэтому используем cast для поиска
+        from sqlalchemy import cast, String
         query = query.where(
             or_(
                 WikiArticle.title.ilike(search_pattern),
                 WikiArticle.summary.ilike(search_pattern),
-                WikiArticle.tags.ilike(search_pattern),
+                cast(WikiArticle.tags, String).ilike(search_pattern),
             )
         )
     
@@ -301,8 +303,27 @@ async def list_articles(
     result = await db.execute(query)
     articles = result.scalars().all()
     
+    # Конвертируем статьи в Summary, добавляя published поле из status
+    items = []
+    for article in articles:
+        article_dict = {
+            "id": article.id,
+            "category_id": article.category_id,
+            "title": article.title,
+            "slug": article.slug,
+            "summary": article.summary,
+            "tags": article.tags,
+            "author": article.author,
+            "published": article.status == WikiArticleStatus.PUBLISHED,
+            "views": article.views,
+            "order": article.order,
+            "created_at": article.created_at,
+            "updated_at": article.updated_at,
+        }
+        items.append(WikiArticleSummary(**article_dict))
+    
     return WikiArticleListResponse(
-        items=[WikiArticleSummary.model_validate(article) for article in articles],
+        items=items,
         total=total,
         page=page,
         page_size=page_size,
@@ -328,7 +349,7 @@ async def get_article(
     if not article:
         raise HTTPException(status_code=404, detail="Article not found")
     
-    if not article.published:
+    if article.status != WikiArticleStatus.PUBLISHED:
         raise HTTPException(status_code=404, detail="Article not published")
     
     # Увеличиваем счетчик просмотров
@@ -351,7 +372,7 @@ async def get_article(
         "content": article.content,
         "tags": article.tags,
         "author": article.author,
-        "published": article.published,
+        "published": article.status == WikiArticleStatus.PUBLISHED,
         "views": article.views,
         "order": article.order,
         "created_at": article.created_at,
@@ -385,7 +406,13 @@ async def create_article(
         raise HTTPException(status_code=400, detail="Article with this slug already exists")
     
     # Создание статьи
-    article = WikiArticle(**data.model_dump())
+    article_data = data.model_dump()
+    # Конвертируем published bool в status enum
+    if "published" in article_data:
+        article_data["status"] = WikiArticleStatus.PUBLISHED if article_data.pop("published") else WikiArticleStatus.DRAFT
+    article = WikiArticle(**article_data)
+    article.created_by_id = _current_user.id
+    article.updated_by_id = _current_user.id
     db.add(article)
     await db.commit()
     await db.refresh(article)
@@ -399,7 +426,7 @@ async def create_article(
         content=article.content,
         tags=article.tags,
         author=article.author,
-        published=article.published,
+        published=article.status == WikiArticleStatus.PUBLISHED,
         views=article.views,
         order=article.order,
         created_at=article.created_at,
@@ -425,6 +452,10 @@ async def update_article(
     # Обновление полей
     update_data = data.model_dump(exclude_unset=True)
     
+    # Конвертируем published bool в status enum
+    if "published" in update_data:
+        update_data["status"] = WikiArticleStatus.PUBLISHED if update_data.pop("published") else WikiArticleStatus.DRAFT
+    
     # Проверка существования новой категории
     if "category_id" in update_data:
         category_result = await db.execute(
@@ -441,8 +472,12 @@ async def update_article(
         if existing.scalar_one_or_none():
             raise HTTPException(status_code=400, detail="Article with this slug already exists")
     
+    # Обновляем поля
     for field, value in update_data.items():
         setattr(article, field, value)
+    
+    # Обновляем updated_by_id
+    article.updated_by_id = _current_user.id
     
     await db.commit()
     await db.refresh(article)
@@ -462,7 +497,7 @@ async def update_article(
         content=article.content,
         tags=article.tags,
         author=article.author,
-        published=article.published,
+        published=article.status == WikiArticleStatus.PUBLISHED,
         views=article.views,
         order=article.order,
         created_at=article.created_at,
@@ -508,13 +543,15 @@ async def search_articles(
     """
     search_pattern = f"%{q}%"
     
+    # tags это JSON поле, поэтому используем cast для поиска
+    from sqlalchemy import cast, String
     query = select(WikiArticle).where(
-        WikiArticle.published == True,
+        WikiArticle.status == WikiArticleStatus.PUBLISHED,
         or_(
             WikiArticle.title.ilike(search_pattern),
             WikiArticle.summary.ilike(search_pattern),
             WikiArticle.content.ilike(search_pattern),
-            WikiArticle.tags.ilike(search_pattern),
+            cast(WikiArticle.tags, String).ilike(search_pattern),
         )
     )
     
@@ -535,8 +572,27 @@ async def search_articles(
     result = await db.execute(query)
     articles = result.scalars().all()
     
+    # Конвертируем статьи в Summary, добавляя published поле из status
+    items = []
+    for article in articles:
+        article_dict = {
+            "id": article.id,
+            "category_id": article.category_id,
+            "title": article.title,
+            "slug": article.slug,
+            "summary": article.summary,
+            "tags": article.tags,
+            "author": article.author,
+            "published": article.status == WikiArticleStatus.PUBLISHED,
+            "views": article.views,
+            "order": article.order,
+            "created_at": article.created_at,
+            "updated_at": article.updated_at,
+        }
+        items.append(WikiArticleSummary(**article_dict))
+    
     return WikiArticleListResponse(
-        items=[WikiArticleSummary.model_validate(article) for article in articles],
+        items=items,
         total=total,
         page=page,
         page_size=page_size,
