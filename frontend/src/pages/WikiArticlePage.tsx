@@ -207,22 +207,24 @@ export function WikiArticlePage() {
 
       {/* Article Content (Markdown) */}
       <article className="bg-white/5 backdrop-blur-sm border border-white/10 rounded-2xl p-6 md:p-8 mb-8 overflow-hidden">
-        <div className="prose prose-invert prose-lg max-w-none break-words
-          prose-headings:text-white prose-headings:font-bold prose-headings:mt-8 prose-headings:mb-4
-          prose-h1:text-3xl prose-h1:border-b prose-h1:border-white/20 prose-h1:pb-3
-          prose-h2:text-2xl prose-h2:mt-8 prose-h2:mb-4
-          prose-h3:text-xl prose-h3:mt-6 prose-h3:mb-3
-          prose-p:text-gray-300 prose-p:leading-7 prose-p:my-4 prose-p:break-words
-          prose-a:text-blue-400 prose-a:no-underline hover:prose-a:text-blue-300 hover:prose-a:underline
-          prose-strong:text-white prose-strong:font-semibold
-          prose-code:text-cyan-300 prose-code:bg-black/40 prose-code:px-1.5 prose-code:py-0.5 prose-code:rounded prose-code:text-sm
-          prose-pre:bg-black/60 prose-pre:border prose-pre:border-white/20 prose-pre:rounded-lg prose-pre:p-4 prose-pre:overflow-x-auto
-          prose-blockquote:border-l-4 prose-blockquote:border-blue-500 prose-blockquote:pl-6 prose-blockquote:pr-4 prose-blockquote:py-2 prose-blockquote:bg-blue-500/10 prose-blockquote:text-gray-300 prose-blockquote:my-6 prose-blockquote:rounded-r-lg
-          prose-ul:text-gray-300 prose-ul:my-4 prose-ul:space-y-2
-          prose-ol:text-gray-300 prose-ol:my-4 prose-ol:space-y-2
-          prose-li:text-gray-300 prose-li:marker:text-blue-400 prose-li:pl-2
-          prose-img:rounded-xl prose-img:shadow-xl prose-img:my-6 prose-img:max-w-full prose-img:h-auto
-          prose-hr:border-white/20 prose-hr:my-8
+        <div className="prose prose-lg max-w-none break-words text-gray-200
+          [&>*]:text-gray-200
+          [&_h1]:text-white [&_h1]:font-bold [&_h1]:text-3xl [&_h1]:mt-8 [&_h1]:mb-4 [&_h1]:border-b [&_h1]:border-white/20 [&_h1]:pb-3
+          [&_h2]:text-white [&_h2]:font-bold [&_h2]:text-2xl [&_h2]:mt-8 [&_h2]:mb-4
+          [&_h3]:text-white [&_h3]:font-bold [&_h3]:text-xl [&_h3]:mt-6 [&_h3]:mb-3
+          [&_h4]:text-white [&_h4]:font-semibold [&_h4]:text-lg [&_h4]:mt-4 [&_h4]:mb-2
+          [&_p]:text-gray-200 [&_p]:leading-7 [&_p]:my-4 [&_p]:break-words
+          [&_a]:text-blue-400 [&_a]:no-underline hover:[&_a]:text-blue-300 hover:[&_a]:underline
+          [&_strong]:text-white [&_strong]:font-semibold
+          [&_em]:text-gray-200
+          [&_code]:text-cyan-300 [&_code]:bg-black/40 [&_code]:px-1.5 [&_code]:py-0.5 [&_code]:rounded [&_code]:text-sm
+          [&_pre]:bg-black/60 [&_pre]:border [&_pre]:border-white/20 [&_pre]:rounded-lg [&_pre]:p-4 [&_pre]:overflow-x-auto
+          [&_blockquote]:border-l-4 [&_blockquote]:border-blue-500 [&_blockquote]:pl-6 [&_blockquote]:pr-4 [&_blockquote]:py-2 [&_blockquote]:bg-blue-500/10 [&_blockquote]:text-gray-200 [&_blockquote]:my-6 [&_blockquote]:rounded-r-lg
+          [&_ul]:text-gray-200 [&_ul]:my-4 [&_ul]:space-y-2 [&_ul]:list-disc [&_ul]:pl-6
+          [&_ol]:text-gray-200 [&_ol]:my-4 [&_ol]:space-y-2 [&_ol]:list-decimal [&_ol]:pl-6
+          [&_li]:text-gray-200 [&_li]:marker:text-blue-400 [&_li]:pl-2
+          [&_img]:rounded-xl [&_img]:shadow-xl [&_img]:my-6 [&_img]:max-w-full [&_img]:h-auto
+          [&_hr]:border-white/20 [&_hr]:my-8
         ">
           <ReactMarkdown
             remarkPlugins={[remarkGfm]}
