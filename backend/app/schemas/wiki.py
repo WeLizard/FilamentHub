@@ -74,7 +74,7 @@ class WikiArticleBase(BaseModel):
     slug: str = Field(..., min_length=1, max_length=200)
     summary: str = Field(..., min_length=1)
     content: str = Field(..., min_length=1)
-    tags: str | None = Field(None, max_length=500)
+    tags: list[str] | None = Field(None, description="Array of tags")
     author: str | None = Field(None, max_length=100)
     published: bool = Field(default=True)
     order: int = Field(default=0, ge=0)
@@ -102,7 +102,7 @@ class WikiArticleUpdate(BaseModel):
     slug: str | None = Field(None, min_length=1, max_length=200)
     summary: str | None = Field(None, min_length=1)
     content: str | None = Field(None, min_length=1)
-    tags: str | None = Field(None, max_length=500)
+    tags: list[str] | None = Field(None, description="Array of tags")
     author: str | None = Field(None, max_length=100)
     published: bool | None = None
     order: int | None = Field(None, ge=0)
@@ -124,7 +124,7 @@ class WikiArticleSummary(BaseModel):
     title: str
     slug: str
     summary: str
-    tags: str | None
+    tags: list[str] | None
     author: str | None
     published: bool
     views: int
