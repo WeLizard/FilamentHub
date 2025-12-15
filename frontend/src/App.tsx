@@ -12,6 +12,8 @@ import { ConsentPage } from './pages/ConsentPage';
 import { ResetPasswordPage } from './pages/ResetPasswordPage';
 import { DownloadPage } from './pages/DownloadPage';
 import { WikiPage } from './pages/WikiPage';
+import { WikiCategoryPage } from './pages/WikiCategoryPage';
+import { WikiArticlePage } from './pages/WikiArticlePage';
 import { ToastContainer } from './components/Toast';
 import { useOrcaSlicerNotifications } from './hooks/useOrcaSlicerNotifications';
 import { useEffect } from 'react';
@@ -124,6 +126,22 @@ function AppContent() {
           element={
             <Layout>
               <WikiPage />
+            </Layout>
+          }
+        />
+        <Route
+          path="/wiki/:slug"
+          element={
+            <Layout>
+              <WikiCategoryPage />
+            </Layout>
+          }
+        />
+        <Route
+          path="/wiki/articles/:slug"
+          element={
+            <Layout>
+              <WikiArticlePage />
             </Layout>
           }
         />
