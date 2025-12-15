@@ -135,7 +135,7 @@ class TokenData(BaseModel):
 class LoginRequest(BaseModel):
     """Schema for login request."""
 
-    email: EmailStr
+    email: str  # email или username (без учёта регистра)
     password: str
 
 

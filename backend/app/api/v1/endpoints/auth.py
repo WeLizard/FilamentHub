@@ -10,7 +10,7 @@ from app.core.config import settings
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
-from sqlalchemy import select, or_
+from sqlalchemy import func, select, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -186,16 +186,25 @@ async def login(
     data: LoginRequest,
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> Token:
-    """Вход пользователя (получить JWT token)."""
+    """Вход пользователя (получить JWT token).
     
-    # Find user by email
-    result = await db.execute(select(User).where(User.email == data.email))
+    Можно использовать email или username (без учёта регистра).
+    """
+    login_value = data.email.strip().lower()
+    
+    # Ищем по email ИЛИ username (case-insensitive)
+    result = await db.execute(
+        select(User).where(
+            (func.lower(User.email) == login_value) | 
+            (func.lower(User.username) == login_value)
+        )
+    )
     user = result.scalar_one_or_none()
     
     if not user or not verify_password(data.password, user.password_hash):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Incorrect email or password",
+            detail="Неверный email/логин или пароль",
             headers={"WWW-Authenticate": "Bearer"},
         )
     
