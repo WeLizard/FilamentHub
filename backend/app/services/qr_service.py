@@ -2,6 +2,7 @@
 
 import base64
 from io import BytesIO
+from pathlib import Path
 
 import qrcode
 from PIL import Image
@@ -76,6 +77,9 @@ def generate_qr_code_image(
     """
     # Формируем URL для QR-кода
     base_url = settings.BASE_URL
+    # Убеждаемся, что используется HTTPS для внешнего домена
+    if base_url.startswith("http://") and "filamenthub.ru" in base_url:
+        base_url = base_url.replace("http://", "https://")
     url = f"{base_url}/qr/{short_code}"
     
     # Выбираем уровень коррекции ошибок
@@ -126,4 +130,59 @@ def generate_qr_code_base64(
     image_data = buffer.getvalue()
     base64_str = base64.b64encode(image_data).decode("utf-8")
     return f"data:image/png;base64,{base64_str}"
+
+
+def save_qr_code_image(
+    short_code: str,
+    sizes: list[int] = [300, 600, 1200],
+    error_correction: str = "L",
+) -> dict[str, str]:
+    """
+    Сохраняет изображения QR-кода на диск в разных размерах.
+    
+    Args:
+        short_code: Короткий код (например: "FH-001")
+        sizes: Список размеров для сохранения (по умолчанию: 300, 600, 1200)
+        error_correction: Уровень коррекции ошибок (L, M, Q, H)
+    
+    Returns:
+        Словарь с путями к сохраненным файлам: {"300": "/qr_codes/FH-001-300.png", ...}
+    """
+    # Определяем базовую директорию
+    base_path = Path(__file__).parent.parent.parent
+    qr_dir = base_path / settings.QR_CODES_DIR
+    qr_dir.mkdir(parents=True, exist_ok=True)
+    
+    saved_paths = {}
+    
+    for size in sizes:
+        # Генерируем изображение
+        buffer = generate_qr_code_image(short_code, size, error_correction)
+        
+        # Сохраняем на диск
+        filename = f"{short_code}-{size}.png"
+        filepath = qr_dir / filename
+        filepath.write_bytes(buffer.getvalue())
+        
+        # Сохраняем относительный путь для использования в URL
+        saved_paths[str(size)] = f"qr_codes/{filename}"
+    
+    return saved_paths
+
+
+def get_qr_code_path(short_code: str, size: int = 300) -> Path | None:
+    """
+    Получить путь к сохраненному изображению QR-кода.
+    
+    Returns:
+        Path к файлу или None если файл не существует
+    """
+    base_path = Path(__file__).parent.parent.parent
+    qr_dir = base_path / settings.QR_CODES_DIR
+    filename = f"{short_code}-{size}.png"
+    filepath = qr_dir / filename
+    
+    if filepath.exists():
+        return filepath
+    return None
 

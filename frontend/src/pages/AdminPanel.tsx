@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { Shield, FileText, Building2, Users, BarChart3, CheckCircle, Home, Printer as PrinterIcon, Package, User, LogOut, Database, MessageCircle, Send } from 'lucide-react';
+import { Shield, FileText, Building2, Users, BarChart3, CheckCircle, Home, Printer as PrinterIcon, Package, User, LogOut, Database, MessageCircle, Send, Settings } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { AdminBrandRequests } from '../components/admin/AdminBrandRequests';
 import { AdminBrands } from '../components/admin/AdminBrands';
@@ -14,8 +14,9 @@ import { AdminPrinterRequests } from '../components/admin/AdminPrinterRequests';
 import { AdminDatabase } from '../components/admin/AdminDatabase';
 import { AdminFeedback } from '../components/admin/AdminFeedback';
 import { AdminNotifications } from '../components/admin/AdminNotifications';
+import { AdminMaintenance } from '../components/admin/AdminMaintenance';
 
-type AdminTab = 'requests' | 'brands' | 'presets' | 'users' | 'stats' | 'printers' | 'printer-requests' | 'feedback' | 'notifications' | 'database';
+type AdminTab = 'requests' | 'brands' | 'presets' | 'users' | 'stats' | 'printers' | 'printer-requests' | 'feedback' | 'notifications' | 'database' | 'maintenance';
 
 export function AdminPanel() {
   const { user, logout } = useAuth();
@@ -51,6 +52,7 @@ export function AdminPanel() {
     { id: 'notifications' as AdminTab, label: 'Уведомления', icon: Send, count: null },
     { id: 'stats' as AdminTab, label: 'Статистика', icon: BarChart3, count: null },
     { id: 'database' as AdminTab, label: 'База данных', icon: Database, count: null },
+    { id: 'maintenance' as AdminTab, label: 'Технические работы', icon: Settings, count: null },
   ];
 
   return (
@@ -134,6 +136,7 @@ export function AdminPanel() {
           {activeTab === 'notifications' && <AdminNotifications />}
           {activeTab === 'stats' && <AdminStats />}
           {activeTab === 'database' && <AdminDatabase />}
+          {activeTab === 'maintenance' && <AdminMaintenance />}
         </div>
       </div>
     </div>

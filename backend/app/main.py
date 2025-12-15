@@ -12,6 +12,7 @@ from slowapi.errors import RateLimitExceeded
 
 from app.core.config import settings
 from app.core.limiter import limiter
+from app.middleware.maintenance import MaintenanceMiddleware
 
 # Create FastAPI app
 app = FastAPI(
@@ -26,6 +27,9 @@ app = FastAPI(
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 app.add_middleware(SlowAPIMiddleware)
+
+# Maintenance mode middleware (должен быть перед CORS для блокировки запросов)
+app.add_middleware(MaintenanceMiddleware)
 
 # CORS middleware
 app.add_middleware(
@@ -46,6 +50,11 @@ app.mount("/uploads", StaticFiles(directory=str(upload_dir)), name="uploads")
 distributions_dir = Path(__file__).parent.parent / settings.DISTRIBUTIONS_DIR
 distributions_dir.mkdir(parents=True, exist_ok=True)
 app.mount("/distributions", StaticFiles(directory=str(distributions_dir)), name="distributions")
+
+# Static files for QR codes (изображения QR-кодов для печати)
+qr_codes_dir = Path(__file__).parent.parent / settings.QR_CODES_DIR
+qr_codes_dir.mkdir(parents=True, exist_ok=True)
+app.mount("/qr_codes", StaticFiles(directory=str(qr_codes_dir)), name="qr_codes")
 
 
 # Health check endpoint

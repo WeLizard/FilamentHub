@@ -13,6 +13,11 @@ logger = logging.getLogger(__name__)
 
 from app.core.dependencies import get_current_admin_user
 from app.db.session import get_db
+from app.services.maintenance_service import (
+    get_maintenance_info,
+    get_maintenance_mode,
+    set_maintenance_mode,
+)
 # BadWord импортируется лениво в функциях, где используется
 from app.models.brand import Brand
 from app.models.brand_request import BrandRequest, BrandRequestStatus
@@ -1854,5 +1859,48 @@ async def manage_user_badges(
         "message": "Бейджи обновлены",
         "user_id": user_id,
         "badges": user.badges,
+    }
+
+
+# ============================================================================
+# Maintenance Mode (Технические работы)
+# ============================================================================
+
+@router.get("/maintenance", response_model=dict)
+async def get_maintenance_status(
+    admin: User = Depends(get_current_admin_user),
+) -> dict:
+    """
+    Получить текущий статус режима технических работ.
+    Доступно только администраторам.
+    """
+    return get_maintenance_info()
+
+
+@router.post("/maintenance", response_model=dict)
+async def set_maintenance_status(
+    enabled: bool = Body(..., description="Включить или выключить технические работы"),
+    message: Optional[str] = Body(None, description="Сообщение для пользователей"),
+    admin: User = Depends(get_current_admin_user),
+) -> dict:
+    """
+    Установить режим технических работ.
+    Доступно только администраторам.
+    
+    Когда включен режим технических работ:
+    - Все запросы к API (кроме /health и /api/v1/admin/maintenance) возвращают 503
+    - Фронтенд должен показывать сообщение о технических работах
+    """
+    set_maintenance_mode(enabled, message)
+    
+    logger.info(
+        f"Admin {admin.id} {'enabled' if enabled else 'disabled'} maintenance mode"
+        + (f" with message: {message}" if message else "")
+    )
+    
+    return {
+        "success": True,
+        "message": "Режим технических работ обновлен",
+        "maintenance_mode": get_maintenance_info(),
     }
 

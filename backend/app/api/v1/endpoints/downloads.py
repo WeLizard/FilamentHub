@@ -74,8 +74,35 @@ def _get_download_url(request: Request, platform: str, architecture: str, versio
     if not _file_exists(filepath):
         return None
     
-    # Формируем URL относительно базового URL
-    base_url = str(request.base_url).rstrip("/")
+    # Определяем базовый URL из заголовков прокси или используем настройки
+    # Это важно для работы вне локальной сети (nginx передает X-Forwarded-* заголовки)
+    forwarded_host = request.headers.get("X-Forwarded-Host")
+    forwarded_proto = request.headers.get("X-Forwarded-Proto", "https")
+    
+    # Всегда используем HTTPS для внешнего домена (безопасность и корректная работа)
+    # Если домен filamenthub.ru - всегда HTTPS
+    if forwarded_host:
+        # Используем заголовки от nginx (правильный внешний URL)
+        # Принудительно используем HTTPS для внешнего домена
+        if "filamenthub.ru" in forwarded_host:
+            base_url = f"https://{forwarded_host}".rstrip("/")
+        else:
+            base_url = f"{forwarded_proto}://{forwarded_host}".rstrip("/")
+    elif request.headers.get("Host"):
+        # Fallback: используем Host заголовок (передается nginx)
+        host = request.headers.get("Host")
+        # Принудительно используем HTTPS для внешнего домена
+        if "filamenthub.ru" in host:
+            base_url = f"https://{host}".rstrip("/")
+        else:
+            base_url = f"{forwarded_proto}://{host}".rstrip("/")
+    else:
+        # Fallback: используем настройки (всегда должен быть HTTPS)
+        base_url = settings.BASE_URL.rstrip("/")
+        # Убеждаемся, что используется HTTPS
+        if base_url.startswith("http://") and "filamenthub.ru" in base_url:
+            base_url = base_url.replace("http://", "https://")
+    
     filename = filepath.name
     return f"{base_url}/distributions/orcaslicer/{filename}"
 
