@@ -2,7 +2,7 @@
 
 from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import func, or_, select
+from sqlalchemy import func, or_, select, cast, String
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.dependencies import get_current_user, get_current_admin_user
@@ -278,7 +278,6 @@ async def list_articles(
     if search:
         search_pattern = f"%{search}%"
         # tags это JSON поле, поэтому используем cast для поиска
-        from sqlalchemy import cast, String
         query = query.where(
             or_(
                 WikiArticle.title.ilike(search_pattern),
