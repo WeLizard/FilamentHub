@@ -1,6 +1,6 @@
 /** Страница статьи Wiki - полный текст с Markdown */
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
   ArrowLeft,
@@ -20,7 +20,6 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { vscDarkPlus } from 'react-syntax-highlighter/dist/esm/styles/prism';
-import { useEffect, useRef } from 'react';
 import mermaid from 'mermaid';
 
 // Mermaid диаграмма компонент
