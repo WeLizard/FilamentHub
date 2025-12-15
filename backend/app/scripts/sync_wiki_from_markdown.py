@@ -139,9 +139,14 @@ async def sync_article(
     # Get author_id (default to 1 = admin)
     author_id = metadata.get("author_id", 1)
     
+    # Generate summary from first 200 chars of content (strip markdown headers)
+    summary_text = content.replace("#", "").strip()
+    summary = summary_text[:200] + "..." if len(summary_text) > 200 else summary_text
+    
     if article:
         # Update existing
         article.title = title
+        article.summary = summary
         article.content = content
         article.category_id = category.id
         article.tags = tags_json
@@ -153,6 +158,7 @@ async def sync_article(
         article = WikiArticle(
             title=title,
             slug=slug,
+            summary=summary,
             content=content,
             category_id=category.id,
             tags=tags_json,
