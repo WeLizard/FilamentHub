@@ -22,6 +22,7 @@ from app.api.v1.endpoints import (
     qr,
     saved_presets,
     spoolman,
+    wiki,
 )
 
 api_router = APIRouter()
@@ -46,4 +47,5 @@ api_router.include_router(notifications.router)
 api_router.include_router(orca_sync.router)
 api_router.include_router(feedback.router)
 api_router.include_router(downloads.router)
+api_router.include_router(wiki.router)
 

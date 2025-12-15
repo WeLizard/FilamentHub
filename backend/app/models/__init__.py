@@ -19,6 +19,10 @@ from app.models.notification import Notification, NotificationType
 from app.models.user import User, UserRole
 from app.models.user_saved_preset import UserSavedPreset
 from app.models.feedback import Feedback, FeedbackType, FeedbackStatus
+from app.models.wiki_category import WikiCategory
+from app.models.wiki_article import WikiArticle, WikiArticleStatus
+from app.models.material_property import MaterialProperty
+from app.models.print_problem import PrintProblem, PrintProblemSeverity
 
 __all__ = [
     # "BadWord",  # Убрано из экспорта, чтобы не падать при отсутствии таблицы
@@ -33,6 +37,7 @@ __all__ = [
     "FilamentReview",
     "MaterialMapping",
     "MaterialMappingPriority",
+    "MaterialProperty",
     "Notification",
     "NotificationType",
     "Preset",
@@ -42,10 +47,15 @@ __all__ = [
     "PrinterRequest",
     "PrinterRequestStatus",
     "PrinterProfile",
+    "PrintProblem",
+    "PrintProblemSeverity",
     "PrintProfile",
     "PrintProfilePrinter",
     "PrintProfileFilament",
     "User",
     "UserRole",
     "UserSavedPreset",
+    "WikiArticle",
+    "WikiArticleStatus",
+    "WikiCategory",
 ]
