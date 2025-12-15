@@ -202,20 +202,20 @@ export const FilamentDetailPage: React.FC = () => {
     : null;
 
   // JSON-LD structured data для филамента
-  const jsonLd = filamentData && brandData
+  const jsonLd = filament && brandData
     ? {
         '@context': 'https://schema.org',
         '@type': 'Product',
-        name: filamentData.name,
-        description: `${filamentData.material_type} филамент от ${brandData.name}`,
+        name: filament.name,
+        description: `${filament.material_type} филамент от ${brandData.name}`,
         brand: {
           '@type': 'Brand',
           name: brandData.name,
         },
-        category: `3D Printing Filament - ${filamentData.material_type}`,
+        category: `3D Printing Filament - ${filament.material_type}`,
         offers: {
           '@type': 'Offer',
-          price: filamentData.price_per_kg?.toString() || undefined,
+          price: filament.price_per_kg?.toString() || undefined,
           priceCurrency: 'RUB',
         },
       }
@@ -223,12 +223,12 @@ export const FilamentDetailPage: React.FC = () => {
 
   return (
     <>
-      {filamentData && (
+      {filament && (
         <SEOHead
-          title={`${filamentData.name} - ${brandData?.name || 'FilamentHub'}`}
-          description={`${filamentData.material_type} филамент ${filamentData.name} от ${brandData?.name || ''}. Настройки печати, пресеты для слайсеров, отзывы пользователей.`}
-          keywords={`${filamentData.name}, ${filamentData.material_type}, ${brandData?.name || ''}, 3D печать, филамент, настройки печати`}
-          url={`/filaments/${filamentData.id}`}
+          title={`${filament.name} - ${brandData?.name || 'FilamentHub'}`}
+          description={`${filament.material_type} филамент ${filament.name} от ${brandData?.name || ''}. Настройки печати, пресеты для слайсеров, отзывы пользователей.`}
+          keywords={`${filament.name}, ${filament.material_type}, ${brandData?.name || ''}, 3D печать, филамент, настройки печати`}
+          url={`/filaments/${filament.id}`}
           type="product"
           jsonLd={jsonLd}
           allowAI={true}

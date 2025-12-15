@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { BookOpen, ArrowLeft, Eye, Clock, User, Loader2, AlertCircle } from 'lucide-react';
 import { wikiAPI } from '../api/client';
+import { SEOHead } from '../components/SEOHead';
 import type { WikiCategory, WikiArticleSummary } from '../types/api';
 import * as LucideIcons from 'lucide-react';
 

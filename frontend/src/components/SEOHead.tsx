@@ -8,7 +8,7 @@ interface SEOHeadProps {
   keywords?: string;
   image?: string;
   url?: string;
-  type?: 'website' | 'article' | 'profile';
+  type?: 'website' | 'article' | 'profile' | 'product';
   author?: string;
   publishedTime?: string;
   modifiedTime?: string;
