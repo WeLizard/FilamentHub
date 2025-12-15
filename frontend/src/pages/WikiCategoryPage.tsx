@@ -168,7 +168,7 @@ export function WikiCategoryPage() {
                       {article.tags.slice(0, 3).map((tag, idx) => (
                         <span
                           key={idx}
-                          className="px-2.5 py-1 bg-white/10 text-white rounded-full text-xs font-semibold border border-white/20"
+                          className="px-2.5 py-1 bg-blue-500/20 text-blue-300 rounded-full text-xs font-semibold"
                         >
                           {tag}
                         </span>
