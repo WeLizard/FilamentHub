@@ -5,7 +5,8 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.dependencies import get_current_user, get_db, require_admin
+from app.core.dependencies import get_current_user, get_current_admin_user
+from app.db.session import get_db
 from app.models.user import User
 from app.models.wiki_article import WikiArticle
 from app.models.wiki_category import WikiCategory
@@ -122,11 +123,11 @@ async def get_category(
     )
 
 
-@router.post("/categories", response_model=WikiCategoryResponse, dependencies=[Depends(require_admin)])
+@router.post("/categories", response_model=WikiCategoryResponse)
 async def create_category(
     data: WikiCategoryCreate,
     db: Annotated[AsyncSession, Depends(get_db)],
-    _current_user: Annotated[User, Depends(get_current_user)],
+    _current_user: Annotated[User, Depends(get_current_admin_user)],
 ) -> WikiCategoryResponse:
     """Создать новую категорию (только для администраторов)."""
     # Проверка уникальности slug
@@ -157,12 +158,12 @@ async def create_category(
     )
 
 
-@router.patch("/categories/{category_id}", response_model=WikiCategoryResponse, dependencies=[Depends(require_admin)])
+@router.patch("/categories/{category_id}", response_model=WikiCategoryResponse)
 async def update_category(
     category_id: int,
     data: WikiCategoryUpdate,
     db: Annotated[AsyncSession, Depends(get_db)],
-    _current_user: Annotated[User, Depends(get_current_user)],
+    _current_user: Annotated[User, Depends(get_current_admin_user)],
 ) -> WikiCategoryResponse:
     """Обновить категорию (только для администраторов)."""
     result = await db.execute(select(WikiCategory).where(WikiCategory.id == category_id))
@@ -217,11 +218,11 @@ async def update_category(
     )
 
 
-@router.delete("/categories/{category_id}", dependencies=[Depends(require_admin)])
+@router.delete("/categories/{category_id}")
 async def delete_category(
     category_id: int,
     db: Annotated[AsyncSession, Depends(get_db)],
-    _current_user: Annotated[User, Depends(get_current_user)],
+    _current_user: Annotated[User, Depends(get_current_admin_user)],
 ) -> dict:
     """Удалить категорию (только для администраторов)."""
     result = await db.execute(select(WikiCategory).where(WikiCategory.id == category_id))
@@ -361,11 +362,11 @@ async def get_article(
     return WikiArticleResponse(**article_dict)
 
 
-@router.post("/articles", response_model=WikiArticleResponse, dependencies=[Depends(require_admin)])
+@router.post("/articles", response_model=WikiArticleResponse)
 async def create_article(
     data: WikiArticleCreate,
     db: Annotated[AsyncSession, Depends(get_db)],
-    _current_user: Annotated[User, Depends(get_current_user)],
+    _current_user: Annotated[User, Depends(get_current_admin_user)],
 ) -> WikiArticleResponse:
     """Создать новую статью (только для администраторов)."""
     # Проверка существования категории
@@ -407,12 +408,12 @@ async def create_article(
     )
 
 
-@router.patch("/articles/{article_id}", response_model=WikiArticleResponse, dependencies=[Depends(require_admin)])
+@router.patch("/articles/{article_id}", response_model=WikiArticleResponse)
 async def update_article(
     article_id: int,
     data: WikiArticleUpdate,
     db: Annotated[AsyncSession, Depends(get_db)],
-    _current_user: Annotated[User, Depends(get_current_user)],
+    _current_user: Annotated[User, Depends(get_current_admin_user)],
 ) -> WikiArticleResponse:
     """Обновить статью (только для администраторов)."""
     result = await db.execute(select(WikiArticle).where(WikiArticle.id == article_id))
@@ -470,11 +471,11 @@ async def update_article(
     )
 
 
-@router.delete("/articles/{article_id}", dependencies=[Depends(require_admin)])
+@router.delete("/articles/{article_id}")
 async def delete_article(
     article_id: int,
     db: Annotated[AsyncSession, Depends(get_db)],
-    _current_user: Annotated[User, Depends(get_current_user)],
+    _current_user: Annotated[User, Depends(get_current_admin_user)],
 ) -> dict:
     """Удалить статью (только для администраторов)."""
     result = await db.execute(select(WikiArticle).where(WikiArticle.id == article_id))
