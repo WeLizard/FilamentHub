@@ -91,6 +91,8 @@ docs/spoolman2slicer-main/
 docs/*.sql
 # OrcaSlicer user presets (should not be in repo - personal settings)
 docs/OrcaSlicer_user_presets/
+# MD files - technical documentation, not for repo
+docs/md/
 # Keep useful documentation assets
 !docs/imgs/
 !docs/orca_bundles/
