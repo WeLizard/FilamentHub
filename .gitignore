@@ -81,21 +81,8 @@ backend/static/uploads/*
 .cache/
 
 
-# Docs folder - exclude large reference folders, keep essential files
-docs/Spoolman-master/
-docs/orcaSlicer-main/
-# docs/OrcaSlicer/ - Now a Git submodule, do not ignore
-docs/3dcalc/
-docs/awesome-cursor-best-practices-main/
-docs/spoolman2slicer-main/
-docs/*.sql
-# OrcaSlicer user presets (should not be in repo - personal settings)
-docs/OrcaSlicer_user_presets/
-# MD files - technical documentation, not for repo
-docs/md/
-# Keep useful documentation assets
-!docs/imgs/
-!docs/orca_bundles/
+# Docs folder - exclude completely
+docs/
 
 # Backend test files and scripts
 backend/test_*.py
