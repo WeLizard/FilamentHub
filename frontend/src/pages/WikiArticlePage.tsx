@@ -140,13 +140,8 @@ export function WikiArticlePage() {
           {article.title}
         </h1>
 
-        {/* Summary */}
-        {article.summary && (
-          <p className="text-lg md:text-xl text-gray-300 mb-6 leading-relaxed">{article.summary}</p>
-        )}
-
-        {/* Meta Info */}
-        <div className="flex flex-wrap items-center gap-4 md:gap-6 text-sm text-gray-400">
+        {/* Meta Info and Tags */}
+        <div className="flex flex-wrap items-center gap-4 text-sm text-gray-400 mb-4">
           {article.author && (
             <div className="flex items-center gap-2">
               <User className="w-4 h-4" />
@@ -169,11 +164,11 @@ export function WikiArticlePage() {
 
         {/* Tags */}
         {article.tags && article.tags.length > 0 && (
-          <div className="flex flex-wrap gap-2 mt-4">
+          <div className="flex flex-wrap gap-2 mb-6">
             {article.tags.map((tag, idx) => (
               <span
                 key={idx}
-                className="inline-flex items-center gap-1 px-3 py-1 bg-white/10 text-gray-300 rounded-full text-xs"
+                className="inline-flex items-center gap-1 px-3 py-1 bg-purple-500/20 text-purple-300 rounded-full text-xs border border-purple-500/30"
               >
                 <Tag className="w-3 h-3" />
                 {tag}
@@ -184,22 +179,29 @@ export function WikiArticlePage() {
       </div>
 
       {/* Article Content (Markdown) */}
-      <div className="bg-white/5 backdrop-blur-sm border border-white/10 rounded-2xl p-6 md:p-8 mb-8">
+      <article className="bg-white/5 backdrop-blur-sm border border-white/10 rounded-2xl p-6 md:p-8 mb-8">
         <div className="prose prose-invert prose-lg max-w-none
-          prose-headings:text-white prose-headings:font-bold
-          prose-h1:text-3xl prose-h2:text-2xl prose-h3:text-xl
-          prose-p:text-gray-300 prose-p:leading-relaxed
-          prose-a:text-blue-400 prose-a:no-underline hover:prose-a:underline
+          prose-headings:text-white prose-headings:font-bold prose-headings:mt-8 prose-headings:mb-4
+          prose-h1:text-3xl prose-h1:border-b prose-h1:border-white/20 prose-h1:pb-3
+          prose-h2:text-2xl prose-h2:mt-8 prose-h2:mb-4
+          prose-h3:text-xl prose-h3:mt-6 prose-h3:mb-3
+          prose-p:text-gray-300 prose-p:leading-7 prose-p:my-4
+          prose-a:text-blue-400 prose-a:no-underline hover:prose-a:text-blue-300 hover:prose-a:underline
           prose-strong:text-white prose-strong:font-semibold
-          prose-code:text-cyan-300 prose-code:bg-black/30 prose-code:px-1.5 prose-code:py-0.5 prose-code:rounded
-          prose-pre:bg-black/50 prose-pre:border prose-pre:border-white/10
-          prose-blockquote:border-l-4 prose-blockquote:border-blue-500 prose-blockquote:pl-4 prose-blockquote:text-gray-400
-          prose-ul:text-gray-300 prose-ol:text-gray-300
-          prose-li:text-gray-300 prose-li:marker:text-blue-400
-          prose-table:border-collapse prose-table:w-full
-          prose-thead:bg-white/10 prose-th:border prose-th:border-white/20 prose-th:px-4 prose-th:py-2
-          prose-td:border prose-td:border-white/20 prose-td:px-4 prose-td:py-2
-          prose-img:rounded-xl prose-img:shadow-lg
+          prose-code:text-cyan-300 prose-code:bg-black/40 prose-code:px-1.5 prose-code:py-0.5 prose-code:rounded prose-code:text-sm
+          prose-pre:bg-black/60 prose-pre:border prose-pre:border-white/20 prose-pre:rounded-lg prose-pre:p-4 prose-pre:overflow-x-auto
+          prose-blockquote:border-l-4 prose-blockquote:border-blue-500 prose-blockquote:pl-6 prose-blockquote:pr-4 prose-blockquote:py-2 prose-blockquote:bg-blue-500/10 prose-blockquote:text-gray-300 prose-blockquote:my-6 prose-blockquote:rounded-r-lg
+          prose-ul:text-gray-300 prose-ul:my-4 prose-ul:space-y-2
+          prose-ol:text-gray-300 prose-ol:my-4 prose-ol:space-y-2
+          prose-li:text-gray-300 prose-li:marker:text-blue-400 prose-li:pl-2
+          prose-table:w-full prose-table:my-6 prose-table:border-collapse
+          prose-thead:bg-white/10
+          prose-th:border prose-th:border-white/30 prose-th:px-4 prose-th:py-3 prose-th:text-left prose-th:text-white prose-th:font-semibold
+          prose-tbody:bg-white/5
+          prose-td:border prose-td:border-white/20 prose-td:px-4 prose-td:py-3 prose-td:text-gray-300
+          prose-tr:hover:bg-white/10
+          prose-img:rounded-xl prose-img:shadow-xl prose-img:my-6
+          prose-hr:border-white/20 prose-hr:my-8
         ">
           <ReactMarkdown
             remarkPlugins={[remarkGfm]}
@@ -226,19 +228,19 @@ export function WikiArticlePage() {
             {article.content}
           </ReactMarkdown>
         </div>
-      </div>
+      </article>
 
-      {/* Article Footer - Placeholder for future features */}
-      <div className="flex flex-col sm:flex-row items-center justify-between gap-4 p-6 bg-white/5 backdrop-blur-sm border border-white/10 rounded-xl">
-        <div className="text-gray-400 text-sm">
+      {/* Article Footer */}
+      <div className="flex flex-col sm:flex-row items-center justify-between gap-4 p-6 bg-white/5 backdrop-blur-sm border border-white/10 rounded-xl mb-8">
+        <div className="text-gray-400 text-sm font-medium">
           Была ли эта статья полезна?
         </div>
         <div className="flex items-center gap-3">
-          <button className="flex items-center gap-2 px-4 py-2 bg-green-500/20 hover:bg-green-500/30 text-green-300 rounded-lg transition-colors">
+          <button className="flex items-center gap-2 px-5 py-2.5 bg-green-500/20 hover:bg-green-500/30 text-green-300 rounded-lg transition-colors border border-green-500/30 font-medium">
             <ThumbsUp className="w-4 h-4" />
             <span>Полезно</span>
           </button>
-          <button className="flex items-center gap-2 px-4 py-2 bg-white/10 hover:bg-white/15 text-gray-300 rounded-lg transition-colors">
+          <button className="flex items-center gap-2 px-5 py-2.5 bg-white/10 hover:bg-white/15 text-gray-300 rounded-lg transition-colors border border-white/20 font-medium">
             <MessageSquare className="w-4 h-4" />
             <span>Оставить отзыв</span>
           </button>
