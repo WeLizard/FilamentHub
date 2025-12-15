@@ -225,9 +225,9 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
       ></div>
 
       {/* Modal */}
-      <div className="relative w-full max-w-md max-h-[90vh] bg-white/10 backdrop-blur-sm rounded-2xl border border-white/20 shadow-xl z-10 overflow-hidden flex flex-col">
+      <div className="relative w-full max-w-md max-h-[90vh] bg-white/10 backdrop-blur-sm rounded-xl sm:rounded-2xl border border-white/20 shadow-xl z-10 overflow-hidden flex flex-col mx-2 sm:mx-0">
         {/* Header */}
-        <div className="relative p-8 pb-0 flex-shrink-0">
+        <div className="relative p-4 sm:p-8 pb-0 flex-shrink-0">
           {/* Close Button */}
           <button
             onClick={(e) => {
@@ -237,22 +237,22 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
               }
             }}
             disabled={isLoading}
-            className="absolute top-4 right-4 p-2 text-gray-400 hover:text-white transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            className="absolute top-3 right-3 sm:top-4 sm:right-4 p-2 text-gray-400 hover:text-white transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
           >
             <X className="w-5 h-5" />
           </button>
 
-          <div className="text-center mb-8">
-            <div className="w-16 h-16 flex items-center justify-center mx-auto mb-4">
-              <img src="/logo.svg" alt="FilamentHub Logo" className="w-16 h-16 object-contain" />
+          <div className="text-center mb-4 sm:mb-8">
+            <div className="w-12 h-12 sm:w-16 sm:h-16 flex items-center justify-center mx-auto mb-3 sm:mb-4">
+              <img src="/logo.svg" alt="FilamentHub Logo" className="w-12 h-12 sm:w-16 sm:h-16 object-contain" />
             </div>
-            <h2 className="text-2xl font-bold text-white mb-2">Добро пожаловать в FilamentHub</h2>
-            <p className="text-gray-300">Войдите в систему для доступа к персональному кабинету</p>
+            <h2 className="text-xl sm:text-2xl font-bold text-white mb-1 sm:mb-2">FilamentHub</h2>
+            <p className="text-sm sm:text-base text-gray-300">Войдите в систему для доступа к персональному кабинету</p>
           </div>
         </div>
 
         {/* Scrollable Content */}
-        <div className="flex-1 overflow-y-auto px-8 pb-8">
+        <div className="flex-1 overflow-y-auto px-4 sm:px-8 pb-4 sm:pb-8">
 
         {/* Tabs */}
         <div className="flex mb-6">
