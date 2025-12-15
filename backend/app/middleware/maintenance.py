@@ -28,8 +28,7 @@ class MaintenanceMiddleware(BaseHTTPMiddleware):
             allowed_paths = [
                 "/health",
                 "/api/v1/admin",        # Вся админка
-                "/api/v1/auth/login",   # Вход
-                "/api/v1/auth/refresh", # Обновление токена
+                "/api/v1/auth",         # Вся авторизация (login, me, refresh)
                 "/api/v1/users/me",     # Проверка текущего пользователя
             ]
             
