@@ -166,7 +166,10 @@ async def sync_article(
 
 async def sync_all_articles() -> None:
     """Sync all Markdown files from wiki_content/ to database."""
-    wiki_content_path = Path("backend/wiki_content")
+    # Get path relative to project root
+    script_dir = Path(__file__).parent
+    project_root = script_dir.parent.parent.parent  # backend/app/scripts -> project root
+    wiki_content_path = project_root / "backend" / "wiki_content"
     
     if not wiki_content_path.exists():
         print(f"❌ Wiki content directory not found: {wiki_content_path}")
