@@ -125,7 +125,9 @@ async def sync_article(
     tags = metadata.get("tags", [])
     if isinstance(tags, str):
         tags = [t.strip() for t in tags.split(",")]
-    tags_json = tags if tags else None
+    # Convert to JSON string for database (tags field is String, not JSON)
+    import json
+    tags_json = json.dumps(tags, ensure_ascii=False) if tags else None
     
     # Parse status
     status_str = metadata.get("status", "draft")
