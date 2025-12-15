@@ -201,109 +201,80 @@ export const FilamentDetailPage: React.FC = () => {
     : null;
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4 md:space-y-6">
       {/* Кнопка назад */}
       <button
         onClick={() => navigate(cameFrom === 'profile' ? '/profile' : '/')}
-        className="flex items-center space-x-2 text-gray-300 hover:text-white transition-colors"
+        className="flex items-center gap-2 text-gray-300 hover:text-white active:text-white transition-colors text-sm md:text-base"
       >
-        <ArrowLeft className="w-5 h-5" />
+        <ArrowLeft className="w-4 h-4 md:w-5 md:h-5" />
         <span>{cameFrom === 'profile' ? 'Назад к профилю' : 'Назад к каталогу'}</span>
       </button>
 
       {/* Заголовок */}
-      <div className="bg-white/10 backdrop-blur-sm rounded-2xl p-8 border border-white/20 shadow-xl">
-        <div className="flex items-start justify-between mb-6">
+      <div className="bg-white/10 backdrop-blur-sm rounded-xl md:rounded-2xl p-4 md:p-8 border border-white/20 shadow-xl">
+        <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-4 mb-4 md:mb-6">
           <div className="flex-1">
-            <div className="flex items-center space-x-3 mb-4">
+            <div className="flex flex-wrap items-center gap-2 md:gap-3 mb-3 md:mb-4">
               {brandData && (
                 <>
                   <span
                     onClick={() => navigate(`/brands/${brandData.id}`)}
-                    className={`${brandData.verified ? 'text-green-400' : 'text-purple-300'} font-bold text-2xl hover:underline cursor-pointer transition-colors`}
+                    className={`${brandData.verified ? 'text-green-400' : 'text-purple-300'} font-bold text-lg md:text-2xl hover:underline cursor-pointer transition-colors`}
                   >
                     {brandData.name}
                   </span>
                   {brandData.verified && (
-                    <Shield className="w-6 h-6 text-green-400" />
+                    <Shield className="w-4 h-4 md:w-6 md:h-6 text-green-400" />
                   )}
                 </>
               )}
-              <h1 className="text-4xl font-bold text-white">{filament.name}</h1>
-              <span className="px-3 py-1 bg-purple-500/20 text-purple-300 text-base rounded-full border border-purple-500/30">
+              <h1 className="text-xl md:text-4xl font-bold text-white">{filament.name}</h1>
+              <span className="px-2 py-0.5 md:px-3 md:py-1 bg-purple-500/20 text-purple-300 text-xs md:text-base rounded-full border border-purple-500/30">
                 {filament.material_type}
               </span>
             </div>
 
             {/* Статистика материала */}
-            <div className="flex items-center space-x-6 text-lg mb-4">
-              {/* Рейтинг материала (из отзывов) */}
+            <div className="flex flex-wrap items-center gap-3 md:gap-6 text-xs md:text-lg mb-3 md:mb-4">
               {filamentRating !== null && (
                 <span className="flex items-center text-gray-300" title="Рейтинг материала">
-                  <Star className="w-5 h-5 mr-2 text-yellow-400 fill-current" />
+                  <Star className="w-3.5 h-3.5 md:w-5 md:h-5 mr-1 md:mr-2 text-yellow-400 fill-current" />
                   <span className="font-bold text-white">{filamentRating.toFixed(1)}</span>
-                  {ratingStats && ratingStats.total_reviews > 0 && (
-                    <span className="text-gray-400 text-sm ml-1">({ratingStats.total_reviews})</span>
-                  )}
                 </span>
               )}
-              {/* Успешность печати (из отзывов) */}
               {filamentSuccessRate !== null && (
-                <span className="flex items-center text-gray-300" title="Процент успешных печатей с этим материалом">
-                  <CheckCircle className="w-5 h-5 mr-2 text-green-400" />
-                  <span className="font-bold text-green-400">{filamentSuccessRate.toFixed(1)}% успеха</span>
-                  {ratingStats && ratingStats.total_reviews > 0 && (
-                    <span className="text-gray-400 text-sm ml-1">из {ratingStats.total_reviews} отзывов</span>
-                  )}
+                <span className="flex items-center text-gray-300" title="Успешность печати">
+                  <CheckCircle className="w-3.5 h-3.5 md:w-5 md:h-5 mr-1 md:mr-2 text-green-400" />
+                  <span className="font-bold text-green-400">{filamentSuccessRate.toFixed(0)}%</span>
                 </span>
               )}
-              {/* Количество пресетов */}
-              <span className="flex items-center text-gray-300" title="Количество пресетов настроек">
-                <TrendingUp className="w-5 h-5 mr-2 text-blue-400" />
-                <span className="font-bold text-white">{presetsData?.total || 0} пресетов</span>
+              <span className="flex items-center text-gray-300">
+                <TrendingUp className="w-3.5 h-3.5 md:w-5 md:h-5 mr-1 md:mr-2 text-blue-400" />
+                <span className="font-bold text-white">{presetsData?.total || 0}</span>
+                <span className="hidden md:inline ml-1">пресетов</span>
               </span>
-              {/* Просмотры */}
-              <span className="flex items-center text-gray-300" title="Количество просмотров">
-                <Package className="w-5 h-5 mr-2 text-purple-400" />
-                <span className="font-bold text-white">{filament.views_count || 0} просмотров</span>
+              <span className="flex items-center text-gray-300">
+                <Package className="w-3.5 h-3.5 md:w-5 md:h-5 mr-1 md:mr-2 text-purple-400" />
+                <span className="font-bold text-white">{filament.views_count || 0}</span>
+                <span className="hidden md:inline ml-1">просмотров</span>
               </span>
-              {/* Количество отзывов */}
-              {ratingStats && ratingStats.total_reviews > 0 && (
-                <span className="flex items-center text-gray-300" title="Количество отзывов о материале">
-                  <MessageCircle className="w-5 h-5 mr-2 text-purple-400" />
-                  <span className="font-bold text-white">{ratingStats.total_reviews} отзывов</span>
-                </span>
-              )}
             </div>
 
             {/* Описание */}
             {filament.description && (
-              <p className="text-gray-300">{filament.description}</p>
+              <p className="text-gray-300 text-sm md:text-base">{filament.description}</p>
             )}
           </div>
 
-          <div className="text-right ml-8">
-            {brandData?.website && (
-              <a
-                href={brandData.website}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="inline-flex items-center justify-end space-x-2 text-purple-400 hover:text-purple-300 transition-colors mb-2"
-                title={brandData.website}
-              >
-                <ExternalLink className="w-5 h-5" />
-                <span className="text-sm">
-                  {brandData.website.replace(/^https?:\/\/(www\.)?/, '').replace(/\/$/, '')}
-                </span>
-              </a>
-            )}
+          <div className="flex md:flex-col items-center md:items-end gap-3 md:gap-0 md:text-right">
             {filament.price_per_kg && (
-              <p className="text-4xl font-bold text-green-400 mb-2">
+              <p className="text-2xl md:text-4xl font-bold text-green-400">
                 {Math.round(filament.price_per_kg)}₽
               </p>
             )}
             {filament.spool_weight && (
-              <p className="text-gray-400 text-lg">
+              <p className="text-gray-400 text-sm md:text-lg">
                 {Math.round(filament.spool_weight)}g
               </p>
             )}
@@ -311,41 +282,45 @@ export const FilamentDetailPage: React.FC = () => {
         </div>
 
         {/* Детали материала */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-6 mb-6">
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-6 mb-4 md:mb-6">
           {filament.diameter && (
-            <div className="flex items-center space-x-3 text-gray-300">
-              <Ruler className="w-5 h-5 text-purple-400" />
+            <div className="flex items-center gap-2 md:gap-3 text-gray-300">
+              <Ruler className="w-4 h-4 md:w-5 md:h-5 text-purple-400" />
               <div>
-                <div className="text-sm">Диаметр</div>
-                <div className="text-xl font-bold text-white">{filament.diameter}mm</div>
+                <div className="text-[10px] md:text-sm">Диаметр</div>
+                <div className="text-base md:text-xl font-bold text-white">{filament.diameter}mm</div>
               </div>
             </div>
           )}
           {filament.density && (
-            <div className="flex items-center space-x-3 text-gray-300">
-              <Package className="w-5 h-5 text-blue-400" />
+            <div className="flex items-center gap-2 md:gap-3 text-gray-300">
+              <Package className="w-4 h-4 md:w-5 md:h-5 text-blue-400" />
               <div>
-                <div className="text-sm">Плотность</div>
-                <div className="text-xl font-bold text-white">{filament.density}g/cm³</div>
+                <div className="text-[10px] md:text-sm">Плотность</div>
+                <div className="text-base md:text-xl font-bold text-white">{filament.density}</div>
               </div>
             </div>
           )}
           {(filament.color_hex || filament.color_name) && (
-            <div className="flex items-center space-x-3 text-gray-300">
-              <div className="flex-shrink-0" style={{ transform: 'scale(0.4)', transformOrigin: 'left center', marginRight: '-80px' }}>
+            <div className="flex items-center gap-2 md:gap-3 text-gray-300">
+              <div className="flex-shrink-0 hidden md:block" style={{ transform: 'scale(0.4)', transformOrigin: 'left center', marginRight: '-80px' }}>
                 <FilamentPreview colorHex={filament.color_hex || '#FFFFFF'} visualSettings={filament.visual_settings} size="medium" />
               </div>
+              <div
+                className="w-6 h-6 md:hidden rounded-full border-2 border-white/20"
+                style={{ backgroundColor: filament.color_hex || '#FFFFFF' }}
+              />
               <div>
-                <div className="text-sm">Цвет</div>
-                <div className="text-xl font-bold text-white">{filament.color_name || '—'}</div>
+                <div className="text-[10px] md:text-sm">Цвет</div>
+                <div className="text-base md:text-xl font-bold text-white">{filament.color_name || '—'}</div>
               </div>
             </div>
           )}
-          <div className="flex items-center space-x-3 text-gray-300">
-            <QrCode className="w-5 h-5 text-green-400" />
+          <div className="flex items-center gap-2 md:gap-3 text-gray-300">
+            <QrCode className="w-4 h-4 md:w-5 md:h-5 text-green-400" />
             <div>
-              <div className="text-sm">Сканирований</div>
-              <div className="text-xl font-bold text-white">{filament.scans_count || 0}</div>
+              <div className="text-[10px] md:text-sm">Сканов</div>
+              <div className="text-base md:text-xl font-bold text-white">{filament.scans_count || 0}</div>
             </div>
           </div>
         </div>

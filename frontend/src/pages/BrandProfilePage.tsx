@@ -2404,13 +2404,13 @@ interface StatCardProps {
 }
 
 const StatCard: React.FC<StatCardProps> = ({ icon: Icon, label, value, color, borderColor, iconColor }) => (
-  <div className={`bg-gradient-to-r ${color} p-6 rounded-2xl border ${borderColor} shadow-xl`}>
+  <div className={`bg-gradient-to-r ${color} p-3 md:p-6 rounded-xl md:rounded-2xl border ${borderColor} shadow-xl`}>
     <div className="flex items-center justify-between">
       <div>
-        <p className="text-gray-300 text-sm">{label}</p>
-        <p className="text-3xl font-bold text-white">{value}</p>
+        <p className="text-gray-300 text-[10px] md:text-sm mb-0.5">{label}</p>
+        <p className="text-xl md:text-3xl font-bold text-white">{value}</p>
       </div>
-      <Icon className={`w-8 h-8 ${iconColor}`} />
+      <Icon className={`w-5 h-5 md:w-8 md:h-8 ${iconColor}`} />
     </div>
   </div>
 );

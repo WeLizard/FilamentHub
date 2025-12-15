@@ -587,46 +587,48 @@ export const ProfilePage: React.FC = () => {
   }
 
   return (
-    <div className="space-y-10">
+    <div className="space-y-6 md:space-y-10">
       {/* Переключатель профилей */}
-      <div className="flex justify-center mb-6">
+      <div className="flex justify-center mb-4 md:mb-6">
         <div className="flex bg-white/10 rounded-lg p-1 border border-white/20">
           <button
             onClick={() => setShowBrandCabinet(false)}
-            className={`flex items-center space-x-2 px-6 py-2 rounded-lg transition-all ${
+            className={`flex items-center gap-1.5 md:gap-2 px-3 md:px-6 py-1.5 md:py-2 rounded-lg transition-all text-xs md:text-base ${
               !showBrandCabinet 
                 ? 'bg-purple-600 text-white shadow-lg shadow-purple-500/25' 
                 : 'text-gray-300 hover:text-white'
             }`}
           >
-            <User className="w-4 h-4" />
-            <span>Профиль пользователя</span>
+            <User className="w-3.5 h-3.5 md:w-4 md:h-4" />
+            <span className="hidden sm:inline">Пользователь</span>
+            <span className="sm:hidden">Профиль</span>
           </button>
           <button
             onClick={() => setShowBrandCabinet(true)}
-            className={`flex items-center space-x-2 px-6 py-2 rounded-lg transition-all ${
+            className={`flex items-center gap-1.5 md:gap-2 px-3 md:px-6 py-1.5 md:py-2 rounded-lg transition-all text-xs md:text-base ${
               showBrandCabinet 
                 ? 'bg-green-600 text-white shadow-lg shadow-green-500/25' 
                 : 'text-gray-300 hover:text-white'
             }`}
           >
-            <Factory className="w-4 h-4" />
-            <span>Профиль компании</span>
+            <Factory className="w-3.5 h-3.5 md:w-4 md:h-4" />
+            <span className="hidden sm:inline">Компания</span>
+            <span className="sm:hidden">Бренд</span>
           </button>
         </div>
       </div>
       
       {/* Header */}
-      <div className="text-center mb-8">
-        <div className="flex items-center justify-center space-x-3 mb-4">
-          <div className="w-16 h-16 bg-gradient-to-r from-purple-500 to-pink-500 rounded-xl flex items-center justify-center shadow-lg shadow-purple-500/25">
-            <User className="w-8 h-8 text-white" />
+      <div className="text-center mb-4 md:mb-8">
+        <div className="flex items-center justify-center gap-2 md:gap-3 mb-3 md:mb-4">
+          <div className="w-12 h-12 md:w-16 md:h-16 bg-gradient-to-r from-purple-500 to-pink-500 rounded-lg md:rounded-xl flex items-center justify-center shadow-lg shadow-purple-500/25">
+            <User className="w-6 h-6 md:w-8 md:h-8 text-white" />
           </div>
-          <div>
-            <h2 className="text-3xl font-bold text-white mb-1">Мой профиль</h2>
-            <div className="flex items-center gap-2">
-              <p className="text-gray-300">
-                {user.full_name || user.username} • 3D печатник
+          <div className="text-left">
+            <h2 className="text-xl md:text-3xl font-bold text-white mb-0.5 md:mb-1">Мой профиль</h2>
+            <div className="flex flex-wrap items-center gap-1 md:gap-2">
+              <p className="text-gray-300 text-xs md:text-base">
+                {user.full_name || user.username}
               </p>
               {user.badges && user.badges.length > 0 && (
                 <BadgeList badges={user.badges as any} size="sm" />
@@ -635,37 +637,40 @@ export const ProfilePage: React.FC = () => {
           </div>
         </div>
 
-        {/* Tabs */}
-        <div className="flex justify-center space-x-2 mt-4">
-          {[
-            { id: 'dashboard', label: 'Дашборд', icon: Play },
-            { id: 'presets', label: 'Профили филамента', icon: Settings },
-            { id: 'printer-profiles', label: 'Мои принтеры', icon: Printer },
-            { id: 'history', label: 'История', icon: TrendingUp },
-            { id: 'calculator', label: 'Калькулятор', icon: Calculator },
-            { id: 'settings', label: 'Настройки', icon: Cog },
-          ].map((tab) => (
-            <button
-              key={tab.id}
-              onClick={() => setUserTab(tab.id as any)}
-              className={`flex items-center space-x-2 px-4 py-2 rounded-lg transition-all ${
-                userTab === tab.id
-                  ? 'bg-purple-600 text-white shadow-lg shadow-purple-500/25'
-                  : 'text-gray-300 hover:text-white hover:bg-white/10'
-              }`}
-            >
-              <tab.icon className="w-4 h-4" />
-              <span>{tab.label}</span>
-            </button>
-          ))}
+        {/* Tabs - горизонтальный скролл на мобильных */}
+        <div className="overflow-x-auto -mx-4 px-4 md:mx-0 md:px-0 scrollbar-hide">
+          <div className="flex justify-start md:justify-center gap-1.5 md:gap-2 mt-3 md:mt-4 min-w-max">
+            {[
+              { id: 'dashboard', label: 'Дашборд', shortLabel: 'Главная', icon: Play },
+              { id: 'presets', label: 'Пресеты', shortLabel: 'Пресеты', icon: Settings },
+              { id: 'printer-profiles', label: 'Принтеры', shortLabel: 'Принтеры', icon: Printer },
+              { id: 'history', label: 'История', shortLabel: 'История', icon: TrendingUp },
+              { id: 'calculator', label: 'Калькулятор', shortLabel: 'Калькул.', icon: Calculator },
+              { id: 'settings', label: 'Настройки', shortLabel: 'Настр.', icon: Cog },
+            ].map((tab) => (
+              <button
+                key={tab.id}
+                onClick={() => setUserTab(tab.id as any)}
+                className={`flex items-center gap-1.5 md:gap-2 px-2.5 md:px-4 py-1.5 md:py-2 rounded-lg transition-all text-xs md:text-sm whitespace-nowrap ${
+                  userTab === tab.id
+                    ? 'bg-purple-600 text-white shadow-lg shadow-purple-500/25'
+                    : 'text-gray-300 hover:text-white hover:bg-white/10 active:bg-white/15'
+                }`}
+              >
+                <tab.icon className="w-3.5 h-3.5 md:w-4 md:h-4" />
+                <span className="hidden md:inline">{tab.label}</span>
+                <span className="md:hidden">{tab.shortLabel}</span>
+              </button>
+            ))}
+          </div>
         </div>
       </div>
 
       {/* Dashboard Tab */}
       {userTab === 'dashboard' && (
-        <div className="space-y-6">
+        <div className="space-y-4 md:space-y-6">
           {/* Stats Cards */}
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-6">
             <StatCard
               icon={CheckCircle}
               label="Успешных печатей"
@@ -675,16 +680,16 @@ export const ProfilePage: React.FC = () => {
               iconColor="text-green-400"
             />
             {/* Объединённая плашка для пресетов */}
-            <div className="bg-gradient-to-r from-blue-500/20 to-cyan-500/20 p-6 rounded-2xl border border-blue-500/30 shadow-xl">
+            <div className="bg-gradient-to-r from-blue-500/20 to-cyan-500/20 p-3 md:p-6 rounded-xl md:rounded-2xl border border-blue-500/30 shadow-xl">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-gray-300 text-sm mb-1">Пресеты</p>
-                  <p className="text-3xl font-bold text-white">
+                  <p className="text-gray-300 text-[10px] md:text-sm mb-0.5 md:mb-1">Пресеты</p>
+                  <p className="text-xl md:text-3xl font-bold text-white">
                     {presetsStats?.total_presets?.toString() || userPresets.length.toString()}/{presetsStats?.synced_presets?.toString() || '0'}
                   </p>
-                  <p className="text-xs text-gray-400 mt-1">всего / к синхронизации</p>
+                  <p className="text-[10px] md:text-xs text-gray-400 mt-0.5 md:mt-1">всего / синхр.</p>
                 </div>
-                <Settings className="w-8 h-8 text-blue-400" />
+                <Settings className="w-5 h-5 md:w-8 md:h-8 text-blue-400" />
               </div>
             </div>
             <StatCard
@@ -715,25 +720,25 @@ export const ProfilePage: React.FC = () => {
 
       {/* Presets Tab */}
       {userTab === 'presets' && (
-        <div className="space-y-6">
-          <div className="flex items-center justify-between">
-            <h3 className="text-2xl font-bold text-white">Профили филамента</h3>
-            <div className="flex items-center gap-3">
-              {/* Кнопка экспорта из OrcaSlicer (только если запущено внутри OrcaSlicer) */}
+        <div className="space-y-4 md:space-y-6">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+            <h3 className="text-lg md:text-2xl font-bold text-white">Профили филамента</h3>
+            <div className="flex items-center gap-2 md:gap-3">
               {typeof window !== 'undefined' && (window as any).filamenthub?.exportFilamentPresets && (
                 <ExportFromOrcaSlicerButton />
               )}
               <button
                 onClick={handleCreatePreset}
-                className="bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white px-4 py-2 rounded-xl transition-all shadow-lg shadow-purple-500/25 hover:shadow-purple-500/40"
+                className="flex-1 sm:flex-none bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 active:from-purple-800 active:to-pink-800 text-white px-3 md:px-4 py-2 rounded-lg md:rounded-xl transition-all shadow-lg shadow-purple-500/25 text-sm md:text-base"
               >
-                <Plus className="w-4 h-4 inline mr-2" />
-                Новый пресет
+                <Plus className="w-4 h-4 inline mr-1.5 md:mr-2" />
+                <span className="hidden sm:inline">Новый пресет</span>
+                <span className="sm:hidden">Добавить</span>
               </button>
             </div>
           </div>
 
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 md:gap-6">
             {userPresets.map((preset) => (
               <PresetCard
                 key={preset.id}
@@ -746,9 +751,9 @@ export const ProfilePage: React.FC = () => {
           </div>
 
           {userPresets.length === 0 && (
-            <div className="text-center py-12">
-              <Settings className="w-16 h-16 text-gray-400 mx-auto mb-4" />
-              <p className="text-gray-400 text-xl">У вас пока нет сохраненных пресетов</p>
+            <div className="text-center py-8 md:py-12">
+              <Settings className="w-12 h-12 md:w-16 md:h-16 text-gray-400 mx-auto mb-3 md:mb-4" />
+              <p className="text-gray-400 text-base md:text-xl">Нет сохраненных пресетов</p>
             </div>
           )}
         </div>
@@ -756,20 +761,20 @@ export const ProfilePage: React.FC = () => {
 
       {/* History Tab */}
       {userTab === 'history' && (
-        <div className="space-y-6">
-          <h3 className="text-2xl font-bold text-white">История печати</h3>
+        <div className="space-y-4 md:space-y-6">
+          <h3 className="text-lg md:text-2xl font-bold text-white">История печати</h3>
 
-          <div className="bg-white/10 backdrop-blur-sm rounded-2xl p-6 border border-white/20 shadow-xl">
+          <div className="bg-white/10 backdrop-blur-sm rounded-xl md:rounded-2xl p-4 md:p-6 border border-white/20 shadow-xl">
             {userHistory.length > 0 ? (
-              <div className="space-y-4">
+              <div className="space-y-3 md:space-y-4">
                 {userHistory.map((item) => (
                   <HistoryItem key={item.id} item={item} />
                 ))}
               </div>
             ) : (
-              <div className="text-center py-12">
-                <TrendingUp className="w-16 h-16 text-gray-400 mx-auto mb-4" />
-                <p className="text-gray-400 text-xl">История печати пока пуста</p>
+              <div className="text-center py-8 md:py-12">
+                <TrendingUp className="w-12 h-12 md:w-16 md:h-16 text-gray-400 mx-auto mb-3 md:mb-4" />
+                <p className="text-gray-400 text-base md:text-xl">История печати пуста</p>
               </div>
             )}
           </div>
@@ -779,10 +784,10 @@ export const ProfilePage: React.FC = () => {
       {/* Calculator Tab */}
       {userTab === 'calculator' && (
         <div className="max-w-4xl mx-auto">
-          <div className="text-center mb-8">
-            <h2 className="text-4xl font-bold text-white mb-4">Калькулятор стоимости печати</h2>
-            <p className="text-xl text-gray-300">
-              Рассчитайте точную стоимость детали с учетом региональных особенностей
+          <div className="text-center mb-4 md:mb-8">
+            <h2 className="text-xl md:text-4xl font-bold text-white mb-2 md:mb-4">Калькулятор стоимости</h2>
+            <p className="text-sm md:text-xl text-gray-300">
+              Рассчитайте стоимость детали
             </p>
           </div>
 
@@ -1164,13 +1169,13 @@ interface StatCardProps {
 }
 
 const StatCard: React.FC<StatCardProps> = ({ icon: Icon, label, value, color, borderColor, iconColor }) => (
-  <div className={`bg-gradient-to-r ${color} p-6 rounded-2xl border ${borderColor} shadow-xl`}>
+  <div className={`bg-gradient-to-r ${color} p-3 md:p-6 rounded-xl md:rounded-2xl border ${borderColor} shadow-xl`}>
     <div className="flex items-center justify-between">
       <div>
-        <p className="text-gray-300 text-sm">{label}</p>
-        <p className="text-3xl font-bold text-white">{value}</p>
+        <p className="text-gray-300 text-[10px] md:text-sm mb-0.5">{label}</p>
+        <p className="text-xl md:text-3xl font-bold text-white">{value}</p>
       </div>
-      <Icon className={`w-8 h-8 ${iconColor}`} />
+      <Icon className={`w-5 h-5 md:w-8 md:h-8 ${iconColor}`} />
     </div>
   </div>
 );

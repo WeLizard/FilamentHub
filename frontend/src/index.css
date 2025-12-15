@@ -151,3 +151,13 @@ input[type="range"].slider-thumb::-moz-range-track {
   }
 }
 
+/* Скрытие скроллбара для горизонтальных списков на мобильных */
+.scrollbar-hide {
+  -ms-overflow-style: none;  /* IE and Edge */
+  scrollbar-width: none;  /* Firefox */
+}
+
+.scrollbar-hide::-webkit-scrollbar {
+  display: none;  /* Chrome, Safari, Opera */
+}
+
