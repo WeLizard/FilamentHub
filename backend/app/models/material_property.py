@@ -194,3 +194,4 @@ class MaterialProperty(Base):
         """String representation."""
         return f"<MaterialProperty(id={self.id}, material_type={self.material_type}, verified={self.verified})>"
 
+

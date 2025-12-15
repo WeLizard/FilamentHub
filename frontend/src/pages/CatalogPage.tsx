@@ -28,6 +28,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { filamentsAPI, brandsAPI, presetsAPI, savedPresetsAPI, filamentReviewsAPI, qrAPI } from '../api/client';
 import { Dropdown } from '../components/Dropdown';
 import { FilamentPreview } from '../components/FilamentPreview';
+import { SEOHead } from '../components/SEOHead';
 import type { Filament, Preset } from '../types/api';
 
 export const CatalogPage: React.FC = () => {
@@ -131,9 +132,18 @@ export const CatalogPage: React.FC = () => {
   }
 
   return (
-    <div className="space-y-6">
-      {/* Hero Section */}
-      <div className="text-center mb-6 sm:mb-8">
+    <>
+      <SEOHead
+        title="Каталог материалов для 3D-печати"
+        description="Найдите идеальные настройки для вашего пластика. Каталог филаментов PLA, PETG, ABS, TPU и других материалов с готовыми пресетами для слайсеров."
+        keywords="каталог филаментов, 3D печать, PLA, PETG, ABS, настройки печати, пресеты слайсера"
+        url="/"
+        type="website"
+        allowAI={true}
+      />
+      <div className="space-y-6">
+        {/* Hero Section */}
+        <div className="text-center mb-6 sm:mb-8">
         <h2 className="text-2xl sm:text-3xl md:text-4xl font-bold text-white mb-3 sm:mb-4 px-2">
           Найдите идеальные настройки для вашего пластика
         </h2>

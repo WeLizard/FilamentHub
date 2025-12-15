@@ -29,6 +29,7 @@ import { FilamentPreview } from '../components/FilamentPreview';
 import { ReviewCard } from '../components/ReviewCard';
 import { CreateReviewModal } from '../components/CreateReviewModal';
 import { PresetSyncToggle } from '../components/PresetSyncToggle';
+import { SEOHead } from '../components/SEOHead';
 import { FilamentReview } from '../types/api';
 
 export const FilamentDetailPage: React.FC = () => {
@@ -200,10 +201,42 @@ export const FilamentDetailPage: React.FC = () => {
       getOrcaNumber(officialPreset.orcaslicer_settings, 'required_nozzle_hrc')
     : null;
 
+  // JSON-LD structured data для филамента
+  const jsonLd = filamentData && brandData
+    ? {
+        '@context': 'https://schema.org',
+        '@type': 'Product',
+        name: filamentData.name,
+        description: `${filamentData.material_type} филамент от ${brandData.name}`,
+        brand: {
+          '@type': 'Brand',
+          name: brandData.name,
+        },
+        category: `3D Printing Filament - ${filamentData.material_type}`,
+        offers: {
+          '@type': 'Offer',
+          price: filamentData.price_per_kg?.toString() || undefined,
+          priceCurrency: 'RUB',
+        },
+      }
+    : undefined;
+
   return (
-    <div className="space-y-4 md:space-y-6">
-      {/* Кнопка назад */}
-      <button
+    <>
+      {filamentData && (
+        <SEOHead
+          title={`${filamentData.name} - ${brandData?.name || 'FilamentHub'}`}
+          description={`${filamentData.material_type} филамент ${filamentData.name} от ${brandData?.name || ''}. Настройки печати, пресеты для слайсеров, отзывы пользователей.`}
+          keywords={`${filamentData.name}, ${filamentData.material_type}, ${brandData?.name || ''}, 3D печать, филамент, настройки печати`}
+          url={`/filaments/${filamentData.id}`}
+          type="product"
+          jsonLd={jsonLd}
+          allowAI={true}
+        />
+      )}
+      <div className="space-y-4 md:space-y-6">
+        {/* Кнопка назад */}
+        <button
         onClick={() => navigate(cameFrom === 'profile' ? '/profile' : '/')}
         className="flex items-center gap-2 text-gray-300 hover:text-white active:text-white transition-colors text-sm md:text-base"
       >
@@ -1056,6 +1089,7 @@ export const FilamentDetailPage: React.FC = () => {
           />
         )}
       </div>
-    </div>
+      </div>
+    </>
   );
 };

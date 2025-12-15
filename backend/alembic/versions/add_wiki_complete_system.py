@@ -247,3 +247,4 @@ def downgrade() -> None:
     op.execute("DROP TYPE IF EXISTS printproblemseverity")
     op.execute("DROP TYPE IF EXISTS wikiarticlestatus")
 
+

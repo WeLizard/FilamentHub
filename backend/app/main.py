@@ -82,5 +82,8 @@ async def root() -> dict[str, str]:
 
 # Include API routers
 from app.api.v1.api import api_router
+from app.api.v1.endpoints import sitemap
 
 app.include_router(api_router, prefix=settings.API_V1_PREFIX)
+# Sitemap доступен без префикса API для SEO
+app.include_router(sitemap.router)

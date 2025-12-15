@@ -51,3 +51,4 @@ class WikiCategory(Base):
         """String representation."""
         return f"<WikiCategory(id={self.id}, name={self.name}, slug={self.slug})>"
 
+

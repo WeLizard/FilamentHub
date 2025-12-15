@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { BookOpen, Search, TrendingUp, Clock, Eye, ChevronRight, Loader2 } from 'lucide-react';
 import { wikiAPI } from '../api/client';
+import { SEOHead } from '../components/SEOHead';
 import type { WikiCategory, WikiArticleSummary } from '../types/api';
 
 // Маппинг названий иконок Lucide на компоненты
@@ -96,8 +97,17 @@ export function WikiPage() {
   }
 
   return (
-    <div className="max-w-6xl mx-auto px-4 md:px-6 py-6 md:py-12">
-      {/* Header */}
+    <>
+      <SEOHead
+        title="Wiki по 3D-печати"
+        description="База знаний о 3D-печати: материалы, настройки, решение проблем. Гайды для новичков и профессионалов."
+        keywords="3D печать, Wiki, гайды, материалы, настройки печати, решение проблем, PLA, PETG, ABS"
+        url="/wiki"
+        type="website"
+        allowAI={true}
+      />
+      <div className="max-w-6xl mx-auto px-4 md:px-6 py-6 md:py-12">
+        {/* Header */}
       <div className="text-center mb-8 md:mb-12">
         <div className="flex items-center justify-center gap-3 mb-4">
           <div className="w-12 h-12 md:w-16 md:h-16 bg-gradient-to-br from-blue-500 to-cyan-500 rounded-xl md:rounded-2xl flex items-center justify-center shadow-lg shadow-blue-500/25">
@@ -229,7 +239,9 @@ export function WikiPage() {
           </p>
         </div>
       )}
-    </div>
+      </div>
+    </>
   );
 }
+
 

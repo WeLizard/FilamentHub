@@ -221,3 +221,4 @@ First layer temperature: +5–10°C
 - "Технологии и материалы 3D-печати" (УГЛТУ, 2017)
 - [3DSourced - Ultimate 3D Printing Troubleshooting Guide](https://www.3dsourced.com/rigid-ink/ultimate-3d-printing-troubleshooting-guide/)
 
+

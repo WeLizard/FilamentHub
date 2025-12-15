@@ -90,8 +90,18 @@ export function WikiCategoryPage() {
   const IconComponent = getIconComponent(category.icon);
 
   return (
-    <div className="max-w-6xl mx-auto px-4 md:px-6 py-6 md:py-12">
-      {/* Back Button */}
+    <>
+      {category && (
+        <SEOHead
+          title={`${category.name} - Wiki по 3D-печати`}
+          description={category.description || `Статьи о ${category.name.toLowerCase()} в базе знаний FilamentHub`}
+          url={`/wiki/${category.slug}`}
+          type="website"
+          allowAI={true}
+        />
+      )}
+      <div className="max-w-6xl mx-auto px-4 md:px-6 py-6 md:py-12">
+        {/* Back Button */}
       <button
         onClick={() => navigate('/wiki')}
         className="flex items-center gap-2 text-gray-300 hover:text-white mb-6 transition-colors group"
@@ -231,7 +241,8 @@ export function WikiCategoryPage() {
           )}
         </>
       )}
-    </div>
+      </div>
+    </>
   );
 }
 

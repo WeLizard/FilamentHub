@@ -21,6 +21,7 @@ import remarkGfm from 'remark-gfm';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { vscDarkPlus } from 'react-syntax-highlighter/dist/esm/styles/prism';
 import mermaid from 'mermaid';
+import { SEOHead } from '../components/SEOHead';
 
 // Mermaid диаграмма компонент
 function MermaidDiagram({ chart, id }: { chart: string; id: string }) {
@@ -123,10 +124,58 @@ export function WikiArticlePage() {
     );
   }
 
+  // JSON-LD structured data для поисковиков
+  const jsonLd = article
+    ? {
+        '@context': 'https://schema.org',
+        '@type': 'Article',
+        headline: article.title,
+        description: article.summary,
+        image: `https://filamenthub.ru/logo.svg`,
+        datePublished: article.created_at,
+        dateModified: article.updated_at,
+        author: {
+          '@type': 'Organization',
+          name: article.author || 'FilamentHub',
+        },
+        publisher: {
+          '@type': 'Organization',
+          name: 'FilamentHub',
+          logo: {
+            '@type': 'ImageObject',
+            url: 'https://filamenthub.ru/logo.svg',
+          },
+        },
+        mainEntityOfPage: {
+          '@type': 'WebPage',
+          '@id': `https://filamenthub.ru/wiki/articles/${article.slug}`,
+        },
+        articleSection: article.category_name || 'Wiki',
+        keywords: article.tags?.join(', ') || '',
+      }
+    : undefined;
+
   return (
-    <div className="max-w-4xl mx-auto px-4 md:px-6 py-6 md:py-12">
-      {/* Back Button */}
-      <div className="flex items-center justify-between mb-6">
+    <>
+      {article && (
+        <SEOHead
+          title={article.title}
+          description={article.summary}
+          keywords={article.tags?.join(', ')}
+          url={`/wiki/articles/${article.slug}`}
+          type="article"
+          author={article.author || undefined}
+          publishedTime={article.created_at}
+          modifiedTime={article.updated_at}
+          section={article.category_name || undefined}
+          tags={article.tags || undefined}
+          jsonLd={jsonLd}
+          allowAI={true}
+        />
+      )}
+      <div className="max-w-4xl mx-auto px-4 md:px-6 py-6 md:py-12">
+        {/* Back Button */}
+        <div className="flex items-center justify-between mb-6">
         <button
           onClick={() => {
             if (article.category_name) {
@@ -318,7 +367,8 @@ export function WikiArticlePage() {
           </button>
         </div>
       </div>
-    </div>
+      </div>
+    </>
   );
 }
 

@@ -186,3 +186,4 @@ Retraction: 4–6 mm
 - [3DSourced - Ultimate 3D Printing Troubleshooting Guide](https://www.3dsourced.com/rigid-ink/ultimate-3d-printing-troubleshooting-guide/)
 - Таблицы проблем и решений из книг по 3D-печати
 
+

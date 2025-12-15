@@ -726,3 +726,4 @@ LEFT JOIN wiki_articles a ON a.category_id = c.id
 GROUP BY c.name
 ORDER BY c.name;
 
+

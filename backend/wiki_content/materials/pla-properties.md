@@ -157,3 +157,4 @@ author_id: 1
 - "Analysis of the Mechanical Properties of 3D-Printed Plastic Materials" (PubMed, 2023)
 - "Анализ возможностей технологии 3D-печати для развития практических приложений в области синтетической органической химии" (ИОХ РАН, 2016)
 
+
