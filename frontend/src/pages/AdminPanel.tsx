@@ -92,39 +92,37 @@ export function AdminPanel() {
           <p className="text-gray-300 text-xs md:text-base">Управление платформой FilamentHub</p>
         </div>
 
-        {/* Tabs - горизонтальный скролл на мобильных */}
-        <div className="overflow-x-auto -mx-2 px-2 md:mx-0 md:px-0 mb-4 md:mb-6 scrollbar-hide">
-          <div className="bg-white/10 backdrop-blur-sm rounded-lg md:rounded-xl border border-white/20 p-1.5 md:p-2 flex gap-1.5 md:gap-2 min-w-max">
-            {tabs.map((tab) => {
-              const Icon = tab.icon;
-              const isActive = activeTab === tab.id;
-              return (
-                <button
-                  key={tab.id}
-                  onClick={() => setActiveTab(tab.id)}
-                  className={`
-                    flex items-center gap-1.5 px-2.5 md:px-4 py-1.5 md:py-2 rounded-lg transition-all whitespace-nowrap text-xs md:text-sm
-                    ${isActive
-                      ? 'bg-purple-600 text-white shadow-lg'
-                      : 'bg-white/5 text-gray-300 hover:bg-white/10 active:bg-white/15'
-                    }
-                  `}
-                >
-                  <Icon className="w-3.5 h-3.5 md:w-4 md:h-4" />
-                  <span className="hidden md:inline">{tab.label}</span>
-                  <span className="md:hidden">{tab.shortLabel}</span>
-                  {tab.count !== null && tab.count > 0 && (
-                    <span className={`
-                      ml-1 md:ml-2 px-1.5 md:px-2 py-0.5 rounded-full text-[10px] md:text-xs font-semibold
-                      ${isActive ? 'bg-purple-700' : 'bg-purple-600'}
-                    `}>
-                      {tab.count}
-                    </span>
-                  )}
-                </button>
-              );
-            })}
-          </div>
+        {/* Tabs */}
+        <div className="bg-white/10 backdrop-blur-sm rounded-lg md:rounded-xl border border-white/20 mb-4 md:mb-6 p-1.5 md:p-2 flex flex-wrap gap-1.5 md:gap-2">
+          {tabs.map((tab) => {
+            const Icon = tab.icon;
+            const isActive = activeTab === tab.id;
+            return (
+              <button
+                key={tab.id}
+                onClick={() => setActiveTab(tab.id)}
+                className={`
+                  flex items-center gap-1.5 md:gap-2 px-2.5 md:px-4 py-1.5 md:py-2 rounded-lg transition-all text-xs md:text-sm
+                  ${isActive
+                    ? 'bg-purple-600 text-white shadow-lg'
+                    : 'bg-white/5 text-gray-300 hover:bg-white/10'
+                  }
+                `}
+              >
+                <Icon className="w-3.5 h-3.5 md:w-4 md:h-4" />
+                <span className="hidden md:inline">{tab.label}</span>
+                <span className="md:hidden">{tab.shortLabel}</span>
+                {tab.count !== null && tab.count > 0 && (
+                  <span className={`
+                    ml-1 md:ml-2 px-1.5 md:px-2 py-0.5 rounded-full text-[10px] md:text-xs font-semibold
+                    ${isActive ? 'bg-purple-700' : 'bg-purple-600'}
+                  `}>
+                    {tab.count}
+                  </span>
+                )}
+              </button>
+            );
+          })}
         </div>
 
         {/* Content */}
