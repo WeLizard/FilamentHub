@@ -53,6 +53,17 @@ const processQueue = (error: any, token: string | null = null) => {
 api.interceptors.response.use(
   (response) => response,
   async (error) => {
+    // Проверяем на maintenance mode (503)
+    if (error.response?.status === 503 && error.response?.data?.maintenance_mode) {
+      // Dispatch custom event для AuthContext
+      window.dispatchEvent(new CustomEvent('maintenanceMode', {
+        detail: {
+          enabled: true,
+          message: error.response?.data?.message || 'Сайт временно недоступен. Ведутся технические работы.',
+        },
+      }));
+    }
+    
     const originalRequest = error.config;
     
     // Если токен истек или невалидный (401), пытаемся обновить

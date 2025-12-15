@@ -38,6 +38,21 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const [isMaintenanceMode, setIsMaintenanceMode] = useState(false);
   const [maintenanceMessage, setMaintenanceMessage] = useState<string | null>(null);
 
+  // Слушаем глобальное событие maintenance mode от API interceptor
+  useEffect(() => {
+    const handleMaintenanceMode = (event: CustomEvent<{ enabled: boolean; message: string }>) => {
+      if (event.detail.enabled) {
+        setIsMaintenanceMode(true);
+        setMaintenanceMessage(event.detail.message);
+      }
+    };
+
+    window.addEventListener('maintenanceMode', handleMaintenanceMode as EventListener);
+    return () => {
+      window.removeEventListener('maintenanceMode', handleMaintenanceMode as EventListener);
+    };
+  }, []);
+
   // Загружаем пользователя при монтировании (если есть токен)
   useEffect(() => {
     const loadUser = async () => {
@@ -62,6 +77,13 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
           // Не логируем ошибку - это нормально при первом заходе или истекшем токене
         }
       } else {
+        // Нет токена - делаем тестовый запрос чтобы проверить maintenance mode
+        // Используем authAPI.me() - он вернёт 401, но если 503 - попадёт в interceptor
+        try {
+          await authAPI.me();
+        } catch {
+          // Игнорируем ошибку - нас интересует только maintenance mode event
+        }
         setUser(null);
       }
       setIsLoading(false);
