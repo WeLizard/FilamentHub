@@ -59,6 +59,14 @@ class Feedback(Base):
     email: Mapped[str | None] = mapped_column(String(255), nullable=True)
     # email: email пользователя (для ответа, если сообщение анонимное)
 
+    # Source context (откуда пришёл отзыв)
+    source: Mapped[str | None] = mapped_column(String(50), nullable=True, index=True)
+    # source: тип источника (wiki_article, preset, catalog, general)
+    source_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    # source_url: URL страницы откуда отправили отзыв
+    source_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
+    # source_id: ID связанного объекта (article_id, preset_id и т.д.)
+
     # Status
     status: Mapped[FeedbackStatus] = mapped_column(
         SQLEnum(FeedbackStatus, values_callable=lambda x: [e.value for e in x]),

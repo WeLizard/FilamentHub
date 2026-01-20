@@ -61,6 +61,10 @@ async def create_feedback(
         message=feedback_data.message,
         email=None,  # Email не нужен для авторизованных пользователей
         status=FeedbackStatus.OPEN,
+        # Source context
+        source=feedback_data.source,
+        source_url=feedback_data.source_url,
+        source_id=feedback_data.source_id,
     )
     
     db.add(feedback)
@@ -78,22 +82,28 @@ async def list_feedback(
     size: int = Query(50, ge=1, le=100),
     status_filter: FeedbackStatus | None = Query(None, alias="status", description="Фильтр по статусу"),
     type_filter: FeedbackType | None = Query(None, alias="type", description="Фильтр по типу"),
+    source_filter: str | None = Query(None, alias="source", description="Фильтр по источнику (wiki_article, preset, general)"),
 ) -> FeedbackListResponse:
     """Получить список обратной связи (только для админов)."""
     query = select(Feedback)
-    
+
     if status_filter:
         query = query.where(Feedback.status == status_filter)
-    
+
     if type_filter:
         query = query.where(Feedback.type == type_filter)
-    
+
+    if source_filter:
+        query = query.where(Feedback.source == source_filter)
+
     # Count total
     count_query = select(func.count()).select_from(Feedback)
     if status_filter:
         count_query = count_query.where(Feedback.status == status_filter)
     if type_filter:
         count_query = count_query.where(Feedback.type == type_filter)
+    if source_filter:
+        count_query = count_query.where(Feedback.source == source_filter)
     
     total_result = await db.execute(count_query)
     total = total_result.scalar() or 0

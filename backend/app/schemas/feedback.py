@@ -33,6 +33,10 @@ class FeedbackBase(BaseModel):
     subject: str = Field(..., max_length=200, description="Тема сообщения")
     message: str = Field(..., description="Текст сообщения")
     email: str | None = Field(None, description="Email для ответа (для анонимных сообщений)")
+    # Source context
+    source: str | None = Field(None, description="Источник: wiki_article, preset, catalog, general")
+    source_url: str | None = Field(None, max_length=500, description="URL страницы откуда отправили")
+    source_id: int | None = Field(None, description="ID связанного объекта")
 
     @field_validator('email')
     @classmethod
@@ -75,6 +79,11 @@ class FeedbackResponse(BaseModel):
     subject: str
     message: str
     email: str | None
+    # Source context
+    source: str | None = None
+    source_url: str | None = None
+    source_id: int | None = None
+    # Status
     status: str
     admin_response: str | None
     admin_response_at: datetime | None

@@ -1253,12 +1253,16 @@ export const orcaslicerDeletedPresetsAPI = {
 
 // Feedback API
 export const feedbackAPI = {
-  // Создать обратную связь (можно анонимно)
+  // Создать обратную связь (требуется авторизация)
   create: async (data: {
     type: FeedbackType;
     subject: string;
     message: string;
     email?: string | null;
+    // Source context
+    source?: string | null;
+    source_url?: string | null;
+    source_id?: number | null;
   }): Promise<Feedback> => {
     const response = await api.post<Feedback>('/feedback/', data);
     return response.data;
@@ -1279,6 +1283,7 @@ export const adminFeedbackAPI = {
     size?: number;
     status?: string;
     type?: FeedbackType;
+    source?: string;
   }): Promise<FeedbackListResponse> => {
     const response = await api.get<FeedbackListResponse>('/feedback/', { params });
     return response.data;

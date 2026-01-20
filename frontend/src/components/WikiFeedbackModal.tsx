@@ -2,8 +2,8 @@
 
 import { useState } from 'react';
 import { X, Send, MessageSquare } from 'lucide-react';
-import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { wikiAPI } from '../api/client';
+import { useMutation } from '@tanstack/react-query';
+import { feedbackAPI } from '../api/client';
 import { useAuth } from '../contexts/AuthContext';
 import { useHeaderVisible } from '../hooks/useHeaderVisible';
 
@@ -22,24 +22,24 @@ export const WikiFeedbackModal: React.FC<WikiFeedbackModalProps> = ({
 }) => {
   const { user } = useAuth();
   const isHeaderVisible = useHeaderVisible();
-  const queryClient = useQueryClient();
 
   const [comment, setComment] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
 
-  // Мутация для создания отзыва
+  // Мутация для создания отзыва через общий Feedback API
   const createFeedbackMutation = useMutation({
     mutationFn: (commentText: string) =>
-      wikiAPI.createFeedback(articleSlug, {
-        feedback_type: 'feedback',
-        comment: commentText,
+      feedbackAPI.create({
+        type: 'other',
+        subject: `Отзыв на wiki: ${articleTitle}`,
+        message: commentText,
+        source: 'wiki_article',
+        source_url: window.location.href,
+        source_id: undefined, // TODO: можно передавать article_id если нужно
       }),
     onSuccess: () => {
       setSuccess(true);
-      // Обновляем статистику
-      queryClient.invalidateQueries({ queryKey: ['wiki-feedback-stats', articleSlug] });
-      queryClient.invalidateQueries({ queryKey: ['wiki-feedback-list', articleSlug] });
       // Закрываем модалку через 2 секунды
       setTimeout(() => {
         setComment('');

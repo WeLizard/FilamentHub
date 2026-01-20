@@ -694,11 +694,19 @@ async def create_article_feedback(
     current_user: Annotated[Optional[User], Depends(get_current_active_user_optional)] = None,
 ) -> WikiFeedbackResponse:
     """
-    Создать обратную связь для статьи.
+    Отметить статью как полезную.
 
     - **helpful**: Отметить статью как полезную (доступно всем, включая анонимов)
-    - **feedback**: Оставить отзыв (только для авторизованных пользователей)
+
+    Для текстовых отзывов используйте общий API /feedback/ с source='wiki_article'.
     """
+    # Текстовые отзывы теперь идут через общий Feedback API
+    if data.feedback_type == "feedback":
+        raise HTTPException(
+            status_code=400,
+            detail="Text feedback should be submitted via /api/v1/feedback/ with source='wiki_article'"
+        )
+
     # Проверяем что статья существует
     result = await db.execute(
         select(WikiArticle.id).where(
@@ -709,20 +717,6 @@ async def create_article_feedback(
     article_id = result.scalar_one_or_none()
     if not article_id:
         raise HTTPException(status_code=404, detail="Article not found")
-
-    # Для feedback требуется авторизация
-    if data.feedback_type == "feedback" and not current_user:
-        raise HTTPException(
-            status_code=401,
-            detail="Authentication required to leave feedback"
-        )
-
-    # Для feedback требуется комментарий
-    if data.feedback_type == "feedback" and not data.comment:
-        raise HTTPException(
-            status_code=400,
-            detail="Comment is required for feedback"
-        )
 
     # Генерируем anonymous_id для анонимов
     anonymous_id = None if current_user else _get_anonymous_id(request)
