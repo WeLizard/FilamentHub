@@ -39,18 +39,21 @@ def upgrade() -> None:
     table_exists = result.scalar()
 
     if not table_exists:
+        # Используем postgresql.ENUM с create_type=False чтобы не создавать повторно
+        wikifeedbacktype_enum = postgresql.ENUM('helpful', 'feedback', name='wikifeedbacktype', create_type=False)
+
         op.create_table(
             'wiki_article_feedback',
             sa.Column('id', sa.Integer(), nullable=False),
             sa.Column('article_id', sa.Integer(), nullable=False),
             sa.Column('user_id', sa.Integer(), nullable=True),
-            sa.Column('feedback_type', sa.Enum('helpful', 'feedback', name='wikifeedbacktype', create_type=False), nullable=False),
-        sa.Column('comment', sa.Text(), nullable=True),
-        sa.Column('anonymous_id', sa.String(length=64), nullable=True),
-        sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
-        sa.ForeignKeyConstraint(['article_id'], ['wiki_articles.id'], ondelete='CASCADE'),
-        sa.ForeignKeyConstraint(['user_id'], ['users.id'], ondelete='SET NULL'),
-        sa.PrimaryKeyConstraint('id'),
+            sa.Column('feedback_type', wikifeedbacktype_enum, nullable=False),
+            sa.Column('comment', sa.Text(), nullable=True),
+            sa.Column('anonymous_id', sa.String(length=64), nullable=True),
+            sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
+            sa.ForeignKeyConstraint(['article_id'], ['wiki_articles.id'], ondelete='CASCADE'),
+            sa.ForeignKeyConstraint(['user_id'], ['users.id'], ondelete='SET NULL'),
+            sa.PrimaryKeyConstraint('id'),
             sa.UniqueConstraint('article_id', 'user_id', 'feedback_type', name='uq_wiki_feedback_user_article_type')
         )
 
