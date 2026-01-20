@@ -237,20 +237,21 @@ async def get_migration_history(db: AsyncSession) -> dict:
 async def validate_migration_integrity(db: AsyncSession) -> tuple[bool, list[str]]:
     """
     Проверить целостность БД после применения миграций.
-    
+
     Проверяет, что все таблицы из миграций действительно существуют в БД.
-    
+
     Returns:
         (is_valid, list_of_missing_tables)
     """
     from alembic.script import ScriptDirectory
-    
+
     config = get_alembic_config()
     script = ScriptDirectory.from_config(config)
-    
+
     # Получаем список таблиц из моделей SQLAlchemy
     from app.db.base import Base
-    from app.models import (  # noqa: F401 - импортируем все модели для регистрации в metadata
+    # Импортируем ВСЕ модели для регистрации в metadata
+    from app.models import (  # noqa: F401
         Brand,
         BrandRequest,
         Filament,
@@ -263,6 +264,39 @@ async def validate_migration_integrity(db: AsyncSession) -> tuple[bool, list[str
         User,
         UserSavedPreset,
     )
+    # Дополнительные модели (могут отсутствовать в старых версиях)
+    try:
+        from app.models.feedback import Feedback  # noqa: F401
+    except ImportError:
+        pass
+    try:
+        from app.models.notification import Notification  # noqa: F401
+    except ImportError:
+        pass
+    try:
+        from app.models.wiki_article import WikiArticle  # noqa: F401
+    except ImportError:
+        pass
+    try:
+        from app.models.wiki_category import WikiCategory  # noqa: F401
+    except ImportError:
+        pass
+    try:
+        from app.models.wiki_feedback import WikiArticleFeedback  # noqa: F401
+    except ImportError:
+        pass
+    try:
+        from app.models.bad_word import BadWord  # noqa: F401
+    except ImportError:
+        pass
+    try:
+        from app.models.printer_profile import PrinterProfile  # noqa: F401
+    except ImportError:
+        pass
+    try:
+        from app.models.print_profile import PrintProfile  # noqa: F401
+    except ImportError:
+        pass
     
     # Получаем все таблицы из metadata
     expected_tables = set(Base.metadata.tables.keys())
@@ -338,8 +372,9 @@ async def recreate_missing_tables(db: AsyncSession) -> tuple[bool, str, list[str
         # Шаг 3: Fallback - создаём через SQLAlchemy metadata
         # Это используется только если миграции не помогли
         logger.info(f"Используем fallback метод для создания таблиц: {missing_tables}")
-        
+
         from app.db.base import Base
+        # Импортируем ВСЕ модели для регистрации в metadata
         from app.models import (  # noqa: F401
             Brand,
             BrandRequest,
@@ -353,6 +388,18 @@ async def recreate_missing_tables(db: AsyncSession) -> tuple[bool, str, list[str
             User,
             UserSavedPreset,
         )
+        # Дополнительные модели
+        try:
+            from app.models.feedback import Feedback  # noqa: F401
+            from app.models.notification import Notification  # noqa: F401
+            from app.models.wiki_article import WikiArticle  # noqa: F401
+            from app.models.wiki_category import WikiCategory  # noqa: F401
+            from app.models.wiki_feedback import WikiArticleFeedback  # noqa: F401
+            from app.models.bad_word import BadWord  # noqa: F401
+            from app.models.printer_profile import PrinterProfile  # noqa: F401
+            from app.models.print_profile import PrintProfile  # noqa: F401
+        except ImportError:
+            pass
         
         # Получаем список существующих таблиц
         result = await db.execute(text("""
@@ -502,44 +549,86 @@ async def apply_migration(revision: str = "head", applied_by: str | None = None)
 async def downgrade_migration(revision: str = "-1", downgraded_by: str | None = None) -> tuple[bool, str, Optional[str]]:
     """
     Откатить миграцию через Alembic с записью в историю.
-    
+
     Args:
         revision: Ревизия для отката ('-1', 'base', или конкретная ревизия)
         downgraded_by: Имя пользователя, откатившего миграцию (опционально)
-    
+
     Returns:
         (success, message, current_revision)
     """
     try:
         config = get_alembic_config()
-        
+
         # Получаем текущую ревизию до отката
         from app.db.session import AsyncSessionLocal
         async with AsyncSessionLocal() as pre_db:
             result = await pre_db.execute(text("SELECT version_num FROM alembic_version"))
             row = result.fetchone()
             old_revision = row[0] if row else None
-        
+
         def run_downgrade():
             command.downgrade(config, revision)
-        
+
         await asyncio.to_thread(run_downgrade)
-        
+
         # Получаем текущую ревизию после отката
         async with AsyncSessionLocal() as db:
             result = await db.execute(text("SELECT version_num FROM alembic_version"))
             row = result.fetchone()
             current_revision = row[0] if row else None
-            
+
             # Записываем откат в историю
             if old_revision and old_revision != current_revision:
                 await _record_migration_downgrade(db, old_revision, downgraded_by)
-        
+
         return True, f"Миграция успешно откачена до {revision}", current_revision
-    
+
     except Exception as e:
         logger.error(f"Ошибка отката миграции до {revision}: {e}", exc_info=True)
         return False, f"Ошибка отката миграции: {str(e)}", None
+
+
+async def stamp_migration(revision: str = "head", stamped_by: str | None = None) -> tuple[bool, str, Optional[str]]:
+    """
+    Пометить миграцию как применённую БЕЗ выполнения SQL.
+
+    Полезно когда:
+    - Миграция частично применилась (enum создан, но таблица нет)
+    - Нужно синхронизировать состояние alembic_version с реальной БД
+    - База была создана вручную и нужно пометить миграции как применённые
+
+    Args:
+        revision: Ревизия для пометки ('head' или конкретная ревизия)
+        stamped_by: Имя пользователя (опционально)
+
+    Returns:
+        (success, message, current_revision)
+    """
+    try:
+        config = get_alembic_config()
+
+        def run_stamp():
+            command.stamp(config, revision)
+
+        await asyncio.to_thread(run_stamp)
+
+        # Получаем текущую ревизию после stamp
+        from app.db.session import AsyncSessionLocal
+        async with AsyncSessionLocal() as db:
+            result = await db.execute(text("SELECT version_num FROM alembic_version"))
+            row = result.fetchone()
+            current_revision = row[0] if row else None
+
+            # Записываем в историю
+            if current_revision:
+                await _record_migration_application(db, current_revision, stamped_by)
+
+        return True, f"Миграция {revision} помечена как применённая (без выполнения SQL)", current_revision
+
+    except Exception as e:
+        logger.error(f"Ошибка пометки миграции {revision}: {e}", exc_info=True)
+        return False, f"Ошибка пометки миграции: {str(e)}", None
 
 
 async def list_database_dumps() -> list[dict]:

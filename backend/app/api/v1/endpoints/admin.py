@@ -41,6 +41,8 @@ from app.schemas.database import (
     MigrationApplyRequest,
     MigrationApplyResponse,
     MigrationHistoryResponse,
+    MigrationStampRequest,
+    MigrationStampResponse,
     RecreateTablesResponse,
     TableStructureResponse,
     TableDataRequest,
@@ -73,6 +75,7 @@ from app.services.database_service import (
     import_database as import_database_service,
     list_database_dumps as list_database_dumps_service,
     recreate_missing_tables as recreate_missing_tables_service,
+    stamp_migration as stamp_migration_service,
     validate_migration_integrity as validate_migration_integrity_service,
 )
 
@@ -1183,6 +1186,30 @@ async def downgrade_migration(
     downgraded_by = f"{admin.email} ({admin.id})"
     success, message, current_revision = await downgrade_migration_service(data.revision, downgraded_by=downgraded_by)
     return MigrationApplyResponse(
+        success=success,
+        message=message,
+        current_revision=current_revision,
+    )
+
+
+@router.post("/database/migrations/stamp", response_model=MigrationStampResponse)
+async def stamp_migration(
+    data: MigrationStampRequest,
+    admin: Annotated[User, Depends(get_current_admin_user)],
+) -> MigrationStampResponse:
+    """
+    Пометить миграцию как применённую БЕЗ выполнения SQL.
+
+    Используйте когда:
+    - Миграция частично применилась (например, enum создан, но таблица нет)
+    - Нужно синхронизировать состояние alembic_version с реальной БД
+    - БД была настроена вручную и нужно пометить миграции
+
+    ВНИМАНИЕ: Это НЕ выполняет SQL из миграции, только обновляет alembic_version.
+    """
+    stamped_by = f"{admin.email} ({admin.id})"
+    success, message, current_revision = await stamp_migration_service(data.revision, stamped_by=stamped_by)
+    return MigrationStampResponse(
         success=success,
         message=message,
         current_revision=current_revision,

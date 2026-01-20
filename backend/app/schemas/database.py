@@ -173,3 +173,17 @@ class TableDataUpdateRequest(BaseModel):
     primary_key: dict[str, Any] = Field(..., description="Значения первичного ключа для идентификации строки")
     data: dict[str, Any] = Field(..., description="Новые значения полей")
 
+
+class MigrationStampRequest(BaseModel):
+    """Запрос на пометку миграции как применённой (без выполнения)."""
+
+    revision: str = Field(..., description="Ревизия для пометки (например, 'head' или конкретная ревизия)")
+
+
+class MigrationStampResponse(BaseModel):
+    """Ответ на пометку миграции."""
+
+    success: bool = Field(..., description="Успешно ли помечена миграция")
+    message: str = Field(..., description="Сообщение о результате")
+    current_revision: Optional[str] = Field(None, description="Текущая ревизия после пометки")
+
