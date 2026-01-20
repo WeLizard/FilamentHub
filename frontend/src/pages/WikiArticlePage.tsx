@@ -364,17 +364,27 @@ export function WikiArticlePage() {
                 },
                 img(props: any) {
                   const { src, alt, ...rest } = props;
-                  // Если путь относительный, добавляем базовый URL для изображений
+                  // Преобразуем путь к изображению в правильный URL
                   let imageSrc = src;
-                  if (src && !src.startsWith('http') && !src.startsWith('/')) {
-                    // Относительный путь - ищем в uploads или используем абсолютный
-                    imageSrc = src.startsWith('uploads/') ? `/api/v1/${src}` : src;
+                  if (src && !src.startsWith('http')) {
+                    // Убираем ../ и ./ из начала пути
+                    let cleanPath = src.replace(/^(\.\.\/)+/, '').replace(/^\.\//, '');
+
+                    // Если путь начинается с uploads/ — добавляем /api/v1/
+                    if (cleanPath.startsWith('uploads/')) {
+                      imageSrc = `/api/v1/${cleanPath}`;
+                    } else if (!src.startsWith('/')) {
+                      // Другие относительные пути — предполагаем uploads/wiki/
+                      imageSrc = `/api/v1/uploads/wiki/${cleanPath}`;
+                    }
+                    // Пути начинающиеся с / оставляем как есть
                   }
                   return (
                     <img
                       src={imageSrc}
                       alt={alt || ''}
                       className="max-w-full h-auto rounded-xl shadow-xl my-6"
+                      loading="lazy"
                       {...rest}
                     />
                   );
