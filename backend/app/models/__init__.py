@@ -21,6 +21,7 @@ from app.models.user_saved_preset import UserSavedPreset
 from app.models.feedback import Feedback, FeedbackType, FeedbackStatus
 from app.models.wiki_category import WikiCategory
 from app.models.wiki_article import WikiArticle, WikiArticleStatus
+from app.models.wiki_feedback import WikiArticleFeedback, WikiFeedbackType
 from app.models.material_property import MaterialProperty
 from app.models.print_problem import PrintProblem, PrintProblemSeverity
 
@@ -56,6 +57,8 @@ __all__ = [
     "UserRole",
     "UserSavedPreset",
     "WikiArticle",
+    "WikiArticleFeedback",
     "WikiArticleStatus",
     "WikiCategory",
+    "WikiFeedbackType",
 ]

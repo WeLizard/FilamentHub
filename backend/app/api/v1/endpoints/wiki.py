@@ -1,15 +1,17 @@
 """Wiki API endpoints."""
 
-from typing import Annotated
-from fastapi import APIRouter, Depends, HTTPException, Query
+from typing import Annotated, Optional
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy import func, or_, select, cast, String
 from sqlalchemy.ext.asyncio import AsyncSession
+import hashlib
 
-from app.core.dependencies import get_current_user, get_current_admin_user
+from app.core.dependencies import get_current_user, get_current_admin_user, get_current_active_user_optional
 from app.db.session import get_db
 from app.models.user import User
 from app.models.wiki_article import WikiArticle, WikiArticleStatus
 from app.models.wiki_category import WikiCategory
+from app.models.wiki_feedback import WikiArticleFeedback, WikiFeedbackType
 from app.schemas.wiki import (
     WikiArticleCreate,
     WikiArticleListResponse,
@@ -20,6 +22,9 @@ from app.schemas.wiki import (
     WikiCategoryListResponse,
     WikiCategoryResponse,
     WikiCategoryUpdate,
+    WikiFeedbackCreate,
+    WikiFeedbackResponse,
+    WikiFeedbackStats,
 )
 
 router = APIRouter(prefix="/wiki", tags=["wiki"])
@@ -537,11 +542,11 @@ async def search_articles(
 ) -> WikiArticleListResponse:
     """
     Полнотекстовый поиск по статьям.
-    
+
     Ищет в заголовке, summary, content и тегах.
     """
     search_pattern = f"%{q}%"
-    
+
     # tags это JSON поле, поэтому используем cast для поиска
     from sqlalchemy import cast, String
     query = select(WikiArticle).where(
@@ -553,12 +558,12 @@ async def search_articles(
             cast(WikiArticle.tags, String).ilike(search_pattern),
         )
     )
-    
+
     # Подсчет total
     count_query = select(func.count()).select_from(query.subquery())
     count_result = await db.execute(count_query)
     total = count_result.scalar_one()
-    
+
     # Сортировка по relevance (title > summary > content)
     # Для простоты сортируем по дате, можно добавить полнотекстовый поиск PostgreSQL
     query = (
@@ -567,10 +572,10 @@ async def search_articles(
         .offset((page - 1) * page_size)
         .limit(page_size)
     )
-    
+
     result = await db.execute(query)
     articles = result.scalars().all()
-    
+
     # Конвертируем статьи в Summary, добавляя published поле из status
     items = []
     for article in articles:
@@ -589,7 +594,7 @@ async def search_articles(
             "updated_at": article.updated_at,
         }
         items.append(WikiArticleSummary(**article_dict))
-    
+
     return WikiArticleListResponse(
         items=items,
         total=total,
@@ -597,4 +602,286 @@ async def search_articles(
         page_size=page_size,
         total_pages=(total + page_size - 1) // page_size,
     )
+
+
+# ============================================================================
+# Wiki Feedback (Helpful marks and comments)
+# ============================================================================
+
+def _get_anonymous_id(request: Request) -> str:
+    """Generate anonymous ID from IP and User-Agent for rate limiting."""
+    ip = request.client.host if request.client else "unknown"
+    user_agent = request.headers.get("user-agent", "")
+    raw = f"{ip}:{user_agent}"
+    return hashlib.sha256(raw.encode()).hexdigest()[:32]
+
+
+@router.get("/articles/{article_slug}/feedback/stats", response_model=WikiFeedbackStats)
+async def get_article_feedback_stats(
+    article_slug: str,
+    request: Request,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    current_user: Annotated[Optional[User], Depends(get_current_active_user_optional)] = None,
+) -> WikiFeedbackStats:
+    """
+    Получить статистику обратной связи для статьи.
+
+    Возвращает количество лайков, отзывов и информацию о том,
+    отметил ли текущий пользователь статью как полезную.
+    """
+    # Проверяем что статья существует
+    result = await db.execute(
+        select(WikiArticle.id).where(WikiArticle.slug == article_slug)
+    )
+    article_id = result.scalar_one_or_none()
+    if not article_id:
+        raise HTTPException(status_code=404, detail="Article not found")
+
+    # Считаем helpful marks
+    helpful_result = await db.execute(
+        select(func.count(WikiArticleFeedback.id)).where(
+            WikiArticleFeedback.article_id == article_id,
+            WikiArticleFeedback.feedback_type == WikiFeedbackType.HELPFUL,
+        )
+    )
+    helpful_count = helpful_result.scalar_one()
+
+    # Считаем feedback comments
+    feedback_result = await db.execute(
+        select(func.count(WikiArticleFeedback.id)).where(
+            WikiArticleFeedback.article_id == article_id,
+            WikiArticleFeedback.feedback_type == WikiFeedbackType.FEEDBACK,
+        )
+    )
+    feedback_count = feedback_result.scalar_one()
+
+    # Проверяем, отметил ли текущий пользователь как полезное
+    user_marked_helpful = False
+    if current_user:
+        user_helpful_result = await db.execute(
+            select(WikiArticleFeedback.id).where(
+                WikiArticleFeedback.article_id == article_id,
+                WikiArticleFeedback.user_id == current_user.id,
+                WikiArticleFeedback.feedback_type == WikiFeedbackType.HELPFUL,
+            )
+        )
+        user_marked_helpful = user_helpful_result.scalar_one_or_none() is not None
+    else:
+        # Для анонимов проверяем по anonymous_id
+        anonymous_id = _get_anonymous_id(request)
+        anon_helpful_result = await db.execute(
+            select(WikiArticleFeedback.id).where(
+                WikiArticleFeedback.article_id == article_id,
+                WikiArticleFeedback.anonymous_id == anonymous_id,
+                WikiArticleFeedback.feedback_type == WikiFeedbackType.HELPFUL,
+            )
+        )
+        user_marked_helpful = anon_helpful_result.scalar_one_or_none() is not None
+
+    return WikiFeedbackStats(
+        helpful_count=helpful_count,
+        feedback_count=feedback_count,
+        user_marked_helpful=user_marked_helpful,
+    )
+
+
+@router.post("/articles/{article_slug}/feedback", response_model=WikiFeedbackResponse)
+async def create_article_feedback(
+    article_slug: str,
+    data: WikiFeedbackCreate,
+    request: Request,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    current_user: Annotated[Optional[User], Depends(get_current_active_user_optional)] = None,
+) -> WikiFeedbackResponse:
+    """
+    Создать обратную связь для статьи.
+
+    - **helpful**: Отметить статью как полезную (доступно всем, включая анонимов)
+    - **feedback**: Оставить отзыв (только для авторизованных пользователей)
+    """
+    # Проверяем что статья существует
+    result = await db.execute(
+        select(WikiArticle.id).where(
+            WikiArticle.slug == article_slug,
+            WikiArticle.status == WikiArticleStatus.PUBLISHED,
+        )
+    )
+    article_id = result.scalar_one_or_none()
+    if not article_id:
+        raise HTTPException(status_code=404, detail="Article not found")
+
+    # Для feedback требуется авторизация
+    if data.feedback_type == "feedback" and not current_user:
+        raise HTTPException(
+            status_code=401,
+            detail="Authentication required to leave feedback"
+        )
+
+    # Для feedback требуется комментарий
+    if data.feedback_type == "feedback" and not data.comment:
+        raise HTTPException(
+            status_code=400,
+            detail="Comment is required for feedback"
+        )
+
+    # Генерируем anonymous_id для анонимов
+    anonymous_id = None if current_user else _get_anonymous_id(request)
+
+    # Проверяем уникальность для авторизованных пользователей
+    if current_user:
+        existing = await db.execute(
+            select(WikiArticleFeedback).where(
+                WikiArticleFeedback.article_id == article_id,
+                WikiArticleFeedback.user_id == current_user.id,
+                WikiArticleFeedback.feedback_type == WikiFeedbackType(data.feedback_type),
+            )
+        )
+        if existing.scalar_one_or_none():
+            if data.feedback_type == "helpful":
+                raise HTTPException(
+                    status_code=400,
+                    detail="You have already marked this article as helpful"
+                )
+            else:
+                raise HTTPException(
+                    status_code=400,
+                    detail="You have already left feedback for this article"
+                )
+    else:
+        # Для анонимов проверяем по anonymous_id (только для helpful)
+        existing = await db.execute(
+            select(WikiArticleFeedback).where(
+                WikiArticleFeedback.article_id == article_id,
+                WikiArticleFeedback.anonymous_id == anonymous_id,
+                WikiArticleFeedback.feedback_type == WikiFeedbackType.HELPFUL,
+            )
+        )
+        if existing.scalar_one_or_none():
+            raise HTTPException(
+                status_code=400,
+                detail="You have already marked this article as helpful"
+            )
+
+    # Создаем feedback
+    feedback = WikiArticleFeedback(
+        article_id=article_id,
+        user_id=current_user.id if current_user else None,
+        feedback_type=WikiFeedbackType(data.feedback_type),
+        comment=data.comment,
+        anonymous_id=anonymous_id,
+    )
+    db.add(feedback)
+    await db.commit()
+    await db.refresh(feedback)
+
+    return WikiFeedbackResponse(
+        id=feedback.id,
+        article_id=feedback.article_id,
+        user_id=feedback.user_id,
+        feedback_type=feedback.feedback_type.value,
+        comment=feedback.comment,
+        created_at=feedback.created_at,
+        username=current_user.username if current_user else None,
+    )
+
+
+@router.delete("/articles/{article_slug}/feedback/helpful")
+async def remove_helpful_mark(
+    article_slug: str,
+    request: Request,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    current_user: Annotated[Optional[User], Depends(get_current_active_user_optional)] = None,
+) -> dict:
+    """
+    Убрать отметку "Полезно" со статьи.
+
+    Доступно и для авторизованных пользователей, и для анонимов.
+    """
+    # Проверяем что статья существует
+    result = await db.execute(
+        select(WikiArticle.id).where(WikiArticle.slug == article_slug)
+    )
+    article_id = result.scalar_one_or_none()
+    if not article_id:
+        raise HTTPException(status_code=404, detail="Article not found")
+
+    # Ищем feedback для удаления
+    if current_user:
+        feedback_result = await db.execute(
+            select(WikiArticleFeedback).where(
+                WikiArticleFeedback.article_id == article_id,
+                WikiArticleFeedback.user_id == current_user.id,
+                WikiArticleFeedback.feedback_type == WikiFeedbackType.HELPFUL,
+            )
+        )
+    else:
+        anonymous_id = _get_anonymous_id(request)
+        feedback_result = await db.execute(
+            select(WikiArticleFeedback).where(
+                WikiArticleFeedback.article_id == article_id,
+                WikiArticleFeedback.anonymous_id == anonymous_id,
+                WikiArticleFeedback.feedback_type == WikiFeedbackType.HELPFUL,
+            )
+        )
+
+    feedback = feedback_result.scalar_one_or_none()
+    if not feedback:
+        raise HTTPException(status_code=404, detail="Helpful mark not found")
+
+    await db.delete(feedback)
+    await db.commit()
+
+    return {"message": "Helpful mark removed successfully"}
+
+
+@router.get("/articles/{article_slug}/feedback", response_model=list[WikiFeedbackResponse])
+async def list_article_feedback(
+    article_slug: str,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    page: int = Query(1, ge=1, description="Page number"),
+    page_size: int = Query(20, ge=1, le=100, description="Items per page"),
+) -> list[WikiFeedbackResponse]:
+    """
+    Получить список отзывов (feedback) для статьи.
+
+    Возвращает только отзывы с комментариями (не helpful marks).
+    """
+    # Проверяем что статья существует
+    result = await db.execute(
+        select(WikiArticle.id).where(WikiArticle.slug == article_slug)
+    )
+    article_id = result.scalar_one_or_none()
+    if not article_id:
+        raise HTTPException(status_code=404, detail="Article not found")
+
+    # Получаем feedback с join на users для username
+    from app.models.user import User as UserModel
+
+    query = (
+        select(WikiArticleFeedback, UserModel.username)
+        .outerjoin(UserModel, WikiArticleFeedback.user_id == UserModel.id)
+        .where(
+            WikiArticleFeedback.article_id == article_id,
+            WikiArticleFeedback.feedback_type == WikiFeedbackType.FEEDBACK,
+        )
+        .order_by(WikiArticleFeedback.created_at.desc())
+        .offset((page - 1) * page_size)
+        .limit(page_size)
+    )
+
+    result = await db.execute(query)
+    rows = result.all()
+
+    return [
+        WikiFeedbackResponse(
+            id=feedback.id,
+            article_id=feedback.article_id,
+            user_id=feedback.user_id,
+            feedback_type=feedback.feedback_type.value,
+            comment=feedback.comment,
+            created_at=feedback.created_at,
+            username=username,
+        )
+        for feedback, username in rows
+    ]
 

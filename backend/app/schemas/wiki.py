@@ -167,3 +167,44 @@ class WikiArticleListResponse(BaseModel):
     page_size: int
     total_pages: int
 
+
+# ============================================================================
+# Wiki Feedback Schemas
+# ============================================================================
+
+class WikiFeedbackCreate(BaseModel):
+    """Schema for creating wiki feedback (helpful mark or full feedback)."""
+
+    feedback_type: str = Field(..., description="Type: 'helpful' or 'feedback'")
+    comment: str | None = Field(None, max_length=2000, description="Comment text (required for 'feedback' type)")
+
+    @field_validator("feedback_type")
+    @classmethod
+    def validate_feedback_type(cls, v: str) -> str:
+        """Validate feedback type."""
+        if v not in ("helpful", "feedback"):
+            raise ValueError("feedback_type must be 'helpful' or 'feedback'")
+        return v
+
+
+class WikiFeedbackResponse(BaseModel):
+    """Schema for wiki feedback response."""
+
+    id: int
+    article_id: int
+    user_id: int | None
+    feedback_type: str
+    comment: str | None
+    created_at: datetime
+    username: str | None = Field(default=None, description="Username if user is authenticated")
+
+    model_config = {"from_attributes": True}
+
+
+class WikiFeedbackStats(BaseModel):
+    """Statistics for article feedback."""
+
+    helpful_count: int = Field(default=0, description="Number of 'helpful' marks")
+    feedback_count: int = Field(default=0, description="Number of feedback comments")
+    user_marked_helpful: bool = Field(default=False, description="Whether current user marked as helpful")
+

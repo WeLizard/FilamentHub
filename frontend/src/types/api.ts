@@ -601,3 +601,27 @@ export interface WikiArticleListResponse {
   page_size: number;
   total_pages: number;
 }
+
+// Wiki Feedback types
+export type WikiFeedbackType = 'helpful' | 'feedback';
+
+export interface WikiFeedbackStats {
+  helpful_count: number;
+  feedback_count: number;
+  user_marked_helpful: boolean;
+}
+
+export interface WikiFeedbackCreate {
+  feedback_type: WikiFeedbackType;
+  comment?: string | null;
+}
+
+export interface WikiFeedback {
+  id: number;
+  article_id: number;
+  user_id: number | null;
+  feedback_type: WikiFeedbackType;
+  comment: string | null;
+  created_at: string;
+  username: string | null;
+}

@@ -124,3 +124,9 @@ log/
 # One-time setup scripts (already executed)
 setup_orcaslicer_*.ps1
 
+# Cursor rules (local project context)
+.cursor/rules/
+
+# Brands folder (local data)
+brands/
+

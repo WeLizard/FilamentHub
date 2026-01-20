@@ -1,7 +1,7 @@
 /** API Client для интеграции с бэкендом */
 
 import axios from 'axios';
-import type { Brand, BrandRequest, BrandRequestStatus, Filament, FilamentVisualSettings, FilamentReview, FilamentRatingStats, Notification, NotificationListResponse, Preset, RecommendedPreset, Printer, PrinterProfile, PrintProfile, PrinterRequest, User, Token, RefreshTokenRequest, RefreshTokenResponse, ListResponse, AccountDeletionStats, UserSavedPreset, CalculatorEstimateRequest, CalculatorEstimateResponse, Feedback, FeedbackListResponse, FeedbackType, CompatiblePrinter, CompatibleFilament, DownloadVersion, DownloadVersionsResponse, WikiCategory, WikiCategoryListResponse, WikiArticle, WikiArticleSummary, WikiArticleListResponse } from '../types/api';
+import type { Brand, BrandRequest, BrandRequestStatus, Filament, FilamentVisualSettings, FilamentReview, FilamentRatingStats, Notification, NotificationListResponse, Preset, RecommendedPreset, Printer, PrinterProfile, PrintProfile, PrinterRequest, User, Token, RefreshTokenRequest, RefreshTokenResponse, ListResponse, AccountDeletionStats, UserSavedPreset, CalculatorEstimateRequest, CalculatorEstimateResponse, Feedback, FeedbackListResponse, FeedbackType, CompatiblePrinter, CompatibleFilament, DownloadVersion, DownloadVersionsResponse, WikiCategory, WikiCategoryListResponse, WikiArticle, WikiArticleSummary, WikiArticleListResponse, WikiFeedbackStats, WikiFeedbackCreate, WikiFeedback } from '../types/api';
 import { getRefreshToken, setToken, removeToken } from '../utils/auth';
 
 const API_BASE_URL = '/api/v1';
@@ -1368,6 +1368,26 @@ export const wikiAPI = {
   
   searchArticles: async (q: string, params?: { page?: number; page_size?: number }): Promise<WikiArticleListResponse> => {
     const response = await api.get('/wiki/search', { params: { q, ...params } });
+    return response.data;
+  },
+
+  // Feedback
+  getFeedbackStats: async (articleSlug: string): Promise<WikiFeedbackStats> => {
+    const response = await api.get(`/wiki/articles/${articleSlug}/feedback/stats`);
+    return response.data;
+  },
+
+  createFeedback: async (articleSlug: string, data: WikiFeedbackCreate): Promise<WikiFeedback> => {
+    const response = await api.post(`/wiki/articles/${articleSlug}/feedback`, data);
+    return response.data;
+  },
+
+  removeHelpfulMark: async (articleSlug: string): Promise<void> => {
+    await api.delete(`/wiki/articles/${articleSlug}/feedback/helpful`);
+  },
+
+  listFeedback: async (articleSlug: string, params?: { page?: number; page_size?: number }): Promise<WikiFeedback[]> => {
+    const response = await api.get(`/wiki/articles/${articleSlug}/feedback`, { params });
     return response.data;
   },
 };

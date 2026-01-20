@@ -14,6 +14,7 @@ from app.db.base import Base
 if TYPE_CHECKING:
     from app.models.wiki_category import WikiCategory
     from app.models.user import User
+    from app.models.wiki_feedback import WikiArticleFeedback
 
 
 class WikiArticleStatus(str, Enum):
@@ -113,6 +114,9 @@ class WikiArticle(Base):
     created_by: Mapped["User"] = relationship("User", foreign_keys=[created_by_id])
     updated_by: Mapped["User"] = relationship("User", foreign_keys=[updated_by_id])
     reviewed_by: Mapped["User"] = relationship("User", foreign_keys=[reviewed_by_id])
+    feedback: Mapped[list["WikiArticleFeedback"]] = relationship(
+        "WikiArticleFeedback", back_populates="article", cascade="all, delete-orphan"
+    )
 
     def __repr__(self) -> str:
         """String representation."""

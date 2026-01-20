@@ -18,6 +18,7 @@ if TYPE_CHECKING:
     from app.models.print_profile import PrintProfile
     from app.models.printer_profile import PrinterProfile
     from app.models.user_saved_preset import UserSavedPreset
+    from app.models.wiki_feedback import WikiArticleFeedback
 
 
 class UserRole(str, Enum):
@@ -115,6 +116,9 @@ class User(Base):
     )
     feedback_messages: Mapped[list["Feedback"]] = relationship(
         "Feedback", foreign_keys="Feedback.user_id", back_populates="user", cascade="all, delete-orphan"
+    )
+    wiki_feedback: Mapped[list["WikiArticleFeedback"]] = relationship(
+        "WikiArticleFeedback", back_populates="user", cascade="all, delete-orphan"
     )
 
     def __repr__(self) -> str:
