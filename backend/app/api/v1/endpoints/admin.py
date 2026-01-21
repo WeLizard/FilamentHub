@@ -1931,3 +1931,43 @@ async def set_maintenance_status(
         "maintenance_mode": get_maintenance_info(),
     }
 
+
+# ==================== Wiki Sync ====================
+
+
+@router.post("/wiki/sync", response_model=dict)
+async def sync_wiki_from_files(
+    admin: Annotated[User, Depends(get_current_admin_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> dict:
+    """
+    Синхронизировать Wiki из markdown файлов.
+
+    Читает все .md файлы из backend/wiki_content/ и обновляет/создаёт статьи в БД.
+    - Новые статьи создаются
+    - Существующие статьи обновляются (по slug)
+    - Файлы без нужных метаданных пропускаются
+
+    Формат .md файла:
+    ```
+    ---
+    title: "Заголовок статьи"
+    category: beginners
+    slug: article-slug
+    tags: ["тег1", "тег2"]
+    status: published
+    ---
+    # Контент статьи в Markdown
+    ```
+    """
+    from app.services.wiki_sync_service import sync_wiki_from_markdown
+
+    result = await sync_wiki_from_markdown(db)
+
+    logger.info(
+        f"Admin {admin.id} synced wiki: {result['created']} created, "
+        f"{result['updated']} updated, {result['errors']} errors"
+    )
+
+    return result
+

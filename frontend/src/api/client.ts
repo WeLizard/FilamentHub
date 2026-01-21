@@ -1158,6 +1158,27 @@ export const adminAPI = {
     });
     return response.data;
   },
+
+  // Wiki Sync
+  syncWiki: async (): Promise<{
+    success: boolean;
+    message: string;
+    created: number;
+    updated: number;
+    skipped: number;
+    errors: number;
+    details: Array<{
+      file: string;
+      status: string;
+      title?: string;
+      slug?: string;
+      category?: string;
+      reason?: string;
+    }>;
+  }> => {
+    const response = await api.post('/admin/wiki/sync');
+    return response.data;
+  },
 };
 
 // Notifications API
