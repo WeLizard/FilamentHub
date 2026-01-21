@@ -58,14 +58,20 @@ fi
 echo ""
 echo -e "${YELLOW}📥 Шаг 2: Обновление кода из Git...${NC}"
 
+# Определяем ветку (main или master)
+BRANCH="main"
+if ! git show-ref --verify --quiet refs/remotes/origin/main; then
+    BRANCH="master"
+fi
+
 # Получаем изменения
-git fetch origin main 2>/dev/null || git fetch origin master 2>/dev/null || {
+git fetch origin "$BRANCH" || {
     echo -e "${RED}❌ Ошибка: не удалось получить изменения из Git${NC}"
     exit 1
 }
 
 # Показываем что изменится
-CHANGES=$(git log HEAD..origin/main --oneline 2>/dev/null || git log HEAD..origin/master --oneline 2>/dev/null || echo "")
+CHANGES=$(git log HEAD..origin/$BRANCH --oneline 2>/dev/null || echo "")
 if [ -n "$CHANGES" ]; then
     echo "   Новые коммиты:"
     echo "$CHANGES" | head -5 | sed 's/^/   - /'
@@ -79,7 +85,7 @@ fi
 
 # Сбрасываем локальные изменения и обновляемся
 echo "   Применяю изменения..."
-git reset --hard origin/main 2>/dev/null || git reset --hard origin/master
+git reset --hard origin/$BRANCH
 
 echo -e "   ${GREEN}✅ Код обновлён${NC}"
 
