@@ -19,7 +19,7 @@ export default defineConfig({
         changeOrigin: true,
         timeout: 180000,
       },
-      '/wiki': {
+      '/wiki_content': {
         target: 'http://localhost:8000',
         changeOrigin: true,
       },

@@ -57,10 +57,10 @@ qr_codes_dir.mkdir(parents=True, exist_ok=True)
 app.mount("/qr_codes", StaticFiles(directory=str(qr_codes_dir)), name="qr_codes")
 
 # Static files for Wiki images
-# Картинки лежат в wiki_content/images/, доступны по /wiki/images/
+# Картинки лежат в wiki_content/images/, доступны по /wiki_content/images/
 wiki_images_dir = Path(__file__).parent.parent / "wiki_content" / "images"
 wiki_images_dir.mkdir(parents=True, exist_ok=True)
-app.mount("/wiki/images", StaticFiles(directory=str(wiki_images_dir)), name="wiki-images")
+app.mount("/wiki_content/images", StaticFiles(directory=str(wiki_images_dir)), name="wiki-images")
 
 
 # Health check endpoint
