@@ -364,24 +364,10 @@ export function WikiArticlePage() {
                 },
                 img(props: any) {
                   const { src, alt, ...rest } = props;
-                  // Преобразуем путь к изображению в правильный URL
-                  let imageSrc = src;
-                  if (src && !src.startsWith('http')) {
-                    // Убираем ../ и ./ из начала пути
-                    let cleanPath = src.replace(/^(\.\.\/)+/, '').replace(/^\.\//, '');
-
-                    // Если путь начинается с uploads/ — используем /uploads/
-                    if (cleanPath.startsWith('uploads/')) {
-                      imageSrc = `/${cleanPath}`;
-                    } else if (!src.startsWith('/')) {
-                      // Другие относительные пути — предполагаем uploads/wiki/
-                      imageSrc = `/uploads/wiki/${cleanPath}`;
-                    }
-                    // Пути начинающиеся с / оставляем как есть
-                  }
+                  // Картинки: используй /wiki-images/filename.webp в markdown
                   return (
                     <img
-                      src={imageSrc}
+                      src={src}
                       alt={alt || ''}
                       className="max-w-full h-auto rounded-xl shadow-xl my-6"
                       loading="lazy"

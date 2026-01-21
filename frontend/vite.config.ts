@@ -17,7 +17,11 @@ export default defineConfig({
       '/uploads': {
         target: 'http://localhost:8000',
         changeOrigin: true,
-        timeout: 180000, // 3 минуты для загрузки файлов
+        timeout: 180000,
+      },
+      '/wiki': {
+        target: 'http://localhost:8000',
+        changeOrigin: true,
       },
     },
   },
