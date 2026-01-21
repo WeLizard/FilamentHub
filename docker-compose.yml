@@ -45,6 +45,8 @@ services:
       - distributions_data:/app/distributions
       # Логи можно хранить на хосте (не критично)
       - ./backend/logs:/app/logs
+      # Wiki content - чтобы можно было редактировать без пересборки
+      - ./backend/wiki_content:/app/wiki_content
     # Backend НЕ пробрасываем наружу - доступ только через nginx (frontend)
     # ports:
     #   - "${BACKEND_PORT:-8000}:8000"
