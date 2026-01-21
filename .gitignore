@@ -95,7 +95,10 @@ backend/node_modules/
 backend/package-lock.json
 backend/package.json
 backend/scripts/
-backend/uploads/
+backend/uploads/*
+!backend/uploads/wiki/
+backend/uploads/wiki/*
+!backend/uploads/wiki/.gitkeep
 backend/docs/
 backend/database_dumps/
 backend/uploads/database_dumps/

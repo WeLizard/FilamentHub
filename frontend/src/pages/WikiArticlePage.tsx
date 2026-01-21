@@ -370,12 +370,12 @@ export function WikiArticlePage() {
                     // Убираем ../ и ./ из начала пути
                     let cleanPath = src.replace(/^(\.\.\/)+/, '').replace(/^\.\//, '');
 
-                    // Если путь начинается с uploads/ — добавляем /api/v1/
+                    // Если путь начинается с uploads/ — используем /uploads/
                     if (cleanPath.startsWith('uploads/')) {
-                      imageSrc = `/api/v1/${cleanPath}`;
+                      imageSrc = `/${cleanPath}`;
                     } else if (!src.startsWith('/')) {
                       // Другие относительные пути — предполагаем uploads/wiki/
-                      imageSrc = `/api/v1/uploads/wiki/${cleanPath}`;
+                      imageSrc = `/uploads/wiki/${cleanPath}`;
                     }
                     // Пути начинающиеся с / оставляем как есть
                   }
