@@ -655,7 +655,7 @@ export const ProfilePage: React.FC = () => {
             {[
               { id: 'dashboard', label: 'Дашборд', shortLabel: 'Главная', icon: Play },
               { id: 'presets', label: 'Пресеты', shortLabel: 'Пресеты', icon: Settings },
-              { id: 'printer-profiles', label: 'Принтеры', shortLabel: 'Принтеры', icon: Printer },
+              { id: 'printer-profiles', label: 'Принтеры', shortLabel: 'Принтеры', icon: Printer3DIcon },
               { id: 'history', label: 'История', shortLabel: 'История', icon: TrendingUp },
               { id: 'calculator', label: 'Калькулятор', shortLabel: 'Калькул.', icon: Calculator },
               { id: 'settings', label: 'Настройки', shortLabel: 'Настр.', icon: Cog },
@@ -1058,7 +1058,7 @@ export const ProfilePage: React.FC = () => {
             </div>
           ) : (
             <EmptyState
-              icon={Printer}
+              icon={Printer3DIcon}
               title="Пока нет принтеров"
               description="Импортируйте профили из OrcaSlicer или создайте их вручную - они появятся здесь."
               actionLabel="Создать профиль принтера"
@@ -2330,7 +2330,7 @@ const CalculatorComponent: React.FC = () => {
                 <ResultCard
                   label="Печать"
                   value={result.cost_printing.toFixed(2)}
-                  icon={Printer}
+                  icon={Printer3DIcon}
                   color="from-indigo-500/20 to-purple-500/20"
                   borderColor="border-indigo-500/30"
                 />
