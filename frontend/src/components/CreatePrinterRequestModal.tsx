@@ -2,7 +2,8 @@
 
 import { useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { X, Printer, Save } from 'lucide-react';
+import { X, Save } from 'lucide-react';
+import { Printer3DIcon } from './icons/Printer3DIcon';
 import { printerRequestsAPI } from '../api/printerRequestsAPI';
 import { useHeaderVisible } from '../hooks/useHeaderVisible';
 
@@ -97,7 +98,7 @@ export function CreatePrinterRequestModal({ isOpen, onClose }: CreatePrinterRequ
         {/* Header */}
         <div className="flex items-center justify-between p-6 border-b border-white/10">
           <div className="flex items-center space-x-3">
-            <Printer className="w-6 h-6 text-purple-400" />
+            <Printer3DIcon className="w-6 h-6 text-purple-400" />
             <h3 className="text-2xl font-bold text-white">Запрос на добавление принтера</h3>
           </div>
           <button

@@ -1,7 +1,8 @@
 /** Компонент для отображения одного отзыва */
 
 import React from 'react';
-import { Star, CheckCircle, XCircle, Printer, Calendar, Edit, Trash2, Settings } from 'lucide-react';
+import { Star, CheckCircle, XCircle, Calendar, Edit, Trash2, Settings } from 'lucide-react';
+import { Printer3DIcon } from './icons/Printer3DIcon';
 import { FilamentReview } from '../types/api';
 import { StarRating } from './StarRating';
 import { BadgeList } from './Badge';
@@ -59,7 +60,7 @@ export const ReviewCard: React.FC<ReviewCardProps> = ({
             )}
             {review.printer_model && (
               <div className="flex items-center space-x-1">
-                <Printer className="w-4 h-4" />
+                <Printer3DIcon className="w-4 h-4" />
                 <span>{review.printer_model}</span>
               </div>
             )}

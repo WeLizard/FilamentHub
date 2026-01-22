@@ -1,7 +1,8 @@
 /** Модальное окно для создания printer profile */
 
 import { useState, useEffect, FormEvent, useRef, useMemo } from 'react';
-import { X, Save, Loader2, Printer as PrinterIcon, Pencil } from 'lucide-react';
+import { X, Save, Loader2, Pencil } from 'lucide-react';
+import { Printer3DIcon } from './icons/Printer3DIcon';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { printerProfilesAPI, printersAPI } from '../api/client';
 import { useAuth } from '../contexts/AuthContext';
@@ -1719,7 +1720,7 @@ export const CreatePrinterProfileModal: React.FC<CreatePrinterProfileModalProps>
         {/* Header */}
         <div className="flex items-center justify-between p-6 border-b border-white/10">
           <div className="flex items-center gap-3">
-            <PrinterIcon className="w-6 h-6 text-purple-400" />
+            <Printer3DIcon className="w-6 h-6 text-purple-400" />
             <h2 className="text-2xl font-bold text-white">
               {profile ? 'Редактировать профиль принтера' : baseProfile ? 'Клонировать профиль принтера' : 'Создать профиль принтера'}
             </h2>

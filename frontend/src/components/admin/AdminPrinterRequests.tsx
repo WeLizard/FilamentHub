@@ -2,7 +2,8 @@
 
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Package, CheckCircle, XCircle, Eye, Clock, Printer, Download } from 'lucide-react';
+import { Package, CheckCircle, XCircle, Eye, Clock, Download } from 'lucide-react';
+import { Printer3DIcon } from '../icons/Printer3DIcon';
 import { adminAPI } from '../../api/client';
 import type { PrinterRequest } from '../../types/api';
 import { useHeaderVisible } from '../../hooks/useHeaderVisible';
@@ -142,7 +143,7 @@ export function AdminPrinterRequests() {
               <div className="flex items-start justify-between">
                 <div className="flex-1">
                   <div className="flex items-center space-x-3 mb-2">
-                    <Printer className="w-5 h-5 text-purple-400" />
+                    <Printer3DIcon className="w-5 h-5 text-purple-400" />
                     <h3 className="text-lg font-semibold text-white">{request.name}</h3>
                     <span className="px-2 py-1 rounded bg-purple-500/20 text-purple-300 text-xs font-semibold">
                       {request.manufacturer} {request.model}

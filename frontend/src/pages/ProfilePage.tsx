@@ -25,7 +25,6 @@ import {
   AlertTriangle,
   Loader2,
   Upload,
-  Printer,
   Eye,
   DollarSign,
   Clock,
@@ -37,6 +36,7 @@ import {
   ChevronUp,
   CheckCircle,
 } from 'lucide-react';
+import { Printer3DIcon } from '../components/icons/Printer3DIcon';
 import { useAuth } from '../contexts/AuthContext';
 import { presetsAPI, filamentsAPI, brandsAPI, savedPresetsAPI, filamentReviewsAPI, calculatorAPI, printerProfilesAPI, printProfilesAPI, authAPI } from '../api/client';
 import api from '../api/client';
@@ -856,7 +856,7 @@ export const ProfilePage: React.FC = () => {
                     <div className="flex items-start justify-between gap-3 mb-4">
                       <div className="flex-1">
                         <div className="flex items-center gap-3 mb-2">
-                          <Printer className="w-6 h-6 text-purple-400 flex-shrink-0" />
+                          <Printer3DIcon className="w-6 h-6 text-purple-400 flex-shrink-0" />
                           <div>
                             {printer.manufacturer && (
                               <p className="text-xs text-gray-400">{printer.manufacturer}</p>

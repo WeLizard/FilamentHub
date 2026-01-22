@@ -1,7 +1,8 @@
 /** Модальное окно для создания/редактирования отзыва */
 
 import React, { useState, useEffect } from 'react';
-import { X, Star, CheckCircle, XCircle, Printer, AlertCircle, Settings, Shield } from 'lucide-react';
+import { X, Star, CheckCircle, XCircle, AlertCircle, Settings, Shield } from 'lucide-react';
+import { Printer3DIcon } from './icons/Printer3DIcon';
 import { useMutation, useQueryClient, useQuery } from '@tanstack/react-query';
 import { filamentReviewsAPI } from '../api/client';
 import { FilamentReview, Preset } from '../types/api';
@@ -264,7 +265,7 @@ export const CreateReviewModal: React.FC<CreateReviewModalProps> = ({
           {/* Модель принтера */}
           <div>
             <label className="block text-white font-semibold mb-2">
-              <Printer className="w-4 h-4 inline mr-2" />
+              <Printer3DIcon className="w-4 h-4 inline mr-2" />
               Модель принтера (необязательно)
             </label>
             <input

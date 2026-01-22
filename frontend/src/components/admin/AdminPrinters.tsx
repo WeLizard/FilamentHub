@@ -3,7 +3,8 @@
 import { useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Printer, Plus, Edit, Trash2, X, Save } from 'lucide-react';
+import { Plus, Edit, Trash2, X, Save } from 'lucide-react';
+import { Printer3DIcon } from '../icons/Printer3DIcon';
 import { adminAPI, printersAPI } from '../../api/client';
 import type { Printer as PrinterType } from '../../types/api';
 import { useHeaderVisible } from '../../hooks/useHeaderVisible';
@@ -128,7 +129,7 @@ export function AdminPrinters() {
       {/* Список принтеров */}
       {printers.length === 0 ? (
         <div className="text-center py-12 text-gray-400">
-          <Printer className="w-16 h-16 mx-auto mb-4 opacity-50" />
+          <Printer3DIcon className="w-16 h-16 mx-auto mb-4 opacity-50" />
           <p>Нет принтеров для отображения</p>
         </div>
       ) : (
@@ -141,7 +142,7 @@ export function AdminPrinters() {
               <div className="flex items-start justify-between">
                 <div className="flex-1">
                   <div className="flex items-center space-x-3 mb-2">
-                    <Printer className="w-5 h-5 text-purple-400" />
+                    <Printer3DIcon className="w-5 h-5 text-purple-400" />
                     <h3 className="text-lg font-semibold text-white">{printer.name}</h3>
                     <span className="px-2 py-1 rounded bg-purple-500/20 text-purple-300 text-xs font-semibold">
                       {printer.manufacturer} {printer.model}

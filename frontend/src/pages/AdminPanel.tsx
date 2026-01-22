@@ -2,7 +2,8 @@
 
 import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { Shield, FileText, Building2, Users, BarChart3, CheckCircle, Home, Printer as PrinterIcon, Package, User, LogOut, Database, MessageCircle, Send, Settings } from 'lucide-react';
+import { Shield, FileText, Building2, Users, BarChart3, CheckCircle, Home, Package, User, LogOut, Database, MessageCircle, Send, Settings } from 'lucide-react';
+import { Printer3DIcon } from '../components/icons/Printer3DIcon';
 import { useAuth } from '../contexts/AuthContext';
 import { AdminBrandRequests } from '../components/admin/AdminBrandRequests';
 import { AdminBrands } from '../components/admin/AdminBrands';
@@ -45,7 +46,7 @@ export function AdminPanel() {
     { id: 'requests' as AdminTab, label: 'Заявки на верификацию', shortLabel: 'Верификация', icon: FileText, count: null },
     { id: 'brands' as AdminTab, label: 'Бренды', shortLabel: 'Бренды', icon: Building2, count: null },
     { id: 'presets' as AdminTab, label: 'Модерация пресетов', shortLabel: 'Пресеты', icon: CheckCircle, count: null },
-    { id: 'printers' as AdminTab, label: 'Принтеры', shortLabel: 'Принтеры', icon: PrinterIcon, count: null },
+    { id: 'printers' as AdminTab, label: 'Принтеры', shortLabel: 'Принтеры', icon: Printer3DIcon, count: null },
     { id: 'printer-requests' as AdminTab, label: 'Заявки на принтеры', shortLabel: 'Заявки', icon: Package, count: null },
     { id: 'users' as AdminTab, label: 'Пользователи', shortLabel: 'Юзеры', icon: Users, count: null },
     { id: 'feedback' as AdminTab, label: 'Обратная связь', shortLabel: 'Фидбек', icon: MessageCircle, count: null },
