@@ -130,8 +130,18 @@ log/
 # One-time setup scripts (already executed)
 setup_orcaslicer_*.ps1
 
-# Cursor rules (local project context)
-.cursor/rules/
+# AI/LLM tools (local configs, rules, context - never commit)
+.cursor/
+.cursorrules
+.claude/
+.continue/
+.aider*
+.codeium/
+.copilot/
+.windsurf/
+CLAUDE.md
+AGENTS.md
+.claudeignore
 
 # Brands folder (local data)
 brands/
