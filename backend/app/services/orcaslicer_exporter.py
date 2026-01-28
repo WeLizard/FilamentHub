@@ -9,6 +9,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.filament import Filament
 from app.models.preset import Preset
 from app.services.material_mapping_service import get_material_preset
+from app.services.profile_validator import (
+    validate_filament_profile,
+    log_validation_result,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -276,7 +280,11 @@ async def preset_to_orcaslicer_json(
     # 3. Применяет параметры из этого JSON поверх родительского конфига
     # 4. Сохраняет как пользовательский пресет
     # 5. Метаданные fhub_id и fhub_source сохраняются в JSON профиля для обратной синхронизации
-    
+
+    # Валидация профиля перед экспортом (мягкая - только логирование)
+    validation_result = validate_filament_profile(profile)
+    log_validation_result(validation_result, preset.name, "filament")
+
     return profile
 
 

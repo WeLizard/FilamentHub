@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 from datetime import datetime
 from typing import Any, Mapping
 
@@ -12,6 +13,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.printer import Printer
 from app.models.printer_profile import PrinterProfile
 from app.models.print_profile import PrintProfile
+from app.services.profile_validator import (
+    validate_printer_profile,
+    validate_print_profile,
+    log_validation_result,
+)
+
+logger = logging.getLogger(__name__)
 
 
 def _coerce_list(value: Any) -> list[str] | None:
@@ -354,6 +362,10 @@ async def printer_profile_to_orca_json(
     # Метки fhub_id и fhub_source обновляются только при импорте из OrcaSlicer.
     # При экспорте мы просто читаем существующие метки и добавляем их в JSON.
 
+    # Валидация профиля перед экспортом (мягкая - только логирование)
+    validation_result = validate_printer_profile(settings)
+    log_validation_result(validation_result, profile.name, "printer")
+
     return settings
 
 
@@ -491,11 +503,15 @@ async def print_profile_to_orca_json(
     # ВАЖНО: OrcaSlicer ожидает строки для fhub_id, не числа!
     settings["fhub_id"] = str(profile.id)
     settings["fhub_source"] = "filamenthub"
-    
+
     # ВАЖНО: НЕ обновляем orcaslicer_settings в базе при экспорте!
     # Это вызывает изменение updated_at и бесконечный цикл экспорта.
     # Метки fhub_id и fhub_source обновляются только при импорте из OrcaSlicer.
     # При экспорте мы просто читаем существующие метки и добавляем их в JSON.
+
+    # Валидация профиля перед экспортом (мягкая - только логирование)
+    validation_result = validate_print_profile(settings)
+    log_validation_result(validation_result, profile.name, "print")
 
     return settings
 
