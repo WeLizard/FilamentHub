@@ -213,7 +213,7 @@ export function WikiArticlePage() {
       )}
       {/* Main Layout: Content + Sidebar TOC */}
       <div className="max-w-7xl mx-auto px-4 md:px-6 py-6 md:py-12">
-        <div className="lg:grid lg:grid-cols-[1fr,280px] lg:gap-8">
+        <div className="lg:grid lg:grid-cols-[1fr_280px] lg:gap-8">
           {/* Main Content Column */}
           <div className="max-w-4xl">
             {/* Back Button */}

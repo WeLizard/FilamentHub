@@ -114,13 +114,13 @@ MAX_ATTEMPTS=12
 
 while [ $ATTEMPTS -lt $MAX_ATTEMPTS ]; do
     ATTEMPTS=$((ATTEMPTS + 1))
-    
-    # Проверяем health endpoint
-    if curl -sf http://localhost:8000/health > /dev/null 2>&1; then
+
+    # Проверяем health endpoint через docker exec (бэкенд не пробрасывает порт наружу)
+    if docker exec filamenthub_backend_prod curl -sf http://localhost:8000/health > /dev/null 2>&1; then
         echo -e "   ${GREEN}✅ Backend работает!${NC}"
         break
     fi
-    
+
     if [ $ATTEMPTS -eq $MAX_ATTEMPTS ]; then
         echo -e "   ${YELLOW}⚠️  Backend не отвечает на /health (возможно всё ок, проверь логи)${NC}"
     else
