@@ -312,105 +312,104 @@ export function WikiArticlePage() {
                   [&_li]:text-gray-200 [&_li]:marker:text-blue-400 [&_li]:pl-2
                   [&_img]:rounded-xl [&_img]:shadow-xl [&_img]:my-6 [&_img]:max-w-full [&_img]:h-auto
                   [&_hr]:border-white/20 [&_hr]:my-8
-                >
+                "
+              >
                 <ReactMarkdown
                   remarkPlugins={[remarkGfm]}
                   components={{
-                code(props: any) {
-                  const { node, inline, className, children, ...rest } = props;
-                  const match = /language-(\w+)/.exec(className || '');
+                    code(props: any) {
+                      const { node, inline, className, children, ...rest } = props;
+                      const match = /language-(\w+)/.exec(className || '');
 
-                  // Mermaid диаграммы
-                  if (!inline && match && match[1] === 'mermaid') {
-                    const id = `mermaid-${Math.random().toString(36).substr(2, 9)}`;
-                    return (
-                      <MermaidDiagram chart={String(children).replace(/\n$/, '')} id={id} />
-                    );
-                  }
+                      // Mermaid диаграммы
+                      if (!inline && match && match[1] === 'mermaid') {
+                        const id = `mermaid-${Math.random().toString(36).substr(2, 9)}`;
+                        return (
+                          <MermaidDiagram chart={String(children).replace(/\n$/, '')} id={id} />
+                        );
+                      }
 
-                  // Обычный code блок
-                  if (!inline && match) {
-                    return (
-                      <SyntaxHighlighter
-                        style={vscDarkPlus as any}
-                        language={match[1]}
-                        PreTag="div"
-                      >
-                        {String(children).replace(/\n$/, '')}
-                      </SyntaxHighlighter>
-                    );
-                  }
+                      // Обычный code блок
+                      if (!inline && match) {
+                        return (
+                          <SyntaxHighlighter
+                            style={vscDarkPlus as any}
+                            language={match[1]}
+                            PreTag="div"
+                          >
+                            {String(children).replace(/\n$/, '')}
+                          </SyntaxHighlighter>
+                        );
+                      }
 
-                  // Inline code
-                  return (
-                    <code className={className} {...rest}>
-                      {children}
-                    </code>
-                  );
-                },
-                table(props: any) {
-                  const { children, ...rest } = props;
-                  return (
-                    <div className="overflow-x-auto my-6 -mx-2 px-2">
-                      <table
-                        className="w-full border-collapse rounded-lg overflow-hidden text-sm
-                        [&_thead]:bg-white/10
-                        [&_th]:px-3 [&_th]:py-2.5 [&_th]:text-left [&_th]:text-white [&_th]:font-semibold [&_th]:border-b [&_th]:border-white/20
-                        [&_tbody]:bg-white/5
-                        [&_td]:px-3 [&_td]:py-2.5 [&_td]:text-gray-200 [&_td]:border-b [&_td]:border-white/10
-                        [&_tr:hover]:bg-white/10
-                        [&_tr:last-child_td]:border-b-0"
-                        {...rest}
-                      >
-                        {children}
-                      </table>
-                    </div>
-                  );
-                },
-                img(props: any) {
-                  const { src, alt, ...rest } = props;
-                  // Картинки: используй /wiki-images/filename.webp в markdown
-                  return (
-                    <img
-                      src={src}
-                      alt={alt || ''}
-                      className="max-w-full h-auto rounded-xl shadow-xl my-6"
-                      loading="lazy"
-                      {...rest}
-                    />
-                  );
-                },
-                // Добавляем ID к заголовкам для навигации TOC
-                h1(props: any) {
-                  const { children, ...rest } = props;
-                  const text = String(children);
-                  const id = generateHeadingId(text);
-                  return (
-                    <h1 id={id} className="scroll-mt-24" {...rest}>
-                      {children}
-                    </h1>
-                  );
-                },
-                h2(props: any) {
-                  const { children, ...rest } = props;
-                  const text = String(children);
-                  const id = generateHeadingId(text);
-                  return (
-                    <h2 id={id} className="scroll-mt-24" {...rest}>
-                      {children}
-                    </h2>
-                  );
-                },
-                h3(props: any) {
-                  const { children, ...rest } = props;
-                  const text = String(children);
-                  const id = generateHeadingId(text);
-                  return (
-                    <h3 id={id} className="scroll-mt-24" {...rest}>
-                      {children}
-                    </h3>
-                  );
-                },
+                      // Inline code
+                      return (
+                        <code className={className} {...rest}>
+                          {children}
+                        </code>
+                      );
+                    },
+                    table(props: any) {
+                      const { children, ...rest } = props;
+                      return (
+                        <div className="overflow-x-auto my-6 -mx-2 px-2">
+                          <table
+                            className="w-full border-collapse rounded-lg overflow-hidden text-sm
+                              [&_thead]:bg-white/10
+                              [&_th]:px-3 [&_th]:py-2.5 [&_th]:text-left [&_th]:text-white [&_th]:font-semibold [&_th]:border-b [&_th]:border-white/20
+                              [&_tbody]:bg-white/5
+                              [&_td]:px-3 [&_td]:py-2.5 [&_td]:text-gray-200 [&_td]:border-b [&_td]:border-white/10
+                              [&_tr:hover]:bg-white/10
+                              [&_tr:last-child_td]:border-b-0"
+                            {...rest}
+                          >
+                            {children}
+                          </table>
+                        </div>
+                      );
+                    },
+                    img(props: any) {
+                      const { src, alt, ...rest } = props;
+                      return (
+                        <img
+                          src={src}
+                          alt={alt || ''}
+                          className="max-w-full h-auto rounded-xl shadow-xl my-6"
+                          loading="lazy"
+                          {...rest}
+                        />
+                      );
+                    },
+                    h1(props: any) {
+                      const { children, ...rest } = props;
+                      const text = String(children);
+                      const id = generateHeadingId(text);
+                      return (
+                        <h1 id={id} className="scroll-mt-24" {...rest}>
+                          {children}
+                        </h1>
+                      );
+                    },
+                    h2(props: any) {
+                      const { children, ...rest } = props;
+                      const text = String(children);
+                      const id = generateHeadingId(text);
+                      return (
+                        <h2 id={id} className="scroll-mt-24" {...rest}>
+                          {children}
+                        </h2>
+                      );
+                    },
+                    h3(props: any) {
+                      const { children, ...rest } = props;
+                      const text = String(children);
+                      const id = generateHeadingId(text);
+                      return (
+                        <h3 id={id} className="scroll-mt-24" {...rest}>
+                          {children}
+                        </h3>
+                      );
+                    },
                   }}
                 >
                   {article.content}
