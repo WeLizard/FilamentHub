@@ -1,6 +1,8 @@
 """API endpoints for OrcaSlicer FilamentHub Edition downloads."""
 
 import hashlib
+import re
+from functools import lru_cache
 from pathlib import Path
 from typing import Literal
 
@@ -12,27 +14,105 @@ from app.core.config import settings
 router = APIRouter(prefix="/downloads", tags=["downloads"])
 
 
-def _get_distribution_path(platform: str, architecture: str, version: str, download_type: str = "installer") -> Path:
-    """Получить путь к файлу дистрибутива."""
-    # Используем абсолютный путь /app для работы в Docker
+def _get_distributions_dir() -> Path:
+    """Получить путь к папке с дистрибутивами."""
     base_path = Path("/app") if Path("/app").exists() else Path(__file__).parent.parent.parent
-    distributions_dir = base_path / settings.DISTRIBUTIONS_DIR / "orcaslicer"
-    
-    # Формируем имя файла по платформе и типу
-    if platform == "windows":
-        if download_type == "portable":
-            filename = f"OrcaSlicer-FilamentHub-{version}-win64-portable.zip"
-        else:
-            filename = f"OrcaSlicer-FilamentHub-{version}-win64.exe"
-    elif platform == "macos":
-        arch_suffix = "arm64" if architecture == "arm64" else "x64"
-        filename = f"OrcaSlicer-FilamentHub-{version}-macos-{arch_suffix}.dmg"
-    elif platform == "linux":
-        filename = f"OrcaSlicer-FilamentHub-{version}-linux-x64.AppImage"
+    return base_path / settings.DISTRIBUTIONS_DIR / "orcaslicer"
+
+
+def _parse_version(filename: str) -> tuple[str, str, str] | None:
+    """
+    Распарсить имя файла и вернуть (версия, платформа, тип).
+
+    Примеры:
+    - OrcaSlicer-FilamentHub-2.1.0-fh-win64.exe -> ('2.1.0-fh', 'windows', 'installer')
+    - OrcaSlicer-FilamentHub-2.1.0-fh-win64-portable.zip -> ('2.1.0-fh', 'windows', 'portable')
+    - OrcaSlicer-FilamentHub-2.1.0-fh-linux-x64.AppImage -> ('2.1.0-fh', 'linux', 'installer')
+    """
+    # Паттерн: OrcaSlicer-FilamentHub-{version}-{platform}[-portable].{ext}
+    pattern = r"OrcaSlicer-FilamentHub-(\d+\.\d+\.\d+-fh)-(\w+)(?:-(portable))?\.(exe|zip|dmg|AppImage)"
+    match = re.match(pattern, filename)
+
+    if not match:
+        return None
+
+    version = match.group(1)
+    platform_raw = match.group(2)
+    is_portable = match.group(3) == "portable"
+    ext = match.group(4)
+
+    # Определяем платформу
+    if "win" in platform_raw:
+        platform = "windows"
+    elif "macos" in platform_raw or ext == "dmg":
+        platform = "macos"
+    elif "linux" in platform_raw or ext == "AppImage":
+        platform = "linux"
     else:
-        filename = f"OrcaSlicer-FilamentHub-{version}-{platform}-{architecture}"
-    
-    return distributions_dir / filename
+        platform = platform_raw
+
+    download_type = "portable" if is_portable else "installer"
+
+    return (version, platform, download_type)
+
+
+def _scan_available_versions() -> dict[str, list[dict]]:
+    """
+    Сканировать папку distributions и найти все доступные версии.
+
+    Возвращает dict: {version: [{platform, arch, type, filename}, ...]}
+    """
+    dist_dir = _get_distributions_dir()
+    versions: dict[str, list[dict]] = {}
+
+    if not dist_dir.exists():
+        return versions
+
+    for filepath in dist_dir.iterdir():
+        if not filepath.is_file():
+            continue
+
+        parsed = _parse_version(filepath.name)
+        if not parsed:
+            continue
+
+        version, platform, download_type = parsed
+
+        # Определяем архитектуру из имени файла
+        if "arm64" in filepath.name.lower():
+            arch = "arm64"
+        else:
+            arch = "x64"
+
+        if version not in versions:
+            versions[version] = []
+
+        versions[version].append({
+            "platform": platform,
+            "architecture": arch,
+            "download_type": download_type,
+            "filename": filepath.name,
+            "filepath": filepath,
+        })
+
+    return versions
+
+
+def _get_latest_version() -> str:
+    """Получить последнюю версию из доступных файлов."""
+    versions = _scan_available_versions()
+
+    if not versions:
+        return "2.0.0-fh"  # Fallback
+
+    # Сортируем версии (семантическое сравнение)
+    def version_key(v: str) -> tuple:
+        # "2.1.0-fh" -> (2, 1, 0)
+        nums = re.findall(r"\d+", v)
+        return tuple(int(n) for n in nums)
+
+    sorted_versions = sorted(versions.keys(), key=version_key, reverse=True)
+    return sorted_versions[0]
 
 
 def _file_exists(filepath: Path) -> bool:
@@ -68,45 +148,6 @@ def _calculate_sha256(filepath: Path) -> str | None:
     return sha256_hash.hexdigest()
 
 
-def _get_download_url(request: Request, platform: str, architecture: str, version: str, download_type: str = "installer") -> str | None:
-    """Получить URL для скачивания файла."""
-    filepath = _get_distribution_path(platform, architecture, version, download_type)
-    if not _file_exists(filepath):
-        return None
-    
-    # Определяем базовый URL из заголовков прокси или используем настройки
-    # Это важно для работы вне локальной сети (nginx передает X-Forwarded-* заголовки)
-    forwarded_host = request.headers.get("X-Forwarded-Host")
-    forwarded_proto = request.headers.get("X-Forwarded-Proto", "https")
-    
-    # Всегда используем HTTPS для внешнего домена (безопасность и корректная работа)
-    # Если домен filamenthub.ru - всегда HTTPS
-    if forwarded_host:
-        # Используем заголовки от nginx (правильный внешний URL)
-        # Принудительно используем HTTPS для внешнего домена
-        if "filamenthub.ru" in forwarded_host:
-            base_url = f"https://{forwarded_host}".rstrip("/")
-        else:
-            base_url = f"{forwarded_proto}://{forwarded_host}".rstrip("/")
-    elif request.headers.get("Host"):
-        # Fallback: используем Host заголовок (передается nginx)
-        host = request.headers.get("Host")
-        # Принудительно используем HTTPS для внешнего домена
-        if "filamenthub.ru" in host:
-            base_url = f"https://{host}".rstrip("/")
-        else:
-            base_url = f"{forwarded_proto}://{host}".rstrip("/")
-    else:
-        # Fallback: используем настройки (всегда должен быть HTTPS)
-        base_url = settings.BASE_URL.rstrip("/")
-        # Убеждаемся, что используется HTTPS
-        if base_url.startswith("http://") and "filamenthub.ru" in base_url:
-            base_url = base_url.replace("http://", "https://")
-    
-    filename = filepath.name
-    return f"{base_url}/distributions/orcaslicer/{filename}"
-
-
 class DownloadVersion(BaseModel):
     """Information about a downloadable version."""
 
@@ -137,104 +178,152 @@ async def get_orcaslicer_downloads(
 ) -> DownloadVersionsResponse:
     """
     Get available OrcaSlicer FilamentHub Edition download links.
-    
-    Returns information about available builds for different platforms.
-    Проверяет наличие файлов в папке distributions и генерирует URL.
+
+    Автоматически сканирует папку distributions и возвращает все найденные версии.
+    Версия, размер и SHA256 определяются из реальных файлов.
     """
-    # Базовая версия
-    base_version = "2.0.0-fh"
-    
-    # Все возможные версии
-    possible_versions = [
+    # Сканируем доступные файлы
+    available_versions = _scan_available_versions()
+    latest_version = _get_latest_version()
+
+    all_downloads: list[DownloadVersion] = []
+
+    # Все возможные комбинации платформ
+    possible_platforms = [
         ("windows", "x64"),
         ("macos", "x64"),
         ("macos", "arm64"),
         ("linux", "x64"),
     ]
-    
-    all_versions: list[DownloadVersion] = []
-    
-    for plat, arch in possible_versions:
+
+    # Собираем информацию о найденных файлах
+    found_files: dict[tuple, dict] = {}  # (platform, arch, type) -> file_info
+
+    for version, files in available_versions.items():
+        for file_info in files:
+            key = (file_info["platform"], file_info["architecture"], file_info["download_type"])
+            # Берём файл с последней версией
+            if key not in found_files:
+                found_files[key] = {**file_info, "version": version}
+            else:
+                # Сравниваем версии, берём новее
+                existing_version = found_files[key]["version"]
+                if _compare_versions(version, existing_version) > 0:
+                    found_files[key] = {**file_info, "version": version}
+
+    # Генерируем ответ для каждой платформы
+    for plat, arch in possible_platforms:
         # Проверяем installer
-        installer_path = _get_distribution_path(plat, arch, base_version, "installer")
-        installer_available = _file_exists(installer_path)
-        
-        # Проверяем portable (только для Windows)
-        portable_available = False
-        portable_path = None
-        if plat == "windows":
-            portable_path = _get_distribution_path(plat, arch, base_version, "portable")
-            portable_available = _file_exists(portable_path)
-        
-        # Приоритет: installer, если нет - portable
-        download_type = "installer"
-        filepath = installer_path
-        available = installer_available
-        
-        if not available and portable_available:
-            download_type = "portable"
-            filepath = portable_path
-            available = True
-        
-        download_url = None
-        file_size = "N/A"
-        checksum = None
-        github_url = None
-        
-        if available:
-            download_url = _get_download_url(request, plat, arch, base_version, download_type)
-            file_size = _get_file_size(filepath)
-            checksum = _calculate_sha256(filepath)
-        else:
-            # Оценочный размер если файл не найден
-            if plat == "windows":
-                file_size = "~250 MB"
-            elif plat == "macos":
-                file_size = "~280 MB"
-            elif plat == "linux":
-                file_size = "~250 MB"
-            # Если нет локального файла, предлагаем GitHub
-            github_url = "https://github.com/lizardjazz1/OrcaSlicer/releases"
-        
-        all_versions.append(
-            DownloadVersion(
-                platform=plat,
-                architecture=arch,
-                version=base_version,
-                download_url=download_url,
-                file_size=file_size,
-                checksum=checksum,
-                available=available,
-                download_type=download_type,
-                github_url=github_url,
-            )
-        )
-        
-        # Добавляем portable версию отдельно если она есть (только для Windows)
-        if plat == "windows" and portable_available and installer_available:
-            portable_filepath = _get_distribution_path(plat, arch, base_version, "portable")
-            all_versions.append(
+        installer_key = (plat, arch, "installer")
+        installer_info = found_files.get(installer_key)
+
+        # Проверяем portable
+        portable_key = (plat, arch, "portable")
+        portable_info = found_files.get(portable_key)
+
+        # Добавляем installer если есть
+        if installer_info:
+            filepath = installer_info["filepath"]
+            version = installer_info["version"]
+            all_downloads.append(
                 DownloadVersion(
                     platform=plat,
                     architecture=arch,
-                    version=base_version,
-                    download_url=_get_download_url(request, plat, arch, base_version, "portable"),
-                    file_size=_get_file_size(portable_filepath),
-                    checksum=_calculate_sha256(portable_filepath),
+                    version=version,
+                    download_url=_get_download_url_from_file(request, filepath),
+                    file_size=_get_file_size(filepath),
+                    checksum=_calculate_sha256(filepath),
+                    available=True,
+                    download_type="installer",
+                    github_url=None,
+                )
+            )
+
+        # Добавляем portable если есть
+        if portable_info:
+            filepath = portable_info["filepath"]
+            version = portable_info["version"]
+            all_downloads.append(
+                DownloadVersion(
+                    platform=plat,
+                    architecture=arch,
+                    version=version,
+                    download_url=_get_download_url_from_file(request, filepath),
+                    file_size=_get_file_size(filepath),
+                    checksum=_calculate_sha256(filepath),
                     available=True,
                     download_type="portable",
                     github_url=None,
                 )
             )
-    
+
+        # Если нет ни installer ни portable — добавляем placeholder
+        if not installer_info and not portable_info:
+            file_size_map = {
+                "windows": "~250 MB",
+                "macos": "~280 MB",
+                "linux": "~250 MB",
+            }
+            all_downloads.append(
+                DownloadVersion(
+                    platform=plat,
+                    architecture=arch,
+                    version=latest_version,
+                    download_url=None,
+                    file_size=file_size_map.get(plat, "~250 MB"),
+                    checksum=None,
+                    available=False,
+                    download_type="installer",
+                    github_url="https://github.com/lizardjazz1/OrcaSlicer/releases",
+                )
+            )
+
     # Фильтруем по платформе если указано
     if platform:
-        all_versions = [v for v in all_versions if v.platform == platform]
-    
+        all_downloads = [v for v in all_downloads if v.platform == platform]
+
     return DownloadVersionsResponse(
-        versions=all_versions,
-        latest_version=base_version,
+        versions=all_downloads,
+        latest_version=latest_version,
     )
+
+
+def _compare_versions(v1: str, v2: str) -> int:
+    """Сравнить две версии. Возвращает >0 если v1 > v2."""
+    def parse(v: str) -> tuple:
+        nums = re.findall(r"\d+", v)
+        return tuple(int(n) for n in nums)
+
+    p1, p2 = parse(v1), parse(v2)
+    if p1 > p2:
+        return 1
+    elif p1 < p2:
+        return -1
+    return 0
+
+
+def _get_download_url_from_file(request: Request, filepath: Path) -> str:
+    """Получить URL для скачивания по пути к файлу."""
+    forwarded_host = request.headers.get("X-Forwarded-Host")
+    forwarded_proto = request.headers.get("X-Forwarded-Proto", "https")
+
+    if forwarded_host:
+        if "filamenthub.ru" in forwarded_host:
+            base_url = f"https://{forwarded_host}".rstrip("/")
+        else:
+            base_url = f"{forwarded_proto}://{forwarded_host}".rstrip("/")
+    elif request.headers.get("Host"):
+        host = request.headers.get("Host")
+        if "filamenthub.ru" in host:
+            base_url = f"https://{host}".rstrip("/")
+        else:
+            base_url = f"{forwarded_proto}://{host}".rstrip("/")
+    else:
+        base_url = settings.BASE_URL.rstrip("/")
+        if base_url.startswith("http://") and "filamenthub.ru" in base_url:
+            base_url = base_url.replace("http://", "https://")
+
+    return f"{base_url}/distributions/orcaslicer/{filepath.name}"
 
 
 @router.get("/orcaslicer/{platform}/{architecture}", response_model=DownloadVersion)
@@ -242,51 +331,46 @@ async def get_orcaslicer_download(
     request: Request,
     platform: Literal["windows", "macos", "linux"],
     architecture: Literal["x64", "arm64"],
+    download_type: Literal["installer", "portable"] = Query("installer"),
 ) -> DownloadVersion:
     """
     Get download link for specific platform and architecture.
-    
-    Returns download information for the requested build.
-    Проверяет наличие файла и возвращает актуальную информацию.
+
+    Автоматически находит файл нужной версии в папке distributions.
     """
-    base_version = "2.0.0-fh"
-    
-    filepath = _get_distribution_path(platform, architecture, base_version)
-    available = _file_exists(filepath)
-    
-    download_url = None
-    file_size = "N/A"
-    checksum = None
-    
-    if available:
-        download_url = _get_download_url(request, platform, architecture, base_version)
-        file_size = _get_file_size(filepath)
-        checksum = _calculate_sha256(filepath)
-    else:
-        # Оценочный размер если файл не найден
-        file_size_map = {
-            ("windows", "x64"): "~250 MB",
-            ("macos", "x64"): "~280 MB",
-            ("macos", "arm64"): "~280 MB",
-            ("linux", "x64"): "~250 MB",
-        }
-        file_size = file_size_map.get((platform, architecture), "~250 MB")
-    
-    version = DownloadVersion(
-        platform=platform,
-        architecture=architecture,
-        version=base_version,
-        download_url=download_url,
-        file_size=file_size,
-        checksum=checksum,
-        available=available,
-    )
-    
-    if not version.available:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Build for {platform} ({architecture}) is not available yet",
+    available_versions = _scan_available_versions()
+    latest_version = _get_latest_version()
+
+    # Ищем файл для запрошенной платформы
+    best_match = None
+    best_version = None
+
+    for version, files in available_versions.items():
+        for file_info in files:
+            if (file_info["platform"] == platform and
+                file_info["architecture"] == architecture and
+                file_info["download_type"] == download_type):
+                if best_version is None or _compare_versions(version, best_version) > 0:
+                    best_match = file_info
+                    best_version = version
+
+    if best_match:
+        filepath = best_match["filepath"]
+        return DownloadVersion(
+            platform=platform,
+            architecture=architecture,
+            version=best_version,
+            download_url=_get_download_url_from_file(request, filepath),
+            file_size=_get_file_size(filepath),
+            checksum=_calculate_sha256(filepath),
+            available=True,
+            download_type=download_type,
+            github_url=None,
         )
-    
-    return version
+
+    # Файл не найден
+    raise HTTPException(
+        status_code=status.HTTP_404_NOT_FOUND,
+        detail=f"Build for {platform} ({architecture}, {download_type}) is not available yet",
+    )
 
