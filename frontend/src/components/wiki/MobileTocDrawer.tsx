@@ -2,7 +2,6 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { List, X, ChevronRight } from 'lucide-react';
-import { cn } from '../../lib/utils';
 import { TocItem, extractHeadings } from './TableOfContents';
 
 interface MobileTocDrawerProps {
@@ -102,15 +101,7 @@ export function MobileTocDrawer({ content, articleTitle }: MobileTocDrawerProps)
       {/* Floating Action Button */}
       <button
         onClick={() => setIsOpen(true)}
-        className={cn(
-          'fixed bottom-6 right-6 z-40 lg:hidden',
-          'flex items-center gap-2 px-4 py-3',
-          'bg-purple-600/90 hover:bg-purple-600 backdrop-blur-sm',
-          'text-white font-medium text-sm',
-          'rounded-full shadow-lg shadow-purple-500/30',
-          'transition-all duration-200',
-          'hover:scale-105 active:scale-95'
-        )}
+        className="fixed bottom-6 right-6 z-40 lg:hidden flex items-center gap-2 px-4 py-3 bg-purple-600/90 hover:bg-purple-600 backdrop-blur-sm text-white font-medium text-sm rounded-full shadow-lg shadow-purple-500/30 transition-all duration-200 hover:scale-105 active:scale-95"
       >
         <List className="w-5 h-5" />
         <span className="hidden sm:inline">Содержание</span>
@@ -118,22 +109,17 @@ export function MobileTocDrawer({ content, articleTitle }: MobileTocDrawerProps)
 
       {/* Backdrop */}
       <div
-        className={cn(
-          'fixed inset-0 z-50 bg-black/60 backdrop-blur-sm transition-opacity duration-300 lg:hidden',
+        className={`fixed inset-0 z-50 bg-black/60 backdrop-blur-sm transition-opacity duration-300 lg:hidden ${
           isOpen ? 'opacity-100' : 'opacity-0 pointer-events-none'
-        )}
+        }`}
         onClick={() => setIsOpen(false)}
       />
 
       {/* Drawer */}
       <div
-        className={cn(
-          'fixed inset-y-0 right-0 z-50 w-full max-w-xs lg:hidden',
-          'bg-gray-900/95 backdrop-blur-md border-l border-white/10',
-          'transform transition-transform duration-300 ease-out',
-          'flex flex-col',
+        className={`fixed inset-y-0 right-0 z-50 w-full max-w-xs lg:hidden bg-gray-900/95 backdrop-blur-md border-l border-white/10 transform transition-transform duration-300 ease-out flex flex-col ${
           isOpen ? 'translate-x-0' : 'translate-x-full'
-        )}
+        }`}
       >
         {/* Header */}
         <div className="flex items-center justify-between p-4 border-b border-white/10">
@@ -178,24 +164,18 @@ export function MobileTocDrawer({ content, articleTitle }: MobileTocDrawerProps)
                   <li key={heading.id}>
                     <button
                       onClick={() => scrollToHeading(heading.id)}
-                      className={cn(
-                        'w-full text-left px-3 py-2.5 rounded-lg text-sm transition-all',
-                        'flex items-center gap-2',
+                      className={`w-full text-left px-3 py-2.5 rounded-lg text-sm transition-all flex items-center gap-2 ${
                         isActive
                           ? 'bg-purple-500/20 text-purple-300'
                           : 'text-gray-400 hover:bg-white/5 hover:text-white'
-                      )}
+                      }`}
                       style={{ paddingLeft: `${12 + indent}px` }}
                     >
                       {isActive && (
                         <ChevronRight className="w-4 h-4 text-purple-400 flex-shrink-0" />
                       )}
                       <span
-                        className={cn(
-                          'line-clamp-2',
-                          heading.level === 1 && 'font-medium',
-                          heading.level === 3 && 'text-xs'
-                        )}
+                        className={`line-clamp-2 ${heading.level === 1 ? 'font-medium' : ''} ${heading.level === 3 ? 'text-xs' : ''}`}
                       >
                         {heading.text}
                       </span>
