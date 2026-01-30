@@ -1,6 +1,6 @@
 /** Страница статьи Wiki - полный текст с Markdown */
 
-import { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, Children } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
@@ -69,6 +69,47 @@ export function WikiArticlePage() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [showFeedbackModal, setShowFeedbackModal] = useState(false);
+  const [checkboxStates, setCheckboxStates] = useState<Record<string, boolean>>({});
+
+  // Загружаем состояние чекбоксов из localStorage
+  useEffect(() => {
+    if (slug) {
+      const saved = localStorage.getItem(`wiki-checkboxes-${slug}`);
+      if (saved) {
+        try {
+          setCheckboxStates(JSON.parse(saved));
+        } catch {
+          // ignore invalid JSON
+        }
+      } else {
+        setCheckboxStates({});
+      }
+    }
+  }, [slug]);
+
+  // Сохраняем состояние чекбоксов в localStorage
+  const handleCheckboxToggle = (key: string) => {
+    setCheckboxStates(prev => {
+      const newState = { ...prev, [key]: !prev[key] };
+      if (slug) {
+        localStorage.setItem(`wiki-checkboxes-${slug}`, JSON.stringify(newState));
+      }
+      return newState;
+    });
+  };
+
+  // Функция для извлечения текста из React children
+  const getTextContent = (children: React.ReactNode): string => {
+    return React.Children.toArray(children)
+      .map((child: any) => {
+        if (typeof child === 'string') return child;
+        if (child?.props?.children) {
+          return getTextContent(child.props.children);
+        }
+        return '';
+      })
+      .join('');
+  };
 
   // Загружаем статью
   useEffect(() => {
@@ -409,6 +450,54 @@ export function WikiArticlePage() {
                           {children}
                         </h3>
                       );
+                    },
+                    li(props: any) {
+                      const { children, className, ...rest } = props;
+                      const childArray = Children.toArray(children);
+
+                      // Проверяем есть ли checkbox среди children
+                      const checkboxChild = childArray.find((child: any) =>
+                        React.isValidElement(child) &&
+                        (child as React.ReactElement<any>).props?.type === 'checkbox'
+                      );
+
+                      if (checkboxChild) {
+                        // Это task list item - делаем интерактивным
+                        const textContent = getTextContent(children);
+                        const checkboxKey = textContent
+                          .toLowerCase()
+                          .replace(/[^a-zа-яё0-9\s]/gi, '')
+                          .trim()
+                          .replace(/\s+/g, '-')
+                          .slice(0, 50);
+
+                        const isChecked = checkboxStates[checkboxKey] ?? false;
+
+                        // Получаем остальные children (текст и форматирование)
+                        const otherChildren = childArray.filter((child: any) =>
+                          !(React.isValidElement(child) &&
+                            (child as React.ReactElement<any>).props?.type === 'checkbox')
+                        );
+
+                        return (
+                          <li className={`${className || ''} flex items-start gap-2`} {...rest}>
+                            <input
+                              type="checkbox"
+                              checked={isChecked}
+                              onChange={() => handleCheckboxToggle(checkboxKey)}
+                              className="mt-1.5 h-4 w-4 cursor-pointer accent-indigo-500 rounded"
+                            />
+                            <span
+                              className={`flex-1 cursor-pointer ${isChecked ? 'line-through text-gray-500' : ''}`}
+                              onClick={() => handleCheckboxToggle(checkboxKey)}
+                            >
+                              {otherChildren}
+                            </span>
+                          </li>
+                        );
+                      }
+
+                      return <li className={className} {...rest}>{children}</li>;
                     },
                   }}
                 >
