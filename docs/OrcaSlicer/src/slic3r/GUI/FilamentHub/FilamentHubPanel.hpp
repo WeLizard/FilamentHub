@@ -94,6 +94,54 @@ private:
 
     // Layout
     void create_layout();
+
+    // Advanced features
+    void sync_preset_type(PresetType type);
+    void sync_all_presets();
+    void show_preset_details(const nlohmann::json& preset_data);
+    void handle_conflict_resolution(const std::vector<nlohmann::json>& conflicts);
+    void apply_server_preset(const nlohmann::json& preset_data);
+    void keep_local_preset(const nlohmann::json& preset_data);
+    void handle_deleted_presets_ui(const std::vector<nlohmann::json>& deleted);
+    void delete_local_presets(const std::vector<nlohmann::json>& presets);
+    void ask_for_each_deleted_preset(const std::vector<nlohmann::json>& presets);
+
+    // Settings and preferences
+    void show_sync_settings();
+    void save_sync_preferences(bool auto_sync, int conflict_strategy, int deleted_strategy);
+    nlohmann::json load_sync_preferences();
+
+    // Preset management
+    void show_preset_browser();
+    void show_sync_history();
+    void export_presets_to_server();
+    void check_for_updates();
+    void validate_local_presets();
+    void clear_sync_cache();
+    void show_debug_info();
+
+    // Token and error handling
+    void refresh_auth_token_if_needed();
+    void handle_network_error(const std::string& operation, const std::string& error_message);
+    void handle_auth_error(const std::string& error_message);
+    void handle_server_error(int status_code, const std::string& error_message);
+
+    // Logging and utilities
+    void log_sync_operation(const std::string& operation, bool success, const std::string& details);
+    void cleanup_temp_files();
+    void update_webview_theme(bool dark_mode);
+    void inject_custom_css();
+    void setup_periodic_token_refresh();
+    void on_refresh_timer(wxTimerEvent& event);
+    void update_webview_badge(int count);
+    void enable_webview_features();
+
+    // Formatting utilities
+    std::string format_timestamp(const std::string& iso_timestamp);
+    std::string format_file_size(size_t bytes);
+    bool validate_preset_name(const std::string& name);
+    std::vector<std::string> get_available_preset_types();
+    std::string preset_type_to_russian(const std::string& type);
 };
 
 } // namespace GUI
