@@ -31,7 +31,7 @@ namespace {
 }
 
 // SyncJob class - implements async sync operation using Job pattern
-class SyncJob {
+class SyncJob : public Slic3r::GUI::Job {
 public:
     SyncJob(
         SyncCoordinator* coordinator,
@@ -45,19 +45,17 @@ public:
         , m_force_full_sync(force_full_sync)
         , m_on_progress(on_progress)
         , m_on_complete(on_complete)
-        , m_cancel_requested(false)
     {
     }
 
-    void execute() {
+    void process(Ctl& ctl) override {
         try {
             // Step 1: Request sync plan (10%)
-            if (m_cancel_requested) {
-                finalize(true, "");
-                return;
-            }
+            if (ctl.was_canceled()) return;
 
-            update_progress(10, "Requesting sync plan...");
+            ctl.update_status(10, "Requesting sync plan...");
+            update_progress_callback(10, "Requesting sync plan...");
+
             SyncPlan plan = m_coordinator->request_sync_plan(
                 m_type,
                 m_coordinator->get_device_fingerprint(),
@@ -65,79 +63,91 @@ public:
             );
 
             // Step 2: Process deleted presets (20%)
-            if (m_cancel_requested) {
-                finalize(true, "");
-                return;
-            }
+            if (ctl.was_canceled()) return;
 
-            update_progress(20, "Processing deleted presets...");
+            ctl.update_status(20, "Processing deleted presets...");
+            update_progress_callback(20, "Processing deleted presets...");
+
             if (!plan.deleted_on_server.empty()) {
                 m_coordinator->handle_deleted_presets(plan.deleted_on_server, m_type);
             }
 
             // Step 3: Process conflicts (30%)
-            if (m_cancel_requested) {
-                finalize(true, "");
-                return;
-            }
+            if (ctl.was_canceled()) return;
 
-            update_progress(30, "Checking conflicts...");
+            ctl.update_status(30, "Checking conflicts...");
+            update_progress_callback(30, "Checking conflicts...");
+
             if (!plan.conflicts.empty()) {
                 m_coordinator->handle_conflicts(plan.conflicts, m_type);
             }
 
             // Step 4: Download presets (40-90%)
-            if (m_cancel_requested) {
-                finalize(true, "");
-                return;
-            }
+            if (ctl.was_canceled()) return;
 
-            update_progress(40, "Downloading presets...");
+            ctl.update_status(40, "Downloading presets...");
+            update_progress_callback(40, "Downloading presets...");
+
             if (!plan.to_download.empty()) {
-                m_coordinator->process_sync_plan(plan, m_type, [this](int progress, const std::string& status) {
-                    if (m_cancel_requested) return;
+                m_coordinator->process_sync_plan(plan, m_type, [this, &ctl](int progress, const std::string& status) {
+                    if (ctl.was_canceled()) return;
                     // Map progress from 40-90%
                     int mapped_progress = 40 + (progress * 50 / 100);
-                    update_progress(mapped_progress, status);
+                    ctl.update_status(mapped_progress, status);
+                    update_progress_callback(mapped_progress, status);
                 });
             }
 
             // Step 5: Update sync version (95%)
-            if (m_cancel_requested) {
-                finalize(true, "");
-                return;
-            }
+            if (ctl.was_canceled()) return;
 
-            update_progress(95, "Updating sync status...");
+            ctl.update_status(95, "Updating sync status...");
+            update_progress_callback(95, "Updating sync status...");
+
             m_coordinator->update_sync_version(m_type, plan.sync_version);
 
             // Step 6: Report success (100%)
-            update_progress(100, "Sync complete");
-            m_coordinator->report_sync_status(m_type, plan.device_fingerprint, true, "");
+            ctl.update_status(100, "Sync complete");
+            update_progress_callback(100, "Sync complete");
 
-            finalize(false, "");
+            m_coordinator->report_sync_status(m_type, plan.device_fingerprint, true, "");
 
         } catch (const std::exception& e) {
             wxLogError("FilamentHub: Sync job failed: %s", e.what());
-            finalize(false, e.what());
+            ctl.show_error_info(e.what(), -1, "Sync failed", "");
+            throw; // Re-throw to pass to finalize()
         }
     }
 
-    void cancel() {
-        m_cancel_requested = true;
+    void finalize(bool canceled, std::exception_ptr& eptr) override {
+        // Determine success: not canceled and no exception
+        bool success = !canceled && !eptr;
+        std::string error_message;
+
+        if (eptr) {
+            try {
+                std::rethrow_exception(eptr);
+            } catch (const std::exception& e) {
+                error_message = e.what();
+            } catch (...) {
+                error_message = "Unknown error";
+            }
+            // Set to nullptr to prevent rethrow
+            eptr = nullptr;
+        } else if (canceled) {
+            error_message = "Sync canceled";
+        }
+
+        // Call completion callback on main thread
+        if (m_on_complete) {
+            m_on_complete(success, error_message);
+        }
     }
 
 private:
-    void update_progress(int percent, const std::string& message) {
+    void update_progress_callback(int percent, const std::string& message) {
         if (m_on_progress) {
             m_on_progress(percent, message);
-        }
-    }
-
-    void finalize(bool canceled, const std::string& error_message) {
-        if (m_on_complete) {
-            bool success = !canceled && error_message.empty();
-            m_on_complete(success, canceled ? "Sync canceled" : error_message);
         }
     }
 
@@ -146,7 +156,6 @@ private:
     bool m_force_full_sync;
     SyncCoordinator::ProgressCallback m_on_progress;
     SyncCoordinator::CompletionCallback m_on_complete;
-    bool m_cancel_requested;
 };
 
 // SyncCoordinator implementation
