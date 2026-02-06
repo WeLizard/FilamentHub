@@ -1,0 +1,39 @@
+{
+  "sandbox": {
+    "enabled": true,
+    "autoAllowBashIfSandboxed": true
+  },
+  "permissions": {
+    "defaultMode": "acceptEdits",
+    "allow": [
+      "Read(./**)",
+      "Write(./**)",
+      "Edit(./**)",
+      "Glob(./**)",
+      "Grep(./**)",
+      "Read(F:\\FilamentHub\\.auto-claude\\worktrees\\tasks\\001-refactoring-orcaslicer-and-backend/**)",
+      "Write(F:\\FilamentHub\\.auto-claude\\worktrees\\tasks\\001-refactoring-orcaslicer-and-backend/**)",
+      "Edit(F:\\FilamentHub\\.auto-claude\\worktrees\\tasks\\001-refactoring-orcaslicer-and-backend/**)",
+      "Glob(F:\\FilamentHub\\.auto-claude\\worktrees\\tasks\\001-refactoring-orcaslicer-and-backend/**)",
+      "Grep(F:\\FilamentHub\\.auto-claude\\worktrees\\tasks\\001-refactoring-orcaslicer-and-backend/**)",
+      "Read(F:\\FilamentHub\\.auto-claude\\worktrees\\tasks\\001-refactoring-orcaslicer-and-backend\\.auto-claude\\specs\\001-refactoring-orcaslicer-and-backend/**)",
+      "Write(F:\\FilamentHub\\.auto-claude\\worktrees\\tasks\\001-refactoring-orcaslicer-and-backend\\.auto-claude\\specs\\001-refactoring-orcaslicer-and-backend/**)",
+      "Edit(F:\\FilamentHub\\.auto-claude\\worktrees\\tasks\\001-refactoring-orcaslicer-and-backend\\.auto-claude\\specs\\001-refactoring-orcaslicer-and-backend/**)",
+      "Read(F:\\FilamentHub\\.auto-claude/**)",
+      "Write(F:\\FilamentHub\\.auto-claude/**)",
+      "Edit(F:\\FilamentHub\\.auto-claude/**)",
+      "Glob(F:\\FilamentHub\\.auto-claude/**)",
+      "Grep(F:\\FilamentHub\\.auto-claude/**)",
+      "Bash(*)",
+      "WebFetch(*)",
+      "WebSearch(*)",
+      "mcp__context7__resolve-library-id(*)",
+      "mcp__context7__get-library-docs(*)",
+      "mcp__graphiti-memory__search_nodes(*)",
+      "mcp__graphiti-memory__search_facts(*)",
+      "mcp__graphiti-memory__add_episode(*)",
+      "mcp__graphiti-memory__get_episodes(*)",
+      "mcp__graphiti-memory__get_entity_edge(*)"
+    ]
+  }
+}
