@@ -1,3 +1,6 @@
+# Docs (local reference only)
+docs/
+
 # Auto Claude data directory
 .auto-claude/
 
