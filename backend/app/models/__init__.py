@@ -19,6 +19,8 @@ from app.models.notification import Notification, NotificationType
 from app.models.user import User, UserRole
 from app.models.user_saved_preset import UserSavedPreset
 from app.models.feedback import Feedback, FeedbackType, FeedbackStatus
+from app.models.sync_device import SyncDevice
+from app.models.sync_history import SyncHistory, SyncOperation, SyncPresetType, SyncStatus
 from app.models.wiki_category import WikiCategory
 from app.models.wiki_article import WikiArticle, WikiArticleStatus
 from app.models.wiki_feedback import WikiArticleFeedback, WikiFeedbackType
@@ -53,6 +55,11 @@ __all__ = [
     "PrintProfile",
     "PrintProfilePrinter",
     "PrintProfileFilament",
+    "SyncDevice",
+    "SyncHistory",
+    "SyncOperation",
+    "SyncPresetType",
+    "SyncStatus",
     "User",
     "UserRole",
     "UserSavedPreset",

@@ -1,0 +1,1202 @@
+import React, { useState, useEffect } from 'react';
+import { Search, Package, Settings, Calculator, TrendingUp, Star, Zap, MapPin, Users, BarChart3, Thermometer, Gauge, Clock, Ruler, Play, CheckCircle, XCircle, AlertTriangle, User, Shield, Download, Upload, Eye, Trash2, Plus, QrCode, Copy, Share2, Globe, Building, Factory, Heart, Award, Target, Calendar, TrendingDown, ArrowUp, ArrowDown, LogIn, LogOut, Mail, Lock, UserPlus } from 'lucide-react';
+
+const App = () => {
+  const [activeTab, setActiveTab] = useState('catalog');
+  const [userType, setUserType] = useState(null); // null, 'user', or 'brand'
+  const [authMode, setAuthMode] = useState('login'); // 'login' or 'register'
+  const [userTab, setUserTab] = useState('dashboard');
+  const [brandTab, setBrandTab] = useState('materials');
+  const [selectedMaterial, setSelectedMaterial] = useState(null);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [printerModel, setPrinterModel] = useState('Ender 3 Pro');
+  const [filamentWeight, setFilamentWeight] = useState(1000);
+  const [electricityCost, setElectricityCost] = useState(5.5);
+  const [showQR, setShowQR] = useState(false);
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+
+  // Mock data
+  const materials = [
+    {
+      id: 1,
+      brand: 'PLAman',
+      name: 'Standard PLA',
+      color: 'Green',
+      type: 'PLA',
+      density: 1.24,
+      weight: 1000,
+      price: 450,
+      rating: 4.8,
+      successRate: 92,
+      region: 'Москва',
+      officialPreset: {
+        nozzleTemp: 200,
+        bedTemp: 60,
+        printSpeed: 50,
+        layerHeight: 0.2,
+        flow: 100
+      },
+      communityPresets: [
+        {
+          id: 101,
+          user: '3D_Guru',
+          printer: 'Ender 3 Pro',
+          nozzleTemp: 195,
+          bedTemp: 60,
+          printSpeed: 45,
+          successRate: 92,
+          rating: 4.8,
+          comments: 12,
+          verified: true
+        },
+        {
+          id: 102,
+          user: 'PrintMaster',
+          printer: 'Ender 3 Pro',
+          nozzleTemp: 205,
+          bedTemp: 55,
+          printSpeed: 55,
+          successRate: 87,
+          rating: 4.5,
+          comments: 8,
+          verified: false
+        }
+      ]
+    },
+    {
+      id: 2,
+      brand: 'PrintLine',
+      name: 'Tough PETG',
+      color: 'Clear',
+      type: 'PETG',
+      density: 1.27,
+      weight: 1000,
+      price: 680,
+      rating: 4.9,
+      successRate: 95,
+      region: 'Санкт-Петербург',
+      officialPreset: {
+        nozzleTemp: 240,
+        bedTemp: 80,
+        printSpeed: 40,
+        layerHeight: 0.2,
+        flow: 98
+      },
+      communityPresets: [
+        {
+          id: 201,
+          user: 'PETG_Pro',
+          printer: 'Ender 3 Pro',
+          nozzleTemp: 235,
+          bedTemp: 85,
+          printSpeed: 35,
+          successRate: 95,
+          rating: 4.9,
+          comments: 15,
+          verified: true
+        }
+      ]
+    },
+    {
+      id: 3,
+      brand: 'KlipperPlast',
+      name: 'Carbon Fiber PLA',
+      color: 'Black',
+      type: 'PLA-CF',
+      density: 1.35,
+      weight: 1000,
+      price: 890,
+      rating: 4.6,
+      successRate: 89,
+      region: 'Новосибирск',
+      officialPreset: {
+        nozzleTemp: 210,
+        bedTemp: 60,
+        printSpeed: 45,
+        layerHeight: 0.15,
+        flow: 102
+      },
+      communityPresets: [
+        {
+          id: 301,
+          user: 'CarbonKing',
+          printer: 'Ender 3 Pro',
+          nozzleTemp: 215,
+          bedTemp: 60,
+          printSpeed: 40,
+          successRate: 89,
+          rating: 4.6,
+          comments: 6,
+          verified: true
+        }
+      ]
+    }
+  ];
+
+  // User presets
+  const userPresets = [
+    {
+      id: 1001,
+      name: 'My PLA Settings',
+      material: 'PLAman Standard PLA',
+      printer: 'Ender 3 Pro',
+      nozzleTemp: 198,
+      bedTemp: 60,
+      printSpeed: 48,
+      successRate: 95,
+      date: '2024-01-15',
+      importedFrom: 'community'
+    },
+    {
+      id: 1002,
+      name: 'PETG High Temp',
+      material: 'PrintLine Tough PETG',
+      printer: 'Ender 3 Pro',
+      nozzleTemp: 245,
+      bedTemp: 85,
+      printSpeed: 38,
+      successRate: 90,
+      date: '2024-01-10',
+      importedFrom: 'official'
+    }
+  ];
+
+  // User history
+  const userHistory = [
+    {
+      id: 2001,
+      material: 'PLAman Standard PLA',
+      printer: 'Ender 3 Pro',
+      date: '2024-01-20',
+      success: true,
+      rating: 5,
+      notes: 'Отличный результат, без проблем'
+    },
+    {
+      id: 2002,
+      material: 'PrintLine Tough PETG',
+      printer: 'Ender 3 Pro',
+      date: '2024-01-18',
+      success: true,
+      rating: 4,
+      notes: 'Хорошее качество, немного осыпались углы'
+    }
+  ];
+
+  // Brand dashboard data
+  const brandData = {
+    name: 'PLAman',
+    verified: true,
+    materials: 24,
+    totalScans: 1247,
+    monthlyGrowth: 15,
+    qrCodes: [
+      {
+        id: 1,
+        material: 'Standard PLA Green',
+        shortCode: 'FHUB-A3B9-X7K2',
+        scans: 245,
+        lastScan: '2024-01-20'
+      },
+      {
+        id: 2,
+        material: 'Standard PLA Red',
+        shortCode: 'FHUB-B4C8-Y6L1',
+        scans: 189,
+        lastScan: '2024-01-19'
+      }
+    ],
+    usageAnalytics: [
+      { material: 'Standard PLA', usage: 1247, successRate: 92, growth: 12 },
+      { material: 'Tough PETG', usage: 892, successRate: 95, growth: 8 },
+      { material: 'Carbon Fiber PLA', usage: 654, successRate: 89, growth: 15 }
+    ]
+  };
+
+  const filteredMaterials = materials.filter(material =>
+    material.brand.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    material.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    material.type.toLowerCase().includes(searchQuery.toLowerCase())
+  );
+
+  const calculateCost = (weight, time) => {
+    const filamentCost = (weight / 1000) * selectedMaterial.price;
+    const electricityCostTotal = (time / 60) * electricityCost;
+    const total = filamentCost + electricityCostTotal;
+    return { filament: filamentCost, electricity: electricityCostTotal, total };
+  };
+
+  const handleLogin = (e) => {
+    e.preventDefault();
+    if (email && password) {
+      // Simple mock authentication
+      if (email.includes('user')) {
+        setUserType('user');
+      } else if (email.includes('brand')) {
+        setUserType('brand');
+      } else {
+        setUserType('user'); // default
+      }
+    }
+  };
+
+  const handleLogout = () => {
+    setUserType(null);
+    setEmail('');
+    setPassword('');
+  };
+
+  if (!userType) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 flex items-center justify-center">
+        <div className="w-full max-w-md mx-auto px-6">
+          <div className="bg-white/10 backdrop-blur-sm rounded-2xl p-8 border border-white/20 shadow-xl">
+            <div className="text-center mb-8">
+              <div className="w-16 h-16 bg-gradient-to-r from-purple-500 to-pink-500 rounded-xl flex items-center justify-center mx-auto mb-4 shadow-lg shadow-purple-500/25">
+                <Package className="w-8 h-8 text-white" />
+              </div>
+              <h2 className="text-2xl font-bold text-white mb-2">Добро пожаловать в FilamentHub</h2>
+              <p className="text-gray-300">Войдите в систему для доступа к персональному кабинету</p>
+            </div>
+
+            <div className="flex mb-6">
+              <button
+                onClick={() => setAuthMode('login')}
+                className={`flex-1 py-3 px-4 rounded-l-xl transition-all ${
+                  authMode === 'login' 
+                    ? 'bg-purple-600 text-white' 
+                    : 'bg-white/10 text-gray-300 hover:bg-white/20'
+                }`}
+              >
+                Вход
+              </button>
+              <button
+                onClick={() => setAuthMode('register')}
+                className={`flex-1 py-3 px-4 rounded-r-xl transition-all ${
+                  authMode === 'register' 
+                    ? 'bg-purple-600 text-white' 
+                    : 'bg-white/10 text-gray-300 hover:bg-white/20'
+                }`}
+              >
+                Регистрация
+              </button>
+            </div>
+
+            <form onSubmit={handleLogin}>
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-gray-300 mb-2">Email</label>
+                  <div className="relative">
+                    <Mail className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
+                    <input
+                      type="email"
+                      value={email}
+                      onChange={(e) => setEmail(e.target.value)}
+                      className="w-full pl-10 pr-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all"
+                      placeholder="your@email.com"
+                    />
+                  </div>
+                </div>
+                
+                <div>
+                  <label className="block text-gray-300 mb-2">Пароль</label>
+                  <div className="relative">
+                    <Lock className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
+                    <input
+                      type="password"
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                      className="w-full pl-10 pr-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all"
+                      placeholder="••••••••"
+                    />
+                  </div>
+                </div>
+
+                {authMode === 'register' && (
+                  <div>
+                    <label className="block text-gray-300 mb-2">Тип аккаунта</label>
+                    <div className="flex space-x-2">
+                      <button
+                        type="button"
+                        onClick={() => setEmail('user@example.com')}
+                        className="flex-1 py-2 px-4 bg-white/10 hover:bg-white/20 text-white rounded-lg transition-all border border-white/20"
+                      >
+                        <User className="w-4 h-4 inline mr-2" />
+                        Пользователь
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setEmail('brand@example.com')}
+                        className="flex-1 py-2 px-4 bg-white/10 hover:bg-white/20 text-white rounded-lg transition-all border border-white/20"
+                      >
+                        <Factory className="w-4 h-4 inline mr-2" />
+                        Производитель
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                <button
+                  type="submit"
+                  className="w-full bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white py-3 px-6 rounded-xl transition-all shadow-lg shadow-purple-500/25 hover:shadow-purple-500/40"
+                >
+                  <LogIn className="w-5 h-5 inline mr-2" />
+                  Войти
+                </button>
+              </div>
+            </form>
+
+            <div className="mt-6 text-center">
+              <p className="text-gray-400 text-sm">
+                Продолжая, вы соглашаетесь с условиями использования
+              </p>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900">
+      {/* Animated Background */}
+      <div className="fixed inset-0 overflow-hidden pointer-events-none">
+        <div className="absolute -top-40 -right-40 w-80 h-80 bg-purple-500/10 rounded-full blur-3xl animate-pulse"></div>
+        <div className="absolute -bottom-40 -left-40 w-80 h-80 bg-blue-500/10 rounded-full blur-3xl animate-pulse delay-1000"></div>
+      </div>
+
+      {/* Header */}
+      <header className="relative bg-black/20 backdrop-blur-sm border-b border-white/10 z-10">
+        <div className="max-w-7xl mx-auto px-6 py-4">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center space-x-4">
+              <div className="w-12 h-12 bg-gradient-to-r from-purple-500 to-pink-500 rounded-xl flex items-center justify-center shadow-lg shadow-purple-500/25">
+                <Package className="w-6 h-6 text-white" />
+              </div>
+              <div>
+                <h1 className="text-2xl font-bold text-white">FilamentHub</h1>
+                <p className="text-sm text-gray-400">Интеллектуальный каталог материалов</p>
+              </div>
+            </div>
+            
+            <nav className="flex space-x-2">
+              {[
+                { id: 'catalog', label: 'Каталог', icon: Package },
+                { id: 'profile', label: 'Профиль', icon: User }
+              ].map((tab) => (
+                <button
+                  key={tab.id}
+                  onClick={() => setActiveTab(tab.id)}
+                  className={`flex items-center space-x-2 px-4 py-2 rounded-lg transition-all ${
+                    activeTab === tab.id 
+                      ? 'bg-purple-600 text-white shadow-lg shadow-purple-500/25' 
+                      : 'text-gray-300 hover:text-white hover:bg-white/10'
+                  }`}
+                >
+                  <tab.icon className="w-4 h-4" />
+                  <span>{tab.label}</span>
+                </button>
+              ))}
+              
+              <button
+                onClick={handleLogout}
+                className="flex items-center space-x-2 px-4 py-2 bg-red-600/20 hover:bg-red-600/30 text-red-400 rounded-lg transition-all"
+              >
+                <LogOut className="w-4 h-4" />
+                <span>Выйти</span>
+              </button>
+            </nav>
+          </div>
+        </div>
+      </header>
+
+      <div className="relative max-w-7xl mx-auto px-6 py-8 z-10">
+        {activeTab === 'catalog' && (
+          <div className="space-y-6">
+            {/* Hero Section */}
+            <div className="text-center mb-8">
+              <h2 className="text-4xl font-bold text-white mb-4">
+                Найдите идеальные настройки для вашего пластика
+              </h2>
+              <p className="text-xl text-gray-300 max-w-3xl mx-auto">
+                База данных материалов с официальными пресетами от производителей и проверенными настройками от сообщества
+              </p>
+            </div>
+
+            {/* Search Bar */}
+            <div className="bg-white/10 backdrop-blur-sm rounded-2xl p-6 border border-white/20 shadow-xl">
+              <div className="flex flex-col lg:flex-row gap-4">
+                <div className="flex-1 relative">
+                  <Search className="absolute left-4 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
+                  <input
+                    type="text"
+                    placeholder="Поиск по бренду, типу или названию..."
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    className="w-full pl-12 pr-4 py-4 bg-white/10 border border-white/20 rounded-xl text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all"
+                  />
+                </div>
+                <select
+                  value={printerModel}
+                  onChange={(e) => setPrinterModel(e.target.value)}
+                  className="px-4 py-4 bg-white/10 border border-white/20 rounded-xl text-white focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all min-w-48"
+                >
+                  <option value="Ender 3 Pro">Ender 3 Pro</option>
+                  <option value="Ender 5">Ender 5</option>
+                  <option value="CR-10">CR-10</option>
+                  <option value="Prusa MK3">Prusa MK3</option>
+                  <option value="Artillery Sidewinder X2">Artillery Sidewinder X2</option>
+                </select>
+              </div>
+            </div>
+
+            {/* Material Grid */}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              {filteredMaterials.map((material) => (
+                <div key={material.id} className="bg-white/10 backdrop-blur-sm rounded-2xl p-6 border border-white/20 hover:bg-white/15 transition-all duration-300 group shadow-xl">
+                  <div className="flex items-start justify-between mb-4">
+                    <div className="flex-1">
+                      <div className="flex items-center space-x-3 mb-2">
+                        <h3 className="text-xl font-bold text-white group-hover:text-purple-300 transition-colors">
+                          {material.brand} - {material.name}
+                        </h3>
+                        <span className="px-2 py-1 bg-purple-500/20 text-purple-300 text-xs rounded-full">
+                          {material.type}
+                        </span>
+                      </div>
+                      <div className="flex items-center space-x-4 text-sm text-gray-400">
+                        <span className="flex items-center">
+                          <MapPin className="w-4 h-4 mr-1" />
+                          {material.region}
+                        </span>
+                        <span className="flex items-center">
+                          <Star className="w-4 h-4 mr-1 text-yellow-400 fill-current" />
+                          {material.rating}
+                        </span>
+                        <span className="flex items-center">
+                          <CheckCircle className="w-4 h-4 mr-1 text-green-400" />
+                          {material.successRate}% успеха
+                        </span>
+                      </div>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-3xl font-bold text-green-400 mb-1">{material.price}₽</p>
+                      <p className="text-sm text-gray-400">{material.weight}g</p>
+                    </div>
+                  </div>
+
+                  {/* Color Indicator */}
+                  <div className="mb-4">
+                    <div className="flex items-center space-x-2 mb-2">
+                      <span className="text-gray-300 text-sm">Цвет:</span>
+                      <div 
+                        className="w-6 h-6 rounded-full border-2 border-white/30"
+                        style={{ backgroundColor: material.color.toLowerCase() === 'green' ? '#10b981' : material.color.toLowerCase() === 'clear' ? '#f3f4f6' : '#000' }}
+                      ></div>
+                      <span className="text-white">{material.color}</span>
+                    </div>
+                  </div>
+
+                  {/* Official Preset */}
+                  <div className="mb-4 p-4 bg-gradient-to-r from-purple-500/20 to-pink-500/20 rounded-xl border border-purple-500/30">
+                    <div className="flex items-center justify-between mb-2">
+                      <h4 className="font-semibold text-white flex items-center">
+                        <Settings className="w-4 h-4 mr-2" />
+                        Официальный пресет
+                      </h4>
+                      <span className="text-purple-300 text-sm">Производитель</span>
+                    </div>
+                    <div className="grid grid-cols-2 md:grid-cols-3 gap-3 text-sm">
+                      <div className="flex items-center space-x-2">
+                        <Thermometer className="w-4 h-4 text-red-400" />
+                        <span className="text-gray-300">Сопло: {material.officialPreset.nozzleTemp}°C</span>
+                      </div>
+                      <div className="flex items-center space-x-2">
+                        <Thermometer className="w-4 h-4 text-red-400" />
+                        <span className="text-gray-300">Стол: {material.officialPreset.bedTemp}°C</span>
+                      </div>
+                      <div className="flex items-center space-x-2">
+                        <Gauge className="w-4 h-4 text-blue-400" />
+                        <span className="text-gray-300">Скорость: {material.officialPreset.printSpeed}mm/s</span>
+                      </div>
+                      <div className="flex items-center space-x-2">
+                        <Ruler className="w-4 h-4 text-green-400" />
+                        <span className="text-gray-300">Слой: {material.officialPreset.layerHeight}mm</span>
+                      </div>
+                      <div className="flex items-center space-x-2">
+                        <Gauge className="w-4 h-4 text-yellow-400" />
+                        <span className="text-gray-300">Поток: {material.officialPreset.flow}%</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Community Presets */}
+                  <div className="mb-4">
+                    <h4 className="font-semibold text-white mb-2 flex items-center">
+                      <Users className="w-4 h-4 mr-2" />
+                      Популярные пресеты сообщества
+                    </h4>
+                    {material.communityPresets.map((preset) => (
+                      <div key={preset.id} className="p-3 bg-white/5 rounded-lg mb-2 last:mb-0 border border-white/10">
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center space-x-3">
+                            {preset.verified && (
+                              <CheckCircle className="w-4 h-4 text-green-400" />
+                            )}
+                            <div>
+                              <p className="text-white font-medium">{preset.user}</p>
+                              <p className="text-gray-400 text-sm">{preset.printer}</p>
+                            </div>
+                          </div>
+                          <div className="text-right">
+                            <div className="flex items-center space-x-1 mb-1">
+                              <Star className="w-3 h-3 text-yellow-400 fill-current" />
+                              <span className="text-white text-sm">{preset.rating}</span>
+                            </div>
+                            <p className="text-green-400 text-xs">{preset.successRate}% успеха</p>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+
+                  <div className="flex space-x-3">
+                    <button
+                      onClick={() => setSelectedMaterial(material)}
+                      className="flex-1 bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white py-3 px-6 rounded-xl transition-all duration-300 shadow-lg shadow-purple-500/25 hover:shadow-purple-500/40"
+                    >
+                      Выбрать для OrcaSlicer
+                    </button>
+                    <button
+                      onClick={() => setShowQR(!showQR)}
+                      className="px-4 py-3 bg-white/10 hover:bg-white/20 text-white rounded-xl transition-all border border-white/20"
+                    >
+                      <QrCode className="w-5 h-5" />
+                    </button>
+                  </div>
+
+                  {showQR && (
+                    <div className="mt-4 p-4 bg-white/5 rounded-xl border border-white/10">
+                      <div className="text-center">
+                        <div className="w-24 h-24 bg-white/20 rounded-lg mx-auto mb-2 flex items-center justify-center">
+                          <div className="grid grid-cols-4 gap-1">
+                            {[...Array(16)].map((_, i) => (
+                              <div key={i} className="w-2 h-2 bg-white rounded-sm"></div>
+                            ))}
+                          </div>
+                        </div>
+                        <p className="text-gray-300 text-sm">QR-код: {brandData.qrCodes[0].shortCode}</p>
+                        <p className="text-gray-400 text-xs">Сканируйте для быстрого импорта</p>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {activeTab === 'profile' && (
+          <div className="space-y-6">
+            {userType === 'user' ? (
+              // User Dashboard
+              <div className="space-y-6">
+                <div className="text-center mb-8">
+                  <div className="flex items-center justify-center space-x-3 mb-4">
+                    <div className="w-16 h-16 bg-gradient-to-r from-purple-500 to-pink-500 rounded-xl flex items-center justify-center">
+                      <User className="w-8 h-8 text-white" />
+                    </div>
+                    <div>
+                      <h2 className="text-3xl font-bold text-white">Мой профиль</h2>
+                      <p className="text-gray-300">3D печатник • 156 успешных отпечатков</p>
+                    </div>
+                  </div>
+                  
+                  <div className="flex justify-center space-x-8 mt-4">
+                    {[
+                      { id: 'dashboard', label: 'Дашборд', icon: Play },
+                      { id: 'presets', label: 'Мои пресеты', icon: Settings },
+                      { id: 'history', label: 'История', icon: TrendingUp },
+                      { id: 'calculator', label: 'Калькулятор', icon: Calculator }
+                    ].map((tab) => (
+                      <button
+                        key={tab.id}
+                        onClick={() => setUserTab(tab.id)}
+                        className={`flex items-center space-x-2 px-4 py-2 rounded-lg transition-all ${
+                          userTab === tab.id 
+                            ? 'bg-purple-600 text-white shadow-lg shadow-purple-500/25' 
+                            : 'text-gray-300 hover:text-white hover:bg-white/10'
+                        }`}
+                      >
+                        <tab.icon className="w-4 h-4" />
+                        <span>{tab.label}</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {userTab === 'dashboard' && (
+                  <div className="space-y-6">
+                    <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+                      <div className="bg-gradient-to-r from-purple-500/20 to-pink-500/20 p-6 rounded-2xl border border-purple-500/30">
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <p className="text-gray-300 text-sm">Успешных печатей</p>
+                            <p className="text-3xl font-bold text-white">156</p>
+                          </div>
+                          <CheckCircle className="w-8 h-8 text-green-400" />
+                        </div>
+                      </div>
+                      <div className="bg-gradient-to-r from-blue-500/20 to-cyan-500/20 p-6 rounded-2xl border border-blue-500/30">
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <p className="text-gray-300 text-sm">Сохраненных пресетов</p>
+                            <p className="text-3xl font-bold text-white">{userPresets.length}</p>
+                          </div>
+                          <Settings className="w-8 h-8 text-blue-400" />
+                        </div>
+                      </div>
+                      <div className="bg-gradient-to-r from-green-500/20 to-emerald-500/20 p-6 rounded-2xl border border-green-500/30">
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <p className="text-gray-300 text-sm">Использованных материалов</p>
+                            <p className="text-3xl font-bold text-white">23</p>
+                          </div>
+                          <Package className="w-8 h-8 text-green-400" />
+                        </div>
+                      </div>
+                      <div className="bg-gradient-to-r from-yellow-500/20 to-orange-500/20 p-6 rounded-2xl border border-yellow-500/30">
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <p className="text-gray-300 text-sm">Средний рейтинг</p>
+                            <p className="text-3xl font-bold text-white">4.7</p>
+                          </div>
+                          <Star className="w-8 h-8 text-yellow-400" />
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                      <div className="bg-white/10 backdrop-blur-sm rounded-2xl p-6 border border-white/20 shadow-xl">
+                        <h3 className="text-xl font-bold text-white mb-4 flex items-center">
+                          <Settings className="w-5 h-5 mr-2" />
+                          Последние пресеты
+                        </h3>
+                        <div className="space-y-3">
+                          {userPresets.slice(0, 3).map((preset) => (
+                            <div key={preset.id} className="flex items-center justify-between p-3 bg-white/5 rounded-xl">
+                              <div>
+                                <p className="text-white font-medium">{preset.name}</p>
+                                <p className="text-gray-400 text-sm">{preset.material}</p>
+                              </div>
+                              <div className="text-right">
+                                <p className="text-green-400 font-semibold">{preset.successRate}% успеха</p>
+                                <p className="text-gray-400 text-sm">{preset.date}</p>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+
+                      <div className="bg-white/10 backdrop-blur-sm rounded-2xl p-6 border border-white/20 shadow-xl">
+                        <h3 className="text-xl font-bold text-white mb-4 flex items-center">
+                          <TrendingUp className="w-5 h-5 mr-2" />
+                          Последние отпечатки
+                        </h3>
+                        <div className="space-y-3">
+                          {userHistory.slice(0, 3).map((item) => (
+                            <div key={item.id} className="flex items-center justify-between p-3 bg-white/5 rounded-xl">
+                              <div>
+                                <p className="text-white font-medium">{item.material}</p>
+                                <p className="text-gray-400 text-sm">{item.date}</p>
+                              </div>
+                              <div className="flex items-center space-x-2">
+                                {item.success ? (
+                                  <CheckCircle className="w-5 h-5 text-green-400" />
+                                ) : (
+                                  <XCircle className="w-5 h-5 text-red-400" />
+                                )}
+                                <span className="text-yellow-400">★{item.rating}</span>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {userTab === 'presets' && (
+                  <div className="space-y-6">
+                    <div className="flex items-center justify-between">
+                      <h3 className="text-2xl font-bold text-white">Мои пресеты</h3>
+                      <button className="bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white px-4 py-2 rounded-xl transition-all">
+                        <Plus className="w-4 h-4 inline mr-2" />
+                        Новый пресет
+                      </button>
+                    </div>
+
+                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                      {userPresets.map((preset) => (
+                        <div key={preset.id} className="bg-white/10 backdrop-blur-sm rounded-2xl p-6 border border-white/20 shadow-xl">
+                          <div className="flex items-center justify-between mb-4">
+                            <h4 className="text-xl font-bold text-white">{preset.name}</h4>
+                            <div className="flex space-x-2">
+                              <button className="p-2 bg-white/10 hover:bg-white/20 rounded-lg text-white transition-all">
+                                <Download className="w-4 h-4" />
+                              </button>
+                              <button className="p-2 bg-white/10 hover:bg-white/20 rounded-lg text-white transition-all">
+                                <Upload className="w-4 h-4" />
+                              </button>
+                              <button className="p-2 bg-white/10 hover:bg-white/20 rounded-lg text-white transition-all">
+                                <Trash2 className="w-4 h-4" />
+                              </button>
+                            </div>
+                          </div>
+                          
+                          <div className="grid grid-cols-2 gap-4 mb-4 text-sm">
+                            <div className="flex items-center space-x-2">
+                              <Thermometer className="w-4 h-4 text-red-400" />
+                              <span className="text-gray-300">Сопло: {preset.nozzleTemp}°C</span>
+                            </div>
+                            <div className="flex items-center space-x-2">
+                              <Thermometer className="w-4 h-4 text-red-400" />
+                              <span className="text-gray-300">Стол: {preset.bedTemp}°C</span>
+                            </div>
+                            <div className="flex items-center space-x-2">
+                              <Gauge className="w-4 h-4 text-blue-400" />
+                              <span className="text-gray-300">Скорость: {preset.printSpeed}mm/s</span>
+                            </div>
+                            <div className="flex items-center space-x-2">
+                              <CheckCircle className="w-4 h-4 text-green-400" />
+                              <span className="text-gray-300">Успех: {preset.successRate}%</span>
+                            </div>
+                          </div>
+                          
+                          <div className="flex items-center justify-between text-sm">
+                            <span className="text-gray-400">Импортирован из: {preset.importedFrom}</span>
+                            <span className="text-gray-400">{preset.date}</span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {userTab === 'history' && (
+                  <div className="space-y-6">
+                    <h3 className="text-2xl font-bold text-white">История печати</h3>
+                    
+                    <div className="bg-white/10 backdrop-blur-sm rounded-2xl p-6 border border-white/20 shadow-xl">
+                      <div className="space-y-4">
+                        {userHistory.map((item) => (
+                          <div key={item.id} className="flex items-center justify-between p-4 bg-white/5 rounded-xl border border-white/10">
+                            <div className="flex-1">
+                              <div className="flex items-center space-x-3 mb-2">
+                                {item.success ? (
+                                  <CheckCircle className="w-5 h-5 text-green-400" />
+                                ) : (
+                                  <XCircle className="w-5 h-5 text-red-400" />
+                                )}
+                                <div>
+                                  <p className="text-white font-medium">{item.material}</p>
+                                  <p className="text-gray-400 text-sm">{item.printer}</p>
+                                </div>
+                              </div>
+                              <p className="text-gray-300 text-sm">{item.notes}</p>
+                            </div>
+                            <div className="text-right">
+                              <div className="flex items-center space-x-1 mb-1">
+                                <Star className="w-4 h-4 text-yellow-400 fill-current" />
+                                <span className="text-white">{item.rating}</span>
+                              </div>
+                              <p className="text-gray-400 text-sm">{item.date}</p>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {userTab === 'calculator' && (
+                  <div className="max-w-4xl mx-auto">
+                    <div className="text-center mb-8">
+                      <h2 className="text-4xl font-bold text-white mb-4">
+                        Калькулятор стоимости печати
+                      </h2>
+                      <p className="text-xl text-gray-300">
+                        Рассчитайте точную стоимость детали с учетом региональных особенностей
+                      </p>
+                    </div>
+
+                    <div className="bg-white/10 backdrop-blur-sm rounded-2xl p-8 border border-white/20 shadow-xl">
+                      {selectedMaterial ? (
+                        <div className="space-y-8">
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                            <div>
+                              <label className="block text-gray-300 mb-3 text-sm font-medium">Вес детали (г)</label>
+                              <input
+                                type="number"
+                                value={filamentWeight}
+                                onChange={(e) => setFilamentWeight(Number(e.target.value))}
+                                className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all"
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-gray-300 mb-3 text-sm font-medium">Стоимость электроэнергии (₽/кВт·ч)</label>
+                              <input
+                                type="number"
+                                step="0.1"
+                                value={electricityCost}
+                                onChange={(e) => setElectricityCost(Number(e.target.value))}
+                                className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all"
+                              />
+                            </div>
+                          </div>
+
+                          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                            <div className="bg-gradient-to-r from-purple-500/20 to-pink-500/20 p-6 rounded-2xl border border-purple-500/30">
+                              <div className="text-3xl font-bold text-white mb-2">
+                                {calculateCost(filamentWeight, 60).filament.toFixed(2)}₽
+                              </div>
+                              <div className="text-gray-300 flex items-center">
+                                <Package className="w-4 h-4 mr-2" />
+                                Пластик
+                              </div>
+                            </div>
+                            <div className="bg-gradient-to-r from-blue-500/20 to-cyan-500/20 p-6 rounded-2xl border border-blue-500/30">
+                              <div className="text-3xl font-bold text-white mb-2">
+                                {calculateCost(filamentWeight, 60).electricity.toFixed(2)}₽
+                              </div>
+                              <div className="text-gray-300 flex items-center">
+                                <Zap className="w-4 h-4 mr-2" />
+                                Электроэнергия
+                              </div>
+                            </div>
+                            <div className="bg-gradient-to-r from-green-500/20 to-emerald-500/20 p-6 rounded-2xl border border-green-500/30">
+                              <div className="text-3xl font-bold text-green-400 mb-2">
+                                {calculateCost(filamentWeight, 60).total.toFixed(2)}₽
+                              </div>
+                              <div className="text-gray-300 flex items-center">
+                                <Calculator className="w-4 h-4 mr-2" />
+                                Итого
+                              </div>
+                            </div>
+                          </div>
+
+                          <div className="bg-white/5 p-6 rounded-2xl border border-white/10">
+                            <h3 className="text-lg font-semibold text-white mb-4">Детализация расчета</h3>
+                            <div className="space-y-3 text-sm">
+                              <div className="flex justify-between items-center py-2 border-b border-white/10">
+                                <span className="text-gray-300">Пластик ({filamentWeight}г):</span>
+                                <span className="text-white font-medium">{calculateCost(filamentWeight, 60).filament.toFixed(2)}₽</span>
+                              </div>
+                              <div className="flex justify-between items-center py-2 border-b border-white/10">
+                                <span className="text-gray-300">Электроэнергия (1 час):</span>
+                                <span className="text-white font-medium">{calculateCost(filamentWeight, 60).electricity.toFixed(2)}₽</span>
+                              </div>
+                              <div className="flex justify-between items-center py-3">
+                                <span className="text-white font-semibold">Всего:</span>
+                                <span className="text-2xl font-bold text-green-400">{calculateCost(filamentWeight, 60).total.toFixed(2)}₽</span>
+                              </div>
+                            </div>
+                          </div>
+
+                          <div className="flex justify-center">
+                            <button className="bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white px-8 py-3 rounded-xl transition-all shadow-lg shadow-purple-500/25 hover:shadow-purple-500/40">
+                              Скачать PDF отчет
+                            </button>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="text-center py-12">
+                          <Package className="w-16 h-16 text-gray-400 mx-auto mb-4" />
+                          <p className="text-gray-400 mb-4">Выберите материал из каталога для расчета стоимости</p>
+                          <button
+                            onClick={() => setActiveTab('catalog')}
+                            className="bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white px-6 py-3 rounded-xl transition-all shadow-lg shadow-purple-500/25 hover:shadow-purple-500/40"
+                          >
+                            Перейти в каталог
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
+            ) : (
+              // Brand Dashboard
+              <div className="space-y-6">
+                <div className="text-center mb-8">
+                  <div className="flex items-center justify-center space-x-3 mb-4">
+                    <div className="w-16 h-16 bg-gradient-to-r from-green-500 to-emerald-500 rounded-xl flex items-center justify-center">
+                      <Factory className="w-8 h-8 text-white" />
+                    </div>
+                    <div>
+                      <h2 className="text-3xl font-bold text-white">{brandData.name}</h2>
+                      <div className="flex items-center space-x-2 text-gray-300">
+                        <Shield className="w-4 h-4 text-green-400" />
+                        <span>Верифицированный производитель</span>
+                      </div>
+                    </div>
+                  </div>
+                  
+                  <div className="flex justify-center space-x-8 mt-4">
+                    {[
+                      { id: 'materials', label: 'Материалы', icon: Package },
+                      { id: 'qr', label: 'QR-коды', icon: QrCode },
+                      { id: 'analytics', label: 'Аналитика', icon: BarChart3 },
+                      { id: 'usage', label: 'Использование', icon: TrendingUp }
+                    ].map((tab) => (
+                      <button
+                        key={tab.id}
+                        onClick={() => setBrandTab(tab.id)}
+                        className={`flex items-center space-x-2 px-4 py-2 rounded-lg transition-all ${
+                          brandTab === tab.id 
+                            ? 'bg-purple-600 text-white shadow-lg shadow-purple-500/25' 
+                            : 'text-gray-300 hover:text-white hover:bg-white/10'
+                        }`}
+                      >
+                        <tab.icon className="w-4 h-4" />
+                        <span>{tab.label}</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {brandTab === 'materials' && (
+                  <div className="space-y-6">
+                    <div className="flex items-center justify-between">
+                      <h3 className="text-2xl font-bold text-white">Мои материалы</h3>
+                      <button className="bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700 text-white px-4 py-2 rounded-xl transition-all">
+                        <Plus className="w-4 h-4 inline mr-2" />
+                        Новый материал
+                      </button>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                      {materials.slice(0, 6).map((material) => (
+                        <div key={material.id} className="bg-white/10 backdrop-blur-sm rounded-2xl p-6 border border-white/20 shadow-xl">
+                          <div className="flex items-center justify-between mb-4">
+                            <h4 className="text-xl font-bold text-white">{material.name}</h4>
+                            <div className="flex space-x-2">
+                              <button className="p-2 bg-white/10 hover:bg-white/20 rounded-lg text-white transition-all">
+                                <Settings className="w-4 h-4" />
+                              </button>
+                              <button className="p-2 bg-white/10 hover:bg-white/20 rounded-lg text-white transition-all">
+                                <Eye className="w-4 h-4" />
+                              </button>
+                            </div>
+                          </div>
+                          
+                          <div className="flex items-center space-x-3 mb-3">
+                            <div 
+                              className="w-8 h-8 rounded-full border-2 border-white/30"
+                              style={{ backgroundColor: material.color.toLowerCase() === 'green' ? '#10b981' : material.color.toLowerCase() === 'clear' ? '#f3f4f6' : '#000' }}
+                            ></div>
+                            <span className="text-purple-300">{material.type}</span>
+                          </div>
+                          
+                          <div className="grid grid-cols-2 gap-3 mb-4 text-sm">
+                            <div className="flex items-center space-x-2">
+                              <Thermometer className="w-4 h-4 text-red-400" />
+                              <span className="text-gray-300">{material.officialPreset.nozzleTemp}°C</span>
+                            </div>
+                            <div className="flex items-center space-x-2">
+                              <Gauge className="w-4 h-4 text-blue-400" />
+                              <span className="text-gray-300">{material.officialPreset.printSpeed}mm/s</span>
+                            </div>
+                          </div>
+                          
+                          <div className="flex justify-between text-sm">
+                            <span className="text-gray-300">Цена: {material.price}₽</span>
+                            <span className="text-green-400">{material.successRate}% успеха</span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {brandTab === 'qr' && (
+                  <div className="space-y-6">
+                    <div className="flex items-center justify-between">
+                      <h3 className="text-2xl font-bold text-white">QR-коды для материалов</h3>
+                      <button className="bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700 text-white px-4 py-2 rounded-xl transition-all">
+                        <Plus className="w-4 h-4 inline mr-2" />
+                        Создать QR
+                      </button>
+                    </div>
+
+                    <div className="bg-white/10 backdrop-blur-sm rounded-2xl p-6 border border-white/20 shadow-xl">
+                      <div className="space-y-3">
+                        {brandData.qrCodes.map((qr) => (
+                          <div key={qr.id} className="flex items-center justify-between p-4 bg-white/5 rounded-xl hover:bg-white/10 transition-all">
+                            <div className="flex items-center space-x-4">
+                              <div className="w-12 h-12 bg-white/20 rounded-lg flex items-center justify-center">
+                                <QrCode className="w-6 h-6 text-white" />
+                              </div>
+                              <div>
+                                <p className="text-white font-medium">{qr.material}</p>
+                                <p className="text-gray-400 text-sm">{qr.shortCode}</p>
+                              </div>
+                            </div>
+                            <div className="flex items-center space-x-4">
+                              <div className="text-right">
+                                <p className="text-white font-semibold">{qr.scans}</p>
+                                <p className="text-gray-400 text-sm">сканирований</p>
+                              </div>
+                              <div className="flex space-x-2">
+                                <button className="p-2 bg-white/10 hover:bg-white/20 rounded-lg text-white transition-all">
+                                  <Download className="w-4 h-4" />
+                                </button>
+                                <button className="p-2 bg-white/10 hover:bg-white/20 rounded-lg text-white transition-all">
+                                  <Copy className="w-4 h-4" />
+                                </button>
+                                <button className="p-2 bg-white/10 hover:bg-white/20 rounded-lg text-white transition-all">
+                                  <Share2 className="w-4 h-4" />
+                                </button>
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {brandTab === 'analytics' && (
+                  <div className="space-y-6">
+                    <h3 className="text-2xl font-bold text-white">Аналитика по материалам</h3>
+                    
+                    <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+                      <div className="bg-gradient-to-r from-green-500/20 to-emerald-500/20 p-6 rounded-2xl border border-green-500/30">
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <p className="text-gray-300 text-sm">Всего сканирований</p>
+                            <p className="text-3xl font-bold text-white">{brandData.totalScans}</p>
+                          </div>
+                          <QrCode className="w-8 h-8 text-green-400" />
+                        </div>
+                      </div>
+                      <div className="bg-gradient-to-r from-blue-500/20 to-cyan-500/20 p-6 rounded-2xl border border-blue-500/30">
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <p className="text-gray-300 text-sm">QR-кодов</p>
+                            <p className="text-3xl font-bold text-white">{brandData.qrCodes.length}</p>
+                          </div>
+                          <Package className="w-8 h-8 text-blue-400" />
+                        </div>
+                      </div>
+                      <div className="bg-gradient-to-r from-purple-500/20 to-pink-500/20 p-6 rounded-2xl border border-purple-500/30">
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <p className="text-gray-300 text-sm">Материалов</p>
+                            <p className="text-3xl font-bold text-white">{brandData.materials}</p>
+                          </div>
+                          <Settings className="w-8 h-8 text-purple-400" />
+                        </div>
+                      </div>
+                      <div className="bg-gradient-to-r from-yellow-500/20 to-orange-500/20 p-6 rounded-2xl border border-yellow-500/30">
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <p className="text-gray-300 text-sm">Рост</p>
+                            <p className="text-3xl font-bold text-white">+{brandData.monthlyGrowth}%</p>
+                          </div>
+                          <TrendingUp className="w-8 h-8 text-yellow-400" />
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="bg-white/10 backdrop-blur-sm rounded-2xl p-6 border border-white/20 shadow-xl">
+                      <h3 className="text-xl font-bold text-white mb-4">Статистика по материалам</h3>
+                      <div className="space-y-3">
+                        {brandData.usageAnalytics.map((item, index) => (
+                          <div key={index} className="flex items-center justify-between p-4 bg-white/5 rounded-xl">
+                            <div className="flex items-center space-x-3">
+                              <div className="w-10 h-10 bg-gradient-to-r from-purple-500 to-pink-500 rounded-lg flex items-center justify-center">
+                                <Package className="w-5 h-5 text-white" />
+                              </div>
+                              <div>
+                                <p className="text-white font-medium">{item.material}</p>
+                                <p className="text-gray-400 text-sm">Рост: {item.growth}%</p>
+                              </div>
+                            </div>
+                            <div className="text-right">
+                              <p className="text-white font-semibold">{item.usage} использований</p>
+                              <p className="text-green-400 text-sm">{item.successRate}% успеха</p>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {brandTab === 'usage' && (
+                  <div className="space-y-6">
+                    <h3 className="text-2xl font-bold text-white">Аналитика использования</h3>
+                    
+                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                      <div className="bg-white/10 backdrop-blur-sm rounded-2xl p-6 border border-white/20 shadow-xl">
+                        <h3 className="text-xl font-bold text-white mb-4">Региональная статистика</h3>
+                        <div className="space-y-3">
+                          {[
+                            { region: 'Москва', usage: 2456, growth: 12 },
+                            { region: 'Санкт-Петербург', usage: 1892, growth: 8 },
+                            { region: 'Новосибирск', usage: 1234, growth: 15 },
+                            { region: 'Екатеринбург', usage: 987, growth: 5 },
+                            { region: 'Казань', usage: 765, growth: 18 }
+                          ].map((item, index) => (
+                            <div key={index} className="flex items-center justify-between p-3 bg-white/5 rounded-xl">
+                              <div className="flex items-center space-x-3">
+                                <MapPin className="w-5 h-5 text-blue-400" />
+                                <span className="text-white">{item.region}</span>
+                              </div>
+                              <div className="text-right">
+                                <p className="text-white font-semibold">{item.usage}</p>
+                                <p className="text-green-400 text-sm">+{item.growth}%</p>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+
+                      <div className="bg-white/10 backdrop-blur-sm rounded-2xl p-6 border border-white/20 shadow-xl">
+                        <h3 className="text-xl font-bold text-white mb-4">Популярные принтеры</h3>
+                        <div className="space-y-3">
+                          {[
+                            { printer: 'Ender 3 Pro', usage: 1247, percentage: 45 },
+                            { printer: 'Prusa MK3', usage: 892, percentage: 32 },
+                            { printer: 'CR-10', usage: 654, percentage: 23 }
+                          ].map((item, index) => (
+                            <div key={index} className="p-3 bg-white/5 rounded-xl">
+                              <div className="flex justify-between mb-2">
+                                <span className="text-white">{item.printer}</span>
+                                <span className="text-gray-400">{item.percentage}%</span>
+                              </div>
+                              <div className="w-full bg-white/10 rounded-full h-2">
+                                <div 
+                                  className="bg-gradient-to-r from-purple-500 to-pink-500 h-2 rounded-full transition-all"
+                                  style={{ width: `${item.percentage}%` }}
+                                ></div>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
+
+export default App;

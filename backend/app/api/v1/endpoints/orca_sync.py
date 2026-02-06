@@ -2625,3 +2625,130 @@ async def auto_process_deleted_presets(
         "notifications_processed": len(old_notifications),
     }
 
+
+# ══════════════════════════════════════════════════════════════
+# SyncPlan & Validation endpoints (Phase 1 Refactoring)
+# ══════════════════════════════════════════════════════════════
+
+from app.schemas.sync_plan import (
+    SyncPlanRequest,
+    SyncPlanResponse,
+    SyncCompleteRequest,
+    SyncStatusResponse,
+    DeletedPresetsRequest as SyncDeletedPresetsRequest,
+    DeletedPresetsResponse as SyncDeletedPresetsResponse,
+)
+from app.schemas.preset_validation import (
+    ParentPresetValidationRequest,
+    ParentPresetValidationResponse,
+    PresetBatchValidationRequest,
+    PresetBatchValidationResponse,
+)
+from app.services.sync_orchestrator import SyncOrchestrator
+from app.services.orcaslicer_validator import (
+    validate_parent_preset,
+    validate_preset_batch,
+)
+
+
+@router.post("/orcaslicer/sync-plan", response_model=SyncPlanResponse)
+async def create_sync_plan(
+    request: SyncPlanRequest,
+    current_user: Annotated[User, Depends(get_current_active_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    """Генерирует план синхронизации для устройства."""
+    orchestrator = SyncOrchestrator(db)
+    plan = await orchestrator.create_sync_plan(
+        user_id=current_user.id,
+        device_fingerprint=request.device_fingerprint,
+        preset_type=request.preset_type,
+        force_full_sync=request.force_full_sync,
+        orcaslicer_version=request.orcaslicer_version,
+    )
+    await db.commit()
+    return SyncPlanResponse(**plan)
+
+
+@router.post("/orcaslicer/sync-complete")
+async def complete_sync(
+    request: SyncCompleteRequest,
+    current_user: Annotated[User, Depends(get_current_active_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    """Подтверждение завершения синхронизации — инкрементирует sync_version."""
+    orchestrator = SyncOrchestrator(db)
+    device = await orchestrator.complete_sync(
+        user_id=current_user.id,
+        device_fingerprint=request.device_fingerprint,
+    )
+    await db.commit()
+    return {"sync_version": device.sync_version, "last_sync_at": device.last_sync_at.isoformat()}
+
+
+@router.get("/orcaslicer/sync-status", response_model=SyncStatusResponse)
+async def get_sync_status(
+    device_fingerprint: Annotated[str, Query(...)],
+    current_user: Annotated[User, Depends(get_current_active_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    """Получить статус последней синхронизации устройства."""
+    orchestrator = SyncOrchestrator(db)
+    status = await orchestrator.get_sync_status(
+        user_id=current_user.id,
+        device_fingerprint=device_fingerprint,
+    )
+    return SyncStatusResponse(**status)
+
+
+@router.post("/orcaslicer/validate-parent", response_model=ParentPresetValidationResponse)
+async def validate_parent(
+    request: ParentPresetValidationRequest,
+    current_user: Annotated[User, Depends(get_current_active_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    """Валидация родительского пресета OrcaSlicer."""
+    result = await validate_parent_preset(
+        inherits=request.inherits,
+        orcaslicer_version=request.orcaslicer_version,
+        db=db,
+    )
+    return ParentPresetValidationResponse(**result.to_dict())
+
+
+@router.post("/orcaslicer/validate-batch", response_model=PresetBatchValidationResponse)
+async def validate_batch(
+    request: PresetBatchValidationRequest,
+    current_user: Annotated[User, Depends(get_current_active_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    """Валидация нескольких пресетов за один запрос."""
+    presets_data = [p.model_dump() for p in request.presets]
+    results = await validate_preset_batch(presets_data, db)
+
+    result_items = [r.to_dict() for r in results]
+    valid_count = sum(1 for r in results if r.is_valid)
+
+    return PresetBatchValidationResponse(
+        results=result_items,
+        total=len(results),
+        valid_count=valid_count,
+        error_count=len(results) - valid_count,
+    )
+
+
+@router.post("/orcaslicer/deleted-presets", response_model=SyncDeletedPresetsResponse)
+async def get_deleted_presets(
+    request: SyncDeletedPresetsRequest,
+    current_user: Annotated[User, Depends(get_current_active_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    """Получить список пресетов удалённых на сервере."""
+    orchestrator = SyncOrchestrator(db)
+    deleted = await orchestrator.get_deleted_presets(
+        user_id=current_user.id,
+        device_fingerprint=request.device_fingerprint,
+        preset_type=request.preset_type,
+    )
+    return SyncDeletedPresetsResponse(deleted=deleted)
+

@@ -1,0 +1,55 @@
+# Быстрая сборка OrcaSlicer с FilamentHub интеграцией
+
+## ✅ Правильный путь
+
+Файл `build_release_vs2022.bat` находится в:
+```
+F:\FilamentHub\docs\OrcaSlicer\
+```
+
+## 🚀 Команды для сборки
+
+### 1. Перейти в правильную директорию
+```powershell
+cd F:\FilamentHub\docs\OrcaSlicer
+```
+
+### 2. Загрузить переменные окружения VS (если используете PowerShell)
+```powershell
+& "C:\Program Files\Microsoft Visual Studio\2022\Community\Common7\Tools\VsDevCmd.bat"
+```
+
+### 3. Проверить наличие зависимостей
+```powershell
+# Проверить наличие папки deps\build
+Test-Path "deps\build"
+```
+
+### 4. Если зависимости НЕ собраны - собрать их сначала
+
+**Вариант A: Собрать только зависимости (рекомендуется)**
+```batch
+build_release_vs2022.bat deps
+```
+⏱️ Время: ~30-60 минут
+
+**Вариант B: Полная сборка (зависимости + OrcaSlicer)**
+```batch
+build_release_vs2022.bat
+```
+⏱️ Время: ~1-2 часа
+
+### 5. После сборки зависимостей - собрать OrcaSlicer
+```batch
+build_release_vs2022.bat slicer
+```
+⏱️ Время: ~5-15 минут
+
+### 6. Запустить после сборки
+```batch
+build\package\bin\orca-slicer.exe
+```
+
+---
+**Полная инструкция:** `docs/ORCASLICER_QUICK_BUILD.md`
+

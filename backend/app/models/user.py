@@ -17,6 +17,7 @@ if TYPE_CHECKING:
     from app.models.preset import Preset
     from app.models.print_profile import PrintProfile
     from app.models.printer_profile import PrinterProfile
+    from app.models.sync_device import SyncDevice
     from app.models.user_saved_preset import UserSavedPreset
     from app.models.wiki_feedback import WikiArticleFeedback
 
@@ -119,6 +120,9 @@ class User(Base):
     )
     wiki_feedback: Mapped[list["WikiArticleFeedback"]] = relationship(
         "WikiArticleFeedback", back_populates="user", cascade="all, delete-orphan"
+    )
+    sync_devices: Mapped[list["SyncDevice"]] = relationship(
+        "SyncDevice", back_populates="user", cascade="all, delete-orphan"
     )
 
     def __repr__(self) -> str:
