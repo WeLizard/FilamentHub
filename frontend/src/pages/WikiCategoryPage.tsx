@@ -108,7 +108,7 @@ export function WikiCategoryPage() {
         className="flex items-center gap-2 text-gray-300 hover:text-white mb-6 transition-colors group"
       >
         <ArrowLeft className="w-5 h-5 group-hover:-translate-x-1 transition-transform" />
-        <span>Назад к Wiki</span>
+        <span>Назад к Вики</span>
       </button>
 
       {/* Category Header */}

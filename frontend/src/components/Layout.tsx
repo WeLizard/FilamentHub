@@ -138,7 +138,7 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
                 }`}
               >
                 <BookOpen className="w-4 h-4" />
-                <span>Wiki</span>
+                <span>Вики</span>
               </Link>
 
               {user?.role === 'admin' && (
@@ -239,7 +239,7 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
                 }`}
               >
                 <BookOpen className="w-5 h-5" />
-                <span className="font-medium">Wiki</span>
+                <span className="font-medium">Вики</span>
               </Link>
 
               {user?.role === 'admin' && (

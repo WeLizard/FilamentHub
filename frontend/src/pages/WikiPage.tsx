@@ -47,7 +47,7 @@ export function WikiPage() {
 
     } catch (err: any) {
       console.error('Failed to load wiki data:', err);
-      setError('Не удалось загрузить данные Wiki');
+      setError('Не удалось загрузить данные Вики');
     } finally {
       setIsLoading(false);
     }
@@ -99,7 +99,7 @@ export function WikiPage() {
   return (
     <>
       <SEOHead
-        title="Wiki по 3D-печати"
+        title="Вики по 3D-печати"
         description="База знаний о 3D-печати: материалы, настройки, решение проблем. Гайды для новичков и профессионалов."
         keywords="3D печать, Wiki, гайды, материалы, настройки печати, решение проблем, PLA, PETG, ABS"
         url="/wiki"
@@ -113,7 +113,7 @@ export function WikiPage() {
           <div className="w-12 h-12 md:w-16 md:h-16 bg-gradient-to-br from-blue-500 to-cyan-500 rounded-xl md:rounded-2xl flex items-center justify-center shadow-lg shadow-blue-500/25">
             <BookOpen className="w-6 h-6 md:w-8 md:h-8 text-white" />
           </div>
-          <h1 className="text-3xl md:text-4xl font-bold text-white">3D Print Wiki</h1>
+          <h1 className="text-3xl md:text-4xl font-bold text-white">3D Print Вики</h1>
         </div>
         <p className="text-base md:text-xl text-gray-300 max-w-2xl mx-auto">
           База знаний о материалах, технологиях и решении проблем 3D печати
@@ -190,7 +190,7 @@ export function WikiPage() {
                     <span>{article.views}</span>
                   </div>
                   {article.author && (
-                    <span className="text-gray-500">by {article.author}</span>
+                    <span className="text-gray-500">{article.author}</span>
                   )}
                 </div>
               </button>
@@ -220,7 +220,7 @@ export function WikiPage() {
                 <div className="flex items-center justify-between text-xs text-gray-400">
                   <span>{new Date(article.created_at).toLocaleDateString('ru-RU')}</span>
                   {article.author && (
-                    <span className="text-gray-500">by {article.author}</span>
+                    <span className="text-gray-500">{article.author}</span>
                   )}
                 </div>
               </button>
@@ -233,7 +233,7 @@ export function WikiPage() {
       {categories.length === 0 && popularArticles.length === 0 && (
         <div className="text-center py-12 bg-white/5 backdrop-blur-sm rounded-2xl border border-white/10">
           <BookOpen className="w-16 h-16 text-gray-400 mx-auto mb-4" />
-          <h3 className="text-xl font-semibold text-white mb-2">Wiki в разработке</h3>
+          <h3 className="text-xl font-semibold text-white mb-2">Вики в разработке</h3>
           <p className="text-gray-400">
             Скоро здесь появятся статьи о материалах и технологиях 3D печати
           </p>

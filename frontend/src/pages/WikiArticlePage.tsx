@@ -197,7 +197,7 @@ export function WikiArticlePage() {
           onClick={() => navigate('/wiki')}
           className="px-6 py-3 bg-purple-600 hover:bg-purple-700 text-white rounded-lg transition-colors"
         >
-          Вернуться к Wiki
+          Вернуться к Вики
         </button>
       </div>
     );
@@ -229,7 +229,7 @@ export function WikiArticlePage() {
           '@type': 'WebPage',
           '@id': `https://filamenthub.ru/wiki/articles/${article.slug}`,
         },
-        articleSection: article.category_name || 'Wiki',
+        articleSection: article.category_name || 'Вики',
         keywords: article.tags?.join(', ') || '',
       }
     : undefined;

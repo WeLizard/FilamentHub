@@ -405,7 +405,7 @@ export function DownloadPage() {
                       className="w-full flex items-center justify-center gap-3 px-6 py-4 bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white font-semibold rounded-xl transition-all shadow-lg shadow-purple-500/25 hover:shadow-xl hover:shadow-purple-500/30"
                     >
                       <Download className="w-5 h-5" />
-                      <span>Скачать Installer (.exe)</span>
+                      <span>Скачать установщик (.exe)</span>
                     </button>
                   )}
 
@@ -421,7 +421,7 @@ export function DownloadPage() {
                       className="w-full flex items-center justify-center gap-3 px-6 py-4 bg-white/10 hover:bg-white/20 border border-white/20 text-white font-semibold rounded-xl transition-all"
                     >
                       <Package className="w-5 h-5" />
-                      <span>Скачать Portable (ZIP)</span>
+                      <span>Скачать портативную версию (ZIP)</span>
                     </button>
                   )}
 
@@ -443,7 +443,7 @@ export function DownloadPage() {
                   >
                     <Download className="w-5 h-5" />
                     <span>
-                      Скачать {currentVersion.download_type === 'portable' ? 'Portable' : 'Installer'} 
+                      Скачать {currentVersion.download_type === 'portable' ? 'портативную версию' : 'установщик'}
                       {currentVersion.download_type === 'portable' && ' (ZIP)'}
                     </span>
                   </button>
@@ -472,10 +472,10 @@ export function DownloadPage() {
             {selectedPlatform === 'windows' && (
               <div className="mt-4 pt-4 border-t border-white/10">
                 <p className="text-xs text-gray-400 mb-2">
-                  <strong className="text-gray-300">Installer:</strong> Установщик для Windows (.exe)
+                  <strong className="text-gray-300">Установщик:</strong> Установщик для Windows (.exe)
                 </p>
                 <p className="text-xs text-gray-400 mb-3">
-                  <strong className="text-gray-300">Portable:</strong> Портативная версия в ZIP архиве — не требует установки
+                  <strong className="text-gray-300">Портативная версия:</strong> ZIP архив — не требует установки
                 </p>
                 {/* GitHub ссылка */}
                 <a
@@ -668,7 +668,7 @@ export function DownloadPage() {
               Сборка для <strong className="text-white">macOS</strong> (Intel и Apple Silicon) появится позже.
             </p>
             <p className="text-gray-300">
-              <strong className="text-white">Статус сборок:</strong> Windows (installer + portable) и Linux (AppImage) готовы к использованию.
+              <strong className="text-white">Статус сборок:</strong> Windows (установщик + портативная) и Linux (AppImage) готовы к использованию.
               macOS появится позже (для сборки требуется соответствующая система).
               Вы также можете собрать версию для своей платформы самостоятельно из исходного кода — инструкции в репозитории.
             </p>

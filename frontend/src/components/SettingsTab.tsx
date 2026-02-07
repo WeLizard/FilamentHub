@@ -73,7 +73,7 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({ user, onUserUpdate }) 
       setTimeout(() => setUsernameSuccess(false), 3000);
     },
     onError: (error: any) => {
-      setUsernameError(error.response?.data?.detail || 'Ошибка при изменении username');
+      setUsernameError(error.response?.data?.detail || 'Ошибка при изменении имени пользователя');
       setUsernameSuccess(false);
     },
   });
@@ -105,7 +105,7 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({ user, onUserUpdate }) 
       setTimeout(() => setEmailSuccess(false), 3000);
     },
     onError: (error: any) => {
-      setEmailError(error.response?.data?.detail || 'Ошибка при изменении email');
+      setEmailError(error.response?.data?.detail || 'Ошибка при изменении эл. почты');
       setEmailSuccess(false);
     },
   });
@@ -129,12 +129,12 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({ user, onUserUpdate }) 
 
     // Валидация
     if (usernameForm.new_username.length < 3) {
-      setUsernameError('Username должен содержать минимум 3 символа');
+      setUsernameError('Имя пользователя должно содержать минимум 3 символа');
       return;
     }
 
     if (usernameForm.new_username === user.username) {
-      setUsernameError('Новый username должен отличаться от текущего');
+      setUsernameError('Новое имя пользователя должно отличаться от текущего');
       return;
     }
 
@@ -190,12 +190,12 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({ user, onUserUpdate }) 
 
     // Валидация
     if (!emailForm.new_email || !emailForm.new_email.includes('@')) {
-      setEmailError('Введите корректный email');
+      setEmailError('Введите корректный адрес эл. почты');
       return;
     }
 
     if (emailForm.new_email === user.email) {
-      setEmailError('Новый email должен отличаться от текущего');
+      setEmailError('Новая эл. почта должна отличаться от текущей');
       return;
     }
 
@@ -228,7 +228,7 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({ user, onUserUpdate }) 
               <div className="flex-1">
                 <div className="flex items-center gap-2 mb-2">
                   <UserIcon className="w-4 h-4 text-purple-400" />
-                  <label className="text-sm font-medium text-gray-300">Username</label>
+                  <label className="text-sm font-medium text-gray-300">Имя пользователя</label>
                   <span className="text-xs text-gray-500">({user.username})</span>
                 </div>
                 <input
@@ -238,7 +238,7 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({ user, onUserUpdate }) 
                   required
                   minLength={3}
                   className="w-full px-3 py-2 bg-white/10 border border-white/20 rounded-lg text-white text-sm placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500"
-                  placeholder="Новый username"
+                  placeholder="Новое имя пользователя"
                 />
               </div>
               <button
@@ -273,7 +273,7 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({ user, onUserUpdate }) 
               <div className="flex-1">
                 <div className="flex items-center gap-2 mb-2">
                   <Mail className="w-4 h-4 text-blue-400" />
-                  <label className="text-sm font-medium text-gray-300">Email</label>
+                  <label className="text-sm font-medium text-gray-300">Эл. почта</label>
                   <span className="text-xs text-gray-500">({user.email})</span>
                 </div>
                 <input
@@ -282,10 +282,10 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({ user, onUserUpdate }) 
                   onChange={(e) => setEmailForm({ new_email: e.target.value })}
                   required
                   className="w-full px-3 py-2 bg-white/10 border border-white/20 rounded-lg text-white text-sm placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500"
-                  placeholder="Новый email"
+                  placeholder="Новая эл. почта"
                 />
                 <p className="text-xs text-blue-300/80 mt-1">
-                  На новый email будет отправлен код подтверждения
+                  На новую эл. почту будет отправлен код подтверждения
                 </p>
               </div>
               <button
@@ -309,7 +309,7 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({ user, onUserUpdate }) 
             {emailSuccess && (
               <div className="flex items-center gap-2 text-green-400 text-xs">
                 <CheckCircle className="w-3 h-3" />
-                <span>Код подтверждения отправлен на новый email</span>
+                <span>Код подтверждения отправлен на новую эл. почту</span>
               </div>
             )}
           </form>

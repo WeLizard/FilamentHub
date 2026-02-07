@@ -89,7 +89,7 @@ export const ForgotPasswordModal: React.FC<ForgotPasswordModalProps> = ({
               <img src="/logo.svg" alt="FilamentHub Logo" className="w-16 h-16 object-contain" />
             </div>
             <h2 className="text-2xl font-bold text-white mb-2">Восстановление пароля</h2>
-            <p className="text-gray-300">Введите email для получения инструкций</p>
+            <p className="text-gray-300">Введите адрес эл. почты для получения инструкций</p>
           </div>
         </div>
 
@@ -103,7 +103,7 @@ export const ForgotPasswordModal: React.FC<ForgotPasswordModalProps> = ({
               <div>
                 <h3 className="text-xl font-bold text-white mb-2">Проверьте почту</h3>
                 <p className="text-gray-300">
-                  Если указанный email существует в системе, на него будет отправлена инструкция по восстановлению пароля.
+                  Если указанный адрес существует в системе, на него будет отправлена инструкция по восстановлению пароля.
                 </p>
                 <p className="text-gray-400 text-sm mt-2">
                   Ссылка действительна в течение 1 часа.
@@ -128,7 +128,7 @@ export const ForgotPasswordModal: React.FC<ForgotPasswordModalProps> = ({
                 )}
 
                 <div>
-                  <label className="block text-gray-300 mb-2">Email</label>
+                  <label className="block text-gray-300 mb-2">Эл. почта</label>
                   <div className="relative">
                     <Mail className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5 pointer-events-none" />
                     <input

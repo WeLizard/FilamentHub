@@ -143,7 +143,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
     } catch (err: any) {
       // Обработка различных типов ошибок
       let errorMessage = authMode === 'login' 
-        ? 'Произошла ошибка при входе. Проверьте email и пароль.'
+        ? 'Произошла ошибка при входе. Проверьте эл. почту и пароль.'
         : 'Произошла ошибка при регистрации. Попробуйте еще раз.';
       
       if (err.response) {
@@ -156,7 +156,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
           if (typeof detail === 'string') {
             // Переводим понятные сообщения на русский
             if (detail.toLowerCase().includes('already registered') || detail.toLowerCase().includes('email')) {
-              errorMessage = 'Этот email уже зарегистрирован. Используйте другой email или войдите в систему.';
+              errorMessage = 'Эта эл. почта уже зарегистрирована. Используйте другую или войдите в систему.';
             } else if (detail.toLowerCase().includes('username') || detail.toLowerCase().includes('taken')) {
               errorMessage = 'Это имя пользователя уже занято. Выберите другое.';
             } else if (detail.toLowerCase().includes('invalid role')) {
@@ -170,7 +170,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
               const msg = item.msg || item.message || '';
               // Переводим типичные ошибки валидации
               if (msg.includes('email')) {
-                return 'Некорректный email адрес.';
+                return 'Некорректный адрес эл. почты.';
               } else if (msg.includes('username') && msg.includes('length')) {
                 return 'Имя пользователя должно быть от 3 до 100 символов.';
               } else if (msg.includes('password') && msg.includes('length')) {
@@ -183,7 +183,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
           }
         } else if (status === 401) {
           // Неверные учетные данные - показываем конкретное сообщение
-          errorMessage = 'Неверный email или пароль. Проверьте правильность ввода.';
+          errorMessage = 'Неверная эл. почта или пароль. Проверьте правильность ввода.';
           // Очищаем пароль для безопасности
           setPassword('');
           // Показываем капчу после нескольких неудачных попыток (опционально)
@@ -312,7 +312,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
                     : 'text-gray-300 hover:text-white'
                 }`}
               >
-                Email
+                Эл. почта
               </button>
               <button
                 type="button"
@@ -365,7 +365,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
           <div className="space-y-4">
             <div>
               <label className="block text-gray-300 mb-2">
-                {authMode === 'login' ? 'Email или логин' : 'Email'}
+                {authMode === 'login' ? 'Эл. почта или логин' : 'Эл. почта'}
               </label>
               <div className="relative">
                 <Mail className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5 pointer-events-none" />
@@ -375,7 +375,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
                   onChange={(e) => setEmail(e.target.value)}
                   required
                   className="w-full pl-10 pr-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all"
-                  placeholder={authMode === 'login' ? 'email или логин' : 'your@email.com'}
+                  placeholder={authMode === 'login' ? 'эл. почта или логин' : 'your@email.com'}
                 />
               </div>
               {authMode === 'register' && (
@@ -399,7 +399,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
                     minLength={3}
                     maxLength={100}
                     className="w-full pl-10 pr-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all"
-                    placeholder="username"
+                    placeholder="имя пользователя"
                   />
                 </div>
                 {username && username.length < 3 && (
@@ -409,7 +409,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
                   <p className="mt-1 text-xs text-red-400">Имя пользователя не должно превышать 100 символов</p>
                 )}
                 {username && !/^[a-zA-Z0-9_-]+$/.test(username) && (
-                  <p className="mt-1 text-xs text-red-400">Имя пользователя может содержать только буквы, цифры, дефис и подчеркивание</p>
+                  <p className="mt-1 text-xs text-red-400">Имя пользователя может содержать только буквы, цифры, дефис и подчёркивание</p>
                 )}
               </div>
             )}

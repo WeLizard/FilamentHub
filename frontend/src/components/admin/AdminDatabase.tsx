@@ -205,7 +205,7 @@ function WikiSync() {
       <div className="flex items-center justify-between mb-4">
         <h3 className="text-xl font-bold text-white flex items-center space-x-2">
           <FileText className="w-5 h-5" />
-          <span>Синхронизация Wiki</span>
+          <span>Синхронизация Вики</span>
         </h3>
         <button
           onClick={() => syncMutation.mutate()}
