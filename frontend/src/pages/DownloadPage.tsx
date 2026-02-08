@@ -31,6 +31,10 @@ export function DownloadPage() {
     loadDownloads();
   }, []);
 
+  // Определяем доступность платформы из данных API
+  const isPlatformAvailable = (platform: string) =>
+    downloadsData?.versions.some(v => v.platform === platform && v.available) ?? false;
+
   // Находим версию (приоритет: installer, потом portable)
   const currentVersion = downloadsData?.versions.find(
     (v) => v.platform === selectedPlatform && 
@@ -284,50 +288,75 @@ export function DownloadPage() {
         <div className="grid grid-cols-3 gap-4 mb-6">
           <button
             onClick={() => {
+              if (!isLoading && !isPlatformAvailable('windows')) return;
               setSelectedPlatform('windows');
               setSelectedArch('x64');
             }}
             className={`flex flex-col items-center gap-2 p-3 rounded-xl border transition-all relative ${
+              !isLoading && !isPlatformAvailable('windows') ? 'opacity-60 cursor-not-allowed' : ''
+            } ${
               selectedPlatform === 'windows'
                 ? 'bg-purple-600/30 border-purple-500 text-white'
                 : 'bg-white/5 border-white/10 text-gray-300 hover:bg-white/10'
             }`}
+            disabled={!isLoading && !isPlatformAvailable('windows')}
+            title={!isLoading && !isPlatformAvailable('windows') ? 'Сборка для Windows в разработке' : undefined}
           >
             <Monitor className="w-8 h-8" />
             <span className="font-medium">Windows</span>
-            <span className="absolute top-2 right-2 px-1.5 py-0.5 bg-green-500/30 border border-green-500/50 rounded text-xs text-green-300">Доступно</span>
+            {!isLoading && (
+              isPlatformAvailable('windows')
+                ? <span className="absolute top-2 right-2 px-1.5 py-0.5 bg-green-500/30 border border-green-500/50 rounded text-xs text-green-300">Доступно</span>
+                : <span className="absolute top-2 right-2 px-1.5 py-0.5 bg-yellow-500/30 border border-yellow-500/50 rounded text-xs text-yellow-300">Скоро</span>
+            )}
           </button>
           <button
             onClick={() => {
+              if (!isLoading && !isPlatformAvailable('macos')) return;
               setSelectedPlatform('macos');
               setSelectedArch('x64');
             }}
-            className={`flex flex-col items-center gap-2 p-3 rounded-xl border transition-all relative opacity-60 cursor-not-allowed ${
+            className={`flex flex-col items-center gap-2 p-3 rounded-xl border transition-all relative ${
+              !isLoading && !isPlatformAvailable('macos') ? 'opacity-60 cursor-not-allowed' : ''
+            } ${
               selectedPlatform === 'macos'
                 ? 'bg-purple-600/30 border-purple-500 text-white'
-                : 'bg-white/5 border-white/10 text-gray-300'
+                : 'bg-white/5 border-white/10 text-gray-300 hover:bg-white/10'
             }`}
-            disabled
-            title="Сборка для macOS в разработке"
+            disabled={!isLoading && !isPlatformAvailable('macos')}
+            title={!isLoading && !isPlatformAvailable('macos') ? 'Сборка для macOS в разработке' : undefined}
           >
             <Smartphone className="w-8 h-8" />
             <span className="font-medium">macOS</span>
-            <span className="absolute top-2 right-2 px-1.5 py-0.5 bg-yellow-500/30 border border-yellow-500/50 rounded text-xs text-yellow-300">Скоро</span>
+            {!isLoading && (
+              isPlatformAvailable('macos')
+                ? <span className="absolute top-2 right-2 px-1.5 py-0.5 bg-green-500/30 border border-green-500/50 rounded text-xs text-green-300">Доступно</span>
+                : <span className="absolute top-2 right-2 px-1.5 py-0.5 bg-yellow-500/30 border border-yellow-500/50 rounded text-xs text-yellow-300">Скоро</span>
+            )}
           </button>
           <button
             onClick={() => {
+              if (!isLoading && !isPlatformAvailable('linux')) return;
               setSelectedPlatform('linux');
               setSelectedArch('x64');
             }}
             className={`flex flex-col items-center gap-2 p-3 rounded-xl border transition-all relative ${
+              !isLoading && !isPlatformAvailable('linux') ? 'opacity-60 cursor-not-allowed' : ''
+            } ${
               selectedPlatform === 'linux'
                 ? 'bg-purple-600/30 border-purple-500 text-white'
                 : 'bg-white/5 border-white/10 text-gray-300 hover:bg-white/10'
             }`}
+            disabled={!isLoading && !isPlatformAvailable('linux')}
+            title={!isLoading && !isPlatformAvailable('linux') ? 'Сборка для Linux в разработке' : undefined}
           >
             <Terminal className="w-8 h-8" />
             <span className="font-medium">Linux</span>
-            <span className="absolute top-2 right-2 px-1.5 py-0.5 bg-green-500/30 border border-green-500/50 rounded text-xs text-green-300">Доступно</span>
+            {!isLoading && (
+              isPlatformAvailable('linux')
+                ? <span className="absolute top-2 right-2 px-1.5 py-0.5 bg-green-500/30 border border-green-500/50 rounded text-xs text-green-300">Доступно</span>
+                : <span className="absolute top-2 right-2 px-1.5 py-0.5 bg-yellow-500/30 border border-yellow-500/50 rounded text-xs text-yellow-300">Скоро</span>
+            )}
           </button>
         </div>
 
@@ -497,15 +526,22 @@ export function DownloadPage() {
               <Package className="w-6 h-6 text-yellow-400 flex-shrink-0 mt-0.5" />
               <div>
                 <h3 className="text-lg font-semibold text-yellow-300 mb-2">
-                  Сборка в разработке
+                  Сборка для {selectedPlatform === 'windows' ? 'Windows' : selectedPlatform === 'macos' ? 'macOS' : 'Linux'} в разработке
                 </h3>
                 <p className="text-gray-300 text-sm mb-2">
-                  Сборка для {selectedPlatform === 'macos' ? 'macOS' : 'Linux'} ещё не готова. 
+                  Сборка для {selectedPlatform === 'windows' ? 'Windows' : selectedPlatform === 'macos' ? 'macOS' : 'Linux'} ещё не готова.
                   Для компиляции требуется соответствующая операционная система.
                 </p>
-                <p className="text-gray-400 text-xs">
-                  Вы можете собрать версию самостоятельно из исходного кода. Инструкции будут доступны в репозитории после релиза для Windows.
+                <p className="text-gray-400 text-xs mb-3">
+                  Вы можете собрать версию самостоятельно из исходного кода или скачать с GitHub.
                 </p>
+                <button
+                  onClick={() => handleDownload('github')}
+                  className="inline-flex items-center gap-2 px-4 py-2 bg-white/10 hover:bg-white/20 border border-white/20 text-white text-sm font-medium rounded-lg transition-all"
+                >
+                  <Globe className="w-4 h-4" />
+                  <span>Скачать с GitHub Releases</span>
+                </button>
               </div>
             </div>
           </div>
