@@ -1,5 +1,153 @@
-# Docs (local reference only)
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Virtual environments
+venv/
+ENV/
+env/
+.venv
+backend/venv/
+backend/.venv/
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Environment variables
+.env
+.env.local
+.env.*.local
+.env.prod
+backend/.env
+backend/.env.prod
+
+# Database
+*.db
+*.sqlite
+*.sqlite3
+
+# Test coverage
+.coverage
+htmlcov/
+.pytest_cache/
+.tox/
+
+# Alembic
+alembic/versions/*.pyc
+backend/alembic/versions/*.pyc
+
+# Logs
+*.log
+logs/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Static files uploads
+static/uploads/*
+!static/uploads/.gitkeep
+backend/static/uploads/*
+!backend/static/uploads/.gitkeep
+
+# Docker
+*.dockerignore
+
+# Temporary files
+*.tmp
+*.temp
+.cache/
+
+
+# Docs folder - exclude completely
 docs/
+
+# Backend test files and scripts
+backend/test_*.py
+backend/check_*.py
+backend/create_*.py
+backend/export_*.py
+backend/link_*.sql
+backend/test_output.txt
+backend/node_modules/
+backend/package-lock.json
+backend/package.json
+backend/scripts/
+backend/uploads/*
+!backend/uploads/wiki/
+backend/uploads/wiki/*
+!backend/uploads/wiki/.gitkeep
+backend/docs/
+
+# Wiki content - хранится только на сервере, не в git
+backend/wiki_content/
+backend/database_dumps/
+backend/uploads/database_dumps/
+
+# MCP configuration (may contain passwords)
+.cursor/mcp-config.json
+
+# Playwright screenshots
+.playwright-mcp/
+
+# Cursor config examples
+.cursor/mcp-config.json.example
+
+# Distributions (OrcaSlicer builds - too large for Git)
+backend/distributions/orcaslicer/*
+!backend/distributions/orcaslicer/.gitkeep
+!backend/distributions/.gitkeep
+
+# SSL certificates (не коммитить!)
+certbot/
+certbot-conf.tar.gz
+
+# Root log folder (debug logs, iotc logs)
+log/
+
+# One-time setup scripts (already executed)
+setup_orcaslicer_*.ps1
+
+# AI/LLM tools (local configs, rules, context - never commit)
+.cursor/
+.cursorrules
+.claude/
+.claude_settings.json
+.claudeignore
+.continue/
+.aider*
+.codeium/
+.copilot/
+.windsurf/
+.gemini/
+CLAUDE.md
+AGENTS.md
+
+# Brands folder (local data)
+brands/
+
 
 # Auto Claude data directory
 .auto-claude/
@@ -7,7 +155,15 @@ docs/
 # Auto Claude generated files
 .auto-claude-security.json
 .auto-claude-status
-.claude_settings.json
 .worktrees/
 .security-key
 logs/security/
+
+# Windows junk
+nul
+NUL
+
+# Debug logs (root level)
+debug_*.log*
+*.log.*
+Снимок.JPG
