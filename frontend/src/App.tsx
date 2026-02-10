@@ -40,7 +40,7 @@ function AppContent() {
       if (!(window as any).filamenthub) {
         (window as any).filamenthub = {};
       }
-      
+
       // Добавляем функцию навигации
       (window as any).filamenthub.navigate = (path: string) => {
         navigate(path);

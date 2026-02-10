@@ -2,16 +2,19 @@
 
 import { useState, useEffect } from 'react';
 import { Upload, Loader2, CheckCircle, AlertCircle } from 'lucide-react';
+import { useAuth } from '../contexts/AuthContext';
 
 interface ExportPrinterProfilesButtonProps {
   onExportComplete?: (result: { success: boolean; message?: string }) => void;
 }
 
 export const ExportPrinterProfilesButton: React.FC<ExportPrinterProfilesButtonProps> = ({ onExportComplete }) => {
+  const { user } = useAuth();
   const [isExporting, setIsExporting] = useState(false);
   const [exportStatus, setExportStatus] = useState<'idle' | 'success' | 'error'>('idle');
   const [statusMessage, setStatusMessage] = useState<string>('');
   const [isInOrcaSlicer, setIsInOrcaSlicer] = useState(false);
+  const isExportDisabled = user?.allow_printer_profiles_export === false;
 
   // Проверяем, запущен ли frontend внутри OrcaSlicer
   useEffect(() => {
@@ -50,8 +53,7 @@ export const ExportPrinterProfilesButton: React.FC<ExportPrinterProfilesButtonPr
       const result = await (window as any).filamenthub.exportPrinterProfiles();
       
       setExportStatus('success');
-      setStatusMessage(result.message || 'Экспорт начат. Результат будет показан в уведомлениях.');
-      
+
       // Вызываем callback, если передан
       if (onExportComplete) {
         onExportComplete({ success: true, message: result.message });
@@ -60,7 +62,6 @@ export const ExportPrinterProfilesButton: React.FC<ExportPrinterProfilesButtonPr
       // Сбрасываем статус через 3 секунды
       setTimeout(() => {
         setExportStatus('idle');
-        setStatusMessage('');
       }, 3000);
     } catch (error: any) {
       console.error('Ошибка экспорта printer profiles:', error);
@@ -87,10 +88,10 @@ export const ExportPrinterProfilesButton: React.FC<ExportPrinterProfilesButtonPr
     <div className="flex flex-col gap-1">
       <button
         onClick={handleExport}
-        disabled={isExporting || !isInOrcaSlicer}
+        disabled={isExporting || !isInOrcaSlicer || isExportDisabled}
         className={`
           px-3 py-1.5 rounded-lg border text-xs font-medium transition-all
-          ${isExporting || !isInOrcaSlicer
+          ${isExporting || !isInOrcaSlicer || isExportDisabled
             ? 'bg-white/5 border-white/10 text-gray-400 cursor-not-allowed opacity-50'
             : exportStatus === 'success'
             ? 'bg-green-500/20 border-green-500/40 text-green-400 hover:bg-green-500/30'
@@ -100,7 +101,9 @@ export const ExportPrinterProfilesButton: React.FC<ExportPrinterProfilesButtonPr
           }
         `}
         title={
-          !isInOrcaSlicer
+          isExportDisabled
+            ? "Экспорт профилей принтеров отключён в настройках. Включите в разделе Настройки профиля."
+            : !isInOrcaSlicer
             ? "Экспорт доступен только внутри OrcaSlicer"
             : "Экспортировать printer profiles из OrcaSlicer в FilamentHub"
         }

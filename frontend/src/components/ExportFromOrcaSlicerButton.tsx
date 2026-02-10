@@ -50,8 +50,7 @@ export const ExportFromOrcaSlicerButton: React.FC<ExportFromOrcaSlicerButtonProp
       const result = await (window as any).filamenthub.exportFilamentPresets();
       
       setExportStatus('success');
-      setStatusMessage(result.message || 'Экспорт начат. Результат будет показан в уведомлениях.');
-      
+
       // Вызываем callback, если передан
       if (onExportComplete) {
         onExportComplete({ success: true, message: result.message });
@@ -60,7 +59,6 @@ export const ExportFromOrcaSlicerButton: React.FC<ExportFromOrcaSlicerButtonProp
       // Сбрасываем статус через 3 секунды
       setTimeout(() => {
         setExportStatus('idle');
-        setStatusMessage('');
       }, 3000);
     } catch (error: any) {
       console.error('Ошибка экспорта filament presets:', error);

@@ -1469,6 +1469,82 @@ async def _find_existing_filament(
     return None
 
 
+def _extract_values_from_orcaslicer_settings(settings: dict) -> dict:
+    """Извлечь реальные значения параметров печати из OrcaSlicer JSON.
+
+    OrcaSlicer хранит значения как массивы строк, например: ["220"], ["0.98"].
+    Функция обрабатывает массивы, скаляры и строки.
+    """
+    def _first_float(val) -> float | None:
+        """Извлечь первое числовое значение из значения OrcaSlicer."""
+        if val is None:
+            return None
+        if isinstance(val, (list, tuple)):
+            if not val:
+                return None
+            val = val[0]
+        try:
+            return float(val)
+        except (ValueError, TypeError):
+            return None
+
+    def _first_int(val) -> int | None:
+        """Извлечь первое целочисленное значение из значения OrcaSlicer."""
+        f = _first_float(val)
+        return int(f) if f is not None else None
+
+    result: dict = {}
+
+    # extruder_temp: nozzle_temperature → fallback nozzle_temperature_initial_layer
+    ext_temp = _first_float(settings.get("nozzle_temperature"))
+    if ext_temp is None:
+        ext_temp = _first_float(settings.get("nozzle_temperature_initial_layer"))
+    if ext_temp is not None:
+        result["extruder_temp"] = ext_temp
+
+    # bed_temp: hot_plate_temp → fallback cool_plate_temp → eng_plate_temp → textured_plate_temp
+    bed_temp = _first_float(settings.get("hot_plate_temp"))
+    if bed_temp is None:
+        bed_temp = _first_float(settings.get("cool_plate_temp"))
+    if bed_temp is None:
+        bed_temp = _first_float(settings.get("eng_plate_temp"))
+    if bed_temp is None:
+        bed_temp = _first_float(settings.get("textured_plate_temp"))
+    if bed_temp is not None:
+        result["bed_temp"] = bed_temp
+
+    # flow_rate: filament_flow_ratio (множитель 0.xx → процент)
+    flow_ratio = _first_float(settings.get("filament_flow_ratio"))
+    if flow_ratio is not None:
+        # OrcaSlicer хранит как множитель (например 0.98), мы храним как процент (98)
+        if flow_ratio <= 2.0:
+            result["flow_rate"] = round(flow_ratio * 100, 1)
+        else:
+            result["flow_rate"] = flow_ratio  # Уже в процентах
+
+    # fan_speed: fan_min_speed (это базовый fan speed в OrcaSlicer) → fallback fan_max_speed
+    fan = _first_int(settings.get("fan_min_speed"))
+    if fan is None:
+        fan = _first_int(settings.get("fan_max_speed"))
+    if fan is not None:
+        result["fan_speed"] = fan
+
+    # retraction_length: filament_retraction_length
+    retract_len = _first_float(settings.get("filament_retraction_length"))
+    if retract_len is not None:
+        result["retraction_length"] = retract_len
+
+    # retraction_speed: filament_retraction_speed
+    retract_spd = _first_float(settings.get("filament_retraction_speed"))
+    if retract_spd is not None:
+        result["retraction_speed"] = retract_spd
+
+    # print_speed, travel_speed, layer_height — НЕТ в филамент-пресетах OrcaSlicer
+    # (они в print/printer profile, не в filament profile)
+
+    return result
+
+
 async def _upsert_filament_preset(
     *,
     payload,
@@ -1976,38 +2052,60 @@ async def _upsert_filament_preset(
                 preset.filament_id = filament.id
             if payload.description is not None:
                 preset.description = payload.description
+            # Извлекаем реальные значения из orcaslicer_settings для fallback
+            extracted = _extract_values_from_orcaslicer_settings(payload.orcaslicer_settings or {})
             if payload.extruder_temp is not None:
                 preset.extruder_temp = payload.extruder_temp
+            elif extracted.get("extruder_temp") is not None:
+                preset.extruder_temp = extracted["extruder_temp"]
             if payload.bed_temp is not None:
                 preset.bed_temp = payload.bed_temp
+            elif extracted.get("bed_temp") is not None:
+                preset.bed_temp = extracted["bed_temp"]
             if payload.print_speed is not None:
                 preset.print_speed = payload.print_speed
+            elif extracted.get("print_speed") is not None:
+                preset.print_speed = extracted["print_speed"]
             if payload.travel_speed is not None:
                 preset.travel_speed = payload.travel_speed
+            elif extracted.get("travel_speed") is not None:
+                preset.travel_speed = extracted["travel_speed"]
             if payload.layer_height is not None:
                 preset.layer_height = payload.layer_height
+            elif extracted.get("layer_height") is not None:
+                preset.layer_height = extracted["layer_height"]
             if payload.first_layer_height is not None:
                 preset.first_layer_height = payload.first_layer_height
+            elif extracted.get("first_layer_height") is not None:
+                preset.first_layer_height = extracted["first_layer_height"]
             if payload.flow_rate is not None:
                 preset.flow_rate = payload.flow_rate
+            elif extracted.get("flow_rate") is not None:
+                preset.flow_rate = extracted["flow_rate"]
             if payload.fan_speed is not None:
                 preset.fan_speed = payload.fan_speed
+            elif extracted.get("fan_speed") is not None:
+                preset.fan_speed = extracted["fan_speed"]
             if payload.retraction_length is not None:
                 preset.retraction_length = payload.retraction_length
+            elif extracted.get("retraction_length") is not None:
+                preset.retraction_length = extracted["retraction_length"]
             if payload.retraction_speed is not None:
                 preset.retraction_speed = payload.retraction_speed
+            elif extracted.get("retraction_speed") is not None:
+                preset.retraction_speed = extracted["retraction_speed"]
             if payload.orcaslicer_settings:
                 # Сохраняем метки FilamentHub при обновлении
                 # Если это черновик - сохраняем fhub_draft_id
                 # Если это наш пресет - сохраняем fhub_id и fhub_source
                 updated_settings = dict(payload.orcaslicer_settings)
-                
+
                 # Сохраняем существующие метки, если они есть
                 if preset.orcaslicer_settings:
                     existing_fhub_draft_id = preset.orcaslicer_settings.get("fhub_draft_id")
                     existing_fhub_id = preset.orcaslicer_settings.get("fhub_id")
                     existing_fhub_source = preset.orcaslicer_settings.get("fhub_source")
-                    
+
                     # Если это черновик - сохраняем fhub_draft_id
                     if existing_fhub_draft_id and not preset.active:
                         updated_settings["fhub_draft_id"] = existing_fhub_draft_id
@@ -2084,30 +2182,52 @@ async def _upsert_filament_preset(
             preset.name = payload.name
             if payload.description is not None:
                 preset.description = payload.description
+            # Извлекаем реальные значения из orcaslicer_settings для fallback
+            extracted = _extract_values_from_orcaslicer_settings(payload.orcaslicer_settings or {})
             if payload.extruder_temp is not None:
                 preset.extruder_temp = payload.extruder_temp
+            elif extracted.get("extruder_temp") is not None:
+                preset.extruder_temp = extracted["extruder_temp"]
             if payload.bed_temp is not None:
                 preset.bed_temp = payload.bed_temp
+            elif extracted.get("bed_temp") is not None:
+                preset.bed_temp = extracted["bed_temp"]
             if payload.print_speed is not None:
                 preset.print_speed = payload.print_speed
+            elif extracted.get("print_speed") is not None:
+                preset.print_speed = extracted["print_speed"]
             if payload.travel_speed is not None:
                 preset.travel_speed = payload.travel_speed
+            elif extracted.get("travel_speed") is not None:
+                preset.travel_speed = extracted["travel_speed"]
             if payload.layer_height is not None:
                 preset.layer_height = payload.layer_height
+            elif extracted.get("layer_height") is not None:
+                preset.layer_height = extracted["layer_height"]
             if payload.first_layer_height is not None:
                 preset.first_layer_height = payload.first_layer_height
+            elif extracted.get("first_layer_height") is not None:
+                preset.first_layer_height = extracted["first_layer_height"]
             if payload.flow_rate is not None:
                 preset.flow_rate = payload.flow_rate
+            elif extracted.get("flow_rate") is not None:
+                preset.flow_rate = extracted["flow_rate"]
             if payload.fan_speed is not None:
                 preset.fan_speed = payload.fan_speed
+            elif extracted.get("fan_speed") is not None:
+                preset.fan_speed = extracted["fan_speed"]
             if payload.retraction_length is not None:
                 preset.retraction_length = payload.retraction_length
+            elif extracted.get("retraction_length") is not None:
+                preset.retraction_length = extracted["retraction_length"]
             if payload.retraction_speed is not None:
                 preset.retraction_speed = payload.retraction_speed
+            elif extracted.get("retraction_speed") is not None:
+                preset.retraction_speed = extracted["retraction_speed"]
             if payload.orcaslicer_settings:
                 # Сохраняем метки FilamentHub при обновлении
                 updated_settings = dict(payload.orcaslicer_settings)
-                
+
                 # Сохраняем существующие метки, если они есть
                 if preset.orcaslicer_settings:
                     existing_fhub_draft_id = preset.orcaslicer_settings.get("fhub_draft_id")
@@ -2140,11 +2260,12 @@ async def _upsert_filament_preset(
         # Создаем новый пресет (черновик)
         # Примечание: Preset не имеет поля slug (только Filament имеет slug)
 
-        # Значения по умолчанию
-        extruder_temp = payload.extruder_temp or 210.0
-        bed_temp = payload.bed_temp or 60.0
-        print_speed = payload.print_speed or 80.0
-        travel_speed = payload.travel_speed or 150.0
+        # Извлекаем реальные значения из orcaslicer_settings
+        extracted = _extract_values_from_orcaslicer_settings(payload.orcaslicer_settings or {})
+        extruder_temp = payload.extruder_temp or extracted.get("extruder_temp") or 200.0
+        bed_temp = payload.bed_temp or extracted.get("bed_temp") or 60.0
+        print_speed = payload.print_speed or extracted.get("print_speed") or 50.0
+        travel_speed = payload.travel_speed or extracted.get("travel_speed")
 
         # Убираем постфикс @FilamentHub из названия для отображения на сайте
         clean_name = payload.name.replace(' @FilamentHub', '').replace('@FilamentHub', '') if payload.name else 'Unnamed Preset'
@@ -2172,12 +2293,12 @@ async def _upsert_filament_preset(
             bed_temp=bed_temp,
             print_speed=print_speed,
             travel_speed=travel_speed,
-            layer_height=payload.layer_height,
-            first_layer_height=payload.first_layer_height,
-            flow_rate=payload.flow_rate,
-            fan_speed=payload.fan_speed,
-            retraction_length=payload.retraction_length,
-            retraction_speed=payload.retraction_speed,
+            layer_height=payload.layer_height or extracted.get("layer_height"),
+            first_layer_height=payload.first_layer_height or extracted.get("first_layer_height"),
+            flow_rate=payload.flow_rate or extracted.get("flow_rate"),
+            fan_speed=payload.fan_speed if payload.fan_speed is not None else extracted.get("fan_speed"),
+            retraction_length=payload.retraction_length or extracted.get("retraction_length"),
+            retraction_speed=payload.retraction_speed or extracted.get("retraction_speed"),
             orcaslicer_settings=preset_orcaslicer_settings,
             is_official=False,
             # ВАЖНО: Для пресетов с @FilamentHub всегда active=True (это наши пресеты из каталога)

@@ -1346,7 +1346,8 @@ const PresetCard: React.FC<PresetCardProps> = ({ preset, onEdit, onView, onDelet
   // Загружаем филамент для отображения информации
   const { data: filament } = useQuery({
     queryKey: ['filament', preset.filament_id],
-    queryFn: () => filamentsAPI.get(preset.filament_id),
+    queryFn: () => filamentsAPI.get(preset.filament_id!),
+    enabled: !!preset.filament_id,
   });
 
   // Загружаем бренд
