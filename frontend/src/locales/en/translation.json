@@ -630,5 +630,26 @@
     "marked": "Marked",
     "helpful": "Helpful",
     "leaveFeedback": "Leave Feedback"
+  },
+  "filamentDetailPage": {
+    "loginRequired": "Login required",
+    "errorSavingPreset": "Failed to add preset to profile",
+    "confirmDeleteReview": "Are you sure you want to delete this review?",
+    "loadingMaterial": "Loading material...",
+    "materialNotFound": "Material not found",
+    "backToProfile": "Back to profile",
+    "backToCatalog": "Back to catalog",
+    "diameter": "Diameter",
+    "density": "Density",
+    "color": "Color",
+    "scans": "Scans",
+    "loginToAdd": "Login to add",
+    "yourPreset": "Your preset",
+    "added": "Added",
+    "saving": "Saving...",
+    "addToProfile": "Add to profile",
+    "noPresets": "No presets",
+    "presetsCount": "Presets ({{count}})",
+    "reviewsCount": "Reviews ({{count}})"
   }
 }

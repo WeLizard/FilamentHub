@@ -1,6 +1,7 @@
 /** Детальная страница филамента */
 
 import { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
@@ -33,6 +34,7 @@ import { SEOHead } from '../components/SEOHead';
 import { FilamentReview } from '../types/api';
 
 export const FilamentDetailPage: React.FC = () => {
+  const { t } = useTranslation();
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const location = useLocation();
@@ -85,7 +87,7 @@ export const FilamentDetailPage: React.FC = () => {
   const savePresetMutation = useMutation({
     mutationFn: (presetId: number) => {
       if (!user) {
-        throw new Error('Необходимо войти в систему');
+        throw new Error(t('filamentDetailPage.loginRequired'));
       }
       return savedPresetsAPI.save(presetId);
     },
@@ -97,7 +99,7 @@ export const FilamentDetailPage: React.FC = () => {
     onError: (error: any) => {
       console.error('Ошибка сохранения пресета:', error);
       // Можно добавить уведомление пользователю
-      alert(error.response?.data?.detail || error.message || 'Не удалось добавить пресет в профиль');
+      alert(error.response?.data?.detail || error.message || t('filamentDetailPage.errorSavingPreset'));
     },
   });
 
@@ -130,7 +132,7 @@ export const FilamentDetailPage: React.FC = () => {
   };
 
   const handleDeleteReview = (reviewId: number) => {
-    if (confirm('Вы уверены, что хотите удалить этот отзыв?')) {
+    if (confirm(t('filamentDetailPage.confirmDeleteReview'))) {
       deleteReviewMutation.mutate(reviewId);
     }
   };
@@ -138,7 +140,7 @@ export const FilamentDetailPage: React.FC = () => {
   if (isLoadingFilament) {
     return (
       <div className="flex items-center justify-center min-h-[400px]">
-        <div className="text-white text-xl">Загрузка материала...</div>
+        <div className="text-white text-xl">{t('filamentDetailPage.loadingMaterial')}</div>
       </div>
     );
   }
@@ -146,7 +148,7 @@ export const FilamentDetailPage: React.FC = () => {
   if (filamentError || !filament) {
     return (
       <div className="flex items-center justify-center min-h-[400px]">
-        <div className="text-red-400 text-xl">Материал не найден</div>
+        <div className="text-red-400 text-xl">{t('filamentDetailPage.materialNotFound')}</div>
       </div>
     );
   }
@@ -241,7 +243,7 @@ export const FilamentDetailPage: React.FC = () => {
         className="flex items-center gap-2 text-gray-300 hover:text-white active:text-white transition-colors text-sm md:text-base"
       >
         <ArrowLeft className="w-4 h-4 md:w-5 md:h-5" />
-        <span>{cameFrom === 'profile' ? 'Назад к профилю' : 'Назад к каталогу'}</span>
+        <span>{cameFrom === 'profile' ? t('filamentDetailPage.backToProfile') : t('filamentDetailPage.backToCatalog')}</span>
       </button>
 
       {/* Заголовок */}
@@ -349,7 +351,7 @@ export const FilamentDetailPage: React.FC = () => {
             <div className="flex items-center gap-2 md:gap-3 text-gray-300">
               <Ruler className="w-4 h-4 md:w-5 md:h-5 text-purple-400" />
               <div>
-                <div className="text-[10px] md:text-sm">Диаметр</div>
+                <div className="text-[10px] md:text-sm">{t('filamentDetailPage.diameter')}</div>
                 <div className="text-base md:text-xl font-bold text-white">{filament.diameter}mm</div>
               </div>
             </div>
@@ -358,7 +360,7 @@ export const FilamentDetailPage: React.FC = () => {
             <div className="flex items-center gap-2 md:gap-3 text-gray-300">
               <Package className="w-4 h-4 md:w-5 md:h-5 text-blue-400" />
               <div>
-                <div className="text-[10px] md:text-sm">Плотность</div>
+                <div className="text-[10px] md:text-sm">{t('filamentDetailPage.density')}</div>
                 <div className="text-base md:text-xl font-bold text-white">{filament.density}</div>
               </div>
             </div>
@@ -373,7 +375,7 @@ export const FilamentDetailPage: React.FC = () => {
                 style={{ backgroundColor: filament.color_hex || '#FFFFFF' }}
               />
               <div>
-                <div className="text-[10px] md:text-sm">Цвет</div>
+                <div className="text-[10px] md:text-sm">{t('filamentDetailPage.color')}</div>
                 <div className="text-base md:text-xl font-bold text-white">{filament.color_name || '—'}</div>
               </div>
             </div>
@@ -381,7 +383,7 @@ export const FilamentDetailPage: React.FC = () => {
           <div className="flex items-center gap-2 md:gap-3 text-gray-300">
             <QrCode className="w-4 h-4 md:w-5 md:h-5 text-green-400" />
             <div>
-              <div className="text-[10px] md:text-sm">Сканов</div>
+              <div className="text-[10px] md:text-sm">{t('filamentDetailPage.scans')}</div>
               <div className="text-base md:text-xl font-bold text-white">{filament.scans_count || 0}</div>
             </div>
           </div>
@@ -394,9 +396,9 @@ export const FilamentDetailPage: React.FC = () => {
               <button
                 disabled
                 className="flex-1 bg-gray-600/50 text-white py-4 px-8 rounded-xl cursor-not-allowed text-lg font-semibold"
-                title="Необходимо войти в систему"
+                title={t('filamentDetailPage.loginRequired')}
               >
-                Войдите, чтобы добавить
+                {t('filamentDetailPage.loginToAdd')}
               </button>
             ) : isOfficialPresetOwn ? (
               <button
@@ -404,7 +406,7 @@ export const FilamentDetailPage: React.FC = () => {
                 className="flex-1 bg-purple-600/50 text-white py-4 px-8 rounded-xl cursor-not-allowed text-lg font-semibold flex items-center justify-center"
               >
                 <CheckCircle className="w-6 h-6 mr-2" />
-                Ваш пресет
+                {t('filamentDetailPage.yourPreset')}
               </button>
             ) : isOfficialPresetSaved ? (
               <button
@@ -412,7 +414,7 @@ export const FilamentDetailPage: React.FC = () => {
                 className="flex-1 bg-green-600/50 text-white py-4 px-8 rounded-xl cursor-not-allowed text-lg font-semibold flex items-center justify-center"
               >
                 <CheckCircle className="w-6 h-6 mr-2" />
-                Добавлено
+                {t('filamentDetailPage.added')}
               </button>
             ) : (
               <button
@@ -420,7 +422,7 @@ export const FilamentDetailPage: React.FC = () => {
                 disabled={savePresetMutation.isPending}
                 className="flex-1 bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white py-4 px-8 rounded-xl transition-all shadow-lg shadow-purple-500/25 hover:shadow-purple-500/40 text-lg font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                {savePresetMutation.isPending ? 'Сохранение...' : 'Добавить в профиль'}
+                {savePresetMutation.isPending ? t('filamentDetailPage.saving') : t('filamentDetailPage.addToProfile')}
               </button>
             )
           ) : (
@@ -428,7 +430,7 @@ export const FilamentDetailPage: React.FC = () => {
               disabled
               className="flex-1 bg-gray-600/50 text-white py-4 px-8 rounded-xl cursor-not-allowed text-lg font-semibold"
             >
-              Нет пресетов
+              {t('filamentDetailPage.noPresets')}
             </button>
           )}
           <button
@@ -507,7 +509,7 @@ export const FilamentDetailPage: React.FC = () => {
             }`}
           >
             <Settings className="w-5 h-5 inline mr-2" />
-            Пресеты ({presetsData?.total || 0})
+            {t('filamentDetailPage.presetsCount', { count: presetsData?.total || 0 })}
           </button>
           <button
             onClick={() => setActiveTab('reviews')}
@@ -518,7 +520,7 @@ export const FilamentDetailPage: React.FC = () => {
             }`}
           >
             <MessageCircle className="w-5 h-5 inline mr-2" />
-            Отзывы ({ratingStats?.total_reviews || 0})
+            {t('filamentDetailPage.reviewsCount', { count: ratingStats?.total_reviews || 0 })}
           </button>
         </div>
 
@@ -946,7 +948,7 @@ export const FilamentDetailPage: React.FC = () => {
                             className="w-full bg-purple-600/50 text-white py-2 px-4 rounded-lg cursor-not-allowed flex items-center justify-center"
                           >
                             <CheckCircle className="w-5 h-5 mr-2" />
-                            Ваш пресет
+                            {t('filamentDetailPage.yourPreset')}
                           </button>
                         ) : isPresetSaved ? (
                           <button
@@ -954,7 +956,7 @@ export const FilamentDetailPage: React.FC = () => {
                             className="w-full bg-green-600/50 text-white py-2 px-4 rounded-lg cursor-not-allowed flex items-center justify-center"
                           >
                             <CheckCircle className="w-5 h-5 mr-2" />
-                            Добавлено
+                            {t('filamentDetailPage.added')}
                           </button>
                         ) : (
                           <button
@@ -965,7 +967,7 @@ export const FilamentDetailPage: React.FC = () => {
                             disabled={savePresetMutation.isPending}
                             className="w-full bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white py-2 px-4 rounded-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed"
                           >
-                            {savePresetMutation.isPending ? 'Сохранение...' : 'Добавить в профиль'}
+                            {savePresetMutation.isPending ? t('filamentDetailPage.saving') : t('filamentDetailPage.addToProfile')}
                           </button>
                         )}
                       </div>

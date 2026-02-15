@@ -652,5 +652,26 @@
     "marked": "Отмечено",
     "helpful": "Полезно",
     "leaveFeedback": "Оставить отзыв"
+  },
+  "filamentDetailPage": {
+    "loginRequired": "Необходимо войти в систему",
+    "errorSavingPreset": "Не удалось добавить пресет в профиль",
+    "confirmDeleteReview": "Вы уверены, что хотите удалить этот отзыв?",
+    "loadingMaterial": "Загрузка материала...",
+    "materialNotFound": "Материал не найден",
+    "backToProfile": "Назад к профилю",
+    "backToCatalog": "Назад к каталогу",
+    "diameter": "Диаметр",
+    "density": "Плотность",
+    "color": "Цвет",
+    "scans": "Сканов",
+    "loginToAdd": "Войдите, чтобы добавить",
+    "yourPreset": "Ваш пресет",
+    "added": "Добавлено",
+    "saving": "Сохранение...",
+    "addToProfile": "Добавить в профиль",
+    "noPresets": "Нет пресетов",
+    "presetsCount": "Пресеты ({{count}})",
+    "reviewsCount": "Отзывы ({{count}})"
   }
 }
