@@ -1,6 +1,7 @@
 /** Страница категории Wiki - список статей в категории */
 
 import { useState, useEffect } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useParams, useNavigate } from 'react-router-dom';
 import { BookOpen, ArrowLeft, Eye, Clock, User, Loader2, AlertCircle } from 'lucide-react';
 import { wikiAPI } from '../api/client';
@@ -9,6 +10,7 @@ import type { WikiCategory, WikiArticleSummary } from '../types/api';
 import * as LucideIcons from 'lucide-react';
 
 export function WikiCategoryPage() {
+  const { t } = useTranslation();
   const { slug } = useParams<{ slug: string }>();
   const navigate = useNavigate();
 
@@ -35,7 +37,7 @@ export function WikiCategoryPage() {
       const foundCategory = categoriesData.items.find((cat: WikiCategory) => cat.slug === slug);
 
       if (!foundCategory) {
-        setError('Категория не найдена');
+        setError(t('wikiCategoryPage.notFound'));
         return;
       }
 
@@ -53,7 +55,7 @@ export function WikiCategoryPage() {
       setTotalPages(articlesData.total_pages);
     } catch (err: any) {
       console.error('Failed to load category:', err);
-      setError('Не удалось загрузить категорию');
+      setError(t('wikiCategoryPage.errorLoadFailed'));
     } finally {
       setIsLoading(false);
     }
@@ -77,12 +79,12 @@ export function WikiCategoryPage() {
     return (
       <div className="max-w-4xl mx-auto px-4 md:px-6 py-12 text-center">
         <AlertCircle className="w-16 h-16 text-red-400 mx-auto mb-4" />
-        <h2 className="text-2xl font-bold text-white mb-4">{error || 'Категория не найдена'}</h2>
+        <h2 className="text-2xl font-bold text-white mb-4">{error || t('wikiCategoryPage.notFound')}</h2>
         <button
           onClick={() => navigate('/wiki')}
           className="px-6 py-3 bg-purple-600 hover:bg-purple-700 text-white rounded-lg transition-colors"
         >
-          Вернуться к Wiki
+          {t('wikiCategoryPage.backToWiki')}
         </button>
       </div>
     );
@@ -94,8 +96,8 @@ export function WikiCategoryPage() {
     <>
       {category && (
         <SEOHead
-          title={`${category.name} - Wiki по 3D-печати`}
-          description={category.description || `Статьи о ${category.name.toLowerCase()} в базе знаний FilamentHub`}
+          title={`${category.name} - ${t('wikiCategoryPage.seoSuffix')}`}
+          description={category.description || t('wikiCategoryPage.seoDescription', { name: category.name.toLowerCase() })}
           url={`/wiki/${category.slug}`}
           type="website"
           allowAI={true}
@@ -108,7 +110,7 @@ export function WikiCategoryPage() {
         className="flex items-center gap-2 text-gray-300 hover:text-white mb-6 transition-colors group"
       >
         <ArrowLeft className="w-5 h-5 group-hover:-translate-x-1 transition-transform" />
-        <span>Назад к Вики</span>
+        <span>{t('wikiCategoryPage.backToWiki')}</span>
       </button>
 
       {/* Category Header */}
@@ -121,7 +123,7 @@ export function WikiCategoryPage() {
             <h1 className="text-2xl md:text-4xl font-bold text-white mb-2">{category.name}</h1>
             <p className="text-base md:text-lg text-gray-300 mb-3">{category.description}</p>
             <div className="text-sm text-gray-400">
-              {category.articles_count} {category.articles_count === 1 ? 'статья' : 'статей'}
+              {category.articles_count} {t('wikiPage.articles')}
             </div>
           </div>
         </div>
@@ -131,8 +133,8 @@ export function WikiCategoryPage() {
       {articles.length === 0 ? (
         <div className="text-center py-12 bg-white/5 backdrop-blur-sm rounded-2xl border border-white/10">
           <BookOpen className="w-16 h-16 text-gray-400 mx-auto mb-4" />
-          <h3 className="text-xl font-semibold text-white mb-2">Статьи отсутствуют</h3>
-          <p className="text-gray-400">В этой категории пока нет опубликованных статей</p>
+          <h3 className="text-xl font-semibold text-white mb-2">{t('wikiCategoryPage.noArticlesTitle')}</h3>
+          <p className="text-gray-400">{t('wikiCategoryPage.noArticlesDesc')}</p>
         </div>
       ) : (
         <>
@@ -157,7 +159,7 @@ export function WikiCategoryPage() {
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-1">
                       <Eye className="w-3.5 h-3.5" />
-                      <span>{article.views} просмотров</span>
+                      <span>{article.views} {t('wikiCategoryPage.views')}</span>
                     </div>
                     <div className="flex items-center gap-1">
                       <Clock className="w-3.5 h-3.5" />
@@ -199,7 +201,7 @@ export function WikiCategoryPage() {
                 disabled={currentPage === 1}
                 className="px-4 py-2 bg-white/10 hover:bg-white/15 disabled:bg-white/5 disabled:text-gray-600 text-white rounded-lg transition-colors disabled:cursor-not-allowed"
               >
-                Назад
+                {t('wikiCategoryPage.paginationBack')}
               </button>
 
               <div className="flex items-center gap-2">
@@ -236,7 +238,7 @@ export function WikiCategoryPage() {
                 disabled={currentPage === totalPages}
                 className="px-4 py-2 bg-white/10 hover:bg-white/15 disabled:bg-white/5 disabled:text-gray-600 text-white rounded-lg transition-colors disabled:cursor-not-allowed"
               >
-                Вперёд
+                {t('wikiCategoryPage.paginationForward')}
               </button>
             </div>
           )}

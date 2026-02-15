@@ -591,5 +591,44 @@
     "faq6A1_post": " (Intel and Apple Silicon) build will come later.",
     "faq6A2_bold": "Build status:",
     "faq6A2_text": "Windows (installer + portable) and Linux (AppImage) are ready to use. macOS will come later (building requires the corresponding system). You can also build a version for your platform yourself from source code — instructions are in the repository."
+  },
+  "wikiPage": {
+    "seoTitle": "3D Printing Wiki",
+    "seoDescription": "Knowledge base about 3D printing: materials, settings, troubleshooting. Guides for beginners and professionals.",
+    "seoKeywords": "3D printing, Wiki, guides, materials, print settings, troubleshooting, PLA, PETG, ABS",
+    "title": "3D Print Wiki",
+    "subtitle": "Knowledge base about materials, technologies, and 3D printing troubleshooting",
+    "searchPlaceholder": "Search materials, problems, technologies...",
+    "categories": "Categories",
+    "articles": "articles",
+    "popularArticles": "Popular Articles",
+    "recentArticles": "Recent Articles",
+    "emptyTitle": "Wiki in development",
+    "emptyDesc": "Articles about materials and 3D printing technologies will appear here soon",
+    "errorLoadFailed": "Failed to load Wiki data",
+    "retry": "Retry"
+  },
+  "wikiCategoryPage": {
+    "notFound": "Category not found",
+    "errorLoadFailed": "Failed to load category",
+    "backToWiki": "Back to Wiki",
+    "seoSuffix": "3D Printing Wiki",
+    "seoDescription": "Articles about {{name}} in FilamentHub knowledge base",
+    "noArticlesTitle": "No articles",
+    "noArticlesDesc": "There are no published articles in this category yet",
+    "views": "views",
+    "paginationBack": "Back",
+    "paginationForward": "Next"
+  },
+  "wikiArticlePage": {
+    "notFound": "Article not found",
+    "errorLoadFailed": "Failed to load article",
+    "backToWiki": "Back to Wiki",
+    "back": "Back",
+    "views": "views",
+    "wasHelpful": "Was this article helpful?",
+    "marked": "Marked",
+    "helpful": "Helpful",
+    "leaveFeedback": "Leave Feedback"
   }
 }

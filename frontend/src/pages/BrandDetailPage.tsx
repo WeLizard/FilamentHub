@@ -1,6 +1,7 @@
 /** Страница бренда с карточкой и списком филаментов */
 
 import { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import {
@@ -20,6 +21,7 @@ import { Dropdown } from '../components/Dropdown';
 import type { Filament } from '../types/api';
 
 export const BrandDetailPage: React.FC = () => {
+  const { t } = useTranslation();
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const [searchQuery, setSearchQuery] = useState('');
@@ -57,7 +59,7 @@ export const BrandDetailPage: React.FC = () => {
   if (isLoadingBrand) {
     return (
       <div className="flex items-center justify-center min-h-[400px]">
-        <div className="text-gray-400 text-xl">Загрузка информации о бренде...</div>
+        <div className="text-gray-400 text-xl">{t('brandDetailPage.loading')}</div>
       </div>
     );
   }
@@ -65,7 +67,7 @@ export const BrandDetailPage: React.FC = () => {
   if (brandError || !brand) {
     return (
       <div className="flex items-center justify-center min-h-[400px]">
-        <div className="text-red-400 text-xl">Бренд не найден</div>
+        <div className="text-red-400 text-xl">{t('brandDetailPage.notFound')}</div>
       </div>
     );
   }
@@ -101,7 +103,7 @@ export const BrandDetailPage: React.FC = () => {
         className="flex items-center space-x-2 text-gray-300 hover:text-white transition-colors"
       >
         <ArrowLeft className="w-5 h-5" />
-        <span>Назад</span>
+        <span>{t('brandDetailPage.back')}</span>
       </button>
 
       {/* Карточка бренда */}
@@ -127,7 +129,7 @@ export const BrandDetailPage: React.FC = () => {
               {brand.verified && (
                 <span className="flex items-center space-x-1 px-3 py-1 bg-green-500/20 text-green-400 rounded-full border border-green-500/30">
                   <Shield className="w-4 h-4" />
-                  <span className="text-sm font-semibold">Верифицирован</span>
+                  <span className="text-sm font-semibold">{t('brandDetailPage.verified')}</span>
                 </span>
               )}
             </div>
@@ -141,13 +143,13 @@ export const BrandDetailPage: React.FC = () => {
               <div className="flex items-center space-x-2 text-gray-300">
                 <Package className="w-5 h-5 text-purple-400" />
                 <span className="font-semibold text-white">{totalFilaments}</span>
-                <span>филаментов</span>
+                <span>{t('brandDetailPage.filaments')}</span>
               </div>
               {avgRating > 0 && (
                 <div className="flex items-center space-x-2 text-gray-300">
                   <Star className="w-5 h-5 text-yellow-400 fill-current" />
                   <span className="font-semibold text-white">{avgRating.toFixed(1)}</span>
-                  <span>средний рейтинг</span>
+                  <span>{t('brandDetailPage.avgRating')}</span>
                 </div>
               )}
             </div>
@@ -162,7 +164,7 @@ export const BrandDetailPage: React.FC = () => {
                   className="flex items-center space-x-2 px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg transition-all"
                 >
                   <ExternalLink className="w-4 h-4" />
-                  <span>Сайт производителя</span>
+                  <span>{t('brandDetailPage.website')}</span>
                 </a>
               )}
             </div>
@@ -180,7 +182,7 @@ export const BrandDetailPage: React.FC = () => {
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Поиск по названию филамента..."
+              placeholder={t('brandDetailPage.searchPlaceholder')}
               className="w-full pl-10 pr-4 py-3 bg-white/5 border border-white/20 rounded-xl text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500"
             />
           </div>
@@ -191,11 +193,11 @@ export const BrandDetailPage: React.FC = () => {
               label=""
               value={materialTypeFilter || ''}
               options={[
-                { value: '', label: 'Все материалы' },
+                { value: '', label: t('brandDetailPage.allMaterials') },
                 ...materialTypes.map((type) => ({ value: type, label: type })),
               ]}
               onChange={(val) => setMaterialTypeFilter(val === '' ? null : String(val))}
-              placeholder="Тип материала"
+              placeholder={t('brandDetailPage.materialType')}
             />
           </div>
         </div>
@@ -203,13 +205,13 @@ export const BrandDetailPage: React.FC = () => {
 
       {/* Список филаментов */}
       {isLoadingFilaments ? (
-        <div className="text-center py-12 text-gray-400">Загрузка филаментов...</div>
+        <div className="text-center py-12 text-gray-400">{t('brandDetailPage.loadingFilaments')}</div>
       ) : filamentsError ? (
-        <div className="text-center py-12 text-red-400">Ошибка загрузки филаментов</div>
+        <div className="text-center py-12 text-red-400">{t('brandDetailPage.errorLoadingFilaments')}</div>
       ) : filteredFilaments.length === 0 ? (
         <div className="text-center py-12">
           <Package className="w-16 h-16 text-gray-400 mx-auto mb-4" />
-          <p className="text-gray-400 text-xl">Филаменты не найдены</p>
+          <p className="text-gray-400 text-xl">{t('brandDetailPage.noFilamentsFound')}</p>
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
@@ -245,21 +247,21 @@ export const BrandDetailPage: React.FC = () => {
               <div className="space-y-2 text-sm">
                 {filament.diameter && (
                   <div className="flex items-center justify-between text-gray-300">
-                    <span>Диаметр:</span>
+                    <span>{t('brandDetailPage.diameter')}</span>
                     <span className="text-white">{filament.diameter}mm</span>
                   </div>
                 )}
                 {filament.density && (
                   <div className="flex items-center justify-between text-gray-300">
-                    <span>Плотность:</span>
+                    <span>{t('brandDetailPage.density')}</span>
                     <span className="text-white">{filament.density}g/cm³</span>
                   </div>
                 )}
                 {filament.price_per_kg && (
                   <div className="flex items-center justify-between text-gray-300">
-                    <span>Цена:</span>
+                    <span>{t('brandDetailPage.price')}</span>
                     <span className="text-green-400 font-semibold">
-                      {Math.round(filament.price_per_kg)}₽/кг
+                      {Math.round(filament.price_per_kg)}{t('brandDetailPage.priceSuffix')}
                     </span>
                   </div>
                 )}

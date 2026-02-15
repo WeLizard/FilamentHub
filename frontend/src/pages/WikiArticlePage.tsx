@@ -1,6 +1,7 @@
 /** Страница статьи Wiki - полный текст с Markdown */
 
 import React, { useState, useEffect, useRef, Children } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
@@ -60,6 +61,7 @@ function MermaidDiagram({ chart, id }: { chart: string; id: string }) {
 }
 
 export function WikiArticlePage() {
+  const { t } = useTranslation();
   const { slug } = useParams<{ slug: string }>();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
@@ -128,9 +130,9 @@ export function WikiArticlePage() {
     } catch (err: any) {
       console.error('Failed to load article:', err);
       if (err.response?.status === 404) {
-        setError('Статья не найдена');
+        setError(t('wikiArticlePage.notFound'));
       } else {
-        setError('Не удалось загрузить статью');
+        setError(t('wikiArticlePage.errorLoadFailed'));
       }
     } finally {
       setIsLoading(false);
@@ -192,12 +194,12 @@ export function WikiArticlePage() {
     return (
       <div className="max-w-4xl mx-auto px-4 md:px-6 py-12 text-center">
         <AlertCircle className="w-16 h-16 text-red-400 mx-auto mb-4" />
-        <h2 className="text-2xl font-bold text-white mb-4">{error || 'Статья не найдена'}</h2>
+        <h2 className="text-2xl font-bold text-white mb-4">{error || t('wikiArticlePage.notFound')}</h2>
         <button
           onClick={() => navigate('/wiki')}
           className="px-6 py-3 bg-purple-600 hover:bg-purple-700 text-white rounded-lg transition-colors"
         >
-          Вернуться к Вики
+          {t('wikiArticlePage.backToWiki')}
         </button>
       </div>
     );
@@ -229,7 +231,7 @@ export function WikiArticlePage() {
           '@type': 'WebPage',
           '@id': `https://filamenthub.ru/wiki/articles/${article.slug}`,
         },
-        articleSection: article.category_name || 'Вики',
+        articleSection: article.category_name || 'Wiki',
         keywords: article.tags?.join(', ') || '',
       }
     : undefined;
@@ -270,7 +272,7 @@ export function WikiArticlePage() {
                 className="flex items-center gap-2 text-gray-300 hover:text-white transition-colors group"
               >
                 <ArrowLeft className="w-5 h-5 group-hover:-translate-x-1 transition-transform" />
-                <span className="hidden sm:inline">Назад</span>
+                <span className="hidden sm:inline">{t('wikiArticlePage.back')}</span>
               </button>
 
               <ShareMenu title={article.title} description={article.summary} />
@@ -312,7 +314,7 @@ export function WikiArticlePage() {
                 </div>
                 <div className="flex items-center gap-2">
                   <Eye className="w-4 h-4" />
-                  <span>{article.views} просмотров</span>
+                  <span>{article.views} {t('wikiArticlePage.views')}</span>
                 </div>
               </div>
 
@@ -509,7 +511,7 @@ export function WikiArticlePage() {
             {/* Article Footer - Feedback Section */}
             <div className="flex flex-col sm:flex-row items-center justify-between gap-4 p-6 bg-white/5 backdrop-blur-sm border border-white/10 rounded-xl mb-8">
               <div className="text-gray-400 text-sm font-medium">
-                Была ли эта статья полезна?
+                {t('wikiArticlePage.wasHelpful')}
               </div>
               <div className="flex items-center gap-3">
                 {/* Кнопка "Полезно" - доступна всем */}
@@ -528,7 +530,7 @@ export function WikiArticlePage() {
                     <ThumbsUp className="w-4 h-4" />
                   )}
                   <span>
-                    {feedbackStats?.user_marked_helpful ? 'Отмечено' : 'Полезно'}
+                    {feedbackStats?.user_marked_helpful ? t('wikiArticlePage.marked') : t('wikiArticlePage.helpful')}
                     {feedbackStats && feedbackStats.helpful_count > 0 && (
                       <span className="ml-1.5 text-green-400/80">
                         ({feedbackStats.helpful_count})
@@ -544,7 +546,7 @@ export function WikiArticlePage() {
                     className="flex items-center gap-2 px-5 py-2.5 bg-white/10 hover:bg-white/15 text-gray-300 rounded-lg transition-colors border border-white/20 font-medium"
                   >
                     <MessageSquare className="w-4 h-4" />
-                    <span>Оставить отзыв</span>
+                    <span>{t('wikiArticlePage.leaveFeedback')}</span>
                   </button>
                 )}
               </div>

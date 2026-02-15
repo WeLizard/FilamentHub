@@ -1,6 +1,7 @@
 /** Главная страница Wiki - каталог знаний о 3D печати */
 
 import { useState, useEffect } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
 import { BookOpen, Search, TrendingUp, Clock, Eye, ChevronRight, Loader2 } from 'lucide-react';
 import { wikiAPI } from '../api/client';
@@ -11,6 +12,7 @@ import type { WikiCategory, WikiArticleSummary } from '../types/api';
 import * as LucideIcons from 'lucide-react';
 
 export function WikiPage() {
+  const { t } = useTranslation();
   const navigate = useNavigate();
   const [categories, setCategories] = useState<WikiCategory[]>([]);
   const [popularArticles, setPopularArticles] = useState<WikiArticleSummary[]>([]);
@@ -47,7 +49,7 @@ export function WikiPage() {
 
     } catch (err: any) {
       console.error('Failed to load wiki data:', err);
-      setError('Не удалось загрузить данные Вики');
+      setError(t('wikiPage.errorLoadFailed'));
     } finally {
       setIsLoading(false);
     }
@@ -90,7 +92,7 @@ export function WikiPage() {
           onClick={loadData}
           className="mt-4 px-6 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg transition-colors"
         >
-          Повторить попытку
+          {t('wikiPage.retry')}
         </button>
       </div>
     );
@@ -99,9 +101,9 @@ export function WikiPage() {
   return (
     <>
       <SEOHead
-        title="Вики по 3D-печати"
-        description="База знаний о 3D-печати: материалы, настройки, решение проблем. Гайды для новичков и профессионалов."
-        keywords="3D печать, Wiki, гайды, материалы, настройки печати, решение проблем, PLA, PETG, ABS"
+        title={t('wikiPage.seoTitle')}
+        description={t('wikiPage.seoDescription')}
+        keywords={t('wikiPage.seoKeywords')}
         url="/wiki"
         type="website"
         allowAI={true}
@@ -113,10 +115,10 @@ export function WikiPage() {
           <div className="w-12 h-12 md:w-16 md:h-16 bg-gradient-to-br from-blue-500 to-cyan-500 rounded-xl md:rounded-2xl flex items-center justify-center shadow-lg shadow-blue-500/25">
             <BookOpen className="w-6 h-6 md:w-8 md:h-8 text-white" />
           </div>
-          <h1 className="text-3xl md:text-4xl font-bold text-white">3D Print Вики</h1>
+          <h1 className="text-3xl md:text-4xl font-bold text-white">{t('wikiPage.title')}</h1>
         </div>
         <p className="text-base md:text-xl text-gray-300 max-w-2xl mx-auto">
-          База знаний о материалах, технологиях и решении проблем 3D печати
+          {t('wikiPage.subtitle')}
         </p>
       </div>
 
@@ -126,7 +128,7 @@ export function WikiPage() {
           <Search className="absolute left-4 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
           <input
             type="text"
-            placeholder="Поиск по материалам, проблемам, технологиям..."
+            placeholder={t('wikiPage.searchPlaceholder')}
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             className="w-full pl-12 pr-4 py-4 bg-white/10 backdrop-blur-sm border border-white/20 rounded-xl text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
@@ -138,7 +140,7 @@ export function WikiPage() {
       <div className="mb-12">
         <h2 className="text-2xl font-bold text-white mb-6 flex items-center gap-2">
           <BookOpen className="w-6 h-6 text-blue-400" />
-          Категории
+          {t('wikiPage.categories')}
         </h2>
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
           {categories.map((category) => {
@@ -158,7 +160,7 @@ export function WikiPage() {
                 <h3 className="text-lg font-semibold text-white mb-2">{category.name}</h3>
                 <p className="text-sm text-gray-300 mb-3 line-clamp-2">{category.description}</p>
                 <div className="text-xs text-gray-400">
-                  {category.articles_count} {category.articles_count === 1 ? 'статья' : 'статей'}
+                  {category.articles_count} {t('wikiPage.articles')}
                 </div>
               </button>
             );
@@ -171,7 +173,7 @@ export function WikiPage() {
         <div className="mb-12">
           <h2 className="text-2xl font-bold text-white mb-6 flex items-center gap-2">
             <TrendingUp className="w-6 h-6 text-yellow-400" />
-            Популярные статьи
+            {t('wikiPage.popularArticles')}
           </h2>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
             {popularArticles.map((article) => (
@@ -204,7 +206,7 @@ export function WikiPage() {
         <div>
           <h2 className="text-2xl font-bold text-white mb-6 flex items-center gap-2">
             <Clock className="w-6 h-6 text-green-400" />
-            Недавние статьи
+            {t('wikiPage.recentArticles')}
           </h2>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
             {recentArticles.map((article) => (
@@ -233,9 +235,9 @@ export function WikiPage() {
       {categories.length === 0 && popularArticles.length === 0 && (
         <div className="text-center py-12 bg-white/5 backdrop-blur-sm rounded-2xl border border-white/10">
           <BookOpen className="w-16 h-16 text-gray-400 mx-auto mb-4" />
-          <h3 className="text-xl font-semibold text-white mb-2">Вики в разработке</h3>
+          <h3 className="text-xl font-semibold text-white mb-2">{t('wikiPage.emptyTitle')}</h3>
           <p className="text-gray-400">
-            Скоро здесь появятся статьи о материалах и технологиях 3D печати
+            {t('wikiPage.emptyDesc')}
           </p>
         </div>
       )}
