@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import {
   Search,
   Package,
@@ -32,6 +33,7 @@ import { SEOHead } from '../components/SEOHead';
 import type { Filament, Preset } from '../types/api';
 
 export const CatalogPage: React.FC = () => {
+  const { t } = useTranslation();
   const navigate = useNavigate();
   const { user } = useAuth();
   const queryClient = useQueryClient();
@@ -55,7 +57,7 @@ export const CatalogPage: React.FC = () => {
   const savePresetMutation = useMutation({
     mutationFn: (presetId: number) => {
       if (!user) {
-        throw new Error('Необходимо войти в систему');
+        throw new Error(t('catalogPage.errorLoginRequired'));
       }
       return savedPresetsAPI.save(presetId);
     },
@@ -66,7 +68,7 @@ export const CatalogPage: React.FC = () => {
     },
     onError: (error: any) => {
       console.error('Ошибка сохранения пресета:', error);
-      alert(error.response?.data?.detail || error.message || 'Не удалось добавить пресет в профиль');
+      alert(error.response?.data?.detail || error.message || t('catalogPage.errorSavePreset'));
     },
   });
 
@@ -118,7 +120,7 @@ export const CatalogPage: React.FC = () => {
   if (isLoadingFilaments) {
     return (
       <div className="flex items-center justify-center min-h-[400px]">
-        <div className="text-white text-xl">Загрузка материалов...</div>
+        <div className="text-white text-xl">{t('catalogPage.loading')}</div>
       </div>
     );
   }
@@ -126,7 +128,7 @@ export const CatalogPage: React.FC = () => {
   if (filamentsError) {
     return (
       <div className="flex items-center justify-center min-h-[400px]">
-        <div className="text-red-400 text-xl">Ошибка загрузки материалов</div>
+        <div className="text-red-400 text-xl">{t('catalogPage.error')}</div>
       </div>
     );
   }
@@ -134,9 +136,9 @@ export const CatalogPage: React.FC = () => {
   return (
     <>
       <SEOHead
-        title="Каталог материалов для 3D-печати"
-        description="Найдите идеальные настройки для вашего пластика. Каталог филаментов PLA, PETG, ABS, TPU и других материалов с готовыми пресетами для слайсеров."
-        keywords="каталог филаментов, 3D печать, PLA, PETG, ABS, настройки печати, пресеты слайсера"
+        title={t('catalogPage.seoTitle')}
+        description={t('catalogPage.seoDescription')}
+        keywords={t('catalogPage.seoKeywords')}
         url="/"
         type="website"
         allowAI={true}
@@ -145,10 +147,10 @@ export const CatalogPage: React.FC = () => {
         {/* Hero Section */}
         <div className="text-center mb-6 sm:mb-8">
         <h2 className="text-2xl sm:text-3xl md:text-4xl font-bold text-white mb-3 sm:mb-4 px-2">
-          Найдите идеальные настройки для вашего пластика
+          {t('catalogPage.heroTitle')}
         </h2>
         <p className="text-base sm:text-lg md:text-xl text-gray-300 max-w-3xl mx-auto px-2">
-          База данных материалов с официальными пресетами от производителей и проверенными настройками от сообщества
+          {t('catalogPage.heroSubtitle')}
         </p>
       </div>
 
@@ -205,7 +207,7 @@ export const CatalogPage: React.FC = () => {
             <Search className="absolute left-3 sm:left-4 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
             <input
               type="text"
-              placeholder="Поиск..."
+              placeholder={t('catalogPage.searchPlaceholder')}
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               className="w-full pl-10 sm:pl-12 pr-4 py-3 sm:py-4 bg-white/10 border border-white/20 rounded-xl text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all text-sm sm:text-base"
@@ -218,19 +220,19 @@ export const CatalogPage: React.FC = () => {
               value={materialTypeFilter || ''}
               onChange={(val) => setMaterialTypeFilter(val === '' ? null : (val as string))}
               options={[
-                { value: '', label: 'Все типы' },
+                { value: '', label: t('catalogPage.allTypes') },
                 ...materialTypes.map((type) => ({ value: type, label: type })),
               ]}
-              placeholder="Все типы"
+              placeholder={t('catalogPage.allTypes')}
             />
             <Dropdown
               value={brandFilter || ''}
               onChange={(val) => setBrandFilter(val === '' ? null : Number(val))}
               options={[
-                { value: '', label: 'Все бренды' },
+                { value: '', label: t('catalogPage.allBrands') },
                 ...(brandsData?.items.map((brand) => ({ value: brand.id, label: brand.name })) || []),
               ]}
-              placeholder="Все бренды"
+              placeholder={t('catalogPage.allBrands')}
             />
           </div>
         </div>
@@ -256,7 +258,7 @@ export const CatalogPage: React.FC = () => {
       {filteredFilaments.length === 0 && (
         <div className="text-center py-12">
           <Package className="w-16 h-16 text-gray-400 mx-auto mb-4" />
-          <p className="text-gray-400 text-xl">Материалы не найдены</p>
+          <p className="text-gray-400 text-xl">{t('catalogPage.noResults')}</p>
         </div>
       )}
       </div>
@@ -285,6 +287,7 @@ const MaterialCard: React.FC<MaterialCardProps> = ({
   onClick,
   savedPresetIds,
 }) => {
+  const { t } = useTranslation();
   const navigate = useNavigate();
   const [currentPresetIndex, setCurrentPresetIndex] = useState(0);
   const presetSummaries = filament.preset_summaries && filament.preset_summaries.length > 0
@@ -324,9 +327,9 @@ const MaterialCard: React.FC<MaterialCardProps> = ({
   };
 
   const formatFanSpeed = (value: number | null | undefined) => {
-    if (value === null || value === undefined) return 'нет';
+    if (value === null || value === undefined) return t('catalogPage.fanNo');
     const rounded = Math.round(value);
-    return rounded > 0 ? `${rounded}%` : 'нет';
+    return rounded > 0 ? `${rounded}%` : t('catalogPage.fanNo');
   };
 
   const formatFlowRate = (value: number | null | undefined) => {
@@ -345,12 +348,12 @@ const MaterialCard: React.FC<MaterialCardProps> = ({
 
   const getPresetTypeBadge = (presetType: string | undefined, isOfficial: boolean, isWeighted: boolean) => {
     if (presetType === 'official' || isOfficial) {
-      return { label: 'Официальный', className: 'bg-green-500/20 text-green-200 border-green-500/30' };
+      return { label: t('catalogPage.badgeOfficial'), className: 'bg-green-500/20 text-green-200 border-green-500/30' };
     }
     if (presetType === 'weighted' || isWeighted) {
-      return { label: 'Генеративный', className: 'bg-yellow-500/20 text-yellow-200 border-yellow-500/30' };
+      return { label: t('catalogPage.badgeWeighted'), className: 'bg-yellow-500/20 text-yellow-200 border-yellow-500/30' };
     }
-    return { label: 'Сообщество', className: 'bg-blue-500/20 text-blue-200 border-blue-500/30' };
+    return { label: t('catalogPage.badgeCommunity'), className: 'bg-blue-500/20 text-blue-200 border-blue-500/30' };
   };
 
   const handleSavePreset = (e: React.MouseEvent) => {
@@ -450,14 +453,14 @@ const MaterialCard: React.FC<MaterialCardProps> = ({
         {filament.diameter && (
           <div className="flex items-center gap-1 bg-white/5 border border-white/10 rounded-full px-2 sm:px-3 py-0.5 sm:py-1">
             <Ruler className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-purple-300" />
-            <span className="hidden sm:inline uppercase tracking-wide text-[11px]">Диаметр</span>
+            <span className="hidden sm:inline uppercase tracking-wide text-[11px]">{t('catalogPage.diameter')}</span>
             <span className="text-white font-semibold text-[10px] sm:text-xs">{filament.diameter} мм</span>
           </div>
         )}
         {filament.density && (
           <div className="flex items-center gap-1 bg-white/5 border border-white/10 rounded-full px-2 sm:px-3 py-0.5 sm:py-1">
             <Droplet className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-blue-300" />
-            <span className="hidden sm:inline uppercase tracking-wide text-[11px]">Плотность</span>
+            <span className="hidden sm:inline uppercase tracking-wide text-[11px]">{t('catalogPage.density')}</span>
             <span className="text-white font-semibold text-[10px] sm:text-xs">{filament.density} г/см³</span>
           </div>
         )}
@@ -481,7 +484,7 @@ const MaterialCard: React.FC<MaterialCardProps> = ({
                 </span>
               )}
               <h4 className="text-sm sm:text-base font-semibold text-white truncate max-w-[150px] sm:max-w-none">{currentPreset.name}</h4>
-              <span className="text-gray-400 text-[10px] sm:text-xs hidden sm:inline">· обновлён {formatUpdatedAt(currentPreset.updated_at)}</span>
+              <span className="text-gray-400 text-[10px] sm:text-xs hidden sm:inline">· {t('catalogPage.updatedAt')} {formatUpdatedAt(currentPreset.updated_at)}</span>
             </div>
             <div className="flex items-center gap-2 sm:gap-3 text-[10px] sm:text-sm text-gray-300">
               <span>
@@ -557,7 +560,7 @@ const MaterialCard: React.FC<MaterialCardProps> = ({
                 disabled={isPresetSaved}
               >
                 {isPresetSaved ? '✓' : '+'}
-                <span className="hidden sm:inline ml-1">{isPresetSaved ? 'Добавлено' : 'В профиль'}</span>
+                <span className="hidden sm:inline ml-1">{isPresetSaved ? t('catalogPage.addedToProfile') : t('catalogPage.addToProfile')}</span>
               </button>
             </div>
           </div>
@@ -585,10 +588,10 @@ const MaterialCard: React.FC<MaterialCardProps> = ({
               alt={`QR-код для ${filament.name}`}
               className="w-48 h-48 mx-auto mb-3 rounded-lg bg-white p-2"
             />
-            <p className="text-gray-300 text-sm font-medium mb-1">QR-код: {filament.qr_code}</p>
-            <p className="text-gray-400 text-xs">Сканируйте для быстрого импорта настроек</p>
+            <p className="text-gray-300 text-sm font-medium mb-1">{t('catalogPage.qrCode')} {filament.qr_code}</p>
+            <p className="text-gray-400 text-xs">{t('catalogPage.qrScanHint')}</p>
             <p className="text-gray-500 text-xs mt-1">
-              Сканирований: {filament.scans_count || 0}
+              {t('catalogPage.qrScans')} {filament.scans_count || 0}
             </p>
           </div>
         </div>

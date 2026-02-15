@@ -458,5 +458,32 @@
     "toHome": "To Home",
     "toProfile": "Profile",
     "logout": "Logout"
+  },
+  "catalogPage": {
+    "seoTitle": "3D Printing Materials Catalog",
+    "seoDescription": "Find perfect settings for your filament. Catalog of PLA, PETG, ABS, TPU and other materials with ready-to-use slicer presets.",
+    "seoKeywords": "filament catalog, 3D printing, PLA, PETG, ABS, print settings, slicer presets",
+    "heroTitle": "Find perfect settings for your filament",
+    "heroSubtitle": "Materials database with official manufacturer presets and community-verified settings",
+    "loading": "Loading materials...",
+    "error": "Error loading materials",
+    "searchPlaceholder": "Search...",
+    "allTypes": "All types",
+    "allBrands": "All brands",
+    "noResults": "No materials found",
+    "errorLoginRequired": "Login required",
+    "errorSavePreset": "Failed to add preset to profile",
+    "diameter": "Diameter",
+    "density": "Density",
+    "fanNo": "off",
+    "updatedAt": "updated",
+    "badgeOfficial": "Official",
+    "badgeWeighted": "Generated",
+    "badgeCommunity": "Community",
+    "addedToProfile": "Added",
+    "addToProfile": "To profile",
+    "qrCode": "QR code:",
+    "qrScanHint": "Scan for quick settings import",
+    "qrScans": "Scans:"
   }
 }
