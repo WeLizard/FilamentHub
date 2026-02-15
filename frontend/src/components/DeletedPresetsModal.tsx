@@ -8,6 +8,8 @@ import { orcaslicerDeletedPresetsAPI, notificationsAPI } from '../api/client';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { Notification } from '../types/api';
 
+import { useTranslation } from 'react-i18next';
+
 interface DeletedPreset {
   preset_id: number;
   preset_name: string;
@@ -27,6 +29,7 @@ export const DeletedPresetsModal: React.FC<DeletedPresetsModalProps> = ({
   onClose,
   notification: initialNotification,
 }) => {
+  const { t } = useTranslation();
   const isHeaderVisible = useHeaderVisible();
   const queryClient = useQueryClient();
   const [selectedPresetIds, setSelectedPresetIds] = useState<Set<number>>(new Set());
@@ -85,7 +88,11 @@ export const DeletedPresetsModal: React.FC<DeletedPresetsModalProps> = ({
     }
   }, [isOpen]);
 
-  if (!isOpen || !notification.extra_data) return null;
+  if (!isOpen || !notification.extra_data) {
+    if (!isOpen) return null;
+    console.error(t('deletedPresetsModal.extra_data_not_found'));
+    return null;
+  }
 
   const handleTogglePreset = (presetId: number) => {
     const newSelected = new Set(selectedPresetIds);
@@ -119,8 +126,6 @@ export const DeletedPresetsModal: React.FC<DeletedPresetsModalProps> = ({
       return orcaslicerDeletedPresetsAPI.handleAction(notification.id, actionData);
     },
     onSuccess: async (response) => {
-      console.log('Действие успешно применено:', response);
-      
       // Оптимистичное обновление - сразу удаляем обработанные пресеты из списка
       const processedIds = Array.from(selectedPresetIds);
       setProcessedPresetIds((prev) => {
@@ -130,15 +135,23 @@ export const DeletedPresetsModal: React.FC<DeletedPresetsModalProps> = ({
       });
       
       // Показываем сообщение об успехе
-      const actionLabels = {
-        restore: 'возвращены в OrcaSlicer',
-        delete: 'убран из "Профили филамента"',
-        skip: 'обработаны',
-      };
-      const currentAction = action; // Сохраняем action до сброса
-      const actionLabel = currentAction ? actionLabels[currentAction] || 'обработаны' : 'обработаны';
       const count = processedIds.length;
-      setSuccessMessage(`${count} ${count === 1 ? 'пресет' : count < 5 ? 'пресета' : 'пресетов'} ${actionLabel}`);
+      const actionLabels = {
+        restore: t('deletedPresetsModal.success_message_restore_other', {count: count}),
+        delete: t('deletedPresetsModal.success_message_delete_other', {count: count}),
+        skip: t('deletedPresetsModal.success_message_skip_other', {count: count}),
+      };
+      
+      if (count === 1) {
+        actionLabels.restore = t('deletedPresetsModal.success_message_restore_one');
+        actionLabels.delete = t('deletedPresetsModal.success_message_delete_one');
+        actionLabels.skip = t('deletedPresetsModal.success_message_skip_one');
+      }
+
+      const currentAction = action; // Сохраняем action до сброса
+      const actionLabel = currentAction ? actionLabels[currentAction] || t('deletedPresetsModal.success_message_skip_other', {count: count}) : t('deletedPresetsModal.success_message_skip_other', {count: count});
+      
+      setSuccessMessage(`${actionLabel}`);
       
       // Убираем сообщение через 3 секунды
       setTimeout(() => setSuccessMessage(null), 3000);
@@ -166,15 +179,13 @@ export const DeletedPresetsModal: React.FC<DeletedPresetsModalProps> = ({
           setTimeout(() => {
             onClose();
           }, 1500);
-        } catch (error) {
-          console.error('Ошибка при удалении уведомления:', error);
-        }
+              } catch (error) {
+                console.error(t('deletedPresetsModal.error_deleting_notification'), error);        }
       }
     },
     onError: (error: any) => {
-      console.error('Ошибка при обработке действия:', error);
-      const errorMessage = error?.response?.data?.detail || error?.message || 'Неизвестная ошибка';
-      alert(`Ошибка при обработке действия: ${errorMessage}`);
+      console.error(t('deletedPresetsModal.error_handling_action', {message: error?.response?.data?.detail || error?.message || t('deletedPresetsModal.error_unknown')}));
+      alert(t('deletedPresetsModal.error_handling_action', {message: error?.response?.data?.detail || error?.message || t('deletedPresetsModal.error_unknown')}));
     },
   });
 
@@ -191,25 +202,20 @@ export const DeletedPresetsModal: React.FC<DeletedPresetsModalProps> = ({
 
   const handleApplyAction = () => {
     if (!action) {
-      console.warn('Действие не выбрано');
+      console.warn(t('deletedPresetsModal.warning_no_action_selected'));
       return;
     }
 
     if (selectedPresetIds.size === 0) {
-      console.warn('Не выбраны пресеты');
-      alert('Пожалуйста, выберите хотя бы один пресет');
+      console.warn(t('deletedPresetsModal.warning_no_presets_selected'));
+      alert(t('deletedPresetsModal.warning_no_presets_selected'));
       return;
     }
 
     const presetIds = Array.from(selectedPresetIds);
     const applyToAll = presetIds.length === deletedPresets.length;
 
-    console.log('Применяю действие:', {
-      action,
-      presetIds,
-      applyToAll,
-      saveRule,
-    });
+
 
     handleActionMutation.mutate({
       action,
@@ -243,7 +249,7 @@ export const DeletedPresetsModal: React.FC<DeletedPresetsModalProps> = ({
           await queryClient.invalidateQueries({ queryKey: ['notifications'] });
         }
       } catch (error) {
-        console.error('Ошибка при автоматической обработке пресетов:', error);
+        console.error(t('deletedPresetsModal.error_auto_handling_presets'), error);
       }
     }
     
@@ -254,24 +260,24 @@ export const DeletedPresetsModal: React.FC<DeletedPresetsModalProps> = ({
     const configs = {
       restore: {
         icon: <RotateCcw className="w-4 h-4" />,
-        label: 'Вернуть в OrcaSlicer',
+        label: t('deletedPresetsModal.action_restore_label'),
         bg: 'bg-blue-600 hover:bg-blue-700',
-        shortDescription: 'Пресет появится в OrcaSlicer снова',
-        fullDescription: 'Пресет вернётся в OrcaSlicer при следующей синхронизации. Останется доступен в FilamentHub.',
+        shortDescription: t('deletedPresetsModal.action_restore_short'),
+        fullDescription: t('deletedPresetsModal.action_restore_full'),
       },
       delete: {
         icon: <Trash2 className="w-4 h-4" />,
-        label: 'Убрать из "Профили филамента"',
+        label: t('deletedPresetsModal.action_delete_label'),
         bg: 'bg-red-600 hover:bg-red-700',
-        shortDescription: 'Пресет исчезнет из вашего профиля',
-        fullDescription: 'Пресет будет убран из раздела "Профили филамента". Останется доступен в каталоге FilamentHub. Пресеты, созданные вами, не удаляются.',
+        shortDescription: t('deletedPresetsModal.action_delete_short'),
+        fullDescription: t('deletedPresetsModal.action_delete_full'),
       },
       skip: {
         icon: <SkipForward className="w-4 h-4" />,
-        label: 'Оставить как есть',
+        label: t('deletedPresetsModal.action_skip_label'),
         bg: 'bg-gray-600 hover:bg-gray-700',
-        shortDescription: 'Ничего не делать с пресетом',
-        fullDescription: 'Пресет останется в FilamentHub, но больше не будет синхронизироваться с OrcaSlicer.',
+        shortDescription: t('deletedPresetsModal.action_skip_short'),
+        fullDescription: t('deletedPresetsModal.action_skip_full'),
       },
     };
 
@@ -323,10 +329,9 @@ export const DeletedPresetsModal: React.FC<DeletedPresetsModalProps> = ({
                 </div>
               </div>
               <div>
-                <h3 className="text-xl font-bold text-white">Пресеты удалены в OrcaSlicer</h3>
+                <h3 className="text-xl font-bold text-white">{t('deletedPresetsModal.title')}</h3>
                 <p className="text-sm text-gray-400 mt-1">
-                  Вы удалили {deletedPresets.length} {deletedPresets.length === 1 ? 'пресет' : deletedPresets.length < 5 ? 'пресета' : 'пресетов'} в OrcaSlicer. 
-                  Выберите, что сделать с ними в FilamentHub.
+                  {t('deletedPresetsModal.subtitle', { count: deletedPresets.length })}
                 </p>
               </div>
             </div>
@@ -353,18 +358,18 @@ export const DeletedPresetsModal: React.FC<DeletedPresetsModalProps> = ({
             {/* Stats */}
             <div className="mb-4 p-3 bg-white/5 rounded-lg">
               <div className="flex items-center justify-between text-sm">
-                <span className="text-gray-300">Всего пресетов:</span>
+                <span className="text-gray-300">{t('deletedPresetsModal.stats_total')}</span>
                 <span className="text-white font-semibold">{deletedPresets.length}</span>
               </div>
               {createdCount > 0 && (
                 <div className="flex items-center justify-between text-sm mt-1">
-                  <span className="text-gray-300">Созданных пользователем:</span>
+                  <span className="text-gray-300">{t('deletedPresetsModal.stats_created')}</span>
                   <span className="text-blue-400 font-semibold">{createdCount}</span>
                 </div>
               )}
               {savedCount > 0 && (
                 <div className="flex items-center justify-between text-sm mt-1">
-                  <span className="text-gray-300">Сохранённых из каталога:</span>
+                  <span className="text-gray-300">{t('deletedPresetsModal.stats_saved')}</span>
                   <span className="text-green-400 font-semibold">{savedCount}</span>
                 </div>
               )}
@@ -373,15 +378,15 @@ export const DeletedPresetsModal: React.FC<DeletedPresetsModalProps> = ({
             {/* Presets List */}
             <div className="mb-6">
               <div className="flex items-center justify-between mb-3">
-                <h4 className="text-sm font-semibold text-white">Выберите пресеты:</h4>
+                <h4 className="text-sm font-semibold text-white">{t('deletedPresetsModal.select_presets')}</h4>
                 {deletedPresets.length > 0 && (
                   <button
                     onClick={handleSelectAll}
                     className="text-sm text-purple-400 hover:text-purple-300 transition-colors"
                   >
                     {Array.from(deletedPresets.map((p) => p.preset_id)).every((id) => selectedPresetIds.has(id))
-                      ? 'Снять выделение'
-                      : 'Выбрать все'}
+                      ? t('deletedPresetsModal.deselect_all')
+                      : t('deletedPresetsModal.select_all')}
                   </button>
                 )}
               </div>
@@ -406,18 +411,18 @@ export const DeletedPresetsModal: React.FC<DeletedPresetsModalProps> = ({
                           <span className="text-sm font-medium text-white break-words">{preset.preset_name}</span>
                           {preset.is_created && (
                             <span className="px-1.5 py-0.5 bg-blue-500/20 text-blue-400 text-xs rounded flex-shrink-0">
-                              Создан
+                              {t('deletedPresetsModal.preset_created')}
                             </span>
                           )}
                           {preset.is_saved && (
                             <span className="px-1.5 py-0.5 bg-green-500/20 text-green-400 text-xs rounded flex-shrink-0">
-                              Сохранён
+                              {t('deletedPresetsModal.preset_saved')}
                             </span>
                           )}
                         </div>
                         {preset.bundle_preset_name && (
                           <p className="text-xs text-gray-400 mt-1 break-words">
-                            OrcaSlicer: {preset.bundle_preset_name}
+                            {t('deletedPresetsModal.orcaslicer_prefix')} {preset.bundle_preset_name}
                           </p>
                         )}
                       </div>
@@ -429,7 +434,7 @@ export const DeletedPresetsModal: React.FC<DeletedPresetsModalProps> = ({
 
             {/* Action Selection */}
             <div className="mb-4">
-              <h4 className="text-sm font-semibold text-white mb-3">Что сделать с выбранными пресетами?</h4>
+              <h4 className="text-sm font-semibold text-white mb-3">{t('deletedPresetsModal.action_selection_title')}</h4>
               <div className="grid grid-cols-3 gap-3">
                 {getActionButton('restore')}
                 {getActionButton('delete')}
@@ -438,14 +443,14 @@ export const DeletedPresetsModal: React.FC<DeletedPresetsModalProps> = ({
               {action && (
                 <div className="mt-3 p-3 bg-blue-500/10 border border-blue-500/30 rounded-lg">
                   <p className="text-sm text-blue-300 font-medium mb-1">
-                    {action === 'restore' && 'Вернуть в OrcaSlicer'}
-                    {action === 'delete' && 'Убрать из "Профили филамента"'}
-                    {action === 'skip' && 'Оставить как есть'}
+                    {action === 'restore' && t('deletedPresetsModal.action_restore_label')}
+                    {action === 'delete' && t('deletedPresetsModal.action_delete_label')}
+                    {action === 'skip' && t('deletedPresetsModal.action_skip_label')}
                   </p>
                   <p className="text-xs text-blue-200/80">
-                    {action === 'restore' && 'Пресет вернётся в OrcaSlicer при следующей синхронизации. Останется доступен в FilamentHub.'}
-                    {action === 'delete' && 'Пресет будет убран из раздела "Профили филамента" на сайте. Останется доступен в каталоге FilamentHub. ⚠️ Пресеты, созданные вами, не удаляются.'}
-                    {action === 'skip' && 'Пресет останется в FilamentHub, но больше не будет автоматически синхронизироваться с OrcaSlicer.'}
+                    {action === 'restore' && t('deletedPresetsModal.action_restore_full')}
+                    {action === 'delete' && t('deletedPresetsModal.action_delete_full')}
+                    {action === 'skip' && t('deletedPresetsModal.action_skip_full')}
                   </p>
                 </div>
               )}
@@ -462,7 +467,7 @@ export const DeletedPresetsModal: React.FC<DeletedPresetsModalProps> = ({
                     className="w-4 h-4 rounded border-gray-400 text-purple-600 focus:ring-purple-500"
                   />
                   <span className="text-sm text-gray-300">
-                    Сохранить это действие как правило для будущих удалений
+                    {t('deletedPresetsModal.save_rule_checkbox')}
                   </span>
                 </label>
               </div>
@@ -476,7 +481,7 @@ export const DeletedPresetsModal: React.FC<DeletedPresetsModalProps> = ({
               disabled={handleActionMutation.isPending}
               className="px-6 py-2.5 bg-white/10 hover:bg-white/20 text-white rounded-xl transition-all disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              Закрыть
+              {t('deletedPresetsModal.close_button')}
             </button>
             <button
               onClick={handleApplyAction}
@@ -486,12 +491,12 @@ export const DeletedPresetsModal: React.FC<DeletedPresetsModalProps> = ({
               {handleActionMutation.isPending ? (
                 <>
                   <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                  <span>Выполнение...</span>
+                  <span>{t('deletedPresetsModal.executing_button')}</span>
                 </>
               ) : (
                 <>
                   <CheckCircle2 className="w-4 h-4" />
-                  <span>Применить</span>
+                  <span>{t('deletedPresetsModal.apply_button')}</span>
                 </>
               )}
             </button>

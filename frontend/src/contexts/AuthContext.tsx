@@ -12,8 +12,8 @@ interface AuthContextType {
   isMaintenanceMode: boolean;
   maintenanceMessage: string | null;
   login: (email: string, password: string) => Promise<void>;
-  register: (data: { email: string; username: string; password: string; role: string }) => Promise<void>;
-  logout: () => void;
+  register: (data: { email: string; username: string; password: string; role: string; recaptcha_token?: string }) => Promise<void>;
+  logout: () => Promise<void>;
   refreshUser: () => Promise<void>;
   clearMaintenanceMode: () => void;
 }
@@ -54,8 +54,11 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   }, []);
 
   // Загружаем пользователя при монтировании (если есть токен)
+  // Используем небольшую задержку чтобы C++ успел инжектировать токен в localStorage
   useEffect(() => {
     const loadUser = async () => {
+      // Небольшая задержка — C++ инжектирует токен через RunScript в OnLoaded,
+      // который может выполниться чуть позже React mount
       const token = getToken();
       if (token) {
         try {
@@ -88,8 +91,29 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       }
       setIsLoading(false);
     };
-    loadUser();
+
+    // Задержка 100ms — даёт C++ время инжектировать токен через RunScript
+    // В обычном браузере токен уже в localStorage, задержка незаметна
+    const timer = setTimeout(loadUser, 100);
+    return () => clearTimeout(timer);
   }, []);
+
+  // Слушаем изменения localStorage (C++ может инжектировать токен после загрузки)
+  useEffect(() => {
+    const handleStorageChange = (e: StorageEvent) => {
+      if (e.key === 'access_token') {
+        if (e.newValue && !user) {
+          // Токен появился (C++ инжектировал) — загружаем пользователя
+          refreshUser();
+        } else if (!e.newValue && user) {
+          // Токен удалён — logout
+          setUser(null);
+        }
+      }
+    };
+    window.addEventListener('storage', handleStorageChange);
+    return () => window.removeEventListener('storage', handleStorageChange);
+  }, [user]);
 
   const login = async (email: string, password: string) => {
     try {
@@ -110,9 +134,9 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         setUserId(userData.id);
       }
       
-      // Отправляем сообщение в OrcaSlicer если запущено там
+      // Отправляем сообщение в OrcaSlicer если запущено там (включая refresh_token)
       if (typeof window !== 'undefined' && (window as any).filamenthub?.sendLoginSuccess) {
-        (window as any).filamenthub.sendLoginSuccess(tokenData.access_token, userData.id);
+        (window as any).filamenthub.sendLoginSuccess(tokenData.access_token, userData.id, tokenData.refresh_token);
       }
     } catch (error: any) {
       // Удаляем токен если логин не удался
@@ -121,7 +145,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     }
   };
 
-  const register = async (data: { email: string; username: string; password: string; role: string }) => {
+  const register = async (data: { email: string; username: string; password: string; role: string; recaptcha_token?: string }) => {
     try {
       // Регистрируем пользователя
       const userResponse = await authAPI.register(data);
@@ -145,10 +169,25 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     }
   };
 
-  const logout = () => {
+  const logout = async () => {
+    // Серверная инвалидация токенов (best-effort — не блокируем UI при ошибке)
+    try {
+      const refreshToken = getRefreshToken();
+      await authAPI.logout(refreshToken);
+    } catch {
+      // Сервер недоступен или токен уже истёк — всё равно выходим локально
+    }
     removeToken();
     removeUserId();
     setUser(null);
+    // Уведомляем C++ (OrcaSlicer) о logout — очистить токен в AppConfig
+    try {
+      if (typeof window !== 'undefined' && (window as any).wx?.postMessage) {
+        (window as any).wx.postMessage(JSON.stringify({ command: 'logout' }));
+      }
+    } catch {
+      // Не в контексте OrcaSlicer — игнорируем
+    }
   };
 
   const refreshUser = async () => {

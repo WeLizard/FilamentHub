@@ -4,6 +4,7 @@ import { useState, FormEvent } from 'react';
 import { Mail, X, CheckCircle, AlertCircle, Loader } from 'lucide-react';
 import { authAPI } from '../api/client';
 import { useHeaderVisible } from '../hooks/useHeaderVisible';
+import { useTranslation } from 'react-i18next';
 
 interface ForgotPasswordModalProps {
   isOpen: boolean;
@@ -16,6 +17,7 @@ export const ForgotPasswordModal: React.FC<ForgotPasswordModalProps> = ({
   onClose,
   onSuccess,
 }) => {
+  const { t } = useTranslation();
   const isHeaderVisible = useHeaderVisible();
   const [email, setEmail] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -34,19 +36,19 @@ export const ForgotPasswordModal: React.FC<ForgotPasswordModalProps> = ({
       setIsSuccess(true);
       setEmail('');
     } catch (err: any) {
-      let errorMessage = 'Произошла ошибка при отправке запроса. Попробуйте позже.';
+      let errorMessage = t('forgotPasswordModal.error_sending');
       
       if (err.response) {
         const status = err.response.status;
         const detail = err.response.data?.detail;
         
         if (status === 429) {
-          errorMessage = 'Слишком много запросов. Попробуйте позже.';
+          errorMessage = t('forgotPasswordModal.error_too_many_requests');
         } else if (typeof detail === 'string') {
           errorMessage = detail;
         }
       } else if (err.request) {
-        errorMessage = 'Не удалось подключиться к серверу. Проверьте подключение к интернету.';
+        errorMessage = t('authModal.error_no_connection');
       }
       
       setError(errorMessage);
@@ -88,8 +90,8 @@ export const ForgotPasswordModal: React.FC<ForgotPasswordModalProps> = ({
             <div className="w-16 h-16 flex items-center justify-center mx-auto mb-4">
               <img src="/logo.svg" alt="FilamentHub Logo" className="w-16 h-16 object-contain" />
             </div>
-            <h2 className="text-2xl font-bold text-white mb-2">Восстановление пароля</h2>
-            <p className="text-gray-300">Введите адрес эл. почты для получения инструкций</p>
+            <h2 className="text-2xl font-bold text-white mb-2">{t('forgotPasswordModal.title')}</h2>
+            <p className="text-gray-300">{t('forgotPasswordModal.subtitle')}</p>
           </div>
         </div>
 
@@ -101,19 +103,19 @@ export const ForgotPasswordModal: React.FC<ForgotPasswordModalProps> = ({
                 <CheckCircle className="w-16 h-16 text-green-400" />
               </div>
               <div>
-                <h3 className="text-xl font-bold text-white mb-2">Проверьте почту</h3>
+                <h3 className="text-xl font-bold text-white mb-2">{t('forgotPasswordModal.success_title')}</h3>
                 <p className="text-gray-300">
-                  Если указанный адрес существует в системе, на него будет отправлена инструкция по восстановлению пароля.
+                  {t('forgotPasswordModal.success_message')}
                 </p>
                 <p className="text-gray-400 text-sm mt-2">
-                  Ссылка действительна в течение 1 часа.
+                  {t('forgotPasswordModal.success_tip')}
                 </p>
               </div>
               <button
                 onClick={handleClose}
                 className="w-full mt-6 bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white py-3 px-6 rounded-xl transition-all shadow-lg shadow-purple-500/25 hover:shadow-purple-500/40"
               >
-                Понятно
+                {t('forgotPasswordModal.success_button')}
               </button>
             </div>
           ) : (
@@ -128,7 +130,7 @@ export const ForgotPasswordModal: React.FC<ForgotPasswordModalProps> = ({
                 )}
 
                 <div>
-                  <label className="block text-gray-300 mb-2">Эл. почта</label>
+                  <label className="block text-gray-300 mb-2">{t('forgotPasswordModal.label_email')}</label>
                   <div className="relative">
                     <Mail className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5 pointer-events-none" />
                     <input
@@ -138,7 +140,7 @@ export const ForgotPasswordModal: React.FC<ForgotPasswordModalProps> = ({
                       required
                       disabled={isLoading}
                       className="w-full pl-10 pr-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-                      placeholder="your@email.com"
+                      placeholder={t('forgotPasswordModal.placeholder_email')}
                     />
                   </div>
                 </div>
@@ -151,10 +153,10 @@ export const ForgotPasswordModal: React.FC<ForgotPasswordModalProps> = ({
                   {isLoading ? (
                     <>
                       <Loader className="w-5 h-5 animate-spin" />
-                      <span>Отправка...</span>
+                      <span>{t('forgotPasswordModal.sending')}</span>
                     </>
                   ) : (
-                    <span>Отправить инструкцию</span>
+                    <span>{t('forgotPasswordModal.send_instructions')}</span>
                   )}
                 </button>
 
@@ -164,7 +166,7 @@ export const ForgotPasswordModal: React.FC<ForgotPasswordModalProps> = ({
                   disabled={isLoading}
                   className="w-full text-gray-400 hover:text-white transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                  Вернуться к входу
+                  {t('forgotPasswordModal.back_to_login')}
                 </button>
               </div>
             </form>

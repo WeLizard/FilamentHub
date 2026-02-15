@@ -15,19 +15,22 @@
     "@vitejs/plugin-react": "^5.1.0",
     "tailwindcss": "^4.1.16",
     "typescript": "~5.9.3",
-    "vite": "^7.1.7"
+    "vite": "^7.1.11"
   },
   "dependencies": {
     "@tanstack/react-query": "^5.90.5",
     "@types/react-syntax-highlighter": "^15.5.13",
-    "axios": "^1.13.1",
+    "axios": "^1.13.5",
+    "i18next": "^23.11.5",
+    "i18next-browser-languagedetector": "^7.2.1",
     "lucide-react": "^0.552.0",
     "mermaid": "^11.12.2",
     "qrcode.react": "^4.2.0",
-    "react": "^19.2.0",
-    "react-dom": "^19.2.0",
+    "react": "^19.2.3",
+    "react-i18next": "^14.1.2",
+    "react-dom": "^19.2.3",
     "react-markdown": "^9.0.1",
-    "react-router-dom": "^7.9.5",
+    "react-router-dom": "^7.9.6",
     "react-syntax-highlighter": "^15.6.1",
     "remark-gfm": "^4.0.0"
   }

@@ -287,7 +287,8 @@ export function AdminPrinterRequests() {
                   <p className="text-gray-400 text-sm mb-2">Прикрепленные файлы</p>
                   <div className="space-y-3">
                     {selectedRequest.proof_files.map((file: string, idx: number) => {
-                      const fileUrl = `/uploads/${file}`;
+                      const accessToken = localStorage.getItem('access_token');
+                      const fileUrl = `/api/v1/uploads/${file}${accessToken ? `?token=${accessToken}` : ''}`;
                       const fileName = file.split('/').pop() || `Файл ${idx + 1}`;
                       const fileExt = fileName.split('.').pop()?.toLowerCase() || '';
                       const isImage = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg'].includes(fileExt);
@@ -301,20 +302,15 @@ export function AdminPrinterRequests() {
                                 alt={fileName}
                                 className="max-w-full h-auto max-h-64 rounded-lg border border-white/20"
                                 onError={(e) => {
-                                  // Если изображение не загрузилось, показываем как обычный файл
                                   const target = e.target as HTMLImageElement;
                                   target.style.display = 'none';
-                                  const parent = target.parentElement;
-                                  if (parent) {
-                                    parent.innerHTML = `
-                                      <a href="${fileUrl}" target="_blank" rel="noopener noreferrer" class="flex items-center space-x-2 text-purple-400 hover:text-purple-300">
-                                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path>
-                                        </svg>
-                                        <span>${fileName}</span>
-                                      </a>
-                                    `;
-                                  }
+                                  const fallback = document.createElement('div');
+                                  fallback.className = 'flex items-center justify-center h-32 bg-white/5 rounded-lg border border-white/20';
+                                  const span = document.createElement('span');
+                                  span.className = 'text-gray-400 text-sm';
+                                  span.textContent = 'Изображение не загружено';
+                                  fallback.appendChild(span);
+                                  target.parentElement?.appendChild(fallback);
                                 }}
                               />
                               <a

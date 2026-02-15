@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import { Shield, FileText, Building2, Users, BarChart3, CheckCircle, Home, Package, User, LogOut, Database, MessageCircle, Send, Settings } from 'lucide-react';
 import { Printer3DIcon } from '../components/icons/Printer3DIcon';
 import { useAuth } from '../contexts/AuthContext';
@@ -20,6 +21,7 @@ import { AdminMaintenance } from '../components/admin/AdminMaintenance';
 type AdminTab = 'requests' | 'brands' | 'presets' | 'users' | 'stats' | 'printers' | 'printer-requests' | 'feedback' | 'notifications' | 'database' | 'maintenance';
 
 export function AdminPanel() {
+  const { t } = useTranslation();
   const { user, logout } = useAuth();
   const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState<AdminTab>('requests');
@@ -29,31 +31,30 @@ export function AdminPanel() {
     navigate('/');
   };
 
-  // Проверка что пользователь админ
   if (!user || user.role !== 'admin') {
     return (
       <div className="min-h-screen bg-gradient-to-br from-purple-900 via-purple-800 to-indigo-900 flex items-center justify-center p-4">
         <div className="bg-white/10 backdrop-blur-sm rounded-2xl p-8 border border-white/20 text-center max-w-md">
           <Shield className="w-16 h-16 text-red-400 mx-auto mb-4" />
-          <h1 className="text-2xl font-bold text-white mb-2">Доступ запрещен</h1>
-          <p className="text-gray-300">Эта страница доступна только администраторам</p>
+          <h1 className="text-2xl font-bold text-white mb-2">{t('adminPanel.accessDenied')}</h1>
+          <p className="text-gray-300">{t('adminPanel.accessDeniedMessage')}</p>
         </div>
       </div>
     );
   }
 
   const tabs = [
-    { id: 'requests' as AdminTab, label: 'Заявки на верификацию', shortLabel: 'Верификация', icon: FileText, count: null },
-    { id: 'brands' as AdminTab, label: 'Бренды', shortLabel: 'Бренды', icon: Building2, count: null },
-    { id: 'presets' as AdminTab, label: 'Модерация пресетов', shortLabel: 'Пресеты', icon: CheckCircle, count: null },
-    { id: 'printers' as AdminTab, label: 'Принтеры', shortLabel: 'Принтеры', icon: Printer3DIcon, count: null },
-    { id: 'printer-requests' as AdminTab, label: 'Заявки на принтеры', shortLabel: 'Заявки', icon: Package, count: null },
-    { id: 'users' as AdminTab, label: 'Пользователи', shortLabel: 'Юзеры', icon: Users, count: null },
-    { id: 'feedback' as AdminTab, label: 'Обратная связь', shortLabel: 'Фидбек', icon: MessageCircle, count: null },
-    { id: 'notifications' as AdminTab, label: 'Уведомления', shortLabel: 'Уведомления', icon: Send, count: null },
-    { id: 'stats' as AdminTab, label: 'Статистика', shortLabel: 'Стат.', icon: BarChart3, count: null },
-    { id: 'database' as AdminTab, label: 'База данных', shortLabel: 'БД', icon: Database, count: null },
-    { id: 'maintenance' as AdminTab, label: 'Технические работы', shortLabel: 'Тех.работы', icon: Settings, count: null },
+    { id: 'requests' as AdminTab, label: t('adminPanel.tabs.requests'), shortLabel: t('adminPanel.shortTabs.requests'), icon: FileText, count: null },
+    { id: 'brands' as AdminTab, label: t('adminPanel.tabs.brands'), shortLabel: t('adminPanel.shortTabs.brands'), icon: Building2, count: null },
+    { id: 'presets' as AdminTab, label: t('adminPanel.tabs.presets'), shortLabel: t('adminPanel.shortTabs.presets'), icon: CheckCircle, count: null },
+    { id: 'printers' as AdminTab, label: t('adminPanel.tabs.printers'), shortLabel: t('adminPanel.shortTabs.printers'), icon: Printer3DIcon, count: null },
+    { id: 'printer-requests' as AdminTab, label: t('adminPanel.tabs.printer-requests'), shortLabel: t('adminPanel.shortTabs.printer-requests'), icon: Package, count: null },
+    { id: 'users' as AdminTab, label: t('adminPanel.tabs.users'), shortLabel: t('adminPanel.shortTabs.users'), icon: Users, count: null },
+    { id: 'feedback' as AdminTab, label: t('adminPanel.tabs.feedback'), shortLabel: t('adminPanel.shortTabs.feedback'), icon: MessageCircle, count: null },
+    { id: 'notifications' as AdminTab, label: t('adminPanel.tabs.notifications'), shortLabel: t('adminPanel.shortTabs.notifications'), icon: Send, count: null },
+    { id: 'stats' as AdminTab, label: t('adminPanel.tabs.stats'), shortLabel: t('adminPanel.shortTabs.stats'), icon: BarChart3, count: null },
+    { id: 'database' as AdminTab, label: t('adminPanel.tabs.database'), shortLabel: t('adminPanel.shortTabs.database'), icon: Database, count: null },
+    { id: 'maintenance' as AdminTab, label: t('adminPanel.tabs.maintenance'), shortLabel: t('adminPanel.shortTabs.maintenance'), icon: Settings, count: null },
   ];
 
   return (
@@ -64,7 +65,7 @@ export function AdminPanel() {
           <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
             <div className="flex items-center space-x-2 md:space-x-3">
               <Shield className="w-6 h-6 md:w-8 md:h-8 text-yellow-400" />
-              <h1 className="text-xl md:text-3xl font-bold text-white">Админ-панель</h1>
+              <h1 className="text-xl md:text-3xl font-bold text-white">{t('adminPanel.header')}</h1>
             </div>
             <div className="flex flex-wrap items-center gap-2 md:gap-3">
               <Link
@@ -72,25 +73,25 @@ export function AdminPanel() {
                 className="flex items-center space-x-1.5 md:space-x-2 px-2.5 md:px-4 py-1.5 md:py-2 rounded-lg transition-all text-gray-300 hover:text-white hover:bg-white/10 text-xs md:text-base"
               >
                 <Home className="w-4 h-4 md:w-5 md:h-5" />
-                <span className="hidden sm:inline">На главную</span>
+                <span className="hidden sm:inline">{t('adminPanel.toHome')}</span>
               </Link>
               <Link
                 to="/profile"
                 className="flex items-center space-x-1.5 md:space-x-2 px-2.5 md:px-4 py-1.5 md:py-2 rounded-lg transition-all text-gray-300 hover:text-white hover:bg-white/10 text-xs md:text-base"
               >
                 <User className="w-4 h-4 md:w-5 md:h-5" />
-                <span className="hidden sm:inline">Профиль</span>
+                <span className="hidden sm:inline">{t('adminPanel.toProfile')}</span>
               </Link>
               <button
                 onClick={handleLogout}
                 className="flex items-center space-x-1.5 md:space-x-2 px-2.5 md:px-4 py-1.5 md:py-2 bg-red-600/20 hover:bg-red-600/30 text-red-400 rounded-lg transition-all text-xs md:text-base"
               >
                 <LogOut className="w-4 h-4 md:w-5 md:h-5" />
-                <span className="hidden sm:inline">Выход</span>
+                <span className="hidden sm:inline">{t('adminPanel.logout')}</span>
               </button>
             </div>
           </div>
-          <p className="text-gray-300 text-xs md:text-base">Управление платформой FilamentHub</p>
+          <p className="text-gray-300 text-xs md:text-base">{t('adminPanel.subheader')}</p>
         </div>
 
         {/* Tabs */}

@@ -1322,8 +1322,7 @@ const PresetCard: React.FC<PresetCardProps> = ({ preset, onEdit, onView, onDelet
           if (data.command === 'import_profile') {
             setIsImporting(false);
             if (data.status === 'success') {
-              // Показываем уведомление об успехе (можно заменить на toast)
-              console.log('✅ Профиль успешно импортирован:', data.message);
+              // Профиль успешно импортирован
             } else if (data.status === 'error') {
               // Показываем ошибку
               alert(`❌ Ошибка импорта: ${data.message || 'Неизвестная ошибка'}`);

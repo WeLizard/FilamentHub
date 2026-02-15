@@ -33,8 +33,10 @@ import {
   Save
 } from 'lucide-react';
 import { adminAPI } from '../../api/client';
+import { useTranslation } from 'react-i18next';
 
 function IntegrityCheck() {
+  const { t } = useTranslation();
   const queryClient = useQueryClient();
   const { data: integrity, isLoading, refetch } = useQuery({
     queryKey: ['admin-db-integrity'],
@@ -56,7 +58,7 @@ function IntegrityCheck() {
       <div className="flex items-center justify-between mb-4">
         <h3 className="text-xl font-bold text-white flex items-center space-x-2">
           <CheckCircle className="w-5 h-5" />
-          <span>Проверка целостности базы данных</span>
+          <span>{t('adminDatabase.integrityCheck.title')}</span>
         </h3>
         <div className="flex items-center space-x-2">
           <button
@@ -65,21 +67,21 @@ function IntegrityCheck() {
             className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg transition-colors flex items-center space-x-2 disabled:opacity-50"
           >
             <RefreshCw className={`w-4 h-4 ${isLoading ? 'animate-spin' : ''}`} />
-            <span>Проверить</span>
+            <span>{t('adminDatabase.integrityCheck.checkButton')}</span>
           </button>
           {integrity && !integrity.is_valid && integrity.missing_tables.length > 0 && (
             <button
               onClick={() => recreateTablesMutation.mutate()}
               disabled={recreateTablesMutation.isPending}
               className="px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg transition-colors flex items-center space-x-2 disabled:opacity-50"
-              title="Сначала попробует применить миграции, затем fallback метод"
+              title={t('adminDatabase.integrityCheck.restoreButtonTitle')}
             >
               {recreateTablesMutation.isPending ? (
                 <Loader className="w-4 h-4 animate-spin" />
               ) : (
                 <CheckCircle className="w-4 h-4" />
               )}
-              <span>Восстановить таблицы</span>
+              <span>{t('adminDatabase.integrityCheck.restoreButton')}</span>
             </button>
           )}
         </div>
@@ -88,13 +90,13 @@ function IntegrityCheck() {
       {isLoading && (
         <div className="flex items-center space-x-2 text-gray-400">
           <Loader className="w-4 h-4 animate-spin" />
-          <span>Проверка целостности...</span>
+          <span>{t('adminDatabase.integrityCheck.checking')}</span>
         </div>
       )}
 
       {!isLoading && !integrity && (
         <div className="text-gray-400">
-          Нажмите "Проверить" для проверки целостности базы данных
+          {t('adminDatabase.integrityCheck.prompt')}
         </div>
       )}
 
@@ -118,23 +120,23 @@ function IntegrityCheck() {
               </p>
               {integrity.missing_tables && integrity.missing_tables.length > 0 && (
                 <div className="mt-2">
-                  <p className="text-gray-300 text-sm mb-1">Отсутствующие таблицы:</p>
+                  <p className="text-gray-300 text-sm mb-1">{t('adminDatabase.integrityCheck.missingTables')}</p>
                   <ul className="list-disc list-inside text-red-300 text-sm space-y-1">
                     {integrity.missing_tables.map((table) => (
                       <li key={table}>{table}</li>
                     ))}
                   </ul>
                   <div className="mt-3 p-3 bg-blue-600/10 border border-blue-500/30 rounded-lg">
-                    <p className="text-blue-400 text-sm font-semibold mb-1">💡 Как восстановить:</p>
+                    <p className="text-blue-400 text-sm font-semibold mb-1">{t('adminDatabase.integrityCheck.howToRestore')}</p>
                     <p className="text-gray-300 text-xs">
-                      Кнопка <strong>"Восстановить таблицы"</strong> автоматически:
+                      {t('adminDatabase.integrityCheck.restoreSteps.intro')}
                     </p>
                     <ol className="text-gray-300 text-xs mt-1 ml-4 list-decimal space-y-1">
-                      <li>Попытается применить все миграции до head (правильный способ)</li>
-                      <li>Если это не поможет, использует fallback метод через SQLAlchemy metadata</li>
+                      <li>{t('adminDatabase.integrityCheck.restoreSteps.step1')}</li>
+                      <li>{t('adminDatabase.integrityCheck.restoreSteps.step2')}</li>
                     </ol>
                     <p className="text-gray-300 text-xs mt-2">
-                      Или можете вручную применить миграции через кнопку <strong>"До head"</strong> в разделе миграций выше.
+                      {t('adminDatabase.integrityCheck.restoreSteps.manualAlternative')}
                     </p>
                   </div>
                 </div>
@@ -152,7 +154,7 @@ function IntegrityCheck() {
               <p className="text-green-400 font-semibold">{recreateTablesMutation.data.message}</p>
               {recreateTablesMutation.data.created_tables && recreateTablesMutation.data.created_tables.length > 0 && (
                 <div className="mt-2">
-                  <p className="text-gray-300 text-sm mb-1">Созданные таблицы:</p>
+                  <p className="text-gray-300 text-sm mb-1">{t('adminDatabase.integrityCheck.createdTables')}</p>
                   <ul className="list-disc list-inside text-green-300 text-sm space-y-1">
                     {recreateTablesMutation.data.created_tables.map((table) => (
                       <li key={table}>{table}</li>
@@ -171,7 +173,7 @@ function IntegrityCheck() {
             <AlertCircle className="w-5 h-5 text-red-400 flex-shrink-0 mt-0.5" />
             <div className="flex-1">
               <p className="text-red-400 font-semibold">
-                Ошибка восстановления: {recreateTablesMutation.error?.message || 'Неизвестная ошибка'}
+                {t('adminDatabase.integrityCheck.errorMessage', { message: recreateTablesMutation.error?.message || t('adminDatabase.errorUnknown') })}
               </p>
             </div>
           </div>
@@ -182,6 +184,7 @@ function IntegrityCheck() {
 }
 
 function WikiSync() {
+  const { t } = useTranslation();
   const [syncResult, setSyncResult] = useState<{
     success: boolean;
     message: string;
@@ -205,7 +208,7 @@ function WikiSync() {
       <div className="flex items-center justify-between mb-4">
         <h3 className="text-xl font-bold text-white flex items-center space-x-2">
           <FileText className="w-5 h-5" />
-          <span>Синхронизация Вики</span>
+          <span>{t('adminDatabase.wikiSync.title')}</span>
         </h3>
         <button
           onClick={() => syncMutation.mutate()}
@@ -217,18 +220,18 @@ function WikiSync() {
           ) : (
             <RefreshCw className="w-4 h-4" />
           )}
-          <span>Синхронизировать</span>
+          <span>{t('adminDatabase.wikiSync.syncButton')}</span>
         </button>
       </div>
 
       <p className="text-gray-400 text-sm mb-4">
-        Загрузить/обновить wiki статьи из файлов <code className="bg-white/10 px-1.5 py-0.5 rounded">backend/wiki_content/*.md</code>
+        {t('adminDatabase.wikiSync.description')} <code className="bg-white/10 px-1.5 py-0.5 rounded">backend/wiki_content/*.md</code>
       </p>
 
       {syncMutation.isPending && (
         <div className="flex items-center space-x-2 text-gray-400">
           <Loader className="w-4 h-4 animate-spin" />
-          <span>Синхронизация...</span>
+          <span>{t('adminDatabase.wikiSync.syncing')}</span>
         </div>
       )}
 
@@ -245,10 +248,10 @@ function WikiSync() {
                 {syncResult.message}
               </p>
               <div className="mt-2 flex flex-wrap gap-3 text-sm">
-                <span className="text-green-300">Создано: {syncResult.created}</span>
-                <span className="text-blue-300">Обновлено: {syncResult.updated}</span>
-                {syncResult.skipped > 0 && <span className="text-yellow-300">Пропущено: {syncResult.skipped}</span>}
-                {syncResult.errors > 0 && <span className="text-red-300">Ошибок: {syncResult.errors}</span>}
+                <span className="text-green-300">{t('adminDatabase.wikiSync.created', { count: syncResult.created })}</span>
+                <span className="text-blue-300">{t('adminDatabase.wikiSync.updated', { count: syncResult.updated })}</span>
+                {syncResult.skipped > 0 && <span className="text-yellow-300">{t('adminDatabase.wikiSync.skipped', { count: syncResult.skipped })}</span>}
+                {syncResult.errors > 0 && <span className="text-red-300">{t('adminDatabase.wikiSync.errors', { count: syncResult.errors })}</span>}
               </div>
               {syncResult.details && syncResult.details.length > 0 && (
                 <button
@@ -256,7 +259,7 @@ function WikiSync() {
                   className="mt-2 text-gray-400 hover:text-white text-sm flex items-center space-x-1"
                 >
                   {showDetails ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
-                  <span>{showDetails ? 'Скрыть детали' : 'Показать детали'}</span>
+                  <span>{showDetails ? t('adminDatabase.wikiSync.hideDetails') : t('adminDatabase.wikiSync.showDetails')}</span>
                 </button>
               )}
               {showDetails && syncResult.details && (
@@ -284,7 +287,7 @@ function WikiSync() {
           <div className="flex items-start space-x-3">
             <AlertCircle className="w-5 h-5 text-red-400 flex-shrink-0 mt-0.5" />
             <p className="text-red-400">
-              Ошибка синхронизации: {syncMutation.error?.message || 'Неизвестная ошибка'}
+              {t('adminDatabase.wikiSync.error', { message: syncMutation.error?.message || t('adminDatabase.errorUnknown') })}
             </p>
           </div>
         </div>
@@ -294,6 +297,7 @@ function WikiSync() {
 }
 
 export function AdminDatabase() {
+  const { t } = useTranslation();
   const isHeaderVisible = useHeaderVisible();
   const queryClient = useQueryClient();
   const [selectedRevision, setSelectedRevision] = useState<string>('head');
@@ -373,7 +377,7 @@ export function AdminDatabase() {
       setImportFile(null);
     },
     onError: (error: any) => {
-      console.error('Ошибка импорта:', error);
+      console.error(t('adminDatabase.import.errorTitle'), error);
     },
   });
 
@@ -391,7 +395,7 @@ export function AdminDatabase() {
       setEditError(null);
     },
     onError: (error: any) => {
-      setEditError(error?.response?.data?.detail || 'Ошибка при обновлении строки');
+      setEditError(error?.response?.data?.detail || t('adminDatabase.tableViewer.error'));
     },
   });
 
@@ -626,12 +630,6 @@ export function AdminDatabase() {
 
   const handleImport = () => {
     if (importFile) {
-      console.log('Начинаем импорт:', {
-        filename: importFile.name,
-        size: importFile.size,
-        format: importFormat,
-        clean: cleanImport,
-      });
       importMutation.mutate(importFile);
     }
   };
@@ -679,8 +677,8 @@ export function AdminDatabase() {
   return (
     <div className="space-y-6">
       <div>
-        <h2 className="text-2xl font-bold text-white mb-2">Управление базой данных</h2>
-        <p className="text-gray-400">Миграции, экспорт и импорт базы данных</p>
+        <h2 className="text-2xl font-bold text-white mb-2">{t('adminDatabase.title')}</h2>
+        <p className="text-gray-400">{t('adminDatabase.description')}</p>
       </div>
 
       {/* Проверка целостности БД */}
@@ -698,12 +696,12 @@ export function AdminDatabase() {
         <div className="flex items-center justify-between mb-4">
           <h3 className="text-xl font-bold text-white flex items-center space-x-2">
             <Database className="w-5 h-5" />
-            <span>Статистика базы данных</span>
+            <span>{t('adminDatabase.dbStats.title')}</span>
           </h3>
           <button
             onClick={() => refetchStats()}
             className="text-gray-400 hover:text-white transition-colors"
-            title="Обновить статистику"
+            title={t('adminDatabase.dbStats.refreshButtonTitle')}
           >
             <RefreshCw className="w-5 h-5" />
           </button>
@@ -712,7 +710,7 @@ export function AdminDatabase() {
         {loadingStats ? (
           <div className="text-center py-8 text-gray-400 flex items-center justify-center space-x-2">
             <Loader className="w-5 h-5 animate-spin" />
-            <span>Загрузка статистики...</span>
+            <span>{t('adminDatabase.dbStats.loading')}</span>
           </div>
         ) : dbStats ? (
           <div className="space-y-4">
@@ -720,21 +718,21 @@ export function AdminDatabase() {
               <div className="bg-gradient-to-br from-purple-600/20 to-purple-800/20 rounded-lg p-4 border border-purple-500/30">
                 <p className="text-gray-400 text-sm mb-1 flex items-center space-x-1">
                   <Database className="w-3.5 h-3.5" />
-                  <span>База данных</span>
+                  <span>{t('adminDatabase.dbStats.databaseName')}</span>
                 </p>
                 <p className="text-white font-semibold text-lg">{dbStats.database_name}</p>
               </div>
               <div className="bg-gradient-to-br from-blue-600/20 to-blue-800/20 rounded-lg p-4 border border-blue-500/30">
                 <p className="text-gray-400 text-sm mb-1 flex items-center space-x-1">
                   <TrendingUp className="w-3.5 h-3.5" />
-                  <span>Размер</span>
+                  <span>{t('adminDatabase.dbStats.size')}</span>
                 </p>
                 <p className="text-white font-semibold text-lg">{dbStats.database_size}</p>
               </div>
               <div className="bg-gradient-to-br from-green-600/20 to-green-800/20 rounded-lg p-4 border border-green-500/30">
                 <p className="text-gray-400 text-sm mb-1 flex items-center space-x-1">
                   <FileText className="w-3.5 h-3.5" />
-                  <span>Таблиц</span>
+                  <span>{t('adminDatabase.dbStats.tables')}</span>
                 </p>
                 <p className="text-white font-semibold text-lg">{dbStats.table_stats.length}</p>
               </div>
@@ -742,12 +740,12 @@ export function AdminDatabase() {
 
             <div className="mt-6">
               <div className="flex items-center justify-between mb-3">
-                <p className="text-gray-300 font-semibold">Таблицы базы данных</p>
+                <p className="text-gray-300 font-semibold">{t('adminDatabase.dbStats.tablesTitle')}</p>
                 <div className="relative w-64">
                   <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
                   <input
                     type="text"
-                    placeholder="Поиск таблиц..."
+                    placeholder={t('adminDatabase.dbStats.searchPlaceholder')}
                     value={tableSearch}
                     onChange={(e) => setTableSearch(e.target.value)}
                     className="w-full bg-white/5 border border-white/10 rounded-lg px-4 pl-10 py-2 text-white placeholder-gray-500 focus:outline-none focus:border-purple-500 text-sm"
@@ -765,7 +763,7 @@ export function AdminDatabase() {
                           onClick={() => toggleSort('name')}
                         >
                           <div className="flex items-center space-x-2">
-                            <span>Таблица</span>
+                            <span>{t('adminDatabase.dbStats.tableHeader')}</span>
                             {sortBy === 'name' && (
                               sortOrder === 'asc' ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />
                             )}
@@ -776,7 +774,7 @@ export function AdminDatabase() {
                           onClick={() => toggleSort('rows')}
                         >
                           <div className="flex items-center justify-end space-x-2">
-                            <span>Записей</span>
+                            <span>{t('adminDatabase.dbStats.rowsHeader')}</span>
                             {sortBy === 'rows' && (
                               sortOrder === 'asc' ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />
                             )}
@@ -787,7 +785,7 @@ export function AdminDatabase() {
                           onClick={() => toggleSort('size')}
                         >
                           <div className="flex items-center justify-end space-x-2">
-                            <span>Размер</span>
+                            <span>{t('adminDatabase.dbStats.sizeHeader')}</span>
                             {sortBy === 'size' && (
                               sortOrder === 'asc' ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />
                             )}
@@ -799,7 +797,7 @@ export function AdminDatabase() {
                       {filteredTables.length === 0 ? (
                         <tr>
                           <td colSpan={3} className="text-center py-8 text-gray-400">
-                            {tableSearch ? 'Таблицы не найдены' : 'Нет таблиц'}
+                            {tableSearch ? t('adminDatabase.dbStats.noTablesFound') : t('adminDatabase.dbStats.noTables')}
                           </td>
                         </tr>
                       ) : (
@@ -829,7 +827,7 @@ export function AdminDatabase() {
         ) : (
           <div className="text-center py-8 text-red-400 flex items-center justify-center space-x-2">
             <XCircle className="w-5 h-5" />
-            <span>Ошибка загрузки статистики</span>
+            <span>{t('adminDatabase.dbStats.error')}</span>
           </div>
         )}
       </div>
@@ -839,12 +837,12 @@ export function AdminDatabase() {
         <div className="flex items-center justify-between mb-4">
           <h3 className="text-xl font-bold text-white flex items-center space-x-2">
             <RefreshCw className="w-5 h-5" />
-            <span>Миграции Alembic</span>
+            <span>{t('adminDatabase.migrations.title')}</span>
           </h3>
           <button
             onClick={() => refetchMigrations()}
             className="text-gray-400 hover:text-white transition-colors"
-            title="Обновить список миграций"
+            title={t('adminDatabase.migrations.refreshButtonTitle')}
           >
             <RefreshCw className="w-5 h-5" />
           </button>
@@ -853,7 +851,7 @@ export function AdminDatabase() {
         {loadingHistory ? (
           <div className="text-center py-8 text-gray-400 flex items-center justify-center space-x-2">
             <Loader className="w-5 h-5 animate-spin" />
-            <span>Загрузка истории миграций...</span>
+            <span>{t('adminDatabase.migrations.loading')}</span>
           </div>
         ) : migrationHistory ? (
           <div className="space-y-6">
@@ -862,7 +860,7 @@ export function AdminDatabase() {
               <div className="bg-gradient-to-br from-purple-600/20 to-purple-800/20 rounded-lg p-4 border border-purple-500/30">
                 <p className="text-gray-400 text-sm mb-1 flex items-center space-x-1">
                   <Clock className="w-3.5 h-3.5" />
-                  <span>Текущая ревизия</span>
+                  <span>{t('adminDatabase.migrations.currentRevision')}</span>
                 </p>
                 {migrationHistory.current_revision ? (
                   <>
@@ -872,22 +870,22 @@ export function AdminDatabase() {
                     {migrationHistory.current_revision === migrationHistory.heads[0] ? (
                       <p className="text-green-400 text-xs flex items-center space-x-1">
                         <CheckCircle className="w-3 h-3" />
-                        <span>База данных актуальна</span>
+                        <span>{t('adminDatabase.migrations.upToDate')}</span>
                       </p>
                     ) : (
                       <p className="text-yellow-400 text-xs flex items-center space-x-1">
                         <AlertCircle className="w-3 h-3" />
-                        <span>Есть неприменённые миграции</span>
+                        <span>{t('adminDatabase.migrations.pendingMigrations')}</span>
                       </p>
                     )}
                   </>
                 ) : (
                   <>
                     <p className="text-yellow-400 font-semibold text-lg mb-1">
-                      Нет применённых миграций
+                      {t('adminDatabase.migrations.noMigrations')}
                     </p>
                     <p className="text-gray-400 text-xs">
-                      База данных не инициализирована. Нажми "До head" чтобы применить все миграции.
+                      {t('adminDatabase.migrations.notInitialized')}
                     </p>
                   </>
                 )}
@@ -895,13 +893,13 @@ export function AdminDatabase() {
               <div className="bg-gradient-to-br from-green-600/20 to-green-800/20 rounded-lg p-4 border border-green-500/30">
                 <p className="text-gray-400 text-sm mb-1 flex items-center space-x-1">
                   <TrendingUp className="w-3.5 h-3.5" />
-                  <span>Последняя ревизия (Head)</span>
+                  <span>{t('adminDatabase.migrations.latestRevision')}</span>
                 </p>
                 <p className="text-white font-semibold text-lg font-mono mb-1">
                   {migrationHistory.heads[0] || 'head'}
                 </p>
                 <p className="text-gray-400 text-xs">
-                  Самая новая миграция в коде
+                  {t('adminDatabase.migrations.latestDescription')}
                 </p>
               </div>
             </div>
@@ -913,8 +911,8 @@ export function AdminDatabase() {
                   <Info className="w-4 h-4" />
                   <span>
                     {migrationHistory.current_revision 
-                      ? `Путь миграций (от текущей ${migrationHistory.current_revision.substring(0, 8)}... до последней):`
-                      : 'Путь миграций (от начала до последней):'
+                      ? t('adminDatabase.migrations.pathFromCurrent', { current: migrationHistory.current_revision.substring(0, 8)})
+                      : t('adminDatabase.migrations.pathFromStart')
                     }
                   </span>
                 </p>
@@ -939,7 +937,7 @@ export function AdminDatabase() {
                     <p className="text-yellow-400 text-sm flex items-center space-x-2">
                       <AlertCircle className="w-4 h-4" />
                       <span>
-                        Нужно применить {migrationPath.length} миграций. Нажми "До head" чтобы обновить базу данных.
+                        {t('adminDatabase.migrations.applyXNewMigrations', { count: migrationPath.length })}
                       </span>
                     </p>
                   </div>
@@ -949,41 +947,41 @@ export function AdminDatabase() {
               <div className="bg-green-600/10 rounded-lg p-4 border border-green-500/30">
                 <p className="text-green-400 text-sm flex items-center space-x-2">
                   <CheckCircle className="w-4 h-4" />
-                  <span>Все миграции применены. База данных актуальна.</span>
+                  <span>{t('adminDatabase.migrations.allApplied')}</span>
                 </p>
               </div>
             ) : (
               <div className="bg-yellow-600/10 rounded-lg p-4 border border-yellow-500/30">
                 <p className="text-yellow-400 text-sm flex items-center space-x-2">
                   <AlertCircle className="w-4 h-4" />
-                  <span>База данных не инициализирована. Нажми "До head" чтобы применить все миграции.</span>
+                  <span>{t('adminDatabase.migrations.notInitialized')}</span>
                 </p>
               </div>
             )}
 
             {/* Быстрые действия */}
             <div className="bg-white/5 rounded-lg p-4 border border-white/10">
-              <p className="text-gray-300 text-sm mb-3">Быстрые действия:</p>
+              <p className="text-gray-300 text-sm mb-3">{t('adminDatabase.migrations.quickActions')}</p>
               <div className="flex items-center space-x-4">
                 <input
                   type="text"
                   value={selectedRevision}
                   onChange={(e) => setSelectedRevision(e.target.value)}
-                  placeholder="head, +1, -1, или ревизия"
+                  placeholder={t('adminDatabase.migrations.revisionInputPlaceholder')}
                   className="flex-1 bg-white/5 border border-white/10 rounded-lg px-4 py-2 text-white placeholder-gray-500 focus:outline-none focus:border-purple-500 text-sm font-mono"
                 />
                 <button
                   onClick={() => handleApplyMigration('head')}
                   disabled={applyMigrationMutation.isPending || migrationHistory.current_revision === migrationHistory.heads[0]}
                   className="flex items-center space-x-2 px-4 py-2 bg-green-600/20 hover:bg-green-600/30 text-green-400 rounded-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed text-sm"
-                  title="Применить все миграции до head"
+                  title={t('adminDatabase.migrations.applyToHeadTitle')}
                 >
                   {applyMigrationMutation.isPending ? (
                     <Loader className="w-4 h-4 animate-spin" />
                   ) : (
                     <Play className="w-4 h-4" />
                   )}
-                  <span>До head</span>
+                  <span>{t('adminDatabase.migrations.applyToHeadButton')}</span>
                 </button>
                 <button
                   onClick={() => handleApplyMigration(selectedRevision)}
@@ -995,7 +993,7 @@ export function AdminDatabase() {
                   ) : (
                     <ArrowUp className="w-4 h-4" />
                   )}
-                  <span>Применить</span>
+                  <span>{t('adminDatabase.migrations.applyButton')}</span>
                 </button>
                 <button
                   onClick={() => handleDowngradeMigration(selectedRevision)}
@@ -1007,7 +1005,7 @@ export function AdminDatabase() {
                   ) : (
                     <RotateCcw className="w-4 h-4" />
                   )}
-                  <span>Откатить</span>
+                  <span>{t('adminDatabase.migrations.downgradeButton')}</span>
                 </button>
               </div>
             </div>
@@ -1018,7 +1016,7 @@ export function AdminDatabase() {
                 <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
                 <input
                   type="text"
-                  placeholder="Поиск по ревизии или описанию..."
+                  placeholder={t('adminDatabase.migrations.tableHeaderDescription')}
                   value={migrationSearch}
                   onChange={(e) => setMigrationSearch(e.target.value)}
                   className="w-full bg-white/5 border border-white/10 rounded-lg px-4 pl-10 py-2 text-white placeholder-gray-500 focus:outline-none focus:border-purple-500 text-sm"
@@ -1029,9 +1027,9 @@ export function AdminDatabase() {
                 onChange={(e) => setMigrationFilter(e.target.value as 'all' | 'applied' | 'pending')}
                 className="bg-white/5 border border-white/10 rounded-lg px-4 py-2 text-white focus:outline-none focus:border-purple-500 text-sm"
               >
-                <option value="all">Все</option>
-                <option value="applied">Применённые</option>
-                <option value="pending">Не применённые</option>
+                <option value="all">{t('adminDatabase.migrations.filterAll')}</option>
+                <option value="applied">{t('adminDatabase.migrations.filterApplied')}</option>
+                <option value="pending">{t('adminDatabase.migrations.filterPending')}</option>
               </select>
             </div>
 
@@ -1040,26 +1038,26 @@ export function AdminDatabase() {
               <div className="bg-blue-600/10 rounded-lg p-4 border border-blue-500/30">
                 <p className="text-blue-400 text-sm font-semibold mb-2 flex items-center space-x-2">
                   <Info className="w-4 h-4" />
-                  <span>Как пользоваться миграциями:</span>
+                  <span>{t('adminDatabase.migrations.howToUseTitle')}</span>
                 </p>
                 <ul className="text-gray-300 text-xs space-y-1 ml-6 list-disc">
-                  <li><strong>"До head"</strong> — применить все неприменённые миграции до последней (рекомендуется)</li>
+                  <li><strong>{t('adminDatabase.migrations.applyToHeadButton')}</strong> — {t('adminDatabase.migrations.howToUseHead')}</li>
                   <li>
-                    <strong>"Применить"</strong> — применить миграцию из поля ввода:
+                    <strong>{t('adminDatabase.migrations.applyButton')}</strong> — {t('adminDatabase.migrations.howToUseApply')}
                     <ul className="ml-4 mt-1 space-y-0.5 list-disc">
-                      <li><code className="bg-white/5 px-1 rounded">head</code> — применить все до последней</li>
-                      <li><code className="bg-white/5 px-1 rounded">+1</code> — применить следующую одну миграцию (если текущая 1a99f4734fc4, применится следующая)</li>
-                      <li><code className="bg-white/5 px-1 rounded">a2b3c4d5e6f7</code> — применить конкретную ревизию</li>
+                      <li><code className="bg-white/5 px-1 rounded">head</code> — {t('adminDatabase.migrations.howToUseApplyHead')}</li>
+                      <li><code className="bg-white/5 px-1 rounded">+1</code> — {t('adminDatabase.migrations.howToUseApplyPlusOne')}</li>
+                      <li><code className="bg-white/5 px-1 rounded">a2b3c4d5e6f7</code> — {t('adminDatabase.migrations.howToUseApplyRevision')}</li>
                     </ul>
                   </li>
                   <li>
-                    <strong>"Откатить"</strong> — откатить миграцию:
+                    <strong>{t('adminDatabase.migrations.downgradeButton')}</strong> — {t('adminDatabase.migrations.howToUseDowngrade')}
                     <ul className="ml-4 mt-1 space-y-0.5 list-disc">
-                      <li><code className="bg-white/5 px-1 rounded">-1</code> — откатить последнюю применённую миграцию</li>
-                      <li><code className="bg-white/5 px-1 rounded">base</code> — откатить все миграции до начала</li>
+                      <li><code className="bg-white/5 px-1 rounded">-1</code> — {t('adminDatabase.migrations.howToUseDowngradeMinusOne')}</li>
+                      <li><code className="bg-white/5 px-1 rounded">base</code> — {t('adminDatabase.migrations.howToUseDowngradeBase')}</li>
                     </ul>
                   </li>
-                  <li>Или нажми <strong>стрелку вверх</strong> рядом с конкретной миграцией в таблице</li>
+                  <li>{t('adminDatabase.migrations.howToUseClickHint')}</li>
                 </ul>
               </div>
             )}
@@ -1078,11 +1076,11 @@ export function AdminDatabase() {
                 )}
                 <div className="flex-1">
                   <span className="text-sm">
-                    {applyMigrationMutation.data?.message || downgradeMigrationMutation.data?.message}
+                    {applyMigrationMutation.isSuccess ? t('adminDatabase.migrations.migrationSuccess') : t('adminDatabase.migrations.downgradeSuccess')}
                   </span>
                   {applyMigrationMutation.data?.validation_errors && applyMigrationMutation.data.validation_errors.length > 0 && (
                     <div className="mt-2">
-                      <p className="text-yellow-300 text-xs mb-1">Отсутствующие таблицы:</p>
+                      <p className="text-yellow-300 text-xs mb-1">{t('adminDatabase.migrations.validationErrors')}</p>
                       <ul className="list-disc list-inside text-yellow-300/80 text-xs space-y-1">
                         {applyMigrationMutation.data.validation_errors.map((table) => (
                           <li key={table}>{table}</li>
@@ -1098,7 +1096,7 @@ export function AdminDatabase() {
               <div className="flex items-center space-x-2 text-red-400 bg-red-600/10 rounded-lg p-3 border border-red-500/30">
                 <AlertCircle className="w-5 h-5 flex-shrink-0" />
                 <span className="text-sm">
-                  {applyMigrationMutation.error?.message || downgradeMigrationMutation.error?.message || 'Произошла ошибка'}
+                  {applyMigrationMutation.error?.message || downgradeMigrationMutation.error?.message || t('adminDatabase.migrations.migrationError')}
                 </span>
               </div>
             )}
@@ -1107,34 +1105,34 @@ export function AdminDatabase() {
             <div className="bg-blue-600/10 rounded-lg p-4 border border-blue-500/30">
               <p className="text-blue-400 text-sm font-semibold mb-2 flex items-center space-x-2">
                 <Info className="w-4 h-4" />
-                <span>Что означают статусы миграций:</span>
+                <span>{t('adminDatabase.migrations.statusExplanationTitle')}</span>
               </p>
               <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-xs">
                 <div className="flex items-start space-x-2">
                   <CheckCircle className="w-4 h-4 text-green-400 flex-shrink-0 mt-0.5" />
                   <div>
-                    <p className="text-green-400 font-semibold">✓ Применена</p>
-                    <p className="text-gray-400">Миграция уже применена к базе данных. Таблицы/колонки созданы.</p>
+                    <p className="text-green-400 font-semibold">✓ {t('adminDatabase.migrations.statusApplied')}</p>
+                    <p className="text-gray-400">{t('adminDatabase.migrations.statusAppliedDesc')}</p>
                   </div>
                 </div>
                 <div className="flex items-start space-x-2">
                   <Clock className="w-4 h-4 text-gray-500 flex-shrink-0 mt-0.5" />
                   <div>
-                    <p className="text-gray-400 font-semibold">⏳ Ожидает</p>
-                    <p className="text-gray-400">Миграция ещё не применена. Нужно применить, чтобы обновить БД.</p>
+                    <p className="text-gray-400 font-semibold">⏳ {t('adminDatabase.migrations.statusPending')}</p>
+                    <p className="text-gray-400">{t('adminDatabase.migrations.statusPendingDesc')}</p>
                   </div>
                 </div>
                 <div className="flex items-start space-x-2">
                   <TrendingUp className="w-4 h-4 text-yellow-400 flex-shrink-0 mt-0.5" />
                   <div>
-                    <p className="text-yellow-400 font-semibold">↑ Head</p>
-                    <p className="text-gray-400">Самая последняя миграция в коде. После неё нет других миграций.</p>
+                    <p className="text-yellow-400 font-semibold">↑ {t('adminDatabase.migrations.statusHead')}</p>
+                    <p className="text-gray-400">{t('adminDatabase.migrations.statusHeadDesc')}</p>
                   </div>
                 </div>
               </div>
               <div className="mt-3 pt-3 border-t border-blue-500/20">
                 <p className="text-gray-300 text-xs">
-                  <strong className="text-purple-400">Current</strong> — метка показывает текущую ревизию базы данных (последняя применённая миграция).
+                  <strong className="text-purple-400">{t('adminDatabase.migrations.currentLabel')}</strong> — {t('adminDatabase.migrations.currentLabelHint')}
                 </p>
               </div>
             </div>
@@ -1145,18 +1143,18 @@ export function AdminDatabase() {
                 <table className="w-full text-sm">
                   <thead>
                     <tr className="border-b border-white/10 bg-white/5">
-                      <th className="text-left py-3 px-4 text-gray-300 font-semibold">Статус</th>
-                      <th className="text-left py-3 px-4 text-gray-300 font-semibold">Ревизия</th>
-                      <th className="text-left py-3 px-4 text-gray-300 font-semibold">Описание</th>
-                      <th className="text-left py-3 px-4 text-gray-300 font-semibold">Дата применения</th>
-                      <th className="text-center py-3 px-4 text-gray-300 font-semibold">Действия</th>
+                      <th className="text-left py-3 px-4 text-gray-300 font-semibold">{t('adminDatabase.migrations.tableHeaderStatus')}</th>
+                      <th className="text-left py-3 px-4 text-gray-300 font-semibold">{t('adminDatabase.migrations.tableHeaderRevision')}</th>
+                      <th className="text-left py-3 px-4 text-gray-300 font-semibold">{t('adminDatabase.migrations.tableHeaderDescription')}</th>
+                      <th className="text-left py-3 px-4 text-gray-300 font-semibold">{t('adminDatabase.migrations.tableHeaderAppliedDate')}</th>
+                      <th className="text-center py-3 px-4 text-gray-300 font-semibold">{t('adminDatabase.migrations.tableHeaderActions')}</th>
                     </tr>
                   </thead>
                   <tbody>
                     {filteredMigrations.length === 0 ? (
                       <tr>
                         <td colSpan={5} className="text-center py-8 text-gray-400">
-                          {migrationSearch || migrationFilter !== 'all' ? 'Миграции не найдены' : 'Нет миграций'}
+                          {migrationSearch || migrationFilter !== 'all' ? t('adminDatabase.migrations.noMigrationsFound') : t('adminDatabase.migrations.noMigrationsExist')}
                         </td>
                       </tr>
                     ) : (
@@ -1174,17 +1172,17 @@ export function AdminDatabase() {
                             {(migration.is_applied || migration.applied_at) ? (
                               <span className="flex items-center space-x-1 text-green-400">
                                 <CheckCircle className="w-4 h-4" />
-                                <span className="text-xs">Применена</span>
+                                <span className="text-xs">{t('adminDatabase.migrations.statusLabelApplied')}</span>
                               </span>
                             ) : migration.is_head ? (
                               <span className="flex items-center space-x-1 text-yellow-400">
                                 <TrendingUp className="w-4 h-4" />
-                                <span className="text-xs">Head</span>
+                                <span className="text-xs">{t('adminDatabase.migrations.statusLabelHead')}</span>
                               </span>
                             ) : (
                               <span className="flex items-center space-x-1 text-gray-500">
                                 <Clock className="w-4 h-4" />
-                                <span className="text-xs">Ожидает</span>
+                                <span className="text-xs">{t('adminDatabase.migrations.statusLabelPending')}</span>
                               </span>
                             )}
                           </td>
@@ -1194,20 +1192,20 @@ export function AdminDatabase() {
                                 {migration.revision}
                               </code>
                               {migration.revision === migrationHistory.current_revision && (
-                                <span className="text-xs text-purple-400 bg-purple-600/20 px-2 py-0.5 rounded">Current</span>
+                                <span className="text-xs text-purple-400 bg-purple-600/20 px-2 py-0.5 rounded">{t('adminDatabase.migrations.currentLabel')}</span>
                               )}
                             </div>
                           </td>
                           <td className="py-3 px-4 text-gray-300">
                             {migration.description || (
-                              <span className="text-gray-500 italic">Нет описания</span>
+                              <span className="text-gray-500 italic">{t('adminDatabase.migrations.noDescription')}</span>
                             )}
                           </td>
                           <td className="py-3 px-4 text-gray-400 text-xs">
                             {migration.applied_at ? (
                               new Date(migration.applied_at).toLocaleString('ru-RU')
                             ) : (
-                              <span className="text-gray-500">—</span>
+                              <span className="text-gray-500">{t('adminDatabase.migrations.notApplied')}</span>
                             )}
                           </td>
                           <td className="py-3 px-4">
@@ -1218,7 +1216,7 @@ export function AdminDatabase() {
                                   onClick={() => handleApplyMigration(migration.revision)}
                                   disabled={applyMigrationMutation.isPending}
                                   className="p-1.5 bg-green-600/20 hover:bg-green-600/30 text-green-400 rounded transition-all disabled:opacity-50"
-                                  title="Применить миграцию"
+                                  title={t('adminDatabase.migrations.applyActionTitle')}
                                 >
                                   {applyMigrationMutation.isPending ? (
                                     <Loader className="w-4 h-4 animate-spin" />
@@ -1231,7 +1229,7 @@ export function AdminDatabase() {
                                   onClick={() => handleDowngradeMigration(migration.down_revision || '-1')}
                                   disabled={downgradeMigrationMutation.isPending}
                                   className="p-1.5 bg-red-600/20 hover:bg-red-600/30 text-red-400 rounded transition-all disabled:opacity-50"
-                                  title="Откатить до предыдущей версии"
+                                  title={t('adminDatabase.migrations.downgradeToPreviousTitle')}
                                 >
                                   {downgradeMigrationMutation.isPending ? (
                                     <Loader className="w-4 h-4 animate-spin" />
@@ -1240,7 +1238,7 @@ export function AdminDatabase() {
                                   )}
                                 </button>
                               ) : (
-                                <span className="text-gray-500 text-xs">Текущая</span>
+                                <span className="text-gray-500 text-xs">{t('adminDatabase.migrations.currentActionLabel')}</span>
                               )}
                             </div>
                           </td>
@@ -1255,7 +1253,7 @@ export function AdminDatabase() {
         ) : (
           <div className="text-center py-8 text-red-400 flex items-center justify-center space-x-2">
             <XCircle className="w-5 h-5" />
-            <span>Ошибка загрузки истории миграций</span>
+            <span>{t('adminDatabase.migrations.migrationError')}</span>
           </div>
         )}
       </div>
@@ -1264,21 +1262,21 @@ export function AdminDatabase() {
       <div className="bg-white/5 rounded-xl p-6 border border-white/10">
         <h3 className="text-xl font-bold text-white mb-4 flex items-center space-x-2">
           <Download className="w-5 h-5" />
-          <span>Экспорт базы данных</span>
+          <span>{t('adminDatabase.export.title')}</span>
         </h3>
 
         <div className="space-y-4">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
-              <label className="block text-gray-400 text-sm mb-2">Формат</label>
+              <label className="block text-gray-400 text-sm mb-2">{t('adminDatabase.export.formatLabel')}</label>
               <select
                 value={exportFormat}
                 onChange={(e) => setExportFormat(e.target.value as 'custom' | 'plain' | 'tar')}
                 className="w-full bg-white/5 border border-white/10 rounded-lg px-4 py-2 text-white focus:outline-none focus:border-purple-500"
               >
-                <option value="custom">Custom (.dump)</option>
-                <option value="plain">Plain SQL (.sql)</option>
-                <option value="tar">Tar (.tar)</option>
+                <option value="custom">{t('adminDatabase.export.formatCustom')}</option>
+                <option value="plain">{t('adminDatabase.export.formatPlain')}</option>
+                <option value="tar">{t('adminDatabase.export.formatTar')}</option>
               </select>
             </div>
             <div className="flex items-center space-x-2 mt-6">
@@ -1290,7 +1288,7 @@ export function AdminDatabase() {
                 className="w-4 h-4 text-purple-600 bg-white/5 border-white/10 rounded focus:ring-purple-500"
               />
               <label htmlFor="includeData" className="text-gray-300">
-                Включать данные
+                {t('adminDatabase.export.includeDataLabel')}
               </label>
             </div>
           </div>
@@ -1305,7 +1303,7 @@ export function AdminDatabase() {
             ) : (
               <Download className="w-4 h-4" />
             )}
-            <span>Экспортировать</span>
+            <span>{t('adminDatabase.export.exportButton')}</span>
           </button>
 
           {exportMutation.isSuccess && exportMutation.data.download_url && exportMutation.data.filename && (
@@ -1333,7 +1331,7 @@ export function AdminDatabase() {
                     
                     if (!response.ok) {
                       const errorText = await response.text();
-                      throw new Error(`Ошибка скачивания файла: ${response.status} ${errorText}`);
+                      throw new Error(t('adminDatabase.export.downloadError', { message: `${response.status} ${errorText}` }));
                     }
                     
                     // Создаём blob URL и скачиваем файл
@@ -1347,14 +1345,14 @@ export function AdminDatabase() {
                     window.URL.revokeObjectURL(url);
                     document.body.removeChild(a);
                   } catch (error: any) {
-                    const errorMessage = error.message || 'Неизвестная ошибка';
-                    alert(`Ошибка скачивания файла: ${errorMessage}`);
+                    const errorMessage = error.message || t('adminDatabase.errorUnknown');
+                    alert(t('adminDatabase.export.downloadError', { message: errorMessage }));
                   }
                 }}
                 className="ml-auto text-blue-400 hover:text-blue-300 underline text-sm flex items-center space-x-1 transition-colors"
               >
                 <Download className="w-4 h-4" />
-                <span>Скачать</span>
+                <span>{t('adminDatabase.export.downloadButton')}</span>
               </button>
             </div>
           )}
@@ -1362,7 +1360,7 @@ export function AdminDatabase() {
           {exportMutation.isError && (
             <div className="flex items-center space-x-2 text-red-400 bg-red-600/10 rounded-lg p-3 border border-red-500/30">
               <AlertCircle className="w-5 h-5 flex-shrink-0" />
-              <span className="text-sm">{exportMutation.error?.message}</span>
+              <span className="text-sm">{t('adminDatabase.export.error', { message: exportMutation.error?.message })}</span>
             </div>
           )}
         </div>
@@ -1372,21 +1370,21 @@ export function AdminDatabase() {
       <div className="bg-white/5 rounded-xl p-6 border border-white/10">
         <h3 className="text-xl font-bold text-white mb-4 flex items-center space-x-2">
           <Upload className="w-5 h-5" />
-          <span>Импорт базы данных</span>
+          <span>{t('adminDatabase.import.title')}</span>
         </h3>
 
         <div className="space-y-4">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
-              <label className="block text-gray-400 text-sm mb-2">Формат</label>
+              <label className="block text-gray-400 text-sm mb-2">{t('adminDatabase.import.formatLabel')}</label>
               <select
                 value={importFormat}
                 onChange={(e) => setImportFormat(e.target.value as 'custom' | 'plain' | 'tar')}
                 className="w-full bg-white/5 border border-white/10 rounded-lg px-4 py-2 text-white focus:outline-none focus:border-purple-500"
               >
-                <option value="custom">Custom (.dump)</option>
-                <option value="plain">Plain SQL (.sql)</option>
-                <option value="tar">Tar (.tar)</option>
+                <option value="custom">{t('adminDatabase.import.formatCustom')}</option>
+                <option value="plain">{t('adminDatabase.import.formatPlain')}</option>
+                <option value="tar">{t('adminDatabase.import.formatTar')}</option>
               </select>
             </div>
             <div className="flex items-center space-x-2 mt-6">
@@ -1398,13 +1396,13 @@ export function AdminDatabase() {
                 className="w-4 h-4 text-purple-600 bg-white/5 border-white/10 rounded focus:ring-purple-500"
               />
               <label htmlFor="cleanImport" className="text-gray-300">
-                Очистить базу перед импортом
+                {t('adminDatabase.import.cleanImportLabel')}
               </label>
             </div>
           </div>
 
           <div>
-            <label className="block text-gray-400 text-sm mb-2">Файл дампа</label>
+            <label className="block text-gray-400 text-sm mb-2">{t('adminDatabase.import.dumpFileLabel')}</label>
             <input
               type="file"
               onChange={(e) => setImportFile(e.target.files?.[0] || null)}
@@ -1420,7 +1418,7 @@ export function AdminDatabase() {
             {importFile && (
               <p className="text-sm text-gray-400 mt-2 flex items-center space-x-2">
                 <CheckCircle className="w-4 h-4 text-green-400" />
-                <span>Выбран файл: <span className="text-white font-medium">{importFile.name}</span></span>
+                <span>{t('adminDatabase.import.fileSelected', { fileName: importFile.name })}</span>
                 <span className="text-gray-500">({(importFile.size / 1024 / 1024).toFixed(2)} MB)</span>
               </p>
             )}
@@ -1434,12 +1432,12 @@ export function AdminDatabase() {
             {importMutation.isPending ? (
               <>
                 <Loader className="w-4 h-4 animate-spin" />
-                <span>Импорт в процессе...</span>
+                <span>{t('adminDatabase.import.importing')}</span>
               </>
             ) : (
               <>
                 <Upload className="w-4 h-4" />
-                <span>Импортировать</span>
+                <span>{t('adminDatabase.import.importButton')}</span>
               </>
             )}
           </button>
@@ -1449,7 +1447,7 @@ export function AdminDatabase() {
               <div className="flex items-center space-x-2 text-blue-400">
                 <Loader className="w-4 h-4 animate-spin" />
                 <span className="text-sm">
-                  Импорт базы данных может занять несколько минут. Пожалуйста, подождите...
+                  {t('adminDatabase.import.importingDescription')}
                 </span>
               </div>
             </div>
@@ -1466,16 +1464,16 @@ export function AdminDatabase() {
             <div className="flex items-start space-x-2 text-red-400 bg-red-600/10 rounded-lg p-3 border border-red-500/30">
               <AlertCircle className="w-5 h-5 flex-shrink-0 mt-0.5" />
               <div className="flex-1">
-                <p className="text-sm font-semibold">Ошибка импорта базы данных</p>
+                <p className="text-sm font-semibold">{t('adminDatabase.import.errorTitle')}</p>
                 <p className="text-xs text-red-300 mt-1">
                   {importMutation.error?.response?.data?.detail || 
                    importMutation.error?.response?.data?.message || 
                    importMutation.error?.message || 
-                   'Неизвестная ошибка'}
+                   t('adminDatabase.import.errorUnknown')}
                 </p>
                 {importMutation.error?.code === 'ECONNABORTED' && (
                   <p className="text-xs text-yellow-300 mt-1">
-                    ⚠️ Превышен таймаут запроса. Импорт может занять много времени для больших файлов.
+                    {t('adminDatabase.import.errorTimeout')}
                   </p>
                 )}
               </div>
@@ -1494,11 +1492,11 @@ export function AdminDatabase() {
               <div>
                 <h3 className="text-2xl font-bold text-white flex items-center space-x-2">
                   <Database className="w-6 h-6" />
-                  <span>{selectedTable.schema}.{selectedTable.name}</span>
+                  <span>{t('adminDatabase.tableViewer.title', { schema: selectedTable.schema, name: selectedTable.name })}</span>
                 </h3>
                 {tableData && (
                   <p className="text-gray-400 text-sm mt-1">
-                    Всего записей: {tableData.total.toLocaleString()}
+                    {t('adminDatabase.tableViewer.totalRows', { count: tableData.total })}
                   </p>
                 )}
               </div>
@@ -1518,7 +1516,7 @@ export function AdminDatabase() {
                   <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
                   <input
                     type="text"
-                    placeholder="Поиск по таблице..."
+                    placeholder={t('adminDatabase.tableViewer.searchPlaceholder')}
                     value={tableDataSearch}
                     onChange={(e) => {
                       setTableDataSearch(e.target.value);
@@ -1546,7 +1544,7 @@ export function AdminDatabase() {
               {loadingTableData ? (
                 <div className="flex items-center justify-center py-12 text-gray-400">
                   <Loader className="w-6 h-6 animate-spin mr-2" />
-                  <span>Загрузка данных...</span>
+                  <span>{t('adminDatabase.tableViewer.loadingData')}</span>
                 </div>
               ) : tableData ? (
                 <>
@@ -1574,7 +1572,7 @@ export function AdminDatabase() {
                         {tableData.rows.length === 0 ? (
                           <tr>
                             <td colSpan={tableData.columns.length} className="text-center py-8 text-gray-400">
-                              {tableDataSearch ? 'Записи не найдены' : 'Нет данных'}
+                              {tableDataSearch ? t('adminDatabase.tableViewer.noDataFound') : t('adminDatabase.tableViewer.noData')}
                             </td>
                           </tr>
                         ) : (
@@ -1594,13 +1592,13 @@ export function AdminDatabase() {
                                   setEditFormData({ ...row });
                                   setEditError(null);
                                 }}
-                                title="Кликните для редактирования"
+                                title={t('adminDatabase.tableViewer.editRowHint')}
                               >
                                 {tableData.columns.map((col: string) => (
                                   <td key={col} className="py-2 px-4 text-gray-300 text-xs">
                                     <div className="max-w-xs truncate" title={String(row[col] ?? 'NULL')}>
                                       {row[col] === null ? (
-                                        <span className="text-gray-500 italic">NULL</span>
+                                        <span className="text-gray-500 italic">{t('adminDatabase.tableViewer.nullValue')}</span>
                                       ) : typeof row[col] === 'boolean' ? (
                                         <span className={row[col] ? 'text-green-400' : 'text-red-400'}>
                                           {row[col] ? 'true' : 'false'}
@@ -1623,7 +1621,7 @@ export function AdminDatabase() {
                   {tableData.pages > 1 && (
                     <div className="flex items-center justify-between mt-4">
                       <div className="text-gray-400 text-sm">
-                        Страница {tableData.page} из {tableData.pages}
+                        {t('adminDatabase.tableViewer.pageInfo', { page: tableData.page, pages: tableData.pages })}
                       </div>
                       <div className="flex items-center space-x-2">
                         <button
@@ -1650,7 +1648,7 @@ export function AdminDatabase() {
               ) : (
                 <div className="flex items-center justify-center py-12 text-red-400">
                   <AlertCircle className="w-6 h-6 mr-2" />
-                  <span>Ошибка загрузки данных</span>
+                  <span>{t('adminDatabase.tableViewer.error')}</span>
                 </div>
               )}
             </div>
@@ -1669,7 +1667,7 @@ export function AdminDatabase() {
               <div className="flex items-center justify-between p-6 border-b border-white/10">
                 <h3 className="text-2xl font-bold text-white flex items-center space-x-2">
                   <Edit className="w-6 h-6" />
-                  <span>Редактировать строку</span>
+                  <span>{t('adminDatabase.tableViewer.editRowTitle')}</span>
                 </h3>
                 <button
                   onClick={() => {
@@ -1700,7 +1698,7 @@ export function AdminDatabase() {
                       <div key={col}>
                         <label className="block text-sm font-medium text-gray-300 mb-2">
                           {col}
-                          {isPrimaryKey && <span className="text-gray-500 ml-2">(первичный ключ)</span>}
+                          {isPrimaryKey && <span className="text-gray-500 ml-2">{t('adminDatabase.tableViewer.primaryKeyLabel')}</span>}
                         </label>
                         {isPrimaryKey ? (
                           <input
@@ -1721,7 +1719,7 @@ export function AdminDatabase() {
                               }));
                             }}
                             className="w-full bg-white/5 border border-white/10 rounded-lg px-4 py-2 text-white text-sm focus:outline-none focus:border-purple-500"
-                            placeholder={value === null ? 'NULL' : ''}
+                            placeholder={value === null ? t('adminDatabase.tableViewer.nullValue') : ''}
                           />
                         )}
                       </div>
@@ -1739,7 +1737,7 @@ export function AdminDatabase() {
                   }}
                   className="px-4 py-2 bg-white/5 hover:bg-white/10 text-gray-300 rounded-lg transition-all"
                 >
-                  Отмена
+                  {t('adminDatabase.tableViewer.cancelButton')}
                 </button>
                 <button
                   onClick={async () => {
@@ -1760,7 +1758,7 @@ export function AdminDatabase() {
                     });
                     
                     if (Object.keys(updateData).length === 0) {
-                      setEditError('Нет данных для обновления');
+                      setEditError(t('adminDatabase.tableViewer.noDataToUpdate'));
                       return;
                     }
                     
@@ -1777,12 +1775,12 @@ export function AdminDatabase() {
                   {updateTableRowMutation.isPending ? (
                     <>
                       <Loader className="w-4 h-4 animate-spin" />
-                      <span>Сохранение...</span>
+                      <span>{t('adminDatabase.tableViewer.saving')}</span>
                     </>
                   ) : (
                     <>
                       <Save className="w-4 h-4" />
-                      <span>Сохранить</span>
+                      <span>{t('adminDatabase.tableViewer.saveButton')}</span>
                     </>
                   )}
                 </button>

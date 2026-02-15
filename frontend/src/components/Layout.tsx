@@ -7,12 +7,14 @@ import { useAuth } from '../contexts/AuthContext';
 import { AuthModal } from './AuthModal';
 import { Notifications } from './Notifications';
 import { FeedbackModal } from './FeedbackModal';
+import { useTranslation } from 'react-i18next';
 
 interface LayoutProps {
   children: ReactNode;
 }
 
 export const Layout: React.FC<LayoutProps> = ({ children }) => {
+  const { t } = useTranslation();
   const { user, logout } = useAuth();
   const location = useLocation();
   const navigate = useNavigate();
@@ -84,7 +86,7 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
                 </div>
                 <div className="hidden xs:block">
                   <h1 className="text-lg sm:text-2xl font-bold text-white">FilamentHub</h1>
-                  <p className="text-xs sm:text-sm text-gray-400 hidden sm:block">Интеллектуальный каталог материалов</p>
+                  <p className="text-xs sm:text-sm text-gray-400 hidden sm:block">{t('layout.tagline')}</p>
                 </div>
               </Link>
               
@@ -93,10 +95,10 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
                 <button
                   onClick={() => setIsFeedbackModalOpen(true)}
                   className="hidden md:flex ml-4 px-3 py-1.5 rounded-lg bg-purple-600/20 hover:bg-purple-600/30 border border-purple-500/30 text-purple-300 hover:text-purple-200 text-xs font-medium transition-all items-center gap-1.5"
-                  title="Обратная связь для бетатестеров"
+                  title={t('layout.feedback_tooltip')}
                 >
                   <MessageCircle className="w-3.5 h-3.5" />
-                  <span>Бета-фидбек</span>
+                  <span>{t('layout.feedback_button')}</span>
                 </button>
               )}
             </div>
@@ -114,7 +116,7 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
                 }`}
               >
                 <Package className="w-4 h-4" />
-                <span>Каталог</span>
+                <span>{t('layout.nav_catalog')}</span>
               </Link>
 
               <Link
@@ -126,7 +128,7 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
                 }`}
               >
                 <Download className="w-4 h-4" />
-                <span>Скачать</span>
+                <span>{t('layout.nav_download')}</span>
               </Link>
 
               <Link
@@ -138,7 +140,7 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
                 }`}
               >
                 <BookOpen className="w-4 h-4" />
-                <span>Вики</span>
+                <span>{t('layout.nav_wiki')}</span>
               </Link>
 
               {user?.role === 'admin' && (
@@ -151,7 +153,7 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
                   }`}
                 >
                   <Shield className="w-4 h-4" />
-                  <span>Админка</span>
+                  <span>{t('layout.nav_admin')}</span>
                 </Link>
               )}
 
@@ -165,7 +167,7 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
                   }`}
                 >
                   <User className="w-4 h-4" />
-                  <span>Профиль</span>
+                  <span>{t('layout.nav_profile')}</span>
                 </Link>
               )}
 
@@ -175,7 +177,7 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
                   className="flex items-center space-x-2 px-4 py-2 bg-red-600/20 hover:bg-red-600/30 text-red-400 rounded-lg transition-all"
                 >
                   <LogOut className="w-4 h-4" />
-                  <span>Выйти</span>
+                  <span>{t('layout.nav_logout')}</span>
                 </button>
               ) : (
                 <button
@@ -183,7 +185,7 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
                   className="flex items-center space-x-2 px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg transition-all"
                 >
                   <User className="w-4 h-4" />
-                  <span>Войти</span>
+                  <span>{t('layout.nav_login')}</span>
                 </button>
               )}
             </nav>
@@ -194,7 +196,7 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
               <button
                 onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
                 className="p-2 text-gray-300 hover:text-white hover:bg-white/10 rounded-lg transition-all"
-                aria-label="Меню"
+                aria-label={t('layout.nav_menu')}
               >
                 {isMobileMenuOpen ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
               </button>
@@ -215,7 +217,7 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
                 }`}
               >
                 <Package className="w-5 h-5" />
-                <span className="font-medium">Каталог</span>
+                <span className="font-medium">{t('layout.nav_catalog')}</span>
               </Link>
 
               <Link
@@ -227,7 +229,7 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
                 }`}
               >
                 <Download className="w-5 h-5" />
-                <span className="font-medium">Скачать</span>
+                <span className="font-medium">{t('layout.nav_download')}</span>
               </Link>
 
               <Link
@@ -239,7 +241,7 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
                 }`}
               >
                 <BookOpen className="w-5 h-5" />
-                <span className="font-medium">Вики</span>
+                <span className="font-medium">{t('layout.nav_wiki')}</span>
               </Link>
 
               {user?.role === 'admin' && (
@@ -252,7 +254,7 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
                   }`}
                 >
                   <Shield className="w-5 h-5" />
-                  <span className="font-medium">Админка</span>
+                  <span className="font-medium">{t('layout.nav_admin')}</span>
                 </Link>
               )}
 
@@ -267,7 +269,7 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
                     }`}
                   >
                     <User className="w-5 h-5" />
-                    <span className="font-medium">Профиль</span>
+                    <span className="font-medium">{t('layout.nav_profile')}</span>
                   </Link>
 
                   <button
@@ -275,7 +277,7 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
                     className="w-full flex items-center space-x-3 px-4 py-3 rounded-lg text-purple-300 hover:text-purple-200 hover:bg-purple-600/20 transition-all"
                   >
                     <MessageCircle className="w-5 h-5" />
-                    <span className="font-medium">Бета-фидбек</span>
+                    <span className="font-medium">{t('layout.feedback_button')}</span>
                   </button>
 
                   <div className="border-t border-white/10 pt-2 mt-2">
@@ -284,7 +286,7 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
                       className="w-full flex items-center space-x-3 px-4 py-3 rounded-lg text-red-400 hover:bg-red-600/20 transition-all"
                     >
                       <LogOut className="w-5 h-5" />
-                      <span className="font-medium">Выйти</span>
+                      <span className="font-medium">{t('layout.nav_logout')}</span>
                     </button>
                   </div>
                 </>
@@ -299,7 +301,7 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
                   className="w-full flex items-center justify-center space-x-2 px-4 py-3 bg-purple-600 hover:bg-purple-700 text-white rounded-lg transition-all font-medium"
                 >
                   <User className="w-5 h-5" />
-                  <span>Войти</span>
+                  <span>{t('layout.nav_login')}</span>
                 </button>
               )}
             </div>

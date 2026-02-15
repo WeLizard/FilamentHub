@@ -63,8 +63,8 @@ export function TableOfContents({ content, className }: TableOfContentsProps) {
     const extracted = extractHeadings(content);
     setHeadings(extracted);
 
-    // Устанавливаем первый заголовок как активный
-    if (extracted.length > 0 && !activeId) {
+    // Сбрасываем активный заголовок на первый при смене контента
+    if (extracted.length > 0) {
       setActiveId(extracted[0].id);
     }
   }, [content]);

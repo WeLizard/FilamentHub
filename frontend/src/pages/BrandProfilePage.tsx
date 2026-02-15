@@ -1372,9 +1372,10 @@ const BrandSelectionForm: React.FC = () => {
                         fileName = `Файл ${index + 1}`;
                       }
                       
-                      // Формируем URL для доступа к файлу
+                      // Формируем URL для доступа к файлу (auth через query token)
                       // filePath уже в формате "brand_requests/5/file.jpg"
-                      const fileUrl = `/uploads/${filePath}`;
+                      const accessToken = localStorage.getItem('access_token');
+                      const fileUrl = `/api/v1/uploads/${filePath}${accessToken ? `?token=${accessToken}` : ''}`;
                       
                       return (
                         <div

@@ -13,6 +13,17 @@ const api = axios.create({
   },
 });
 
+/** Уведомить C++ (OrcaSlicer) о logout — очистить токен в AppConfig */
+const notifyCppLogout = () => {
+  try {
+    if (typeof window !== 'undefined' && (window as any).wx?.postMessage) {
+      (window as any).wx.postMessage(JSON.stringify({ command: 'logout' }));
+    }
+  } catch {
+    // Не в контексте OrcaSlicer — игнорируем
+  }
+};
+
 // Добавляем токен в запросы
 api.interceptors.request.use((config) => {
   const token = localStorage.getItem('access_token');
@@ -100,6 +111,8 @@ api.interceptors.response.use(
         // Нет refresh token, удаляем токены и перенаправляем
         // Только если это не запрос авторизации и не админ панель
         removeToken();
+        // Уведомляем C++ о logout (401 без refresh token)
+        notifyCppLogout();
         const isAdminPage = window.location.pathname.includes('/admin');
         if (!window.location.pathname.includes('/auth') && !isAdminPage) {
           window.location.reload();
@@ -137,6 +150,8 @@ api.interceptors.response.use(
       } catch (refreshError: any) {
         // Refresh token невалидный, удаляем токены
         removeToken();
+        // Уведомляем C++ о logout (refresh failed)
+        notifyCppLogout();
         processQueue(refreshError, null);
         isRefreshing = false;
         
@@ -155,7 +170,7 @@ api.interceptors.response.use(
 
 // Auth API
 export const authAPI = {
-  register: async (data: { email: string; username: string; password: string; role: string }) => {
+  register: async (data: { email: string; username: string; password: string; role: string; recaptcha_token?: string }) => {
     const response = await api.post<User>('/auth/register', data);
     return response.data;
   },
@@ -170,6 +185,10 @@ export const authAPI = {
       refresh_token: refreshToken,
     } as RefreshTokenRequest);
     return response.data;
+  },
+
+  logout: async (refreshToken?: string | null) => {
+    await api.post('/auth/logout', refreshToken ? { refresh_token: refreshToken } : undefined);
   },
 
   me: async () => {

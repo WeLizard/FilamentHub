@@ -60,7 +60,7 @@ export function WikiPage() {
     try {
       const results = await wikiAPI.searchArticles(searchQuery);
       // TODO: показать результаты поиска в модалке или на отдельной странице
-      console.log('Search results:', results);
+      void results;
     } catch (err) {
       console.error('Search failed:', err);
     }

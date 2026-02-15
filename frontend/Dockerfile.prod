@@ -12,6 +12,10 @@ RUN npm ci
 # Copy source code
 COPY . .
 
+# reCAPTCHA v3 site key (публичный, передаётся через docker-compose build args)
+ARG VITE_RECAPTCHA_SITE_KEY=""
+ENV VITE_RECAPTCHA_SITE_KEY=${VITE_RECAPTCHA_SITE_KEY}
+
 # Build for production
 RUN npm run build
 
@@ -26,6 +30,9 @@ COPY nginx.conf /etc/nginx/conf.d/default.conf
 
 # Expose port 80
 EXPOSE 80
+
+HEALTHCHECK --interval=30s --timeout=3s --retries=3 \
+    CMD wget -qO /dev/null http://localhost:80/ || exit 1
 
 # Start nginx
 CMD ["nginx", "-g", "daemon off;"]

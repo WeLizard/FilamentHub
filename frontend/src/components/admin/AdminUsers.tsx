@@ -63,7 +63,6 @@ export function AdminUsers() {
   // Привязка к бренду
   const linkBrandMutation = useMutation({
     mutationFn: ({ userId, brandId }: { userId: number; brandId: number }) => {
-      console.log('Вызываем API linkUserToBrand:', { userId, brandId });
       return adminAPI.linkUserToBrand(userId, brandId);
     },
     onSuccess: () => {

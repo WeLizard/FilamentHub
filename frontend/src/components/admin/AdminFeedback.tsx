@@ -7,8 +7,10 @@ import { MessageCircle, Eye, Send, CheckCircle, Clock, XCircle, AlertCircle, Bug
 import { adminFeedbackAPI } from '../../api/client';
 import type { Feedback, FeedbackType, FeedbackStatus } from '../../types/api';
 import { useHeaderVisible } from '../../hooks/useHeaderVisible';
+import { useTranslation } from 'react-i18next';
 
 export function AdminFeedback() {
+  const { t } = useTranslation();
   const isHeaderVisible = useHeaderVisible();
   const queryClient = useQueryClient();
   const [selectedStatus, setSelectedStatus] = useState<FeedbackStatus | 'all'>('all');
@@ -46,7 +48,7 @@ export function AdminFeedback() {
 
   const handleResponse = (id: number) => {
     if (!adminResponse.trim()) {
-      alert('Введите ответ пользователю');
+      alert(t('adminFeedback.alert_enter_response'));
       return;
     }
     updateMutation.mutate({ id, status: responseStatus, response: adminResponse });
@@ -55,13 +57,13 @@ export function AdminFeedback() {
   const getStatusBadge = (status: FeedbackStatus) => {
     switch (status) {
       case 'open':
-        return <span className="px-2 py-1 rounded bg-yellow-500/20 text-yellow-400 text-xs font-semibold">Открыто</span>;
+        return <span className="px-2 py-1 rounded bg-yellow-500/20 text-yellow-400 text-xs font-semibold">{t('adminFeedback.filter_open')}</span>;
       case 'in_progress':
-        return <span className="px-2 py-1 rounded bg-blue-500/20 text-blue-400 text-xs font-semibold">В работе</span>;
+        return <span className="px-2 py-1 rounded bg-blue-500/20 text-blue-400 text-xs font-semibold">{t('adminFeedback.filter_in_progress')}</span>;
       case 'resolved':
-        return <span className="px-2 py-1 rounded bg-green-500/20 text-green-400 text-xs font-semibold">Решено</span>;
+        return <span className="px-2 py-1 rounded bg-green-500/20 text-green-400 text-xs font-semibold">{t('adminFeedback.filter_resolved')}</span>;
       case 'closed':
-        return <span className="px-2 py-1 rounded bg-gray-500/20 text-gray-400 text-xs font-semibold">Закрыто</span>;
+        return <span className="px-2 py-1 rounded bg-gray-500/20 text-gray-400 text-xs font-semibold">{t('adminFeedback.filter_closed')}</span>;
     }
   };
 
@@ -81,13 +83,13 @@ export function AdminFeedback() {
   const getTypeLabel = (type: FeedbackType) => {
     switch (type) {
       case 'bug':
-        return 'Ошибка';
+        return t('adminFeedback.filter_bug');
       case 'feature':
-        return 'Предложение';
+        return t('adminFeedback.filter_feature');
       case 'question':
-        return 'Вопрос';
+        return t('adminFeedback.filter_question');
       case 'other':
-        return 'Другое';
+        return t('adminFeedback.filter_other');
     }
   };
 
@@ -106,11 +108,11 @@ export function AdminFeedback() {
     : feedbackItems;
 
   if (isLoading) {
-    return <div className="text-center py-12 text-gray-400">Загрузка обратной связи...</div>;
+    return <div className="text-center py-12 text-gray-400">{t('adminFeedback.loading')}</div>;
   }
 
   if (error) {
-    return <div className="text-center py-12 text-red-400">Ошибка загрузки обратной связи</div>;
+    return <div className="text-center py-12 text-red-400">{t('adminFeedback.error')}</div>;
   }
 
   return (
@@ -118,10 +120,10 @@ export function AdminFeedback() {
       <div className="mb-6">
         <h2 className="text-2xl font-bold text-white mb-4 flex items-center gap-2">
           <MessageCircle className="w-6 h-6 text-purple-400" />
-          Обратная связь от пользователей
+          {t('adminFeedback.title')}
         </h2>
         <p className="text-gray-300 text-sm mb-4">
-          Все сообщения от пользователей сохраняются здесь. Вы можете просматривать, отвечать и менять статус обращений.
+          {t('adminFeedback.description')}
         </p>
 
         {/* Фильтры */}
@@ -136,11 +138,11 @@ export function AdminFeedback() {
               }}
               className="px-3 py-2 bg-white/5 border border-white/10 rounded-lg text-white text-sm focus:outline-none focus:ring-2 focus:ring-purple-500"
             >
-              <option value="all">Все статусы</option>
-              <option value="open">Открыто</option>
-              <option value="in_progress">В работе</option>
-              <option value="resolved">Решено</option>
-              <option value="closed">Закрыто</option>
+              <option value="all">{t('adminFeedback.filter_all_statuses')}</option>
+              <option value="open">{t('adminFeedback.filter_open')}</option>
+              <option value="in_progress">{t('adminFeedback.filter_in_progress')}</option>
+              <option value="resolved">{t('adminFeedback.filter_resolved')}</option>
+              <option value="closed">{t('adminFeedback.filter_closed')}</option>
             </select>
           </div>
 
@@ -153,11 +155,11 @@ export function AdminFeedback() {
               }}
               className="px-3 py-2 bg-white/5 border border-white/10 rounded-lg text-white text-sm focus:outline-none focus:ring-2 focus:ring-purple-500"
             >
-              <option value="all">Все типы</option>
-              <option value="bug">Ошибки</option>
-              <option value="feature">Предложения</option>
-              <option value="question">Вопросы</option>
-              <option value="other">Другое</option>
+              <option value="all">{t('adminFeedback.filter_all_types')}</option>
+              <option value="bug">{t('adminFeedback.filter_bug')}</option>
+              <option value="feature">{t('adminFeedback.filter_feature')}</option>
+              <option value="question">{t('adminFeedback.filter_question')}</option>
+              <option value="other">{t('adminFeedback.filter_other')}</option>
             </select>
           </div>
 
@@ -167,23 +169,23 @@ export function AdminFeedback() {
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Поиск по теме, тексту или email..."
+              placeholder={t('adminFeedback.search_placeholder')}
               className="w-full pl-10 pr-4 py-2 bg-white/5 border border-white/10 rounded-lg text-white placeholder-gray-500 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500"
             />
           </div>
         </div>
 
         <div className="text-sm text-gray-400">
-          Всего сообщений: <span className="text-white font-semibold">{total}</span>
-          {selectedStatus !== 'all' && ` • Статус: ${getStatusBadge(selectedStatus)}`}
-          {selectedType !== 'all' && ` • Тип: ${getTypeLabel(selectedType)}`}
+          {t('adminFeedback.total_messages', { count: total })}
+          {selectedStatus !== 'all' && ` • ${t('adminFeedback.status_label')}${getStatusBadge(selectedStatus)}`}
+          {selectedType !== 'all' && ` • ${t('adminFeedback.type_label')}${getTypeLabel(selectedType)}`}
         </div>
       </div>
 
       {/* Список обратной связи */}
       {filteredItems.length === 0 ? (
         <div className="text-center py-12 text-gray-400">
-          {searchQuery ? 'Ничего не найдено по вашему запросу' : 'Пока нет обратной связи'}
+          {searchQuery ? t('adminFeedback.no_feedback_found') : t('adminFeedback.no_feedback_yet')}
         </div>
       ) : (
         <>
@@ -203,18 +205,18 @@ export function AdminFeedback() {
                         <span className="text-xs text-gray-400">{getTypeLabel(feedback.type)}</span>
                         {getStatusBadge(feedback.status)}
                         {feedback.user_id ? (
-                          <span className="text-xs text-gray-400">• Пользователь #{feedback.user_id}</span>
+                          <span className="text-xs text-gray-400">• {t('adminFeedback.user_id', { id: feedback.user_id })}</span>
                         ) : (
-                          <span className="text-xs text-gray-400">• Анонимно</span>
+                          <span className="text-xs text-gray-400">• {t('adminFeedback.anonymous')}</span>
                         )}
                       </div>
                       <h3 className="text-white font-medium mb-1">{feedback.subject}</h3>
                       <p className="text-gray-400 text-sm line-clamp-2">{feedback.message}</p>
                       <div className="flex items-center gap-4 mt-2 text-xs text-gray-500">
                         <span>{new Date(feedback.created_at).toLocaleString('ru-RU')}</span>
-                        {feedback.email && <span>Email: {feedback.email}</span>}
+                        {feedback.email && <span>{t('adminFeedback.email', { email: feedback.email })}</span>}
                         {feedback.admin_response && (
-                          <span className="text-green-400">✓ Отвечено</span>
+                          <span className="text-green-400">{t('adminFeedback.responded')}</span>
                         )}
                       </div>
                     </div>
@@ -233,17 +235,17 @@ export function AdminFeedback() {
                 disabled={page === 1}
                 className="px-3 py-1 rounded-lg border border-white/20 text-sm text-gray-300 hover:bg-white/10 disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                Назад
+                {t('adminFeedback.pagination_back')}
               </button>
               <span className="text-sm text-gray-400">
-                Страница {page} из {pages}
+                {t('adminFeedback.pagination_page_info', { page: page, pages: pages })}
               </span>
               <button
                 onClick={() => setPage((p) => Math.min(pages, p + 1))}
                 disabled={page >= pages}
                 className="px-3 py-1 rounded-lg border border-white/20 text-sm text-gray-300 hover:bg-white/10 disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                Вперед
+                {t('adminFeedback.pagination_forward')}
               </button>
             </div>
           )}
@@ -283,9 +285,9 @@ export function AdminFeedback() {
                     <div className="flex items-center gap-4 mt-2 text-sm text-gray-400">
                       <span>{new Date(selectedFeedback.created_at).toLocaleString('ru-RU')}</span>
                       {selectedFeedback.user_id ? (
-                        <span>Пользователь #{selectedFeedback.user_id}</span>
+                        <span>{t('adminFeedback.user_id', { id: selectedFeedback.user_id })}</span>
                       ) : (
-                        <span>Анонимно • {selectedFeedback.email}</span>
+                        <span>{t('adminFeedback.anonymous')} • {selectedFeedback.email}</span>
                       )}
                     </div>
                   </div>
@@ -304,7 +306,7 @@ export function AdminFeedback() {
                 <div className="flex-1 overflow-y-auto px-6 py-4 space-y-4 custom-scrollbar">
                   {/* Сообщение пользователя */}
                   <div>
-                    <h3 className="text-sm font-medium text-gray-300 mb-2">Сообщение пользователя:</h3>
+                    <h3 className="text-sm font-medium text-gray-300 mb-2">{t('adminFeedback.modal_user_message')}</h3>
                     <div className="bg-white/5 border border-white/10 rounded-lg p-4 text-gray-300 whitespace-pre-wrap">
                       {selectedFeedback.message}
                     </div>
@@ -314,7 +316,7 @@ export function AdminFeedback() {
                   {selectedFeedback.admin_response && (
                     <div>
                       <h3 className="text-sm font-medium text-gray-300 mb-2">
-                        Ваш ответ ({selectedFeedback.admin_response_at && new Date(selectedFeedback.admin_response_at).toLocaleString('ru-RU')}):
+                        {t('adminFeedback.modal_your_response', { date: selectedFeedback.admin_response_at && new Date(selectedFeedback.admin_response_at).toLocaleString('ru-RU') })}:
                       </h3>
                       <div className="bg-green-500/10 border border-green-500/30 rounded-lg p-4 text-gray-300 whitespace-pre-wrap">
                         {selectedFeedback.admin_response}
@@ -324,12 +326,12 @@ export function AdminFeedback() {
 
                   {/* Форма ответа */}
                   <div>
-                    <h3 className="text-sm font-medium text-gray-300 mb-2">Ответ пользователю:</h3>
+                    <h3 className="text-sm font-medium text-gray-300 mb-2">{t('adminFeedback.modal_response_placeholder')}</h3>
                     <textarea
                       value={adminResponse}
                       onChange={(e) => setAdminResponse(e.target.value)}
                       rows={6}
-                      placeholder="Введите ответ пользователю..."
+                      placeholder={t('adminFeedback.modal_response_placeholder')}
                       className="w-full px-4 py-2 bg-white/5 border border-white/10 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent resize-none custom-scrollbar"
                     />
                   </div>
@@ -337,17 +339,17 @@ export function AdminFeedback() {
                   {/* Статус */}
                   <div>
                     <label className="block text-sm font-medium text-gray-300 mb-2">
-                      Изменить статус:
+                      {t('adminFeedback.modal_change_status')}
                     </label>
                     <select
                       value={responseStatus}
                       onChange={(e) => setResponseStatus(e.target.value as FeedbackStatus)}
                       className="w-full px-4 py-2 bg-white/5 border border-white/10 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-purple-500"
                     >
-                      <option value="open">Открыто</option>
-                      <option value="in_progress">В работе</option>
-                      <option value="resolved">Решено</option>
-                      <option value="closed">Закрыто</option>
+                      <option value="open">{t('adminFeedback.filter_open')}</option>
+                      <option value="in_progress">{t('adminFeedback.filter_in_progress')}</option>
+                      <option value="resolved">{t('adminFeedback.filter_resolved')}</option>
+                      <option value="closed">{t('adminFeedback.filter_closed')}</option>
                     </select>
                   </div>
                 </div>
@@ -361,7 +363,7 @@ export function AdminFeedback() {
                     }}
                     className="px-4 py-2 rounded-lg border border-white/20 text-sm text-gray-300 hover:bg-white/10 transition-all"
                   >
-                    Закрыть
+                    {t('adminFeedback.modal_close_button')}
                   </button>
                   <button
                     onClick={() => handleResponse(selectedFeedback.id)}
@@ -371,12 +373,12 @@ export function AdminFeedback() {
                     {updateMutation.isPending ? (
                       <>
                         <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                        Сохранение...
+                        {t('adminFeedback.modal_saving_button')}
                       </>
                     ) : (
                       <>
                         <Send className="w-4 h-4" />
-                        Сохранить ответ
+                        {t('adminFeedback.modal_save_button')}
                       </>
                     )}
                   </button>

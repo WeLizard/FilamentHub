@@ -3,11 +3,12 @@
 import { useState, useEffect, FormEvent } from 'react';
 import { Mail, Lock, LogIn, UserPlus, User, Factory, Package, X, Check, Eye, EyeOff, AlertCircle, KeyRound } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
-import { Captcha } from './Captcha';
+import { Recaptcha } from './Captcha';
 import { TermsModal } from './TermsModal';
 import { ConsentModal } from './ConsentModal';
 import { ForgotPasswordModal } from './ForgotPasswordModal';
 import { useHeaderVisible } from '../hooks/useHeaderVisible';
+import { useTranslation } from 'react-i18next';
 
 interface AuthModalProps {
   isOpen: boolean;
@@ -16,6 +17,7 @@ interface AuthModalProps {
 }
 
 export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMode = 'login' }) => {
+  const { t } = useTranslation();
   const isHeaderVisible = useHeaderVisible();
   const [authMode, setAuthMode] = useState<'login' | 'register'>(initialMode);
   const [authMethod, setAuthMethod] = useState<'email' | 'google'>('email'); // Новое состояние для метода входа
@@ -26,9 +28,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [username, setUsername] = useState('');
   const [agreed, setAgreed] = useState(false);
-  const [captchaValue, setCaptchaValue] = useState('');
-  const [captchaVerified, setCaptchaVerified] = useState(false);
-  const [showCaptcha, setShowCaptcha] = useState(false); // Теперь показывается только после ошибки
+  const [recaptchaToken, setRecaptchaToken] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [isTermsModalOpen, setIsTermsModalOpen] = useState(false);
@@ -49,9 +49,9 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
     if (/[0-9]/.test(pwd)) strength++;
     if (/[^a-zA-Z0-9]/.test(pwd)) strength++;
 
-    if (strength <= 2) return { strength, label: 'Слабый', color: 'text-red-400' };
-    if (strength <= 4) return { strength, label: 'Средний', color: 'text-yellow-400' };
-    return { strength, label: 'Сильный', color: 'text-green-400' };
+    if (strength <= 2) return { strength, label: t('authModal.password_strength_weak'), color: 'text-red-400' };
+    if (strength <= 4) return { strength, label: t('authModal.password_strength_medium'), color: 'text-yellow-400' };
+    return { strength, label: t('authModal.password_strength_strong'), color: 'text-green-400' };
   };
 
   const passwordStrength = getPasswordStrength(password);
@@ -62,9 +62,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
       setError(null);
       setIsLoading(false);
       setAuthMethod('email'); // Сбрасываем метод входа
-      setShowCaptcha(false);
-      setCaptchaValue('');
-      setCaptchaVerified(false);
+      setRecaptchaToken(null);
     }
   }, [isOpen]);
 
@@ -87,44 +85,29 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
       } else {
         // Валидация без очистки полей
         if (!agreed) {
-          setError('Необходимо согласиться с условиями использования');
+          setError(t('authModal.error_agree_terms'));
           setIsLoading(false);
           return;
         }
         if (password !== confirmPassword) {
-          setError('Пароли не совпадают');
+          setError(t('authModal.error_passwords_mismatch'));
           setIsLoading(false);
           return;
         }
         if (password.length < 8) {
-          setError('Пароль должен содержать минимум 8 символов');
+          setError(t('authModal.error_password_too_short'));
           setIsLoading(false);
           return;
         }
         
-        // Проверяем капчу, если она показана (после предыдущей ошибки)
-        if (showCaptcha && !captchaVerified) {
-          setError('Необходимо пройти проверку капчи');
-          setIsLoading(false);
-          return;
-        }
-        
-        // Все проверки пройдены - регистрируем
-        try {
-          // Всегда регистрируем как обычный пользователь
-          // Роль производителя устанавливается через привязку к бренду в профиле
-          await register({ email, username, password, role: 'user' });
-        } catch (registerError: any) {
-          // Если ошибка регистрации (валидация или rate limit), показываем капчу при следующей попытке
-          if (registerError.response?.status === 400 || registerError.response?.status === 429) {
-            if (!showCaptcha) {
-              setShowCaptcha(true);
-              setCaptchaVerified(false);
-              setCaptchaValue('');
-            }
-          }
-          throw registerError; // Пробрасываем ошибку дальше для обработки
-        }
+        // Все проверки пройдены - регистрируем (с reCAPTCHA токеном если есть)
+        await register({
+          email,
+          username,
+          password,
+          role: 'user',
+          recaptcha_token: recaptchaToken ?? undefined,
+        });
         
         // Успешная регистрация - закрываем модальное окно
         onClose();
@@ -135,16 +118,14 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
         setConfirmPassword('');
         setUsername('');
         setAgreed(false);
-        setCaptchaValue('');
-        setCaptchaVerified(false);
-        setShowCaptcha(false);
+        setRecaptchaToken(null);
         setIsLoading(false);
       }
     } catch (err: any) {
       // Обработка различных типов ошибок
       let errorMessage = authMode === 'login' 
-        ? 'Произошла ошибка при входе. Проверьте эл. почту и пароль.'
-        : 'Произошла ошибка при регистрации. Попробуйте еще раз.';
+        ? t('authModal.error_login_failed')
+        : t('authModal.error_register_failed');
       
       if (err.response) {
         // Ошибка от сервера
@@ -156,11 +137,11 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
           if (typeof detail === 'string') {
             // Переводим понятные сообщения на русский
             if (detail.toLowerCase().includes('already registered') || detail.toLowerCase().includes('email')) {
-              errorMessage = 'Эта эл. почта уже зарегистрирована. Используйте другую или войдите в систему.';
+              errorMessage = t('authModal.error_email_registered');
             } else if (detail.toLowerCase().includes('username') || detail.toLowerCase().includes('taken')) {
-              errorMessage = 'Это имя пользователя уже занято. Выберите другое.';
+              errorMessage = t('authModal.error_username_taken');
             } else if (detail.toLowerCase().includes('invalid role')) {
-              errorMessage = 'Неверный тип аккаунта. Выберите "Пользователь" или "Производитель".';
+              errorMessage = t('authModal.error_invalid_role');
             } else {
               errorMessage = detail;
             }
@@ -170,11 +151,11 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
               const msg = item.msg || item.message || '';
               // Переводим типичные ошибки валидации
               if (msg.includes('email')) {
-                return 'Некорректный адрес эл. почты.';
+                return t('authModal.error_invalid_email');
               } else if (msg.includes('username') && msg.includes('length')) {
-                return 'Имя пользователя должно быть от 3 до 100 символов.';
+                return t('authModal.error_username_length');
               } else if (msg.includes('password') && msg.includes('length')) {
-                return 'Пароль должен быть от 8 до 100 символов.';
+                return t('authModal.error_password_length');
               }
               return msg;
             }).join(' ');
@@ -183,20 +164,20 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
           }
         } else if (status === 401) {
           // Неверные учетные данные - показываем конкретное сообщение
-          errorMessage = 'Неверная эл. почта или пароль. Проверьте правильность ввода.';
+          errorMessage = t('authModal.error_wrong_credentials');
           // Очищаем пароль для безопасности
           setPassword('');
           // Показываем капчу после нескольких неудачных попыток (опционально)
         } else if (status === 403) {
-          errorMessage = 'Аккаунт заблокирован. Обратитесь в поддержку.';
+          errorMessage = t('authModal.error_account_locked');
         } else if (status === 500) {
-          errorMessage = 'Ошибка сервера. Попробуйте позже или обратитесь в поддержку.';
+          errorMessage = t('authModal.error_server_error');
         } else if (typeof detail === 'string') {
           errorMessage = detail;
         }
       } else if (err.request) {
         // Запрос отправлен, но ответа нет
-        errorMessage = 'Не удалось подключиться к серверу. Проверьте подключение к интернету.';
+        errorMessage = t('authModal.error_no_connection');
       } else if (err.message) {
         errorMessage = err.message;
       }
@@ -208,7 +189,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
 
   const handleGoogleLogin = () => {
     // ЗАГЛУШКА: TODO - Реализовать Google OAuth
-    setError('Вход через Google будет доступен в ближайшее время');
+    setError(t('authModal.google_login_soon'));
   };
 
   return (
@@ -247,7 +228,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
               <img src="/logo.svg" alt="FilamentHub Logo" className="w-12 h-12 sm:w-16 sm:h-16 object-contain" />
             </div>
             <h2 className="text-xl sm:text-2xl font-bold text-white mb-1 sm:mb-2">FilamentHub</h2>
-            <p className="text-sm sm:text-base text-gray-300">Войдите в систему для доступа к персональному кабинету</p>
+            <p className="text-sm sm:text-base text-gray-300">{t('authModal.title')}</p>
           </div>
         </div>
 
@@ -261,9 +242,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
               setAuthMode('login');
               setAuthMethod('email'); // Сбрасываем метод входа на email
               setError(null);
-              setShowCaptcha(false);
-              setCaptchaValue('');
-              setCaptchaVerified(false);
+              setRecaptchaToken(null);
             }}
             className={`flex-1 py-3 px-4 rounded-l-xl transition-all ${
               authMode === 'login'
@@ -271,16 +250,14 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
                 : 'bg-white/10 text-gray-300 hover:bg-white/20'
             }`}
           >
-            Вход
+            {t('authModal.tab_login')}
           </button>
           <button
             onClick={() => {
               setAuthMode('register');
               setAuthMethod('email'); // Регистрация всегда через email
               setError(null);
-              setShowCaptcha(false);
-              setCaptchaValue('');
-              setCaptchaVerified(false);
+              setRecaptchaToken(null);
             }}
             className={`flex-1 py-3 px-4 rounded-r-xl transition-all ${
               authMode === 'register'
@@ -288,7 +265,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
                 : 'bg-white/10 text-gray-300 hover:bg-white/20'
             }`}
           >
-            Регистрация
+            {t('authModal.tab_register')}
           </button>
         </div>
 
@@ -312,7 +289,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
                     : 'text-gray-300 hover:text-white'
                 }`}
               >
-                Эл. почта
+                {t('authModal.method_email')}
               </button>
               <button
                 type="button"
@@ -323,7 +300,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
                     : 'text-gray-300 hover:text-white'
                 }`}
               >
-                Google
+                {t('authModal.method_google')}
               </button>
             </div>
           </div>
@@ -355,7 +332,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
                 d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"
               />
             </svg>
-            <span>Войти через Google</span>
+            <span>{t('authModal.login_with_google')}</span>
           </button>
         )}
 
@@ -365,7 +342,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
           <div className="space-y-4">
             <div>
               <label className="block text-gray-300 mb-2">
-                {authMode === 'login' ? 'Эл. почта или логин' : 'Эл. почта'}
+                {authMode === 'login' ? t('authModal.label_email_or_login') : t('authModal.label_email')}
               </label>
               <div className="relative">
                 <Mail className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5 pointer-events-none" />
@@ -375,20 +352,20 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
                   onChange={(e) => setEmail(e.target.value)}
                   required
                   className="w-full pl-10 pr-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all"
-                  placeholder={authMode === 'login' ? 'эл. почта или логин' : 'your@email.com'}
+                  placeholder={authMode === 'login' ? t('authModal.placeholder_email_or_login') : t('authModal.placeholder_email')}
                 />
               </div>
               {authMode === 'register' && (
                 <p className="mt-1 text-xs text-gray-400 flex items-start">
                   <AlertCircle className="w-3.5 h-3.5 text-yellow-400 mr-1.5 flex-shrink-0 mt-0.5" />
-                  <span>Для производителей рекомендуется корпоративная почта для ускоренной верификации бренда</span>
+                  <span>{t('authModal.corporate_email_tip')}</span>
                 </p>
               )}
             </div>
 
             {authMode === 'register' && (
               <div>
-                <label className="block text-gray-300 mb-2">Имя пользователя</label>
+                <label className="block text-gray-300 mb-2">{t('authModal.label_username')}</label>
                 <div className="relative">
                   <User className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
                   <input
@@ -399,24 +376,24 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
                     minLength={3}
                     maxLength={100}
                     className="w-full pl-10 pr-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all"
-                    placeholder="имя пользователя"
+                    placeholder={t('authModal.placeholder_username')}
                   />
                 </div>
                 {username && username.length < 3 && (
-                  <p className="mt-1 text-xs text-red-400">Имя пользователя должно содержать минимум 3 символа</p>
+                  <p className="mt-1 text-xs text-red-400">{t('authModal.username_too_short')}</p>
                 )}
                 {username && username.length > 100 && (
-                  <p className="mt-1 text-xs text-red-400">Имя пользователя не должно превышать 100 символов</p>
+                  <p className="mt-1 text-xs text-red-400">{t('authModal.username_too_long')}</p>
                 )}
                 {username && !/^[a-zA-Z0-9_-]+$/.test(username) && (
-                  <p className="mt-1 text-xs text-red-400">Имя пользователя может содержать только буквы, цифры, дефис и подчёркивание</p>
+                  <p className="mt-1 text-xs text-red-400">{t('authModal.username_invalid_chars')}</p>
                 )}
               </div>
             )}
 
             <div>
               <div className="flex items-center justify-between mb-2">
-                <label className="block text-gray-300">Пароль</label>
+                <label className="block text-gray-300">{t('authModal.label_password')}</label>
                 {authMode === 'login' && (
                   <button
                     type="button"
@@ -427,7 +404,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
                     className="text-sm text-purple-400 hover:text-purple-300 transition-colors flex items-center space-x-1"
                   >
                     <KeyRound className="w-3.5 h-3.5" />
-                    <span>Забыли пароль?</span>
+                    <span>{t('authModal.forgot_password')}</span>
                   </button>
                 )}
               </div>
@@ -439,7 +416,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
                   onChange={(e) => setPassword(e.target.value)}
                   required
                   className="w-full pl-10 pr-12 py-3 bg-white/10 border border-white/20 rounded-xl text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all"
-                  placeholder="••••••••"
+                  placeholder={t('authModal.placeholder_password')}
                 />
                 <button
                   type="button"
@@ -470,7 +447,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
                     </span>
                   </div>
                   <p className="text-xs text-gray-400">
-                    Минимум 8 символов, включая заглавные и строчные буквы, цифры
+                    {t('authModal.password_tip')}
                   </p>
                 </div>
               )}
@@ -479,7 +456,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
             {/* Поле подтверждения пароля (только для регистрации) */}
             {authMode === 'register' && (
               <div>
-                <label className="block text-gray-300 mb-2">Подтвердите пароль</label>
+                <label className="block text-gray-300 mb-2">{t('authModal.label_confirm_password')}</label>
                 <div className="relative">
                   <Lock className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
                   <input
@@ -494,7 +471,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
                           ? 'border-green-500/50'
                           : 'border-white/20'
                     }`}
-                    placeholder="••••••••"
+                    placeholder={t('authModal.placeholder_password')}
                   />
                   <button
                     type="button"
@@ -505,10 +482,10 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
                   </button>
                 </div>
                 {confirmPassword && password !== confirmPassword && (
-                  <p className="mt-1 text-xs text-red-400">Пароли не совпадают</p>
+                  <p className="mt-1 text-xs text-red-400">{t('authModal.error_passwords_mismatch')}</p>
                 )}
                 {confirmPassword && password === confirmPassword && (
-                  <p className="mt-1 text-xs text-green-400">✓ Пароли совпадают</p>
+                  <p className="mt-1 text-xs text-green-400">{t('authModal.passwords_match')}</p>
                 )}
               </div>
             )}
@@ -528,7 +505,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
                     {agreed && <Check className="w-4 h-4" />}
                   </button>
                   <label className="text-gray-300 text-sm cursor-pointer flex-1">
-                    Я принимаю{' '}
+                    {t('authModal.agree_terms_1')}{' '}
                     <button
                       type="button"
                       onClick={(e) => {
@@ -538,9 +515,9 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
                       }}
                       className="text-purple-400 hover:text-purple-300 underline"
                     >
-                      условия Пользовательского соглашения
+                      {t('authModal.agree_terms_user_agreement')}
                     </button>{' '}
-                    и даю{' '}
+                    {t('authModal.agree_terms_2')}{' '}
                     <button
                       type="button"
                       onClick={(e) => {
@@ -550,42 +527,34 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
                       }}
                       className="text-purple-400 hover:text-purple-300 underline"
                     >
-                      согласие на обработку персональных данных
+                      {t('authModal.agree_terms_personal_data')}
                     </button>
                   </label>
                 </div>
 
-                {/* Captcha - показываем только после ошибки регистрации */}
-                {showCaptcha && (
-                  <div className="mt-4">
-                    <Captcha
-                      value={captchaValue}
-                      onChange={setCaptchaValue}
-                      onVerify={setCaptchaVerified}
-                    />
-                  </div>
-                )}
+                {/* reCAPTCHA v3 — невидимая, запускается автоматически */}
+                <Recaptcha onToken={setRecaptchaToken} action="register" />
               </>
             )}
 
             <button
               type="submit"
-              disabled={isLoading || (authMode === 'register' && (!agreed || (showCaptcha && !captchaVerified)))}
+              disabled={isLoading || (authMode === 'register' && !agreed)}
               className="w-full mt-4 bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white py-3 px-6 rounded-xl transition-all shadow-lg shadow-purple-500/25 hover:shadow-purple-500/40 disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {isLoading ? (
-                'Загрузка...'
+                t('authModal.loading')
               ) : (
                 <>
                   {authMode === 'login' ? (
                     <>
                       <LogIn className="w-5 h-5 inline mr-2" />
-                      Войти
+                      {t('authModal.login_button')}
                     </>
                   ) : (
                     <>
                       <UserPlus className="w-5 h-5 inline mr-2" />
-                      Зарегистрироваться
+                      {t('authModal.register_button')}
                     </>
                   )}
                 </>

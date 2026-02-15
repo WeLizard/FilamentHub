@@ -1,4 +1,4 @@
-import { Routes, Route, useNavigate } from 'react-router-dom';
+import { Routes, Route, useNavigate, Link } from 'react-router-dom';
 import { AuthProvider } from './contexts/AuthContext';
 import { ProtectedRoute } from './components/ProtectedRoute';
 import { Layout } from './components/Layout';
@@ -20,6 +20,25 @@ import { useEffect } from 'react';
 import { Notifications } from './components/Notifications';
 import { useAuth } from './contexts/AuthContext';
 import { MaintenancePage } from './components/MaintenancePage';
+
+import { useTranslation } from 'react-i18next';
+
+/** Страница 404 */
+function NotFoundPage() {
+  const { t } = useTranslation();
+  return (
+    <Layout>
+      <div style={{ padding: '3rem', textAlign: 'center' }}>
+        <h1 style={{ fontSize: '3rem', marginBottom: '0.5rem' }}>404</h1>
+        <p style={{ color: '#666', marginBottom: '1.5rem' }}>{t('notFound.title')}</p>
+        <Link to="/" style={{ color: '#2563eb' }}>{t('notFound.goHome')}</Link>
+      </div>
+    </Layout>
+  );
+}
+
+// ... (AppContent and App)
+
 
 function AppContent() {
   // Обработчик уведомлений от OrcaSlicer
@@ -148,6 +167,7 @@ function AppContent() {
         <Route path="/user-agreement" element={<TermsPage />} />
         <Route path="/personal-data-consent" element={<ConsentPage />} />
         <Route path="/reset-password" element={<ResetPasswordPage />} />
+        <Route path="*" element={<NotFoundPage />} />
       </Routes>
     </>
   );

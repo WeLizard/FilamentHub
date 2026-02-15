@@ -80,7 +80,8 @@ export const Notifications: React.FC<NotificationsProps> = ({ floating = false }
     if (!floating) return;
 
     const handleMessage = (event: MessageEvent) => {
-      // Проверяем, что сообщение от нашего приложения
+      // Принимаем только от нашего origin или от OrcaSlicer (file:// / null origin)
+      if (event.origin !== window.location.origin && event.origin !== 'null' && event.origin !== 'file://') return;
       if (event.data && typeof event.data === 'object' && event.data.command === 'update_notifications_count') {
         const count = event.data.count || 0;
         setExternalUnreadCount(count);

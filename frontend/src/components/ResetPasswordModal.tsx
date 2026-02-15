@@ -5,6 +5,7 @@ import { Lock, X, CheckCircle, AlertCircle, Loader, Eye, EyeOff } from 'lucide-r
 import { authAPI } from '../api/client';
 import { useNavigate } from 'react-router-dom';
 import { useHeaderVisible } from '../hooks/useHeaderVisible';
+import { useTranslation } from 'react-i18next';
 
 interface ResetPasswordModalProps {
   isOpen: boolean;
@@ -17,6 +18,7 @@ export const ResetPasswordModal: React.FC<ResetPasswordModalProps> = ({
   onClose,
   token,
 }) => {
+  const { t } = useTranslation();
   const isHeaderVisible = useHeaderVisible();
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
@@ -39,9 +41,9 @@ export const ResetPasswordModal: React.FC<ResetPasswordModalProps> = ({
     if (/[0-9]/.test(pwd)) strength++;
     if (/[^a-zA-Z0-9]/.test(pwd)) strength++;
 
-    if (strength <= 2) return { strength, label: 'Слабый', color: 'text-red-400' };
-    if (strength <= 4) return { strength, label: 'Средний', color: 'text-yellow-400' };
-    return { strength, label: 'Сильный', color: 'text-green-400' };
+    if (strength <= 2) return { strength, label: t('authModal.password_strength_weak'), color: 'text-red-400' };
+    if (strength <= 4) return { strength, label: t('authModal.password_strength_medium'), color: 'text-yellow-400' };
+    return { strength, label: t('authModal.password_strength_strong'), color: 'text-green-400' };
   };
 
   const passwordStrength = getPasswordStrength(newPassword);
@@ -63,12 +65,12 @@ export const ResetPasswordModal: React.FC<ResetPasswordModalProps> = ({
 
     // Валидация
     if (newPassword !== confirmPassword) {
-      setError('Пароли не совпадают');
+      setError(t('authModal.error_passwords_mismatch'));
       return;
     }
 
     if (newPassword.length < 8) {
-      setError('Пароль должен содержать минимум 8 символов');
+      setError(t('authModal.error_password_too_short'));
       return;
     }
 
@@ -84,23 +86,23 @@ export const ResetPasswordModal: React.FC<ResetPasswordModalProps> = ({
         navigate('/');
       }, 2000);
     } catch (err: any) {
-      let errorMessage = 'Произошла ошибка при сбросе пароля. Попробуйте позже.';
+      let errorMessage = t('resetPasswordModal.error_reset_failed');
       
       if (err.response) {
         const status = err.response.status;
         const detail = err.response.data?.detail;
         
         if (status === 400) {
-          errorMessage = detail || 'Неверный или истёкший токен восстановления пароля.';
+          errorMessage = detail || t('resetPasswordModal.error_invalid_token');
         } else if (status === 403) {
-          errorMessage = 'Аккаунт заблокирован. Обратитесь в поддержку.';
+          errorMessage = t('authModal.error_account_locked');
         } else if (status === 429) {
-          errorMessage = 'Слишком много запросов. Попробуйте позже.';
+          errorMessage = t('forgotPasswordModal.error_too_many_requests');
         } else if (typeof detail === 'string') {
           errorMessage = detail;
         }
       } else if (err.request) {
-        errorMessage = 'Не удалось подключиться к серверу. Проверьте подключение к интернету.';
+        errorMessage = t('authModal.error_no_connection');
       }
       
       setError(errorMessage);
@@ -143,8 +145,8 @@ export const ResetPasswordModal: React.FC<ResetPasswordModalProps> = ({
             <div className="w-16 h-16 flex items-center justify-center mx-auto mb-4">
               <img src="/logo.svg" alt="FilamentHub Logo" className="w-16 h-16 object-contain" />
             </div>
-            <h2 className="text-2xl font-bold text-white mb-2">Установка нового пароля</h2>
-            <p className="text-gray-300">Введите новый пароль для вашего аккаунта</p>
+            <h2 className="text-2xl font-bold text-white mb-2">{t('resetPasswordModal.title')}</h2>
+            <p className="text-gray-300">{t('resetPasswordModal.subtitle')}</p>
           </div>
         </div>
 
@@ -156,9 +158,9 @@ export const ResetPasswordModal: React.FC<ResetPasswordModalProps> = ({
                 <CheckCircle className="w-16 h-16 text-green-400" />
               </div>
               <div>
-                <h3 className="text-xl font-bold text-white mb-2">Пароль успешно изменён!</h3>
+                <h3 className="text-xl font-bold text-white mb-2">{t('resetPasswordModal.success_title')}</h3>
                 <p className="text-gray-300">
-                  Теперь вы можете войти в систему с новым паролем.
+                  {t('resetPasswordModal.success_message')}
                 </p>
               </div>
             </div>
@@ -174,7 +176,7 @@ export const ResetPasswordModal: React.FC<ResetPasswordModalProps> = ({
                 )}
 
                 <div>
-                  <label className="block text-gray-300 mb-2">Новый пароль</label>
+                  <label className="block text-gray-300 mb-2">{t('resetPasswordModal.label_new_password')}</label>
                   <div className="relative">
                     <Lock className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
                     <input
@@ -215,14 +217,14 @@ export const ResetPasswordModal: React.FC<ResetPasswordModalProps> = ({
                         </span>
                       </div>
                       <p className="text-xs text-gray-400">
-                        Минимум 8 символов, включая заглавные и строчные буквы, цифры
+                        {t('authModal.password_tip')}
                       </p>
                     </div>
                   )}
                 </div>
 
                 <div>
-                  <label className="block text-gray-300 mb-2">Подтвердите пароль</label>
+                  <label className="block text-gray-300 mb-2">{t('resetPasswordModal.label_confirm_password')}</label>
                   <div className="relative">
                     <Lock className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
                     <input
@@ -249,10 +251,10 @@ export const ResetPasswordModal: React.FC<ResetPasswordModalProps> = ({
                     </button>
                   </div>
                   {confirmPassword && newPassword !== confirmPassword && (
-                    <p className="mt-1 text-xs text-red-400">Пароли не совпадают</p>
+                    <p className="mt-1 text-xs text-red-400">{t('authModal.error_passwords_mismatch')}</p>
                   )}
                   {confirmPassword && newPassword === confirmPassword && (
-                    <p className="mt-1 text-xs text-green-400">✓ Пароли совпадают</p>
+                    <p className="mt-1 text-xs text-green-400">{t('authModal.passwords_match')}</p>
                   )}
                 </div>
 
@@ -264,10 +266,10 @@ export const ResetPasswordModal: React.FC<ResetPasswordModalProps> = ({
                   {isLoading ? (
                     <>
                       <Loader className="w-5 h-5 animate-spin" />
-                      <span>Изменение пароля...</span>
+                      <span>{t('resetPasswordModal.changing_password')}</span>
                     </>
                   ) : (
-                    <span>Изменить пароль</span>
+                    <span>{t('resetPasswordModal.change_password_button')}</span>
                   )}
                 </button>
               </div>

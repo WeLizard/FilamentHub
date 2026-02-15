@@ -2,6 +2,7 @@
 
 import { Link } from 'react-router-dom';
 import { X, ExternalLink } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import { useHeaderVisible } from '../hooks/useHeaderVisible';
 
 interface ConsentModalProps {
@@ -10,6 +11,7 @@ interface ConsentModalProps {
 }
 
 export const ConsentModal: React.FC<ConsentModalProps> = ({ isOpen, onClose }) => {
+  const { t } = useTranslation();
   const isHeaderVisible = useHeaderVisible();
   if (!isOpen) return null;
 
@@ -25,7 +27,7 @@ export const ConsentModal: React.FC<ConsentModalProps> = ({ isOpen, onClose }) =
       <div className="relative w-full max-w-4xl max-h-[90vh] bg-white/10 backdrop-blur-sm rounded-2xl border border-white/20 shadow-xl z-10 overflow-hidden flex flex-col">
         {/* Header */}
         <div className="flex items-center justify-between p-6 border-b border-white/20">
-          <h2 className="text-2xl font-bold text-white">Согласие на обработку персональных данных</h2>
+          <h2 className="text-2xl font-bold text-white">{t('consentModal.title')}</h2>
           <div className="flex items-center space-x-2">
             <Link
               to="/personal-data-consent"
@@ -37,7 +39,7 @@ export const ConsentModal: React.FC<ConsentModalProps> = ({ isOpen, onClose }) =
               className="flex items-center space-x-1 px-3 py-1.5 text-sm bg-white/10 hover:bg-white/20 text-white rounded-lg transition-all border border-white/20"
             >
               <ExternalLink className="w-4 h-4" />
-              <span>Полная версия</span>
+              <span>{t('consentModal.full_version')}</span>
             </Link>
             <button
               onClick={onClose}
@@ -78,7 +80,10 @@ export const ConsentModal: React.FC<ConsentModalProps> = ({ isOpen, onClose }) =
                   </ul>
                   Указанные данные обрабатываются исключительно в целях верификации полномочий Пользователя и администрирования кабинета производителя. Данные о бренде не относятся к персональным данным Пользователя, но предоставляются им добровольно и с его согласия.
                 </li>
-                <li>Данные о действиях на сайте (использование сервиса, IP-адрес, тип браузера, операционная система).</li>
+                <li>Данные о действиях на сайте (использование сервиса, IP-адрес, тип браузера, операционная система);</li>
+                <li>Настройки печати, передаваемые при использовании функции синхронизации: пресеты материалов,
+                  профили принтеров, профили печати и связанные технические параметры (температуры, скорости,
+                  коэффициенты потока и т.п.).</li>
               </ul>
             </section>
 
@@ -165,7 +170,7 @@ export const ConsentModal: React.FC<ConsentModalProps> = ({ isOpen, onClose }) =
               <h3 className="text-xl font-bold text-white mb-4">5. Порядок отзыва согласия</h3>
               <p className="mb-2">
                 5.1. Согласие может быть отозвано субъектом персональных данных или его представителем путем направления
-                заявления Оператору по адресу электронной почты: [адрес электронной почты].
+                заявления Оператору по адресу электронной почты: support@filamenthub.ru.
               </p>
               <p className="mb-2">
                 5.2. В заявлении об отзыве согласия должна содержаться следующая информация:
@@ -242,7 +247,7 @@ export const ConsentModal: React.FC<ConsentModalProps> = ({ isOpen, onClose }) =
               <h3 className="text-xl font-bold text-white mb-4">9. Контактная информация</h3>
               <p className="mb-2">
                 9.1. По всем вопросам, связанным с обработкой персональных данных, субъект персональных данных может
-                обратиться к Оператору по адресу электронной почты: [адрес электронной почты].
+                обратиться к Оператору по адресу электронной почты: support@filamenthub.ru.
               </p>
               <p className="mb-2">
                 9.2. Пользовательское соглашение доступно на странице{' '}
@@ -287,7 +292,7 @@ export const ConsentModal: React.FC<ConsentModalProps> = ({ isOpen, onClose }) =
             onClick={onClose}
             className="px-6 py-3 bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700 text-white rounded-xl transition-all shadow-lg shadow-green-500/25 hover:shadow-green-500/40"
           >
-            Понятно
+            {t('consentModal.close_button')}
           </button>
         </div>
       </div>

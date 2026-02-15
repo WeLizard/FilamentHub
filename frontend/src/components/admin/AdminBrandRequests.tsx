@@ -4,12 +4,14 @@ import { useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { FileText, CheckCircle, XCircle, Eye, Download, Clock, Building2, UserPlus, Trash2 } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import { adminAPI } from '../../api/client';
 import type { BrandRequest, BrandRequestStatus } from '../../types/api';
 import { ConfirmDeleteModal } from '../ConfirmDeleteModal';
 import { useHeaderVisible } from '../../hooks/useHeaderVisible';
 
 export function AdminBrandRequests() {
+  const { t } = useTranslation();
   const isHeaderVisible = useHeaderVisible();
   const queryClient = useQueryClient();
   const [selectedStatus, setSelectedStatus] = useState<BrandRequestStatus | 'all'>('all');
@@ -59,7 +61,7 @@ export function AdminBrandRequests() {
 
   const handleReject = (id: number) => {
     if (!rejectionReason.trim()) {
-      alert('Укажите причину отклонения');
+      alert(t('adminBrandRequests.alert_rejection_reason_required'));
       return;
     }
     rejectMutation.mutate({ id, reason: rejectionReason });
@@ -79,11 +81,11 @@ export function AdminBrandRequests() {
   const getStatusBadge = (status: BrandRequestStatus) => {
     switch (status) {
       case 'pending':
-        return <span className="px-2 py-1 rounded bg-yellow-500/20 text-yellow-400 text-xs font-semibold">Ожидает</span>;
+        return <span className="px-2 py-1 rounded bg-yellow-500/20 text-yellow-400 text-xs font-semibold">{t('adminBrandRequests.status_pending')}</span>;
       case 'approved':
-        return <span className="px-2 py-1 rounded bg-green-500/20 text-green-400 text-xs font-semibold">Одобрена</span>;
+        return <span className="px-2 py-1 rounded bg-green-500/20 text-green-400 text-xs font-semibold">{t('adminBrandRequests.status_approved')}</span>;
       case 'rejected':
-        return <span className="px-2 py-1 rounded bg-red-500/20 text-red-400 text-xs font-semibold">Отклонена</span>;
+        return <span className="px-2 py-1 rounded bg-red-500/20 text-red-400 text-xs font-semibold">{t('adminBrandRequests.status_rejected')}</span>;
     }
   };
 
@@ -92,11 +94,11 @@ export function AdminBrandRequests() {
   };
 
   if (isLoading) {
-    return <div className="text-center py-12 text-gray-400">Загрузка заявок...</div>;
+    return <div className="text-center py-12 text-gray-400">{t('adminBrandRequests.loading_requests')}</div>;
   }
 
   if (error) {
-    return <div className="text-center py-12 text-red-400">Ошибка загрузки заявок</div>;
+    return <div className="text-center py-12 text-red-400">{t('adminBrandRequests.error_loading_requests')}</div>;
   }
 
   const requests = data?.items || [];
@@ -107,8 +109,8 @@ export function AdminBrandRequests() {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-2xl font-bold text-white mb-2">Заявки на верификацию</h2>
-          <p className="text-gray-400">Всего: {data?.total || 0}</p>
+          <h2 className="text-2xl font-bold text-white mb-2">{t('adminBrandRequests.title')}</h2>
+          <p className="text-gray-400">{t('adminBrandRequests.total_requests', { count: data?.total || 0 })}</p>
         </div>
 
         {/* Фильтры */}
@@ -128,7 +130,7 @@ export function AdminBrandRequests() {
                 }
               `}
             >
-              {status === 'all' ? 'Все' : status === 'pending' ? 'Ожидают' : status === 'approved' ? 'Одобрены' : 'Отклонены'}
+              {status === 'all' ? t('adminBrandRequests.filter_all') : status === 'pending' ? t('adminBrandRequests.filter_pending') : status === 'approved' ? t('adminBrandRequests.filter_approved') : t('adminBrandRequests.filter_rejected')}
             </button>
           ))}
         </div>
@@ -138,7 +140,7 @@ export function AdminBrandRequests() {
       {requests.length === 0 ? (
         <div className="text-center py-12 text-gray-400">
           <FileText className="w-16 h-16 mx-auto mb-4 opacity-50" />
-          <p>Нет заявок для отображения</p>
+          <p>{t('adminBrandRequests.no_requests_to_display')}</p>
         </div>
       ) : (
         <div className="space-y-4">
@@ -156,16 +158,16 @@ export function AdminBrandRequests() {
                       <TypeIcon className="w-5 h-5 text-purple-400" />
                       <h3 className="text-lg font-semibold text-white">
                         {request.request_type === 'create' 
-                          ? `Создать бренд: ${request.new_brand_name}` 
-                          : `Присоединиться к бренду: ${request.brand_name || `#${request.brand_id}`}`}
+                          ? t('adminBrandRequests.create_brand_request', { brandName: request.new_brand_name })
+                          : t('adminBrandRequests.join_brand_request', { brandName: request.brand_name || `#${request.brand_id}`})}
                       </h3>
                       {getStatusBadge(request.status)}
                     </div>
                     <div className="text-sm text-gray-400 space-y-1">
-                      <p>{request.user_email ? `Пользователь: ${request.user_email}` : `Пользователь ID: ${request.user_id}`}</p>
-                      <p>Создана: {new Date(request.created_at).toLocaleString('ru-RU')}</p>
+                      <p>{request.user_email ? t('adminBrandRequests.user_email', { email: request.user_email }) : t('adminBrandRequests.user_id', { id: request.user_id })}</p>
+                      <p>{t('adminBrandRequests.created_at', { date: new Date(request.created_at).toLocaleString('ru-RU') })}</p>
                       {request.processed_at && (
-                        <p>Обработана: {new Date(request.processed_at).toLocaleString('ru-RU')}</p>
+                        <p>{t('adminBrandRequests.processed_at', { date: new Date(request.processed_at).toLocaleString('ru-RU') })}</p>
                       )}
                     </div>
                   </div>
@@ -173,7 +175,7 @@ export function AdminBrandRequests() {
                     {request.status === 'pending' && (
                       <div className="flex items-center space-x-2">
                         <Clock className="w-5 h-5 text-yellow-400" />
-                        <span className="text-sm text-yellow-400">Требует внимания</span>
+                        <span className="text-sm text-yellow-400">{t('adminBrandRequests.attention_required')}</span>
                       </div>
                     )}
                     <button
@@ -183,7 +185,7 @@ export function AdminBrandRequests() {
                       }}
                       disabled={deleteMutation.isPending}
                       className="p-2 text-red-400 hover:text-red-300 hover:bg-red-500/10 rounded-lg transition-colors disabled:opacity-50"
-                      title="Удалить заявку"
+                      title={t('adminBrandRequests.delete_request_title')}
                     >
                       <Trash2 className="w-5 h-5" />
                     </button>
@@ -203,15 +205,15 @@ export function AdminBrandRequests() {
             disabled={page === 1}
             className="px-4 py-2 rounded-lg bg-white/5 text-gray-300 disabled:opacity-50 disabled:cursor-not-allowed hover:bg-white/10"
           >
-            Назад
+            {t('adminBrandRequests.pagination_previous')}
           </button>
-          <span className="text-gray-400">Страница {page} из {data.pages}</span>
+          <span className="text-gray-400">{t('adminBrandRequests.pagination_page_info', { page: page, totalPages: data.pages })}</span>
           <button
             onClick={() => setPage(p => Math.min(data.pages, p + 1))}
             disabled={page === data.pages}
             className="px-4 py-2 rounded-lg bg-white/5 text-gray-300 disabled:opacity-50 disabled:cursor-not-allowed hover:bg-white/10"
           >
-            Вперед
+            {t('adminBrandRequests.pagination_next')}
           </button>
         </div>
       )}
@@ -224,7 +226,7 @@ export function AdminBrandRequests() {
             <div className="bg-gradient-to-br from-purple-900 to-indigo-900 rounded-2xl max-w-3xl w-full max-h-[90vh] my-8 overflow-hidden flex flex-col border border-white/20">
             {/* Header */}
             <div className="flex items-center justify-between p-6 border-b border-white/10">
-              <h3 className="text-2xl font-bold text-white">Детали заявки #{selectedRequest.id}</h3>
+              <h3 className="text-2xl font-bold text-white">{t('adminBrandRequests.request_details_title', { id: selectedRequest.id })}</h3>
               <button
                 onClick={() => setSelectedRequest(null)}
                 className="text-gray-400 hover:text-white"
@@ -240,21 +242,21 @@ export function AdminBrandRequests() {
               {/* Кто и когда создал */}
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <p className="text-gray-400 text-sm mb-1">Пользователь</p>
+                  <p className="text-gray-400 text-sm mb-1">{t('adminBrandRequests.user_label')}</p>
                   <p className="text-white">
-                    {selectedRequest.user_email || `ID: ${selectedRequest.user_id}`}
+                    {selectedRequest.user_email ? t('adminBrandRequests.user_email_display', { email: selectedRequest.user_email }) : t('adminBrandRequests.user_id_display', { id: selectedRequest.user_id })}
                   </p>
                 </div>
                 <div>
-                  <p className="text-gray-400 text-sm mb-1">Статус</p>
+                  <p className="text-gray-400 text-sm mb-1">{t('adminBrandRequests.status_label')}</p>
                   {getStatusBadge(selectedRequest.status)}
                 </div>
               </div>
               
               <div className="text-sm text-gray-400">
-                <p>Создана: {new Date(selectedRequest.created_at).toLocaleString('ru-RU')}</p>
+                <p>{t('adminBrandRequests.created_at_display', { date: new Date(selectedRequest.created_at).toLocaleString('ru-RU') })}</p>
                 {selectedRequest.processed_at && (
-                  <p>Обработана: {new Date(selectedRequest.processed_at).toLocaleString('ru-RU')}</p>
+                  <p>{t('adminBrandRequests.processed_at_display', { date: new Date(selectedRequest.processed_at).toLocaleString('ru-RU') })}</p>
                 )}
               </div>
 
@@ -262,17 +264,17 @@ export function AdminBrandRequests() {
                 <>
                   <div className="grid grid-cols-2 gap-4">
                     <div>
-                      <p className="text-gray-400 text-sm mb-1">Название бренда</p>
+                      <p className="text-gray-400 text-sm mb-1">{t('adminBrandRequests.brand_name_label')}</p>
                       <p className="text-white font-semibold">{selectedRequest.new_brand_name}</p>
                     </div>
                     <div>
-                      <p className="text-gray-400 text-sm mb-1">Slug</p>
+                      <p className="text-gray-400 text-sm mb-1">{t('adminBrandRequests.brand_slug_label')}</p>
                       <p className="text-white">{selectedRequest.new_brand_slug}</p>
                     </div>
                   </div>
                   {selectedRequest.new_brand_description && (
                     <div>
-                      <p className="text-gray-400 text-sm mb-1">Описание</p>
+                      <p className="text-gray-400 text-sm mb-1">{t('adminBrandRequests.description_label')}</p>
                       <p className="text-white">{selectedRequest.new_brand_description}</p>
                     </div>
                   )}
@@ -281,9 +283,9 @@ export function AdminBrandRequests() {
 
               {selectedRequest.request_type === 'join' && selectedRequest.brand_id && (
                 <div>
-                  <p className="text-gray-400 text-sm mb-1">Присоединение к бренду</p>
+                  <p className="text-gray-400 text-sm mb-1">{t('adminBrandRequests.join_brand_label')}</p>
                   <p className="text-white font-semibold">
-                    {selectedRequest.brand_name || `Бренд #${selectedRequest.brand_id}`}
+                    {selectedRequest.brand_name || t('adminBrandRequests.brand_id_display', { id: selectedRequest.brand_id })}
                   </p>
                   {selectedRequest.brand_id && (
                     <a
@@ -292,7 +294,7 @@ export function AdminBrandRequests() {
                       rel="noopener noreferrer"
                       className="text-purple-400 hover:text-purple-300 underline text-sm mt-1 inline-block"
                     >
-                      Открыть страницу бренда →
+                      {t('adminBrandRequests.open_brand_page_link')} →
                     </a>
                   )}
                 </div>
@@ -300,7 +302,7 @@ export function AdminBrandRequests() {
 
               {selectedRequest.message && (
                 <div>
-                  <p className="text-gray-400 text-sm mb-1">Сообщение</p>
+                  <p className="text-gray-400 text-sm mb-1">{t('adminBrandRequests.message_label')}</p>
                   <p className="text-white bg-white/5 rounded-lg p-3">{selectedRequest.message}</p>
                 </div>
               )}
@@ -310,13 +312,13 @@ export function AdminBrandRequests() {
                 <div className="grid grid-cols-2 gap-4">
                   {selectedRequest.company_email && (
                     <div>
-                      <p className="text-gray-400 text-sm mb-1">Email компании</p>
+                      <p className="text-gray-400 text-sm mb-1">{t('adminBrandRequests.company_email_label')}</p>
                       <p className="text-white">{selectedRequest.company_email}</p>
                     </div>
                   )}
                   {selectedRequest.company_website && (
                     <div>
-                      <p className="text-gray-400 text-sm mb-1">Сайт компании</p>
+                      <p className="text-gray-400 text-sm mb-1">{t('adminBrandRequests.company_website_label')}</p>
                       {(() => {
                         // Добавляем протокол, если его нет
                         const websiteUrl = selectedRequest.company_website.startsWith('http://') || selectedRequest.company_website.startsWith('https://')
@@ -342,7 +344,7 @@ export function AdminBrandRequests() {
               {/* Социальные сети */}
               {selectedRequest.social_media_urls && selectedRequest.social_media_urls.length > 0 && (
                 <div>
-                  <p className="text-gray-400 text-sm mb-2">Социальные сети</p>
+                  <p className="text-gray-400 text-sm mb-2">{t('adminBrandRequests.social_media_label')}</p>
                   <div className="flex flex-wrap gap-2">
                     {selectedRequest.social_media_urls.map((url, index) => {
                       // Добавляем протокол, если его нет
@@ -368,14 +370,14 @@ export function AdminBrandRequests() {
 
               {selectedRequest.proof_text && (
                 <div>
-                  <p className="text-gray-400 text-sm mb-1">Описание подтверждающих документов</p>
+                  <p className="text-gray-400 text-sm mb-1">{t('adminBrandRequests.proof_docs_description_label')}</p>
                   <p className="text-white bg-white/5 rounded-lg p-3">{selectedRequest.proof_text}</p>
                 </div>
               )}
 
               {selectedRequest.proof_files && selectedRequest.proof_files.length > 0 && (
                 <div>
-                  <p className="text-gray-400 text-sm mb-2">Прикрепленные файлы</p>
+                  <p className="text-gray-400 text-sm mb-2">{t('adminBrandRequests.attached_files_label')}</p>
                   <div className="space-y-3">
                     {selectedRequest.proof_files.map((fileInfo, idx) => {
                       // Поддержка старого формата (строка) и нового (объект)
@@ -385,14 +387,15 @@ export function AdminBrandRequests() {
                       if (typeof fileInfo === 'string') {
                         // Старый формат: строка с путем
                         filePath = fileInfo;
-                        fileName = fileInfo.split('/').pop() || `Файл ${idx + 1}`;
+                        fileName = fileInfo.split('/').pop() || t('adminBrandRequests.file_placeholder', { index: idx + 1 });
                       } else {
                         // Новый формат: объект с path и name
                         filePath = fileInfo.path;
-                        fileName = fileInfo.name || fileInfo.path.split('/').pop() || `Файл ${idx + 1}`;
+                        fileName = fileInfo.name || fileInfo.path.split('/').pop() || t('adminBrandRequests.file_placeholder', { index: idx + 1 });
                       }
                       
-                      const fileUrl = `/uploads/${filePath}`;
+                      const accessToken = localStorage.getItem('access_token');
+                      const fileUrl = `/api/v1/uploads/${filePath}${accessToken ? `?token=${accessToken}` : ''}`;
                       const fileExt = fileName.split('.').pop()?.toLowerCase() || '';
                       const isImage = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg'].includes(fileExt);
                       
@@ -415,18 +418,15 @@ export function AdminBrandRequests() {
                                   alt={fileName}
                                   className="max-w-full h-auto max-h-64 rounded-lg border border-white/20 hover:border-purple-400/50 transition-colors"
                                   onError={(e) => {
-                                    console.error('Failed to load image:', fileUrl, e);
-                                    // Если изображение не загрузилось, показываем fallback
                                     const target = e.target as HTMLImageElement;
-                                    const parent = target.parentElement;
-                                    if (parent) {
-                                      target.style.display = 'none';
-                                      parent.innerHTML = `
-                                        <div class="flex items-center justify-center h-32 bg-white/5 rounded-lg border border-white/20">
-                                          <span class="text-gray-400 text-sm">Изображение не загружено</span>
-                                        </div>
-                                      `;
-                                    }
+                                    target.style.display = 'none';
+                                    const fallback = document.createElement('div');
+                                    fallback.className = 'flex items-center justify-center h-32 bg-white/5 rounded-lg border border-white/20';
+                                    const span = document.createElement('span');
+                                    span.className = 'text-gray-400 text-sm';
+                                    span.textContent = t('adminBrandRequests.image_not_loaded');
+                                    fallback.appendChild(span);
+                                    target.parentElement?.appendChild(fallback);
                                   }}
                                 />
                               </a>
@@ -442,7 +442,7 @@ export function AdminBrandRequests() {
                                   download
                                 >
                                   <Download className="w-4 h-4" />
-                                  <span className="hidden sm:inline">Скачать</span>
+                                  <span className="hidden sm:inline">{t('adminBrandRequests.download_file_link')}</span>
                                 </a>
                               </div>
                             </div>
@@ -466,7 +466,7 @@ export function AdminBrandRequests() {
 
               {selectedRequest.rejection_reason && (
                 <div>
-                  <p className="text-gray-400 text-sm mb-1">Причина отклонения</p>
+                  <p className="text-gray-400 text-sm mb-1">{t('adminBrandRequests.rejection_reason_label')}</p>
                   <p className="text-red-400 bg-red-500/10 rounded-lg p-3">{selectedRequest.rejection_reason}</p>
                 </div>
               )}
@@ -480,7 +480,7 @@ export function AdminBrandRequests() {
                   <textarea
                     value={rejectionReason}
                     onChange={(e) => setRejectionReason(e.target.value)}
-                    placeholder="Укажите причину отклонения заявки..."
+                    placeholder={t('adminBrandRequests.rejection_reason_placeholder')}
                     className="flex-1 px-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500 resize-none h-[108px]"
                   />
 
@@ -493,7 +493,7 @@ export function AdminBrandRequests() {
                       className="flex items-center space-x-2 px-6 py-3 bg-green-600 hover:bg-green-700 text-white rounded-xl transition-all disabled:opacity-50"
                     >
                       <CheckCircle className="w-5 h-5" />
-                      <span>Одобрить</span>
+                      <span>{t('adminBrandRequests.approve_button')}</span>
                     </button>
                     <button
                       onClick={() => handleReject(selectedRequest.id)}
@@ -501,7 +501,7 @@ export function AdminBrandRequests() {
                       className="flex items-center space-x-2 px-6 py-3 bg-red-600 hover:bg-red-700 text-white rounded-xl transition-all disabled:opacity-50"
                     >
                       <XCircle className="w-5 h-5" />
-                      <span>Отклонить</span>
+                      <span>{t('adminBrandRequests.reject_button')}</span>
                     </button>
                   </div>
                 </div>
@@ -518,10 +518,10 @@ export function AdminBrandRequests() {
         isOpen={deleteRequestId !== null}
         onClose={() => setDeleteRequestId(null)}
         onConfirm={confirmDelete}
-        title="Удалить заявку?"
-        message="Все связанные файлы будут также удалены. Это действие нельзя отменить."
+        title={t('adminBrandRequests.confirm_delete_title')}
+        message={t('adminBrandRequests.confirm_delete_message')}
         isLoading={deleteMutation.isPending}
-        itemName={deleteRequestId ? data?.items.find(r => r.id === deleteRequestId)?.new_brand_name || `Заявка #${deleteRequestId}` : undefined}
+        itemName={deleteRequestId ? data?.items.find(r => r.id === deleteRequestId)?.new_brand_name || t('adminBrandRequests.request_placeholder', { id: deleteRequestId }) : undefined}
       />
     </>
   );
