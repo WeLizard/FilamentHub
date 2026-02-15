@@ -8,7 +8,7 @@ RUN apt-get update && apt-get install -y \
     postgresql-client \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy all files
+# Copy all source files first (needed for editable install)
 COPY . .
 
 # Install Python dependencies
@@ -20,4 +20,3 @@ EXPOSE 8000
 
 # Run application
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
-

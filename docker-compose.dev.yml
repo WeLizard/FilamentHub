@@ -1,0 +1,83 @@
+services:
+  postgres-dev:
+    image: postgres:15-alpine
+    container_name: filamenthub_postgres_dev
+    environment:
+      POSTGRES_DB: filamenthub_dev
+      POSTGRES_USER: filamenthub
+      POSTGRES_PASSWORD: devpass123
+    volumes:
+      - postgres_dev_data:/var/lib/postgresql/data
+    ports:
+      - "5433:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U filamenthub -d filamenthub_dev"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    networks:
+      - filamenthub_dev
+
+  redis-dev:
+    image: redis:7-alpine
+    container_name: filamenthub_redis_dev
+    ports:
+      - "6380:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    networks:
+      - filamenthub_dev
+
+  backend-dev:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: filamenthub_backend_dev
+    volumes:
+      - ./backend:/app
+    ports:
+      - "8001:8000"
+    depends_on:
+      postgres-dev:
+        condition: service_healthy
+      redis-dev:
+        condition: service_healthy
+    environment:
+      POSTGRES_HOST: postgres-dev
+      POSTGRES_PORT: 5432
+      POSTGRES_USER: filamenthub
+      POSTGRES_PASSWORD: devpass123
+      POSTGRES_DB: filamenthub_dev
+      REDIS_URL: redis://redis-dev:6379/0
+      SECRET_KEY: dev-secret-key-not-for-production
+      ADMIN_PASSWORD: admin123
+      DEBUG: "true"
+      LOG_LEVEL: DEBUG
+    networks:
+      - filamenthub_dev
+
+  frontend-dev:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile.prod
+      args:
+        VITE_RECAPTCHA_SITE_KEY: ""
+    container_name: filamenthub_frontend_dev
+    volumes:
+      - ./frontend/nginx.dev.conf:/etc/nginx/conf.d/default.conf:ro
+    ports:
+      - "3001:80"
+    depends_on:
+      - backend-dev
+    networks:
+      - filamenthub_dev
+
+volumes:
+  postgres_dev_data:
+
+networks:
+  filamenthub_dev:
+    driver: bridge

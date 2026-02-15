@@ -42,16 +42,17 @@ def upgrade() -> None:
         unique=True,
     )
 
-    # Create enums for sync_history
-    sync_preset_type = sa.Enum('filament', 'printer', 'print', name='syncpresettype')
-    sync_operation = sa.Enum('download', 'upload', 'delete', name='syncoperation')
-    sync_status = sa.Enum('success', 'error', 'conflict', name='syncstatus')
+    # Create enums via raw SQL (sa.Enum + asyncpg has checkfirst bugs)
+    op.execute("DO $$ BEGIN CREATE TYPE syncpresettype AS ENUM ('filament', 'printer', 'print'); EXCEPTION WHEN duplicate_object THEN NULL; END $$;")
+    op.execute("DO $$ BEGIN CREATE TYPE syncoperation AS ENUM ('download', 'upload', 'delete'); EXCEPTION WHEN duplicate_object THEN NULL; END $$;")
+    op.execute("DO $$ BEGIN CREATE TYPE syncstatus AS ENUM ('success', 'error', 'conflict'); EXCEPTION WHEN duplicate_object THEN NULL; END $$;")
 
-    sync_preset_type.create(op.get_bind(), checkfirst=True)
-    sync_operation.create(op.get_bind(), checkfirst=True)
-    sync_status.create(op.get_bind(), checkfirst=True)
+    # Use postgresql.ENUM with create_type=False to reference already-created enums
+    from sqlalchemy.dialects.postgresql import ENUM as PG_ENUM
+    sync_preset_type = PG_ENUM('filament', 'printer', 'print', name='syncpresettype', create_type=False)
+    sync_operation = PG_ENUM('download', 'upload', 'delete', name='syncoperation', create_type=False)
+    sync_status = PG_ENUM('success', 'error', 'conflict', name='syncstatus', create_type=False)
 
-    # Create sync_history table
     op.create_table(
         'sync_history',
         sa.Column('id', sa.Integer(), nullable=False),

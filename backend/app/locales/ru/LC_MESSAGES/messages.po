@@ -1,0 +1,23 @@
+msgid ""
+msgstr ""
+"Project-Id-Version: filamenthub-backend 0.1.0\n"
+"Report-Msgid-Bugs-To: \n"
+"POT-Creation-Date: 2026-02-14 14:20+0000\n"
+"PO-Revision-Date: 2026-02-14 14:20+0000\n"
+"Last-Translator: Gemini\n"
+"Language-Team: Russian\n"
+"Language: ru\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+
+msgid "INVALID_CREDENTIALS"
+msgstr "Неверные учетные данные"
+
+msgid "EMAIL_ALREADY_REGISTERED"
+msgstr "Эл. почта уже зарегистрирована"
+
+msgid "USERNAME_ALREADY_REGISTERED"
+msgstr "Имя пользователя уже зарегистрировано"
+
+# ... (all other keys from i18n.py will be added here in the same format) ...

@@ -15,12 +15,13 @@ from app.core.limiter import limiter
 from app.middleware.maintenance import MaintenanceMiddleware
 
 # Create FastAPI app
+# Hide OpenAPI docs in production [INFRA-15]
 app = FastAPI(
     title=settings.PROJECT_NAME,
     version=settings.VERSION,
-    openapi_url=f"{settings.API_V1_PREFIX}/openapi.json",
-    docs_url=f"{settings.API_V1_PREFIX}/docs",
-    redoc_url=f"{settings.API_V1_PREFIX}/redoc",
+    openapi_url=f"{settings.API_V1_PREFIX}/openapi.json" if settings.DEBUG else None,
+    docs_url=f"{settings.API_V1_PREFIX}/docs" if settings.DEBUG else None,
+    redoc_url=f"{settings.API_V1_PREFIX}/redoc" if settings.DEBUG else None,
 )
 
 # Rate limiting setup
@@ -36,8 +37,8 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.CORS_ORIGINS,
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allow_headers=["Authorization", "Content-Type", "X-API-Key", "Accept", "Origin"],
 )
 
 # Static files for uploaded proof files

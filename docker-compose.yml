@@ -7,7 +7,7 @@ services:
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-filamenthub}
       POSTGRES_USER: ${POSTGRES_USER:-filamenthub}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-filamenthub_prod_password}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
@@ -62,7 +62,7 @@ services:
       POSTGRES_HOST: postgres
       POSTGRES_PORT: 5432
       POSTGRES_USER: ${POSTGRES_USER:-filamenthub}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-filamenthub_prod_password}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
       POSTGRES_DB: ${POSTGRES_DB:-filamenthub}
       REDIS_URL: redis://redis:6379/0
     env_file:
@@ -75,6 +75,8 @@ services:
     build:
       context: ./frontend
       dockerfile: Dockerfile.prod
+      args:
+        VITE_RECAPTCHA_SITE_KEY: ${VITE_RECAPTCHA_SITE_KEY:-}
     container_name: filamenthub_frontend_prod
     ports:
       - "${FRONTEND_PORT:-80}:80"
