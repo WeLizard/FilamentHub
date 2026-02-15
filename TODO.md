@@ -1,764 +1,300 @@
-# FilamentHub - TODO List
+# TODO — FilamentHub
 
-> **Последнее обновление:** 2025-11-23  
-> **Текущий фокус:** 
-> - ✅ Backend API ~95% (завершение мелких задач, уведомления, weighted presets)
-> - 🔥 Frontend Integration ~85% (улучшение UX, админ-панель, уведомления, weighted presets)
-> - 🔥 OrcaSlicer Integration ~87% (FilamentHubPanel, WebView, авторизация, синхронизация пресетов, badge уведомлений, экспорт filament/printer/print profiles)
+> Консолидация всех открытых задач.
+> Подробный аудит (описания, файлы, строки): [`docs/PENDING_TASKS.md`](docs/PENDING_TASKS.md)
+> Общий план проекта и прогресс MVP: [`TODO_Main.md`](TODO_Main.md)
 
 ---
 
-## 📊 Общий прогресс MVP
+## P0 — КРИТИЧЕСКИЕ
 
-```
-✅ Фаза 0: Планирование                 [████████████████████] 100%
-✅ Фаза 1: Backend API                  [███████████████████░]  95%
-🔥 Фаза 3: Web UI                       [██████████████████░░]  85%
-🔥 Фаза 2: OrcaSlicer Integration       [██████████████████░░]  87%
-⏳ Фаза 4: Публичный запуск             [░░░░░░░░░░░░░░░░░░░░]   0%
-```
+### Секреты и аутентификация
 
-**Детализация прогресса:**
-- ✅ Backend: Все основные эндпоинты, модели, миграции, тесты, OrcaSlicer экспорт, Brand Requests система, уведомления, weighted presets, API для количества непрочитанных уведомлений
-- ✅ Frontend: Каталог, создание материалов/пресетов, профиль, админ панель, полный UI для OrcaSlicer параметров, Brand Requests система, Brand Profile Page, уведомления, weighted presets в UI
-- 🔥 OrcaSlicer: Изучен код, собран локально, экспорт работает, интеграция в UI ~87% (FilamentHubPanel, WebView, авторизация, синхронизация пресетов, badge уведомлений, исправление проблемы с обновлением не-FilamentHub пресетов, экспорт filament/printer/print profiles)
+- [ ] **Сменить production-секреты** `[INFRA-1]`
+  - `backend/.env.prod`: `ADMIN_PASSWORD=admin123`, реальный `SECRET_KEY`, `POSTGRES_PASSWORD`
+  - Сменить все три значения на сервере
 
-**Статус:**
-- ✅ Completed (Завершено)
-- 🔥 In Progress (В работе)
-- 👀 Learning (Изучаем параллельно)
-- ⏳ Pending (Ожидает)
-- 💤 Deferred (Отложено на потом)
+- [x] ~~**Заменить `python-jose` на `PyJWT`**~~ `[CVE-1, INFRA-13]`
+- [x] ~~**Обновить `python-multipart` ≥ 0.0.22**~~ `[CVE-2]`
+- [x] ~~**Обновить `bcrypt` ≥ 5.0.0**~~ `[CVE-3]`
 
----
+### XSS в OrcaSlicer C++
 
-## ✅ ФАЗА 0: Планирование [ЗАВЕРШЕНА]
+- [ ] **XSS: инъекция токена в JS без экранирования** `[SEC-1]`
+  - `FilamentHubPanel.cpp:655-673` — `wxString::Format('%s')`
+  - Решение: `JSON.parse()` вместо строковой подстановки
 
-- [x] Изучить 3dcalc (PHP), Spoolman, OrcaSlicer
-- [x] Выбрать стек: Python FastAPI + PostgreSQL
-- [x] Создать ROADMAP.md
-- [x] Создать .cursor/rules/
-- [x] Создать AGENTS.md
-- [x] Уточнить видение с OrcaSlicer интеграцией
-- [x] Определить MVP scope (заглушки для Spoolman/Calculator)
+- [ ] **XSS: unsafe конкатенация JSON в JS** `[SEC-2]`
+  - `FilamentHubPanel.cpp:1710-1715, 1748-1751`
 
-**Результат:** ✅ Полное понимание проекта
+- [ ] **XSS: navigate_without_reload без экранирования** `[SEC-3]`
+  - `FilamentHubPanel.cpp:3444-3462` — path в `wxString::Format("navigate('%s')")`
+  - Решение: валидировать path — только `/[a-zA-Z0-9/_-]+/`
 
----
+### Пресеты НЕ попадают в секцию "FilamentHub presets"
 
-## 🔥 ФАЗА 1: Backend API MVP (Месяц 1-3)
+- [ ] **`fhub_source` не парсится Config.cpp** `[EXPORT-1]`
+  - `Config.cpp:905` — `load_from_json()` не кладёт `fhub_source` в `key_values`
+  - Добавить обработку `fhub_source`/`fhub_id` перед `else` веткой
 
-**Прогресс:** 95% (Все основные модели, эндпоинты, тесты, документация, rate limiting, refresh tokens, email verification (частично), модерация, brand requests, saved presets, filament reviews (частично), OrcaSlicer экспорт, удаление аккаунтов, админ панель)
+- [x] ~~**Fallback `"fdm_filament_common"` → импорт молча отклоняется**~~ `[EXPORT-2]`
 
-### 1.1 Настройка проекта ✅
-**Задачи на эту неделю:**
+### Перезапись чужих данных
 
-- [x] Создать структуру `backend/` проекта
-  ```
-  backend/
-  ├── app/
-  │   ├── main.py
-  │   ├── core/ (config, security, dependencies)
-  │   ├── api/v1/
-  │   ├── models/
-  │   ├── schemas/
-  │   ├── services/
-  │   └── db/
-  ├── tests/
-  ├── alembic/
-  ├── .env.example
-  ├── pyproject.toml
-  └── docker-compose.yml
-  ```
-- [x] Настроить `pyproject.toml` (FastAPI, SQLAlchemy, Alembic, pytest)
-- [x] Создать `docker-compose.yml` (PostgreSQL 15 + Redis 7)
-- [x] Создать `.env.example` с переменными
-- [x] Поднять Docker контейнеры локально
-- [x] Проверить подключение к PostgreSQL
-- [x] Инициализировать Alembic
-- [x] Создать первую миграцию (init)
+- [x] ~~**Нет проверки прав по fhub_id из .info**~~ `[SYNC-1]`
+- [x] ~~**SQL LIKE injection — неэкранированные `%` и `_`**~~ `[SYNC-3]`
 
-### 1.2 Базовые модели ✅
-**После 1.1:**
+### Другие уязвимости
 
-- [x] `app/models/user.py` - User (id, email, username, role, api_key)
-- [x] `app/models/brand.py` - Brand (id, name, verified, timestamps)
-- [x] `app/models/filament.py` - Filament (основной)
-- [x] `app/models/printer.py` - Printer
-- [x] `app/models/preset.py` - Preset (settings JSON, rating)
-- [x] `app/models/filament_review.py` - FilamentReview (reviews from users)
-- [x] `app/models/user_saved_preset.py` - UserSavedPreset (favorites)
-- [x] Relationships (Brand→Filaments, Filament→Presets, User→Reviews)
-- [x] Миграции Alembic для всех моделей
-- [x] Индексы (brand_id, material_type, printer_id)
+- [x] ~~**Капча — визуальная заглушка без защиты**~~ `[SEC-7]`
+  - Заменена на reCAPTCHA v3 с серверной верификацией через Google API
+  - Backend: `utils.py:verify_recaptcha()`, проверка в `/auth/register`
+  - Frontend: невидимый виджет `Recaptcha` в `Captcha.tsx`
 
-### 1.3 Pydantic Schemas ✅
+- [x] ~~**Path Traversal в file_service.py**~~ `[SEC-8]`
+- [x] ~~**DoS через большие файлы**~~ `[BACKEND-9]`
 
-- [x] `app/schemas/brand.py` (BrandCreate, BrandResponse)
-- [x] `app/schemas/filament.py` (FilamentCreate, FilamentResponse, FilamentList)
-- [x] `app/schemas/preset.py` (PresetCreate, PresetResponse)
-- [x] `app/schemas/user.py` (UserCreate, Token, TokenData)
-- [x] Validators (email, color_hex, temperatures)
+### CVE фронтенда
 
-### 1.4 REST API Endpoints 🔥
-
-#### Auth ✅
-- [x] `POST /api/v1/auth/register` (с rate limiting)
-- [x] `POST /api/v1/auth/login` (JWT, с rate limiting)
-- [x] `POST /api/v1/auth/refresh` (refresh token)
-- [x] `POST /api/v1/auth/api-key` (генерация API ключа)
-- [x] `GET /api/v1/auth/me` (текущий пользователь)
-- [x] `PATCH /api/v1/auth/me` (обновление профиля)
-- [x] `DELETE /api/v1/auth/me` (удаление аккаунта)
-- [x] `GET /api/v1/auth/deletion-stats` (статистика удалений)
-- [x] `POST /api/v1/auth/verify-email` (верификация email)
-
-#### Brands ✅
-- [x] `GET /api/v1/brands/` (список с пагинацией)
-- [x] `GET /api/v1/brands/{id}`
-- [x] `POST /api/v1/brands/` (admin only)
-- [x] `PATCH /api/v1/brands/{id}` (admin only)
-- [x] `DELETE /api/v1/brands/{id}` (admin only)
-
-#### Brand Requests ✅
-- [x] `POST /api/v1/brand-requests/` (создание заявки)
-- [x] `GET /api/v1/brand-requests/my` (мои заявки)
-- [x] `GET /api/v1/brand-requests/` (список для админов)
-- [x] `GET /api/v1/brand-requests/{id}` (детали заявки)
-- [x] `PATCH /api/v1/brand-requests/{id}` (обновление заявки)
-- [x] `DELETE /api/v1/brand-requests/{id}` (удаление заявки админом вместе с файлами)
-- [x] `POST /api/v1/brand-requests/{id}/upload` (загрузка файлов с оригинальными именами)
-- [x] `DELETE /api/v1/brand-requests/{id}/files/{file_path}` (удаление файла из заявки)
-- [x] При одобрении заявки: изменение роли пользователя на `brand`, привязка к бренду
-- [x] При одобрении CREATE заявки: создание нового бренда и привязка пользователя
-- [x] Отображение названия бренда вместо ID в JOIN заявках
-- [x] Загрузка файлов с сохранением оригинальных имен
-- [x] Валидация количества файлов (максимум 10 на заявку)
-- [x] Автоматическая очистка старых файлов (через 30 дней)
-
-#### Saved Presets ✅
-- [x] `GET /api/v1/saved-presets/` (список избранных)
-- [x] `POST /api/v1/saved-presets/` (добавить в избранное)
-- [x] `DELETE /api/v1/saved-presets/{preset_id}` (удалить из избранного)
-
-#### Admin ✅
-- [x] `GET /api/v1/admin/stats` (статистика системы)
-- [x] `GET /api/v1/admin/brands` (список брендов с фильтрацией)
-- [x] `POST /api/v1/admin/brands/{id}/verify` (верификация бренда)
-- [x] `POST /api/v1/admin/brands/{id}/unverify` (снятие верификации)
-- [x] `GET /api/v1/admin/presets/pending` (пресеты на модерации)
-- [x] `POST /api/v1/admin/presets/{id}/approve` (одобрение пресета)
-- [x] `POST /api/v1/admin/presets/{id}/reject` (отклонение пресета)
-- [x] `GET /api/v1/admin/users` (список пользователей с информацией о брендах)
-- [x] `POST /api/v1/admin/users/{id}/activate` (активация пользователя)
-- [x] `POST /api/v1/admin/users/{id}/deactivate` (деактивация пользователя)
-- [x] `POST /api/v1/admin/users/{id}/promote-admin` (повышение до админа)
-- [x] `POST /api/v1/admin/users/{id}/unlink-brand` (отвязка пользователя от бренда)
-- [x] `POST /api/v1/admin/users/{id}/link-brand` (привязка пользователя к бренду)
-- [x] `POST /api/v1/admin/users/{id}/demote-user` (понижение до обычного пользователя)
-- [x] `GET /api/v1/admin/brand-requests` (список заявок на бренд с фильтрацией)
-- [x] `GET /api/v1/admin/brand-requests/{id}` (детали заявки)
-- [x] `PATCH /api/v1/admin/brand-requests/{id}` (одобрение/отклонение заявки)
-- [x] `DELETE /api/v1/admin/brand-requests/{id}` (удаление заявки вместе с файлами)
-- [x] `GET /api/v1/admin/printer-requests` (список заявок на принтеры)
-- [x] `GET /api/v1/admin/printer-requests/{id}` (детали заявки на принтер)
-- [x] `PATCH /api/v1/admin/printer-requests/{id}` (одобрение/отклонение заявки на принтер)
-
-#### Filaments ✅
-- [x] `GET /api/v1/filaments/` (фильтры: type, brand_id, color, search, пагинация)
-- [x] `GET /api/v1/filaments/{id}`
-- [x] `POST /api/v1/filaments/` (brand auth)
-- [x] `PATCH /api/v1/filaments/{id}` (brand auth)
-- [x] `DELETE /api/v1/filaments/{id}` (brand auth)
-- [x] `GET /api/v1/filaments/{id}/presets` (пресеты для материала)
-
-#### Presets ✅
-- [x] `GET /api/v1/presets/` (фильтры: filament_id, printer_id, user_id, is_official)
-- [x] `GET /api/v1/presets/{id}`
-- [x] `POST /api/v1/presets/` (auth)
-- [x] `PATCH /api/v1/presets/{id}` (auth)
-- [x] `DELETE /api/v1/presets/{id}` (auth)
-- [x] `GET /api/v1/presets/recommend` (weighted average)
-- [x] `POST /api/v1/presets/{id}/increment-usage` (увеличение счетчика использования)
-- [x] `GET /api/v1/presets/{id}/export/orcaslicer.json` (экспорт профиля OrcaSlicer)
-- [x] `GET /api/v1/presets/{id}/export/orcaslicer.info` (экспорт .info файла)
-- [x] `POST /api/v1/orcaslicer/deleted-presets` (отправка локально удалённых пресетов из OrcaSlicer)
-- [x] `GET /api/v1/notifications/unread-count` (количество непрочитанных уведомлений)
-- [x] `DELETE /api/v1/notifications/{id}` (удаление уведомления)
-- [x] `PATCH /api/v1/saved-presets/{preset_id}/sync` (переключение синхронизации пресета)
-
-#### Printers ✅
-- [x] `GET /api/v1/printers/` (список с пагинацией)
-- [x] `GET /api/v1/printers/{id}`
-- [x] `POST /api/v1/printers/` (admin only)
-- [x] `PATCH /api/v1/printers/{id}` (admin only)
-- [x] `DELETE /api/v1/printers/{id}` (admin only)
-
-#### Printer Requests ✅
-- [x] `POST /api/v1/printer-requests/` (создание заявки на принтер)
-- [x] `GET /api/v1/printer-requests/` (мои заявки)
-- [x] `GET /api/v1/printer-requests/{id}` (детали заявки)
-- [x] `POST /api/v1/printer-requests/{id}/upload` (загрузка файлов)
-- [x] `DELETE /api/v1/printer-requests/{id}/files/{file_path}` (удаление файла)
-- [x] `GET /api/v1/admin/printer-requests` (список для админов)
-- [x] `GET /api/v1/admin/printer-requests/{id}` (детали для админа)
-- [x] `PATCH /api/v1/admin/printer-requests/{id}` (одобрение/отклонение)
-
-#### QR Codes ✅
-- [x] `POST /api/v1/filaments/` автоматически генерирует QR-код для верифицированных брендов
-- [x] `GET /api/v1/qr/filaments/{id}/qr-code` (получение изображения QR-кода)
-- [x] `GET /api/v1/qr/filaments/{id}/qr-code/download` (скачивание QR-кода)
-- [x] Поле `qr_code` в модели Filament (короткий код типа `FH-XXX` или `FH-XXX-XXX`)
-- [x] Генерация короткого кода с динамическим форматом (base36)
-- [x] UI для отображения и скачивания QR-кодов в профиле бренда
-
-#### Notifications ✅
-- [x] Модель `Notification` с типами (preset_updated, preset_deleted, preset_locally_deleted, brand_verified, brand_request_approved, brand_request_rejected)
-- [x] Сервис `notification_service.py` для создания уведомлений
-- [x] Сервис `orcaslicer_service.py` для обработки локально удалённых пресетов
-- [x] `GET /api/v1/notifications/` (список уведомлений пользователя)
-- [x] `GET /api/v1/notifications/unread-count` (количество непрочитанных)
-- [x] `POST /api/v1/notifications/{id}/mark-read` (отметить как прочитанное)
-- [x] `POST /api/v1/notifications/mark-all-read` (отметить все как прочитанные)
-- [x] `POST /api/v1/orcaslicer/deleted-presets` (отправка локально удалённых пресетов из OrcaSlicer)
-- [x] Интеграция в endpoints (presets, admin) для автоматической отправки уведомлений
-- [x] Frontend компонент `Notifications.tsx` с отображением и навигацией
-- [x] Frontend компонент `DeletedPresetsModal.tsx` для обработки локально удалённых пресетов
-- [x] OrcaSlicer: API метод `get_unread_notifications_count()` для получения количества непрочитанных уведомлений
-- [x] OrcaSlicer: Badge с количеством непрочитанных уведомлений на кнопке уведомлений
-
-#### Weighted Presets ✅
-- [x] Поле `is_weighted` в модели `Preset` (Boolean, индекс)
-- [x] Сервис `weighted_preset_service.py` для автоматического создания/обновления взвешенных пресетов
-- [x] Алгоритм на основе закона больших чисел и метода Ферми (weighted average)
-- [x] Минимальное количество пресетов для генерации: 4
-- [x] Автоматическое обновление при создании/изменении/удалении пресетов
-- [x] Исключение weighted presets из расчета (предотвращение рекурсии)
-- [x] Frontend: отображение в каталоге (carousel), тег "Генеративный" в профиле
-
-### 1.5 Заглушки (MVP scope) 💤
-
-#### Spoolman Integration (заглушка) ✅
-- [x] `GET /api/v1/spoolman/sync` → `{"status": "TODO", "message": "Будет реализовано в Фазе 5"}`
-- [ ] Создать модели для future (Spool, InventoryItem)
-- [x] Документировать планируемый API
-
-#### Calculator (заглушка) ✅
-- [x] `POST /api/v1/calculator/estimate` → простая формула
-  - Принимает: `weight_g`, `time_sec`, `price_per_kg`
-  - Возвращает: `cost_material`, `cost_total`
-  - **БЕЗ** G-code парсинга (будет в Фазе 6)
-
-### 1.6 Service Layer ✅
-
-- [x] `app/services/brand_service.py`
-- [x] `app/services/filament_service.py`
-- [x] `app/services/preset_service.py`
-- [x] `app/services/preset_recommender.py` (weighted average алгоритм)
-- [x] `app/services/orcaslicer_exporter.py` (экспорт в OrcaSlicer формат)
-- [x] `app/services/email_validator.py` (валидация email доменов, нормализация URL сайтов)
-- [x] `app/services/file_service.py` (загрузка файлов для brand requests с оригинальными именами, валидация, очистка старых файлов)
-- [x] `app/services/account_deletion.py` (удаление аккаунтов)
-- [x] `app/services/qr_service.py` (генерация QR-кодов и коротких кодов)
-- [x] `app/services/notification_service.py` (создание и управление уведомлениями)
-- [x] `app/services/orcaslicer_service.py` (обработка локально удалённых пресетов из OrcaSlicer)
-- [x] `app/services/weighted_preset_service.py` (автоматическое создание/обновление взвешенных пресетов)
-- [x] `app/core/security.py` (JWT, password hashing, email verification tokens)
-
-### 1.7 Testing ✅
-
-- [x] Pytest setup
-- [x] Tests для моделей
-- [x] Tests для API (базовые эндпоинты)
-- [x] Coverage 58%+ (33 из 38 тестов проходят, auth тесты имеют известную проблему с passlib/bcrypt)
-
-### 1.8 Documentation ✅
-
-- [x] Swagger (автогенерация FastAPI) - работает на `/api/v1/docs`
-- [ ] README.md для backend
-- [x] API examples в Swagger (автоматически из Pydantic схем)
-
-### 1.9 Security Improvements 🔥
-
-#### Rate Limiting ✅
-- [x] Добавить slowapi для rate limiting
-- [x] Ограничить `/api/v1/auth/login` (5 попыток/минуту)
-- [x] Ограничить `/api/v1/auth/register` (3 попытки/минуту)
-- [ ] Настроить Redis для хранения лимитов (пока используется in-memory)
-
-#### Password Validation ⏳
-- [ ] Усилить валидацию пароля (цифры + буквы + спецсимволы)
-- [ ] Обновить Pydantic схему `UserCreate.password`
-- [ ] Обновить frontend валидацию пароля
-- [ ] Добавить проверку на утечку паролей (опционально, через API)
-
-#### Token Management ✅
-- [x] Реализовать refresh tokens (настройки есть, логика не реализована)
-- [x] Добавить endpoint `/api/v1/auth/refresh`
-- [x] Обновить frontend для автоматического обновления токенов
-- [ ] Добавить endpoint `/api/v1/auth/logout` (blacklist токенов)
-
-#### Production Security
-- [ ] Генерация сильного SECRET_KEY при первом запуске
-- [ ] HTTPS only для production (CORS настройки)
-- [x] Email верификация (токены генерируются, отправка email - TODO)
-  - [x] Генерация токенов верификации
-  - [x] Endpoint для верификации `/api/v1/auth/verify-email`
-  - [x] Логика автоматического присвоения роли brand при верификации
-  - [ ] Отправка email с токеном (нужен SMTP сервер)
-
-**Цель Фазы 1:** Работающий Backend API с заглушками
+- [x] ~~**Обновить `vite` ≥ 7.1.11**~~ `[CVE-4]`
+- [x] ~~**Обновить `axios` ≥ 1.13.5**~~ `[CVE-5]`
+- [x] ~~**Обновить `react` ≥ 19.2.3**~~ `[CVE-6]`
 
 ---
 
-## 🔥 ФАЗА 2: OrcaSlicer Integration (Месяц 3-6) ⭐
+## P1 — ВЫСОКИЙ ПРИОРИТЕТ (до релиза)
 
-**Прогресс:** 87% (изучен код, собран локально, экспорт работает, форк создан и настроен, интеграция в UI ~87%: FilamentHubPanel, WebView, авторизация, синхронизация пресетов, badge уведомлений, экспорт filament/printer/print profiles, управление синхронизацией через `sync_enabled`)
+### Данные и атомарность
 
-### 2.1 Изучение OrcaSlicer ✅
+- [x] ~~**commit внутри цикла нарушает атомарность**~~ `[SYNC-2]`
+- [x] ~~**Race condition при создании принтера/бренда**~~ `[SYNC-6]`
+- [x] ~~**Enum `preset_locally_deleted` не в PostgreSQL**~~ `[ALEMBIC-6]`
+- [x] ~~**env.py — только 6 из 24 моделей**~~ `[ALEMBIC-3]`
 
-**Параллельно с Backend разработкой:**
+### Экспорт пресетов
 
-- [x] Клонировать https://github.com/SoftFever/OrcaSlicer
-- [x] Прочитать `OrcaSlicer-main/CLAUDE.md`
-- [x] Прочитать `OrcaSlicer-main/AGENTS.md`
-- [x] Изучить структуру `src/slic3r/GUI/`
-- [x] Найти код tabs: `Tab.cpp`, `MainFrame.cpp`
-- [x] Найти код "Профиль прутка" dropdown
-- [x] Изучить как работает HTTP (libcurl примеры)
-- [x] Компилировать OrcaSlicer локально (Windows) - версия 2.3.2dev
-- [x] Изучить структуру профилей OrcaSlicer (JSON формат, массивы строк)
-- [x] Изучить все параметры OrcaSlicer для филаментов (113+ параметров)
-- [x] Реализовать экспорт профилей в формате OrcaSlicer (.json и .info)
-- [x] Изучить интеграцию BambuLab в OrcaSlicer (для понимания архитектуры)
+- [x] ~~**Два несовместимых генератора .info**~~ `[EXPORT-3]`
+- [x] ~~**`filament_cost` — цена занижена в 10 раз**~~ `[EXPORT-4]`
+- [x] ~~**Двойной prefix `/orcaslicer/orcaslicer/`**~~ `[SYNC-4]`
+- [x] ~~**OR вместо AND в поиске manufacturer+model**~~ `[SYNC-9]`
 
-**Дедлайн:** 2 недели (изучаем вечерами пока делаем Backend)
+### Дубликаты
 
-### 2.2 Форк и Proof-of-Concept ✅
+- [x] ~~**Дублирование endpoints в printer_requests.py**~~ `[CONTRACT-1,2]`
+- [x] ~~**Дублирование кода в brands.py**~~ `[CONTRACT-3]`
+- [x] ~~**~140 строк дублированного обновления пресета**~~ `[SYNC-5]`
 
-- [x] Создать форк `lizardjazz1/OrcaSlicer` на GitHub (публичный, для соблюдения AGPL-3.0)
-- [x] Клонировать форк локально (`docs/OrcaSlicer`)
-- [x] Настроить upstream remote (SoftFever/OrcaSlicer)
-- [x] Применить правки для сборки (OpenCV, OCCT DLL) из существующей копии
-- [x] Создать ветку `filamenthub-integration` для разработки
-- [x] Закоммитить и запушить правки в форк (`600f782aec`)
-- [x] Синхронизировать с upstream (`git fetch upstream`)
-- [x] Скомпилировать и запустить (Windows) - версия 2.3.2dev работает
-- [x] Соблюдение AGPL-3.0: форк публичный, копирайты сохранены, LICENSE.txt не изменен
-- [x] Добавить уведомления о модификациях в измененные файлы (CMakeLists.txt)
-- [x] Создать файл CHANGES.md с описанием всех модификаций
-- [x] Закоммитить и запушить уведомления о модификациях (`88b7eafe59`)
-- [ ] Обновить README.md форка с информацией о FilamentHub интеграции (опционально)
-- [ ] Добавить тестовый HTTP запрос к localhost:8000
-- [ ] Создать пустой FilamentHub tab (skeleton)
-- [ ] Протестировать базовую интеграцию
+### Безопасность инфраструктуры
 
-### 2.3 FilamentHub Authorization Integration ✅ ~90%
-**Цель:** Реализовать авторизацию в OrcaSlicer через FilamentHub (аналогично BambuLab)
+- [x] ~~**CORS без production домена**~~ `[INFRA-2]`
+- [x] ~~**Stack trace в API-ответах**~~ `[SYNC-8]`
+- [x] ~~**except Exception: pass — проглоченные ошибки**~~ `[BACKEND-1]`
+- [x] ~~**undefined base_upload_dir в cleanup**~~ `[BACKEND-10]`
 
-**Задачи:**
-- [x] Изучить существующую интеграцию BambuLab в OrcaSlicer
-- [x] Создать `src/slic3r/Utils/FilamentHubClient.cpp/.h` для HTTP клиента
-- [x] UI авторизации через WebView:
-  - [x] Авторизация через WebView (открытие модального окна во фронтенде)
-  - [x] Автоматическое сохранение токена доступа (JWT) в AppConfig
-  - [x] Сохранение user_id в AppConfig
-  - [x] Отображение статуса авторизации (авторизован/не авторизован) в UI
-  - [x] Кнопка "Login/Logout" в верхней панели FilamentHub tab
-- [x] HTTP клиент для FilamentHub API:
-  - [x] POST /api/v1/auth/login (авторизация) - через фронтенд
-  - [x] GET /api/v1/auth/me (проверка статуса, получение user info)
-  - [x] GET /api/v1/auth/my-presets (получение пресетов пользователя)
-- [x] Сохранение настроек авторизации в конфиге OrcaSlicer (AppConfig)
-- [ ] POST /api/v1/auth/refresh (обновление токена) - не реализовано (не критично)
+- [x] ~~**Uploads без авторизации**~~ `[INFRA-8]`
+  - Убран StaticFiles mount, добавлен endpoint с Bearer/query token auth
 
-### 2.4 FilamentHub Tab Implementation ✅ ~85%
-**Цель:** Добавить таб "FilamentHub" в главный UI (рядом с "Подготовка", "Принтер", "Проект")
+- [x] ~~**Экспорт пресетов без auth**~~ `[EXPORT-7]`
+  - Добавлен `get_current_active_user` в export .json и .info
 
-**Задачи:**
-- [x] Создать `src/slic3r/GUI/FilamentHubPanel.cpp/.h`
-- [x] Добавить таб "FilamentHub" в главное окно (рядом с существующими табами)
-- [x] UI компоненты через WebView:
-  - [x] WebView с React фронтендом (http://localhost:3000)
-  - [x] Отображение статуса авторизации (если не авторизован - предложить войти)
-  - [x] Поиск материалов по бренду, типу, цвету (через фронтенд)
-  - [x] Просмотр деталей материала (через фронтенд)
-  - [x] Просмотр пресетов для материала (через фронтенд)
-  - [x] Кнопка "Скачать" для пресета (скачивание JSON файла)
-  - [x] Навигация (Catalog, Profile) в верхней панели
-  - [x] Кнопка "Уведомления" с badge непрочитанных уведомлений
-  - [x] Кнопка "Админ" (только для админов)
-  - [x] Кнопка "Обновить" для перезагрузки WebView
-- [x] HTTP клиент для FilamentHub API:
-  - [x] GET /api/v1/presets/{id}/export/orcaslicer.json (экспорт профиля)
-  - [x] GET /api/v1/auth/my-presets (получение пресетов пользователя)
-  - [x] GET /api/v1/notifications/unread-count (количество непрочитанных уведомлений)
-- [ ] GET /api/v1/filaments (поиск с фильтрами) - не требуется (через фронтенд)
-- [ ] GET /api/v1/filaments/{id} (детали материала) - не требуется (через фронтенд)
-- [ ] GET /api/v1/filaments/{id}/presets (пресеты материала) - не требуется (через фронтенд)
+### CVE
 
-### 2.5 Profile Synchronization ✅ ~83%
-**Цель:** Отображать профили пользователя из FilamentHub в dropdown "Профиль прутка" после авторизации
+- [x] ~~**`react-router-dom` ≥ 7.9.6**~~ `[CVE-7]`
+- [x] ~~**`uvicorn` ≥ 0.40.0**~~ `[CVE-8]`
+- [x] ~~**`mermaid` → latest**~~ `[CVE-9]` — уже на ^11.12.2 (latest)
 
-**Задачи:**
-- [x] Найти код где формируется dropdown "Профиль прутка" (Filament Profile)
-- [x] Реализовать синхронизацию профилей:
-  - [x] При авторизации получать список профилей пользователя через API (`/api/v1/auth/my-presets`)
-  - [x] Скачивать .json профили и импортировать через `PresetBundle::import_json_presets`
-  - [x] Сохранение маппинга `preset_id → bundle_preset_name` в AppConfig
-  - [x] Добавление постфикса `[FilamentHub]` к именам пресетов
-  - [x] Проверка и исправление родительских пресетов (`ensure_parent_preset_exists`)
-- [x] Автосинхронизация при открытии FilamentHub tab (если пользователь авторизован) - отключена для предотвращения проблем с истёкшими токенами
-- [x] Автосинхронизация после авторизации
-- [x] Кнопка "Синхронизировать" для ручного обновления
-- [x] Инкрементальная синхронизация (через `updated_since` параметр)
-- [x] Исправлена проблема с обновлением не-FilamentHub пресетов (убран вызов `load_current_presets` после каждого импорта, вызов только один раз в конце)
-- [x] Реализована асинхронная очередь для импорта пресетов (предотвращение deadlock при использовании `perform_sync()`)
-- [x] Реализована система обнаружения локально удалённых пресетов и отправка их на бэкенд (`POST /api/v1/orcaslicer/deleted-presets`)
-- [x] Добавлен badge с количеством непрочитанных уведомлений на кнопку уведомлений
-- [x] Добавлен API метод `get_unread_notifications_count()` для получения количества непрочитанных уведомлений
-- [x] Добавлено обновление количества уведомлений при входе и после синхронизации
-- [x] **Двусторонняя синхронизация (OrcaSlicer → FilamentHub)** (частично - filament presets):
-  - [x] Backend: Добавить поле `allow_filament_presets_import` в модель `User`
-  - [x] Backend: Добавить поля `external_id` и `source` в модель `Preset`
-  - [x] Backend: Создать служебный бренд "User Materials" (id=1) для черновиков из OrcaSlicer
-  - [x] Backend: Создать Pydantic схемы `OrcaFilamentPresetPayload`, `FilamentPresetSyncRequest`, `FilamentPresetSyncResponse`
-  - [x] Backend: Реализовать эндпоинт `POST /api/v1/orcaslicer/filaments/import`
-  - [x] Backend: Реализовать функцию `_upsert_filament_preset()` с логикой создания Filament при импорте
-  - [x] Backend: Реализовать разрешение конфликтов на основе timestamp (новее версия выигрывает)
-  - [x] C++ Client: Добавить метод `import_filament_presets()` в `FilamentHubClient`
-  - [x] C++ Panel: Реализовать экспорт Filament Preset в JSON (`export_filament_presets_to_filamenthub()`)
-  - [x] C++ Panel: Добавить проверку разрешений на импорт перед экспортом filament presets
-  - [x] C++ Panel: Сохранять маппинги `external_id → fhub_id` для filament presets
-  - [x] Документация: Создать подробную инструкцию по реализации (✅ создано в `docs/md/ORCASLICER_BIDIRECTIONAL_SYNC_IMPLEMENTATION.md`)
-  - [x] C++ Panel: Добавить обработку команды `export_filament_presets` в `OnScriptMessage`
-  - [x] C++ Panel: Добавить JavaScript API функцию `exportFilamentPresets` в `setup_javascript_api`
-  - [x] Frontend: Реализовать компонент `ExportFromOrcaSlicerButton` для экспорта профилей из OrcaSlicer в FilamentHub
-  - [x] Frontend: Интегрировать компонент экспорта в `ProfilePage.tsx`
-  - [x] C++ Panel: Реализовать экспорт Printer Profile в JSON (`export_printer_profiles_to_filamenthub()`)
-  - [x] C++ Panel: Реализовать экспорт Print Profile в JSON (`export_print_profiles_to_filamenthub()`)
-  - [x] C++ Panel: Добавить проверку разрешений на импорт перед экспортом printer/print profiles
-  - [x] C++ Panel: Сохранять маппинги `external_id → fhub_id` для printer/print profiles
-  - [x] C++ Panel: Добавить обработку команд `export_printer_profiles` и `export_print_profiles` в `OnScriptMessage`
-  - [x] C++ Panel: Добавить JavaScript API функции `exportPrinterProfiles` и `exportPrintProfiles` в `setup_javascript_api`
-  - [x] Frontend: Реализовать компоненты `ExportPrinterProfilesButton` и `ExportPrintProfilesButton` для экспорта printer/print profiles
-  - [x] Frontend: Интегрировать кнопки экспорта в разделы "Профили принтера" и "Профили печати" в `ProfilePage.tsx`
-  - [x] Frontend: Переименовать "Мои пресеты" → "Профили филамента" для единообразия терминологии
-  - [x] Backend: Реализовать систему `sync_enabled` в `user_saved_presets` для управления синхронизацией пресетов на уровне пользователя
-  - [x] Backend: Добавить поле `sync_enabled` в модель `UserSavedPreset`
-  - [x] Backend: Создать миграцию для добавления `sync_enabled` в `user_saved_presets`
-  - [x] Backend: Автоматически создавать `UserSavedPreset` при создании пользователем пресета
-  - [x] Backend: Добавить эндпоинт `PATCH /saved-presets/{preset_id}/sync` для переключения синхронизации
-  - [x] Frontend: Реализовать компонент `PresetSyncToggle` для управления синхронизацией пресетов
-  - [x] Frontend: Интегрировать `PresetSyncToggle` в `PresetCard` (отображается для всех пресетов в "Мои пресеты")
-  - [x] Backend: Исправить проблему с дублирующимися уведомлениями (обновление существующего уведомления вместо создания нового)
-  - [x] Backend: Добавить возможность удаления уведомлений через `DELETE /notifications/{id}`
-  - [x] Frontend: Добавить кнопку удаления уведомлений в компонент `Notifications`
-  - [ ] C++ Panel: Реализовать функцию `export_profiles_to_filamenthub()` для экспорта всех 3 типов профилей
-  - [ ] C++ Panel: Реализовать определение бандлов (если есть все 3 типа профилей)
-  - [ ] C++ Panel: Реализовать автоматический экспорт при первой синхронизации
-- [ ] Обновление уже импортированных пресетов (проверка `updated_at`)
-- [ ] Удаление пресетов из OrcaSlicer если они удалены на FilamentHub (частично реализовано - обнаружение работает, восстановление работает)
-- [ ] Визуальная пометка профилей FilamentHub в dropdown (иконка/метка)
-- [ ] Реализовать выпадающее меню уведомлений в WebView (временно открывает страницу уведомлений)
-- [ ] Протестировать синхронизацию и обновить `material_type_base_map` с реальными именами системных пресетов
+### Race conditions C++
 
-### 2.6 Testing & Release ⏳
+- [ ] **`m_is_syncing` — plain bool, не atomic** `[RACE-1]`
+- [ ] **`m_pending_actions_count` без atomic** `[RACE-2]`
+- [ ] **`m_is_logged_in` без защиты** `[RACE-3]`
+- [ ] **`m_presets_data` — shared vector без мьютекса** `[RACE-4]`
 
-- [ ] Тестирование Windows
-- [ ] Собрать бинарники (Windows exe)
-- [ ] GitHub Release (v0.1.0-filamenthub)
-- [ ] Инструкция по установке
+### Производительность
 
-**Цель Фазы 2:** Работающая интеграция в OrcaSlicer
+- [x] ~~**Загрузка ВСЕХ филаментов в память**~~ `[SYNC-7]`
+  - Заменено на точечный SQL-запрос с `LOWER(TRIM(...))` вместо загрузки всей таблицы
+
+### Экспорт
+
+- [x] ~~**flow_ratio: эвристика ломает значения 1.0–2.0**~~ `[EXPORT-5]`
+  - БД хранит проценты (50–150), OrcaSlicer — множитель (0.5–1.5). Убрана эвристика, всегда `*100` / `/100`
+
+### Стабильность C++
+
+- [ ] **Blocking wait 30 сек в UI потоке** `[CRASH-1]`
+  - `FilamentHubPanel.cpp:2200-2223` — `cv.wait_for(lock, 30s)` при удалении пресета
+
+- [ ] **Null pointer в dynamic_cast** `[CRASH-2]`
+  - `FilamentHubPanel.cpp:85-90` — `dynamic_cast<ConfigOptionString*>(opt)->value` без проверки
+
+- [ ] **WebView может быть null** `[CRASH-3]`
+  - `FilamentHubPanel.cpp:366, 3464` — `LoadUrl`/`RunScript` без проверки `m_browser`
 
 ---
 
-## ⏳ ФАЗА 3: Web UI (Месяц 7-9)
+## P2 — СРЕДНИЙ ПРИОРИТЕТ
 
-**Прогресс:** 75% (Базовый UI полностью реализован, интеграция с API завершена, создание пресетов с OrcaSlicer параметрами работает)
+### Инфраструктура
 
-**Минимальный набор для MVP:**
+- [ ] CI/CD пайплайн `.github/workflows/ci.yml` `[INFRA-5]`
+- [ ] Rate limiter → Redis backend `[INFRA-6]`
+- [x] ~~Nginx `client_max_body_size 50m`~~ `[INFRA-9]`
+- [x] ~~Content-Security-Policy~~ `[INFRA-10]`
+- [ ] Redis с паролем `[INFRA-11]`
+- [x] ~~Убрать диагностический JWT double-decode~~ `[INFRA-12]`
+- [x] ~~Убрать hardcoded fallback пароль в docker-compose~~ `[INFRA-14]`
+- [x] ~~`run.py` — `reload=True` в production~~ `[BACKEND-4]`
 
-- [x] React + TypeScript + Vite setup
-- [x] Публичный каталог материалов с фильтрацией
-- [x] Регистрация/авторизация (модальные окна)
-- [x] Страницы пользовательского соглашения и согласия на обработку данных
-- [x] Dashboard для администраторов (полный UI)
-- [x] Проверка сложности пароля и подтверждение пароля
-- [x] Капча с показом после попытки регистрации
-- [x] Страница профиля пользователя с избранными пресетами
-- [x] Добавление/редактирование материалов (CreateFilamentModal с API)
-- [x] Добавление/редактирование пресетов (CreatePresetModal с полным UI для OrcaSlicer)
-- [x] Визуализация филамента (FilamentPreview компонент)
-- [x] Полная интеграция всех компонентов с реальным API
-- [x] CustomSelect компонент (стилизованный dropdown)
-- [x] EditGCodeModal (редактор G-code с плейсхолдерами)
-- [x] Страница бренда (BrandProfilePage реализована)
-  - [x] Создание/редактирование материалов через модальное окно
-  - [x] Удаление материалов
-  - [x] Отображение статистики
-  - [x] Заявки на бренд (создание, просмотр, загрузка файлов)
-  - [x] Отображение файлов с оригинальными именами
-  - [x] Создание/редактирование пресетов бренда (официальные пресеты)
-  - [x] Вкладка "QR-коды" для отображения и скачивания QR-кодов материалов
-  - [x] Доработано создание/редактирование материалов (единообразие форм, улучшен UX)
-  - [x] Улучшено отображение заявок на бренд (компактное отображение полей)
-  - [x] Доработана логика присоединения к верифицированным брендам (полная заявка если нет сотрудников)
-- [x] Админ-панель полностью реализована
-  - [x] Управление заявками на бренды (одобрение/отклонение, удаление)
-  - [x] Управление заявками на принтеры (одобрение/отклонение)
-  - [x] Управление брендами (верификация, переход на страницу бренда)
-  - [x] Управление пользователями (активация/деактивация, повышение до админа, понижение до пользователя, привязка/отвязка от бренда)
-  - [x] Отображение информации о брендах пользователей
-  - [x] Кнопки профиля и выхода в админ-панели
-  - [x] Модальные окна подтверждения (ConfirmModal) вместо confirm()
-- [x] Система уведомлений (компонент Notifications.tsx, интеграция с API)
-- [x] Weighted Presets в UI (отображение в каталоге через carousel, тег "Генеративный" в профиле)
-- [ ] Калькулятор стоимости с G-code парсингом (заглушка работает)
+### Тесты
 
-**Цель:** Производители могут управлять материалами через веб
+- [ ] Тестовый фреймворк для фронтенда (vitest) `[INFRA-3]`
+- [ ] Тесты: Admin API, Sync, Reviews, QR, auth flows `[INFRA-4]`
 
----
+### Alembic
 
-## ⏳ ФАЗА 4: Публичный запуск (Месяц 9-10)
+- [ ] `drop_constraint(None)` — невозможный downgrade `[ALEMBIC-4]`
+- [ ] Потеря данных при downgrade e01bc3b29297 `[ALEMBIC-5]`
+- [x] ~~`can_edit_wiki` в БД, но не в модели~~ `[ALEMBIC-8]` — добавлено в User model
 
-- [ ] Деплой на VPS (или остаться локально)
-- [ ] Домен filamenthub.ru (опционально)
-- [ ] SSL сертификаты
-- [ ] Мониторинг (Sentry)
-- [ ] Связь с @SoftFever (PR в OrcaSlicer)
-- [ ] Маркетинг (Habr, соцсети)
+### Sync orchestrator
 
----
+- [x] ~~N+1 запросы для deleted presets~~ `[SYNC-10]` — batch DELETE с `.in_()`
+- [x] ~~SELECT DISTINCT manufacturer на каждый вызов~~ `[SYNC-11]` — кэш на уровне batch
+- [x] ~~`if not value` ложно для 0.0 → `is None`~~ `[SYNC-12]`
+- [x] ~~Лимит на батч printer/print profiles~~ `[SYNC-13]` — max_length=50 на все SyncRequest
+- [x] ~~Фильтр active при поиске пресетов~~ `[SYNC-14]` — не баг, осознанно ищем все (включая неактивные) чтобы избежать дублей
+- [x] ~~Двойной commit в handle_deleted_preset_action~~ `[SYNC-15]`
+- [x] ~~Границы слов в matcher'е материалов~~ `[SYNC-17]` — проверено: `\b` + `[^A-Z]` корректно разделяют
+- [x] ~~AttributeError при filament=None~~ `[SYNC-18]`
+- [x] ~~Lazy loading → MissingGreenlet~~ `[SYNC-19]` — selectinload(Filament.brand)
+- [x] ~~commit после ошибки без rollback~~ `[SYNC-20]`
 
-## 💤 Post-MVP (Отложено)
+### Валидация
 
-### Фаза 5: Динамическая загрузка профилей принтеров и филаментов (Месяц 11-12) ⭐
-**Проблема:** Сейчас профили принтеров и филаментов зашиты в ресурсы OrcaSlicer (`resources/profiles/`). Для добавления нового принтера или филамента нужен PR в репозиторий и новый релиз. Это неудобно и медленно.
+- [ ] Валидация не блокирует экспорт → HTTP 422 `[EXPORT-6]`
+- [x] ~~Race condition в QR-коде при создании филамента~~ `[BACKEND-5]` — обработка IntegrityError
 
-**Решение:** Загрузка профилей динамически через FilamentHub API — без пересборки OrcaSlicer.
+### Безопасность
 
-**Задачи:**
+- [ ] Токены в localStorage → httpOnly cookies `[INFRA-7]`
+- [x] ~~innerHTML / dangerouslySetInnerHTML без санитизации~~ `[SEC-4..6]` — заменено на createElement/textContent
+- [x] ~~`account_deletion.py` — deactivate перед delete бесполезен~~ `[BACKEND-8]`
 
-#### 5.0 Исследование: структура профилей OrcaSlicer (ПЕРВЫЙ ШАГ)
-- [x] Изучить структуру `resources/profiles/` в OrcaSlicer — какие файлы, форматы, иерархия
-- [x] Изучить формат JSON профилей принтеров (machine): какие поля, зависимости, наследование
-- [x] Изучить формат JSON профилей филаментов (filament): связь с брендами, вариации по нозлам
-- [x] Изучить формат JSON профилей печати (process): связь с принтерами и материалами
-- [x] Изучить как OrcaSlicer загружает профили при запуске (код в `PresetBundle`, `Preset`, `VendorProfile`)
-- [x] Изучить формат vendor JSON (например `Elegoo.json`, `Creality.json`) — мета-описание всех профилей вендора
-- [x] Понять систему наследования профилей (`inherits`, `compatible_printers`, `compatible_prints`)
-- [x] Изучить процесс PR в OrcaSlicer для добавления профилей — что проверяют, какие требования
-- [x] Составить спецификацию: что нужно хранить на бэкенде FilamentHub для полной поддержки
-- [x] Изучить SoftFever Wiki (OrcaFilamentLibrary, filament_id ≤8 символов, валидаторы, кэш)
-- [x] Определить MVP: минимальный набор для динамической загрузки без ломания совместимости
-**Результат:** `docs/OrcaSlicer-Profiles-Guide.md` — полный гайд (15 секций, спецификация БД, API, правила для AI-агента)
+### UX
 
-#### 5.1 Реализация
-- [ ] Backend: API эндпоинты для раздачи профилей принтеров (`GET /api/v1/profiles/printers`)
-- [ ] Backend: API эндпоинты для раздачи профилей филаментов (`GET /api/v1/profiles/filaments`)
-- [ ] Backend: Версионирование профилей (чтобы клиент скачивал только обновлённые)
-- [ ] Backend: Модерация и валидация загружаемых профилей
-- [ ] Frontend: UI для загрузки/редактирования профилей принтеров и филаментов сообществом
-- [ ] Frontend: Система ревью профилей (рейтинг, отзывы, количество использований)
-- [ ] OrcaSlicer: Интеграция подгрузки профилей из FilamentHub API в runtime
-- [ ] OrcaSlicer: Кэширование скачанных профилей локально
-- [ ] OrcaSlicer: UI для поиска и установки профилей из FilamentHub (внутри вкладки FilamentHub)
-- [ ] OrcaSlicer: Автообновление профилей при запуске (проверка новых версий)
+- [x] ~~49 мест с `alert()`/`confirm()` вместо toast~~ `[UX-1]`
+- [ ] WikiPage — поиск не показывает результаты `[UX-2]`
+- [ ] BrandDetailPage — рейтинг-заглушка `[UX-3]`
+- [ ] ViewPresetModal — нет полей экструдеров `[UX-4]`
+- [x] ~~Notifications.tsx — postMessage без проверки OrcaSlicer~~ `[UX-5]` — добавлена проверка event.origin
+- [x] ~~TableOfContents — stale closure в useEffect~~ `[UX-6]`
 
-**Результат:** Сообщество добавляет профили принтеров/филаментов через веб-интерфейс FilamentHub, пользователи OrcaSlicer FH Edition получают их автоматически без обновления слайсера.
+### Качество кода
 
-### Фаза 6: Полная Spoolman Integration (Месяц 13-14)
-- Импорт/экспорт катушек
-- Двусторонняя синхронизация
+- [x] ~~N+1 запросы при загрузке пресетов~~ `[PERF-1]` — проверено: selectinload используется везде
+- [x] ~~Логирование конфиденциальных данных (JWT exp, API URLs)~~ `[CODE-7]` — токены понижены до debug
+- [x] ~~Неконсистентный язык ошибок (рус/англ)~~ `[BACKEND-7]`
+- [x] ~~Дублирование формулы в calculator.py~~ `[BACKEND-12]` — вынесено вычисление, убраны дубли
 
-### Фаза 7: G-code Calculator (Месяц 15-16)
-- Портирование PHP парсеров
-- Полный калькулятор с парсингом
-- Премиум доступ
+### Юридическое
 
-### Фаза 8: Рейтинги и аналитика (Месяц 17-18)
-- Отзывы на пресеты
-- Статистика для производителей (платная)
-
-### Фаза 9: Расширение (Месяц 19+)
-- QR-коды
-- Маркетплейс (Ozon/WB ссылки)
-- Другие слайсеры (PrusaSlicer, Cura)
+- [x] ~~Заполнители в юридических документах~~ `[LEGAL-1]`
+  - Заменены `[адрес электронной почты]` → `support@filamenthub.ru`
+  - Добавлен раздел 8 «Синхронизация и передача настроек печати» в Пользовательское соглашение
+  - В Согласие на обработку ПД добавлены настройки печати как обрабатываемые данные
+  - `[адрес ИП Кузьмин И.И.]` — оставлен для заполнения вручную
 
 ---
 
-## 🎯 Текущие задачи (Следующие шаги)
+## P3 — НИЗКИЙ ПРИОРИТЕТ
 
-### Приоритет 1: Frontend Integration ✅
-1. ✅ Регистрация и авторизация работают
-2. ✅ Добавление/редактирование материалов (CreateFilamentModal интегрирован с API)
-3. ✅ Добавление/редактирование пресетов (CreatePresetModal интегрирован с API, полный UI для OrcaSlicer параметров)
-4. ✅ Brand Requests система полностью реализована (создание, загрузка файлов, одобрение админом, изменение роли)
-5. ✅ Страница бренда (BrandProfilePage реализована с полным функционалом)
-6. ✅ Доработано создание/редактирование материалов (единообразие форм, улучшен UX)
-7. ✅ Админ-панель полностью реализована (все разделы, управление пользователями, отвязка от брендов)
-8. ✅ QR-коды материалов (генерация, отображение, скачивание в профиле бренда)
-9. ⏳ **СЛЕДУЮЩЕЕ:** Калькулятор стоимости с G-code парсингом (заглушка работает, нужен полный парсер)
-    - [x] Backend: Базовая заглушка калькулятора (простая формула)
-    - [ ] Backend: Портировать G-code парсеры из PHP (OrcaSlicer, PrusaSlicer, Cura и др.)
-    - [ ] Backend: Полный калькулятор с парсингом G-code
-    - [ ] Frontend: UI для загрузки G-code файла
-    - [ ] Frontend: Отображение результатов расчёта
-10. ✅ **ЗАВЕРШЕНО:** Система отзывов и рейтингов (звёзды/баллы)
-    - [x] Backend: CRUD эндпоинты для отзывов на пресеты
-    - [x] Backend: Система рейтингов (1-5 звёзд)
-    - [x] Backend: Расчёт среднего рейтинга для пресетов
-    - [x] Frontend: UI для создания/редактирования отзывов
-    - [x] Frontend: Компонент рейтинга (звёзды)
-    - [x] Frontend: Отображение отзывов на странице пресета
-    - [x] Frontend: Отображение среднего рейтинга в карточках пресетов
-    - [x] Frontend: Фильтрация пресетов по рейтингу
-11. ✅ **ЗАВЕРШЕНО:** Привязка принтеров к пресетам
-    - [x] Backend: Модель PresetPrinter (many-to-many связь)
-    - [x] Backend: Обновление схем PresetCreate/PresetUpdate для работы с printer_ids
-    - [x] Backend: Автоматическое создание связей при создании/обновлении пресета
-    - [x] Frontend: UI для выбора принтеров при создании/редактировании пресета (множественный выбор)
-    - [x] Frontend: Отображение списка принтеров в CreatePresetModal
-    - [x] Frontend: Фильтрация пресетов по принтеру (работает через API)
-    - [ ] Frontend: Отображение иконок/названий принтеров в карточках пресетов (можно доработать)
+### Заглушки
 
-### Приоритет 2: Backend Security (завершение)
-1. ✅ Rate limiting реализован
-2. ✅ Refresh tokens реализованы
-3. ⏳ Усилить валидацию паролей (цифры + буквы + спецсимволы)
-4. ⏳ Добавить endpoint `/api/v1/auth/logout`
+- [ ] `get_all_mapped_preset_ids()` — всегда пустой вектор `[STUB-1]`
+- [ ] Google OAuth кнопка — заглушка `[STUB-2]`
+- [ ] История печати — `userHistory = []` `[STUB-3]`
+- [ ] Spoolman интеграция — `status="TODO"` `[BACKEND-6]`
+- [ ] Email-сервис (SMTP) — верификация email, сброс пароля, уведомления `[EMAIL-1]`
+  - Сейчас токены логируются в `debug` — убрать после реализации
+  - SMTP config в `.env`, шаблоны писем, очередь отправки
 
-### Приоритет 3: OrcaSlicer Integration 🔥 В РАБОТЕ
-**Статус:** Интеграция активно разрабатывается, прогресс ~85%
-1. ✅ Реализовать экспорт профилей в формате OrcaSlicer (готово в backend)
-2. ✅ Создать форк или локальную ветку для разработки (lizardjazz1/OrcaSlicer, ветка filamenthub-integration)
-3. ✅ Реализовать авторизацию в OrcaSlicer через FilamentHub (через WebView, токен сохраняется в AppConfig)
-4. ✅ Добавить таб "FilamentHub" в главный UI OrcaSlicer (FilamentHubPanel с WebView)
-5. ✅ Реализовать синхронизацию профилей в "Профиль прутка" dropdown (асинхронная очередь, обнаружение удалённых пресетов)
-6. ✅ Исправить проблему с обновлением не-FilamentHub пресетов (убран множественный вызов load_current_presets)
-7. ✅ Добавить badge с количеством непрочитанных уведомлений на кнопку уведомлений
-8. ✅ Реализовать экспорт filament presets из OrcaSlicer в FilamentHub (C++ метод `export_filament_presets_to_filamenthub()`)
-9. ✅ Добавить проверку разрешений на импорт перед экспортом filament presets
-10. ✅ Добавить JavaScript API функцию `exportFilamentPresets` в C++ для вызова экспорта из Frontend
-11. ✅ Реализовать Frontend компонент `ExportFromOrcaSlicerButton` для экспорта профилей из OrcaSlicer в FilamentHub
-12. ✅ Интегрировать компонент экспорта в `ProfilePage.tsx` (отображается только внутри OrcaSlicer)
-13. ⏳ Реализовать выпадающее меню уведомлений в WebView (временно открывает страницу)
-14. ⏳ Визуальная пометка профилей FilamentHub в dropdown (иконка/метка)
-15. ⏳ Реализовать экспорт printer и print profiles (в дополнение к filament presets)
-16. ⏳ Тестирование и отладка синхронизации
+### Код backend
 
----
+- [ ] Двойная docstring, проглоченные exceptions, дубли импортов `[SYNC-21..25]`
+- [ ] Пустая миграция 5752bb11b46d `[ALEMBIC-9]`
+- [ ] Orphan таблица bad_words `[ALEMBIC-10]`
+- [ ] Нестандартные revision ID `[ALEMBIC-11]`
+- [x] ~~OpenAPI docs в production~~ `[INFRA-15]`
+- [x] ~~Frontend Dockerfile без health check~~ `[INFRA-16]`
+- [x] ~~Dev Dockerfile: COPY до pip install~~ `[INFRA-17]`
+- [x] ~~CORS allow_methods/headers = ["*"]~~ `[INFRA-18]` — ограничено до конкретных методов и заголовков
+- [x] ~~requirements.txt — артефакт~~ `[INFRA-20]` — удалён
+- [ ] Admin endpoints не используются из frontend `[CONTRACT-5]`
+- [ ] 8 пустых классов в schemas (наследуют с `pass`) `[CODE-6]`
 
-## 📝 Примечания
+### Код C++
 
-### Deployment Strategy:
-- **MVP:** Разворачиваем локально (localhost:8000)
-- **После тестирования:** VPS (Hetzner/Timeweb)
+- [ ] Огромные callback лямбды (438 строк) `[CODE-1]`
+- [ ] 136 вызовов CallAfter без контроля `[CODE-2]`
+- [ ] Temp-файлы не удаляются при исключениях `[CODE-3]`
+- [ ] JSON parsing без проверки ключей `[CODE-4]`
+- [ ] `_ensure_printer_id()` — 278 строк монстр-функция `[CODE-5]`
+- [ ] Мёртвый код `m_notifications_button/badge` `[LOW-2]`
+- [ ] Хардкод таймаутов в FilamentHubClient `[LOW-3]`
+- [ ] Хардкод API endpoints `[LOW-4]`
+- [ ] Хардкод постфикса `[FilamentHub]` `[LOW-5]`
+- [ ] `sync_call_counter` может переполниться `[LOW-6]`
+- [ ] 200+ BOOST_LOG_TRIVIAL на info вместо debug `[LOW-7]`
+- [ ] Unused variable `e` в CallAfter лямбде `[LOW-8]`
+- [ ] Include guards `__` зарезервированы стандартом `[LOW-9]`
+- [ ] Переменные не в member initializer list `[LOW-10]`
 
-### Приоритет фич:
-1. ✅ Backend API (основа) - 98% готово
-2. ✅ Web UI (для брендов) - 90% готово
-3. ⏳ G-code калькулятор (портировать парсеры из PHP)
-4. 💤 OrcaSlicer интеграция (отложено)
-5. Всё остальное (потом)
+### Код frontend
 
-### Заглушки на MVP:
-- ✅ Spoolman sync - заглушка (Фаза 5)
-- ✅ Calculator - простая формула (полный в Фазе 6)
-- ✅ G-code парсинг - не портируем сейчас (Фаза 6)
+- [x] ~~32 `console.log` в production~~ `[LOW-1]`
+- [ ] TypeScript `noUnusedLocals: false` `[INFRA-19]`
+- [ ] 60+ использований `any` в TypeScript `[TS-1]`
+- [ ] Unsafe `as any` casts `[TS-2]`
+- [ ] `qrcode.react` — inactive, рассмотреть замену `[CVE-11]`
+- [ ] `passlib` 1.7.4 — не поддерживается `[CVE-12]`
+- [ ] `react-syntax-highlighter` ≥ 16.1.0 `[CVE-10]`
+- [ ] Admin role check только на frontend `[FRONTEND-1]`
+
+### Фичи
+
+- [ ] Переименовать "История" → "Активность"
+- [ ] Топ-10 популярных на главной
+- [ ] Расширить CreatePrintProfileModal
+- [ ] Retry logic в FilamentHubClient
+- [ ] "Мои принтеры" — generic вместо конкретных моделей `[TODO-12]`
+- [ ] Комбинации профилей (принтер + филамент + process) `[TODO-13]`
+- [ ] Smart Matching & Filtering System `[TODO-14]`
+- [ ] Вендор-бандлы (Фазы A→C) — см. `PENDING_TASKS.md`
 
 ---
 
-**Готовы начинать!** 🚀  
-**Следующий шаг:** Создать структуру Backend проекта
+## OrcaSlicer C++ — баги
+
+- [x] ~~Экспорт пропускал все новые пресеты~~ (убран `continue` по `fhub_id`)
+- [x] ~~user_id = 'true' в AppConfig~~ (очистка невалидного user_id)
+- [x] ~~Дублирование "Export started" текста~~
+- [x] ~~74 русских перевода добавлены в .po файл~~
+- [x] ~~Кракозябры в тостах WebView~~ (`wxString::FromUTF8()`)
+- [x] ~~Спам "Printer profiles import is disabled"~~ (guard `m_is_syncing`)
+- [x] ~~Зависание UI при синхронизации~~
+- [x] ~~Синхронизация запускается дважды при открытии~~
+- [x] ~~Типы материалов на сайте — только PLA~~
+
+- [ ] **403 для printer/print profiles** — настройки `allow_*_import` = false по умолчанию
+- [ ] **get_my_presets возвращает пустой массив** — после экспорта должны появиться
 
 ---
 
-### 🗂️ Backlog / Идеи на потом (низкий приоритет)
+## Нужно проверить
 
-- [ ] (🛰️) Исследовать и при необходимости портировать идею фильтрации из RussianBadWords на Python — https://github.com/Vasiliy-Makogon/RussianBadWords
-- [ ] (🛰️) Спланировать региональные фильтры брендов по странам (добавить `country_code`, автоопределение региона, fallback на глобальные бренды)
+- [ ] get_my_presets возвращает пустой массив `[TODO-10]`
 
 ---
 
-## 📋 Доработка 100% поддержки полей OrcaSlicer Filament Presets
-
-**Статус:** ⏳ Pending  
-**Приоритет:** Средний  
-**Прогресс:** ~69% (78 из 113 полей собираются в UI)  
-**Источник:** `docs/md/FILAMENT_FIELDS_COMPLETE_COMPARISON.md`
-
-### Задачи для полного покрытия всех 113 полей:
-
-#### 1. Температуры стола (4 поля) - Приоритет: Средний
-**Файл:** `frontend/src/components/CreatePresetModal.tsx`
-
-- [ ] Добавить state переменные для `textured_cool_plate_temp`, `textured_cool_plate_temp_initial_layer`, `supertack_plate_temp`, `supertack_plate_temp_initial_layer`
-- [ ] Добавить UI поля во вкладку "Профиль прутка" (секция "Температуры стола")
-- [ ] Добавить в `buildOrcaslicerSettings()` (после строки 1005)
-- [ ] Добавить загрузку из `orcaslicer_settings` при редактировании
-
-**Оценка:** ~2-3 часа
-
-#### 2. Adaptive Pressure Advance Model (1 поле) - Приоритет: Низкий
-**Файл:** `frontend/src/components/CreatePresetModal.tsx`
-
-- [ ] Добавить state переменную `adaptivePressureAdvanceModel` (string)
-- [ ] Добавить UI поле во вкладку "Профиль прутка" (секция "Pressure Advance") - текстовое поле или JSON редактор
-- [ ] Добавить в `buildOrcaslicerSettings()` (после строки 1055)
-- [ ] Добавить загрузку из `orcaslicer_settings` при редактировании
-
-**Оценка:** ~1-1.5 часа
-
-#### 3. Filament Ramming Parameters (1 поле) - Приоритет: Низкий
-**Файл:** `frontend/src/components/CreatePresetModal.tsx`
-
-- [ ] Добавить state переменную `filamentRammingParameters` (string)
-- [ ] Добавить UI поле во вкладку "Дополнительно" (секция "Мультитул") - текстовое поле или JSON редактор
-- [ ] Добавить в `buildOrcaslicerSettings()` (после строки 1152)
-- [ ] Добавить загрузку из `orcaslicer_settings` при редактировании
-
-**Оценка:** ~1-1.5 часа
-
-#### 4. Pellet Flow Coefficient - Приоритет: Низкий
-**Файл:** `frontend/src/components/CreatePresetModal.tsx`
-
-- [ ] Проверить наличие state переменной `pelletFlowCoefficient` (строка 165)
-- [ ] Проверить наличие UI поля (возможно уже есть, но не отображается)
-- [ ] Если нет UI поля - добавить во вкладку "Дополнительно"
-- [ ] Убедиться что поле добавляется в `buildOrcaslicerSettings()` (строка 1174)
-
-**Оценка:** ~30 минут
-
-#### 5. Filament Notes - Приоритет: Средний
-**Файл:** `backend/app/services/orcaslicer_exporter.py`
-
-- [ ] Добавить экспорт `presets.description` → `filament_notes` в функцию `preset_to_orcaslicer_json()`
-  - После строки 156 (после flow_ratio):
-  ```python
-  # Заметки пользователя
-  if preset.description:
-      profile["filament_notes"] = to_array(preset.description)
-  ```
-
-**Оценка:** ~15 минут
-
-#### 6. Полная проверка покрытия - Приоритет: Высокий
-**Файл:** `docs/md/FILAMENT_FIELDS_COMPLETE_COMPARISON.md`
-
-- [ ] Провести полную проверку всех 113 полей:
-  - Сравнить каждое поле из `ORCASLICER_PROFILE_FIELDS_TEMPLATE.md` (строки 40-184)
-  - С полями в `buildOrcaslicerSettings()` (строки 966-1196)
-  - Убедиться что каждое поле либо:
-    - Есть в UI и собирается
-    - Явно пропущено по причине (с комментарием)
-    - Добавлено в TODO для доработки
-- [ ] Обновить таблицы в документе с колонкой "Собирается в UI" для всех 113 полей
-
-**Оценка:** ~2-3 часа
-
-**Итого:** ~7-10 часов работы
-
-**Примечание:** Технически все 113 полей уже поддерживаются (хранятся в `orcaslicer_settings`, сохраняются при импорте, экспортируются обратно). Задачи направлены на добавление UI полей для ручного редактирования пользователями.
+*Источники: Claude Opus аудит (7 фаз), Gemini CVE-анализ, tracing потока экспорта/импорта пресетов*
