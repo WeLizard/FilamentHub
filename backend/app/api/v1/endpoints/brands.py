@@ -6,6 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.utils import like_pattern
 from app.db.session import get_db
 from app.models.brand import Brand
 from app.schemas.brand import BrandCreate, BrandListResponse, BrandResponse, BrandUpdate
@@ -31,7 +32,7 @@ async def list_brands(
     
     # Search filter
     if search:
-        search_term = f"%{search.lower()}%"
+        search_term = like_pattern(search)
         query = query.where(Brand.name.ilike(search_term))
 
     # Count total
@@ -39,7 +40,7 @@ async def list_brands(
     if active_only:
         count_query = count_query.where(Brand.active == True)
     if search:
-        search_term = f"%{search.lower()}%"
+        search_term = like_pattern(search)
         count_query = count_query.where(Brand.name.ilike(search_term))
     total_result = await db.execute(count_query)
     total = total_result.scalar() or 0

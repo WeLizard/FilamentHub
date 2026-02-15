@@ -142,7 +142,7 @@ class LoginRequest(BaseModel):
 class RegisterRequest(UserCreate):
     """Schema for register request."""
 
-    pass
+    recaptcha_token: str | None = Field(None, description="reCAPTCHA v3 token")
 
 
 class APIKeyResponse(BaseModel):

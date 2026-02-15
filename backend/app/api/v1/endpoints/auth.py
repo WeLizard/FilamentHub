@@ -70,10 +70,18 @@ async def register(
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> UserResponse:
     """Регистрация нового пользователя."""
-    
+
     import logging
     logger = logging.getLogger(__name__)
-    
+
+    # reCAPTCHA v3 verification
+    from app.core.utils import verify_recaptcha
+    if not await verify_recaptcha(data.recaptcha_token or ""):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="reCAPTCHA verification failed",
+        )
+
     # Проверка существования email
     result = await db.execute(select(User).where(User.email == data.email))
     existing_user = result.scalar_one_or_none()

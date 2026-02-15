@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 import hashlib
 
 from app.core.dependencies import get_current_user, get_current_admin_user, get_current_active_user_optional
+from app.core.utils import like_pattern
 from app.db.session import get_db
 from app.models.user import User
 from app.models.wiki_article import WikiArticle, WikiArticleStatus
@@ -281,7 +282,7 @@ async def list_articles(
     
     # Поиск
     if search:
-        search_pattern = f"%{search}%"
+        search_pattern = like_pattern(search)
         # tags это JSON поле, поэтому используем cast для поиска
         query = query.where(
             or_(
@@ -545,7 +546,7 @@ async def search_articles(
 
     Ищет в заголовке, summary, content и тегах.
     """
-    search_pattern = f"%{q}%"
+    search_pattern = like_pattern(q)
 
     # tags это JSON поле, поэтому используем cast для поиска
     from sqlalchemy import cast, String

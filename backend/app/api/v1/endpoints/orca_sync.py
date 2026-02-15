@@ -8,10 +8,12 @@ from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import or_, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.core.dependencies import get_current_active_user
+from app.core.utils import like_pattern
 from app.db.session import get_db
 from app.models.brand import Brand
 from app.models.filament import Filament
@@ -250,8 +252,8 @@ async def _ensure_printer_id(
         result = await db.execute(
             select(Printer).where(
                 or_(
-                    Printer.name.ilike(f"%{printer_model}%"),
-                    Printer.model_id.ilike(f"%{printer_model}%"),
+                    Printer.name.ilike(like_pattern(printer_model)),
+                    Printer.model_id.ilike(like_pattern(printer_model)),
                 )
             )
         )
@@ -274,8 +276,8 @@ async def _ensure_printer_id(
         # Точное совпадение vendor + model
         result = await db.execute(
             select(Printer).where(
-                Printer.vendor.ilike(f"%{vendor_name}%"),
-                Printer.model.ilike(f"%{search_model}%")
+                Printer.vendor.ilike(like_pattern(vendor_name)),
+                Printer.model.ilike(like_pattern(search_model))
             )
         )
         printer = result.scalar_one_or_none()
@@ -285,7 +287,7 @@ async def _ensure_printer_id(
         # Если точное не найдено, попробуем умное сопоставление моделей
         logger.info(f"  🔍 Шаг 6: Умное сопоставление для vendor='{vendor_name}', model='{search_model}'")
         result = await db.execute(
-            select(Printer).where(Printer.vendor.ilike(f"%{vendor_name}%"))
+            select(Printer).where(Printer.vendor.ilike(like_pattern(vendor_name)))
         )
         vendor_printers = result.scalars().all()
         logger.info(f"  📊 Найдено {len(vendor_printers)} принтеров vendor'а {vendor_name}")
@@ -317,16 +319,16 @@ async def _ensure_printer_id(
     # 7. Поиск по manufacturer + model (case-insensitive через SQL LIKE)
     if manufacturer_normalized and model_normalized:
         # Строим условия поиска
-        manufacturer_conditions = [Printer.manufacturer.ilike(f"%{manufacturer}%")]
+        manufacturer_conditions = [Printer.manufacturer.ilike(like_pattern(manufacturer))]
         if vendor_name:  # Добавляем только если vendor_name не пустой
-            manufacturer_conditions.append(Printer.manufacturer.ilike(f"%{vendor_name}%"))
+            manufacturer_conditions.append(Printer.manufacturer.ilike(like_pattern(vendor_name)))
 
         # Точное совпадение (case-insensitive)
         result = await db.execute(
             select(Printer).where(
                 or_(
                     or_(*manufacturer_conditions),  # manufacturer содержит искомое
-                    Printer.model.ilike(f"%{model}%"),  # ИЛИ model содержит искомое
+                    Printer.model.ilike(like_pattern(model)),  # ИЛИ model содержит искомое
                 )
             )
         )
@@ -355,8 +357,8 @@ async def _ensure_printer_id(
     if vendor_normalized and name_normalized:
         result = await db.execute(
             select(Printer).where(
-                Printer.vendor.ilike(f"%{vendor_name}%"),
-                Printer.name.ilike(f"%{profile_name}%"),
+                Printer.vendor.ilike(like_pattern(vendor_name)),
+                Printer.name.ilike(like_pattern(profile_name)),
             )
         )
         printers = result.scalars().all()
@@ -373,7 +375,7 @@ async def _ensure_printer_id(
         clean_printer_name = _extract_printer_name_from_profile_name(profile_name)
         if clean_printer_name:
             result = await db.execute(
-                select(Printer).where(Printer.name.ilike(f"%{clean_printer_name}%"))
+                select(Printer).where(Printer.name.ilike(like_pattern(clean_printer_name)))
             )
             printers = result.scalars().all()
 
@@ -386,19 +388,19 @@ async def _ensure_printer_id(
     if vendor_normalized and model_normalized:
         result = await db.execute(
             select(Printer).where(
-                Printer.vendor.ilike(f"%{vendor_name}%"),
-                Printer.model.ilike(f"%{model}%"),
+                Printer.vendor.ilike(like_pattern(vendor_name)),
+                Printer.model.ilike(like_pattern(model)),
             )
         )
         printers = result.scalars().all()
-        
+
         for printer in printers:
             printer_vendor = _normalize_for_match(printer.vendor)
             printer_model_norm = _normalize_for_match(printer.model)
-            
+
             if printer_vendor == vendor_normalized and printer_model_norm == model_normalized:
                 return printer.id
-    
+
     # Принтер не найден - создаем новый
     logger.info(f"  ❌ Принтер не найден, создаем новый: manufacturer='{manufacturer}', model='{model}'")
     if profile_name:
@@ -446,9 +448,22 @@ async def _ensure_printer_id(
             active=True,
         )
         db.add(printer)
-        await db.flush()
+        try:
+            await db.flush()
+        except IntegrityError:
+            await db.rollback()
+            # Race condition: другой запрос создал принтер параллельно — ищем заново
+            result = await db.execute(
+                select(Printer).where(Printer.slug == final_slug)
+            )
+            existing = result.scalar_one_or_none()
+            if existing:
+                logger.info(f"  ♻️ Race condition resolved: found printer {existing.id} by slug")
+                return existing.id
+            logger.warning("IntegrityError при создании принтера, но повторный поиск не дал результата")
+            return None
         return printer.id
-    
+
     return None
 
 
@@ -1400,8 +1415,20 @@ async def _ensure_user_materials_brand(
         active=True,
     )
     db.add(brand)
-    await db.flush()  # Получаем ID бренда
-    
+    try:
+        await db.flush()  # Получаем ID бренда
+    except IntegrityError:
+        await db.rollback()
+        # Race condition: другой запрос создал бренд параллельно
+        result = await db.execute(
+            select(Brand).where(Brand.slug == USER_MATERIALS_SLUG)
+        )
+        existing = result.scalar_one_or_none()
+        if existing:
+            logger.info(f"Race condition resolved: found brand {existing.id}")
+            return existing.id
+        raise
+
     logger.info(f"Created User Materials brand (id={brand.id}, name='{brand.name}', slug='{brand.slug}')")
     return brand.id
 
@@ -2034,7 +2061,13 @@ async def _upsert_filament_preset(
                 sync=True,  # По умолчанию включаем синхронизацию
             )
             db.add(saved_preset)
-            logger.info(f"Created user_saved_preset record for existing preset {preset.id}")
+            try:
+                await db.flush()
+            except IntegrityError:
+                await db.rollback()
+                logger.debug(f"user_saved_preset already exists (race condition) for preset {preset.id}")
+            else:
+                logger.info(f"Created user_saved_preset record for existing preset {preset.id}")
         else:
             logger.debug(f"user_saved_preset record already exists for preset {preset.id}")
 
@@ -2427,7 +2460,7 @@ async def import_filament_presets(
         await db.rollback()
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Internal server error: {str(exc)}",
+            detail="Internal server error",
         )
 
 

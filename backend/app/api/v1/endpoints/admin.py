@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 logger = logging.getLogger(__name__)
 
 from app.core.dependencies import get_current_admin_user
+from app.core.utils import like_pattern
 from app.db.session import get_db
 from app.services.maintenance_service import (
     get_maintenance_info,
@@ -111,7 +112,7 @@ async def list_brands_admin(
     
     # Search filter
     if search:
-        search_term = f"%{search.lower()}%"
+        search_term = like_pattern(search)
         query = query.where(Brand.name.ilike(search_term))
 
     # Count total
@@ -121,7 +122,7 @@ async def list_brands_admin(
     if verified is not None:
         count_query = count_query.where(Brand.verified == verified)
     if search:
-        search_term = f"%{search.lower()}%"
+        search_term = like_pattern(search)
         count_query = count_query.where(Brand.name.ilike(search_term))
     total_result = await db.execute(count_query)
     total = total_result.scalar() or 0
@@ -1347,7 +1348,7 @@ async def import_database(
             filepath.unlink()
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Ошибка импорта: {str(e)}",
+            detail="Ошибка импорта базы данных",
         )
     
     # Удаляем временный файл после импорта
@@ -1407,7 +1408,7 @@ async def get_table_structure(
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Ошибка получения структуры таблицы: {str(e)}",
+            detail="Ошибка получения структуры таблицы",
         )
 
 
@@ -1471,15 +1472,15 @@ async def get_table_data(
             search=search,
         )
         return TableDataResponse(**table_data)
-    except ValueError as e:
+    except ValueError:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail=str(e),
+            detail="Таблица не найдена",
         )
-    except Exception as e:
+    except Exception:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Ошибка получения данных таблицы: {str(e)}",
+            detail="Ошибка получения данных таблицы",
         )
 
 
@@ -1531,7 +1532,7 @@ async def update_table_data(
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Ошибка обновления данных таблицы: {str(e)}",
+            detail="Ошибка обновления данных таблицы",
         )
 
 
@@ -1559,7 +1560,7 @@ async def list_bad_words(
     
     # Search filter
     if search:
-        search_term = f"%{search.lower()}%"
+        search_term = like_pattern(search)
         query = query.where(BadWord.word.ilike(search_term))
     
     # Count total
@@ -1567,7 +1568,7 @@ async def list_bad_words(
     if language:
         count_query = count_query.where(BadWord.language == language)
     if search:
-        search_term = f"%{search.lower()}%"
+        search_term = like_pattern(search)
         count_query = count_query.where(BadWord.word.ilike(search_term))
     
     total_result = await db.execute(count_query)

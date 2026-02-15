@@ -14,7 +14,7 @@ from app.db.base import Base
 from app.core.config import settings
 
 # Import all models to ensure they are registered with Base.metadata
-from app.models import Brand, BrandRequest, Filament, Preset, Printer, User  # noqa: F401
+from app.models import *  # noqa: F401,F403
 
 # this is the Alembic Config object
 config = context.config
@@ -58,7 +58,11 @@ def run_migrations_offline() -> None:
 
 def do_run_migrations(connection: Connection) -> None:
     """Run migrations with the given connection."""
-    context.configure(connection=connection, target_metadata=target_metadata)
+    context.configure(
+        connection=connection,
+        target_metadata=target_metadata,
+        version_table_pk=False,
+    )
 
     with context.begin_transaction():
         context.run_migrations()
@@ -86,7 +90,7 @@ async def run_async_migrations() -> None:
             await connectable.dispose()
             return  # Success, exit retry loop
             
-        except (socket.gaierror, OSError, Exception) as e:
+        except (socket.gaierror, OSError, ConnectionRefusedError) as e:
             if attempt < max_retries - 1:
                 print(f"⚠️  Database connection attempt {attempt + 1}/{max_retries} failed: {e}")
                 print(f"   Retrying in {retry_delay} seconds...")

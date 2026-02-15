@@ -11,6 +11,7 @@ from sqlalchemy.orm import selectinload
 logger = logging.getLogger(__name__)
 
 from app.core.dependencies import get_current_user
+from app.core.utils import like_pattern
 from app.db.session import get_db
 from app.models.filament import Filament
 from app.models.printer import Printer
@@ -47,7 +48,7 @@ async def list_filaments(
     if material_type:
         query = query.where(Filament.material_type == material_type)
     if search:
-        search_term = f"%{search.lower()}%"
+        search_term = like_pattern(search)
         # Search in filament name AND brand name (LEFT JOIN чтобы не потерять филаменты без бренда)
         query = query.outerjoin(Brand).where(
             or_(
@@ -65,7 +66,7 @@ async def list_filaments(
     if material_type:
         count_query = count_query.where(Filament.material_type == material_type)
     if search:
-        search_term = f"%{search.lower()}%"
+        search_term = like_pattern(search)
         # Search in filament name AND brand name (LEFT JOIN чтобы не потерять филаменты без бренда)
         count_query = count_query.outerjoin(Brand).where(
             or_(

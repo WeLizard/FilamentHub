@@ -89,8 +89,15 @@ async def save_proof_file(
     # Генерируем уникальное имя файла
     file_ext = Path(file.filename).suffix.lower()
     file_name = f"{uuid.uuid4().hex}{file_ext}"
-    file_path = upload_dir / file_name
-    
+    file_path = (upload_dir / file_name).resolve()
+
+    # Path traversal protection: убеждаемся, что файл остаётся внутри upload_dir
+    if not str(file_path).startswith(str(upload_dir.resolve())):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid file path",
+        )
+
     # Сохраняем файл (используем уже прочитанное содержимое)
     with open(file_path, "wb") as f:
         f.write(file_content)
@@ -157,7 +164,12 @@ async def delete_proof_file(file_path: str) -> None:
     
     # Используем абсолютный путь относительно корня проекта
     base_upload_dir = Path(__file__).parent.parent.parent / settings.UPLOAD_DIR
-    full_path = base_upload_dir / file_path
+    full_path = (base_upload_dir / file_path).resolve()
+
+    # Path traversal protection
+    if not str(full_path).startswith(str(base_upload_dir.resolve())):
+        return
+
     if full_path.exists():
         full_path.unlink()
         
@@ -191,8 +203,8 @@ async def cleanup_old_files(
     if cutoff_date is None:
         cutoff_date = datetime.now() - timedelta(days=settings.CLEANUP_FILES_AFTER_DAYS)
     
-    upload_dir = Path(settings.UPLOAD_DIR)
-    if not upload_dir.exists():
+    base_upload_dir = Path(__file__).parent.parent.parent / settings.UPLOAD_DIR
+    if not base_upload_dir.exists():
         return {"files_deleted": 0, "space_freed_mb": 0}
     
     folders_to_clean = []

@@ -16,6 +16,7 @@ from app.models.print_profile import PrintProfile
 from app.models.print_profile_printer import PrintProfilePrinter
 from app.models.print_profile_filament import PrintProfileFilament
 from app.models.notification import Notification, NotificationType
+from app.models.revoked_token import RevokedToken
 from app.models.user import User, UserRole
 from app.models.user_saved_preset import UserSavedPreset
 from app.models.feedback import Feedback, FeedbackType, FeedbackStatus
@@ -44,6 +45,7 @@ __all__ = [
     "Notification",
     "NotificationType",
     "Preset",
+    "RevokedToken",
     "PresetModerationStatus",
     "PresetPrinter",
     "Printer",

@@ -43,6 +43,8 @@ class Settings(BaseSettings):
         "http://localhost:3000",
         "http://localhost:5173",
         "http://localhost:8080",
+        "https://filamenthub.ru",
+        "https://www.filamenthub.ru",
     ]
 
     # Pagination
@@ -66,6 +68,10 @@ class Settings(BaseSettings):
     
     # QR codes
     QR_CODES_DIR: str = "uploads/qr_codes"  # Изображения QR-кодов для печати
+
+    # reCAPTCHA v3
+    RECAPTCHA_SECRET_KEY: str = ""  # Пустая строка = пропуск проверки (для разработки)
+    RECAPTCHA_SCORE_THRESHOLD: float = 0.5
 
     model_config = SettingsConfigDict(
         env_file=".env",

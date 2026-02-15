@@ -184,13 +184,11 @@ async def preset_to_orcaslicer_json(
 
     # Диаметр филамента
     if filament.diameter is not None:
-        profile["filament_diameter"] = to_array(str(filament.diameter))
+        profile["filament_diameter"] = to_array(filament.diameter)
 
-    # Стоимость филамента (цена за кг в рублях, конвертируем в копейки для OrcaSlicer)
+    # Стоимость филамента (OrcaSlicer ожидает money/kg)
     if filament.price_per_kg is not None:
-        # OrcaSlicer хранит стоимость в копейках за грамм
-        price_per_g = int(filament.price_per_kg * 100 / 1000)  # рубли -> копейки за грамм
-        profile["filament_cost"] = to_array(str(price_per_g))
+        profile["filament_cost"] = to_array(str(filament.price_per_kg))
 
     # Тип материала
     profile["filament_type"] = to_array(filament.material_type)
@@ -208,10 +206,9 @@ async def preset_to_orcaslicer_json(
         profile["filament_retraction_speed"] = to_array(str(int(preset.retraction_speed)))
 
     # Flow ratio (коэффициент потока)
-    if preset.flow_rate:
-        # flow_rate в FilamentHub это процент (например 100 = 100%)
-        # В OrcaSlicer это множитель (например 1.0 = 100%)
-        flow_ratio = preset.flow_rate / 100.0 if preset.flow_rate > 1 else preset.flow_rate
+    # БД хранит проценты (50-150), OrcaSlicer ожидает множитель (0.5-1.5)
+    if preset.flow_rate is not None:
+        flow_ratio = preset.flow_rate / 100.0
         profile["filament_flow_ratio"] = to_array(str(round(flow_ratio, 2)))
 
     # Расширенные параметры из JSON поля orcaslicer_settings

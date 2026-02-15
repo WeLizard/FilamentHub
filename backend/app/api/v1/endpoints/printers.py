@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.core.dependencies import get_current_admin_user
+from app.core.utils import like_pattern
 from app.db.session import get_db
 from app.models.printer import Printer
 from app.models.user import User
@@ -38,26 +39,28 @@ async def list_printers(
         query = query.where(Printer.active == True)
     
     if manufacturer:
-        query = query.where(Printer.manufacturer.ilike(f"%{manufacturer}%"))
-    
+        query = query.where(Printer.manufacturer.ilike(like_pattern(manufacturer)))
+
     if search:
+        search_pat = like_pattern(search)
         query = query.where(
-            Printer.name.ilike(f"%{search}%")
-            | Printer.manufacturer.ilike(f"%{search}%")
-            | Printer.model.ilike(f"%{search}%")
+            Printer.name.ilike(search_pat)
+            | Printer.manufacturer.ilike(search_pat)
+            | Printer.model.ilike(search_pat)
         )
-    
+
     # Count total
     count_query = select(func.count()).select_from(Printer)
     if active_only:
         count_query = count_query.where(Printer.active == True)
     if manufacturer:
-        count_query = count_query.where(Printer.manufacturer.ilike(f"%{manufacturer}%"))
+        count_query = count_query.where(Printer.manufacturer.ilike(like_pattern(manufacturer)))
     if search:
+        search_pat = like_pattern(search)
         count_query = count_query.where(
-            Printer.name.ilike(f"%{search}%")
-            | Printer.manufacturer.ilike(f"%{search}%")
-            | Printer.model.ilike(f"%{search}%")
+            Printer.name.ilike(search_pat)
+            | Printer.manufacturer.ilike(search_pat)
+            | Printer.model.ilike(search_pat)
         )
     
     total_result = await db.execute(count_query)

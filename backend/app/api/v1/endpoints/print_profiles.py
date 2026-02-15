@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.core.dependencies import get_current_active_user
+from app.core.utils import like_pattern
 from app.db.session import get_db
 from app.models.print_profile import PrintProfile
 from app.models.user import User, UserRole
@@ -52,7 +53,7 @@ async def list_print_profiles(
     if category:
         query = query.where(PrintProfile.category == category)
     if search:
-        like = f"%{search.lower()}%"
+        like = like_pattern(search)
         query = query.where(
             or_(
                 PrintProfile.name.ilike(like),
@@ -266,7 +267,7 @@ async def export_print_profile_json(
         profile_json = await export_print_profile(profile, db)
     except Exception as e:
         logger.error(f"Error exporting print profile {profile_id}: {str(e)}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Error exporting print profile: {str(e)}")
+        raise HTTPException(status_code=500, detail="Error exporting print profile")
     
     # Формируем безопасное имя файла
     def to_safe_filename(text: str) -> str:

@@ -528,6 +528,7 @@ async def increment_usage(
 async def export_preset_json(
     preset_id: int,
     db: Annotated[AsyncSession, Depends(get_db)],
+    current_user: Annotated[User, Depends(get_current_active_user)],
 ) -> Response:
     """
     Экспортировать профиль в формате OrcaSlicer (.json).
@@ -554,7 +555,7 @@ async def export_preset_json(
         profile_dict = await preset_to_orcaslicer_json(preset, preset.filament, db)
     except Exception as e:
         logger.error(f"Error exporting preset {preset_id}: {str(e)}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Error exporting preset: {str(e)}")
+        raise HTTPException(status_code=500, detail="Error exporting preset")
     
     # Возвращаем JSON файл
     # Формируем безопасное имя файла (только латиница и безопасные символы для HTTP заголовков)
@@ -617,6 +618,7 @@ async def export_preset_json(
 async def export_preset_info(
     preset_id: int,
     db: Annotated[AsyncSession, Depends(get_db)],
+    current_user: Annotated[User, Depends(get_current_active_user)],
 ) -> Response:
     """
     Экспортировать .info файл в формате INI для OrcaSlicer.
@@ -669,5 +671,5 @@ async def get_recommended_preset(
             filament_id=filament_id,
             **recommended_values
         )
-    except ValueError as e:
-        raise HTTPException(status_code=404, detail=str(e))
+    except ValueError:
+        raise HTTPException(status_code=404, detail="Filament not found or no presets available")

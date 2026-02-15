@@ -1,9 +1,12 @@
 """Service for managing maintenance mode."""
 
 import json
+import logging
 import os
 from pathlib import Path
 from typing import Optional
+
+logger = logging.getLogger(__name__)
 
 # Файл для хранения состояния технических работ (доступен всем воркерам)
 # Используем директорию uploads, которая монтируется как volume
@@ -18,7 +21,7 @@ def _read_maintenance_file() -> tuple[bool, Optional[str]]:
                 data = json.load(f)
                 return data.get("enabled", False), data.get("message")
     except Exception:
-        pass
+        logger.warning("Failed to read maintenance file", exc_info=True)
     return False, None
 
 
@@ -29,7 +32,7 @@ def _write_maintenance_file(enabled: bool, message: Optional[str] = None) -> Non
         with open(MAINTENANCE_FILE, "w", encoding="utf-8") as f:
             json.dump({"enabled": enabled, "message": message}, f, ensure_ascii=False)
     except Exception:
-        pass
+        logger.warning("Failed to write maintenance file", exc_info=True)
 
 
 def get_maintenance_mode() -> bool:

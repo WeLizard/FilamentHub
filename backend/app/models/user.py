@@ -68,6 +68,9 @@ class User(Base):
     # Status
     active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     email_verified: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+
+    # Wiki editing permission
+    can_edit_wiki: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     
     # Badges (список строк: ["founder", "beta_tester", "contributor", "verified"])
     badges: Mapped[list[str] | None] = mapped_column(JSON, nullable=True)
