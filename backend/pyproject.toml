@@ -16,7 +16,6 @@ dependencies = [
     "pydantic-settings~=2.7.0",
     "email-validator~=2.2.0",
     "PyJWT[crypto]~=2.9.0",
-    "passlib[bcrypt]~=1.7.4",
     "bcrypt~=5.0.0",
     "python-multipart~=0.0.22",
     "redis~=5.2.0",

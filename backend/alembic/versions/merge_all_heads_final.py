@@ -1,7 +1,7 @@
 """Merge all heads into single head
 
 Revision ID: merge_all_heads_final
-Revises: add_feedback_source, add_sync_device_and_sync_history_tables
+Revises: add_feedback_source, add_sync_device_and_history
 Create Date: 2026-02-11
 
 """
@@ -15,7 +15,7 @@ import sqlalchemy as sa
 revision: str = 'merge_all_heads_final'
 down_revision = (
     'add_feedback_source',
-    'add_sync_device_and_sync_history_tables',
+    'add_sync_device_and_history',
 )
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None

@@ -1,6 +1,6 @@
 """add sync_device and sync_history tables
 
-Revision ID: add_sync_device_and_sync_history_tables
+Revision ID: add_sync_device_and_history
 Revises: f2b7c90864d4
 Create Date: 2026-02-06
 
@@ -12,7 +12,7 @@ import sqlalchemy as sa
 
 
 # revision identifiers, used by Alembic.
-revision: str = 'add_sync_device_and_sync_history_tables'
+revision: str = 'add_sync_device_and_history'
 down_revision: str = 'f2b7c90864d4'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None

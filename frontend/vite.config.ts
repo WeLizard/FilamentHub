@@ -3,6 +3,8 @@ import react from '@vitejs/plugin-react';
 import tailwindcss from '@tailwindcss/vite';
 
 // https://vite.dev/config/
+const proxyTarget = process.env.VITE_PROXY_TARGET || 'http://localhost:8000';
+
 export default defineConfig({
   plugins: [react(), tailwindcss()],
   server: {
@@ -10,17 +12,17 @@ export default defineConfig({
     host: '0.0.0.0', // Слушать на всех интерфейсах (IPv4 и IPv6)
     proxy: {
       '/api': {
-        target: 'http://localhost:8000',
+        target: proxyTarget,
         changeOrigin: true,
         timeout: 180000, // 3 минуты для длительных операций (миграции)
       },
       '/uploads': {
-        target: 'http://localhost:8000',
+        target: proxyTarget,
         changeOrigin: true,
         timeout: 180000,
       },
       '/wiki_content': {
-        target: 'http://localhost:8000',
+        target: proxyTarget,
         changeOrigin: true,
       },
     },
