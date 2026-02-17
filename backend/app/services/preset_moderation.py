@@ -1,7 +1,10 @@
 """Сервис автоматической модерации пресетов."""
 
+import logging
 import re
 from typing import Optional
+
+logger = logging.getLogger(__name__)
 
 from better_profanity import profanity
 from sqlalchemy import select
@@ -16,7 +19,7 @@ from app.models.filament import Filament
 try:
     profanity.load_censor_words()
 except Exception:
-    pass  # Если не удалось загрузить, используем пустой список
+    logger.warning("Failed to load profanity censor words", exc_info=True)
 
 
 # Справочные данные для типов материалов (температуры в градусах Цельсия)
@@ -195,9 +198,7 @@ async def _load_bad_words_from_db(db: AsyncSession) -> tuple[list[str], list[str
         # Если таблицы нет или произошла ошибка, возвращаем пустые списки и кэшируем их
         # Это предотвращает повторные попытки запроса к несуществующей таблице
         # Логируем ошибку для отладки, но не падаем
-        import logging
-        logger = logging.getLogger(__name__)
-        logger.warning(f"Не удалось загрузить плохие слова из БД: {e}. Используются пустые списки.")
+        logger.warning("Failed to load bad words from DB: %s. Using empty lists.", e)
         
         _BAD_WORDS_CACHE["ru"] = []
         _BAD_WORDS_CACHE["en"] = []
@@ -246,7 +247,7 @@ async def check_bad_words(text: str, db: AsyncSession, field_name: str = "Пол
         if profanity.contains_profanity(text):
             return False, f"{field_name} содержит запрещенные слова"
     except Exception:
-        pass  # Если библиотека не работает, пропускаем
+        logger.warning("Profanity check failed", exc_info=True)
     
     # 2. Загружаем пользовательские слова из БД
     bad_words_ru, bad_words_en = await _load_bad_words_from_db(db)

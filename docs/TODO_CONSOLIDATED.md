@@ -204,7 +204,7 @@ OrcaSlicer C++       [██████████████████░�
 
 ### Код backend
 
-- [ ] Двойная docstring, проглоченные exceptions, дубли импортов `[SYNC-21..25]`
+- [x] ~~Двойная docstring, проглоченные exceptions, дубли импортов~~ `[SYNC-21..25]`
 - [ ] Пустая миграция 5752bb11b46d `[ALEMBIC-9]`
 - [ ] Orphan таблица bad_words `[ALEMBIC-10]`
 - [ ] Нестандартные revision ID `[ALEMBIC-11]`

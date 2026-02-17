@@ -1,8 +1,11 @@
 """Email validation utilities for brand verification."""
 
+import logging
 import re
 from pathlib import Path
 from urllib.parse import urlparse
+
+logger = logging.getLogger(__name__)
 
 
 # Путь к файлу с белым списком личных почтовых доменов
@@ -36,6 +39,7 @@ def load_personal_email_domains() -> list[str]:
                 if line and not line.startswith("#"):
                     domains.append(line.lower())
     except Exception:
+        logger.warning("Failed to load personal email domains file", exc_info=True)
         # В случае ошибки возвращаем дефолтный список
         return [
             "gmail.com", "yahoo.com", "outlook.com", "hotmail.com",
@@ -113,6 +117,7 @@ def normalize_website_url(website: str) -> str | None:
             # Если не похоже на домен, возвращаем None
             return None
     except Exception:
+        logger.warning("Failed to normalize website URL", exc_info=True)
         return None
 
 
@@ -161,6 +166,7 @@ def is_corporate_email(email: str, website: str | None) -> bool:
         
         return email_domain == website_domain
     except Exception:
+        logger.warning("Failed to match email domain to website", exc_info=True)
         return False
 
 
