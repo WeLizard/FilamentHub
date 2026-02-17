@@ -9,7 +9,6 @@ import {
   Shield,
   ExternalLink,
   Package,
-  Star,
   CheckCircle,
   ArrowLeft,
   Search,
@@ -87,13 +86,6 @@ export const BrandDetailPage: React.FC = () => {
 
   // Вычисляем статистику
   const totalFilaments = filaments.length;
-  const avgRating =
-    filaments.length > 0
-      ? filaments.reduce((acc, f) => {
-          // TODO: Получить реальный рейтинг из пресетов
-          return acc + 4.5; // Заглушка
-        }, 0) / filaments.length
-      : 0;
 
   return (
     <div className="space-y-6">
@@ -145,13 +137,6 @@ export const BrandDetailPage: React.FC = () => {
                 <span className="font-semibold text-white">{totalFilaments}</span>
                 <span>{t('brandDetailPage.filaments')}</span>
               </div>
-              {avgRating > 0 && (
-                <div className="flex items-center space-x-2 text-gray-300">
-                  <Star className="w-5 h-5 text-yellow-400 fill-current" />
-                  <span className="font-semibold text-white">{avgRating.toFixed(1)}</span>
-                  <span>{t('brandDetailPage.avgRating')}</span>
-                </div>
-              )}
             </div>
 
             {/* Ссылки */}
