@@ -1178,7 +1178,7 @@ export const adminAPI = {
     return response.data;
   },
 
-  // Wiki Sync
+  // Wiki Sync & Export
   syncWiki: async (): Promise<{
     success: boolean;
     message: string;
@@ -1197,6 +1197,40 @@ export const adminAPI = {
   }> => {
     const response = await api.post('/admin/wiki/sync');
     return response.data;
+  },
+
+  exportWiki: async (): Promise<{
+    success: boolean;
+    message: string;
+    exported: number;
+    errors: number;
+    details: Array<{
+      file: string;
+      status: string;
+      title?: string;
+      reason?: string;
+    }>;
+  }> => {
+    const response = await api.post('/admin/wiki/export');
+    return response.data;
+  },
+
+  exportArticle: async (id: number): Promise<void> => {
+    const response = await api.get(`/admin/wiki/export/${id}`, {
+      responseType: 'blob',
+    });
+    const url = window.URL.createObjectURL(new Blob([response.data]));
+    const link = document.createElement('a');
+    link.href = url;
+    const contentDisposition = response.headers['content-disposition'];
+    const filename = contentDisposition
+      ? contentDisposition.split('filename=')[1]?.replace(/"/g, '')
+      : `article-${id}.md`;
+    link.setAttribute('download', filename);
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    window.URL.revokeObjectURL(url);
   },
 };
 
@@ -1434,6 +1468,67 @@ export const wikiAPI = {
   listFeedback: async (articleSlug: string, params?: { page?: number; page_size?: number }): Promise<WikiFeedback[]> => {
     const response = await api.get(`/wiki/articles/${articleSlug}/feedback`, { params });
     return response.data;
+  },
+
+  // Admin CRUD
+  createArticle: async (data: {
+    category_id: number;
+    title: string;
+    slug: string;
+    summary: string;
+    content: string;
+    tags?: string[] | null;
+    author?: string | null;
+    published?: boolean;
+    order?: number;
+  }): Promise<WikiArticle> => {
+    const response = await api.post<WikiArticle>('/wiki/articles', data);
+    return response.data;
+  },
+
+  updateArticle: async (id: number, data: {
+    category_id?: number;
+    title?: string;
+    slug?: string;
+    summary?: string;
+    content?: string;
+    tags?: string[] | null;
+    author?: string | null;
+    published?: boolean;
+    order?: number;
+  }): Promise<WikiArticle> => {
+    const response = await api.patch<WikiArticle>(`/wiki/articles/${id}`, data);
+    return response.data;
+  },
+
+  deleteArticle: async (id: number): Promise<void> => {
+    await api.delete(`/wiki/articles/${id}`);
+  },
+
+  createCategory: async (data: {
+    name: string;
+    slug: string;
+    description: string;
+    icon?: string | null;
+    order?: number;
+  }): Promise<WikiCategory> => {
+    const response = await api.post<WikiCategory>('/wiki/categories', data);
+    return response.data;
+  },
+
+  updateCategory: async (id: number, data: {
+    name?: string;
+    slug?: string;
+    description?: string;
+    icon?: string | null;
+    order?: number;
+  }): Promise<WikiCategory> => {
+    const response = await api.patch<WikiCategory>(`/wiki/categories/${id}`, data);
+    return response.data;
+  },
+
+  deleteCategory: async (id: number): Promise<void> => {
+    await api.delete(`/wiki/categories/${id}`);
   },
 };
 

@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import { Shield, FileText, Building2, Users, BarChart3, CheckCircle, Home, Package, User, LogOut, Database, MessageCircle, Send, Settings } from 'lucide-react';
+import { Shield, FileText, Building2, Users, BarChart3, CheckCircle, Home, Package, User, LogOut, Database, MessageCircle, Send, Settings, BookOpen } from 'lucide-react';
 import { Printer3DIcon } from '../components/icons/Printer3DIcon';
 import { useAuth } from '../contexts/AuthContext';
 import { AdminBrandRequests } from '../components/admin/AdminBrandRequests';
@@ -17,8 +17,9 @@ import { AdminDatabase } from '../components/admin/AdminDatabase';
 import { AdminFeedback } from '../components/admin/AdminFeedback';
 import { AdminNotifications } from '../components/admin/AdminNotifications';
 import { AdminMaintenance } from '../components/admin/AdminMaintenance';
+import { AdminWiki } from '../components/admin/AdminWiki';
 
-type AdminTab = 'requests' | 'brands' | 'presets' | 'users' | 'stats' | 'printers' | 'printer-requests' | 'feedback' | 'notifications' | 'database' | 'maintenance';
+type AdminTab = 'requests' | 'brands' | 'presets' | 'users' | 'stats' | 'printers' | 'printer-requests' | 'feedback' | 'notifications' | 'database' | 'maintenance' | 'wiki';
 
 export function AdminPanel() {
   const { t } = useTranslation();
@@ -52,6 +53,7 @@ export function AdminPanel() {
     { id: 'users' as AdminTab, label: t('adminPanel.tabs.users'), shortLabel: t('adminPanel.shortTabs.users'), icon: Users, count: null },
     { id: 'feedback' as AdminTab, label: t('adminPanel.tabs.feedback'), shortLabel: t('adminPanel.shortTabs.feedback'), icon: MessageCircle, count: null },
     { id: 'notifications' as AdminTab, label: t('adminPanel.tabs.notifications'), shortLabel: t('adminPanel.shortTabs.notifications'), icon: Send, count: null },
+    { id: 'wiki' as AdminTab, label: t('adminPanel.tabs.wiki'), shortLabel: t('adminPanel.shortTabs.wiki'), icon: BookOpen, count: null },
     { id: 'stats' as AdminTab, label: t('adminPanel.tabs.stats'), shortLabel: t('adminPanel.shortTabs.stats'), icon: BarChart3, count: null },
     { id: 'database' as AdminTab, label: t('adminPanel.tabs.database'), shortLabel: t('adminPanel.shortTabs.database'), icon: Database, count: null },
     { id: 'maintenance' as AdminTab, label: t('adminPanel.tabs.maintenance'), shortLabel: t('adminPanel.shortTabs.maintenance'), icon: Settings, count: null },
@@ -137,6 +139,7 @@ export function AdminPanel() {
           {activeTab === 'users' && <AdminUsers />}
           {activeTab === 'feedback' && <AdminFeedback />}
           {activeTab === 'notifications' && <AdminNotifications />}
+          {activeTab === 'wiki' && <AdminWiki />}
           {activeTab === 'stats' && <AdminStats />}
           {activeTab === 'database' && <AdminDatabase />}
           {activeTab === 'maintenance' && <AdminMaintenance />}

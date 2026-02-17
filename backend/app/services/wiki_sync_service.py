@@ -158,6 +158,121 @@ async def sync_article(
     }
 
 
+def generate_frontmatter(article: "WikiArticle", category_slug: str) -> str:
+    """Generate YAML frontmatter string from article data."""
+    tags_str = ""
+    if article.tags:
+        tags_list = ', '.join(f'"{t}"' for t in article.tags)
+        tags_str = f"[{tags_list}]"
+    else:
+        tags_str = "[]"
+
+    lines = [
+        "---",
+        f'title: "{article.title}"',
+        f"category: {category_slug}",
+        f"slug: {article.slug}",
+        f"tags: {tags_str}",
+        f"status: {article.status.value}",
+        f"author_id: {article.created_by_id or 1}",
+        "---",
+    ]
+    return "\n".join(lines)
+
+
+async def export_article_to_markdown(
+    db: AsyncSession,
+    article_id: int,
+) -> tuple[str | None, str | None]:
+    """Export single article to markdown string. Returns (filename, content) or (None, None)."""
+    from sqlalchemy.orm import selectinload
+
+    result = await db.execute(
+        select(WikiArticle)
+        .where(WikiArticle.id == article_id)
+        .options(selectinload(WikiArticle.category))
+    )
+    article = result.scalar_one_or_none()
+
+    if not article:
+        return None, None
+
+    category_slug = article.category.slug if article.category else "uncategorized"
+    frontmatter = generate_frontmatter(article, category_slug)
+    content = f"{frontmatter}\n{article.content}"
+    filename = f"{article.slug}.md"
+
+    return filename, content
+
+
+async def export_articles_to_markdown(db: AsyncSession) -> dict[str, Any]:
+    """
+    Export all articles from DB to .md files in wiki_content/.
+
+    Returns dict with export results.
+    """
+    from sqlalchemy.orm import selectinload
+
+    backend_dir = Path(__file__).parent.parent.parent
+    wiki_content_path = backend_dir / "wiki_content"
+
+    result = await db.execute(
+        select(WikiArticle).options(selectinload(WikiArticle.category))
+    )
+    articles = result.scalars().all()
+
+    if not articles:
+        return {
+            "success": True,
+            "message": "No articles found in database",
+            "exported": 0,
+            "errors": 0,
+            "details": [],
+        }
+
+    results: dict[str, Any] = {
+        "success": True,
+        "message": "",
+        "exported": 0,
+        "errors": 0,
+        "details": [],
+    }
+
+    for article in articles:
+        try:
+            category_slug = article.category.slug if article.category else "uncategorized"
+            category_dir = wiki_content_path / category_slug
+            category_dir.mkdir(parents=True, exist_ok=True)
+
+            frontmatter = generate_frontmatter(article, category_slug)
+            file_content = f"{frontmatter}\n{article.content}"
+
+            file_path = category_dir / f"{article.slug}.md"
+            file_path.write_text(file_content, encoding="utf-8")
+
+            results["exported"] += 1
+            results["details"].append({
+                "file": f"{category_slug}/{article.slug}.md",
+                "status": "exported",
+                "title": article.title,
+            })
+        except Exception as e:
+            results["errors"] += 1
+            results["details"].append({
+                "file": article.slug,
+                "status": "error",
+                "reason": str(e),
+            })
+
+    results["message"] = (
+        f"Export complete: {results['exported']} files written"
+    )
+    if results["errors"] > 0:
+        results["message"] += f", {results['errors']} errors"
+
+    return results
+
+
 async def sync_wiki_from_markdown(db: AsyncSession) -> dict[str, Any]:
     """
     Sync all Markdown files from wiki_content/ to database.

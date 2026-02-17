@@ -1972,3 +1972,58 @@ async def sync_wiki_from_files(
 
     return result
 
+
+@router.post("/wiki/export", response_model=dict)
+async def export_wiki_to_files(
+    admin: Annotated[User, Depends(get_current_admin_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> dict:
+    """
+    Экспортировать все Wiki статьи из БД в .md файлы на сервере.
+
+    Сохраняет файлы в backend/wiki_content/{category_slug}/{slug}.md
+    с восстановлением frontmatter.
+    """
+    from app.services.wiki_sync_service import export_articles_to_markdown
+
+    result = await export_articles_to_markdown(db)
+
+    logger.info(
+        f"Admin {admin.id} exported wiki: {result['exported']} files, "
+        f"{result['errors']} errors"
+    )
+
+    return result
+
+
+@router.get("/wiki/export/{article_id}")
+async def export_wiki_article(
+    article_id: int,
+    admin: Annotated[User, Depends(get_current_admin_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> FileResponse:
+    """Скачать одну Wiki статью как .md файл."""
+    from app.services.wiki_sync_service import export_article_to_markdown
+    import tempfile
+
+    filename, content = await export_article_to_markdown(db, article_id)
+
+    if not filename or not content:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Статья не найдена",
+        )
+
+    # Write to temp file for FileResponse
+    tmp = tempfile.NamedTemporaryFile(
+        mode="w", suffix=".md", delete=False, encoding="utf-8"
+    )
+    tmp.write(content)
+    tmp.close()
+
+    return FileResponse(
+        path=tmp.name,
+        filename=filename,
+        media_type="text/markdown",
+    )
+
