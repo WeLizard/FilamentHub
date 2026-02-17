@@ -585,7 +585,7 @@ const MaterialCard: React.FC<MaterialCardProps> = ({
           <div className="text-center">
             <img
               src={qrAPI.getQRCodeURL(filament.id, 200)}
-              alt={`QR-код для ${filament.name}`}
+              alt={`QR ${filament.name}`}
               className="w-48 h-48 mx-auto mb-3 rounded-lg bg-white p-2"
             />
             <p className="text-gray-300 text-sm font-medium mb-1">{t('catalogPage.qrCode')} {filament.qr_code}</p>

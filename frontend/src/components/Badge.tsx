@@ -1,51 +1,52 @@
 import React from 'react';
+import { useTranslation } from 'react-i18next';
 import { Shield, Star, CheckCircle, Zap, User } from 'lucide-react';
 
 export type BadgeType = 'founder' | 'beta_tester' | 'contributor' | 'verified' | 'early_adopter' | 'supporter';
 
 interface BadgeConfig {
   icon: React.ComponentType<{ className?: string }>;
-  label: string;
+  labelKey: string;
   color: string;
-  title: string;
+  titleKey: string;
 }
 
 export const BADGE_CONFIG: Record<BadgeType, BadgeConfig> = {
   founder: {
     icon: Star,
-    label: 'Founder',
+    labelKey: 'badge.founder.label',
     color: 'text-amber-500',
-    title: 'Основатель проекта',
+    titleKey: 'badge.founder.title',
   },
   beta_tester: {
     icon: Shield,
-    label: 'Beta Tester',
+    labelKey: 'badge.betaTester.label',
     color: 'text-blue-500',
-    title: 'Бета-тестер',
+    titleKey: 'badge.betaTester.title',
   },
   contributor: {
     icon: User,
-    label: 'Contributor',
+    labelKey: 'badge.contributor.label',
     color: 'text-purple-500',
-    title: 'Контрибьютор',
+    titleKey: 'badge.contributor.title',
   },
   verified: {
     icon: CheckCircle,
-    label: 'Verified',
+    labelKey: 'badge.verified.label',
     color: 'text-green-500',
-    title: 'Верифицированный производитель',
+    titleKey: 'badge.verified.title',
   },
   early_adopter: {
     icon: Zap,
-    label: 'Early Adopter',
+    labelKey: 'badge.earlyAdopter.label',
     color: 'text-orange-500',
-    title: 'Ранний последователь',
+    titleKey: 'badge.earlyAdopter.title',
   },
   supporter: {
     icon: CheckCircle,
-    label: 'Supporter',
+    labelKey: 'badge.supporter.label',
     color: 'text-pink-500',
-    title: 'Поддержал проект',
+    titleKey: 'badge.supporter.title',
   },
 };
 
@@ -56,20 +57,21 @@ interface BadgeProps {
   className?: string;
 }
 
-export const Badge: React.FC<BadgeProps> = ({ 
-  type, 
-  size = 'md', 
+export const Badge: React.FC<BadgeProps> = ({
+  type,
+  size = 'md',
   showLabel = false,
-  className 
+  className
 }) => {
+  const { t } = useTranslation();
   const config = BADGE_CONFIG[type];
-  
+
   if (!config) {
     return null;
   }
 
   const Icon = config.icon;
-  
+
   const sizeClasses = {
     sm: 'h-4 w-4',
     md: 'h-5 w-5',
@@ -79,10 +81,10 @@ export const Badge: React.FC<BadgeProps> = ({
   return (
     <span
       className={`inline-flex items-center ${className || ''}`}
-      title={config.title}
+      title={t(config.titleKey)}
     >
       <Icon className={`${sizeClasses[size]} ${config.color}`} />
-      {showLabel && <span className="ml-1">{config.label}</span>}
+      {showLabel && <span className="ml-1">{t(config.labelKey)}</span>}
     </span>
   );
 };
