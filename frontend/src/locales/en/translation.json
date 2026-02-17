@@ -660,7 +660,10 @@
     "emptyTitle": "Wiki in development",
     "emptyDesc": "Articles about materials and 3D printing technologies will appear here soon",
     "errorLoadFailed": "Failed to load Wiki data",
-    "retry": "Retry"
+    "retry": "Retry",
+    "searchResults": "Search results ({{count}})",
+    "clearSearch": "Clear",
+    "noResults": "Nothing found. Try a different query."
   },
   "wikiCategoryPage": {
     "notFound": "Category not found",

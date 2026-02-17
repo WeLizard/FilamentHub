@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
-import { BookOpen, Search, TrendingUp, Clock, Eye, ChevronRight, Loader2 } from 'lucide-react';
+import { BookOpen, Search, TrendingUp, Clock, Eye, ChevronRight, Loader2, X } from 'lucide-react';
 import { wikiAPI } from '../api/client';
 import { SEOHead } from '../components/SEOHead';
 import type { WikiCategory, WikiArticleSummary } from '../types/api';
@@ -18,6 +18,8 @@ export function WikiPage() {
   const [popularArticles, setPopularArticles] = useState<WikiArticleSummary[]>([]);
   const [recentArticles, setRecentArticles] = useState<WikiArticleSummary[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
+  const [searchResults, setSearchResults] = useState<WikiArticleSummary[] | null>(null);
+  const [isSearching, setIsSearching] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -58,14 +60,21 @@ export function WikiPage() {
   const handleSearch = async (e: React.FormEvent) => {
     e.preventDefault();
     if (searchQuery.trim().length < 2) return;
-    
+
     try {
-      const results = await wikiAPI.searchArticles(searchQuery);
-      // TODO: показать результаты поиска в модалке или на отдельной странице
-      void results;
+      setIsSearching(true);
+      const response = await wikiAPI.searchArticles(searchQuery);
+      setSearchResults(response.items);
     } catch (err) {
       console.error('Search failed:', err);
+    } finally {
+      setIsSearching(false);
     }
+  };
+
+  const clearSearch = () => {
+    setSearchQuery('');
+    setSearchResults(null);
   };
 
   const getIconComponent = (iconName: string | null) => {
@@ -131,12 +140,83 @@ export function WikiPage() {
             placeholder={t('wikiPage.searchPlaceholder')}
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full pl-12 pr-4 py-4 bg-white/10 backdrop-blur-sm border border-white/20 rounded-xl text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+            className="w-full pl-12 pr-12 py-4 bg-white/10 backdrop-blur-sm border border-white/20 rounded-xl text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
           />
+          {searchQuery && (
+            <button
+              type="button"
+              onClick={clearSearch}
+              className="absolute right-4 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-white transition-colors"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          )}
         </div>
       </form>
 
-      {/* Categories Grid */}
+      {/* Search Results */}
+      {isSearching && (
+        <div className="flex items-center justify-center py-12">
+          <Loader2 className="w-6 h-6 text-blue-500 animate-spin" />
+        </div>
+      )}
+
+      {searchResults !== null && !isSearching && (
+        <div className="mb-12">
+          <div className="flex items-center justify-between mb-6">
+            <h2 className="text-2xl font-bold text-white flex items-center gap-2">
+              <Search className="w-6 h-6 text-blue-400" />
+              {t('wikiPage.searchResults', { count: searchResults.length })}
+            </h2>
+            <button
+              onClick={clearSearch}
+              className="text-sm text-gray-400 hover:text-white transition-colors"
+            >
+              {t('wikiPage.clearSearch')}
+            </button>
+          </div>
+
+          {searchResults.length > 0 ? (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {searchResults.map((article) => (
+                <button
+                  key={article.id}
+                  onClick={() => navigate(`/wiki/articles/${article.slug}`)}
+                  className="group bg-white/10 backdrop-blur-sm border border-white/20 rounded-xl p-5 hover:bg-white/15 transition-all text-left"
+                >
+                  <h3 className="text-base font-semibold text-white mb-2 group-hover:text-blue-300 transition-colors line-clamp-2">
+                    {article.title}
+                  </h3>
+                  <p className="text-sm text-gray-300 mb-3 line-clamp-2">{article.summary}</p>
+                  <div className="flex items-center justify-between text-xs text-gray-400">
+                    <div className="flex items-center gap-1">
+                      <Eye className="w-3.5 h-3.5" />
+                      <span>{article.views}</span>
+                    </div>
+                    {article.tags.length > 0 && (
+                      <div className="flex gap-1">
+                        {article.tags.slice(0, 2).map((tag) => (
+                          <span key={tag} className="px-1.5 py-0.5 bg-white/10 rounded text-gray-400">
+                            {tag}
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </button>
+              ))}
+            </div>
+          ) : (
+            <div className="text-center py-8 bg-white/5 backdrop-blur-sm rounded-xl border border-white/10">
+              <Search className="w-10 h-10 text-gray-500 mx-auto mb-3" />
+              <p className="text-gray-400">{t('wikiPage.noResults')}</p>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Main content (hidden during search) */}
+      {searchResults === null && (<>
       <div className="mb-12">
         <h2 className="text-2xl font-bold text-white mb-6 flex items-center gap-2">
           <BookOpen className="w-6 h-6 text-blue-400" />
@@ -241,6 +321,7 @@ export function WikiPage() {
           </p>
         </div>
       )}
+      </>)}
       </div>
     </>
   );
