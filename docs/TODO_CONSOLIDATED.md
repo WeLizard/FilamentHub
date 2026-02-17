@@ -134,7 +134,7 @@ OrcaSlicer C++       [██████████████████░�
 
 - [ ] CI/CD пайплайн `.github/workflows/ci.yml` `[INFRA-5]`
 - [x] ~~Rate limiter → Redis backend~~ `[INFRA-6]`
-- [ ] Redis с паролем `[INFRA-11]`
+- [x] ~~Redis с паролем~~ `[INFRA-11]`
 - [ ] Токены в localStorage → httpOnly cookies `[INFRA-7]`
 - [ ] Тестовый фреймворк для фронтенда (vitest) `[INFRA-3]`
 - [ ] Тесты: Admin API, Sync, Reviews, QR, auth flows `[INFRA-4]`

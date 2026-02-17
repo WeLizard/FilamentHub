@@ -21,10 +21,11 @@ services:
   redis-dev:
     image: redis:7-alpine
     container_name: filamenthub_redis_dev
+    command: redis-server --requirepass devredis123
     ports:
       - "6380:6379"
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: ["CMD", "redis-cli", "-a", "devredis123", "ping"]
       interval: 5s
       timeout: 3s
       retries: 5
@@ -51,7 +52,7 @@ services:
       POSTGRES_USER: filamenthub
       POSTGRES_PASSWORD: devpass123
       POSTGRES_DB: filamenthub_dev
-      REDIS_URL: redis://redis-dev:6379/0
+      REDIS_URL: redis://:devredis123@redis-dev:6379/0
       SECRET_KEY: dev-secret-key-not-for-production
       ADMIN_PASSWORD: admin123
       DEBUG: "true"
