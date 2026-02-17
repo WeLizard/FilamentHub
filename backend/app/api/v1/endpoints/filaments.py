@@ -389,8 +389,17 @@ async def create_filament(
         if not is_valid:
             raise HTTPException(status_code=400, detail=error_msg)
 
+    # Generate unique slug from name
+    from app.services.slug_service import generate_unique_slug
+    slug = await generate_unique_slug(
+        db=db,
+        model=Filament,
+        source=data.name,
+        fallback="filament",
+    )
+
     # Create filament
-    filament = Filament(**data.model_dump())
+    filament = Filament(**data.model_dump(), slug=slug)
     db.add(filament)
     await db.flush()  # Получаем ID без коммита
     
