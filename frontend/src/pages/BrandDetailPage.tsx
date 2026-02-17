@@ -56,6 +56,19 @@ export const BrandDetailPage: React.FC = () => {
     enabled: !!id,
   });
 
+  // Загружаем рейтинги для всех филаментов бренда (хук должен быть ДО early returns)
+  const filamentIds = (filamentsData?.items || []).map((f) => f.id);
+  const { data: ratingsData } = useQuery({
+    queryKey: ['brand-ratings', id, filamentIds],
+    queryFn: async () => {
+      const stats = await Promise.all(
+        filamentIds.map((fid) => filamentReviewsAPI.getStats(fid).catch(() => null))
+      );
+      return stats;
+    },
+    enabled: filamentIds.length > 0,
+  });
+
   if (isLoadingBrand) {
     return (
       <div className="flex items-center justify-center min-h-[400px]">
@@ -83,19 +96,6 @@ export const BrandDetailPage: React.FC = () => {
       return false;
     }
     return true;
-  });
-
-  // Загружаем рейтинги для всех филаментов бренда
-  const filamentIds = filaments.map((f) => f.id);
-  const { data: ratingsData } = useQuery({
-    queryKey: ['brand-ratings', id, filamentIds],
-    queryFn: async () => {
-      const stats = await Promise.all(
-        filamentIds.map((fid) => filamentReviewsAPI.getStats(fid).catch(() => null))
-      );
-      return stats;
-    },
-    enabled: filamentIds.length > 0,
   });
 
   // Вычисляем статистику
