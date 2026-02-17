@@ -9,12 +9,13 @@ import {
   Shield,
   ExternalLink,
   Package,
+  Star,
   CheckCircle,
   ArrowLeft,
   Search,
   Filter,
 } from 'lucide-react';
-import { brandsAPI, filamentsAPI } from '../api/client';
+import { brandsAPI, filamentsAPI, filamentReviewsAPI } from '../api/client';
 import { FilamentPreview } from '../components/FilamentPreview';
 import { Dropdown } from '../components/Dropdown';
 import type { Filament } from '../types/api';
@@ -84,8 +85,28 @@ export const BrandDetailPage: React.FC = () => {
     return true;
   });
 
+  // Загружаем рейтинги для всех филаментов бренда
+  const filamentIds = filaments.map((f) => f.id);
+  const { data: ratingsData } = useQuery({
+    queryKey: ['brand-ratings', id, filamentIds],
+    queryFn: async () => {
+      const stats = await Promise.all(
+        filamentIds.map((fid) => filamentReviewsAPI.getStats(fid).catch(() => null))
+      );
+      return stats;
+    },
+    enabled: filamentIds.length > 0,
+  });
+
   // Вычисляем статистику
   const totalFilaments = filaments.length;
+  const ratingsWithData = (ratingsData || []).filter(
+    (s) => s && s.avg_rating !== null && s.avg_rating !== undefined && s.total_reviews > 0
+  );
+  const avgRating =
+    ratingsWithData.length > 0
+      ? ratingsWithData.reduce((acc, s) => acc + (s!.avg_rating || 0), 0) / ratingsWithData.length
+      : null;
 
   return (
     <div className="space-y-6">
@@ -137,6 +158,13 @@ export const BrandDetailPage: React.FC = () => {
                 <span className="font-semibold text-white">{totalFilaments}</span>
                 <span>{t('brandDetailPage.filaments')}</span>
               </div>
+              {avgRating !== null && (
+                <div className="flex items-center space-x-2 text-gray-300">
+                  <Star className="w-5 h-5 text-yellow-400 fill-current" />
+                  <span className="font-semibold text-white">{avgRating.toFixed(1)}</span>
+                  <span>{t('brandDetailPage.avgRating')}</span>
+                </div>
+              )}
             </div>
 
             {/* Ссылки */}
