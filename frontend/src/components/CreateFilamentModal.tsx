@@ -1,6 +1,7 @@
 /** Модальное окно для создания/редактирования материала */
 
 import { useState, useEffect, FormEvent, useRef } from 'react';
+import { useTranslation } from 'react-i18next';
 import { X, Save, Loader2, Check, Download, QrCode } from 'lucide-react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { filamentsAPI, brandsAPI, qrAPI } from '../api/client';
@@ -26,6 +27,7 @@ export const CreateFilamentModal: React.FC<CreateFilamentModalProps> = ({
   filament,
   brandId,
 }) => {
+  const { t } = useTranslation();
   const [brandIdValue, setBrandIdValue] = useState<number | null>(brandId || null);
   const [name, setName] = useState('');
   const [materialType, setMaterialType] = useState('PLA');
@@ -404,7 +406,7 @@ export const CreateFilamentModal: React.FC<CreateFilamentModalProps> = ({
         {/* Header */}
         <div className="flex items-center justify-between p-6 border-b border-white/10">
           <h2 className="text-2xl font-bold text-white">
-            {filament ? 'Редактировать материал' : 'Создать новый материал'}
+            {filament ? t('createFilament.editTitle') : t('createFilament.createTitle')}
           </h2>
           <button
             onClick={onClose}
@@ -452,7 +454,7 @@ export const CreateFilamentModal: React.FC<CreateFilamentModalProps> = ({
                 
                 {/* QR Code Info */}
                 <div className="text-center">
-                  <p className="text-gray-300 text-sm mb-2">Код:</p>
+                  <p className="text-gray-300 text-sm mb-2">{t('createFilament.code')}:</p>
                   <p className="text-white font-mono text-lg font-bold">{createdFilament.qr_code}</p>
                 </div>
                 
@@ -499,21 +501,21 @@ export const CreateFilamentModal: React.FC<CreateFilamentModalProps> = ({
           {/* Name and Material Type in one row */}
           <div className="flex items-end gap-4">
             <div className="flex-1">
-              <label className="block text-gray-300 mb-2 text-sm font-medium">Название материала *</label>
+              <label className="block text-gray-300 mb-2 text-sm font-medium">{t('createFilament.nameLabel')} *</label>
               <input
                 type="text"
                 value={name}
                 onChange={(e) => setName(e.target.value)}
                 required
                 className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all"
-                placeholder="Например: PLA Red"
+                placeholder={t('createFilament.namePlaceholder')}
               />
             </div>
             <div className="flex-1">
               {/* Если brandId передан - используем input с выпадающим списком (как в CreatePresetModal) */}
               {brandId ? (
                 <div className="relative" ref={materialTypeDropdownRef}>
-                  <label className="block text-gray-300 mb-2 text-sm font-medium">Тип материала *</label>
+                  <label className="block text-gray-300 mb-2 text-sm font-medium">{t('createFilament.materialTypeLabel')} *</label>
                   <div className="relative">
                     <input
                       type="text"
@@ -539,7 +541,7 @@ export const CreateFilamentModal: React.FC<CreateFilamentModalProps> = ({
                       onFocus={() => {
                         setShowMaterialTypeDropdown(true);
                       }}
-                      placeholder="Выберите или введите тип материала"
+                      placeholder={t('createFilament.selectOrEnterMaterial')}
                       required
                       className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all"
                     />
@@ -585,7 +587,7 @@ export const CreateFilamentModal: React.FC<CreateFilamentModalProps> = ({
               ) : (
                 <>
                   <Dropdown
-                    label="Тип материала *"
+                    label={`${t('createFilament.materialTypeLabel')} *`}
                     value={materialType}
                     options={[
                       ...(materialTypes.length > 0
@@ -609,14 +611,14 @@ export const CreateFilamentModal: React.FC<CreateFilamentModalProps> = ({
                         setCustomMaterialType('');
                       }
                     }}
-                    placeholder="Выберите тип материала"
+                    placeholder={t('createFilament.selectMaterial')}
                   />
                   {materialType === 'Other' && (
                     <input
                       type="text"
                       value={customMaterialType}
                       onChange={(e) => setCustomMaterialType(e.target.value)}
-                      placeholder="Введите тип материала (например: PP+, PCTG, CPE)"
+                      placeholder={t('createFilament.enterMaterialType')}
                       required={materialType === 'Other'}
                       className="mt-2 w-full px-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all"
                     />
@@ -628,7 +630,7 @@ export const CreateFilamentModal: React.FC<CreateFilamentModalProps> = ({
             {!filament && !brandId && !user?.brand_id && (
               <div className="flex-[2]">
                 <Dropdown
-                  label="Производитель *"
+                  label={`${t('createFilament.brandLabel')} *`}
                   value={brandIdValue || ''}
                   options={[
                     { value: '', label: 'Выберите бренд' },
@@ -638,7 +640,7 @@ export const CreateFilamentModal: React.FC<CreateFilamentModalProps> = ({
                     })) || []),
                   ]}
                   onChange={(val) => setBrandIdValue(val === '' ? null : Number(val))}
-                  placeholder="Выберите бренд"
+                  placeholder={t('createFilament.selectBrand')}
                 />
               </div>
             )}
@@ -668,9 +670,9 @@ export const CreateFilamentModal: React.FC<CreateFilamentModalProps> = ({
                 type="button"
                 onClick={() => setShowAdvancedVisual(!showAdvancedVisual)}
                 className="h-12 px-4 py-2 bg-white/10 border border-white/20 rounded-xl text-gray-300 hover:text-white hover:bg-white/20 transition-all flex items-center gap-2"
-                title="Расширенные характеристики цвета"
+                title={t('createFilament.advancedColorSettings')}
               >
-                <span className="text-sm font-medium">Расширенные характеристики цвета</span>
+                <span className="text-sm font-medium">{t('createFilament.advancedColorSettings')}</span>
                 <span className="text-xs">{showAdvancedVisual ? '▼' : '▶'}</span>
               </button>
             }
@@ -682,7 +684,7 @@ export const CreateFilamentModal: React.FC<CreateFilamentModalProps> = ({
               <div className="space-y-4">
                 {/* Тип цвета */}
                 <div>
-                  <label className="block text-gray-300 mb-2 text-sm font-medium">Тип цвета</label>
+                  <label className="block text-gray-300 mb-2 text-sm font-medium">{t('createFilament.colorTypeLabel')}</label>
                   <div className="grid grid-cols-3 sm:grid-cols-6 gap-2">
                     {(['single', 'two', 'three', 'gradient', 'transition', 'thermochromic'] as const).map((type) => (
                       <button
@@ -719,18 +721,18 @@ export const CreateFilamentModal: React.FC<CreateFilamentModalProps> = ({
                             : 'bg-white/10 border-white/20 text-gray-300 hover:bg-white/20'
                         }`}
                       >
-                        {type === 'single' ? 'Одноцветный' : 
-                         type === 'two' ? 'Двухцветный' :
-                         type === 'three' ? 'Трёхцветный' :
-                         type === 'gradient' ? 'Градиент' :
+                        {type === 'single' ? t('createFilament.colorType.single') :
+                         type === 'two' ? t('createFilament.colorType.two') :
+                         type === 'three' ? t('createFilament.colorType.three') :
+                         type === 'gradient' ? t('createFilament.colorType.gradient') :
                          type === 'transition' ? (
-                          <span title="Переходной цвет: производитель меняет цвет на катушке, часть старого цвета остается на новой катушке (брак, но продается)">
-                            Переходный
+                          <span title={t('createFilament.colorType.transitionHint')}>
+                            {t('createFilament.colorType.transition')}
                           </span>
                         ) :
                          type === 'thermochromic' ? (
-                          <span title="Термохромный: меняет цвет при нагреве (210-230°C)">
-                            Термохромный
+                          <span title={t('createFilament.colorType.thermochromicHint')}>
+                            {t('createFilament.colorType.thermochromic')}
                           </span>
                         ) : null}
                       </button>
@@ -763,7 +765,7 @@ export const CreateFilamentModal: React.FC<CreateFilamentModalProps> = ({
                               }}
                               className="w-full h-12 rounded-lg border border-white/20 cursor-pointer hover:opacity-80 transition-opacity relative overflow-visible"
                               style={{ backgroundColor: currentColor }}
-                              title="Нажмите для выбора цвета"
+                              title={t('createFilament.clickToPickColor')}
                             >
                               <div className="absolute inset-0 flex items-center justify-center text-white text-xs font-medium drop-shadow-lg">
                                 {currentColor}
@@ -803,7 +805,7 @@ export const CreateFilamentModal: React.FC<CreateFilamentModalProps> = ({
 
                 {/* Финиш */}
                 <div>
-                  <label className="block text-gray-300 mb-2 text-sm font-medium">Тип поверхности</label>
+                  <label className="block text-gray-300 mb-2 text-sm font-medium">{t('createFilament.surfaceTypeLabel')}</label>
                   <div className="flex gap-2">
                     {(['matte', 'glossy'] as const).map((finish) => (
                       <button
@@ -816,7 +818,7 @@ export const CreateFilamentModal: React.FC<CreateFilamentModalProps> = ({
                             : 'bg-white/10 border-white/20 text-gray-300 hover:bg-white/20'
                         }`}
                       >
-                        {finish === 'matte' ? 'Матовый' : 'Глянцевый'}
+                        {finish === 'matte' ? t('createFilament.surface.matte') : t('createFilament.surface.glossy')}
                       </button>
                     ))}
                   </div>
@@ -824,20 +826,20 @@ export const CreateFilamentModal: React.FC<CreateFilamentModalProps> = ({
 
                 {/* Наполнитель */}
                 <div>
-                  <label className="block text-gray-300 mb-2 text-sm font-medium">Наполнитель</label>
+                  <label className="block text-gray-300 mb-2 text-sm font-medium">{t('createFilament.fillerLabel')}</label>
                   <Dropdown
                     value={visualFiller}
                     onChange={(val) => setVisualFiller(val as typeof visualFiller)}
                     options={[
-                      { value: 'none', label: 'Нет' },
-                      { value: 'wood', label: 'Дерево' },
-                      { value: 'carbon', label: 'CF (Углеродное волокно)' },
-                      { value: 'glass', label: 'GF (Стекловолокно)' },
-                      { value: 'metallic', label: 'Металлик' },
-                      { value: 'luminescent', label: 'Люминофор' },
-                      { value: 'glitter', label: 'Глиттер' },
-                      { value: 'fibers', label: 'Волокна' },
-                      { value: 'stone', label: 'Камень' },
+                      { value: 'none', label: t('createFilament.filler.none') },
+                      { value: 'wood', label: t('createFilament.filler.wood') },
+                      { value: 'carbon', label: t('createFilament.filler.carbon') },
+                      { value: 'glass', label: t('createFilament.filler.glass') },
+                      { value: 'metallic', label: t('createFilament.filler.metallic') },
+                      { value: 'luminescent', label: t('createFilament.filler.luminescent') },
+                      { value: 'glitter', label: t('createFilament.filler.glitter') },
+                      { value: 'fibers', label: t('createFilament.filler.fibers') },
+                      { value: 'stone', label: t('createFilament.filler.stone') },
                       // Паттерны временно отключены (не удалены, чтобы сохранить совместимость с существующими данными)
                       // { value: 'pattern1', label: 'Паттерн 1' },
                       // { value: 'pattern2', label: 'Паттерн 2' },
@@ -852,7 +854,7 @@ export const CreateFilamentModal: React.FC<CreateFilamentModalProps> = ({
                       // { value: 'pattern11', label: 'Паттерн 11' },
                       // { value: 'pattern12', label: 'Паттерн 12' },
                     ]}
-                    placeholder="Выберите наполнитель"
+                    placeholder={t('createFilament.selectFiller')}
                   />
                 </div>
 
@@ -865,7 +867,7 @@ export const CreateFilamentModal: React.FC<CreateFilamentModalProps> = ({
                       onChange={(e) => setVisualTransparency(e.target.checked)}
                       className="w-4 h-4 rounded border-white/20 bg-white/10 text-purple-500 focus:ring-purple-500"
                     />
-                    <span>Прозрачный материал</span>
+                    <span>{t('createFilament.transparentMaterial')}</span>
                   </label>
                 </div>
               </div>
@@ -875,7 +877,7 @@ export const CreateFilamentModal: React.FC<CreateFilamentModalProps> = ({
           {/* Diameter and Density */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <Dropdown
-              label="Диаметр (mm) *"
+              label={`${t('createFilament.diameterLabel')} *`}
               value={diameter}
               options={[
                 { value: 1.75, label: '1.75 mm' },
@@ -883,10 +885,10 @@ export const CreateFilamentModal: React.FC<CreateFilamentModalProps> = ({
                 { value: 3.0, label: '3.0 mm' },
               ]}
               onChange={(val) => setDiameter(Number(val))}
-              placeholder="Выберите диаметр"
+              placeholder={t('createFilament.selectDiameter')}
             />
             <div>
-              <label className="block text-gray-300 mb-2 text-sm font-medium">Плотность (g/cm³)</label>
+              <label className="block text-gray-300 mb-2 text-sm font-medium">{t('createFilament.densityLabel')}</label>
               <input
                 type="number"
                 value={density}
@@ -917,9 +919,9 @@ export const CreateFilamentModal: React.FC<CreateFilamentModalProps> = ({
                         ? 'bg-purple-600 text-white'
                         : 'text-gray-400 hover:text-white'
                     }`}
-                    title="За кг"
+                    title={t('createFilament.pricePerKg')}
                   >
-                    За кг
+                    {t('createFilament.pricePerKg')}
                   </button>
                   <button
                     type="button"
@@ -929,9 +931,9 @@ export const CreateFilamentModal: React.FC<CreateFilamentModalProps> = ({
                         ? 'bg-purple-600 text-white'
                         : 'text-gray-400 hover:text-white'
                     }`}
-                    title="За катушку"
+                    title={t('createFilament.pricePerSpool')}
                   >
-                    За катушку
+                    {t('createFilament.pricePerSpool')}
                   </button>
                 </div>
               </div>
@@ -965,7 +967,7 @@ export const CreateFilamentModal: React.FC<CreateFilamentModalProps> = ({
             </div>
             <div className="flex flex-col">
               <div className="h-[34px] mb-2 flex items-end">
-                <label className="block text-gray-300 text-sm font-medium">Вес катушки (g)</label>
+                <label className="block text-gray-300 text-sm font-medium">{t('createFilament.spoolWeightLabel')}</label>
               </div>
               <input
                 type="number"
@@ -981,13 +983,13 @@ export const CreateFilamentModal: React.FC<CreateFilamentModalProps> = ({
 
           {/* Description */}
           <div>
-            <label className="block text-gray-300 mb-2 text-sm font-medium">Описание</label>
+            <label className="block text-gray-300 mb-2 text-sm font-medium">{t('createFilament.descriptionLabel')}</label>
             <textarea
               value={description}
               onChange={(e) => setDescription(e.target.value)}
               rows={3}
               className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all resize-none"
-              placeholder="Описание материала..."
+              placeholder={t('createFilament.descriptionPlaceholder')}
             />
           </div>
 
@@ -1009,12 +1011,12 @@ export const CreateFilamentModal: React.FC<CreateFilamentModalProps> = ({
               {isLoading ? (
                 <>
                   <Loader2 className="w-4 h-4 animate-spin" />
-                  <span>Сохранение...</span>
+                  <span>{t('createFilament.saving')}</span>
                 </>
               ) : (
                 <>
                   <Save className="w-4 h-4" />
-                  <span>{filament ? 'Сохранить' : 'Создать'}</span>
+                  <span>{filament ? t('createFilament.save') : t('createFilament.create')}</span>
                 </>
               )}
             </button>

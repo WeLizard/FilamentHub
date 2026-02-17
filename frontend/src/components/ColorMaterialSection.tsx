@@ -1,6 +1,7 @@
 /** Компонент секции цвета материала с поддержкой режимов preview и edit */
 
 import React, { useState, useEffect, useRef } from 'react';
+import { useTranslation } from 'react-i18next';
 import { createPortal } from 'react-dom';
 import { FilamentPreview } from './FilamentPreview';
 import { HSLColorPicker } from './HSLColorPicker';
@@ -44,6 +45,7 @@ export const ColorMaterialSection: React.FC<ColorMaterialSectionProps> = ({
   className = '',
   rightButton,
 }) => {
+  const { t } = useTranslation();
   const isEditMode = mode === 'edit';
   const [isColorPickerOpen, setIsColorPickerOpen] = useState(false);
   const buttonRef = useRef<HTMLButtonElement | null>(null);
@@ -97,7 +99,7 @@ export const ColorMaterialSection: React.FC<ColorMaterialSectionProps> = ({
               type="text"
               value={colorName}
               onChange={(e) => onColorNameChange?.(e.target.value)}
-              placeholder="Например: Красный, Blue, Green"
+              placeholder={t('createFilament.colorNamePlaceholder')}
               className="w-full h-12 px-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white placeholder-gray-400 placeholder:text-center focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all"
             />
           ) : (
@@ -122,7 +124,7 @@ export const ColorMaterialSection: React.FC<ColorMaterialSectionProps> = ({
                   type="button"
                   onClick={() => setIsColorPickerOpen(!isColorPickerOpen)}
                   className="cursor-pointer hover:opacity-80 transition-opacity flex items-center justify-center h-full"
-                  title="Нажмите для выбора цвета"
+                  title={t('createFilament.clickToPickColor')}
                 >
                   <div style={{ transform: 'scale(0.8)', transformOrigin: 'center' }}>
                     <FilamentPreview
