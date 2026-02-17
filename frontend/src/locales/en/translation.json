@@ -28,6 +28,8 @@
     "error_agree_terms": "You must agree to the terms of use",
     "error_passwords_mismatch": "Passwords do not match",
     "error_password_too_short": "Password must be at least 8 characters long",
+    "error_password_no_letter": "Password must contain at least one letter",
+    "error_password_no_digit": "Password must contain at least one digit",
     "error_login_failed": "An error occurred during login. Please check your email and password.",
     "error_register_failed": "An error occurred during registration. Please try again.",
     "error_email_registered": "This email is already registered. Use another one or log in.",

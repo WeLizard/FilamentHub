@@ -163,6 +163,16 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({ user, onUserUpdate }) 
       return;
     }
 
+    if (!/[a-zA-Zа-яА-ЯёЁ]/.test(passwordForm.new_password)) {
+      setPasswordError('Пароль должен содержать хотя бы одну букву');
+      return;
+    }
+
+    if (!/\d/.test(passwordForm.new_password)) {
+      setPasswordError('Пароль должен содержать хотя бы одну цифру');
+      return;
+    }
+
     if (passwordForm.new_password !== passwordForm.confirm_password) {
       setPasswordError('Пароли не совпадают');
       return;

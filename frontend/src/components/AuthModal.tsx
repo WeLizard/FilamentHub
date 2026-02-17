@@ -99,6 +99,16 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
           setIsLoading(false);
           return;
         }
+        if (!/[a-zA-Zа-яА-ЯёЁ]/.test(password)) {
+          setError(t('authModal.error_password_no_letter'));
+          setIsLoading(false);
+          return;
+        }
+        if (!/\d/.test(password)) {
+          setError(t('authModal.error_password_no_digit'));
+          setIsLoading(false);
+          return;
+        }
         
         // Все проверки пройдены - регистрируем (с reCAPTCHA токеном если есть)
         await register({

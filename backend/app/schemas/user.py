@@ -3,9 +3,20 @@
 from datetime import datetime
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, EmailStr, Field
+import re
+
+from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
 
 from app.models.user import UserRole
+
+
+def validate_password_strength(password: str) -> str:
+    """Validate password has at least one letter and one digit."""
+    if not re.search(r'[a-zA-Zа-яА-ЯёЁ]', password):
+        raise ValueError('Пароль должен содержать хотя бы одну букву')
+    if not re.search(r'\d', password):
+        raise ValueError('Пароль должен содержать хотя бы одну цифру')
+    return password
 
 
 class UserBase(BaseModel):
@@ -21,6 +32,11 @@ class UserCreate(UserBase):
     """Schema for creating User."""
 
     password: str = Field(..., min_length=8, max_length=100)
+
+    @field_validator('password')
+    @classmethod
+    def password_strength(cls, v: str) -> str:
+        return validate_password_strength(v)
     # Роль всегда "user" при создании - роль "brand" присваивается только через процесс верификации
     role: Literal["user"] = Field(default="user")
 
@@ -33,6 +49,13 @@ class UserUpdate(BaseModel):
     full_name: str | None = Field(None, max_length=255)
     bio: str | None = None
     password: str | None = Field(None, min_length=8, max_length=100)
+
+    @field_validator('password')
+    @classmethod
+    def password_strength(cls, v: str | None) -> str | None:
+        if v is not None:
+            return validate_password_strength(v)
+        return v
     brand_id: int | None = Field(None, gt=0, description="ID бренда, который представляет пользователь")
     # Sync settings
     allow_printer_profiles_import: bool | None = None
@@ -55,6 +78,11 @@ class UserPasswordUpdate(BaseModel):
 
     current_password: str = Field(..., min_length=1, description="Текущий пароль")
     new_password: str = Field(..., min_length=8, max_length=100, description="Новый пароль")
+
+    @field_validator('new_password')
+    @classmethod
+    def password_strength(cls, v: str) -> str:
+        return validate_password_strength(v)
 
 
 class UserEmailUpdate(BaseModel):
@@ -200,9 +228,14 @@ class ForgotPasswordResponse(BaseModel):
 
 class ResetPasswordRequest(BaseModel):
     """Schema for reset password request."""
-    
+
     token: str = Field(..., description="Токен восстановления пароля")
     new_password: str = Field(..., min_length=8, max_length=100, description="Новый пароль")
+
+    @field_validator('new_password')
+    @classmethod
+    def password_strength(cls, v: str) -> str:
+        return validate_password_strength(v)
 
 
 class ResetPasswordResponse(BaseModel):

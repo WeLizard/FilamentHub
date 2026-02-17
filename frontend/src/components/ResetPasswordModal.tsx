@@ -74,6 +74,16 @@ export const ResetPasswordModal: React.FC<ResetPasswordModalProps> = ({
       return;
     }
 
+    if (!/[a-zA-Zа-яА-ЯёЁ]/.test(newPassword)) {
+      setError(t('authModal.error_password_no_letter'));
+      return;
+    }
+
+    if (!/\d/.test(newPassword)) {
+      setError(t('authModal.error_password_no_digit'));
+      return;
+    }
+
     setIsLoading(true);
 
     try {
