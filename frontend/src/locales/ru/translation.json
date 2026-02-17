@@ -733,6 +733,11 @@
     "presetsCount": "Пресеты ({{count}})",
     "reviewsCount": "Отзывы ({{count}})"
   },
+  "dropdown": {
+    "placeholder": "Выберите...",
+    "emptyMessage": "Опции не найдены",
+    "clearSelection": "Очистить выбор"
+  },
   "badge": {
     "founder": { "label": "Основатель", "title": "Основатель проекта" },
     "betaTester": { "label": "Бета-тестер", "title": "Бета-тестер" },

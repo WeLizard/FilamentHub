@@ -1,6 +1,7 @@
 /** Универсальный компонент выпадающего списка для всего сайта */
 
 import { useState, useRef, ReactNode, useEffect, useMemo } from 'react';
+import { useTranslation } from 'react-i18next';
 import { createPortal } from 'react-dom';
 import { Check, X } from 'lucide-react';
 
@@ -30,7 +31,7 @@ export const Dropdown: React.FC<DropdownProps> = ({
   value,
   options,
   onChange,
-  placeholder = 'Выберите...',
+  placeholder: placeholderProp,
   label,
   className = '',
   disabled = false,
@@ -38,9 +39,12 @@ export const Dropdown: React.FC<DropdownProps> = ({
   filterValue = '',
   onFilterChange,
   renderOption,
-  emptyMessage = 'Опции не найдены',
+  emptyMessage: emptyMessageProp,
   maxHeight = 'max-h-60',
 }) => {
+  const { t } = useTranslation();
+  const placeholder = placeholderProp || t('dropdown.placeholder');
+  const emptyMessage = emptyMessageProp || t('dropdown.emptyMessage');
   const containerRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
@@ -208,7 +212,7 @@ export const Dropdown: React.FC<DropdownProps> = ({
                   handleClear();
                 }}
                 className="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 text-gray-400 hover:text-white hover:bg-white/10 rounded-lg transition-all"
-                title="Очистить выбор"
+                title={t('dropdown.clearSelection')}
               >
                 <X className="w-4 h-4" />
               </button>
@@ -236,7 +240,7 @@ export const Dropdown: React.FC<DropdownProps> = ({
                   handleClear();
                 }}
                 className="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 text-gray-400 hover:text-white hover:bg-white/10 rounded-lg transition-all"
-                title="Очистить выбор"
+                title={t('dropdown.clearSelection')}
               >
                 <X className="w-4 h-4" />
               </button>

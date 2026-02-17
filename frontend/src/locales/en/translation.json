@@ -711,6 +711,11 @@
     "presetsCount": "Presets ({{count}})",
     "reviewsCount": "Reviews ({{count}})"
   },
+  "dropdown": {
+    "placeholder": "Select...",
+    "emptyMessage": "No options found",
+    "clearSelection": "Clear selection"
+  },
   "badge": {
     "founder": { "label": "Founder", "title": "Project founder" },
     "betaTester": { "label": "Beta Tester", "title": "Beta tester" },
