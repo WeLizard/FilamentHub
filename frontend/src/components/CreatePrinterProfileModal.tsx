@@ -12,6 +12,7 @@ import { useHeaderVisible } from '../hooks/useHeaderVisible';
 import { CustomSelect } from './CustomSelect';
 import { Dropdown } from './Dropdown';
 import { useDebounce } from '../hooks/useDebounce';
+import { useTranslation } from 'react-i18next';
 
 interface CreatePrinterProfileModalProps {
   isOpen: boolean;
@@ -31,6 +32,7 @@ export const CreatePrinterProfileModal: React.FC<CreatePrinterProfileModalProps>
   const { user } = useAuth();
   const queryClient = useQueryClient();
   const isHeaderVisible = useHeaderVisible();
+  const { t } = useTranslation();
   
   // Поиск принтеров
   const [printerSearch, setPrinterSearch] = useState('');
@@ -283,7 +285,7 @@ export const CreatePrinterProfileModal: React.FC<CreatePrinterProfileModalProps>
       setExtraMetadata(formatted);
       setJsonError(null);
     } catch (error) {
-      setJsonError('Не удалось отформатировать JSON. Проверьте синтаксис.');
+      setJsonError(t('printerProfile.jsonFormatError'));
     }
   };
 
@@ -313,7 +315,7 @@ export const CreatePrinterProfileModal: React.FC<CreatePrinterProfileModalProps>
         setImageUrl(''); // TODO: если будет поле в модели
       } else if (baseProfile) {
         // Клонирование
-        setName(`${baseProfile.name} (копия)`);
+        setName(`${baseProfile.name} (${t('printerProfile.copyLabel')})`);
         setSlug(`${baseProfile.slug}-copy`);
         setDescription(baseProfile.description || '');
         setPrinterId(baseProfile.printer_id);
@@ -371,8 +373,8 @@ export const CreatePrinterProfileModal: React.FC<CreatePrinterProfileModalProps>
       onClose();
     },
     onError: (error: any) => {
-      console.error('Ошибка сохранения printer profile:', error);
-      alert(error?.response?.data?.detail || error?.message || 'Не удалось сохранить профиль принтера');
+      console.error('Error saving printer profile:', error);
+      alert(error?.response?.data?.detail || error?.message || t('printerProfile.saveError'));
     },
   });
 
@@ -416,12 +418,12 @@ export const CreatePrinterProfileModal: React.FC<CreatePrinterProfileModalProps>
     e.preventDefault();
     
     if (!name.trim()) {
-      alert('Введите название профиля');
+      alert(t('printerProfile.nameRequired'));
       return;
     }
     
     if (!slug.trim()) {
-      alert('Введите slug профиля');
+      alert(t('printerProfile.slugRequired'));
       return;
     }
 
@@ -432,7 +434,7 @@ export const CreatePrinterProfileModal: React.FC<CreatePrinterProfileModalProps>
         setJsonError(null);
       } catch (error) {
         console.error('Invalid extra metadata JSON', error);
-        setJsonError('Некорректный JSON. Проверьте синтаксис.');
+        setJsonError(t('printerProfile.jsonInvalid'));
         return;
       }
     } else {
@@ -539,7 +541,7 @@ export const CreatePrinterProfileModal: React.FC<CreatePrinterProfileModalProps>
     if (!trimmed) return;
     const value = parseFloat(trimmed);
     if (isNaN(value) || value <= 0) {
-      alert('Введите корректное значение диаметра сопла (положительное число)');
+      alert(t('printerProfile.nozzleDiameterInvalid'));
       return;
     }
     const valueStr = value.toString();
@@ -571,53 +573,53 @@ export const CreatePrinterProfileModal: React.FC<CreatePrinterProfileModalProps>
       'Cool Plate',
       'Auto',
     ];
-    const firmwareFlagOptions: Array<{ key: string; label: string; description?: string }> = [
-      { key: 'use_relative_e_distances', label: 'Относительные координаты E', description: 'Включает относительный режим подачи в G-code (M83).' },
-      { key: 'use_firmware_retraction', label: 'Откат на уровне прошивки', description: 'Передаёт управление ретрактом прошивке (G10/G11).' },
-      { key: 'pellet_modded_printer', label: 'Гранульная модификация', description: 'Принтер модифицирован под гранулы / пеллетный экструдер.' },
-      { key: 'support_multi_bed_types', label: 'Несколько типов столов', description: 'Поддерживает разные пластины и профили стола.' },
-      { key: 'support_air_filtration', label: 'Фильтрация воздуха' },
-      { key: 'support_chamber_temp_control', label: 'Контроль температуры камеры' },
-      { key: 'auxiliary_fan', label: 'Внешний вентилятор' },
-      { key: 'scan_first_layer', label: 'Сканирование первого слоя' },
-      { key: 'disable_m73', label: 'Отключить отчёт времени M73' },
-      { key: 'bbl_use_printhost', label: 'Использовать PrintHost' },
+    const firmwareFlagOptions: Array<{ key: string; labelKey: string; descriptionKey?: string }> = [
+      { key: 'use_relative_e_distances', labelKey: 'printerProfile.flags.relativeE', descriptionKey: 'printerProfile.flags.relativeEDesc' },
+      { key: 'use_firmware_retraction', labelKey: 'printerProfile.flags.firmwareRetraction', descriptionKey: 'printerProfile.flags.firmwareRetractionDesc' },
+      { key: 'pellet_modded_printer', labelKey: 'printerProfile.flags.pelletMod', descriptionKey: 'printerProfile.flags.pelletModDesc' },
+      { key: 'support_multi_bed_types', labelKey: 'printerProfile.flags.multiBedTypes', descriptionKey: 'printerProfile.flags.multiBedTypesDesc' },
+      { key: 'support_air_filtration', labelKey: 'printerProfile.flags.airFiltration' },
+      { key: 'support_chamber_temp_control', labelKey: 'printerProfile.flags.chamberTemp' },
+      { key: 'auxiliary_fan', labelKey: 'printerProfile.flags.auxiliaryFan' },
+      { key: 'scan_first_layer', labelKey: 'printerProfile.flags.scanFirstLayer' },
+      { key: 'disable_m73', labelKey: 'printerProfile.flags.disableM73' },
+      { key: 'bbl_use_printhost', labelKey: 'printerProfile.flags.usePrinthost' },
     ];
-    const coolingFanFields: Array<{ key: string; label: string; placeholder?: string; unit?: string }> = [
-      { key: 'fan_speedup_time', label: 'Время разгона вентилятора', placeholder: '2', unit: 'с' },
-      { key: 'fan_speedup_overhangs', label: 'Разгон для свесов', placeholder: '30', unit: '%' },
-      { key: 'fan_kickstart', label: 'Kickstart', placeholder: '100', unit: '%' },
+    const coolingFanFields: Array<{ key: string; labelKey: string; placeholder?: string; unit?: string }> = [
+      { key: 'fan_speedup_time', labelKey: 'printerProfile.cooling.speedupTime', placeholder: '2', unit: t('printerProfile.units.sec') },
+      { key: 'fan_speedup_overhangs', labelKey: 'printerProfile.cooling.speedupOverhangs', placeholder: '30', unit: '%' },
+      { key: 'fan_kickstart', labelKey: 'printerProfile.cooling.kickstart', placeholder: '100', unit: '%' },
     ];
-    const extruderClearanceFields: Array<{ key: string; label: string; placeholder?: string; unit?: string }> = [
-      { key: 'extruder_clearance_radius', label: 'Радиус рабочей зоны экструдера', placeholder: '65', unit: 'мм' },
-      { key: 'extruder_clearance_height_to_rod', label: 'Высота до направляющих', placeholder: '36', unit: 'мм' },
-      { key: 'extruder_clearance_height_to_lid', label: 'Высота до крышки', placeholder: '140', unit: 'мм' },
+    const extruderClearanceFields: Array<{ key: string; labelKey: string; placeholder?: string; unit?: string }> = [
+      { key: 'extruder_clearance_radius', labelKey: 'printerProfile.extruderClearance.radius', placeholder: '65', unit: t('printerProfile.units.mm') },
+      { key: 'extruder_clearance_height_to_rod', labelKey: 'printerProfile.extruderClearance.heightToRod', placeholder: '36', unit: t('printerProfile.units.mm') },
+      { key: 'extruder_clearance_height_to_lid', labelKey: 'printerProfile.extruderClearance.heightToLid', placeholder: '140', unit: t('printerProfile.units.mm') },
     ];
-    const adaptiveMeshFields: Array<{ key: string; label: string; placeholder?: string }> = [
-      { key: 'bed_mesh_min', label: 'Bed mesh min (координаты)', placeholder: '0x0, 256x0...' },
-      { key: 'bed_mesh_max', label: 'Bed mesh max (координаты)', placeholder: '256x256...' },
-      { key: 'bed_mesh_probe_distance', label: 'Расстояние между точками сетки (мм)', placeholder: '30' },
-      { key: 'adaptive_bed_mesh_margin', label: 'Отступ сетки (мм)', placeholder: '5' },
+    const adaptiveMeshFields: Array<{ key: string; labelKey: string; placeholder?: string }> = [
+      { key: 'bed_mesh_min', labelKey: 'printerProfile.mesh.min', placeholder: '0x0, 256x0...' },
+      { key: 'bed_mesh_max', labelKey: 'printerProfile.mesh.max', placeholder: '256x256...' },
+      { key: 'bed_mesh_probe_distance', labelKey: 'printerProfile.mesh.probeDistance', placeholder: '30' },
+      { key: 'adaptive_bed_mesh_margin', labelKey: 'printerProfile.mesh.margin', placeholder: '5' },
     ];
-    const bedGeometryFields: Array<{ key: string; label: string; isList?: boolean; placeholder?: string }> = [
-      { key: 'bed_shape', label: 'Форма стола (мм)', isList: true, placeholder: '0x0, 256x0, 256x256, 0x256' },
-      { key: 'bed_exclude_area', label: 'Запретные зоны стола', isList: true, placeholder: '90x90, 166x166' },
-      { key: 'bed_custom_rectangle', label: 'Пользовательский прямоугольник', isList: true, placeholder: '0x0, 256x0, 256x256, 0x256' },
-      { key: 'origin_z', label: 'Смещение по Z', placeholder: '0' },
+    const bedGeometryFields: Array<{ key: string; labelKey: string; isList?: boolean; placeholder?: string }> = [
+      { key: 'bed_shape', labelKey: 'printerProfile.bed.shape', isList: true, placeholder: '0x0, 256x0, 256x256, 0x256' },
+      { key: 'bed_exclude_area', labelKey: 'printerProfile.bed.excludeArea', isList: true, placeholder: '90x90, 166x166' },
+      { key: 'bed_custom_rectangle', labelKey: 'printerProfile.bed.customRectangle', isList: true, placeholder: '0x0, 256x0, 256x256, 0x256' },
+      { key: 'origin_z', labelKey: 'printerProfile.bed.originZ', placeholder: '0' },
     ];
-    const thumbnailsFields: Array<{ key: string; label: string; placeholder?: string }> = [
-      { key: 'thumbnails', label: 'Thumbnails', placeholder: '32x32,64x64' },
-      { key: 'thumbnails_format', label: 'Формат миниатюр', placeholder: 'png,gcode,ufp...' },
+    const thumbnailsFields: Array<{ key: string; labelKey: string; placeholder?: string }> = [
+      { key: 'thumbnails', labelKey: 'printerProfile.thumbnails.sizes', placeholder: '32x32,64x64' },
+      { key: 'thumbnails_format', labelKey: 'printerProfile.thumbnails.format', placeholder: 'png,gcode,ufp...' },
     ];
 
     return (
       <div className="space-y-6">
         <div>
           <label className="block text-sm font-medium text-gray-300 mb-2">
-            Название <span className="text-red-400">*</span>
+            {t('printerProfile.name')} <span className="text-red-400">*</span>
             {selectedPrinter && nozzleDiameters.length > 0 && (
               <span className="text-xs text-gray-400 ml-2">
-                (Рекомендуемый формат для OrcaSlicer: &quot;{selectedPrinter.name} {nozzleDiameters[0]} nozzle&quot;)
+                ({t('printerProfile.nameFormatHint', { name: selectedPrinter.name, nozzle: nozzleDiameters[0] })})
               </span>
             )}
           </label>
@@ -631,19 +633,19 @@ export const CreatePrinterProfileModal: React.FC<CreatePrinterProfileModalProps>
             className="w-full bg-white/5 border border-white/10 rounded-lg px-4 py-2 text-white placeholder-gray-500 focus:outline-none focus:border-purple-500"
             placeholder={selectedPrinter && nozzleDiameters.length > 0 
               ? `${selectedPrinter.name} ${nozzleDiameters[0]} nozzle`
-              : "Например: Voron 2.4 350 0.4 nozzle"}
+              : t('printerProfile.namePlaceholder')}
             required
           />
           {selectedPrinter && nozzleDiameters.length > 0 && !name.match(/nozzle$/i) && name && (
             <p className="text-xs text-amber-400 mt-1">
-              💡 Рекомендуется формат для совместимости с OrcaSlicer: &quot;{selectedPrinter.name} {nozzleDiameters[0]} nozzle&quot;
+              {t('printerProfile.nameFormatWarning', { name: selectedPrinter.name, nozzle: nozzleDiameters[0] })}
             </p>
           )}
         </div>
 
         <div>
           <label className="block text-sm font-medium text-gray-300 mb-2">
-            Slug (уникальный идентификатор) <span className="text-red-400">*</span>
+            {t('printerProfile.slug')} <span className="text-red-400">*</span>
           </label>
           <input
             type="text"
@@ -653,12 +655,12 @@ export const CreatePrinterProfileModal: React.FC<CreatePrinterProfileModalProps>
             placeholder="ender-3-pro-standard"
             required
           />
-          <p className="text-xs text-gray-500 mt-1">Только латинские буквы, цифры и дефисы</p>
+          <p className="text-xs text-gray-500 mt-1">{t('printerProfile.slugHint')}</p>
         </div>
 
         <div>
           <label className="block text-sm font-medium text-gray-300 mb-2">
-            Принтер (опционально)
+            {t('printerProfile.printer')}
           </label>
           <div className="space-y-2">
             <Dropdown
@@ -684,20 +686,20 @@ export const CreatePrinterProfileModal: React.FC<CreatePrinterProfileModalProps>
                   setPrinterSearch('');
                 }
               }}
-              placeholder="Выберите принтер или начните вводить название"
+              placeholder={t('printerProfile.printerPlaceholder')}
               filterable
               filterValue={printerSearch}
               onFilterChange={setPrinterSearch}
-              emptyMessage="Принтер не найден"
+              emptyMessage={t('printerProfile.printerNotFound')}
             />
             {printers.length === 0 && printerSearch && (
               <p className="text-xs text-gray-400">
-                Принтеры не найдены. Сначала запросите добавление принтера в базу.
+                {t('printerProfile.noPrintersHint')}
               </p>
             )}
             {onRequestPrinter && (
               <p className="text-xs text-gray-400">
-                Ваш принтер отсутствует в списке?{' '}
+                {t('printerProfile.printerMissing')}{' '}
                 <button
                   type="button"
                   onClick={() => {
@@ -705,7 +707,7 @@ export const CreatePrinterProfileModal: React.FC<CreatePrinterProfileModalProps>
                   }}
                   className="text-purple-400 hover:text-purple-300 underline"
                 >
-                  Запросить добавление принтера
+                  {t('printerProfile.requestPrinter')}
                 </button>
               </p>
             )}
@@ -714,24 +716,24 @@ export const CreatePrinterProfileModal: React.FC<CreatePrinterProfileModalProps>
 
         <div>
           <label className="block text-sm font-medium text-gray-300 mb-2">
-            Vendor (производитель/поставщик)
+            {t('printerProfile.vendor')}
           </label>
           <input
             type="text"
             value={vendor}
             onChange={(e) => setVendor(e.target.value)}
             className="w-full bg-white/5 border border-white/10 rounded-lg px-4 py-2 text-white placeholder-gray-500 focus:outline-none focus:border-purple-500"
-            placeholder="Например: Bambu Lab, Creality"
+            placeholder={t('printerProfile.vendorPlaceholder')}
           />
         </div>
 
         <div>
           <label className="block text-sm font-medium text-gray-300 mb-3">
-            Рабочая область (мм)
+            {t('printerProfile.printArea')}
           </label>
           <div className="grid grid-cols-3 gap-4">
             <div>
-              <label className="block text-xs text-gray-400 mb-1">Ширина X (мм)</label>
+              <label className="block text-xs text-gray-400 mb-1">{t('printerProfile.widthX')}</label>
               <input
                 type="number"
                 step="0.1"
@@ -742,7 +744,7 @@ export const CreatePrinterProfileModal: React.FC<CreatePrinterProfileModalProps>
               />
             </div>
             <div>
-              <label className="block text-xs text-gray-400 mb-1">Глубина Y (мм)</label>
+              <label className="block text-xs text-gray-400 mb-1">{t('printerProfile.depthY')}</label>
               <input
                 type="number"
                 step="0.1"
@@ -753,7 +755,7 @@ export const CreatePrinterProfileModal: React.FC<CreatePrinterProfileModalProps>
               />
             </div>
             <div>
-              <label className="block text-xs text-gray-400 mb-1">Высота Z (мм)</label>
+              <label className="block text-xs text-gray-400 mb-1">{t('printerProfile.heightZ')}</label>
               <input
                 type="number"
                 step="0.1"
@@ -768,7 +770,7 @@ export const CreatePrinterProfileModal: React.FC<CreatePrinterProfileModalProps>
 
         <div>
           <label className="block text-sm font-medium text-gray-300 mb-2">
-            Диаметры сопел (мм)
+            {t('printerProfile.nozzleDiameters')}
           </label>
           <div className="space-y-3">
             {nozzleDiameters.length > 0 && (
@@ -778,12 +780,12 @@ export const CreatePrinterProfileModal: React.FC<CreatePrinterProfileModalProps>
                     key={diameter}
                     className="inline-flex items-center gap-1 px-3 py-1 rounded-full bg-purple-500/20 text-purple-200 text-sm"
                   >
-                    {diameter} мм
+                    {diameter} {t('printerProfile.units.mm')}
                     <button
                       type="button"
                       onClick={() => handleRemoveNozzleDiameter(diameter)}
                       className="hover:text-white transition"
-                      aria-label="Удалить диаметр"
+                      aria-label={t('printerProfile.removeDiameter')}
                     >
                       ×
                     </button>
@@ -812,7 +814,7 @@ export const CreatePrinterProfileModal: React.FC<CreatePrinterProfileModalProps>
                 onClick={handleAddNozzleDiameter}
                 className="px-4 py-2 bg-white/10 hover:bg-white/20 text-white rounded-lg transition-all"
               >
-                Добавить
+                {t('printerProfile.add')}
               </button>
             </div>
           </div>
@@ -820,7 +822,7 @@ export const CreatePrinterProfileModal: React.FC<CreatePrinterProfileModalProps>
 
         <div>
           <label className="block text-sm font-medium text-gray-300 mb-2">
-            Материалы по умолчанию
+            {t('printerProfile.defaultMaterials')}
           </label>
           <div className="flex flex-wrap gap-2 mb-2">
             {defaultMaterials.map((material) => (
@@ -833,7 +835,7 @@ export const CreatePrinterProfileModal: React.FC<CreatePrinterProfileModalProps>
                   type="button"
                   onClick={() => setDefaultMaterials(defaultMaterials.filter((m) => m !== material))}
                   className="hover:text-white transition"
-                  aria-label="Удалить материал"
+                  aria-label={t('printerProfile.removeMaterial')}
                 >
                   ×
                 </button>
@@ -859,14 +861,14 @@ export const CreatePrinterProfileModal: React.FC<CreatePrinterProfileModalProps>
               onClick={handleAddMaterial}
               className="px-4 py-2 bg-white/10 hover:bg-white/20 text-white rounded-lg transition-all"
             >
-              Добавить
+              {t('printerProfile.add')}
             </button>
           </div>
         </div>
 
         <div>
           <label className="block text-sm font-medium text-gray-300 mb-2">
-            URL изображения
+            {t('printerProfile.imageUrl')}
           </label>
           <input
             type="url"
@@ -878,18 +880,18 @@ export const CreatePrinterProfileModal: React.FC<CreatePrinterProfileModalProps>
 
         {metadataInvalid ? (
           <div className="rounded-lg border border-red-500/40 bg-red-500/10 px-4 py-3 text-sm text-red-200">
-            Не удалось разобрать JSON в поле «Дополнительные метаданные». Исправьте содержимое вручную или нажмите «Форматировать».
+            {t('printerProfile.jsonParseError')}
           </div>
         ) : (
           <div className="space-y-6">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
-                <label className="block text-gray-300 mb-2 text-sm font-medium">Структура принтера</label>
+                <label className="block text-gray-300 mb-2 text-sm font-medium">{t('printerProfile.printerStructure')}</label>
                 <CustomSelect
                   value={getMetadataString('printer_structure') || null}
                   onChange={(value) => handleMetadataStringChange('printer_structure', (value as string) || '')}
                   options={printerStructureOptions.map((option) => ({ value: option, label: option }))}
-                  placeholder="Выберите структуру"
+                  placeholder={t('printerProfile.selectStructure')}
                 />
               </div>
               <div>
@@ -898,29 +900,29 @@ export const CreatePrinterProfileModal: React.FC<CreatePrinterProfileModalProps>
                   value={getMetadataString('gcode_flavor') || null}
                   onChange={(value) => handleMetadataStringChange('gcode_flavor', (value as string) || '')}
                   options={gcodeFlavorOptions.map((option) => ({ value: option, label: option }))}
-                  placeholder="Выберите flavor"
+                  placeholder={t('printerProfile.selectFlavor')}
                 />
               </div>
               <div>
-                <label className="block text-gray-300 mb-2 text-sm font-medium">Технология печати</label>
+                <label className="block text-gray-300 mb-2 text-sm font-medium">{t('printerProfile.printTechnology')}</label>
                 <CustomSelect
                   value={getMetadataString('printer_technology') || null}
                   onChange={(value) => handleMetadataStringChange('printer_technology', (value as string) || '')}
                   options={printerTechnologyOptions.map((option) => ({ value: option, label: option }))}
-                  placeholder="Выберите технологию"
+                  placeholder={t('printerProfile.selectTechnology')}
                 />
               </div>
               <div>
-                <label className="block text-gray-300 mb-2 text-sm font-medium">Пластина стола по умолчанию</label>
+                <label className="block text-gray-300 mb-2 text-sm font-medium">{t('printerProfile.defaultBedType')}</label>
                 <CustomSelect
                   value={getMetadataString('default_bed_type') || null}
                   onChange={(value) => handleMetadataStringChange('default_bed_type', (value as string) || '')}
                   options={defaultBedTypeOptions.map((option) => ({ value: option, label: option }))}
-                  placeholder="Выберите пластину"
+                  placeholder={t('printerProfile.selectBedType')}
                 />
               </div>
               <div>
-                <label className="block text-gray-300 mb-2 text-sm font-medium">Хотэнд</label>
+                <label className="block text-gray-300 mb-2 text-sm font-medium">{t('printerProfile.hotend')}</label>
                 <input
                   type="text"
                   value={getMetadataString('hotend_model')}
@@ -930,7 +932,7 @@ export const CreatePrinterProfileModal: React.FC<CreatePrinterProfileModalProps>
                 />
               </div>
               <div>
-                <label className="block text-gray-300 mb-2 text-sm font-medium">Стоимость часа печати</label>
+                <label className="block text-gray-300 mb-2 text-sm font-medium">{t('printerProfile.timeCost')}</label>
                 <input
                   type="text"
                   value={getMetadataString('time_cost')}
@@ -940,7 +942,7 @@ export const CreatePrinterProfileModal: React.FC<CreatePrinterProfileModalProps>
                 />
               </div>
               <div>
-                <label className="block text-gray-300 mb-2 text-sm font-medium">Профиль филамента по умолчанию</label>
+                <label className="block text-gray-300 mb-2 text-sm font-medium">{t('printerProfile.defaultFilamentProfile')}</label>
                 <input
                   type="text"
                   value={getMetadataListString('default_filament_profile')}
@@ -950,7 +952,7 @@ export const CreatePrinterProfileModal: React.FC<CreatePrinterProfileModalProps>
                 />
               </div>
               <div>
-                <label className="block text-gray-300 mb-2 text-sm font-medium">Вариант принтера</label>
+                <label className="block text-gray-300 mb-2 text-sm font-medium">{t('printerProfile.printerVariant')}</label>
                 <input
                   type="text"
                   value={getMetadataListString('printer_variant')}
@@ -962,11 +964,11 @@ export const CreatePrinterProfileModal: React.FC<CreatePrinterProfileModalProps>
             </div>
 
             <div>
-              <h5 className="text-xs font-semibold uppercase tracking-wide text-purple-200/70 mb-3">Стол и ограничения</h5>
+              <h5 className="text-xs font-semibold uppercase tracking-wide text-purple-200/70 mb-3">{t('printerProfile.sections.bedConstraints')}</h5>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 {bedGeometryFields.map((field) => (
                   <div key={field.key}>
-                    <label className="block text-gray-300 mb-2 text-sm font-medium">{field.label}</label>
+                    <label className="block text-gray-300 mb-2 text-sm font-medium">{t(field.labelKey)}</label>
                     <input
                       type="text"
                       value={
@@ -988,7 +990,7 @@ export const CreatePrinterProfileModal: React.FC<CreatePrinterProfileModalProps>
             </div>
 
             <div>
-              <h5 className="text-xs font-semibold uppercase tracking-wide text-purple-200/70 mb-3">Флаги и режимы</h5>
+              <h5 className="text-xs font-semibold uppercase tracking-wide text-purple-200/70 mb-3">{t('printerProfile.sections.flagsAndModes')}</h5>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                 {firmwareFlagOptions.map((option) => (
                   <div key={option.key} className="flex items-start gap-3">
@@ -1001,9 +1003,9 @@ export const CreatePrinterProfileModal: React.FC<CreatePrinterProfileModalProps>
                     />
                     <div>
                       <label htmlFor={`flag-${option.key}`} className="text-gray-300 text-sm font-medium">
-                        {option.label}
+                        {t(option.labelKey)}
                       </label>
-                      {option.description && <p className="text-xs text-gray-500">{option.description}</p>}
+                      {option.descriptionKey && <p className="text-xs text-gray-500">{t(option.descriptionKey)}</p>}
                     </div>
                   </div>
                 ))}
@@ -1015,7 +1017,7 @@ export const CreatePrinterProfileModal: React.FC<CreatePrinterProfileModalProps>
               <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
                 {coolingFanFields.map((field) => (
                   <div key={field.key} className="space-y-2">
-                    <label className="block min-h-[38px] text-gray-300 text-sm font-medium leading-tight flex items-end">{field.label}</label>
+                    <label className="block min-h-[38px] text-gray-300 text-sm font-medium leading-tight flex items-end">{t(field.labelKey)}</label>
                     <div className="relative">
                       <input
                         type="text"
@@ -1036,11 +1038,11 @@ export const CreatePrinterProfileModal: React.FC<CreatePrinterProfileModalProps>
             </div>
 
             <div>
-              <h5 className="text-xs font-semibold uppercase tracking-wide text-purple-200/70 mb-3">Экструдер: рабочая область</h5>
+              <h5 className="text-xs font-semibold uppercase tracking-wide text-purple-200/70 mb-3">{t('printerProfile.sections.extruderClearance')}</h5>
               <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
                 {extruderClearanceFields.map((field) => (
                   <div key={field.key} className="space-y-2">
-                    <label className="block min-h-[38px] text-gray-300 text-sm font-medium leading-tight flex items-end">{field.label}</label>
+                    <label className="block min-h-[38px] text-gray-300 text-sm font-medium leading-tight flex items-end">{t(field.labelKey)}</label>
                     <div className="relative">
                       <input
                         type="text"
@@ -1065,7 +1067,7 @@ export const CreatePrinterProfileModal: React.FC<CreatePrinterProfileModalProps>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 {adaptiveMeshFields.map((field) => (
                   <div key={field.key}>
-                    <label className="block text-gray-300 mb-2 text-sm font-medium">{field.label}</label>
+                    <label className="block text-gray-300 mb-2 text-sm font-medium">{t(field.labelKey)}</label>
                     <input
                       type="text"
                       value={getMetadataListString(field.key)}
@@ -1079,11 +1081,11 @@ export const CreatePrinterProfileModal: React.FC<CreatePrinterProfileModalProps>
             </div>
 
             <div>
-              <h5 className="text-xs font-semibold uppercase tracking-wide text-purple-200/70 mb-3">Thumbnails</h5>
+              <h5 className="text-xs font-semibold uppercase tracking-wide text-purple-200/70 mb-3">{t('printerProfile.sections.thumbnails')}</h5>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 {thumbnailsFields.map((field) => (
                   <div key={field.key}>
-                    <label className="block text-gray-300 mb-2 text-sm font-medium">{field.label}</label>
+                    <label className="block text-gray-300 mb-2 text-sm font-medium">{t(field.labelKey)}</label>
                     <input
                       type="text"
                       value={getMetadataString(field.key)}
@@ -1100,7 +1102,7 @@ export const CreatePrinterProfileModal: React.FC<CreatePrinterProfileModalProps>
 
         <div>
           <label className="block text-sm font-medium text-gray-300 mb-2">
-            Дополнительные метаданные (JSON)
+            {t('printerProfile.extraMetadata')}
           </label>
           <div className="flex flex-col md:flex-row md:items-start gap-2 mb-2">
             <textarea
@@ -1120,12 +1122,12 @@ export const CreatePrinterProfileModal: React.FC<CreatePrinterProfileModalProps>
               onClick={handleFormatJson}
               className="px-4 py-3 bg-white/10 hover:bg-white/20 text-white rounded-lg text-xs font-medium transition-all"
             >
-              Форматировать
+              {t('printerProfile.formatJson')}
             </button>
           </div>
           {jsonError && <p className="text-red-400 text-xs mt-1">{jsonError}</p>}
           <p className="text-xs text-gray-500 mt-1">
-            Для произвольных флагов из OrcaSlicer. Например: {"{\"source\":\"system\",\"profile\":\"Bambu X1C\"}"}.
+            {t('printerProfile.extraMetadataHint')}
           </p>
         </div>
       </div>
@@ -1136,12 +1138,12 @@ export const CreatePrinterProfileModal: React.FC<CreatePrinterProfileModalProps>
     <div className="space-y-6">
       {metadataInvalid ? (
         <div className="rounded-lg border border-red-500/40 bg-red-500/10 px-4 py-3 text-sm text-red-200">
-          Невозможно отобразить настройки движения: extra_metadata содержит некорректный JSON.
+          {t('printerProfile.jsonErrorMotion')}
         </div>
       ) : (
         <div className="space-y-6">
           <div>
-            <h5 className="text-xs font-semibold uppercase tracking-wide text-purple-200/70 mb-3">Максимальная скорость (мм/с)</h5>
+            <h5 className="text-xs font-semibold uppercase tracking-wide text-purple-200/70 mb-3">{t('printerProfile.motion.maxSpeed')}</h5>
             <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
               {(['machine_max_speed_x', 'machine_max_speed_y', 'machine_max_speed_z', 'machine_max_speed_e'] as const).map((key) => (
                 <div key={key}>
@@ -1159,7 +1161,7 @@ export const CreatePrinterProfileModal: React.FC<CreatePrinterProfileModalProps>
           </div>
 
           <div>
-            <h5 className="text-xs font-semibold uppercase tracking-wide text-purple-200/70 mb-3">Ускорения (мм/с²)</h5>
+            <h5 className="text-xs font-semibold uppercase tracking-wide text-purple-200/70 mb-3">{t('printerProfile.motion.acceleration')}</h5>
             <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
               {(['machine_max_acceleration_x', 'machine_max_acceleration_y', 'machine_max_acceleration_z', 'machine_max_acceleration_e'] as const).map((key) => (
                 <div key={key}>
@@ -1176,9 +1178,9 @@ export const CreatePrinterProfileModal: React.FC<CreatePrinterProfileModalProps>
             </div>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-4">
               {([
-                { key: 'machine_max_acceleration_extruding', label: 'Экструзия' },
-                { key: 'machine_max_acceleration_retracting', label: 'Ретракция' },
-                { key: 'machine_max_acceleration_travel', label: 'Перемещения' },
+                { key: 'machine_max_acceleration_extruding', label: t('printerProfile.motion.extruding') },
+                { key: 'machine_max_acceleration_retracting', label: t('printerProfile.motion.retracting') },
+                { key: 'machine_max_acceleration_travel', label: t('printerProfile.motion.travel') },
               ] as const).map(({ key, label }) => (
                 <div key={key}>
                   <label className="block text-gray-300 mb-2 text-sm font-medium">{label}</label>
@@ -1213,10 +1215,10 @@ export const CreatePrinterProfileModal: React.FC<CreatePrinterProfileModalProps>
           </div>
 
           <div>
-            <h5 className="text-xs font-semibold uppercase tracking-wide text-purple-200/70 mb-3">Минимальные скорости (мм/с)</h5>
+            <h5 className="text-xs font-semibold uppercase tracking-wide text-purple-200/70 mb-3">{t('printerProfile.motion.minSpeeds')}</h5>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
-                <label className="block text-gray-300 mb-2 text-sm font-medium">Минимальная скорость экструзии</label>
+                <label className="block text-gray-300 mb-2 text-sm font-medium">{t('printerProfile.motion.minExtrudingRate')}</label>
                 <input
                   type="text"
                   value={getMetadataListString('machine_min_extruding_rate')}
@@ -1226,7 +1228,7 @@ export const CreatePrinterProfileModal: React.FC<CreatePrinterProfileModalProps>
                 />
               </div>
               <div>
-                <label className="block text-gray-300 mb-2 text-sm font-medium">Минимальная скорость перемещения</label>
+                <label className="block text-gray-300 mb-2 text-sm font-medium">{t('printerProfile.motion.minTravelRate')}</label>
                 <input
                   type="text"
                   value={getMetadataListString('machine_min_travel_rate')}
@@ -1251,21 +1253,21 @@ export const CreatePrinterProfileModal: React.FC<CreatePrinterProfileModalProps>
       <div className="space-y-6">
         {metadataInvalid ? (
           <div className="rounded-lg border border-red-500/40 bg-red-500/10 px-4 py-3 text-sm text-red-200">
-            Невозможно показать настройки Orca для экструдера: extra_metadata содержит некорректный JSON.
+            {t('printerProfile.jsonErrorExtruder')}
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
-              <label className="block text-gray-300 mb-2 text-sm font-medium">Тип экструдера</label>
+              <label className="block text-gray-300 mb-2 text-sm font-medium">{t('printerProfile.extruder.type')}</label>
               <CustomSelect
                 value={getMetadataString('extruder_type') || null}
                 onChange={(value) => handleMetadataStringChange('extruder_type', (value as string) || '')}
                 options={extruderTypeOptions.map((option) => ({ value: option, label: option }))}
-                placeholder="Выберите тип"
+                placeholder={t('printerProfile.selectType')}
               />
             </div>
             <div>
-              <label className="block text-gray-300 mb-2 text-sm font-medium">Варианты экструдера</label>
+              <label className="block text-gray-300 mb-2 text-sm font-medium">{t('printerProfile.extruder.variants')}</label>
               <input
                 type="text"
                 value={getMetadataListString('extruder_variant_list')}
@@ -1275,16 +1277,16 @@ export const CreatePrinterProfileModal: React.FC<CreatePrinterProfileModalProps>
               />
             </div>
             <div>
-              <label className="block text-gray-300 mb-2 text-sm font-medium">Тип сопла</label>
+              <label className="block text-gray-300 mb-2 text-sm font-medium">{t('printerProfile.extruder.nozzleType')}</label>
               <CustomSelect
                 value={selectedNozzleType || null}
                 onChange={(value) => handleMetadataSelectFromOptions('nozzle_type', (value as string) || null)}
                 options={nozzleTypeOptions.map((option) => ({ value: option, label: option }))}
-                placeholder="Выберите тип"
+                placeholder={t('printerProfile.selectType')}
               />
             </div>
             <div>
-              <label className="block text-gray-300 mb-2 text-sm font-medium">Объем сопла</label>
+              <label className="block text-gray-300 mb-2 text-sm font-medium">{t('printerProfile.extruder.nozzleVolume')}</label>
               <div className="relative">
                 <input
                   type="text"
@@ -1297,7 +1299,7 @@ export const CreatePrinterProfileModal: React.FC<CreatePrinterProfileModalProps>
               </div>
             </div>
             <div>
-              <label className="block text-gray-300 mb-2 text-sm font-medium">Зазор до крышки</label>
+              <label className="block text-gray-300 mb-2 text-sm font-medium">{t('printerProfile.extruder.clearanceToLid')}</label>
               <div className="relative">
                 <input
                   type="text"
@@ -1310,7 +1312,7 @@ export const CreatePrinterProfileModal: React.FC<CreatePrinterProfileModalProps>
               </div>
             </div>
             <div>
-              <label className="block text-gray-300 mb-2 text-sm font-medium">Макс. радиус зоны экструдера</label>
+              <label className="block text-gray-300 mb-2 text-sm font-medium">{t('printerProfile.extruder.maxRadius')}</label>
               <div className="relative">
                 <input
                   type="text"
@@ -1323,7 +1325,7 @@ export const CreatePrinterProfileModal: React.FC<CreatePrinterProfileModalProps>
               </div>
             </div>
             <div>
-              <label className="block text-gray-300 mb-2 text-sm font-medium">ID экструдера принтера</label>
+              <label className="block text-gray-300 mb-2 text-sm font-medium">{t('printerProfile.extruder.printerId')}</label>
               <input
                 type="text"
                 value={getMetadataListString('printer_extruder_id')}
@@ -1333,7 +1335,7 @@ export const CreatePrinterProfileModal: React.FC<CreatePrinterProfileModalProps>
               />
             </div>
             <div>
-              <label className="block text-gray-300 mb-2 text-sm font-medium">Вариант экструдера принтера</label>
+              <label className="block text-gray-300 mb-2 text-sm font-medium">{t('printerProfile.extruder.printerVariant')}</label>
               <input
                 type="text"
                 value={getMetadataListString('printer_extruder_variant')}
@@ -1343,7 +1345,7 @@ export const CreatePrinterProfileModal: React.FC<CreatePrinterProfileModalProps>
               />
             </div>
             <div>
-              <label className="block text-gray-300 mb-2 text-sm font-medium">Физическая карта экструдеров</label>
+              <label className="block text-gray-300 mb-2 text-sm font-medium">{t('printerProfile.extruder.physicalMap')}</label>
               <input
                 type="text"
                 value={getMetadataListString('physical_extruder_map')}
@@ -1353,7 +1355,7 @@ export const CreatePrinterProfileModal: React.FC<CreatePrinterProfileModalProps>
               />
             </div>
             <div>
-              <label className="block text-gray-300 mb-2 text-sm font-medium">Макс. высота слоя (мм)</label>
+              <label className="block text-gray-300 mb-2 text-sm font-medium">{t('printerProfile.extruder.maxLayerHeight')}</label>
               <input
                 type="text"
                 value={getMetadataString('max_layer_height')}
@@ -1363,7 +1365,7 @@ export const CreatePrinterProfileModal: React.FC<CreatePrinterProfileModalProps>
               />
             </div>
             <div>
-              <label className="block text-gray-300 mb-2 text-sm font-medium">Мин. высота слоя (мм)</label>
+              <label className="block text-gray-300 mb-2 text-sm font-medium">{t('printerProfile.extruder.minLayerHeight')}</label>
               <input
                 type="text"
                 value={getMetadataString('min_layer_height')}
@@ -1376,15 +1378,15 @@ export const CreatePrinterProfileModal: React.FC<CreatePrinterProfileModalProps>
         )}
 
         <div>
-          <h5 className="text-xs font-semibold uppercase tracking-wide text-purple-200/70 mb-3">Ретракция и Z-hop</h5>
+          <h5 className="text-xs font-semibold uppercase tracking-wide text-purple-200/70 mb-3">{t('printerProfile.sections.retractionZhop')}</h5>
           {metadataInvalid ? (
             <p className="text-xs text-red-200">
-              Невозможно отобразить параметры: extra_metadata содержит некорректный JSON.
+              {t('printerProfile.jsonErrorGeneric')}
             </p>
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
-                <label className="block text-gray-300 mb-2 text-sm font-medium">Ретракция (мм)</label>
+                <label className="block text-gray-300 mb-2 text-sm font-medium">{t('printerProfile.retraction.length')}</label>
                 <input
                   type="text"
                   value={getMetadataListString('retraction_length')}
@@ -1394,7 +1396,7 @@ export const CreatePrinterProfileModal: React.FC<CreatePrinterProfileModalProps>
                 />
               </div>
               <div>
-                <label className="block text-gray-300 mb-2 text-sm font-medium">Скорость ретракции (мм/с)</label>
+                <label className="block text-gray-300 mb-2 text-sm font-medium">{t('printerProfile.retraction.speed')}</label>
                 <input
                   type="text"
                   value={getMetadataListString('retraction_speed')}
@@ -1404,7 +1406,7 @@ export const CreatePrinterProfileModal: React.FC<CreatePrinterProfileModalProps>
                 />
               </div>
               <div>
-                <label className="block text-gray-300 mb-2 text-sm font-medium">Скорость деретракции (мм/с)</label>
+                <label className="block text-gray-300 mb-2 text-sm font-medium">{t('printerProfile.retraction.deretractSpeed')}</label>
                 <input
                   type="text"
                   value={getMetadataListString('deretraction_speed')}
@@ -1414,7 +1416,7 @@ export const CreatePrinterProfileModal: React.FC<CreatePrinterProfileModalProps>
                 />
               </div>
               <div>
-                <label className="block text-gray-300 mb-2 text-sm font-medium">Минимальное движение для ретракта (мм)</label>
+                <label className="block text-gray-300 mb-2 text-sm font-medium">{t('printerProfile.retraction.minTravel')}</label>
                 <input
                   type="text"
                   value={getMetadataListString('retraction_minimum_travel')}
@@ -1424,7 +1426,7 @@ export const CreatePrinterProfileModal: React.FC<CreatePrinterProfileModalProps>
                 />
               </div>
               <div>
-                <label className="block text-gray-300 mb-2 text-sm font-medium">Ретракт перед очисткой (%)</label>
+                <label className="block text-gray-300 mb-2 text-sm font-medium">{t('printerProfile.retraction.beforeWipe')}</label>
                 <input
                   type="text"
                   value={getMetadataListString('retract_before_wipe')}
@@ -1454,7 +1456,7 @@ export const CreatePrinterProfileModal: React.FC<CreatePrinterProfileModalProps>
                 />
               </div>
               <div>
-                <label className="block text-gray-300 mb-2 text-sm font-medium">Тип Z-hop</label>
+                <label className="block text-gray-300 mb-2 text-sm font-medium">{t('printerProfile.retraction.zhopType')}</label>
                 <input
                   type="text"
                   value={getMetadataListString('z_hop_types')}
@@ -1464,7 +1466,7 @@ export const CreatePrinterProfileModal: React.FC<CreatePrinterProfileModalProps>
                 />
               </div>
               <div>
-                <label className="block text-gray-300 mb-2 text-sm font-medium">Ретракт при смене инструмента (мм)</label>
+                <label className="block text-gray-300 mb-2 text-sm font-medium">{t('printerProfile.retraction.toolchange')}</label>
                 <input
                   type="text"
                   value={getMetadataListString('retract_length_toolchange')}
@@ -1483,9 +1485,9 @@ export const CreatePrinterProfileModal: React.FC<CreatePrinterProfileModalProps>
                 />
                 <div>
                   <label htmlFor="enable_long_retraction_when_cut" className="text-gray-300 text-sm font-medium">
-                    Длинная ретракция при резке
+                    {t('printerProfile.retraction.longRetractionOnCut')}
                   </label>
-                  <p className="text-xs text-gray-500">Включает длинную ретракцию при резке нити</p>
+                  <p className="text-xs text-gray-500">{t('printerProfile.retraction.longRetractionOnCutDesc')}</p>
                 </div>
               </div>
             </div>
@@ -1499,7 +1501,7 @@ export const CreatePrinterProfileModal: React.FC<CreatePrinterProfileModalProps>
     <div className="space-y-6">
       {metadataInvalid ? (
         <div className="rounded-lg border border-red-500/40 bg-red-500/10 px-4 py-3 text-sm text-red-200">
-          Невозможно отобразить параметры мульти-материала: extra_metadata содержит некорректный JSON.
+          {t('printerProfile.jsonErrorMultimaterial')}
         </div>
       ) : (
         <div className="space-y-6">
@@ -1525,7 +1527,7 @@ export const CreatePrinterProfileModal: React.FC<CreatePrinterProfileModalProps>
                 className="w-4 h-4 rounded border-white/30 bg-white/10"
               />
               <label htmlFor="purge_in_prime_tower" className="text-gray-300 text-sm">
-                Очищать в башне (purge_in_prime_tower)
+                {t('printerProfile.multi.purgeInTower')}
               </label>
             </div>
             <div className="flex items-center gap-3">
@@ -1537,7 +1539,7 @@ export const CreatePrinterProfileModal: React.FC<CreatePrinterProfileModalProps>
                 className="w-4 h-4 rounded border-white/30 bg-white/10"
               />
               <label htmlFor="enable_filament_ramming" className="text-gray-300 text-sm">
-                Включить ramming
+                {t('printerProfile.multi.enableRamming')}
               </label>
             </div>
             <div className="flex items-center gap-3">
@@ -1549,14 +1551,14 @@ export const CreatePrinterProfileModal: React.FC<CreatePrinterProfileModalProps>
                 className="w-4 h-4 rounded border-white/30 bg-white/10"
               />
               <label htmlFor="manual_filament_change" className="text-gray-300 text-sm">
-                Ручная замена филамента
+                {t('printerProfile.multi.manualFilamentChange')}
               </label>
             </div>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
-              <label className="block text-gray-300 mb-2 text-sm font-medium">Время загрузки филамента (сек)</label>
+              <label className="block text-gray-300 mb-2 text-sm font-medium">{t('printerProfile.multi.loadTime')}</label>
               <input
                 type="text"
                 value={getMetadataString('machine_load_filament_time')}
@@ -1566,7 +1568,7 @@ export const CreatePrinterProfileModal: React.FC<CreatePrinterProfileModalProps>
               />
             </div>
             <div>
-              <label className="block text-gray-300 mb-2 text-sm font-medium">Время выгрузки филамента (сек)</label>
+              <label className="block text-gray-300 mb-2 text-sm font-medium">{t('printerProfile.multi.unloadTime')}</label>
               <input
                 type="text"
                 value={getMetadataString('machine_unload_filament_time')}
@@ -1576,7 +1578,7 @@ export const CreatePrinterProfileModal: React.FC<CreatePrinterProfileModalProps>
               />
             </div>
             <div>
-              <label className="block text-gray-300 mb-2 text-sm font-medium">Время смены экструдера (сек)</label>
+              <label className="block text-gray-300 mb-2 text-sm font-medium">{t('printerProfile.multi.switchExtruderTime')}</label>
               <input
                 type="text"
                 value={getMetadataString('machine_switch_extruder_time')}
@@ -1586,12 +1588,12 @@ export const CreatePrinterProfileModal: React.FC<CreatePrinterProfileModalProps>
               />
             </div>
             <div>
-              <label className="block text-gray-300 mb-2 text-sm font-medium">Очистка перед парковкой (мм)</label>
+              <label className="block text-gray-300 mb-2 text-sm font-medium">{t('printerProfile.multi.parkingRetraction')}</label>
               <input
                 type="text"
                 value={getMetadataString('parking_pos_retraction')}
                 onChange={(e) => handleMetadataStringChange('parking_pos_retraction', e.target.value)}
-                placeholder="например 16"
+                placeholder="16"
                 className="w-full bg-white/5 border border-white/10 rounded-lg px-4 py-2 text-white placeholder-gray-500 focus:outline-none focus:border-purple-500"
               />
             </div>
@@ -1645,7 +1647,7 @@ export const CreatePrinterProfileModal: React.FC<CreatePrinterProfileModalProps>
     <div className="space-y-6">
       {metadataInvalid ? (
         <div className="rounded-lg border border-red-500/40 bg-red-500/10 px-4 py-3 text-sm text-red-200">
-          Невозможно отобразить G-code: extra_metadata содержит некорректный JSON.
+          {t('printerProfile.jsonErrorGcode')}
         </div>
       ) : (
         <div className="space-y-6">
@@ -1658,7 +1660,7 @@ export const CreatePrinterProfileModal: React.FC<CreatePrinterProfileModalProps>
                   <label className="text-gray-300 text-sm font-medium">{label}</label>
                   {value ? (
                     <span className="text-[10px] uppercase tracking-wider text-purple-200/60">
-                      Символов: {value.length}
+                      {t('printerProfile.gcode.chars')}: {value.length}
                     </span>
                   ) : null}
                 </div>
@@ -1669,7 +1671,7 @@ export const CreatePrinterProfileModal: React.FC<CreatePrinterProfileModalProps>
                     onChange={(e) => handleMetadataStringChange(key, e.target.value)}
                     rows={8}
                     className="flex-1 bg-white/5 border border-white/10 rounded-lg px-4 py-2 pr-10 text-white placeholder-gray-500 focus:outline-none focus:border-purple-500 font-mono text-sm resize-none"
-                    placeholder="; Ваш кастомный G-code..."
+                    placeholder={t('printerProfile.gcode.placeholder')}
                   />
                   <button
                     type="button"
@@ -1679,7 +1681,7 @@ export const CreatePrinterProfileModal: React.FC<CreatePrinterProfileModalProps>
                         ? 'text-purple-400 bg-purple-500/20'
                         : 'text-gray-400 hover:text-purple-400'
                     }`}
-                    title="Вставить плейсхолдер"
+                    title={t('printerProfile.gcode.insertPlaceholder')}
                   >
                     <Pencil className="w-4 h-4" />
                   </button>
@@ -1688,7 +1690,7 @@ export const CreatePrinterProfileModal: React.FC<CreatePrinterProfileModalProps>
                       isOpen={showGcodeModals[key]}
                       onClose={() => toggleGcodeModal(key)}
                       onInsert={(placeholderText) => handleInsertGcodePlaceholder(key, textareaId, placeholderText)}
-                      title={`Вставить плейсхолдер в ${label}`}
+                      title={t('printerProfile.gcode.insertPlaceholderIn', { label })}
                     />
                   )}
                 </div>
@@ -1722,7 +1724,7 @@ export const CreatePrinterProfileModal: React.FC<CreatePrinterProfileModalProps>
           <div className="flex items-center gap-3">
             <Printer3DIcon className="w-6 h-6 text-purple-400" />
             <h2 className="text-2xl font-bold text-white">
-              {profile ? 'Редактировать профиль принтера' : baseProfile ? 'Клонировать профиль принтера' : 'Создать профиль принтера'}
+              {profile ? t('printerProfile.titleEdit') : baseProfile ? t('printerProfile.titleClone') : t('printerProfile.titleCreate')}
             </h2>
           </div>
           <button
@@ -1744,7 +1746,7 @@ export const CreatePrinterProfileModal: React.FC<CreatePrinterProfileModalProps>
                 : 'text-gray-400 hover:text-white hover:bg-white/5'
             }`}
           >
-            Общая информация
+            {t('printerProfile.tabs.general')}
           </button>
           <button
             type="button"
@@ -1766,7 +1768,7 @@ export const CreatePrinterProfileModal: React.FC<CreatePrinterProfileModalProps>
                 : 'text-gray-400 hover:text-white hover:bg-white/5'
             }`}
           >
-            Экструдеры
+            {t('printerProfile.tabs.extruders')}
           </button>
           <button
             type="button"
@@ -1799,7 +1801,7 @@ export const CreatePrinterProfileModal: React.FC<CreatePrinterProfileModalProps>
                 : 'text-gray-400 hover:text-white hover:bg-white/5'
             }`}
           >
-            Заметки
+            {t('printerProfile.tabs.notes')}
           </button>
         </div>
 
@@ -1816,17 +1818,17 @@ export const CreatePrinterProfileModal: React.FC<CreatePrinterProfileModalProps>
               {/* Заметки */}
               <div>
                 <label className="block text-sm font-medium text-gray-300 mb-2">
-                  Заметки (только для вас)
+                  {t('printerProfile.notesLabel')}
                 </label>
                 <textarea
                   value={notes}
                   onChange={(e) => setNotes(e.target.value)}
                   rows={10}
                   className="w-full bg-white/5 border border-white/10 rounded-lg px-4 py-2 text-white placeholder-gray-500 focus:outline-none focus:border-purple-500 resize-none"
-                  placeholder="Личные заметки о профиле..."
+                  placeholder={t('printerProfile.notesPlaceholder')}
                 />
                 <p className="text-xs text-gray-500 mt-1">
-                  Эти заметки видны только вам и не отображаются при экспорте в OrcaSlicer
+                  {t('printerProfile.notesHint')}
                 </p>
               </div>
             </div>
@@ -1839,7 +1841,7 @@ export const CreatePrinterProfileModal: React.FC<CreatePrinterProfileModalProps>
               onClick={onClose}
               className="px-6 py-2 rounded-lg border border-white/20 text-gray-300 hover:bg-white/10 transition-all"
             >
-              Отмена
+              {t('printerProfile.cancel')}
             </button>
             <button
               type="submit"
@@ -1849,12 +1851,12 @@ export const CreatePrinterProfileModal: React.FC<CreatePrinterProfileModalProps>
               {createMutation.isPending ? (
                 <>
                   <Loader2 className="w-4 h-4 animate-spin" />
-                  Сохранение...
+                  {t('printerProfile.saving')}
                 </>
               ) : (
                 <>
                   <Save className="w-4 h-4" />
-                  {profile ? 'Сохранить изменения' : 'Создать профиль'}
+                  {profile ? t('printerProfile.saveChanges') : t('printerProfile.createProfile')}
                 </>
               )}
             </button>
