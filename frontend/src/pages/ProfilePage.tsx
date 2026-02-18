@@ -1,6 +1,7 @@
 /** Страница профиля пользователя */
 
 import { useState, useMemo, useEffect, type ReactNode } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 import {
@@ -57,6 +58,7 @@ import type { Preset, PricingMethod, CalculatorEstimateRequest, PrinterProfile, 
 export const ProfilePage: React.FC = () => {
   const { user, refreshUser } = useAuth();
   const queryClient = useQueryClient();
+  const { t } = useTranslation();
   const [showBrandCabinet, setShowBrandCabinet] = useState(false); // Показывать ли кабинет производителя
   const [userTab, setUserTab] = useState<'dashboard' | 'presets' | 'history' | 'calculator' | 'settings' | 'printer-profiles'>(
     'dashboard'
@@ -214,14 +216,14 @@ export const ProfilePage: React.FC = () => {
         let displayName = '';
         
         // Сначала проверяем printer_name - это наиболее точное имя для пользовательских принтеров
-        if (profile.printer_name && !profile.printer_name.startsWith('Принтер ')) {
+        if (profile.printer_name && !profile.printer_name.startsWith('Printer ') && !profile.printer_name.startsWith('Принтер ')) {
           displayName = profile.printer_name;
         } else if (profile.printer_manufacturer && profile.printer_model) {
           // Если есть manufacturer и model, используем их (для официальных принтеров)
           displayName = `${profile.printer_manufacturer} ${profile.printer_model}`;
         } else {
           // Fallback
-          displayName = profile.printer_name || profile.printer_slug || `Принтер ${profile.printer_id}`;
+          displayName = profile.printer_name || profile.printer_slug || `Printer ${profile.printer_id}`;
         }
         
         printerMap.set(profile.printer_id, {
@@ -429,17 +431,17 @@ export const ProfilePage: React.FC = () => {
     },
     onError: (error: any) => {
       console.error('Ошибка удаления сохранённого пресета:', error);
-      alert(error.response?.data?.detail || error.message || 'Не удалось убрать пресет из профиля');
+      alert(error.response?.data?.detail || error.message || t('profilePage.unsaveError'));
     },
   });
 
   const handleDeletePreset = (preset: Preset) => {
     if (preset.source === 'saved') {
-      if (confirm('Убрать пресет из профиля?')) {
+      if (confirm(t('profilePage.confirmUnsave'))) {
         unsavePresetMutation.mutate(preset.id);
       }
     } else {
-      if (confirm('Вы уверены, что хотите удалить этот пресет?')) {
+      if (confirm(t('profilePage.confirmDelete'))) {
         deletePresetMutation.mutate(preset.id);
       }
     }
@@ -531,9 +533,9 @@ export const ProfilePage: React.FC = () => {
       link.remove();
       setTimeout(() => URL.revokeObjectURL(url), 1000);
     } catch (error: any) {
-      console.error('Ошибка скачивания printer profile:', error);
-      const errorMessage = error?.response?.data?.detail || error?.message || 'Неизвестная ошибка';
-      alert(`Не удалось скачать профиль принтера: ${errorMessage}`);
+      console.error('Error downloading printer profile:', error);
+      const errorMessage = error?.response?.data?.detail || error?.message || t('profilePage.unknownError');
+      alert(`${t('profilePage.downloadPrinterProfileError')}: ${errorMessage}`);
     }
   };
 
@@ -557,9 +559,9 @@ export const ProfilePage: React.FC = () => {
       link.remove();
       setTimeout(() => URL.revokeObjectURL(url), 1000);
     } catch (error: any) {
-      console.error('Ошибка скачивания print profile:', error);
-      const errorMessage = error?.response?.data?.detail || error?.message || 'Неизвестная ошибка';
-      alert(`Не удалось скачать профиль печати: ${errorMessage}`);
+      console.error('Error downloading print profile:', error);
+      const errorMessage = error?.response?.data?.detail || error?.message || t('profilePage.unknownError');
+      alert(`${t('profilePage.downloadPrintProfileError')}: ${errorMessage}`);
     }
   };
 
@@ -581,14 +583,14 @@ export const ProfilePage: React.FC = () => {
               className="flex items-center space-x-2 px-6 py-2 rounded-lg transition-all text-gray-300 hover:text-white"
             >
               <User className="w-4 h-4" />
-              <span>Профиль пользователя</span>
+              <span>{t('profilePage.userProfile')}</span>
             </button>
             <button
               onClick={() => setShowBrandCabinet(true)}
               className="flex items-center space-x-2 px-6 py-2 rounded-lg transition-all bg-green-600 text-white shadow-lg shadow-green-500/25"
             >
               <Factory className="w-4 h-4" />
-              <span>Профиль компании</span>
+              <span>{t('profilePage.companyProfile')}</span>
             </button>
           </div>
         </div>
@@ -612,8 +614,8 @@ export const ProfilePage: React.FC = () => {
             }`}
           >
             <User className="w-3.5 h-3.5 md:w-4 md:h-4" />
-            <span className="hidden sm:inline">Пользователь</span>
-            <span className="sm:hidden">Профиль</span>
+            <span className="hidden sm:inline">{t('profilePage.user')}</span>
+            <span className="sm:hidden">{t('profilePage.profile')}</span>
           </button>
           <button
             onClick={() => setShowBrandCabinet(true)}
@@ -624,8 +626,8 @@ export const ProfilePage: React.FC = () => {
             }`}
           >
             <Factory className="w-3.5 h-3.5 md:w-4 md:h-4" />
-            <span className="hidden sm:inline">Компания</span>
-            <span className="sm:hidden">Бренд</span>
+            <span className="hidden sm:inline">{t('profilePage.company')}</span>
+            <span className="sm:hidden">{t('profilePage.brand')}</span>
           </button>
         </div>
       </div>
@@ -637,10 +639,10 @@ export const ProfilePage: React.FC = () => {
             <User className="w-6 h-6 md:w-8 md:h-8 text-white" />
           </div>
           <div className="text-left">
-            <h2 className="text-xl md:text-3xl font-bold text-white mb-0.5 md:mb-1">Мой профиль</h2>
+            <h2 className="text-xl md:text-3xl font-bold text-white mb-0.5 md:mb-1">{t('profilePage.myProfile')}</h2>
             <div className="flex flex-wrap items-center gap-1 md:gap-2">
               <p className="text-gray-300 text-xs md:text-base">
-                {user.full_name || user.username}<span className="hidden md:inline"> • 3D печатник</span>
+                {user.full_name || user.username}<span className="hidden md:inline"> • {t('profilePage.printer3d')}</span>
               </p>
               {user.badges && user.badges.length > 0 && (
                 <BadgeList badges={user.badges as any} size="sm" />
@@ -653,12 +655,12 @@ export const ProfilePage: React.FC = () => {
         <div className="overflow-x-auto -mx-4 px-4 md:mx-0 md:px-0 scrollbar-hide">
           <div className="flex justify-start md:justify-center gap-1.5 md:gap-2 mt-3 md:mt-4 min-w-max">
             {[
-              { id: 'dashboard', label: 'Дашборд', shortLabel: 'Главная', icon: Play },
-              { id: 'presets', label: 'Пресеты', shortLabel: 'Пресеты', icon: Settings },
-              { id: 'printer-profiles', label: 'Принтеры', shortLabel: 'Принтеры', icon: Printer3DIcon },
-              { id: 'history', label: 'История', shortLabel: 'История', icon: TrendingUp },
-              { id: 'calculator', label: 'Калькулятор', shortLabel: 'Калькул.', icon: Calculator },
-              { id: 'settings', label: 'Настройки', shortLabel: 'Настр.', icon: Cog },
+              { id: 'dashboard', label: t('profilePage.tabs.dashboard'), shortLabel: t('profilePage.tabs.dashboardShort'), icon: Play },
+              { id: 'presets', label: t('profilePage.tabs.presets'), shortLabel: t('profilePage.tabs.presetsShort'), icon: Settings },
+              { id: 'printer-profiles', label: t('profilePage.tabs.printers'), shortLabel: t('profilePage.tabs.printersShort'), icon: Printer3DIcon },
+              { id: 'history', label: t('profilePage.tabs.history'), shortLabel: t('profilePage.tabs.historyShort'), icon: TrendingUp },
+              { id: 'calculator', label: t('profilePage.tabs.calculator'), shortLabel: t('profilePage.tabs.calculatorShort'), icon: Calculator },
+              { id: 'settings', label: t('profilePage.tabs.settings'), shortLabel: t('profilePage.tabs.settingsShort'), icon: Cog },
             ].map((tab) => (
               <button
                 key={tab.id}
@@ -685,7 +687,7 @@ export const ProfilePage: React.FC = () => {
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-6">
             <StatCard
               icon={CheckCircle}
-              label="Успешных печатей"
+              label={t('profilePage.stats.successfulPrints')}
               value={reviewsStats.successCount.toString()}
               color="from-purple-500/20 to-pink-500/20"
               borderColor="border-purple-500/30"
@@ -695,13 +697,13 @@ export const ProfilePage: React.FC = () => {
             <div className="bg-gradient-to-r from-blue-500/20 to-cyan-500/20 p-3 md:p-6 rounded-xl md:rounded-2xl border border-blue-500/30 shadow-xl">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-gray-300 text-[10px] md:text-sm mb-0.5 md:mb-1">Пресеты</p>
+                  <p className="text-gray-300 text-[10px] md:text-sm mb-0.5 md:mb-1">{t('profilePage.stats.presets')}</p>
                   <p className="text-xl md:text-3xl font-bold text-white">
                     {presetsStats?.total_presets?.toString() || userPresets.length.toString()}/{presetsStats?.synced_presets?.toString() || '0'}
                   </p>
                   <p className="text-[10px] md:text-xs text-gray-400 mt-0.5 md:mt-1">
-                    <span className="md:hidden">всего / синхр.</span>
-                    <span className="hidden md:inline">всего / к синхронизации</span>
+                    <span className="md:hidden">{t('profilePage.stats.totalSyncShort')}</span>
+                    <span className="hidden md:inline">{t('profilePage.stats.totalSync')}</span>
                   </p>
                 </div>
                 <Settings className="w-5 h-5 md:w-8 md:h-8 text-blue-400" />
@@ -709,7 +711,7 @@ export const ProfilePage: React.FC = () => {
             </div>
             <StatCard
               icon={Star}
-              label="Оставлено отзывов"
+              label={t('profilePage.stats.reviewsLeft')}
               value={reviewsStats.totalReviews.toString()}
               color="from-purple-500/20 to-pink-500/20"
               borderColor="border-purple-500/30"
@@ -717,7 +719,7 @@ export const ProfilePage: React.FC = () => {
             />
             <StatCard
               icon={Star}
-              label="Средний рейтинг"
+              label={t('profilePage.stats.avgRating')}
               value={reviewsStats.avgRating || '—'}
               color="from-yellow-500/20 to-orange-500/20"
               borderColor="border-yellow-500/30"
@@ -835,10 +837,10 @@ export const ProfilePage: React.FC = () => {
                   setEditingPrinterProfile(null);
                   setIsCreatePrinterProfileModalOpen(true);
                 }}
-                title="Создать профиль принтера"
+                title={t('profilePage.createPrinterProfile')}
               >
                 <Plus className="w-4 h-4 inline mr-2" />
-                Добавить профиль
+                {t('profilePage.addProfile')}
               </button>
             </div>
           </div>
@@ -997,10 +999,10 @@ export const ProfilePage: React.FC = () => {
                                               </div>
                                               <div className="flex items-center gap-2">
                                                 {printProfile.is_official && (
-                                                  <StatusBadge label="Системный" variant="accent" />
+                                                  <StatusBadge label={t('profilePage.badge.system')} variant="accent" />
                                                 )}
                                                 <StatusBadge
-                                                  label={printProfile.active ? 'Активен' : 'Отключен'}
+                                                  label={printProfile.active ? t('profilePage.badge.active') : t('profilePage.badge.disabled')}
                                                   variant={printProfile.active ? 'success' : 'muted'}
                                                 />
                                               </div>
@@ -1059,9 +1061,9 @@ export const ProfilePage: React.FC = () => {
           ) : (
             <EmptyState
               icon={Printer3DIcon}
-              title="Пока нет принтеров"
-              description="Импортируйте профили из OrcaSlicer или создайте их вручную - они появятся здесь."
-              actionLabel="Создать профиль принтера"
+              title={t('profilePage.noPrinters')}
+              description={t('profilePage.noPrintersDesc')}
+              actionLabel={t('profilePage.createPrinterProfile')}
               onAction={() => {
                 setEditingPrinterProfile(null);
                 setIsCreatePrinterProfileModalOpen(true);
@@ -1130,28 +1132,28 @@ export const ProfilePage: React.FC = () => {
         <section className="mt-12 space-y-5">
           <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
             <div>
-              <h2 className="text-2xl font-bold text-white">Комбинации профилей</h2>
+              <h2 className="text-2xl font-bold text-white">{t('profilePage.combos.title')}</h2>
               <p className="text-sm text-gray-400">
-                В планах — собирать связки «принтер + профиль печати + материал» и применять их в один клик.
+                {t('profilePage.combos.description')}
               </p>
             </div>
-            <StatusBadge label="в разработке" variant="muted" />
+            <StatusBadge label={t('profilePage.combos.inDevelopment')} variant="muted" />
           </div>
 
           <div className="bg-white/5 border border-dashed border-white/20 rounded-2xl p-6 text-gray-200">
-            <p className="text-lg text-white font-semibold mb-2">Конструктор сетапов готовится к запуску.</p>
+            <p className="text-lg text-white font-semibold mb-2">{t('profilePage.combos.comingSoon')}</p>
             <p className="text-sm text-gray-300">
-              После внедрения обратного импорта OrcaSlicer вы сможете сохранять готовые наборы и делиться ими с командой или друзьями.
+              {t('profilePage.combos.comingSoonDesc')}
             </p>
 
             <div className="mt-4 grid gap-4 md:grid-cols-3">
-              <InfoSummary label="Черновиков профилей принтера" value={myPrinterProfiles.length} />
-              <InfoSummary label="Черновиков профилей печати" value={myPrintProfiles.length} />
-              <InfoSummary label="Доступных пресетов" value={userPresets.length} />
+              <InfoSummary label={t('profilePage.combos.printerProfileDrafts')} value={myPrinterProfiles.length} />
+              <InfoSummary label={t('profilePage.combos.printProfileDrafts')} value={myPrintProfiles.length} />
+              <InfoSummary label={t('profilePage.combos.availablePresets')} value={userPresets.length} />
             </div>
 
             <p className="mt-4 text-xs text-gray-400 uppercase tracking-wide">
-              Комбинаций пока: {combinationsDraftCount}
+              {t('profilePage.combos.combinationsCount')}: {combinationsDraftCount}
             </p>
           </div>
         </section>
@@ -1325,7 +1327,7 @@ const PresetCard: React.FC<PresetCardProps> = ({ preset, onEdit, onView, onDelet
               // Профиль успешно импортирован
             } else if (data.status === 'error') {
               // Показываем ошибку
-              alert(`❌ Ошибка импорта: ${data.message || 'Неизвестная ошибка'}`);
+              alert(`${t('profilePage.importError')}: ${data.message || t('profilePage.unknownError')}`);
             }
           }
         } catch (e) {
@@ -1451,35 +1453,31 @@ const PresetCard: React.FC<PresetCardProps> = ({ preset, onEdit, onView, onDelet
         }, 300);
       }, 0);
     } catch (error: any) {
-      console.error('Ошибка скачивания пресета:', error);
-      
-      // Детальная обработка ошибок
-      let errorMessage = 'Неизвестная ошибка';
+      console.error('Error downloading preset:', error);
+
+      let errorMessage = t('profilePage.unknownError');
       if (error.response) {
-        // Ошибка от сервера
         const status = error.response.status;
         const data = error.response.data;
-        
+
         if (status === 401) {
-          errorMessage = 'Необходима авторизация. Пожалуйста, войдите в систему.';
+          errorMessage = t('profilePage.errors.authRequired');
         } else if (status === 404) {
-          errorMessage = 'Пресет не найден.';
+          errorMessage = t('profilePage.errors.presetNotFound');
         } else if (status === 500) {
-          const detail = data?.detail || 'Внутренняя ошибка сервера';
-          errorMessage = `Ошибка сервера при экспорте: ${detail}`;
-          console.error('Детали ошибки 500:', detail);
+          const detail = data?.detail || t('profilePage.errors.internalError');
+          errorMessage = `${t('profilePage.errors.serverExportError')}: ${detail}`;
+          console.error('Error 500 details:', detail);
         } else {
-          errorMessage = `Ошибка ${status}: ${data?.detail || data?.message || 'Ошибка запроса'}`;
+          errorMessage = `${t('profilePage.errors.errorCode', { code: status })}: ${data?.detail || data?.message || t('profilePage.errors.requestError')}`;
         }
       } else if (error.request) {
-        // Запрос был сделан, но ответа не получено
-        errorMessage = 'Не удалось подключиться к серверу. Проверьте подключение.';
+        errorMessage = t('profilePage.errors.connectionError');
       } else {
-        // Ошибка настройки запроса
-        errorMessage = error.message || 'Ошибка при выполнении запроса';
+        errorMessage = error.message || t('profilePage.errors.requestError');
       }
-      
-      alert(`Не удалось скачать пресет: ${errorMessage}`);
+
+      alert(`${t('profilePage.downloadPresetError')}: ${errorMessage}`);
     } finally {
       setIsDownloading(false);
     }
@@ -1550,7 +1548,7 @@ const PresetCard: React.FC<PresetCardProps> = ({ preset, onEdit, onView, onDelet
             <button
               onClick={() => onEdit?.(preset)}
               className="p-2 bg-white/10 hover:bg-white/20 rounded-lg text-white transition-all"
-              title="Редактировать"
+              title={t('profilePage.edit')}
             >
               <Edit className="w-4 h-4" />
             </button>
@@ -1558,7 +1556,7 @@ const PresetCard: React.FC<PresetCardProps> = ({ preset, onEdit, onView, onDelet
             <button
               onClick={() => onView?.(preset)}
               className="p-2 bg-white/10 hover:bg-white/20 rounded-lg text-white transition-all"
-              title="Посмотреть пресет подробно"
+              title={t('profilePage.viewPreset')}
             >
               <Eye className="w-4 h-4" />
             </button>
@@ -1569,7 +1567,7 @@ const PresetCard: React.FC<PresetCardProps> = ({ preset, onEdit, onView, onDelet
             onClick={handleDownload}
             disabled={isDownloading}
             className="p-2 bg-white/10 hover:bg-white/20 rounded-lg text-white transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-            title={isDownloading ? "Скачивание..." : "Скачать в формате OrcaSlicer"}
+            title={isDownloading ? t('profilePage.downloading') : t('profilePage.downloadOrcaSlicer')}
           >
             {isDownloading ? (
               <Loader2 className="w-4 h-4 animate-spin" />
@@ -1580,7 +1578,7 @@ const PresetCard: React.FC<PresetCardProps> = ({ preset, onEdit, onView, onDelet
           <button
             onClick={() => onDelete?.(preset)}
             className="p-2 bg-white/10 hover:bg-red-500/20 rounded-lg text-white transition-all"
-            title={preset.source === 'saved' ? 'Убрать из профиля' : 'Удалить'}
+            title={preset.source === 'saved' ? t('profilePage.removeFromProfile') : t('profilePage.delete')}
           >
             <Trash2 className="w-4 h-4" />
           </button>
@@ -1590,49 +1588,49 @@ const PresetCard: React.FC<PresetCardProps> = ({ preset, onEdit, onView, onDelet
       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 mb-4 text-sm">
         <div className="flex items-center space-x-2">
           <Thermometer className="w-4 h-4 text-red-400" />
-          <span className="text-gray-300">Сопло: {preset.extruder_temp}°C</span>
+          <span className="text-gray-300">{t('profilePage.preset.nozzle')}: {preset.extruder_temp}°C</span>
         </div>
         <div className="flex items-center space-x-2">
           <Thermometer className="w-4 h-4 text-red-400" />
-          <span className="text-gray-300">Стол: {preset.bed_temp}°C</span>
+          <span className="text-gray-300">{t('profilePage.preset.bed')}: {preset.bed_temp}°C</span>
         </div>
         <div className="flex items-center space-x-2">
           <Gauge className="w-4 h-4 text-blue-400" />
-          <span className="text-gray-300">Скорость: {preset.print_speed}mm/s</span>
+          <span className="text-gray-300">{t('profilePage.preset.speed')}: {preset.print_speed}mm/s</span>
         </div>
         {preset.travel_speed && (
           <div className="flex items-center space-x-2">
             <Wind className="w-4 h-4 text-cyan-400" />
-            <span className="text-gray-300">Перемещение: {preset.travel_speed}mm/s</span>
+            <span className="text-gray-300">{t('profilePage.preset.travel')}: {preset.travel_speed}mm/s</span>
           </div>
         )}
         {preset.flow_rate && (
           <div className="flex items-center space-x-2">
             <Gauge className="w-4 h-4 text-yellow-400" />
-            <span className="text-gray-300">Поток: {preset.flow_rate}%</span>
+            <span className="text-gray-300">{t('profilePage.preset.flow')}: {preset.flow_rate}%</span>
           </div>
         )}
         {preset.fan_speed !== null && (
           <div className="flex items-center space-x-2">
             <Fan className="w-4 h-4 text-orange-400" />
-            <span className="text-gray-300">Обдув: {preset.fan_speed}%</span>
+            <span className="text-gray-300">{t('profilePage.preset.fan')}: {preset.fan_speed}%</span>
           </div>
         )}
         {preset.retraction_length && (
           <div className="flex items-center space-x-2">
             <Wind className="w-4 h-4 text-purple-400" />
-            <span className="text-gray-300">Ретракт: {preset.retraction_length}mm</span>
+            <span className="text-gray-300">{t('profilePage.preset.retract')}: {preset.retraction_length}mm</span>
           </div>
         )}
         {preset.retraction_speed && (
           <div className="flex items-center space-x-2">
             <Gauge className="w-4 h-4 text-indigo-400" />
-            <span className="text-gray-300">Ск. ретракт: {preset.retraction_speed}mm/s</span>
+            <span className="text-gray-300">{t('profilePage.preset.retractSpeed')}: {preset.retraction_speed}mm/s</span>
           </div>
         )}
         <div className="flex items-center space-x-2">
           <CheckCircle className="w-4 h-4 text-green-400" />
-          <span className="text-gray-300">Использований: {preset.usage_count}</span>
+          <span className="text-gray-300">{t('profilePage.preset.usageCount')}: {preset.usage_count}</span>
         </div>
       </div>
 
@@ -2649,8 +2647,8 @@ const PrinterProfileCard: React.FC<PrinterProfileCardProps> = ({
         )}
       </div>
       <div className="flex flex-wrap gap-2 justify-end">
-        <StatusBadge label={profile.active ? 'Активен' : 'Отключен'} variant={profile.active ? 'success' : 'muted'} />
-        {profile.is_official && <StatusBadge label="Официальный" variant="accent" />}
+        <StatusBadge label={profile.active ? t('profilePage.badge.active') : t('profilePage.badge.disabled')} variant={profile.active ? 'success' : 'muted'} />
+        {profile.is_official && <StatusBadge label={t('profilePage.badge.official')} variant="accent" />}
         {printProfilesCount > 0 && (
           <StatusBadge label={`${printProfilesCount} профилей печати`} variant="accent" />
         )}
@@ -2720,10 +2718,10 @@ const PrinterProfileCard: React.FC<PrinterProfileCardProps> = ({
                   </div>
                   <div className="flex items-center gap-2">
                     {printProfile.is_official && (
-                      <StatusBadge label="Системный" variant="accent" />
+                      <StatusBadge label={t('profilePage.badge.system')} variant="accent" />
                     )}
                     <StatusBadge 
-                      label={printProfile.active ? 'Активен' : 'Отключен'} 
+                      label={printProfile.active ? t('profilePage.badge.active') : t('profilePage.badge.disabled')} 
                       variant={printProfile.active ? 'success' : 'muted'}
                     />
                   </div>
@@ -2827,8 +2825,8 @@ const PrintProfileCard: React.FC<PrintProfileCardProps> = ({ profile, formatDate
           <p className="text-sm text-gray-400">Slug: {profile.slug}</p>
         </div>
         <div className="flex flex-wrap gap-2 justify-end">
-          <StatusBadge label={profile.active ? 'Активен' : 'Отключен'} variant={profile.active ? 'success' : 'muted'} />
-          {profile.is_official && <StatusBadge label="Официальный" variant="accent" />}
+          <StatusBadge label={profile.active ? t('profilePage.badge.active') : t('profilePage.badge.disabled')} variant={profile.active ? 'success' : 'muted'} />
+          {profile.is_official && <StatusBadge label={t('profilePage.badge.official')} variant="accent" />}
         </div>
       </div>
       {profile.description && (
@@ -3059,7 +3057,7 @@ const PrinterProfileModal: React.FC<PrinterProfileModalProps> = ({ profile, onCl
             <InfoRow label="Создан" value={formatDateTime(profile.created_at)} />
             <InfoRow label="Обновлён" value={formatDateTime(profile.updated_at)} />
             <InfoRow label="Тип" value={profile.is_official ? 'Официальный' : 'Пользовательский'} />
-            <InfoRow label="Статус" value={profile.active ? 'Активен' : 'Отключен'} />
+            <InfoRow label="Статус" value={profile.active ? t('profilePage.badge.active') : t('profilePage.badge.disabled')} />
             <InfoRow label="Источник" value={profile.source || 'не указан'} />
             <InfoRow label="Вендор" value={profile.vendor || 'не указан'} />
             <InfoRow label="Setting ID" value={profile.setting_id || '—'} />
@@ -3168,7 +3166,7 @@ const PrintProfileModal: React.FC<PrintProfileModalProps> = ({ profile, onClose,
             <InfoRow label="Обновлён" value={formatDateTime(profile.updated_at)} />
             <InfoRow label="Категория" value={profile.category || 'не указана'} />
             <InfoRow label="Тип" value={profile.is_official ? 'Официальный' : 'Пользовательский'} />
-            <InfoRow label="Статус" value={profile.active ? 'Активен' : 'Отключен'} />
+            <InfoRow label="Статус" value={profile.active ? t('profilePage.badge.active') : t('profilePage.badge.disabled')} />
             <InfoRow label="Источник" value={profile.source || 'не указан'} />
             <InfoRow label="Вендор" value={profile.vendor || 'не указан'} />
             <InfoRow label="Setting ID" value={profile.setting_id || '—'} />
