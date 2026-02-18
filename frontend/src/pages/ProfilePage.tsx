@@ -121,7 +121,7 @@ export const ProfilePage: React.FC = () => {
       // Логируем ошибки для отладки
       const errors = results.filter(result => result.status === 'rejected');
       if (errors.length > 0) {
-        console.warn('Некоторые пресеты не удалось загрузить:', errors);
+        console.warn('Some presets failed to load:', errors);
       }
       
       return details;
@@ -430,7 +430,7 @@ export const ProfilePage: React.FC = () => {
       queryClient.invalidateQueries({ queryKey: ['user-presets'] });
     },
     onError: (error: any) => {
-      console.error('Ошибка удаления сохранённого пресета:', error);
+      console.error('Failed to delete saved preset:', error);
       alert(error.response?.data?.detail || error.message || t('profilePage.unsaveError'));
     },
   });
@@ -739,7 +739,7 @@ export const ProfilePage: React.FC = () => {
       {userTab === 'presets' && (
         <div className="space-y-4 md:space-y-6">
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-            <h3 className="text-lg md:text-2xl font-bold text-white">Профили филамента</h3>
+            <h3 className="text-lg md:text-2xl font-bold text-white">{t('profilePage.filamentProfiles')}</h3>
             <div className="flex items-center gap-2 md:gap-3">
               {typeof window !== 'undefined' && (window as any).filamenthub?.exportFilamentPresets && (
                 <ExportFromOrcaSlicerButton />
@@ -749,8 +749,8 @@ export const ProfilePage: React.FC = () => {
                 className="flex-1 sm:flex-none bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 active:from-purple-800 active:to-pink-800 text-white px-3 md:px-4 py-2 rounded-lg md:rounded-xl transition-all shadow-lg shadow-purple-500/25 text-sm md:text-base"
               >
                 <Plus className="w-4 h-4 inline mr-1.5 md:mr-2" />
-                <span className="hidden sm:inline">Новый пресет</span>
-                <span className="sm:hidden">Добавить</span>
+                <span className="hidden sm:inline">{t('profilePage.newPreset')}</span>
+                <span className="sm:hidden">{t('profilePage.add')}</span>
               </button>
             </div>
           </div>
@@ -771,8 +771,8 @@ export const ProfilePage: React.FC = () => {
             <div className="text-center py-8 md:py-12">
               <Settings className="w-12 h-12 md:w-16 md:h-16 text-gray-400 mx-auto mb-3 md:mb-4" />
               <p className="text-gray-400 text-base md:text-xl">
-                <span className="md:hidden">Нет сохраненных пресетов</span>
-                <span className="hidden md:inline">У вас пока нет сохраненных пресетов</span>
+                <span className="md:hidden">{t('profilePage.noPresetsShort')}</span>
+                <span className="hidden md:inline">{t('profilePage.noPresetsLong')}</span>
               </p>
             </div>
           )}
@@ -782,7 +782,7 @@ export const ProfilePage: React.FC = () => {
       {/* History Tab */}
       {userTab === 'history' && (
         <div className="space-y-4 md:space-y-6">
-          <h3 className="text-lg md:text-2xl font-bold text-white">История печати</h3>
+          <h3 className="text-lg md:text-2xl font-bold text-white">{t('profilePage.printHistory')}</h3>
 
           <div className="bg-white/10 backdrop-blur-sm rounded-xl md:rounded-2xl p-4 md:p-6 border border-white/20 shadow-xl">
             {userHistory.length > 0 ? (
@@ -794,7 +794,7 @@ export const ProfilePage: React.FC = () => {
             ) : (
               <div className="text-center py-8 md:py-12">
                 <TrendingUp className="w-12 h-12 md:w-16 md:h-16 text-gray-400 mx-auto mb-3 md:mb-4" />
-                <p className="text-gray-400 text-base md:text-xl">История печати пуста</p>
+                <p className="text-gray-400 text-base md:text-xl">{t('profilePage.printHistoryEmpty')}</p>
               </div>
             )}
           </div>
@@ -805,10 +805,10 @@ export const ProfilePage: React.FC = () => {
       {userTab === 'calculator' && (
         <div className="max-w-4xl mx-auto">
           <div className="text-center mb-4 md:mb-8">
-            <h2 className="text-xl md:text-4xl font-bold text-white mb-2 md:mb-4">Калькулятор стоимости печати</h2>
+            <h2 className="text-xl md:text-4xl font-bold text-white mb-2 md:mb-4">{t('profilePage.calculatorTitle')}</h2>
             <p className="text-sm md:text-xl text-gray-300">
-              <span className="md:hidden">Рассчитайте стоимость детали</span>
-              <span className="hidden md:inline">Рассчитайте точную стоимость детали с учётом региональных особенностей</span>
+              <span className="md:hidden">{t('profilePage.calculatorSubtitleShort')}</span>
+              <span className="hidden md:inline">{t('profilePage.calculatorSubtitleLong')}</span>
             </p>
           </div>
 
@@ -821,13 +821,13 @@ export const ProfilePage: React.FC = () => {
         <div className="space-y-6">
           <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
             <div>
-              <h2 className="text-2xl font-bold text-white">Мои принтеры</h2>
+              <h2 className="text-2xl font-bold text-white">{t('profilePage.myPrinters')}</h2>
               <p className="text-sm text-gray-400">
-                Управление принтерами и их профилями. Синхронизация с OrcaSlicer.
+                {t('profilePage.myPrintersDescription')}
               </p>
             </div>
             <div className="flex items-center gap-3">
-              <StatusBadge label={`${printersWithProfiles.length} принтеров`} variant="accent" />
+              <StatusBadge label={t('profilePage.printersCount', { count: printersWithProfiles.length })} variant="accent" />
               {/* Кнопка экспорта из OrcaSlicer */}
               <ExportPrinterProfilesButton />
               <button
@@ -870,7 +870,7 @@ export const ProfilePage: React.FC = () => {
                           <p className="text-xs text-gray-500">Slug: {printer.slug}</p>
                         )}
                       </div>
-                      <StatusBadge label={`${printer.profiles.length} профилей`} variant="accent" />
+                      <StatusBadge label={t('profilePage.profilesCount', { count: printer.profiles.length })} variant="accent" />
                     </div>
 
                     {/* Профили принтера */}
@@ -900,12 +900,12 @@ export const ProfilePage: React.FC = () => {
                                   </div>
                                   {profile.nozzle_diameters && profile.nozzle_diameters.length > 0 && (
                                     <p className="text-xs text-gray-400 ml-6">
-                                      Сопла: {profile.nozzle_diameters.join(', ')} мм
+                                      {t('profilePage.nozzles')}: {profile.nozzle_diameters.join(', ')} {t('profilePage.mm')}
                                     </p>
                                   )}
                                 </div>
                                 {printProfilesForPrinterProfile.length > 0 && (
-                                  <StatusBadge label={`${printProfilesForPrinterProfile.length} профилей печати`} variant="accent" />
+                                  <StatusBadge label={t('profilePage.printProfilesCount', { count: printProfilesForPrinterProfile.length })} variant="accent" />
                                 )}
                               </div>
                               
@@ -918,12 +918,12 @@ export const ProfilePage: React.FC = () => {
                                 {isProfileExpanded ? (
                                   <>
                                     <ChevronUp className="w-3 h-3" />
-                                    Скрыть детали
+                                    {t('profilePage.hideDetails')}
                                   </>
                                 ) : (
                                   <>
                                     <ChevronDown className="w-3 h-3" />
-                                    Показать детали
+                                    {t('profilePage.showDetails')}
                                   </>
                                 )}
                               </button>
@@ -934,7 +934,7 @@ export const ProfilePage: React.FC = () => {
                                   {/* Краткая информация о профиле принтера */}
                                   <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3 text-xs">
                                     <div>
-                                      <span className="text-gray-400">Обновлён:</span>{' '}
+                                      <span className="text-gray-400">{t('profilePage.updated')}:</span>{' '}
                                       <span className="text-white">{formatDateTime(profile.updated_at)}</span>
                                     </div>
                                     {profile.default_print_profile_slug && (
@@ -947,8 +947,8 @@ export const ProfilePage: React.FC = () => {
                                     )}
                                     {typeof profile.printable_height_mm === 'number' && (
                                       <div>
-                                        <span className="text-gray-400">Высота:</span>{' '}
-                                        <span className="text-white">{profile.printable_height_mm.toFixed(0)} мм</span>
+                                        <span className="text-gray-400">{t('profilePage.height')}:</span>{' '}
+                                        <span className="text-white">{profile.printable_height_mm.toFixed(0)} {t('profilePage.mm')}</span>
                                       </div>
                                     )}
                                   </div>
@@ -961,7 +961,7 @@ export const ProfilePage: React.FC = () => {
                                       className="px-3 py-1.5 rounded-lg border border-white/20 text-xs text-white/90 hover:bg-white/10 transition-all flex items-center gap-1.5"
                                     >
                                       <Eye className="w-3 h-3" />
-                                      Просмотр
+                                      {t('profilePage.view')}
                                     </button>
                                     <button
                                       type="button"
@@ -969,14 +969,14 @@ export const ProfilePage: React.FC = () => {
                                       className="px-3 py-1.5 rounded-lg border border-white/20 text-xs text-white/90 hover:bg-white/10 transition-all flex items-center gap-1.5"
                                     >
                                       <Download className="w-3 h-3" />
-                                      Скачать JSON
+                                      {t('profilePage.downloadJson')}
                                     </button>
                                   </div>
 
                                   {/* Профили печати для этого профиля принтера */}
                                   {printProfilesForPrinterProfile.length > 0 && (
                                     <div className="pt-2 border-t border-white/10">
-                                      <p className="text-xs text-gray-400 mb-2">Профили печати:</p>
+                                      <p className="text-xs text-gray-400 mb-2">{t('profilePage.printProfilesLabel')}:</p>
                                       <div className="space-y-2">
                                         {printProfilesForPrinterProfile.map((printProfile) => (
                                           <div
@@ -988,12 +988,12 @@ export const ProfilePage: React.FC = () => {
                                                 <h5 className="text-xs font-semibold text-white">{printProfile.name}</h5>
                                                 {printProfile.quality_tier && (
                                                   <p className="text-xs text-gray-400 mt-0.5">
-                                                    Качество: {printProfile.quality_tier}
+                                                    {t('profilePage.quality')}: {printProfile.quality_tier}
                                                   </p>
                                                 )}
                                                 {printProfile.layer_height_mm && (
                                                   <p className="text-xs text-gray-400">
-                                                    Высота слоя: {printProfile.layer_height_mm.toFixed(2)} мм
+                                                    {t('profilePage.layerHeight')}: {printProfile.layer_height_mm.toFixed(2)} {t('profilePage.mm')}
                                                   </p>
                                                 )}
                                               </div>
@@ -1019,7 +1019,7 @@ export const ProfilePage: React.FC = () => {
                                                 className="px-2 py-1 rounded border border-white/20 text-xs text-white/90 hover:bg-white/10 transition-all flex items-center gap-1"
                                               >
                                                 <Eye className="w-3 h-3" />
-                                                Просмотр
+                                                {t('profilePage.view')}
                                               </button>
                                               <button
                                                 type="button"
@@ -1027,7 +1027,7 @@ export const ProfilePage: React.FC = () => {
                                                 className="px-2 py-1 rounded border border-white/20 text-xs text-white/90 hover:bg-white/10 transition-all flex items-center gap-1"
                                               >
                                                 <Download className="w-3 h-3" />
-                                                Скачать
+                                                {t('profilePage.download')}
                                               </button>
                                             </div>
                                           </div>
@@ -1046,7 +1046,7 @@ export const ProfilePage: React.FC = () => {
                                     className="w-full px-3 py-2 rounded-lg border border-dashed border-white/20 text-xs text-gray-400 hover:text-white hover:border-white/40 transition-all flex items-center justify-center gap-2"
                                   >
                                     <Plus className="w-3 h-3" />
-                                    Добавить профиль печати
+                                    {t('profilePage.addPrintProfile')}
                                   </button>
                                 </div>
                               )}
@@ -1205,11 +1205,13 @@ interface RecentPresetsProps {
   presets: Preset[];
 }
 
-const RecentPresets: React.FC<RecentPresetsProps> = ({ presets }) => (
+const RecentPresets: React.FC<RecentPresetsProps> = ({ presets }) => {
+  const { t } = useTranslation();
+  return (
   <div className="bg-white/10 backdrop-blur-sm rounded-2xl p-6 border border-white/20 shadow-xl">
     <h3 className="text-xl font-bold text-white mb-4 flex items-center">
       <Settings className="w-5 h-5 mr-2" />
-      Последние пресеты
+      {t('profilePage.recentPresets')}
     </h3>
     <div className="space-y-3">
       {presets.length > 0 ? (
@@ -1237,7 +1239,7 @@ const RecentPresets: React.FC<RecentPresetsProps> = ({ presets }) => (
               </p>
             </div>
             <div className="text-right">
-              <p className="text-green-400 font-semibold">{preset.usage_count} использований</p>
+              <p className="text-green-400 font-semibold">{preset.usage_count} {t('profilePage.usages')}</p>
               <p className="text-gray-400 text-sm">
                 {new Date(preset.created_at).toLocaleDateString('ru-RU')}
               </p>
@@ -1245,11 +1247,12 @@ const RecentPresets: React.FC<RecentPresetsProps> = ({ presets }) => (
           </div>
         ))
       ) : (
-        <p className="text-gray-400 text-center py-4">Нет пресетов</p>
+        <p className="text-gray-400 text-center py-4">{t('profilePage.noPresets')}</p>
       )}
     </div>
   </div>
-);
+  );
+};
 
 interface RecentHistoryProps {
   history: Array<{
@@ -1263,11 +1266,13 @@ interface RecentHistoryProps {
   }>;
 }
 
-const RecentHistory: React.FC<RecentHistoryProps> = ({ history }) => (
+const RecentHistory: React.FC<RecentHistoryProps> = ({ history }) => {
+  const { t } = useTranslation();
+  return (
   <div className="bg-white/10 backdrop-blur-sm rounded-2xl p-6 border border-white/20 shadow-xl">
     <h3 className="text-xl font-bold text-white mb-4 flex items-center">
       <TrendingUp className="w-5 h-5 mr-2" />
-      Последние отпечатки
+      {t('profilePage.recentPrints')}
     </h3>
     <div className="space-y-3">
       {history.length > 0 ? (
@@ -1288,11 +1293,12 @@ const RecentHistory: React.FC<RecentHistoryProps> = ({ history }) => (
           </div>
         ))
       ) : (
-        <p className="text-gray-400 text-center py-4">Пока нет истории печати</p>
+        <p className="text-gray-400 text-center py-4">{t('profilePage.noPrintHistory')}</p>
       )}
     </div>
   </div>
-);
+  );
+};
 
 interface PresetCardProps {
   preset: Preset;
@@ -1504,17 +1510,17 @@ const PresetCard: React.FC<PresetCardProps> = ({ preset, onEdit, onView, onDelet
               )}
               {preset.source === 'saved' && (
                 <span className="px-2 py-0.5 bg-blue-600/30 rounded text-blue-300 text-xs font-medium whitespace-nowrap">
-                  Из каталога
+                  {t('profilePage.fromCatalog')}
                 </span>
               )}
               {!preset.active && preset.source === 'own' && !preset.name?.includes('@FilamentHub') && (
                 <span className="px-2 py-0.5 bg-orange-600/30 rounded text-orange-300 text-xs font-medium whitespace-nowrap">
-                  Заготовка
+                  {t('profilePage.draft')}
                 </span>
               )}
               {preset.is_weighted && (
                 <span className="px-2 py-0.5 bg-green-600/30 rounded text-green-300 text-xs font-medium whitespace-nowrap">
-                  Генеративный
+                  {t('profilePage.generative')}
                 </span>
               )}
             </div>
@@ -1637,11 +1643,11 @@ const PresetCard: React.FC<PresetCardProps> = ({ preset, onEdit, onView, onDelet
       <div className="flex items-center justify-between text-sm">
         <div className="flex items-center space-x-3">
           <span className="text-gray-400">
-            Создан: {new Date(preset.created_at).toLocaleDateString('ru-RU')}
+            {t('profilePage.created')}: {new Date(preset.created_at).toLocaleDateString()}
           </span>
           {preset.created_at !== preset.updated_at && (
             <span className="text-blue-400">
-              Изменён: {new Date(preset.updated_at).toLocaleDateString('ru-RU')}
+              {t('profilePage.modified')}: {new Date(preset.updated_at).toLocaleDateString()}
             </span>
           )}
         </div>
@@ -1696,6 +1702,7 @@ const HistoryItem: React.FC<HistoryItemProps> = ({ item }) => (
 
 // Калькулятор стоимости печати с поддержкой трех методов расчета
 const CalculatorComponent: React.FC = () => {
+  const { t } = useTranslation();
   const [pricingMethod, setPricingMethod] = useState<PricingMethod>('combined');
   
   // Параметры материала
@@ -1827,12 +1834,12 @@ const CalculatorComponent: React.FC = () => {
     <div className="space-y-6">
       {/* Переключатель методов */}
       <div className="bg-white/10 backdrop-blur-sm rounded-2xl p-6 border border-white/20 shadow-xl">
-        <label className="block text-gray-300 mb-4 text-sm font-medium">Метод расчета</label>
+        <label className="block text-gray-300 mb-4 text-sm font-medium">{t('profilePage.calc.pricingMethod')}</label>
         <div className="flex flex-wrap gap-3">
           {[
-            { value: 'by_weight', label: 'По граммам' },
-            { value: 'by_time', label: 'По часам' },
-            { value: 'combined', label: 'Комбинированный' },
+            { value: 'by_weight', label: t('profilePage.calc.byWeight') },
+            { value: 'by_time', label: t('profilePage.calc.byTime') },
+            { value: 'combined', label: t('profilePage.calc.combined') },
           ].map((method) => (
             <button
               key={method.value}
@@ -1854,11 +1861,11 @@ const CalculatorComponent: React.FC = () => {
         <div className="bg-white/10 backdrop-blur-sm rounded-2xl p-6 border border-white/20 shadow-xl">
           <h3 className="text-xl font-bold text-white mb-4 flex items-center">
             <Package className="w-5 h-5 mr-2" />
-            Параметры материала
+            {t('profilePage.calc.materialParams')}
           </h3>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
-              <label className="block text-gray-300 mb-2 text-sm font-medium">Вес детали (г)</label>
+              <label className="block text-gray-300 mb-2 text-sm font-medium">{t('profilePage.calc.partWeight')}</label>
               <input
                 type="number"
                 value={weightG}
@@ -1868,7 +1875,7 @@ const CalculatorComponent: React.FC = () => {
               />
             </div>
             <div>
-              <label className="block text-gray-300 mb-2 text-sm font-medium">Вес поддержек (г)</label>
+              <label className="block text-gray-300 mb-2 text-sm font-medium">{t('profilePage.calc.supportsWeight')}</label>
               <input
                 type="number"
                 value={supportsWeightG}
@@ -1876,10 +1883,10 @@ const CalculatorComponent: React.FC = () => {
                 className="w-full px-4 py-2 bg-white/10 border border-white/20 rounded-xl text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500"
                 placeholder="0"
               />
-              <p className="text-xs text-gray-400 mt-1">Обычно 15-30% от веса детали</p>
+              <p className="text-xs text-gray-400 mt-1">{t('profilePage.calc.supportsWeightHint')}</p>
             </div>
             <div>
-              <label className="block text-gray-300 mb-2 text-sm font-medium">Коэффициент потерь на поддержки</label>
+              <label className="block text-gray-300 mb-2 text-sm font-medium">{t('profilePage.calc.supportsLossCoeff')}</label>
               <input
                 type="number"
                 step="0.1"
@@ -1890,10 +1897,10 @@ const CalculatorComponent: React.FC = () => {
                 className="w-full px-4 py-2 bg-white/10 border border-white/20 rounded-xl text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500"
                 placeholder="1.2"
               />
-              <p className="text-xs text-gray-400 mt-1">Обычно 1.2-1.3</p>
+              <p className="text-xs text-gray-400 mt-1">{t('profilePage.calc.supportsLossHint')}</p>
             </div>
             <div>
-              <label className="block text-gray-300 mb-2 text-sm font-medium">Цена катушки (₽)</label>
+              <label className="block text-gray-300 mb-2 text-sm font-medium">{t('profilePage.calc.spoolPrice')}</label>
               <input
                 type="number"
                 value={spoolPrice}
@@ -1903,7 +1910,7 @@ const CalculatorComponent: React.FC = () => {
               />
             </div>
             <div>
-              <label className="block text-gray-300 mb-2 text-sm font-medium">Вес катушки (кг)</label>
+              <label className="block text-gray-300 mb-2 text-sm font-medium">{t('profilePage.calc.spoolWeight')}</label>
               <input
                 type="number"
                 step="0.1"
@@ -1914,7 +1921,7 @@ const CalculatorComponent: React.FC = () => {
               />
             </div>
             <div>
-              <label className="block text-gray-300 mb-2 text-sm font-medium">Доставка (₽)</label>
+              <label className="block text-gray-300 mb-2 text-sm font-medium">{t('profilePage.calc.deliveryCost')}</label>
               <input
                 type="number"
                 value={deliveryCost}
@@ -1932,11 +1939,11 @@ const CalculatorComponent: React.FC = () => {
         <div className="bg-white/10 backdrop-blur-sm rounded-2xl p-6 border border-white/20 shadow-xl">
           <h3 className="text-xl font-bold text-white mb-4 flex items-center">
             <Gauge className="w-5 h-5 mr-2" />
-            Время печати
+            {t('profilePage.calc.printTime')}
           </h3>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div>
-              <label className="block text-gray-300 mb-2 text-sm font-medium">Часы</label>
+              <label className="block text-gray-300 mb-2 text-sm font-medium">{t('profilePage.calc.hours')}</label>
               <input
                 type="number"
                 value={timeHours}
@@ -1946,7 +1953,7 @@ const CalculatorComponent: React.FC = () => {
               />
             </div>
             <div>
-              <label className="block text-gray-300 mb-2 text-sm font-medium">Минуты</label>
+              <label className="block text-gray-300 mb-2 text-sm font-medium">{t('profilePage.calc.minutes')}</label>
               <input
                 type="number"
                 value={timeMinutes}
@@ -1956,7 +1963,7 @@ const CalculatorComponent: React.FC = () => {
               />
             </div>
             <div>
-              <label className="block text-gray-300 mb-2 text-sm font-medium">Секунды</label>
+              <label className="block text-gray-300 mb-2 text-sm font-medium">{t('profilePage.calc.seconds')}</label>
               <input
                 type="number"
                 value={timeSec}
@@ -1972,9 +1979,9 @@ const CalculatorComponent: React.FC = () => {
       {/* Почасовая ставка (для by_time) */}
       {pricingMethod === 'by_time' && (
         <div className="bg-white/10 backdrop-blur-sm rounded-2xl p-6 border border-white/20 shadow-xl">
-          <h3 className="text-xl font-bold text-white mb-4">Почасовая ставка</h3>
+          <h3 className="text-xl font-bold text-white mb-4">{t('profilePage.calc.hourlyRate')}</h3>
           <div>
-            <label className="block text-gray-300 mb-2 text-sm font-medium">Цена за час печати (₽/ч)</label>
+            <label className="block text-gray-300 mb-2 text-sm font-medium">{t('profilePage.calc.pricePerHour')}</label>
             <input
               type="number"
               value={pricePerHour}
@@ -1990,11 +1997,11 @@ const CalculatorComponent: React.FC = () => {
       <div className="bg-white/10 backdrop-blur-sm rounded-2xl p-6 border border-white/20 shadow-xl">
         <h3 className="text-xl font-bold text-white mb-4 flex items-center">
           <Wind className="w-5 h-5 mr-2" />
-          Электроэнергия
+          {t('profilePage.calc.electricity')}
         </h3>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
-            <label className="block text-gray-300 mb-2 text-sm font-medium">Стоимость 1 кВт·ч (₽)</label>
+            <label className="block text-gray-300 mb-2 text-sm font-medium">{t('profilePage.calc.electricityCost')}</label>
             <input
               type="number"
               step="0.1"
@@ -2005,7 +2012,7 @@ const CalculatorComponent: React.FC = () => {
             />
           </div>
           <div>
-            <label className="block text-gray-300 mb-2 text-sm font-medium">Мощность принтера (Вт)</label>
+            <label className="block text-gray-300 mb-2 text-sm font-medium">{t('profilePage.calc.printerPower')}</label>
             <input
               type="number"
               value={printerPowerW}
@@ -2023,13 +2030,13 @@ const CalculatorComponent: React.FC = () => {
           <div className="bg-white/10 backdrop-blur-sm rounded-2xl p-6 border border-white/20 shadow-xl">
             <h3 className="text-xl font-bold text-white mb-4 flex items-center">
               <Settings className="w-5 h-5 mr-2" />
-              Дополнительные услуги
+              {t('profilePage.calc.additionalServices')}
             </h3>
             <div className="space-y-4">
               {/* Моделирование */}
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div>
-                  <label className="block text-gray-300 mb-2 text-sm font-medium">Моделирование (ч)</label>
+                  <label className="block text-gray-300 mb-2 text-sm font-medium">{t('profilePage.calc.modelingHours')}</label>
                   <input
                     type="number"
                     value={modelingHours}
@@ -2039,7 +2046,7 @@ const CalculatorComponent: React.FC = () => {
                   />
                 </div>
                 <div>
-                  <label className="block text-gray-300 mb-2 text-sm font-medium">Моделирование (мин)</label>
+                  <label className="block text-gray-300 mb-2 text-sm font-medium">{t('profilePage.calc.modelingMinutes')}</label>
                   <input
                     type="number"
                     value={modelingMinutes}
@@ -2049,7 +2056,7 @@ const CalculatorComponent: React.FC = () => {
                   />
                 </div>
                 <div>
-                  <label className="block text-gray-300 mb-2 text-sm font-medium">Ставка (₽/ч)</label>
+                  <label className="block text-gray-300 mb-2 text-sm font-medium">{t('profilePage.calc.rate')}</label>
                   <input
                     type="number"
                     value={modelingRatePerHour}
@@ -2062,7 +2069,7 @@ const CalculatorComponent: React.FC = () => {
 
               {/* Печать */}
               <div>
-                <label className="block text-gray-300 mb-2 text-sm font-medium">Ставка печати (₽/ч)</label>
+                <label className="block text-gray-300 mb-2 text-sm font-medium">{t('profilePage.calc.printingRate')}</label>
                 <input
                   type="number"
                   value={printingRatePerHour}
@@ -2075,7 +2082,7 @@ const CalculatorComponent: React.FC = () => {
               {/* Постобработка */}
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div>
-                  <label className="block text-gray-300 mb-2 text-sm font-medium">Постобработка (ч)</label>
+                  <label className="block text-gray-300 mb-2 text-sm font-medium">{t('profilePage.calc.postprocessingHours')}</label>
                   <input
                     type="number"
                     value={postprocessingHours}
@@ -2085,7 +2092,7 @@ const CalculatorComponent: React.FC = () => {
                   />
                 </div>
                 <div>
-                  <label className="block text-gray-300 mb-2 text-sm font-medium">Постобработка (мин)</label>
+                  <label className="block text-gray-300 mb-2 text-sm font-medium">{t('profilePage.calc.postprocessingMinutes')}</label>
                   <input
                     type="number"
                     value={postprocessingMinutes}
@@ -2095,7 +2102,7 @@ const CalculatorComponent: React.FC = () => {
                   />
                 </div>
                 <div>
-                  <label className="block text-gray-300 mb-2 text-sm font-medium">Ставка (₽/ч)</label>
+                  <label className="block text-gray-300 mb-2 text-sm font-medium">{t('profilePage.calc.rate')}</label>
                   <input
                     type="number"
                     value={postprocessingRatePerHour}
@@ -2108,7 +2115,7 @@ const CalculatorComponent: React.FC = () => {
 
               {/* Амортизация */}
               <div>
-                <label className="block text-gray-300 mb-2 text-sm font-medium">Ставка амортизации (₽/ч)</label>
+                <label className="block text-gray-300 mb-2 text-sm font-medium">{t('profilePage.calc.amortizationRate')}</label>
                 <input
                   type="number"
                   value={amortizationRatePerHour}
@@ -2127,11 +2134,11 @@ const CalculatorComponent: React.FC = () => {
         <div className="bg-white/10 backdrop-blur-sm rounded-2xl p-6 border border-white/20 shadow-xl">
           <h3 className="text-xl font-bold text-white mb-4 flex items-center">
             <TrendingUp className="w-5 h-5 mr-2" />
-            Накладные расходы и наценка
+            {t('profilePage.calc.overheadAndMarkup')}
           </h3>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
-              <label className="block text-gray-300 mb-2 text-sm font-medium">Накладные расходы (%)</label>
+              <label className="block text-gray-300 mb-2 text-sm font-medium">{t('profilePage.calc.overheadPercent')}</label>
               <input
                 type="number"
                 step="0.1"
@@ -2142,10 +2149,10 @@ const CalculatorComponent: React.FC = () => {
                 className="w-full px-4 py-2 bg-white/10 border border-white/20 rounded-xl text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500"
                 placeholder="20"
               />
-              <p className="text-xs text-gray-400 mt-1">Обычно 20-30%</p>
+              <p className="text-xs text-gray-400 mt-1">{t('profilePage.calc.overheadHint')}</p>
             </div>
             <div>
-              <label className="block text-gray-300 mb-2 text-sm font-medium">Наценка (%)</label>
+              <label className="block text-gray-300 mb-2 text-sm font-medium">{t('profilePage.calc.markupPercent')}</label>
               <input
                 type="number"
                 step="0.1"
@@ -2156,7 +2163,7 @@ const CalculatorComponent: React.FC = () => {
                 className="w-full px-4 py-2 bg-white/10 border border-white/20 rounded-xl text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500"
                 placeholder="30"
               />
-              <p className="text-xs text-gray-400 mt-1">Эконом: 20-30%, Стандарт: 35-45%, Премиум: 50-70%</p>
+              <p className="text-xs text-gray-400 mt-1">{t('profilePage.calc.markupHint')}</p>
             </div>
           </div>
         </div>
@@ -2167,11 +2174,11 @@ const CalculatorComponent: React.FC = () => {
         <div className="bg-white/10 backdrop-blur-sm rounded-2xl p-6 border border-white/20 shadow-xl">
           <h3 className="text-xl font-bold text-white mb-4 flex items-center">
             <Settings className="w-5 h-5 mr-2" />
-            Коэффициенты корректировки
+            {t('profilePage.calc.adjustmentCoeffs')}
           </h3>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div>
-              <label className="block text-gray-300 mb-2 text-sm font-medium">Срочность</label>
+              <label className="block text-gray-300 mb-2 text-sm font-medium">{t('profilePage.calc.urgency')}</label>
               <input
                 type="number"
                 step="0.1"
@@ -2182,10 +2189,10 @@ const CalculatorComponent: React.FC = () => {
                 className="w-full px-4 py-2 bg-white/10 border border-white/20 rounded-xl text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500"
                 placeholder="1.0"
               />
-              <p className="text-xs text-gray-400 mt-1">1.0 = стандарт, 1.2-1.5 = срочно (+20-50%)</p>
+              <p className="text-xs text-gray-400 mt-1">{t('profilePage.calc.urgencyHint')}</p>
             </div>
             <div>
-              <label className="block text-gray-300 mb-2 text-sm font-medium">Сложность</label>
+              <label className="block text-gray-300 mb-2 text-sm font-medium">{t('profilePage.calc.complexity')}</label>
               <input
                 type="number"
                 step="0.1"
@@ -2196,10 +2203,10 @@ const CalculatorComponent: React.FC = () => {
                 className="w-full px-4 py-2 bg-white/10 border border-white/20 rounded-xl text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500"
                 placeholder="1.0"
               />
-              <p className="text-xs text-gray-400 mt-1">1.0 = просто, 1.2-2.5 = сложно (+15-30%)</p>
+              <p className="text-xs text-gray-400 mt-1">{t('profilePage.calc.complexityHint')}</p>
             </div>
             <div>
-              <label className="block text-gray-300 mb-2 text-sm font-medium">Скидка за объем</label>
+              <label className="block text-gray-300 mb-2 text-sm font-medium">{t('profilePage.calc.volumeDiscount')}</label>
               <input
                 type="number"
                 step="0.01"
@@ -2210,7 +2217,7 @@ const CalculatorComponent: React.FC = () => {
                 className="w-full px-4 py-2 bg-white/10 border border-white/20 rounded-xl text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500"
                 placeholder="1.0"
               />
-              <p className="text-xs text-gray-400 mt-1">1.0 = без скидки, 0.85-0.95 = скидка 5-15%</p>
+              <p className="text-xs text-gray-400 mt-1">{t('profilePage.calc.volumeDiscountHint')}</p>
             </div>
           </div>
         </div>
@@ -2220,7 +2227,7 @@ const CalculatorComponent: React.FC = () => {
       <div className="bg-white/10 backdrop-blur-sm rounded-2xl p-6 border border-white/20 shadow-xl">
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
-            <label className="block text-gray-300 mb-2 text-sm font-medium">Количество деталей</label>
+            <label className="block text-gray-300 mb-2 text-sm font-medium">{t('profilePage.calc.quantity')}</label>
             <input
               type="number"
               value={quantity}
@@ -2233,7 +2240,7 @@ const CalculatorComponent: React.FC = () => {
           {pricingMethod === 'combined' && (
             <>
               <div>
-                <label className="block text-gray-300 mb-2 text-sm font-medium">Фиксированные расходы (₽)</label>
+                <label className="block text-gray-300 mb-2 text-sm font-medium">{t('profilePage.calc.fixedCosts')}</label>
                 <input
                   type="number"
                   value={fixedCosts}
@@ -2241,10 +2248,10 @@ const CalculatorComponent: React.FC = () => {
                   className="w-full px-4 py-2 bg-white/10 border border-white/20 rounded-xl text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500"
                   placeholder="0"
                 />
-                <p className="text-xs text-gray-400 mt-1">Упаковка, доставка до ПВЗ (обычно 50-100 ₽)</p>
+                <p className="text-xs text-gray-400 mt-1">{t('profilePage.calc.fixedCostsHint')}</p>
               </div>
               <div>
-                <label className="block text-gray-300 mb-2 text-sm font-medium">Минимальная цена заказа (₽)</label>
+                <label className="block text-gray-300 mb-2 text-sm font-medium">{t('profilePage.calc.minOrderPrice')}</label>
                 <input
                   type="number"
                   value={minOrderPrice}
@@ -2252,10 +2259,10 @@ const CalculatorComponent: React.FC = () => {
                   className="w-full px-4 py-2 bg-white/10 border border-white/20 rounded-xl text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500"
                   placeholder="0"
                 />
-                <p className="text-xs text-gray-400 mt-1">Если цена меньше, устанавливается минимум (обычно 300-500 ₽)</p>
+                <p className="text-xs text-gray-400 mt-1">{t('profilePage.calc.minOrderPriceHint')}</p>
               </div>
               <div>
-                <label className="block text-gray-300 mb-2 text-sm font-medium">Округлить до (₽)</label>
+                <label className="block text-gray-300 mb-2 text-sm font-medium">{t('profilePage.calc.roundTo')}</label>
                 <input
                   type="number"
                   value={roundToNearest}
@@ -2279,12 +2286,12 @@ const CalculatorComponent: React.FC = () => {
           {calculateMutation.isPending ? (
             <>
               <Loader2 className="w-5 h-5 animate-spin" />
-              <span>Расчет...</span>
+              <span>{t('profilePage.calc.calculating')}</span>
             </>
           ) : (
             <>
               <Calculator className="w-5 h-5" />
-              <span>Рассчитать</span>
+              <span>{t('profilePage.calc.calculate')}</span>
             </>
           )}
         </button>
@@ -2295,11 +2302,11 @@ const CalculatorComponent: React.FC = () => {
         <div className="space-y-4">
           {/* Компоненты стоимости */}
           <div className="bg-white/10 backdrop-blur-sm rounded-2xl p-6 border border-white/20 shadow-xl">
-            <h3 className="text-xl font-bold text-white mb-4">Компоненты стоимости</h3>
+            <h3 className="text-xl font-bold text-white mb-4">{t('profilePage.calc.costComponents')}</h3>
             <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
               {result.cost_material > 0 && (
                 <ResultCard
-                  label="Материал"
+                  label={t('profilePage.calc.material')}
                   value={result.cost_material.toFixed(2)}
                   icon={Package}
                   color="from-purple-500/20 to-pink-500/20"
@@ -2308,7 +2315,7 @@ const CalculatorComponent: React.FC = () => {
               )}
               {result.cost_electricity > 0 && (
                 <ResultCard
-                  label="Электроэнергия"
+                  label={t('profilePage.calc.electricityLabel')}
                   value={result.cost_electricity.toFixed(2)}
                   icon={Wind}
                   color="from-blue-500/20 to-cyan-500/20"
@@ -2317,7 +2324,7 @@ const CalculatorComponent: React.FC = () => {
               )}
               {result.cost_modeling > 0 && (
                 <ResultCard
-                  label="Моделирование"
+                  label={t('profilePage.calc.modeling')}
                   value={result.cost_modeling.toFixed(2)}
                   icon={Settings}
                   color="from-orange-500/20 to-red-500/20"
@@ -2326,7 +2333,7 @@ const CalculatorComponent: React.FC = () => {
               )}
               {result.cost_printing > 0 && (
                 <ResultCard
-                  label="Печать"
+                  label={t('profilePage.calc.printing')}
                   value={result.cost_printing.toFixed(2)}
                   icon={Printer3DIcon}
                   color="from-indigo-500/20 to-purple-500/20"
@@ -2335,7 +2342,7 @@ const CalculatorComponent: React.FC = () => {
               )}
               {result.cost_postprocessing > 0 && (
                 <ResultCard
-                  label="Постобработка"
+                  label={t('profilePage.calc.postprocessing')}
                   value={result.cost_postprocessing.toFixed(2)}
                   icon={Fan}
                   color="from-teal-500/20 to-green-500/20"
@@ -2344,7 +2351,7 @@ const CalculatorComponent: React.FC = () => {
               )}
               {result.cost_amortization > 0 && (
                 <ResultCard
-                  label="Амортизация"
+                  label={t('profilePage.calc.amortization')}
                   value={result.cost_amortization.toFixed(2)}
                   icon={Gauge}
                   color="from-gray-500/20 to-slate-500/20"
@@ -2357,46 +2364,46 @@ const CalculatorComponent: React.FC = () => {
           {/* Промежуточные расчеты (только для combined) */}
           {pricingMethod === 'combined' && result.cost_direct > 0 && (
             <div className="bg-white/10 backdrop-blur-sm rounded-2xl p-6 border border-white/20 shadow-xl">
-              <h3 className="text-xl font-bold text-white mb-4">Промежуточные расчеты</h3>
+              <h3 className="text-xl font-bold text-white mb-4">{t('profilePage.calc.intermediateCalcs')}</h3>
               <div className="space-y-3">
                 <div className="flex justify-between items-center py-2 border-b border-white/10">
-                  <span className="text-gray-300">Прямые затраты</span>
+                  <span className="text-gray-300">{t('profilePage.calc.directCosts')}</span>
                   <span className="text-white font-semibold">{result.cost_direct.toFixed(2)} ₽</span>
                 </div>
                 {result.cost_overhead > 0 && (
                   <div className="flex justify-between items-center py-2 border-b border-white/10">
-                    <span className="text-gray-300">Накладные расходы</span>
+                    <span className="text-gray-300">{t('profilePage.calc.overhead')}</span>
                     <span className="text-white font-semibold">{result.cost_overhead.toFixed(2)} ₽</span>
                   </div>
                 )}
                 <div className="flex justify-between items-center py-2 border-b border-white/10">
-                  <span className="text-gray-300">Стоимость до наценки</span>
+                  <span className="text-gray-300">{t('profilePage.calc.costBeforeMarkup')}</span>
                   <span className="text-white font-semibold">{result.cost_before_markup.toFixed(2)} ₽</span>
                 </div>
                 {result.cost_markup > 0 && (
                   <div className="flex justify-between items-center py-2 border-b border-white/10">
-                    <span className="text-gray-300">Наценка</span>
+                    <span className="text-gray-300">{t('profilePage.calc.markup')}</span>
                     <span className="text-white font-semibold">{result.cost_markup.toFixed(2)} ₽</span>
                   </div>
                 )}
                 {(result.applied_urgency_coefficient || result.applied_complexity_coefficient || result.applied_volume_discount) && (
                   <div className="pt-2 space-y-1">
-                    <p className="text-sm text-gray-400">Примененные коэффициенты:</p>
+                    <p className="text-sm text-gray-400">{t('profilePage.calc.appliedCoeffs')}:</p>
                     {result.applied_urgency_coefficient && result.applied_urgency_coefficient !== 1.0 && (
                       <div className="flex justify-between items-center text-sm">
-                        <span className="text-gray-300">Срочность</span>
+                        <span className="text-gray-300">{t('profilePage.calc.urgency')}</span>
                         <span className="text-white">×{result.applied_urgency_coefficient.toFixed(2)}</span>
                       </div>
                     )}
                     {result.applied_complexity_coefficient && result.applied_complexity_coefficient !== 1.0 && (
                       <div className="flex justify-between items-center text-sm">
-                        <span className="text-gray-300">Сложность</span>
+                        <span className="text-gray-300">{t('profilePage.calc.complexity')}</span>
                         <span className="text-white">×{result.applied_complexity_coefficient.toFixed(2)}</span>
                       </div>
                     )}
                     {result.applied_volume_discount && result.applied_volume_discount !== 1.0 && (
                       <div className="flex justify-between items-center text-sm">
-                        <span className="text-gray-300">Скидка за объем</span>
+                        <span className="text-gray-300">{t('profilePage.calc.volumeDiscount')}</span>
                         <span className="text-white">×{result.applied_volume_discount.toFixed(2)}</span>
                       </div>
                     )}
@@ -2411,23 +2418,23 @@ const CalculatorComponent: React.FC = () => {
             <div className="bg-white/10 backdrop-blur-sm rounded-2xl p-6 border border-white/20 shadow-xl">
               <h3 className="text-xl font-bold text-white mb-4 flex items-center">
                 <TrendingUp className="w-5 h-5 mr-2" />
-                Финансовые показатели
+                {t('profilePage.calc.financialMetrics')}
               </h3>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 {result.cost_of_goods_sold !== undefined && result.cost_of_goods_sold !== null && (
                   <div className="bg-white/5 rounded-xl p-4 border border-white/10">
                     <div className="flex items-center justify-between mb-2">
-                      <span className="text-gray-300 text-sm">Себестоимость</span>
+                      <span className="text-gray-300 text-sm">{t('profilePage.calc.costOfGoods')}</span>
                       <DollarSign className="w-4 h-4 text-gray-400" />
                     </div>
                     <div className="text-2xl font-bold text-white">{result.cost_of_goods_sold.toFixed(2)} ₽</div>
-                    <p className="text-xs text-gray-400 mt-1">Прямые затраты + накладные + фиксированные</p>
+                    <p className="text-xs text-gray-400 mt-1">{t('profilePage.calc.costOfGoodsHint')}</p>
                   </div>
                 )}
                 {result.profit_margin !== undefined && result.profit_margin !== null && (
                   <div className="bg-green-500/10 rounded-xl p-4 border border-green-500/30">
                     <div className="flex items-center justify-between mb-2">
-                      <span className="text-green-300 text-sm">Маржа (прибыль)</span>
+                      <span className="text-green-300 text-sm">{t('profilePage.calc.profitMargin')}</span>
                       <TrendingUp className="w-4 h-4 text-green-400" />
                     </div>
                     <div className="text-2xl font-bold text-green-400">
@@ -2436,24 +2443,24 @@ const CalculatorComponent: React.FC = () => {
                         <span className="text-lg ml-2">({result.profit_margin_percent.toFixed(1)}%)</span>
                       )}
                     </div>
-                    <p className="text-xs text-green-200 mt-1">Финальная цена - Себестоимость</p>
+                    <p className="text-xs text-green-200 mt-1">{t('profilePage.calc.profitMarginHint')}</p>
                   </div>
                 )}
                 {result.total_time_hours && (
                   <div className="bg-blue-500/10 rounded-xl p-4 border border-blue-500/30 md:col-span-2">
                     <div className="flex items-center justify-between mb-2">
-                      <span className="text-blue-300 text-sm">Общее время работы</span>
+                      <span className="text-blue-300 text-sm">{t('profilePage.calc.totalWorkTime')}</span>
                       <Clock className="w-4 h-4 text-blue-400" />
                     </div>
                     <div className="text-2xl font-bold text-blue-400">
-                      {result.total_time_hours.toFixed(2)} ч
+                      {result.total_time_hours.toFixed(2)} {t('profilePage.calc.h')}
                       {result.total_time_hours >= 1 && (
                         <span className="text-lg ml-2">
-                          ({Math.floor(result.total_time_hours)} ч {Math.round((result.total_time_hours % 1) * 60)} мин)
+                          ({Math.floor(result.total_time_hours)} {t('profilePage.calc.h')} {Math.round((result.total_time_hours % 1) * 60)} {t('profilePage.calc.min')})
                         </span>
                       )}
                     </div>
-                    <p className="text-xs text-blue-200 mt-1">Печать + подготовка + постобработка</p>
+                    <p className="text-xs text-blue-200 mt-1">{t('profilePage.calc.totalWorkTimeHint')}</p>
                   </div>
                 )}
               </div>
@@ -2462,19 +2469,19 @@ const CalculatorComponent: React.FC = () => {
 
           {/* Итоговые суммы */}
           <div className="bg-white/10 backdrop-blur-sm rounded-2xl p-6 border border-white/20 shadow-xl">
-            <h3 className="text-xl font-bold text-white mb-4">Итоговые суммы</h3>
+            <h3 className="text-xl font-bold text-white mb-4">{t('profilePage.calc.totalSums')}</h3>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               {result.quantity > 1 && (
                 <>
                   <ResultCard
-                    label="Цена первой детали"
+                    label={t('profilePage.calc.firstPartPrice')}
                     value={result.cost_first_part.toFixed(2)}
                     icon={Star}
                     color="from-yellow-500/20 to-orange-500/20"
                     borderColor="border-yellow-500/30"
                   />
                   <ResultCard
-                    label="Цена последующих"
+                    label={t('profilePage.calc.subsequentPrice')}
                     value={result.cost_subsequent_parts.toFixed(2)}
                     icon={Package}
                     color="from-blue-500/20 to-indigo-500/20"
@@ -2483,7 +2490,7 @@ const CalculatorComponent: React.FC = () => {
                 </>
               )}
               <ResultCard
-                label={result.quantity > 1 ? 'Общая стоимость' : 'Итого'}
+                label={result.quantity > 1 ? t('profilePage.calc.totalCost') : t('profilePage.calc.total')}
                 value={result.cost_final ? result.cost_final.toFixed(2) : result.cost_total.toFixed(2)}
                 icon={Calculator}
                 color="from-green-500/20 to-emerald-500/20"
@@ -2499,7 +2506,7 @@ const CalculatorComponent: React.FC = () => {
       {calculateMutation.isError && (
         <div className="bg-red-500/10 border border-red-500/30 rounded-xl p-4">
           <p className="text-red-300">
-            Ошибка расчета: {calculateMutation.error instanceof Error ? calculateMutation.error.message : 'Неизвестная ошибка'}
+            {t('profilePage.calc.error')}: {calculateMutation.error instanceof Error ? calculateMutation.error.message : t('profilePage.calc.unknownError')}
           </p>
         </div>
       )}
@@ -2528,12 +2535,15 @@ const ResultCard: React.FC<ResultCardProps> = ({ label, value, icon: Icon, color
   </div>
 );
 
-const ProfileSectionLoader: React.FC = () => (
+const ProfileSectionLoader: React.FC = () => {
+  const { t } = useTranslation();
+  return (
   <div className="flex items-center justify-center gap-3 py-12 text-gray-300">
     <Loader2 className="w-5 h-5 animate-spin" />
-    <span>Загружаем профили...</span>
+    <span>{t('profilePage.loadingProfiles')}</span>
   </div>
-);
+  );
+};
 
 type StatusVariant = 'default' | 'accent' | 'success' | 'warning' | 'muted';
 
@@ -2621,19 +2631,20 @@ interface PrinterProfileCardProps {
   printProfileNameBySlug?: Map<string, string>;
 }
 
-const PrinterProfileCard: React.FC<PrinterProfileCardProps> = ({ 
-  profile, 
+const PrinterProfileCard: React.FC<PrinterProfileCardProps> = ({
+  profile,
   printProfiles = [],
   isExpanded = false,
   onExpand,
-  formatDateTime, 
-  onView, 
+  formatDateTime,
+  onView,
   onDownload,
   onViewPrintProfile,
   onDownloadPrintProfile,
   onCreatePrintProfile,
   printProfileNameBySlug,
 }) => {
+  const { t } = useTranslation();
   const printProfilesCount = printProfiles.length;
   
   return (
@@ -2643,14 +2654,14 @@ const PrinterProfileCard: React.FC<PrinterProfileCardProps> = ({
         <h3 className="text-xl font-semibold text-white">{profile.name}</h3>
         <p className="text-sm text-gray-400">Slug: {profile.slug}</p>
         {profile.printer_slug && (
-          <p className="text-xs text-gray-400 mt-1">Принтер: {profile.printer_name ?? profile.printer_slug}</p>
+          <p className="text-xs text-gray-400 mt-1">{t('profilePage.printer')}: {profile.printer_name ?? profile.printer_slug}</p>
         )}
       </div>
       <div className="flex flex-wrap gap-2 justify-end">
         <StatusBadge label={profile.active ? t('profilePage.badge.active') : t('profilePage.badge.disabled')} variant={profile.active ? 'success' : 'muted'} />
         {profile.is_official && <StatusBadge label={t('profilePage.badge.official')} variant="accent" />}
         {printProfilesCount > 0 && (
-          <StatusBadge label={`${printProfilesCount} профилей печати`} variant="accent" />
+          <StatusBadge label={t('profilePage.printProfilesCount', { count: printProfilesCount })} variant="accent" />
         )}
       </div>
     </div>
@@ -2658,26 +2669,25 @@ const PrinterProfileCard: React.FC<PrinterProfileCardProps> = ({
       <p className="mt-3 text-sm text-gray-300 line-clamp-3">{profile.description}</p>
     )}
     <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-      <InfoRow label="Привязка к принтеру" value={profile.printer_id ? `ID ${profile.printer_id}` : 'не указана'} />
-      <InfoRow label="Обновлён" value={formatDateTime(profile.updated_at)} />
-      <InfoRow 
-        label="Default Print Profile" 
-        value={profile.default_print_profile_slug 
+      <InfoRow label={t('profilePage.printerBinding')} value={profile.printer_id ? `ID ${profile.printer_id}` : t('profilePage.notSpecifiedF')} />
+      <InfoRow label={t('profilePage.updated')} value={formatDateTime(profile.updated_at)} />
+      <InfoRow
+        label={t('profilePage.defaultPrintProfile')}
+        value={profile.default_print_profile_slug
           ? (printProfileNameBySlug?.get(profile.default_print_profile_slug) || profile.default_print_profile_slug)
-          : 'не задан'} 
+          : t('profilePage.notSetM')}
       />
       <InfoRow
-        label="Диаметры сопел"
-        value={profile.nozzle_diameters && profile.nozzle_diameters.length > 0 ? profile.nozzle_diameters.join(', ') : 'не указаны'}
+        label={t('profilePage.nozzleDiameters')}
+        value={profile.nozzle_diameters && profile.nozzle_diameters.length > 0 ? profile.nozzle_diameters.join(', ') : t('profilePage.notSpecifiedPl')}
       />
       <InfoRow
-        label="Высота печати"
+        label={t('profilePage.printHeight')}
         value={
-          typeof profile.printable_height_mm === 'number' ? `${profile.printable_height_mm.toFixed(0)} мм` : 'не указана'
-        }
+          typeof profile.printable_height_mm === 'number' ? `${profile.printable_height_mm.toFixed(0)} ${t('profilePage.mm')}` : t('profilePage.notSpecifiedF')}
       />
-      <InfoRow label="Стартовый G-code" value={profile.start_gcode ? 'задан' : '—'} />
-      <InfoRow label="Финальный G-code" value={profile.end_gcode ? 'задан' : '—'} />
+      <InfoRow label={t('profilePage.startGcode')} value={profile.start_gcode ? t('profilePage.set') : '—'} />
+      <InfoRow label={t('profilePage.endGcode')} value={profile.end_gcode ? t('profilePage.set') : '—'} />
     </div>
     
     {/* Профили печати для этого принтера */}
@@ -2690,7 +2700,7 @@ const PrinterProfileCard: React.FC<PrinterProfileCardProps> = ({
         >
           <div className="flex items-center gap-2">
             <Layers className="w-4 h-4" />
-            <span>Профили печати ({printProfilesCount})</span>
+            <span>{t('profilePage.printProfilesLabel')} ({printProfilesCount})</span>
           </div>
           {isExpanded ? (
             <ChevronUp className="w-4 h-4" />
@@ -2710,10 +2720,10 @@ const PrinterProfileCard: React.FC<PrinterProfileCardProps> = ({
                   <div className="flex-1">
                     <h4 className="text-sm font-semibold text-white">{printProfile.name}</h4>
                     {printProfile.quality_tier && (
-                      <p className="text-xs text-gray-400 mt-1">Качество: {printProfile.quality_tier}</p>
+                      <p className="text-xs text-gray-400 mt-1">{t('profilePage.quality')}: {printProfile.quality_tier}</p>
                     )}
                     {printProfile.layer_height_mm && (
-                      <p className="text-xs text-gray-400">Высота слоя: {printProfile.layer_height_mm.toFixed(2)} мм</p>
+                      <p className="text-xs text-gray-400">{t('profilePage.layerHeight')}: {printProfile.layer_height_mm.toFixed(2)} {t('profilePage.mm')}</p>
                     )}
                   </div>
                   <div className="flex items-center gap-2">
@@ -2737,7 +2747,7 @@ const PrinterProfileCard: React.FC<PrinterProfileCardProps> = ({
                       className="px-3 py-1.5 rounded-lg border border-white/20 text-xs text-white/90 hover:bg-white/10 transition-all flex items-center gap-1.5"
                     >
                       <Eye className="w-3 h-3" />
-                      Просмотр
+                      {t('profilePage.view')}
                     </button>
                   )}
                   {onDownloadPrintProfile && (
@@ -2747,7 +2757,7 @@ const PrinterProfileCard: React.FC<PrinterProfileCardProps> = ({
                       className="px-3 py-1.5 rounded-lg border border-white/20 text-xs text-white/90 hover:bg-white/10 transition-all flex items-center gap-1.5"
                     >
                       <Download className="w-3 h-3" />
-                      Скачать
+                      {t('profilePage.download')}
                     </button>
                   )}
                 </div>
@@ -2760,7 +2770,7 @@ const PrinterProfileCard: React.FC<PrinterProfileCardProps> = ({
                 className="w-full px-4 py-2 rounded-lg border border-dashed border-white/20 text-sm text-gray-400 hover:text-white hover:border-white/40 transition-all flex items-center justify-center gap-2"
               >
                 <Plus className="w-4 h-4" />
-                Добавить профиль печати
+                {t('profilePage.addPrintProfile')}
               </button>
             )}
           </div>
@@ -2788,7 +2798,7 @@ const PrinterProfileCard: React.FC<PrinterProfileCardProps> = ({
         className="px-4 py-2 rounded-lg border border-white/20 text-sm text-white/90 hover:bg-white/10 transition-all flex items-center gap-2"
       >
         <Eye className="w-4 h-4" />
-        Смотреть JSON
+        {t('profilePage.viewJson')}
       </button>
       <button
         type="button"
@@ -2796,7 +2806,7 @@ const PrinterProfileCard: React.FC<PrinterProfileCardProps> = ({
         className="px-4 py-2 rounded-lg border border-white/20 text-sm text-white/90 hover:bg-white/10 transition-all flex items-center gap-2"
       >
         <Download className="w-4 h-4" />
-        Скачать JSON
+        {t('profilePage.downloadJson')}
       </button>
     </div>
   </div>
@@ -2811,11 +2821,12 @@ interface PrintProfileCardProps {
 }
 
 const PrintProfileCard: React.FC<PrintProfileCardProps> = ({ profile, formatDateTime, onView, onDownload }) => {
+  const { t } = useTranslation();
   const printersCount = profile.printer_links?.length ?? 0;
   const filamentsCount = profile.filament_links?.length ?? 0;
-  const defaultNozzle = profile.default_nozzle ? `${profile.default_nozzle} мм` : 'не указано';
+  const defaultNozzle = profile.default_nozzle ? `${profile.default_nozzle} ${t('profilePage.mm')}` : t('profilePage.notSpecifiedN');
   const layerHeight =
-    typeof profile.layer_height_mm === 'number' ? `${profile.layer_height_mm.toFixed(2)} мм` : 'не указана';
+    typeof profile.layer_height_mm === 'number' ? `${profile.layer_height_mm.toFixed(2)} ${t('profilePage.mm')}` : t('profilePage.notSpecifiedF');
 
   return (
     <div className="bg-white/10 backdrop-blur-sm border border-white/15 rounded-2xl p-6 shadow-xl">
@@ -2833,13 +2844,13 @@ const PrintProfileCard: React.FC<PrintProfileCardProps> = ({ profile, formatDate
         <p className="mt-3 text-sm text-gray-300 line-clamp-3">{profile.description}</p>
       )}
       <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-        <InfoRow label="Категория" value={profile.category || 'не указана'} />
-        <InfoRow label="Качество" value={profile.quality_tier || 'не указано'} />
-        <InfoRow label="Обновлён" value={formatDateTime(profile.updated_at)} />
-        <InfoRow label="Сопло (по умолчанию)" value={defaultNozzle} />
-        <InfoRow label="Высота слоя" value={layerHeight} />
-        <InfoRow label="Совместимые принтеры" value={`${printersCount} шт.`} />
-        <InfoRow label="Совместимые филаменты" value={`${filamentsCount} шт.`} />
+        <InfoRow label={t('profilePage.category')} value={profile.category || t('profilePage.notSpecifiedF')} />
+        <InfoRow label={t('profilePage.quality')} value={profile.quality_tier || t('profilePage.notSpecifiedN')} />
+        <InfoRow label={t('profilePage.updated')} value={formatDateTime(profile.updated_at)} />
+        <InfoRow label={t('profilePage.defaultNozzle')} value={defaultNozzle} />
+        <InfoRow label={t('profilePage.layerHeight')} value={layerHeight} />
+        <InfoRow label={t('profilePage.compatiblePrinters')} value={`${printersCount}`} />
+        <InfoRow label={t('profilePage.compatibleFilaments')} value={`${filamentsCount}`} />
       </div>
       <div className="mt-4 flex flex-wrap gap-2">
         <button
@@ -2848,7 +2859,7 @@ const PrintProfileCard: React.FC<PrintProfileCardProps> = ({ profile, formatDate
           className="px-4 py-2 rounded-lg border border-white/20 text-sm text-white/90 hover:bg-white/10 transition-all flex items-center gap-2"
         >
           <Eye className="w-4 h-4" />
-          Смотреть JSON
+          {t('profilePage.viewJson')}
         </button>
         <button
           type="button"
@@ -2856,7 +2867,7 @@ const PrintProfileCard: React.FC<PrintProfileCardProps> = ({ profile, formatDate
           className="px-4 py-2 rounded-lg border border-white/20 text-sm text-white/90 hover:bg-white/10 transition-all flex items-center gap-2"
         >
           <Download className="w-4 h-4" />
-          Скачать JSON
+          {t('profilePage.downloadJson')}
         </button>
       </div>
     </div>
@@ -2885,7 +2896,7 @@ const FilterChip: React.FC<FilterChipProps> = ({ label, active, onClick }) => (
 
 const formatQualityLabel = (value: string) => {
   const map: Record<string, string> = {
-    superdraft: 'Супер Draft',
+    superdraft: 'Super Draft',
     draft: 'Draft',
     standard: 'Standard',
     optimal: 'Optimal',
@@ -2930,6 +2941,7 @@ const PrintProfileFilters: React.FC<PrintProfileFiltersProps> = ({
   onToggleActive,
   onReset,
 }) => {
+  const { t } = useTranslation();
   const hasActiveFilters =
     !!qualityFilter || !!nozzleFilter || !!printerFilter || onlyOfficial || onlyActive;
 
@@ -2938,7 +2950,7 @@ const PrintProfileFilters: React.FC<PrintProfileFiltersProps> = ({
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-2 text-sm font-medium uppercase tracking-wide text-gray-300">
           <Filter className="w-4 h-4" />
-          Фильтры
+          {t('profilePage.filters')}
         </div>
         <button
           type="button"
@@ -2951,13 +2963,13 @@ const PrintProfileFilters: React.FC<PrintProfileFiltersProps> = ({
           }`}
         >
           <RotateCcw className="w-4 h-4" />
-          Сбросить
+          {t('profilePage.reset')}
         </button>
       </div>
 
       {qualityOptions.length > 0 && (
         <div className="space-y-2">
-          <p className="text-xs text-gray-400 uppercase tracking-wide">Класс качества</p>
+          <p className="text-xs text-gray-400 uppercase tracking-wide">{t('profilePage.qualityClass')}</p>
           <div className="flex flex-wrap gap-2">
             {qualityOptions.map(option => (
               <FilterChip
@@ -2973,12 +2985,12 @@ const PrintProfileFilters: React.FC<PrintProfileFiltersProps> = ({
 
       {nozzleOptions.length > 0 && (
         <div className="space-y-2">
-          <p className="text-xs text-gray-400 uppercase tracking-wide">Сопло</p>
+          <p className="text-xs text-gray-400 uppercase tracking-wide">{t('profilePage.nozzle')}</p>
           <div className="flex flex-wrap gap-2">
             {nozzleOptions.map(option => (
               <FilterChip
                 key={option}
-                label={`${option} мм`}
+                label={`${option} ${t('profilePage.mm')}`}
                 active={nozzleFilter === option}
                 onClick={() => onNozzleChange(option)}
               />
@@ -2989,7 +3001,7 @@ const PrintProfileFilters: React.FC<PrintProfileFiltersProps> = ({
 
       {printerOptions.length > 0 && (
         <div className="space-y-2">
-          <p className="text-xs text-gray-400 uppercase tracking-wide">Принтер</p>
+          <p className="text-xs text-gray-400 uppercase tracking-wide">{t('profilePage.printer')}</p>
           <div className="flex flex-wrap gap-2">
             {printerOptions.map(option => (
               <FilterChip
@@ -3005,11 +3017,11 @@ const PrintProfileFilters: React.FC<PrintProfileFiltersProps> = ({
 
       <div className="flex flex-wrap gap-2">
         <FilterChip
-          label="Только официальные"
+          label={t('profilePage.officialOnly')}
           active={onlyOfficial}
           onClick={onToggleOfficial}
         />
-        <FilterChip label="Только активные" active={onlyActive} onClick={onToggleActive} />
+        <FilterChip label={t('profilePage.activeOnly')} active={onlyActive} onClick={onToggleActive} />
       </div>
     </div>
   );
@@ -3023,6 +3035,7 @@ interface PrinterProfileModalProps {
 }
 
 const PrinterProfileModal: React.FC<PrinterProfileModalProps> = ({ profile, onClose, formatDateTime, printProfileNameBySlug }) => {
+  const { t } = useTranslation();
   useEffect(() => {
     const handleKey = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
@@ -3052,48 +3065,47 @@ const PrinterProfileModal: React.FC<PrinterProfileModalProps> = ({ profile, onCl
         </div>
         <div className="px-6 pb-6 pt-2 space-y-6 overflow-y-auto max-h-[70vh] custom-scrollbar">
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            <InfoRow label="ID профиля" value={`#${profile.id}`} />
-            <InfoRow label="Привязка к принтеру" value={profile.printer_id ? `ID ${profile.printer_id}` : 'не указана'} />
-            <InfoRow label="Создан" value={formatDateTime(profile.created_at)} />
-            <InfoRow label="Обновлён" value={formatDateTime(profile.updated_at)} />
-            <InfoRow label="Тип" value={profile.is_official ? 'Официальный' : 'Пользовательский'} />
-            <InfoRow label="Статус" value={profile.active ? t('profilePage.badge.active') : t('profilePage.badge.disabled')} />
-            <InfoRow label="Источник" value={profile.source || 'не указан'} />
-            <InfoRow label="Вендор" value={profile.vendor || 'не указан'} />
+            <InfoRow label={t('profilePage.profileId')} value={`#${profile.id}`} />
+            <InfoRow label={t('profilePage.printerBinding')} value={profile.printer_id ? `ID ${profile.printer_id}` : t('profilePage.notSpecifiedF')} />
+            <InfoRow label={t('profilePage.created')} value={formatDateTime(profile.created_at)} />
+            <InfoRow label={t('profilePage.updated')} value={formatDateTime(profile.updated_at)} />
+            <InfoRow label={t('profilePage.type')} value={profile.is_official ? t('profilePage.official') : t('profilePage.custom')} />
+            <InfoRow label={t('profilePage.status')} value={profile.active ? t('profilePage.badge.active') : t('profilePage.badge.disabled')} />
+            <InfoRow label={t('profilePage.source')} value={profile.source || t('profilePage.notSpecifiedM')} />
+            <InfoRow label={t('profilePage.vendor')} value={profile.vendor || t('profilePage.notSpecifiedM')} />
             <InfoRow label="Setting ID" value={profile.setting_id || '—'} />
             <InfoRow label="External ID" value={profile.external_id || '—'} />
             <InfoRow
-              label="Диаметры сопел"
-              value={profile.nozzle_diameters && profile.nozzle_diameters.length > 0 ? profile.nozzle_diameters.join(', ') : 'не указаны'}
+              label={t('profilePage.nozzleDiameters')}
+              value={profile.nozzle_diameters && profile.nozzle_diameters.length > 0 ? profile.nozzle_diameters.join(', ') : t('profilePage.notSpecifiedPl')}
             />
             <InfoRow
-              label="Высота печати"
+              label={t('profilePage.printHeight')}
               value={
-                typeof profile.printable_height_mm === 'number' ? `${profile.printable_height_mm.toFixed(0)} мм` : 'не указана'
-              }
+                typeof profile.printable_height_mm === 'number' ? `${profile.printable_height_mm.toFixed(0)} ${t('profilePage.mm')}` : t('profilePage.notSpecifiedF')}
             />
-            <InfoRow 
-        label="Default Print Profile" 
-        value={profile.default_print_profile_slug 
+            <InfoRow
+        label={t('profilePage.defaultPrintProfile')}
+        value={profile.default_print_profile_slug
           ? (printProfileNameBySlug?.get(profile.default_print_profile_slug) || profile.default_print_profile_slug)
-          : 'не задан'} 
+          : t('profilePage.notSetM')}
       />
           </div>
           {profile.description && (
             <div>
-              <h4 className="text-sm font-semibold text-white mb-2">Описание</h4>
+              <h4 className="text-sm font-semibold text-white mb-2">{t('profilePage.description')}</h4>
               <p className="text-sm text-gray-200 whitespace-pre-wrap">{profile.description}</p>
             </div>
           )}
           {profile.notes && (
             <div>
-              <h4 className="text-sm font-semibold text-white mb-2">Заметки</h4>
+              <h4 className="text-sm font-semibold text-white mb-2">{t('profilePage.notes')}</h4>
               <p className="text-sm text-gray-200 whitespace-pre-wrap">{profile.notes}</p>
             </div>
           )}
           {profile.start_gcode && (
             <div>
-              <h4 className="text-sm font-semibold text-white mb-2">Стартовый G-code</h4>
+              <h4 className="text-sm font-semibold text-white mb-2">{t('profilePage.startGcode')}</h4>
               <pre className="bg-black/40 border border-white/10 rounded-xl p-4 text-xs text-gray-200 overflow-auto max-h-60 whitespace-pre-wrap">
                 {profile.start_gcode}
               </pre>
@@ -3101,14 +3113,14 @@ const PrinterProfileModal: React.FC<PrinterProfileModalProps> = ({ profile, onCl
           )}
           {profile.end_gcode && (
             <div>
-              <h4 className="text-sm font-semibold text-white mb-2">Финальный G-code</h4>
+              <h4 className="text-sm font-semibold text-white mb-2">{t('profilePage.endGcode')}</h4>
               <pre className="bg-black/40 border border-white/10 rounded-xl p-4 text-xs text-gray-200 overflow-auto max-h-60 whitespace-pre-wrap">
                 {profile.end_gcode}
               </pre>
             </div>
           )}
           <div>
-            <h4 className="text-sm font-semibold text-white mb-2">Настройки OrcaSlicer</h4>
+            <h4 className="text-sm font-semibold text-white mb-2">{t('profilePage.orcaSlicerSettings')}</h4>
             <pre className="bg-black/40 border border-white/10 rounded-xl p-4 text-xs text-gray-200 overflow-auto max-h-72 whitespace-pre">
               {JSON.stringify(profile.orcaslicer_settings ?? {}, null, 2)}
             </pre>
@@ -3126,6 +3138,7 @@ interface PrintProfileModalProps {
 }
 
 const PrintProfileModal: React.FC<PrintProfileModalProps> = ({ profile, onClose, formatDateTime }) => {
+  const { t } = useTranslation();
   useEffect(() => {
     const handleKey = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
@@ -3138,9 +3151,9 @@ const PrintProfileModal: React.FC<PrintProfileModalProps> = ({ profile, onClose,
 
   const printersList = profile.printer_links ?? [];
   const filamentsList = profile.filament_links ?? [];
-  const defaultNozzle = profile.default_nozzle ? `${profile.default_nozzle} мм` : 'не указано';
+  const defaultNozzle = profile.default_nozzle ? `${profile.default_nozzle} ${t('profilePage.mm')}` : t('profilePage.notSpecifiedN');
   const layerHeight =
-    typeof profile.layer_height_mm === 'number' ? `${profile.layer_height_mm.toFixed(2)} мм` : 'не указана';
+    typeof profile.layer_height_mm === 'number' ? `${profile.layer_height_mm.toFixed(2)} ${t('profilePage.mm')}` : t('profilePage.notSpecifiedF');
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
@@ -3161,35 +3174,35 @@ const PrintProfileModal: React.FC<PrintProfileModalProps> = ({ profile, onClose,
         </div>
         <div className="px-6 pb-6 pt-2 space-y-6 overflow-y-auto max-h-[70vh] custom-scrollbar">
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            <InfoRow label="ID профиля" value={`#${profile.id}`} />
-            <InfoRow label="Создан" value={formatDateTime(profile.created_at)} />
-            <InfoRow label="Обновлён" value={formatDateTime(profile.updated_at)} />
-            <InfoRow label="Категория" value={profile.category || 'не указана'} />
-            <InfoRow label="Тип" value={profile.is_official ? 'Официальный' : 'Пользовательский'} />
-            <InfoRow label="Статус" value={profile.active ? t('profilePage.badge.active') : t('profilePage.badge.disabled')} />
-            <InfoRow label="Источник" value={profile.source || 'не указан'} />
-            <InfoRow label="Вендор" value={profile.vendor || 'не указан'} />
+            <InfoRow label={t('profilePage.profileId')} value={`#${profile.id}`} />
+            <InfoRow label={t('profilePage.created')} value={formatDateTime(profile.created_at)} />
+            <InfoRow label={t('profilePage.updated')} value={formatDateTime(profile.updated_at)} />
+            <InfoRow label={t('profilePage.category')} value={profile.category || t('profilePage.notSpecifiedF')} />
+            <InfoRow label={t('profilePage.type')} value={profile.is_official ? t('profilePage.official') : t('profilePage.custom')} />
+            <InfoRow label={t('profilePage.status')} value={profile.active ? t('profilePage.badge.active') : t('profilePage.badge.disabled')} />
+            <InfoRow label={t('profilePage.source')} value={profile.source || t('profilePage.notSpecifiedM')} />
+            <InfoRow label={t('profilePage.vendor')} value={profile.vendor || t('profilePage.notSpecifiedM')} />
             <InfoRow label="Setting ID" value={profile.setting_id || '—'} />
             <InfoRow label="External ID" value={profile.external_id || '—'} />
-            <InfoRow label="Класс качества" value={profile.quality_tier || '—'} />
-            <InfoRow label="Сопло (по умолчанию)" value={defaultNozzle} />
-            <InfoRow label="Высота слоя" value={layerHeight} />
+            <InfoRow label={t('profilePage.qualityClass')} value={profile.quality_tier || '—'} />
+            <InfoRow label={t('profilePage.defaultNozzle')} value={defaultNozzle} />
+            <InfoRow label={t('profilePage.layerHeight')} value={layerHeight} />
           </div>
           {profile.description && (
             <div>
-              <h4 className="text-sm font-semibold text-white mb-2">Описание</h4>
+              <h4 className="text-sm font-semibold text-white mb-2">{t('profilePage.description')}</h4>
               <p className="text-sm text-gray-200 whitespace-pre-wrap">{profile.description}</p>
             </div>
           )}
           {profile.notes && (
             <div>
-              <h4 className="text-sm font-semibold text-white mb-2">Заметки</h4>
+              <h4 className="text-sm font-semibold text-white mb-2">{t('profilePage.notes')}</h4>
               <p className="text-sm text-gray-200 whitespace-pre-wrap">{profile.notes}</p>
             </div>
           )}
           {printersList.length > 0 && (
             <div>
-              <h4 className="text-sm font-semibold text-white mb-2">Совместимые принтеры</h4>
+              <h4 className="text-sm font-semibold text-white mb-2">{t('profilePage.compatiblePrinters')}</h4>
               <div className="flex flex-wrap gap-2">
                 {printersList.map((item) => (
                   <span
@@ -3197,7 +3210,7 @@ const PrintProfileModal: React.FC<PrintProfileModalProps> = ({ profile, onClose,
                     className="px-2 py-1 bg-white/10 border border-white/15 rounded-lg text-xs text-gray-100"
                   >
                     {item.printer_slug}
-                    {item.relation_type === 'condition' && item.condition ? ` (условие: ${item.condition})` : null}
+                    {item.relation_type === 'condition' && item.condition ? ` (${t('profilePage.condition')}: ${item.condition})` : null}
                   </span>
                 ))}
               </div>
@@ -3205,7 +3218,7 @@ const PrintProfileModal: React.FC<PrintProfileModalProps> = ({ profile, onClose,
           )}
           {filamentsList.length > 0 && (
             <div>
-              <h4 className="text-sm font-semibold text-white mb-2">Совместимые филаменты</h4>
+              <h4 className="text-sm font-semibold text-white mb-2">{t('profilePage.compatibleFilaments')}</h4>
               <div className="flex flex-wrap gap-2">
                 {filamentsList.map((item) => (
                   <span
@@ -3219,7 +3232,7 @@ const PrintProfileModal: React.FC<PrintProfileModalProps> = ({ profile, onClose,
             </div>
           )}
           <div>
-            <h4 className="text-sm font-semibold text-white mb-2">Настройки OrcaSlicer</h4>
+            <h4 className="text-sm font-semibold text-white mb-2">{t('profilePage.orcaSlicerSettings')}</h4>
             <pre className="bg-black/40 border border-white/10 rounded-xl p-4 text-xs text-gray-200 overflow-auto max-h-72 whitespace-pre">
               {JSON.stringify(profile.orcaslicer_settings ?? {}, null, 2)}
             </pre>
