@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useTranslation } from 'react-i18next';
 import { Plus, Edit, Trash2, X, Save } from 'lucide-react';
 import { Printer3DIcon } from '../icons/Printer3DIcon';
 import { adminAPI, printersAPI } from '../../api/client';
@@ -20,6 +21,7 @@ const slugify = (value: string): string =>
     .slice(0, 200);
 
 export function AdminPrinters() {
+  const { t } = useTranslation();
   const isHeaderVisible = useHeaderVisible();
   const queryClient = useQueryClient();
   const [page, setPage] = useState(1);
@@ -65,20 +67,20 @@ export function AdminPrinters() {
   });
 
   const handleDelete = (id: number) => {
-    if (confirm('Вы уверены, что хотите удалить этот принтер?')) {
+    if (confirm(t('adminPrinters.confirmDelete'))) {
       deleteMutation.mutate(id);
     }
   };
 
   if (isLoading) {
-    return <div className="text-center py-12 text-gray-400">Загрузка принтеров...</div>;
+    return <div className="text-center py-12 text-gray-400">{t('adminPrinters.loading')}</div>;
   }
 
   // Если есть реальная ошибка (не просто пустой список)
   if (error) {
-    const errorMessage = error instanceof Error 
-      ? error.message 
-      : 'Неизвестная ошибка';
+    const errorMessage = error instanceof Error
+      ? error.message
+      : t('adminPrinters.unknownError');
     
     // Проверяем, не является ли это просто отсутствием данных
     const isNotFound = errorMessage.includes('404') || errorMessage.includes('not found');
@@ -86,7 +88,7 @@ export function AdminPrinters() {
     if (!isNotFound) {
       return (
         <div className="text-center py-12">
-          <div className="text-red-400 mb-2">Ошибка загрузки принтеров</div>
+          <div className="text-red-400 mb-2">{t('adminPrinters.loadError')}</div>
           <div className="text-gray-400 text-sm">{errorMessage}</div>
         </div>
       );
@@ -100,15 +102,15 @@ export function AdminPrinters() {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-2xl font-bold text-white mb-2">Принтеры</h2>
-          <p className="text-gray-400">Всего: {data?.total || 0}</p>
+          <h2 className="text-2xl font-bold text-white mb-2">{t('adminPrinters.title')}</h2>
+          <p className="text-gray-400">{t('adminPrinters.total')}: {data?.total || 0}</p>
         </div>
         <button
           onClick={() => setIsCreateModalOpen(true)}
           className="flex items-center space-x-2 px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-xl transition-all"
         >
           <Plus className="w-5 h-5" />
-          <span>Добавить принтер</span>
+          <span>{t('adminPrinters.addPrinter')}</span>
         </button>
       </div>
 
@@ -121,7 +123,7 @@ export function AdminPrinters() {
             setSearchQuery(e.target.value);
             setPage(1);
           }}
-          placeholder="Поиск по названию, производителю или модели..."
+          placeholder={t('adminPrinters.searchPlaceholder')}
           className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500"
         />
       </div>
@@ -130,7 +132,7 @@ export function AdminPrinters() {
       {printers.length === 0 ? (
         <div className="text-center py-12 text-gray-400">
           <Printer3DIcon className="w-16 h-16 mx-auto mb-4 opacity-50" />
-          <p>Нет принтеров для отображения</p>
+          <p>{t('adminPrinters.noPrinters')}</p>
         </div>
       ) : (
         <div className="space-y-4">
@@ -149,34 +151,34 @@ export function AdminPrinters() {
                     </span>
                     {!printer.active && (
                       <span className="px-2 py-1 rounded bg-red-500/20 text-red-400 text-xs font-semibold">
-                        Неактивен
+                        {t('adminPrinters.inactive')}
                       </span>
                     )}
                   </div>
                   <div className="text-sm text-gray-400 space-y-1">
                     <p>Slug: {printer.slug}</p>
-                    <p>Источник: {printer.source}</p>
-                    {printer.vendor && <p>Вендор: {printer.vendor}</p>}
+                    <p>{t('adminPrinters.source')}: {printer.source}</p>
+                    {printer.vendor && <p>{t('adminPrinters.vendor')}: {printer.vendor}</p>}
                     {printer.model_id && <p>Model ID: {printer.model_id}</p>}
-                    {printer.family && <p>Семейство: {printer.family}</p>}
-                    {printer.technology && <p>Технология: {printer.technology}</p>}
+                    {printer.family && <p>{t('adminPrinters.family')}: {printer.family}</p>}
+                    {printer.technology && <p>{t('adminPrinters.technology')}: {printer.technology}</p>}
                     {printer.description && <p>{printer.description}</p>}
                     {(printer.build_volume_x || printer.build_volume_y || printer.build_volume_z) && (
                       <p>
-                        Объём печати: {printer.build_volume_x || '?'} × {printer.build_volume_y || '?'} × {printer.build_volume_z || '?'} мм
+                        {t('adminPrinters.buildVolume')}: {printer.build_volume_x || '?'} × {printer.build_volume_y || '?'} × {printer.build_volume_z || '?'} {t('adminPrinters.mm')}
                       </p>
                     )}
-                    {printer.nozzle_diameter && <p>Сопло: {printer.nozzle_diameter}мм</p>}
+                    {printer.nozzle_diameter && <p>{t('adminPrinters.nozzle')}: {printer.nozzle_diameter}{t('adminPrinters.mm')}</p>}
                     {printer.nozzle_options?.length ? (
-                      <p>Доп. сопла: {printer.nozzle_options.join(', ')} мм</p>
+                      <p>{t('adminPrinters.extraNozzles')}: {printer.nozzle_options.join(', ')} {t('adminPrinters.mm')}</p>
                     ) : null}
                     {(printer.max_extruder_temp || printer.max_bed_temp) && (
                       <p>
-                        Температуры: сопло до {printer.max_extruder_temp || '?'}°C, стол до {printer.max_bed_temp || '?'}°C
+                        {t('adminPrinters.temps')}: {t('adminPrinters.nozzleUpTo')} {printer.max_extruder_temp || '?'}°C, {t('adminPrinters.bedUpTo')} {printer.max_bed_temp || '?'}°C
                       </p>
                     )}
                     {printer.default_materials?.length ? (
-                      <p>Материалы по умолчанию: {printer.default_materials.join(', ')}</p>
+                      <p>{t('adminPrinters.defaultMaterials')}: {printer.default_materials.join(', ')}</p>
                     ) : null}
                   </div>
                 </div>
@@ -184,14 +186,14 @@ export function AdminPrinters() {
                   <button
                     onClick={() => setEditingPrinter(printer)}
                     className="p-2 bg-white/10 hover:bg-white/20 text-white rounded-lg transition-all"
-                    title="Редактировать"
+                    title={t('adminPrinters.edit')}
                   >
                     <Edit className="w-5 h-5" />
                   </button>
                   <button
                     onClick={() => handleDelete(printer.id)}
                     className="p-2 bg-red-500/20 hover:bg-red-500/30 text-red-400 rounded-lg transition-all"
-                    title="Удалить"
+                    title={t('adminPrinters.delete')}
                   >
                     <Trash2 className="w-5 h-5" />
                   </button>
@@ -210,15 +212,15 @@ export function AdminPrinters() {
             disabled={page === 1}
             className="px-4 py-2 rounded-lg bg-white/5 text-gray-300 disabled:opacity-50 disabled:cursor-not-allowed hover:bg-white/10"
           >
-            Назад
+            {t('adminPrinters.prev')}
           </button>
-          <span className="text-gray-400">Страница {page} из {data.pages}</span>
+          <span className="text-gray-400">{t('adminPrinters.page')} {page} {t('adminPrinters.of')} {data.pages}</span>
           <button
             onClick={() => setPage(p => Math.min(data.pages, p + 1))}
             disabled={page === data.pages}
             className="px-4 py-2 rounded-lg bg-white/5 text-gray-300 disabled:opacity-50 disabled:cursor-not-allowed hover:bg-white/10"
           >
-            Вперед
+            {t('adminPrinters.next')}
           </button>
         </div>
       )}
@@ -273,6 +275,7 @@ const PRINTER_GCODE_FIELDS = [
 ] as const;
 
 function PrinterModal({ printer, onClose, onSave, isLoading }: PrinterModalProps) {
+  const { t } = useTranslation();
   const isHeaderVisible = useHeaderVisible();
   const [formData, setFormData] = useState({
     name: printer?.name || '',
@@ -539,12 +542,12 @@ function PrinterModal({ printer, onClose, onSave, isLoading }: PrinterModalProps
   };
 
   const tabConfig: { key: PrinterTabKey; label: string; description: string }[] = [
-    { key: 'general', label: 'Общая информация', description: 'Основные сведения, размеры, медиа' },
-    { key: 'motion', label: 'Motion ability', description: 'Лимиты скоростей, ускорений, jerk' },
-    { key: 'extruders', label: 'Экструдеры', description: 'Диаметры, температуры, сопла' },
-    { key: 'multimaterial', label: 'Multimaterial', description: 'Single-extruder MM настройки' },
-    { key: 'gcode', label: 'Machine G-code', description: 'Старт/финал и прочие блоки G-code' },
-    { key: 'notes', label: 'Заметки', description: 'Описание и служебные комментарии' },
+    { key: 'general', label: t('adminPrinters.tabs.general'), description: t('adminPrinters.tabs.generalDesc') },
+    { key: 'motion', label: t('adminPrinters.tabs.motion'), description: t('adminPrinters.tabs.motionDesc') },
+    { key: 'extruders', label: t('adminPrinters.tabs.extruders'), description: t('adminPrinters.tabs.extrudersDesc') },
+    { key: 'multimaterial', label: t('adminPrinters.tabs.multimaterial'), description: t('adminPrinters.tabs.multimaterialDesc') },
+    { key: 'gcode', label: t('adminPrinters.tabs.gcode'), description: t('adminPrinters.tabs.gcodeDesc') },
+    { key: 'notes', label: t('adminPrinters.tabs.notes'), description: t('adminPrinters.tabs.notesDesc') },
   ];
 
   const handleAddNozzle = () => {
@@ -582,7 +585,7 @@ function PrinterModal({ printer, onClose, onSave, isLoading }: PrinterModalProps
       setFormData((prev) => ({ ...prev, extra_metadata: formatted }));
       setJsonError(null);
     } catch (error) {
-      setJsonError('Не удалось отформатировать JSON. Проверьте синтаксис.');
+      setJsonError(t('adminPrinters.jsonFormatError'));
     }
   };
 
@@ -596,7 +599,7 @@ function PrinterModal({ printer, onClose, onSave, isLoading }: PrinterModalProps
         setJsonError(null);
       } catch (error) {
         console.error('Invalid extra metadata JSON', error);
-        setJsonError('Некорректный JSON. Проверьте синтаксис.');
+        setJsonError(t('adminPrinters.jsonInvalid'));
         return;
       }
     } else {
@@ -632,16 +635,16 @@ function PrinterModal({ printer, onClose, onSave, isLoading }: PrinterModalProps
 
   const renderGeneralTab = () => {
     const firmwareFlagOptions: Array<{ key: string; label: string; description?: string }> = [
-      { key: 'use_relative_e_distances', label: 'Относительные координаты E', description: 'Включает относительный режим подачи в G-code (M83).' },
-      { key: 'use_firmware_retraction', label: 'Откат на уровне прошивки', description: 'Передаёт управление ретрактом прошивке (G10/G11).' },
-      { key: 'pellet_modded_printer', label: 'Гранульная модификация', description: 'Принтер модифицирован под гранулы / пеллетный экструдер.' },
-      { key: 'support_multi_bed_types', label: 'Несколько типов столов', description: 'Поддерживает разные пластины и профили стола.' },
-      { key: 'support_air_filtration', label: 'Фильтрация воздуха' },
-      { key: 'support_chamber_temp_control', label: 'Контроль температуры камеры' },
-      { key: 'auxiliary_fan', label: 'Внешний вентилятор' },
-      { key: 'scan_first_layer', label: 'Сканирование первого слоя' },
-      { key: 'disable_m73', label: 'Отключить отчёт времени M73' },
-      { key: 'bbl_use_printhost', label: 'Использовать PrintHost' },
+      { key: 'use_relative_e_distances', label: t('adminPrinters.flags.relativeE'), description: t('adminPrinters.flags.relativeEDesc') },
+      { key: 'use_firmware_retraction', label: t('adminPrinters.flags.firmwareRetraction'), description: t('adminPrinters.flags.firmwareRetractionDesc') },
+      { key: 'pellet_modded_printer', label: t('adminPrinters.flags.pelletMod'), description: t('adminPrinters.flags.pelletModDesc') },
+      { key: 'support_multi_bed_types', label: t('adminPrinters.flags.multiBedTypes'), description: t('adminPrinters.flags.multiBedTypesDesc') },
+      { key: 'support_air_filtration', label: t('adminPrinters.flags.airFiltration') },
+      { key: 'support_chamber_temp_control', label: t('adminPrinters.flags.chamberTemp') },
+      { key: 'auxiliary_fan', label: t('adminPrinters.flags.auxFan') },
+      { key: 'scan_first_layer', label: t('adminPrinters.flags.scanFirstLayer') },
+      { key: 'disable_m73', label: t('adminPrinters.flags.disableM73') },
+      { key: 'bbl_use_printhost', label: t('adminPrinters.flags.usePrintHost') },
     ];
     const printerStructureOptions = ['corexy', 'cartesian', 'i3', 'delta', 'belt', 'polar', 'scara', 'undefine'];
     const gcodeFlavorOptions = ['marlin', 'marlin2', 'klipper', 'reprapfirmware'];
@@ -655,44 +658,44 @@ function PrinterModal({ printer, onClose, onSave, isLoading }: PrinterModalProps
       'Auto',
     ];
     const coolingFanFields: Array<{ key: string; label: string; placeholder?: string; unit?: string }> = [
-      { key: 'fan_speedup_time', label: 'Время разгона вентилятора', placeholder: '2', unit: 'с' },
-      { key: 'fan_speedup_overhangs', label: 'Разгон для свесов', placeholder: '30', unit: '%' },
+      { key: 'fan_speedup_time', label: t('adminPrinters.cooling.fanSpeedupTime'), placeholder: '2', unit: t('adminPrinters.units.sec') },
+      { key: 'fan_speedup_overhangs', label: t('adminPrinters.cooling.fanSpeedupOverhangs'), placeholder: '30', unit: '%' },
       { key: 'fan_kickstart', label: 'Kickstart', placeholder: '100', unit: '%' },
     ];
     const extruderClearanceFields: Array<{ key: string; label: string; placeholder?: string; unit?: string }> = [
-      { key: 'extruder_clearance_radius', label: 'Радиус рабочей зоны экструдера', placeholder: '65', unit: 'мм' },
-      { key: 'extruder_clearance_height_to_rod', label: 'Высота до направляющих', placeholder: '36', unit: 'мм' },
-      { key: 'extruder_clearance_height_to_lid', label: 'Высота до крышки', placeholder: '140', unit: 'мм' },
+      { key: 'extruder_clearance_radius', label: t('adminPrinters.clearance.radius'), placeholder: '65', unit: t('adminPrinters.mm') },
+      { key: 'extruder_clearance_height_to_rod', label: t('adminPrinters.clearance.heightToRod'), placeholder: '36', unit: t('adminPrinters.mm') },
+      { key: 'extruder_clearance_height_to_lid', label: t('adminPrinters.clearance.heightToLid'), placeholder: '140', unit: t('adminPrinters.mm') },
     ];
     const adaptiveMeshFields: Array<{ key: string; label: string; placeholder?: string }> = [
-      { key: 'bed_mesh_min', label: 'Bed mesh min (координаты)', placeholder: '0x0, 256x0...' },
-      { key: 'bed_mesh_max', label: 'Bed mesh max (координаты)', placeholder: '256x256...' },
-      { key: 'bed_mesh_probe_distance', label: 'Расстояние между точками сетки (мм)', placeholder: '30' },
-      { key: 'adaptive_bed_mesh_margin', label: 'Отступ сетки (мм)', placeholder: '5' },
+      { key: 'bed_mesh_min', label: t('adminPrinters.mesh.bedMeshMin'), placeholder: '0x0, 256x0...' },
+      { key: 'bed_mesh_max', label: t('adminPrinters.mesh.bedMeshMax'), placeholder: '256x256...' },
+      { key: 'bed_mesh_probe_distance', label: t('adminPrinters.mesh.probeDistance'), placeholder: '30' },
+      { key: 'adaptive_bed_mesh_margin', label: t('adminPrinters.mesh.margin'), placeholder: '5' },
     ];
     const bedGeometryFields: Array<{ key: string; label: string; isList?: boolean; placeholder?: string }> = [
-      { key: 'bed_shape', label: 'Форма стола (мм)', isList: true, placeholder: '0x0, 256x0, 256x256, 0x256' },
-      { key: 'bed_exclude_area', label: 'Запретные зоны стола', isList: true, placeholder: '90x90, 166x166' },
-      { key: 'bed_custom_rectangle', label: 'Пользовательский прямоугольник', isList: true, placeholder: '0x0, 256x0, 256x256, 0x256' },
-      { key: 'origin_z', label: 'Смещение по Z', placeholder: '0' },
+      { key: 'bed_shape', label: t('adminPrinters.bed.shape'), isList: true, placeholder: '0x0, 256x0, 256x256, 0x256' },
+      { key: 'bed_exclude_area', label: t('adminPrinters.bed.excludeArea'), isList: true, placeholder: '90x90, 166x166' },
+      { key: 'bed_custom_rectangle', label: t('adminPrinters.bed.customRectangle'), isList: true, placeholder: '0x0, 256x0, 256x256, 0x256' },
+      { key: 'origin_z', label: t('adminPrinters.bed.originZ'), placeholder: '0' },
     ];
     const thumbnailsFields: Array<{ key: string; label: string; placeholder?: string }> = [
       { key: 'thumbnails', label: 'Thumbnails', placeholder: '32x32,64x64' },
-      { key: 'thumbnails_format', label: 'Формат миниатюр', placeholder: 'png,gcode,ufp...' },
+      { key: 'thumbnails_format', label: t('adminPrinters.thumbnailsFormat'), placeholder: 'png,gcode,ufp...' },
     ];
 
   return (
       <div className="space-y-8">
         <section className="space-y-4 bg-white/5 border border-white/10 rounded-2xl p-6 shadow-inner shadow-indigo-900/30">
           <div>
-            <h4 className="text-sm font-semibold text-white uppercase tracking-wide">Общие сведения</h4>
+            <h4 className="text-sm font-semibold text-white uppercase tracking-wide">{t('adminPrinters.sections.general')}</h4>
             <p className="text-xs text-gray-400 mt-1">
-              Основная информация о принтере. Slug генерируется автоматически из производителя и модели.
+              {t('adminPrinters.sections.generalDesc')}
             </p>
         </div>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
-              <label className="block text-gray-300 mb-2 text-sm font-medium">Название *</label>
+              <label className="block text-gray-300 mb-2 text-sm font-medium">{t('adminPrinters.fields.name')} *</label>
               <input
                 type="text"
                 value={formData.name}
@@ -702,7 +705,7 @@ function PrinterModal({ printer, onClose, onSave, isLoading }: PrinterModalProps
               />
             </div>
             <div>
-              <label className="block text-gray-300 mb-2 text-sm font-medium">Производитель *</label>
+              <label className="block text-gray-300 mb-2 text-sm font-medium">{t('adminPrinters.fields.manufacturer')} *</label>
               <input
                 type="text"
                 value={formData.manufacturer}
@@ -720,7 +723,7 @@ function PrinterModal({ printer, onClose, onSave, isLoading }: PrinterModalProps
               />
             </div>
             <div>
-              <label className="block text-gray-300 mb-2 text-sm font-medium">Модель *</label>
+              <label className="block text-gray-300 mb-2 text-sm font-medium">{t('adminPrinters.fields.model')} *</label>
               <input
                 type="text"
                 value={formData.model}
@@ -749,7 +752,7 @@ function PrinterModal({ printer, onClose, onSave, isLoading }: PrinterModalProps
                 }
                 className="px-4 py-2 bg-white/10 hover:bg-white/20 text-white rounded-xl text-xs font-medium transition-all"
               >
-                Генерировать
+                {t('adminPrinters.generate')}
               </button>
             </div>
           </div>
@@ -762,9 +765,9 @@ function PrinterModal({ printer, onClose, onSave, isLoading }: PrinterModalProps
       {(formData.family || formData.technology || formData.model_id || (printer && printer.source === 'system')) && (
         <section className="space-y-4 bg-white/5 border border-white/10 rounded-2xl p-6 shadow-inner shadow-indigo-900/30">
           <div>
-            <h4 className="text-sm font-semibold text-white uppercase tracking-wide">Дополнительно</h4>
+            <h4 className="text-sm font-semibold text-white uppercase tracking-wide">{t('adminPrinters.sections.additional')}</h4>
             <p className="text-xs text-gray-400 mt-1">
-              Дополнительные поля для системных принтеров (заполняются автоматически при импорте).
+              {t('adminPrinters.sections.additionalDesc')}
             </p>
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -775,28 +778,28 @@ function PrinterModal({ printer, onClose, onSave, isLoading }: PrinterModalProps
                   type="text"
                   value={formData.model_id}
                   onChange={(e) => setFormData({ ...formData, model_id: e.target.value })}
-                  placeholder="Автоматически заполняется при импорте"
+                  placeholder={t('adminPrinters.placeholders.autoFilled')}
                   className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500"
                 />
               </div>
             )}
             <div>
-              <label className="block text-gray-300 mb-2 text-sm font-medium">Семейство</label>
+              <label className="block text-gray-300 mb-2 text-sm font-medium">{t('adminPrinters.fields.family')}</label>
               <input
                 type="text"
                 value={formData.family}
                 onChange={(e) => setFormData({ ...formData, family: e.target.value })}
-                placeholder="Опционально (например: X1, P1S)"
+                placeholder={t('adminPrinters.placeholders.familyOptional')}
                 className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500"
               />
             </div>
             <div>
-              <label className="block text-gray-300 mb-2 text-sm font-medium">Технология</label>
+              <label className="block text-gray-300 mb-2 text-sm font-medium">{t('adminPrinters.fields.technology')}</label>
               <input
                 type="text"
                 value={formData.technology}
                 onChange={(e) => setFormData({ ...formData, technology: e.target.value })}
-                placeholder="Опционально (например: FDM, SLA)"
+                placeholder={t('adminPrinters.placeholders.technologyOptional')}
                 className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500"
               />
             </div>
@@ -806,14 +809,14 @@ function PrinterModal({ printer, onClose, onSave, isLoading }: PrinterModalProps
 
       <section className="space-y-4 bg-white/5 border border-white/10 rounded-2xl p-6 shadow-inner shadow-indigo-900/30">
             <div>
-          <h4 className="text-sm font-semibold text-white uppercase tracking-wide">Рабочая область</h4>
+          <h4 className="text-sm font-semibold text-white uppercase tracking-wide">{t('adminPrinters.sections.buildArea')}</h4>
           <p className="text-xs text-gray-400 mt-1">
-            Значения в миллиметрах. Используются при связке с профилями печати и визуализации стола.
+            {t('adminPrinters.sections.buildAreaDesc')}
           </p>
         </div>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div>
-            <label className="block text-gray-300 mb-2 text-sm font-medium">Ширина X (мм)</label>
+            <label className="block text-gray-300 mb-2 text-sm font-medium">{t('adminPrinters.fields.widthX')}</label>
               <input
                 type="number"
                 step="0.1"
@@ -823,7 +826,7 @@ function PrinterModal({ printer, onClose, onSave, isLoading }: PrinterModalProps
               />
             </div>
             <div>
-            <label className="block text-gray-300 mb-2 text-sm font-medium">Глубина Y (мм)</label>
+            <label className="block text-gray-300 mb-2 text-sm font-medium">{t('adminPrinters.fields.depthY')}</label>
               <input
                 type="number"
                 step="0.1"
@@ -833,7 +836,7 @@ function PrinterModal({ printer, onClose, onSave, isLoading }: PrinterModalProps
               />
             </div>
             <div>
-            <label className="block text-gray-300 mb-2 text-sm font-medium">Высота Z (мм)</label>
+            <label className="block text-gray-300 mb-2 text-sm font-medium">{t('adminPrinters.fields.heightZ')}</label>
               <input
                 type="number"
                 step="0.1"
@@ -847,13 +850,13 @@ function PrinterModal({ printer, onClose, onSave, isLoading }: PrinterModalProps
 
       <section className="space-y-4 bg-white/5 border border-white/10 rounded-2xl p-6 shadow-inner shadow-indigo-900/30">
             <div>
-          <h4 className="text-sm font-semibold text-white uppercase tracking-wide">Материалы и медиа</h4>
+          <h4 className="text-sm font-semibold text-white uppercase tracking-wide">{t('adminPrinters.sections.materialsMedia')}</h4>
           <p className="text-xs text-gray-400 mt-1">
-            Здесь можно добавить рекомендуемые материалы, обложку принтера и служебные данные.
+            {t('adminPrinters.sections.materialsMediaDesc')}
           </p>
         </div>
         <div>
-          <label className="block text-gray-300 mb-2 text-sm font-medium">Материалы по умолчанию</label>
+          <label className="block text-gray-300 mb-2 text-sm font-medium">{t('adminPrinters.fields.defaultMaterials')}</label>
           <div className="flex flex-wrap gap-2 mb-2">
             {formData.default_materials.map((material) => (
               <span
@@ -870,14 +873,14 @@ function PrinterModal({ printer, onClose, onSave, isLoading }: PrinterModalProps
                     }))
                   }
                   className="hover:text-white transition"
-                  aria-label="Удалить материал"
+                  aria-label={t('adminPrinters.removeMaterial')}
                 >
                   ×
                 </button>
               </span>
             ))}
             {formData.default_materials.length === 0 && (
-              <span className="text-xs text-gray-500">Материалы не заданы</span>
+              <span className="text-xs text-gray-500">{t('adminPrinters.noMaterials')}</span>
             )}
           </div>
           <div className="flex gap-2">
@@ -893,16 +896,16 @@ function PrinterModal({ printer, onClose, onSave, isLoading }: PrinterModalProps
               onClick={handleAddMaterial}
               className="px-4 py-3 bg-white/10 hover:bg-white/20 text-white rounded-xl transition-all"
             >
-              Добавить
+              {t('adminPrinters.add')}
             </button>
           </div>
           <p className="text-gray-500 text-xs mt-1">
-            Добавьте материалы, которые идут «из коробки» в комплектации или рекомендуются производителем.
+            {t('adminPrinters.materialsHint')}
           </p>
         </div>
 
         <div>
-          <label className="block text-gray-300 mb-2 text-sm font-medium">URL изображения</label>
+          <label className="block text-gray-300 mb-2 text-sm font-medium">{t('adminPrinters.fields.imageUrl')}</label>
           <input
             type="url"
             value={formData.image_url}
@@ -912,7 +915,7 @@ function PrinterModal({ printer, onClose, onSave, isLoading }: PrinterModalProps
         </div>
 
         <div>
-          <label className="block text-gray-300 mb-2 text-sm font-medium">Дополнительные метаданные (JSON)</label>
+          <label className="block text-gray-300 mb-2 text-sm font-medium">{t('adminPrinters.fields.extraMetadata')}</label>
           <div className="flex flex-col md:flex-row md:items-start gap-2 mb-2">
             <textarea
               value={formData.extra_metadata}
@@ -931,12 +934,12 @@ function PrinterModal({ printer, onClose, onSave, isLoading }: PrinterModalProps
               onClick={handleFormatJson}
               className="px-4 py-3 bg-white/10 hover:bg-white/20 text-white rounded-xl text-xs font-medium transition-all"
             >
-              Форматировать
+              {t('adminPrinters.format')}
             </button>
           </div>
           {jsonError && <p className="text-red-400 text-xs mt-1">{jsonError}</p>}
           <p className="text-gray-500 text-xs mt-1">
-            Для произвольных флагов из OrcaSlicer. Например: {"{\"source\":\"system\",\"profile\":\"Bambu X1C\"}"}.
+            {t('adminPrinters.metadataHint')}
           </p>
         </div>
 
@@ -949,35 +952,35 @@ function PrinterModal({ printer, onClose, onSave, isLoading }: PrinterModalProps
               onChange={(e) => setFormData({ ...formData, active: e.target.checked })}
               className="w-4 h-4 rounded border-white/30 bg-white/10"
             />
-            <label htmlFor="active" className="text-gray-300 text-sm">Активен</label>
+            <label htmlFor="active" className="text-gray-300 text-sm">{t('adminPrinters.active')}</label>
           </div>
         )}
       </section>
 
       <section className="space-y-4 bg-white/5 border border-white/10 rounded-2xl p-6 shadow-inner shadow-indigo-900/30">
         <div>
-          <h4 className="text-sm font-semibold text-white uppercase tracking-wide">Конфигурация Orca</h4>
+          <h4 className="text-sm font-semibold text-white uppercase tracking-wide">{t('adminPrinters.sections.orcaConfig')}</h4>
           <p className="text-xs text-gray-400 mt-1">
-            Значения из system-профиля OrcaSlicer. Используются при экспорте/импорте принтеров.
+            {t('adminPrinters.sections.orcaConfigDesc')}
           </p>
         </div>
         {metadataInvalid ? (
           <div className="rounded-2xl border border-red-500/40 bg-red-500/10 px-4 py-3 text-sm text-red-200">
-            Не удалось разобрать JSON в поле «Дополнительные метаданные». Исправьте содержимое вручную или нажмите «Форматировать».
+            {t('adminPrinters.jsonParseError')}
           </div>
         ) : (
           <div className="space-y-6">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
-                <label className="block text-gray-300 mb-2 text-sm font-medium">Структура принтера</label>
+                <label className="block text-gray-300 mb-2 text-sm font-medium">{t('adminPrinters.orca.printerStructure')}</label>
                 <CustomSelect
                   value={getMetadataString('printer_structure') || null}
                   onChange={(value) => handleMetadataStringChange('printer_structure', (value as string) || '')}
                   options={printerStructureOptions.map((option) => ({ value: option, label: option }))}
-                  placeholder="Выберите структуру"
+                  placeholder={t('adminPrinters.placeholders.selectStructure')}
                   className="h-[52px]"
                 />
-                <p className="text-xs text-gray-500 mt-1">Совпадает с полем <code className="text-purple-200">printer_structure</code> в Orca.</p>
+                <p className="text-xs text-gray-500 mt-1">{t('adminPrinters.orca.printerStructureHint')}</p>
               </div>
               <div>
                 <label className="block text-gray-300 mb-2 text-sm font-medium">G-code flavor</label>
@@ -985,28 +988,28 @@ function PrinterModal({ printer, onClose, onSave, isLoading }: PrinterModalProps
                   value={getMetadataString('gcode_flavor') || null}
                   onChange={(value) => handleMetadataStringChange('gcode_flavor', (value as string) || '')}
                   options={gcodeFlavorOptions.map((option) => ({ value: option, label: option }))}
-                  placeholder="Выберите flavor"
+                  placeholder={t('adminPrinters.placeholders.selectFlavor')}
                   className="h-[52px]"
                 />
-                <p className="text-xs text-gray-500 mt-1">Из заранее известных вариантов OrcaSlicer. При необходимости можно задать новый через JSON.</p>
+                <p className="text-xs text-gray-500 mt-1">{t('adminPrinters.orca.gcodeFlavorHint')}</p>
               </div>
               <div>
-                <label className="block text-gray-300 mb-2 text-sm font-medium">Технология печати</label>
+                <label className="block text-gray-300 mb-2 text-sm font-medium">{t('adminPrinters.orca.printTechnology')}</label>
                 <CustomSelect
                   value={getMetadataString('printer_technology') || null}
                   onChange={(value) => handleMetadataStringChange('printer_technology', (value as string) || '')}
                   options={printerTechnologyOptions.map((option) => ({ value: option, label: option }))}
-                  placeholder="Выберите технологию"
+                  placeholder={t('adminPrinters.placeholders.selectTechnology')}
                   className="h-[52px]"
                 />
               </div>
               <div>
-                <label className="block text-gray-300 mb-2 text-sm font-medium">Пластина стола по умолчанию</label>
+                <label className="block text-gray-300 mb-2 text-sm font-medium">{t('adminPrinters.orca.defaultBedType')}</label>
                 <CustomSelect
                   value={getMetadataString('default_bed_type') || null}
                   onChange={(value) => handleMetadataStringChange('default_bed_type', (value as string) || '')}
                   options={defaultBedTypeOptions.map((option) => ({ value: option, label: option }))}
-                  placeholder="Выберите пластину"
+                  placeholder={t('adminPrinters.placeholders.selectBedPlate')}
                   className="h-[52px]"
                 />
               </div>
@@ -1034,7 +1037,7 @@ function PrinterModal({ printer, onClose, onSave, isLoading }: PrinterModalProps
               </div>
               */}
               <div>
-                <label className="block text-gray-300 mb-2 text-sm font-medium">Хотэнд</label>
+                <label className="block text-gray-300 mb-2 text-sm font-medium">{t('adminPrinters.orca.hotend')}</label>
                 <input
                   type="text"
                   value={getMetadataString('hotend_model')}
@@ -1042,7 +1045,7 @@ function PrinterModal({ printer, onClose, onSave, isLoading }: PrinterModalProps
                   placeholder="Phaetus Rapido..."
                   className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500"
                 />
-                <p className="text-xs text-gray-500 mt-1">Произвольная строка, если хотэнд не из стандартного списка.</p>
+                <p className="text-xs text-gray-500 mt-1">{t('adminPrinters.orca.hotendHint')}</p>
               </div>
               {/* Формула температуры стола и ID настроек скрыты до уточнения назначения */}
               {/*
@@ -1068,7 +1071,7 @@ function PrinterModal({ printer, onClose, onSave, isLoading }: PrinterModalProps
               </div>
               */}
               <div>
-                <label className="block text-gray-300 mb-2 text-sm font-medium">Стоимость часа печати</label>
+                <label className="block text-gray-300 mb-2 text-sm font-medium">{t('adminPrinters.orca.timeCost')}</label>
                 <input
                   type="text"
                   value={getMetadataString('time_cost')}
@@ -1078,7 +1081,7 @@ function PrinterModal({ printer, onClose, onSave, isLoading }: PrinterModalProps
                 />
               </div>
               <div>
-                <label className="block text-gray-300 mb-2 text-sm font-medium">Профиль филамента по умолчанию</label>
+                <label className="block text-gray-300 mb-2 text-sm font-medium">{t('adminPrinters.orca.defaultFilamentProfile')}</label>
                 <input
                   type="text"
                   value={getMetadataListString('default_filament_profile')}
@@ -1086,10 +1089,10 @@ function PrinterModal({ printer, onClose, onSave, isLoading }: PrinterModalProps
                   placeholder="Generic PLA"
                   className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500"
                 />
-                <p className="text-xs text-gray-500 mt-1">Имя профиля филамента по умолчанию</p>
+                <p className="text-xs text-gray-500 mt-1">{t('adminPrinters.orca.defaultFilamentProfileHint')}</p>
               </div>
               <div>
-                <label className="block text-gray-300 mb-2 text-sm font-medium">Вариант принтера</label>
+                <label className="block text-gray-300 mb-2 text-sm font-medium">{t('adminPrinters.orca.printerVariant')}</label>
                 <input
                   type="text"
                   value={getMetadataListString('printer_variant')}
@@ -1097,12 +1100,12 @@ function PrinterModal({ printer, onClose, onSave, isLoading }: PrinterModalProps
                   placeholder="0.4"
                   className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500"
                 />
-                <p className="text-xs text-gray-500 mt-1">Вариант принтера (например, диаметр сопла)</p>
+                <p className="text-xs text-gray-500 mt-1">{t('adminPrinters.orca.printerVariantHint')}</p>
               </div>
             </div>
 
             <div>
-              <h5 className="text-xs font-semibold uppercase tracking-wide text-purple-200/70 mb-3">Стол и ограничения</h5>
+              <h5 className="text-xs font-semibold uppercase tracking-wide text-purple-200/70 mb-3">{t('adminPrinters.orca.bedAndLimits')}</h5>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 {bedGeometryFields.map((field) => (
                   <div key={field.key}>
@@ -1126,12 +1129,12 @@ function PrinterModal({ printer, onClose, onSave, isLoading }: PrinterModalProps
                 ))}
               </div>
               <p className="text-xs text-gray-500 mt-2">
-                Координаты указываются в формате OrcaSlicer: <code className="text-purple-200">XxY</code>, значения через запятую.
+                {t('adminPrinters.orca.coordinatesHint')}
               </p>
             </div>
 
             <div>
-              <h5 className="text-xs font-semibold uppercase tracking-wide text-purple-200/70 mb-3">Флаги и режимы</h5>
+              <h5 className="text-xs font-semibold uppercase tracking-wide text-purple-200/70 mb-3">{t('adminPrinters.orca.flagsAndModes')}</h5>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                 {firmwareFlagOptions.map((option) => (
                   <div key={option.key} className="flex items-start gap-3">
@@ -1179,7 +1182,7 @@ function PrinterModal({ printer, onClose, onSave, isLoading }: PrinterModalProps
             </div>
 
             <div>
-              <h5 className="text-xs font-semibold uppercase tracking-wide text-purple-200/70 mb-3">Экструдер: рабочая область</h5>
+              <h5 className="text-xs font-semibold uppercase tracking-wide text-purple-200/70 mb-3">{t('adminPrinters.orca.extruderClearance')}</h5>
               <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
                 {extruderClearanceFields.map((field) => (
                   <div key={field.key} className="space-y-2">
@@ -1238,7 +1241,7 @@ function PrinterModal({ printer, onClose, onSave, isLoading }: PrinterModalProps
                 ))}
               </div>
               <p className="text-xs text-gray-500 mt-2">
-                Формат аналогичен OrcaSlicer: перечень размеров через запятую, например <code className="text-purple-200">32x32,64x64</code>.
+                {t('adminPrinters.orca.thumbnailsHint')}
               </p>
             </div>
           </div>
@@ -1257,14 +1260,14 @@ function PrinterModal({ printer, onClose, onSave, isLoading }: PrinterModalProps
       <div className="space-y-8">
       <section className="space-y-4 bg-white/5 border border-white/10 rounded-2xl p-6 shadow-inner shadow-indigo-900/30">
         <div>
-          <h4 className="text-sm font-semibold text-white uppercase tracking-wide">Экструдер 1</h4>
+          <h4 className="text-sm font-semibold text-white uppercase tracking-wide">{t('adminPrinters.extruder.title')}</h4>
           <p className="text-xs text-gray-400 mt-1">
-            Совпадает с вкладкой «Extruder 1» в OrcaSlicer. При появлении multi-extruder будем добавлять дополнительные блоки.
+            {t('adminPrinters.extruder.desc')}
           </p>
         </div>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div>
-              <label className="block text-gray-300 mb-2 text-sm font-medium">Диаметр сопла</label>
+              <label className="block text-gray-300 mb-2 text-sm font-medium">{t('adminPrinters.extruder.nozzleDiameter')}</label>
               <div className="relative">
               <input
                 type="number"
@@ -1274,11 +1277,11 @@ function PrinterModal({ printer, onClose, onSave, isLoading }: PrinterModalProps
                   placeholder="0.4"
                   className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500 pr-16"
               />
-                <span className="absolute inset-y-0 right-4 flex items-center text-xs text-gray-400 pointer-events-none">мм</span>
+                <span className="absolute inset-y-0 right-4 flex items-center text-xs text-gray-400 pointer-events-none">{t('adminPrinters.mm')}</span>
               </div>
             </div>
             <div>
-              <label className="block text-gray-300 mb-2 text-sm font-medium">Макс. температура сопла</label>
+              <label className="block text-gray-300 mb-2 text-sm font-medium">{t('adminPrinters.extruder.maxNozzleTemp')}</label>
               <div className="relative">
               <input
                 type="number"
@@ -1291,7 +1294,7 @@ function PrinterModal({ printer, onClose, onSave, isLoading }: PrinterModalProps
               </div>
             </div>
             <div>
-              <label className="block text-gray-300 mb-2 text-sm font-medium">Макс. температура стола</label>
+              <label className="block text-gray-300 mb-2 text-sm font-medium">{t('adminPrinters.extruder.maxBedTemp')}</label>
               <div className="relative">
               <input
                 type="number"
@@ -1306,7 +1309,7 @@ function PrinterModal({ printer, onClose, onSave, isLoading }: PrinterModalProps
           </div>
 
           <div>
-          <label className="block text-gray-300 mb-2 text-sm font-medium">Дополнительные сопла</label>
+          <label className="block text-gray-300 mb-2 text-sm font-medium">{t('adminPrinters.extruder.extraNozzles')}</label>
           <div className="flex flex-wrap gap-2 mb-2">
             {formData.nozzle_options.map((option) => (
               <span
@@ -1323,14 +1326,14 @@ function PrinterModal({ printer, onClose, onSave, isLoading }: PrinterModalProps
                     }))
                   }
                   className="hover:text-white transition"
-                  aria-label="Удалить сопло"
+                  aria-label={t('adminPrinters.removeNozzle')}
                 >
                   ×
                 </button>
               </span>
             ))}
             {formData.nozzle_options.length === 0 && (
-              <span className="text-xs text-gray-500">Дополнительные сопла не указаны</span>
+              <span className="text-xs text-gray-500">{t('adminPrinters.extruder.noExtraNozzles')}</span>
             )}
           </div>
           <div className="flex gap-2">
@@ -1347,30 +1350,30 @@ function PrinterModal({ printer, onClose, onSave, isLoading }: PrinterModalProps
               onClick={handleAddNozzle}
               className="px-4 py-3 bg-white/10 hover:bg-white/20 text-white rounded-xl transition-all"
             >
-              Добавить
+              {t('adminPrinters.add')}
             </button>
           </div>
           <p className="text-gray-500 text-xs mt-1">
-            Список дополнительных сопел, которые идут в комплекте или доступны у производителя.
+            {t('adminPrinters.extruder.extraNozzlesHint')}
           </p>
         </div>
         {metadataInvalid ? (
           <div className="rounded-2xl border border-red-500/40 bg-red-500/10 px-4 py-3 text-sm text-red-200">
-            Невозможно показать настройки Orca для экструдера: extra_metadata содержит некорректный JSON.
+            {t('adminPrinters.extruder.jsonError')}
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2">
             <div>
-              <label className="block text-gray-300 mb-2 text-sm font-medium">Тип экструдера</label>
+              <label className="block text-gray-300 mb-2 text-sm font-medium">{t('adminPrinters.extruder.type')}</label>
               <CustomSelect
                 value={getMetadataString('extruder_type') || null}
                 onChange={(value) => handleMetadataStringChange('extruder_type', (value as string) || '')}
                 options={extruderTypeOptions.map((option) => ({ value: option, label: option }))}
-                placeholder="Выберите тип"
+                placeholder={t('adminPrinters.placeholders.selectType')}
               />
             </div>
             <div>
-              <label className="block text-gray-300 mb-2 text-sm font-medium">Варианты экструдера</label>
+              <label className="block text-gray-300 mb-2 text-sm font-medium">{t('adminPrinters.extruder.variants')}</label>
               <input
                 type="text"
                 value={getMetadataListString('extruder_variant_list')}
@@ -1380,16 +1383,16 @@ function PrinterModal({ printer, onClose, onSave, isLoading }: PrinterModalProps
               />
             </div>
             <div>
-              <label className="block text-gray-300 mb-2 text-sm font-medium">Тип сопла</label>
+              <label className="block text-gray-300 mb-2 text-sm font-medium">{t('adminPrinters.extruder.nozzleType')}</label>
               <CustomSelect
                 value={selectedNozzleType || null}
                 onChange={(value) => handleMetadataSelectFromOptions('nozzle_type', (value as string) || null)}
                 options={nozzleTypeOptions.map((option) => ({ value: option, label: option }))}
-                placeholder="Выберите тип"
+                placeholder={t('adminPrinters.placeholders.selectType')}
               />
           </div>
             <div>
-              <label className="block text-gray-300 mb-2 text-sm font-medium">Объем сопла</label>
+              <label className="block text-gray-300 mb-2 text-sm font-medium">{t('adminPrinters.extruder.nozzleVolume')}</label>
               <div className="relative">
                 <input
                   type="text"
@@ -1402,7 +1405,7 @@ function PrinterModal({ printer, onClose, onSave, isLoading }: PrinterModalProps
               </div>
             </div>
             <div>
-              <label className="block text-gray-300 mb-2 text-sm font-medium">Зазор до крышки</label>
+              <label className="block text-gray-300 mb-2 text-sm font-medium">{t('adminPrinters.extruder.clearanceToLid')}</label>
               <div className="relative">
                 <input
                   type="text"
@@ -1415,7 +1418,7 @@ function PrinterModal({ printer, onClose, onSave, isLoading }: PrinterModalProps
               </div>
             </div>
             <div>
-              <label className="block text-gray-300 mb-2 text-sm font-medium">Макс. радиус зоны экструдера</label>
+              <label className="block text-gray-300 mb-2 text-sm font-medium">{t('adminPrinters.extruder.maxClearanceRadius')}</label>
               <div className="relative">
                 <input
                   type="text"
@@ -1428,7 +1431,7 @@ function PrinterModal({ printer, onClose, onSave, isLoading }: PrinterModalProps
               </div>
             </div>
             <div>
-              <label className="block text-gray-300 mb-2 text-sm font-medium">ID экструдера принтера</label>
+              <label className="block text-gray-300 mb-2 text-sm font-medium">{t('adminPrinters.extruder.printerId')}</label>
               <input
                 type="text"
                 value={getMetadataListString('printer_extruder_id')}
@@ -1436,10 +1439,10 @@ function PrinterModal({ printer, onClose, onSave, isLoading }: PrinterModalProps
                 placeholder="0"
                 className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500"
               />
-              <p className="text-xs text-gray-500 mt-1">Идентификатор экструдера принтера (для multi-extruder)</p>
+              <p className="text-xs text-gray-500 mt-1">{t('adminPrinters.extruder.printerIdHint')}</p>
             </div>
             <div>
-              <label className="block text-gray-300 mb-2 text-sm font-medium">Вариант экструдера принтера</label>
+              <label className="block text-gray-300 mb-2 text-sm font-medium">{t('adminPrinters.extruder.printerVariant')}</label>
               <input
                 type="text"
                 value={getMetadataListString('printer_extruder_variant')}
@@ -1447,10 +1450,10 @@ function PrinterModal({ printer, onClose, onSave, isLoading }: PrinterModalProps
                 placeholder="0"
                 className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500"
               />
-              <p className="text-xs text-gray-500 mt-1">Вариант экструдера принтера</p>
+              <p className="text-xs text-gray-500 mt-1">{t('adminPrinters.extruder.printerVariantHint')}</p>
             </div>
             <div>
-              <label className="block text-gray-300 mb-2 text-sm font-medium">Физическая карта экструдеров</label>
+              <label className="block text-gray-300 mb-2 text-sm font-medium">{t('adminPrinters.extruder.physicalMap')}</label>
               <input
                 type="text"
                 value={getMetadataListString('physical_extruder_map')}
@@ -1458,10 +1461,10 @@ function PrinterModal({ printer, onClose, onSave, isLoading }: PrinterModalProps
                 placeholder="0, 1"
                 className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500"
               />
-              <p className="text-xs text-gray-500 mt-1">Карта физических экструдеров (для multi-extruder)</p>
+              <p className="text-xs text-gray-500 mt-1">{t('adminPrinters.extruder.physicalMapHint')}</p>
             </div>
             <div>
-              <label className="block text-gray-300 mb-2 text-sm font-medium">Макс. высота слоя (мм)</label>
+              <label className="block text-gray-300 mb-2 text-sm font-medium">{t('adminPrinters.extruder.maxLayerHeight')}</label>
               <input
                 type="text"
                 value={getMetadataString('max_layer_height')}
@@ -1471,7 +1474,7 @@ function PrinterModal({ printer, onClose, onSave, isLoading }: PrinterModalProps
               />
             </div>
             <div>
-              <label className="block text-gray-300 mb-2 text-sm font-medium">Мин. высота слоя (мм)</label>
+              <label className="block text-gray-300 mb-2 text-sm font-medium">{t('adminPrinters.extruder.minLayerHeight')}</label>
               <input
                 type="text"
                 value={getMetadataString('min_layer_height')}
@@ -1485,15 +1488,15 @@ function PrinterModal({ printer, onClose, onSave, isLoading }: PrinterModalProps
       </section>
 
       <section className="space-y-4 bg-white/5 border border-white/10 rounded-2xl p-6 shadow-inner shadow-indigo-900/30">
-        <h4 className="text-sm font-semibold text-white uppercase tracking-wide">Ретракция и Z-hop</h4>
+        <h4 className="text-sm font-semibold text-white uppercase tracking-wide">{t('adminPrinters.retraction.title')}</h4>
         {metadataInvalid ? (
           <p className="text-xs text-red-200">
-            Невозможно отобразить параметры: extra_metadata содержит некорректный JSON.
+            {t('adminPrinters.retraction.jsonError')}
           </p>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
-              <label className="block text-gray-300 mb-2 text-sm font-medium">Ретракция (мм)</label>
+              <label className="block text-gray-300 mb-2 text-sm font-medium">{t('adminPrinters.retraction.length')}</label>
             <input
                 type="text"
                 value={getMetadataListString('retraction_length')}
@@ -1503,7 +1506,7 @@ function PrinterModal({ printer, onClose, onSave, isLoading }: PrinterModalProps
             />
           </div>
             <div>
-              <label className="block text-gray-300 mb-2 text-sm font-medium">Скорость ретракции (мм/с)</label>
+              <label className="block text-gray-300 mb-2 text-sm font-medium">{t('adminPrinters.retraction.speed')}</label>
               <input
                 type="text"
                 value={getMetadataListString('retraction_speed')}
@@ -1513,7 +1516,7 @@ function PrinterModal({ printer, onClose, onSave, isLoading }: PrinterModalProps
               />
             </div>
             <div>
-              <label className="block text-gray-300 mb-2 text-sm font-medium">Скорость деретракции (мм/с)</label>
+              <label className="block text-gray-300 mb-2 text-sm font-medium">{t('adminPrinters.retraction.deretractionSpeed')}</label>
               <input
                 type="text"
                 value={getMetadataListString('deretraction_speed')}
@@ -1523,7 +1526,7 @@ function PrinterModal({ printer, onClose, onSave, isLoading }: PrinterModalProps
               />
             </div>
             <div>
-              <label className="block text-gray-300 mb-2 text-sm font-medium">Минимальное движение для ретракта (мм)</label>
+              <label className="block text-gray-300 mb-2 text-sm font-medium">{t('adminPrinters.retraction.minTravel')}</label>
               <input
                 type="text"
                 value={getMetadataListString('retraction_minimum_travel')}
@@ -1533,7 +1536,7 @@ function PrinterModal({ printer, onClose, onSave, isLoading }: PrinterModalProps
               />
             </div>
             <div>
-              <label className="block text-gray-300 mb-2 text-sm font-medium">Ретракт перед очисткой (%)</label>
+              <label className="block text-gray-300 mb-2 text-sm font-medium">{t('adminPrinters.retraction.beforeWipe')}</label>
               <input
                 type="text"
                 value={getMetadataListString('retract_before_wipe')}
@@ -1563,7 +1566,7 @@ function PrinterModal({ printer, onClose, onSave, isLoading }: PrinterModalProps
               />
             </div>
             <div>
-              <label className="block text-gray-300 mb-2 text-sm font-medium">Тип Z-hop</label>
+              <label className="block text-gray-300 mb-2 text-sm font-medium">{t('adminPrinters.retraction.zHopType')}</label>
               <input
                 type="text"
                 value={getMetadataListString('z_hop_types')}
@@ -1573,7 +1576,7 @@ function PrinterModal({ printer, onClose, onSave, isLoading }: PrinterModalProps
               />
             </div>
             <div>
-              <label className="block text-gray-300 mb-2 text-sm font-medium">Ретракт при смене инструмента (мм)</label>
+              <label className="block text-gray-300 mb-2 text-sm font-medium">{t('adminPrinters.retraction.toolchange')}</label>
               <input
                 type="text"
                 value={getMetadataListString('retract_length_toolchange')}
@@ -1592,9 +1595,9 @@ function PrinterModal({ printer, onClose, onSave, isLoading }: PrinterModalProps
               />
               <div>
                 <label htmlFor="enable_long_retraction_when_cut" className="text-gray-300 text-sm font-medium">
-                  Длинная ретракция при резке
+                  {t('adminPrinters.retraction.longRetractionCut')}
                 </label>
-                <p className="text-xs text-gray-500">Включает длинную ретракцию при резке нити</p>
+                <p className="text-xs text-gray-500">{t('adminPrinters.retraction.longRetractionCutHint')}</p>
               </div>
             </div>
           </div>
@@ -1609,17 +1612,17 @@ function PrinterModal({ printer, onClose, onSave, isLoading }: PrinterModalProps
       <div>
         <h4 className="text-sm font-semibold text-white uppercase tracking-wide">Motion ability</h4>
         <p className="text-xs text-gray-400 mt-1">
-          Лимиты скоростей, ускорений и jerk из OrcaSlicer. Значения вводятся через запятую (Normal/Silent режимы).
+          {t('adminPrinters.motion.desc')}
         </p>
       </div>
       {metadataInvalid ? (
         <div className="rounded-2xl border border-red-500/40 bg-red-500/10 px-4 py-3 text-sm text-red-200">
-          Невозможно отобразить настройки движения: extra_metadata содержит некорректный JSON.
+          {t('adminPrinters.motion.jsonError')}
         </div>
       ) : (
         <div className="space-y-6">
           <div>
-            <h5 className="text-xs font-semibold uppercase tracking-wide text-purple-200/70 mb-3">Максимальная скорость (мм/с)</h5>
+            <h5 className="text-xs font-semibold uppercase tracking-wide text-purple-200/70 mb-3">{t('adminPrinters.motion.maxSpeed')}</h5>
             <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
               {(['machine_max_speed_x', 'machine_max_speed_y', 'machine_max_speed_z', 'machine_max_speed_e'] as const).map((key) => (
                 <div key={key}>
@@ -1637,7 +1640,7 @@ function PrinterModal({ printer, onClose, onSave, isLoading }: PrinterModalProps
           </div>
 
           <div>
-            <h5 className="text-xs font-semibold uppercase tracking-wide text-purple-200/70 mb-3">Ускорения (мм/с²)</h5>
+            <h5 className="text-xs font-semibold uppercase tracking-wide text-purple-200/70 mb-3">{t('adminPrinters.motion.acceleration')}</h5>
             <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
               {(
                 [
@@ -1662,9 +1665,9 @@ function PrinterModal({ printer, onClose, onSave, isLoading }: PrinterModalProps
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-4">
               {(
                 [
-                  { key: 'machine_max_acceleration_extruding', label: 'Экструзия' },
-                  { key: 'machine_max_acceleration_retracting', label: 'Ретракция' },
-                  { key: 'machine_max_acceleration_travel', label: 'Перемещения' },
+                  { key: 'machine_max_acceleration_extruding', label: t('adminPrinters.motion.extrusion') },
+                  { key: 'machine_max_acceleration_retracting', label: t('adminPrinters.motion.retraction') },
+                  { key: 'machine_max_acceleration_travel', label: t('adminPrinters.motion.travel') },
                 ] as const
               ).map(({ key, label }) => (
                 <div key={key}>
@@ -1707,10 +1710,10 @@ function PrinterModal({ printer, onClose, onSave, isLoading }: PrinterModalProps
           </div>
 
           <div>
-            <h5 className="text-xs font-semibold uppercase tracking-wide text-purple-200/70 mb-3">Минимальные скорости (мм/с)</h5>
+            <h5 className="text-xs font-semibold uppercase tracking-wide text-purple-200/70 mb-3">{t('adminPrinters.motion.minSpeeds')}</h5>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
-                <label className="block text-gray-300 mb-2 text-sm font-medium">Минимальная скорость экструзии</label>
+                <label className="block text-gray-300 mb-2 text-sm font-medium">{t('adminPrinters.motion.minExtrusionRate')}</label>
                 <input
                   type="text"
                   value={getMetadataListString('machine_min_extruding_rate')}
@@ -1720,7 +1723,7 @@ function PrinterModal({ printer, onClose, onSave, isLoading }: PrinterModalProps
                 />
               </div>
               <div>
-                <label className="block text-gray-300 mb-2 text-sm font-medium">Минимальная скорость перемещения</label>
+                <label className="block text-gray-300 mb-2 text-sm font-medium">{t('adminPrinters.motion.minTravelRate')}</label>
                 <input
                   type="text"
                   value={getMetadataListString('machine_min_travel_rate')}
@@ -1741,12 +1744,12 @@ function PrinterModal({ printer, onClose, onSave, isLoading }: PrinterModalProps
       <div>
         <h4 className="text-sm font-semibold text-white uppercase tracking-wide">Single extruder multi-material</h4>
         <p className="text-xs text-gray-400 mt-1">
-          Настройки AMS/воронки и времена смены инструмента. Помогают корректно экспортировать/импортировать мульти-материальные профили.
+          {t('adminPrinters.multimaterial.desc')}
         </p>
       </div>
       {metadataInvalid ? (
         <div className="rounded-2xl border border-red-500/40 bg-red-500/10 px-4 py-3 text-sm text-red-200">
-          Невозможно отобразить параметры мульти-материала: extra_metadata содержит некорректный JSON.
+          {t('adminPrinters.multimaterial.jsonError')}
         </div>
       ) : (
         <div className="space-y-6">
@@ -1772,7 +1775,7 @@ function PrinterModal({ printer, onClose, onSave, isLoading }: PrinterModalProps
                 className="w-4 h-4 rounded border-white/30 bg-white/10"
               />
               <label htmlFor="purge_in_prime_tower" className="text-gray-300 text-sm">
-                Очищать в башне (purge_in_prime_tower)
+                {t('adminPrinters.multimaterial.purgeInTower')}
               </label>
             </div>
             <div className="flex items-center gap-3">
@@ -1784,7 +1787,7 @@ function PrinterModal({ printer, onClose, onSave, isLoading }: PrinterModalProps
                 className="w-4 h-4 rounded border-white/30 bg-white/10"
               />
               <label htmlFor="enable_filament_ramming" className="text-gray-300 text-sm">
-                Включить ramming
+                {t('adminPrinters.multimaterial.enableRamming')}
               </label>
             </div>
             <div className="flex items-center gap-3">
@@ -1796,14 +1799,14 @@ function PrinterModal({ printer, onClose, onSave, isLoading }: PrinterModalProps
                 className="w-4 h-4 rounded border-white/30 bg-white/10"
               />
               <label htmlFor="manual_filament_change" className="text-gray-300 text-sm">
-                Ручная замена филамента
+                {t('adminPrinters.multimaterial.manualChange')}
               </label>
             </div>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
-              <label className="block text-gray-300 mb-2 text-sm font-medium">Время загрузки филамента (сек)</label>
+              <label className="block text-gray-300 mb-2 text-sm font-medium">{t('adminPrinters.multimaterial.loadTime')}</label>
               <input
                 type="text"
                 value={getMetadataString('machine_load_filament_time')}
@@ -1813,7 +1816,7 @@ function PrinterModal({ printer, onClose, onSave, isLoading }: PrinterModalProps
               />
             </div>
             <div>
-              <label className="block text-gray-300 mb-2 text-sm font-medium">Время выгрузки филамента (сек)</label>
+              <label className="block text-gray-300 mb-2 text-sm font-medium">{t('adminPrinters.multimaterial.unloadTime')}</label>
               <input
                 type="text"
                 value={getMetadataString('machine_unload_filament_time')}
@@ -1823,7 +1826,7 @@ function PrinterModal({ printer, onClose, onSave, isLoading }: PrinterModalProps
               />
             </div>
             <div>
-              <label className="block text-gray-300 mb-2 text-sm font-medium">Время смены экструдера (сек)</label>
+              <label className="block text-gray-300 mb-2 text-sm font-medium">{t('adminPrinters.multimaterial.switchTime')}</label>
               <input
                 type="text"
                 value={getMetadataString('machine_switch_extruder_time')}
@@ -1833,7 +1836,7 @@ function PrinterModal({ printer, onClose, onSave, isLoading }: PrinterModalProps
               />
             </div>
             <div>
-              <label className="block text-gray-300 mb-2 text-sm font-medium">Очистка перед парковкой (мм)</label>
+              <label className="block text-gray-300 mb-2 text-sm font-medium">{t('adminPrinters.multimaterial.parkingRetraction')}</label>
               <input
                 type="text"
                 value={getMetadataString('parking_pos_retraction')}
@@ -1893,12 +1896,12 @@ function PrinterModal({ printer, onClose, onSave, isLoading }: PrinterModalProps
       <div>
         <h4 className="text-sm font-semibold text-white uppercase tracking-wide">Machine G-code</h4>
         <p className="text-xs text-gray-400 mt-1">
-          Блоки G-code из OrcaSlicer (start/end, pause, timelapse и т.д.). При изменении значения сохраняются в extra_metadata.
+          {t('adminPrinters.gcode.desc')}
         </p>
       </div>
       {metadataInvalid ? (
         <div className="rounded-2xl border border-red-500/40 bg-red-500/10 px-4 py-3 text-sm text-red-200">
-          Невозможно отобразить G-code: extra_metadata содержит некорректный JSON.
+          {t('adminPrinters.gcode.jsonError')}
         </div>
       ) : (
         <div className="space-y-6">
@@ -1926,13 +1929,13 @@ function PrinterModal({ printer, onClose, onSave, isLoading }: PrinterModalProps
                     onChange={(e) => handleMetadataStringChange(key, e.target.value)}
                     rows={12}
                     className="flex-1 px-3 py-2 bg-black/30 border border-white/20 rounded-xl text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-purple-500 font-mono text-sm leading-5 resize-none"
-                    placeholder="; Ваш кастомный G-code..."
+                    placeholder={t('adminPrinters.gcode.placeholder')}
                   />
                   <EditGCodeModal
                     isOpen={activeTab === 'gcode'}
                     onClose={() => {}}
                     onInsert={(placeholderText) => handleInsertGcodePlaceholder(key, textareaId, placeholderText)}
-                    title="Плейсхолдеры"
+                    title={t('adminPrinters.gcode.placeholders')}
                   />
                 </div>
               </div>
@@ -1946,9 +1949,9 @@ function PrinterModal({ printer, onClose, onSave, isLoading }: PrinterModalProps
   const renderNotesTab = () => (
     <section className="space-y-4 bg-white/5 border border-white/10 rounded-2xl p-6 shadow-inner shadow-indigo-900/30">
       <div>
-        <h4 className="text-sm font-semibold text-white uppercase tracking-wide">Заметки</h4>
+        <h4 className="text-sm font-semibold text-white uppercase tracking-wide">{t('adminPrinters.notes.title')}</h4>
         <p className="text-xs text-gray-400 mt-1">
-          Аналог вкладки Notes в OrcaSlicer. Можно фиксировать нюансы сборки, рекомендации по калибровке и т. д.
+          {t('adminPrinters.notes.desc')}
         </p>
       </div>
       <textarea
@@ -1956,7 +1959,7 @@ function PrinterModal({ printer, onClose, onSave, isLoading }: PrinterModalProps
         onChange={(e) => setFormData({ ...formData, description: e.target.value })}
         rows={10}
         className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500"
-        placeholder="Например: после обновления прошивки 1.4.3 рекомендуется обновить значения flow для PLA."
+        placeholder={t('adminPrinters.notes.placeholder')}
       />
     </section>
   );
@@ -1970,16 +1973,16 @@ function PrinterModal({ printer, onClose, onSave, isLoading }: PrinterModalProps
         <div className="bg-gradient-to-br from-[#1c1140] to-[#23185a] rounded-3xl shadow-[0_20px_60px_-15px_rgba(76,29,149,0.7)] border border-white/15 h-[85vh] overflow-hidden flex flex-col">
           <div className="flex items-center justify-between px-6 md:px-10 py-6 border-b border-white/10">
             <div>
-              <p className="text-xs uppercase tracking-[0.3em] text-purple-300/80 mb-2">Формы Orca</p>
+              <p className="text-xs uppercase tracking-[0.3em] text-purple-300/80 mb-2">{t('adminPrinters.modal.orcaForms')}</p>
               <h3 className="text-2xl font-bold text-white">
-                {printer ? 'Редактировать принтер' : 'Создать принтер'}
+                {printer ? t('adminPrinters.modal.editPrinter') : t('adminPrinters.modal.createPrinter')}
               </h3>
             </div>
             <button
               onClick={onClose}
               className="text-gray-400 hover:text-white transition"
               type="button"
-              aria-label="Закрыть"
+              aria-label={t('adminPrinters.close')}
             >
               <X className="w-6 h-6" />
             </button>
@@ -2026,7 +2029,7 @@ function PrinterModal({ printer, onClose, onSave, isLoading }: PrinterModalProps
               onClick={onClose}
               className="px-6 py-3 bg-white/10 hover:bg-white/20 text-white rounded-xl transition-all"
             >
-              Отмена
+              {t('adminPrinters.cancel')}
             </button>
             <button
               type="submit"
@@ -2034,7 +2037,7 @@ function PrinterModal({ printer, onClose, onSave, isLoading }: PrinterModalProps
                   className="flex items-center gap-2 px-6 py-3 bg-purple-600 hover:bg-purple-700 text-white rounded-xl transition-all disabled:opacity-50"
             >
               <Save className="w-5 h-5" />
-              <span>{printer ? 'Сохранить' : 'Создать'}</span>
+              <span>{printer ? t('adminPrinters.save') : t('adminPrinters.create')}</span>
             </button>
           </div>
         </form>
