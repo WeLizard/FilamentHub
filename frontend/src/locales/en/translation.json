@@ -1660,7 +1660,9 @@
       "fanSpeedupOverhangs": "Speedup for overhangs"
     },
     "units": {
-      "sec": "s"
+      "sec": "s",
+      "mm": "mm",
+      "mm3": "mm³"
     },
     "clearance": {
       "radius": "Extruder clearance radius",
@@ -1734,7 +1736,9 @@
       "zHopType": "Z-hop type",
       "toolchange": "Toolchange retraction (mm)",
       "longRetractionCut": "Long retraction on cut",
-      "longRetractionCutHint": "Enables long retraction when cutting filament"
+      "longRetractionCutHint": "Enables long retraction when cutting filament",
+      "wipeDistance": "Wipe distance (mm)",
+      "zHop": "Z-hop (mm)"
     },
     "motion": {
       "desc": "Speed, acceleration and jerk limits from OrcaSlicer. Enter values comma-separated (Normal/Silent modes).",
@@ -1757,13 +1761,17 @@
       "loadTime": "Filament load time (sec)",
       "unloadTime": "Filament unload time (sec)",
       "switchTime": "Extruder switch time (sec)",
-      "parkingRetraction": "Purge before parking (mm)"
+      "parkingRetraction": "Purge before parking (mm)",
+      "coolingTubeRetraction": "Cooling tube retraction (mm)",
+      "coolingTubeLength": "Cooling tube length (mm)",
+      "extraLoadingMove": "Extra loading move (mm)"
     },
     "gcode": {
       "desc": "G-code blocks from OrcaSlicer (start/end, pause, timelapse, etc.). Changes are saved to extra_metadata.",
       "jsonError": "Cannot display G-code: extra_metadata contains invalid JSON.",
       "placeholder": "; Your custom G-code...",
-      "placeholders": "Placeholders"
+      "placeholders": "Placeholders",
+      "chars": "Characters"
     },
     "notes": {
       "title": "Notes",
@@ -1774,6 +1782,9 @@
       "orcaForms": "Orca Forms",
       "editPrinter": "Edit printer",
       "createPrinter": "Create printer"
+    },
+    "speed": {
+      "jerk": "Jerk (mm/s)"
     }
   },
   "brandProfile": {

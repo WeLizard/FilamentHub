@@ -1316,7 +1316,7 @@ function PrinterModal({ printer, onClose, onSave, isLoading }: PrinterModalProps
                 key={option}
                 className="inline-flex items-center gap-1 px-3 py-1 rounded-full bg-purple-500/20 text-purple-200 text-xs"
               >
-                {option} мм
+                {option} {t('adminPrinters.units.mm')}
                 <button
                   type="button"
                   onClick={() =>
@@ -1401,7 +1401,7 @@ function PrinterModal({ printer, onClose, onSave, isLoading }: PrinterModalProps
                   placeholder="107"
                   className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500 pr-16"
                 />
-                <span className="absolute inset-y-0 right-4 flex items-center text-xs text-gray-400 pointer-events-none">мм³</span>
+                <span className="absolute inset-y-0 right-4 flex items-center text-xs text-gray-400 pointer-events-none">{t('adminPrinters.units.mm3')}</span>
               </div>
             </div>
             <div>
@@ -1414,7 +1414,7 @@ function PrinterModal({ printer, onClose, onSave, isLoading }: PrinterModalProps
                   placeholder="90"
                   className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500 pr-16"
                 />
-                <span className="absolute inset-y-0 right-4 flex items-center text-xs text-gray-400 pointer-events-none">мм</span>
+                <span className="absolute inset-y-0 right-4 flex items-center text-xs text-gray-400 pointer-events-none">{t('adminPrinters.units.mm')}</span>
               </div>
             </div>
             <div>
@@ -1427,7 +1427,7 @@ function PrinterModal({ printer, onClose, onSave, isLoading }: PrinterModalProps
                   placeholder="68"
                   className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500 pr-16"
                 />
-                <span className="absolute inset-y-0 right-4 flex items-center text-xs text-gray-400 pointer-events-none">мм</span>
+                <span className="absolute inset-y-0 right-4 flex items-center text-xs text-gray-400 pointer-events-none">{t('adminPrinters.units.mm')}</span>
               </div>
             </div>
             <div>
@@ -1546,7 +1546,7 @@ function PrinterModal({ printer, onClose, onSave, isLoading }: PrinterModalProps
               />
             </div>
             <div>
-              <label className="block text-gray-300 mb-2 text-sm font-medium">Wipe distance (мм)</label>
+              <label className="block text-gray-300 mb-2 text-sm font-medium">{t('adminPrinters.retraction.wipeDistance')}</label>
               <input
                 type="text"
                 value={getMetadataListString('wipe_distance')}
@@ -1556,7 +1556,7 @@ function PrinterModal({ printer, onClose, onSave, isLoading }: PrinterModalProps
               />
             </div>
             <div>
-              <label className="block text-gray-300 mb-2 text-sm font-medium">Z-hop (мм)</label>
+              <label className="block text-gray-300 mb-2 text-sm font-medium">{t('adminPrinters.retraction.zHop')}</label>
               <input
                 type="text"
                 value={getMetadataListString('z_hop')}
@@ -1685,7 +1685,7 @@ function PrinterModal({ printer, onClose, onSave, isLoading }: PrinterModalProps
           </div>
 
           <div>
-            <h5 className="text-xs font-semibold uppercase tracking-wide text-purple-200/70 mb-3">Jerk (мм/с)</h5>
+            <h5 className="text-xs font-semibold uppercase tracking-wide text-purple-200/70 mb-3">{t('adminPrinters.speed.jerk')}</h5>
             <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
               {(
                 [
@@ -1841,12 +1841,12 @@ function PrinterModal({ printer, onClose, onSave, isLoading }: PrinterModalProps
                 type="text"
                 value={getMetadataString('parking_pos_retraction')}
                 onChange={(e) => handleMetadataStringChange('parking_pos_retraction', e.target.value)}
-                placeholder="например 16"
+                placeholder="e.g. 16"
                 className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-purple-500"
               />
             </div>
             <div>
-              <label className="block text-gray-300 mb-2 text-sm font-medium">Cooling tube retraction (мм)</label>
+              <label className="block text-gray-300 mb-2 text-sm font-medium">{t('adminPrinters.multimaterial.coolingTubeRetraction')}</label>
               <input
                 type="text"
                 value={getMetadataString('cooling_tube_retraction')}
@@ -1856,7 +1856,7 @@ function PrinterModal({ printer, onClose, onSave, isLoading }: PrinterModalProps
               />
             </div>
             <div>
-              <label className="block text-gray-300 mb-2 text-sm font-medium">Cooling tube length (мм)</label>
+              <label className="block text-gray-300 mb-2 text-sm font-medium">{t('adminPrinters.multimaterial.coolingTubeLength')}</label>
               <input
                 type="text"
                 value={getMetadataString('cooling_tube_length')}
@@ -1866,7 +1866,7 @@ function PrinterModal({ printer, onClose, onSave, isLoading }: PrinterModalProps
               />
             </div>
             <div>
-              <label className="block text-gray-300 mb-2 text-sm font-medium">Extra loading move (мм)</label>
+              <label className="block text-gray-300 mb-2 text-sm font-medium">{t('adminPrinters.multimaterial.extraLoadingMove')}</label>
               <input
                 type="text"
                 value={getMetadataString('extra_loading_move')}
@@ -1914,7 +1914,7 @@ function PrinterModal({ printer, onClose, onSave, isLoading }: PrinterModalProps
                   <label className="text-gray-300 text-sm font-medium">{label}</label>
                   {value ? (
                     <span className="text-[10px] uppercase tracking-wider text-purple-200/60">
-                      Символов: {value.length}
+                      {t('adminPrinters.gcode.chars')}: {value.length}
                     </span>
                   ) : null}
                 </div>

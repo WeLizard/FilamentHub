@@ -1682,7 +1682,9 @@
       "fanSpeedupOverhangs": "Разгон для свесов"
     },
     "units": {
-      "sec": "с"
+      "sec": "с",
+      "mm": "мм",
+      "mm3": "мм³"
     },
     "clearance": {
       "radius": "Радиус рабочей зоны экструдера",
@@ -1756,7 +1758,9 @@
       "zHopType": "Тип Z-hop",
       "toolchange": "Ретракт при смене инструмента (мм)",
       "longRetractionCut": "Длинная ретракция при резке",
-      "longRetractionCutHint": "Включает длинную ретракцию при резке нити"
+      "longRetractionCutHint": "Включает длинную ретракцию при резке нити",
+      "wipeDistance": "Wipe distance (мм)",
+      "zHop": "Z-hop (мм)"
     },
     "motion": {
       "desc": "Лимиты скоростей, ускорений и jerk из OrcaSlicer. Значения вводятся через запятую (Normal/Silent режимы).",
@@ -1779,13 +1783,17 @@
       "loadTime": "Время загрузки филамента (сек)",
       "unloadTime": "Время выгрузки филамента (сек)",
       "switchTime": "Время смены экструдера (сек)",
-      "parkingRetraction": "Очистка перед парковкой (мм)"
+      "parkingRetraction": "Очистка перед парковкой (мм)",
+      "coolingTubeRetraction": "Cooling tube retraction (мм)",
+      "coolingTubeLength": "Cooling tube length (мм)",
+      "extraLoadingMove": "Extra loading move (мм)"
     },
     "gcode": {
       "desc": "Блоки G-code из OrcaSlicer (start/end, pause, timelapse и т.д.). При изменении значения сохраняются в extra_metadata.",
       "jsonError": "Невозможно отобразить G-code: extra_metadata содержит некорректный JSON.",
       "placeholder": "; Ваш кастомный G-code...",
-      "placeholders": "Плейсхолдеры"
+      "placeholders": "Плейсхолдеры",
+      "chars": "Символов"
     },
     "notes": {
       "title": "Заметки",
@@ -1796,6 +1804,9 @@
       "orcaForms": "Формы Orca",
       "editPrinter": "Редактировать принтер",
       "createPrinter": "Создать принтер"
+    },
+    "speed": {
+      "jerk": "Jerk (мм/с)"
     }
   },
   "brandProfile": {
