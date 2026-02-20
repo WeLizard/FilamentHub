@@ -1,6 +1,7 @@
 /** Личный кабинет производителя */
 
 import { useState, useEffect } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   Factory,
@@ -48,6 +49,7 @@ interface BrandProfilePageProps {
 }
 
 export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({ onBack }) => {
+  const { t } = useTranslation();
   const { user } = useAuth();
   const queryClient = useQueryClient();
   const [brandTab, setBrandTab] = useState<'materials' | 'presets' | 'qr' | 'analytics' | 'usage'>('materials');
@@ -115,7 +117,7 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({ onBack }) =>
       setDeletingFilamentId(null);
     },
     onError: (err: any) => {
-      alert(err.response?.data?.detail || 'Ошибка при удалении материала');
+      alert(err.response?.data?.detail || t('brandProfile.errorDeleteMaterial'));
       setDeletingFilamentId(null);
     },
   });
@@ -167,7 +169,7 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({ onBack }) =>
   if (!user) {
     return (
       <div className="flex items-center justify-center min-h-[400px]">
-        <div className="text-red-400 text-xl">Необходимо войти в систему</div>
+        <div className="text-red-400 text-xl">{t('brandProfile.loginRequired')}</div>
       </div>
     );
   }
@@ -180,7 +182,7 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({ onBack }) =>
   if (isLoadingBrand) {
     return (
       <div className="flex items-center justify-center min-h-[400px]">
-        <div className="text-white text-xl">Загрузка...</div>
+        <div className="text-white text-xl">{t('brandProfile.loading')}</div>
       </div>
     );
   }
@@ -188,7 +190,7 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({ onBack }) =>
   if (!brandData) {
     return (
       <div className="flex items-center justify-center min-h-[400px]">
-        <div className="text-red-400 text-xl">Бренд не найден</div>
+        <div className="text-red-400 text-xl">{t('brandProfile.brandNotFound')}</div>
       </div>
     );
   }
@@ -209,7 +211,7 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({ onBack }) =>
             <h2 className="text-3xl font-bold text-white">{brandData.name}</h2>
             <div className="flex items-center justify-center space-x-2 text-gray-300">
               {brandData.verified && <Shield className="w-4 h-4 text-green-400" />}
-              <span>{brandData.verified ? 'Верифицированный производитель' : 'Производитель'}</span>
+              <span>{brandData.verified ? t('brandProfile.verifiedManufacturer') : t('brandProfile.manufacturer')}</span>
             </div>
           </div>
         </div>
@@ -217,11 +219,11 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({ onBack }) =>
         {/* Tabs */}
         <div className="flex justify-center space-x-2 mt-4">
           {[
-            { id: 'materials', label: 'Материалы', icon: Package },
-            { id: 'presets', label: 'Пресеты', icon: Settings },
-            { id: 'qr', label: 'QR-коды', icon: QrCode },
-            { id: 'analytics', label: 'Аналитика', icon: BarChart3 },
-            { id: 'usage', label: 'Использование', icon: TrendingUp },
+            { id: 'materials', label: t('brandProfile.tabs.materials'), icon: Package },
+            { id: 'presets', label: t('brandProfile.tabs.presets'), icon: Settings },
+            { id: 'qr', label: t('brandProfile.tabs.qr'), icon: QrCode },
+            { id: 'analytics', label: t('brandProfile.tabs.analytics'), icon: BarChart3 },
+            { id: 'usage', label: t('brandProfile.tabs.usage'), icon: TrendingUp },
           ].map((tab) => (
             <button
               key={tab.id}
@@ -243,7 +245,7 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({ onBack }) =>
       {brandTab === 'materials' && (
         <div className="space-y-6">
           <div className="flex items-center justify-between">
-            <h3 className="text-2xl font-bold text-white">Мои материалы</h3>
+            <h3 className="text-2xl font-bold text-white">{t('brandProfile.myMaterials')}</h3>
             <div className="flex items-center space-x-3">
               {/* View Mode Toggle */}
               <div className="flex items-center bg-white/10 rounded-lg p-1 border border-white/20">
@@ -254,7 +256,7 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({ onBack }) =>
                       ? 'bg-purple-600 text-white'
                       : 'text-gray-400 hover:text-white'
                   }`}
-                  title="Сетка"
+                  title={t('brandProfile.gridView')}
                 >
                   <Grid3x3 className="w-4 h-4" />
                 </button>
@@ -265,7 +267,7 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({ onBack }) =>
                       ? 'bg-purple-600 text-white'
                       : 'text-gray-400 hover:text-white'
                   }`}
-                  title="Список"
+                  title={t('brandProfile.listView')}
                 >
                   <List className="w-4 h-4" />
                 </button>
@@ -276,7 +278,7 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({ onBack }) =>
               className="bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700 text-white px-4 py-2 rounded-xl transition-all shadow-lg shadow-green-500/25 hover:shadow-green-500/40 disabled:opacity-50 disabled:cursor-not-allowed flex items-center space-x-2"
             >
               <Plus className="w-4 h-4" />
-              <span>Новый материал</span>
+              <span>{t('brandProfile.newMaterial')}</span>
             </button>
             </div>
           </div>
@@ -285,7 +287,7 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({ onBack }) =>
           {isLoadingFilaments && (
             <div className="flex items-center justify-center py-12">
               <Loader2 className="w-8 h-8 text-purple-400 animate-spin mr-3" />
-              <span className="text-gray-300 text-lg">Загрузка материалов...</span>
+              <span className="text-gray-300 text-lg">{t('brandProfile.loadingMaterials')}</span>
             </div>
           )}
 
@@ -294,7 +296,7 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({ onBack }) =>
             <div className="bg-red-500/20 border border-red-500/30 rounded-xl p-4">
               <div className="flex items-center space-x-2 text-red-300">
                 <XCircle className="w-5 h-5" />
-                <span>Ошибка загрузки материалов. Попробуйте обновить страницу.</span>
+                <span>{t('brandProfile.errorLoadMaterials')}</span>
               </div>
             </div>
           )}
@@ -333,14 +335,14 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({ onBack }) =>
               ) : (
                 <div className="text-center py-12">
                   <Package className="w-16 h-16 text-gray-400 mx-auto mb-4" />
-                  <p className="text-gray-400 text-xl mb-2">У вас пока нет материалов</p>
-                  <p className="text-gray-500 text-sm mb-6">Создайте первый материал для вашего бренда</p>
+                  <p className="text-gray-400 text-xl mb-2">{t('brandProfile.noMaterials')}</p>
+                  <p className="text-gray-500 text-sm mb-6">{t('brandProfile.createFirstMaterial')}</p>
                   <button
                     onClick={handleCreateFilament}
                     className="bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700 text-white px-6 py-3 rounded-xl transition-all shadow-lg shadow-green-500/25 hover:shadow-green-500/40 flex items-center space-x-2 mx-auto"
                   >
                     <Plus className="w-4 h-4" />
-                    <span>Создать первый материал</span>
+                    <span>{t('brandProfile.createFirstMaterialBtn')}</span>
                   </button>
                 </div>
               )}
@@ -351,7 +353,7 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({ onBack }) =>
           {deleteFilamentMutation.isPending && (
             <div className="fixed bottom-4 right-4 bg-purple-600/90 backdrop-blur-sm text-white px-4 py-3 rounded-xl shadow-lg flex items-center space-x-2 z-50">
               <Loader2 className="w-4 h-4 animate-spin" />
-              <span>Удаление материала...</span>
+              <span>{t('brandProfile.deletingMaterial')}</span>
             </div>
           )}
 
@@ -363,12 +365,12 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({ onBack }) =>
                   <div className="w-12 h-12 bg-red-500/20 rounded-full flex items-center justify-center">
                     <Trash2 className="w-6 h-6 text-red-400" />
                   </div>
-                  <h3 className="text-xl font-bold text-white">Подтверждение удаления</h3>
+                  <h3 className="text-xl font-bold text-white">{t('brandProfile.confirmDelete')}</h3>
                 </div>
                 <p className="text-gray-300 mb-6">
-                  Вы уверены, что хотите удалить материал "{filaments.find(f => f.id === deletingFilamentId)?.name}"?
+                  {t('brandProfile.confirmDeleteMaterial', { name: filaments.find(f => f.id === deletingFilamentId)?.name })}
                   <br />
-                  <span className="text-red-400 text-sm mt-2 block">Это действие нельзя отменить.</span>
+                  <span className="text-red-400 text-sm mt-2 block">{t('brandProfile.actionIrreversible')}</span>
                 </p>
                 <div className="flex justify-end space-x-3">
                   <button
@@ -376,7 +378,7 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({ onBack }) =>
                     disabled={deleteFilamentMutation.isPending}
                     className="px-4 py-2 bg-white/10 hover:bg-white/20 text-white rounded-xl transition-all disabled:opacity-50"
                   >
-                    Отмена
+                    {t('brandProfile.cancel')}
                   </button>
                   <button
                     onClick={confirmDeleteFilament}
@@ -386,12 +388,12 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({ onBack }) =>
                     {deleteFilamentMutation.isPending ? (
                       <>
                         <Loader2 className="w-4 h-4 animate-spin" />
-                        <span>Удаление...</span>
+                        <span>{t('brandProfile.deleting')}</span>
                       </>
                     ) : (
                       <>
                         <Trash2 className="w-4 h-4" />
-                        <span>Удалить</span>
+                        <span>{t('brandProfile.delete')}</span>
                       </>
                     )}
                   </button>
@@ -406,15 +408,15 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({ onBack }) =>
       {brandTab === 'presets' && (
         <div className="space-y-6">
           <div className="flex items-center justify-between">
-            <h3 className="text-2xl font-bold text-white">Официальные пресеты</h3>
+            <h3 className="text-2xl font-bold text-white">{t('brandProfile.officialPresets')}</h3>
             <button
               onClick={handleCreatePreset}
               disabled={isLoadingPresets || filaments.length === 0}
               className="bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700 text-white px-4 py-2 rounded-xl transition-all shadow-lg shadow-green-500/25 hover:shadow-green-500/40 disabled:opacity-50 disabled:cursor-not-allowed flex items-center space-x-2"
-              title={filaments.length === 0 ? 'Сначала создайте материал' : ''}
+              title={filaments.length === 0 ? t('brandProfile.createMaterialFirst') : ''}
             >
               <Plus className="w-4 h-4" />
-              <span>Новый пресет</span>
+              <span>{t('brandProfile.newPreset')}</span>
             </button>
           </div>
 
@@ -444,20 +446,20 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({ onBack }) =>
                   <div className="grid grid-cols-2 gap-2 text-sm mb-3">
                     <div className="flex items-center space-x-1">
                       <Thermometer className="w-4 h-4 text-red-400" />
-                      <span className="text-gray-300">Сопло: {preset.extruder_temp}°C</span>
+                      <span className="text-gray-300">{t('brandProfile.nozzle')}: {preset.extruder_temp}°C</span>
                     </div>
                     <div className="flex items-center space-x-1">
                       <Thermometer className="w-4 h-4 text-red-400" />
-                      <span className="text-gray-300">Стол: {preset.bed_temp}°C</span>
+                      <span className="text-gray-300">{t('brandProfile.bed')}: {preset.bed_temp}°C</span>
                     </div>
                     <div className="flex items-center space-x-1">
                       <Gauge className="w-4 h-4 text-blue-400" />
-                      <span className="text-gray-300">Скорость: {preset.print_speed}mm/s</span>
+                      <span className="text-gray-300">{t('brandProfile.speed')}: {preset.print_speed}mm/s</span>
                     </div>
                     {preset.fan_speed !== null && (
                       <div className="flex items-center space-x-1">
                         <Fan className="w-4 h-4 text-green-400" />
-                        <span className="text-gray-300">Обдув: {preset.fan_speed}%</span>
+                        <span className="text-gray-300">{t('brandProfile.fan')}: {preset.fan_speed}%</span>
                       </div>
                     )}
                   </div>
@@ -483,11 +485,11 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({ onBack }) =>
           ) : (
             <div className="text-center py-12 bg-white/10 backdrop-blur-sm rounded-2xl border border-white/20">
               <Settings className="w-16 h-16 text-gray-400 mx-auto mb-4" />
-              <p className="text-gray-400 text-xl mb-2">У вас пока нет официальных пресетов</p>
+              <p className="text-gray-400 text-xl mb-2">{t('brandProfile.noPresets')}</p>
               <p className="text-gray-500 text-sm">
-                {filaments.length === 0 
-                  ? 'Сначала создайте материал' 
-                  : 'Создайте пресет для одного из ваших материалов'}
+                {filaments.length === 0
+                  ? t('brandProfile.createMaterialFirst')
+                  : t('brandProfile.createPresetForMaterial')}
               </p>
             </div>
           )}
@@ -498,7 +500,7 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({ onBack }) =>
       {brandTab === 'qr' && (
         <div className="space-y-6">
           <div className="flex items-center justify-between">
-            <h3 className="text-2xl font-bold text-white">QR-коды материалов</h3>
+            <h3 className="text-2xl font-bold text-white">{t('brandProfile.qrCodes')}</h3>
           </div>
 
           <div className="bg-white/10 backdrop-blur-sm rounded-2xl p-6 border border-white/20 shadow-xl">
@@ -513,8 +515,8 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({ onBack }) =>
             ) : (
               <div className="text-center py-12">
                 <QrCode className="w-16 h-16 text-gray-400 mx-auto mb-4" />
-                <p className="text-gray-400 text-xl">QR-коды автоматически создаются при создании материалов</p>
-                <p className="text-gray-500 text-sm mt-2">Создайте материал, чтобы получить QR-код</p>
+                <p className="text-gray-400 text-xl">{t('brandProfile.qrAutoCreated')}</p>
+                <p className="text-gray-500 text-sm mt-2">{t('brandProfile.createMaterialForQR')}</p>
               </div>
             )}
           </div>
@@ -524,13 +526,13 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({ onBack }) =>
       {/* Analytics Tab */}
       {brandTab === 'analytics' && (
         <div className="space-y-6">
-          <h3 className="text-2xl font-bold text-white">Аналитика по материалам</h3>
+          <h3 className="text-2xl font-bold text-white">{t('brandProfile.materialAnalytics')}</h3>
 
           {/* Stats Cards */}
           <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
             <StatCard
               icon={QrCode}
-              label="Всего сканирований"
+              label={t('brandProfile.totalScans')}
               value={totalScans.toString()}
               color="from-green-500/20 to-emerald-500/20"
               borderColor="border-green-500/30"
@@ -538,7 +540,7 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({ onBack }) =>
             />
             <StatCard
               icon={Package}
-              label="QR-кодов"
+              label={t('brandProfile.qrCodesCount')}
               value={filaments.filter(f => f.qr_code).length.toString()}
               color="from-blue-500/20 to-cyan-500/20"
               borderColor="border-blue-500/30"
@@ -546,7 +548,7 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({ onBack }) =>
             />
             <StatCard
               icon={Eye}
-              label="Материалов"
+              label={t('brandProfile.materialsCount')}
               value={filaments.length.toString()}
               color="from-purple-500/20 to-pink-500/20"
               borderColor="border-purple-500/30"
@@ -554,7 +556,7 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({ onBack }) =>
             />
             <StatCard
               icon={TrendingUp}
-              label="Просмотров"
+              label={t('brandProfile.viewsCount')}
               value={totalViews.toString()}
               color="from-yellow-500/20 to-orange-500/20"
               borderColor="border-yellow-500/30"
@@ -564,7 +566,7 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({ onBack }) =>
 
           {/* Materials Statistics */}
           <div className="bg-white/10 backdrop-blur-sm rounded-2xl p-6 border border-white/20 shadow-xl">
-            <h3 className="text-xl font-bold text-white mb-4">Статистика по материалам</h3>
+            <h3 className="text-xl font-bold text-white mb-4">{t('brandProfile.materialStats')}</h3>
             {filaments.length > 0 ? (
               <div className="space-y-3">
                 {filaments.map((filament) => (
@@ -572,7 +574,7 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({ onBack }) =>
                 ))}
               </div>
             ) : (
-              <p className="text-gray-400 text-center py-8">Нет данных</p>
+              <p className="text-gray-400 text-center py-8">{t('brandProfile.noData')}</p>
             )}
           </div>
         </div>
@@ -581,14 +583,14 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({ onBack }) =>
       {/* Usage Tab */}
       {brandTab === 'usage' && (
         <div className="space-y-6">
-          <h3 className="text-2xl font-bold text-white">Аналитика использования</h3>
+          <h3 className="text-2xl font-bold text-white">{t('brandProfile.usageAnalytics')}</h3>
 
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             {/* Regional Statistics - ЗАГЛУШКА */}
             <div className="bg-white/10 backdrop-blur-sm rounded-2xl p-6 border border-white/20 shadow-xl">
               <h3 className="text-xl font-bold text-white mb-4 flex items-center">
                 <MapPin className="w-5 h-5 mr-2" />
-                Региональная статистика [ЗАГЛУШКА]
+                {t('brandProfile.regionalStats')} [{t('brandProfile.placeholder')}]
               </h3>
               <div className="space-y-3">
                 {[
@@ -612,7 +614,7 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({ onBack }) =>
 
             {/* Popular Printers - ЗАГЛУШКА */}
             <div className="bg-white/10 backdrop-blur-sm rounded-2xl p-6 border border-white/20 shadow-xl">
-              <h3 className="text-xl font-bold text-white mb-4">Популярные принтеры [ЗАГЛУШКА]</h3>
+              <h3 className="text-xl font-bold text-white mb-4">{t('brandProfile.popularPrinters')} [{t('brandProfile.placeholder')}]</h3>
               <div className="space-y-3">
                 {[
                   { printer: 'Ender 3 Pro', usage: 1247, percentage: 45 },
@@ -662,7 +664,7 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({ onBack }) =>
             <div className="flex items-center justify-between p-6 border-b border-white/10">
               <div className="flex items-center space-x-3">
                 <QrCode className="w-6 h-6 text-green-400" />
-                <h2 className="text-2xl font-bold text-white">QR-код материала</h2>
+                <h2 className="text-2xl font-bold text-white">{t('brandProfile.materialQRCode')}</h2>
               </div>
               <button
                 onClick={() => setShowQRFilament(null)}
@@ -686,7 +688,7 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({ onBack }) =>
                 
                 {/* QR Code Info */}
                 <div className="text-center">
-                  <p className="text-gray-300 text-sm mb-2">Код:</p>
+                  <p className="text-gray-300 text-sm mb-2">{t('brandProfile.code')}:</p>
                   <p className="text-white font-mono text-lg font-bold">{showQRFilament.qr_code}</p>
                   <p className="text-gray-400 text-sm mt-2">{showQRFilament.name}</p>
                 </div>
@@ -721,13 +723,13 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({ onBack }) =>
                   onClick={() => {
                     if (showQRFilament.qr_code) {
                       navigator.clipboard.writeText(showQRFilament.qr_code);
-                      alert('Код скопирован в буфер обмена');
+                      alert(t('brandProfile.codeCopied'));
                     }
                   }}
                   className="px-6 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg transition-all flex items-center space-x-2"
                 >
                   <Check className="w-4 h-4" />
-                  <span>Копировать код</span>
+                  <span>{t('brandProfile.copyCode')}</span>
                 </button>
               </div>
             </div>
@@ -738,7 +740,7 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({ onBack }) =>
                 onClick={() => setShowQRFilament(null)}
                 className="w-full px-6 py-3 bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white rounded-xl transition-all shadow-lg shadow-purple-500/25 hover:shadow-purple-500/40"
               >
-                Закрыть
+                {t('brandProfile.close')}
               </button>
             </div>
           </div>
@@ -750,6 +752,7 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({ onBack }) =>
 
 /** Форма выбора/создания бренда */
 const BrandSelectionForm: React.FC = () => {
+  const { t } = useTranslation();
   const { user, refreshUser } = useAuth();
   const queryClient = useQueryClient();
   const [selectedBrandId, setSelectedBrandId] = useState<number | null>(null);
@@ -844,7 +847,7 @@ const BrandSelectionForm: React.FC = () => {
         } catch (uploadError: any) {
           // Если загрузка файлов не удалась, все равно возвращаем заявку
           // (файлы можно загрузить позже через UI)
-          console.error('Ошибка при загрузке файлов:', uploadError);
+          console.error('Error uploading files:', uploadError);
           // Возвращаем заявку без файлов - пользователь сможет загрузить их позже
           return request;
         }
@@ -876,7 +879,7 @@ const BrandSelectionForm: React.FC = () => {
       refetchRequests();
     },
     onError: (err: any) => {
-      setError(err.response?.data?.detail || 'Ошибка при отправке заявки');
+      setError(err.response?.data?.detail || t('brandProfile.errorSubmitRequest'));
     },
   });
 
@@ -888,7 +891,7 @@ const BrandSelectionForm: React.FC = () => {
       refetchRequests();
     },
     onError: (err: any) => {
-      alert(err.response?.data?.detail || 'Ошибка при отзыве заявки');
+      alert(err.response?.data?.detail || t('brandProfile.errorCancelRequest'));
     },
   });
 
@@ -913,7 +916,7 @@ const BrandSelectionForm: React.FC = () => {
       }
     },
     onError: (err: any) => {
-      setError(err.response?.data?.detail || 'Ошибка при загрузке файла');
+      setError(err.response?.data?.detail || t('brandProfile.errorUploadFile'));
     },
   });
 
@@ -932,7 +935,7 @@ const BrandSelectionForm: React.FC = () => {
       refetchRequests();
     },
     onError: (err: any) => {
-      alert(err.response?.data?.detail || 'Ошибка при удалении файла');
+      alert(err.response?.data?.detail || t('brandProfile.errorDeleteFile'));
     },
   });
 
@@ -948,12 +951,12 @@ const BrandSelectionForm: React.FC = () => {
     const allowedExtensions = ['.pdf', '.jpg', '.jpeg', '.png', '.doc', '.docx'];
     const fileExt = '.' + file.name.split('.').pop()?.toLowerCase();
     if (!allowedExtensions.includes(fileExt)) {
-      setError(`Разрешены только файлы: ${allowedExtensions.join(', ')}`);
+      setError(t('brandProfile.errorAllowedFiles', { types: allowedExtensions.join(', ') }));
       return;
     }
     // Проверяем размер (50 MB)
     if (file.size > 50 * 1024 * 1024) {
-      setError('Размер файла не должен превышать 50 MB');
+      setError(t('brandProfile.errorFileSize'));
       return;
     }
     setError(null);
@@ -971,13 +974,13 @@ const BrandSelectionForm: React.FC = () => {
     });
     
     if (validFiles.length !== files.length) {
-      setError('Некоторые файлы не были добавлены. Разрешены только PDF, JPG, PNG, DOC, DOCX (макс. 50 MB)');
+      setError(t('brandProfile.errorSomeFilesRejected'));
     } else {
       setError(null);
     }
     
     if (localFiles.length + validFiles.length > 10) {
-      setError('Максимум 10 файлов');
+      setError(t('brandProfile.errorMaxFiles'));
       return;
     }
     
@@ -1075,12 +1078,12 @@ const BrandSelectionForm: React.FC = () => {
   const handleCreateBrandRequest = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newBrandName.trim() || !newBrandSlug.trim()) {
-      setError('Заполните название и slug бренда');
+      setError(t('brandProfile.errorFillNameAndSlug'));
       return;
     }
     // Проверяем обязательное подтверждение достоверности данных
     if (!confirmAccuracy) {
-      setError('Необходимо подтвердить достоверность предоставленных данных');
+      setError(t('brandProfile.errorConfirmAccuracy'));
       return;
     }
     
@@ -1091,11 +1094,11 @@ const BrandSelectionForm: React.FC = () => {
     // Если email указан И не корпоративный → документы и описание обязательны
     if (companyEmail && !isCorporate) {
       if (!proofText.trim()) {
-        setError('Опишите подтверждающие документы (обязательно при использовании личной почты)');
+        setError(t('brandProfile.errorDescribeProofDocs'));
         return;
       }
       if (localFiles.length === 0) {
-        setError('При использовании личной почты обязательно прикрепите подтверждающие документы (доверенность, письмо от компании, выписка из ЕГРЮЛ/ЕГРИП и т.д.)');
+        setError(t('brandProfile.errorAttachProofDocs'));
         return;
       }
     }
@@ -1117,12 +1120,12 @@ const BrandSelectionForm: React.FC = () => {
 
   const handleJoinBrandRequest = async () => {
     if (!selectedBrandId) {
-      setError('Выберите бренд');
+      setError(t('brandProfile.errorSelectBrand'));
       return;
     }
     // Проверяем обязательное подтверждение достоверности данных
     if (!confirmAccuracy) {
-      setError('Необходимо подтвердить достоверность предоставленных данных');
+      setError(t('brandProfile.errorConfirmAccuracy'));
       return;
     }
     
@@ -1135,18 +1138,18 @@ const BrandSelectionForm: React.FC = () => {
       // Если email указан И не корпоративный → документы и описание обязательны
       if (companyEmail && !isCorporate) {
         if (!proofText.trim()) {
-          setError('Опишите подтверждающие документы (обязательно при использовании личной почты)');
+          setError(t('brandProfile.errorDescribeProofDocs'));
           return;
         }
         if (localFiles.length === 0) {
-          setError('При использовании личной почты обязательно прикрепите подтверждающие документы');
+          setError(t('brandProfile.errorAttachProofDocsShort'));
           return;
         }
       }
       
       // Если требуются документы → описание обязательно
       if (!proofText.trim()) {
-        setError('Для верифицированного бренда без сотрудников необходимо указать описание подтверждающих документов');
+        setError(t('brandProfile.errorProofRequired'));
         return;
       }
     }
@@ -1160,7 +1163,7 @@ const BrandSelectionForm: React.FC = () => {
       company_website: companyWebsite.trim() || undefined,
       social_media_urls: socialMediaUrls.length > 0 ? socialMediaUrls : undefined,
       // Если у бренда нет сотрудников - требуем полную заявку с документами
-      proof_text: hasEmployees ? (message.trim() || 'Заявка на вступление в бренд') : proofText.trim(),
+      proof_text: hasEmployees ? (message.trim() || 'Brand join request') : proofText.trim(),
       files: hasEmployees ? undefined : (localFiles.length > 0 ? localFiles : undefined),
     });
   };
@@ -1192,12 +1195,12 @@ const BrandSelectionForm: React.FC = () => {
               <Shield className="w-10 h-10 text-white" />
             </div>
             <h2 className="text-2xl font-bold text-white mb-2">
-              {submittedRequest.request_type === 'create' ? 'Заявка на создание бренда отправлена!' : 'Заявка на вступление отправлена!'}
+              {submittedRequest.request_type === 'create' ? t('brandProfile.requestCreateSent') : t('brandProfile.requestJoinSent')}
             </h2>
             <p className="text-gray-300">
               {submittedRequest.request_type === 'create' 
-                ? `Заявка на создание бренда "${submittedRequest.new_brand_name}" отправлена на рассмотрение.`
-                : `Ваша заявка на вступление в бренд отправлена на рассмотрение.`}
+                ? t('brandProfile.requestCreateDescription', { name: submittedRequest.new_brand_name })
+                : t('brandProfile.requestJoinDescription')}
             </p>
           </div>
 
@@ -1205,9 +1208,9 @@ const BrandSelectionForm: React.FC = () => {
             <div className="flex items-start space-x-4">
               <Shield className="w-6 h-6 text-yellow-400 flex-shrink-0 mt-0.5" />
               <div>
-                <h3 className="text-lg font-semibold text-yellow-300 mb-2">Ожидание рассмотрения</h3>
+                <h3 className="text-lg font-semibold text-yellow-300 mb-2">{t('brandProfile.awaitingReview')}</h3>
                 <p className="text-yellow-200 text-sm">
-                  Ваша заявка находится на модерации. Администратор проверит предоставленные подтверждающие документы и примет решение. После одобрения заявки вы получите доступ к личному кабинету производителя.
+                  {t('brandProfile.awaitingReviewDescription')}
                 </p>
               </div>
             </div>
@@ -1215,18 +1218,18 @@ const BrandSelectionForm: React.FC = () => {
 
           <div className="space-y-4">
             <div className="bg-white/5 rounded-xl p-4 border border-white/10">
-              <h4 className="text-white font-medium mb-3">Детали заявки:</h4>
+              <h4 className="text-white font-medium mb-3">{t('brandProfile.requestDetails')}:</h4>
               <div className="space-y-3 text-sm">
                 <div>
-                  <span className="text-gray-400">Статус: </span>
+                  <span className="text-gray-400">{t('brandProfile.status')}: </span>
                   <span className={`font-medium ${
                     submittedRequest.status === 'pending' ? 'text-yellow-400' :
                     submittedRequest.status === 'approved' ? 'text-green-400' :
                     'text-red-400'
                   }`}>
-                    {submittedRequest.status === 'pending' ? 'Ожидает рассмотрения' :
-                     submittedRequest.status === 'approved' ? 'Одобрена' :
-                     'Отклонена'}
+                    {submittedRequest.status === 'pending' ? t('brandProfile.statusPending') :
+                     submittedRequest.status === 'approved' ? t('brandProfile.statusApproved') :
+                     t('brandProfile.statusRejected')}
                   </span>
                 </div>
                 
@@ -1234,7 +1237,7 @@ const BrandSelectionForm: React.FC = () => {
                   <>
                     <div className="grid grid-cols-2 gap-4">
                       <div>
-                        <span className="text-gray-400">Название: </span>
+                        <span className="text-gray-400">{t('brandProfile.name')}: </span>
                         <span className="text-white font-medium">{submittedRequest.new_brand_name}</span>
                       </div>
                       {submittedRequest.new_brand_slug && (
@@ -1246,7 +1249,7 @@ const BrandSelectionForm: React.FC = () => {
                     </div>
                     {submittedRequest.new_brand_description && (
                       <div className="flex flex-col">
-                        <span className="text-gray-400 mb-1">Описание бренда:</span>
+                        <span className="text-gray-400 mb-1">{t('brandProfile.brandDescription')}:</span>
                         <span className="text-white text-xs bg-white/5 rounded-lg p-2">{submittedRequest.new_brand_description}</span>
                       </div>
                     )}
@@ -1255,9 +1258,9 @@ const BrandSelectionForm: React.FC = () => {
 
                 {submittedRequest.request_type === 'join' && submittedRequest.brand_id && (
                   <div>
-                    <span className="text-gray-400">Бренд: </span>
+                    <span className="text-gray-400">{t('brandProfile.brand')}: </span>
                     <span className="text-white font-medium">
-                      {submittedRequest.brand_name || `Бренд #${submittedRequest.brand_id}`}
+                      {submittedRequest.brand_name || `${t('brandProfile.brand')} #${submittedRequest.brand_id}`}
                     </span>
                   </div>
                 )}
@@ -1267,13 +1270,13 @@ const BrandSelectionForm: React.FC = () => {
                   <div className="grid grid-cols-2 gap-4">
                     {submittedRequest.company_email && (
                       <div>
-                        <span className="text-gray-400">Ваш Email: </span>
+                        <span className="text-gray-400">{t('brandProfile.yourEmail')}: </span>
                         <span className="text-white">{submittedRequest.company_email}</span>
                       </div>
                     )}
                     {submittedRequest.company_website && (
                       <div>
-                        <span className="text-gray-400">Сайт компании: </span>
+                        <span className="text-gray-400">{t('brandProfile.companyWebsite')}: </span>
                         {(() => {
                           const websiteUrl = submittedRequest.company_website.startsWith('http://') || submittedRequest.company_website.startsWith('https://')
                             ? submittedRequest.company_website
@@ -1296,7 +1299,7 @@ const BrandSelectionForm: React.FC = () => {
 
                 {submittedRequest.social_media_urls && submittedRequest.social_media_urls.length > 0 && (
                   <div className="flex flex-col">
-                    <span className="text-gray-400 mb-2">Социальные сети:</span>
+                    <span className="text-gray-400 mb-2">{t('brandProfile.socialMedia')}:</span>
                     <div className="flex flex-wrap gap-2">
                       {submittedRequest.social_media_urls.map((url, index) => {
                         const fullUrl = url.startsWith('http://') || url.startsWith('https://') 
@@ -1320,14 +1323,14 @@ const BrandSelectionForm: React.FC = () => {
 
                 {submittedRequest.message && (
                   <div className="flex flex-col">
-                    <span className="text-gray-400 mb-1">Сообщение:</span>
+                    <span className="text-gray-400 mb-1">{t('brandProfile.message')}:</span>
                     <span className="text-white text-xs bg-white/5 rounded-lg p-2">{submittedRequest.message}</span>
                   </div>
                 )}
 
                 {submittedRequest.proof_text && (
                   <div className="flex flex-col">
-                    <span className="text-gray-400 mb-1">Описание подтверждающих документов:</span>
+                    <span className="text-gray-400 mb-1">{t('brandProfile.proofDocsDescription')}:</span>
                     <span className="text-white text-xs bg-white/5 rounded-lg p-2">{submittedRequest.proof_text}</span>
                   </div>
                 )}
@@ -1339,7 +1342,7 @@ const BrandSelectionForm: React.FC = () => {
               <div className="bg-white/5 rounded-xl p-4 border border-white/10">
                 <h4 className="text-white font-medium mb-3 flex items-center">
                   <Paperclip className="w-4 h-4 mr-2 text-green-400" />
-                  Прикрепленные файлы (PDF, изображения, документы)
+                  {t('brandProfile.attachedFiles')}
                 </h4>
                 {submittedRequest.proof_files && submittedRequest.proof_files.length > 0 && (
                   <div className="space-y-3 mb-4">
@@ -1360,16 +1363,16 @@ const BrandSelectionForm: React.FC = () => {
                         // Старый формат: строка с путем (для обратной совместимости)
                         filePath = fileInfo as string;
                         const parts = filePath.split('/');
-                        fileName = parts[parts.length - 1] || `Файл ${index + 1}`;
+                        fileName = parts[parts.length - 1] || `${t('brandProfile.file')} ${index + 1}`;
                       } else if (fileInfo && typeof fileInfo === 'object' && 'path' in fileInfo) {
                         // Новый формат: объект с path и name
                         filePath = fileInfo.path;
                         const pathParts = filePath.split('/');
-                        fileName = fileInfo.name || pathParts[pathParts.length - 1] || `Файл ${index + 1}`;
+                        fileName = fileInfo.name || pathParts[pathParts.length - 1] || `${t('brandProfile.file')} ${index + 1}`;
                       } else {
                         // Fallback на случай неожиданного формата
                         filePath = '';
-                        fileName = `Файл ${index + 1}`;
+                        fileName = `${t('brandProfile.file')} ${index + 1}`;
                       }
                       
                       // Формируем URL для доступа к файлу (auth через query token)
@@ -1394,7 +1397,7 @@ const BrandSelectionForm: React.FC = () => {
                             </a>
                             <button
                               onClick={() => {
-                                if (confirm('Удалить этот файл?')) {
+                                if (confirm(t('brandProfile.confirmDeleteFile'))) {
                                   deleteFileMutation.mutate({
                                     requestId: submittedRequest.id,
                                     filePath: filePath, // Используем путь для удаления
@@ -1403,7 +1406,7 @@ const BrandSelectionForm: React.FC = () => {
                               }}
                               disabled={deleteFileMutation.isPending}
                               className="ml-2 p-1 text-red-400 hover:text-red-300 transition-colors disabled:opacity-50 flex-shrink-0"
-                              title="Удалить файл"
+                              title={t('brandProfile.deleteFile')}
                             >
                               <XCircle className="w-4 h-4" />
                             </button>
@@ -1426,19 +1429,19 @@ const BrandSelectionForm: React.FC = () => {
                       {uploadFileMutation.isPending ? (
                         <>
                           <Loader2 className="w-4 h-4 animate-spin" />
-                          <span className="text-sm">Загрузка...</span>
+                          <span className="text-sm">{t('brandProfile.uploading')}</span>
                         </>
                       ) : (
                         <>
                           <Paperclip className="w-4 h-4" />
-                          <span className="text-sm">Прикрепить файл</span>
+                          <span className="text-sm">{t('brandProfile.attachFile')}</span>
                         </>
                       )}
                     </div>
                   </label>
                 </div>
                 <p className="text-xs text-gray-400 mt-2">
-                  Разрешены: PDF, JPG, PNG, DOC, DOCX (макс. 50 MB)
+                  {t('brandProfile.allowedFormats')}
                 </p>
               </div>
             )}
@@ -1453,12 +1456,12 @@ const BrandSelectionForm: React.FC = () => {
                 className="flex-1 bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white px-6 py-3 rounded-xl transition-all shadow-lg shadow-purple-500/25 hover:shadow-purple-500/40 flex items-center justify-center"
               >
                 <CheckCircle className="w-5 h-5 mr-2" />
-                Обновить статус
+                {t('brandProfile.refreshStatus')}
               </button>
               {submittedRequest.status === 'pending' && (
                 <button
                   onClick={() => {
-                    if (confirm('Вы уверены, что хотите отозвать эту заявку?')) {
+                    if (confirm(t('brandProfile.confirmCancelRequest'))) {
                       cancelRequestMutation.mutate(submittedRequest.id);
                       setSubmittedRequest(null);
                     }
@@ -1466,13 +1469,13 @@ const BrandSelectionForm: React.FC = () => {
                   disabled={cancelRequestMutation.isPending}
                   className="px-6 py-3 bg-red-600/20 hover:bg-red-600/30 text-red-400 rounded-xl transition-all disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                  {cancelRequestMutation.isPending ? 'Отзыв...' : 'Отозвать заявку'}
+                  {cancelRequestMutation.isPending ? t('brandProfile.cancelling') : t('brandProfile.cancelRequest')}
                 </button>
               )}
             </div>
 
             <p className="text-center text-gray-400 text-xs mt-4">
-              После верификации вы получите уведомление и сможете привязать бренд к аккаунту
+              {t('brandProfile.afterVerificationNotice')}
             </p>
           </div>
         </div>
@@ -1487,7 +1490,7 @@ const BrandSelectionForm: React.FC = () => {
           <div className="flex items-center justify-between mb-6">
             <h2 className="text-2xl font-bold text-white flex items-center">
               <Factory className="w-6 h-6 mr-3 text-green-400" />
-              Создать новый бренд
+              {t('brandProfile.createNewBrand')}
             </h2>
             <button
               onClick={() => {
@@ -1510,9 +1513,9 @@ const BrandSelectionForm: React.FC = () => {
             <div className="flex items-start space-x-3">
               <Shield className="w-5 h-5 text-blue-400 flex-shrink-0 mt-0.5" />
               <div className="flex-1">
-                <h3 className="text-sm font-semibold text-blue-300 mb-1">Процесс верификации</h3>
+                <h3 className="text-sm font-semibold text-blue-300 mb-1">{t('brandProfile.verificationProcess')}</h3>
                 <p className="text-xs text-blue-200">
-                После подачи заявки администратор проверит предоставленные подтверждающие документы и контактные данные (корпоративный email, сайт, официальные документы) и примет решение в течение 3–5 рабочих дней. После одобрения вы автоматически получите доступ к кабинету производителя.</p>
+                {t('brandProfile.verificationDescription')}</p>
               </div>
             </div>
           </div>
@@ -1520,7 +1523,7 @@ const BrandSelectionForm: React.FC = () => {
           <form onSubmit={handleCreateBrandRequest} className="space-y-4">
             <div>
               <label className="block text-gray-300 mb-2 text-sm font-medium">
-                Название бренда *
+                {t('brandProfile.brandName')} *
               </label>
               <input
                 type="text"
@@ -1554,20 +1557,20 @@ const BrandSelectionForm: React.FC = () => {
                 placeholder="thermplast"
               />
               <p className="mt-1 text-xs text-gray-400">
-                Уникальный идентификатор для URL (только латиница, цифры и дефисы)
+                {t('brandProfile.slugHint')}
               </p>
             </div>
 
             <div>
               <label className="block text-gray-300 mb-2 text-sm font-medium">
-                Описание (необязательно)
+                {t('brandProfile.descriptionOptional')}
               </label>
               <textarea
                 value={newBrandDescription}
                 onChange={(e) => setNewBrandDescription(e.target.value)}
                 rows={3}
                 className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all resize-none"
-                placeholder="Краткое описание бренда..."
+                placeholder={t('brandProfile.descriptionPlaceholder')}
               />
             </div>
 
@@ -1576,7 +1579,7 @@ const BrandSelectionForm: React.FC = () => {
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="block text-gray-300 mb-2 text-sm font-medium">
-                    Email компании
+                    {t('brandProfile.companyEmail')}
                   </label>
                   <div className="space-y-1">
                     <input
@@ -1592,13 +1595,13 @@ const BrandSelectionForm: React.FC = () => {
                         onClick={() => setCompanyEmail(user.email)}
                         className="text-xs text-green-400 hover:text-green-300 transition-colors"
                       >
-                        Использовать мой email
+                        {t('brandProfile.useMyEmail')}
                       </button>
                     )}
                     {companyEmail && isPersonalEmail(companyEmail) && (
                       <div className="mt-1 p-2 bg-yellow-500/20 border border-yellow-500/30 rounded-lg">
                         <p className="text-xs text-yellow-300">
-                          ⚠️ Вы используете личную почту. Обязательно прикрепите подтверждающие документы.
+                          {t('brandProfile.personalEmailWarning')}
                         </p>
                       </div>
                     )}
@@ -1607,7 +1610,7 @@ const BrandSelectionForm: React.FC = () => {
 
                 <div>
                   <label className="block text-gray-300 mb-2 text-sm font-medium">
-                    Сайт компании
+                    {t('brandProfile.companyWebsite')}
                   </label>
                   <input
                     type="text"
@@ -1621,7 +1624,7 @@ const BrandSelectionForm: React.FC = () => {
 
               <div>
                 <label className="block text-gray-300 mb-2 text-sm font-medium">
-                  Соцсети бренда
+                  {t('brandProfile.brandSocialMedia')}
                 </label>
                 <div className="space-y-2">
                   <div className="flex space-x-2">
@@ -1651,7 +1654,7 @@ const BrandSelectionForm: React.FC = () => {
                       }}
                       className="px-4 py-3 bg-green-600/20 hover:bg-green-600/30 border border-green-500/50 rounded-xl text-green-300 transition-all"
                     >
-                      Добавить
+                      {t('brandProfile.add')}
                     </button>
                   </div>
                   {socialMediaUrls.length > 0 && (
@@ -1681,14 +1684,14 @@ const BrandSelectionForm: React.FC = () => {
 
             <div>
               <label className="block text-gray-300 mb-2 text-sm font-medium">
-                Описание подтверждающих документов
+                {t('brandProfile.proofDocsLabel')}
                 {(() => {
                   const userEmail = user?.email || '';
                   const isCorporate = isCorporateEmail(companyEmail || userEmail, companyWebsite);
                   return (!companyEmail || !isCorporate) ? (
                     <span className="text-red-400"> *</span>
                   ) : (
-                    <span className="text-gray-400 text-xs"> (необязательно для корпоративной почты)</span>
+                    <span className="text-gray-400 text-xs"> ({t('brandProfile.optionalForCorporate')})</span>
                   );
                 })()}
               </label>
@@ -1706,9 +1709,9 @@ const BrandSelectionForm: React.FC = () => {
                   const userEmail = user?.email || '';
                   const isCorporate = isCorporateEmail(companyEmail || userEmail, companyWebsite);
                   if (isCorporate && companyEmail) {
-                    return "Опционально: опишите подтверждающие документы для ускорения верификации (доверенность, выписка из ЕГРЮЛ/ЕГРИП и т.д.)";
+                    return t('brandProfile.proofPlaceholderCorporate');
                   }
-                  return "При использовании личной почты (например, @gmail.com) обязательно прикрепите подтверждающие документы и опишите их содержание: доверенность, выписку из ЕГРЮЛ/ЕГРИП (для ИП), ссылки на соцсети, маркетплейсы или фото продукции с логотипом или упаковкой";
+                  return t('brandProfile.proofPlaceholderPersonal');
                 })()}
               />
               {(() => {
@@ -1717,7 +1720,7 @@ const BrandSelectionForm: React.FC = () => {
                 if (!isCorporate && companyEmail) {
                   return (
                     <p className="mt-1 text-xs text-red-300">
-                      Текстовое описание не заменяет документы — оно лишь поясняет их содержание.
+                      {t('brandProfile.proofTextHint')}
                     </p>
                   );
                 }
@@ -1727,14 +1730,14 @@ const BrandSelectionForm: React.FC = () => {
 
             <div>
               <label className="block text-gray-300 mb-2 text-sm font-medium">
-                Прикрепить документы
+                {t('brandProfile.attachDocs')}
                 {(() => {
                   const userEmail = user?.email || '';
                   const isCorporate = isCorporateEmail(companyEmail || userEmail, companyWebsite);
                   return !isCorporate && companyEmail ? (
                     <span className="text-red-400"> *</span>
                   ) : (
-                    <span className="text-gray-400 text-xs"> (необязательно для корпоративной почты)</span>
+                    <span className="text-gray-400 text-xs"> ({t('brandProfile.optionalForCorporate')})</span>
                   );
                 })()}
               </label>
@@ -1765,12 +1768,12 @@ const BrandSelectionForm: React.FC = () => {
                       const userEmail = user?.email || '';
                       const isCorporate = isCorporateEmail(companyEmail || userEmail, companyWebsite);
                       if (!isCorporate && companyEmail && localFiles.length === 0) {
-                        return 'Обязательно: нажмите для выбора файлов';
+                        return t('brandProfile.requiredSelectFiles');
                       }
-                      return 'Нажмите для выбора файлов';
+                      return t('brandProfile.selectFiles');
                     })()}
                   </span>
-                  <span className="text-xs text-gray-400">PDF, JPG, PNG, DOC, DOCX (макс. 50 MB)</span>
+                  <span className="text-xs text-gray-400">{t('brandProfile.allowedFormats')}</span>
                 </label>
                 {localFiles.length > 0 && (
                   <div className="mt-4 space-y-2">
@@ -1802,27 +1805,27 @@ const BrandSelectionForm: React.FC = () => {
 
             <div>
               <label className="block text-gray-300 mb-2 text-sm font-medium">
-                Дополнительное сообщение <span className="text-gray-400 text-xs">(необязательно)</span>
+                {t('brandProfile.additionalMessage')} <span className="text-gray-400 text-xs">({t('brandProfile.optional')})</span>
               </label>
               <textarea
                 value={message}
                 onChange={(e) => setMessage(e.target.value)}
                 rows={2}
                 className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all resize-none"
-                placeholder="Любая дополнительная информация для администратора..."
+                placeholder={t('brandProfile.additionalMessagePlaceholder')}
               />
             </div>
 
             <div className="bg-blue-500/10 border border-blue-500/30 rounded-xl p-3 mb-4">
               <p className="text-xs text-blue-200 mb-2">
-                <strong className="text-blue-300">Важно:</strong> В случае отсутствия возможности предоставить стандартные документы (например, при регистрации авторского бренда физическим лицом без ИП), вы можете связаться с администрацией для согласования альтернативного способа верификации.
+                <strong className="text-blue-300">{t('brandProfile.important')}:</strong> {t('brandProfile.alternativeVerification')}
               </p>
               <a
                 href="mailto:admin@filamenthub.ru?subject=Заявка на верификацию бренда&body=Здравствуйте! Я хочу зарегистрировать бренд на платформе FilamentHub."
                 className="inline-flex items-center space-x-2 text-xs text-blue-300 hover:text-blue-200 transition-colors"
               >
                 <Share2 className="w-3 h-3" />
-                <span>Связаться с администратором</span>
+                <span>{t('brandProfile.contactAdmin')}</span>
               </a>
             </div>
 
@@ -1838,9 +1841,9 @@ const BrandSelectionForm: React.FC = () => {
                 />
                   <div className="flex-1">
                     <span className="text-sm text-white">
-                      Я подтверждаю, что вся предоставленная информация является достоверной. Предоставление ложных сведений может повлечь отказ в верификации и блокировку аккаунта. {' '}
+                      {t('brandProfile.confirmAccuracyText')} {' '}
                       <a href="/user-agreement" target="_blank" className="text-green-400 hover:text-green-300 underline">
-                       Пользовательское соглашение
+                       {t('brandProfile.userAgreement')}
                       </a>
                     </span>
                   </div>
@@ -1856,12 +1859,12 @@ const BrandSelectionForm: React.FC = () => {
                 {createRequestMutation.isPending ? (
                   <>
                     <Loader2 className="w-5 h-5 mr-2 animate-spin" />
-                    Отправка заявки...
+                    {t('brandProfile.submittingRequest')}
                   </>
                 ) : (
                   <>
                     <Plus className="w-5 h-5 mr-2" />
-                    Подать заявку на создание бренда
+                    {t('brandProfile.submitCreateRequest')}
                   </>
                 )}
               </button>
@@ -1881,7 +1884,7 @@ const BrandSelectionForm: React.FC = () => {
                 disabled={createRequestMutation.isPending}
                 className="px-6 py-3 bg-white/10 hover:bg-white/20 text-white rounded-xl transition-all disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                Отмена
+                {t('brandProfile.cancel')}
               </button>
             </div>
           </form>
@@ -1897,9 +1900,9 @@ const BrandSelectionForm: React.FC = () => {
           <div className="w-16 h-16 bg-gradient-to-r from-green-500 to-emerald-500 rounded-xl flex items-center justify-center mx-auto mb-4 shadow-lg shadow-green-500/25">
             <Factory className="w-8 h-8 text-white" />
           </div>
-          <h2 className="text-2xl font-bold text-white mb-2">Получите доступ к кабинету производителя</h2>
+          <h2 className="text-2xl font-bold text-white mb-2">{t('brandProfile.getManufacturerAccess')}</h2>
           <p className="text-gray-300 mb-4">
-            Чтобы добавлять официальные профили материалов, управлять рекомендованными настройками печати и получать аналитику по использованию ваших филаментов, подайте заявку на подключение к FilamentHub как официальный представитель бренда.
+            {t('brandProfile.getManufacturerAccessDescription')}
           </p>
           
           {/* Информационный блок о процессе */}
@@ -1907,12 +1910,12 @@ const BrandSelectionForm: React.FC = () => {
             <div className="flex items-start space-x-3">
               <Shield className="w-5 h-5 text-blue-400 flex-shrink-0 mt-0.5" />
               <div className="text-left">
-                <h3 className="text-sm font-semibold text-blue-300 mb-1">Процесс верификации</h3>
+                <h3 className="text-sm font-semibold text-blue-300 mb-1">{t('brandProfile.verificationProcess')}</h3>
                 <ul className="text-xs text-blue-200 space-y-1 list-disc list-inside">
-                  <li>Выберите: присоединиться к существующему бренду или зарегистрировать новый</li>
-                  <li>Укажите подтверждающие документы или контактные данные, подтверждающие ваше право представлять бренд</li>
-                  <li>Администрация проверит информацию и примет решение в течение 3–5 рабочих дней</li>
-                  <li>После одобрения вы автоматически получите доступ к кабинету производителя</li>
+                  <li>{t('brandProfile.verifyStep1')}</li>
+                  <li>{t('brandProfile.verifyStep2')}</li>
+                  <li>{t('brandProfile.verifyStep3')}</li>
+                  <li>{t('brandProfile.verifyStep4')}</li>
                 </ul>
               </div>
             </div>
@@ -1922,7 +1925,7 @@ const BrandSelectionForm: React.FC = () => {
         {/* Список моих заявок */}
         {myRequests && myRequests.length > 0 && (
           <div className="mb-6">
-            <h3 className="text-lg font-bold text-white mb-4">Мои заявки</h3>
+            <h3 className="text-lg font-bold text-white mb-4">{t('brandProfile.myRequests')}</h3>
             <div className="space-y-3">
               {myRequests.map((request) => (
                 <div
@@ -1943,37 +1946,37 @@ const BrandSelectionForm: React.FC = () => {
                         request.status === 'approved' ? 'bg-green-500/20 text-green-300' :
                         'bg-red-500/20 text-red-300'
                       }`}>
-                        {request.status === 'pending' ? 'Ожидает' :
-                         request.status === 'approved' ? 'Одобрена' :
-                         'Отклонена'}
+                        {request.status === 'pending' ? t('brandProfile.statusPendingShort') :
+                         request.status === 'approved' ? t('brandProfile.statusApproved') :
+                         t('brandProfile.statusRejected')}
                       </span>
                       <span className="text-white font-medium">
-                        {request.request_type === 'create' 
-                          ? `Создание бренда "${request.new_brand_name}"`
-                          : 'Вступление в бренд'}
+                        {request.request_type === 'create'
+                          ? t('brandProfile.createBrandRequest', { name: request.new_brand_name })
+                          : t('brandProfile.joinBrandRequest')}
                       </span>
                     </div>
                     {request.status === 'pending' && (
                       <button
                         onClick={(e) => {
                           e.stopPropagation(); // Предотвращаем клик по карточке
-                          if (confirm('Вы уверены, что хотите отозвать эту заявку?')) {
+                          if (confirm(t('brandProfile.confirmCancelRequest'))) {
                             cancelRequestMutation.mutate(request.id);
                           }
                         }}
                         disabled={cancelRequestMutation.isPending}
                         className="px-3 py-1 text-xs bg-red-600/20 hover:bg-red-600/30 text-red-400 rounded-lg transition-all disabled:opacity-50"
                       >
-                        Отозвать
+                        {t('brandProfile.cancelRequestShort')}
                       </button>
                     )}
                   </div>
                   <p className="text-gray-400 text-sm">
-                    Подано: {new Date(request.created_at).toLocaleDateString('ru-RU')}
+                    {t('brandProfile.submitted')}: {new Date(request.created_at).toLocaleDateString('ru-RU')}
                   </p>
                   {request.status === 'pending' && (
                     <p className="text-gray-300 text-xs mt-2 italic">
-                      Нажмите на заявку, чтобы просмотреть детали и добавить файлы
+                      {t('brandProfile.clickToViewDetails')}
                     </p>
                   )}
                 </div>
@@ -1990,10 +1993,10 @@ const BrandSelectionForm: React.FC = () => {
 
         <div className="space-y-4">
           <label className="block text-gray-300 mb-2 text-sm font-medium">
-            Вариант 1: Присоединиться к существующему бренду
+            {t('brandProfile.option1JoinExisting')}
           </label>
           <p className="text-xs text-gray-400 mb-3">
-            Если ваш бренд уже зарегистрирован в каталоге FilamentHub.
+            {t('brandProfile.option1Description')}
           </p>
           <Dropdown
             value={selectedBrandId || ''}
@@ -2018,11 +2021,11 @@ const BrandSelectionForm: React.FC = () => {
                 <Factory className="w-4 h-4 text-gray-400 flex-shrink-0" />
               ),
             }))}
-            placeholder="Начните вводить название бренда..."
+            placeholder={t('brandProfile.searchBrandPlaceholder')}
             filterable
             filterValue={brandSearch}
             onFilterChange={setBrandSearch}
-            emptyMessage="Бренды не найдены"
+            emptyMessage={t('brandProfile.brandsNotFound')}
             renderOption={(option) => {
               const brand = allBrands.find((b) => b.id === option.value);
               return (
@@ -2035,9 +2038,9 @@ const BrandSelectionForm: React.FC = () => {
                     )}
                   <span>{option.label}</span>
                     {brand?.verified ? (
-                  <span className="text-gray-400 text-xs">(верифицирован)</span>
+                  <span className="text-gray-400 text-xs">({t('brandProfile.verified')})</span>
                     ) : (
-                      <span className="text-gray-500 text-xs">(не верифицирован)</span>
+                      <span className="text-gray-500 text-xs">({t('brandProfile.notVerified')})</span>
                     )}
                 </span>
                 {selectedBrandId === option.value && (
@@ -2055,7 +2058,7 @@ const BrandSelectionForm: React.FC = () => {
                   <Shield className="w-5 h-5 text-blue-400 flex-shrink-0 mt-0.5" />
                   <div className="flex-1">
                     <p className="text-xs text-blue-200">
-                      После подачи заявки администратор свяжется с существующими представителями бренда <strong className="text-blue-300">{selectedBrand?.name}</strong> для подтверждения вашего членства. Убедитесь, что они ожидают ваш запрос. Подтверждающие документы предоставлять не требуется.
+                      {t('brandProfile.joinVerifiedBrandInfo', { name: selectedBrand?.name })}
                     </p>
                   </div>
                 </div>
@@ -2067,9 +2070,9 @@ const BrandSelectionForm: React.FC = () => {
                     <div className="flex-1">
                       <p className="text-xs text-yellow-200">
                         {!selectedBrand?.verified ? (
-                          <>Бренд <strong className="text-yellow-300">{selectedBrand?.name}</strong> не верифицирован. Для присоединения необходимо предоставить подтверждающие документы, как при создании нового бренда.</>
+                          <>{t('brandProfile.brandNotVerifiedWarning', { name: selectedBrand?.name })}</>
                         ) : (
-                          <>У бренда <strong className="text-yellow-300">{selectedBrand?.name}</strong> пока нет сотрудников. Для присоединения необходимо предоставить подтверждающие документы, как при создании нового бренда.</>
+                          <>{t('brandProfile.brandNoEmployeesWarning', { name: selectedBrand?.name })}</>
                         )}
                       </p>
                     </div>
@@ -2082,7 +2085,7 @@ const BrandSelectionForm: React.FC = () => {
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="block text-gray-300 mb-2 text-sm font-medium">
-                      Email компании
+                      {t('brandProfile.companyEmail')}
                   </label>
                     <div className="space-y-1">
                   <input
@@ -2098,13 +2101,13 @@ const BrandSelectionForm: React.FC = () => {
                           onClick={() => setCompanyEmail(user.email)}
                           className="text-xs text-green-400 hover:text-green-300 transition-colors"
                         >
-                          Использовать мой email
+                          {t('brandProfile.useMyEmail')}
                         </button>
                       )}
                       {companyEmail && isPersonalEmail(companyEmail) && (
                         <div className="mt-1 p-2 bg-yellow-500/20 border border-yellow-500/30 rounded-lg">
                           <p className="text-xs text-yellow-300">
-                            ⚠️ Вы используете личную почту. Обязательно прикрепите подтверждающие документы.
+                            {t('brandProfile.personalEmailWarning')}
                           </p>
                 </div>
                       )}
@@ -2113,7 +2116,7 @@ const BrandSelectionForm: React.FC = () => {
 
                 <div>
                   <label className="block text-gray-300 mb-2 text-sm font-medium">
-                      Сайт компании
+                      {t('brandProfile.companyWebsite')}
                   </label>
                   <input
                     type="text"
@@ -2127,7 +2130,7 @@ const BrandSelectionForm: React.FC = () => {
 
               <div>
                 <label className="block text-gray-300 mb-2 text-sm font-medium">
-                    Соцсети бренда
+                    {t('brandProfile.brandSocialMedia')}
                 </label>
                 <div className="space-y-2">
                   <div className="flex space-x-2">
@@ -2157,7 +2160,7 @@ const BrandSelectionForm: React.FC = () => {
                       }}
                       className="px-4 py-3 bg-green-600/20 hover:bg-green-600/30 border border-green-500/50 rounded-xl text-green-300 transition-all"
                     >
-                      Добавить
+                      {t('brandProfile.add')}
                     </button>
                   </div>
                   {socialMediaUrls.length > 0 && (
@@ -2190,14 +2193,14 @@ const BrandSelectionForm: React.FC = () => {
                 <>
               <div>
                 <label className="block text-gray-300 mb-2 text-sm font-medium">
-                      Описание подтверждающих документов
+                      {t('brandProfile.proofDocsLabel')}
                       {(() => {
                         const userEmail = user?.email || '';
                         const isCorporate = isCorporateEmail(companyEmail || userEmail, companyWebsite);
                         return (!companyEmail || !isCorporate) ? (
                           <span className="text-red-400"> *</span>
                         ) : (
-                          <span className="text-gray-400 text-xs"> (необязательно для корпоративной почты)</span>
+                          <span className="text-gray-400 text-xs"> ({t('brandProfile.optionalForCorporate')})</span>
                         );
                       })()}
                     </label>
@@ -2215,9 +2218,9 @@ const BrandSelectionForm: React.FC = () => {
                         const userEmail = user?.email || '';
                         const isCorporate = isCorporateEmail(companyEmail || userEmail, companyWebsite);
                         if (isCorporate && companyEmail) {
-                          return "Опционально: опишите подтверждающие документы для ускорения верификации (доверенность, выписка из ЕГРЮЛ/ЕГРИП и т.д.)";
+                          return t('brandProfile.proofPlaceholderCorporate');
                         }
-                        return "При использовании личной почты (например, @gmail.com) обязательно прикрепите подтверждающие документы и опишите их содержание: доверенность, выписку из ЕГРЮЛ/ЕГРИП (для ИП), ссылки на соцсети, маркетплейсы или фото продукции с логотипом или упаковкой";
+                        return t('brandProfile.proofPlaceholderPersonal');
                       })()}
                     />
                     {(() => {
@@ -2226,7 +2229,7 @@ const BrandSelectionForm: React.FC = () => {
                       if (!isCorporate && companyEmail) {
                         return (
                           <p className="mt-1 text-xs text-red-300">
-                            Текстовое описание не заменяет документы — оно лишь поясняет их содержание.
+                            {t('brandProfile.proofTextHint')}
                           </p>
                         );
                       }
@@ -2236,14 +2239,14 @@ const BrandSelectionForm: React.FC = () => {
 
                   <div>
                     <label className="block text-gray-300 mb-2 text-sm font-medium">
-                      Прикрепить документы
+                      {t('brandProfile.attachDocs')}
                       {(() => {
                         const userEmail = user?.email || '';
                         const isCorporate = isCorporateEmail(companyEmail || userEmail, companyWebsite);
                         return !isCorporate && companyEmail ? (
                           <span className="text-red-400"> *</span>
                         ) : (
-                          <span className="text-gray-400 text-xs"> (необязательно для корпоративной почты)</span>
+                          <span className="text-gray-400 text-xs"> ({t('brandProfile.optionalForCorporate')})</span>
                         );
                       })()}
                     </label>
@@ -2266,12 +2269,12 @@ const BrandSelectionForm: React.FC = () => {
                             const userEmail = user?.email || '';
                             const isCorporate = isCorporateEmail(companyEmail || userEmail, companyWebsite);
                             if (!isCorporate && companyEmail && localFiles.length === 0) {
-                              return 'Обязательно: нажмите для выбора файлов';
+                              return t('brandProfile.requiredSelectFiles');
                             }
-                            return 'Нажмите для выбора файлов';
+                            return t('brandProfile.selectFiles');
                           })()}
                         </span>
-                        <span className="text-xs text-gray-400">PDF, JPG, PNG, DOC, DOCX (макс. 50 MB)</span>
+                        <span className="text-xs text-gray-400">{t('brandProfile.allowedFormats')}</span>
                       </label>
                       {localFiles.length > 0 && (
                         <div className="mt-4 space-y-2">
@@ -2305,14 +2308,14 @@ const BrandSelectionForm: React.FC = () => {
 
               <div>
                 <label className="block text-gray-300 mb-2 text-sm font-medium">
-                  Дополнительное сообщение <span className="text-gray-400 text-xs">(необязательно)</span>
+                  {t('brandProfile.additionalMessage')} <span className="text-gray-400 text-xs">({t('brandProfile.optional')})</span>
                 </label>
                 <textarea
                   value={message}
                   onChange={(e) => setMessage(e.target.value)}
                   rows={2}
                   className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all resize-none"
-                  placeholder="Любая дополнительная информация для администратора..."
+                  placeholder={t('brandProfile.additionalMessagePlaceholder')}
                 />
               </div>
 
@@ -2328,9 +2331,9 @@ const BrandSelectionForm: React.FC = () => {
                   />
                   <div className="flex-1">
                     <span className="text-sm text-white">
-                      Я подтверждаю, что вся предоставленная информация является достоверной. Предоставление ложных сведений может повлечь отказ в верификации и блокировку аккаунта. 
+                      {t('brandProfile.confirmAccuracyText')} 
                       <a href="/user-agreement" target="_blank" className="text-green-400 hover:text-green-300 underline">
-                       Пользовательское соглашение
+                       {t('brandProfile.userAgreement')}
                       </a>
                     </span>
                   </div>
@@ -2345,12 +2348,12 @@ const BrandSelectionForm: React.FC = () => {
                 {createRequestMutation.isPending ? (
                   <>
                     <Loader2 className="w-5 h-5 mr-2 animate-spin" />
-                    Отправка заявки...
+                    {t('brandProfile.submittingRequest')}
                   </>
                 ) : (
                   <>
                     <CheckCircle className="w-5 h-5 mr-2" />
-                    Присоединиться к бренду
+                    {t('brandProfile.joinBrand')}
                   </>
                 )}
               </button>
@@ -2359,15 +2362,15 @@ const BrandSelectionForm: React.FC = () => {
           
           <div className="relative flex items-center my-6">
             <div className="flex-1 border-t border-white/20"></div>
-            <span className="px-4 text-sm text-gray-400">или</span>
+            <span className="px-4 text-sm text-gray-400">{t('brandProfile.or')}</span>
             <div className="flex-1 border-t border-white/20"></div>
           </div>
 
           <label className="block text-gray-300 mb-2 text-sm font-medium">
-            Вариант 2: Зарегистрировать новый бренд
+            {t('brandProfile.option2RegisterNew')}
           </label>
           <p className="text-xs text-gray-400 mb-3">
-            Если вы представляете бренд, которого ещё нет на платформе. После модерации вы получите доступ к кабинету производителя.
+            {t('brandProfile.option2Description')}
           </p>
 
           <div className="bg-yellow-500/20 border border-yellow-500/50 rounded-xl p-4 mb-4">
@@ -2375,7 +2378,7 @@ const BrandSelectionForm: React.FC = () => {
               <Shield className="w-5 h-5 text-yellow-400 flex-shrink-0 mt-0.5" />
               <div className="text-left">
                 <p className="text-xs text-yellow-200">
-                  Пожалуйста, убедитесь, что ваш бренд действительно ещё не зарегистрирован на платформе перед подачей заявки.
+                  {t('brandProfile.checkBrandNotExists')}
                 </p>
               </div>
             </div>
@@ -2386,7 +2389,7 @@ const BrandSelectionForm: React.FC = () => {
             className="w-full bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700 text-white px-6 py-3 rounded-xl transition-all shadow-lg shadow-green-500/25 hover:shadow-green-500/40 flex items-center justify-center"
           >
             <Plus className="w-5 h-5 mr-2" />
-            Зарегистрировать новый бренд
+            {t('brandProfile.registerNewBrand')}
           </button>
         </div>
       </div>
@@ -2425,6 +2428,7 @@ interface FilamentCardProps {
 }
 
 const FilamentCard: React.FC<FilamentCardProps> = ({ filament, onEdit, onDelete, onShowQR, viewMode = 'grid' }) => {
+  const { t } = useTranslation();
   // Загружаем пресеты для материала
   const { data: presetsData } = useQuery({
     queryKey: ['filament-presets', filament.id],
@@ -2470,7 +2474,7 @@ const FilamentCard: React.FC<FilamentCardProps> = ({ filament, onEdit, onDelete,
                 {officialPreset && (
                   <div className="flex items-center space-x-1">
                     <CheckCircle className="w-3 h-3 text-green-400" />
-                    <span>Официальный</span>
+                    <span>{t('brandProfile.official')}</span>
                   </div>
                 )}
                 <div className="flex items-center space-x-1">
@@ -2497,7 +2501,7 @@ const FilamentCard: React.FC<FilamentCardProps> = ({ filament, onEdit, onDelete,
               )}
               {filament.active === false && (
                 <span className="px-2 py-0.5 bg-gray-500/20 text-gray-400 text-xs rounded-full">
-                  Неактивен
+                  {t('brandProfile.inactive')}
                 </span>
               )}
             </div>
@@ -2509,7 +2513,7 @@ const FilamentCard: React.FC<FilamentCardProps> = ({ filament, onEdit, onDelete,
               <button
                 onClick={() => onShowQR(filament)}
                 className="p-1.5 bg-white/10 hover:bg-green-500/20 rounded-md text-white transition-all"
-                title="QR-код"
+                title={t('brandProfile.qrCode')}
               >
                 <QrCode className="w-3.5 h-3.5" />
               </button>
@@ -2517,14 +2521,14 @@ const FilamentCard: React.FC<FilamentCardProps> = ({ filament, onEdit, onDelete,
             <button
               onClick={() => onEdit(filament)}
               className="p-1.5 bg-white/10 hover:bg-purple-500/20 rounded-md text-white transition-all"
-              title="Редактировать"
+              title={t('brandProfile.edit')}
             >
               <Edit className="w-3.5 h-3.5" />
             </button>
             <button
               onClick={() => onDelete(filament)}
               className="p-1.5 bg-white/10 hover:bg-red-500/20 rounded-md text-white transition-all"
-              title="Удалить"
+              title={t('brandProfile.delete')}
             >
               <Trash2 className="w-3.5 h-3.5" />
             </button>
@@ -2551,7 +2555,7 @@ const FilamentCard: React.FC<FilamentCardProps> = ({ filament, onEdit, onDelete,
             <button
               onClick={() => onShowQR(filament)}
               className="p-2 bg-white/10 hover:bg-green-500/20 rounded-lg text-white transition-all"
-              title="Показать QR-код"
+              title={t('brandProfile.showQRCode')}
             >
               <QrCode className="w-4 h-4" />
             </button>
@@ -2559,14 +2563,14 @@ const FilamentCard: React.FC<FilamentCardProps> = ({ filament, onEdit, onDelete,
           <button
             onClick={() => onEdit(filament)}
             className="p-2 bg-white/10 hover:bg-purple-500/20 rounded-lg text-white transition-all"
-            title="Редактировать"
+            title={t('brandProfile.edit')}
           >
             <Edit className="w-4 h-4" />
           </button>
           <button
             onClick={() => onDelete(filament)}
             className="p-2 bg-white/10 hover:bg-red-500/20 rounded-lg text-white transition-all"
-            title="Удалить"
+            title={t('brandProfile.delete')}
           >
             <Trash2 className="w-4 h-4" />
           </button>
@@ -2597,11 +2601,11 @@ const FilamentCard: React.FC<FilamentCardProps> = ({ filament, onEdit, onDelete,
         {filament.active !== false ? (
           <span className="px-2 py-1 bg-green-500/20 text-green-300 text-xs rounded-full flex items-center space-x-1">
             <CheckCircle className="w-3 h-3" />
-            <span>Активен</span>
+            <span>{t('brandProfile.active')}</span>
           </span>
         ) : (
           <span className="px-2 py-1 bg-gray-500/20 text-gray-400 text-xs rounded-full">
-            Неактивен
+            {t('brandProfile.inactive')}
           </span>
         )}
       </div>
@@ -2611,25 +2615,25 @@ const FilamentCard: React.FC<FilamentCardProps> = ({ filament, onEdit, onDelete,
         <div className="mb-4 p-3 bg-purple-500/10 rounded-xl border border-purple-500/20">
           <div className="flex items-center space-x-2 mb-2">
             <CheckCircle className="w-4 h-4 text-green-400" />
-            <span className="text-white text-sm font-medium">Официальный пресет</span>
+            <span className="text-white text-sm font-medium">{t('brandProfile.officialPreset')}</span>
           </div>
           <div className="grid grid-cols-2 gap-2 text-xs">
             <div className="flex items-center space-x-1">
               <Thermometer className="w-3 h-3 text-red-400" />
-              <span className="text-gray-300">Сопло: {officialPreset.extruder_temp}°C</span>
+              <span className="text-gray-300">{t('brandProfile.nozzle')}: {officialPreset.extruder_temp}°C</span>
             </div>
             <div className="flex items-center space-x-1">
               <Gauge className="w-3 h-3 text-blue-400" />
-              <span className="text-gray-300">Стол: {officialPreset.bed_temp}°C</span>
+              <span className="text-gray-300">{t('brandProfile.bed')}: {officialPreset.bed_temp}°C</span>
             </div>
             <div className="flex items-center space-x-1">
               <Gauge className="w-3 h-3 text-green-400" />
-              <span className="text-gray-300">Скорость: {officialPreset.print_speed}mm/s</span>
+              <span className="text-gray-300">{t('brandProfile.speed')}: {officialPreset.print_speed}mm/s</span>
             </div>
             {officialPreset.fan_speed !== undefined && (
               <div className="flex items-center space-x-1">
                 <Settings className="w-3 h-3 text-yellow-400" />
-                <span className="text-gray-300">Обдув: {officialPreset.fan_speed}%</span>
+                <span className="text-gray-300">{t('brandProfile.fan')}: {officialPreset.fan_speed}%</span>
               </div>
             )}
           </div>
@@ -2643,21 +2647,21 @@ const FilamentCard: React.FC<FilamentCardProps> = ({ filament, onEdit, onDelete,
             <Settings className="w-3 h-3" />
           </div>
           <div className="text-white font-semibold">{totalPresets}</div>
-          <div className="text-gray-400">Пресетов</div>
+          <div className="text-gray-400">{t('brandProfile.presetsCount')}</div>
         </div>
         <div className="text-center p-2 bg-white/5 rounded-lg">
           <div className="flex items-center justify-center space-x-1 text-gray-400 mb-1">
             <Eye className="w-3 h-3" />
           </div>
           <div className="text-white font-semibold">{filament.views_count || 0}</div>
-          <div className="text-gray-400">Просмотров</div>
+          <div className="text-gray-400">{t('brandProfile.views')}</div>
         </div>
         <div className="text-center p-2 bg-white/5 rounded-lg">
           <div className="flex items-center justify-center space-x-1 text-gray-400 mb-1">
             <QrCode className="w-3 h-3" />
           </div>
           <div className="text-white font-semibold">{filament.scans_count || 0}</div>
-          <div className="text-gray-400">Сканирований</div>
+          <div className="text-gray-400">{t('brandProfile.scans')}</div>
         </div>
       </div>
 
@@ -2666,15 +2670,15 @@ const FilamentCard: React.FC<FilamentCardProps> = ({ filament, onEdit, onDelete,
         <div className="flex items-center justify-between text-sm">
           {filament.price_per_kg ? (
             <div>
-              <span className="text-gray-400">Цена: </span>
+              <span className="text-gray-400">{t('brandProfile.price')}: </span>
               <span className="text-white font-semibold">{Math.round(filament.price_per_kg)}₽/кг</span>
             </div>
           ) : (
-            <span className="text-gray-500 text-xs">Цена не указана</span>
+            <span className="text-gray-500 text-xs">{t('brandProfile.priceNotSet')}</span>
           )}
           {filament.density && (
             <div className="text-gray-400 text-xs">
-              Плотность: {filament.density} г/см³
+              {t('brandProfile.density')}: {filament.density} {t('brandProfile.densityUnit')}
             </div>
           )}
         </div>
@@ -2691,6 +2695,7 @@ interface QRCodeCardProps {
 }
 
 const QRCodeCard: React.FC<QRCodeCardProps> = ({ filament }) => {
+  const { t } = useTranslation();
   // Используем реальный QR-код из филамента
   const shortCode = filament.qr_code || null;
   
@@ -2724,20 +2729,20 @@ const QRCodeCard: React.FC<QRCodeCardProps> = ({ filament }) => {
       <div className="flex items-center space-x-4">
         <div className="text-right">
           <p className="text-white font-semibold">{filament.scans_count || 0}</p>
-          <p className="text-gray-400 text-sm">сканирований</p>
+          <p className="text-gray-400 text-sm">{t('brandProfile.scans')}</p>
         </div>
         <div className="flex space-x-2">
           <button
             onClick={() => handleDownload(600)}
             className="p-2 bg-white/10 hover:bg-white/20 rounded-lg text-white transition-all"
-            title="Скачать QR-код (600x600)"
+            title={t('brandProfile.downloadQR')}
           >
             <Download className="w-4 h-4" />
           </button>
           <button
             onClick={() => navigator.clipboard.writeText(shortCode)}
             className="p-2 bg-white/10 hover:bg-white/20 rounded-lg text-white transition-all"
-            title="Копировать код"
+            title={t('brandProfile.copyCode')}
           >
             <Copy className="w-4 h-4" />
           </button>
@@ -2752,6 +2757,7 @@ interface MaterialStatCardProps {
 }
 
 const MaterialStatCard: React.FC<MaterialStatCardProps> = ({ filament }) => {
+  const { t } = useTranslation();
   return (
     <div className="flex items-center justify-between p-4 bg-white/5 rounded-xl">
       <div className="flex items-center space-x-3">
@@ -2764,8 +2770,8 @@ const MaterialStatCard: React.FC<MaterialStatCardProps> = ({ filament }) => {
         </div>
       </div>
       <div className="text-right">
-        <p className="text-white font-semibold">{filament.scans_count || 0} сканирований</p>
-        <p className="text-green-400 text-sm">{filament.views_count || 0} просмотров</p>
+        <p className="text-white font-semibold">{filament.scans_count || 0} {t('brandProfile.scans')}</p>
+        <p className="text-green-400 text-sm">{filament.views_count || 0} {t('brandProfile.views')}</p>
       </div>
     </div>
   );
