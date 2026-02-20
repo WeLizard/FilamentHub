@@ -2546,5 +2546,32 @@
     "colorName": "Название цвета",
     "notSpecified": "Не указано",
     "hexColor": "Цвет HEX"
+  },
+  "printerRequest": {
+    "title": "Запрос на добавление принтера",
+    "subtitle": "Если ваш принтер отсутствует в базе, заполните форму ниже. Запрос будет рассмотрен администратором.",
+    "successMessage": "Запрос на добавление принтера успешно создан! Он будет рассмотрен администратором.",
+    "createError": "Ошибка при создании запроса",
+    "printerName": "Название принтера",
+    "namePlaceholder": "Например: Bambu Lab X1 Carbon",
+    "manufacturer": "Производитель",
+    "manufacturerPlaceholder": "Например: Bambu Lab",
+    "model": "Модель",
+    "modelPlaceholder": "Например: X1 Carbon",
+    "slugPlaceholder": "Автоматически генерируется из названия",
+    "slugHint": "URL-friendly идентификатор принтера (генерируется автоматически из названия)",
+    "description": "Описание",
+    "descriptionPlaceholder": "Краткое описание принтера...",
+    "volumeX": "Объём X (мм)",
+    "volumeY": "Объём Y (мм)",
+    "volumeZ": "Объём Z (мм)",
+    "nozzleDiameter": "Диаметр сопла (мм)",
+    "maxExtruderTemp": "Макс. темп. сопла (°C)",
+    "maxBedTemp": "Макс. темп. стола (°C)",
+    "imageUrl": "URL изображения",
+    "additionalInfo": "Дополнительная информация",
+    "additionalInfoPlaceholder": "Любая дополнительная информация о принтере...",
+    "cancel": "Отмена",
+    "submit": "Отправить запрос"
   }
 }

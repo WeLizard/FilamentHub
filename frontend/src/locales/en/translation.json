@@ -2524,5 +2524,32 @@
     "colorName": "Color name",
     "notSpecified": "Not specified",
     "hexColor": "HEX color"
+  },
+  "printerRequest": {
+    "title": "Printer addition request",
+    "subtitle": "If your printer is not in the database, fill out the form below. The request will be reviewed by an administrator.",
+    "successMessage": "Printer addition request created successfully! It will be reviewed by an administrator.",
+    "createError": "Error creating request",
+    "printerName": "Printer name",
+    "namePlaceholder": "Example: Bambu Lab X1 Carbon",
+    "manufacturer": "Manufacturer",
+    "manufacturerPlaceholder": "Example: Bambu Lab",
+    "model": "Model",
+    "modelPlaceholder": "Example: X1 Carbon",
+    "slugPlaceholder": "Auto-generated from name",
+    "slugHint": "URL-friendly printer identifier (auto-generated from name)",
+    "description": "Description",
+    "descriptionPlaceholder": "Brief printer description...",
+    "volumeX": "Volume X (mm)",
+    "volumeY": "Volume Y (mm)",
+    "volumeZ": "Volume Z (mm)",
+    "nozzleDiameter": "Nozzle diameter (mm)",
+    "maxExtruderTemp": "Max extruder temp (°C)",
+    "maxBedTemp": "Max bed temp (°C)",
+    "imageUrl": "Image URL",
+    "additionalInfo": "Additional information",
+    "additionalInfoPlaceholder": "Any additional information about the printer...",
+    "cancel": "Cancel",
+    "submit": "Submit request"
   }
 }

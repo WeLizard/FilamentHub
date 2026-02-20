@@ -1,6 +1,7 @@
 /** Модальное окно для создания запроса на добавление принтера */
 
 import { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { X, Save } from 'lucide-react';
 import { Printer3DIcon } from './icons/Printer3DIcon';
@@ -13,6 +14,7 @@ interface CreatePrinterRequestModalProps {
 }
 
 export function CreatePrinterRequestModal({ isOpen, onClose }: CreatePrinterRequestModalProps) {
+  const { t } = useTranslation();
   const isHeaderVisible = useHeaderVisible();
   const queryClient = useQueryClient();
   const [formData, setFormData] = useState({
@@ -51,10 +53,10 @@ export function CreatePrinterRequestModal({ isOpen, onClose }: CreatePrinterRequ
         image_url: '',
         message: '',
       });
-      alert('Запрос на добавление принтера успешно создан! Он будет рассмотрен администратором.');
+      alert(t('printerRequest.successMessage'));
     },
     onError: (error: any) => {
-      alert(error.response?.data?.detail || 'Ошибка при создании запроса');
+      alert(error.response?.data?.detail || t('printerRequest.createError'));
     },
   });
 
@@ -99,7 +101,7 @@ export function CreatePrinterRequestModal({ isOpen, onClose }: CreatePrinterRequ
         <div className="flex items-center justify-between p-6 border-b border-white/10">
           <div className="flex items-center space-x-3">
             <Printer3DIcon className="w-6 h-6 text-purple-400" />
-            <h3 className="text-2xl font-bold text-white">Запрос на добавление принтера</h3>
+            <h3 className="text-2xl font-bold text-white">{t('printerRequest.title')}</h3>
           </div>
           <button
             onClick={onClose}
@@ -112,13 +114,13 @@ export function CreatePrinterRequestModal({ isOpen, onClose }: CreatePrinterRequ
         {/* Scrollable Content */}
         <div className="flex-1 overflow-y-auto p-6">
           <p className="text-gray-300 mb-6 text-sm">
-            Если ваш принтер отсутствует в базе, заполните форму ниже. Запрос будет рассмотрен администратором.
+            {t('printerRequest.subtitle')}
           </p>
 
           <form onSubmit={handleSubmit} className="space-y-4">
           <div className="space-y-4">
             <div>
-              <label className="block text-gray-300 mb-2 text-sm font-medium">Название принтера *</label>
+              <label className="block text-gray-300 mb-2 text-sm font-medium">{t('printerRequest.printerName')} *</label>
               <input
                 type="text"
                 value={formData.name}
@@ -138,31 +140,31 @@ export function CreatePrinterRequestModal({ isOpen, onClose }: CreatePrinterRequ
                   });
                 }}
                 required
-                placeholder="Например: Bambu Lab X1 Carbon"
+                placeholder={t('printerRequest.namePlaceholder')}
                 className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500"
               />
             </div>
             
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <label className="block text-gray-300 mb-2 text-sm font-medium">Производитель *</label>
+                <label className="block text-gray-300 mb-2 text-sm font-medium">{t('printerRequest.manufacturer')} *</label>
                 <input
                   type="text"
                   value={formData.manufacturer}
                   onChange={(e) => setFormData({ ...formData, manufacturer: e.target.value })}
                   required
-                  placeholder="Например: Bambu Lab"
+                  placeholder={t('printerRequest.manufacturerPlaceholder')}
                   className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500"
                 />
               </div>
               <div>
-                <label className="block text-gray-300 mb-2 text-sm font-medium">Модель *</label>
+                <label className="block text-gray-300 mb-2 text-sm font-medium">{t('printerRequest.model')} *</label>
                 <input
                   type="text"
                   value={formData.model}
                   onChange={(e) => setFormData({ ...formData, model: e.target.value })}
                   required
-                  placeholder="Например: X1 Carbon"
+                  placeholder={t('printerRequest.modelPlaceholder')}
                   className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500"
                 />
               </div>
@@ -175,29 +177,29 @@ export function CreatePrinterRequestModal({ isOpen, onClose }: CreatePrinterRequ
                 value={formData.slug}
                 onChange={(e) => setFormData({ ...formData, slug: e.target.value })}
                 required
-                placeholder="Автоматически генерируется из названия"
+                placeholder={t('printerRequest.slugPlaceholder')}
                 className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500"
               />
               <p className="text-xs text-gray-400 mt-1">
-                URL-friendly идентификатор принтера (генерируется автоматически из названия)
+                {t('printerRequest.slugHint')}
               </p>
             </div>
           </div>
 
           <div>
-            <label className="block text-gray-300 mb-2 text-sm font-medium">Описание</label>
+            <label className="block text-gray-300 mb-2 text-sm font-medium">{t('printerRequest.description')}</label>
             <textarea
               value={formData.description}
               onChange={(e) => setFormData({ ...formData, description: e.target.value })}
               rows={3}
-              placeholder="Краткое описание принтера..."
+              placeholder={t('printerRequest.descriptionPlaceholder')}
               className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500 resize-none"
             />
           </div>
 
           <div className="grid grid-cols-3 gap-4">
             <div>
-              <label className="block text-gray-300 mb-2 text-sm font-medium">Объём X (мм)</label>
+              <label className="block text-gray-300 mb-2 text-sm font-medium">{t('printerRequest.volumeX')}</label>
               <input
                 type="number"
                 step="0.1"
@@ -208,7 +210,7 @@ export function CreatePrinterRequestModal({ isOpen, onClose }: CreatePrinterRequ
               />
             </div>
             <div>
-              <label className="block text-gray-300 mb-2 text-sm font-medium">Объём Y (мм)</label>
+              <label className="block text-gray-300 mb-2 text-sm font-medium">{t('printerRequest.volumeY')}</label>
               <input
                 type="number"
                 step="0.1"
@@ -219,7 +221,7 @@ export function CreatePrinterRequestModal({ isOpen, onClose }: CreatePrinterRequ
               />
             </div>
             <div>
-              <label className="block text-gray-300 mb-2 text-sm font-medium">Объём Z (мм)</label>
+              <label className="block text-gray-300 mb-2 text-sm font-medium">{t('printerRequest.volumeZ')}</label>
               <input
                 type="number"
                 step="0.1"
@@ -233,7 +235,7 @@ export function CreatePrinterRequestModal({ isOpen, onClose }: CreatePrinterRequ
 
           <div className="grid grid-cols-3 gap-4">
             <div>
-              <label className="block text-gray-300 mb-2 text-sm font-medium">Диаметр сопла (мм)</label>
+              <label className="block text-gray-300 mb-2 text-sm font-medium">{t('printerRequest.nozzleDiameter')}</label>
               <input
                 type="number"
                 step="0.1"
@@ -244,7 +246,7 @@ export function CreatePrinterRequestModal({ isOpen, onClose }: CreatePrinterRequ
               />
             </div>
             <div>
-              <label className="block text-gray-300 mb-2 text-sm font-medium">Макс. темп. сопла (°C)</label>
+              <label className="block text-gray-300 mb-2 text-sm font-medium">{t('printerRequest.maxExtruderTemp')}</label>
               <input
                 type="number"
                 value={formData.max_extruder_temp}
@@ -254,7 +256,7 @@ export function CreatePrinterRequestModal({ isOpen, onClose }: CreatePrinterRequ
               />
             </div>
             <div>
-              <label className="block text-gray-300 mb-2 text-sm font-medium">Макс. темп. стола (°C)</label>
+              <label className="block text-gray-300 mb-2 text-sm font-medium">{t('printerRequest.maxBedTemp')}</label>
               <input
                 type="number"
                 value={formData.max_bed_temp}
@@ -266,7 +268,7 @@ export function CreatePrinterRequestModal({ isOpen, onClose }: CreatePrinterRequ
           </div>
 
           <div>
-            <label className="block text-gray-300 mb-2 text-sm font-medium">URL изображения</label>
+            <label className="block text-gray-300 mb-2 text-sm font-medium">{t('printerRequest.imageUrl')}</label>
             <input
               type="url"
               value={formData.image_url}
@@ -277,12 +279,12 @@ export function CreatePrinterRequestModal({ isOpen, onClose }: CreatePrinterRequ
           </div>
 
           <div>
-            <label className="block text-gray-300 mb-2 text-sm font-medium">Дополнительная информация</label>
+            <label className="block text-gray-300 mb-2 text-sm font-medium">{t('printerRequest.additionalInfo')}</label>
             <textarea
               value={formData.message}
               onChange={(e) => setFormData({ ...formData, message: e.target.value })}
               rows={3}
-              placeholder="Любая дополнительная информация о принтере..."
+              placeholder={t('printerRequest.additionalInfoPlaceholder')}
               className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500 resize-none"
             />
           </div>
@@ -293,7 +295,7 @@ export function CreatePrinterRequestModal({ isOpen, onClose }: CreatePrinterRequ
               onClick={onClose}
               className="px-6 py-3 bg-white/10 hover:bg-white/20 text-white rounded-xl transition-all"
             >
-              Отмена
+              {t('printerRequest.cancel')}
             </button>
             <button
               type="submit"
@@ -301,7 +303,7 @@ export function CreatePrinterRequestModal({ isOpen, onClose }: CreatePrinterRequ
               className="flex items-center space-x-2 px-6 py-3 bg-purple-600 hover:bg-purple-700 text-white rounded-xl transition-all disabled:opacity-50"
             >
               <Save className="w-5 h-5" />
-              <span>Отправить запрос</span>
+              <span>{t('printerRequest.submit')}</span>
             </button>
           </div>
         </form>
