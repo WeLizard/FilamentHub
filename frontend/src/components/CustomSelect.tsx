@@ -1,6 +1,7 @@
 /** Кастомный выпадающий список в стиле модалок */
 
 import { useState, useRef, useEffect } from 'react';
+import { useTranslation } from 'react-i18next';
 import { createPortal } from 'react-dom';
 import { ChevronDown, Check } from 'lucide-react';
 
@@ -22,10 +23,12 @@ export const CustomSelect: React.FC<CustomSelectProps> = ({
   value,
   onChange,
   options,
-  placeholder = 'Выберите...',
+  placeholder: placeholderProp,
   className = '',
   disabled = false,
 }) => {
+  const { t } = useTranslation();
+  const placeholder = placeholderProp ?? t('common.select');
   const [isOpen, setIsOpen] = useState(false);
   const [position, setPosition] = useState<{ top: number; left: number; width: number } | null>(null);
   const buttonRef = useRef<HTMLButtonElement>(null);

@@ -1,4 +1,5 @@
 import { createPortal } from 'react-dom';
+import { useTranslation } from 'react-i18next';
 import { AlertTriangle, X, CheckCircle, Shield, Unlink } from 'lucide-react';
 import { useHeaderVisible } from '../hooks/useHeaderVisible';
 import { ReactNode } from 'react';
@@ -20,14 +21,19 @@ export const ConfirmModal: React.FC<ConfirmModalProps> = ({
   isOpen,
   onClose,
   onConfirm,
-  title = 'Подтвердите действие',
+  title: titleProp,
   message,
-  confirmText = 'Подтвердить',
-  cancelText = 'Отмена',
+  confirmText: confirmTextProp,
+  cancelText: cancelTextProp,
   isLoading = false,
   variant = 'warning',
   icon,
 }) => {
+  const { t } = useTranslation();
+  const title = titleProp ?? t('confirmModal.defaultTitle');
+  const confirmText = confirmTextProp ?? t('confirmModal.confirm');
+  const cancelText = cancelTextProp ?? t('confirmModal.cancel');
+
   if (!isOpen) return null;
 
   const isHeaderVisible = useHeaderVisible();
@@ -116,7 +122,7 @@ export const ConfirmModal: React.FC<ConfirmModalProps> = ({
                 {isLoading ? (
                   <>
                     <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                    <span>Выполнение...</span>
+                    <span>{t('confirmModal.executing')}</span>
                   </>
                 ) : (
                   confirmText

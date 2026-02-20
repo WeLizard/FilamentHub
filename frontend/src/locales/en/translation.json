@@ -2323,5 +2323,41 @@
     "confirmBroadcast": "Send message to all active users?",
     "selectAtLeastOne": "Select at least one user",
     "confirmSpecific": "Send message to {{count}} selected users?"
+  },
+  "adminStats": {
+    "title": "Platform Statistics",
+    "subtitle": "General platform information",
+    "loading": "Loading statistics...",
+    "error": "Error loading statistics",
+    "users": "Users",
+    "totalUsers": "Total users",
+    "brandReps": "Brand representatives",
+    "admins": "Administrators",
+    "brands": "Brands",
+    "totalBrands": "Total brands",
+    "verified": "Verified",
+    "pendingVerification": "Pending verification",
+    "presets": "Presets",
+    "totalPresets": "Total presets",
+    "approved": "Approved",
+    "pendingModeration": "Pending moderation",
+    "rejected": "Rejected"
+  },
+  "confirmModal": {
+    "defaultTitle": "Confirm action",
+    "confirm": "Confirm",
+    "cancel": "Cancel",
+    "executing": "Executing..."
+  },
+  "confirmDeleteModal": {
+    "defaultTitle": "Confirm deletion",
+    "delete": "Delete",
+    "cancel": "Cancel",
+    "deleting": "Deleting...",
+    "messageWithName": "Are you sure you want to delete \"{{name}}\"? This action cannot be undone.",
+    "messageGeneric": "Are you sure you want to delete this item? This action cannot be undone."
+  },
+  "common": {
+    "select": "Select..."
   }
 }

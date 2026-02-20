@@ -1,4 +1,5 @@
 import { createPortal } from 'react-dom';
+import { useTranslation } from 'react-i18next';
 import { AlertTriangle, X } from 'lucide-react';
 import { useHeaderVisible } from '../hooks/useHeaderVisible';
 
@@ -18,18 +19,23 @@ export const ConfirmDeleteModal: React.FC<ConfirmDeleteModalProps> = ({
   isOpen,
   onClose,
   onConfirm,
-  title = 'Подтвердите удаление',
+  title: titleProp,
   message,
-  confirmText = 'Удалить',
-  cancelText = 'Отмена',
+  confirmText: confirmTextProp,
+  cancelText: cancelTextProp,
   isLoading = false,
   itemName,
 }) => {
+  const { t } = useTranslation();
+  const title = titleProp ?? t('confirmDeleteModal.defaultTitle');
+  const confirmText = confirmTextProp ?? t('confirmDeleteModal.delete');
+  const cancelText = cancelTextProp ?? t('confirmDeleteModal.cancel');
+
   if (!isOpen) return null;
 
   const defaultMessage = itemName
-    ? `Вы уверены, что хотите удалить "${itemName}"? Это действие нельзя отменить.`
-    : 'Вы уверены, что хотите удалить этот элемент? Это действие нельзя отменить.';
+    ? t('confirmDeleteModal.messageWithName', { name: itemName })
+    : t('confirmDeleteModal.messageGeneric');
 
   const displayMessage = message || defaultMessage;
   const isHeaderVisible = useHeaderVisible();
@@ -76,7 +82,7 @@ export const ConfirmDeleteModal: React.FC<ConfirmDeleteModalProps> = ({
                 {isLoading ? (
                   <>
                     <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                    <span>Удаление...</span>
+                    <span>{t('confirmDeleteModal.deleting')}</span>
                   </>
                 ) : (
                   confirmText
