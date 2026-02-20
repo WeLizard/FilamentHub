@@ -1,6 +1,7 @@
 /** Компонент уведомлений с колокольчиком */
 
 import React, { useState, useRef, useEffect } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Bell, CheckCircle, XCircle, AlertCircle, Info, Settings, X, MessageCircle, ExternalLink, Trash2 } from 'lucide-react';
 import { createPortal } from 'react-dom';
 import { useHeaderVisible } from '../hooks/useHeaderVisible';
@@ -16,6 +17,7 @@ interface NotificationsProps {
 }
 
 export const Notifications: React.FC<NotificationsProps> = ({ floating = false }) => {
+  const { t } = useTranslation();
   const { user } = useAuth();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
@@ -191,11 +193,11 @@ export const Notifications: React.FC<NotificationsProps> = ({ floating = false }
     const diffHours = Math.floor(diffMs / 3600000);
     const diffDays = Math.floor(diffMs / 86400000);
 
-    if (diffMins < 1) return 'только что';
-    if (diffMins < 60) return `${diffMins} мин назад`;
-    if (diffHours < 24) return `${diffHours} ч назад`;
-    if (diffDays < 7) return `${diffDays} дн назад`;
-    return date.toLocaleDateString('ru-RU');
+    if (diffMins < 1) return t('notifications.justNow');
+    if (diffMins < 60) return t('notifications.minsAgo', { count: diffMins });
+    if (diffHours < 24) return t('notifications.hoursAgo', { count: diffHours });
+    if (diffDays < 7) return t('notifications.daysAgo', { count: diffDays });
+    return date.toLocaleDateString();
   };
 
   // Плавающая версия (для OrcaSlicer)
@@ -208,7 +210,7 @@ export const Notifications: React.FC<NotificationsProps> = ({ floating = false }
         <button
           onClick={() => setIsOpen(!isOpen)}
           className="relative flex items-center justify-center w-14 h-14 rounded-full bg-gradient-to-br from-purple-600 to-indigo-600 text-white shadow-2xl hover:shadow-purple-500/50 transition-all hover:scale-110 active:scale-95"
-          aria-label="Уведомления"
+          aria-label={t('notifications.title')}
         >
           <Bell className="w-6 h-6" />
           {unreadCount > 0 && (
@@ -222,10 +224,10 @@ export const Notifications: React.FC<NotificationsProps> = ({ floating = false }
           <div className="absolute right-0 bottom-full mb-4 w-96 bg-gradient-to-br from-purple-900 to-indigo-900 rounded-xl border border-white/20 shadow-2xl z-[10000] max-h-[80vh] overflow-hidden flex flex-col">
             {/* Header */}
             <div className="flex items-center justify-between p-4 border-b border-white/10">
-              <h3 className="text-lg font-bold text-white">Уведомления</h3>
+              <h3 className="text-lg font-bold text-white">{t('notifications.title')}</h3>
               {unreadCount > 0 && (
                 <span className="px-2 py-1 bg-purple-600 text-white text-xs font-semibold rounded-full">
-                  {unreadCount} новых
+                  {t('notifications.newCount', { count: unreadCount })}
                 </span>
               )}
             </div>
@@ -235,7 +237,7 @@ export const Notifications: React.FC<NotificationsProps> = ({ floating = false }
               {notifications.length === 0 ? (
                 <div className="p-8 text-center text-gray-400">
                   <Bell className="w-12 h-12 mx-auto mb-3 opacity-50" />
-                  <p>Нет уведомлений</p>
+                  <p>{t('notifications.empty')}</p>
                 </div>
               ) : (
                 <div className="divide-y divide-white/10">
@@ -273,7 +275,7 @@ export const Notifications: React.FC<NotificationsProps> = ({ floating = false }
                                 <p className="text-sm text-gray-300 mb-2">
                                   {messagePreview}
                                   {isLongMessage && (
-                                    <span className="text-purple-400 ml-1">(нажмите для полного текста)</span>
+                                    <span className="text-purple-400 ml-1">{t('notifications.clickForFull')}</span>
                                   )}
                                 </p>
                                 <div className="flex items-center justify-between gap-2">
@@ -307,8 +309,8 @@ export const Notifications: React.FC<NotificationsProps> = ({ floating = false }
                             }}
                             disabled={deleteNotificationMutation.isPending}
                             className="flex-shrink-0 p-1 rounded hover:bg-white/10 text-gray-400 hover:text-red-400 transition-all"
-                            title="Удалить уведомление"
-                            aria-label="Удалить уведомление"
+                            title={t('notifications.deleteOne')}
+                            aria-label={t('notifications.deleteOne')}
                           >
                             <X className="w-4 h-4" />
                           </button>
@@ -331,7 +333,7 @@ export const Notifications: React.FC<NotificationsProps> = ({ floating = false }
                     }}
                     disabled={markAllAsReadMutation.isPending}
                   >
-                    {markAllAsReadMutation.isPending ? 'Обработка...' : 'Отметить все как прочитанные'}
+                    {markAllAsReadMutation.isPending ? t('notifications.processing') : t('notifications.markAllRead')}
                   </button>
                 )}
                 <button
@@ -344,12 +346,12 @@ export const Notifications: React.FC<NotificationsProps> = ({ floating = false }
                   {deleteAllNotificationsMutation.isPending ? (
                     <>
                       <div className="w-4 h-4 border-2 border-red-400/30 border-t-red-400 rounded-full animate-spin" />
-                      Очистка...
+                      {t('notifications.clearing')}
                     </>
                   ) : (
                     <>
                       <Trash2 className="w-4 h-4" />
-                      Очистить уведомления
+                      {t('notifications.clearAll')}
                     </>
                   )}
                 </button>
@@ -410,17 +412,17 @@ export const Notifications: React.FC<NotificationsProps> = ({ floating = false }
                       }}
                       disabled={deleteNotificationMutation.isPending}
                       className="flex-shrink-0 flex items-center gap-1.5 px-3 py-1.5 text-xs text-red-400 hover:text-red-300 hover:bg-red-500/10 rounded-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-                      title="Удалить это уведомление"
+                      title={t('notifications.deleteThis')}
                     >
                       {deleteNotificationMutation.isPending ? (
                         <>
                           <div className="w-3 h-3 border-2 border-red-400/30 border-t-red-400 rounded-full animate-spin" />
-                          Удаление...
+                          {t('notifications.deleting')}
                         </>
                       ) : (
                         <>
                           <Trash2 className="w-3.5 h-3.5" />
-                          Удалить
+                          {t('notifications.delete')}
                         </>
                       )}
                     </button>
@@ -442,7 +444,7 @@ export const Notifications: React.FC<NotificationsProps> = ({ floating = false }
                   {/* Link section */}
                   {viewNotification.link && (
                     <div className="mt-6 pt-6 border-t border-white/10">
-                      <p className="text-sm text-gray-400 mb-2">Ссылка:</p>
+                      <p className="text-sm text-gray-400 mb-2">{t('notifications.link')}</p>
                       <a
                         href={viewNotification.link}
                         onClick={(e) => {
@@ -471,7 +473,7 @@ export const Notifications: React.FC<NotificationsProps> = ({ floating = false }
       <button
         onClick={() => setIsOpen(!isOpen)}
         className="relative flex items-center justify-center w-10 h-10 rounded-lg text-gray-300 hover:text-white hover:bg-white/10 transition-all"
-        aria-label="Уведомления"
+        aria-label={t('notifications.title')}
       >
         <Bell className="w-5 h-5" />
         {unreadCount > 0 && (
@@ -485,10 +487,10 @@ export const Notifications: React.FC<NotificationsProps> = ({ floating = false }
         <div className="fixed md:absolute inset-x-2 md:inset-x-auto md:right-0 top-16 md:top-12 md:w-96 bg-gradient-to-br from-purple-900 to-indigo-900 rounded-xl border border-white/20 shadow-2xl z-[10000] max-h-[70vh] md:max-h-[80vh] overflow-hidden flex flex-col mx-auto md:mx-0 max-w-[calc(100vw-16px)] md:max-w-none">
           {/* Header */}
           <div className="flex items-center justify-between p-3 md:p-4 border-b border-white/10">
-            <h3 className="text-base md:text-lg font-bold text-white">Уведомления</h3>
+            <h3 className="text-base md:text-lg font-bold text-white">{t('notifications.title')}</h3>
             {unreadCount > 0 && (
               <span className="px-2 py-0.5 md:py-1 bg-purple-600 text-white text-xs font-semibold rounded-full">
-                {unreadCount} новых
+                {t('notifications.newCount', { count: unreadCount })}
               </span>
             )}
           </div>
@@ -498,7 +500,7 @@ export const Notifications: React.FC<NotificationsProps> = ({ floating = false }
             {notifications.length === 0 ? (
               <div className="p-6 md:p-8 text-center text-gray-400">
                 <Bell className="w-10 h-10 md:w-12 md:h-12 mx-auto mb-3 opacity-50" />
-                <p className="text-sm md:text-base">Нет уведомлений</p>
+                <p className="text-sm md:text-base">{t('notifications.empty')}</p>
               </div>
             ) : (
               <div className="divide-y divide-white/10">
@@ -537,7 +539,7 @@ export const Notifications: React.FC<NotificationsProps> = ({ floating = false }
                               <p className="text-xs md:text-sm text-gray-300 mb-2">
                                 {messagePreview}
                                 {isLongMessage && (
-                                  <span className="text-purple-400 ml-1">(нажмите для полного текста)</span>
+                                  <span className="text-purple-400 ml-1">{t('notifications.clickForFull')}</span>
                                 )}
                               </p>
                               <div className="flex items-center justify-between gap-2">
@@ -571,8 +573,8 @@ export const Notifications: React.FC<NotificationsProps> = ({ floating = false }
                           }}
                           disabled={deleteNotificationMutation.isPending}
                           className="flex-shrink-0 p-1 rounded hover:bg-white/10 text-gray-400 hover:text-red-400 transition-all"
-                          title="Удалить уведомление"
-                          aria-label="Удалить уведомление"
+                          title={t('notifications.deleteOne')}
+                          aria-label={t('notifications.deleteOne')}
                         >
                           <X className="w-4 h-4" />
                         </button>
@@ -595,7 +597,7 @@ export const Notifications: React.FC<NotificationsProps> = ({ floating = false }
                   }}
                   disabled={markAllAsReadMutation.isPending}
                 >
-                  {markAllAsReadMutation.isPending ? 'Обработка...' : 'Отметить все как прочитанные'}
+                  {markAllAsReadMutation.isPending ? t('notifications.processing') : t('notifications.markAllRead')}
                 </button>
               )}
               <button
@@ -608,12 +610,12 @@ export const Notifications: React.FC<NotificationsProps> = ({ floating = false }
                 {deleteAllNotificationsMutation.isPending ? (
                   <>
                     <div className="w-4 h-4 border-2 border-red-400/30 border-t-red-400 rounded-full animate-spin" />
-                    Очистка...
+                    {t('notifications.clearing')}
                   </>
                 ) : (
                   <>
                     <Trash2 className="w-4 h-4" />
-                    Очистить уведомления
+                    {t('notifications.clearAll')}
                   </>
                 )}
               </button>
@@ -674,17 +676,17 @@ export const Notifications: React.FC<NotificationsProps> = ({ floating = false }
                     }}
                     disabled={deleteNotificationMutation.isPending}
                     className="flex-shrink-0 flex items-center gap-1.5 px-3 py-1.5 text-xs text-red-400 hover:text-red-300 hover:bg-red-500/10 rounded-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-                    title="Удалить это уведомление"
+                    title={t('notifications.deleteThis')}
                   >
                     {deleteNotificationMutation.isPending ? (
                       <>
                         <div className="w-3 h-3 border-2 border-red-400/30 border-t-red-400 rounded-full animate-spin" />
-                        Удаление...
+                        {t('notifications.deleting')}
                       </>
                     ) : (
                       <>
                         <Trash2 className="w-3.5 h-3.5" />
-                        <span className="hidden md:inline">Удалить</span>
+                        <span className="hidden md:inline">{t('notifications.delete')}</span>
                       </>
                     )}
                   </button>
@@ -706,7 +708,7 @@ export const Notifications: React.FC<NotificationsProps> = ({ floating = false }
                 {/* Link section */}
                 {viewNotification.link && (
                   <div className="mt-4 md:mt-6 pt-4 md:pt-6 border-t border-white/10">
-                    <p className="text-xs md:text-sm text-gray-400 mb-2">Ссылка:</p>
+                    <p className="text-xs md:text-sm text-gray-400 mb-2">{t('notifications.link')}</p>
                     <a
                       href={viewNotification.link}
                       onClick={(e) => {
@@ -733,7 +735,7 @@ export const Notifications: React.FC<NotificationsProps> = ({ floating = false }
                   className="w-full flex items-center justify-center gap-2 py-3 text-sm text-red-400 hover:text-red-300 bg-red-500/10 rounded-xl transition-all disabled:opacity-50"
                 >
                   <Trash2 className="w-4 h-4" />
-                  <span>Удалить уведомление</span>
+                  <span>{t('notifications.deleteOne')}</span>
                 </button>
               </div>
             </div>

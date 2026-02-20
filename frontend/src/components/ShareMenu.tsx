@@ -1,6 +1,7 @@
 /** Компонент меню для шаринга в соцсети */
 
 import { useState, useRef, useEffect } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Share2, Copy, Check, MessageCircle, Send } from 'lucide-react';
 
 // Иконки соцсетей (inline SVG для компактности)
@@ -47,49 +48,50 @@ interface ShareOption {
   getUrl: (url: string, title: string, description: string) => string;
 }
 
-const shareOptions: ShareOption[] = [
-  {
-    name: 'Telegram',
-    icon: <TelegramIcon />,
-    color: 'hover:bg-[#0088cc]/20 text-[#0088cc]',
-    getUrl: (url, title) => `https://t.me/share/url?url=${encodeURIComponent(url)}&text=${encodeURIComponent(title)}`,
-  },
-  {
-    name: 'ВКонтакте',
-    icon: <VKIcon />,
-    color: 'hover:bg-[#0077ff]/20 text-[#0077ff]',
-    getUrl: (url, title) => `https://vk.com/share.php?url=${encodeURIComponent(url)}&title=${encodeURIComponent(title)}`,
-  },
-  {
-    name: 'WhatsApp',
-    icon: <WhatsAppIcon />,
-    color: 'hover:bg-[#25D366]/20 text-[#25D366]',
-    getUrl: (url, title) => `https://api.whatsapp.com/send?text=${encodeURIComponent(title + '\n' + url)}`,
-  },
-  {
-    name: 'Twitter/X',
-    icon: <TwitterIcon />,
-    color: 'hover:bg-white/20 text-white',
-    getUrl: (url, title) => `https://twitter.com/intent/tweet?url=${encodeURIComponent(url)}&text=${encodeURIComponent(title)}`,
-  },
-  {
-    name: 'Одноклассники',
-    icon: <OKIcon />,
-    color: 'hover:bg-[#ee8208]/20 text-[#ee8208]',
-    getUrl: (url, title) => `https://connect.ok.ru/offer?url=${encodeURIComponent(url)}&title=${encodeURIComponent(title)}`,
-  },
-];
-
 export const ShareMenu: React.FC<ShareMenuProps> = ({
   url: propUrl,
   title,
   description = ''
 }) => {
+  const { t } = useTranslation();
   const [isOpen, setIsOpen] = useState(false);
   const [copied, setCopied] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
 
   const url = propUrl || (typeof window !== 'undefined' ? window.location.href : '');
+
+  const shareOptions: ShareOption[] = [
+    {
+      name: 'Telegram',
+      icon: <TelegramIcon />,
+      color: 'hover:bg-[#0088cc]/20 text-[#0088cc]',
+      getUrl: (u, t) => `https://t.me/share/url?url=${encodeURIComponent(u)}&text=${encodeURIComponent(t)}`,
+    },
+    {
+      name: t('shareMenu.vk'),
+      icon: <VKIcon />,
+      color: 'hover:bg-[#0077ff]/20 text-[#0077ff]',
+      getUrl: (u, t) => `https://vk.com/share.php?url=${encodeURIComponent(u)}&title=${encodeURIComponent(t)}`,
+    },
+    {
+      name: 'WhatsApp',
+      icon: <WhatsAppIcon />,
+      color: 'hover:bg-[#25D366]/20 text-[#25D366]',
+      getUrl: (u, t) => `https://api.whatsapp.com/send?text=${encodeURIComponent(t + '\n' + u)}`,
+    },
+    {
+      name: 'Twitter/X',
+      icon: <TwitterIcon />,
+      color: 'hover:bg-white/20 text-white',
+      getUrl: (u, t) => `https://twitter.com/intent/tweet?url=${encodeURIComponent(u)}&text=${encodeURIComponent(t)}`,
+    },
+    {
+      name: t('shareMenu.ok'),
+      icon: <OKIcon />,
+      color: 'hover:bg-[#ee8208]/20 text-[#ee8208]',
+      getUrl: (u, t) => `https://connect.ok.ru/offer?url=${encodeURIComponent(u)}&title=${encodeURIComponent(t)}`,
+    },
+  ];
 
   // Закрытие по клику вне меню
   useEffect(() => {
@@ -163,7 +165,7 @@ export const ShareMenu: React.FC<ShareMenuProps> = ({
         aria-haspopup="true"
       >
         <Share2 className="w-4 h-4" />
-        <span className="hidden sm:inline">Поделиться</span>
+        <span className="hidden sm:inline">{t('shareMenu.share')}</span>
       </button>
 
       {/* Выпадающее меню */}
@@ -180,7 +182,7 @@ export const ShareMenu: React.FC<ShareMenuProps> = ({
               role="menuitem"
             >
               <Send className="w-5 h-5 text-purple-400" />
-              <span>Поделиться...</span>
+              <span>{t('shareMenu.shareNative')}</span>
             </button>
           )}
 
@@ -209,12 +211,12 @@ export const ShareMenu: React.FC<ShareMenuProps> = ({
             {copied ? (
               <>
                 <Check className="w-5 h-5 text-green-400" />
-                <span className="text-green-400">Скопировано!</span>
+                <span className="text-green-400">{t('shareMenu.copied')}</span>
               </>
             ) : (
               <>
                 <Copy className="w-5 h-5 text-gray-400" />
-                <span>Копировать ссылку</span>
+                <span>{t('shareMenu.copyLink')}</span>
               </>
             )}
           </button>

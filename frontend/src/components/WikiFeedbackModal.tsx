@@ -1,6 +1,7 @@
 /** Модальное окно для отзыва на wiki статью */
 
 import { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { X, Send, MessageSquare } from 'lucide-react';
 import { useMutation } from '@tanstack/react-query';
 import { feedbackAPI } from '../api/client';
@@ -20,6 +21,7 @@ export const WikiFeedbackModal: React.FC<WikiFeedbackModalProps> = ({
   articleSlug,
   articleTitle,
 }) => {
+  const { t } = useTranslation();
   const { user } = useAuth();
   const isHeaderVisible = useHeaderVisible();
 
@@ -32,7 +34,7 @@ export const WikiFeedbackModal: React.FC<WikiFeedbackModalProps> = ({
     mutationFn: (commentText: string) =>
       feedbackAPI.create({
         type: 'other',
-        subject: `Отзыв на wiki: ${articleTitle}`,
+        subject: `Wiki feedback: ${articleTitle}`,
         message: commentText,
         source: 'wiki_article',
         source_url: window.location.href,
@@ -52,7 +54,7 @@ export const WikiFeedbackModal: React.FC<WikiFeedbackModalProps> = ({
       setError(
         err?.response?.data?.detail ||
           err?.message ||
-          'Не удалось отправить отзыв. Попробуйте позже.'
+          t('wikiFeedback.sendError')
       );
     },
   });
@@ -78,15 +80,15 @@ export const WikiFeedbackModal: React.FC<WikiFeedbackModalProps> = ({
           >
             <div className="text-center">
               <MessageSquare className="w-16 h-16 text-purple-400 mx-auto mb-4" />
-              <h2 className="text-xl font-bold text-white mb-4">Требуется авторизация</h2>
+              <h2 className="text-xl font-bold text-white mb-4">{t('wikiFeedback.authRequired')}</h2>
               <p className="text-gray-400 mb-6">
-                Войдите в систему, чтобы оставить отзыв о статье
+                {t('wikiFeedback.authMessage')}
               </p>
               <button
                 onClick={onClose}
                 className="px-6 py-3 bg-purple-600 hover:bg-purple-700 text-white rounded-xl transition-colors"
               >
-                Закрыть
+                {t('wikiFeedback.close')}
               </button>
             </div>
           </div>
@@ -100,7 +102,7 @@ export const WikiFeedbackModal: React.FC<WikiFeedbackModalProps> = ({
     setError(null);
 
     if (!comment.trim()) {
-      setError('Введите текст отзыва');
+      setError(t('wikiFeedback.emptyError'));
       return;
     }
 
@@ -133,7 +135,7 @@ export const WikiFeedbackModal: React.FC<WikiFeedbackModalProps> = ({
           {/* Header */}
           <div className="flex items-start justify-between gap-3 md:gap-4 px-4 md:px-6 pt-4 md:pt-6 pb-3 md:pb-4 border-b border-white/10">
             <div>
-              <h2 className="text-lg md:text-xl font-semibold text-white">Оставить отзыв</h2>
+              <h2 className="text-lg md:text-xl font-semibold text-white">{t('wikiFeedback.title')}</h2>
               <p className="text-xs md:text-sm text-gray-400 mt-0.5 md:mt-1 line-clamp-1">
                 {articleTitle}
               </p>
@@ -155,9 +157,9 @@ export const WikiFeedbackModal: React.FC<WikiFeedbackModalProps> = ({
           >
             {success ? (
               <div className="bg-green-500/20 border border-green-500/40 rounded-xl p-4 text-center">
-                <div className="text-green-400 font-medium mb-1">Спасибо за отзыв!</div>
+                <div className="text-green-400 font-medium mb-1">{t('wikiFeedback.thankYou')}</div>
                 <div className="text-sm text-gray-300">
-                  Ваш отзыв отправлен и поможет улучшить эту статью.
+                  {t('wikiFeedback.feedbackSent')}
                 </div>
               </div>
             ) : (
@@ -168,7 +170,7 @@ export const WikiFeedbackModal: React.FC<WikiFeedbackModalProps> = ({
                     htmlFor="wiki-feedback-comment"
                     className="block text-xs md:text-sm font-medium text-gray-300 mb-1.5 md:mb-2"
                   >
-                    Ваш отзыв
+                    {t('wikiFeedback.yourFeedback')}
                   </label>
                   <textarea
                     id="wiki-feedback-comment"
@@ -177,7 +179,7 @@ export const WikiFeedbackModal: React.FC<WikiFeedbackModalProps> = ({
                     required
                     rows={5}
                     maxLength={2000}
-                    placeholder="Что вам понравилось или что можно улучшить в этой статье? Ваш отзыв поможет сделать материал лучше."
+                    placeholder={t('wikiFeedback.placeholder')}
                     className="w-full px-3 md:px-4 py-2.5 md:py-3 bg-white/5 border border-white/10 rounded-xl text-sm md:text-base text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent resize-none custom-scrollbar"
                     disabled={createFeedbackMutation.isPending}
                   />
@@ -205,7 +207,7 @@ export const WikiFeedbackModal: React.FC<WikiFeedbackModalProps> = ({
                 className="px-4 py-2.5 sm:py-2 rounded-lg border border-white/20 text-sm text-gray-300 hover:bg-white/10 active:bg-white/15 transition-all"
                 disabled={createFeedbackMutation.isPending}
               >
-                Отмена
+                {t('wikiFeedback.cancel')}
               </button>
               <button
                 type="submit"
@@ -216,12 +218,12 @@ export const WikiFeedbackModal: React.FC<WikiFeedbackModalProps> = ({
                 {createFeedbackMutation.isPending ? (
                   <>
                     <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                    <span>Отправка...</span>
+                    <span>{t('wikiFeedback.sending')}</span>
                   </>
                 ) : (
                   <>
                     <Send className="w-4 h-4" />
-                    <span>Отправить</span>
+                    <span>{t('wikiFeedback.send')}</span>
                   </>
                 )}
               </button>

@@ -2392,5 +2392,90 @@
   },
   "filamentSummary": {
     "noColor": "No color"
+  },
+  "shareMenu": {
+    "share": "Share",
+    "shareNative": "Share...",
+    "vk": "VK",
+    "ok": "OK (Odnoklassniki)",
+    "copied": "Copied!",
+    "copyLink": "Copy link"
+  },
+  "notifications": {
+    "title": "Notifications",
+    "empty": "No notifications",
+    "newCount": "{{count}} new",
+    "justNow": "just now",
+    "minsAgo": "{{count}} min ago",
+    "hoursAgo": "{{count}} h ago",
+    "daysAgo": "{{count}} d ago",
+    "clickForFull": "(click for full text)",
+    "deleteOne": "Delete notification",
+    "deleteThis": "Delete this notification",
+    "delete": "Delete",
+    "deleting": "Deleting...",
+    "processing": "Processing...",
+    "markAllRead": "Mark all as read",
+    "clearing": "Clearing...",
+    "clearAll": "Clear notifications",
+    "link": "Link:"
+  },
+  "feedback": {
+    "title": "Feedback",
+    "subtitle": "Report bugs, suggest features, or ask a question",
+    "typeLabel": "Type",
+    "subjectLabel": "Subject",
+    "messageLabel": "Message",
+    "cancel": "Cancel",
+    "send": "Send",
+    "sending": "Sending...",
+    "sendError": "Failed to send message. Please try again later.",
+    "thankYou": "Thank you for your feedback!",
+    "messageSent": "Your message has been sent. We will review it shortly.",
+    "types": {
+      "bug": {
+        "label": "Bug",
+        "description": "Report a bug or error",
+        "subjectPlaceholder": "Example: \"Error when creating a preset on the filament page\"",
+        "messagePlaceholder": "Describe the issue in detail:\n\n1. What were you doing before the error occurred? (steps to reproduce)\n2. What behavior did you expect?\n3. What actually happened?\n4. On which page/section did the error occur?\n5. Are you using a browser on mobile or desktop?\n6. Do you have screenshots or error messages?\n\nThe more detail you provide, the faster we can fix it!",
+        "instructions": "For bugs, it is important to describe the steps to reproduce and expected behavior"
+      },
+      "feature": {
+        "label": "Suggestion",
+        "description": "Suggest a new feature",
+        "subjectPlaceholder": "Example: \"Add a filter by material rating\"",
+        "messagePlaceholder": "Describe your suggestion:\n\n1. What feature would you like to see?\n2. How would it be useful?\n3. How do you envision it?\n4. Are there examples from other services that could serve as inspiration?\n\nYour ideas help make FilamentHub better!",
+        "instructions": "Describe the feature, its purpose, and how it should work"
+      },
+      "question": {
+        "label": "Question",
+        "description": "Ask a question",
+        "subjectPlaceholder": "Example: \"How to sync presets with OrcaSlicer?\"",
+        "messagePlaceholder": "Ask your question:\n\nDescribe what you are interested in or what you need help with. We will try to answer as soon as possible!",
+        "instructions": "Ask your question and we will definitely respond"
+      },
+      "other": {
+        "label": "Other",
+        "description": "Other feedback",
+        "subjectPlaceholder": "Briefly describe the subject",
+        "messagePlaceholder": "Describe your question, suggestion, or issue in detail.\n\nYour feedback is very important to us!",
+        "instructions": "Describe your feedback in detail"
+      }
+    }
+  },
+  "wikiFeedback": {
+    "title": "Leave feedback",
+    "authRequired": "Authorization required",
+    "authMessage": "Sign in to leave feedback on the article",
+    "close": "Close",
+    "yourFeedback": "Your feedback",
+    "placeholder": "What did you like or what could be improved in this article? Your feedback will help make the content better.",
+    "emptyError": "Please enter feedback text",
+    "sendError": "Failed to send feedback. Please try again later.",
+    "thankYou": "Thank you for your feedback!",
+    "feedbackSent": "Your feedback has been sent and will help improve this article.",
+    "cancel": "Cancel",
+    "send": "Send",
+    "sending": "Sending..."
   }
 }

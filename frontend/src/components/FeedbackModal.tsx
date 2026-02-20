@@ -1,6 +1,7 @@
 /** Модалка обратной связи для бетатестеров и пользователей */
 
 import { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { X, Send, Bug, Lightbulb, HelpCircle, MessageSquare } from 'lucide-react';
 import { feedbackAPI } from '../api/client';
 import type { FeedbackType } from '../types/api';
@@ -12,76 +13,59 @@ interface FeedbackModalProps {
   onClose: () => void;
 }
 
-const FEEDBACK_TYPES: Array<{ 
-  value: FeedbackType; 
-  label: string; 
-  icon: React.ComponentType<{ className?: string }>; 
+interface FeedbackTypeInfo {
+  value: FeedbackType;
+  label: string;
+  icon: React.ComponentType<{ className?: string }>;
   description: string;
   subjectPlaceholder: string;
   messagePlaceholder: string;
   instructions: string;
-}> = [
-  { 
-    value: 'bug', 
-    label: 'Ошибка', 
-    icon: Bug, 
-    description: 'Сообщить об ошибке или баге',
-    subjectPlaceholder: 'Например: "Ошибка при создании пресета на странице материала"',
-    messagePlaceholder: `Опишите проблему подробно:
-
-1. Что вы делали перед появлением ошибки? (шаги воспроизведения)
-2. Какое поведение вы ожидали?
-3. Что произошло на самом деле?
-4. На какой странице/в каком разделе возникла ошибка?
-5. Используете ли вы браузер на мобильном или десктопе?
-6. Есть ли скриншоты или сообщения об ошибке?
-
-Чем подробнее вы опишете проблему, тем быстрее мы её исправим!`,
-    instructions: 'Для багов важно описать шаги воспроизведения и ожидаемое поведение'
-  },
-  { 
-    value: 'feature', 
-    label: 'Предложение', 
-    icon: Lightbulb, 
-    description: 'Предложить новую функцию',
-    subjectPlaceholder: 'Например: "Добавить фильтр по рейтингу материалов"',
-    messagePlaceholder: `Опишите ваше предложение:
-
-1. Какую функцию вы хотели бы видеть?
-2. Для чего она будет полезна?
-3. Как вы её себе представляете?
-4. Есть ли примеры из других сервисов, которые можно взять за основу?
-
-Ваши идеи помогают сделать FilamentHub лучше!`,
-    instructions: 'Опишите функцию, её назначение и как она должна работать'
-  },
-  { 
-    value: 'question', 
-    label: 'Вопрос', 
-    icon: HelpCircle, 
-    description: 'Задать вопрос',
-    subjectPlaceholder: 'Например: "Как синхронизировать пресеты с OrcaSlicer?"',
-    messagePlaceholder: `Задайте ваш вопрос:
-
-Опишите что вас интересует или с чем нужна помощь. Мы постараемся ответить как можно скорее!`,
-    instructions: 'Задайте ваш вопрос, и мы обязательно ответим'
-  },
-  { 
-    value: 'other', 
-    label: 'Другое', 
-    icon: MessageSquare, 
-    description: 'Другая обратная связь',
-    subjectPlaceholder: 'Кратко опишите суть обращения',
-    messagePlaceholder: `Опишите ваш вопрос, предложение или проблему подробно.
-
-Ваша обратная связь очень важна для нас!`,
-    instructions: 'Опишите вашу обратную связь подробно'
-  },
-];
+}
 
 export const FeedbackModal: React.FC<FeedbackModalProps> = ({ isOpen, onClose }) => {
+  const { t } = useTranslation();
   const { user } = useAuth();
   const isHeaderVisible = useHeaderVisible();
+
+  const FEEDBACK_TYPES: FeedbackTypeInfo[] = [
+    {
+      value: 'bug',
+      label: t('feedback.types.bug.label'),
+      icon: Bug,
+      description: t('feedback.types.bug.description'),
+      subjectPlaceholder: t('feedback.types.bug.subjectPlaceholder'),
+      messagePlaceholder: t('feedback.types.bug.messagePlaceholder'),
+      instructions: t('feedback.types.bug.instructions'),
+    },
+    {
+      value: 'feature',
+      label: t('feedback.types.feature.label'),
+      icon: Lightbulb,
+      description: t('feedback.types.feature.description'),
+      subjectPlaceholder: t('feedback.types.feature.subjectPlaceholder'),
+      messagePlaceholder: t('feedback.types.feature.messagePlaceholder'),
+      instructions: t('feedback.types.feature.instructions'),
+    },
+    {
+      value: 'question',
+      label: t('feedback.types.question.label'),
+      icon: HelpCircle,
+      description: t('feedback.types.question.description'),
+      subjectPlaceholder: t('feedback.types.question.subjectPlaceholder'),
+      messagePlaceholder: t('feedback.types.question.messagePlaceholder'),
+      instructions: t('feedback.types.question.instructions'),
+    },
+    {
+      value: 'other',
+      label: t('feedback.types.other.label'),
+      icon: MessageSquare,
+      description: t('feedback.types.other.description'),
+      subjectPlaceholder: t('feedback.types.other.subjectPlaceholder'),
+      messagePlaceholder: t('feedback.types.other.messagePlaceholder'),
+      instructions: t('feedback.types.other.instructions'),
+    },
+  ];
   
   const [type, setType] = useState<FeedbackType>('bug');
   const [subject, setSubject] = useState('');
@@ -119,8 +103,8 @@ export const FeedbackModal: React.FC<FeedbackModalProps> = ({ isOpen, onClose })
         onClose();
       }, 2000);
     } catch (err: any) {
-      console.error('Ошибка отправки обратной связи:', err);
-      setError(err?.response?.data?.detail || err?.message || 'Не удалось отправить сообщение. Попробуйте позже.');
+      console.error('Feedback submission error:', err);
+      setError(err?.response?.data?.detail || err?.message || t('feedback.sendError'));
     } finally {
       setIsSubmitting(false);
     }
@@ -158,9 +142,9 @@ export const FeedbackModal: React.FC<FeedbackModalProps> = ({ isOpen, onClose })
           {/* Header */}
           <div className="flex items-start justify-between gap-3 md:gap-4 px-4 md:px-6 pt-4 md:pt-6 pb-3 md:pb-4 border-b border-white/10">
             <div>
-              <h2 className="text-lg md:text-2xl font-semibold text-white">Обратная связь</h2>
+              <h2 className="text-lg md:text-2xl font-semibold text-white">{t('feedback.title')}</h2>
               <p className="text-xs md:text-sm text-gray-400 mt-0.5 md:mt-1">
-                Сообщите о багах, предложите функции или задайте вопрос
+                {t('feedback.subtitle')}
               </p>
             </div>
             <button
@@ -177,15 +161,15 @@ export const FeedbackModal: React.FC<FeedbackModalProps> = ({ isOpen, onClose })
           <form onSubmit={handleSubmit} className="flex-1 overflow-y-auto px-4 md:px-6 py-3 md:py-4 space-y-3 md:space-y-4 custom-scrollbar">
             {success ? (
               <div className="bg-green-500/20 border border-green-500/40 rounded-xl p-4 text-center">
-                <div className="text-green-400 font-medium mb-1">Спасибо за обратную связь!</div>
-                <div className="text-sm text-gray-300">Ваше сообщение отправлено. Мы рассмотрим его в ближайшее время.</div>
+                <div className="text-green-400 font-medium mb-1">{t('feedback.thankYou')}</div>
+                <div className="text-sm text-gray-300">{t('feedback.messageSent')}</div>
               </div>
             ) : (
               <>
                 {/* Type Selection */}
                 <div>
                   <label className="block text-xs md:text-sm font-medium text-gray-300 mb-2">
-                    Тип обращения *
+                    {t('feedback.typeLabel')} *
                   </label>
                   {/* Мобильная версия: компактные кнопки 2x2 */}
                   <div className="grid grid-cols-2 gap-2 md:hidden">
@@ -238,7 +222,7 @@ export const FeedbackModal: React.FC<FeedbackModalProps> = ({ isOpen, onClose })
                 {/* Subject */}
                 <div>
                   <label htmlFor="feedback-subject" className="block text-xs md:text-sm font-medium text-gray-300 mb-1.5 md:mb-2">
-                    Тема *
+                    {t('feedback.subjectLabel')} *
                   </label>
                   <input
                     id="feedback-subject"
@@ -256,7 +240,7 @@ export const FeedbackModal: React.FC<FeedbackModalProps> = ({ isOpen, onClose })
                 {/* Message */}
                 <div>
                   <label htmlFor="feedback-message" className="block text-xs md:text-sm font-medium text-gray-300 mb-1.5 md:mb-2">
-                    Сообщение *
+                    {t('feedback.messageLabel')} *
                   </label>
                   <textarea
                     id="feedback-message"
@@ -289,7 +273,7 @@ export const FeedbackModal: React.FC<FeedbackModalProps> = ({ isOpen, onClose })
                 className="px-4 py-2.5 sm:py-2 rounded-lg border border-white/20 text-sm text-gray-300 hover:bg-white/10 active:bg-white/15 transition-all"
                 disabled={isSubmitting}
               >
-                Отмена
+                {t('feedback.cancel')}
               </button>
               <button
                 type="submit"
@@ -300,12 +284,12 @@ export const FeedbackModal: React.FC<FeedbackModalProps> = ({ isOpen, onClose })
                 {isSubmitting ? (
                   <>
                     <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                    <span>Отправка...</span>
+                    <span>{t('feedback.sending')}</span>
                   </>
                 ) : (
                   <>
                     <Send className="w-4 h-4" />
-                    <span>Отправить</span>
+                    <span>{t('feedback.send')}</span>
                   </>
                 )}
               </button>
