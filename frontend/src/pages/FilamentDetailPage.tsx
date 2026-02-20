@@ -97,7 +97,7 @@ export const FilamentDetailPage: React.FC = () => {
       queryClient.invalidateQueries({ queryKey: ['user-presets'] });
     },
     onError: (error: any) => {
-      console.error('Ошибка сохранения пресета:', error);
+      console.error('Error saving preset:', error);
       // Можно добавить уведомление пользователю
       alert(error.response?.data?.detail || error.message || t('filamentDetailPage.errorSavingPreset'));
     },
@@ -209,7 +209,7 @@ export const FilamentDetailPage: React.FC = () => {
         '@context': 'https://schema.org',
         '@type': 'Product',
         name: filament.name,
-        description: `${filament.material_type} филамент от ${brandData.name}`,
+        description: `${filament.material_type} filament by ${brandData.name}`,
         brand: {
           '@type': 'Brand',
           name: brandData.name,
@@ -228,8 +228,8 @@ export const FilamentDetailPage: React.FC = () => {
       {filament && (
         <SEOHead
           title={`${filament.name} - ${brandData?.name || 'FilamentHub'}`}
-          description={`${filament.material_type} филамент ${filament.name} от ${brandData?.name || ''}. Настройки печати, пресеты для слайсеров, отзывы пользователей.`}
-          keywords={`${filament.name}, ${filament.material_type}, ${brandData?.name || ''}, 3D печать, филамент, настройки печати`}
+          description={t('filamentDetailPage.seoDescription', { materialType: filament.material_type, name: filament.name, brand: brandData?.name || '' })}
+          keywords={t('filamentDetailPage.seoKeywords', { name: filament.name, materialType: filament.material_type, brand: brandData?.name || '' })}
           url={`/filaments/${filament.id}`}
           type="product"
           jsonLd={jsonLd}
@@ -274,7 +274,7 @@ export const FilamentDetailPage: React.FC = () => {
             <div className="flex flex-wrap items-center gap-3 md:gap-6 text-xs md:text-lg mb-3 md:mb-4">
               {/* Рейтинг материала (из отзывов) */}
               {filamentRating !== null && (
-                <span className="flex items-center text-gray-300" title="Рейтинг материала">
+                <span className="flex items-center text-gray-300" title={t('filamentDetailPage.materialRatingTitle')}>
                   <Star className="w-3.5 h-3.5 md:w-5 md:h-5 mr-1 md:mr-2 text-yellow-400 fill-current" />
                   <span className="font-bold text-white">{filamentRating.toFixed(1)}</span>
                   {ratingStats && ratingStats.total_reviews > 0 && (
@@ -284,29 +284,29 @@ export const FilamentDetailPage: React.FC = () => {
               )}
               {/* Успешность печати (из отзывов) */}
               {filamentSuccessRate !== null && (
-                <span className="flex items-center text-gray-300" title="Процент успешных печатей с этим материалом">
+                <span className="flex items-center text-gray-300" title={t('filamentDetailPage.successRateTitle')}>
                   <CheckCircle className="w-3.5 h-3.5 md:w-5 md:h-5 mr-1 md:mr-2 text-green-400" />
-                  <span className="font-bold text-green-400">{filamentSuccessRate.toFixed(1)}<span className="hidden md:inline">% успеха</span><span className="md:hidden">%</span></span>
+                  <span className="font-bold text-green-400">{filamentSuccessRate.toFixed(1)}<span className="hidden md:inline">{t('filamentDetailPage.successPercent')}</span><span className="md:hidden">%</span></span>
                   {ratingStats && ratingStats.total_reviews > 0 && (
-                    <span className="hidden md:inline text-gray-400 text-sm ml-1">из {ratingStats.total_reviews} отзывов</span>
+                    <span className="hidden md:inline text-gray-400 text-sm ml-1">{t('filamentDetailPage.fromReviews', { count: ratingStats.total_reviews })}</span>
                   )}
                 </span>
               )}
               {/* Количество пресетов */}
-              <span className="flex items-center text-gray-300" title="Количество пресетов настроек">
+              <span className="flex items-center text-gray-300" title={t('filamentDetailPage.presetsCountTitle')}>
                 <TrendingUp className="w-3.5 h-3.5 md:w-5 md:h-5 mr-1 md:mr-2 text-blue-400" />
-                <span className="font-bold text-white">{presetsData?.total || 0} <span className="hidden md:inline">пресетов</span></span>
+                <span className="font-bold text-white">{presetsData?.total || 0} <span className="hidden md:inline">{t('filamentDetailPage.presets')}</span></span>
               </span>
               {/* Просмотры */}
-              <span className="flex items-center text-gray-300" title="Количество просмотров">
+              <span className="flex items-center text-gray-300" title={t('filamentDetailPage.viewsCountTitle')}>
                 <Package className="w-3.5 h-3.5 md:w-5 md:h-5 mr-1 md:mr-2 text-purple-400" />
-                <span className="font-bold text-white">{filament.views_count || 0} <span className="hidden md:inline">просмотров</span></span>
+                <span className="font-bold text-white">{filament.views_count || 0} <span className="hidden md:inline">{t('filamentDetailPage.views')}</span></span>
               </span>
               {/* Количество отзывов */}
               {ratingStats && ratingStats.total_reviews > 0 && (
-                <span className="hidden md:flex items-center text-gray-300" title="Количество отзывов о материале">
+                <span className="hidden md:flex items-center text-gray-300" title={t('filamentDetailPage.reviewsCountTitle')}>
                   <MessageCircle className="w-5 h-5 mr-2 text-purple-400" />
-                  <span className="font-bold text-white">{ratingStats.total_reviews} отзывов</span>
+                  <span className="font-bold text-white">{ratingStats.total_reviews} {t('filamentDetailPage.reviews')}</span>
                 </span>
               )}
             </div>
@@ -449,33 +449,33 @@ export const FilamentDetailPage: React.FC = () => {
                 <>
                   <img
                     src={qrAPI.getQRCodeURL(filament.id, 256)}
-                    alt={`QR-код для ${filament.name}`}
+                    alt={t('filamentDetailPage.qrCodeAlt', { name: filament.name })}
                     className="w-64 h-64 mx-auto mb-4 rounded-lg bg-white p-3"
                   />
-                  <p className="text-gray-300 text-base font-medium mb-1">QR-код: {filament.qr_code}</p>
-                  <p className="text-gray-400 text-sm mb-2">Сканируйте для быстрого импорта настроек</p>
+                  <p className="text-gray-300 text-base font-medium mb-1">{t('filamentDetailPage.qrCode')}: {filament.qr_code}</p>
+                  <p className="text-gray-400 text-sm mb-2">{t('filamentDetailPage.scanForImport')}</p>
                   <div className="flex items-center justify-center gap-2 text-gray-500 text-xs">
                     <QrCode className="w-4 h-4" />
-                    <span>Сканирований: {filament.scans_count || 0}</span>
+                    <span>{t('filamentDetailPage.scans')}: {filament.scans_count || 0}</span>
                   </div>
                   <div className="mt-4 flex gap-2 justify-center">
                     <button
                       onClick={() => qrAPI.downloadQRCode(filament.id, 300)}
                       className="px-4 py-2 bg-white/10 hover:bg-white/20 text-white rounded-lg text-sm transition-all border border-white/20"
                     >
-                      Скачать 300px
+                      {t('filamentDetailPage.download')} 300px
                     </button>
                     <button
                       onClick={() => qrAPI.downloadQRCode(filament.id, 600)}
                       className="px-4 py-2 bg-white/10 hover:bg-white/20 text-white rounded-lg text-sm transition-all border border-white/20"
                     >
-                      Скачать 600px
+                      {t('filamentDetailPage.download')} 600px
                     </button>
                     <button
                       onClick={() => qrAPI.downloadQRCode(filament.id, 1200)}
                       className="px-4 py-2 bg-white/10 hover:bg-white/20 text-white rounded-lg text-sm transition-all border border-white/20"
                     >
-                      Скачать 1200px
+                      {t('filamentDetailPage.download')} 1200px
                     </button>
                   </div>
                 </>
@@ -483,11 +483,11 @@ export const FilamentDetailPage: React.FC = () => {
                 <div className="py-8">
                   <QrCode className="w-20 h-20 mx-auto mb-3 text-gray-500" />
                   <p className="text-gray-400 text-sm mb-1">
-                    QR-код доступен только для верифицированных брендов
+                    {t('filamentDetailPage.qrVerifiedOnly')}
                   </p>
                   {brandData && (
                     <p className="text-gray-500 text-xs">
-                      Бренд: {brandData.name} {brandData.verified ? '✓' : '(не верифицирован)'}
+                      {t('filamentDetailPage.brand')}: {brandData.name} {brandData.verified ? '✓' : t('filamentDetailPage.notVerified')}
                     </p>
                   )}
                 </div>
@@ -528,7 +528,7 @@ export const FilamentDetailPage: React.FC = () => {
           <div className="space-y-6">
             {/* Официальный пресет */}
             {isLoadingPresets && (
-              <div className="text-center py-8 text-gray-400">Загрузка пресетов...</div>
+              <div className="text-center py-8 text-gray-400">{t('filamentDetailPage.loadingPresets')}</div>
             )}
 
             {officialPreset && (
@@ -537,7 +537,7 @@ export const FilamentDetailPage: React.FC = () => {
                   <div className="flex items-center gap-2">
                     <h3 className="text-xl font-bold text-white flex items-center">
                       <Settings className="w-5 h-5 mr-2" />
-                      Официальный пресет
+                      {t('filamentDetailPage.officialPreset')}
                     </h3>
                   </div>
                   <div className="flex items-center gap-3">
@@ -554,17 +554,17 @@ export const FilamentDetailPage: React.FC = () => {
                         ))}
                       </div>
                     )}
-                    <span className="text-purple-300 font-semibold">Производитель</span>
+                    <span className="text-purple-300 font-semibold">{t('filamentDetailPage.manufacturer')}</span>
                     {/* Рейтинг и успешность официального пресета */}
                     <div className="flex items-center space-x-2">
                       {officialPreset.rating !== null && officialPreset.rating !== undefined && (
-                        <div className="flex items-center space-x-1" title="Рейтинг этого пресета настроек">
+                        <div className="flex items-center space-x-1" title={t('filamentDetailPage.presetRatingTitle')}>
                           <Star className="w-4 h-4 text-yellow-400 fill-current" />
                           <span className="text-white font-semibold">{officialPreset.rating.toFixed(1)}</span>
                         </div>
                       )}
                       {officialPreset.success_rate !== null && officialPreset.success_rate !== undefined && (
-                        <div className="flex items-center space-x-1" title="Процент успешных печатей с этим пресетом">
+                        <div className="flex items-center space-x-1" title={t('filamentDetailPage.presetSuccessTitle')}>
                           <CheckCircle className="w-4 h-4 text-green-400" />
                           <span className="text-green-400 text-sm font-semibold">{officialPreset.success_rate.toFixed(1)}%</span>
                         </div>
@@ -576,21 +576,21 @@ export const FilamentDetailPage: React.FC = () => {
                   <div className="flex items-center space-x-2">
                     <Thermometer className="w-5 h-5 text-red-400" />
                     <div>
-                      <div className="text-gray-400 text-sm">Сопло</div>
+                      <div className="text-gray-400 text-sm">{t('filamentDetailPage.nozzle')}</div>
                       <div className="text-white font-semibold">{officialPreset.extruder_temp}°C</div>
                     </div>
                   </div>
                   <div className="flex items-center space-x-2">
                     <Thermometer className="w-5 h-5 text-red-400" />
                     <div>
-                      <div className="text-gray-400 text-sm">Стол</div>
+                      <div className="text-gray-400 text-sm">{t('filamentDetailPage.bed')}</div>
                       <div className="text-white font-semibold">{officialPreset.bed_temp}°C</div>
                     </div>
                   </div>
                   <div className="flex items-center space-x-2">
                     <Gauge className="w-5 h-5 text-blue-400" />
                     <div>
-                      <div className="text-gray-400 text-sm">Скорость</div>
+                      <div className="text-gray-400 text-sm">{t('filamentDetailPage.speed')}</div>
                       <div className="text-white font-semibold">{officialPreset.print_speed}mm/s</div>
                     </div>
                   </div>
@@ -598,7 +598,7 @@ export const FilamentDetailPage: React.FC = () => {
                     <div className="flex items-center space-x-2">
                       <Wind className="w-5 h-5 text-cyan-400" />
                       <div>
-                        <div className="text-gray-400 text-sm">Перемещение</div>
+                        <div className="text-gray-400 text-sm">{t('filamentDetailPage.travel')}</div>
                         <div className="text-white font-semibold">{officialPreset.travel_speed}mm/s</div>
                       </div>
                     </div>
@@ -607,7 +607,7 @@ export const FilamentDetailPage: React.FC = () => {
                     <div className="flex items-center space-x-2">
                       <Gauge className="w-5 h-5 text-yellow-400" />
                       <div>
-                        <div className="text-gray-400 text-sm">Поток</div>
+                        <div className="text-gray-400 text-sm">{t('filamentDetailPage.flowRate')}</div>
                         <div className="text-white font-semibold">{officialPreset.flow_rate}%</div>
                       </div>
                     </div>
@@ -616,7 +616,7 @@ export const FilamentDetailPage: React.FC = () => {
                     <div className="flex items-center space-x-2">
                       <Fan className="w-5 h-5 text-orange-400" />
                       <div>
-                        <div className="text-gray-400 text-sm">Обдув</div>
+                        <div className="text-gray-400 text-sm">{t('filamentDetailPage.fan')}</div>
                         <div className="text-white font-semibold">{officialPreset.fan_speed}%</div>
                       </div>
                     </div>
@@ -625,7 +625,7 @@ export const FilamentDetailPage: React.FC = () => {
                     <div className="flex items-center space-x-2">
                       <Wind className="w-5 h-5 text-purple-400" />
                       <div>
-                        <div className="text-gray-400 text-sm">Ретракт</div>
+                        <div className="text-gray-400 text-sm">{t('filamentDetailPage.retraction')}</div>
                         <div className="text-white font-semibold">{officialPreset.retraction_length}mm</div>
                       </div>
                     </div>
@@ -634,7 +634,7 @@ export const FilamentDetailPage: React.FC = () => {
                     <div className="flex items-center space-x-2">
                       <Gauge className="w-5 h-5 text-indigo-400" />
                       <div>
-                        <div className="text-gray-400 text-sm">Ск. ретракт</div>
+                        <div className="text-gray-400 text-sm">{t('filamentDetailPage.retractionSpeed')}</div>
                         <div className="text-white font-semibold">{officialPreset.retraction_speed}mm/s</div>
                       </div>
                     </div>
@@ -643,7 +643,7 @@ export const FilamentDetailPage: React.FC = () => {
                     <div className="flex items-center space-x-2">
                       <Flame className="w-5 h-5 text-orange-400" />
                       <div>
-                        <div className="text-gray-400 text-sm">Темп. стеклования</div>
+                        <div className="text-gray-400 text-sm">{t('filamentDetailPage.softeningTemp')}</div>
                         <div className="text-white font-semibold">{officialSofteningTemperature}°C</div>
                       </div>
                     </div>
@@ -652,7 +652,7 @@ export const FilamentDetailPage: React.FC = () => {
                     <div className="flex items-center space-x-2">
                       <Hammer className="w-5 h-5 text-amber-400" />
                       <div>
-                        <div className="text-gray-400 text-sm">Твёрдость сопла</div>
+                        <div className="text-gray-400 text-sm">{t('filamentDetailPage.nozzleHardness')}</div>
                         <div className="text-white font-semibold">{officialRequiredNozzleHRC} HRC</div>
                       </div>
                     </div>
@@ -662,13 +662,13 @@ export const FilamentDetailPage: React.FC = () => {
                 {/* Расширенные параметры OrcaSlicer */}
                 {officialPreset.orcaslicer_settings && Object.keys(officialPreset.orcaslicer_settings).length > 0 && (
                   <div className="mt-4 pt-4 border-t border-white/10">
-                    <h4 className="text-sm font-medium text-gray-300 mb-3">Расширенные настройки</h4>
+                    <h4 className="text-sm font-medium text-gray-300 mb-3">{t('filamentDetailPage.advancedSettings')}</h4>
                     <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
                       {officialPreset.orcaslicer_settings.nozzle_temperature_range_low?.[0] && officialPreset.orcaslicer_settings.nozzle_temperature_range_high?.[0] && (
                         <div className="flex items-center space-x-2">
                           <Thermometer className="w-4 h-4 text-orange-400" />
                           <div>
-                            <div className="text-gray-400 text-xs">Диапазон</div>
+                            <div className="text-gray-400 text-xs">{t('filamentDetailPage.tempRange')}</div>
                             <div className="text-white text-sm font-semibold">
                               {officialPreset.orcaslicer_settings.nozzle_temperature_range_low[0]}–{officialPreset.orcaslicer_settings.nozzle_temperature_range_high[0]}°C
                             </div>
@@ -679,7 +679,7 @@ export const FilamentDetailPage: React.FC = () => {
                         <div className="flex items-center space-x-2">
                           <Gauge className="w-4 h-4 text-blue-400" />
                           <div>
-                            <div className="text-gray-400 text-xs">Объемная скорость</div>
+                            <div className="text-gray-400 text-xs">{t('filamentDetailPage.volumetricSpeed')}</div>
                             <div className="text-white text-sm font-semibold">
                               {officialPreset.orcaslicer_settings.filament_max_volumetric_speed[0]}mm³/s
                             </div>
@@ -690,7 +690,7 @@ export const FilamentDetailPage: React.FC = () => {
                         <div className="flex items-center space-x-2">
                           <Fan className="w-4 h-4 text-cyan-400" />
                           <div>
-                            <div className="text-gray-400 text-xs">Обдув</div>
+                            <div className="text-gray-400 text-xs">{t('filamentDetailPage.fan')}</div>
                             <div className="text-white text-sm font-semibold">
                               {officialPreset.orcaslicer_settings.fan_min_speed[0]}–{officialPreset.orcaslicer_settings.fan_max_speed[0]}%
                             </div>
@@ -701,7 +701,7 @@ export const FilamentDetailPage: React.FC = () => {
                         <div className="flex items-center space-x-2">
                           <Thermometer className="w-4 h-4 text-red-400" />
                           <div>
-                            <div className="text-gray-400 text-xs">Камера</div>
+                            <div className="text-gray-400 text-xs">{t('filamentDetailPage.chamber')}</div>
                             <div className="text-white text-sm font-semibold">
                               {officialPreset.orcaslicer_settings.chamber_temperature[0]}°C
                             </div>
@@ -719,7 +719,7 @@ export const FilamentDetailPage: React.FC = () => {
               <div>
                 <h3 className="text-xl font-bold text-white mb-4 flex items-center">
                   <Users className="w-5 h-5 mr-2" />
-                  Пресеты сообщества ({communityPresets.length})
+                  {t('filamentDetailPage.communityPresets', { count: communityPresets.length })}
                 </h3>
                 <div className="space-y-3">
                   {communityPresets.map((preset) => {
@@ -773,22 +773,22 @@ export const FilamentDetailPage: React.FC = () => {
                             )}
                             {/* Рейтинг пресета (отдельный от рейтинга материала) */}
                             {preset.rating !== null && preset.rating !== undefined ? (
-                              <div className="flex items-center space-x-2 mb-2" title="Рейтинг этого пресета настроек">
+                              <div className="flex items-center space-x-2 mb-2" title={t('filamentDetailPage.presetRatingTitle')}>
                               <Star className="w-5 h-5 text-yellow-400 fill-current" />
                                 <span className="text-white font-bold">{preset.rating.toFixed(1)}</span>
                             </div>
                             ) : (
-                              <div className="mb-2 text-gray-500 text-sm">Нет рейтинга</div>
+                              <div className="mb-2 text-gray-500 text-sm">{t('filamentDetailPage.noRating')}</div>
                             )}
                             {/* Успешность пресета */}
                             {preset.success_rate !== null && preset.success_rate !== undefined && (
-                              <div className="flex items-center space-x-1 mb-1" title="Процент успешных печатей с этим пресетом">
+                              <div className="flex items-center space-x-1 mb-1" title={t('filamentDetailPage.presetSuccessTitle')}>
                                 <CheckCircle className="w-4 h-4 text-green-400" />
                                 <span className="text-green-400 text-sm font-semibold">{preset.success_rate.toFixed(1)}%</span>
                               </div>
                             )}
                             {/* Использования пресета */}
-                            <p className="text-gray-400 text-xs">{preset.usage_count} использований</p>
+                            <p className="text-gray-400 text-xs">{preset.usage_count} {t('filamentDetailPage.usages')}</p>
                           </div>
                         </div>
                         
@@ -797,21 +797,21 @@ export const FilamentDetailPage: React.FC = () => {
                         <div className="flex items-center space-x-2">
                           <Thermometer className="w-4 h-4 text-red-400" />
                           <div>
-                            <div className="text-gray-400 text-xs">Сопло</div>
+                            <div className="text-gray-400 text-xs">{t('filamentDetailPage.nozzle')}</div>
                             <div className="text-white text-sm font-semibold">{preset.extruder_temp}°C</div>
                           </div>
                         </div>
                         <div className="flex items-center space-x-2">
                           <Thermometer className="w-4 h-4 text-red-400" />
                           <div>
-                            <div className="text-gray-400 text-xs">Стол</div>
+                            <div className="text-gray-400 text-xs">{t('filamentDetailPage.bed')}</div>
                             <div className="text-white text-sm font-semibold">{preset.bed_temp}°C</div>
                           </div>
                         </div>
                         <div className="flex items-center space-x-2">
                           <Gauge className="w-4 h-4 text-blue-400" />
                           <div>
-                            <div className="text-gray-400 text-xs">Скорость</div>
+                            <div className="text-gray-400 text-xs">{t('filamentDetailPage.speed')}</div>
                             <div className="text-white text-sm font-semibold">{preset.print_speed}mm/s</div>
                           </div>
                         </div>
@@ -819,7 +819,7 @@ export const FilamentDetailPage: React.FC = () => {
                           <div className="flex items-center space-x-2">
                             <Wind className="w-4 h-4 text-cyan-400" />
                             <div>
-                              <div className="text-gray-400 text-xs">Перемещение</div>
+                              <div className="text-gray-400 text-xs">{t('filamentDetailPage.travel')}</div>
                               <div className="text-white text-sm font-semibold">{preset.travel_speed}mm/s</div>
                             </div>
                           </div>
@@ -828,7 +828,7 @@ export const FilamentDetailPage: React.FC = () => {
                           <div className="flex items-center space-x-2">
                             <Gauge className="w-4 h-4 text-yellow-400" />
                             <div>
-                              <div className="text-gray-400 text-xs">Поток</div>
+                              <div className="text-gray-400 text-xs">{t('filamentDetailPage.flowRate')}</div>
                               <div className="text-white text-sm font-semibold">{preset.flow_rate}%</div>
                             </div>
                           </div>
@@ -837,7 +837,7 @@ export const FilamentDetailPage: React.FC = () => {
                           <div className="flex items-center space-x-2">
                             <Fan className="w-4 h-4 text-orange-400" />
                             <div>
-                              <div className="text-gray-400 text-xs">Обдув</div>
+                              <div className="text-gray-400 text-xs">{t('filamentDetailPage.fan')}</div>
                               <div className="text-white text-sm font-semibold">{preset.fan_speed}%</div>
                             </div>
                           </div>
@@ -846,7 +846,7 @@ export const FilamentDetailPage: React.FC = () => {
                           <div className="flex items-center space-x-2">
                             <Wind className="w-4 h-4 text-purple-400" />
                             <div>
-                              <div className="text-gray-400 text-xs">Ретракт</div>
+                              <div className="text-gray-400 text-xs">{t('filamentDetailPage.retraction')}</div>
                               <div className="text-white text-sm font-semibold">{preset.retraction_length}mm</div>
                             </div>
                           </div>
@@ -855,7 +855,7 @@ export const FilamentDetailPage: React.FC = () => {
                           <div className="flex items-center space-x-2">
                             <Gauge className="w-4 h-4 text-indigo-400" />
                             <div>
-                              <div className="text-gray-400 text-xs">Ск. ретракт</div>
+                              <div className="text-gray-400 text-xs">{t('filamentDetailPage.retractionSpeed')}</div>
                               <div className="text-white text-sm font-semibold">{preset.retraction_speed}mm/s</div>
                             </div>
                           </div>
@@ -864,7 +864,7 @@ export const FilamentDetailPage: React.FC = () => {
                           <div className="flex items-center space-x-2">
                             <Flame className="w-4 h-4 text-orange-400" />
                             <div>
-                              <div className="text-gray-400 text-xs">Темп. стеклования</div>
+                              <div className="text-gray-400 text-xs">{t('filamentDetailPage.softeningTemp')}</div>
                               <div className="text-white text-sm font-semibold">{presetSofteningTemperature}°C</div>
                             </div>
                           </div>
@@ -873,7 +873,7 @@ export const FilamentDetailPage: React.FC = () => {
                           <div className="flex items-center space-x-2">
                             <Hammer className="w-4 h-4 text-amber-400" />
                             <div>
-                              <div className="text-gray-400 text-xs">Твёрдость сопла</div>
+                              <div className="text-gray-400 text-xs">{t('filamentDetailPage.nozzleHardness')}</div>
                               <div className="text-white text-sm font-semibold">{presetRequiredNozzleHRC} HRC</div>
                             </div>
                           </div>
@@ -888,7 +888,7 @@ export const FilamentDetailPage: React.FC = () => {
                               <div className="flex items-center space-x-2">
                                 <Thermometer className="w-4 h-4 text-orange-400" />
                                 <div>
-                                  <div className="text-gray-400 text-xs">Диапазон</div>
+                                  <div className="text-gray-400 text-xs">{t('filamentDetailPage.tempRange')}</div>
                                   <div className="text-white text-sm font-semibold">
                                     {preset.orcaslicer_settings.nozzle_temperature_range_low[0]}–{preset.orcaslicer_settings.nozzle_temperature_range_high[0]}°C
                                   </div>
@@ -899,7 +899,7 @@ export const FilamentDetailPage: React.FC = () => {
                               <div className="flex items-center space-x-2">
                                 <Gauge className="w-4 h-4 text-blue-400" />
                                 <div>
-                                  <div className="text-gray-400 text-xs">Объемная</div>
+                                  <div className="text-gray-400 text-xs">{t('filamentDetailPage.volumetricSpeed')}</div>
                                   <div className="text-white text-sm font-semibold">
                                     {preset.orcaslicer_settings.filament_max_volumetric_speed[0]}mm³/s
                                   </div>
@@ -910,7 +910,7 @@ export const FilamentDetailPage: React.FC = () => {
                               <div className="flex items-center space-x-2">
                                 <Fan className="w-4 h-4 text-cyan-400" />
                                 <div>
-                                  <div className="text-gray-400 text-xs">Обдув</div>
+                                  <div className="text-gray-400 text-xs">{t('filamentDetailPage.fan')}</div>
                                   <div className="text-white text-sm font-semibold">
                                     {preset.orcaslicer_settings.fan_min_speed[0]}–{preset.orcaslicer_settings.fan_max_speed[0]}%
                                   </div>
@@ -921,7 +921,7 @@ export const FilamentDetailPage: React.FC = () => {
                               <div className="flex items-center space-x-2">
                                 <Thermometer className="w-4 h-4 text-red-400" />
                                 <div>
-                                  <div className="text-gray-400 text-xs">Камера</div>
+                                  <div className="text-gray-400 text-xs">{t('filamentDetailPage.chamber')}</div>
                                   <div className="text-white text-sm font-semibold">
                                     {preset.orcaslicer_settings.chamber_temperature[0]}°C
                                   </div>
@@ -938,9 +938,9 @@ export const FilamentDetailPage: React.FC = () => {
                           <button
                             disabled
                             className="w-full bg-gray-600/50 text-white py-2 px-4 rounded-lg cursor-not-allowed flex items-center justify-center"
-                            title="Необходимо войти в систему"
+                            title={t('filamentDetailPage.loginRequiredTitle')}
                           >
-                            Войдите, чтобы добавить
+                            {t('filamentDetailPage.loginToAdd')}
                           </button>
                         ) : isPresetOwn ? (
                           <button
@@ -986,7 +986,7 @@ export const FilamentDetailPage: React.FC = () => {
             <div className="flex items-center justify-between">
               <div>
                 <h3 className="text-xl font-bold text-white mb-2">
-                  Отзывы пользователей
+                  {t('filamentDetailPage.userReviews')}
                 </h3>
                 {ratingStats && ratingStats.total_reviews > 0 && (
                   <div className="flex items-center space-x-4 text-sm text-gray-400">
@@ -994,13 +994,13 @@ export const FilamentDetailPage: React.FC = () => {
                       <div className="flex items-center space-x-1">
                         <Star className="w-4 h-4 text-yellow-400 fill-current" />
                         <span className="text-white font-semibold">{ratingStats.avg_rating.toFixed(1)}</span>
-                        <span>из 5.0</span>
+                        <span>{t('filamentDetailPage.outOf5')}</span>
                       </div>
                     )}
                     {ratingStats.success_rate !== null && (
                       <div className="flex items-center space-x-1">
                         <CheckCircle className="w-4 h-4 text-green-400" />
-                        <span>{ratingStats.success_rate.toFixed(1)}% успешных печатей</span>
+                        <span>{ratingStats.success_rate.toFixed(1)}% {t('filamentDetailPage.successfulPrints')}</span>
                       </div>
                     )}
                   </div>
@@ -1015,14 +1015,14 @@ export const FilamentDetailPage: React.FC = () => {
                   className="px-6 py-3 bg-purple-600 hover:bg-purple-700 text-white rounded-xl transition-colors font-semibold flex items-center space-x-2"
                 >
                   <MessageCircle className="w-5 h-5" />
-                  <span>Оставить отзыв</span>
+                  <span>{t('filamentDetailPage.leaveReview')}</span>
                 </button>
               )}
             </div>
 
             {/* Список отзывов */}
             {isLoadingReviews ? (
-              <div className="text-center py-12 text-gray-400">Загрузка отзывов...</div>
+              <div className="text-center py-12 text-gray-400">{t('filamentDetailPage.loadingReviews')}</div>
             ) : reviewsData && reviewsData.items.length > 0 ? (
               <>
                 <div className="space-y-4">
@@ -1045,17 +1045,17 @@ export const FilamentDetailPage: React.FC = () => {
                       disabled={reviewsPage === 1}
                       className="px-4 py-2 bg-white/10 hover:bg-white/20 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-xl transition-colors"
                     >
-                      Назад
+                      {t('filamentDetailPage.prev')}
                     </button>
                     <span className="text-gray-300">
-                      Страница {reviewsPage} из {reviewsData.pages}
+                      {t('filamentDetailPage.pageOf', { page: reviewsPage, total: reviewsData.pages })}
                     </span>
                     <button
                       onClick={() => setReviewsPage((p) => Math.min(reviewsData.pages, p + 1))}
                       disabled={reviewsPage >= reviewsData.pages}
                       className="px-4 py-2 bg-white/10 hover:bg-white/20 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-xl transition-colors"
                     >
-                      Вперёд
+                      {t('filamentDetailPage.next')}
                     </button>
                   </div>
                 )}
@@ -1063,10 +1063,10 @@ export const FilamentDetailPage: React.FC = () => {
             ) : (
           <div className="text-center py-12 text-gray-400">
             <MessageCircle className="w-16 h-16 mx-auto mb-4 opacity-50" />
-                <p className="text-xl mb-2">Пока нет отзывов</p>
+                <p className="text-xl mb-2">{t('filamentDetailPage.noReviews')}</p>
                 {user && (
                   <p className="text-sm">
-                    Станьте первым, кто оставит отзыв об этом материале!
+                    {t('filamentDetailPage.beFirstReviewer')}
                   </p>
                 )}
           </div>
