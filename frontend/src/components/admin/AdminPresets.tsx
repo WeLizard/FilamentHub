@@ -1,12 +1,14 @@
 /** Компонент для модерации пресетов */
 
 import { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Settings, CheckCircle, XCircle } from 'lucide-react';
 import { adminAPI } from '../../api/client';
 import type { Preset } from '../../types/api';
 
 export function AdminPresets() {
+  const { t } = useTranslation();
   const queryClient = useQueryClient();
   const [page, setPage] = useState(1);
 
@@ -34,7 +36,7 @@ export function AdminPresets() {
   });
 
   if (isLoading) {
-    return <div className="text-center py-12 text-gray-400">Загрузка пресетов...</div>;
+    return <div className="text-center py-12 text-gray-400">{t('adminPresets.loading')}</div>;
   }
 
   const presets = pendingPresets || [];
@@ -42,14 +44,14 @@ export function AdminPresets() {
   return (
     <div className="space-y-6">
       <div>
-        <h2 className="text-2xl font-bold text-white mb-2">Модерация пресетов</h2>
-        <p className="text-gray-400">Ожидающие модерации: {presets.length}</p>
+        <h2 className="text-2xl font-bold text-white mb-2">{t('adminPresets.title')}</h2>
+        <p className="text-gray-400">{t('adminPresets.pending')}: {presets.length}</p>
       </div>
 
       {presets.length === 0 ? (
         <div className="text-center py-12 text-gray-400">
           <Settings className="w-16 h-16 mx-auto mb-4 opacity-50" />
-          <p>Нет пресетов, ожидающих модерации</p>
+          <p>{t('adminPresets.empty')}</p>
         </div>
       ) : (
         <div className="space-y-4">
@@ -68,19 +70,19 @@ export function AdminPresets() {
                     <p className="text-sm text-gray-400 mb-2">{preset.description}</p>
                   )}
                   <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-sm text-gray-400">
-                    <div>Сопло: {preset.extruder_temp}°C</div>
-                    <div>Стол: {preset.bed_temp}°C</div>
-                    <div>Скорость: {preset.print_speed}mm/s</div>
-                    <div>Использований: {preset.usage_count}</div>
+                    <div>{t('adminPresets.nozzle')}: {preset.extruder_temp}°C</div>
+                    <div>{t('adminPresets.bed')}: {preset.bed_temp}°C</div>
+                    <div>{t('adminPresets.speed')}: {preset.print_speed}mm/s</div>
+                    <div>{t('adminPresets.usages')}: {preset.usage_count}</div>
                   </div>
                   <p className="text-xs text-gray-500 mt-2">
-                    Создан: {new Date(preset.created_at).toLocaleString('ru-RU')}
+                    {t('adminPresets.created')}: {new Date(preset.created_at).toLocaleString('ru-RU')}
                   </p>
                 </div>
                 <div className="flex items-center space-x-2">
                   <button
                     onClick={() => {
-                      if (confirm(`Одобрить пресет "${preset.name}"?`)) {
+                      if (confirm(t('adminPresets.confirmApprove', { name: preset.name }))) {
                         approveMutation.mutate(preset.id);
                       }
                     }}
@@ -88,11 +90,11 @@ export function AdminPresets() {
                     className="flex items-center space-x-2 px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg transition-all disabled:opacity-50"
                   >
                     <CheckCircle className="w-4 h-4" />
-                    <span>Одобрить</span>
+                    <span>{t('adminPresets.approve')}</span>
                   </button>
                   <button
                     onClick={() => {
-                      const reason = prompt('Укажите причину отклонения:');
+                      const reason = prompt(t('adminPresets.rejectReasonPrompt'));
                       if (reason && reason.trim()) {
                         rejectMutation.mutate({ presetId: preset.id, reason: reason.trim() });
                       }
@@ -101,7 +103,7 @@ export function AdminPresets() {
                     className="flex items-center space-x-2 px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg transition-all disabled:opacity-50"
                   >
                     <XCircle className="w-4 h-4" />
-                    <span>Отклонить</span>
+                    <span>{t('adminPresets.reject')}</span>
                   </button>
                 </div>
               </div>
