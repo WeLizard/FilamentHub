@@ -1,6 +1,7 @@
 /** Модальное окно для создания/редактирования отзыва */
 
 import React, { useState, useEffect } from 'react';
+import { useTranslation } from 'react-i18next';
 import { X, Star, CheckCircle, XCircle, AlertCircle, Settings, Shield } from 'lucide-react';
 import { Printer3DIcon } from './icons/Printer3DIcon';
 import { useMutation, useQueryClient, useQuery } from '@tanstack/react-query';
@@ -23,6 +24,7 @@ export const CreateReviewModal: React.FC<CreateReviewModalProps> = ({
   onClose,
   onSuccess,
 }) => {
+  const { t } = useTranslation();
   const isHeaderVisible = useHeaderVisible();
   const { user } = useAuth();
   const queryClient = useQueryClient();
@@ -92,7 +94,7 @@ export const CreateReviewModal: React.FC<CreateReviewModalProps> = ({
       if (error.response?.data?.detail) {
         setErrors({ submit: error.response.data.detail });
       } else {
-        setErrors({ submit: 'Ошибка при сохранении отзыва' });
+        setErrors({ submit: t('createReview.saveError') });
       }
     },
   });
@@ -103,7 +105,7 @@ export const CreateReviewModal: React.FC<CreateReviewModalProps> = ({
 
     // Валидация
     if (rating === 0) {
-      setErrors({ rating: 'Выберите рейтинг' });
+      setErrors({ rating: t('createReview.selectRating') });
       return;
     }
 
@@ -123,15 +125,15 @@ export const CreateReviewModal: React.FC<CreateReviewModalProps> = ({
         <div className="bg-gray-900 rounded-2xl p-8 border border-white/20 max-w-md w-full mx-4">
           <div className="text-center">
             <AlertCircle className="w-16 h-16 text-yellow-400 mx-auto mb-4" />
-            <h2 className="text-2xl font-bold text-white mb-4">Требуется авторизация</h2>
+            <h2 className="text-2xl font-bold text-white mb-4">{t('createReview.authRequired')}</h2>
             <p className="text-gray-400 mb-6">
-              Войдите в систему, чтобы оставить отзыв
+              {t('createReview.authRequiredMessage')}
             </p>
             <button
               onClick={onClose}
               className="px-6 py-3 bg-purple-600 hover:bg-purple-700 text-white rounded-xl transition-colors"
             >
-              Закрыть
+              {t('createReview.close')}
             </button>
           </div>
         </div>
@@ -145,7 +147,7 @@ export const CreateReviewModal: React.FC<CreateReviewModalProps> = ({
         {/* Заголовок */}
         <div className="flex items-center justify-between mb-6">
           <h2 className="text-2xl font-bold text-white">
-            {isEdit ? 'Редактировать отзыв' : 'Оставить отзыв'}
+            {isEdit ? t('createReview.editTitle') : t('createReview.createTitle')}
           </h2>
           <button
             onClick={onClose}
@@ -161,14 +163,14 @@ export const CreateReviewModal: React.FC<CreateReviewModalProps> = ({
             <div>
               <label className="block text-white font-semibold mb-3">
                 <Settings className="w-4 h-4 inline mr-2" />
-                Пресет настроек {availablePresetsData && availablePresetsData.total > 1 && <span className="text-gray-400 text-sm font-normal">(необязательно)</span>}
+                {t('createReview.presetSettings')} {availablePresetsData && availablePresetsData.total > 1 && <span className="text-gray-400 text-sm font-normal">({t('createReview.optional')})</span>}
               </label>
               {isLoadingPresets ? (
-                <div className="text-gray-400 text-sm">Загрузка пресетов...</div>
+                <div className="text-gray-400 text-sm">{t('createReview.loadingPresets')}</div>
               ) : presetsError ? (
                 <div className="bg-yellow-500/20 border border-yellow-500/30 rounded-xl p-4">
                   <p className="text-yellow-400 text-sm">
-                    Не удалось загрузить список пресетов. Вы можете оставить отзыв без указания пресета.
+                    {t('createReview.presetsLoadError')}
                   </p>
                 </div>
               ) : availablePresetsData && availablePresetsData.items.length > 0 ? (
@@ -187,13 +189,13 @@ export const CreateReviewModal: React.FC<CreateReviewModalProps> = ({
                       <div className="flex items-center justify-between">
                         <div className="flex items-center space-x-2">
                           {preset.is_official && (
-                            <span title="Официальный пресет">
+                            <span title={t('createReview.officialPreset')}>
                               <Shield className="w-4 h-4 text-green-400" />
                             </span>
                           )}
                           <span className="font-semibold">{preset.name}</span>
                           {preset.is_saved && (
-                            <span className="text-xs text-purple-400">(в профиле)</span>
+                            <span className="text-xs text-purple-400">({t('createReview.inProfile')})</span>
                           )}
                         </div>
                         {preset.rating !== null && preset.rating !== undefined && (
@@ -209,9 +211,9 @@ export const CreateReviewModal: React.FC<CreateReviewModalProps> = ({
               ) : (
                 <div className="bg-yellow-500/20 border border-yellow-500/30 rounded-xl p-4">
                   <p className="text-yellow-400 text-sm">
-                    {presetsError 
-                      ? 'Не удалось загрузить список пресетов. Вы можете оставить отзыв без указания пресета.'
-                      : 'Нет доступных пресетов для этого материала. Отзыв будет привязан к материалу в целом.'}
+                    {presetsError
+                      ? t('createReview.presetsLoadError')
+                      : t('createReview.noPresetsAvailable')}
                   </p>
                 </div>
               )}
@@ -221,7 +223,7 @@ export const CreateReviewModal: React.FC<CreateReviewModalProps> = ({
           {/* Рейтинг */}
           <div>
             <label className="block text-white font-semibold mb-3">
-              Рейтинг <span className="text-red-400">*</span>
+              {t('createReview.rating')} <span className="text-red-400">*</span>
             </label>
             <StarRating rating={rating} onChange={setRating} />
             {errors.rating && (
@@ -232,7 +234,7 @@ export const CreateReviewModal: React.FC<CreateReviewModalProps> = ({
           {/* Успешность печати */}
           <div>
             <label className="block text-white font-semibold mb-3">
-              Результат печати <span className="text-red-400">*</span>
+              {t('createReview.printResult')} <span className="text-red-400">*</span>
             </label>
             <div className="flex items-center space-x-4">
               <button
@@ -245,7 +247,7 @@ export const CreateReviewModal: React.FC<CreateReviewModalProps> = ({
                 }`}
               >
                 <CheckCircle className="w-5 h-5" />
-                <span className="font-semibold">Успешно</span>
+                <span className="font-semibold">{t('createReview.successful')}</span>
               </button>
               <button
                 type="button"
@@ -257,7 +259,7 @@ export const CreateReviewModal: React.FC<CreateReviewModalProps> = ({
                 }`}
               >
                 <XCircle className="w-5 h-5" />
-                <span className="font-semibold">Проблемы</span>
+                <span className="font-semibold">{t('createReview.problems')}</span>
               </button>
             </div>
           </div>
@@ -266,13 +268,13 @@ export const CreateReviewModal: React.FC<CreateReviewModalProps> = ({
           <div>
             <label className="block text-white font-semibold mb-2">
               <Printer3DIcon className="w-4 h-4 inline mr-2" />
-              Модель принтера (необязательно)
+              {t('createReview.printerModel')}
             </label>
             <input
               type="text"
               value={printerModel}
               onChange={(e) => setPrinterModel(e.target.value)}
-              placeholder="Например: Bambu Lab A1 mini"
+              placeholder={t('createReview.printerModelPlaceholder')}
               className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white placeholder-gray-500 focus:outline-none focus:border-purple-500 transition-colors"
               maxLength={200}
             />
@@ -281,12 +283,12 @@ export const CreateReviewModal: React.FC<CreateReviewModalProps> = ({
           {/* Комментарий */}
           <div>
             <label className="block text-white font-semibold mb-2">
-              Комментарий (необязательно)
+              {t('createReview.comment')}
             </label>
             <textarea
               value={comment}
               onChange={(e) => setComment(e.target.value)}
-              placeholder="Расскажите о вашем опыте печати с этим материалом..."
+              placeholder={t('createReview.commentPlaceholder')}
               rows={6}
               className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white placeholder-gray-500 focus:outline-none focus:border-purple-500 transition-colors resize-none"
               maxLength={2000}
@@ -310,7 +312,7 @@ export const CreateReviewModal: React.FC<CreateReviewModalProps> = ({
               onClick={onClose}
               className="px-6 py-3 bg-white/10 hover:bg-white/20 text-white rounded-xl transition-colors"
             >
-              Отмена
+              {t('createReview.cancel')}
             </button>
             <button
               type="submit"
@@ -318,10 +320,10 @@ export const CreateReviewModal: React.FC<CreateReviewModalProps> = ({
               className="px-6 py-3 bg-purple-600 hover:bg-purple-700 disabled:bg-gray-600 disabled:cursor-not-allowed text-white rounded-xl transition-colors font-semibold"
             >
               {createMutation.isPending
-                ? 'Сохранение...'
+                ? t('createReview.saving')
                 : isEdit
-                ? 'Сохранить изменения'
-                : 'Опубликовать отзыв'}
+                ? t('createReview.saveChanges')
+                : t('createReview.publish')}
             </button>
           </div>
         </form>

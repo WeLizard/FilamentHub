@@ -260,7 +260,7 @@ export const CreateFilamentModal: React.FC<CreateFilamentModalProps> = ({
       queryClient.invalidateQueries({ queryKey: ['filaments', 'material-types'] });
       queryClient.invalidateQueries({ queryKey: ['brands'] });
       queryClient.invalidateQueries({ queryKey: ['brand-filaments'] });
-      setSuccessMessage('Материал успешно создан!');
+      setSuccessMessage(t('createFilament.createSuccess'));
       
       // Если есть QR-код И создание НЕ из профиля бренда - показываем его
       // Для брендов QR-код показывается через отдельную кнопку в списке материалов
@@ -276,7 +276,7 @@ export const CreateFilamentModal: React.FC<CreateFilamentModalProps> = ({
       }, 1500);
     },
     onError: (err: any) => {
-      setError(err.response?.data?.detail || 'Ошибка при создании материала');
+      setError(err.response?.data?.detail || t('createFilament.createError'));
     },
   });
 
@@ -303,14 +303,14 @@ export const CreateFilamentModal: React.FC<CreateFilamentModalProps> = ({
       queryClient.invalidateQueries({ queryKey: ['filaments', 'material-types'] });
       queryClient.invalidateQueries({ queryKey: ['brands'] });
       queryClient.invalidateQueries({ queryKey: ['brand-filaments'] });
-      setSuccessMessage('Материал успешно обновлён!');
+      setSuccessMessage(t('createFilament.updateSuccess'));
       setTimeout(() => {
         onClose();
         setSuccessMessage(null);
       }, 1500);
     },
     onError: (err: any) => {
-      setError(err.response?.data?.detail || 'Ошибка при обновлении материала');
+      setError(err.response?.data?.detail || t('createFilament.updateError'));
     },
   });
 
@@ -319,7 +319,7 @@ export const CreateFilamentModal: React.FC<CreateFilamentModalProps> = ({
     setError(null);
 
     if (!brandIdValue) {
-      setError('Выберите бренд');
+      setError(t('createFilament.selectBrandError'));
       return;
     }
 
@@ -327,7 +327,7 @@ export const CreateFilamentModal: React.FC<CreateFilamentModalProps> = ({
       // Обновление существующего материала
       const finalMaterialType = materialType === 'Other' ? customMaterialType.trim() : materialType;
       if (!finalMaterialType) {
-        setError('Введите тип материала');
+        setError(t('createFilament.enterMaterialTypeError'));
         return;
       }
       // Формируем visual_settings если есть расширенные эффекты
@@ -360,7 +360,7 @@ export const CreateFilamentModal: React.FC<CreateFilamentModalProps> = ({
       // Создание нового материала
       const finalMaterialType = materialType === 'Other' ? customMaterialType.trim() : materialType;
       if (!finalMaterialType) {
-        setError('Введите тип материала');
+        setError(t('createFilament.enterMaterialTypeError'));
         return;
       }
       // Формируем visual_settings если есть расширенные эффекты
@@ -439,7 +439,7 @@ export const CreateFilamentModal: React.FC<CreateFilamentModalProps> = ({
             <div className="p-6 bg-gradient-to-br from-green-500/20 to-emerald-500/20 border border-green-500/30 rounded-xl">
               <div className="flex items-center space-x-2 mb-4">
                 <QrCode className="w-6 h-6 text-green-400" />
-                <h3 className="text-xl font-bold text-white">QR-код создан автоматически!</h3>
+                <h3 className="text-xl font-bold text-white">{t('createFilament.qrCodeCreated')}</h3>
               </div>
               
               <div className="flex flex-col items-center space-y-4">
@@ -491,7 +491,7 @@ export const CreateFilamentModal: React.FC<CreateFilamentModalProps> = ({
                   }}
                   className="px-6 py-3 bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white rounded-xl transition-all shadow-lg shadow-purple-500/25 hover:shadow-purple-500/40"
                 >
-                  Закрыть
+                  {t('createFilament.close')}
                 </button>
               </div>
             </div>
@@ -576,7 +576,7 @@ export const CreateFilamentModal: React.FC<CreateFilamentModalProps> = ({
                             ))
                           ) : (
                             <div className="px-4 py-3 text-gray-400 text-sm">
-                              Типы не найдены. Введите новый тип материала вручную.
+                              {t('createFilament.noTypesFound')}
                             </div>
                           );
                         })()}
@@ -602,7 +602,7 @@ export const CreateFilamentModal: React.FC<CreateFilamentModalProps> = ({
                             { value: 'PA', label: 'PA (Nylon)' },
                             { value: 'PVA', label: 'PVA' },
                           ]),
-                      { value: 'Other', label: 'Другой...' },
+                      { value: 'Other', label: t('createFilament.other') },
                     ]}
                     onChange={(val) => {
                       const value = String(val);
@@ -633,7 +633,7 @@ export const CreateFilamentModal: React.FC<CreateFilamentModalProps> = ({
                   label={`${t('createFilament.brandLabel')} *`}
                   value={brandIdValue || ''}
                   options={[
-                    { value: '', label: 'Выберите бренд' },
+                    { value: '', label: t('createFilament.selectBrand') },
                     ...(brandsData?.items.map((brand: Brand) => ({
                       value: brand.id,
                       label: brand.name,
@@ -743,7 +743,7 @@ export const CreateFilamentModal: React.FC<CreateFilamentModalProps> = ({
                 {/* Цвета (до 5) */}
                 <div>
                   <label className="block text-gray-300 mb-2 text-sm font-medium">
-                    Цвета ({visualColorType === 'single' ? 1 : visualColorType === 'two' ? 2 : visualColorType === 'three' ? 3 : visualColorType === 'transition' || visualColorType === 'thermochromic' ? 2 : 5})
+                    {t('createFilament.colors')} ({visualColorType === 'single' ? 1 : visualColorType === 'two' ? 2 : visualColorType === 'three' ? 3 : visualColorType === 'transition' || visualColorType === 'thermochromic' ? 2 : 5})
                   </label>
                   <div className="grid grid-cols-5 gap-2">
                     {Array.from({ length: visualColorType === 'single' ? 1 : visualColorType === 'two' ? 2 : visualColorType === 'three' ? 3 : visualColorType === 'transition' || visualColorType === 'thermochromic' ? 2 : 5 }).map((_, idx) => {
@@ -907,7 +907,7 @@ export const CreateFilamentModal: React.FC<CreateFilamentModalProps> = ({
             <div>
               <div className="flex items-center justify-between mb-2">
                 <label className="block text-gray-300 text-sm font-medium">
-                  {priceMode === 'per_kg' ? 'Цена за кг (₽)' : 'Цена за катушку (₽)'}
+                  {priceMode === 'per_kg' ? t('createFilament.pricePerKgLabel') : t('createFilament.pricePerSpoolLabel')}
                 </label>
                 {/* Price Mode Toggle */}
                 <div className="flex items-center bg-white/10 rounded-lg p-1 border border-white/20">
@@ -956,12 +956,12 @@ export const CreateFilamentModal: React.FC<CreateFilamentModalProps> = ({
               {/* Показываем пересчитанное значение */}
               {priceMode === 'per_kg' && pricePerKg > 0 && spoolWeight > 0 && (
                 <p className="text-xs text-gray-400 mt-1">
-                  ≈ {((pricePerKg * spoolWeight) / 1000).toFixed(2)} ₽ за катушку
+                  ≈ {((pricePerKg * spoolWeight) / 1000).toFixed(2)} {t('createFilament.rubPerSpool')}
                 </p>
               )}
               {priceMode === 'per_spool' && pricePerSpool > 0 && spoolWeight > 0 && (
                 <p className="text-xs text-gray-400 mt-1">
-                  ≈ {((pricePerSpool / spoolWeight) * 1000).toFixed(2)} ₽ за кг
+                  ≈ {((pricePerSpool / spoolWeight) * 1000).toFixed(2)} {t('createFilament.rubPerKg')}
                 </p>
               )}
             </div>
@@ -1001,7 +1001,7 @@ export const CreateFilamentModal: React.FC<CreateFilamentModalProps> = ({
               disabled={isLoading}
               className="px-6 py-3 bg-white/10 hover:bg-white/20 text-white rounded-xl transition-all disabled:opacity-50"
             >
-              Отмена
+              {t('createFilament.cancel')}
             </button>
             <button
               type="submit"

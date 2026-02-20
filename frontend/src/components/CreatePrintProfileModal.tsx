@@ -1,6 +1,7 @@
 /** Модальное окно для создания print profile */
 
 import { useState, useEffect, FormEvent } from 'react';
+import { useTranslation } from 'react-i18next';
 import { X, Save, Loader2, Layers } from 'lucide-react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { printProfilesAPI } from '../api/client';
@@ -20,6 +21,7 @@ export const CreatePrintProfileModal: React.FC<CreatePrintProfileModalProps> = (
   profile,
   baseProfile,
 }) => {
+  const { t } = useTranslation();
   const { user } = useAuth();
   const queryClient = useQueryClient();
 
@@ -97,7 +99,7 @@ export const CreatePrintProfileModal: React.FC<CreatePrintProfileModalProps> = (
         setNotes(profile.notes || '');
       } else if (baseProfile) {
         // Клонирование
-        setName(`${baseProfile.name} (копия)`);
+        setName(`${baseProfile.name} (${t('createPrintProfile.copy')})`);
         setSlug(`${baseProfile.slug}-copy`);
         setDescription(baseProfile.description || '');
         setCategory(baseProfile.category || '');
@@ -133,8 +135,8 @@ export const CreatePrintProfileModal: React.FC<CreatePrintProfileModalProps> = (
       onClose();
     },
     onError: (error: any) => {
-      console.error('Ошибка сохранения print profile:', error);
-      alert(error?.response?.data?.detail || error?.message || 'Не удалось сохранить профиль печати');
+      console.error('Error saving print profile:', error);
+      alert(error?.response?.data?.detail || error?.message || t('createPrintProfile.saveError'));
     },
   });
 
@@ -142,12 +144,12 @@ export const CreatePrintProfileModal: React.FC<CreatePrintProfileModalProps> = (
     e.preventDefault();
     
     if (!name.trim()) {
-      alert('Введите название профиля');
+      alert(t('createPrintProfile.nameRequired'));
       return;
     }
     
     if (!slug.trim()) {
-      alert('Введите slug профиля');
+      alert(t('createPrintProfile.slugRequired'));
       return;
     }
 
@@ -179,7 +181,7 @@ export const CreatePrintProfileModal: React.FC<CreatePrintProfileModalProps> = (
           <div className="flex items-center gap-3">
             <Layers className="w-6 h-6 text-purple-400" />
             <h2 className="text-2xl font-bold text-white">
-              {profile ? 'Редактировать профиль печати' : baseProfile ? 'Клонировать профиль печати' : 'Создать профиль печати'}
+              {profile ? t('createPrintProfile.editTitle') : baseProfile ? t('createPrintProfile.cloneTitle') : t('createPrintProfile.createTitle')}
             </h2>
           </div>
           <button
@@ -195,10 +197,10 @@ export const CreatePrintProfileModal: React.FC<CreatePrintProfileModalProps> = (
           {/* Название */}
           <div>
             <label className="block text-sm font-medium text-gray-300 mb-2">
-              Название <span className="text-red-400">*</span>
+              {t('createPrintProfile.name')} <span className="text-red-400">*</span>
               {layerHeight && qualityTier && (
                 <span className="text-xs text-gray-400 ml-2">
-                  (Рекомендуемый формат для OrcaSlicer: &quot;{typeof layerHeight === 'number' ? layerHeight.toFixed(2).replace(/\.?0+$/, '') : layerHeight}mm {qualityTierMap[qualityTier.toLowerCase()] || qualityTier.charAt(0).toUpperCase() + qualityTier.slice(1)} @FilamentHub&quot;)
+                  ({t('createPrintProfile.recommendedFormat')}: &quot;{typeof layerHeight === 'number' ? layerHeight.toFixed(2).replace(/\.?0+$/, '') : layerHeight}mm {qualityTierMap[qualityTier.toLowerCase()] || qualityTier.charAt(0).toUpperCase() + qualityTier.slice(1)} @FilamentHub&quot;)
                 </span>
               )}
             </label>
@@ -212,12 +214,12 @@ export const CreatePrintProfileModal: React.FC<CreatePrintProfileModalProps> = (
               className="w-full bg-white/5 border border-white/10 rounded-lg px-4 py-2 text-white placeholder-gray-500 focus:outline-none focus:border-purple-500"
               placeholder={layerHeight && qualityTier 
                 ? `${typeof layerHeight === 'number' ? layerHeight.toFixed(2).replace(/\.?0+$/, '') : layerHeight}mm ${qualityTierMap[qualityTier.toLowerCase()] || qualityTier.charAt(0).toUpperCase() + qualityTier.slice(1)} @FilamentHub`
-                : "Например: 0.20mm Standard @Voron"}
+                : t('createPrintProfile.namePlaceholder')}
               required
             />
             {layerHeight && qualityTier && !name.match(/@\w+$/i) && name && (
               <p className="text-xs text-amber-400 mt-1">
-                💡 Рекомендуется формат для совместимости с OrcaSlicer: &quot;{typeof layerHeight === 'number' ? layerHeight.toFixed(2).replace(/\.?0+$/, '') : layerHeight}mm {qualityTierMap[qualityTier.toLowerCase()] || qualityTier.charAt(0).toUpperCase() + qualityTier.slice(1)} @FilamentHub&quot;
+                {t('createPrintProfile.recommendedFormatHint')}: &quot;{typeof layerHeight === 'number' ? layerHeight.toFixed(2).replace(/\.?0+$/, '') : layerHeight}mm {qualityTierMap[qualityTier.toLowerCase()] || qualityTier.charAt(0).toUpperCase() + qualityTier.slice(1)} @FilamentHub&quot;
               </p>
             )}
           </div>
@@ -225,7 +227,7 @@ export const CreatePrintProfileModal: React.FC<CreatePrintProfileModalProps> = (
           {/* Slug */}
           <div>
             <label className="block text-sm font-medium text-gray-300 mb-2">
-              Slug (уникальный идентификатор) <span className="text-red-400">*</span>
+              {t('createPrintProfile.slug')} <span className="text-red-400">*</span>
             </label>
             <input
               type="text"
@@ -235,34 +237,34 @@ export const CreatePrintProfileModal: React.FC<CreatePrintProfileModalProps> = (
               placeholder="standard-0.4mm"
               required
             />
-            <p className="text-xs text-gray-500 mt-1">Только латинские буквы, цифры и дефисы</p>
+            <p className="text-xs text-gray-500 mt-1">{t('createPrintProfile.slugHint')}</p>
           </div>
 
           {/* Категория */}
           <div>
             <label className="block text-sm font-medium text-gray-300 mb-2">
-              Категория
+              {t('createPrintProfile.category')}
             </label>
             <input
               type="text"
               value={category}
               onChange={(e) => setCategory(e.target.value)}
               className="w-full bg-white/5 border border-white/10 rounded-lg px-4 py-2 text-white placeholder-gray-500 focus:outline-none focus:border-purple-500"
-              placeholder="Например: Standard, Draft, Quality"
+              placeholder={t('createPrintProfile.categoryPlaceholder')}
             />
           </div>
 
           {/* Quality Tier */}
           <div>
             <label className="block text-sm font-medium text-gray-300 mb-2">
-              Качество печати
+              {t('createPrintProfile.qualityTier')}
             </label>
             <select
               value={qualityTier}
               onChange={(e) => setQualityTier(e.target.value)}
               className="w-full bg-white/5 border border-white/10 rounded-lg px-4 py-2 text-white focus:outline-none focus:border-purple-500"
             >
-              <option value="">Не указано</option>
+              <option value="">{t('createPrintProfile.notSpecified')}</option>
               {qualityTiers.map((tier) => (
                 <option key={tier} value={tier}>
                   {tier}
@@ -274,17 +276,17 @@ export const CreatePrintProfileModal: React.FC<CreatePrintProfileModalProps> = (
           {/* Default Nozzle */}
           <div>
             <label className="block text-sm font-medium text-gray-300 mb-2">
-              Диаметр сопла по умолчанию (мм)
+              {t('createPrintProfile.defaultNozzle')}
             </label>
             <select
               value={defaultNozzle}
               onChange={(e) => setDefaultNozzle(e.target.value)}
               className="w-full bg-white/5 border border-white/10 rounded-lg px-4 py-2 text-white focus:outline-none focus:border-purple-500"
             >
-              <option value="">Не указано</option>
+              <option value="">{t('createPrintProfile.notSpecified')}</option>
               {nozzleSizes.map((size) => (
                 <option key={size} value={size}>
-                  {size} мм
+                  {size} {t('createPrintProfile.mm')}
                 </option>
               ))}
             </select>
@@ -293,7 +295,7 @@ export const CreatePrintProfileModal: React.FC<CreatePrintProfileModalProps> = (
           {/* Layer Height */}
           <div>
             <label className="block text-sm font-medium text-gray-300 mb-2">
-              Высота слоя (мм)
+              {t('createPrintProfile.layerHeight')}
             </label>
             <input
               type="number"
@@ -310,28 +312,28 @@ export const CreatePrintProfileModal: React.FC<CreatePrintProfileModalProps> = (
           {/* Описание */}
           <div>
             <label className="block text-sm font-medium text-gray-300 mb-2">
-              Описание
+              {t('createPrintProfile.description')}
             </label>
             <textarea
               value={description}
               onChange={(e) => setDescription(e.target.value)}
               rows={3}
               className="w-full bg-white/5 border border-white/10 rounded-lg px-4 py-2 text-white placeholder-gray-500 focus:outline-none focus:border-purple-500 resize-none"
-              placeholder="Краткое описание профиля..."
+              placeholder={t('createPrintProfile.descriptionPlaceholder')}
             />
           </div>
 
           {/* Заметки */}
           <div>
             <label className="block text-sm font-medium text-gray-300 mb-2">
-              Заметки (только для вас)
+              {t('createPrintProfile.notes')}
             </label>
             <textarea
               value={notes}
               onChange={(e) => setNotes(e.target.value)}
               rows={3}
               className="w-full bg-white/5 border border-white/10 rounded-lg px-4 py-2 text-white placeholder-gray-500 focus:outline-none focus:border-purple-500 resize-none"
-              placeholder="Личные заметки о профиле..."
+              placeholder={t('createPrintProfile.notesPlaceholder')}
             />
           </div>
 
@@ -342,7 +344,7 @@ export const CreatePrintProfileModal: React.FC<CreatePrintProfileModalProps> = (
               onClick={onClose}
               className="px-6 py-2 rounded-lg border border-white/20 text-gray-300 hover:bg-white/10 transition-all"
             >
-              Отмена
+              {t('createPrintProfile.cancel')}
             </button>
             <button
               type="submit"
@@ -352,12 +354,12 @@ export const CreatePrintProfileModal: React.FC<CreatePrintProfileModalProps> = (
               {createMutation.isPending ? (
                 <>
                   <Loader2 className="w-4 h-4 animate-spin" />
-                  Сохранение...
+                  {t('createPrintProfile.saving')}
                 </>
               ) : (
                 <>
                   <Save className="w-4 h-4" />
-                  {profile ? 'Сохранить изменения' : 'Создать профиль'}
+                  {profile ? t('createPrintProfile.saveChanges') : t('createPrintProfile.create')}
                 </>
               )}
             </button>
