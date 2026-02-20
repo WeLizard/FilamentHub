@@ -1,6 +1,7 @@
 /** Модальное окно для просмотра пресета (только чтение) */
 
 import { useState, useEffect } from 'react';
+import { useTranslation } from 'react-i18next';
 import { X, CheckCircle2, XCircle } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
 import { presetsAPI, filamentsAPI } from '../api/client';
@@ -36,6 +37,7 @@ interface ViewCheckboxProps {
 }
 
 const ViewCheckbox: React.FC<ViewCheckboxProps> = ({ label, checked }) => {
+  const { t } = useTranslation();
   return (
     <div className="flex flex-col py-1">
       <span className="text-gray-400 text-xs mb-0.5">{label}</span>
@@ -43,12 +45,12 @@ const ViewCheckbox: React.FC<ViewCheckboxProps> = ({ label, checked }) => {
         {checked ? (
           <>
             <CheckCircle2 className="w-4 h-4 text-green-400" />
-            <span className="text-green-400">Да</span>
+            <span className="text-green-400">{t('viewPreset.yes')}</span>
           </>
         ) : (
           <>
             <XCircle className="w-4 h-4 text-red-400" />
-            <span className="text-red-400">Нет</span>
+            <span className="text-red-400">{t('viewPreset.no')}</span>
           </>
         )}
       </span>
@@ -67,6 +69,7 @@ export const ViewPresetModal: React.FC<ViewPresetModalProps> = ({
   onClose,
   preset,
 }) => {
+  const { t } = useTranslation();
   const [activeTab, setActiveTab] = useState<'profile' | 'cooling' | 'override' | 'retraction' | 'gcode' | 'extruder_mm' | 'compatibility' | 'notes'>('profile');
   const isHeaderVisible = useHeaderVisible();
 
@@ -123,13 +126,9 @@ export const ViewPresetModal: React.FC<ViewPresetModalProps> = ({
     return val ? String(val) : null;
   };
 
-  // Функция для правильного склонения "слой/слоя/слоёв"
   const getLayersText = (count: number | null | undefined): string | null => {
     if (count === null || count === undefined) return null;
-    const num = Math.floor(count);
-    if (num === 1) return '1 слой';
-    if (num >= 2 && num <= 4) return `${num} слоя`;
-    return `${num} слоёв`;
+    return t('viewPreset.layersCount', { count: Math.floor(count) });
   };
 
   // Основные настройки
@@ -275,7 +274,7 @@ export const ViewPresetModal: React.FC<ViewPresetModalProps> = ({
       <div className={`bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900 rounded-2xl w-full max-w-5xl overflow-hidden flex flex-col border border-white/20 shadow-2xl pointer-events-auto ${isHeaderVisible ? 'max-h-[calc(100vh-100px)]' : 'max-h-[90vh]'}`}>
         {/* Header */}
         <div className="flex items-center justify-between p-6 border-b border-white/10">
-          <h2 className="text-2xl font-bold text-white">Просмотр пресета</h2>
+          <h2 className="text-2xl font-bold text-white">{t('viewPreset.title')}</h2>
           <button
             onClick={onClose}
             className="p-2 hover:bg-white/10 rounded-lg transition-colors"
@@ -299,7 +298,7 @@ export const ViewPresetModal: React.FC<ViewPresetModalProps> = ({
 
             {editingFilament && (
               <div>
-                <label className="block text-gray-300 mb-2 text-sm font-medium">Филамент</label>
+                <label className="block text-gray-300 mb-2 text-sm font-medium">{t('viewPreset.filament')}</label>
                 <FilamentSummaryCard filament={editingFilament} />
               </div>
             )}
@@ -307,28 +306,28 @@ export const ViewPresetModal: React.FC<ViewPresetModalProps> = ({
 
           {/* Основные настройки */}
           <div className="mb-6">
-            <h3 className="text-lg font-semibold text-white mb-3">Основные настройки</h3>
+            <h3 className="text-lg font-semibold text-white mb-3">{t('viewPreset.basicSettings')}</h3>
             
             <div className="bg-white/5 rounded-xl p-3">
               <div className="grid grid-cols-5 gap-x-3 gap-y-2.5">
-                <ViewField label="Сопло" value={extruderTemp} unit="°C" />
-                <ViewField label="Стол" value={bedTemp} unit="°C" />
-                <ViewField label="Печать" value={printSpeed} unit="mm/s" />
-                <ViewField label="Перемещение" value={travelSpeed} unit="mm/s" />
-                <ViewField label="Обдув" value={fanSpeed} unit="%" />
-                
-                <ViewField label="Поток" value={flowRate} unit="%" />
-                <ViewField label="Длина ретракта" value={retractionLength} unit="mm" />
-                <ViewField label="Скорость ретракта" value={retractionSpeed} unit="mm/s" />
-                <ViewField label="Темп. стеклования" value={softeningTemperature} unit="°C" />
-                <ViewField label="Твёрдость сопла" value={requiredNozzleHRC} unit="HRC" />
+                <ViewField label={t('viewPreset.nozzle')} value={extruderTemp} unit="°C" />
+                <ViewField label={t('viewPreset.bed')} value={bedTemp} unit="°C" />
+                <ViewField label={t('viewPreset.print')} value={printSpeed} unit="mm/s" />
+                <ViewField label={t('viewPreset.travel')} value={travelSpeed} unit="mm/s" />
+                <ViewField label={t('viewPreset.fan')} value={fanSpeed} unit="%" />
+
+                <ViewField label={t('viewPreset.flow')} value={flowRate} unit="%" />
+                <ViewField label={t('viewPreset.retractionLength')} value={retractionLength} unit="mm" />
+                <ViewField label={t('viewPreset.retractionSpeed')} value={retractionSpeed} unit="mm/s" />
+                <ViewField label={t('viewPreset.softeningTemp')} value={softeningTemperature} unit="°C" />
+                <ViewField label={t('viewPreset.nozzleHardness')} value={requiredNozzleHRC} unit="HRC" />
               </div>
             </div>
           </div>
 
           {/* Подробные настройки */}
           <div className="mt-6">
-            <h3 className="text-lg font-semibold text-white mb-4">Подробные настройки</h3>
+            <h3 className="text-lg font-semibold text-white mb-4">{t('viewPreset.detailedSettings')}</h3>
             
             {/* Вкладки */}
             <div className="flex flex-wrap gap-2 mb-4 border-b border-white/20">
@@ -341,7 +340,7 @@ export const ViewPresetModal: React.FC<ViewPresetModalProps> = ({
                     : 'text-gray-400 hover:text-white hover:bg-white/5'
                 }`}
               >
-                Профиль прутка
+                {t('viewPreset.tabs.filamentProfile')}
               </button>
               <button
                 type="button"
@@ -352,7 +351,7 @@ export const ViewPresetModal: React.FC<ViewPresetModalProps> = ({
                     : 'text-gray-400 hover:text-white hover:bg-white/5'
                 }`}
               >
-                Охлаждение
+                {t('viewPreset.tabs.cooling')}
               </button>
               <button
                 type="button"
@@ -363,7 +362,7 @@ export const ViewPresetModal: React.FC<ViewPresetModalProps> = ({
                     : 'text-gray-400 hover:text-white hover:bg-white/5'
                 }`}
               >
-                Переопределение параметров
+                {t('viewPreset.tabs.override')}
               </button>
               <button
                 type="button"
@@ -374,7 +373,7 @@ export const ViewPresetModal: React.FC<ViewPresetModalProps> = ({
                     : 'text-gray-400 hover:text-white hover:bg-white/5'
                 }`}
               >
-                Ретракт
+                {t('viewPreset.tabs.retraction')}
               </button>
               <button
                 type="button"
@@ -396,7 +395,7 @@ export const ViewPresetModal: React.FC<ViewPresetModalProps> = ({
                     : 'text-gray-400 hover:text-white hover:bg-white/5'
                 }`}
               >
-                Экструдер ММ
+                {t('viewPreset.tabs.extruderMM')}
               </button>
               <button
                 type="button"
@@ -407,7 +406,7 @@ export const ViewPresetModal: React.FC<ViewPresetModalProps> = ({
                     : 'text-gray-400 hover:text-white hover:bg-white/5'
                 }`}
               >
-                Совместимость
+                {t('viewPreset.tabs.compatibility')}
               </button>
               <button
                 type="button"
@@ -418,7 +417,7 @@ export const ViewPresetModal: React.FC<ViewPresetModalProps> = ({
                     : 'text-gray-400 hover:text-white hover:bg-white/5'
                 }`}
               >
-                Заметки
+                {t('viewPreset.tabs.notes')}
               </button>
             </div>
 
@@ -428,27 +427,27 @@ export const ViewPresetModal: React.FC<ViewPresetModalProps> = ({
                 <div className="space-y-4">
                   {/* Общая информация */}
                   <div>
-                    <h4 className="text-xs font-semibold text-white/70 mb-2 pb-1 border-b border-white/10">Общая информация</h4>
+                    <h4 className="text-xs font-semibold text-white/70 mb-2 pb-1 border-b border-white/10">{t('viewPreset.generalInfo')}</h4>
                     <div className="grid grid-cols-3 gap-x-3 gap-y-2 mt-2">
                       {editingFilament && (
                         <>
-                          <ViewField label="Тип" value={editingFilament.material_type || null} />
-                          <ViewField label="Производитель" value={editingFilament.brand_name || null} />
+                          <ViewField label={t('viewPreset.type')} value={editingFilament.material_type || null} />
+                          <ViewField label={t('viewPreset.manufacturer')} value={editingFilament.brand_name || null} />
                           <div></div>
                         </>
                       )}
-                      <ViewCheckbox label="Растворимый материал" checked={filamentSoluble} />
-                      <ViewCheckbox label="Поддержка" checked={filamentIsSupport} />
-                      <ViewField label="Ramming length" value={filamentMultitoolRammingVolume} unit="mm" />
-                      <ViewField label="Компенсация усадки по XY" value={filamentShrink} />
-                      <ViewField label="Компенсация усадки по Z" value={filamentShrinkageCompensationZ} />
-                      <ViewField label="Темп. размягчения" value={softeningTemperature} unit="°C" />
-                      <ViewField label="Темп. ожидания" value={idleTemperature} unit="°C" />
-                      <ViewField label="Категория адгезии" value={filamentAdhesivenessCategory} />
-                      <ViewField label="Печатаемость" value={filamentPrintable} />
+                      <ViewCheckbox label={t('viewPreset.solubleMaterial')} checked={filamentSoluble} />
+                      <ViewCheckbox label={t('viewPreset.support')} checked={filamentIsSupport} />
+                      <ViewField label={t('viewPreset.rammingLength')} value={filamentMultitoolRammingVolume} unit="mm" />
+                      <ViewField label={t('viewPreset.shrinkCompensationXY')} value={filamentShrink} />
+                      <ViewField label={t('viewPreset.shrinkCompensationZ')} value={filamentShrinkageCompensationZ} />
+                      <ViewField label={t('viewPreset.softeningTempShort')} value={softeningTemperature} unit="°C" />
+                      <ViewField label={t('viewPreset.idleTemp')} value={idleTemperature} unit="°C" />
+                      <ViewField label={t('viewPreset.adhesionCategory')} value={filamentAdhesivenessCategory} />
+                      <ViewField label={t('viewPreset.printability')} value={filamentPrintable} />
                       {defaultFilamentColour && (
                         <div className="flex flex-col py-1">
-                          <span className="text-gray-400 text-xs mb-0.5">Цвет по умолчанию</span>
+                          <span className="text-gray-400 text-xs mb-0.5">{t('viewPreset.defaultColor')}</span>
                           <div className="flex items-center space-x-2">
                             <div 
                               className="w-6 h-6 rounded border border-white/20"
@@ -463,27 +462,27 @@ export const ViewPresetModal: React.FC<ViewPresetModalProps> = ({
 
                   {/* Рекомендуемая температура сопла */}
                   <div>
-                    <h4 className="text-xs font-semibold text-white/70 mb-2 pb-1 border-b border-white/10">Рекомендуемая температура сопла</h4>
+                    <h4 className="text-xs font-semibold text-white/70 mb-2 pb-1 border-b border-white/10">{t('viewPreset.recommendedNozzleTemp')}</h4>
                     <div className="grid grid-cols-3 gap-x-3 gap-y-2 mt-2">
-                      <ViewField label="Мин." value={tempRangeLow} unit="°C" />
-                      <ViewField label="Макс." value={tempRangeHigh} unit="°C" />
+                      <ViewField label={t('viewPreset.min')} value={tempRangeLow} unit="°C" />
+                      <ViewField label={t('viewPreset.max')} value={tempRangeHigh} unit="°C" />
                       <div></div>
                     </div>
                   </div>
 
                   {/* Коэффициент потока и Pressure Advance */}
                   <div>
-                    <h4 className="text-xs font-semibold text-white/70 mb-2 pb-1 border-b border-white/10">Коэффициент потока и Pressure Advance</h4>
+                    <h4 className="text-xs font-semibold text-white/70 mb-2 pb-1 border-b border-white/10">{t('viewPreset.flowAndPA')}</h4>
                     <div className="grid grid-cols-3 gap-x-3 gap-y-2 mt-2">
-                      <ViewField label="Коэф. потока модели" value={flowRate !== 100 ? (flowRate / 100).toFixed(2) : '1.00'} />
-                      <ViewCheckbox label="Pressure advance" checked={enablePressureAdvance} />
+                      <ViewField label={t('viewPreset.modelFlowCoef')} value={flowRate !== 100 ? (flowRate / 100).toFixed(2) : '1.00'} />
+                      <ViewCheckbox label={t('viewPreset.pressureAdvance')} checked={enablePressureAdvance} />
                       {enablePressureAdvance && (
                         <>
-                          <ViewField label="Коэф. PA" value={pressureAdvance} />
-                          <ViewCheckbox label="Адаптивный PA" checked={adaptivePressureAdvance} />
-                          <ViewCheckbox label="PA на нависаниях" checked={adaptivePAOverhangs} />
+                          <ViewField label={t('viewPreset.paCoef')} value={pressureAdvance} />
+                          <ViewCheckbox label={t('viewPreset.adaptivePA')} checked={adaptivePressureAdvance} />
+                          <ViewCheckbox label={t('viewPreset.paOverhangs')} checked={adaptivePAOverhangs} />
                           {adaptivePressureAdvance && adaptivePABridges !== null && (
-                            <ViewField label="Коэф. PA для мостов" value={adaptivePABridges} />
+                            <ViewField label={t('viewPreset.paBridgesCoef')} value={adaptivePABridges} />
                           )}
                         </>
                       )}
@@ -491,7 +490,7 @@ export const ViewPresetModal: React.FC<ViewPresetModalProps> = ({
                     {/* Измеренные значения адаптивного Pressure advance */}
                     {adaptivePressureAdvance && adaptivePAModel && (
                       <div className="mt-3">
-                        <h5 className="text-xs font-semibold text-white/60 mb-1">Измеренные значения адаптивного Pressure advance (beta)</h5>
+                        <h5 className="text-xs font-semibold text-white/60 mb-1">{t('viewPreset.adaptivePAValues')}</h5>
                         <pre className="bg-white/5 p-2 rounded-lg text-xs text-gray-300 font-mono whitespace-pre-wrap break-words">
                           {adaptivePAModel}
                         </pre>
@@ -501,17 +500,15 @@ export const ViewPresetModal: React.FC<ViewPresetModalProps> = ({
 
                   {/* Температура */}
                   <div>
-                    <h4 className="text-xs font-semibold text-white/70 mb-2 pb-1 border-b border-white/10">Температура</h4>
+                    <h4 className="text-xs font-semibold text-white/70 mb-2 pb-1 border-b border-white/10">{t('viewPreset.temperature')}</h4>
                     <div className="grid grid-cols-3 gap-x-3 gap-y-2 mt-2">
-                      {/* 1 строка */}
-                      <ViewField label="Сопло 1-й слой" value={nozzleTempInitialLayer} unit="°C" />
-                      <ViewField label="Стол 1-й слой" value={bedTemp} unit="°C" />
-                      <ViewCheckbox label="Контроль камеры" checked={enableChamberControl} />
-                      {/* 2 строка */}
-                      <ViewField label="Сопло слои" value={extruderTemp} unit="°C" />
-                      <ViewField label="Стол слои" value={bedTemp} unit="°C" />
+                      <ViewField label={t('viewPreset.nozzleFirstLayer')} value={nozzleTempInitialLayer} unit="°C" />
+                      <ViewField label={t('viewPreset.bedFirstLayer')} value={bedTemp} unit="°C" />
+                      <ViewCheckbox label={t('viewPreset.chamberControl')} checked={enableChamberControl} />
+                      <ViewField label={t('viewPreset.nozzleLayers')} value={extruderTemp} unit="°C" />
+                      <ViewField label={t('viewPreset.bedLayers')} value={bedTemp} unit="°C" />
                       {enableChamberControl ? (
-                        <ViewField label="Темп. камеры" value={chamberTemp} unit="°C" />
+                        <ViewField label={t('viewPreset.chamberTemp')} value={chamberTemp} unit="°C" />
                       ) : (
                         <div></div>
                       )}
@@ -520,10 +517,10 @@ export const ViewPresetModal: React.FC<ViewPresetModalProps> = ({
 
                   {/* Ограничение объёмного расхода */}
                   <div>
-                    <h4 className="text-xs font-semibold text-white/70 mb-2 pb-1 border-b border-white/10">Ограничение объёмного расхода</h4>
+                    <h4 className="text-xs font-semibold text-white/70 mb-2 pb-1 border-b border-white/10">{t('viewPreset.volumetricLimit')}</h4>
                     <div className="grid grid-cols-3 gap-x-3 gap-y-2 mt-2">
-                      <ViewCheckbox label="Адаптивное ограничение" checked={adaptiveVolumetricSpeed} />
-                      <ViewField label="Объёмный расход" value={volumetricSpeed} unit="mm³/s" />
+                      <ViewCheckbox label={t('viewPreset.adaptiveLimit')} checked={adaptiveVolumetricSpeed} />
+                      <ViewField label={t('viewPreset.volumetricFlow')} value={volumetricSpeed} unit="mm³/s" />
                       <div></div>
                     </div>
                   </div>
@@ -535,48 +532,48 @@ export const ViewPresetModal: React.FC<ViewPresetModalProps> = ({
                   <div className="grid grid-cols-3 gap-x-3 gap-y-2">
                     {closeFanFirstXLayers !== null && closeFanFirstXLayers !== undefined && (
                       <div className="flex flex-col py-1">
-                        <span className="text-gray-400 text-xs mb-0.5">Не включать вентилятор первые</span>
+                        <span className="text-gray-400 text-xs mb-0.5">{t('viewPreset.disableFanFirst')}</span>
                         <span className="text-white font-medium text-sm">
                           {getLayersText(closeFanFirstXLayers)}
                         </span>
                       </div>
                     )}
-                    <ViewField label="Слой полной скорости" value={fullFanSpeedLayer} />
-                    <ViewField label="Время охлаждения слоя" value={fanCoolingLayerTime} unit="s" />
-                    <ViewField label="Время макс. скорости" value={fanMaxSpeedLayerTime} unit="s" />
-                    <ViewField label="Мин. скорость обдува" value={fanMinSpeed} unit="%" />
-                    <ViewField label="Макс. скорость обдува" value={fanMaxSpeed} unit="%" />
-                    <ViewCheckbox label="Обдув всегда включён" checked={reduceFanStopStartFreq} />
-                    <ViewCheckbox label="Замедлять для охлаждения" checked={slowDownForLayerCooling} />
-                    <ViewCheckbox label="Не замедлять периметр" checked={dontSlowDownOuterWall} />
+                    <ViewField label={t('viewPreset.fullSpeedLayer')} value={fullFanSpeedLayer} />
+                    <ViewField label={t('viewPreset.layerCoolingTime')} value={fanCoolingLayerTime} unit="s" />
+                    <ViewField label={t('viewPreset.maxSpeedTime')} value={fanMaxSpeedLayerTime} unit="s" />
+                    <ViewField label={t('viewPreset.minFanSpeed')} value={fanMinSpeed} unit="%" />
+                    <ViewField label={t('viewPreset.maxFanSpeed')} value={fanMaxSpeed} unit="%" />
+                    <ViewCheckbox label={t('viewPreset.fanAlwaysOn')} checked={reduceFanStopStartFreq} />
+                    <ViewCheckbox label={t('viewPreset.slowDownForCooling')} checked={slowDownForLayerCooling} />
+                    <ViewCheckbox label={t('viewPreset.dontSlowPerimeter')} checked={dontSlowDownOuterWall} />
                     {slowDownForLayerCooling && (
-                      <ViewField label="Мин. скорость печати" value={slowDownMinSpeed} unit="mm/s" />
+                      <ViewField label={t('viewPreset.minPrintSpeed')} value={slowDownMinSpeed} unit="mm/s" />
                     )}
-                    <ViewCheckbox label="Обдув нависаний и мостов" checked={enableOverhangBridgeFan} />
+                    <ViewCheckbox label={t('viewPreset.overhangBridgeFan')} checked={enableOverhangBridgeFan} />
                     {enableOverhangBridgeFan && (
                       <>
-                        <ViewField label="Вент. нависаний" value={overhangFanSpeed} unit="%" />
-                        <ViewField label="Порог нависаний" value={overhangFanThreshold} />
+                        <ViewField label={t('viewPreset.overhangFan')} value={overhangFanSpeed} unit="%" />
+                        <ViewField label={t('viewPreset.overhangThreshold')} value={overhangFanThreshold} />
                         {internalBridgeFanSpeed !== null && internalBridgeFanSpeed !== -1 && (
-                          <ViewField label="Вент. внутренних мостов" value={internalBridgeFanSpeed} unit="%" />
+                          <ViewField label={t('viewPreset.internalBridgeFan')} value={internalBridgeFanSpeed} unit="%" />
                         )}
                         {internalBridgeFanSpeed === -1 && (
                           <div className="flex flex-col py-1">
-                            <span className="text-gray-400 text-xs mb-0.5">Вент. внутренних мостов</span>
-                            <span className="text-white font-medium text-sm">По умолчанию</span>
+                            <span className="text-gray-400 text-xs mb-0.5">{t('viewPreset.internalBridgeFan')}</span>
+                            <span className="text-white font-medium text-sm">{t('viewPreset.default')}</span>
                           </div>
                         )}
-                        <ViewField label="Вент. при глажке" value={ironingFanSpeed} unit="%" />
-                        <ViewField label="Вент. интерфейса поддержки" value={supportMaterialInterfaceFanSpeed} unit="%" />
-                        <ViewField label="Доп. скорость обдува" value={additionalCoolingFanSpeed} unit="%" />
+                        <ViewField label={t('viewPreset.ironingFan')} value={ironingFanSpeed} unit="%" />
+                        <ViewField label={t('viewPreset.supportInterfaceFan')} value={supportMaterialInterfaceFanSpeed} unit="%" />
+                        <ViewField label={t('viewPreset.additionalFanSpeed')} value={additionalCoolingFanSpeed} unit="%" />
                       </>
                     )}
-                    <ViewCheckbox label="Вытяжной вентилятор" checked={enableExhaustFan} />
+                    <ViewCheckbox label={t('viewPreset.exhaustFan')} checked={enableExhaustFan} />
                     {enableExhaustFan && (
                       <>
-                        <ViewField label="Вент. во время печати" value={duringPrintExhaustFanSpeed} unit="%" />
-                        <ViewField label="Вент. после печати" value={completePrintExhaustFanSpeed} unit="%" />
-                        <ViewCheckbox label="Фильтрация воздуха" checked={activateAirFiltration} />
+                        <ViewField label={t('viewPreset.fanDuringPrint')} value={duringPrintExhaustFanSpeed} unit="%" />
+                        <ViewField label={t('viewPreset.fanAfterPrint')} value={completePrintExhaustFanSpeed} unit="%" />
+                        <ViewCheckbox label={t('viewPreset.airFiltration')} checked={activateAirFiltration} />
                       </>
                     )}
                   </div>
@@ -587,36 +584,35 @@ export const ViewPresetModal: React.FC<ViewPresetModalProps> = ({
                 <div className="space-y-4">
                   {/* Скорости и замедления */}
                   <div>
-                    <h4 className="text-xs font-semibold text-white/70 mb-2 pb-1 border-b border-white/10">Скорости и замедления</h4>
+                    <h4 className="text-xs font-semibold text-white/70 mb-2 pb-1 border-b border-white/10">{t('viewPreset.speedsAndSlowdowns')}</h4>
                     <div className="grid grid-cols-3 gap-x-3 gap-y-2 mt-2">
-                      <ViewCheckbox label="Замедлять для охлаждения" checked={slowDownForLayerCooling} />
-                      <ViewCheckbox label="Не замедлять периметр" checked={dontSlowDownOuterWall} />
+                      <ViewCheckbox label={t('viewPreset.slowDownForCooling')} checked={slowDownForLayerCooling} />
+                      <ViewCheckbox label={t('viewPreset.dontSlowPerimeter')} checked={dontSlowDownOuterWall} />
                       {slowDownForLayerCooling && (
-                        <ViewField label="Мин. скорость печати" value={slowDownMinSpeed} unit="mm/s" />
+                        <ViewField label={t('viewPreset.minPrintSpeed')} value={slowDownMinSpeed} unit="mm/s" />
                       )}
                     </div>
                   </div>
 
-                  {/* Откат */}
                   <div>
-                    <h4 className="text-xs font-semibold text-white/70 mb-2 pb-1 border-b border-white/10">Откат</h4>
+                    <h4 className="text-xs font-semibold text-white/70 mb-2 pb-1 border-b border-white/10">{t('viewPreset.retract')}</h4>
                     <div className="grid grid-cols-3 gap-x-3 gap-y-2 mt-2">
-                      <ViewField label="Длина" value={retractionLength} unit="mm" />
-                      <ViewField label="Скорость извлечения" value={retractionSpeed} unit="mm/s" />
-                      <ViewField label="Высота поднятия Z" value={filamentZHop} unit="mm" />
-                      <ViewField label="Скорость заправки" value={deretractionSpeed} unit="mm/s" />
-                      <ViewField label="Тип подъёма Z" value={filamentZHopTypes || null} />
-                      <ViewField label="На поверхностях" value={retractLiftEnforce || null} />
-                      <ViewField label="Поднимать Z выше" value={retractLiftAbove} unit="mm" />
-                      <ViewField label="Поднимать Z ниже" value={retractLiftBelow} unit="mm" />
-                      <ViewField label="Доп. длина подачи" value={retractRestartExtra} unit="mm" />
-                      <ViewField label="Порог перемещения" value={retractionMinimumTravel} unit="mm" />
-                      <ViewCheckbox label="Откат при смене слоя" checked={retractWhenChangingLayer} />
-                      <ViewCheckbox label="Очистка сопла" checked={filamentWipe} />
+                      <ViewField label={t('viewPreset.length')} value={retractionLength} unit="mm" />
+                      <ViewField label={t('viewPreset.extractionSpeed')} value={retractionSpeed} unit="mm/s" />
+                      <ViewField label={t('viewPreset.zHopHeight')} value={filamentZHop} unit="mm" />
+                      <ViewField label={t('viewPreset.feedSpeed')} value={deretractionSpeed} unit="mm/s" />
+                      <ViewField label={t('viewPreset.zHopType')} value={filamentZHopTypes || null} />
+                      <ViewField label={t('viewPreset.onSurfaces')} value={retractLiftEnforce || null} />
+                      <ViewField label={t('viewPreset.liftZAbove')} value={retractLiftAbove} unit="mm" />
+                      <ViewField label={t('viewPreset.liftZBelow')} value={retractLiftBelow} unit="mm" />
+                      <ViewField label={t('viewPreset.extraFeedLength')} value={retractRestartExtra} unit="mm" />
+                      <ViewField label={t('viewPreset.travelThreshold')} value={retractionMinimumTravel} unit="mm" />
+                      <ViewCheckbox label={t('viewPreset.retractOnLayerChange')} checked={retractWhenChangingLayer} />
+                      <ViewCheckbox label={t('viewPreset.nozzleWipe')} checked={filamentWipe} />
                       {filamentWipe && (
                         <>
-                          <ViewField label="Расстояние очистки" value={filamentWipeDistance} unit="mm" />
-                          <ViewField label="Откат перед очисткой" value={retractBeforeWipe} />
+                          <ViewField label={t('viewPreset.wipeDistance')} value={filamentWipeDistance} unit="mm" />
+                          <ViewField label={t('viewPreset.retractBeforeWipe')} value={retractBeforeWipe} />
                           <div></div>
                         </>
                       )}
@@ -630,26 +626,26 @@ export const ViewPresetModal: React.FC<ViewPresetModalProps> = ({
                 <div className="space-y-4">
                   {/* Основные параметры ретракта */}
                   <div>
-                    <h4 className="text-xs font-semibold text-white/70 mb-2 pb-1 border-b border-white/10">Основные параметры</h4>
+                    <h4 className="text-xs font-semibold text-white/70 mb-2 pb-1 border-b border-white/10">{t('viewPreset.basicParams')}</h4>
                     <div className="grid grid-cols-3 gap-x-3 gap-y-2 mt-2">
-                      <ViewField label="Длина" value={retractionLength} unit="mm" />
-                      <ViewField label="Скорость извлечения" value={retractionSpeed} unit="mm/s" />
-                      <ViewField label="Высота поднятия Z" value={filamentZHop} unit="mm" />
-                      <ViewField label="Скорость заправки" value={deretractionSpeed} unit="mm/s" />
-                      <ViewField label="Тип подъёма Z" value={filamentZHopTypes || null} />
-                      <ViewField label="На поверхностях" value={retractLiftEnforce || null} />
-                      <ViewField label="Поднимать Z выше" value={retractLiftAbove} unit="mm" />
-                      <ViewField label="Поднимать Z ниже" value={retractLiftBelow} unit="mm" />
-                      <ViewField label="Доп. длина подачи" value={retractRestartExtra} unit="mm" />
-                      <ViewField label="Порог перемещения" value={retractionMinimumTravel} unit="mm" />
-                      <ViewCheckbox label="Откат при смене слоя" checked={retractWhenChangingLayer} />
-                      <ViewCheckbox label="Очистка сопла" checked={filamentWipe} />
+                      <ViewField label={t('viewPreset.length')} value={retractionLength} unit="mm" />
+                      <ViewField label={t('viewPreset.extractionSpeed')} value={retractionSpeed} unit="mm/s" />
+                      <ViewField label={t('viewPreset.zHopHeight')} value={filamentZHop} unit="mm" />
+                      <ViewField label={t('viewPreset.feedSpeed')} value={deretractionSpeed} unit="mm/s" />
+                      <ViewField label={t('viewPreset.zHopType')} value={filamentZHopTypes || null} />
+                      <ViewField label={t('viewPreset.onSurfaces')} value={retractLiftEnforce || null} />
+                      <ViewField label={t('viewPreset.liftZAbove')} value={retractLiftAbove} unit="mm" />
+                      <ViewField label={t('viewPreset.liftZBelow')} value={retractLiftBelow} unit="mm" />
+                      <ViewField label={t('viewPreset.extraFeedLength')} value={retractRestartExtra} unit="mm" />
+                      <ViewField label={t('viewPreset.travelThreshold')} value={retractionMinimumTravel} unit="mm" />
+                      <ViewCheckbox label={t('viewPreset.retractOnLayerChange')} checked={retractWhenChangingLayer} />
+                      <ViewCheckbox label={t('viewPreset.nozzleWipe')} checked={filamentWipe} />
                       {filamentWipe && (
                         <>
-                          <ViewField label="Расстояние очистки" value={filamentWipeDistance} unit="mm" />
-                          <ViewField label="Откат перед очисткой" value={retractBeforeWipe} />
-                          <ViewField label="Темп. промывки" value={filamentFlushTemp} unit="°C" />
-                          <ViewField label="Объёмный расход промывки" value={filamentFlushVolumetricSpeed} unit="mm³/s" />
+                          <ViewField label={t('viewPreset.wipeDistance')} value={filamentWipeDistance} unit="mm" />
+                          <ViewField label={t('viewPreset.retractBeforeWipe')} value={retractBeforeWipe} />
+                          <ViewField label={t('viewPreset.flushTemp')} value={filamentFlushTemp} unit="°C" />
+                          <ViewField label={t('viewPreset.flushVolumetricSpeed')} value={filamentFlushVolumetricSpeed} unit="mm³/s" />
                           <div></div>
                         </>
                       )}
@@ -658,15 +654,15 @@ export const ViewPresetModal: React.FC<ViewPresetModalProps> = ({
 
                   {/* Дополнительные параметры ретракта */}
                   <div>
-                    <h4 className="text-xs font-semibold text-white/70 mb-2 pb-1 border-b border-white/10">Дополнительные параметры ретракта</h4>
+                    <h4 className="text-xs font-semibold text-white/70 mb-2 pb-1 border-b border-white/10">{t('viewPreset.additionalRetractParams')}</h4>
                     <div className="grid grid-cols-3 gap-x-3 gap-y-2 mt-2">
-                      <ViewField label="Ретракт при обрезке" value={retractionDistancesWhenCut} />
-                      <ViewField label="Длинные ретракты при обрезке" value={longRetractionsWhenCut} />
+                      <ViewField label={t('viewPreset.retractOnCut')} value={retractionDistancesWhenCut} />
+                      <ViewField label={t('viewPreset.longRetractsOnCut')} value={longRetractionsWhenCut} />
                       <div></div>
-                      <ViewCheckbox label="Длинный ретракт при смене экстр." checked={longRetractionsWhenEC} />
+                      <ViewCheckbox label={t('viewPreset.longRetractOnEC')} checked={longRetractionsWhenEC} />
                       {longRetractionsWhenEC && (
                         <>
-                          <ViewField label="Расстояния ретракта при смене экструдера" value={retractionDistancesWhenEC} unit="mm" />
+                          <ViewField label={t('viewPreset.retractDistOnEC')} value={retractionDistancesWhenEC} unit="mm" />
                           <div></div>
                         </>
                       )}
@@ -675,13 +671,13 @@ export const ViewPresetModal: React.FC<ViewPresetModalProps> = ({
 
                   {/* Мультиматериал (многоэкструдерные принтеры) */}
                   <div>
-                    <h4 className="text-xs font-semibold text-white/70 mb-2 pb-1 border-b border-white/10">Мультиматериал (многоэкструдерные принтеры)</h4>
+                    <h4 className="text-xs font-semibold text-white/70 mb-2 pb-1 border-b border-white/10">{t('viewPreset.multimaterial')}</h4>
                     <div className="grid grid-cols-3 gap-x-3 gap-y-2 mt-2">
-                      <ViewCheckbox label="Рэмминг мультитул" checked={filamentMultitoolRamming} />
+                      <ViewCheckbox label={t('viewPreset.multitoolRamming')} checked={filamentMultitoolRamming} />
                       {filamentMultitoolRamming && (
                         <>
-                          <ViewField label="Объём рэмминга" value={filamentMultitoolRammingVolume} unit="mm³" />
-                          <ViewField label="Поток рэмминга" value={filamentMultitoolRammingFlow} unit="mm³/s" />
+                          <ViewField label={t('viewPreset.rammingVolume')} value={filamentMultitoolRammingVolume} unit="mm³" />
+                          <ViewField label={t('viewPreset.rammingFlow')} value={filamentMultitoolRammingFlow} unit="mm³/s" />
                         </>
                       )}
                       {/* TODO: Добавить поля для начального и заменяющего экструдера, когда будут известны ключи */}
@@ -693,23 +689,23 @@ export const ViewPresetModal: React.FC<ViewPresetModalProps> = ({
               {activeTab === 'gcode' && (
                 <div className="space-y-4">
                   <div>
-                    <h4 className="text-xs font-semibold text-white/70 mb-2 pb-1 border-b border-white/10">Стартовый G-код прутка</h4>
+                    <h4 className="text-xs font-semibold text-white/70 mb-2 pb-1 border-b border-white/10">{t('viewPreset.startGcode')}</h4>
                     {filamentStartGcode ? (
                       <pre className="bg-white/5 p-2 rounded-lg text-xs text-gray-300 font-mono whitespace-pre-wrap break-words mt-2">
                         {filamentStartGcode}
                       </pre>
                     ) : (
-                      <p className="text-gray-400 text-xs mt-2">нет</p>
+                      <p className="text-gray-400 text-xs mt-2">{t('viewPreset.none')}</p>
                     )}
                   </div>
                   <div>
-                    <h4 className="text-xs font-semibold text-white/70 mb-2 pb-1 border-b border-white/10">Завершающий G-код прутка</h4>
+                    <h4 className="text-xs font-semibold text-white/70 mb-2 pb-1 border-b border-white/10">{t('viewPreset.endGcode')}</h4>
                     {filamentEndGcode ? (
                       <pre className="bg-white/5 p-2 rounded-lg text-xs text-gray-300 font-mono whitespace-pre-wrap break-words mt-2">
                         {filamentEndGcode}
                       </pre>
                     ) : (
-                      <p className="text-gray-400 text-xs mt-2">нет</p>
+                      <p className="text-gray-400 text-xs mt-2">{t('viewPreset.none')}</p>
                     )}
                   </div>
                 </div>
@@ -719,19 +715,19 @@ export const ViewPresetModal: React.FC<ViewPresetModalProps> = ({
                 <div className="space-y-4">
                   {/* Параметры экструдера */}
                   <div>
-                    <h4 className="text-xs font-semibold text-white/70 mb-2 pb-1 border-b border-white/10">Параметры экструдера</h4>
+                    <h4 className="text-xs font-semibold text-white/70 mb-2 pb-1 border-b border-white/10">{t('viewPreset.extruderParams')}</h4>
                     <div className="grid grid-cols-3 gap-x-3 gap-y-2 mt-2">
-                      <ViewField label="Вариант экструдера" value={filamentExtruderVariant} />
-                      <ViewField label="Требуемая твердость сопла HRC" value={requiredNozzleHRC} unit="HRC" />
+                      <ViewField label={t('viewPreset.extruderVariant')} value={filamentExtruderVariant} />
+                      <ViewField label={t('viewPreset.requiredNozzleHRC')} value={requiredNozzleHRC} unit="HRC" />
                       <div></div>
                     </div>
                   </div>
 
                   {/* Параметры черновой башни */}
                   <div>
-                    <h4 className="text-xs font-semibold text-white/70 mb-2 pb-1 border-b border-white/10">Параметры черновой башни</h4>
+                    <h4 className="text-xs font-semibold text-white/70 mb-2 pb-1 border-b border-white/10">{t('viewPreset.wipeTowerParams')}</h4>
                     <div className="grid grid-cols-3 gap-x-3 gap-y-2 mt-2">
-                      <ViewField label="Мин. объём сброса на черновой башне" value={filamentMinimalPurgeOnWipeTower} unit="mm³" />
+                      <ViewField label={t('viewPreset.minPurgeVolume')} value={filamentMinimalPurgeOnWipeTower} unit="mm³" />
                       <div></div>
                       <div></div>
                     </div>
@@ -739,35 +735,35 @@ export const ViewPresetModal: React.FC<ViewPresetModalProps> = ({
 
                   {/* Параметры смены инструмента в одноэкструдерных мультиматериальных принтерах */}
                   <div>
-                    <h4 className="text-xs font-semibold text-white/70 mb-2 pb-1 border-b border-white/10">Параметры смены инструмента в одноэкструдерных мультиматериальных принтерах</h4>
+                    <h4 className="text-xs font-semibold text-white/70 mb-2 pb-1 border-b border-white/10">{t('viewPreset.singleExtruderToolchange')}</h4>
                     <div className="grid grid-cols-3 gap-x-3 gap-y-2 mt-2">
-                      <ViewField label="Начальная скорость загрузки" value={filamentLoadingSpeedStart} unit="mm/s" />
-                      <ViewField label="Скорость загрузки" value={filamentLoadingSpeed} unit="mm/s" />
+                      <ViewField label={t('viewPreset.initialLoadSpeed')} value={filamentLoadingSpeedStart} unit="mm/s" />
+                      <ViewField label={t('viewPreset.loadSpeed')} value={filamentLoadingSpeed} unit="mm/s" />
                       <div></div>
-                      <ViewField label="Начальная скорость выгрузки" value={filamentUnloadingSpeedStart} unit="mm/s" />
-                      <ViewField label="Скорость выгрузки" value={filamentUnloadingSpeed} unit="mm/s" />
+                      <ViewField label={t('viewPreset.initialUnloadSpeed')} value={filamentUnloadingSpeedStart} unit="mm/s" />
+                      <ViewField label={t('viewPreset.unloadSpeed')} value={filamentUnloadingSpeed} unit="mm/s" />
                       <div></div>
-                      <ViewField label="Задержка после выгрузки" value={filamentToolchangeDelay} unit="s" />
-                      <ViewField label="Количество охлаждающих движений" value={filamentCoolingMoves} />
+                      <ViewField label={t('viewPreset.unloadDelay')} value={filamentToolchangeDelay} unit="s" />
+                      <ViewField label={t('viewPreset.coolingMoves')} value={filamentCoolingMoves} />
                       <div></div>
-                      <ViewField label="Скорость первого охлаждающего движения" value={filamentCoolingInitialSpeed} unit="mm/s" />
-                      <ViewField label="Скорость последнего охлаждающего движения" value={filamentCoolingFinalSpeed} unit="mm/s" />
+                      <ViewField label={t('viewPreset.firstCoolingMoveSpeed')} value={filamentCoolingInitialSpeed} unit="mm/s" />
+                      <ViewField label={t('viewPreset.lastCoolingMoveSpeed')} value={filamentCoolingFinalSpeed} unit="mm/s" />
                       <div></div>
-                      <ViewField label="Скорость загрузки при утрамбовке" value={filamentStampingLoadingSpeed} unit="mm/s" />
-                      <ViewField label="Расстояние утрамбовки" value={filamentStampingDistance} unit="mm" />
+                      <ViewField label={t('viewPreset.stampingLoadSpeed')} value={filamentStampingLoadingSpeed} unit="mm/s" />
+                      <ViewField label={t('viewPreset.stampingDistance')} value={filamentStampingDistance} unit="mm" />
                       <div></div>
                     </div>
                   </div>
 
                   {/* Параметры смены инструмента в многоэкструдерных мультиматериальных принтерах */}
                   <div>
-                    <h4 className="text-xs font-semibold text-white/70 mb-2 pb-1 border-b border-white/10">Параметры смены инструмента в многоэкструдерных мультиматериальных принтерах</h4>
+                    <h4 className="text-xs font-semibold text-white/70 mb-2 pb-1 border-b border-white/10">{t('viewPreset.multiExtruderToolchange')}</h4>
                     <div className="grid grid-cols-3 gap-x-3 gap-y-2 mt-2">
-                      <ViewCheckbox label="Включить рэмминг для многоинструментального принтера" checked={filamentMultitoolRamming} />
+                      <ViewCheckbox label={t('viewPreset.enableMultitoolRamming')} checked={filamentMultitoolRamming} />
                       {filamentMultitoolRamming && (
                         <>
-                          <ViewField label="Объём рэмминга многоинструментального принтера" value={filamentMultitoolRammingVolume} unit="mm³" />
-                          <ViewField label="Поток рэмминга многоинструментального принтера" value={filamentMultitoolRammingFlow} unit="mm³/s" />
+                          <ViewField label={t('viewPreset.multitoolRammingVolume')} value={filamentMultitoolRammingVolume} unit="mm³" />
+                          <ViewField label={t('viewPreset.multitoolRammingFlow')} value={filamentMultitoolRammingFlow} unit="mm³/s" />
                         </>
                       )}
                     </div>
@@ -775,10 +771,10 @@ export const ViewPresetModal: React.FC<ViewPresetModalProps> = ({
 
                   {/* Дополнительные параметры */}
                   <div>
-                    <h4 className="text-xs font-semibold text-white/70 mb-2 pb-1 border-b border-white/10">Дополнительные параметры</h4>
+                    <h4 className="text-xs font-semibold text-white/70 mb-2 pb-1 border-b border-white/10">{t('viewPreset.additionalParams')}</h4>
                     <div className="grid grid-cols-3 gap-x-3 gap-y-2 mt-2">
-                      <ViewField label="Длина смены филамента" value={filamentChangeLength} unit="mm" />
-                      <ViewField label="Коэффициент потока пеллет" value={pelletFlowCoefficient} />
+                      <ViewField label={t('viewPreset.filamentChangeLength')} value={filamentChangeLength} unit="mm" />
+                      <ViewField label={t('viewPreset.pelletFlowCoef')} value={pelletFlowCoefficient} />
                       <div></div>
                     </div>
                   </div>
@@ -790,7 +786,7 @@ export const ViewPresetModal: React.FC<ViewPresetModalProps> = ({
                   {/* Принтеры */}
                   {preset.printers && preset.printers.length > 0 && (
                     <div>
-                      <h4 className="text-xs font-semibold text-white/70 mb-2 pb-1 border-b border-white/10">Принтеры</h4>
+                      <h4 className="text-xs font-semibold text-white/70 mb-2 pb-1 border-b border-white/10">{t('viewPreset.printers')}</h4>
                       <div className="flex flex-wrap gap-2 mt-2">
                         {preset.printers.map((printer) => (
                           <span
@@ -807,13 +803,13 @@ export const ViewPresetModal: React.FC<ViewPresetModalProps> = ({
                   
                   {/* Дополнительные параметры совместимости */}
                   <div>
-                    <h4 className="text-xs font-semibold text-white/70 mb-2 pb-1 border-b border-white/10">Дополнительные параметры</h4>
+                    <h4 className="text-xs font-semibold text-white/70 mb-2 pb-1 border-b border-white/10">{t('viewPreset.additionalParams')}</h4>
                     <div className="grid grid-cols-3 gap-x-3 gap-y-2 mt-2">
-                      <ViewField label="Совместимые принтеры" value={compatiblePrinters} />
-                      <ViewField label="Условие принтеров" value={compatiblePrintersCondition} />
+                      <ViewField label={t('viewPreset.compatiblePrinters')} value={compatiblePrinters} />
+                      <ViewField label={t('viewPreset.printersCondition')} value={compatiblePrintersCondition} />
                       <div></div>
-                      <ViewField label="Совместимые печати" value={compatiblePrints} />
-                      <ViewField label="Условие печатей" value={compatiblePrintsCondition} />
+                      <ViewField label={t('viewPreset.compatiblePrints')} value={compatiblePrints} />
+                      <ViewField label={t('viewPreset.printsCondition')} value={compatiblePrintsCondition} />
                       <div></div>
                     </div>
                   </div>
@@ -823,13 +819,13 @@ export const ViewPresetModal: React.FC<ViewPresetModalProps> = ({
               {activeTab === 'notes' && (
                 <div className="space-y-4">
                   <div>
-                    <h4 className="text-xs font-semibold text-white/70 mb-2 pb-1 border-b border-white/10">Заметки</h4>
+                    <h4 className="text-xs font-semibold text-white/70 mb-2 pb-1 border-b border-white/10">{t('viewPreset.tabs.notes')}</h4>
                     {filamentNotes && filamentNotes.trim() ? (
                       <pre className="bg-white/5 p-3 rounded-lg text-xs text-gray-300 font-mono whitespace-pre-wrap break-words mt-2">
                         {filamentNotes}
                       </pre>
                     ) : (
-                      <p className="text-gray-400 text-xs mt-2">нет</p>
+                      <p className="text-gray-400 text-xs mt-2">{t('viewPreset.none')}</p>
                     )}
                   </div>
                 </div>
@@ -844,7 +840,7 @@ export const ViewPresetModal: React.FC<ViewPresetModalProps> = ({
             onClick={onClose}
             className="px-6 py-3 bg-white/10 hover:bg-white/20 text-white rounded-xl transition-all"
           >
-            Закрыть
+            {t('viewPreset.close')}
           </button>
         </div>
       </div>
