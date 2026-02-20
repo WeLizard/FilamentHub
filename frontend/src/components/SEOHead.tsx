@@ -1,6 +1,7 @@
 /** Компонент для управления SEO meta тегами, Open Graph и Twitter Cards */
 
 import { useEffect } from 'react';
+import { useTranslation } from 'react-i18next';
 
 interface SEOHeadProps {
   title?: string;
@@ -22,8 +23,6 @@ interface SEOHeadProps {
   allowAI?: boolean;
 }
 
-const DEFAULT_TITLE = 'FilamentHub - Каталог материалов для 3D-печати';
-const DEFAULT_DESCRIPTION = 'Централизованная платформа для управления материалами 3D-печати. Каталог филаментов, настройки слайсеров, Wiki по 3D-печати.';
 const DEFAULT_IMAGE = '/logo.svg';
 const BASE_URL = 'https://filamenthub.ru';
 
@@ -43,8 +42,9 @@ export const SEOHead: React.FC<SEOHeadProps> = ({
   additionalMeta = [],
   allowAI = true,
 }) => {
-  const fullTitle = title ? `${title} | FilamentHub` : DEFAULT_TITLE;
-  const fullDescription = description || DEFAULT_DESCRIPTION;
+  const { t } = useTranslation();
+  const fullTitle = title ? `${title} | FilamentHub` : t('seo.defaultTitle');
+  const fullDescription = description || t('seo.defaultDescription');
   const fullImage = image ? (image.startsWith('http') ? image : `${BASE_URL}${image}`) : `${BASE_URL}${DEFAULT_IMAGE}`;
   const fullUrl = url ? (url.startsWith('http') ? url : `${BASE_URL}${url}`) : BASE_URL;
 

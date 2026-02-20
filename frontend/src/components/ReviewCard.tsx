@@ -1,6 +1,7 @@
 /** Компонент для отображения одного отзыва */
 
 import React from 'react';
+import { useTranslation } from 'react-i18next';
 import { Star, CheckCircle, XCircle, Calendar, Edit, Trash2, Settings } from 'lucide-react';
 import { Printer3DIcon } from './icons/Printer3DIcon';
 import { FilamentReview } from '../types/api';
@@ -20,6 +21,7 @@ export const ReviewCard: React.FC<ReviewCardProps> = ({
   onEdit,
   onDelete,
 }) => {
+  const { t } = useTranslation();
   const formatDate = (dateString: string) => {
     const date = new Date(dateString);
     return date.toLocaleDateString('ru-RU', {
@@ -36,14 +38,14 @@ export const ReviewCard: React.FC<ReviewCardProps> = ({
         <div className="flex-1">
           <div className="flex items-center space-x-3 mb-2">
             <h3 className="text-white font-semibold text-lg">
-              {review.username || 'Анонимный пользователь'}
+              {review.username || t('reviewCard.anonymousUser')}
             </h3>
             {review.user_badges && review.user_badges.length > 0 && (
               <BadgeList badges={review.user_badges as any} size="sm" />
             )}
             {isOwn && (
               <span className="px-2 py-1 bg-blue-500/20 text-blue-300 text-xs rounded-full border border-blue-500/30">
-                Ваш отзыв
+                {t('reviewCard.yourReview')}
               </span>
             )}
           </div>
@@ -74,7 +76,7 @@ export const ReviewCard: React.FC<ReviewCardProps> = ({
               <button
                 onClick={() => onEdit(review)}
                 className="p-2 text-gray-400 hover:text-blue-400 transition-colors rounded-lg hover:bg-white/10"
-                title="Редактировать отзыв"
+                title={t('reviewCard.editReview')}
               >
                 <Edit className="w-4 h-4" />
               </button>
@@ -83,7 +85,7 @@ export const ReviewCard: React.FC<ReviewCardProps> = ({
               <button
                 onClick={() => onDelete(review.id)}
                 className="p-2 text-gray-400 hover:text-red-400 transition-colors rounded-lg hover:bg-white/10"
-                title="Удалить отзыв"
+                title={t('reviewCard.deleteReview')}
               >
                 <Trash2 className="w-4 h-4" />
               </button>
@@ -98,12 +100,12 @@ export const ReviewCard: React.FC<ReviewCardProps> = ({
         {review.success ? (
           <div className="flex items-center space-x-1 text-green-400">
             <CheckCircle className="w-5 h-5" />
-            <span className="font-semibold">Успешная печать</span>
+            <span className="font-semibold">{t('reviewCard.successfulPrint')}</span>
           </div>
         ) : (
           <div className="flex items-center space-x-1 text-red-400">
             <XCircle className="w-5 h-5" />
-            <span className="font-semibold">Проблемы с печатью</span>
+            <span className="font-semibold">{t('reviewCard.printProblems')}</span>
           </div>
         )}
       </div>

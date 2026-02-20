@@ -1078,12 +1078,30 @@
     "clearSelection": "Очистить выбор"
   },
   "badge": {
-    "founder": { "label": "Основатель", "title": "Основатель проекта" },
-    "betaTester": { "label": "Бета-тестер", "title": "Бета-тестер" },
-    "contributor": { "label": "Контрибьютор", "title": "Контрибьютор" },
-    "verified": { "label": "Верифицирован", "title": "Верифицированный производитель" },
-    "earlyAdopter": { "label": "Ранний пользователь", "title": "Ранний последователь" },
-    "supporter": { "label": "Поддержал проект", "title": "Поддержал проект" }
+    "founder": {
+      "label": "Основатель",
+      "title": "Основатель проекта"
+    },
+    "betaTester": {
+      "label": "Бета-тестер",
+      "title": "Бета-тестер"
+    },
+    "contributor": {
+      "label": "Контрибьютор",
+      "title": "Контрибьютор"
+    },
+    "verified": {
+      "label": "Верифицирован",
+      "title": "Верифицированный производитель"
+    },
+    "earlyAdopter": {
+      "label": "Ранний пользователь",
+      "title": "Ранний последователь"
+    },
+    "supporter": {
+      "label": "Поддержал проект",
+      "title": "Поддержал проект"
+    }
   },
   "deleteAccount": {
     "title": "Удаление аккаунта",
@@ -2381,5 +2399,20 @@
   },
   "common": {
     "select": "Выберите..."
+  },
+  "reviewCard": {
+    "anonymousUser": "Анонимный пользователь",
+    "yourReview": "Ваш отзыв",
+    "editReview": "Редактировать отзыв",
+    "deleteReview": "Удалить отзыв",
+    "successfulPrint": "Успешная печать",
+    "printProblems": "Проблемы с печатью"
+  },
+  "seo": {
+    "defaultTitle": "FilamentHub — платформа для 3D-печати",
+    "defaultDescription": "Каталог филаментов, профили принтеров и настройки печати для 3D-принтеров"
+  },
+  "filamentSummary": {
+    "noColor": "Без цвета"
   }
 }

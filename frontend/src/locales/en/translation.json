@@ -1056,12 +1056,30 @@
     "clearSelection": "Clear selection"
   },
   "badge": {
-    "founder": { "label": "Founder", "title": "Project founder" },
-    "betaTester": { "label": "Beta Tester", "title": "Beta tester" },
-    "contributor": { "label": "Contributor", "title": "Contributor" },
-    "verified": { "label": "Verified", "title": "Verified manufacturer" },
-    "earlyAdopter": { "label": "Early Adopter", "title": "Early adopter" },
-    "supporter": { "label": "Supporter", "title": "Project supporter" }
+    "founder": {
+      "label": "Founder",
+      "title": "Project founder"
+    },
+    "betaTester": {
+      "label": "Beta Tester",
+      "title": "Beta tester"
+    },
+    "contributor": {
+      "label": "Contributor",
+      "title": "Contributor"
+    },
+    "verified": {
+      "label": "Verified",
+      "title": "Verified manufacturer"
+    },
+    "earlyAdopter": {
+      "label": "Early Adopter",
+      "title": "Early adopter"
+    },
+    "supporter": {
+      "label": "Supporter",
+      "title": "Project supporter"
+    }
   },
   "deleteAccount": {
     "title": "Delete Account",
@@ -2359,5 +2377,20 @@
   },
   "common": {
     "select": "Select..."
+  },
+  "reviewCard": {
+    "anonymousUser": "Anonymous user",
+    "yourReview": "Your review",
+    "editReview": "Edit review",
+    "deleteReview": "Delete review",
+    "successfulPrint": "Successful print",
+    "printProblems": "Print problems"
+  },
+  "seo": {
+    "defaultTitle": "FilamentHub — 3D Printing Platform",
+    "defaultDescription": "Filament catalog, printer profiles and print settings for 3D printers"
+  },
+  "filamentSummary": {
+    "noColor": "No color"
   }
 }

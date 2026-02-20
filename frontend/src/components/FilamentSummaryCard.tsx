@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next';
 import { Filament } from '../types/api';
 import { FilamentPreview } from './FilamentPreview';
 
@@ -18,6 +19,7 @@ export const FilamentSummaryCard: React.FC<FilamentSummaryCardProps> = ({
   className = '',
   showDescription = true,
 }) => {
+  const { t } = useTranslation();
   const {
     name,
     color_name,
@@ -33,10 +35,10 @@ export const FilamentSummaryCard: React.FC<FilamentSummaryCardProps> = ({
   } = filament;
 
   const detailItems: DetailItem[] = [
-    { label: 'Диаметр', value: diameter !== null && diameter !== undefined ? `${diameter} мм` : null },
-    { label: 'Плотность', value: density !== null && density !== undefined ? `${density} g/см³` : null },
-    { label: 'Стоимость', value: price_per_kg !== null && price_per_kg !== undefined ? `${price_per_kg} ₽/кг` : null },
-    { label: 'Вес катушки', value: spool_weight !== null && spool_weight !== undefined ? `${spool_weight} г` : null },
+    { label: t('filamentSummary.diameter'), value: diameter !== null && diameter !== undefined ? `${diameter} ${t('filamentSummary.mm')}` : null },
+    { label: t('filamentSummary.density'), value: density !== null && density !== undefined ? `${density} g/${t('filamentSummary.cm3')}` : null },
+    { label: t('filamentSummary.cost'), value: price_per_kg !== null && price_per_kg !== undefined ? `${price_per_kg} ₽/${t('filamentSummary.kg')}` : null },
+    { label: t('filamentSummary.spoolWeight'), value: spool_weight !== null && spool_weight !== undefined ? `${spool_weight} ${t('filamentSummary.g')}` : null },
   ];
 
   return (
@@ -56,7 +58,7 @@ export const FilamentSummaryCard: React.FC<FilamentSummaryCardProps> = ({
             </h4>
             {(color_name || color_hex) && (
               <p className="text-sm text-gray-300">
-                {color_name ?? 'Без цвета'}
+                {color_name ?? t('filamentSummary.noColor')}
                 {color_hex && ' | '}
                 {color_hex}
               </p>
