@@ -1,6 +1,7 @@
 /** Компонент для управления режимом технических работ */
 
 import { useState, useEffect } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Settings, AlertTriangle, CheckCircle, Loader2 } from 'lucide-react';
 import api from '../../api/client';
 
@@ -10,6 +11,7 @@ interface MaintenanceInfo {
 }
 
 export function AdminMaintenance() {
+  const { t } = useTranslation();
   const [maintenanceInfo, setMaintenanceInfo] = useState<MaintenanceInfo | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isUpdating, setIsUpdating] = useState(false);
@@ -30,7 +32,7 @@ export function AdminMaintenance() {
       setMessage(response.data.message || '');
     } catch (err: any) {
       console.error('Failed to load maintenance status:', err);
-      setError(err.response?.data?.detail || 'Не удалось загрузить статус технических работ');
+      setError(err.response?.data?.detail || t('adminMaintenance.loadError'));
     } finally {
       setIsLoading(false);
     }
@@ -39,8 +41,8 @@ export function AdminMaintenance() {
   const handleToggleMaintenance = async (enabled: boolean) => {
     if (!confirm(
       enabled
-        ? 'Включить режим технических работ? Сайт станет недоступен для всех пользователей (кроме админов).'
-        : 'Выключить режим технических работ? Сайт снова станет доступен для всех пользователей.'
+        ? t('adminMaintenance.confirmEnable')
+        : t('adminMaintenance.confirmDisable')
     )) {
       return;
     }
@@ -56,7 +58,7 @@ export function AdminMaintenance() {
       setMessage(response.data.maintenance_mode.message || '');
     } catch (err: any) {
       console.error('Failed to update maintenance mode:', err);
-      setError(err.response?.data?.detail || 'Не удалось обновить режим технических работ');
+      setError(err.response?.data?.detail || t('adminMaintenance.updateError'));
     } finally {
       setIsUpdating(false);
     }
@@ -66,7 +68,7 @@ export function AdminMaintenance() {
     return (
       <div className="flex items-center justify-center py-12">
         <Loader2 className="w-8 h-8 animate-spin text-purple-400" />
-        <span className="ml-3 text-gray-300">Загрузка статуса...</span>
+        <span className="ml-3 text-gray-300">{t('adminMaintenance.loadingStatus')}</span>
       </div>
     );
   }
@@ -77,7 +79,7 @@ export function AdminMaintenance() {
     <div className="space-y-6">
       <div className="flex items-center gap-3 mb-6">
         <Settings className="w-6 h-6 text-purple-400" />
-        <h2 className="text-2xl font-bold text-white">Технические работы</h2>
+        <h2 className="text-2xl font-bold text-white">{t('adminMaintenance.title')}</h2>
       </div>
 
       {error && (
@@ -99,53 +101,50 @@ export function AdminMaintenance() {
           {isEnabled ? (
             <>
               <AlertTriangle className="w-6 h-6 text-yellow-400" />
-              <h3 className="text-xl font-semibold text-yellow-300">Режим технических работ ВКЛЮЧЕН</h3>
+              <h3 className="text-xl font-semibold text-yellow-300">{t('adminMaintenance.statusEnabled')}</h3>
             </>
           ) : (
             <>
               <CheckCircle className="w-6 h-6 text-green-400" />
-              <h3 className="text-xl font-semibold text-green-300">Режим технических работ ВЫКЛЮЧЕН</h3>
+              <h3 className="text-xl font-semibold text-green-300">{t('adminMaintenance.statusDisabled')}</h3>
             </>
           )}
         </div>
 
         {isEnabled && maintenanceInfo?.message && (
           <div className="mt-4 p-4 bg-yellow-900/30 rounded-lg border border-yellow-500/20">
-            <p className="text-yellow-200 text-sm font-medium mb-1">Сообщение для пользователей:</p>
+            <p className="text-yellow-200 text-sm font-medium mb-1">{t('adminMaintenance.userMessage')}:</p>
             <p className="text-yellow-100">{maintenanceInfo.message}</p>
           </div>
         )}
 
         <div className="mt-4 text-sm text-gray-300">
           {isEnabled ? (
-            <p>
-              Сайт временно недоступен для всех пользователей. 
-              Доступ к админ-панели и API для управления режимом сохранен.
-            </p>
+            <p>{t('adminMaintenance.siteUnavailable')}</p>
           ) : (
-            <p>Сайт доступен для всех пользователей.</p>
+            <p>{t('adminMaintenance.siteAvailable')}</p>
           )}
         </div>
       </div>
 
       {/* Управление */}
       <div className="bg-white/5 rounded-xl p-6 border border-white/10">
-        <h3 className="text-lg font-semibold text-white mb-4">Управление режимом</h3>
+        <h3 className="text-lg font-semibold text-white mb-4">{t('adminMaintenance.modeControl')}</h3>
 
         {/* Сообщение */}
         <div className="mb-4">
           <label className="block text-sm font-medium text-gray-300 mb-2">
-            Сообщение для пользователей (опционально)
+            {t('adminMaintenance.messageLabel')}
           </label>
           <textarea
             value={message}
             onChange={(e) => setMessage(e.target.value)}
-            placeholder="Например: Ведутся технические работы. Ожидаемое время восстановления: 1 час."
+            placeholder={t('adminMaintenance.messagePlaceholder')}
             className="w-full px-4 py-2 bg-white/5 border border-white/10 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-purple-500"
             rows={3}
           />
           <p className="mt-1 text-xs text-gray-400">
-            Если не указано, будет использовано стандартное сообщение
+            {t('adminMaintenance.messageHint')}
           </p>
         </div>
 
@@ -165,12 +164,12 @@ export function AdminMaintenance() {
             {isUpdating ? (
               <>
                 <Loader2 className="w-5 h-5 animate-spin" />
-                <span>Обновление...</span>
+                <span>{t('adminMaintenance.updating')}</span>
               </>
             ) : (
               <>
                 <AlertTriangle className="w-5 h-5" />
-                <span>Включить технические работы</span>
+                <span>{t('adminMaintenance.enableBtn')}</span>
               </>
             )}
           </button>
@@ -189,12 +188,12 @@ export function AdminMaintenance() {
             {isUpdating ? (
               <>
                 <Loader2 className="w-5 h-5 animate-spin" />
-                <span>Обновление...</span>
+                <span>{t('adminMaintenance.updating')}</span>
               </>
             ) : (
               <>
                 <CheckCircle className="w-5 h-5" />
-                <span>Выключить технические работы</span>
+                <span>{t('adminMaintenance.disableBtn')}</span>
               </>
             )}
           </button>
@@ -203,12 +202,12 @@ export function AdminMaintenance() {
 
       {/* Информация */}
       <div className="bg-blue-900/20 border border-blue-500/30 rounded-xl p-4">
-        <h4 className="text-sm font-semibold text-blue-300 mb-2">Как это работает:</h4>
+        <h4 className="text-sm font-semibold text-blue-300 mb-2">{t('adminMaintenance.howItWorks')}</h4>
         <ul className="text-sm text-blue-200 space-y-1 list-disc list-inside">
-          <li>При включении режима все запросы к API (кроме /health и /api/v1/admin/maintenance) возвращают ошибку 503</li>
-          <li>Фронтенд должен обрабатывать ошибку 503 и показывать сообщение о технических работах</li>
-          <li>Администраторы могут войти в систему и управлять режимом через админ-панель</li>
-          <li>Режим хранится в памяти сервера (при перезапуске сбрасывается)</li>
+          <li>{t('adminMaintenance.info1')}</li>
+          <li>{t('adminMaintenance.info2')}</li>
+          <li>{t('adminMaintenance.info3')}</li>
+          <li>{t('adminMaintenance.info4')}</li>
         </ul>
       </div>
     </div>

@@ -2202,5 +2202,30 @@
       "early_adopter": "Early adopter. User who started using FilamentHub in the first months after launch and actively participates in the community.",
       "supporter": "Project supporter. User who financially or otherwise supported the development of FilamentHub."
     }
+  },
+  "adminMaintenance": {
+    "title": "Maintenance Mode",
+    "loadingStatus": "Loading status...",
+    "loadError": "Failed to load maintenance status",
+    "updateError": "Failed to update maintenance mode",
+    "confirmEnable": "Enable maintenance mode? The site will become unavailable to all users (except admins).",
+    "confirmDisable": "Disable maintenance mode? The site will become available to all users again.",
+    "statusEnabled": "Maintenance mode ENABLED",
+    "statusDisabled": "Maintenance mode DISABLED",
+    "userMessage": "Message for users",
+    "siteUnavailable": "The site is temporarily unavailable for all users. Access to the admin panel and API for mode management is preserved.",
+    "siteAvailable": "The site is available for all users.",
+    "modeControl": "Mode Control",
+    "messageLabel": "Message for users (optional)",
+    "messagePlaceholder": "Example: Maintenance in progress. Estimated recovery time: 1 hour.",
+    "messageHint": "If not specified, a default message will be used",
+    "updating": "Updating...",
+    "enableBtn": "Enable maintenance mode",
+    "disableBtn": "Disable maintenance mode",
+    "howItWorks": "How it works:",
+    "info1": "When enabled, all API requests (except /health and /api/v1/admin/maintenance) return error 503",
+    "info2": "Frontend should handle 503 error and show maintenance message",
+    "info3": "Administrators can log in and manage the mode through the admin panel",
+    "info4": "Mode is stored in server memory (resets on restart)"
   }
 }
