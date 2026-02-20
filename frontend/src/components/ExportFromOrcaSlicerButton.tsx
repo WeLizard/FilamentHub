@@ -1,6 +1,7 @@
 /** Кнопка экспорта filament presets из OrcaSlicer в FilamentHub */
 
 import { useState, useEffect } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Upload, Loader2, CheckCircle, AlertCircle } from 'lucide-react';
 
 interface ExportFromOrcaSlicerButtonProps {
@@ -8,6 +9,7 @@ interface ExportFromOrcaSlicerButtonProps {
 }
 
 export const ExportFromOrcaSlicerButton: React.FC<ExportFromOrcaSlicerButtonProps> = ({ onExportComplete }) => {
+  const { t } = useTranslation();
   const [isExporting, setIsExporting] = useState(false);
   const [exportStatus, setExportStatus] = useState<'idle' | 'success' | 'error'>('idle');
   const [statusMessage, setStatusMessage] = useState<string>('');
@@ -43,7 +45,7 @@ export const ExportFromOrcaSlicerButton: React.FC<ExportFromOrcaSlicerButtonProp
     try {
       // Проверяем наличие API
       if (!(window as any).filamenthub?.exportFilamentPresets) {
-        throw new Error('OrcaSlicer API не доступно. Убедитесь, что вы используете FilamentHub внутри OrcaSlicer.');
+        throw new Error('OrcaSlicer API is not available.');
       }
 
       // Вызываем экспорт через JavaScript API
@@ -61,10 +63,10 @@ export const ExportFromOrcaSlicerButton: React.FC<ExportFromOrcaSlicerButtonProp
         setExportStatus('idle');
       }, 3000);
     } catch (error: any) {
-      console.error('Ошибка экспорта filament presets:', error);
-      
+      console.error('Filament presets export error:', error);
+
       setExportStatus('error');
-      setStatusMessage(error.message || 'Ошибка при экспорте профилей. Проверьте логи для деталей.');
+      setStatusMessage(error.message || t('exportOrcaSlicer.exportError'));
       
       // Вызываем callback, если передан
       if (onExportComplete) {
@@ -102,27 +104,27 @@ export const ExportFromOrcaSlicerButton: React.FC<ExportFromOrcaSlicerButtonProp
             : 'bg-white/10 border-white/20 text-white hover:bg-white/20'
           }
         `}
-        title="Экспортировать filament presets из OrcaSlicer в FilamentHub"
+        title={t('exportOrcaSlicer.title')}
       >
         {isExporting ? (
           <>
             <Loader2 className="w-4 h-4 inline mr-2 animate-spin" />
-            Экспорт...
+            {t('exportOrcaSlicer.exporting')}
           </>
         ) : exportStatus === 'success' ? (
           <>
             <CheckCircle className="w-4 h-4 inline mr-2" />
-            Экспорт начат
+            {t('exportOrcaSlicer.started')}
           </>
         ) : exportStatus === 'error' ? (
           <>
             <AlertCircle className="w-4 h-4 inline mr-2" />
-            Ошибка
+            {t('exportOrcaSlicer.error')}
           </>
         ) : (
           <>
             <Upload className="w-4 h-4 inline mr-2" />
-            Экспортировать из OrcaSlicer
+            {t('exportOrcaSlicer.button')}
           </>
         )}
       </button>

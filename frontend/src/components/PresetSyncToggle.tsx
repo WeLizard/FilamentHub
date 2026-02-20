@@ -1,6 +1,7 @@
 /** Компонент для переключения синхронизации пресета с OrcaSlicer */
 
 import { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { RefreshCw, RefreshCwOff } from 'lucide-react';
 import { useMutation, useQueryClient, useQuery } from '@tanstack/react-query';
 import { savedPresetsAPI } from '../api/client';
@@ -20,6 +21,7 @@ export const PresetSyncToggle: React.FC<PresetSyncToggleProps> = ({
   className = '',
   showLabel = false,
 }) => {
+  const { t } = useTranslation();
   const { user } = useAuth();
   const queryClient = useQueryClient();
   const [isToggling, setIsToggling] = useState(false);
@@ -60,8 +62,8 @@ export const PresetSyncToggle: React.FC<PresetSyncToggleProps> = ({
       queryClient.invalidateQueries({ queryKey: ['my-presets'] });
     },
     onError: (error: any) => {
-      console.error('Ошибка при переключении синхронизации:', error);
-      alert(`Ошибка при переключении синхронизации: ${error?.response?.data?.detail || error?.message || 'Неизвестная ошибка'}`);
+      console.error('Sync toggle error:', error);
+      alert(`${t('presetSync.toggleError')}: ${error?.response?.data?.detail || error?.message || t('presetSync.unknownError')}`);
     },
     onSettled: () => {
       setIsToggling(false);
@@ -112,8 +114,8 @@ export const PresetSyncToggle: React.FC<PresetSyncToggleProps> = ({
       className={`flex items-center gap-2 transition-all disabled:opacity-50 disabled:cursor-not-allowed ${className}`}
       title={
         isSyncEnabled
-          ? 'Синхронизация включена. Нажмите, чтобы отключить.'
-          : 'Синхронизация отключена. Нажмите, чтобы включить.'
+          ? t('presetSync.enabledTitle')
+          : t('presetSync.disabledTitle')
       }
     >
       {isSyncEnabled ? (
@@ -131,7 +133,7 @@ export const PresetSyncToggle: React.FC<PresetSyncToggleProps> = ({
       )}
       {showLabel && (
         <span className="text-sm text-gray-300">
-          {isSyncEnabled ? 'Синхронизация включена' : 'Синхронизация отключена'}
+          {isSyncEnabled ? t('presetSync.enabled') : t('presetSync.disabled')}
         </span>
       )}
     </button>

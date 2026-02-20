@@ -1,6 +1,7 @@
 /** Кнопка экспорта print profiles из OrcaSlicer в FilamentHub */
 
 import { useState, useEffect } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Upload, Loader2, CheckCircle, AlertCircle } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 
@@ -9,6 +10,7 @@ interface ExportPrintProfilesButtonProps {
 }
 
 export const ExportPrintProfilesButton: React.FC<ExportPrintProfilesButtonProps> = ({ onExportComplete }) => {
+  const { t } = useTranslation();
   const { user } = useAuth();
   const [isExporting, setIsExporting] = useState(false);
   const [exportStatus, setExportStatus] = useState<'idle' | 'success' | 'error'>('idle');
@@ -46,7 +48,7 @@ export const ExportPrintProfilesButton: React.FC<ExportPrintProfilesButtonProps>
     try {
       // Проверяем наличие API
       if (!(window as any).filamenthub?.exportPrintProfiles) {
-        throw new Error('OrcaSlicer API не доступно. Убедитесь, что вы используете FilamentHub внутри OrcaSlicer.');
+        throw new Error('OrcaSlicer API is not available.');
       }
 
       // Вызываем экспорт через JavaScript API
@@ -64,10 +66,10 @@ export const ExportPrintProfilesButton: React.FC<ExportPrintProfilesButtonProps>
         setExportStatus('idle');
       }, 3000);
     } catch (error: any) {
-      console.error('Ошибка экспорта print profiles:', error);
-      
+      console.error('Print profiles export error:', error);
+
       setExportStatus('error');
-      setStatusMessage(error.message || 'Ошибка при экспорте профилей печати. Проверьте логи для деталей.');
+      setStatusMessage(error.message || t('exportPrintProfiles.exportError'));
       
       // Вызываем callback, если передан
       if (onExportComplete) {
@@ -102,31 +104,31 @@ export const ExportPrintProfilesButton: React.FC<ExportPrintProfilesButtonProps>
         `}
         title={
           isExportDisabled
-            ? "Экспорт профилей печати отключён в настройках. Включите в разделе Настройки профиля."
+            ? t('exportPrintProfiles.disabled')
             : !isInOrcaSlicer
-            ? "Экспорт доступен только внутри OrcaSlicer"
-            : "Экспортировать print profiles из OrcaSlicer в FilamentHub"
+            ? t('exportPrintProfiles.onlyInOrca')
+            : t('exportPrintProfiles.title')
         }
       >
         {isExporting ? (
           <>
             <Loader2 className="w-3 h-3 inline mr-1.5 animate-spin" />
-            Экспорт...
+            {t('exportPrintProfiles.exporting')}
           </>
         ) : exportStatus === 'success' ? (
           <>
             <CheckCircle className="w-3 h-3 inline mr-1.5" />
-            Готово
+            {t('exportPrintProfiles.done')}
           </>
         ) : exportStatus === 'error' ? (
           <>
             <AlertCircle className="w-3 h-3 inline mr-1.5" />
-            Ошибка
+            {t('exportPrintProfiles.error')}
           </>
         ) : (
           <>
             <Upload className="w-3 h-3 inline mr-1.5" />
-            Из OrcaSlicer
+            {t('exportPrintProfiles.button')}
           </>
         )}
       </button>

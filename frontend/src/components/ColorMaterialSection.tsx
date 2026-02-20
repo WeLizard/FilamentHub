@@ -87,13 +87,13 @@ export const ColorMaterialSection: React.FC<ColorMaterialSectionProps> = ({
 
   return (
     <div className={className}>
-      <label className="block text-gray-300 mb-2 text-sm font-medium">Цвет материала</label>
+      <label className="block text-gray-300 mb-2 text-sm font-medium">{t('colorMaterial.sectionLabel')}</label>
       
       {/* Flex layout: Название цвета | Preview | HEX - все выровнены по высоте */}
       <div className="flex items-end gap-4 justify-between">
         {/* Инпут названия цвета (слева) */}
         <div className="flex-[0_1_auto] min-w-[250px]">
-          <label className="block text-gray-400 mb-1 text-xs font-medium">Название цвета</label>
+          <label className="block text-gray-400 mb-1 text-xs font-medium">{t('colorMaterial.colorName')}</label>
           {isEditMode ? (
             <input
               type="text"
@@ -104,7 +104,7 @@ export const ColorMaterialSection: React.FC<ColorMaterialSectionProps> = ({
             />
           ) : (
             <div className="h-12 px-4 py-3 bg-white/5 border border-white/10 rounded-xl text-white flex items-center">
-              {colorName || <span className="text-gray-400 italic">Не указано</span>}
+              {colorName || <span className="text-gray-400 italic">{t('colorMaterial.notSpecified')}</span>}
             </div>
           )}
         </div>
@@ -170,7 +170,7 @@ export const ColorMaterialSection: React.FC<ColorMaterialSectionProps> = ({
 
         {/* Инпут HEX (справа) */}
         <div className="w-32">
-          <label className="block text-gray-400 mb-1 text-xs font-medium">Цвет HEX</label>
+          <label className="block text-gray-400 mb-1 text-xs font-medium">{t('colorMaterial.hexColor')}</label>
           {isEditMode ? (
             <input
               type="text"

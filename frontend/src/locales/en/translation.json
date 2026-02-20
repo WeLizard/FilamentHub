@@ -2477,5 +2477,52 @@
     "cancel": "Cancel",
     "send": "Send",
     "sending": "Sending..."
+  },
+  "mobileToc": {
+    "title": "Contents",
+    "currentlyReading": "Currently reading",
+    "readingProgress": "Reading progress"
+  },
+  "exportOrcaSlicer": {
+    "title": "Export filament presets from OrcaSlicer to FilamentHub",
+    "button": "Export from OrcaSlicer",
+    "exporting": "Exporting...",
+    "started": "Export started",
+    "error": "Error",
+    "exportError": "Error exporting profiles. Check logs for details."
+  },
+  "exportPrinterProfiles": {
+    "title": "Export printer profiles from OrcaSlicer to FilamentHub",
+    "button": "From OrcaSlicer",
+    "exporting": "Exporting...",
+    "done": "Done",
+    "error": "Error",
+    "exportError": "Error exporting printer profiles. Check logs for details.",
+    "disabled": "Printer profiles export is disabled in settings. Enable it in Profile Settings.",
+    "onlyInOrca": "Export is only available inside OrcaSlicer"
+  },
+  "exportPrintProfiles": {
+    "title": "Export print profiles from OrcaSlicer to FilamentHub",
+    "button": "From OrcaSlicer",
+    "exporting": "Exporting...",
+    "done": "Done",
+    "error": "Error",
+    "exportError": "Error exporting print profiles. Check logs for details.",
+    "disabled": "Print profiles export is disabled in settings. Enable it in Profile Settings.",
+    "onlyInOrca": "Export is only available inside OrcaSlicer"
+  },
+  "presetSync": {
+    "enabledTitle": "Sync enabled. Click to disable.",
+    "disabledTitle": "Sync disabled. Click to enable.",
+    "enabled": "Sync enabled",
+    "disabled": "Sync disabled",
+    "toggleError": "Error toggling sync",
+    "unknownError": "Unknown error"
+  },
+  "colorMaterial": {
+    "sectionLabel": "Material color",
+    "colorName": "Color name",
+    "notSpecified": "Not specified",
+    "hexColor": "HEX color"
   }
 }

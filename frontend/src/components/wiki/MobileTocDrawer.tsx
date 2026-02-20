@@ -1,6 +1,7 @@
 /** Мобильная шторка с оглавлением для Wiki */
 
 import { useState, useEffect, useCallback } from 'react';
+import { useTranslation } from 'react-i18next';
 import { List, X, ChevronRight } from 'lucide-react';
 import { TocItem, extractHeadings } from './TableOfContents';
 
@@ -10,6 +11,7 @@ interface MobileTocDrawerProps {
 }
 
 export function MobileTocDrawer({ content, articleTitle }: MobileTocDrawerProps) {
+  const { t } = useTranslation();
   const [isOpen, setIsOpen] = useState(false);
   const [headings, setHeadings] = useState<TocItem[]>([]);
   const [activeId, setActiveId] = useState<string>('');
@@ -104,7 +106,7 @@ export function MobileTocDrawer({ content, articleTitle }: MobileTocDrawerProps)
         className="fixed bottom-6 right-6 z-40 lg:hidden flex items-center gap-2 px-4 py-3 bg-purple-600/90 hover:bg-purple-600 backdrop-blur-sm text-white font-medium text-sm rounded-full shadow-lg shadow-purple-500/30 transition-all duration-200 hover:scale-105 active:scale-95"
       >
         <List className="w-5 h-5" />
-        <span className="hidden sm:inline">Содержание</span>
+        <span className="hidden sm:inline">{t('mobileToc.title')}</span>
       </button>
 
       {/* Backdrop */}
@@ -128,7 +130,7 @@ export function MobileTocDrawer({ content, articleTitle }: MobileTocDrawerProps)
               <List className="w-4 h-4 text-purple-400" />
             </div>
             <div>
-              <h3 className="text-white font-semibold text-sm">Содержание</h3>
+              <h3 className="text-white font-semibold text-sm">{t('mobileToc.title')}</h3>
               <p className="text-gray-500 text-xs truncate max-w-[180px]">
                 {articleTitle}
               </p>
@@ -145,7 +147,7 @@ export function MobileTocDrawer({ content, articleTitle }: MobileTocDrawerProps)
         {/* Current Section Indicator */}
         {currentHeading && (
           <div className="px-4 py-3 bg-purple-500/10 border-b border-white/10">
-            <div className="text-xs text-gray-500 mb-1">Сейчас читаете</div>
+            <div className="text-xs text-gray-500 mb-1">{t('mobileToc.currentlyReading')}</div>
             <div className="text-sm text-purple-300 font-medium truncate">
               {currentHeading.text}
             </div>
@@ -197,6 +199,7 @@ export function MobileTocDrawer({ content, articleTitle }: MobileTocDrawerProps)
 }
 
 function MobileReadingProgress() {
+  const { t } = useTranslation();
   const [progress, setProgress] = useState(0);
 
   useEffect(() => {
@@ -216,7 +219,7 @@ function MobileReadingProgress() {
   return (
     <div>
       <div className="flex items-center justify-between text-xs text-gray-500 mb-2">
-        <span>Прогресс чтения</span>
+        <span>{t('mobileToc.readingProgress')}</span>
         <span className="text-purple-400 font-medium">{Math.round(progress)}%</span>
       </div>
       <div className="h-2 bg-white/10 rounded-full overflow-hidden">

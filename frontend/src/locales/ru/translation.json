@@ -2499,5 +2499,52 @@
     "cancel": "Отмена",
     "send": "Отправить",
     "sending": "Отправка..."
+  },
+  "mobileToc": {
+    "title": "Содержание",
+    "currentlyReading": "Сейчас читаете",
+    "readingProgress": "Прогресс чтения"
+  },
+  "exportOrcaSlicer": {
+    "title": "Экспортировать filament presets из OrcaSlicer в FilamentHub",
+    "button": "Экспортировать из OrcaSlicer",
+    "exporting": "Экспорт...",
+    "started": "Экспорт начат",
+    "error": "Ошибка",
+    "exportError": "Ошибка при экспорте профилей. Проверьте логи для деталей."
+  },
+  "exportPrinterProfiles": {
+    "title": "Экспортировать printer profiles из OrcaSlicer в FilamentHub",
+    "button": "Из OrcaSlicer",
+    "exporting": "Экспорт...",
+    "done": "Готово",
+    "error": "Ошибка",
+    "exportError": "Ошибка при экспорте профилей принтера. Проверьте логи для деталей.",
+    "disabled": "Экспорт профилей принтеров отключён в настройках. Включите в разделе Настройки профиля.",
+    "onlyInOrca": "Экспорт доступен только внутри OrcaSlicer"
+  },
+  "exportPrintProfiles": {
+    "title": "Экспортировать print profiles из OrcaSlicer в FilamentHub",
+    "button": "Из OrcaSlicer",
+    "exporting": "Экспорт...",
+    "done": "Готово",
+    "error": "Ошибка",
+    "exportError": "Ошибка при экспорте профилей печати. Проверьте логи для деталей.",
+    "disabled": "Экспорт профилей печати отключён в настройках. Включите в разделе Настройки профиля.",
+    "onlyInOrca": "Экспорт доступен только внутри OrcaSlicer"
+  },
+  "presetSync": {
+    "enabledTitle": "Синхронизация включена. Нажмите, чтобы отключить.",
+    "disabledTitle": "Синхронизация отключена. Нажмите, чтобы включить.",
+    "enabled": "Синхронизация включена",
+    "disabled": "Синхронизация отключена",
+    "toggleError": "Ошибка при переключении синхронизации",
+    "unknownError": "Неизвестная ошибка"
+  },
+  "colorMaterial": {
+    "sectionLabel": "Цвет материала",
+    "colorName": "Название цвета",
+    "notSpecified": "Не указано",
+    "hexColor": "Цвет HEX"
   }
 }
