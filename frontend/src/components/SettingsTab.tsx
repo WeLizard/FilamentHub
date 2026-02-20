@@ -1,6 +1,7 @@
 /** Компонент вкладки настроек пользователя */
 
 import { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { Settings, Lock, Mail, Save, CheckCircle, XCircle, Loader2, User as UserIcon, Eye, EyeOff } from 'lucide-react';
 import { authAPI } from '../api/client';
@@ -15,6 +16,7 @@ interface SettingsTabProps {
 export const SettingsTab: React.FC<SettingsTabProps> = ({ user, onUserUpdate }) => {
   const queryClient = useQueryClient();
   const { refreshUser } = useAuth();
+  const { t } = useTranslation();
 
   // Состояния для настроек синхронизации
   const [syncSettings, setSyncSettings] = useState({
@@ -73,7 +75,7 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({ user, onUserUpdate }) 
       setTimeout(() => setUsernameSuccess(false), 3000);
     },
     onError: (error: any) => {
-      setUsernameError(error.response?.data?.detail || 'Ошибка при изменении имени пользователя');
+      setUsernameError(error.response?.data?.detail || t('settings.usernameChangeError'));
       setUsernameSuccess(false);
     },
   });
@@ -88,7 +90,7 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({ user, onUserUpdate }) 
       setTimeout(() => setPasswordSuccess(false), 3000);
     },
     onError: (error: any) => {
-      setPasswordError(error.response?.data?.detail || 'Ошибка при изменении пароля');
+      setPasswordError(error.response?.data?.detail || t('settings.passwordChangeError'));
       setPasswordSuccess(false);
     },
   });
@@ -105,7 +107,7 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({ user, onUserUpdate }) 
       setTimeout(() => setEmailSuccess(false), 3000);
     },
     onError: (error: any) => {
-      setEmailError(error.response?.data?.detail || 'Ошибка при изменении эл. почты');
+      setEmailError(error.response?.data?.detail || t('settings.emailChangeError'));
       setEmailSuccess(false);
     },
   });
@@ -129,12 +131,12 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({ user, onUserUpdate }) 
 
     // Валидация
     if (usernameForm.new_username.length < 3) {
-      setUsernameError('Имя пользователя должно содержать минимум 3 символа');
+      setUsernameError(t('settings.usernameMinLength'));
       return;
     }
 
     if (usernameForm.new_username === user.username) {
-      setUsernameError('Новое имя пользователя должно отличаться от текущего');
+      setUsernameError(t('settings.usernameMustDiffer'));
       return;
     }
 
@@ -154,32 +156,32 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({ user, onUserUpdate }) 
 
     // Валидация
     if (passwordForm.current_password.length === 0) {
-      setPasswordError('Введите текущий пароль');
+      setPasswordError(t('settings.enterCurrentPassword'));
       return;
     }
 
     if (passwordForm.new_password.length < 8) {
-      setPasswordError('Пароль должен содержать минимум 8 символов');
+      setPasswordError(t('settings.passwordMinLength'));
       return;
     }
 
     if (!/[a-zA-Zа-яА-ЯёЁ]/.test(passwordForm.new_password)) {
-      setPasswordError('Пароль должен содержать хотя бы одну букву');
+      setPasswordError(t('settings.passwordNeedLetter'));
       return;
     }
 
     if (!/\d/.test(passwordForm.new_password)) {
-      setPasswordError('Пароль должен содержать хотя бы одну цифру');
+      setPasswordError(t('settings.passwordNeedDigit'));
       return;
     }
 
     if (passwordForm.new_password !== passwordForm.confirm_password) {
-      setPasswordError('Пароли не совпадают');
+      setPasswordError(t('settings.passwordsMismatch'));
       return;
     }
 
     if (passwordForm.current_password === passwordForm.new_password) {
-      setPasswordError('Новый пароль должен отличаться от текущего');
+      setPasswordError(t('settings.passwordMustDiffer'));
       return;
     }
 
@@ -200,12 +202,12 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({ user, onUserUpdate }) 
 
     // Валидация
     if (!emailForm.new_email || !emailForm.new_email.includes('@')) {
-      setEmailError('Введите корректный адрес эл. почты');
+      setEmailError(t('settings.invalidEmail'));
       return;
     }
 
     if (emailForm.new_email === user.email) {
-      setEmailError('Новая эл. почта должна отличаться от текущей');
+      setEmailError(t('settings.emailMustDiffer'));
       return;
     }
 
@@ -228,7 +230,7 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({ user, onUserUpdate }) 
           <div className="p-2 bg-gradient-to-r from-purple-500/20 to-blue-500/20 rounded-lg">
             <UserIcon className="w-5 h-5 text-purple-400" />
           </div>
-          <h3 className="text-xl font-bold text-white">Профиль</h3>
+          <h3 className="text-xl font-bold text-white">{t('settings.profile')}</h3>
         </div>
         
         <div className="space-y-4">
@@ -238,7 +240,7 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({ user, onUserUpdate }) 
               <div className="flex-1">
                 <div className="flex items-center gap-2 mb-2">
                   <UserIcon className="w-4 h-4 text-purple-400" />
-                  <label className="text-sm font-medium text-gray-300">Имя пользователя</label>
+                  <label className="text-sm font-medium text-gray-300">{t('settings.username')}</label>
                   <span className="text-xs text-gray-500">({user.username})</span>
                 </div>
                 <input
@@ -248,7 +250,7 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({ user, onUserUpdate }) 
                   required
                   minLength={3}
                   className="w-full px-3 py-2 bg-white/10 border border-white/20 rounded-lg text-white text-sm placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500"
-                  placeholder="Новое имя пользователя"
+                  placeholder={t('settings.newUsernamePlaceholder')}
                 />
               </div>
               <button
@@ -272,7 +274,7 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({ user, onUserUpdate }) 
             {usernameSuccess && (
               <div className="flex items-center gap-2 text-green-400 text-xs">
                 <CheckCircle className="w-3 h-3" />
-                <span>Успешно!</span>
+                <span>{t('settings.success')}</span>
               </div>
             )}
           </form>
@@ -283,7 +285,7 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({ user, onUserUpdate }) 
               <div className="flex-1">
                 <div className="flex items-center gap-2 mb-2">
                   <Mail className="w-4 h-4 text-blue-400" />
-                  <label className="text-sm font-medium text-gray-300">Эл. почта</label>
+                  <label className="text-sm font-medium text-gray-300">{t('settings.email')}</label>
                   <span className="text-xs text-gray-500">({user.email})</span>
                 </div>
                 <input
@@ -292,10 +294,10 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({ user, onUserUpdate }) 
                   onChange={(e) => setEmailForm({ new_email: e.target.value })}
                   required
                   className="w-full px-3 py-2 bg-white/10 border border-white/20 rounded-lg text-white text-sm placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500"
-                  placeholder="Новая эл. почта"
+                  placeholder={t('settings.newEmailPlaceholder')}
                 />
                 <p className="text-xs text-blue-300/80 mt-1">
-                  На новую эл. почту будет отправлен код подтверждения
+                  {t('settings.emailConfirmationHint')}
                 </p>
               </div>
               <button
@@ -319,7 +321,7 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({ user, onUserUpdate }) 
             {emailSuccess && (
               <div className="flex items-center gap-2 text-green-400 text-xs">
                 <CheckCircle className="w-3 h-3" />
-                <span>Код подтверждения отправлен на новую эл. почту</span>
+                <span>{t('settings.emailConfirmationSent')}</span>
               </div>
             )}
           </form>
@@ -332,12 +334,12 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({ user, onUserUpdate }) 
             <div className="p-2 bg-pink-500/20 rounded-lg">
               <Lock className="w-5 h-5 text-pink-400" />
             </div>
-            <h3 className="text-lg font-bold text-white">Пароль</h3>
+            <h3 className="text-lg font-bold text-white">{t('settings.password')}</h3>
           </div>
 
           <form onSubmit={handlePasswordSubmit} className="space-y-3">
             <div>
-              <label className="block text-gray-300 mb-1.5 text-xs font-medium">Текущий пароль</label>
+              <label className="block text-gray-300 mb-1.5 text-xs font-medium">{t('settings.currentPassword')}</label>
               <div className="relative">
                 <input
                   type={showPasswords.current ? "text" : "password"}
@@ -345,7 +347,7 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({ user, onUserUpdate }) 
                   onChange={(e) => setPasswordForm({ ...passwordForm, current_password: e.target.value })}
                   required
                   className="w-full px-3 py-2 pr-10 bg-white/10 border border-white/20 rounded-lg text-white text-sm placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500"
-                  placeholder="Введите текущий пароль"
+                  placeholder={t('settings.currentPasswordPlaceholder')}
                 />
                 <button
                   type="button"
@@ -362,7 +364,7 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({ user, onUserUpdate }) 
             </div>
 
             <div>
-              <label className="block text-gray-300 mb-1.5 text-xs font-medium">Новый пароль</label>
+              <label className="block text-gray-300 mb-1.5 text-xs font-medium">{t('settings.newPassword')}</label>
               <div className="relative">
                 <input
                   type={showPasswords.new ? "text" : "password"}
@@ -371,7 +373,7 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({ user, onUserUpdate }) 
                   required
                   minLength={8}
                   className="w-full px-3 py-2 pr-10 bg-white/10 border border-white/20 rounded-lg text-white text-sm placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500"
-                  placeholder="Минимум 8 символов"
+                  placeholder={t('settings.minCharsPlaceholder')}
                 />
                 <button
                   type="button"
@@ -388,7 +390,7 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({ user, onUserUpdate }) 
             </div>
 
             <div>
-              <label className="block text-gray-300 mb-1.5 text-xs font-medium">Подтвердите</label>
+              <label className="block text-gray-300 mb-1.5 text-xs font-medium">{t('settings.confirmPassword')}</label>
               <div className="relative">
                 <input
                   type={showPasswords.confirm ? "text" : "password"}
@@ -397,7 +399,7 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({ user, onUserUpdate }) 
                   required
                   minLength={8}
                   className="w-full px-3 py-2 pr-10 bg-white/10 border border-white/20 rounded-lg text-white text-sm placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500"
-                  placeholder="Повторите пароль"
+                  placeholder={t('settings.repeatPasswordPlaceholder')}
                 />
                 <button
                   type="button"
@@ -423,7 +425,7 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({ user, onUserUpdate }) 
             {passwordSuccess && (
               <div className="flex items-center gap-2 text-green-400 text-xs">
                 <CheckCircle className="w-3 h-3" />
-                <span>Успешно!</span>
+                <span>{t('settings.success')}</span>
               </div>
             )}
 
@@ -435,12 +437,12 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({ user, onUserUpdate }) 
               {updatePasswordMutation.isPending ? (
                 <>
                   <Loader2 className="w-4 h-4 animate-spin" />
-                  <span>Изменение...</span>
+                  <span>{t('settings.changing')}</span>
                 </>
               ) : (
                 <>
                   <Save className="w-4 h-4" />
-                  <span>Изменить пароль</span>
+                  <span>{t('settings.changePassword')}</span>
                 </>
               )}
             </button>
@@ -455,9 +457,9 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({ user, onUserUpdate }) 
               <Settings className="w-5 h-5 text-green-400" />
             </div>
             <div>
-              <h3 className="text-lg font-bold text-white">Синхронизация с OrcaSlicer</h3>
+              <h3 className="text-lg font-bold text-white">{t('settings.syncTitle')}</h3>
               <p className="text-xs text-gray-400 mt-0.5">
-                Управление импортом и экспортом профилей принтеров и печати
+                {t('settings.syncDescription')}
               </p>
             </div>
           </div>
@@ -468,11 +470,11 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({ user, onUserUpdate }) 
           <div className="bg-white/5 rounded-xl p-4 border border-white/10">
             <h4 className="text-sm font-semibold text-white mb-3 flex items-center gap-2 min-h-[24px]">
               <span className="w-2 h-2 bg-purple-500 rounded-full flex-shrink-0"></span>
-              <span className="whitespace-nowrap">Профили принтеров</span>
+              <span className="whitespace-nowrap">{t('settings.printerProfiles')}</span>
             </h4>
             <div className="space-y-2">
               <label className="flex items-center justify-between cursor-pointer group">
-                <span className="text-sm text-gray-300 w-16">Импорт</span>
+                <span className="text-sm text-gray-300 w-16">{t('settings.import')}</span>
                 <div className="relative">
                   <input
                     type="checkbox"
@@ -491,7 +493,7 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({ user, onUserUpdate }) 
               </label>
 
               <label className="flex items-center justify-between cursor-pointer group">
-                <span className="text-sm text-gray-300 w-16">Экспорт</span>
+                <span className="text-sm text-gray-300 w-16">{t('settings.export')}</span>
                 <div className="relative">
                   <input
                     type="checkbox"
@@ -515,11 +517,11 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({ user, onUserUpdate }) 
           <div className="bg-white/5 rounded-xl p-4 border border-white/10">
             <h4 className="text-sm font-semibold text-white mb-3 flex items-center gap-2 min-h-[24px]">
               <span className="w-2 h-2 bg-pink-500 rounded-full flex-shrink-0"></span>
-              <span className="whitespace-nowrap">Профили печати</span>
+              <span className="whitespace-nowrap">{t('settings.printProfiles')}</span>
             </h4>
             <div className="space-y-2">
               <label className="flex items-center justify-between cursor-pointer group">
-                <span className="text-sm text-gray-300 w-16">Импорт</span>
+                <span className="text-sm text-gray-300 w-16">{t('settings.import')}</span>
                 <div className="relative">
                   <input
                     type="checkbox"
@@ -538,7 +540,7 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({ user, onUserUpdate }) 
               </label>
 
               <label className="flex items-center justify-between cursor-pointer group">
-                <span className="text-sm text-gray-300 w-16">Экспорт</span>
+                <span className="text-sm text-gray-300 w-16">{t('settings.export')}</span>
                 <div className="relative">
                   <input
                     type="checkbox"
@@ -569,12 +571,12 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({ user, onUserUpdate }) 
             {updateSettingsMutation.isPending ? (
               <>
                 <Loader2 className="w-4 h-4 animate-spin" />
-                <span>Сохранение...</span>
+                <span>{t('settings.saving')}</span>
               </>
             ) : (
               <>
                 <Save className="w-4 h-4" />
-                <span>Сохранить</span>
+                <span>{t('settings.save')}</span>
               </>
             )}
           </button>
