@@ -1308,6 +1308,7 @@ interface PresetCardProps {
 }
 
 const PresetCard: React.FC<PresetCardProps> = ({ preset, onEdit, onView, onDelete }) => {
+  const { t } = useTranslation();
   const navigate = useNavigate();
   const [isDownloading, setIsDownloading] = useState(false);
   const [isImporting, setIsImporting] = useState(false);
