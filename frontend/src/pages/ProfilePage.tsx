@@ -1146,9 +1146,10 @@ export const ProfilePage: React.FC = () => {
 
       {/* Help Modal */}
       {showHelpModal && (
-        <div className={`fixed inset-0 z-[60] flex items-center justify-center p-4 ${isHeaderVisible ? 'pt-[88px]' : ''}`}>
-          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setShowHelpModal(false)} />
-          <div className="relative w-full max-w-4xl max-h-[85vh] overflow-hidden rounded-2xl border border-white/20 bg-white/10 backdrop-blur-md shadow-2xl">
+        <div className={`fixed inset-0 z-[100] ${isHeaderVisible ? 'pt-[88px]' : ''}`}>
+          <div className="fixed inset-0 bg-black/50 backdrop-blur-sm" onClick={() => setShowHelpModal(false)} />
+          <div className="fixed inset-0 flex items-center justify-center pointer-events-none" style={{ top: isHeaderVisible ? '88px' : '0' }}>
+          <div className={`bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900 rounded-2xl w-full max-w-4xl overflow-hidden flex flex-col border border-white/20 shadow-2xl pointer-events-auto mx-4 ${isHeaderVisible ? 'max-h-[calc(100vh-100px)]' : 'max-h-[90vh]'}`} onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center justify-between p-5 border-b border-white/10">
               <div className="flex items-center gap-3">
                 <div className="p-2 bg-purple-600/20 rounded-xl">
@@ -1232,6 +1233,7 @@ export const ProfilePage: React.FC = () => {
               </HelpSection>
 
             </div>
+          </div>
           </div>
         </div>
       )}
