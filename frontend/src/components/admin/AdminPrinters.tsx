@@ -660,7 +660,7 @@ function PrinterModal({ printer, onClose, onSave, isLoading }: PrinterModalProps
     const coolingFanFields: Array<{ key: string; label: string; placeholder?: string; unit?: string }> = [
       { key: 'fan_speedup_time', label: t('adminPrinters.cooling.fanSpeedupTime'), placeholder: '2', unit: t('adminPrinters.units.sec') },
       { key: 'fan_speedup_overhangs', label: t('adminPrinters.cooling.fanSpeedupOverhangs'), placeholder: '30', unit: '%' },
-      { key: 'fan_kickstart', label: 'Kickstart', placeholder: '100', unit: '%' },
+      { key: 'fan_kickstart', label: t('adminPrinters.cooling.kickstart'), placeholder: '100', unit: '%' },
     ];
     const extruderClearanceFields: Array<{ key: string; label: string; placeholder?: string; unit?: string }> = [
       { key: 'extruder_clearance_radius', label: t('adminPrinters.clearance.radius'), placeholder: '65', unit: t('adminPrinters.mm') },
@@ -680,7 +680,7 @@ function PrinterModal({ printer, onClose, onSave, isLoading }: PrinterModalProps
       { key: 'origin_z', label: t('adminPrinters.bed.originZ'), placeholder: '0' },
     ];
     const thumbnailsFields: Array<{ key: string; label: string; placeholder?: string }> = [
-      { key: 'thumbnails', label: 'Thumbnails', placeholder: '32x32,64x64' },
+      { key: 'thumbnails', label: t('adminPrinters.thumbnailsLabel'), placeholder: '32x32,64x64' },
       { key: 'thumbnails_format', label: t('adminPrinters.thumbnailsFormat'), placeholder: 'png,gcode,ufp...' },
     ];
 
@@ -983,7 +983,7 @@ function PrinterModal({ printer, onClose, onSave, isLoading }: PrinterModalProps
                 <p className="text-xs text-gray-500 mt-1">{t('adminPrinters.orca.printerStructureHint')}</p>
               </div>
               <div>
-                <label className="block text-gray-300 mb-2 text-sm font-medium">G-code flavor</label>
+                <label className="block text-gray-300 mb-2 text-sm font-medium">{t('adminPrinters.orca.gcodeFlavor')}</label>
                 <CustomSelect
                   value={getMetadataString('gcode_flavor') || null}
                   onChange={(value) => handleMetadataStringChange('gcode_flavor', (value as string) || '')}
@@ -1157,7 +1157,7 @@ function PrinterModal({ printer, onClose, onSave, isLoading }: PrinterModalProps
             </div>
 
             <div>
-              <h5 className="text-xs font-semibold uppercase tracking-wide text-purple-200/70 mb-3">Cooling Fan</h5>
+              <h5 className="text-xs font-semibold uppercase tracking-wide text-purple-200/70 mb-3">{t('adminPrinters.cooling.title')}</h5>
               <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
                 {coolingFanFields.map((field) => (
                   <div key={field.key} className="space-y-2">
@@ -1207,7 +1207,7 @@ function PrinterModal({ printer, onClose, onSave, isLoading }: PrinterModalProps
             </div>
 
             <div>
-              <h5 className="text-xs font-semibold uppercase tracking-wide text-purple-200/70 mb-3">Adaptive bed mesh</h5>
+              <h5 className="text-xs font-semibold uppercase tracking-wide text-purple-200/70 mb-3">{t('adminPrinters.mesh.title')}</h5>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 {adaptiveMeshFields.map((field) => (
                   <div key={field.key}>
@@ -1225,7 +1225,7 @@ function PrinterModal({ printer, onClose, onSave, isLoading }: PrinterModalProps
             </div>
 
             <div>
-              <h5 className="text-xs font-semibold uppercase tracking-wide text-purple-200/70 mb-3">Thumbnails</h5>
+              <h5 className="text-xs font-semibold uppercase tracking-wide text-purple-200/70 mb-3">{t('adminPrinters.thumbnailsTitle')}</h5>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 {thumbnailsFields.map((field) => (
                   <div key={field.key}>
@@ -1610,7 +1610,7 @@ function PrinterModal({ printer, onClose, onSave, isLoading }: PrinterModalProps
   const renderMotionTab = () => (
     <section className="space-y-6 bg-white/5 border border-white/10 rounded-2xl p-6 shadow-inner shadow-indigo-900/30">
       <div>
-        <h4 className="text-sm font-semibold text-white uppercase tracking-wide">Motion ability</h4>
+        <h4 className="text-sm font-semibold text-white uppercase tracking-wide">{t('adminPrinters.motion.title')}</h4>
         <p className="text-xs text-gray-400 mt-1">
           {t('adminPrinters.motion.desc')}
         </p>
@@ -1894,7 +1894,7 @@ function PrinterModal({ printer, onClose, onSave, isLoading }: PrinterModalProps
   const renderGcodeTab = () => (
     <section className="space-y-6 bg-white/5 border border-white/10 rounded-2xl p-6 shadow-inner shadow-indigo-900/30">
       <div>
-        <h4 className="text-sm font-semibold text-white uppercase tracking-wide">Machine G-code</h4>
+        <h4 className="text-sm font-semibold text-white uppercase tracking-wide">{t('adminPrinters.gcode.title')}</h4>
         <p className="text-xs text-gray-400 mt-1">
           {t('adminPrinters.gcode.desc')}
         </p>

@@ -1625,17 +1625,19 @@
     "jsonFormatError": "Не удалось отформатировать JSON. Проверьте синтаксис.",
     "jsonInvalid": "Некорректный JSON. Проверьте синтаксис.",
     "jsonParseError": "Не удалось разобрать JSON в поле «Дополнительные метаданные». Исправьте содержимое вручную или нажмите «Форматировать».",
+    "thumbnailsTitle": "Миниатюры",
+    "thumbnailsLabel": "Миниатюры",
     "thumbnailsFormat": "Формат миниатюр",
     "tabs": {
       "general": "Общая информация",
       "generalDesc": "Основные сведения, размеры, медиа",
-      "motion": "Motion ability",
+      "motion": "Кинематика",
       "motionDesc": "Лимиты скоростей, ускорений, jerk",
       "extruders": "Экструдеры",
       "extrudersDesc": "Диаметры, температуры, сопла",
-      "multimaterial": "Multimaterial",
-      "multimaterialDesc": "Single-extruder MM настройки",
-      "gcode": "Machine G-code",
+      "multimaterial": "Мультиматериал",
+      "multimaterialDesc": "Настройки одноэкструдерной ММ-системы",
+      "gcode": "G-code принтера",
       "gcodeDesc": "Старт/финал и прочие блоки G-code",
       "notes": "Заметки",
       "notesDesc": "Описание и служебные комментарии"
@@ -1692,8 +1694,10 @@
       "usePrintHost": "Использовать PrintHost"
     },
     "cooling": {
+      "title": "Вентилятор охлаждения",
       "fanSpeedupTime": "Время разгона вентилятора",
-      "fanSpeedupOverhangs": "Разгон для свесов"
+      "fanSpeedupOverhangs": "Разгон для свесов",
+      "kickstart": "Кикстарт"
     },
     "units": {
       "sec": "с",
@@ -1706,6 +1710,7 @@
       "heightToLid": "Высота до крышки"
     },
     "mesh": {
+      "title": "Адаптивная сетка стола",
       "bedMeshMin": "Bed mesh min (координаты)",
       "bedMeshMax": "Bed mesh max (координаты)",
       "probeDistance": "Расстояние между точками сетки (мм)",
@@ -1720,6 +1725,7 @@
     "orca": {
       "printerStructure": "Структура принтера",
       "printerStructureHint": "Совпадает с полем printer_structure в Orca.",
+      "gcodeFlavor": "Тип G-code",
       "gcodeFlavorHint": "Из заранее известных вариантов OrcaSlicer. При необходимости можно задать новый через JSON.",
       "printTechnology": "Технология печати",
       "defaultBedType": "Пластина стола по умолчанию",
@@ -1777,6 +1783,7 @@
       "zHop": "Z-hop (мм)"
     },
     "motion": {
+      "title": "Кинематика",
       "desc": "Лимиты скоростей, ускорений и jerk из OrcaSlicer. Значения вводятся через запятую (Normal/Silent режимы).",
       "jsonError": "Невозможно отобразить настройки движения: extra_metadata содержит некорректный JSON.",
       "maxSpeed": "Максимальная скорость (мм/с)",
@@ -1803,6 +1810,7 @@
       "extraLoadingMove": "Extra loading move (мм)"
     },
     "gcode": {
+      "title": "G-code принтера",
       "desc": "Блоки G-code из OrcaSlicer (start/end, pause, timelapse и т.д.). При изменении значения сохраняются в extra_metadata.",
       "jsonError": "Невозможно отобразить G-code: extra_metadata содержит некорректный JSON.",
       "placeholder": "; Ваш кастомный G-code...",

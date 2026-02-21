@@ -1603,6 +1603,8 @@
     "jsonFormatError": "Failed to format JSON. Check the syntax.",
     "jsonInvalid": "Invalid JSON. Check the syntax.",
     "jsonParseError": "Failed to parse JSON in extra metadata field. Fix the content manually or click Format.",
+    "thumbnailsTitle": "Thumbnails",
+    "thumbnailsLabel": "Thumbnails",
     "thumbnailsFormat": "Thumbnails format",
     "tabs": {
       "general": "General info",
@@ -1670,8 +1672,10 @@
       "usePrintHost": "Use PrintHost"
     },
     "cooling": {
+      "title": "Cooling Fan",
       "fanSpeedupTime": "Fan speedup time",
-      "fanSpeedupOverhangs": "Speedup for overhangs"
+      "fanSpeedupOverhangs": "Speedup for overhangs",
+      "kickstart": "Kickstart"
     },
     "units": {
       "sec": "s",
@@ -1684,6 +1688,7 @@
       "heightToLid": "Height to lid"
     },
     "mesh": {
+      "title": "Adaptive bed mesh",
       "bedMeshMin": "Bed mesh min (coordinates)",
       "bedMeshMax": "Bed mesh max (coordinates)",
       "probeDistance": "Mesh probe distance (mm)",
@@ -1698,6 +1703,7 @@
     "orca": {
       "printerStructure": "Printer structure",
       "printerStructureHint": "Matches the printer_structure field in Orca.",
+      "gcodeFlavor": "G-code flavor",
       "gcodeFlavorHint": "From known OrcaSlicer options. You can set a new one via JSON if needed.",
       "printTechnology": "Print technology",
       "defaultBedType": "Default bed plate",
@@ -1755,6 +1761,7 @@
       "zHop": "Z-hop (mm)"
     },
     "motion": {
+      "title": "Motion ability",
       "desc": "Speed, acceleration and jerk limits from OrcaSlicer. Enter values comma-separated (Normal/Silent modes).",
       "jsonError": "Cannot display motion settings: extra_metadata contains invalid JSON.",
       "maxSpeed": "Maximum speed (mm/s)",
@@ -1781,6 +1788,7 @@
       "extraLoadingMove": "Extra loading move (mm)"
     },
     "gcode": {
+      "title": "Machine G-code",
       "desc": "G-code blocks from OrcaSlicer (start/end, pause, timelapse, etc.). Changes are saved to extra_metadata.",
       "jsonError": "Cannot display G-code: extra_metadata contains invalid JSON.",
       "placeholder": "; Your custom G-code...",
