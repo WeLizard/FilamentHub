@@ -1144,8 +1144,8 @@ export const ProfilePage: React.FC = () => {
 
       {/* Help Modal */}
       {showHelpModal && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={() => setShowHelpModal(false)}>
-          <div className="bg-gray-900 border border-white/20 rounded-2xl shadow-2xl w-full max-w-2xl max-h-[85vh] overflow-hidden" onClick={(e) => e.stopPropagation()}>
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-start justify-center pt-20 p-4" onClick={() => setShowHelpModal(false)}>
+          <div className="bg-gray-900 border border-white/20 rounded-2xl shadow-2xl w-full max-w-4xl max-h-[80vh] overflow-hidden" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center justify-between p-5 border-b border-white/10">
               <div className="flex items-center gap-3">
                 <div className="p-2 bg-purple-600/20 rounded-xl">
@@ -1157,32 +1157,65 @@ export const ProfilePage: React.FC = () => {
                 <X className="w-5 h-5 text-gray-400" />
               </button>
             </div>
-            <div className="overflow-y-auto p-5 space-y-5" style={{ maxHeight: 'calc(85vh - 70px)' }}>
+            <div className="overflow-y-auto p-5 space-y-4" style={{ maxHeight: 'calc(80vh - 70px)' }}>
 
               <HelpSection icon={Package} title={t('profilePage.help.presetsTitle')}>
                 <p>{t('profilePage.help.presetsDesc')}</p>
+                <p className="mt-2 text-gray-400 text-sm">{t('profilePage.help.presetsHow')}</p>
                 <ul className="list-disc list-inside space-y-1 text-gray-400 text-sm mt-2">
                   <li>{t('profilePage.help.presetsStep1')}</li>
                   <li>{t('profilePage.help.presetsStep2')}</li>
                   <li>{t('profilePage.help.presetsStep3')}</li>
                   <li>{t('profilePage.help.presetsStep4')}</li>
                 </ul>
+                <p className="mt-2 text-gray-400 text-sm">{t('profilePage.help.presetsNote')}</p>
               </HelpSection>
 
               <HelpSection icon={Printer3DIcon} title={t('profilePage.help.printersTitle')}>
                 <p>{t('profilePage.help.printersDesc')}</p>
+                <ul className="list-disc list-inside space-y-1 text-gray-400 text-sm mt-2">
+                  <li>{t('profilePage.help.printersStep1')}</li>
+                  <li>{t('profilePage.help.printersStep2')}</li>
+                  <li>{t('profilePage.help.printersStep3')}</li>
+                </ul>
+                <p className="mt-2 text-gray-400 text-sm">{t('profilePage.help.printersNote')}</p>
               </HelpSection>
 
               <HelpSection icon={Calculator} title={t('profilePage.help.calculatorTitle')}>
                 <p>{t('profilePage.help.calculatorDesc')}</p>
+                <ul className="list-disc list-inside space-y-1 text-gray-400 text-sm mt-2">
+                  <li>{t('profilePage.help.calculatorStep1')}</li>
+                  <li>{t('profilePage.help.calculatorStep2')}</li>
+                  <li>{t('profilePage.help.calculatorStep3')}</li>
+                </ul>
               </HelpSection>
 
               <HelpSection icon={RefreshCw} title={t('profilePage.help.syncTitle')}>
                 <p>{t('profilePage.help.syncDesc')}</p>
+                <ul className="list-disc list-inside space-y-1 text-gray-400 text-sm mt-2">
+                  <li>{t('profilePage.help.syncStep1')}</li>
+                  <li>{t('profilePage.help.syncStep2')}</li>
+                  <li>{t('profilePage.help.syncStep3')}</li>
+                </ul>
+                <p className="mt-2 text-gray-400 text-sm">{t('profilePage.help.syncNote')}</p>
               </HelpSection>
 
               <HelpSection icon={Shield} title={t('profilePage.help.brandTitle')}>
                 <p>{t('profilePage.help.brandDesc')}</p>
+                <ul className="list-disc list-inside space-y-1 text-gray-400 text-sm mt-2">
+                  <li>{t('profilePage.help.brandStep1')}</li>
+                  <li>{t('profilePage.help.brandStep2')}</li>
+                  <li>{t('profilePage.help.brandStep3')}</li>
+                </ul>
+              </HelpSection>
+
+              <HelpSection icon={Settings} title={t('profilePage.help.settingsTitle')}>
+                <p>{t('profilePage.help.settingsDesc')}</p>
+                <ul className="list-disc list-inside space-y-1 text-gray-400 text-sm mt-2">
+                  <li>{t('profilePage.help.settingsStep1')}</li>
+                  <li>{t('profilePage.help.settingsStep2')}</li>
+                  <li>{t('profilePage.help.settingsStep3')}</li>
+                </ul>
               </HelpSection>
 
               <HelpSection icon={Zap} title={t('profilePage.help.tipsTitle')}>
@@ -1190,6 +1223,8 @@ export const ProfilePage: React.FC = () => {
                   <li>{t('profilePage.help.tip1')}</li>
                   <li>{t('profilePage.help.tip2')}</li>
                   <li>{t('profilePage.help.tip3')}</li>
+                  <li>{t('profilePage.help.tip4')}</li>
+                  <li>{t('profilePage.help.tip5')}</li>
                 </ul>
               </HelpSection>
 
