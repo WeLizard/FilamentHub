@@ -1086,7 +1086,15 @@
     "notesHint": "Заметки сохраняются в профиле материала и доступны при импорте в OrcaSlicer.",
     "saving": "Сохранение...",
     "save": "Сохранить",
-    "create": "Создать"
+    "create": "Создать",
+    "units": {
+      "sec": "с"
+    },
+    "placeholders": {
+      "examplePrice": "Например: 1500",
+      "exampleWeight": "Например: 1000"
+    },
+    "defaultMinusOne": "-1 = по умолчанию"
   },
   "dropdown": {
     "placeholder": "Выберите...",

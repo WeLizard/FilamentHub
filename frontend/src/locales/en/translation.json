@@ -1064,7 +1064,15 @@
     "notesHint": "Notes are saved in the filament profile and available when importing to OrcaSlicer.",
     "saving": "Saving...",
     "save": "Save",
-    "create": "Create"
+    "create": "Create",
+    "units": {
+      "sec": "s"
+    },
+    "placeholders": {
+      "examplePrice": "E.g.: 1500",
+      "exampleWeight": "E.g.: 1000"
+    },
+    "defaultMinusOne": "-1 = default"
   },
   "dropdown": {
     "placeholder": "Select...",

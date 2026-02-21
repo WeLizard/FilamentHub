@@ -2192,7 +2192,7 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                           type="number"
                           value={filamentPricePerKg}
                           onChange={(e) => { setFilamentPricePerKg(e.target.value === '' ? '' : Number(e.target.value)); }}
-                          placeholder="Например: 1500"
+                          placeholder={t('presetModal.placeholders.examplePrice')}
                           min={0}
                           step="10"
                           className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white placeholder-gray-400 placeholder:text-center focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all"
@@ -2204,7 +2204,7 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                           type="number"
                           value={filamentSpoolWeight}
                           onChange={(e) => { setFilamentSpoolWeight(e.target.value === '' ? '' : Number(e.target.value)); }}
-                          placeholder="Например: 1000"
+                          placeholder={t('presetModal.placeholders.exampleWeight')}
                           min={0}
                           step="50"
                           className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white placeholder-gray-400 placeholder:text-center focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all"
@@ -3141,7 +3141,7 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                                 placeholder="30"
                                 className={`w-full pl-3 pr-8 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-gray-500 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all `}
                               />
-                              <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400 pointer-events-none">с</span>
+                              <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400 pointer-events-none">{t('presetModal.units.sec')}</span>
                             </div>
                           </div>
                         </div>
@@ -3179,7 +3179,7 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                                 placeholder="3"
                                 className={`w-full pl-3 pr-8 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-gray-500 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all `}
                               />
-                              <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400 pointer-events-none">с</span>
+                              <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400 pointer-events-none">{t('presetModal.units.sec')}</span>
                             </div>
                           </div>
                         </div>
@@ -3354,7 +3354,7 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                           />
                           <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400 pointer-events-none">%</span>
                         </div>
-                        <p className="text-xs text-gray-500 mt-1">-1 = по умолчанию</p>
+                        <p className="text-xs text-gray-500 mt-1">{t('presetModal.defaultMinusOne')}</p>
                       </div>
                     </div>
                   </div>
@@ -3601,7 +3601,7 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                               { value: 'Spiral', label: t('presetModal.zHopSpiral') },
                               { value: 'AutoLift', label: t('presetModal.zHopAutoLift') },
                             ]}
-                            placeholder="По умолчанию"
+                            placeholder={t('presetModal.default')}
                           />
                         </div>
                         <div>
@@ -3615,7 +3615,7 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                               { value: 'TopOnly', label: t('presetModal.topOnly') },
                               { value: 'None', label: t('presetModal.none') },
                             ]}
-                            placeholder="По умолчанию"
+                            placeholder={t('presetModal.default')}
                           />
                         </div>
                       </div>
