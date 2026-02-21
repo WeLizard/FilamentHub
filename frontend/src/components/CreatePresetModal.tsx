@@ -2598,7 +2598,7 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                     {/* Filament ramming length - это параметр мультитула, будет в вкладке "Дополнительно" */}
                     {/* Но в OrcaSlicer он показывается в "Профиль прутка", оставляем здесь */}
                     <div>
-                      <label className="block text-gray-300 mb-1 text-sm">Filament ramming length</label>
+                      <label className="block text-gray-300 mb-1 text-sm">{t('presetModal.filamentRammingLength')}</label>
                       <div className="relative">
                         <input
                           type="number"
@@ -3036,7 +3036,7 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                         className="w-4 h-4 rounded border-white/20 bg-white/10 text-purple-500 focus:ring-purple-500"
                       />
                       <label htmlFor="adaptiveVolumetricSpeed" className="text-gray-300 text-sm">
-                        Adaptive volumetric speed
+                        {t('presetModal.adaptiveVolumetricSpeed')}
                       </label>
                     </div>
 
@@ -3340,7 +3340,7 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
 
                       {/* Ironing fan speed */}
                       <div>
-                        <label className="block text-gray-300 mb-1 text-sm">Ironing fan speed</label>
+                        <label className="block text-gray-300 mb-1 text-sm">{t('presetModal.ironingFanSpeed')}</label>
                         <div className="relative">
                           <input
                             type="number"
