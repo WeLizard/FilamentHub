@@ -2654,5 +2654,8 @@
     "saving": "Saving...",
     "saveChanges": "Save changes",
     "create": "Create profile"
+  },
+  "editGCode": {
+    "searchPlaceholder": "Search placeholders..."
   }
 }

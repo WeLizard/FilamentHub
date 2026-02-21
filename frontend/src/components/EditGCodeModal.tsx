@@ -1,4 +1,5 @@
 import React, { useState, useMemo } from 'react';
+import { useTranslation } from 'react-i18next';
 import { X, Search, ChevronRight, ChevronDown } from 'lucide-react';
 
 interface Placeholder {
@@ -112,6 +113,7 @@ export const EditGCodeModal: React.FC<EditGCodeModalProps> = ({
   title,
   gcodeType,
 }) => {
+  const { t } = useTranslation();
   const [searchQuery, setSearchQuery] = useState('');
   const [expandedCategories, setExpandedCategories] = useState<Set<string>>(new Set(['Temperatures', 'Dimensions']));
 
@@ -227,7 +229,7 @@ export const EditGCodeModal: React.FC<EditGCodeModalProps> = ({
             type="text"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Поиск плейсхолдеров..."
+            placeholder={t('editGCode.searchPlaceholder')}
             className="w-full pl-8 pr-3 py-1.5 bg-white/10 border border-white/20 rounded-lg text-white placeholder-gray-500 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent"
           />
         </div>

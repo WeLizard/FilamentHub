@@ -260,7 +260,7 @@ export function AdminPrinterRequests() {
                 {selectedRequest.nozzle_diameter && (
                   <div>
                     <p className="text-gray-400 text-sm mb-1">{t('adminPrinterRequests.nozzleDiameter')}</p>
-                    <p className="text-white">{selectedRequest.nozzle_diameter}мм</p>
+                    <p className="text-white">{selectedRequest.nozzle_diameter}{t('adminPrinters.units.mm')}</p>
                   </div>
                 )}
                 {selectedRequest.max_extruder_temp && (
