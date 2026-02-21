@@ -1147,7 +1147,7 @@ export const ProfilePage: React.FC = () => {
       {/* Help Modal */}
       {showHelpModal && (
         <div className={`fixed inset-0 z-[60] flex items-center justify-center p-4 ${isHeaderVisible ? 'pt-[88px]' : ''}`}>
-          <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[59]" onClick={() => setShowHelpModal(false)} />
+          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setShowHelpModal(false)} />
           <div className="relative w-full max-w-4xl max-h-[85vh] overflow-hidden rounded-2xl border border-white/20 bg-white/10 backdrop-blur-md shadow-2xl">
             <div className="flex items-center justify-between p-5 border-b border-white/10">
               <div className="flex items-center gap-3">
