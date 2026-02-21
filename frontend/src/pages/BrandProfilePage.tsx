@@ -594,9 +594,9 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({ onBack }) =>
               </h3>
               <div className="space-y-3">
                 {[
-                  { region: 'Москва', usage: 2456, growth: 12 },
-                  { region: 'Санкт-Петербург', usage: 1892, growth: 8 },
-                  { region: 'Новосибирск', usage: 1234, growth: 15 },
+                  { region: t('brandProfile.regions.moscow'), usage: 2456, growth: 12 },
+                  { region: t('brandProfile.regions.spb'), usage: 1892, growth: 8 },
+                  { region: t('brandProfile.regions.novosibirsk'), usage: 1234, growth: 15 },
                 ].map((item, index) => (
                   <div key={index} className="flex items-center justify-between p-3 bg-white/5 rounded-xl">
                     <div className="flex items-center space-x-3">
@@ -1821,7 +1821,7 @@ const BrandSelectionForm: React.FC = () => {
                 <strong className="text-blue-300">{t('brandProfile.important')}:</strong> {t('brandProfile.alternativeVerification')}
               </p>
               <a
-                href="mailto:admin@filamenthub.ru?subject=Заявка на верификацию бренда&body=Здравствуйте! Я хочу зарегистрировать бренд на платформе FilamentHub."
+                href="mailto:admin@filamenthub.ru?subject=Brand verification request&body=Hello! I would like to register a brand on FilamentHub."
                 className="inline-flex items-center space-x-2 text-xs text-blue-300 hover:text-blue-200 transition-colors"
               >
                 <Share2 className="w-3 h-3" />
@@ -2671,7 +2671,7 @@ const FilamentCard: React.FC<FilamentCardProps> = ({ filament, onEdit, onDelete,
           {filament.price_per_kg ? (
             <div>
               <span className="text-gray-400">{t('brandProfile.price')}: </span>
-              <span className="text-white font-semibold">{Math.round(filament.price_per_kg)}₽/кг</span>
+              <span className="text-white font-semibold">{Math.round(filament.price_per_kg)}{t('brandProfile.rubPerKg')}</span>
             </div>
           ) : (
             <span className="text-gray-500 text-xs">{t('brandProfile.priceNotSet')}</span>

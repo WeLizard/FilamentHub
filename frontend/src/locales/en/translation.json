@@ -540,7 +540,11 @@
     "addToProfile": "To profile",
     "qrCode": "QR code:",
     "qrScanHint": "Scan for quick settings import",
-    "qrScans": "Scans:"
+    "qrScans": "Scans:",
+    "units": {
+      "mm": "mm",
+      "gcm3": "g/cm³"
+    }
   },
   "downloadPage": {
     "errorLoadFailed": "Failed to load build information",
@@ -1971,7 +1975,13 @@
     "priceNotSet": "Price not set",
     "density": "Density",
     "densityUnit": "g/cm³",
-    "downloadQR": "Download QR code"
+    "downloadQR": "Download QR code",
+    "regions": {
+      "moscow": "Moscow",
+      "spb": "Saint Petersburg",
+      "novosibirsk": "Novosibirsk"
+    },
+    "rubPerKg": "₽/kg"
   },
   "viewPreset": {
     "yes": "Yes",

@@ -70,7 +70,7 @@ api.interceptors.response.use(
       window.dispatchEvent(new CustomEvent('maintenanceMode', {
         detail: {
           enabled: true,
-          message: error.response?.data?.message || 'Сайт временно недоступен. Ведутся технические работы.',
+          message: error.response?.data?.message || 'Site is temporarily unavailable. Maintenance in progress.',
         },
       }));
     }

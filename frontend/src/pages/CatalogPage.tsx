@@ -67,7 +67,7 @@ export const CatalogPage: React.FC = () => {
       queryClient.invalidateQueries({ queryKey: ['user-presets'] });
     },
     onError: (error: any) => {
-      console.error('Ошибка сохранения пресета:', error);
+      console.error('Error saving preset:', error);
       alert(error.response?.data?.detail || error.message || t('catalogPage.errorSavePreset'));
     },
   });
@@ -454,14 +454,14 @@ const MaterialCard: React.FC<MaterialCardProps> = ({
           <div className="flex items-center gap-1 bg-white/5 border border-white/10 rounded-full px-2 sm:px-3 py-0.5 sm:py-1">
             <Ruler className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-purple-300" />
             <span className="hidden sm:inline uppercase tracking-wide text-[11px]">{t('catalogPage.diameter')}</span>
-            <span className="text-white font-semibold text-[10px] sm:text-xs">{filament.diameter} мм</span>
+            <span className="text-white font-semibold text-[10px] sm:text-xs">{filament.diameter} {t('catalogPage.units.mm')}</span>
           </div>
         )}
         {filament.density && (
           <div className="flex items-center gap-1 bg-white/5 border border-white/10 rounded-full px-2 sm:px-3 py-0.5 sm:py-1">
             <Droplet className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-blue-300" />
             <span className="hidden sm:inline uppercase tracking-wide text-[11px]">{t('catalogPage.density')}</span>
-            <span className="text-white font-semibold text-[10px] sm:text-xs">{filament.density} г/см³</span>
+            <span className="text-white font-semibold text-[10px] sm:text-xs">{filament.density} {t('catalogPage.units.gcm3')}</span>
           </div>
         )}
         {filament.color_name && (

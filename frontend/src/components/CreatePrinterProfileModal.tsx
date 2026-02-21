@@ -1197,7 +1197,7 @@ export const CreatePrinterProfileModal: React.FC<CreatePrinterProfileModalProps>
           </div>
 
           <div>
-            <h5 className="text-xs font-semibold uppercase tracking-wide text-purple-200/70 mb-3">Jerk (мм/с)</h5>
+            <h5 className="text-xs font-semibold uppercase tracking-wide text-purple-200/70 mb-3">{t('adminPrinters.speed.jerk')}</h5>
             <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
               {(['machine_max_jerk_x', 'machine_max_jerk_y', 'machine_max_jerk_z', 'machine_max_jerk_e'] as const).map((key) => (
                 <div key={key}>
@@ -1295,7 +1295,7 @@ export const CreatePrinterProfileModal: React.FC<CreatePrinterProfileModalProps>
                   placeholder="107"
                   className="w-full bg-white/5 border border-white/10 rounded-lg px-4 py-2 text-white placeholder-gray-500 focus:outline-none focus:border-purple-500 pr-16"
                 />
-                <span className="absolute inset-y-0 right-4 flex items-center text-xs text-gray-400 pointer-events-none">мм³</span>
+                <span className="absolute inset-y-0 right-4 flex items-center text-xs text-gray-400 pointer-events-none">{t('adminPrinters.units.mm3')}</span>
               </div>
             </div>
             <div>
@@ -1308,7 +1308,7 @@ export const CreatePrinterProfileModal: React.FC<CreatePrinterProfileModalProps>
                   placeholder="90"
                   className="w-full bg-white/5 border border-white/10 rounded-lg px-4 py-2 text-white placeholder-gray-500 focus:outline-none focus:border-purple-500 pr-16"
                 />
-                <span className="absolute inset-y-0 right-4 flex items-center text-xs text-gray-400 pointer-events-none">мм</span>
+                <span className="absolute inset-y-0 right-4 flex items-center text-xs text-gray-400 pointer-events-none">{t('adminPrinters.units.mm')}</span>
               </div>
             </div>
             <div>
@@ -1321,7 +1321,7 @@ export const CreatePrinterProfileModal: React.FC<CreatePrinterProfileModalProps>
                   placeholder="68"
                   className="w-full bg-white/5 border border-white/10 rounded-lg px-4 py-2 text-white placeholder-gray-500 focus:outline-none focus:border-purple-500 pr-16"
                 />
-                <span className="absolute inset-y-0 right-4 flex items-center text-xs text-gray-400 pointer-events-none">мм</span>
+                <span className="absolute inset-y-0 right-4 flex items-center text-xs text-gray-400 pointer-events-none">{t('adminPrinters.units.mm')}</span>
               </div>
             </div>
             <div>
@@ -1436,7 +1436,7 @@ export const CreatePrinterProfileModal: React.FC<CreatePrinterProfileModalProps>
                 />
               </div>
               <div>
-                <label className="block text-gray-300 mb-2 text-sm font-medium">Wipe distance (мм)</label>
+                <label className="block text-gray-300 mb-2 text-sm font-medium">{t('adminPrinters.retraction.wipeDistance')}</label>
                 <input
                   type="text"
                   value={getMetadataListString('wipe_distance')}
@@ -1446,7 +1446,7 @@ export const CreatePrinterProfileModal: React.FC<CreatePrinterProfileModalProps>
                 />
               </div>
               <div>
-                <label className="block text-gray-300 mb-2 text-sm font-medium">Z-hop (мм)</label>
+                <label className="block text-gray-300 mb-2 text-sm font-medium">{t('adminPrinters.retraction.zHop')}</label>
                 <input
                   type="text"
                   value={getMetadataListString('z_hop')}
@@ -1598,7 +1598,7 @@ export const CreatePrinterProfileModal: React.FC<CreatePrinterProfileModalProps>
               />
             </div>
             <div>
-              <label className="block text-gray-300 mb-2 text-sm font-medium">Cooling tube retraction (мм)</label>
+              <label className="block text-gray-300 mb-2 text-sm font-medium">{t('adminPrinters.multimaterial.coolingTubeRetraction')}</label>
               <input
                 type="text"
                 value={getMetadataString('cooling_tube_retraction')}
@@ -1608,7 +1608,7 @@ export const CreatePrinterProfileModal: React.FC<CreatePrinterProfileModalProps>
               />
             </div>
             <div>
-              <label className="block text-gray-300 mb-2 text-sm font-medium">Cooling tube length (мм)</label>
+              <label className="block text-gray-300 mb-2 text-sm font-medium">{t('adminPrinters.multimaterial.coolingTubeLength')}</label>
               <input
                 type="text"
                 value={getMetadataString('cooling_tube_length')}
@@ -1618,7 +1618,7 @@ export const CreatePrinterProfileModal: React.FC<CreatePrinterProfileModalProps>
               />
             </div>
             <div>
-              <label className="block text-gray-300 mb-2 text-sm font-medium">Extra loading move (мм)</label>
+              <label className="block text-gray-300 mb-2 text-sm font-medium">{t('adminPrinters.multimaterial.extraLoadingMove')}</label>
               <input
                 type="text"
                 value={getMetadataString('extra_loading_move')}
