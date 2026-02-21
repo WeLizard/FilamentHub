@@ -18,7 +18,7 @@
   - Все P0 закрыты (PyJWT, reCAPTCHA v3, Path Traversal, SQL LIKE, DoS, CVE фронтенда)
   - P1 закрыты (CORS, race conditions, stack traces, auth на экспорт, дубликаты)
   - Открыты: XSS в C++ (`SEC-1..3`), `fhub_source` в Config.cpp (`EXPORT-1`), production секреты (`INFRA-1`)
-- ✅ i18n: Frontend (react-i18next) работает; Backend (fastapi-i18n) — мёртвый код, подлежит удалению
+- ✅ i18n: Frontend (react-i18next) — 30+ компонентов переведены, остались только юридические тексты (ConsentModal, TermsModal); Backend (fastapi-i18n) — мёртвый код, подлежит удалению
 - ✅ Юридические документы заполнены (support@filamenthub.ru, раздел о синхронизации)
 - ✅ Docker dev/prod настроен (docker-compose.yml + docker-compose.dev.yml)
 
