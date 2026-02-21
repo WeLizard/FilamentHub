@@ -36,6 +36,12 @@ import {
   ChevronDown,
   ChevronUp,
   CheckCircle,
+  HelpCircle,
+  X,
+  BookOpen,
+  Zap,
+  Shield,
+  RefreshCw,
 } from 'lucide-react';
 import { Printer3DIcon } from '../components/icons/Printer3DIcon';
 import { useAuth } from '../contexts/AuthContext';
@@ -63,6 +69,7 @@ export const ProfilePage: React.FC = () => {
   const [userTab, setUserTab] = useState<'dashboard' | 'presets' | 'history' | 'calculator' | 'settings' | 'printer-profiles'>(
     'dashboard'
   );
+  const [showHelpModal, setShowHelpModal] = useState(false);
   const [isCreatePresetModalOpen, setIsCreatePresetModalOpen] = useState(false);
   const [isViewPresetModalOpen, setIsViewPresetModalOpen] = useState(false);
   const [isCreatePrinterRequestModalOpen, setIsCreatePrinterRequestModalOpen] = useState(false);
@@ -676,6 +683,14 @@ export const ProfilePage: React.FC = () => {
                 <span className="md:hidden">{tab.shortLabel}</span>
               </button>
             ))}
+            <button
+              onClick={() => setShowHelpModal(true)}
+              className="flex items-center gap-1.5 px-2 md:px-3 py-1.5 md:py-2 rounded-lg transition-all text-xs md:text-sm text-gray-400 hover:text-white hover:bg-white/10 active:bg-white/15"
+              title={t('profilePage.help.title')}
+            >
+              <HelpCircle className="w-3.5 h-3.5 md:w-4 md:h-4" />
+              <span className="hidden lg:inline">{t('profilePage.help.button')}</span>
+            </button>
           </div>
         </div>
       </div>
@@ -1127,6 +1142,62 @@ export const ProfilePage: React.FC = () => {
         profile={editingPrintProfile}
       />
 
+      {/* Help Modal */}
+      {showHelpModal && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={() => setShowHelpModal(false)}>
+          <div className="bg-gray-900 border border-white/20 rounded-2xl shadow-2xl w-full max-w-2xl max-h-[85vh] overflow-hidden" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between p-5 border-b border-white/10">
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-purple-600/20 rounded-xl">
+                  <BookOpen className="w-5 h-5 text-purple-400" />
+                </div>
+                <h2 className="text-lg font-bold text-white">{t('profilePage.help.title')}</h2>
+              </div>
+              <button onClick={() => setShowHelpModal(false)} className="p-2 hover:bg-white/10 rounded-lg transition-colors">
+                <X className="w-5 h-5 text-gray-400" />
+              </button>
+            </div>
+            <div className="overflow-y-auto p-5 space-y-5" style={{ maxHeight: 'calc(85vh - 70px)' }}>
+
+              <HelpSection icon={Package} title={t('profilePage.help.presetsTitle')}>
+                <p>{t('profilePage.help.presetsDesc')}</p>
+                <ul className="list-disc list-inside space-y-1 text-gray-400 text-sm mt-2">
+                  <li>{t('profilePage.help.presetsStep1')}</li>
+                  <li>{t('profilePage.help.presetsStep2')}</li>
+                  <li>{t('profilePage.help.presetsStep3')}</li>
+                  <li>{t('profilePage.help.presetsStep4')}</li>
+                </ul>
+              </HelpSection>
+
+              <HelpSection icon={Printer3DIcon} title={t('profilePage.help.printersTitle')}>
+                <p>{t('profilePage.help.printersDesc')}</p>
+              </HelpSection>
+
+              <HelpSection icon={Calculator} title={t('profilePage.help.calculatorTitle')}>
+                <p>{t('profilePage.help.calculatorDesc')}</p>
+              </HelpSection>
+
+              <HelpSection icon={RefreshCw} title={t('profilePage.help.syncTitle')}>
+                <p>{t('profilePage.help.syncDesc')}</p>
+              </HelpSection>
+
+              <HelpSection icon={Shield} title={t('profilePage.help.brandTitle')}>
+                <p>{t('profilePage.help.brandDesc')}</p>
+              </HelpSection>
+
+              <HelpSection icon={Zap} title={t('profilePage.help.tipsTitle')}>
+                <ul className="list-disc list-inside space-y-1 text-gray-400 text-sm">
+                  <li>{t('profilePage.help.tip1')}</li>
+                  <li>{t('profilePage.help.tip2')}</li>
+                  <li>{t('profilePage.help.tip3')}</li>
+                </ul>
+              </HelpSection>
+
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Combined Profiles Section (только на dashboard) */}
       {userTab === 'dashboard' && (
         <section className="mt-12 space-y-5">
@@ -1299,6 +1370,16 @@ const RecentHistory: React.FC<RecentHistoryProps> = ({ history }) => {
   </div>
   );
 };
+
+const HelpSection: React.FC<{ icon: React.ElementType; title: string; children: ReactNode }> = ({ icon: Icon, title, children }) => (
+  <div className="bg-white/5 border border-white/10 rounded-xl p-4">
+    <div className="flex items-center gap-2 mb-2">
+      <Icon className="w-4 h-4 text-purple-400 flex-shrink-0" />
+      <h3 className="text-sm font-semibold text-white">{title}</h3>
+    </div>
+    <div className="text-sm text-gray-300 leading-relaxed">{children}</div>
+  </div>
+);
 
 interface PresetCardProps {
   preset: Preset;
