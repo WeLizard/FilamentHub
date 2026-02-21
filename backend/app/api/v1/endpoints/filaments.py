@@ -366,12 +366,17 @@ async def create_filament(
     if not brand:
         raise HTTPException(status_code=404, detail="Brand not found")
     
-    # Проверка прав доступа: только админ или сотрудник бренда может создавать материалы
+    # Проверка прав доступа:
+    # - Админ может создавать для любого бренда
+    # - Сотрудник бренда может создавать для своего бренда
+    # - Любой авторизованный пользователь может создавать для неверифицированного бренда
+    #   (например, только что созданного через форму пресета)
     if current_user.role != UserRole.ADMIN and current_user.brand_id != data.brand_id:
-        raise HTTPException(
-            status_code=403,
-            detail="Not enough permissions. You can only create materials for your own brand."
-        )
+        if brand.verified:
+            raise HTTPException(
+                status_code=403,
+                detail="Not enough permissions. You can only create materials for your own brand."
+            )
     
     # Проверка текстовых полей на плохие слова
     from app.services.preset_moderation import validate_text_field
