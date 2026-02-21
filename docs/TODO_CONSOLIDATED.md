@@ -434,6 +434,7 @@ OrcaSlicer C++       [██████████████████░�
 - [x] CatalogPage — units, console (~4 строки)
 - [x] EditGCodeModal — search placeholder (~1 строка)
 - [x] api/client.ts — maintenance message → English
+- [x] AdminWiki — все ключи (~40 строк)
 - [ ] ConsentModal — юридический текст (102 строки, отложено)
 - [ ] TermsModal — юридический текст (218 строк, отложено)
 
