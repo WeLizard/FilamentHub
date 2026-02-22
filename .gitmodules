@@ -1,4 +1,4 @@
-[submodule "docs/OrcaSlicer"]
-	path = docs/OrcaSlicer
+[submodule "submodule/OrcaSlicer"]
+	path = submodule/OrcaSlicer
 	url = https://github.com/lizardjazz1/OrcaSlicer.git
 	branch = filamenthub-integration
