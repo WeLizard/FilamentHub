@@ -549,7 +549,21 @@ async def export_preset_json(
     
     if not preset.filament:
         raise HTTPException(status_code=404, detail="Filament not found")
-    
+
+    # EXPORT-6 fix: валидация обязательных полей перед экспортом → HTTP 422
+    missing_fields = []
+    if not preset.name:
+        missing_fields.append("name")
+    if not preset.filament.material_type:
+        missing_fields.append("filament.material_type")
+    if preset.nozzle_temperature is None:
+        missing_fields.append("nozzle_temperature")
+    if missing_fields:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Пресет не может быть экспортирован: отсутствуют обязательные поля: {', '.join(missing_fields)}",
+        )
+
     # Экспортируем в JSON
     try:
         profile_dict = await preset_to_orcaslicer_json(preset, preset.filament, db)
@@ -641,7 +655,19 @@ async def export_preset_info(
     
     if not preset.filament:
         raise HTTPException(status_code=404, detail="Filament not found")
-    
+
+    # EXPORT-6 fix: валидация обязательных полей перед экспортом → HTTP 422
+    missing_fields = []
+    if not preset.name:
+        missing_fields.append("name")
+    if not preset.filament.material_type:
+        missing_fields.append("filament.material_type")
+    if missing_fields:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Пресет не может быть экспортирован: отсутствуют обязательные поля: {', '.join(missing_fields)}",
+        )
+
     # Генерируем .info файл (INI формат)
     info_content = generate_profile_info(preset, preset.filament)
     

@@ -33,9 +33,17 @@ def upgrade() -> None:
 
 def downgrade() -> None:
     """Downgrade database schema."""
-    # ВАЖНО: Перед downgrade нужно удалить все черновики (presets с filament_id=None)
-    # Иначе миграция упадёт
-    op.execute("DELETE FROM presets WHERE filament_id IS NULL")
+    # ALEMBIC-5 fix: вместо тихого удаления черновиков — проверяем их наличие и падаем с ошибкой.
+    # Это защищает от случайной потери данных при downgrade.
+    # Если черновики есть — нужно их вручную перенести или удалить перед downgrade.
+    conn = op.get_bind()
+    result = conn.execute(sa.text("SELECT COUNT(*) FROM presets WHERE filament_id IS NULL"))
+    draft_count = result.scalar()
+    if draft_count > 0:
+        raise RuntimeError(
+            f"Cannot downgrade: {draft_count} draft preset(s) with filament_id=NULL exist. "
+            "Manually migrate or delete them before running downgrade."
+        )
     op.alter_column('presets', 'filament_id',
                     existing_type=sa.Integer(),
                     nullable=False,
