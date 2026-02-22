@@ -13,6 +13,7 @@ from sqlalchemy.orm import selectinload
 logger = logging.getLogger(__name__)
 
 from app.core.dependencies import get_current_active_user, get_current_brand_user, get_current_active_user_optional
+from app.core.errors import ERR_FILAMENT_NOT_FOUND, ERR_NO_PERMISSION_EDIT_PRESET, ERR_PRESET_NOT_FOUND
 from app.db.session import get_db
 from app.models.preset import Preset, PresetModerationStatus
 from app.models.preset_printer import PresetPrinter
@@ -137,7 +138,7 @@ async def get_preset(
     preset = result.scalar_one_or_none()
 
     if not preset:
-        raise HTTPException(status_code=404, detail="Preset not found")
+        raise HTTPException(status_code=404, detail=ERR_PRESET_NOT_FOUND)
 
     # Если пресет не активен и пользователь не является владельцем - не показываем
     if not preset.active:
@@ -160,12 +161,12 @@ async def get_preset(
                     can_access = True
         
         if not can_access:
-            raise HTTPException(status_code=404, detail="Preset not found")
+            raise HTTPException(status_code=404, detail=ERR_PRESET_NOT_FOUND)
 
     # Если пресет не одобрен и пользователь не является владельцем - не показываем
     if preset.moderation_status != PresetModerationStatus.APPROVED and not preset.is_official:
         if current_user and preset.user_id != current_user.id:
-            raise HTTPException(status_code=404, detail="Preset not found")
+            raise HTTPException(status_code=404, detail=ERR_PRESET_NOT_FOUND)
 
     # Преобразуем пресет в ответ (без printers, так как таблица может не существовать)
     preset_dict = PresetResponse.model_validate(preset).model_dump()
@@ -187,7 +188,7 @@ async def create_preset(
     filament = filament_result.scalar_one_or_none()
     
     if not filament:
-        raise HTTPException(status_code=404, detail="Filament not found")
+        raise HTTPException(status_code=404, detail=ERR_FILAMENT_NOT_FOUND)
     
     # Проверка прав на создание официального пресета
     if data.is_official:
@@ -320,7 +321,7 @@ async def update_preset(
     preset = result.scalar_one_or_none()
 
     if not preset:
-        raise HTTPException(status_code=404, detail="Preset not found")
+        raise HTTPException(status_code=404, detail=ERR_PRESET_NOT_FOUND)
     
     # Взвешенные пресеты нельзя редактировать (они автоматически обновляются системой)
     if preset.is_weighted:
@@ -333,7 +334,7 @@ async def update_preset(
     if preset.user_id != current_user.id and current_user.role.value != "admin":
         raise HTTPException(
             status_code=403,
-            detail="You can only update your own presets"
+            detail=ERR_NO_PERMISSION_EDIT_PRESET
         )
 
     # Обновляем только переданные поля
@@ -350,7 +351,7 @@ async def update_preset(
         filament_result = await db.execute(select(Filament).where(Filament.id == target_filament_id))
         filament = filament_result.scalar_one_or_none()
         if not filament:
-            raise HTTPException(status_code=404, detail="Filament not found")
+            raise HTTPException(status_code=404, detail=ERR_FILAMENT_NOT_FOUND)
     
     # Сохраняем старое состояние для проверки активации черновика
     was_draft = not preset.active or not preset.filament_id
@@ -463,7 +464,7 @@ async def delete_preset(
     preset = result.scalar_one_or_none()
 
     if not preset:
-        raise HTTPException(status_code=404, detail="Preset not found")
+        raise HTTPException(status_code=404, detail=ERR_PRESET_NOT_FOUND)
     
     # Взвешенные пресеты нельзя удалять (они автоматически управляются системой)
     if preset.is_weighted:
@@ -515,7 +516,7 @@ async def increment_usage(
     preset = result.scalar_one_or_none()
 
     if not preset:
-        raise HTTPException(status_code=404, detail="Preset not found")
+        raise HTTPException(status_code=404, detail=ERR_PRESET_NOT_FOUND)
 
     preset.usage_count += 1
     await db.commit()
@@ -545,10 +546,10 @@ async def export_preset_json(
     preset = result.scalar_one_or_none()
     
     if not preset:
-        raise HTTPException(status_code=404, detail="Preset not found")
+        raise HTTPException(status_code=404, detail=ERR_PRESET_NOT_FOUND)
     
     if not preset.filament:
-        raise HTTPException(status_code=404, detail="Filament not found")
+        raise HTTPException(status_code=404, detail=ERR_FILAMENT_NOT_FOUND)
 
     # EXPORT-6 fix: валидация обязательных полей перед экспортом → HTTP 422
     missing_fields = []
@@ -651,10 +652,10 @@ async def export_preset_info(
     preset = result.scalar_one_or_none()
     
     if not preset:
-        raise HTTPException(status_code=404, detail="Preset not found")
+        raise HTTPException(status_code=404, detail=ERR_PRESET_NOT_FOUND)
     
     if not preset.filament:
-        raise HTTPException(status_code=404, detail="Filament not found")
+        raise HTTPException(status_code=404, detail=ERR_FILAMENT_NOT_FOUND)
 
     # EXPORT-6 fix: валидация обязательных полей перед экспортом → HTTP 422
     missing_fields = []

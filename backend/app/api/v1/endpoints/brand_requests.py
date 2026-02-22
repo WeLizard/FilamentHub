@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.dependencies import get_current_active_user, get_current_admin_user
 from app.core.config import settings
+from app.core.errors import ERR_BRAND_NOT_FOUND, ERR_BRAND_SLUG_EXISTS, ERR_REQUEST_NOT_FOUND, ERR_REQUEST_NOT_PENDING
 from app.db.session import get_db
 from app.models.brand_request import BrandRequest, BrandRequestStatus, BrandRequestType
 from app.models.brand import Brand
@@ -53,7 +54,7 @@ async def create_brand_request(
         if not brand:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail="Brand not found",
+                detail=ERR_BRAND_NOT_FOUND,
             )
         
         # Проверяем, есть ли у бренда сотрудники (пользователи с brand_id = brand.id)
@@ -115,7 +116,7 @@ async def create_brand_request(
         if existing_brand.scalar_one_or_none():
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Brand with this slug already exists",
+                detail=ERR_BRAND_SLUG_EXISTS,
             )
         
         # Проверяем, что у пользователя еще нет активной заявки на создание этого бренда
@@ -326,7 +327,7 @@ async def cancel_brand_request(
     if not request:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="Request not found",
+            detail=ERR_REQUEST_NOT_FOUND,
         )
     
     if request.status != BrandRequestStatus.PENDING:
@@ -360,13 +361,13 @@ async def update_brand_request(
     if not request:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="Request not found",
+            detail=ERR_REQUEST_NOT_FOUND,
         )
     
     if request.status != BrandRequestStatus.PENDING:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Can only update pending requests",
+            detail=ERR_REQUEST_NOT_PENDING,
         )
     
     # Обновляем статус
@@ -424,7 +425,7 @@ async def get_brand_request(
     if not request:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="Request not found",
+            detail=ERR_REQUEST_NOT_FOUND,
         )
     
     # Пользователь может видеть только свои заявки (или админ - все)
@@ -463,7 +464,7 @@ async def upload_proof_file(
     if not request:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="Request not found",
+            detail=ERR_REQUEST_NOT_FOUND,
         )
     
     if request.user_id != current_user.id:
@@ -535,7 +536,7 @@ async def delete_proof_file_endpoint(
     if not request:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="Request not found",
+            detail=ERR_REQUEST_NOT_FOUND,
         )
     
     if request.user_id != current_user.id:

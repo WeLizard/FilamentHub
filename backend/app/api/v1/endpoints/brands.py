@@ -7,6 +7,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.utils import like_pattern
+from app.core.errors import ERR_BRAND_NOT_FOUND, ERR_BRAND_SLUG_EXISTS
 from app.db.session import get_db
 from app.models.brand import Brand
 from app.schemas.brand import BrandCreate, BrandListResponse, BrandResponse, BrandUpdate
@@ -75,7 +76,7 @@ async def get_brand(
     brand = result.scalar_one_or_none()
 
     if not brand:
-        raise HTTPException(status_code=404, detail="Brand not found")
+        raise HTTPException(status_code=404, detail=ERR_BRAND_NOT_FOUND)
 
     response = BrandResponse.model_validate(brand)
     
@@ -111,7 +112,7 @@ async def create_brand(
     # Check if slug exists
     existing = await db.execute(select(Brand).where(Brand.slug == data.slug))
     if existing.scalar_one_or_none():
-        raise HTTPException(status_code=400, detail="Brand with this slug already exists")
+        raise HTTPException(status_code=400, detail=ERR_BRAND_SLUG_EXISTS)
 
     # Create brand
     brand = Brand(**data.model_dump())
@@ -133,7 +134,7 @@ async def update_brand(
     brand = result.scalar_one_or_none()
 
     if not brand:
-        raise HTTPException(status_code=404, detail="Brand not found")
+        raise HTTPException(status_code=404, detail=ERR_BRAND_NOT_FOUND)
 
     # Проверка текстовых полей на плохие слова
     from app.services.preset_moderation import validate_text_field
@@ -169,7 +170,7 @@ async def delete_brand(
     brand = result.scalar_one_or_none()
 
     if not brand:
-        raise HTTPException(status_code=404, detail="Brand not found")
+        raise HTTPException(status_code=404, detail=ERR_BRAND_NOT_FOUND)
 
     await db.delete(brand)
     await db.commit()
@@ -179,7 +180,7 @@ async def delete_brand(
     brand = result.scalar_one_or_none()
 
     if not brand:
-        raise HTTPException(status_code=404, detail="Brand not found")
+        raise HTTPException(status_code=404, detail=ERR_BRAND_NOT_FOUND)
 
     await db.delete(brand)
     await db.commit()

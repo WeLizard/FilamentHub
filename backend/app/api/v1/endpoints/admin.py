@@ -13,6 +13,7 @@ logger = logging.getLogger(__name__)
 
 from app.core.dependencies import get_current_admin_user
 from app.core.utils import like_pattern
+from app.core.errors import ERR_BRAND_NOT_FOUND, ERR_BRAND_SLUG_EXISTS, ERR_PRESET_NOT_FOUND, ERR_PRINTER_NOT_FOUND, ERR_PRINTER_SLUG_EXISTS, ERR_REQUEST_NOT_PENDING, ERR_USER_ALREADY_IN_BRAND, ERR_USER_NOT_FOUND, ERR_USER_NOT_IN_BRAND
 from app.db.session import get_db
 from app.services.maintenance_service import (
     get_maintenance_info,
@@ -159,7 +160,7 @@ async def verify_brand(
     if not brand:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="Brand not found",
+            detail=ERR_BRAND_NOT_FOUND,
         )
     
     brand.verified = True
@@ -202,7 +203,7 @@ async def unverify_brand(
     if not brand:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="Brand not found",
+            detail=ERR_BRAND_NOT_FOUND,
         )
     
     brand.verified = False
@@ -226,7 +227,7 @@ async def update_brand_admin(
     if not brand:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="Brand not found",
+            detail=ERR_BRAND_NOT_FOUND,
         )
 
     # Проверка текстовых полей на плохие слова
@@ -251,7 +252,7 @@ async def update_brand_admin(
         if existing_brand.scalar_one_or_none():
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Brand with this slug already exists"
+                detail=ERR_BRAND_SLUG_EXISTS
             )
 
     # Update fields
@@ -306,7 +307,7 @@ async def approve_preset(
     if not preset:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="Preset not found",
+            detail=ERR_PRESET_NOT_FOUND,
         )
     
     preset.moderation_status = PresetModerationStatus.APPROVED
@@ -334,7 +335,7 @@ async def reject_preset(
     if not preset:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="Preset not found",
+            detail=ERR_PRESET_NOT_FOUND,
         )
     
     preset.moderation_status = PresetModerationStatus.REJECTED
@@ -407,7 +408,7 @@ async def activate_user(
     if not user:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="User not found",
+            detail=ERR_USER_NOT_FOUND,
         )
     
     user.active = True
@@ -430,7 +431,7 @@ async def deactivate_user(
     if not user:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="User not found",
+            detail=ERR_USER_NOT_FOUND,
         )
     
     user.active = False
@@ -453,7 +454,7 @@ async def promote_to_admin(
     if not user:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="User not found",
+            detail=ERR_USER_NOT_FOUND,
         )
     
     # Админ может оставаться привязанным к бренду, поэтому brand_id не обнуляем
@@ -477,7 +478,7 @@ async def demote_to_user(
     if not user:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="User not found",
+            detail=ERR_USER_NOT_FOUND,
         )
     
     # Меняем только роль, привязка к бренду остается без изменений
@@ -502,13 +503,13 @@ async def link_user_to_brand(
     if not user:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="User not found",
+            detail=ERR_USER_NOT_FOUND,
         )
     
     if user.brand_id:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="User is already linked to a brand",
+            detail=ERR_USER_ALREADY_IN_BRAND,
         )
     
     # Проверяем существование бренда
@@ -518,7 +519,7 @@ async def link_user_to_brand(
     if not brand:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="Brand not found",
+            detail=ERR_BRAND_NOT_FOUND,
         )
     
     # Привязываем к бренду (роль не меняем)
@@ -552,13 +553,13 @@ async def unlink_user_from_brand(
     if not user:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="User not found",
+            detail=ERR_USER_NOT_FOUND,
         )
     
     if not user.brand_id:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="User is not linked to a brand",
+            detail=ERR_USER_NOT_IN_BRAND,
         )
     
     # Отвязываем от бренда (роль не меняем)
@@ -752,7 +753,7 @@ async def update_brand_request(
     if request.status != BrandRequestStatus.PENDING:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Can only update pending requests",
+            detail=ERR_REQUEST_NOT_PENDING,
         )
     
     # Обновляем статус
@@ -769,7 +770,7 @@ async def update_brand_request(
         if not user:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail="User not found",
+                detail=ERR_USER_NOT_FOUND,
             )
         
         # Просто привязываем к бренду, роль не меняем (админ может быть привязан к бренду, но оставаться админом)
@@ -798,7 +799,7 @@ async def update_brand_request(
             if existing_brand.scalar_one_or_none():
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
-                    detail="Brand with this slug already exists",
+                    detail=ERR_BRAND_SLUG_EXISTS,
                 )
             
             # Создаем новый бренд
@@ -923,7 +924,7 @@ async def create_printer_admin(
     existing = slug_result.scalar_one_or_none()
     
     if existing:
-        raise HTTPException(status_code=400, detail="Printer with this slug already exists")
+        raise HTTPException(status_code=400, detail=ERR_PRINTER_SLUG_EXISTS)
     
     # Create printer
     printer = Printer(**data.model_dump())
@@ -946,14 +947,14 @@ async def update_printer_admin(
     printer = result.scalar_one_or_none()
     
     if not printer:
-        raise HTTPException(status_code=404, detail="Printer not found")
+        raise HTTPException(status_code=404, detail=ERR_PRINTER_NOT_FOUND)
     
     # Проверяем уникальность slug если он обновляется
     if data.slug and data.slug != printer.slug:
         slug_result = await db.execute(select(Printer).where(Printer.slug == data.slug))
         existing = slug_result.scalar_one_or_none()
         if existing:
-            raise HTTPException(status_code=400, detail="Printer with this slug already exists")
+            raise HTTPException(status_code=400, detail=ERR_PRINTER_SLUG_EXISTS)
     
     # Update fields
     update_data = data.model_dump(exclude_unset=True)
@@ -977,7 +978,7 @@ async def delete_printer_admin(
     printer = result.scalar_one_or_none()
     
     if not printer:
-        raise HTTPException(status_code=404, detail="Printer not found")
+        raise HTTPException(status_code=404, detail=ERR_PRINTER_NOT_FOUND)
     
     await db.delete(printer)
     await db.commit()

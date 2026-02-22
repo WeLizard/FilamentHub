@@ -9,6 +9,7 @@ from sqlalchemy.orm import selectinload
 
 from app.core.dependencies import get_current_admin_user
 from app.core.utils import like_pattern
+from app.core.errors import ERR_PRINTER_NOT_FOUND, ERR_PRINTER_SLUG_EXISTS
 from app.db.session import get_db
 from app.models.printer import Printer
 from app.models.user import User
@@ -97,7 +98,7 @@ async def get_printer(
     printer = result.scalar_one_or_none()
     
     if not printer:
-        raise HTTPException(status_code=404, detail="Printer not found")
+        raise HTTPException(status_code=404, detail=ERR_PRINTER_NOT_FOUND)
     
     return PrinterResponse.model_validate(printer)
 
@@ -114,7 +115,7 @@ async def create_printer(
     existing = slug_result.scalar_one_or_none()
     
     if existing:
-        raise HTTPException(status_code=400, detail="Printer with this slug already exists")
+        raise HTTPException(status_code=400, detail=ERR_PRINTER_SLUG_EXISTS)
     
     # Проверка текстовых полей на плохие слова
     from app.services.preset_moderation import validate_text_field
@@ -148,14 +149,14 @@ async def update_printer(
     printer = result.scalar_one_or_none()
     
     if not printer:
-        raise HTTPException(status_code=404, detail="Printer not found")
+        raise HTTPException(status_code=404, detail=ERR_PRINTER_NOT_FOUND)
     
     # Проверяем уникальность slug если он обновляется
     if data.slug and data.slug != printer.slug:
         slug_result = await db.execute(select(Printer).where(Printer.slug == data.slug))
         existing = slug_result.scalar_one_or_none()
         if existing:
-            raise HTTPException(status_code=400, detail="Printer with this slug already exists")
+            raise HTTPException(status_code=400, detail=ERR_PRINTER_SLUG_EXISTS)
     
     # Проверка текстовых полей на плохие слова
     from app.services.preset_moderation import validate_text_field
@@ -192,7 +193,7 @@ async def delete_printer(
     printer = result.scalar_one_or_none()
     
     if not printer:
-        raise HTTPException(status_code=404, detail="Printer not found")
+        raise HTTPException(status_code=404, detail=ERR_PRINTER_NOT_FOUND)
     
     await db.delete(printer)
     await db.commit()

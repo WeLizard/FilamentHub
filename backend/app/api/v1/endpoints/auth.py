@@ -60,6 +60,7 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 
 # Импортируем limiter из core
 from app.core.limiter import limiter
+from app.core.errors import ERR_ACCOUNT_INACTIVE, ERR_BRAND_NOT_FOUND, ERR_EMAIL_EXISTS, ERR_INVALID_REFRESH_TOKEN, ERR_INVALID_VERIFICATION_TOKEN, ERR_USERNAME_EXISTS, ERR_USER_NOT_FOUND
 
 
 @router.post("/register", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
@@ -88,7 +89,7 @@ async def register(
     if existing_user:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Email already registered",
+            detail=ERR_EMAIL_EXISTS,
         )
     
     # Проверка существования username
@@ -97,7 +98,7 @@ async def register(
     if existing_user:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Username already taken",
+            detail=ERR_USERNAME_EXISTS,
         )
     
     # Проверка текстовых полей на плохие слова
@@ -164,12 +165,12 @@ async def register(
             if "email" in error_str:
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
-                    detail="Email already registered",
+                    detail=ERR_EMAIL_EXISTS,
                 )
             elif "username" in error_str:
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
-                    detail="Username already taken",
+                    detail=ERR_USERNAME_EXISTS,
                 )
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -219,7 +220,7 @@ async def login(
     if not user.active:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="User account is inactive",
+            detail=ERR_ACCOUNT_INACTIVE,
         )
     
     # Update last login
@@ -246,7 +247,7 @@ async def refresh_token(
     if payload is None:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid or expired refresh token",
+            detail=ERR_INVALID_REFRESH_TOKEN,
             headers={"WWW-Authenticate": "Bearer"},
         )
     
@@ -266,14 +267,14 @@ async def refresh_token(
     if user is None:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="User not found",
+            detail=ERR_USER_NOT_FOUND,
             headers={"WWW-Authenticate": "Bearer"},
         )
     
     if not user.active:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="User account is inactive",
+            detail=ERR_ACCOUNT_INACTIVE,
         )
     
     # Создаём новый access token
@@ -491,7 +492,7 @@ async def update_current_user(
         if existing_user and existing_user.id != current_user.id:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Email already registered",
+                detail=ERR_EMAIL_EXISTS,
             )
     
     if "username" in update_data and update_data["username"]:
@@ -500,7 +501,7 @@ async def update_current_user(
         if existing_user and existing_user.id != current_user.id:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Username already taken",
+                detail=ERR_USERNAME_EXISTS,
             )
     
     # Проверка текстовых полей на плохие слова
@@ -527,7 +528,7 @@ async def update_current_user(
         if not brand:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail="Brand not found",
+                detail=ERR_BRAND_NOT_FOUND,
             )
     
     # Применяем обновления
@@ -590,7 +591,7 @@ async def verify_email(
     if not payload:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Invalid or expired verification token",
+            detail=ERR_INVALID_VERIFICATION_TOKEN,
         )
     
     user_id: int | None = payload.get("user_id")
@@ -609,7 +610,7 @@ async def verify_email(
     if not user:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="User not found",
+            detail=ERR_USER_NOT_FOUND,
         )
     
     # Проверяем, что email совпадает
