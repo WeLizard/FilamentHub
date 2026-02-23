@@ -139,21 +139,122 @@ def _levenshtein(s1: str, s2: str) -> int:
 
 # Hardcoded common typos for instant matching
 _COMMON_TYPOS: dict[str, str] = {
-    "tandex.ru": "yandex.ru",
-    "yanex.ru": "yandex.ru",
-    "yadnex.ru": "yandex.ru",
+    # Gmail
     "gmial.com": "gmail.com",
     "gmal.com": "gmail.com",
     "gmai.com": "gmail.com",
     "gamil.com": "gmail.com",
-    "hotmial.com": "hotmail.com",
-    "hotmal.com": "hotmail.com",
-    "outook.com": "outlook.com",
-    "outlok.com": "outlook.com",
+    "gnail.com": "gmail.com",
+    "gmaill.com": "gmail.com",
+    "gmali.com": "gmail.com",
+    "gmail.co": "gmail.com",
+    "gmail.ru": "gmail.com",
+    "gmill.com": "gmail.com",
+    "gmeil.com": "gmail.com",
+    # Yandex
+    "tandex.ru": "yandex.ru",
+    "yanex.ru": "yandex.ru",
+    "yadnex.ru": "yandex.ru",
+    "yandx.ru": "yandex.ru",
+    "yamdex.ru": "yandex.ru",
+    "yandez.ru": "yandex.ru",
+    "yndex.ru": "yandex.ru",
+    "yandeks.ru": "yandex.ru",
+    "yandeex.ru": "yandex.ru",
+    # Mail.ru
     "mal.ru": "mail.ru",
     "maio.ru": "mail.ru",
+    "maill.ru": "mail.ru",
+    "meil.ru": "mail.ru",
+    "nail.ru": "mail.ru",
+    "maiil.ru": "mail.ru",
+    "mai.ru": "mail.ru",
+    # Hotmail
+    "hotmial.com": "hotmail.com",
+    "hotmal.com": "hotmail.com",
+    "hotmai.com": "hotmail.com",
+    "hotmaill.com": "hotmail.com",
+    "hotnail.com": "hotmail.com",
+    "hotamil.com": "hotmail.com",
+    # Outlook
+    "outook.com": "outlook.com",
+    "outlok.com": "outlook.com",
+    "outllok.com": "outlook.com",
+    "outlookk.com": "outlook.com",
+    "outloook.com": "outlook.com",
+    "outlool.com": "outlook.com",
+    # Yahoo
+    "yaho.com": "yahoo.com",
+    "yahooo.com": "yahoo.com",
+    "tahoo.com": "yahoo.com",
+    "uahoo.com": "yahoo.com",
+    "yhaoo.com": "yahoo.com",
+    # iCloud
+    "iclould.com": "icloud.com",
+    "icoud.com": "icloud.com",
+    "iclod.com": "icloud.com",
+    # ProtonMail
     "protonmal.com": "protonmail.com",
+    "protonmial.com": "protonmail.com",
+    "protonmall.com": "protonmail.com",
+    # Rambler
+    "ramber.ru": "rambler.ru",
+    "ramblerr.ru": "rambler.ru",
+    "ranbler.ru": "rambler.ru",
+    # bk.ru / inbox.ru / list.ru
+    "bkk.ru": "bk.ru",
+    "imbox.ru": "inbox.ru",
+    "inbx.ru": "inbox.ru",
+    "lis.ru": "list.ru",
 }
+
+
+# DNS check timeout (seconds)
+_DNS_TIMEOUT = 5.0
+
+
+async def check_domain_has_mx_or_a(domain: str) -> bool:
+    """
+    Check if domain has MX or A DNS records (i.e. can receive email).
+
+    Uses dnspython (already installed as email-validator dependency).
+    Runs DNS queries in a thread pool to avoid blocking the event loop.
+    """
+    import asyncio
+    import dns.resolver
+
+    def _resolve() -> bool:
+        resolver = dns.resolver.Resolver()
+        resolver.lifetime = _DNS_TIMEOUT
+
+        # Try MX first
+        try:
+            answers = resolver.resolve(domain, "MX")
+            if answers:
+                return True
+        except (dns.resolver.NoAnswer, dns.resolver.NXDOMAIN, dns.resolver.NoNameservers):
+            pass
+        except Exception:
+            pass
+
+        # Fallback to A record (some domains accept mail without MX)
+        try:
+            answers = resolver.resolve(domain, "A")
+            if answers:
+                return True
+        except (dns.resolver.NoAnswer, dns.resolver.NXDOMAIN, dns.resolver.NoNameservers):
+            pass
+        except Exception:
+            pass
+
+        return False
+
+    try:
+        return await asyncio.to_thread(_resolve)
+    except Exception:
+        # If DNS check fails entirely (network issue etc.), let the user pass
+        logger.warning("DNS check failed for domain %s, allowing registration", domain, exc_info=True)
+        return True
 
 
 def check_email_domain_typo(email: str) -> str | None:
@@ -183,6 +284,41 @@ def check_email_domain_typo(email: str) -> str | None:
             return f"Возможно, вы имели в виду @{known_domain}?"
 
     # Unknown domain (corporate etc.) — let it pass
+    return None
+
+
+async def validate_email_domain(email: str) -> str | None:
+    """
+    Full email domain validation: typo check + DNS MX/A check.
+
+    Returns error message string if domain is invalid, None if OK.
+
+    Validation order:
+    1. Known domain from personal_email_domains.txt → OK
+    2. Hardcoded typo → error with suggestion
+    3. Levenshtein match → error with suggestion
+    4. DNS MX/A check → error if domain doesn't exist
+    """
+    if not email or "@" not in email:
+        return None
+
+    domain = email.split("@")[1].lower()
+
+    # Known personal domain — skip all checks
+    personal_domains = load_personal_email_domains()
+    if domain in personal_domains:
+        return None
+
+    # Typo check (hardcoded + fuzzy)
+    typo_hint = check_email_domain_typo(email)
+    if typo_hint:
+        return typo_hint
+
+    # DNS MX/A check for unknown domains
+    has_mail_records = await check_domain_has_mx_or_a(domain)
+    if not has_mail_records:
+        return f"Домен @{domain} не существует или не может принимать почту"
+
     return None
 
 
