@@ -1,41 +1,179 @@
 # Белый список личных почтовых сервисов
 # Один домен на строку (без @)
 # Используется для определения личной почты при проверке заявок на верификацию бренда
-# Обновлено: 2024
+# Обновлено: 2026-02
 
-# Google
+# === Google ===
 gmail.com
+googlemail.com
 
-# Microsoft (Outlook/Hotmail)
+# === Microsoft (Outlook / Hotmail / Live / MSN) ===
 outlook.com
 hotmail.com
-hotmail.co.uk
-hotmail.fr
-hotmail.de
 live.com
 msn.com
-outlook.fr
+windowslive.com
+# Microsoft Regional (Outlook)
+outlook.at
+outlook.be
+outlook.cl
+outlook.co.il
+outlook.co.nz
+outlook.co.th
+outlook.com.ar
+outlook.com.au
+outlook.com.br
+outlook.com.gr
+outlook.com.pe
+outlook.com.tr
+outlook.com.vn
+outlook.cz
 outlook.de
+outlook.dk
+outlook.es
+outlook.fr
+outlook.hu
+outlook.ie
+outlook.in
+outlook.it
+outlook.jp
+outlook.kr
+outlook.lv
+outlook.my
+outlook.ph
+outlook.pt
+outlook.sa
+outlook.sg
+outlook.sk
+outlook.vn
+# Microsoft Regional (Hotmail)
+hotmail.be
+hotmail.ca
+hotmail.cl
+hotmail.co.jp
+hotmail.co.kr
+hotmail.co.th
+hotmail.co.uk
+hotmail.co.za
+hotmail.com.ar
+hotmail.com.au
+hotmail.com.br
+hotmail.com.hk
+hotmail.com.tr
+hotmail.com.tw
+hotmail.com.vn
+hotmail.cz
+hotmail.de
+hotmail.dk
+hotmail.es
+hotmail.fi
+hotmail.fr
+hotmail.gr
+hotmail.hu
+hotmail.id
+hotmail.ie
+hotmail.in
+hotmail.it
+hotmail.jp
+hotmail.lv
+hotmail.my
+hotmail.nl
+hotmail.no
+hotmail.ph
+hotmail.pt
+hotmail.sg
+# Microsoft Regional (Live)
+live.be
+live.ca
+live.cn
+live.co.uk
+live.co.za
+live.com.au
+live.com.ar
+live.com.mx
+live.de
+live.dk
+live.es
+live.fi
+live.fr
+live.hk
+live.ie
+live.in
+live.it
+live.jp
+live.kr
+live.nl
+live.no
+live.ru
+live.se
+live.sg
 
-# Yahoo
+# === Yahoo ===
 yahoo.com
-yahoo.co.uk
-yahoo.fr
-yahoo.de
-yahoo.it
-yahoo.es
-yahoo.com.au
-yahoo.co.jp
-yahoo.ca
 ymail.com
 rocketmail.com
+# Yahoo Regional
+yahoo.at
+yahoo.be
+yahoo.ca
+yahoo.co.hu
+yahoo.co.id
+yahoo.co.il
+yahoo.co.in
+yahoo.co.jp
+yahoo.co.kr
+yahoo.co.nz
+yahoo.co.th
+yahoo.co.uk
+yahoo.co.za
+yahoo.com.ar
+yahoo.com.au
+yahoo.com.br
+yahoo.com.co
+yahoo.com.hk
+yahoo.com.hr
+yahoo.com.mx
+yahoo.com.my
+yahoo.com.pe
+yahoo.com.ph
+yahoo.com.sg
+yahoo.com.tr
+yahoo.com.tw
+yahoo.com.ua
+yahoo.com.ve
+yahoo.com.vn
+yahoo.cz
+yahoo.de
+yahoo.dk
+yahoo.es
+yahoo.fi
+yahoo.fr
+yahoo.gr
+yahoo.hu
+yahoo.ie
+yahoo.in
+yahoo.it
+yahoo.nl
+yahoo.no
+yahoo.pl
+yahoo.pt
+yahoo.ro
+yahoo.se
 
-# Apple
+# === Apple ===
 icloud.com
 me.com
 mac.com
 
-# Mail.ru Group (российские)
+# === AOL ===
+aol.com
+
+# === Zoho ===
+zoho.com
+
+# === Российские провайдеры ===
+
+# VK / Mail.ru Group
 mail.ru
 inbox.ru
 list.ru
@@ -44,15 +182,16 @@ internet.ru
 xmail.ru
 mail.ua
 
-# Yandex (российские)
+# Yandex
 yandex.ru
-yandex.com
-yandex.ua
-yandex.kz
-yandex.by
 ya.ru
+yandex.com
+yandex.by
+yandex.kz
+yandex.ua
+yandex.com.tr
 
-# Rambler (российские)
+# Rambler
 rambler.ru
 rambler.ua
 lenta.ru
@@ -60,12 +199,135 @@ autorambler.ru
 myrambler.ru
 ro.ru
 
-# ProtonMail (шифрование)
+# === Европейские провайдеры ===
+
+# GMX (Германия / Международный)
+gmx.de
+gmx.net
+gmx.com
+gmx.at
+gmx.ch
+gmx.co.uk
+gmx.es
+gmx.fr
+
+# Германия
+web.de
+t-online.de
+freenet.de
+
+# Франция
+orange.fr
+sfr.fr
+free.fr
+laposte.net
+wanadoo.fr
+
+# Италия
+libero.it
+virgilio.it
+alice.it
+tin.it
+tiscali.it
+
+# Испания
+telefonica.net
+terra.es
+movistar.es
+
+# Польша
+wp.pl
+onet.pl
+interia.pl
+o2.pl
+poczta.fm
+gazeta.pl
+
+# Чехия и Словакия
+seznam.cz
+centrum.cz
+atlas.cz
+email.cz
+azet.sk
+post.sk
+
+# === Азиатские провайдеры ===
+
+# Китай
+qq.com
+163.com
+126.com
+sina.com
+sohu.com
+aliyun.com
+189.cn
+139.com
+yeah.net
+foxmail.com
+
+# Корея
+naver.com
+daum.net
+hanmail.net
+kakao.com
+nate.com
+
+# Япония
+docomo.ne.jp
+ezweb.ne.jp
+softbank.ne.jp
+au.com
+i.softbank.jp
+
+# Индия
+rediffmail.com
+
+# Турция
+mynet.com
+turk.net
+yaani.com
+
+# === СНГ (кроме РФ) ===
+# Украина
+ukr.net
+i.ua
+meta.ua
+bigmir.net
+# Беларусь
+tut.by
+# Казахстан
+mail.kz
+
+# === Бразилия ===
+bol.com.br
+uol.com.br
+terra.com.br
+ig.com.br
+r7.com
+
+# === Privacy-ориентированные провайдеры ===
 protonmail.com
 proton.me
 protonmail.ch
+tutanota.com
+tutamail.com
+tuta.com
+tuta.io
+fastmail.com
+fastmail.fm
+hushmail.com
+mailfence.com
+disroot.org
+riseup.net
+posteo.de
+posteo.net
+mailbox.org
+kolabnow.com
+countermail.com
+startmail.com
+runbox.com
 
-# Mail.com и поддомены (популярные)
+# === Mail.com (основные) ===
 mail.com
 email.com
 usa.com
@@ -74,26 +336,8 @@ consultant.com
 post.com
 iname.com
 engineer.com
+europe.com
+asia.com
 
-# GMX
-gmx.com
-gmx.net
-gmx.de
-gmx.fr
-gmx.at
-gmx.ch
-
-# Другие популярные международные
-aol.com
-zoho.com
-tutanota.com
-fastmail.com
-disroot.org
+# === Другие известные ===
 hey.com
-
-# Региональные для СНГ и других стран
-ukr.net
-i.ua
-meta.ua
-bigmir.net
-
