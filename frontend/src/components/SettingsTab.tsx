@@ -3,10 +3,11 @@
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { Settings, Lock, Mail, Save, CheckCircle, XCircle, Loader2, User as UserIcon, Eye, EyeOff } from 'lucide-react';
+import { Settings, Lock, Mail, Save, CheckCircle, XCircle, Loader2, User as UserIcon, Eye, EyeOff, AlertTriangle, Trash2 } from 'lucide-react';
 import { authAPI } from '../api/client';
 import type { User } from '../types/api';
 import { useAuth } from '../contexts/AuthContext';
+import { DeleteAccountModal } from './DeleteAccountModal';
 
 interface SettingsTabProps {
   user: User;
@@ -17,6 +18,9 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({ user, onUserUpdate }) 
   const queryClient = useQueryClient();
   const { refreshUser } = useAuth();
   const { t } = useTranslation();
+
+  // Состояние для модалки удаления аккаунта
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
 
   // Состояния для настроек синхронизации
   const [syncSettings, setSyncSettings] = useState({
@@ -583,6 +587,30 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({ user, onUserUpdate }) 
         </div>
       </section>
       </div>
+
+      {/* Опасная зона */}
+      <section className="bg-red-500/5 backdrop-blur-sm border border-red-500/20 rounded-2xl p-6 shadow-xl">
+        <div className="flex items-center gap-3 mb-4">
+          <div className="p-2 bg-red-500/20 rounded-lg">
+            <AlertTriangle className="w-5 h-5 text-red-400" />
+          </div>
+          <h3 className="text-xl font-bold text-red-400">{t('settings.dangerZone')}</h3>
+        </div>
+
+        <p className="text-sm text-gray-400 mb-4">
+          {t('settings.deleteAccountWarning')}
+        </p>
+
+        <button
+          onClick={() => setShowDeleteModal(true)}
+          className="flex items-center gap-2 px-5 py-2.5 bg-gradient-to-r from-red-600 to-red-700 hover:from-red-700 hover:to-red-800 text-white text-sm rounded-lg transition-all shadow-lg shadow-red-500/25 hover:shadow-red-500/40"
+        >
+          <Trash2 className="w-4 h-4" />
+          <span>{t('settings.deleteAccountButton')}</span>
+        </button>
+      </section>
+
+      <DeleteAccountModal isOpen={showDeleteModal} onClose={() => setShowDeleteModal(false)} />
     </div>
   );
 };

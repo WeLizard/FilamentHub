@@ -27,7 +27,7 @@ from app.core.security import (
     get_password_hash,
     verify_password,
 )
-from app.services.email_validator import is_personal_email, normalize_website_url
+from app.services.email_validator import check_email_domain_typo, is_personal_email, normalize_website_url
 from app.db.session import get_db
 from app.models.user import User, UserRole
 from app.models.brand import Brand
@@ -81,6 +81,14 @@ async def register(
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Проверка reCAPTCHA не пройдена",
+        )
+
+    # Проверка домена email на опечатки
+    typo_hint = check_email_domain_typo(data.email)
+    if typo_hint:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=typo_hint,
         )
 
     # Проверка существования email

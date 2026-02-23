@@ -2266,7 +2266,10 @@
     "passwordsMismatch": "Passwords do not match",
     "passwordMustDiffer": "New password must differ from the current one",
     "invalidEmail": "Enter a valid email address",
-    "emailMustDiffer": "New email must differ from the current one"
+    "emailMustDiffer": "New email must differ from the current one",
+    "dangerZone": "Danger Zone",
+    "deleteAccountWarning": "Account deletion is irreversible. Content you created (presets, profiles) will remain on the site in anonymized form, as described in the user agreement.",
+    "deleteAccountButton": "Delete Account"
   },
   "adminUsers": {
     "title": "User Management",

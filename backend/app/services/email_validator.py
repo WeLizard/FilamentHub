@@ -121,6 +121,71 @@ def normalize_website_url(website: str) -> str | None:
         return None
 
 
+def _levenshtein(s1: str, s2: str) -> int:
+    """Compute Levenshtein distance between two strings."""
+    if len(s1) < len(s2):
+        return _levenshtein(s2, s1)
+    if len(s2) == 0:
+        return len(s1)
+    prev_row = list(range(len(s2) + 1))
+    for i, c1 in enumerate(s1):
+        curr_row = [i + 1]
+        for j, c2 in enumerate(s2):
+            cost = 0 if c1 == c2 else 1
+            curr_row.append(min(curr_row[j] + 1, prev_row[j + 1] + 1, prev_row[j] + cost))
+        prev_row = curr_row
+    return prev_row[-1]
+
+
+# Hardcoded common typos for instant matching
+_COMMON_TYPOS: dict[str, str] = {
+    "tandex.ru": "yandex.ru",
+    "yanex.ru": "yandex.ru",
+    "yadnex.ru": "yandex.ru",
+    "gmial.com": "gmail.com",
+    "gmal.com": "gmail.com",
+    "gmai.com": "gmail.com",
+    "gamil.com": "gmail.com",
+    "hotmial.com": "hotmail.com",
+    "hotmal.com": "hotmail.com",
+    "outook.com": "outlook.com",
+    "outlok.com": "outlook.com",
+    "mal.ru": "mail.ru",
+    "maio.ru": "mail.ru",
+    "protonmal.com": "protonmail.com",
+}
+
+
+def check_email_domain_typo(email: str) -> str | None:
+    """
+    Check if email domain looks like a typo of a known personal email domain.
+
+    Returns a hint string like "Возможно, вы имели в виду @gmail.com?"
+    if the domain is a likely typo, or None if it looks fine.
+    """
+    if not email or "@" not in email:
+        return None
+
+    domain = email.split("@")[1].lower()
+    personal_domains = load_personal_email_domains()
+
+    # If the domain is a known personal domain — it's fine
+    if domain in personal_domains:
+        return None
+
+    # Check hardcoded common typos first
+    if domain in _COMMON_TYPOS:
+        return f"Возможно, вы имели в виду @{_COMMON_TYPOS[domain]}?"
+
+    # Fuzzy match against known personal domains (Levenshtein ≤ 2)
+    for known_domain in personal_domains:
+        if _levenshtein(domain, known_domain) <= 2:
+            return f"Возможно, вы имели в виду @{known_domain}?"
+
+    # Unknown domain (corporate etc.) — let it pass
+    return None
+
+
 def is_personal_email(email: str) -> bool:
     """
     Проверить, является ли email личным (из популярных почтовых сервисов).
