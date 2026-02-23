@@ -11,8 +11,14 @@ logger = logging.getLogger(__name__)
 # Путь к файлу с белым списком личных почтовых доменов
 PERSONAL_EMAIL_DOMAINS_FILE = Path(__file__).parent.parent / "core" / "personal_email_domains.txt"
 
+# Путь к файлу с опечатками доменов (формат: опечатка=правильный_домен)
+EMAIL_DOMAIN_TYPOS_FILE = Path(__file__).parent.parent / "core" / "email_domain_typos.txt"
+
 # Кэш для списка личных доменов
 _personal_email_domains_cache: list[str] | None = None
+
+# Кэш для словаря опечаток
+_domain_typos_cache: dict[str, str] | None = None
 
 
 def load_personal_email_domains() -> list[str]:
@@ -137,76 +143,37 @@ def _levenshtein(s1: str, s2: str) -> int:
     return prev_row[-1]
 
 
-# Hardcoded common typos for instant matching
-_COMMON_TYPOS: dict[str, str] = {
-    # Gmail
-    "gmial.com": "gmail.com",
-    "gmal.com": "gmail.com",
-    "gmai.com": "gmail.com",
-    "gamil.com": "gmail.com",
-    "gnail.com": "gmail.com",
-    "gmaill.com": "gmail.com",
-    "gmali.com": "gmail.com",
-    "gmail.co": "gmail.com",
-    "gmail.ru": "gmail.com",
-    "gmill.com": "gmail.com",
-    "gmeil.com": "gmail.com",
-    # Yandex
-    "tandex.ru": "yandex.ru",
-    "yanex.ru": "yandex.ru",
-    "yadnex.ru": "yandex.ru",
-    "yandx.ru": "yandex.ru",
-    "yamdex.ru": "yandex.ru",
-    "yandez.ru": "yandex.ru",
-    "yndex.ru": "yandex.ru",
-    "yandeks.ru": "yandex.ru",
-    "yandeex.ru": "yandex.ru",
-    # Mail.ru
-    "mal.ru": "mail.ru",
-    "maio.ru": "mail.ru",
-    "maill.ru": "mail.ru",
-    "meil.ru": "mail.ru",
-    "nail.ru": "mail.ru",
-    "maiil.ru": "mail.ru",
-    "mai.ru": "mail.ru",
-    # Hotmail
-    "hotmial.com": "hotmail.com",
-    "hotmal.com": "hotmail.com",
-    "hotmai.com": "hotmail.com",
-    "hotmaill.com": "hotmail.com",
-    "hotnail.com": "hotmail.com",
-    "hotamil.com": "hotmail.com",
-    # Outlook
-    "outook.com": "outlook.com",
-    "outlok.com": "outlook.com",
-    "outllok.com": "outlook.com",
-    "outlookk.com": "outlook.com",
-    "outloook.com": "outlook.com",
-    "outlool.com": "outlook.com",
-    # Yahoo
-    "yaho.com": "yahoo.com",
-    "yahooo.com": "yahoo.com",
-    "tahoo.com": "yahoo.com",
-    "uahoo.com": "yahoo.com",
-    "yhaoo.com": "yahoo.com",
-    # iCloud
-    "iclould.com": "icloud.com",
-    "icoud.com": "icloud.com",
-    "iclod.com": "icloud.com",
-    # ProtonMail
-    "protonmal.com": "protonmail.com",
-    "protonmial.com": "protonmail.com",
-    "protonmall.com": "protonmail.com",
-    # Rambler
-    "ramber.ru": "rambler.ru",
-    "ramblerr.ru": "rambler.ru",
-    "ranbler.ru": "rambler.ru",
-    # bk.ru / inbox.ru / list.ru
-    "bkk.ru": "bk.ru",
-    "imbox.ru": "inbox.ru",
-    "inbx.ru": "inbox.ru",
-    "lis.ru": "list.ru",
-}
+def load_domain_typos() -> dict[str, str]:
+    """Load email domain typos from file. Format: typo=correct_domain (one per line)."""
+    global _domain_typos_cache
+
+    if _domain_typos_cache is not None:
+        return _domain_typos_cache
+
+    typos: dict[str, str] = {}
+
+    if not EMAIL_DOMAIN_TYPOS_FILE.exists():
+        logger.warning("Email domain typos file not found: %s", EMAIL_DOMAIN_TYPOS_FILE)
+        _domain_typos_cache = typos
+        return typos
+
+    try:
+        with open(EMAIL_DOMAIN_TYPOS_FILE, "r", encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if not line or line.startswith("#"):
+                    continue
+                if "=" in line:
+                    typo, correct = line.split("=", 1)
+                    typo = typo.strip().lower()
+                    correct = correct.strip().lower()
+                    if typo and correct:
+                        typos[typo] = correct
+    except Exception:
+        logger.warning("Failed to load email domain typos file", exc_info=True)
+
+    _domain_typos_cache = typos
+    return typos
 
 
 # DNS check timeout (seconds)
@@ -274,9 +241,10 @@ def check_email_domain_typo(email: str) -> str | None:
     if domain in personal_domains:
         return None
 
-    # Check hardcoded common typos first
-    if domain in _COMMON_TYPOS:
-        return f"Возможно, вы имели в виду @{_COMMON_TYPOS[domain]}?"
+    # Check known typos from file
+    domain_typos = load_domain_typos()
+    if domain in domain_typos:
+        return f"Возможно, вы имели в виду @{domain_typos[domain]}?"
 
     # Fuzzy match against known personal domains (Levenshtein ≤ 2)
     for known_domain in personal_domains:

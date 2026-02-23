@@ -1,0 +1,255 @@
+# Словарь опечаток email-доменов
+# Формат: опечатка=правильный_домен
+# Один маппинг на строку, комментарии начинаются с #
+#
+# Используется при регистрации для блокировки очевидных опечаток
+# с подсказкой правильного домена пользователю.
+#
+# ВАЖНО: не добавлять сюда домены из personal_email_domains.txt
+# (они уже считаются валидными и пропускаются до этой проверки)
+
+# === Google (Gmail) ===
+gmial.com=gmail.com
+gamil.com=gmail.com
+gmal.com=gmail.com
+gmil.com=gmail.com
+gmailc.om=gmail.com
+gmaill.com=gmail.com
+ggmail.com=gmail.com
+gnail.com=gmail.com
+mgail.com=gmail.com
+gmail.co=gmail.com
+gmai.com=gmail.com
+gmali.com=gmail.com
+gmill.com=gmail.com
+gmeil.com=gmail.com
+
+# === Microsoft (Outlook) ===
+outlok.com=outlook.com
+outloook.com=outlook.com
+uotlook.com=outlook.com
+otulook.com=outlook.com
+outllok.com=outlook.com
+outloock.com=outlook.com
+outlook.cmo=outlook.com
+outook.com=outlook.com
+outlookk.com=outlook.com
+outlool.com=outlook.com
+outlok.fr=outlook.fr
+outlok.de=outlook.de
+
+# === Microsoft (Hotmail) ===
+hotmial.com=hotmail.com
+hotmal.com=hotmail.com
+hotmali.com=hotmail.com
+hotamil.com=hotmail.com
+hptmail.com=hotmail.com
+hotmai.com=hotmail.com
+hotmaill.com=hotmail.com
+hotnail.com=hotmail.com
+hotmial.co.uk=hotmail.co.uk
+hotmail.couk=hotmail.co.uk
+hotmal.co.uk=hotmail.co.uk
+hotmial.fr=hotmail.fr
+hotmal.fr=hotmail.fr
+hotmail.fe=hotmail.fr
+hotmial.de=hotmail.de
+hotmal.de=hotmail.de
+hotmail.ce=hotmail.de
+
+# === Microsoft (Live / MSN) ===
+lve.com=live.com
+liev.com=live.com
+liv.com=live.com
+mns.com=msn.com
+msn.cmo=msn.com
+
+# === Yahoo ===
+yaho.com=yahoo.com
+yhaoo.com=yahoo.com
+yaoo.com=yahoo.com
+yahho.com=yahoo.com
+ayhoo.com=yahoo.com
+yahool.com=yahoo.com
+yahoo.cmo=yahoo.com
+tahoo.com=yahoo.com
+uahoo.com=yahoo.com
+yahooo.com=yahoo.com
+yaho.co.uk=yahoo.co.uk
+yahoo.couk=yahoo.co.uk
+yaho.fr=yahoo.fr
+yaho.de=yahoo.de
+yaho.it=yahoo.it
+yaho.es=yahoo.es
+yaho.com.au=yahoo.com.au
+yahoo.comau=yahoo.com.au
+yaho.co.jp=yahoo.co.jp
+yahoo.cojp=yahoo.co.jp
+yaho.ca=yahoo.ca
+
+# === Yahoo (Ymail / Rocketmail) ===
+ymial.com=ymail.com
+ymal.com=ymail.com
+yamil.com=ymail.com
+rocketmial.com=rocketmail.com
+rocketmal.com=rocketmail.com
+rockemail.com=rocketmail.com
+
+# === Apple (iCloud / me / mac) ===
+iclud.com=icloud.com
+iclaud.com=icloud.com
+icluod.com=icloud.com
+icloud.cmo=icloud.com
+icloud.co=icloud.com
+iclould.com=icloud.com
+icoud.com=icloud.com
+iclod.com=icloud.com
+
+# === Mail.ru Group (VK) ===
+mial.ru=mail.ru
+mal.ru=mail.ru
+amil.ru=mail.ru
+mai.ru=mail.ru
+maik.ru=mail.ru
+maill.ru=mail.ru
+mail.ry=mail.ru
+meil.ru=mail.ru
+nail.ru=mail.ru
+maiil.ru=mail.ru
+maio.ru=mail.ru
+mial.ua=mail.ua
+mal.ua=mail.ua
+
+# === Mail.ru (Inbox) ===
+inobx.ru=inbox.ru
+inbix.ru=inbox.ru
+inbo.ru=inbox.ru
+ibox.ru=inbox.ru
+inbox.ry=inbox.ru
+imbox.ru=inbox.ru
+inbx.ru=inbox.ru
+
+# === Mail.ru (List) ===
+lsit.ru=list.ru
+lits.ru=list.ru
+lis.ru=list.ru
+liat.ru=list.ru
+liist.ru=list.ru
+lst.ru=list.ru
+
+# === Mail.ru (BK) ===
+bkk.ru=bk.ru
+bk.ry=bk.ru
+kb.ru=bk.ru
+bk.rru=bk.ru
+
+# === Mail.ru (Internet / Xmail) ===
+internte.ru=internet.ru
+internt.ru=internet.ru
+intenet.ru=internet.ru
+xamil.ru=xmail.ru
+xmial.ru=xmail.ru
+
+# === Yandex ===
+yandeks.ru=yandex.ru
+yadex.ru=yandex.ru
+yandx.ru=yandex.ru
+yndex.ru=yandex.ru
+iandex.ru=yandex.ru
+yandex.ry=yandex.ru
+tandex.ru=yandex.ru
+yanex.ru=yandex.ru
+yadnex.ru=yandex.ru
+yamdex.ru=yandex.ru
+yandez.ru=yandex.ru
+yandeex.ru=yandex.ru
+yadex.com=yandex.com
+yandx.com=yandex.com
+yadex.ua=yandex.ua
+yandx.ua=yandex.ua
+yadex.kz=yandex.kz
+yandx.kz=yandex.kz
+yadex.by=yandex.by
+yandx.by=yandex.by
+
+# === Yandex (Ya.ru) ===
+yaa.ru=ya.ru
+ay.ru=ya.ru
+ya.ry=ya.ru
+
+# === Rambler ===
+ramber.ru=rambler.ru
+rambler.ry=rambler.ru
+rambelr.ru=rambler.ru
+rmbler.ru=rambler.ru
+ranbler.ru=rambler.ru
+ramblerr.ru=rambler.ru
+ramber.ua=rambler.ua
+
+# === Rambler (Lenta / Autorambler / Myrambler / Ro) ===
+lenta.ry=lenta.ru
+lenat.ru=lenta.ru
+lnet.ru=lenta.ru
+autoramber.ru=autorambler.ru
+myramber.ru=myrambler.ru
+ro.ry=ro.ru
+
+# === ProtonMail / Proton ===
+protonmial.com=protonmail.com
+protomail.com=protonmail.com
+protonmal.com=protonmail.com
+protonail.com=protonmail.com
+protonmeil.com=protonmail.com
+protonmall.com=protonmail.com
+protom.me=proton.me
+prton.me=proton.me
+proton.ne=proton.me
+protonmial.ch=protonmail.ch
+protomail.ch=protonmail.ch
+
+# === Mail.com Group ===
+mial.com=mail.com
+mal.com=mail.com
+amil.com=mail.com
+emial.com=email.com
+emal.com=email.com
+consultent.com=consultant.com
+enginer.com=engineer.com
+
+# === GMX ===
+gxm.com=gmx.com
+gmx.cmo=gmx.com
+gxm.net=gmx.net
+gmx.nte=gmx.net
+gxm.de=gmx.de
+gmx.ce=gmx.de
+gxm.fr=gmx.fr
+gmx.fe=gmx.fr
+gxm.at=gmx.at
+gxm.ch=gmx.ch
+
+# === AOL / Zoho / Tutanota / Fastmail / Hey ===
+aol.cmo=aol.com
+alo.com=aol.com
+aoll.com=aol.com
+zohu.com=zoho.com
+zoho.cmo=zoho.com
+tutanot.com=tutanota.com
+tutsnota.com=tutanota.com
+tutanota.cmo=tutanota.com
+fastmial.com=fastmail.com
+fastmal.com=fastmail.com
+fastail.com=fastmail.com
+disrot.org=disroot.org
+disroot.ogr=disroot.org
+hey.cmo=hey.com
+ehy.com=hey.com
+
+# === Украинские провайдеры ===
+ukr.nte=ukr.net
+urk.net=ukr.net
+meta.au=meta.ua
+mtea.ua=meta.ua
+bigmir.nte=bigmir.net
+bigmr.net=bigmir.net
+bimir.net=bigmir.net
