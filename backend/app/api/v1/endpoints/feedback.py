@@ -15,6 +15,7 @@ from app.core.dependencies import (
 from app.db.session import get_db
 from app.models.feedback import Feedback, FeedbackStatus, FeedbackType
 from app.models.user import User, UserRole
+from app.core.errors import ERR_AUTH_REQUIRED, ERR_FEEDBACK_NOT_FOUND
 from app.schemas.feedback import (
     FeedbackCreate,
     FeedbackListResponse,
@@ -42,7 +43,7 @@ async def create_feedback(
     if not current_user:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Authentication required for feedback",
+            detail=ERR_AUTH_REQUIRED,
         )
     
     # Валидация типа
@@ -51,7 +52,7 @@ async def create_feedback(
     except ValueError:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Invalid feedback type. Must be one of: {[t.value for t in FeedbackType]}",
+            detail=f"Недопустимый тип обратной связи. Допустимые: {[t.value for t in FeedbackType]}",
         )
     
     feedback = Feedback(
@@ -137,7 +138,7 @@ async def get_feedback(
     if not feedback:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="Feedback not found",
+            detail=ERR_FEEDBACK_NOT_FOUND,
         )
     
     return FeedbackResponse.model_validate(feedback)
@@ -156,7 +157,7 @@ async def update_feedback(
     if not feedback:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="Feedback not found",
+            detail=ERR_FEEDBACK_NOT_FOUND,
         )
     
     if update_data.status:
@@ -165,7 +166,7 @@ async def update_feedback(
         except ValueError:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Invalid status. Must be one of: {[s.value for s in FeedbackStatus]}",
+                detail=f"Недопустимый статус. Допустимые: {[s.value for s in FeedbackStatus]}",
             )
     
     if update_data.admin_response is not None:

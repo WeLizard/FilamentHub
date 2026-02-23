@@ -13,7 +13,23 @@ logger = logging.getLogger(__name__)
 
 from app.core.dependencies import get_current_admin_user
 from app.core.utils import like_pattern
-from app.core.errors import ERR_BRAND_NOT_FOUND, ERR_BRAND_SLUG_EXISTS, ERR_PRESET_NOT_FOUND, ERR_PRINTER_NOT_FOUND, ERR_PRINTER_SLUG_EXISTS, ERR_REQUEST_NOT_PENDING, ERR_USER_ALREADY_IN_BRAND, ERR_USER_NOT_FOUND, ERR_USER_NOT_IN_BRAND
+from app.core.errors import (
+    ERR_ARTICLE_NOT_FOUND,
+    ERR_BANNED_WORD_NOT_FOUND,
+    ERR_BRAND_NOT_FOUND,
+    ERR_BRAND_REQUEST_NOT_FOUND,
+    ERR_BRAND_SLUG_EXISTS,
+    ERR_DUMP_NOT_FOUND,
+    ERR_PRESET_NOT_FOUND,
+    ERR_PRINTER_NOT_FOUND,
+    ERR_PRINTER_REQUEST_NOT_FOUND,
+    ERR_PRINTER_SLUG_EXISTS,
+    ERR_REQUEST_NOT_PENDING,
+    ERR_TABLE_NOT_FOUND,
+    ERR_USER_ALREADY_IN_BRAND,
+    ERR_USER_NOT_FOUND,
+    ERR_USER_NOT_IN_BRAND,
+)
 from app.db.session import get_db
 from app.services.maintenance_service import (
     get_maintenance_info,
@@ -702,7 +718,7 @@ async def get_brand_request(
     if not request:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="Brand request not found",
+            detail=ERR_BRAND_REQUEST_NOT_FOUND,
         )
     
     response = BrandRequestResponse.model_validate(request)
@@ -747,7 +763,7 @@ async def update_brand_request(
     if not request:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="Brand request not found",
+            detail=ERR_BRAND_REQUEST_NOT_FOUND,
         )
     
     if request.status != BrandRequestStatus.PENDING:
@@ -780,7 +796,7 @@ async def update_brand_request(
             if not request.brand_id:
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
-                    detail="Brand ID is required for JOIN requests",
+                    detail="Для заявок на присоединение необходим Brand ID",
                 )
             user.brand_id = request.brand_id
             
@@ -789,7 +805,7 @@ async def update_brand_request(
             if not request.new_brand_name or not request.new_brand_slug:
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
-                    detail="Brand name and slug are required for CREATE requests",
+                    detail="Для заявок на создание необходимы название и slug бренда",
                 )
             
             # Проверяем, что бренд еще не создан
@@ -895,7 +911,7 @@ async def delete_brand_request(
     if not request:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="Brand request not found",
+            detail=ERR_BRAND_REQUEST_NOT_FOUND,
         )
     
     # Удаляем все файлы связанные с заявкой
@@ -1066,7 +1082,7 @@ async def get_printer_request_admin(
     printer_request = result.scalar_one_or_none()
     
     if not printer_request:
-        raise HTTPException(status_code=404, detail="Printer request not found")
+        raise HTTPException(status_code=404, detail=ERR_PRINTER_REQUEST_NOT_FOUND)
     
     response = PrinterRequestResponse.model_validate(printer_request)
     # Добавляем email пользователя
@@ -1096,7 +1112,7 @@ async def update_printer_request_admin(
     request = result.scalar_one_or_none()
     
     if not request:
-        raise HTTPException(status_code=404, detail="Printer request not found")
+        raise HTTPException(status_code=404, detail=ERR_PRINTER_REQUEST_NOT_FOUND)
     
     # Если одобряем запрос, создаём принтер
     if data.status == PrinterRequestStatus.APPROVED:
@@ -1107,7 +1123,7 @@ async def update_printer_request_admin(
         if existing_printer:
             raise HTTPException(
                 status_code=400,
-                detail="Принтер с таким slug уже существует в базе"
+                detail=ERR_PRINTER_SLUG_EXISTS
             )
         
         # Создаём принтер из данных запроса
@@ -1269,7 +1285,7 @@ async def download_database_dump(
     if not dump_file.exists():
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="Файл дампа не найден",
+            detail=ERR_DUMP_NOT_FOUND,
         )
     
     return FileResponse(
@@ -1476,7 +1492,7 @@ async def get_table_data(
     except ValueError:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="Таблица не найдена",
+            detail=ERR_TABLE_NOT_FOUND,
         )
     except Exception:
         raise HTTPException(
@@ -1646,7 +1662,7 @@ async def get_bad_word(
     if not word:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="Запрещенное слово не найдено",
+            detail=ERR_BANNED_WORD_NOT_FOUND,
         )
     
     return BadWordResponse.model_validate(word)
@@ -1669,7 +1685,7 @@ async def update_bad_word(
     if not word:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="Запрещенное слово не найдено",
+            detail=ERR_BANNED_WORD_NOT_FOUND,
         )
     
     # Проверяем уникальность, если меняем слово или язык
@@ -1728,7 +1744,7 @@ async def delete_bad_word(
     if not word:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="Запрещенное слово не найдено",
+            detail=ERR_BANNED_WORD_NOT_FOUND,
         )
     
     await db.delete(word)
@@ -1791,7 +1807,7 @@ async def send_notification_to_users(
     if not user_ids:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="User IDs list cannot be empty",
+            detail="Список ID пользователей не может быть пустым",
         )
     
     # Проверяем, что пользователи существуют и активны
@@ -1803,7 +1819,7 @@ async def send_notification_to_users(
     if not valid_user_ids:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="No active users found with provided IDs",
+            detail="Активные пользователи с указанными ID не найдены",
         )
     
     from app.services.notification_service import create_bulk_notifications
@@ -1869,7 +1885,7 @@ async def manage_user_badges(
     if not user:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="Пользователь не найден"
+            detail=ERR_USER_NOT_FOUND
         )
     
     # Обновляем бейджи
@@ -2012,7 +2028,7 @@ async def export_wiki_article(
     if not filename or not content:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="Статья не найдена",
+            detail=ERR_ARTICLE_NOT_FOUND,
         )
 
     # Write to temp file for FileResponse

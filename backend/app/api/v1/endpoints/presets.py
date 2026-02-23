@@ -13,7 +13,15 @@ from sqlalchemy.orm import selectinload
 logger = logging.getLogger(__name__)
 
 from app.core.dependencies import get_current_active_user, get_current_brand_user, get_current_active_user_optional
-from app.core.errors import ERR_FILAMENT_NOT_FOUND, ERR_NO_PERMISSION_EDIT_PRESET, ERR_PRESET_NOT_FOUND
+from app.core.errors import (
+    ERR_FILAMENT_NO_PRESETS,
+    ERR_FILAMENT_NOT_FOUND,
+    ERR_NO_PERMISSION_DELETE_PRESET,
+    ERR_NO_PERMISSION_EDIT_PRESET,
+    ERR_PRESET_NOT_FOUND,
+    ERR_WEIGHTED_PRESET_NO_DELETE,
+    ERR_WEIGHTED_PRESET_READONLY,
+)
 from app.db.session import get_db
 from app.models.preset import Preset, PresetModerationStatus
 from app.models.preset_printer import PresetPrinter
@@ -196,13 +204,13 @@ async def create_preset(
         if not current_user.brand_id and current_user.role.value != "admin":
             raise HTTPException(
                 status_code=403,
-                detail="Only users linked to a brand can create official presets"
+                detail="Только пользователи, привязанные к бренду, могут создавать официальные пресеты"
             )
         # Проверяем, что filament принадлежит бренду пользователя (админы могут создавать для любого бренда)
         if current_user.brand_id and filament.brand_id != current_user.brand_id:
             raise HTTPException(
                 status_code=403,
-                detail="You can only create official presets for your brand's filaments"
+                detail="Вы можете создавать официальные пресеты только для материалов своего бренда"
             )
     
     preset = Preset(
@@ -327,7 +335,7 @@ async def update_preset(
     if preset.is_weighted:
         raise HTTPException(
             status_code=403,
-            detail="Weighted presets cannot be edited. They are automatically updated by the system."
+            detail=ERR_WEIGHTED_PRESET_READONLY
         )
 
     # Проверка прав: пользователь может редактировать только свои пресеты (или админ)
@@ -470,14 +478,14 @@ async def delete_preset(
     if preset.is_weighted:
         raise HTTPException(
             status_code=403,
-            detail="Weighted presets cannot be deleted. They are automatically managed by the system."
+            detail=ERR_WEIGHTED_PRESET_NO_DELETE
         )
 
     # Проверка: пользователь может удалять только свои пресеты (или админ)
     if preset.user_id != current_user.id and current_user.role.value != "admin":
         raise HTTPException(
             status_code=403,
-            detail="You can only delete your own presets"
+            detail=ERR_NO_PERMISSION_DELETE_PRESET
         )
     
     # Сохраняем данные перед удалением для уведомлений и обновления взвешенного пресета
@@ -570,7 +578,7 @@ async def export_preset_json(
         profile_dict = await preset_to_orcaslicer_json(preset, preset.filament, db)
     except Exception as e:
         logger.error(f"Error exporting preset {preset_id}: {str(e)}", exc_info=True)
-        raise HTTPException(status_code=500, detail="Error exporting preset")
+        raise HTTPException(status_code=500, detail="Ошибка экспорта пресета")
     
     # Возвращаем JSON файл
     # Формируем безопасное имя файла (только латиница и безопасные символы для HTTP заголовков)
@@ -699,4 +707,4 @@ async def get_recommended_preset(
             **recommended_values
         )
     except ValueError:
-        raise HTTPException(status_code=404, detail="Filament not found or no presets available")
+        raise HTTPException(status_code=404, detail=ERR_FILAMENT_NO_PRESETS)

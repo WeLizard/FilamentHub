@@ -7,6 +7,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.dependencies import get_current_active_user
+from app.core.errors import ERR_PRESET_NOT_FOUND, ERR_PRESET_INACTIVE, ERR_SAVED_PRESET_NOT_FOUND
 from app.db.session import get_db
 from app.models.preset import Preset
 from app.models.user import User
@@ -49,10 +50,10 @@ async def save_preset(
     preset = preset_result.scalar_one_or_none()
 
     if not preset:
-        raise HTTPException(status_code=404, detail="Preset not found")
+        raise HTTPException(status_code=404, detail=ERR_PRESET_NOT_FOUND)
 
     if not preset.active:
-        raise HTTPException(status_code=400, detail="Cannot save inactive preset")
+        raise HTTPException(status_code=400, detail=ERR_PRESET_INACTIVE)
 
     # Проверяем, не сохранён ли уже этот пресет
     existing_result = await db.execute(
@@ -97,7 +98,7 @@ async def unsave_preset(
     saved_preset = result.scalar_one_or_none()
 
     if not saved_preset:
-        raise HTTPException(status_code=404, detail="Saved preset not found")
+        raise HTTPException(status_code=404, detail=ERR_SAVED_PRESET_NOT_FOUND)
 
     # Удаляем
     await db.delete(saved_preset)
@@ -122,7 +123,7 @@ async def toggle_saved_preset_sync(
     saved_preset = result.scalar_one_or_none()
 
     if not saved_preset:
-        raise HTTPException(status_code=404, detail="Saved preset not found")
+        raise HTTPException(status_code=404, detail=ERR_SAVED_PRESET_NOT_FOUND)
 
     # Обновляем sync
     saved_preset.sync = sync

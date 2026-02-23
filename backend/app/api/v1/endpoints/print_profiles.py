@@ -9,6 +9,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.core.dependencies import get_current_active_user
+from app.core.errors import (
+    ERR_CANNOT_ASSIGN_OTHER_OWNER,
+    ERR_NO_PERMISSION,
+    ERR_ONLY_ADMIN_OFFICIAL,
+    ERR_ONLY_ADMIN_REASSIGN,
+    ERR_PRINT_PROFILE_NOT_FOUND,
+    ERR_SLUG_EXISTS,
+)
 from app.core.utils import like_pattern
 from app.db.session import get_db
 from app.models.print_profile import PrintProfile
@@ -97,7 +105,7 @@ async def get_print_profile(
         )
     ).scalar_one_or_none()
     if profile is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Print profile not found")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=ERR_PRINT_PROFILE_NOT_FOUND)
     return PrintProfileResponse.model_validate(profile)
 
 
@@ -112,14 +120,14 @@ async def create_print_profile(
     owner_user_id = data.owner_user_id or current_user.id
 
     if data.is_official and current_user.role != UserRole.ADMIN:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only admins can publish official profiles")
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=ERR_ONLY_ADMIN_OFFICIAL)
 
     if current_user.role != UserRole.ADMIN and owner_user_id != current_user.id:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Cannot assign owner to another user")
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=ERR_CANNOT_ASSIGN_OTHER_OWNER)
 
     existing_slug = await db.execute(select(PrintProfile).where(PrintProfile.slug == data.slug))
     if existing_slug.scalar_one_or_none():
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Slug already exists")
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=ERR_SLUG_EXISTS)
 
     from app.services.preset_moderation import validate_text_field
 
@@ -172,11 +180,11 @@ async def update_print_profile(
 
     profile = (await db.execute(select(PrintProfile).where(PrintProfile.id == profile_id))).scalar_one_or_none()
     if profile is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Print profile not found")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=ERR_PRINT_PROFILE_NOT_FOUND)
 
     is_owner = profile.owner_user_id == current_user.id if profile.owner_user_id else False
     if current_user.role != UserRole.ADMIN and not is_owner:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not enough permissions")
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=ERR_NO_PERMISSION)
 
     update_data = data.model_dump(exclude_unset=True)
 
@@ -188,13 +196,13 @@ async def update_print_profile(
             )
         )
         if slug_exists.scalar_one_or_none():
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Slug already exists")
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=ERR_SLUG_EXISTS)
 
     if "is_official" in update_data and update_data["is_official"] and current_user.role != UserRole.ADMIN:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only admins can set official status")
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=ERR_ONLY_ADMIN_OFFICIAL)
 
     if "owner_user_id" in update_data and current_user.role != UserRole.ADMIN:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only admins can reassign owner")
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=ERR_ONLY_ADMIN_REASSIGN)
 
     from app.services.preset_moderation import validate_text_field
 
@@ -227,11 +235,11 @@ async def delete_print_profile(
 
     profile = (await db.execute(select(PrintProfile).where(PrintProfile.id == profile_id))).scalar_one_or_none()
     if profile is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Print profile not found")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=ERR_PRINT_PROFILE_NOT_FOUND)
 
     is_owner = profile.owner_user_id == current_user.id if profile.owner_user_id else False
     if current_user.role != UserRole.ADMIN and not is_owner:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not enough permissions")
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=ERR_NO_PERMISSION)
 
     await db.delete(profile)
     await db.commit()
@@ -260,14 +268,14 @@ async def export_print_profile_json(
     profile = result.scalar_one_or_none()
     
     if not profile:
-        raise HTTPException(status_code=404, detail="Print profile not found")
+        raise HTTPException(status_code=404, detail=ERR_PRINT_PROFILE_NOT_FOUND)
     
     # Экспортируем в JSON
     try:
         profile_json = await export_print_profile(profile, db)
     except Exception as e:
         logger.error(f"Error exporting print profile {profile_id}: {str(e)}", exc_info=True)
-        raise HTTPException(status_code=500, detail="Error exporting print profile")
+        raise HTTPException(status_code=500, detail="Ошибка экспорта профиля печати")
     
     # Формируем безопасное имя файла
     def to_safe_filename(text: str) -> str:

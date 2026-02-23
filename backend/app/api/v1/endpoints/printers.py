@@ -218,7 +218,7 @@ async def get_compatible_filaments(
     # Проверяем существование принтера
     printer = await db.get(Printer, printer_id)
     if not printer:
-        raise HTTPException(status_code=404, detail="Принтер не найден")
+        raise HTTPException(status_code=404, detail=ERR_PRINTER_NOT_FOUND)
     
     # Используем VIEW для получения совместимых филаментов
     query = text("""

@@ -8,6 +8,14 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.dependencies import get_current_active_user, get_current_active_user_optional
+from app.core.errors import (
+    ERR_ACCESS_DENIED,
+    ERR_BRAND_NOT_FOUND,
+    ERR_FILAMENT_NOT_FOUND,
+    ERR_OFFICIAL_PRESET_NOT_FOUND,
+    ERR_QR_NOT_FOUND,
+    ERR_QR_VERIFIED_ONLY,
+)
 from app.db.session import get_db
 from app.models.filament import Filament
 from app.models.user import User
@@ -39,7 +47,7 @@ async def redirect_qr_scan(
     filament = result.scalar_one_or_none()
 
     if not filament:
-        raise HTTPException(status_code=404, detail="Material not found")
+        raise HTTPException(status_code=404, detail=ERR_FILAMENT_NOT_FOUND)
 
     # Инкрементируем счетчик
     filament.scans_count += 1
@@ -68,7 +76,7 @@ async def handle_qr_scan(
     filament = result.scalar_one_or_none()
 
     if not filament:
-        raise HTTPException(status_code=404, detail="Material not found")
+        raise HTTPException(status_code=404, detail=ERR_FILAMENT_NOT_FOUND)
 
     # Инкрементируем счетчик
     filament.scans_count += 1
@@ -138,7 +146,7 @@ async def get_qr_preset(
     filament = result.scalar_one_or_none()
 
     if not filament:
-        raise HTTPException(status_code=404, detail="Material not found")
+        raise HTTPException(status_code=404, detail=ERR_FILAMENT_NOT_FOUND)
 
     # Находим официальный пресет
     from app.models.preset import Preset
@@ -155,7 +163,7 @@ async def get_qr_preset(
     preset = preset_result.scalar_one_or_none()
 
     if not preset:
-        raise HTTPException(status_code=404, detail="Official preset not found")
+        raise HTTPException(status_code=404, detail=ERR_OFFICIAL_PRESET_NOT_FOUND)
 
     # Экспортируем в формат OrcaSlicer
     preset_json = await export_preset_to_orcaslicer(preset, db)
@@ -179,7 +187,7 @@ async def get_filament_qr_code(
     filament = result.scalar_one_or_none()
 
     if not filament:
-        raise HTTPException(status_code=404, detail="Filament not found")
+        raise HTTPException(status_code=404, detail=ERR_FILAMENT_NOT_FOUND)
 
     # Если QR-кода нет - проверяем, можем ли его создать
     if not filament.qr_code:
@@ -191,7 +199,7 @@ async def get_filament_qr_code(
         if not brand or not brand.verified:
             raise HTTPException(
                 status_code=403,
-                detail="QR code can only be generated for verified brands"
+                detail=ERR_QR_VERIFIED_ONLY
             )
 
         # Генерируем QR-код
@@ -258,21 +266,21 @@ async def download_filament_qr_code(
     filament = result.scalar_one_or_none()
 
     if not filament:
-        raise HTTPException(status_code=404, detail="Filament not found")
+        raise HTTPException(status_code=404, detail=ERR_FILAMENT_NOT_FOUND)
 
     # Проверяем права (только владелец бренда или админ)
     brand_result = await db.execute(select(Brand).where(Brand.id == filament.brand_id))
     brand = brand_result.scalar_one_or_none()
 
     if not brand:
-        raise HTTPException(status_code=404, detail="Brand not found")
+        raise HTTPException(status_code=404, detail=ERR_BRAND_NOT_FOUND)
 
     # Проверяем права доступа (админ или пользователь привязан к этому бренду)
     if current_user.role.value != 'admin' and (not current_user.brand_id or current_user.brand_id != brand.id):
-        raise HTTPException(status_code=403, detail="Access denied")
+        raise HTTPException(status_code=403, detail=ERR_ACCESS_DENIED)
 
     if not filament.qr_code:
-        raise HTTPException(status_code=404, detail="QR code not found")
+        raise HTTPException(status_code=404, detail=ERR_QR_NOT_FOUND)
 
     # Проверяем, есть ли сохраненное изображение нужного размера
     saved_path = get_qr_code_path(filament.qr_code, size)

@@ -7,6 +7,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.dependencies import get_current_active_user
+from app.core.errors import ERR_NOTIFICATION_NOT_FOUND
 from app.db.session import get_db
 from app.models.notification import Notification
 from app.models.user import User
@@ -100,7 +101,7 @@ async def mark_as_read(
     notification = result.scalar_one_or_none()
     
     if not notification:
-        raise HTTPException(status_code=404, detail="Notification not found")
+        raise HTTPException(status_code=404, detail=ERR_NOTIFICATION_NOT_FOUND)
     
     if not notification.read:
         from datetime import datetime, timezone
@@ -155,12 +156,12 @@ async def delete_notification(
     notification = result.scalar_one_or_none()
     
     if not notification:
-        raise HTTPException(status_code=404, detail="Notification not found")
+        raise HTTPException(status_code=404, detail=ERR_NOTIFICATION_NOT_FOUND)
     
     await db.delete(notification)
     await db.commit()
     
-    return {"message": "Notification deleted successfully"}
+    return {"message": "Уведомление удалено"}
 
 
 @router.delete("/all")

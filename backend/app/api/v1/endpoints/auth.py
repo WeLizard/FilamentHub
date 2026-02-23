@@ -80,7 +80,7 @@ async def register(
     if not await verify_recaptcha(data.recaptcha_token or ""):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="reCAPTCHA verification failed",
+            detail="Проверка reCAPTCHA не пройдена",
         )
 
     # Проверка существования email
@@ -128,7 +128,7 @@ async def register(
         logger.error(f"Error hashing password: {str(e)}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to process password",
+            detail="Ошибка обработки пароля",
         )
     
     # Создание пользователя
@@ -174,7 +174,7 @@ async def register(
                 )
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to create user. Please try again.",
+            detail="Ошибка создания пользователя. Попробуйте ещё раз.",
         )
     
     # Возвращаем ответ
@@ -184,7 +184,7 @@ async def register(
         logger.error(f"Error serializing user response: {str(e)}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to create user response",
+            detail="Ошибка формирования ответа",
         )
 
 
@@ -256,7 +256,7 @@ async def refresh_token(
     if email is None:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid refresh token",
+            detail=ERR_INVALID_REFRESH_TOKEN,
             headers={"WWW-Authenticate": "Bearer"},
         )
     
@@ -600,7 +600,7 @@ async def verify_email(
     if not user_id or not email:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Invalid verification token",
+            detail=ERR_INVALID_VERIFICATION_TOKEN,
         )
     
     # Получаем пользователя
@@ -617,7 +617,7 @@ async def verify_email(
     if user.email != email:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Email mismatch",
+            detail="Email не совпадает",
         )
     
     # Проверяем, не верифицирован ли уже
@@ -864,7 +864,7 @@ async def update_user_username(
     if existing_user and existing_user.id != current_user.id:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Username уже занят",
+            detail=ERR_USERNAME_EXISTS,
         )
     
     # Обновляем username
@@ -892,7 +892,7 @@ async def update_user_email(
     if existing_user and existing_user.id != current_user.id:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Email уже зарегистрирован",
+            detail=ERR_EMAIL_EXISTS,
         )
     
     # Обновляем email и сбрасываем верификацию (требуется повторная верификация)

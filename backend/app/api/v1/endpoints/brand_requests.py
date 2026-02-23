@@ -10,7 +10,16 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.dependencies import get_current_active_user, get_current_admin_user
 from app.core.config import settings
-from app.core.errors import ERR_BRAND_NOT_FOUND, ERR_BRAND_SLUG_EXISTS, ERR_REQUEST_NOT_FOUND, ERR_REQUEST_NOT_PENDING
+from app.core.errors import (
+    ERR_ACCESS_DENIED,
+    ERR_BRAND_NOT_FOUND,
+    ERR_BRAND_REQUEST_PENDING_CREATE,
+    ERR_BRAND_REQUEST_PENDING_JOIN,
+    ERR_BRAND_SLUG_EXISTS,
+    ERR_FILE_NOT_FOUND_IN_REQUEST,
+    ERR_REQUEST_NOT_FOUND,
+    ERR_REQUEST_NOT_PENDING,
+)
 from app.db.session import get_db
 from app.models.brand_request import BrandRequest, BrandRequestStatus, BrandRequestType
 from app.models.brand import Brand
@@ -45,7 +54,7 @@ async def create_brand_request(
         if not data.brand_id:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="brand_id is required for JOIN requests",
+                detail="Для заявок на вступление необходим brand_id",
             )
         
         # Проверяем, что бренд существует
@@ -99,14 +108,14 @@ async def create_brand_request(
         if existing_request.scalar_one_or_none():
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="You already have a pending request for this brand",
+                detail=ERR_BRAND_REQUEST_PENDING_JOIN,
             )
     
     elif data.request_type == BrandRequestType.CREATE:
         if not data.new_brand_name or not data.new_brand_slug:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="new_brand_name and new_brand_slug are required for CREATE requests",
+                detail="Для заявок на создание бренда необходимы название и slug",
             )
         
         # Проверяем, что slug бренда не существует
@@ -131,7 +140,7 @@ async def create_brand_request(
         if existing_request.scalar_one_or_none():
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="You already have a pending request to create this brand",
+                detail=ERR_BRAND_REQUEST_PENDING_CREATE,
             )
     
         # Проверка текстовых полей на плохие слова
@@ -333,7 +342,7 @@ async def cancel_brand_request(
     if request.status != BrandRequestStatus.PENDING:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Can only cancel pending requests",
+            detail=ERR_REQUEST_NOT_PENDING,
         )
     
     # Удаляем прикрепленные файлы
@@ -432,7 +441,7 @@ async def get_brand_request(
     if request.user_id != current_user.id and current_user.role != UserRole.ADMIN:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="You can only view your own requests",
+            detail="Вы можете просматривать только свои заявки",
         )
     
     response = BrandRequestResponse.model_validate(request)
@@ -470,14 +479,14 @@ async def upload_proof_file(
     if request.user_id != current_user.id:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="You can only upload files to your own requests",
+            detail="Загружать файлы можно только в свои заявки",
         )
     
     # Проверяем, что заявка в статусе pending
     if request.status != BrandRequestStatus.PENDING:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Can only upload files to pending requests",
+            detail=ERR_REQUEST_NOT_PENDING,
         )
     
     # Получаем существующие файлы для проверки лимита
@@ -542,14 +551,14 @@ async def delete_proof_file_endpoint(
     if request.user_id != current_user.id:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="You can only delete files from your own requests",
+            detail="Удалять файлы можно только из своих заявок",
         )
     
     # Проверяем, что заявка в статусе pending
     if request.status != BrandRequestStatus.PENDING:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Can only delete files from pending requests",
+            detail=ERR_REQUEST_NOT_PENDING,
         )
     
     # Удаляем файл из списка
@@ -568,7 +577,7 @@ async def delete_proof_file_endpoint(
     if file_to_remove is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="File not found in request",
+            detail=ERR_FILE_NOT_FOUND_IN_REQUEST,
         )
     
     existing_files.remove(file_to_remove)

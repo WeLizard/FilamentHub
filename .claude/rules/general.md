@@ -90,6 +90,7 @@ FilamentHub/
     ROADMAP.md             # Стратегический план
     plan.md                # План: рекомендованные пресеты
     PENDING_TASKS.md       # Нерешённые задачи + вендор-бандлы
+  submodule/
     OrcaSlicer/            # Форк, C++ код (submodule)
   scripts/                 # Скрипты запуска и деплоя
 ```
@@ -102,7 +103,7 @@ FilamentHub/
 | Аудит безопасности | `docs/TODO.md` |
 | Прогресс MVP | `docs/TODO_Main.md` |
 | Стратегический план | `docs/ROADMAP.md` |
-| OrcaSlicer профили | `docs/OrcaSlicer/TODO.md` |
+| OrcaSlicer C++ код | `submodule/OrcaSlicer/src/` |
 | Вендор-бандлы | `docs/PENDING_TASKS.md` |
 | Рекомендации пресетов | `docs/plan.md` |
 | Деплой | `docs/DEPLOY.md`, `docs/DEPLOYMENT.md` |
@@ -131,3 +132,48 @@ docker exec filamenthub_backend_dev python -m pytest tests/ -v
 
 # Frontend (vitest не настроен — в планах)
 ```
+
+## MCP-серверы (доступные инструменты)
+
+| MCP | Назначение |
+|-----|-----------|
+| **PAL** | Мульти-модельная оркестрация: `clink` (вызов Gemini/Qwen CLI), `chat`, `thinkdeep`, `codereview`, `debug`, `analyze`, `refactor`, `testgen`, `consensus` и др. |
+| **Playwright** | Браузерная автоматизация: навигация, скриншоты, клики, формы |
+| **context7** | Документация библиотек по запросу (resolve + get-library-docs) |
+
+## Делегирование задач через PAL clink
+
+### Gemini CLI (модель: Gemini 2.5 Pro / 2.5 Flash)
+- **Контекст**: 1M токенов — может анализировать целые репозитории за раз
+- **SWE-bench Verified**: ~63.8%
+- **Сильные стороны**: рефакторинг больших файлов, анализ архитектуры, генерация документации, обработка длинного контекста, веб-поиск
+- **Слабые стороны**: сложный дебаг, склонен перекладывать задачи обратно при нечётких инструкциях
+- **Вызов**: `clink(cli_name="gemini", prompt="...")`
+
+### Qwen CLI (модель: Qwen3-Coder, обновлён 2026-02-17)
+- **Контекст**: 256K токенов (до 1M с экстраполяцией)
+- **SWE-bench Verified**: ~69.6% (Qwen3-Coder-480B), ~70.6% (Coder-Next)
+- **Сильные стороны**: code review (находит реальные баги, security issues, N+1 с конкретными строками), сравнение/анализ данных (JSON, переводы), backend аудит (race conditions, error handling), быстрый (25-63 сек vs 120-180 сек Gemini)
+- **Слабые стороны**: менее стабилен на очень сложных архитектурных задачах
+- **ВАЖНО**: Qwen работает только с минимальным промптом (без system prompt обёрток). Это уже настроено в clink — для Qwen отправляется только задача без guidance/system prompt. Также `working_dir` установлен на `F:\FilamentHub`.
+- **Вызов**: `clink(cli_name="qwen", prompt="...")` — промпт должен быть прямой задачей без лишних инструкций
+
+### PAL clink: Background mode
+- `clink(cli_name="...", prompt="...", background=true)` — запускает CLI в фоне, мгновенно возвращает `job_id`
+- `clink(job_id="...")` — проверка статуса/получение результата
+- Можно запускать несколько задач параллельно и работать пока они выполняются
+- Jobs хранятся в памяти — при рестарте PAL теряются
+
+### Когда делегировать
+
+| Задача | Кому |
+|--------|------|
+| Code review / аудит безопасности | Qwen (точный, быстрый, находит реальные баги) |
+| Сравнение файлов / данных | Qwen (структурированные ответы) |
+| Backend анализ (N+1, race conditions) | Qwen (детальный с номерами строк) |
+| Анализ больших файлов (>500 строк) | Gemini (1M контекст) |
+| Рефакторинг модуля | Gemini |
+| Документация / wiki статьи | Gemini (веб-поиск, Playwright) |
+| Работа с сайтом (навигация, скриншоты) | Gemini (Playwright MCP) |
+| Параллельный поиск / second opinion | Оба через consensus |
+| Сложная архитектура, дебаг | Claude (основной) |

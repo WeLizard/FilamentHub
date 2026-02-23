@@ -371,6 +371,6 @@ async def get_orcaslicer_download(
     # Файл не найден
     raise HTTPException(
         status_code=status.HTTP_404_NOT_FOUND,
-        detail=f"Build for {platform} ({architecture}, {download_type}) is not available yet",
+        detail=f"Сборка для {platform} ({architecture}, {download_type}) пока недоступна",
     )
 

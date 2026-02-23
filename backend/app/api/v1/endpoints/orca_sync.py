@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.core.dependencies import get_current_active_user
+from app.core.errors import ERR_ACCESS_DENIED, ERR_INTERNAL_ERROR, ERR_NOTIFICATION_NOT_FOUND, ERR_PRESET_NOT_FOUND
 from app.core.utils import like_pattern
 from app.db.session import get_db
 from app.models.brand import Brand
@@ -1251,14 +1252,14 @@ async def get_preset_info_file(
     if not preset:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="Preset not found",
+            detail=ERR_PRESET_NOT_FOUND,
         )
-    
+
     # Проверяем права доступа (публичный пресет или свой пресет)
     if not preset.active and preset.user_id != current_user.id:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Access denied",
+            detail=ERR_ACCESS_DENIED,
         )
     
     # Генерируем .info файл
@@ -2417,7 +2418,7 @@ async def import_filament_presets(
         if len(payload.profiles) > MAX_PROFILES_PER_REQUEST:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Too many profiles: {len(payload.profiles)} (max {MAX_PROFILES_PER_REQUEST})",
+                detail=f"Слишком много профилей: {len(payload.profiles)} (максимум {MAX_PROFILES_PER_REQUEST})",
             )
 
         results: list[OrcaSyncResult] = []
@@ -2460,7 +2461,7 @@ async def import_filament_presets(
         await db.rollback()
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Internal server error",
+            detail=ERR_INTERNAL_ERROR,
         )
 
 
@@ -2636,11 +2637,11 @@ async def handle_deleted_preset_action(
     notification = result.scalar_one_or_none()
 
     if not notification:
-        raise HTTPException(status_code=404, detail="Notification not found")
+        raise HTTPException(status_code=404, detail=ERR_NOTIFICATION_NOT_FOUND)
 
     # Получаем список удалённых пресетов из extra_data
     if not notification.extra_data:
-        raise HTTPException(status_code=400, detail="Notification has no extra_data")
+        raise HTTPException(status_code=400, detail="У уведомления нет дополнительных данных")
     deleted_presets = notification.extra_data.get("deleted_presets", [])
 
     # Фильтруем пресеты по выбранным preset_ids (если apply_to_all=False)
@@ -2648,7 +2649,7 @@ async def handle_deleted_preset_action(
         deleted_presets = [p for p in deleted_presets if p["preset_id"] in action.preset_ids]
     elif not action.apply_to_all:
         # Если не указаны preset_ids и не apply_to_all, возвращаем ошибку
-        raise HTTPException(status_code=400, detail="preset_ids or apply_to_all required")
+        raise HTTPException(status_code=400, detail="Необходимо указать preset_ids или apply_to_all")
 
     processed_count = 0
 
