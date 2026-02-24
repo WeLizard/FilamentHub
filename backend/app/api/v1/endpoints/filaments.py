@@ -12,7 +12,7 @@ logger = logging.getLogger(__name__)
 
 from app.core.dependencies import get_current_user
 from app.core.utils import like_pattern
-from app.core.errors import ERR_BRAND_NOT_FOUND, ERR_FILAMENT_NOT_FOUND, ERR_NO_PERMISSION_CREATE_FILAMENT, ERR_NO_PERMISSION_DELETE_FILAMENT, ERR_NO_PERMISSION_EDIT_FILAMENT
+from app.core.errors import ERR_BRAND_NOT_FOUND, ERR_FILAMENT_NOT_FOUND, ERR_NO_PERMISSION_CREATE_FILAMENT, ERR_NO_PERMISSION_DELETE_FILAMENT, ERR_NO_PERMISSION_EDIT_FILAMENT, raise_error
 from app.db.session import get_db
 from app.models.filament import Filament
 from app.models.printer import Printer
@@ -257,7 +257,7 @@ async def get_filament(
     filament = result.scalar_one_or_none()
 
     if not filament:
-        raise HTTPException(status_code=404, detail=ERR_FILAMENT_NOT_FOUND)
+        raise_error(404, ERR_FILAMENT_NOT_FOUND)
 
     filament_dict = FilamentResponse.model_validate(filament).model_dump()
     filament_dict["brand_name"] = filament.brand.name if filament.brand else None
@@ -281,7 +281,7 @@ async def get_filament_presets(
     filament = filament_result.scalar_one_or_none()
 
     if not filament:
-        raise HTTPException(status_code=404, detail=ERR_FILAMENT_NOT_FOUND)
+        raise_error(404, ERR_FILAMENT_NOT_FOUND)
 
     # Build query - показываем только активные пресеты (все пресеты автоматически одобрены)
     from app.models.preset import PresetModerationStatus
@@ -365,7 +365,7 @@ async def create_filament(
     brand_result = await db.execute(select(Brand).where(Brand.id == data.brand_id))
     brand = brand_result.scalar_one_or_none()
     if not brand:
-        raise HTTPException(status_code=404, detail=ERR_BRAND_NOT_FOUND)
+        raise_error(404, ERR_BRAND_NOT_FOUND)
     
     # Проверка прав доступа:
     # - Админ может создавать для любого бренда
@@ -374,10 +374,7 @@ async def create_filament(
     #   (например, только что созданного через форму пресета)
     if current_user.role != UserRole.ADMIN and current_user.brand_id != data.brand_id:
         if brand.verified:
-            raise HTTPException(
-                status_code=403,
-                detail=ERR_NO_PERMISSION_CREATE_FILAMENT
-            )
+            raise_error(403, ERR_NO_PERMISSION_CREATE_FILAMENT)
     
     # Проверка текстовых полей на плохие слова
     from app.services.preset_moderation import validate_text_field
@@ -486,14 +483,11 @@ async def update_filament(
     filament = result.scalar_one_or_none()
 
     if not filament:
-        raise HTTPException(status_code=404, detail=ERR_FILAMENT_NOT_FOUND)
+        raise_error(404, ERR_FILAMENT_NOT_FOUND)
     
     # Проверка прав доступа: только админ или сотрудник бренда может редактировать материалы
     if current_user.role != UserRole.ADMIN and current_user.brand_id != filament.brand_id:
-        raise HTTPException(
-            status_code=403,
-            detail=ERR_NO_PERMISSION_EDIT_FILAMENT
-        )
+        raise_error(403, ERR_NO_PERMISSION_EDIT_FILAMENT)
     
     # Проверка текстовых полей на плохие слова
     from app.services.preset_moderation import validate_text_field
@@ -535,14 +529,11 @@ async def delete_filament(
     filament = result.scalar_one_or_none()
 
     if not filament:
-        raise HTTPException(status_code=404, detail=ERR_FILAMENT_NOT_FOUND)
+        raise_error(404, ERR_FILAMENT_NOT_FOUND)
     
     # Проверка прав доступа: только админ или сотрудник бренда может удалять материалы
     if current_user.role != UserRole.ADMIN and current_user.brand_id != filament.brand_id:
-        raise HTTPException(
-            status_code=403,
-            detail=ERR_NO_PERMISSION_DELETE_FILAMENT
-        )
+        raise_error(403, ERR_NO_PERMISSION_DELETE_FILAMENT)
 
     await db.delete(filament)
     await db.commit()
@@ -565,7 +556,7 @@ async def get_compatible_printers(
     # Проверяем существование филамента
     filament = await db.get(Filament, filament_id)
     if not filament:
-        raise HTTPException(status_code=404, detail=ERR_FILAMENT_NOT_FOUND)
+        raise_error(404, ERR_FILAMENT_NOT_FOUND)
     
     # Используем VIEW для получения совместимых принтеров
     query = text("""

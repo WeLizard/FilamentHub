@@ -9,10 +9,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.dependencies import get_current_user
 from app.core.errors import (
+    ERR_DELETE_PENDING_ONLY,
     ERR_FILE_NOT_FOUND_IN_REQUEST,
     ERR_PRINTER_REQUEST_NOT_FOUND,
     ERR_PRINTER_REQUEST_PENDING,
     ERR_PRINTER_SLUG_EXISTS,
+    ERR_UPLOAD_PENDING_ONLY,
+    raise_error,
 )
 from app.db.session import get_db
 from app.models.printer_request import PrinterRequest, PrinterRequestStatus
@@ -47,10 +50,7 @@ async def create_printer_request(
     existing_printer = printer_result.scalar_one_or_none()
     
     if existing_printer:
-        raise HTTPException(
-            status_code=400,
-            detail=ERR_PRINTER_SLUG_EXISTS
-        )
+        raise_error(400, ERR_PRINTER_SLUG_EXISTS)
     
     # Проверяем, нет ли уже запроса на этот принтер
     request_result = await db.execute(
@@ -61,10 +61,7 @@ async def create_printer_request(
     existing_request = request_result.scalar_one_or_none()
     
     if existing_request:
-        raise HTTPException(
-            status_code=400,
-            detail=ERR_PRINTER_REQUEST_PENDING
-        )
+        raise_error(400, ERR_PRINTER_REQUEST_PENDING)
     
     # Проверка текстовых полей на плохие слова
     from app.services.preset_moderation import validate_text_field
@@ -120,14 +117,11 @@ async def upload_proof_file(
     printer_request = result.scalar_one_or_none()
     
     if not printer_request:
-        raise HTTPException(status_code=404, detail=ERR_PRINTER_REQUEST_NOT_FOUND)
+        raise_error(404, ERR_PRINTER_REQUEST_NOT_FOUND)
     
     # Проверяем, что заявка еще не обработана
     if printer_request.status != PrinterRequestStatus.PENDING:
-        raise HTTPException(
-            status_code=400,
-            detail="Загружать файлы можно только в ожидающие заявки"
-        )
+        raise_error(400, ERR_UPLOAD_PENDING_ONLY)
     
     # Получаем существующие файлы для проверки лимита
     existing_files = parse_proof_files(printer_request.proof_files)
@@ -171,22 +165,16 @@ async def delete_proof_file_endpoint(
     printer_request = result.scalar_one_or_none()
     
     if not printer_request:
-        raise HTTPException(status_code=404, detail=ERR_PRINTER_REQUEST_NOT_FOUND)
+        raise_error(404, ERR_PRINTER_REQUEST_NOT_FOUND)
     
     # Проверяем, что заявка еще не обработана
     if printer_request.status != PrinterRequestStatus.PENDING:
-        raise HTTPException(
-            status_code=400,
-            detail="Удалять файлы можно только из ожидающих заявок"
-        )
+        raise_error(400, ERR_DELETE_PENDING_ONLY)
     
     # Удаляем файл из списка
     existing_files = parse_proof_files(printer_request.proof_files)
     if file_path not in existing_files:
-        raise HTTPException(
-            status_code=404,
-            detail=ERR_FILE_NOT_FOUND_IN_REQUEST
-        )
+        raise_error(404, ERR_FILE_NOT_FOUND_IN_REQUEST)
     
     existing_files.remove(file_path)
     
@@ -266,7 +254,7 @@ async def get_printer_request(
     printer_request = result.scalar_one_or_none()
     
     if not printer_request:
-        raise HTTPException(status_code=404, detail=ERR_PRINTER_REQUEST_NOT_FOUND)
+        raise_error(404, ERR_PRINTER_REQUEST_NOT_FOUND)
     
     response = PrinterRequestResponse.model_validate(printer_request)
     # Парсим файлы для ответа
@@ -293,14 +281,11 @@ async def upload_proof_file(
     printer_request = result.scalar_one_or_none()
     
     if not printer_request:
-        raise HTTPException(status_code=404, detail=ERR_PRINTER_REQUEST_NOT_FOUND)
+        raise_error(404, ERR_PRINTER_REQUEST_NOT_FOUND)
     
     # Проверяем, что заявка еще не обработана
     if printer_request.status != PrinterRequestStatus.PENDING:
-        raise HTTPException(
-            status_code=400,
-            detail="Загружать файлы можно только в ожидающие заявки"
-        )
+        raise_error(400, ERR_UPLOAD_PENDING_ONLY)
     
     # Получаем существующие файлы для проверки лимита
     existing_files = parse_proof_files(printer_request.proof_files)
@@ -344,22 +329,16 @@ async def delete_proof_file_endpoint(
     printer_request = result.scalar_one_or_none()
     
     if not printer_request:
-        raise HTTPException(status_code=404, detail=ERR_PRINTER_REQUEST_NOT_FOUND)
+        raise_error(404, ERR_PRINTER_REQUEST_NOT_FOUND)
     
     # Проверяем, что заявка еще не обработана
     if printer_request.status != PrinterRequestStatus.PENDING:
-        raise HTTPException(
-            status_code=400,
-            detail="Удалять файлы можно только из ожидающих заявок"
-        )
+        raise_error(400, ERR_DELETE_PENDING_ONLY)
     
     # Удаляем файл из списка
     existing_files = parse_proof_files(printer_request.proof_files)
     if file_path not in existing_files:
-        raise HTTPException(
-            status_code=404,
-            detail=ERR_FILE_NOT_FOUND_IN_REQUEST
-        )
+        raise_error(404, ERR_FILE_NOT_FOUND_IN_REQUEST)
     
     existing_files.remove(file_path)
     

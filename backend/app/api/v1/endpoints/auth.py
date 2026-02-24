@@ -60,7 +60,24 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 
 # Импортируем limiter из core
 from app.core.limiter import limiter
-from app.core.errors import ERR_ACCOUNT_INACTIVE, ERR_BRAND_NOT_FOUND, ERR_EMAIL_EXISTS, ERR_INVALID_REFRESH_TOKEN, ERR_INVALID_VERIFICATION_TOKEN, ERR_USERNAME_EXISTS, ERR_USER_NOT_FOUND
+from app.core.errors import (
+    ERR_ACCOUNT_BLOCKED,
+    ERR_ACCOUNT_INACTIVE,
+    ERR_BRAND_NOT_FOUND,
+    ERR_EMAIL_EXISTS,
+    ERR_EMAIL_MISMATCH,
+    ERR_INVALID_REFRESH_TOKEN,
+    ERR_INVALID_RESET_TOKEN,
+    ERR_INVALID_VERIFICATION_TOKEN,
+    ERR_PASSWORD_HASH_ERROR,
+    ERR_RECAPTCHA_FAILED,
+    ERR_RESPONSE_ERROR,
+    ERR_USER_CREATE_ERROR,
+    ERR_USER_NOT_FOUND,
+    ERR_USERNAME_EXISTS,
+    ERR_WRONG_PASSWORD,
+    raise_error,
+)
 
 
 @router.post("/register", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
@@ -78,36 +95,27 @@ async def register(
     # reCAPTCHA v3 verification
     from app.core.utils import verify_recaptcha
     if not await verify_recaptcha(data.recaptcha_token or ""):
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Проверка reCAPTCHA не пройдена",
-        )
+        raise_error(status.HTTP_400_BAD_REQUEST, ERR_RECAPTCHA_FAILED)
 
     # Проверка домена email: опечатки + DNS MX/A
     domain_error = await validate_email_domain(data.email)
     if domain_error:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=domain_error,
+            detail=domain_error,  # already {"code": ..., "params": ...} from validator
         )
 
     # Проверка существования email
     result = await db.execute(select(User).where(User.email == data.email))
     existing_user = result.scalar_one_or_none()
     if existing_user:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=ERR_EMAIL_EXISTS,
-        )
-    
+        raise_error(status.HTTP_400_BAD_REQUEST, ERR_EMAIL_EXISTS)
+
     # Проверка существования username
     result = await db.execute(select(User).where(User.username == data.username))
     existing_user = result.scalar_one_or_none()
     if existing_user:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=ERR_USERNAME_EXISTS,
-        )
+        raise_error(status.HTTP_400_BAD_REQUEST, ERR_USERNAME_EXISTS)
     
     # Проверка текстовых полей на плохие слова
     from app.services.preset_moderation import validate_text_field
@@ -134,11 +142,8 @@ async def register(
         password_hash = get_password_hash(data.password)
     except Exception as e:
         logger.error(f"Error hashing password: {str(e)}", exc_info=True)
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Ошибка обработки пароля",
-        )
-    
+        raise_error(status.HTTP_500_INTERNAL_SERVER_ERROR, ERR_PASSWORD_HASH_ERROR)
+
     # Создание пользователя
     user = User(
         email=data.email,
@@ -171,29 +176,17 @@ async def register(
         error_str = str(e).lower()
         if "unique" in error_str or "duplicate" in error_str:
             if "email" in error_str:
-                raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail=ERR_EMAIL_EXISTS,
-                )
+                raise_error(status.HTTP_400_BAD_REQUEST, ERR_EMAIL_EXISTS)
             elif "username" in error_str:
-                raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail=ERR_USERNAME_EXISTS,
-                )
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Ошибка создания пользователя. Попробуйте ещё раз.",
-        )
+                raise_error(status.HTTP_400_BAD_REQUEST, ERR_USERNAME_EXISTS)
+        raise_error(status.HTTP_500_INTERNAL_SERVER_ERROR, ERR_USER_CREATE_ERROR)
     
     # Возвращаем ответ
     try:
         return UserResponse.model_validate(user)
     except Exception as e:
         logger.error(f"Error serializing user response: {str(e)}", exc_info=True)
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Ошибка формирования ответа",
-        )
+        raise_error(status.HTTP_500_INTERNAL_SERVER_ERROR, ERR_RESPONSE_ERROR)
 
 
 @router.post("/login", response_model=Token)
@@ -219,17 +212,10 @@ async def login(
     user = result.scalar_one_or_none()
     
     if not user or not verify_password(data.password, user.password_hash):
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Неверный email/логин или пароль",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
-    
+        raise_error(status.HTTP_401_UNAUTHORIZED, ERR_WRONG_PASSWORD, headers={"WWW-Authenticate": "Bearer"})
+
     if not user.active:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail=ERR_ACCOUNT_INACTIVE,
-        )
+        raise_error(status.HTTP_403_FORBIDDEN, ERR_ACCOUNT_INACTIVE)
     
     # Update last login
     user.last_login = datetime.now(timezone.utc)
@@ -253,37 +239,22 @@ async def refresh_token(
     payload = decode_refresh_token(data.refresh_token)
     
     if payload is None:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail=ERR_INVALID_REFRESH_TOKEN,
-            headers={"WWW-Authenticate": "Bearer"},
-        )
-    
+        raise_error(status.HTTP_401_UNAUTHORIZED, ERR_INVALID_REFRESH_TOKEN, headers={"WWW-Authenticate": "Bearer"})
+
     # Получаем email из payload
     email: str | None = payload.get("sub")
     if email is None:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail=ERR_INVALID_REFRESH_TOKEN,
-            headers={"WWW-Authenticate": "Bearer"},
-        )
-    
+        raise_error(status.HTTP_401_UNAUTHORIZED, ERR_INVALID_REFRESH_TOKEN, headers={"WWW-Authenticate": "Bearer"})
+
     # Проверяем существование пользователя
     result = await db.execute(select(User).where(User.email == email))
     user = result.scalar_one_or_none()
-    
+
     if user is None:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail=ERR_USER_NOT_FOUND,
-            headers={"WWW-Authenticate": "Bearer"},
-        )
-    
+        raise_error(status.HTTP_401_UNAUTHORIZED, ERR_USER_NOT_FOUND, headers={"WWW-Authenticate": "Bearer"})
+
     if not user.active:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail=ERR_ACCOUNT_INACTIVE,
-        )
+        raise_error(status.HTTP_403_FORBIDDEN, ERR_ACCOUNT_INACTIVE)
     
     # Создаём новый access token
     token_data = {"sub": user.email, "user_id": user.id, "role": user.role.value}
@@ -498,19 +469,13 @@ async def update_current_user(
         result = await db.execute(select(User).where(User.email == update_data["email"]))
         existing_user = result.scalar_one_or_none()
         if existing_user and existing_user.id != current_user.id:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=ERR_EMAIL_EXISTS,
-            )
-    
+            raise_error(status.HTTP_400_BAD_REQUEST, ERR_EMAIL_EXISTS)
+
     if "username" in update_data and update_data["username"]:
         result = await db.execute(select(User).where(User.username == update_data["username"]))
         existing_user = result.scalar_one_or_none()
         if existing_user and existing_user.id != current_user.id:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=ERR_USERNAME_EXISTS,
-            )
+            raise_error(status.HTTP_400_BAD_REQUEST, ERR_USERNAME_EXISTS)
     
     # Проверка текстовых полей на плохие слова
     from app.services.preset_moderation import validate_text_field
@@ -534,10 +499,7 @@ async def update_current_user(
         result = await db.execute(select(Brand).where(Brand.id == update_data["brand_id"]))
         brand = result.scalar_one_or_none()
         if not brand:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail=ERR_BRAND_NOT_FOUND,
-            )
+            raise_error(status.HTTP_404_NOT_FOUND, ERR_BRAND_NOT_FOUND)
     
     # Применяем обновления
     for key, value in update_data.items():
@@ -597,36 +559,24 @@ async def verify_email(
     # Декодируем токен верификации
     payload = decode_email_verification_token(token)
     if not payload:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=ERR_INVALID_VERIFICATION_TOKEN,
-        )
-    
+        raise_error(status.HTTP_400_BAD_REQUEST, ERR_INVALID_VERIFICATION_TOKEN)
+
     user_id: int | None = payload.get("user_id")
     email: str | None = payload.get("email")
-    
+
     if not user_id or not email:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=ERR_INVALID_VERIFICATION_TOKEN,
-        )
-    
+        raise_error(status.HTTP_400_BAD_REQUEST, ERR_INVALID_VERIFICATION_TOKEN)
+
     # Получаем пользователя
     result = await db.execute(select(User).where(User.id == user_id))
     user = result.scalar_one_or_none()
-    
+
     if not user:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=ERR_USER_NOT_FOUND,
-        )
-    
+        raise_error(status.HTTP_404_NOT_FOUND, ERR_USER_NOT_FOUND)
+
     # Проверяем, что email совпадает
     if user.email != email:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Email не совпадает",
-        )
+        raise_error(status.HTTP_400_BAD_REQUEST, ERR_EMAIL_MISMATCH)
     
     # Проверяем, не верифицирован ли уже
     if user.email_verified:
@@ -683,10 +633,7 @@ async def delete_account(
     
     # Проверяем пароль
     if not verify_password(data.password_confirm, current_user.password_hash):
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Неверный пароль",
-        )
+        raise_error(status.HTTP_401_UNAUTHORIZED, ERR_WRONG_PASSWORD)
     
     # Выполняем удаление аккаунта
     await delete_user_account(
@@ -748,53 +695,35 @@ async def reset_password(
     # Декодируем токен восстановления
     payload = decode_password_reset_token(data.token)
     if not payload:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Неверный или истёкший токен восстановления пароля",
-        )
-    
+        raise_error(status.HTTP_400_BAD_REQUEST, ERR_INVALID_RESET_TOKEN)
+
     user_id: int | None = payload.get("user_id")
     email: str | None = payload.get("email")
-    
+
     if not user_id or not email:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Неверный токен восстановления пароля",
-        )
-    
+        raise_error(status.HTTP_400_BAD_REQUEST, ERR_INVALID_RESET_TOKEN)
+
     # Получаем пользователя
     result = await db.execute(select(User).where(User.id == user_id))
     user = result.scalar_one_or_none()
-    
+
     if not user:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Пользователь не найден",
-        )
-    
+        raise_error(status.HTTP_404_NOT_FOUND, ERR_USER_NOT_FOUND)
+
     # Проверяем, что email совпадает
     if user.email != email:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Несоответствие email в токене",
-        )
-    
+        raise_error(status.HTTP_400_BAD_REQUEST, ERR_EMAIL_MISMATCH)
+
     # Проверяем, что аккаунт активен
     if not user.active:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Аккаунт заблокирован",
-        )
-    
+        raise_error(status.HTTP_403_FORBIDDEN, ERR_ACCOUNT_BLOCKED)
+
     # Хешируем новый пароль
     try:
         password_hash = get_password_hash(data.new_password)
     except Exception as e:
         logger.error(f"Error hashing password: {str(e)}", exc_info=True)
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Ошибка обработки пароля",
-        )
+        raise_error(status.HTTP_500_INTERNAL_SERVER_ERROR, ERR_PASSWORD_HASH_ERROR)
     
     # Обновляем пароль
     user.password_hash = password_hash
@@ -834,11 +763,8 @@ async def update_user_password(
     """Изменить пароль текущего пользователя."""
     # Проверяем текущий пароль (для безопасности критичных операций)
     if not verify_password(data.current_password, current_user.password_hash):
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Неверный текущий пароль",
-        )
-    
+        raise_error(status.HTTP_401_UNAUTHORIZED, ERR_WRONG_PASSWORD)
+
     # Хешируем новый пароль
     try:
         password_hash = get_password_hash(data.new_password)
@@ -846,10 +772,7 @@ async def update_user_password(
         import logging
         logger = logging.getLogger(__name__)
         logger.error(f"Error hashing password: {str(e)}", exc_info=True)
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Ошибка обработки пароля",
-        )
+        raise_error(status.HTTP_500_INTERNAL_SERVER_ERROR, ERR_PASSWORD_HASH_ERROR)
     
     # Обновляем пароль
     current_user.password_hash = password_hash
@@ -870,11 +793,8 @@ async def update_user_username(
     result = await db.execute(select(User).where(User.username == data.new_username))
     existing_user = result.scalar_one_or_none()
     if existing_user and existing_user.id != current_user.id:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=ERR_USERNAME_EXISTS,
-        )
-    
+        raise_error(status.HTTP_400_BAD_REQUEST, ERR_USERNAME_EXISTS)
+
     # Обновляем username
     current_user.username = data.new_username
     await db.commit()
@@ -898,11 +818,8 @@ async def update_user_email(
     result = await db.execute(select(User).where(User.email == data.new_email))
     existing_user = result.scalar_one_or_none()
     if existing_user and existing_user.id != current_user.id:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=ERR_EMAIL_EXISTS,
-        )
-    
+        raise_error(status.HTTP_400_BAD_REQUEST, ERR_EMAIL_EXISTS)
+
     # Обновляем email и сбрасываем верификацию (требуется повторная верификация)
     # Примечание: В будущих версиях планируется добавить подтверждение через код,
     # но на текущий момент email обновляется сразу с требованием повторной верификации

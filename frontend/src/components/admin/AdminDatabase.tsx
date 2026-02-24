@@ -33,6 +33,7 @@ import {
   Save
 } from 'lucide-react';
 import { adminAPI } from '../../api/client';
+import { translateApiError } from '../../utils/translateApiError';
 import { useTranslation } from 'react-i18next';
 
 function IntegrityCheck() {
@@ -395,7 +396,7 @@ export function AdminDatabase() {
       setEditError(null);
     },
     onError: (error: any) => {
-      setEditError(error?.response?.data?.detail || t('adminDatabase.tableViewer.error'));
+      setEditError(translateApiError(t, error?.response?.data?.detail, t('adminDatabase.tableViewer.error')));
     },
   });
 
@@ -1466,10 +1467,7 @@ export function AdminDatabase() {
               <div className="flex-1">
                 <p className="text-sm font-semibold">{t('adminDatabase.import.errorTitle')}</p>
                 <p className="text-xs text-red-300 mt-1">
-                  {importMutation.error?.response?.data?.detail || 
-                   importMutation.error?.response?.data?.message || 
-                   importMutation.error?.message || 
-                   t('adminDatabase.import.errorUnknown')}
+                  {translateApiError(t, importMutation.error?.response?.data?.detail, t('adminDatabase.import.errorUnknown'))}
                 </p>
                 {importMutation.error?.code === 'ECONNABORTED' && (
                   <p className="text-xs text-yellow-300 mt-1">

@@ -6,6 +6,7 @@ import { useTranslation } from 'react-i18next';
 import { X, Save, Loader2, Check, Plus, CheckCircle } from 'lucide-react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { presetsAPI, filamentsAPI, brandsAPI, printersAPI } from '../api/client';
+import { translateApiError } from '../utils/translateApiError';
 import { useAuth } from '../contexts/AuthContext';
 import type { Preset, Filament, Brand, Printer } from '../types/api';
 import { applyMaterialDefaults } from '../data/materialDefaults';
@@ -849,8 +850,7 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
   const createBrandMutation = useMutation({
     mutationFn: (data: { name: string; slug: string; website?: string }) => brandsAPI.create(data),
     onError: (err: any) => {
-      const errorMessage = err?.response?.data?.detail || err?.message || t('presetModal.errors.createBrand');
-      setError(errorMessage);
+      setError(translateApiError(t, err?.response?.data?.detail, t('presetModal.errors.createBrand')));
       console.error('Failed to create brand:', err);
     },
   });
@@ -877,8 +877,7 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
       queryClient.invalidateQueries({ queryKey: ['filaments'] });
     },
     onError: (err: any) => {
-      const errorMessage = err?.response?.data?.detail || err?.message || t('presetModal.errors.createFilament');
-      setError(errorMessage);
+      setError(translateApiError(t, err?.response?.data?.detail, t('presetModal.errors.createFilament')));
       console.error('Failed to create filament:', err);
     },
   });
@@ -918,8 +917,7 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
       onClose();
     },
     onError: (err: any) => {
-      const errorMessage = err?.response?.data?.detail || err?.message || t('presetModal.errors.createPreset');
-      setError(errorMessage);
+      setError(translateApiError(t, err?.response?.data?.detail, t('presetModal.errors.createPreset')));
       console.error('Failed to create preset:', err);
     },
   });
@@ -961,8 +959,7 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
       onClose();
     },
     onError: (err: any) => {
-      const errorMessage = err?.response?.data?.detail || err?.message || t('presetModal.errors.updatePreset');
-      setError(errorMessage);
+      setError(translateApiError(t, err?.response?.data?.detail, t('presetModal.errors.updatePreset')));
       console.error('Failed to update preset:', err);
     },
   });

@@ -5,6 +5,7 @@ import { useTranslation } from 'react-i18next';
 import { X, Save, Loader2, Check, Download, QrCode } from 'lucide-react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { filamentsAPI, brandsAPI, qrAPI } from '../api/client';
+import { translateApiError } from '../utils/translateApiError';
 import { ColorMaterialSection } from './ColorMaterialSection';
 import { HSLColorPicker } from './HSLColorPicker';
 import type { FilamentVisualSettings } from '../types/api';
@@ -276,7 +277,7 @@ export const CreateFilamentModal: React.FC<CreateFilamentModalProps> = ({
       }, 1500);
     },
     onError: (err: any) => {
-      setError(err.response?.data?.detail || t('createFilament.createError'));
+      setError(translateApiError(t, err.response?.data?.detail, t('createFilament.createError')));
     },
   });
 
@@ -310,7 +311,7 @@ export const CreateFilamentModal: React.FC<CreateFilamentModalProps> = ({
       }, 1500);
     },
     onError: (err: any) => {
-      setError(err.response?.data?.detail || t('createFilament.updateError'));
+      setError(translateApiError(t, err.response?.data?.detail, t('createFilament.updateError')));
     },
   });
 

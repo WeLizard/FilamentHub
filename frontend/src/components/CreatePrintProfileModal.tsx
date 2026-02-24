@@ -5,6 +5,7 @@ import { useTranslation } from 'react-i18next';
 import { X, Save, Loader2, Layers } from 'lucide-react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { printProfilesAPI } from '../api/client';
+import { translateApiError } from '../utils/translateApiError';
 import { useAuth } from '../contexts/AuthContext';
 import type { PrintProfile } from '../types/api';
 
@@ -136,7 +137,7 @@ export const CreatePrintProfileModal: React.FC<CreatePrintProfileModalProps> = (
     },
     onError: (error: any) => {
       console.error('Error saving print profile:', error);
-      alert(error?.response?.data?.detail || error?.message || t('createPrintProfile.saveError'));
+      alert(translateApiError(t, error?.response?.data?.detail, t('createPrintProfile.saveError')));
     },
   });
 

@@ -6,6 +6,7 @@ import { X, Star, CheckCircle, XCircle, AlertCircle, Settings, Shield } from 'lu
 import { Printer3DIcon } from './icons/Printer3DIcon';
 import { useMutation, useQueryClient, useQuery } from '@tanstack/react-query';
 import { filamentReviewsAPI } from '../api/client';
+import { translateApiError } from '../utils/translateApiError';
 import { FilamentReview, Preset } from '../types/api';
 import { StarRating } from './StarRating';
 import { useAuth } from '../contexts/AuthContext';
@@ -91,11 +92,7 @@ export const CreateReviewModal: React.FC<CreateReviewModalProps> = ({
       onClose();
     },
     onError: (error: any) => {
-      if (error.response?.data?.detail) {
-        setErrors({ submit: error.response.data.detail });
-      } else {
-        setErrors({ submit: t('createReview.saveError') });
-      }
+      setErrors({ submit: translateApiError(t, error.response?.data?.detail, t('createReview.saveError')) });
     },
   });
 

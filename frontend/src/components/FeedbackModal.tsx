@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { X, Send, Bug, Lightbulb, HelpCircle, MessageSquare } from 'lucide-react';
 import { feedbackAPI } from '../api/client';
+import { translateApiError } from '../utils/translateApiError';
 import type { FeedbackType } from '../types/api';
 import { useAuth } from '../contexts/AuthContext';
 import { useHeaderVisible } from '../hooks/useHeaderVisible';
@@ -104,7 +105,7 @@ export const FeedbackModal: React.FC<FeedbackModalProps> = ({ isOpen, onClose })
       }, 2000);
     } catch (err: any) {
       console.error('Feedback submission error:', err);
-      setError(err?.response?.data?.detail || err?.message || t('feedback.sendError'));
+      setError(translateApiError(t, err?.response?.data?.detail, t('feedback.sendError')));
     } finally {
       setIsSubmitting(false);
     }

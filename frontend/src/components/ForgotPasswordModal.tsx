@@ -5,6 +5,7 @@ import { Mail, X, CheckCircle, AlertCircle, Loader } from 'lucide-react';
 import { authAPI } from '../api/client';
 import { useHeaderVisible } from '../hooks/useHeaderVisible';
 import { useTranslation } from 'react-i18next';
+import { translateApiError } from '../utils/translateApiError';
 
 interface ForgotPasswordModalProps {
   isOpen: boolean;
@@ -37,20 +38,20 @@ export const ForgotPasswordModal: React.FC<ForgotPasswordModalProps> = ({
       setEmail('');
     } catch (err: any) {
       let errorMessage = t('forgotPasswordModal.error_sending');
-      
+
       if (err.response) {
         const status = err.response.status;
         const detail = err.response.data?.detail;
-        
+
         if (status === 429) {
           errorMessage = t('forgotPasswordModal.error_too_many_requests');
-        } else if (typeof detail === 'string') {
-          errorMessage = detail;
+        } else {
+          errorMessage = translateApiError(t, detail, t('forgotPasswordModal.error_sending'));
         }
       } else if (err.request) {
         errorMessage = t('authModal.error_no_connection');
       }
-      
+
       setError(errorMessage);
     } finally {
       setIsLoading(false);

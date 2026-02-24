@@ -18,6 +18,8 @@ from app.core.errors import (
     ERR_CATEGORY_SLUG_EXISTS,
     ERR_CATEGORY_SLUG_OR_NAME_EXISTS,
     ERR_HELPFUL_MARK_NOT_FOUND,
+    ERR_WIKI_USE_FEEDBACK,
+    raise_error,
 )
 from app.core.utils import like_pattern
 from app.db.session import get_db
@@ -124,7 +126,7 @@ async def get_category(
     row = result.first()
     
     if not row:
-        raise HTTPException(status_code=404, detail=ERR_CATEGORY_NOT_FOUND)
+        raise_error(404, ERR_CATEGORY_NOT_FOUND)
     
     category, articles_count = row
     
@@ -155,7 +157,7 @@ async def create_category(
         )
     )
     if existing.scalar_one_or_none():
-        raise HTTPException(status_code=400, detail=ERR_CATEGORY_SLUG_OR_NAME_EXISTS)
+        raise_error(400, ERR_CATEGORY_SLUG_OR_NAME_EXISTS)
     
     # Создание категории
     category = WikiCategory(**data.model_dump())
@@ -188,7 +190,7 @@ async def update_category(
     category = result.scalar_one_or_none()
     
     if not category:
-        raise HTTPException(status_code=404, detail=ERR_CATEGORY_NOT_FOUND)
+        raise_error(404, ERR_CATEGORY_NOT_FOUND)
     
     # Обновление полей
     update_data = data.model_dump(exclude_unset=True)
@@ -199,7 +201,7 @@ async def update_category(
             select(WikiCategory).where(WikiCategory.slug == update_data["slug"])
         )
         if existing.scalar_one_or_none():
-            raise HTTPException(status_code=400, detail=ERR_CATEGORY_SLUG_EXISTS)
+            raise_error(400, ERR_CATEGORY_SLUG_EXISTS)
     
     # Проверка уникальности name если он изменяется
     if "name" in update_data and update_data["name"] != category.name:
@@ -207,7 +209,7 @@ async def update_category(
             select(WikiCategory).where(WikiCategory.name == update_data["name"])
         )
         if existing.scalar_one_or_none():
-            raise HTTPException(status_code=400, detail=ERR_CATEGORY_NAME_EXISTS)
+            raise_error(400, ERR_CATEGORY_NAME_EXISTS)
     
     for field, value in update_data.items():
         setattr(category, field, value)
@@ -247,7 +249,7 @@ async def delete_category(
     category = result.scalar_one_or_none()
     
     if not category:
-        raise HTTPException(status_code=404, detail=ERR_CATEGORY_NOT_FOUND)
+        raise_error(404, ERR_CATEGORY_NOT_FOUND)
     
     await db.delete(category)
     await db.commit()
@@ -285,7 +287,7 @@ async def list_articles(
         )
         category_id = category_result.scalar_one_or_none()
         if not category_id:
-            raise HTTPException(status_code=404, detail=ERR_CATEGORY_NOT_FOUND)
+            raise_error(404, ERR_CATEGORY_NOT_FOUND)
         query = query.where(WikiArticle.category_id == category_id)
     
     # Фильтр по публикации
@@ -364,10 +366,10 @@ async def get_article(
     article = result.scalar_one_or_none()
     
     if not article:
-        raise HTTPException(status_code=404, detail=ERR_ARTICLE_NOT_FOUND)
+        raise_error(404, ERR_ARTICLE_NOT_FOUND)
     
     if article.status != WikiArticleStatus.PUBLISHED:
-        raise HTTPException(status_code=404, detail=ERR_ARTICLE_NOT_PUBLISHED)
+        raise_error(404, ERR_ARTICLE_NOT_PUBLISHED)
     
     # Увеличиваем счетчик просмотров
     article.views += 1
@@ -413,14 +415,14 @@ async def create_article(
     )
     category = category_result.scalar_one_or_none()
     if not category:
-        raise HTTPException(status_code=404, detail=ERR_CATEGORY_NOT_FOUND)
+        raise_error(404, ERR_CATEGORY_NOT_FOUND)
     
     # Проверка уникальности slug
     existing = await db.execute(
         select(WikiArticle).where(WikiArticle.slug == data.slug)
     )
     if existing.scalar_one_or_none():
-        raise HTTPException(status_code=400, detail=ERR_ARTICLE_SLUG_EXISTS)
+        raise_error(400, ERR_ARTICLE_SLUG_EXISTS)
     
     # Создание статьи
     article_data = data.model_dump()
@@ -464,7 +466,7 @@ async def update_article(
     article = result.scalar_one_or_none()
     
     if not article:
-        raise HTTPException(status_code=404, detail=ERR_ARTICLE_NOT_FOUND)
+        raise_error(404, ERR_ARTICLE_NOT_FOUND)
     
     # Обновление полей
     update_data = data.model_dump(exclude_unset=True)
@@ -479,7 +481,7 @@ async def update_article(
             select(WikiCategory).where(WikiCategory.id == update_data["category_id"])
         )
         if not category_result.scalar_one_or_none():
-            raise HTTPException(status_code=404, detail=ERR_CATEGORY_NOT_FOUND)
+            raise_error(404, ERR_CATEGORY_NOT_FOUND)
     
     # Проверка уникальности slug если он изменяется
     if "slug" in update_data and update_data["slug"] != article.slug:
@@ -487,7 +489,7 @@ async def update_article(
             select(WikiArticle).where(WikiArticle.slug == update_data["slug"])
         )
         if existing.scalar_one_or_none():
-            raise HTTPException(status_code=400, detail=ERR_ARTICLE_SLUG_EXISTS)
+            raise_error(400, ERR_ARTICLE_SLUG_EXISTS)
     
     # Обновляем поля
     for field, value in update_data.items():
@@ -534,7 +536,7 @@ async def delete_article(
     article = result.scalar_one_or_none()
     
     if not article:
-        raise HTTPException(status_code=404, detail=ERR_ARTICLE_NOT_FOUND)
+        raise_error(404, ERR_ARTICLE_NOT_FOUND)
     
     await db.delete(article)
     await db.commit()
@@ -648,7 +650,7 @@ async def get_article_feedback_stats(
     )
     article_id = result.scalar_one_or_none()
     if not article_id:
-        raise HTTPException(status_code=404, detail=ERR_ARTICLE_NOT_FOUND)
+        raise_error(404, ERR_ARTICLE_NOT_FOUND)
 
     # Считаем helpful marks
     helpful_result = await db.execute(
@@ -715,10 +717,7 @@ async def create_article_feedback(
     """
     # Текстовые отзывы теперь идут через общий Feedback API
     if data.feedback_type == "feedback":
-        raise HTTPException(
-            status_code=400,
-            detail="Текстовые отзывы отправляйте через /api/v1/feedback/ с source='wiki_article'"
-        )
+        raise_error(400, ERR_WIKI_USE_FEEDBACK)
 
     # Проверяем что статья существует
     result = await db.execute(
@@ -729,7 +728,7 @@ async def create_article_feedback(
     )
     article_id = result.scalar_one_or_none()
     if not article_id:
-        raise HTTPException(status_code=404, detail=ERR_ARTICLE_NOT_FOUND)
+        raise_error(404, ERR_ARTICLE_NOT_FOUND)
 
     # Генерируем anonymous_id для анонимов
     anonymous_id = None if current_user else _get_anonymous_id(request)
@@ -810,7 +809,7 @@ async def remove_helpful_mark(
     )
     article_id = result.scalar_one_or_none()
     if not article_id:
-        raise HTTPException(status_code=404, detail=ERR_ARTICLE_NOT_FOUND)
+        raise_error(404, ERR_ARTICLE_NOT_FOUND)
 
     # Ищем feedback для удаления
     if current_user:
@@ -833,7 +832,7 @@ async def remove_helpful_mark(
 
     feedback = feedback_result.scalar_one_or_none()
     if not feedback:
-        raise HTTPException(status_code=404, detail=ERR_HELPFUL_MARK_NOT_FOUND)
+        raise_error(404, ERR_HELPFUL_MARK_NOT_FOUND)
 
     await db.delete(feedback)
     await db.commit()
@@ -859,7 +858,7 @@ async def list_article_feedback(
     )
     article_id = result.scalar_one_or_none()
     if not article_id:
-        raise HTTPException(status_code=404, detail=ERR_ARTICLE_NOT_FOUND)
+        raise_error(404, ERR_ARTICLE_NOT_FOUND)
 
     # Получаем feedback с join на users для username
     from app.models.user import User as UserModel

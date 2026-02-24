@@ -13,6 +13,7 @@ import { CustomSelect } from './CustomSelect';
 import { Dropdown } from './Dropdown';
 import { useDebounce } from '../hooks/useDebounce';
 import { useTranslation } from 'react-i18next';
+import { translateApiError } from '../utils/translateApiError';
 
 interface CreatePrinterProfileModalProps {
   isOpen: boolean;
@@ -374,7 +375,7 @@ export const CreatePrinterProfileModal: React.FC<CreatePrinterProfileModalProps>
     },
     onError: (error: any) => {
       console.error('Error saving printer profile:', error);
-      alert(error?.response?.data?.detail || error?.message || t('printerProfile.saveError'));
+      alert(translateApiError(t, error?.response?.data?.detail, t('printerProfile.saveError')));
     },
   });
 

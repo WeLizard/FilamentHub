@@ -48,6 +48,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { useHeaderVisible } from '../hooks/useHeaderVisible';
 import { presetsAPI, filamentsAPI, brandsAPI, savedPresetsAPI, filamentReviewsAPI, calculatorAPI, printerProfilesAPI, printProfilesAPI, authAPI } from '../api/client';
 import api from '../api/client';
+import { translateApiError } from '../utils/translateApiError';
 import { CreatePresetModal } from '../components/CreatePresetModal';
 import { ViewPresetModal } from '../components/ViewPresetModal';
 import { CreatePrinterRequestModal } from '../components/CreatePrinterRequestModal';
@@ -440,7 +441,7 @@ export const ProfilePage: React.FC = () => {
     },
     onError: (error: any) => {
       console.error('Failed to delete saved preset:', error);
-      alert(error.response?.data?.detail || error.message || t('profilePage.unsaveError'));
+      alert(translateApiError(t, error.response?.data?.detail, t('profilePage.unsaveError')));
     },
   });
 
@@ -543,8 +544,7 @@ export const ProfilePage: React.FC = () => {
       setTimeout(() => URL.revokeObjectURL(url), 1000);
     } catch (error: any) {
       console.error('Error downloading printer profile:', error);
-      const errorMessage = error?.response?.data?.detail || error?.message || t('profilePage.unknownError');
-      alert(`${t('profilePage.downloadPrinterProfileError')}: ${errorMessage}`);
+      alert(`${t('profilePage.downloadPrinterProfileError')}: ${translateApiError(t, error?.response?.data?.detail, t('profilePage.unknownError'))}`);
     }
   };
 
@@ -569,8 +569,7 @@ export const ProfilePage: React.FC = () => {
       setTimeout(() => URL.revokeObjectURL(url), 1000);
     } catch (error: any) {
       console.error('Error downloading print profile:', error);
-      const errorMessage = error?.response?.data?.detail || error?.message || t('profilePage.unknownError');
-      alert(`${t('profilePage.downloadPrintProfileError')}: ${errorMessage}`);
+      alert(`${t('profilePage.downloadPrintProfileError')}: ${translateApiError(t, error?.response?.data?.detail, t('profilePage.unknownError'))}`);
     }
   };
 

@@ -9,6 +9,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { Notification } from '../types/api';
 
 import { useTranslation } from 'react-i18next';
+import { translateApiError } from '../utils/translateApiError';
 
 interface DeletedPreset {
   preset_id: number;
@@ -184,8 +185,9 @@ export const DeletedPresetsModal: React.FC<DeletedPresetsModalProps> = ({
       }
     },
     onError: (error: any) => {
-      console.error(t('deletedPresetsModal.error_handling_action', {message: error?.response?.data?.detail || error?.message || t('deletedPresetsModal.error_unknown')}));
-      alert(t('deletedPresetsModal.error_handling_action', {message: error?.response?.data?.detail || error?.message || t('deletedPresetsModal.error_unknown')}));
+      const msg = translateApiError(t, error?.response?.data?.detail, t('deletedPresetsModal.error_unknown'));
+      console.error(t('deletedPresetsModal.error_handling_action', {message: msg}));
+      alert(t('deletedPresetsModal.error_handling_action', {message: msg}));
     },
   });
 

@@ -5,6 +5,7 @@ import { useTranslation } from 'react-i18next';
 import { RefreshCw, RefreshCwOff } from 'lucide-react';
 import { useMutation, useQueryClient, useQuery } from '@tanstack/react-query';
 import { savedPresetsAPI } from '../api/client';
+import { translateApiError } from '../utils/translateApiError';
 import { useAuth } from '../contexts/AuthContext';
 import type { Preset } from '../types/api';
 
@@ -63,7 +64,7 @@ export const PresetSyncToggle: React.FC<PresetSyncToggleProps> = ({
     },
     onError: (error: any) => {
       console.error('Sync toggle error:', error);
-      alert(`${t('presetSync.toggleError')}: ${error?.response?.data?.detail || error?.message || t('presetSync.unknownError')}`);
+      alert(`${t('presetSync.toggleError')}: ${translateApiError(t, error?.response?.data?.detail, t('presetSync.unknownError'))}`);
     },
     onSettled: () => {
       setIsToggling(false);

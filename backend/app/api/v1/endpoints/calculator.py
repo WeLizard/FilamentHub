@@ -3,6 +3,13 @@
 import math
 from fastapi import APIRouter, HTTPException
 
+from app.core.errors import (
+    ERR_WEIGHT_REQUIRED,
+    ERR_SPOOL_PRICE_REQUIRED,
+    ERR_TIME_REQUIRED,
+    ERR_PRICE_PER_HOUR_REQUIRED,
+    raise_error,
+)
 from app.schemas.calculator import CalculatorEstimateRequest, CalculatorEstimateResponse, PricingMethod
 
 router = APIRouter(prefix="/calculator", tags=["calculator"])
@@ -47,15 +54,9 @@ async def estimate_cost(
     # ========== Простые методы (для обратной совместимости) ==========
     if data.pricing_method == PricingMethod.BY_WEIGHT:
         if data.weight_g is None:
-            raise HTTPException(
-                status_code=400,
-                detail="Для метода расчета по весу необходимо указать weight_g"
-            )
+            raise_error(400, ERR_WEIGHT_REQUIRED)
         if data.spool_price is None or data.spool_weight_kg is None:
-            raise HTTPException(
-                status_code=400,
-                detail="Для метода расчета по весу необходимо указать spool_price и spool_weight_kg"
-            )
+            raise_error(400, ERR_SPOOL_PRICE_REQUIRED)
         
         delivery = data.delivery_cost or 0.0
         weight_kg = (data.weight_g * quantity) / 1000.0
@@ -91,15 +92,9 @@ async def estimate_cost(
     
     elif data.pricing_method == PricingMethod.BY_TIME:
         if data.time_sec is None and data.time_hours is None and data.time_minutes is None:
-            raise HTTPException(
-                status_code=400,
-                detail="Для метода расчета по времени необходимо указать time_sec, time_hours или time_minutes"
-            )
+            raise_error(400, ERR_TIME_REQUIRED)
         if data.price_per_hour is None:
-            raise HTTPException(
-                status_code=400,
-                detail="Для метода расчета по времени необходимо указать price_per_hour"
-            )
+            raise_error(400, ERR_PRICE_PER_HOUR_REQUIRED)
         
         # Время печати на 1 деталь (для отображения)
         time_hours_per_part = _convert_time_to_hours(data.time_hours, data.time_minutes, data.time_sec)

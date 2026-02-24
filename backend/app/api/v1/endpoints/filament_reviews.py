@@ -9,10 +9,15 @@ from sqlalchemy.orm import selectinload
 
 from app.core.dependencies import get_current_user
 from app.core.errors import (
+    ERR_ADD_PRESET_FIRST,
     ERR_FILAMENT_NOT_FOUND,
     ERR_NO_PERMISSION_DELETE_REVIEW,
     ERR_NO_PERMISSION_EDIT_REVIEW,
+    ERR_PRESET_NOT_MATCH,
+    ERR_REVIEW_ALREADY_EXISTS,
     ERR_REVIEW_NOT_FOUND,
+    ERR_REVIEW_SAVED_ONLY,
+    raise_error,
 )
 from app.db.session import get_db
 from app.models.filament_review import FilamentReview
@@ -51,7 +56,7 @@ async def get_available_presets_for_review(
     filament_result = await db.execute(select(Filament).where(Filament.id == filament_id))
     filament = filament_result.scalar_one_or_none()
     if not filament:
-        raise HTTPException(status_code=404, detail=ERR_FILAMENT_NOT_FOUND)
+        raise_error(404, ERR_FILAMENT_NOT_FOUND)
 
     available_presets = []
 
@@ -202,7 +207,7 @@ async def list_filament_reviews(
     filament_result = await db.execute(select(Filament).where(Filament.id == filament_id))
     filament = filament_result.scalar_one_or_none()
     if not filament:
-        raise HTTPException(status_code=404, detail=ERR_FILAMENT_NOT_FOUND)
+        raise_error(404, ERR_FILAMENT_NOT_FOUND)
 
     # Строим запрос
     query = (
@@ -288,7 +293,7 @@ async def get_filament_rating_stats(
     filament_result = await db.execute(select(Filament).where(Filament.id == filament_id))
     filament = filament_result.scalar_one_or_none()
     if not filament:
-        raise HTTPException(status_code=404, detail=ERR_FILAMENT_NOT_FOUND)
+        raise_error(404, ERR_FILAMENT_NOT_FOUND)
 
     # Строим запрос для активных отзывов
     query = select(FilamentReview).where(FilamentReview.filament_id == filament_id)
@@ -348,7 +353,7 @@ async def get_review(
     )
     review = result.scalar_one_or_none()
     if not review:
-        raise HTTPException(status_code=404, detail=ERR_REVIEW_NOT_FOUND)
+        raise_error(404, ERR_REVIEW_NOT_FOUND)
 
     # Загружаем пресет если есть
     preset_name = None
@@ -388,7 +393,7 @@ async def create_review(
     filament_result = await db.execute(select(Filament).where(Filament.id == review_data.filament_id))
     filament = filament_result.scalar_one_or_none()
     if not filament:
-        raise HTTPException(status_code=404, detail=ERR_FILAMENT_NOT_FOUND)
+        raise_error(404, ERR_FILAMENT_NOT_FOUND)
 
     # Определяем пресет для отзыва
     preset_id = review_data.preset_id
@@ -420,10 +425,7 @@ async def create_review(
             if saved_preset:
                 preset_id = saved_preset.preset_id
             else:
-                raise HTTPException(
-                    status_code=400,
-                    detail="Добавьте хотя бы один пресет этого материала в профиль, чтобы оставить отзыв",
-                )
+                raise_error(400, ERR_ADD_PRESET_FIRST)
     
     # Проверяем существование пресета и соответствие филаменту
     preset_result = await db.execute(
@@ -435,7 +437,7 @@ async def create_review(
     )
     preset = preset_result.scalar_one_or_none()
     if not preset:
-        raise HTTPException(status_code=404, detail="Пресет не найден или не соответствует материалу")
+        raise_error(404, ERR_PRESET_NOT_MATCH)
     
     # Проверяем доступность пресета для пользователя
     # Пресет должен быть либо официальным, либо сохраненным пользователем
@@ -447,10 +449,7 @@ async def create_review(
             )
         )
         if not saved_preset_check.scalar_one_or_none():
-            raise HTTPException(
-                status_code=403,
-                detail="Вы можете оставить отзыв только на сохраненные вами пресеты или официальный пресет",
-            )
+            raise_error(403, ERR_REVIEW_SAVED_ONLY)
     
     # Проверка текстовых полей на плохие слова
     from app.services.preset_moderation import validate_text_field
@@ -475,10 +474,7 @@ async def create_review(
     )
     existing_review = existing_review_result.scalar_one_or_none()
     if existing_review:
-        raise HTTPException(
-            status_code=400,
-            detail="Вы уже оставили отзыв для этого пресета. Используйте обновление отзыва.",
-        )
+        raise_error(400, ERR_REVIEW_ALREADY_EXISTS)
 
     # Создаём отзыв
     review = FilamentReview(
@@ -536,11 +532,11 @@ async def update_review(
     )
     review = result.scalar_one_or_none()
     if not review:
-        raise HTTPException(status_code=404, detail=ERR_REVIEW_NOT_FOUND)
+        raise_error(404, ERR_REVIEW_NOT_FOUND)
 
     # Проверяем права: только автор или админ
     if review.user_id != current_user.id and current_user.role.value != "admin":
-        raise HTTPException(status_code=403, detail=ERR_NO_PERMISSION_EDIT_REVIEW)
+        raise_error(403, ERR_NO_PERMISSION_EDIT_REVIEW)
     
     # Проверка текстовых полей на плохие слова
     from app.services.preset_moderation import validate_text_field
@@ -609,11 +605,11 @@ async def delete_review(
     )
     review = result.scalar_one_or_none()
     if not review:
-        raise HTTPException(status_code=404, detail=ERR_REVIEW_NOT_FOUND)
+        raise_error(404, ERR_REVIEW_NOT_FOUND)
 
     # Проверяем права: только автор или админ
     if review.user_id != current_user.id and current_user.role.value != "admin":
-        raise HTTPException(status_code=403, detail=ERR_NO_PERMISSION_DELETE_REVIEW)
+        raise_error(403, ERR_NO_PERMISSION_DELETE_REVIEW)
 
     # Сохраняем preset_id перед деактивацией
     preset_id = review.preset_id

@@ -26,6 +26,7 @@ import {
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { filamentsAPI, brandsAPI, savedPresetsAPI, filamentReviewsAPI, qrAPI } from '../api/client';
+import { translateApiError } from '../utils/translateApiError';
 import { FilamentPreview } from '../components/FilamentPreview';
 import { ReviewCard } from '../components/ReviewCard';
 import { CreateReviewModal } from '../components/CreateReviewModal';
@@ -99,7 +100,7 @@ export const FilamentDetailPage: React.FC = () => {
     onError: (error: any) => {
       console.error('Error saving preset:', error);
       // Можно добавить уведомление пользователю
-      alert(error.response?.data?.detail || error.message || t('filamentDetailPage.errorSavingPreset'));
+      alert(translateApiError(t, error.response?.data?.detail, t('filamentDetailPage.errorSavingPreset')));
     },
   });
 

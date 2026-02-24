@@ -5,6 +5,7 @@ import { useTranslation } from 'react-i18next';
 import { useMutation } from '@tanstack/react-query';
 import { Send, Users, UserCheck, AlertCircle, CheckCircle, Link as LinkIcon } from 'lucide-react';
 import { adminNotificationsAPI, adminAPI } from '../../api/client';
+import { translateApiError } from '../../utils/translateApiError';
 import { useQuery } from '@tanstack/react-query';
 import { toast } from '../Toast';
 
@@ -56,7 +57,7 @@ export function AdminNotifications() {
       setLink('');
     },
     onError: (error: any) => {
-      toast.error(error?.response?.data?.detail || error?.message || t('adminNotifications.sendError'), 6000);
+      toast.error(translateApiError(t, error?.response?.data?.detail, t('adminNotifications.sendError')), 6000);
     },
   });
 
@@ -77,7 +78,7 @@ export function AdminNotifications() {
       setUserSearch('');
     },
     onError: (error: any) => {
-      toast.error(error?.response?.data?.detail || error?.message || t('adminNotifications.sendError'), 6000);
+      toast.error(translateApiError(t, error?.response?.data?.detail, t('adminNotifications.sendError')), 6000);
     },
   });
 

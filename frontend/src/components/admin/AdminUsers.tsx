@@ -6,6 +6,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { createPortal } from 'react-dom';
 import { Users, Shield, CheckCircle, XCircle, Unlink, Link2, Factory, Check, Award } from 'lucide-react';
 import { adminAPI, brandsAPI } from '../../api/client';
+import { translateApiError } from '../../utils/translateApiError';
 import { Dropdown } from '../Dropdown';
 import { ConfirmModal } from '../ConfirmModal';
 import { BadgeList, BADGE_CONFIG, type BadgeType } from '../Badge';
@@ -81,7 +82,7 @@ export function AdminUsers() {
         setSelectedUserIdForBrand(null);
         setSelectedBrandId(null);
       } else {
-        alert(error?.response?.data?.detail || error?.message || t('adminUsers.brandLinkError'));
+        alert(translateApiError(t, error?.response?.data?.detail, t('adminUsers.brandLinkError')));
       }
     },
   });

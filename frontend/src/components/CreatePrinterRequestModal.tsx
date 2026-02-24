@@ -6,6 +6,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { X, Save } from 'lucide-react';
 import { Printer3DIcon } from './icons/Printer3DIcon';
 import { printerRequestsAPI } from '../api/printerRequestsAPI';
+import { translateApiError } from '../utils/translateApiError';
 import { useHeaderVisible } from '../hooks/useHeaderVisible';
 
 interface CreatePrinterRequestModalProps {
@@ -56,7 +57,7 @@ export function CreatePrinterRequestModal({ isOpen, onClose }: CreatePrinterRequ
       alert(t('printerRequest.successMessage'));
     },
     onError: (error: any) => {
-      alert(error.response?.data?.detail || t('printerRequest.createError'));
+      alert(translateApiError(t, error.response?.data?.detail, t('printerRequest.createError')));
     },
   });
 

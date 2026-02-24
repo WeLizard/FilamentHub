@@ -8,6 +8,14 @@ from pathlib import Path
 from fastapi import UploadFile, HTTPException, status
 
 from app.core.config import settings
+from app.core.errors import (
+    ERR_FILE_EXT_NOT_ALLOWED,
+    ERR_FILE_SAVE_FAILED,
+    ERR_FILE_SIZE_EXCEEDED,
+    ERR_INVALID_FILE_PATH,
+    ERR_MAX_FILES_EXCEEDED,
+    raise_error,
+)
 
 
 def get_allowed_extensions() -> list[str]:
@@ -18,17 +26,11 @@ def get_allowed_extensions() -> list[str]:
 def validate_file(file: UploadFile) -> None:
     """Валидация загружаемого файла."""
     if not file.filename:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Filename is required",
-        )
-    
+        raise_error(status.HTTP_400_BAD_REQUEST, ERR_FILE_EXT_NOT_ALLOWED, {"ext": "", "allowed": ", ".join(get_allowed_extensions())})
+
     file_ext = Path(file.filename).suffix.lower()
     if file_ext not in get_allowed_extensions():
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"File extension {file_ext} not allowed. Allowed extensions: {', '.join(get_allowed_extensions())}",
-        )
+        raise_error(status.HTTP_400_BAD_REQUEST, ERR_FILE_EXT_NOT_ALLOWED, {"ext": file_ext, "allowed": ", ".join(get_allowed_extensions())})
 
 
 async def save_proof_file(
@@ -58,10 +60,7 @@ async def save_proof_file(
     
     # Проверяем количество файлов
     if existing_files is not None and len(existing_files) >= settings.MAX_FILES_PER_REQUEST:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Maximum {settings.MAX_FILES_PER_REQUEST} files per request allowed. Current: {len(existing_files)}",
-        )
+        raise_error(status.HTTP_400_BAD_REQUEST, ERR_MAX_FILES_EXCEEDED, {"max": settings.MAX_FILES_PER_REQUEST})
     
     # Читаем содержимое файла
     file_content = await file.read()
@@ -69,10 +68,7 @@ async def save_proof_file(
     
     # Проверяем размер файла
     if file_size_mb > settings.MAX_UPLOAD_SIZE_MB:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"File size {file_size_mb:.2f} MB exceeds maximum allowed size {settings.MAX_UPLOAD_SIZE_MB} MB",
-        )
+        raise_error(status.HTTP_400_BAD_REQUEST, ERR_FILE_SIZE_EXCEEDED, {"size_mb": f"{file_size_mb:.2f}", "max_mb": str(settings.MAX_UPLOAD_SIZE_MB)})
     
     # Определяем директорию в зависимости от типа заявки
     if request_type == "printer":
@@ -93,10 +89,7 @@ async def save_proof_file(
 
     # Path traversal protection: убеждаемся, что файл остаётся внутри upload_dir
     if not str(file_path).startswith(str(upload_dir.resolve())):
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Invalid file path",
-        )
+        raise_error(status.HTTP_400_BAD_REQUEST, ERR_INVALID_FILE_PATH)
 
     # Сохраняем файл (используем уже прочитанное содержимое)
     with open(file_path, "wb") as f:
@@ -104,10 +97,7 @@ async def save_proof_file(
     
     # Проверяем, что файл действительно сохранился
     if not file_path.exists() or file_path.stat().st_size == 0:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to save file",
-        )
+        raise_error(status.HTTP_500_INTERNAL_SERVER_ERROR, ERR_FILE_SAVE_FAILED)
     
     # Возвращаем объект с путем и оригинальным именем
     relative_path = f"{folder}/{request_id}/{file_name}"

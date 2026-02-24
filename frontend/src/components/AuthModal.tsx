@@ -9,6 +9,7 @@ import { ConsentModal } from './ConsentModal';
 import { ForgotPasswordModal } from './ForgotPasswordModal';
 import { useHeaderVisible } from '../hooks/useHeaderVisible';
 import { useTranslation } from 'react-i18next';
+import { translateApiError } from '../utils/translateApiError';
 
 interface AuthModalProps {
   isOpen: boolean;
@@ -132,66 +133,27 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
         setIsLoading(false);
       }
     } catch (err: any) {
-      // Обработка различных типов ошибок
-      let errorMessage = authMode === 'login' 
+      const fallback = authMode === 'login'
         ? t('authModal.error_login_failed')
         : t('authModal.error_register_failed');
-      
+
+      let errorMessage = fallback;
+
       if (err.response) {
-        // Ошибка от сервера
         const status = err.response.status;
         const detail = err.response.data?.detail;
-        
-        if (status === 400) {
-          // Ошибка валидации или дубликат
-          if (typeof detail === 'string') {
-            // Переводим понятные сообщения на русский
-            if (detail.toLowerCase().includes('already registered') || detail.toLowerCase().includes('email')) {
-              errorMessage = t('authModal.error_email_registered');
-            } else if (detail.toLowerCase().includes('username') || detail.toLowerCase().includes('taken')) {
-              errorMessage = t('authModal.error_username_taken');
-            } else if (detail.toLowerCase().includes('invalid role')) {
-              errorMessage = t('authModal.error_invalid_role');
-            } else {
-              errorMessage = detail;
-            }
-          } else if (Array.isArray(detail)) {
-            // Валидационные ошибки от Pydantic
-            errorMessage = detail.map((item: any) => {
-              const msg = item.msg || item.message || '';
-              // Переводим типичные ошибки валидации
-              if (msg.includes('email')) {
-                return t('authModal.error_invalid_email');
-              } else if (msg.includes('username') && msg.includes('length')) {
-                return t('authModal.error_username_length');
-              } else if (msg.includes('password') && msg.includes('length')) {
-                return t('authModal.error_password_length');
-              }
-              return msg;
-            }).join(' ');
-          } else if (detail) {
-            errorMessage = JSON.stringify(detail);
-          }
-        } else if (status === 401) {
-          // Неверные учетные данные - показываем конкретное сообщение
-          errorMessage = t('authModal.error_wrong_credentials');
-          // Очищаем пароль для безопасности
+
+        errorMessage = translateApiError(t, detail, fallback);
+
+        if (status === 401) {
           setPassword('');
-          // Показываем капчу после нескольких неудачных попыток (опционально)
-        } else if (status === 403) {
-          errorMessage = t('authModal.error_account_locked');
-        } else if (status === 500) {
-          errorMessage = t('authModal.error_server_error');
-        } else if (typeof detail === 'string') {
-          errorMessage = detail;
         }
       } else if (err.request) {
-        // Запрос отправлен, но ответа нет
         errorMessage = t('authModal.error_no_connection');
       } else if (err.message) {
         errorMessage = err.message;
       }
-      
+
       setError(errorMessage);
       setIsLoading(false);
     }

@@ -6,7 +6,9 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Literal
 
-from fastapi import APIRouter, HTTPException, Query, Request, status
+from fastapi import APIRouter, Query, Request, status
+
+from app.core.errors import ERR_DOWNLOAD_UNAVAILABLE, raise_error
 from pydantic import BaseModel
 
 from app.core.config import settings
@@ -369,8 +371,9 @@ async def get_orcaslicer_download(
         )
 
     # Файл не найден
-    raise HTTPException(
-        status_code=status.HTTP_404_NOT_FOUND,
-        detail=f"Сборка для {platform} ({architecture}, {download_type}) пока недоступна",
+    raise_error(
+        status.HTTP_404_NOT_FOUND,
+        ERR_DOWNLOAD_UNAVAILABLE,
+        {"platform": platform, "arch": architecture, "type": download_type},
     )
 

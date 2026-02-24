@@ -12,13 +12,20 @@ from app.core.dependencies import get_current_active_user, get_current_admin_use
 from app.core.config import settings
 from app.core.errors import (
     ERR_ACCESS_DENIED,
+    ERR_BRAND_ID_REQUIRED,
+    ERR_BRAND_CREATE_NAME_SLUG_REQUIRED,
     ERR_BRAND_NOT_FOUND,
     ERR_BRAND_REQUEST_PENDING_CREATE,
     ERR_BRAND_REQUEST_PENDING_JOIN,
     ERR_BRAND_SLUG_EXISTS,
+    ERR_DELETE_OWN_FILES_ONLY,
+    ERR_DOCUMENTS_REQUIRED,
     ERR_FILE_NOT_FOUND_IN_REQUEST,
     ERR_REQUEST_NOT_FOUND,
     ERR_REQUEST_NOT_PENDING,
+    ERR_UPLOAD_OWN_REQUESTS_ONLY,
+    ERR_VIEW_OWN_REQUESTS_ONLY,
+    raise_error,
 )
 from app.db.session import get_db
 from app.models.brand_request import BrandRequest, BrandRequestStatus, BrandRequestType
@@ -52,19 +59,13 @@ async def create_brand_request(
     # Валидация в зависимости от типа заявки
     if data.request_type == BrandRequestType.JOIN:
         if not data.brand_id:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Для заявок на вступление необходим brand_id",
-            )
+            raise_error(status.HTTP_400_BAD_REQUEST, ERR_BRAND_ID_REQUIRED)
         
         # Проверяем, что бренд существует
         result = await db.execute(select(Brand).where(Brand.id == data.brand_id))
         brand = result.scalar_one_or_none()
         if not brand:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail=ERR_BRAND_NOT_FOUND,
-            )
+            raise_error(status.HTTP_404_NOT_FOUND, ERR_BRAND_NOT_FOUND)
         
         # Проверяем, есть ли у бренда сотрудники (пользователи с brand_id = brand.id)
         from app.models.user import User
@@ -90,11 +91,7 @@ async def create_brand_request(
             # Если требуются документы → описание обязательно
             if requires_documents:
                 if not data.proof_text or not data.proof_text.strip():
-                    brand_type = "неверифицированного" if not brand.verified else "верифицированного без сотрудников"
-                    raise HTTPException(
-                        status_code=status.HTTP_400_BAD_REQUEST,
-                        detail=f"Для {brand_type} бренда необходимо указать описание подтверждающих документов. Пожалуйста, укажите описание документов, подтверждающих, что вы представляете этот бренд.",
-                    )
+                    raise_error(status.HTTP_400_BAD_REQUEST, ERR_DOCUMENTS_REQUIRED)
         
         # Проверяем, что у пользователя еще нет активной заявки на этот бренд
         existing_request = await db.execute(
@@ -106,27 +103,18 @@ async def create_brand_request(
             )
         )
         if existing_request.scalar_one_or_none():
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=ERR_BRAND_REQUEST_PENDING_JOIN,
-            )
+            raise_error(status.HTTP_400_BAD_REQUEST, ERR_BRAND_REQUEST_PENDING_JOIN)
     
     elif data.request_type == BrandRequestType.CREATE:
         if not data.new_brand_name or not data.new_brand_slug:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Для заявок на создание бренда необходимы название и slug",
-            )
+            raise_error(status.HTTP_400_BAD_REQUEST, ERR_BRAND_CREATE_NAME_SLUG_REQUIRED)
         
         # Проверяем, что slug бренда не существует
         existing_brand = await db.execute(
             select(Brand).where(Brand.slug == data.new_brand_slug)
         )
         if existing_brand.scalar_one_or_none():
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=ERR_BRAND_SLUG_EXISTS,
-            )
+            raise_error(status.HTTP_400_BAD_REQUEST, ERR_BRAND_SLUG_EXISTS)
         
         # Проверяем, что у пользователя еще нет активной заявки на создание этого бренда
         existing_request = await db.execute(
@@ -138,10 +126,7 @@ async def create_brand_request(
             )
         )
         if existing_request.scalar_one_or_none():
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=ERR_BRAND_REQUEST_PENDING_CREATE,
-            )
+            raise_error(status.HTTP_400_BAD_REQUEST, ERR_BRAND_REQUEST_PENDING_CREATE)
     
         # Проверка текстовых полей на плохие слова
         from app.services.preset_moderation import validate_text_field
@@ -185,10 +170,7 @@ async def create_brand_request(
         if requires_documents:
             # Описание обязательно для личной/не-корпоративной почты
             if not data.proof_text or not data.proof_text.strip():
-                raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail="Для использования личной или некорпоративной почты необходимо указать описание подтверждающих документов. Пожалуйста, укажите описание документов, подтверждающих, что вы представляете этот бренд и имеете разрешение компании на его регистрацию.",
-                )
+                raise_error(status.HTTP_400_BAD_REQUEST, ERR_DOCUMENTS_REQUIRED)
             # Файлы не проверяем при создании - они могут быть загружены позже через /upload эндпоинт
         # Если email корпоративный → документы необязательны, описание тоже можно сделать необязательным
         # (но оставляем возможность указать для ускорения верификации)
@@ -334,16 +316,10 @@ async def cancel_brand_request(
     request = result.scalar_one_or_none()
     
     if not request:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=ERR_REQUEST_NOT_FOUND,
-        )
+        raise_error(status.HTTP_404_NOT_FOUND, ERR_REQUEST_NOT_FOUND)
     
     if request.status != BrandRequestStatus.PENDING:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=ERR_REQUEST_NOT_PENDING,
-        )
+        raise_error(status.HTTP_400_BAD_REQUEST, ERR_REQUEST_NOT_PENDING)
     
     # Удаляем прикрепленные файлы
     if request.proof_files:
@@ -368,16 +344,10 @@ async def update_brand_request(
     request = result.scalar_one_or_none()
     
     if not request:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=ERR_REQUEST_NOT_FOUND,
-        )
+        raise_error(status.HTTP_404_NOT_FOUND, ERR_REQUEST_NOT_FOUND)
     
     if request.status != BrandRequestStatus.PENDING:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=ERR_REQUEST_NOT_PENDING,
-        )
+        raise_error(status.HTTP_400_BAD_REQUEST, ERR_REQUEST_NOT_PENDING)
     
     # Обновляем статус
     request.status = data.status
@@ -432,17 +402,11 @@ async def get_brand_request(
     request = result.scalar_one_or_none()
     
     if not request:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=ERR_REQUEST_NOT_FOUND,
-        )
+        raise_error(status.HTTP_404_NOT_FOUND, ERR_REQUEST_NOT_FOUND)
     
     # Пользователь может видеть только свои заявки (или админ - все)
     if request.user_id != current_user.id and current_user.role != UserRole.ADMIN:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Вы можете просматривать только свои заявки",
-        )
+        raise_error(status.HTTP_403_FORBIDDEN, ERR_VIEW_OWN_REQUESTS_ONLY)
     
     response = BrandRequestResponse.model_validate(request)
     # Файлы уже парсятся через валидатор в схеме, конвертация выполняется автоматически
@@ -471,23 +435,14 @@ async def upload_proof_file(
     request = result.scalar_one_or_none()
     
     if not request:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=ERR_REQUEST_NOT_FOUND,
-        )
+        raise_error(status.HTTP_404_NOT_FOUND, ERR_REQUEST_NOT_FOUND)
     
     if request.user_id != current_user.id:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Загружать файлы можно только в свои заявки",
-        )
+        raise_error(status.HTTP_403_FORBIDDEN, ERR_UPLOAD_OWN_REQUESTS_ONLY)
     
     # Проверяем, что заявка в статусе pending
     if request.status != BrandRequestStatus.PENDING:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=ERR_REQUEST_NOT_PENDING,
-        )
+        raise_error(status.HTTP_400_BAD_REQUEST, ERR_REQUEST_NOT_PENDING)
     
     # Получаем существующие файлы для проверки лимита
     existing_files = parse_proof_files(request.proof_files)
@@ -543,23 +498,14 @@ async def delete_proof_file_endpoint(
     request = result.scalar_one_or_none()
     
     if not request:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=ERR_REQUEST_NOT_FOUND,
-        )
+        raise_error(status.HTTP_404_NOT_FOUND, ERR_REQUEST_NOT_FOUND)
     
     if request.user_id != current_user.id:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Удалять файлы можно только из своих заявок",
-        )
+        raise_error(status.HTTP_403_FORBIDDEN, ERR_DELETE_OWN_FILES_ONLY)
     
     # Проверяем, что заявка в статусе pending
     if request.status != BrandRequestStatus.PENDING:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=ERR_REQUEST_NOT_PENDING,
-        )
+        raise_error(status.HTTP_400_BAD_REQUEST, ERR_REQUEST_NOT_PENDING)
     
     # Удаляем файл из списка
     existing_files = parse_proof_files(request.proof_files)
@@ -575,10 +521,7 @@ async def delete_proof_file_endpoint(
             break
     
     if file_to_remove is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=ERR_FILE_NOT_FOUND_IN_REQUEST,
-        )
+        raise_error(status.HTTP_404_NOT_FOUND, ERR_FILE_NOT_FOUND_IN_REQUEST)
     
     existing_files.remove(file_to_remove)
     

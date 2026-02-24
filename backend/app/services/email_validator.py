@@ -224,11 +224,11 @@ async def check_domain_has_mx_or_a(domain: str) -> bool:
         return True
 
 
-def check_email_domain_typo(email: str) -> str | None:
+def check_email_domain_typo(email: str) -> dict | None:
     """
     Check if email domain looks like a typo of a known personal email domain.
 
-    Returns a hint string like "Возможно, вы имели в виду @gmail.com?"
+    Returns {"code": "ERR_EMAIL_DOMAIN_TYPO", "params": {"domain": ...}}
     if the domain is a likely typo, or None if it looks fine.
     """
     if not email or "@" not in email:
@@ -244,22 +244,22 @@ def check_email_domain_typo(email: str) -> str | None:
     # Check known typos from file
     domain_typos = load_domain_typos()
     if domain in domain_typos:
-        return f"Возможно, вы имели в виду @{domain_typos[domain]}?"
+        return {"code": "ERR_EMAIL_DOMAIN_TYPO", "params": {"domain": domain_typos[domain]}}
 
     # Fuzzy match against known personal domains (Levenshtein ≤ 2)
     for known_domain in personal_domains:
         if _levenshtein(domain, known_domain) <= 2:
-            return f"Возможно, вы имели в виду @{known_domain}?"
+            return {"code": "ERR_EMAIL_DOMAIN_TYPO", "params": {"domain": known_domain}}
 
     # Unknown domain (corporate etc.) — let it pass
     return None
 
 
-async def validate_email_domain(email: str) -> str | None:
+async def validate_email_domain(email: str) -> dict | None:
     """
     Full email domain validation: typo check + DNS MX/A check.
 
-    Returns error message string if domain is invalid, None if OK.
+    Returns error dict if domain is invalid, None if OK.
 
     Validation order:
     1. Known domain from personal_email_domains.txt → OK
@@ -285,7 +285,7 @@ async def validate_email_domain(email: str) -> str | None:
     # DNS MX/A check for unknown domains
     has_mail_records = await check_domain_has_mx_or_a(domain)
     if not has_mail_records:
-        return f"Домен @{domain} не существует или не может принимать почту"
+        return {"code": "ERR_DOMAIN_NO_MAIL", "params": {"domain": domain}}
 
     return None
 

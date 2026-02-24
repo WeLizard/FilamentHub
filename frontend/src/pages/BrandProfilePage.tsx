@@ -37,6 +37,7 @@ import {
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { authAPI, brandsAPI, filamentsAPI, brandRequestsAPI, presetsAPI, qrAPI } from '../api/client';
+import { translateApiError } from '../utils/translateApiError';
 import { CreateFilamentModal } from '../components/CreateFilamentModal';
 import { CreatePresetModal } from '../components/CreatePresetModal';
 import { PresetSyncToggle } from '../components/PresetSyncToggle';
@@ -117,7 +118,7 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({ onBack }) =>
       setDeletingFilamentId(null);
     },
     onError: (err: any) => {
-      alert(err.response?.data?.detail || t('brandProfile.errorDeleteMaterial'));
+      alert(translateApiError(t, err.response?.data?.detail, t('brandProfile.errorDeleteMaterial')));
       setDeletingFilamentId(null);
     },
   });
@@ -879,7 +880,7 @@ const BrandSelectionForm: React.FC = () => {
       refetchRequests();
     },
     onError: (err: any) => {
-      setError(err.response?.data?.detail || t('brandProfile.errorSubmitRequest'));
+      setError(translateApiError(t, err.response?.data?.detail, t('brandProfile.errorSubmitRequest')));
     },
   });
 
@@ -891,7 +892,7 @@ const BrandSelectionForm: React.FC = () => {
       refetchRequests();
     },
     onError: (err: any) => {
-      alert(err.response?.data?.detail || t('brandProfile.errorCancelRequest'));
+      alert(translateApiError(t, err.response?.data?.detail, t('brandProfile.errorCancelRequest')));
     },
   });
 
@@ -916,7 +917,7 @@ const BrandSelectionForm: React.FC = () => {
       }
     },
     onError: (err: any) => {
-      setError(err.response?.data?.detail || t('brandProfile.errorUploadFile'));
+      setError(translateApiError(t, err.response?.data?.detail, t('brandProfile.errorUploadFile')));
     },
   });
 
@@ -935,7 +936,7 @@ const BrandSelectionForm: React.FC = () => {
       refetchRequests();
     },
     onError: (err: any) => {
-      alert(err.response?.data?.detail || t('brandProfile.errorDeleteFile'));
+      alert(translateApiError(t, err.response?.data?.detail, t('brandProfile.errorDeleteFile')));
     },
   });
 

@@ -6,6 +6,7 @@ import { authAPI } from '../api/client';
 import { useNavigate } from 'react-router-dom';
 import { useHeaderVisible } from '../hooks/useHeaderVisible';
 import { useTranslation } from 'react-i18next';
+import { translateApiError } from '../utils/translateApiError';
 
 interface ResetPasswordModalProps {
   isOpen: boolean;
@@ -97,24 +98,20 @@ export const ResetPasswordModal: React.FC<ResetPasswordModalProps> = ({
       }, 2000);
     } catch (err: any) {
       let errorMessage = t('resetPasswordModal.error_reset_failed');
-      
+
       if (err.response) {
         const status = err.response.status;
         const detail = err.response.data?.detail;
-        
-        if (status === 400) {
-          errorMessage = detail || t('resetPasswordModal.error_invalid_token');
-        } else if (status === 403) {
-          errorMessage = t('authModal.error_account_locked');
-        } else if (status === 429) {
+
+        if (status === 429) {
           errorMessage = t('forgotPasswordModal.error_too_many_requests');
-        } else if (typeof detail === 'string') {
-          errorMessage = detail;
+        } else {
+          errorMessage = translateApiError(t, detail, t('resetPasswordModal.error_reset_failed'));
         }
       } else if (err.request) {
         errorMessage = t('authModal.error_no_connection');
       }
-      
+
       setError(errorMessage);
     } finally {
       setIsLoading(false);

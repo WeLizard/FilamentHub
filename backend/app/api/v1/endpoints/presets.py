@@ -14,13 +14,17 @@ logger = logging.getLogger(__name__)
 
 from app.core.dependencies import get_current_active_user, get_current_brand_user, get_current_active_user_optional
 from app.core.errors import (
+    ERR_EXPORT_PRESET_ERROR,
     ERR_FILAMENT_NO_PRESETS,
     ERR_FILAMENT_NOT_FOUND,
     ERR_NO_PERMISSION_DELETE_PRESET,
     ERR_NO_PERMISSION_EDIT_PRESET,
+    ERR_ONLY_BRAND_OFFICIAL,
+    ERR_ONLY_OWN_BRAND_OFFICIAL,
     ERR_PRESET_NOT_FOUND,
     ERR_WEIGHTED_PRESET_NO_DELETE,
     ERR_WEIGHTED_PRESET_READONLY,
+    raise_error,
 )
 from app.db.session import get_db
 from app.models.preset import Preset, PresetModerationStatus
@@ -146,7 +150,7 @@ async def get_preset(
     preset = result.scalar_one_or_none()
 
     if not preset:
-        raise HTTPException(status_code=404, detail=ERR_PRESET_NOT_FOUND)
+        raise_error(404, ERR_PRESET_NOT_FOUND)
 
     # Если пресет не активен и пользователь не является владельцем - не показываем
     if not preset.active:
@@ -169,12 +173,12 @@ async def get_preset(
                     can_access = True
         
         if not can_access:
-            raise HTTPException(status_code=404, detail=ERR_PRESET_NOT_FOUND)
+            raise_error(404, ERR_PRESET_NOT_FOUND)
 
     # Если пресет не одобрен и пользователь не является владельцем - не показываем
     if preset.moderation_status != PresetModerationStatus.APPROVED and not preset.is_official:
         if current_user and preset.user_id != current_user.id:
-            raise HTTPException(status_code=404, detail=ERR_PRESET_NOT_FOUND)
+            raise_error(404, ERR_PRESET_NOT_FOUND)
 
     # Преобразуем пресет в ответ (без printers, так как таблица может не существовать)
     preset_dict = PresetResponse.model_validate(preset).model_dump()
@@ -196,22 +200,16 @@ async def create_preset(
     filament = filament_result.scalar_one_or_none()
     
     if not filament:
-        raise HTTPException(status_code=404, detail=ERR_FILAMENT_NOT_FOUND)
+        raise_error(404, ERR_FILAMENT_NOT_FOUND)
     
     # Проверка прав на создание официального пресета
     if data.is_official:
         # Только пользователи, привязанные к бренду (или админы), могут создавать официальные пресеты
         if not current_user.brand_id and current_user.role.value != "admin":
-            raise HTTPException(
-                status_code=403,
-                detail="Только пользователи, привязанные к бренду, могут создавать официальные пресеты"
-            )
+            raise_error(403, ERR_ONLY_BRAND_OFFICIAL)
         # Проверяем, что filament принадлежит бренду пользователя (админы могут создавать для любого бренда)
         if current_user.brand_id and filament.brand_id != current_user.brand_id:
-            raise HTTPException(
-                status_code=403,
-                detail="Вы можете создавать официальные пресеты только для материалов своего бренда"
-            )
+            raise_error(403, ERR_ONLY_OWN_BRAND_OFFICIAL)
     
     preset = Preset(
         filament_id=data.filament_id,
@@ -242,7 +240,7 @@ async def create_preset(
             # Не сохраняем пресет, возвращаем ошибку сразу
             raise HTTPException(
                 status_code=400,
-                detail=f"Пресет отклонён автоматической модерацией: {moderation_reason}. Пожалуйста, исправьте настройки и попробуйте снова."
+                detail=moderation_reason,  # structured {"code": "ERR_...", "params": {...}}
             )
         preset.moderation_status = moderation_status
     else:
@@ -329,21 +327,15 @@ async def update_preset(
     preset = result.scalar_one_or_none()
 
     if not preset:
-        raise HTTPException(status_code=404, detail=ERR_PRESET_NOT_FOUND)
+        raise_error(404, ERR_PRESET_NOT_FOUND)
     
     # Взвешенные пресеты нельзя редактировать (они автоматически обновляются системой)
     if preset.is_weighted:
-        raise HTTPException(
-            status_code=403,
-            detail=ERR_WEIGHTED_PRESET_READONLY
-        )
+        raise_error(403, ERR_WEIGHTED_PRESET_READONLY)
 
     # Проверка прав: пользователь может редактировать только свои пресеты (или админ)
     if preset.user_id != current_user.id and current_user.role.value != "admin":
-        raise HTTPException(
-            status_code=403,
-            detail=ERR_NO_PERMISSION_EDIT_PRESET
-        )
+        raise_error(403, ERR_NO_PERMISSION_EDIT_PRESET)
 
     # Обновляем только переданные поля
     update_data = data.model_dump(exclude_unset=True)
@@ -359,7 +351,7 @@ async def update_preset(
         filament_result = await db.execute(select(Filament).where(Filament.id == target_filament_id))
         filament = filament_result.scalar_one_or_none()
         if not filament:
-            raise HTTPException(status_code=404, detail=ERR_FILAMENT_NOT_FOUND)
+            raise_error(404, ERR_FILAMENT_NOT_FOUND)
     
     # Сохраняем старое состояние для проверки активации черновика
     was_draft = not preset.active or not preset.filament_id
@@ -395,7 +387,7 @@ async def update_preset(
         # Если пресет был одобрен, а теперь отклонён - меняем статус
         if moderation_status == PresetModerationStatus.REJECTED:
             preset.moderation_status = moderation_status
-            preset.moderation_reason = moderation_reason
+            preset.moderation_reason = json.dumps(moderation_reason) if isinstance(moderation_reason, dict) else moderation_reason
             preset.active = False
         # Если пресет был отклонён, но теперь проходит проверку - одобряем
         elif preset.moderation_status == PresetModerationStatus.REJECTED and moderation_status == PresetModerationStatus.APPROVED:
@@ -472,21 +464,15 @@ async def delete_preset(
     preset = result.scalar_one_or_none()
 
     if not preset:
-        raise HTTPException(status_code=404, detail=ERR_PRESET_NOT_FOUND)
+        raise_error(404, ERR_PRESET_NOT_FOUND)
     
     # Взвешенные пресеты нельзя удалять (они автоматически управляются системой)
     if preset.is_weighted:
-        raise HTTPException(
-            status_code=403,
-            detail=ERR_WEIGHTED_PRESET_NO_DELETE
-        )
+        raise_error(403, ERR_WEIGHTED_PRESET_NO_DELETE)
 
     # Проверка: пользователь может удалять только свои пресеты (или админ)
     if preset.user_id != current_user.id and current_user.role.value != "admin":
-        raise HTTPException(
-            status_code=403,
-            detail=ERR_NO_PERMISSION_DELETE_PRESET
-        )
+        raise_error(403, ERR_NO_PERMISSION_DELETE_PRESET)
     
     # Сохраняем данные перед удалением для уведомлений и обновления взвешенного пресета
     filament_id = preset.filament_id
@@ -524,7 +510,7 @@ async def increment_usage(
     preset = result.scalar_one_or_none()
 
     if not preset:
-        raise HTTPException(status_code=404, detail=ERR_PRESET_NOT_FOUND)
+        raise_error(404, ERR_PRESET_NOT_FOUND)
 
     preset.usage_count += 1
     await db.commit()
@@ -554,10 +540,10 @@ async def export_preset_json(
     preset = result.scalar_one_or_none()
     
     if not preset:
-        raise HTTPException(status_code=404, detail=ERR_PRESET_NOT_FOUND)
+        raise_error(404, ERR_PRESET_NOT_FOUND)
     
     if not preset.filament:
-        raise HTTPException(status_code=404, detail=ERR_FILAMENT_NOT_FOUND)
+        raise_error(404, ERR_FILAMENT_NOT_FOUND)
 
     # EXPORT-6 fix: валидация обязательных полей перед экспортом → HTTP 422
     missing_fields = []
@@ -578,7 +564,7 @@ async def export_preset_json(
         profile_dict = await preset_to_orcaslicer_json(preset, preset.filament, db)
     except Exception as e:
         logger.error(f"Error exporting preset {preset_id}: {str(e)}", exc_info=True)
-        raise HTTPException(status_code=500, detail="Ошибка экспорта пресета")
+        raise_error(500, ERR_EXPORT_PRESET_ERROR)
     
     # Возвращаем JSON файл
     # Формируем безопасное имя файла (только латиница и безопасные символы для HTTP заголовков)
@@ -660,10 +646,10 @@ async def export_preset_info(
     preset = result.scalar_one_or_none()
     
     if not preset:
-        raise HTTPException(status_code=404, detail=ERR_PRESET_NOT_FOUND)
+        raise_error(404, ERR_PRESET_NOT_FOUND)
     
     if not preset.filament:
-        raise HTTPException(status_code=404, detail=ERR_FILAMENT_NOT_FOUND)
+        raise_error(404, ERR_FILAMENT_NOT_FOUND)
 
     # EXPORT-6 fix: валидация обязательных полей перед экспортом → HTTP 422
     missing_fields = []
@@ -707,4 +693,4 @@ async def get_recommended_preset(
             **recommended_values
         )
     except ValueError:
-        raise HTTPException(status_code=404, detail=ERR_FILAMENT_NO_PRESETS)
+        raise_error(404, ERR_FILAMENT_NO_PRESETS)

@@ -5,6 +5,7 @@ import { useTranslation } from 'react-i18next';
 import { X, Send, MessageSquare } from 'lucide-react';
 import { useMutation } from '@tanstack/react-query';
 import { feedbackAPI } from '../api/client';
+import { translateApiError } from '../utils/translateApiError';
 import { useAuth } from '../contexts/AuthContext';
 import { useHeaderVisible } from '../hooks/useHeaderVisible';
 
@@ -51,11 +52,7 @@ export const WikiFeedbackModal: React.FC<WikiFeedbackModalProps> = ({
     },
     onError: (err: any) => {
       console.error('Error creating feedback:', err);
-      setError(
-        err?.response?.data?.detail ||
-          err?.message ||
-          t('wikiFeedback.sendError')
-      );
+      setError(translateApiError(t, err?.response?.data?.detail, t('wikiFeedback.sendError')));
     },
   });
 

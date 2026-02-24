@@ -205,191 +205,154 @@ async def _load_bad_words_from_db(db: AsyncSession) -> tuple[list[str], list[str
         return [], []
 
 
-async def validate_text_field(text: str | None, db: AsyncSession, field_name: str = "Поле") -> tuple[bool, Optional[str]]:
+async def validate_text_field(text: str | None, db: AsyncSession, field_name: str = "Поле") -> tuple[bool, Optional[dict | str]]:
     """
     Универсальная функция для проверки текстового поля на плохие слова.
-    
+
     Args:
         text: Текст для проверки (может быть None)
         db: Сессия БД для загрузки слов из базы
         field_name: Название поля (для сообщения об ошибке)
-    
+
     Returns:
-        (is_valid, reason): (True, None) если всё ок, (False, reason) если найдены проблемы
+        (is_valid, reason): (True, None) если всё ок, (False, error_detail) если найдены проблемы.
+        error_detail is a dict {"code": "ERR_...", "params": {...}} ready for HTTPException detail.
     """
     if not text:
         return True, None
-    
+
     return await check_bad_words(text, db, field_name)
 
 
-async def check_bad_words(text: str, db: AsyncSession, field_name: str = "Поле") -> tuple[bool, Optional[str]]:
+async def check_bad_words(text: str, db: AsyncSession, field_name: str = "Поле") -> tuple[bool, Optional[dict]]:
     """
     Проверить текст на наличие плохих слов.
-    
+
     Использует библиотеку better-profanity для английского языка
     и пользовательский список из БД для русского и английского.
-    
+
     Args:
         text: Текст для проверки
         db: Сессия БД для загрузки слов из базы
-    
+
     Returns:
-        (is_valid, reason): (True, None) если всё ок, (False, reason) если найдены плохие слова
+        (is_valid, reason): (True, None) если всё ок,
+        (False, {"code": ..., "params": ...}) если найдены плохие слова
     """
     if not text:
         return True, None
-    
+
     text_lower = text.lower()
-    
+
+    bad_words_error = {"code": "ERR_BAD_WORDS", "params": {"field_name": field_name}}
+
     # 1. Проверяем через библиотеку better-profanity (английский язык)
     try:
         if profanity.contains_profanity(text):
-            return False, f"{field_name} содержит запрещенные слова"
+            return False, bad_words_error
     except Exception:
         logger.warning("Profanity check failed", exc_info=True)
-    
+
     # 2. Загружаем пользовательские слова из БД
     bad_words_ru, bad_words_en = await _load_bad_words_from_db(db)
-    
+
     # 3. Проверяем русские плохие слова из БД
     for word in bad_words_ru:
         # Проверяем точное вхождение слова (word boundaries)
         pattern = r'\b' + re.escape(word) + r'\b'
         if re.search(pattern, text_lower, re.IGNORECASE):
-            return False, f"{field_name} содержит запрещенные слова"
-    
+            return False, bad_words_error
+
     # 4. Проверяем английские плохие слова из БД (дополнительно к библиотеке)
     for word in bad_words_en:
         pattern = r'\b' + re.escape(word) + r'\b'
         if re.search(pattern, text_lower, re.IGNORECASE):
-            return False, f"{field_name} содержит запрещенные слова"
-    
+            return False, bad_words_error
+
     # 5. Проверка на спам (повторяющиеся символы)
     if re.search(r'(.)\1{4,}', text):  # 5+ одинаковых символов подряд
-        return False, f"{field_name} содержит повторяющиеся символы"
-    
+        return False, {"code": "ERR_REPEATED_CHARS", "params": {"field_name": field_name}}
+
     # 6. Проверка на только спецсимволы (только для полей с обязательным текстом)
     if not re.search(r'[a-zA-Zа-яА-Я0-9]', text):
-        return False, f"{field_name} должно содержать буквы или цифры"
-    
+        return False, {"code": "ERR_NO_LETTERS_OR_DIGITS", "params": {"field_name": field_name}}
+
     return True, None
 
 
 def validate_preset_settings(
     preset: Preset, filament: Filament
-) -> tuple[bool, Optional[str]]:
+) -> tuple[bool, Optional[dict]]:
     """
     Проверить настройки пресета на разумность для типа материала.
-    
+
     Returns:
-        (is_valid, reason): (True, None) если всё ок, (False, reason) если найдены проблемы
+        (is_valid, reason): (True, None) если всё ок,
+        (False, {"code": ..., "params": ...}) если найдены проблемы
     """
     material_type = filament.material_type.upper() if filament.material_type else None
-    
+
     # Если тип материала не найден в справочнике, используем общие ограничения
     if material_type not in MATERIAL_SETTINGS_RANGES:
         # Общие ограничения (жёсткие) - отсекаем только совсем абсурдные значения
         ranges = {
-            "extruder_temp": {"min": 100, "max": 500},  # Ниже 100°C пластик не плавится, выше 500°C - явно ошибка
-            "bed_temp": {"min": 0, "max": 200},  # Выше 200°C стол обычно не нагревается
-            "print_speed": {"min": 1, "max": 300},  # Меньше 1 мм/с - слишком медленно, больше 300 - абсурдно
-            "fan_speed": {"min": 0, "max": 100},  # Вентилятор всегда 0-100%
-            "retraction_length": {"min": 0, "max": 20},  # Больше 20 мм - явно ошибка
-            "retraction_speed": {"min": 1, "max": 200},  # Абсурдные значения
+            "extruder_temp": {"min": 100, "max": 500},
+            "bed_temp": {"min": 0, "max": 200},
+            "print_speed": {"min": 1, "max": 300},
+            "fan_speed": {"min": 0, "max": 100},
+            "retraction_length": {"min": 0, "max": 20},
+            "retraction_speed": {"min": 1, "max": 200},
         }
     else:
         ranges = MATERIAL_SETTINGS_RANGES[material_type]
-    
-    # Проверка температуры экструдера (жёсткие ограничения - только совсем абсурдные значения)
+
+    # Проверка температуры экструдера
     if preset.extruder_temp:
         if preset.extruder_temp < ranges["extruder_temp"]["min"]:
-            return False, (
-                f"Температура сопла слишком низкая ({preset.extruder_temp}°C). "
-                f"Минимальная допустимая температура: {ranges['extruder_temp']['min']}°C"
-            )
+            return False, {"code": "ERR_EXTRUDER_TEMP_TOO_LOW", "params": {"value": preset.extruder_temp, "min": ranges["extruder_temp"]["min"]}}
         if preset.extruder_temp > ranges["extruder_temp"]["max"]:
-            return False, (
-                f"Температура сопла слишком высокая ({preset.extruder_temp}°C). "
-                f"Максимальная допустимая температура: {ranges['extruder_temp']['max']}°C. "
-                f"Проверьте, возможно, вы ввели значение в неправильных единицах измерения."
-            )
-    
-    # Проверка температуры стола (жёсткие ограничения)
+            return False, {"code": "ERR_EXTRUDER_TEMP_TOO_HIGH", "params": {"value": preset.extruder_temp, "max": ranges["extruder_temp"]["max"]}}
+
+    # Проверка температуры стола
     if preset.bed_temp:
         if preset.bed_temp < ranges["bed_temp"]["min"]:
-            return False, (
-                f"Температура стола слишком низкая ({preset.bed_temp}°C). "
-                f"Минимальная допустимая температура: {ranges['bed_temp']['min']}°C"
-            )
+            return False, {"code": "ERR_BED_TEMP_TOO_LOW", "params": {"value": preset.bed_temp, "min": ranges["bed_temp"]["min"]}}
         if preset.bed_temp > ranges["bed_temp"]["max"]:
-            return False, (
-                f"Температура стола слишком высокая ({preset.bed_temp}°C). "
-                f"Максимальная допустимая температура: {ranges['bed_temp']['max']}°C"
-            )
-    
-    # Проверка скорости печати (жёсткие ограничения)
+            return False, {"code": "ERR_BED_TEMP_TOO_HIGH", "params": {"value": preset.bed_temp, "max": ranges["bed_temp"]["max"]}}
+
+    # Проверка скорости печати
     if preset.print_speed:
         if preset.print_speed < ranges["print_speed"]["min"]:
-            return False, (
-                f"Скорость печати слишком низкая ({preset.print_speed} мм/с). "
-                f"Минимальная допустимая скорость: {ranges['print_speed']['min']} мм/с"
-            )
+            return False, {"code": "ERR_PRINT_SPEED_TOO_LOW", "params": {"value": preset.print_speed, "min": ranges["print_speed"]["min"]}}
         if preset.print_speed > ranges["print_speed"]["max"]:
-            return False, (
-                f"Скорость печати слишком высокая ({preset.print_speed} мм/с). "
-                f"Максимальная допустимая скорость: {ranges['print_speed']['max']} мм/с"
-            )
-    
+            return False, {"code": "ERR_PRINT_SPEED_TOO_HIGH", "params": {"value": preset.print_speed, "max": ranges["print_speed"]["max"]}}
+
     # Проверка скорости вентилятора (всегда 0-100%)
     if preset.fan_speed is not None:
         if preset.fan_speed < ranges["fan_speed"]["min"]:
-            return False, (
-                f"Скорость вентилятора не может быть отрицательной ({preset.fan_speed}%). "
-                f"Допустимый диапазон: {ranges['fan_speed']['min']}-{ranges['fan_speed']['max']}%"
-            )
+            return False, {"code": "ERR_FAN_SPEED_TOO_LOW", "params": {"value": preset.fan_speed, "min": ranges["fan_speed"]["min"], "max": ranges["fan_speed"]["max"]}}
         if preset.fan_speed > ranges["fan_speed"]["max"]:
-            return False, (
-                f"Скорость вентилятора не может превышать 100% ({preset.fan_speed}%). "
-                f"Допустимый диапазон: {ranges['fan_speed']['min']}-{ranges['fan_speed']['max']}%"
-            )
-    
-    # Проверка длины ретракта (жёсткие ограничения)
+            return False, {"code": "ERR_FAN_SPEED_TOO_HIGH", "params": {"value": preset.fan_speed, "min": ranges["fan_speed"]["min"], "max": ranges["fan_speed"]["max"]}}
+
+    # Проверка длины ретракта
     if preset.retraction_length is not None:
         if preset.retraction_length < ranges["retraction_length"]["min"]:
-            return False, (
-                f"Длина ретракта не может быть отрицательной ({preset.retraction_length} мм). "
-                f"Допустимый диапазон: {ranges['retraction_length']['min']}-{ranges['retraction_length']['max']} мм"
-            )
+            return False, {"code": "ERR_RETRACTION_LEN_TOO_LOW", "params": {"value": preset.retraction_length, "min": ranges["retraction_length"]["min"], "max": ranges["retraction_length"]["max"]}}
         if preset.retraction_length > ranges["retraction_length"]["max"]:
-            return False, (
-                f"Длина ретракта слишком велика ({preset.retraction_length} мм). "
-                f"Максимальная допустимая длина: {ranges['retraction_length']['max']} мм. "
-                f"Возможно, вы ввели значение в неправильных единицах измерения."
-            )
-    
-    # Проверка скорости ретракта (жёсткие ограничения)
+            return False, {"code": "ERR_RETRACTION_LEN_TOO_HIGH", "params": {"value": preset.retraction_length, "max": ranges["retraction_length"]["max"]}}
+
+    # Проверка скорости ретракта
     if preset.retraction_speed is not None:
         if preset.retraction_speed < ranges["retraction_speed"]["min"]:
-            return False, (
-                f"Скорость ретракта слишком низкая ({preset.retraction_speed} мм/с). "
-                f"Минимальная допустимая скорость: {ranges['retraction_speed']['min']} мм/с"
-            )
+            return False, {"code": "ERR_RETRACTION_SPEED_TOO_LOW", "params": {"value": preset.retraction_speed, "min": ranges["retraction_speed"]["min"]}}
         if preset.retraction_speed > ranges["retraction_speed"]["max"]:
-            return False, (
-                f"Скорость ретракта слишком высокая ({preset.retraction_speed} мм/с). "
-                f"Максимальная допустимая скорость: {ranges['retraction_speed']['max']} мм/с"
-            )
-    
-    # Дополнительные проверки на абсурдные значения
+            return False, {"code": "ERR_RETRACTION_SPEED_TOO_HIGH", "params": {"value": preset.retraction_speed, "max": ranges["retraction_speed"]["max"]}}
+
     # Температура стола значительно выше температуры экструдера (абсурдно)
     if preset.bed_temp and preset.extruder_temp:
-        if preset.bed_temp > preset.extruder_temp + 80:  # Допускаем разницу до 80°C (для некоторых экзотических материалов)
-            return False, (
-                f"Температура стола ({preset.bed_temp}°C) значительно выше температуры сопла ({preset.extruder_temp}°C). "
-                f"Это технически невозможно для обычных принтеров."
-            )
-    
+        if preset.bed_temp > preset.extruder_temp + 80:
+            return False, {"code": "ERR_BED_TEMP_EXCEEDS_EXTRUDER", "params": {"bed_temp": preset.bed_temp, "extruder_temp": preset.extruder_temp}}
+
     return True, None
 
 

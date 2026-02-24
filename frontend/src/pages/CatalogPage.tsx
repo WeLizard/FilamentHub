@@ -27,6 +27,7 @@ import {
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { filamentsAPI, brandsAPI, presetsAPI, savedPresetsAPI, filamentReviewsAPI, qrAPI } from '../api/client';
+import { translateApiError } from '../utils/translateApiError';
 import { Dropdown } from '../components/Dropdown';
 import { FilamentPreview } from '../components/FilamentPreview';
 import { SEOHead } from '../components/SEOHead';
@@ -68,7 +69,7 @@ export const CatalogPage: React.FC = () => {
     },
     onError: (error: any) => {
       console.error('Error saving preset:', error);
-      alert(error.response?.data?.detail || error.message || t('catalogPage.errorSavePreset'));
+      alert(translateApiError(t, error.response?.data?.detail, t('catalogPage.errorSavePreset')));
     },
   });
 

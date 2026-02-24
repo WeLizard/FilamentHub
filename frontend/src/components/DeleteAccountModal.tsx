@@ -6,6 +6,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 import { X, AlertTriangle, Trash2, Eye, Shield } from 'lucide-react';
 import { authAPI } from '../api/client';
+import { translateApiError } from '../utils/translateApiError';
 import { useAuth } from '../contexts/AuthContext';
 import { useHeaderVisible } from '../hooks/useHeaderVisible';
 
@@ -55,7 +56,7 @@ export const DeleteAccountModal: React.FC<DeleteAccountModalProps> = ({ isOpen, 
     },
     onError: (error: any) => {
       console.error('Delete account error:', error);
-      alert(error.response?.data?.detail || error.message || t('deleteAccount.errorMessage'));
+      alert(translateApiError(t, error.response?.data?.detail, t('deleteAccount.errorMessage')));
     },
   });
 

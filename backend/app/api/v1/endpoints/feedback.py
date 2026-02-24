@@ -15,7 +15,7 @@ from app.core.dependencies import (
 from app.db.session import get_db
 from app.models.feedback import Feedback, FeedbackStatus, FeedbackType
 from app.models.user import User, UserRole
-from app.core.errors import ERR_AUTH_REQUIRED, ERR_FEEDBACK_NOT_FOUND
+from app.core.errors import ERR_AUTH_REQUIRED, ERR_FEEDBACK_NOT_FOUND, ERR_INVALID_FEEDBACK_TYPE, ERR_INVALID_FEEDBACK_STATUS, raise_error
 from app.schemas.feedback import (
     FeedbackCreate,
     FeedbackListResponse,
@@ -41,19 +41,13 @@ async def create_feedback(
     current_user = await get_current_active_user_optional(request, db)
     
     if not current_user:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail=ERR_AUTH_REQUIRED,
-        )
+        raise_error(status.HTTP_401_UNAUTHORIZED, ERR_AUTH_REQUIRED)
     
     # Валидация типа
     try:
         feedback_type = FeedbackType(feedback_data.type)
     except ValueError:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Недопустимый тип обратной связи. Допустимые: {[t.value for t in FeedbackType]}",
-        )
+        raise_error(status.HTTP_400_BAD_REQUEST, ERR_INVALID_FEEDBACK_TYPE)
     
     feedback = Feedback(
         user_id=current_user.id,
@@ -136,10 +130,7 @@ async def get_feedback(
     feedback = await db.get(Feedback, feedback_id)
     
     if not feedback:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=ERR_FEEDBACK_NOT_FOUND,
-        )
+        raise_error(status.HTTP_404_NOT_FOUND, ERR_FEEDBACK_NOT_FOUND)
     
     return FeedbackResponse.model_validate(feedback)
 
@@ -155,19 +146,13 @@ async def update_feedback(
     feedback = await db.get(Feedback, feedback_id)
     
     if not feedback:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=ERR_FEEDBACK_NOT_FOUND,
-        )
+        raise_error(status.HTTP_404_NOT_FOUND, ERR_FEEDBACK_NOT_FOUND)
     
     if update_data.status:
         try:
             feedback.status = FeedbackStatus(update_data.status)
         except ValueError:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Недопустимый статус. Допустимые: {[s.value for s in FeedbackStatus]}",
-            )
+            raise_error(status.HTTP_400_BAD_REQUEST, ERR_INVALID_FEEDBACK_STATUS)
     
     if update_data.admin_response is not None:
         feedback.admin_response = update_data.admin_response

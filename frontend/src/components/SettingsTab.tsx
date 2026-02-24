@@ -5,6 +5,7 @@ import { useTranslation } from 'react-i18next';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { Settings, Lock, Mail, Save, CheckCircle, XCircle, Loader2, User as UserIcon, Eye, EyeOff, AlertTriangle, Trash2 } from 'lucide-react';
 import { authAPI } from '../api/client';
+import { translateApiError } from '../utils/translateApiError';
 import type { User } from '../types/api';
 import { useAuth } from '../contexts/AuthContext';
 import { DeleteAccountModal } from './DeleteAccountModal';
@@ -79,7 +80,7 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({ user, onUserUpdate }) 
       setTimeout(() => setUsernameSuccess(false), 3000);
     },
     onError: (error: any) => {
-      setUsernameError(error.response?.data?.detail || t('settings.usernameChangeError'));
+      setUsernameError(translateApiError(t, error.response?.data?.detail, t('settings.usernameChangeError')));
       setUsernameSuccess(false);
     },
   });
@@ -94,7 +95,7 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({ user, onUserUpdate }) 
       setTimeout(() => setPasswordSuccess(false), 3000);
     },
     onError: (error: any) => {
-      setPasswordError(error.response?.data?.detail || t('settings.passwordChangeError'));
+      setPasswordError(translateApiError(t, error.response?.data?.detail, t('settings.passwordChangeError')));
       setPasswordSuccess(false);
     },
   });
@@ -111,7 +112,7 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({ user, onUserUpdate }) 
       setTimeout(() => setEmailSuccess(false), 3000);
     },
     onError: (error: any) => {
-      setEmailError(error.response?.data?.detail || t('settings.emailChangeError'));
+      setEmailError(translateApiError(t, error.response?.data?.detail, t('settings.emailChangeError')));
       setEmailSuccess(false);
     },
   });

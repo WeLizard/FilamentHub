@@ -13,7 +13,21 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.core.dependencies import get_current_active_user
-from app.core.errors import ERR_ACCESS_DENIED, ERR_INTERNAL_ERROR, ERR_NOTIFICATION_NOT_FOUND, ERR_PRESET_NOT_FOUND
+from app.core.errors import (
+    ERR_ACCESS_DENIED,
+    ERR_EXPORT_PRINT_DISABLED,
+    ERR_EXPORT_PRINTER_DISABLED,
+    ERR_IMPORT_FILAMENT_DISABLED,
+    ERR_IMPORT_PRINT_DISABLED,
+    ERR_IMPORT_PRINTER_DISABLED,
+    ERR_INTERNAL_ERROR,
+    ERR_NO_NOTIFICATION_DATA,
+    ERR_NOTIFICATION_NOT_FOUND,
+    ERR_PRESET_IDS_REQUIRED,
+    ERR_PRESET_NOT_FOUND,
+    ERR_TOO_MANY_PROFILES,
+    raise_error,
+)
 from app.core.utils import like_pattern
 from app.db.session import get_db
 from app.models.brand import Brand
@@ -1147,10 +1161,7 @@ async def list_printer_profiles_for_sync(
     """Return printer profiles for OrcaSlicer synchronisation."""
     # Проверяем разрешение на экспорт профилей принтера
     if not current_user.allow_printer_profiles_export:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Экспорт профилей принтера отключен в настройках пользователя",
-        )
+        raise_error(status.HTTP_403_FORBIDDEN, ERR_EXPORT_PRINTER_DISABLED)
     
     query = select(PrinterProfile).options(selectinload(PrinterProfile.printer))
     if include_official:
@@ -1198,10 +1209,7 @@ async def list_print_profiles_for_sync(
     """Return print profiles for OrcaSlicer synchronisation."""
     # Проверяем разрешение на экспорт профилей печати
     if not current_user.allow_print_profiles_export:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Экспорт профилей печати отключен в настройках пользователя",
-        )
+        raise_error(status.HTTP_403_FORBIDDEN, ERR_EXPORT_PRINT_DISABLED)
     
     query = select(PrintProfile)
     if include_official:
@@ -1250,17 +1258,11 @@ async def get_preset_info_file(
     """
     preset = await db.get(Preset, preset_id)
     if not preset:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=ERR_PRESET_NOT_FOUND,
-        )
+        raise_error(status.HTTP_404_NOT_FOUND, ERR_PRESET_NOT_FOUND)
 
     # Проверяем права доступа (публичный пресет или свой пресет)
     if not preset.active and preset.user_id != current_user.id:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail=ERR_ACCESS_DENIED,
-        )
+        raise_error(status.HTTP_403_FORBIDDEN, ERR_ACCESS_DENIED)
     
     # Генерируем .info файл
     from app.services.orcaslicer_exporter import preset_to_orcaslicer_info
@@ -1284,10 +1286,7 @@ async def import_printer_profiles(
     """Import or update printer profiles submitted by OrcaSlicer."""
     # Проверяем разрешение на импорт профилей принтера
     if not current_user.allow_printer_profiles_import:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Импорт профилей принтера отключен в настройках пользователя",
-        )
+        raise_error(status.HTTP_403_FORBIDDEN, ERR_IMPORT_PRINTER_DISABLED)
     
     results: list[OrcaSyncResult] = []
 
@@ -1333,10 +1332,7 @@ async def import_print_profiles(
     """Import or update print profiles submitted by OrcaSlicer."""
     # Проверяем разрешение на импорт профилей печати
     if not current_user.allow_print_profiles_import:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Импорт профилей печати отключен в настройках пользователя",
-        )
+        raise_error(status.HTTP_403_FORBIDDEN, ERR_IMPORT_PRINT_DISABLED)
     
     results: list[OrcaSyncResult] = []
 
@@ -2408,17 +2404,15 @@ async def import_filament_presets(
         
         # Проверяем разрешение на импорт filament presets
         if not current_user.allow_filament_presets_import:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Импорт пресетов филаментов отключен в настройках пользователя",
-            )
+            raise_error(status.HTTP_403_FORBIDDEN, ERR_IMPORT_FILAMENT_DISABLED)
 
         # Лимит на количество профилей (50 для MVP)
         MAX_PROFILES_PER_REQUEST = 50
         if len(payload.profiles) > MAX_PROFILES_PER_REQUEST:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Слишком много профилей: {len(payload.profiles)} (максимум {MAX_PROFILES_PER_REQUEST})",
+            raise_error(
+                status.HTTP_400_BAD_REQUEST,
+                ERR_TOO_MANY_PROFILES,
+                {"count": len(payload.profiles), "max": MAX_PROFILES_PER_REQUEST},
             )
 
         results: list[OrcaSyncResult] = []
@@ -2459,10 +2453,7 @@ async def import_filament_presets(
         # Ловим все остальные исключения и возвращаем 500 с деталями
         logger.exception("Critical error in import_filament_presets endpoint")
         await db.rollback()
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=ERR_INTERNAL_ERROR,
-        )
+        raise_error(status.HTTP_500_INTERNAL_SERVER_ERROR, ERR_INTERNAL_ERROR)
 
 
 @router.post("/deleted-presets", response_model=DeletedPresetsResponse, status_code=status.HTTP_200_OK)
@@ -2637,11 +2628,11 @@ async def handle_deleted_preset_action(
     notification = result.scalar_one_or_none()
 
     if not notification:
-        raise HTTPException(status_code=404, detail=ERR_NOTIFICATION_NOT_FOUND)
+        raise_error(404, ERR_NOTIFICATION_NOT_FOUND)
 
     # Получаем список удалённых пресетов из extra_data
     if not notification.extra_data:
-        raise HTTPException(status_code=400, detail="У уведомления нет дополнительных данных")
+        raise_error(400, ERR_NO_NOTIFICATION_DATA)
     deleted_presets = notification.extra_data.get("deleted_presets", [])
 
     # Фильтруем пресеты по выбранным preset_ids (если apply_to_all=False)
@@ -2649,7 +2640,7 @@ async def handle_deleted_preset_action(
         deleted_presets = [p for p in deleted_presets if p["preset_id"] in action.preset_ids]
     elif not action.apply_to_all:
         # Если не указаны preset_ids и не apply_to_all, возвращаем ошибку
-        raise HTTPException(status_code=400, detail="Необходимо указать preset_ids или apply_to_all")
+        raise_error(400, ERR_PRESET_IDS_REQUIRED)
 
     processed_count = 0
 

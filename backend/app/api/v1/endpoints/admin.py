@@ -15,20 +15,37 @@ from app.core.dependencies import get_current_admin_user
 from app.core.utils import like_pattern
 from app.core.errors import (
     ERR_ARTICLE_NOT_FOUND,
+    ERR_BANNED_WORD_EXISTS,
     ERR_BANNED_WORD_NOT_FOUND,
+    ERR_BRAND_ID_REQUIRED_JOIN,
+    ERR_BRAND_NAME_SLUG_REQUIRED,
     ERR_BRAND_NOT_FOUND,
     ERR_BRAND_REQUEST_NOT_FOUND,
     ERR_BRAND_SLUG_EXISTS,
+    ERR_DATA_REQUIRED,
+    ERR_DB_IMPORT_ERROR,
     ERR_DUMP_NOT_FOUND,
+    ERR_FILE_TOO_LARGE,
+    ERR_FILENAME_REQUIRED,
+    ERR_INVALID_BADGES,
+    ERR_INVALID_FILE_EXT,
+    ERR_INVALID_FILENAME,
+    ERR_NO_ACTIVE_USERS_FOUND,
     ERR_PRESET_NOT_FOUND,
+    ERR_PRIMARY_KEY_REQUIRED,
     ERR_PRINTER_NOT_FOUND,
     ERR_PRINTER_REQUEST_NOT_FOUND,
     ERR_PRINTER_SLUG_EXISTS,
     ERR_REQUEST_NOT_PENDING,
+    ERR_TABLE_DATA_ERROR,
     ERR_TABLE_NOT_FOUND,
+    ERR_TABLE_STRUCTURE_ERROR,
+    ERR_TABLE_UPDATE_ERROR,
     ERR_USER_ALREADY_IN_BRAND,
+    ERR_USER_IDS_EMPTY,
     ERR_USER_NOT_FOUND,
     ERR_USER_NOT_IN_BRAND,
+    raise_error,
 )
 from app.db.session import get_db
 from app.services.maintenance_service import (
@@ -174,10 +191,7 @@ async def verify_brand(
     brand = result.scalar_one_or_none()
     
     if not brand:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=ERR_BRAND_NOT_FOUND,
-        )
+        raise_error(status.HTTP_404_NOT_FOUND, ERR_BRAND_NOT_FOUND)
     
     brand.verified = True
     await db.commit()
@@ -217,10 +231,7 @@ async def unverify_brand(
     brand = result.scalar_one_or_none()
     
     if not brand:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=ERR_BRAND_NOT_FOUND,
-        )
+        raise_error(status.HTTP_404_NOT_FOUND, ERR_BRAND_NOT_FOUND)
     
     brand.verified = False
     await db.commit()
@@ -241,10 +252,7 @@ async def update_brand_admin(
     brand = result.scalar_one_or_none()
 
     if not brand:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=ERR_BRAND_NOT_FOUND,
-        )
+        raise_error(status.HTTP_404_NOT_FOUND, ERR_BRAND_NOT_FOUND)
 
     # Проверка текстовых полей на плохие слова
     from app.services.preset_moderation import validate_text_field
@@ -321,10 +329,7 @@ async def approve_preset(
     preset = result.scalar_one_or_none()
     
     if not preset:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=ERR_PRESET_NOT_FOUND,
-        )
+        raise_error(status.HTTP_404_NOT_FOUND, ERR_PRESET_NOT_FOUND)
     
     preset.moderation_status = PresetModerationStatus.APPROVED
     preset.moderated_by = admin.id
@@ -349,10 +354,7 @@ async def reject_preset(
     preset = result.scalar_one_or_none()
     
     if not preset:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=ERR_PRESET_NOT_FOUND,
-        )
+        raise_error(status.HTTP_404_NOT_FOUND, ERR_PRESET_NOT_FOUND)
     
     preset.moderation_status = PresetModerationStatus.REJECTED
     preset.moderated_by = admin.id
@@ -422,10 +424,7 @@ async def activate_user(
     user = result.scalar_one_or_none()
     
     if not user:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=ERR_USER_NOT_FOUND,
-        )
+        raise_error(status.HTTP_404_NOT_FOUND, ERR_USER_NOT_FOUND)
     
     user.active = True
     await db.commit()
@@ -445,10 +444,7 @@ async def deactivate_user(
     user = result.scalar_one_or_none()
     
     if not user:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=ERR_USER_NOT_FOUND,
-        )
+        raise_error(status.HTTP_404_NOT_FOUND, ERR_USER_NOT_FOUND)
     
     user.active = False
     await db.commit()
@@ -468,10 +464,7 @@ async def promote_to_admin(
     user = result.scalar_one_or_none()
     
     if not user:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=ERR_USER_NOT_FOUND,
-        )
+        raise_error(status.HTTP_404_NOT_FOUND, ERR_USER_NOT_FOUND)
     
     # Админ может оставаться привязанным к бренду, поэтому brand_id не обнуляем
     user.role = UserRole.ADMIN
@@ -492,10 +485,7 @@ async def demote_to_user(
     user = result.scalar_one_or_none()
     
     if not user:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=ERR_USER_NOT_FOUND,
-        )
+        raise_error(status.HTTP_404_NOT_FOUND, ERR_USER_NOT_FOUND)
     
     # Меняем только роль, привязка к бренду остается без изменений
     user.role = UserRole.USER
@@ -517,26 +507,17 @@ async def link_user_to_brand(
     user = result.scalar_one_or_none()
     
     if not user:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=ERR_USER_NOT_FOUND,
-        )
+        raise_error(status.HTTP_404_NOT_FOUND, ERR_USER_NOT_FOUND)
     
     if user.brand_id:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=ERR_USER_ALREADY_IN_BRAND,
-        )
+        raise_error(status.HTTP_400_BAD_REQUEST, ERR_USER_ALREADY_IN_BRAND)
     
     # Проверяем существование бренда
     brand_result = await db.execute(select(Brand).where(Brand.id == brand_id))
     brand = brand_result.scalar_one_or_none()
     
     if not brand:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=ERR_BRAND_NOT_FOUND,
-        )
+        raise_error(status.HTTP_404_NOT_FOUND, ERR_BRAND_NOT_FOUND)
     
     # Привязываем к бренду (роль не меняем)
     user.brand_id = brand_id
@@ -567,16 +548,10 @@ async def unlink_user_from_brand(
     user = result.scalar_one_or_none()
     
     if not user:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=ERR_USER_NOT_FOUND,
-        )
+        raise_error(status.HTTP_404_NOT_FOUND, ERR_USER_NOT_FOUND)
     
     if not user.brand_id:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=ERR_USER_NOT_IN_BRAND,
-        )
+        raise_error(status.HTTP_400_BAD_REQUEST, ERR_USER_NOT_IN_BRAND)
     
     # Отвязываем от бренда (роль не меняем)
     user.brand_id = None
@@ -716,10 +691,7 @@ async def get_brand_request(
     request = result.scalar_one_or_none()
     
     if not request:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=ERR_BRAND_REQUEST_NOT_FOUND,
-        )
+        raise_error(status.HTTP_404_NOT_FOUND, ERR_BRAND_REQUEST_NOT_FOUND)
     
     response = BrandRequestResponse.model_validate(request)
     # Добавляем email пользователя
@@ -761,16 +733,10 @@ async def update_brand_request(
     request = result.scalar_one_or_none()
     
     if not request:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=ERR_BRAND_REQUEST_NOT_FOUND,
-        )
+        raise_error(status.HTTP_404_NOT_FOUND, ERR_BRAND_REQUEST_NOT_FOUND)
     
     if request.status != BrandRequestStatus.PENDING:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=ERR_REQUEST_NOT_PENDING,
-        )
+        raise_error(status.HTTP_400_BAD_REQUEST, ERR_REQUEST_NOT_PENDING)
     
     # Обновляем статус
     request.status = data.status
@@ -794,9 +760,7 @@ async def update_brand_request(
         if request.request_type == BrandRequestType.JOIN:
             # Для JOIN: привязываем пользователя к существующему бренду
             if not request.brand_id:
-                raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail="Для заявок на присоединение необходим Brand ID",
+                raise_error(status.HTTP_400_BAD_REQUEST, ERR_BRAND_ID_REQUIRED_JOIN
                 )
             user.brand_id = request.brand_id
             
@@ -805,7 +769,7 @@ async def update_brand_request(
             if not request.new_brand_name or not request.new_brand_slug:
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
-                    detail="Для заявок на создание необходимы название и slug бренда",
+                    detail={"code": ERR_BRAND_NAME_SLUG_REQUIRED},
                 )
             
             # Проверяем, что бренд еще не создан
@@ -909,10 +873,7 @@ async def delete_brand_request(
     request = result.scalar_one_or_none()
     
     if not request:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=ERR_BRAND_REQUEST_NOT_FOUND,
-        )
+        raise_error(status.HTTP_404_NOT_FOUND, ERR_BRAND_REQUEST_NOT_FOUND)
     
     # Удаляем все файлы связанные с заявкой
     if request.proof_files:
@@ -940,7 +901,7 @@ async def create_printer_admin(
     existing = slug_result.scalar_one_or_none()
     
     if existing:
-        raise HTTPException(status_code=400, detail=ERR_PRINTER_SLUG_EXISTS)
+        raise_error(400, ERR_PRINTER_SLUG_EXISTS)
     
     # Create printer
     printer = Printer(**data.model_dump())
@@ -963,14 +924,14 @@ async def update_printer_admin(
     printer = result.scalar_one_or_none()
     
     if not printer:
-        raise HTTPException(status_code=404, detail=ERR_PRINTER_NOT_FOUND)
+        raise_error(404, ERR_PRINTER_NOT_FOUND)
     
     # Проверяем уникальность slug если он обновляется
     if data.slug and data.slug != printer.slug:
         slug_result = await db.execute(select(Printer).where(Printer.slug == data.slug))
         existing = slug_result.scalar_one_or_none()
         if existing:
-            raise HTTPException(status_code=400, detail=ERR_PRINTER_SLUG_EXISTS)
+            raise_error(400, ERR_PRINTER_SLUG_EXISTS)
     
     # Update fields
     update_data = data.model_dump(exclude_unset=True)
@@ -994,7 +955,7 @@ async def delete_printer_admin(
     printer = result.scalar_one_or_none()
     
     if not printer:
-        raise HTTPException(status_code=404, detail=ERR_PRINTER_NOT_FOUND)
+        raise_error(404, ERR_PRINTER_NOT_FOUND)
     
     await db.delete(printer)
     await db.commit()
@@ -1082,7 +1043,7 @@ async def get_printer_request_admin(
     printer_request = result.scalar_one_or_none()
     
     if not printer_request:
-        raise HTTPException(status_code=404, detail=ERR_PRINTER_REQUEST_NOT_FOUND)
+        raise_error(404, ERR_PRINTER_REQUEST_NOT_FOUND)
     
     response = PrinterRequestResponse.model_validate(printer_request)
     # Добавляем email пользователя
@@ -1112,7 +1073,7 @@ async def update_printer_request_admin(
     request = result.scalar_one_or_none()
     
     if not request:
-        raise HTTPException(status_code=404, detail=ERR_PRINTER_REQUEST_NOT_FOUND)
+        raise_error(404, ERR_PRINTER_REQUEST_NOT_FOUND)
     
     # Если одобряем запрос, создаём принтер
     if data.status == PrinterRequestStatus.APPROVED:
@@ -1311,7 +1272,7 @@ async def import_database(
     if not file.filename:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Имя файла не указано",
+            detail={"code": ERR_FILENAME_REQUIRED},
         )
     
     # Проверяем расширение файла
@@ -1322,19 +1283,13 @@ async def import_database(
     }
     file_ext = Path(file.filename).suffix.lower()
     if file_ext not in valid_extensions.get(format, []):
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Неверное расширение файла для формата {format}. Ожидается: {', '.join(valid_extensions.get(format, []))}",
-        )
+        raise_error(status.HTTP_400_BAD_REQUEST, ERR_INVALID_FILE_EXT, {"ext": file_ext, "expected": ", ".join(valid_extensions.get(format, []))})
     
     # Проверяем размер файла (максимум 1GB)
     MAX_FILE_SIZE = 1024 * 1024 * 1024  # 1GB
     content = await file.read()
     if len(content) > MAX_FILE_SIZE:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Файл слишком большой. Максимальный размер: 1GB",
-        )
+        raise_error(status.HTTP_400_BAD_REQUEST, ERR_FILE_TOO_LARGE, {"max_size": "1GB"})
     
     # Сохраняем загруженный файл
     dumps_dir = Path(settings.UPLOAD_DIR) / "database_dumps"
@@ -1365,7 +1320,7 @@ async def import_database(
             filepath.unlink()
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Ошибка импорта базы данных",
+            detail={"code": ERR_DB_IMPORT_ERROR},
         )
     
     # Удаляем временный файл после импорта
@@ -1397,7 +1352,7 @@ async def delete_database_dump(
     if '/' in filename or '\\' in filename or '..' in filename:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Недопустимое имя файла",
+            detail={"code": ERR_INVALID_FILENAME},
         )
     
     success, message = await delete_database_dump_service(filename)
@@ -1425,7 +1380,7 @@ async def get_table_structure(
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Ошибка получения структуры таблицы",
+            detail={"code": ERR_TABLE_STRUCTURE_ERROR},
         )
 
 
@@ -1497,7 +1452,7 @@ async def get_table_data(
     except Exception:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Ошибка получения данных таблицы",
+            detail={"code": ERR_TABLE_DATA_ERROR},
         )
 
 
@@ -1518,16 +1473,10 @@ async def update_table_data(
         update_data = data.get("data", {})
         
         if not primary_key:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="primary_key обязателен для идентификации строки",
-            )
-        
+            raise_error(status.HTTP_400_BAD_REQUEST, ERR_PRIMARY_KEY_REQUIRED)
+
         if not update_data:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="data обязателен и не может быть пустым",
-            )
+            raise_error(status.HTTP_400_BAD_REQUEST, ERR_DATA_REQUIRED)
         
         success, message = await update_table_row_service_func(
             db,
@@ -1549,7 +1498,7 @@ async def update_table_data(
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Ошибка обновления данных таблицы",
+            detail={"code": ERR_TABLE_UPDATE_ERROR},
         )
 
 
@@ -1630,10 +1579,7 @@ async def create_bad_word(
     existing = result.scalar_one_or_none()
     
     if existing:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Слово '{data.word}' уже существует в базе для языка '{data.language}'",
-        )
+        raise_error(status.HTTP_400_BAD_REQUEST, ERR_BANNED_WORD_EXISTS, {"word": data.word, "language": data.language})
     
     bad_word = BadWord(word=data.word.lower(), language=data.language)
     db.add(bad_word)
@@ -1706,10 +1652,7 @@ async def update_bad_word(
         existing = check_result.scalar_one_or_none()
         
         if existing:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Слово '{new_word}' уже существует в базе для языка '{new_language}'",
-            )
+            raise_error(status.HTTP_400_BAD_REQUEST, ERR_BANNED_WORD_EXISTS, {"word": new_word, "language": new_language})
     
     # Обновляем поля
     for field, value in update_data.items():
@@ -1807,7 +1750,7 @@ async def send_notification_to_users(
     if not user_ids:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Список ID пользователей не может быть пустым",
+            detail={"code": ERR_USER_IDS_EMPTY},
         )
     
     # Проверяем, что пользователи существуют и активны
@@ -1819,7 +1762,7 @@ async def send_notification_to_users(
     if not valid_user_ids:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="Активные пользователи с указанными ID не найдены",
+            detail={"code": ERR_NO_ACTIVE_USERS_FOUND},
         )
     
     from app.services.notification_service import create_bulk_notifications
@@ -1871,10 +1814,7 @@ async def manage_user_badges(
     invalid_badges = [b for b in badges if b not in valid_badges]
     
     if invalid_badges:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Недопустимые бейджи: {', '.join(invalid_badges)}. Доступные: {', '.join(valid_badges)}"
-        )
+        raise_error(status.HTTP_400_BAD_REQUEST, ERR_INVALID_BADGES, {"invalid": ", ".join(invalid_badges), "valid": ", ".join(valid_badges)})
     
     # Получаем пользователя
     result = await db.execute(

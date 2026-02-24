@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Settings, AlertTriangle, CheckCircle, Loader2 } from 'lucide-react';
 import api from '../../api/client';
+import { translateApiError } from '../../utils/translateApiError';
 
 interface MaintenanceInfo {
   enabled: boolean;
@@ -32,7 +33,7 @@ export function AdminMaintenance() {
       setMessage(response.data.message || '');
     } catch (err: any) {
       console.error('Failed to load maintenance status:', err);
-      setError(err.response?.data?.detail || t('adminMaintenance.loadError'));
+      setError(translateApiError(t, err.response?.data?.detail, t('adminMaintenance.loadError')));
     } finally {
       setIsLoading(false);
     }
@@ -58,7 +59,7 @@ export function AdminMaintenance() {
       setMessage(response.data.maintenance_mode.message || '');
     } catch (err: any) {
       console.error('Failed to update maintenance mode:', err);
-      setError(err.response?.data?.detail || t('adminMaintenance.updateError'));
+      setError(translateApiError(t, err.response?.data?.detail, t('adminMaintenance.updateError')));
     } finally {
       setIsUpdating(false);
     }

@@ -6,6 +6,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 import { Building2, CheckCircle, XCircle, Shield, Search, ExternalLink, Edit, X, Save, Loader2 } from 'lucide-react';
 import { adminAPI } from '../../api/client';
+import { translateApiError } from '../../utils/translateApiError';
 import type { Brand } from '../../types/api';
 
 type FilterType = 'all' | 'verified' | 'unverified';
@@ -66,7 +67,7 @@ export function AdminBrands() {
       setEditError(null);
     },
     onError: (error: any) => {
-      setEditError(error?.response?.data?.detail || t('adminBrands.updateError'));
+      setEditError(translateApiError(t, error?.response?.data?.detail, t('adminBrands.updateError')));
     },
   });
 
