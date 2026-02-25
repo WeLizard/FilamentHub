@@ -14,6 +14,16 @@ paths:
 - Backend логирование — `logger.warning(exc_info=True)` вместо `except: pass`.
 - Пароли хешируются через `bcrypt` напрямую (passlib удалён).
 
+## Ошибки (error codes i18n)
+
+- Все HTTP-ошибки используют коды из `app/core/errors.py` (80+ констант `ERR_*`).
+- Формат: `raise_error(status_code, ERR_CONSTANT)` или `raise_error(status_code, ERR_CONSTANT, params={...})`.
+- Хелпер `raise_error()` формирует `detail={"code": "ERR_...", "params": {...}}`.
+- **НЕ** использовать `detail="строка на русском"` — только коды.
+- Текстовая валидация: `validate_text_field()` из `app/core/utils.py` → возвращает dict с `ERR_BAD_WORDS` / `ERR_REPEATED_CHARS` / `ERR_NO_LETTERS_OR_DIGITS`.
+- Email валидация: `app/services/email_validator.py` → `ERR_EMAIL_DOMAIN_TYPO`, `ERR_DOMAIN_NO_MAIL`.
+- Остаток: ~24 места в admin.py/wiki.py используют `detail=ERR_STRING` (строка вместо dict) — работает, но неконсистентно. См. `docs/plan_error_codes_i18n.md`.
+
 ## Alembic
 
 - Production БД существует — миграции должны быть обратно-совместимыми.
@@ -33,9 +43,24 @@ paths:
 
 ```
 backend/app/
-  api/v1/endpoints/    # REST endpoints
-  core/                # config, security, utils
-  models/              # SQLAlchemy models (24+)
+  api/v1/endpoints/    # REST endpoints (21 файл)
+  core/                # config, security, utils, errors, dependencies
+  models/              # SQLAlchemy models (25)
   schemas/             # Pydantic schemas
-  services/            # Бизнес-логика
+  services/            # Бизнес-логика (25 сервисов)
 ```
+
+## Ключевые сервисы
+
+| Сервис | Назначение |
+|--------|-----------|
+| `orcaslicer_service.py` | Синхронизация пресетов OrcaSlicer ↔ FilamentHub |
+| `orcaslicer_exporter.py` | Экспорт пресетов в формат OrcaSlicer JSON/.info |
+| `preset_recommender.py` | Скоринг и рекомендации пресетов для принтера |
+| `weighted_preset_service.py` | Взвешенные (агрегированные) пресеты |
+| `email_validator.py` | Валидация email: домены, опечатки, MX/A check |
+| `file_service.py` | Загрузка/хранение файлов с валидацией |
+| `text_moderation.py` | Проверка текста на запрещённые слова |
+| `sync_orchestrator.py` | Оркестрация синхронизации данных |
+| `wiki_sync_service.py` | Синхронизация Wiki статей |
+| `maintenance_service.py` | Режим обслуживания |

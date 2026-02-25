@@ -22,15 +22,19 @@ paths:
 
 ## Компоненты
 
-- 48+ компонентов, 12 страниц
+- 57 компонентов, 13 страниц
 - Модалки: CreatePresetModal (4320 строк), CreatePrinterProfileModal (1868 строк)
 - Toast уведомления вместо alert()/confirm()
+- Confirm/Delete модалки вместо native confirm()
 
 ## i18n
 
 - Все строки через `useTranslation()` / `t('key')`
 - Локали: `frontend/src/locales/ru/translation.json`, `frontend/src/locales/en/translation.json`
 - Ключи по формату: `pageName.section.element` (например `catalogPage.errorLoginRequired`)
+- **API ошибки**: секция `apiErrors` в обоих locale файлах (~80 ключей)
+- Утилита `frontend/src/utils/translateApiError.ts` — переводит `{"code": "ERR_..."}` → локализованную строку
+- Все 25 компонентов с API-ошибками используют `translateApiError(t, detail, fallback)`
 
 ## Vite proxy
 

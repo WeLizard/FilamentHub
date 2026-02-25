@@ -49,7 +49,7 @@ paths:
 
 - Код, переменные, комментарии в коде — **английский**
 - Документация, TODO, ROADMAP — **русский**
-- Сообщения об ошибках в API для пользователей — **русский**
+- Сообщения об ошибках в API — **i18n коды** (`ERR_USER_NOT_FOUND`), переводы на фронтенде через `translateApiError.ts`
 - Логирование — **английский**
 - Git commit messages — **английский**
 
@@ -71,17 +71,18 @@ FilamentHub/
     app/
       api/v1/endpoints/    # REST endpoints
       core/                # config, security, utils
-      models/              # SQLAlchemy models (24+)
+      models/              # SQLAlchemy models (25)
       schemas/             # Pydantic schemas
-      services/            # Бизнес-логика
-    alembic/               # Миграции (45+)
+      services/            # Бизнес-логика (25 сервисов)
+    alembic/               # Миграции (46)
     tests/
   frontend/
     src/
       api/client.ts        # API клиент (20 модулей)
-      components/          # React компоненты (48+)
+      components/          # React компоненты (57)
       contexts/            # AuthContext
-      pages/               # 12 страниц
+      pages/               # 13 страниц
+      utils/               # translateApiError.ts, auth.ts
       locales/             # i18n (ru, en)
   docs/
     TODO_CONSOLIDATED.md   # Единая точка входа по задачам
@@ -106,6 +107,7 @@ FilamentHub/
 | OrcaSlicer C++ код | `submodule/OrcaSlicer/src/` |
 | Вендор-бандлы | `docs/PENDING_TASKS.md` |
 | Рекомендации пресетов | `docs/plan.md` |
+| Error codes i18n (остатки) | `docs/plan_error_codes_i18n.md` |
 | Деплой | `docs/DEPLOY.md`, `docs/DEPLOYMENT.md` |
 | Скрипты | `scripts/` |
 
