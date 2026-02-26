@@ -94,9 +94,82 @@ def make_error(
     return {"jsonrpc": "2.0", "id": request_id, "error": error_obj}
 
 
-def write_json(message: dict[str, Any]) -> None:
+_transport_uses_content_length: bool | None = None
+
+
+def _write_framed_json(message: dict[str, Any]) -> None:
+    payload = json.dumps(message, ensure_ascii=False).encode("utf-8")
+    header = f"Content-Length: {len(payload)}\r\n\r\n".encode("ascii")
+    sys.stdout.buffer.write(header)
+    sys.stdout.buffer.write(payload)
+    sys.stdout.buffer.flush()
+
+
+def _write_line_json(message: dict[str, Any]) -> None:
     sys.stdout.write(json.dumps(message, ensure_ascii=False) + "\n")
     sys.stdout.flush()
+
+
+def write_json(message: dict[str, Any]) -> None:
+    # Match client transport mode once detected from incoming traffic.
+    if _transport_uses_content_length:
+        _write_framed_json(message)
+    else:
+        _write_line_json(message)
+
+
+def _read_content_length_message(first_line: bytes) -> dict[str, Any]:
+    global _transport_uses_content_length
+
+    header_line = first_line.decode("ascii", errors="replace").strip()
+    if ":" not in header_line:
+        raise JsonRpcError(-32700, "Invalid header line.")
+
+    key, value = header_line.split(":", 1)
+    if key.strip().lower() != "content-length":
+        raise JsonRpcError(-32700, f"Unexpected header: {key.strip()}")
+
+    try:
+        content_length = int(value.strip())
+    except ValueError as exc:
+        raise JsonRpcError(-32700, "Invalid Content-Length value.") from exc
+
+    if content_length < 0:
+        raise JsonRpcError(-32700, "Negative Content-Length is not allowed.")
+
+    # Consume remaining headers up to the empty line.
+    while True:
+        line = sys.stdin.buffer.readline()
+        if not line:
+            raise EOFError
+        if line in (b"\r\n", b"\n"):
+            break
+
+    payload = sys.stdin.buffer.read(content_length)
+    if len(payload) != content_length:
+        raise EOFError
+
+    _transport_uses_content_length = True
+    return json.loads(payload.decode("utf-8", errors="replace"))
+
+
+def read_message() -> dict[str, Any] | None:
+    global _transport_uses_content_length
+
+    first_line = sys.stdin.buffer.readline()
+    if not first_line:
+        return None
+
+    stripped = first_line.strip()
+    if not stripped:
+        return read_message()
+
+    if stripped.startswith(b"{"):
+        _transport_uses_content_length = False
+        return json.loads(first_line.decode("utf-8", errors="replace"))
+
+    # Assume framed transport.
+    return _read_content_length_message(first_line)
 
 
 def content_text(text: str, is_error: bool = False) -> dict[str, Any]:
@@ -314,14 +387,13 @@ def run() -> int:
         "orca_orcaslicer_launch": tool_orca_orcaslicer_launch,
     }
 
-    for raw in sys.stdin:
-        line = raw.strip()
-        if not line:
-            continue
-
+    while True:
         request_id: Any = None
         try:
-            req = json.loads(line)
+            req = read_message()
+            if req is None:
+                break
+
             request_id = req.get("id")
             method = req.get("method")
             params = req.get("params", {})
@@ -374,6 +446,8 @@ def run() -> int:
         except JsonRpcError as exc:
             if request_id is not None:
                 write_json(make_error(request_id, exc.code, exc.message, exc.data))
+        except EOFError:
+            break
         except Exception as exc:  # pragma: no cover - safety net for protocol loop
             if request_id is not None:
                 details = {
