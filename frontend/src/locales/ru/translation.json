@@ -870,7 +870,8 @@
       "enterFilamentName": "Введите название филамента",
       "selectMaterialType": "Выберите или введите тип материала",
       "enterPresetName": "Введите название пресета",
-      "selectFilament": "Выберите материал"
+      "selectFilament": "Выберите материал",
+      "finishOrCancelFilamentCreation": "Завершите создание материала или нажмите «Отмена»"
     },
     "titleDraft": "Доработать заготовку",
     "titleEdit": "Редактировать пресет",
@@ -890,6 +891,7 @@
     "customMaterialTypeHint": "Введите тип материала, которых нет в стандартном списке (например: PCTG, PET, CPE)",
     "brand": "Производитель",
     "brandSearchPlaceholder": "Начните вводить название производителя...",
+    "newBrandButton": "Новый производитель",
     "newBrandNamePlaceholder": "Название нового производителя...",
     "brandWebsitePlaceholder": "Сайт производителя (необязательно)",
     "filamentName": "Название филамента",

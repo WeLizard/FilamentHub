@@ -848,7 +848,8 @@
       "enterFilamentName": "Enter filament name",
       "selectMaterialType": "Select or enter material type",
       "enterPresetName": "Enter preset name",
-      "selectFilament": "Select a filament"
+      "selectFilament": "Select a filament",
+      "finishOrCancelFilamentCreation": "Finish creating the filament or click \"Cancel\""
     },
     "titleDraft": "Refine draft",
     "titleEdit": "Edit preset",
@@ -868,6 +869,7 @@
     "customMaterialTypeHint": "Enter a material type not in the standard list (e.g.: PCTG, PET, CPE)",
     "brand": "Brand",
     "brandSearchPlaceholder": "Start typing brand name...",
+    "newBrandButton": "New brand",
     "newBrandNamePlaceholder": "New brand name...",
     "brandWebsitePlaceholder": "Brand website (optional)",
     "filamentName": "Filament name",

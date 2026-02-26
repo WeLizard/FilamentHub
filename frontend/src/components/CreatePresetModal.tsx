@@ -1381,7 +1381,11 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
     }
 
     if (!selectedFilamentId) {
-      setError(t('presetModal.errors.selectFilament'));
+      setError(
+        showFilamentForm
+          ? t('presetModal.errors.finishOrCancelFilamentCreation')
+          : t('presetModal.errors.selectFilament')
+      );
       return;
     }
 
@@ -1466,7 +1470,21 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
     }
   };
 
-  const isLoading = createMutation.isPending || updateMutation.isPending || createFilamentMutation.isPending;
+  const isLoading =
+    createMutation.isPending ||
+    updateMutation.isPending ||
+    createFilamentMutation.isPending ||
+    createBrandMutation.isPending;
+  const normalizedMaterialType = useCustomMaterial ? customMaterialType.trim() : materialType.trim();
+  const hasBrandSelection = brandId
+    ? true
+    : showBrandForm
+      ? newBrandName.trim().length > 0
+      : Boolean(selectedBrandId || brandSearch.trim());
+  const canSubmitFromFilamentForm =
+    hasBrandSelection && filamentName.trim().length > 0 && normalizedMaterialType.length > 0;
+  const canSubmit = name.trim().length > 0 && (showFilamentForm ? canSubmitFromFilamentForm : Boolean(selectedFilamentId));
+  const isSubmitDisabled = isLoading || !canSubmit;
   const isHeaderVisible = useHeaderVisible();
 
   if (!isOpen) return null;
@@ -1551,9 +1569,12 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                       <button
                         type="button"
                         onClick={() => setShowFilamentForm(true)}
-                        className="p-3 bg-purple-600 hover:bg-purple-700 rounded-xl transition-all text-white"
+                        className="px-3 py-3 bg-purple-600 hover:bg-purple-700 rounded-xl transition-all text-white flex items-center gap-2 whitespace-nowrap"
+                        title={t('presetModal.createNewFilament')}
+                        aria-label={t('presetModal.createNewFilament')}
                       >
                         <Plus className="w-5 h-5" />
+                        <span className="hidden sm:inline">{t('presetModal.createNewFilament')}</span>
                       </button>
                     )}
                   </div>
@@ -1870,9 +1891,12 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                                       setNewBrandName('');
                                       setNewBrandWebsite('');
                                     }}
-                                    className="p-3 bg-purple-600 hover:bg-purple-700 rounded-xl transition-all text-white"
+                                    className="px-3 py-3 bg-purple-600 hover:bg-purple-700 rounded-xl transition-all text-white flex items-center gap-2 whitespace-nowrap"
+                                    title={t('presetModal.newBrandButton')}
+                                    aria-label={t('presetModal.newBrandButton')}
                                   >
                                     <Plus className="w-5 h-5" />
+                                    <span className="hidden sm:inline text-sm font-medium">{t('presetModal.newBrandButton')}</span>
                                   </button>
                                 )}
                               </>
@@ -4337,8 +4361,8 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
             </button>
             <button
               type="submit"
-              disabled={isLoading}
-              className="px-6 py-3 bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white rounded-xl transition-all shadow-lg shadow-purple-500/25 hover:shadow-purple-500/40 disabled:opacity-50 flex items-center space-x-2"
+              disabled={isSubmitDisabled}
+              className="px-6 py-3 bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white rounded-xl transition-all shadow-lg shadow-purple-500/25 hover:shadow-purple-500/40 disabled:opacity-50 disabled:cursor-not-allowed flex items-center space-x-2"
             >
               {isLoading ? (
                 <>
