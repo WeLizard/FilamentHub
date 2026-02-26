@@ -31,8 +31,11 @@ def _parse_version(filename: str) -> tuple[str, str, str] | None:
     - OrcaSlicer-FilamentHub-2.1.0-fh-win64-portable.zip -> ('2.1.0-fh', 'windows', 'portable')
     - OrcaSlicer-FilamentHub-2.1.0-fh-linux-x64.AppImage -> ('2.1.0-fh', 'linux', 'installer')
     """
-    # Паттерн: OrcaSlicer-FilamentHub-{version}-{platform}[-portable].{ext}
-    pattern = r"OrcaSlicer-FilamentHub-(\d+\.\d+\.\d+-fh)-(\w+)(?:-(portable))?\.(exe|zip|dmg|AppImage)"
+    # Паттерн:
+    # OrcaSlicer-FilamentHub-{version}-{platform}[-portable|-setup].{ext}
+    # Поддерживаем setup-суффикс для Windows installer:
+    # OrcaSlicer-FilamentHub-2.1.0-fh-win64-setup.exe
+    pattern = r"^OrcaSlicer-FilamentHub-(\d+\.\d+\.\d+-fh)-([A-Za-z0-9_-]+?)(?:-(portable|setup))?\.(exe|zip|dmg|AppImage)$"
     match = re.match(pattern, filename)
 
     if not match:
@@ -40,7 +43,7 @@ def _parse_version(filename: str) -> tuple[str, str, str] | None:
 
     version = match.group(1)
     platform_raw = match.group(2)
-    is_portable = match.group(3) == "portable"
+    flavor = match.group(3)
     ext = match.group(4)
 
     # Определяем платформу
@@ -53,7 +56,7 @@ def _parse_version(filename: str) -> tuple[str, str, str] | None:
     else:
         platform = platform_raw
 
-    download_type = "portable" if is_portable else "installer"
+    download_type = "portable" if flavor == "portable" else "installer"
 
     return (version, platform, download_type)
 
@@ -140,13 +143,33 @@ def _calculate_sha256(filepath: Path) -> str | None:
     """Вычислить SHA256 checksum файла."""
     if not _file_exists(filepath):
         return None
-    
+
+    # Хэширование больших файлов на каждом запросе очень дорого.
+    # Кэш автоматически инвалидируется при изменении размера или mtime файла.
+    try:
+        stat = filepath.stat()
+    except OSError:
+        return None
+
+    return _calculate_sha256_cached(
+        str(filepath.resolve()),
+        stat.st_size,
+        stat.st_mtime_ns,
+    )
+
+
+@lru_cache(maxsize=256)
+def _calculate_sha256_cached(filepath_str: str, file_size: int, file_mtime_ns: int) -> str:
+    """Кэшируем SHA256 по пути/размеру/mtime, чтобы не читать файл повторно."""
+    # file_size и file_mtime_ns используются как часть ключа кэша (инвалидация).
+    _ = (file_size, file_mtime_ns)
+
     sha256_hash = hashlib.sha256()
-    with open(filepath, "rb") as f:
+    with open(filepath_str, "rb") as f:
         # Читаем файл по частям для больших файлов
         for byte_block in iter(lambda: f.read(4096), b""):
             sha256_hash.update(byte_block)
-    
+
     return sha256_hash.hexdigest()
 
 
@@ -376,4 +399,3 @@ async def get_orcaslicer_download(
         ERR_DOWNLOAD_UNAVAILABLE,
         {"platform": platform, "arch": architecture, "type": download_type},
     )
-
