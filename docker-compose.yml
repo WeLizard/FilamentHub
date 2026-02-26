@@ -41,9 +41,10 @@ services:
     container_name: filamenthub_backend_prod
     command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 4 --no-access-log
     volumes:
-      # Named volumes для персистентности данных при обновлениях
+      # Персистентные данные
       - uploads_data:/app/uploads
-      - distributions_data:/app/distributions
+      # Дистрибутивы OrcaSlicer читаем напрямую с хоста
+      - ./backend/distributions:/app/distributions
       # Логи можно хранить на хосте (не критично)
       - ./backend/logs:/app/logs
       # Wiki content - чтобы можно было редактировать без пересборки
@@ -98,7 +99,6 @@ volumes:
   redis_data:
   # Пользовательские данные (сохраняются при обновлениях)
   uploads_data:  # Загруженные файлы (proof files для brand requests) + database_dumps + QR-коды
-  distributions_data:  # Сборки OrcaSlicer и другие дистрибутивы
 
 networks:
   filamenthub_network:
