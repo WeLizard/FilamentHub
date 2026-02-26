@@ -2897,6 +2897,8 @@
     "ERR_INVALID_BADGES": "Invalid badges: {{invalid}}. Valid: {{valid}}",
     "ERR_INVALID_FILE_EXT": "Invalid file extension: {{ext}}. Expected: {{expected}}",
     "ERR_FILE_TOO_LARGE": "File is too large. Maximum: {{max_size}}",
+    "ERR_UNSUPPORTED_PRICING_METHOD": "Unsupported pricing method: {{method}}",
+    "ERR_EXPORT_MISSING_FIELDS": "Preset cannot be exported: missing required fields: {{fields}}",
 
     "ERR_EXTRUDER_TEMP_TOO_LOW": "Extruder temperature is too low ({{value}}°C). Minimum: {{min}}°C",
     "ERR_EXTRUDER_TEMP_TOO_HIGH": "Extruder temperature is too high ({{value}}°C). Maximum: {{max}}°C",

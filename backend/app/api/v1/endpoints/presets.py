@@ -14,6 +14,7 @@ logger = logging.getLogger(__name__)
 
 from app.core.dependencies import get_current_active_user, get_current_brand_user, get_current_active_user_optional
 from app.core.errors import (
+    ERR_EXPORT_MISSING_FIELDS,
     ERR_EXPORT_PRESET_ERROR,
     ERR_FILAMENT_NO_PRESETS,
     ERR_FILAMENT_NOT_FOUND,
@@ -554,10 +555,7 @@ async def export_preset_json(
     if preset.nozzle_temperature is None:
         missing_fields.append("nozzle_temperature")
     if missing_fields:
-        raise HTTPException(
-            status_code=422,
-            detail=f"Пресет не может быть экспортирован: отсутствуют обязательные поля: {', '.join(missing_fields)}",
-        )
+        raise_error(422, ERR_EXPORT_MISSING_FIELDS, params={"fields": ", ".join(missing_fields)})
 
     # Экспортируем в JSON
     try:
@@ -658,10 +656,7 @@ async def export_preset_info(
     if not preset.filament.material_type:
         missing_fields.append("filament.material_type")
     if missing_fields:
-        raise HTTPException(
-            status_code=422,
-            detail=f"Пресет не может быть экспортирован: отсутствуют обязательные поля: {', '.join(missing_fields)}",
-        )
+        raise_error(422, ERR_EXPORT_MISSING_FIELDS, params={"fields": ", ".join(missing_fields)})
 
     # Генерируем .info файл (INI формат)
     info_content = generate_profile_info(preset, preset.filament)

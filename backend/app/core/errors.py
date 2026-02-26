@@ -189,6 +189,8 @@ ERR_BANNED_WORD_EXISTS = "ERR_BANNED_WORD_EXISTS"         # params: {word, langu
 ERR_INVALID_BADGES = "ERR_INVALID_BADGES"                 # params: {invalid, valid}
 ERR_INVALID_FILE_EXT = "ERR_INVALID_FILE_EXT"             # params: {ext, expected}
 ERR_FILE_TOO_LARGE = "ERR_FILE_TOO_LARGE"                 # params: {max_size}
+ERR_UNSUPPORTED_PRICING_METHOD = "ERR_UNSUPPORTED_PRICING_METHOD"  # params: {method}
+ERR_EXPORT_MISSING_FIELDS = "ERR_EXPORT_MISSING_FIELDS"    # params: {fields}
 
 
 def raise_error(

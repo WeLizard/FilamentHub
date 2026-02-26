@@ -8,6 +8,7 @@ from app.core.errors import (
     ERR_SPOOL_PRICE_REQUIRED,
     ERR_TIME_REQUIRED,
     ERR_PRICE_PER_HOUR_REQUIRED,
+    ERR_UNSUPPORTED_PRICING_METHOD,
     raise_error,
 )
 from app.schemas.calculator import CalculatorEstimateRequest, CalculatorEstimateResponse, PricingMethod
@@ -303,8 +304,5 @@ async def estimate_cost(
         )
     
     else:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Неподдерживаемый метод расчета: {data.pricing_method}"
-    )
+        raise_error(400, ERR_UNSUPPORTED_PRICING_METHOD, params={"method": data.pricing_method})
 

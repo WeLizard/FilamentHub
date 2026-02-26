@@ -2919,6 +2919,8 @@
     "ERR_INVALID_BADGES": "Недопустимые бейджи: {{invalid}}. Допустимые: {{valid}}",
     "ERR_INVALID_FILE_EXT": "Недопустимое расширение файла: {{ext}}. Ожидается: {{expected}}",
     "ERR_FILE_TOO_LARGE": "Файл слишком большой. Максимум: {{max_size}}",
+    "ERR_UNSUPPORTED_PRICING_METHOD": "Неподдерживаемый метод расчёта: {{method}}",
+    "ERR_EXPORT_MISSING_FIELDS": "Пресет не может быть экспортирован: отсутствуют обязательные поля: {{fields}}",
 
     "ERR_EXTRUDER_TEMP_TOO_LOW": "Температура сопла слишком низкая ({{value}}°C). Минимум: {{min}}°C",
     "ERR_EXTRUDER_TEMP_TOO_HIGH": "Температура сопла слишком высокая ({{value}}°C). Максимум: {{max}}°C",
