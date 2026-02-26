@@ -76,7 +76,7 @@ export const ViewPresetModal: React.FC<ViewPresetModalProps> = ({
   // Загружаем данные филамента
   const { data: editingFilament } = useQuery<Filament>({
     queryKey: ['filament', preset?.filament_id],
-    queryFn: () => filamentsAPI.get(preset!.filament_id),
+    queryFn: () => filamentsAPI.get(preset!.filament_id!),
     enabled: !!preset?.filament_id,
   });
 
@@ -847,5 +847,4 @@ export const ViewPresetModal: React.FC<ViewPresetModalProps> = ({
     </div>
   );
 };
-
 

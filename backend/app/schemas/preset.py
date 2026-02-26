@@ -98,7 +98,8 @@ class PresetResponse(PresetBase):
     """Schema for Preset response."""
 
     id: int
-    filament_id: int
+    # КРИТИЧНО: для черновиков из OrcaSlicer filament_id может быть NULL
+    filament_id: int | None
     user_id: int | None = None
     active: bool
     moderation_status: str  # pending, approved, rejected
@@ -150,6 +151,5 @@ class RecommendedPresetResponse(BaseModel):
     avg_rating: float | None = Field(None, ge=0, le=5, description="Average rating of used presets")
     
     model_config = ConfigDict(from_attributes=True)
-
 
 

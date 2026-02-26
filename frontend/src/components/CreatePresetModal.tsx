@@ -265,7 +265,7 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
   // Загружаем филамент для редактирования
   const { data: editingFilament } = useQuery({
     queryKey: ['filament', preset?.filament_id],
-    queryFn: () => filamentsAPI.get(preset!.filament_id),
+    queryFn: () => filamentsAPI.get(preset!.filament_id!),
     enabled: isOpen && !!preset?.filament_id, // Загружаем только при редактировании
   });
 

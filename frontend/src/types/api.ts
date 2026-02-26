@@ -211,7 +211,7 @@ export interface PrinterRequest {
 
 export interface Preset {
   id: number;
-  filament_id: number;
+  filament_id: number | null;
   name: string;
   description: string | null;
   is_official: boolean;
