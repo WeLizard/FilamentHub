@@ -196,6 +196,17 @@ export const authAPI = {
     return response.data;
   },
 
+  getMaintenanceStatus: async (): Promise<{ maintenance_mode: boolean; message: string | null }> => {
+    const response = await axios.get<{ maintenance_mode?: boolean; maintenance_message?: string | null }>(
+      '/health',
+      { baseURL: '' }
+    );
+    return {
+      maintenance_mode: Boolean(response.data.maintenance_mode),
+      message: response.data.maintenance_message ?? null,
+    };
+  },
+
   updateProfile: async (data: Partial<{ email: string; username: string; full_name: string | null; bio: string | null; password: string; brand_id: number | null }>) => {
     const response = await api.patch<User>('/auth/me', data);
     return response.data;
@@ -1533,4 +1544,3 @@ export const wikiAPI = {
 };
 
 export default api;
-

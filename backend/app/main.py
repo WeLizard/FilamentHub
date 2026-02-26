@@ -13,6 +13,7 @@ from slowapi.errors import RateLimitExceeded
 from app.core.config import settings
 from app.core.limiter import limiter
 from app.middleware.maintenance import MaintenanceMiddleware
+from app.services.maintenance_service import get_maintenance_info
 
 # Create FastAPI app
 # Hide OpenAPI docs in production [INFRA-15]
@@ -66,12 +67,15 @@ app.mount("/wiki_content/images", StaticFiles(directory=str(wiki_images_dir)), n
 
 # Health check endpoint
 @app.get("/health")
-async def health_check() -> dict[str, str]:
+async def health_check() -> dict[str, str | bool | None]:
     """Health check endpoint."""
+    maintenance_info = get_maintenance_info()
     return {
         "status": "ok",
         "version": settings.VERSION,
         "project": settings.PROJECT_NAME,
+        "maintenance_mode": maintenance_info["enabled"],
+        "maintenance_message": maintenance_info["message"] if maintenance_info["enabled"] else None,
     }
 
 
