@@ -1,11 +1,16 @@
 # FilamentHub OrcaSlicer Integration - End-to-End Testing Guide
 
-**Refactoring Task:** 001-refactoring-orcaslicer-and-backend
-**Phase:** 8 - End-to-End Testing
+> Status on 2026-02-26: archived QA guide for the modular refactor.
+> Active runtime code path is `submodule/OrcaSlicer/src/slic3r/GUI/FilamentHubPanel.*`.
+> `SyncCoordinator`/`PresetImporter` modules are reference-only in `docs/reference/FilamentHub-refactoring/`.
+
+**Status:** Archived reference scenario (not active runtime path)
+**Original Task:** 001-refactoring-orcaslicer-and-backend
+**Phase:** 8 - End-to-End Testing (historical)
 **Subtask:** 8-1 - Manual Testing of FilamentHub Login and Sync Functionality
 
 **Date Created:** 2026-02-06
-**Purpose:** Manual verification of refactored FilamentHub OrcaSlicer integration
+**Purpose:** Historical manual verification checklist for archived modular implementation
 **Tester:** _[Name]_
 **Test Date:** _[Date]_
 
@@ -13,7 +18,13 @@
 
 ## Overview
 
-This guide provides comprehensive manual testing procedures for the refactored FilamentHub OrcaSlicer integration. The refactoring moved business logic from C++ client to Python backend and modularized the C++ codebase from a 6,377-line monolith into 4 focused modules (~4,427 lines).
+This guide provides manual testing procedures for the archived modular FilamentHub OrcaSlicer refactor.
+For current testing, focus on the active monolithic panel and client:
+
+- `submodule/OrcaSlicer/src/slic3r/GUI/FilamentHubPanel.cpp`
+- `submodule/OrcaSlicer/src/slic3r/GUI/FilamentHubPanel.hpp`
+- `submodule/OrcaSlicer/src/slic3r/Utils/FilamentHubClient.cpp`
+- `submodule/OrcaSlicer/src/slic3r/Utils/FilamentHubClient.hpp`
 
 ### What Was Refactored
 
@@ -545,7 +556,7 @@ Resolution UI shown: [Yes/No]
 
 ---
 
-## Appendix A: Module Architecture
+## Appendix A: Archived Module Architecture (Reference Only)
 
 ### AuthManager (608 lines)
 - **Responsibility:** Token lifecycle management, authentication state
@@ -641,3 +652,4 @@ Response:
 | Version | Date | Author | Changes |
 |---------|------|--------|---------|
 | 1.0 | 2026-02-06 | auto-claude | Initial testing guide for refactored integration |
+| 1.1 | 2026-02-26 | codex | Marked as archived reference; active path documented as FilamentHubPanel.* |

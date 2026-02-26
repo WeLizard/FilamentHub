@@ -49,6 +49,27 @@ export function DownloadPage() {
   ) || downloadsData?.versions.find(
     (v) => v.platform === selectedPlatform && v.architecture === selectedArch
   );
+  const selectedPlatformHasAvailableBuild = isPlatformAvailable(selectedPlatform);
+  const hasWindowsInstaller = Boolean(downloadsData?.versions.some(
+    (v) => v.platform === 'windows' &&
+           v.architecture === selectedArch &&
+           v.download_type === 'installer' &&
+           v.available
+  ));
+  const hasWindowsPortable = Boolean(downloadsData?.versions.some(
+    (v) => v.platform === 'windows' &&
+           v.architecture === selectedArch &&
+           v.download_type === 'portable' &&
+           v.available
+  ));
+  const hasWindowsRelease = hasWindowsInstaller && hasWindowsPortable;
+  const showDetailedCard = Boolean(
+    currentVersion && (
+      selectedPlatform === 'windows'
+        ? hasWindowsRelease
+        : selectedPlatformHasAvailableBuild
+    )
+  );
 
   const handleDownload = (downloadType?: 'installer' | 'portable' | 'github') => {
     if (!downloadsData?.versions || downloadsData.versions.length === 0) {
@@ -400,7 +421,7 @@ export function DownloadPage() {
           <div className="bg-red-900/20 border border-red-500/30 rounded-xl p-6 mb-6">
             <p className="text-red-300">{error}</p>
           </div>
-        ) : currentVersion ? (
+        ) : showDetailedCard ? (
           <div className="bg-white/5 rounded-xl p-6 border border-white/10 mb-6">
             <div className="flex items-start justify-between mb-4">
               <div>
@@ -425,12 +446,7 @@ export function DownloadPage() {
               {selectedPlatform === 'windows' && downloadsData?.versions ? (
                 <>
                   {/* Установщик */}
-                  {downloadsData.versions.find(
-                    v => v.platform === 'windows' && 
-                         v.architecture === selectedArch && 
-                         v.download_type === 'installer' && 
-                         v.available
-                  ) && (
+                  {hasWindowsInstaller && (
                     <button
                       onClick={() => handleDownload('installer')}
                       className="w-full flex items-center justify-center gap-3 px-6 py-4 bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white font-semibold rounded-xl transition-all shadow-lg shadow-purple-500/25 hover:shadow-xl hover:shadow-purple-500/30"
@@ -441,12 +457,7 @@ export function DownloadPage() {
                   )}
 
                   {/* Portable версия */}
-                  {downloadsData.versions.find(
-                    v => v.platform === 'windows' && 
-                         v.architecture === selectedArch && 
-                         v.download_type === 'portable' && 
-                         v.available
-                  ) && (
+                  {hasWindowsPortable && (
                     <button
                       onClick={() => handleDownload('portable')}
                       className="w-full flex items-center justify-center gap-3 px-6 py-4 bg-white/10 hover:bg-white/20 border border-white/20 text-white font-semibold rounded-xl transition-all"
@@ -455,15 +466,6 @@ export function DownloadPage() {
                       <span>{t('downloadPage.downloadPortable')}</span>
                     </button>
                   )}
-
-                  {/* GitHub ссылка */}
-                  <button
-                    onClick={() => handleDownload('github')}
-                    className="w-full flex items-center justify-center gap-3 px-6 py-4 bg-white/10 hover:bg-white/20 border border-white/20 text-white font-semibold rounded-xl transition-all"
-                  >
-                    <Globe className="w-5 h-5" />
-                    <span>{t('downloadPage.downloadFromGithub')}</span>
-                  </button>
                 </>
               ) : (
                 /* Для других платформ - основная кнопка */
@@ -481,7 +483,7 @@ export function DownloadPage() {
               )}
 
               {/* Если нет доступных версий, показываем GitHub */}
-              {!currentVersion.available && currentVersion.github_url && (
+              {selectedPlatform !== 'windows' && !currentVersion.available && currentVersion.github_url && (
                 <button
                   onClick={() => handleDownload('github')}
                   className="w-full flex items-center justify-center gap-3 px-6 py-4 bg-white/10 hover:bg-white/20 border border-white/20 text-white font-semibold rounded-xl transition-all"
