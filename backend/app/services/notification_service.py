@@ -76,11 +76,11 @@ async def notify_preset_updated(
         await create_notification(
             user_id=user_id,
             notification_type=NotificationType.PRESET_UPDATED,
-            title="Пресет обновлен",
-            message=f'Пресет "{preset_name}" был обновлен. Проверьте новые настройки.',
+            title="preset_updated",
+            message="preset_updated_message",
             db=db,
             link=f"/filaments/{filament_id}",
-            extra_data={"preset_id": preset_id, "filament_id": filament_id},
+            extra_data={"preset_id": preset_id, "filament_id": filament_id, "preset_name": preset_name},
         )
 
 
@@ -112,11 +112,11 @@ async def notify_preset_deleted(
         await create_notification(
             user_id=user_id,
             notification_type=NotificationType.PRESET_DELETED,
-            title="Пресет удален",
-            message=f'Пресет "{preset_name}" был удален из каталога.',
+            title="preset_deleted",
+            message="preset_deleted_message",
             db=db,
             link=f"/filaments/{filament_id}",
-            extra_data={"preset_id": preset_id, "filament_id": filament_id},
+            extra_data={"preset_id": preset_id, "filament_id": filament_id, "preset_name": preset_name},
         )
 
 
@@ -138,11 +138,11 @@ async def notify_brand_verified(
     await create_notification(
         user_id=user_id,
         notification_type=NotificationType.BRAND_VERIFIED,
-        title="Бренд верифицирован",
-        message=f'Ваш бренд "{brand_name}" успешно верифицирован! Теперь вы можете создавать официальные пресеты и генерировать QR-коды.',
+        title="brand_verified",
+        message="brand_verified_message",
         db=db,
         link=f"/brands/{brand_id}",
-        extra_data={"brand_id": brand_id},
+        extra_data={"brand_id": brand_id, "brand_name": brand_name},
     )
 
 
@@ -164,11 +164,11 @@ async def notify_brand_request_approved(
     await create_notification(
         user_id=user_id,
         notification_type=NotificationType.BRAND_REQUEST_APPROVED,
-        title="Заявка на бренд одобрена",
-        message=f'Ваша заявка на присоединение к бренду "{brand_name}" была одобрена.',
+        title="brand_request_approved",
+        message="brand_request_approved_message",
         db=db,
         link=f"/brands/{brand_id}",
-        extra_data={"brand_id": brand_id},
+        extra_data={"brand_id": brand_id, "brand_name": brand_name},
     )
 
 
@@ -187,15 +187,11 @@ async def notify_brand_request_rejected(
         reason: Причина отклонения (опционально)
         db: Database session
     """
-    message = f'Ваша заявка на присоединение к бренду "{brand_name}" была отклонена.'
-    if reason:
-        message += f" Причина: {reason}"
-    
     await create_notification(
         user_id=user_id,
         notification_type=NotificationType.BRAND_REQUEST_REJECTED,
-        title="Заявка на бренд отклонена",
-        message=message,
+        title="brand_request_rejected",
+        message="brand_request_rejected_message",
         db=db,
         extra_data={"brand_name": brand_name, "reason": reason},
     )

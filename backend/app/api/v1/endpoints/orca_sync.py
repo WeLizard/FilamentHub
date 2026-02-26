@@ -2483,11 +2483,8 @@ async def report_deleted_presets(
 
     # Создаём уведомление
     preset_count = len(request.deleted_presets)
-    title = f"Обнаружено {preset_count} удалённых пресетов"
-    message = (
-        f"В OrcaSlicer обнаружено {preset_count} пресетов, которые были удалены локально, "
-        "но остаются в FilamentHub."
-    )
+    title = "deleted_presets_detected"
+    message = "deleted_presets_detected_message"
 
     # Сохраняем список пресетов в extra_data с указанием типа
     extra_data = {
@@ -2574,11 +2571,8 @@ async def report_deleted_presets(
                 "created_count": sum(1 for p in all_presets if p.get("is_created", False)),
                 "saved_count": sum(1 for p in all_presets if p.get("is_saved", False)),
             }
-            existing_notification.title = f"Обнаружено {len(all_presets)} удалённых пресетов"
-            existing_notification.message = (
-                f"В OrcaSlicer обнаружено {len(all_presets)} пресетов, которые были удалены локально, "
-                "но остаются в FilamentHub."
-            )
+            existing_notification.title = "deleted_presets_detected"
+            existing_notification.message = "deleted_presets_detected_message"
             await db.commit()
             await db.refresh(existing_notification)
             notification = existing_notification

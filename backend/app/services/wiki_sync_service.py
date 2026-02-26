@@ -342,9 +342,7 @@ async def sync_wiki_from_markdown(db: AsyncSession) -> dict[str, Any]:
             })
 
     total = results["created"] + results["updated"]
-    results["message"] = f"Синхронизация завершена: {total} статей обработано ({results['created']} создано, {results['updated']} обновлено)"
-
-    if results["errors"] > 0:
-        results["message"] += f", {results['errors']} ошибок"
+    results["message"] = "wiki_sync_complete"
+    results["total"] = total
 
     return results

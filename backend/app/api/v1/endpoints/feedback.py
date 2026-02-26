@@ -167,8 +167,8 @@ async def update_feedback(
             await create_notification(
                 user_id=feedback.user_id,
                 notification_type=NotificationType.ADMIN_MESSAGE,
-                title=f"Ответ на ваше обращение: {feedback.subject}",
-                message=f"Администратор ответил на ваше обращение:\n\n{update_data.admin_response}",
+                title="feedback_response",
+                message=update_data.admin_response,
                 db=db,
                 link=f"/feedback/{feedback.id}",
                 extra_data={"feedback_id": feedback.id, "feedback_type": feedback.type.value},

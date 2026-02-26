@@ -63,6 +63,6 @@ def get_maintenance_info() -> dict:
     enabled, message = _read_maintenance_file()
     return {
         "enabled": enabled,
-        "message": message or "Сайт временно недоступен. Ведутся технические работы.",
+        "message": message or "maintenance_default_message",
     }
 

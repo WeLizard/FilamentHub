@@ -322,7 +322,7 @@ def validate_profile_strict(
     if not result.is_valid:
         error_details = "; ".join(result.errors)
         raise ValueError(
-            f"Профиль '{name}' не прошел валидацию: {error_details}"
+            f"Profile '{name}' validation failed: {error_details}"
         )
 
     # Логируем предупреждения даже при успешной валидации

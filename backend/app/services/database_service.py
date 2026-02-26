@@ -18,24 +18,24 @@ from app.core.config import settings
 
 logger = logging.getLogger(__name__)
 
-# Путь к директории с миграциями
+# Path to migrations directory
 ALEMBIC_CONFIG_PATH = Path(__file__).parent.parent.parent / "alembic.ini"
 ALEMBIC_VERSIONS_PATH = Path(__file__).parent.parent.parent / "alembic" / "versions"
 
 
 def get_alembic_config() -> Config:
-    """Получить конфигурацию Alembic."""
+    """Get Alembic configuration."""
     config = Config(str(ALEMBIC_CONFIG_PATH))
-    # Экранируем % для Alembic (он интерпретирует % как интерполяцию)
+    # Escape % for Alembic (it interprets % as interpolation)
     database_url_escaped = settings.DATABASE_URL.replace('%', '%%')
     config.set_main_option("sqlalchemy.url", database_url_escaped)
     return config
 
 
 async def _ensure_migration_history_table(db: AsyncSession) -> None:
-    """Создать таблицу для истории миграций, если её нет."""
+    """Create migration history table if it doesn't exist."""
     try:
-        # Проверяем существование таблицы перед созданием
+        # Check if table exists before creating
         result = await db.execute(text("""
             SELECT EXISTS (
                 SELECT FROM information_schema.tables 
@@ -46,7 +46,7 @@ async def _ensure_migration_history_table(db: AsyncSession) -> None:
         exists = result.scalar()
         
         if not exists:
-            logger.info("Создаем таблицу alembic_migration_history...")
+            logger.info("Creating alembic_migration_history table...")
             await db.execute(text("""
                 CREATE TABLE alembic_migration_history (
                     revision VARCHAR(50) PRIMARY KEY,
@@ -56,17 +56,17 @@ async def _ensure_migration_history_table(db: AsyncSession) -> None:
                     downgraded_by VARCHAR(255)
                 )
             """))
-            logger.info("✅ Таблица alembic_migration_history создана")
+            logger.info("alembic_migration_history table created")
         else:
-            logger.debug("Таблица alembic_migration_history уже существует")
+            logger.debug("alembic_migration_history table already exists")
     except Exception as e:
-        logger.error(f"❌ Не удалось создать таблицу истории миграций: {e}", exc_info=True)
+        logger.error(f"Failed to create migration history table: {e}", exc_info=True)
         await db.rollback()
-        raise  # Пробрасываем исключение дальше, чтобы вызывающий код знал об ошибке
+        raise  # Re-raise so the caller knows about the error
 
 
 async def _record_migration_application(db: AsyncSession, revision: str, applied_by: str | None = None) -> None:
-    """Записать применение миграции в историю."""
+    """Record migration application in history."""
     await _ensure_migration_history_table(db)
     try:
         await db.execute(text("""
@@ -81,12 +81,12 @@ async def _record_migration_application(db: AsyncSession, revision: str, applied
         """), {"revision": revision, "applied_by": applied_by})
         await db.commit()
     except Exception as e:
-        logger.warning(f"Не удалось записать применение миграции {revision}: {e}")
+        logger.warning(f"Failed to record migration application {revision}: {e}")
         await db.rollback()
 
 
 async def _record_migration_downgrade(db: AsyncSession, revision: str, downgraded_by: str | None = None) -> None:
-    """Записать откат миграции в историю."""
+    """Record migration downgrade in history."""
     await _ensure_migration_history_table(db)
     try:
         await db.execute(text("""
@@ -96,41 +96,41 @@ async def _record_migration_downgrade(db: AsyncSession, revision: str, downgrade
         """), {"revision": revision, "downgraded_by": downgraded_by})
         await db.commit()
     except Exception as e:
-        logger.warning(f"Не удалось записать откат миграции {revision}: {e}")
+        logger.warning(f"Failed to record migration downgrade {revision}: {e}")
         await db.rollback()
 
 
 async def get_migration_history(db: AsyncSession) -> dict:
-    """Получить историю миграций."""
+    """Get migration history."""
     from alembic.script import ScriptDirectory
     from alembic.runtime.migration import MigrationContext
     
     config = get_alembic_config()
     script = ScriptDirectory.from_config(config)
     
-    # Получаем текущую ревизию из БД
+    # Get current revision from DB
     current_revision = None
     try:
-        # Используем прямой запрос без транзакции для чтения
-        # Явно указываем autocommit для чтения
+        # Use direct query without transaction for reading
+        # Explicitly specify autocommit for reading
         result = await db.execute(text("SELECT version_num FROM alembic_version"))
         row = result.fetchone()
         if row:
-            current_revision = str(row[0])  # Явно преобразуем в строку
-            logger.info(f"✅ Текущая ревизия из БД: {current_revision}")
+            current_revision = str(row[0])  # Explicitly convert to string
+            logger.info(f"Current revision from DB: {current_revision}")
         else:
-            logger.info("⚠️ Таблица alembic_version пуста (миграции ещё не применялись)")
+            logger.info("alembic_version table is empty (no migrations applied yet)")
     except Exception as e:
-        # Таблица alembic_version может не существовать, если миграции ещё не применялись
-        logger.warning(f"❌ Не удалось получить текущую ревизию: {e}", exc_info=True)
+        # alembic_version table may not exist if migrations haven't been applied yet
+        logger.warning(f"Failed to get current revision: {e}", exc_info=True)
         current_revision = None
     
-    # Получаем историю применения миграций
+    # Get migration application history
     migration_history_map = {}
     try:
-        # Создаем таблицу истории миграций, если её нет
+        # Create migration history table if it doesn't exist
         await _ensure_migration_history_table(db)
-        # Коммитим создание таблицы отдельно, чтобы она была доступна для запросов
+        # Commit table creation separately so it's available for queries
         await db.commit()
         
         result = await db.execute(text("""
@@ -139,7 +139,7 @@ async def get_migration_history(db: AsyncSession) -> dict:
             WHERE downgraded_at IS NULL
         """))
         for row in result.fetchall():
-            # Конвертируем datetime в ISO строку для Pydantic
+            # Convert datetime to ISO string for Pydantic
             applied_at = row[1]
             if applied_at and isinstance(applied_at, datetime):
                 applied_at = applied_at.isoformat()
@@ -148,19 +148,19 @@ async def get_migration_history(db: AsyncSession) -> dict:
                 "applied_by": row[2],
             }
     except Exception as e:
-        logger.warning(f"Не удалось получить историю миграций: {e}")
+        logger.warning(f"Failed to get migration history: {e}")
     
-    # Получаем все миграции
+    # Get all migrations
     migrations = []
     heads = [rev.revision for rev in script.get_revisions("heads")]
     
-    # Сначала строим карту всех миграций для быстрого доступа
+    # First build a map of all migrations for quick access
     all_revisions_map = {}
     for rev in script.walk_revisions():
         all_revisions_map[rev.revision] = rev
-        # Получаем дату применения из истории, если есть
+        # Get application date from history, if available
         history = migration_history_map.get(rev.revision, {})
-        # down_revision может быть tuple (merge миграции) - конвертируем в строку
+        # down_revision can be a tuple (merge migration) - convert to string
         down_rev = rev.down_revision
         if isinstance(down_rev, tuple):
             down_rev = ",".join(down_rev)
@@ -170,60 +170,60 @@ async def get_migration_history(db: AsyncSession) -> dict:
             "down_revision": down_rev,
             "branch_labels": ",".join(rev.branch_labels) if rev.branch_labels else None,
             "is_head": rev.revision in heads,
-            "is_applied": False,  # Будет обновлено ниже
-            "applied_at": history.get("applied_at"),  # Дата из истории миграций
+            "is_applied": False,  # Will be updated below
+            "applied_at": history.get("applied_at"),  # Date from migration history
             "description": rev.doc if rev.doc else None,
         }
         migrations.append(migration)
     
-    # Проверяем, какая миграция применена
-    # Alembic хранит только текущую ревизию, поэтому нужно проверить цепочку
+    # Check which migration is applied
+    # Alembic stores only the current revision, so we need to check the chain
     applied_revisions = set()
     if current_revision:
-        # Находим все применённые миграции (от текущей до начальной)
-        # Используем рекурсивный подход для обработки всех веток
+        # Find all applied migrations (from current to initial)
+        # Use recursive approach to handle all branches
         visited = set()
         
         def add_migration_chain(revision_id: str | None):
-            """Рекурсивно добавляет миграцию и все её предшественники."""
+            """Recursively add migration and all its predecessors."""
             if revision_id is None or revision_id in visited:
                 return
             
             visited.add(revision_id)
             
-            # Получаем ревизию из карты или через script
+            # Get revision from map or via script
             rev = all_revisions_map.get(revision_id)
             if not rev:
                 try:
                     rev = script.get_revision(revision_id)
                 except Exception:
-                    logger.warning(f"Не удалось найти ревизию {revision_id}")
+                    logger.warning(f"Failed to find revision {revision_id}")
                     applied_revisions.add(revision_id)
                     return
             
             if rev:
                 applied_revisions.add(rev.revision)
-                logger.debug(f"Добавлена применённая миграция: {rev.revision}")
+                logger.debug(f"Added applied migration: {rev.revision}")
                 
-                # Обрабатываем down_revision
+                # Process down_revision
                 if rev.down_revision:
                     if isinstance(rev.down_revision, tuple):
-                        # Множественные down_revision (merge) - обрабатываем все ветки
-                        logger.debug(f"Обнаружен merge в {rev.revision}, ветки: {rev.down_revision}")
+                        # Multiple down_revision (merge) - process all branches
+                        logger.debug(f"Merge detected in {rev.revision}, branches: {rev.down_revision}")
                         for down_rev in rev.down_revision:
                             if down_rev:
                                 add_migration_chain(down_rev)
                     else:
-                        # Одна ветка
+                        # Single branch
                         add_migration_chain(rev.down_revision)
         
-        # Начинаем с текущей ревизии
-        logger.info(f"Начинаем построение цепочки применённых миграций с {current_revision}")
+        # Start from current revision
+        logger.info(f"Building applied migration chain starting from {current_revision}")
         add_migration_chain(current_revision)
-        logger.info(f"Найдено применённых миграций: {len(applied_revisions)}")
-        logger.debug(f"Применённые ревизии: {sorted(applied_revisions)}")
+        logger.info(f"Found applied migrations: {len(applied_revisions)}")
+        logger.debug(f"Applied revisions: {sorted(applied_revisions)}")
     
-    # Обновляем статус применения
+    # Update application status
     for migration in migrations:
         migration["is_applied"] = migration["revision"] in applied_revisions
     
@@ -236,9 +236,9 @@ async def get_migration_history(db: AsyncSession) -> dict:
 
 async def validate_migration_integrity(db: AsyncSession) -> tuple[bool, list[str]]:
     """
-    Проверить целостность БД после применения миграций.
+    Validate database integrity after applying migrations.
 
-    Проверяет, что все таблицы из миграций действительно существуют в БД.
+    Checks that all tables from migrations actually exist in the database.
 
     Returns:
         (is_valid, list_of_missing_tables)
@@ -248,9 +248,9 @@ async def validate_migration_integrity(db: AsyncSession) -> tuple[bool, list[str
     config = get_alembic_config()
     script = ScriptDirectory.from_config(config)
 
-    # Получаем список таблиц из моделей SQLAlchemy
+    # Get table list from SQLAlchemy models
     from app.db.base import Base
-    # Импортируем ВСЕ модели для регистрации в metadata
+    # Import ALL models to register them in metadata
     from app.models import (  # noqa: F401
         Brand,
         BrandRequest,
@@ -264,7 +264,7 @@ async def validate_migration_integrity(db: AsyncSession) -> tuple[bool, list[str
         User,
         UserSavedPreset,
     )
-    # Дополнительные модели (могут отсутствовать в старых версиях)
+    # Additional models (may be absent in older versions)
     try:
         from app.models.feedback import Feedback  # noqa: F401
     except ImportError:
@@ -298,12 +298,12 @@ async def validate_migration_integrity(db: AsyncSession) -> tuple[bool, list[str
     except ImportError:
         pass
     
-    # Получаем все таблицы из metadata
+    # Get all tables from metadata
     expected_tables = set(Base.metadata.tables.keys())
-    # Добавляем alembic_version, которая не в моделях
+    # Add alembic_version which is not in models
     expected_tables.add('alembic_version')
     
-    # Получаем реальные таблицы из БД
+    # Get actual tables from DB
     try:
         result = await db.execute(text("""
             SELECT table_name 
@@ -312,69 +312,69 @@ async def validate_migration_integrity(db: AsyncSession) -> tuple[bool, list[str
         """))
         existing_tables = {row[0] for row in result.fetchall()}
         
-        # Находим отсутствующие таблицы
+        # Find missing tables
         missing_tables = expected_tables - existing_tables
-        
+
         return len(missing_tables) == 0, list(missing_tables)
     except Exception as e:
-        logger.error(f"Ошибка проверки целостности БД: {e}", exc_info=True)
-        return False, [f"Ошибка проверки: {str(e)}"]
+        logger.error(f"Database integrity check error: {e}", exc_info=True)
+        return False, [f"Validation error: {str(e)}"]
 
 
 async def recreate_missing_tables(db: AsyncSession) -> tuple[bool, str, list[str]]:
     """
-    Восстановить все недостающие таблицы через применение миграций Alembic.
-    
-    Сначала пытается применить все неприменённые миграции до head.
-    Если это не помогает, использует SQLAlchemy metadata как fallback.
+    Restore all missing tables by applying Alembic migrations.
+
+    First tries to apply all unapplied migrations up to head.
+    If that doesn't help, uses SQLAlchemy metadata as a fallback.
     
     Returns:
         (success, message, created_tables)
     """
     try:
-        # Шаг 1: Проверяем, какие таблицы отсутствуют
+        # Step 1: Check which tables are missing
         is_valid, missing_tables = await validate_migration_integrity(db)
         
         if is_valid:
-            return True, "Все таблицы уже существуют. Нечего восстанавливать.", []
+            return True, "All tables already exist. Nothing to restore.", []
         
         if not missing_tables:
-            return True, "Все таблицы уже существуют. Нечего восстанавливать.", []
+            return True, "All tables already exist. Nothing to restore.", []
         
-        # Шаг 2: Пытаемся применить миграции до head
-        # Это правильный способ создания таблиц
-        logger.info(f"Обнаружены отсутствующие таблицы: {missing_tables}. Применяем миграции до head...")
+        # Step 2: Try to apply migrations up to head
+        # This is the proper way to create tables
+        logger.info(f"Missing tables detected: {missing_tables}. Applying migrations up to head...")
         
         try:
             config = get_alembic_config()
             
             def run_upgrade():
-                # Применяем все миграции до head
+                # Apply all migrations up to head
                 command.upgrade(config, "head")
             
             await asyncio.to_thread(run_upgrade)
             
-            # Проверяем результат
+            # Check the result
             is_valid_after, still_missing = await validate_migration_integrity(db)
             
             if is_valid_after:
-                return True, f"✅ Успешно восстановлено через миграции. Все таблицы созданы.", list(missing_tables)
+                return True, f"Successfully restored via migrations. All tables created.", list(missing_tables)
             
             if still_missing:
-                logger.warning(f"После применения миграций всё ещё отсутствуют таблицы: {still_missing}")
-                # Продолжаем к fallback методу
+                logger.warning(f"Tables still missing after applying migrations: {still_missing}")
+                # Continue to fallback method
                 missing_tables = still_missing
         
         except Exception as migration_error:
-            logger.warning(f"Не удалось применить миграции: {migration_error}. Используем fallback метод.")
-            # Продолжаем к fallback методу
+            logger.warning(f"Failed to apply migrations: {migration_error}. Using fallback method.")
+            # Continue to fallback method
         
-        # Шаг 3: Fallback - создаём через SQLAlchemy metadata
-        # Это используется только если миграции не помогли
-        logger.info(f"Используем fallback метод для создания таблиц: {missing_tables}")
+        # Step 3: Fallback - create via SQLAlchemy metadata
+        # This is only used if migrations didn't help
+        logger.info(f"Using fallback method to create tables: {missing_tables}")
 
         from app.db.base import Base
-        # Импортируем ВСЕ модели для регистрации в metadata
+        # Import ALL models to register them in metadata
         from app.models import (  # noqa: F401
             Brand,
             BrandRequest,
@@ -388,7 +388,7 @@ async def recreate_missing_tables(db: AsyncSession) -> tuple[bool, str, list[str
             User,
             UserSavedPreset,
         )
-        # Дополнительные модели
+        # Additional models
         try:
             from app.models.feedback import Feedback  # noqa: F401
             from app.models.notification import Notification  # noqa: F401
@@ -401,7 +401,7 @@ async def recreate_missing_tables(db: AsyncSession) -> tuple[bool, str, list[str
         except ImportError:
             pass
         
-        # Получаем список существующих таблиц
+        # Get list of existing tables
         result = await db.execute(text("""
             SELECT table_name 
             FROM information_schema.tables 
@@ -409,26 +409,26 @@ async def recreate_missing_tables(db: AsyncSession) -> tuple[bool, str, list[str
         """))
         existing_tables = {row[0] for row in result.fetchall()}
         
-        # Получаем все таблицы из metadata
+        # Get all tables from metadata
         all_tables = set(Base.metadata.tables.keys())
-        
-        # Находим отсутствующие таблицы (исключаем alembic_version)
+
+        # Find missing tables (excluding alembic_version)
         tables_to_create = all_tables - existing_tables - {'alembic_version'}
         
         if not tables_to_create:
-            return True, "Все таблицы уже существуют после применения миграций.", []
+            return True, "All tables already exist after applying migrations.", []
         
-        # Создаём недостающие таблицы через SQLAlchemy metadata
+        # Create missing tables via SQLAlchemy metadata
         from app.db.session import engine
         
         async def create_tables_async():
             async with engine.begin() as conn:
-                # Используем run_sync для выполнения синхронного create_all
+                # Use run_sync to execute synchronous create_all
                 await conn.run_sync(Base.metadata.create_all, checkfirst=True)
         
         await create_tables_async()
         
-        # Проверяем, что таблицы действительно созданы
+        # Verify that tables were actually created
         result = await db.execute(text("""
             SELECT table_name 
             FROM information_schema.tables 
@@ -438,23 +438,23 @@ async def recreate_missing_tables(db: AsyncSession) -> tuple[bool, str, list[str
         actually_created = tables_to_create & new_existing_tables
         
         if actually_created:
-            warning = " (⚠️ ВНИМАНИЕ: использован fallback метод через metadata. Проверьте ENUM типы и индексы!)"
-            return True, f"Создано таблиц через fallback метод: {len(actually_created)}{warning}", list(actually_created)
+            warning = " (WARNING: fallback method via metadata was used. Check ENUM types and indexes!)"
+            return True, f"Tables created via fallback method: {len(actually_created)}{warning}", list(actually_created)
         else:
-            return False, "Не удалось создать таблицы. Проверьте логи для деталей.", []
+            return False, "Failed to create tables. Check logs for details.", []
     
     except Exception as e:
-        logger.error(f"Ошибка восстановления таблиц: {e}", exc_info=True)
-        return False, f"Ошибка восстановления таблиц: {str(e)}", []
+        logger.error(f"Table restoration error: {e}", exc_info=True)
+        return False, f"Table restoration error: {str(e)}", []
 
 
 async def apply_migration(revision: str = "head", applied_by: str | None = None) -> tuple[bool, str, Optional[str], Optional[list[str]]]:
     """
-    Применить миграцию через Alembic с валидацией и записью в историю.
-    
+    Apply migration via Alembic with validation and history recording.
+
     Args:
-        revision: Ревизия для применения ('head', '+1', '-1', или конкретная ревизия)
-        applied_by: Имя пользователя, применившего миграцию (опционально)
+        revision: Revision to apply ('head', '+1', '-1', or a specific revision)
+        applied_by: Username of the person who applied the migration (optional)
     
     Returns:
         (success, message, current_revision, validation_errors)
@@ -462,37 +462,37 @@ async def apply_migration(revision: str = "head", applied_by: str | None = None)
     try:
         config = get_alembic_config()
         
-        # Определяем, какие миграции будут применены
-        # Для этого нужно получить текущую ревизию и вычислить целевую
+        # Determine which migrations will be applied
+        # Need to get current revision and compute the target
         from app.db.session import AsyncSessionLocal
         async with AsyncSessionLocal() as pre_db:
             result = await pre_db.execute(text("SELECT version_num FROM alembic_version"))
             row = result.fetchone()
             old_revision = row[0] if row else None
         
-        # Запускаем Alembic команду синхронно (Alembic не поддерживает async напрямую)
-        # Используем asyncio.to_thread для неблокирующего выполнения
+        # Run Alembic command synchronously (Alembic doesn't support async directly)
+        # Use asyncio.to_thread for non-blocking execution
         def run_upgrade():
             command.upgrade(config, revision)
         
         await asyncio.to_thread(run_upgrade)
         
-        # Получаем текущую ревизию после применения
+        # Get current revision after application
         async with AsyncSessionLocal() as db:
             result = await db.execute(text("SELECT version_num FROM alembic_version"))
             row = result.fetchone()
             current_revision = row[0] if row else None
             
-            # Записываем в историю все применённые миграции
+            # Record all applied migrations in history
             if current_revision and current_revision != old_revision:
                 from alembic.script import ScriptDirectory
                 script = ScriptDirectory.from_config(config)
                 applied_revisions = []
                 
-                # Находим все миграции между old_revision и current_revision
+                # Find all migrations between old_revision and current_revision
                 if old_revision:
-                    # Строим путь от старой до новой ревизии через down_revision цепочку
-                    # Начинаем с current_revision и идём назад до old_revision
+                    # Build path from old to new revision via down_revision chain
+                    # Start from current_revision and go back to old_revision
                     path = []
                     current = current_revision
                     visited = set()
@@ -502,7 +502,7 @@ async def apply_migration(revision: str = "head", applied_by: str | None = None)
                         path.append(current)
                         
                         if current == old_revision:
-                            # Нашли начало пути, разворачиваем список
+                            # Found the start of path, reverse the list
                             applied_revisions = list(reversed(path))
                             break
                         
@@ -510,7 +510,7 @@ async def apply_migration(revision: str = "head", applied_by: str | None = None)
                             rev = script.get_revision(current)
                             if rev and rev.down_revision:
                                 if isinstance(rev.down_revision, tuple):
-                                    # Merge - берём первую ветку
+                                    # Merge - take the first branch
                                     current = rev.down_revision[0] if rev.down_revision[0] else None
                                 else:
                                     current = rev.down_revision
@@ -519,40 +519,40 @@ async def apply_migration(revision: str = "head", applied_by: str | None = None)
                         except Exception:
                             break
                     
-                    # Если не удалось найти путь, просто записываем текущую
+                    # If path not found, just record the current one
                     if not applied_revisions:
                         applied_revisions = [current_revision]
                 else:
-                    # Если не было старой ревизии, записываем текущую
+                    # If there was no old revision, record the current one
                     applied_revisions = [current_revision]
                 
-                # Записываем все применённые миграции
+                # Record all applied migrations
                 for rev in applied_revisions:
                     await _record_migration_application(db, rev, applied_by)
         
-        # Валидация после применения миграции
+        # Validation after migration application
         async with AsyncSessionLocal() as validation_db:
             is_valid, missing_tables = await validate_migration_integrity(validation_db)
             
             if not is_valid:
-                warning_msg = f"Миграция {revision} применена, но обнаружены проблемы: отсутствуют таблицы {', '.join(missing_tables)}"
+                warning_msg = f"Migration {revision} applied, but issues detected: missing tables {', '.join(missing_tables)}"
                 logger.warning(warning_msg)
-                return True, f"Миграция {revision} применена. ВНИМАНИЕ: {warning_msg}", current_revision, missing_tables
+                return True, f"Migration {revision} applied. WARNING: {warning_msg}", current_revision, missing_tables
         
-        return True, f"Миграция {revision} успешно применена и проверена", current_revision, None
+        return True, f"Migration {revision} applied and verified successfully", current_revision, None
     
     except Exception as e:
-        logger.error(f"Ошибка применения миграции {revision}: {e}", exc_info=True)
-        return False, f"Ошибка применения миграции: {str(e)}", None, None
+        logger.error(f"Migration application error {revision}: {e}", exc_info=True)
+        return False, f"Migration application error: {str(e)}", None, None
 
 
 async def downgrade_migration(revision: str = "-1", downgraded_by: str | None = None) -> tuple[bool, str, Optional[str]]:
     """
-    Откатить миграцию через Alembic с записью в историю.
+    Downgrade migration via Alembic with history recording.
 
     Args:
-        revision: Ревизия для отката ('-1', 'base', или конкретная ревизия)
-        downgraded_by: Имя пользователя, откатившего миграцию (опционально)
+        revision: Revision to downgrade to ('-1', 'base', or a specific revision)
+        downgraded_by: Username of the person who downgraded the migration (optional)
 
     Returns:
         (success, message, current_revision)
@@ -560,7 +560,7 @@ async def downgrade_migration(revision: str = "-1", downgraded_by: str | None = 
     try:
         config = get_alembic_config()
 
-        # Получаем текущую ревизию до отката
+        # Get current revision before downgrade
         from app.db.session import AsyncSessionLocal
         async with AsyncSessionLocal() as pre_db:
             result = await pre_db.execute(text("SELECT version_num FROM alembic_version"))
@@ -572,35 +572,35 @@ async def downgrade_migration(revision: str = "-1", downgraded_by: str | None = 
 
         await asyncio.to_thread(run_downgrade)
 
-        # Получаем текущую ревизию после отката
+        # Get current revision after downgrade
         async with AsyncSessionLocal() as db:
             result = await db.execute(text("SELECT version_num FROM alembic_version"))
             row = result.fetchone()
             current_revision = row[0] if row else None
 
-            # Записываем откат в историю
+            # Record downgrade in history
             if old_revision and old_revision != current_revision:
                 await _record_migration_downgrade(db, old_revision, downgraded_by)
 
-        return True, f"Миграция успешно откачена до {revision}", current_revision
+        return True, f"Migration successfully downgraded to {revision}", current_revision
 
     except Exception as e:
-        logger.error(f"Ошибка отката миграции до {revision}: {e}", exc_info=True)
-        return False, f"Ошибка отката миграции: {str(e)}", None
+        logger.error(f"Migration downgrade error to {revision}: {e}", exc_info=True)
+        return False, f"Migration downgrade error: {str(e)}", None
 
 
 async def stamp_migration(revision: str = "head", stamped_by: str | None = None) -> tuple[bool, str, Optional[str]]:
     """
-    Пометить миграцию как применённую БЕЗ выполнения SQL.
+    Stamp migration as applied WITHOUT executing SQL.
 
-    Полезно когда:
-    - Миграция частично применилась (enum создан, но таблица нет)
-    - Нужно синхронизировать состояние alembic_version с реальной БД
-    - База была создана вручную и нужно пометить миграции как применённые
+    Useful when:
+    - Migration was partially applied (enum created, but table wasn't)
+    - Need to synchronize alembic_version state with actual DB
+    - Database was created manually and migrations need to be marked as applied
 
     Args:
-        revision: Ревизия для пометки ('head' или конкретная ревизия)
-        stamped_by: Имя пользователя (опционально)
+        revision: Revision to stamp ('head' or a specific revision)
+        stamped_by: Username (optional)
 
     Returns:
         (success, message, current_revision)
@@ -613,30 +613,30 @@ async def stamp_migration(revision: str = "head", stamped_by: str | None = None)
 
         await asyncio.to_thread(run_stamp)
 
-        # Получаем текущую ревизию после stamp
+        # Get current revision after stamp
         from app.db.session import AsyncSessionLocal
         async with AsyncSessionLocal() as db:
             result = await db.execute(text("SELECT version_num FROM alembic_version"))
             row = result.fetchone()
             current_revision = row[0] if row else None
 
-            # Записываем в историю
+            # Record in history
             if current_revision:
                 await _record_migration_application(db, current_revision, stamped_by)
 
-        return True, f"Миграция {revision} помечена как применённая (без выполнения SQL)", current_revision
+        return True, f"Migration {revision} stamped as applied (without executing SQL)", current_revision
 
     except Exception as e:
-        logger.error(f"Ошибка пометки миграции {revision}: {e}", exc_info=True)
-        return False, f"Ошибка пометки миграции: {str(e)}", None
+        logger.error(f"Migration stamp error {revision}: {e}", exc_info=True)
+        return False, f"Migration stamp error: {str(e)}", None
 
 
 async def list_database_dumps() -> list[dict]:
     """
-    Получить список всех дампов базы данных.
-    
+    Get list of all database dumps.
+
     Returns:
-        Список словарей с информацией о дампах: filename, size, created_at, format
+        List of dicts with dump info: filename, size, created_at, format
     """
     try:
         dumps_dir = Path(settings.UPLOAD_DIR) / "database_dumps"
@@ -649,7 +649,7 @@ async def list_database_dumps() -> list[dict]:
                 stat = file_path.stat()
                 filename = file_path.name
                 
-                # Определяем формат по расширению
+                # Determine format by extension
                 if filename.endswith('.dump'):
                     format_type = 'custom'
                 elif filename.endswith('.sql'):
@@ -667,21 +667,21 @@ async def list_database_dumps() -> list[dict]:
                     "format": format_type,
                 })
         
-        # Сортируем по дате создания (новые первыми)
+        # Sort by creation date (newest first)
         dumps.sort(key=lambda x: x["created_at"], reverse=True)
         return dumps
     
     except Exception as e:
-        logger.error(f"Ошибка получения списка дампов: {e}", exc_info=True)
+        logger.error(f"Error getting dump list: {e}", exc_info=True)
         return []
 
 
 async def delete_database_dump(filename: str) -> tuple[bool, str]:
     """
-    Удалить файл дампа базы данных.
-    
+    Delete a database dump file.
+
     Args:
-        filename: Имя файла дампа
+        filename: Dump file name
     
     Returns:
         (success, message)
@@ -690,31 +690,31 @@ async def delete_database_dump(filename: str) -> tuple[bool, str]:
         dumps_dir = Path(settings.UPLOAD_DIR) / "database_dumps"
         dump_file = dumps_dir / filename
         
-        # Проверяем, что файл существует и находится в правильной директории
+        # Check that file exists and is in the correct directory
         if not dump_file.exists():
-            return False, f"Файл дампа не найден: {filename}"
-        
-        # Проверяем, что файл действительно в директории дампов (безопасность)
+            return False, f"Dump file not found: {filename}"
+
+        # Check that the file is actually in the dumps directory (security)
         if not str(dump_file).startswith(str(dumps_dir.resolve())):
-            return False, "Недопустимый путь к файлу"
-        
-        # Удаляем файл
+            return False, "Invalid file path"
+
+        # Delete the file
         dump_file.unlink()
         
-        return True, f"Файл дампа {filename} успешно удалён"
+        return True, f"Dump file {filename} deleted successfully"
     
     except Exception as e:
-        logger.error(f"Ошибка удаления дампа {filename}: {e}", exc_info=True)
-        return False, f"Ошибка удаления: {str(e)}"
+        logger.error(f"Error deleting dump {filename}: {e}", exc_info=True)
+        return False, f"Deletion error: {str(e)}"
 
 
 async def get_database_stats(db: AsyncSession) -> dict:
-    """Получить статистику базы данных."""
-    # Получаем имя базы данных
+    """Get database statistics."""
+    # Get database name
     db_name_result = await db.execute(text("SELECT current_database()"))
     db_name = db_name_result.scalar()
     
-    # Получаем размер базы данных
+    # Get database size
     size_result = await db.execute(
         text("SELECT pg_size_pretty(pg_database_size(current_database())) as size, "
              "pg_database_size(current_database()) as size_bytes")
@@ -723,7 +723,7 @@ async def get_database_stats(db: AsyncSession) -> dict:
     db_size = size_row[0] if size_row else "0 bytes"
     db_size_bytes = size_row[1] if size_row else 0
     
-    # Получаем статистику по таблицам
+    # Get table statistics
     tables_result = await db.execute(
         text("""
             SELECT 
@@ -744,8 +744,8 @@ async def get_database_stats(db: AsyncSession) -> dict:
     
     table_stats = []
     for row in tables_result.fetchall():
-        # Получаем количество записей в таблице
-        # Безопасное использование имён таблиц (они уже из pg_tables, так что безопасны)
+        # Get row count for table
+        # Safe use of table names (they come from pg_tables, so they're safe)
         schema_name = row[0].replace('"', '""')
         table_name = row[1].replace('"', '""')
         count_result = await db.execute(
@@ -776,18 +776,18 @@ async def export_database(
     tables: Optional[list[str]] = None,
 ) -> tuple[bool, str, Optional[str], Optional[int]]:
     """
-    Экспортировать базу данных через pg_dump.
-    
+    Export database via pg_dump.
+
     Args:
-        format: Формат экспорта ('custom', 'plain', 'tar')
-        include_data: Включать ли данные (True) или только схему (False)
-        tables: Список таблиц для экспорта (None = все таблицы)
+        format: Export format ('custom', 'plain', 'tar')
+        include_data: Include data (True) or schema only (False)
+        tables: List of tables to export (None = all tables)
     
     Returns:
         (success, message, filename, size)
     """
     try:
-        # Парсим DATABASE_URL для получения параметров подключения
+        # Parse DATABASE_URL to get connection parameters
         from urllib.parse import urlparse
         parsed = urlparse(settings.DATABASE_URL.replace("+asyncpg", ""))
         
@@ -797,11 +797,11 @@ async def export_database(
         db_host = parsed.hostname or "localhost"
         db_port = parsed.port or 5432
         
-        # Создаём директорию для дампов если её нет
+        # Create dumps directory if it doesn't exist
         dumps_dir = Path(settings.UPLOAD_DIR) / "database_dumps"
         dumps_dir.mkdir(parents=True, exist_ok=True)
         
-        # Генерируем имя файла
+        # Generate filename
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         if format == "custom":
             ext = ".dump"
@@ -815,14 +815,14 @@ async def export_database(
         filename = f"filamenthub_backup_{timestamp}{ext}"
         filepath = dumps_dir / filename
         
-        # Формируем команду pg_dump
+        # Build pg_dump command
         cmd = [
             "pg_dump",
             "-h", db_host,
             "-p", str(db_port),
             "-U", db_user,
             "-d", db_name,
-            "-F", format[0],  # 'c' для custom, 'p' для plain, 't' для tar
+            "-F", format[0],  # 'c' for custom, 'p' for plain, 't' for tar
         ]
         
         if not include_data:
@@ -832,11 +832,11 @@ async def export_database(
             for table in tables:
                 cmd.extend(["-t", table])
         
-        # Устанавливаем переменную окружения для пароля
+        # Set environment variable for password
         env = os.environ.copy()
         env["PGPASSWORD"] = db_password
         
-        # Выполняем экспорт
+        # Execute export
         def run_export():
             with open(filepath, "wb") as f:
                 process = subprocess.run(
@@ -852,16 +852,16 @@ async def export_database(
         
         if success:
             size = filepath.stat().st_size
-            return True, f"База данных успешно экспортирована", filename, size
+            return True, f"Database exported successfully", filename, size
         else:
-            return False, "Ошибка экспорта базы данных", None, None
+            return False, "Database export error", None, None
     
     except subprocess.CalledProcessError as e:
-        logger.error(f"Ошибка экспорта базы данных: {e.stderr.decode()}", exc_info=True)
-        return False, f"Ошибка экспорта: {e.stderr.decode()}", None, None
+        logger.error(f"Database export error: {e.stderr.decode()}", exc_info=True)
+        return False, f"Export error: {e.stderr.decode()}", None, None
     except Exception as e:
-        logger.error(f"Ошибка экспорта базы данных: {e}", exc_info=True)
-        return False, f"Ошибка экспорта: {str(e)}", None, None
+        logger.error(f"Database export error: {e}", exc_info=True)
+        return False, f"Export error: {str(e)}", None, None
 
 
 async def import_database(
@@ -871,19 +871,19 @@ async def import_database(
     create: bool = False,
 ) -> tuple[bool, str]:
     """
-    Импортировать базу данных через pg_restore или psql.
-    
+    Import database via pg_restore or psql.
+
     Args:
-        filepath: Путь к файлу дампа
-        format: Формат импорта ('custom', 'plain', 'tar')
-        clean: Очистить базу перед импортом
-        create: Создать базу если не существует
+        filepath: Path to the dump file
+        format: Import format ('custom', 'plain', 'tar')
+        clean: Clean database before import
+        create: Create database if it doesn't exist
     
     Returns:
         (success, message)
     """
     try:
-        # Парсим DATABASE_URL
+        # Parse DATABASE_URL
         from urllib.parse import urlparse
         parsed = urlparse(settings.DATABASE_URL.replace("+asyncpg", ""))
         
@@ -893,14 +893,14 @@ async def import_database(
         db_host = parsed.hostname or "localhost"
         db_port = parsed.port or 5432
         
-        # Проверяем существование файла
+        # Check file existence
         dump_file = Path(settings.UPLOAD_DIR) / "database_dumps" / filepath
         if not dump_file.exists():
-            return False, f"Файл дампа не найден: {filepath}"
+            return False, f"Dump file not found: {filepath}"
         
-        # Формируем команду в зависимости от формата
+        # Build command depending on format
         if format == "plain":
-            # Для plain используется psql
+            # For plain format, use psql
             cmd = [
                 "psql",
                 "-h", db_host,
@@ -910,7 +910,7 @@ async def import_database(
                 "-f", str(dump_file),
             ]
         else:
-            # Для custom и tar используется pg_restore
+            # For custom and tar formats, use pg_restore
             cmd = [
                 "pg_restore",
                 "-h", db_host,
@@ -938,38 +938,38 @@ async def import_database(
                     stderr=subprocess.PIPE,
                     env=env,
                     check=True,
-                    timeout=300,  # Таймаут 5 минут для больших дампов
+                    timeout=300,  # 5 minute timeout for large dumps
                 )
-                return True, process.stdout.decode() if process.stdout else "База данных успешно импортирована"
+                return True, process.stdout.decode() if process.stdout else "Database imported successfully"
             except subprocess.TimeoutExpired:
-                return False, "Таймаут импорта: операция заняла слишком много времени (>5 минут)"
+                return False, "Import timeout: operation took too long (>5 minutes)"
             except subprocess.CalledProcessError as e:
                 error_msg = e.stderr.decode() if e.stderr else str(e)
-                logger.error(f"Ошибка импорта: {error_msg}")
-                return False, f"Ошибка импорта: {error_msg[:500]}"  # Ограничиваем длину сообщения
+                logger.error(f"Import error: {error_msg}")
+                return False, f"Import error: {error_msg[:500]}"  # Limit message length
             except Exception as e:
-                logger.error(f"Неожиданная ошибка импорта: {e}", exc_info=True)
-                return False, f"Ошибка импорта: {str(e)}"
+                logger.error(f"Unexpected import error: {e}", exc_info=True)
+                return False, f"Import error: {str(e)}"
         
         success, result_message = await asyncio.to_thread(run_import)
         
         if success:
-            return True, result_message if isinstance(result_message, str) else "База данных успешно импортирована"
+            return True, result_message if isinstance(result_message, str) else "Database imported successfully"
         else:
-            return False, result_message if isinstance(result_message, str) else "Ошибка импорта базы данных"
+            return False, result_message if isinstance(result_message, str) else "Database import error"
     
     except subprocess.CalledProcessError as e:
-        logger.error(f"Ошибка импорта базы данных: {e.stderr.decode()}", exc_info=True)
-        return False, f"Ошибка импорта: {e.stderr.decode()}"
+        logger.error(f"Database import error: {e.stderr.decode()}", exc_info=True)
+        return False, f"Import error: {e.stderr.decode()}"
     except Exception as e:
-        logger.error(f"Ошибка импорта базы данных: {e}", exc_info=True)
-        return False, f"Ошибка импорта: {str(e)}"
+        logger.error(f"Database import error: {e}", exc_info=True)
+        return False, f"Import error: {str(e)}"
 
 
 async def get_table_structure(db: AsyncSession, table_name: str, schema_name: str = "public") -> dict:
-    """Получить структуру таблицы (колонки, индексы, ограничения)."""
-    
-    # Получаем информацию о колонках
+    """Get table structure (columns, indexes, constraints)."""
+
+    # Get column information
     columns_result = await db.execute(
         text("""
             SELECT 
@@ -995,7 +995,7 @@ async def get_table_structure(db: AsyncSession, table_name: str, schema_name: st
             "character_maximum_length": row[4],
         })
     
-    # Получаем информацию об индексах
+    # Get index information
     indexes_result = await db.execute(
         text("""
             SELECT 
@@ -1072,7 +1072,7 @@ async def get_table_data(
     columns = [row[0] for row in columns_result.fetchall()]
     
     if not columns:
-        raise ValueError(f"Таблица {schema_name}.{table_name} не найдена или не имеет колонок")
+        raise ValueError(f"Table {schema_name}.{table_name} not found or has no columns")
     
     # Строим WHERE для поиска
     where_clause = ""

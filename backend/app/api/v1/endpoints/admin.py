@@ -1380,7 +1380,7 @@ async def check_database_integrity(
     if is_valid:
         message = "database_ok"
     else:
-        message = f"Обнаружены проблемы: отсутствуют таблицы {', '.join(missing_tables)}"
+        message = f"database_missing_tables: {', '.join(missing_tables)}"
     
     return DatabaseIntegrityResponse(
         is_valid=is_valid,
