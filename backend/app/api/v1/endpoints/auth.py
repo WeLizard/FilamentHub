@@ -14,10 +14,15 @@ from sqlalchemy import func, select, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.core.dependencies import get_current_active_user, get_current_user
+from app.core.dependencies import (
+    get_current_active_user,
+    get_current_user,
+    is_token_revoked,
+)
 from app.core.security import (
     create_access_token,
     create_refresh_token,
+    decode_access_token,
     decode_refresh_token,
     decode_email_verification_token,
     decode_password_reset_token,
@@ -25,6 +30,7 @@ from app.core.security import (
     generate_email_verification_token,
     generate_password_reset_token,
     get_password_hash,
+    token_fingerprint,
     verify_password,
 )
 from app.services.email_validator import is_personal_email, normalize_website_url, validate_email_domain
@@ -32,6 +38,7 @@ from app.db.session import get_db
 from app.models.user import User, UserRole
 from app.models.brand import Brand
 from app.models.preset import Preset
+from app.models.revoked_token import RevokedToken
 from app.models.user_saved_preset import UserSavedPreset
 from app.schemas.user import (
     APIKeyResponse,
@@ -40,6 +47,7 @@ from app.schemas.user import (
     ForgotPasswordRequest,
     ForgotPasswordResponse,
     LoginRequest,
+    LogoutRequest,
     RefreshTokenRequest,
     RefreshTokenResponse,
     RegisterRequest,
@@ -78,6 +86,43 @@ from app.core.errors import (
     ERR_WRONG_PASSWORD,
     raise_error,
 )
+
+
+def _extract_expiry(payload: dict | None) -> datetime | None:
+    """Convert JWT exp claim to timezone-aware datetime."""
+    if not payload:
+        return None
+
+    exp = payload.get("exp")
+    if exp is None:
+        return None
+
+    try:
+        exp_timestamp = int(exp)
+    except (TypeError, ValueError):
+        return None
+
+    return datetime.fromtimestamp(exp_timestamp, tz=timezone.utc)
+
+
+async def _revoke_token_if_valid(
+    token: str,
+    payload: dict | None,
+    db: AsyncSession,
+) -> None:
+    """Store token fingerprint in revoked_tokens when token payload is valid."""
+    expires_at = _extract_expiry(payload)
+    if not expires_at:
+        return
+
+    fingerprint = token_fingerprint(token)
+    existing = await db.execute(
+        select(RevokedToken.id).where(RevokedToken.jti == fingerprint)
+    )
+    if existing.scalar_one_or_none():
+        return
+
+    db.add(RevokedToken(jti=fingerprint, expires_at=expires_at))
 
 
 @router.post("/register", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
@@ -235,6 +280,9 @@ async def refresh_token(
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> RefreshTokenResponse:
     """Обновить access token используя refresh token."""
+    if await is_token_revoked(data.refresh_token, db):
+        raise_error(status.HTTP_401_UNAUTHORIZED, ERR_INVALID_REFRESH_TOKEN, headers={"WWW-Authenticate": "Bearer"})
+
     # Декодируем refresh token
     payload = decode_refresh_token(data.refresh_token)
     
@@ -261,6 +309,41 @@ async def refresh_token(
     access_token = create_access_token(data=token_data)
     
     return RefreshTokenResponse(access_token=access_token)
+
+
+@router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)
+async def logout(
+    request: Request,
+    current_user: Annotated[User, Depends(get_current_active_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+    data: LogoutRequest | None = Body(default=None),
+) -> None:
+    """Инвалидировать текущие access/refresh токены (server-side blacklist)."""
+    _ = current_user  # авторизация обязательна, даже если объект пользователя дальше не нужен
+
+    authorization = request.headers.get("Authorization")
+    access_token = None
+    if authorization and authorization.startswith("Bearer "):
+        access_token = authorization.split(" ", 1)[1]
+
+    if access_token:
+        access_payload = decode_access_token(access_token)
+        await _revoke_token_if_valid(access_token, access_payload, db)
+
+    refresh_token = data.refresh_token if data else None
+    if refresh_token:
+        if await is_token_revoked(refresh_token, db):
+            return
+
+        refresh_payload = decode_refresh_token(refresh_token)
+        if refresh_payload is None:
+            raise_error(status.HTTP_401_UNAUTHORIZED, ERR_INVALID_REFRESH_TOKEN, headers={"WWW-Authenticate": "Bearer"})
+
+        refresh_email: str | None = refresh_payload.get("sub")
+        if refresh_email != current_user.email:
+            raise_error(status.HTTP_401_UNAUTHORIZED, ERR_INVALID_REFRESH_TOKEN, headers={"WWW-Authenticate": "Bearer"})
+
+        await _revoke_token_if_valid(refresh_token, refresh_payload, db)
 
 
 @router.get("/me", response_model=UserResponse)

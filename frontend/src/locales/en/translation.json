@@ -6,7 +6,9 @@
   },
   "notFound": {
     "title": "Page Not Found",
-    "goHome": "Go back to Home"
+    "subtitle": "The page may have moved or no longer exists. Return to the catalog and continue where you left off.",
+    "goHome": "Go to Catalog",
+    "goBack": "Go Back"
   },
   "layout": {
     "tagline": "Intelligent materials catalog",

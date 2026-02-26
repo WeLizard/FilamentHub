@@ -145,6 +145,12 @@ class RefreshTokenRequest(BaseModel):
     refresh_token: str
 
 
+class LogoutRequest(BaseModel):
+    """Schema for logout request."""
+
+    refresh_token: str | None = None
+
+
 class RefreshTokenResponse(BaseModel):
     """Schema for refresh token response."""
 
@@ -242,4 +248,3 @@ class ResetPasswordResponse(BaseModel):
     """Schema for reset password response."""
     
     message: str = Field(default="Пароль успешно изменён", description="Сообщение о результате")
-

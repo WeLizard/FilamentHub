@@ -17,14 +17,24 @@ from app.core.errors import (
     ERR_USER_NOT_FOUND,
     raise_error,
 )
-from app.core.security import decode_access_token, verify_password
+from app.core.security import decode_access_token, token_fingerprint, verify_password
 from app.db.session import get_db
+from app.models.revoked_token import RevokedToken
 from app.models.user import User, UserRole
 from app.schemas.user import TokenData
 
 logger = logging.getLogger(__name__)
 
 security = HTTPBearer()
+
+
+async def is_token_revoked(token: str, db: AsyncSession) -> bool:
+    """Check whether JWT token was explicitly revoked via logout."""
+    fingerprint = token_fingerprint(token)
+    result = await db.execute(
+        select(RevokedToken.id).where(RevokedToken.jti == fingerprint)
+    )
+    return result.scalar_one_or_none() is not None
 
 
 async def get_current_user(
@@ -39,6 +49,10 @@ async def get_current_user(
     
     if payload is None:
         logger.warning("Failed to decode JWT token (preview: %s) - token is invalid, expired, or malformed", token_preview)
+        raise_error(status.HTTP_401_UNAUTHORIZED, ERR_COULD_NOT_VALIDATE, headers={"WWW-Authenticate": "Bearer"})
+
+    if await is_token_revoked(token, db):
+        logger.info("JWT token is revoked (preview: %s)", token_preview)
         raise_error(status.HTTP_401_UNAUTHORIZED, ERR_COULD_NOT_VALIDATE, headers={"WWW-Authenticate": "Bearer"})
 
     email: str | None = payload.get("sub")
@@ -80,6 +94,9 @@ async def get_current_active_user_optional(
     payload = decode_access_token(token)
     
     if payload is None:
+        return None
+
+    if await is_token_revoked(token, db):
         return None
     
     email: str | None = payload.get("sub")
@@ -135,4 +152,3 @@ async def get_current_user_by_api_key(
     if not user.active:
         raise_error(status.HTTP_403_FORBIDDEN, ERR_USER_INACTIVE)
     return user
-

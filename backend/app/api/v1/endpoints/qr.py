@@ -116,7 +116,6 @@ async def handle_qr_scan(
                 saved_preset = UserSavedPreset(
                     user_id=current_user.id,
                     preset_id=official_preset.id,
-                    source='qr_scan'  # Метка источника
                 )
                 db.add(saved_preset)
                 preset_added = True
@@ -307,4 +306,3 @@ async def download_filament_qr_code(
             'Cache-Control': 'public, max-age=3600',
         }
     )
-

@@ -1,6 +1,7 @@
 """Security utilities (JWT, password hashing)."""
 
 import calendar
+import hashlib
 import logging
 import secrets
 from datetime import datetime, timedelta, timezone
@@ -32,6 +33,11 @@ def get_password_hash(password: str) -> str:
         password.encode("utf-8"),
         bcrypt.gensalt(),
     ).decode("utf-8")
+
+
+def token_fingerprint(token: str) -> str:
+    """Create deterministic token fingerprint for server-side revocation list."""
+    return hashlib.sha256(token.encode("utf-8")).hexdigest()
 
 
 def create_access_token(data: dict[str, Any], expires_delta: timedelta | None = None) -> str:
