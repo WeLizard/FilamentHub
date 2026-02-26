@@ -232,6 +232,7 @@ export interface Preset {
   usage_count: number;
   active: boolean;
   moderation_status: string;
+  moderation_reason?: string | null;
   // УДАЛЕНО: sync_enabled - теперь управляется через user_saved_presets.sync
   external_id?: string | null; // ID пресета в OrcaSlicer (для маппинга)
   source?: string | null; // Источник пресета ("orcaslicer", "user", "system", etc.) или 'own' | 'saved' для UI

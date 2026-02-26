@@ -200,6 +200,21 @@ export const Notifications: React.FC<NotificationsProps> = ({ floating = false }
     return date.toLocaleDateString();
   };
 
+  const getNotificationText = (notification: Notification) => {
+    const params = notification.extra_data || {};
+    const titleKey = `notifications.keys.${notification.title}`;
+    const messageKey = `notifications.keys.${notification.message}`;
+    const translatedTitle = t(titleKey, params);
+    const translatedMessage = t(messageKey, params);
+    const normalizedTitle = typeof translatedTitle === 'string' ? translatedTitle : notification.title;
+    const normalizedMessage = typeof translatedMessage === 'string' ? translatedMessage : notification.message;
+    const title = normalizedTitle === titleKey ? notification.title : normalizedTitle;
+    const message = normalizedMessage === messageKey ? notification.message : normalizedMessage;
+    return { title, message };
+  };
+
+  const viewNotificationText = viewNotification ? getNotificationText(viewNotification) : null;
+
   // Плавающая версия (для OrcaSlicer)
   if (floating) {
     return (
@@ -242,11 +257,12 @@ export const Notifications: React.FC<NotificationsProps> = ({ floating = false }
               ) : (
                 <div className="divide-y divide-white/10">
                   {notifications.map((notification) => {
+                    const { title, message } = getNotificationText(notification);
                     const previewLength = 150;
-                    const messagePreview = notification.message.length > previewLength
-                      ? notification.message.substring(0, previewLength) + '...'
-                      : notification.message;
-                    const isLongMessage = notification.message.length > previewLength;
+                    const messagePreview = message.length > previewLength
+                      ? message.substring(0, previewLength) + '...'
+                      : message;
+                    const isLongMessage = message.length > previewLength;
                     const hasLink = !!notification.link;
                     
                     return (
@@ -266,7 +282,7 @@ export const Notifications: React.FC<NotificationsProps> = ({ floating = false }
                               <div className="flex-1 min-w-0">
                                 <div className="flex items-start justify-between gap-2 mb-1">
                                   <p className="text-sm font-semibold text-white">
-                                    {notification.title}
+                                    {title}
                                   </p>
                                   {!notification.read && (
                                     <div className="w-2 h-2 bg-blue-400 rounded-full flex-shrink-0 mt-1.5"></div>
@@ -373,7 +389,7 @@ export const Notifications: React.FC<NotificationsProps> = ({ floating = false }
         )}
 
         {/* Modal for viewing notification */}
-        {viewNotification && createPortal(
+        {viewNotification && viewNotificationText && createPortal(
           <div
             className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[100] overflow-y-auto"
             onClick={() => setViewNotification(null)}
@@ -396,7 +412,7 @@ export const Notifications: React.FC<NotificationsProps> = ({ floating = false }
                     </div>
                     <div className="flex-1 min-w-0">
                       <h3 className="text-xl font-bold text-white mb-1">
-                        {viewNotification.title}
+                        {viewNotificationText.title}
                       </h3>
                       <p className="text-xs text-gray-400">
                         {formatTime(viewNotification.created_at)}
@@ -438,7 +454,7 @@ export const Notifications: React.FC<NotificationsProps> = ({ floating = false }
                 {/* Content */}
                 <div className="flex-1 overflow-y-auto p-6 custom-scrollbar">
                   <div className="text-gray-300 whitespace-pre-wrap break-words">
-                    {viewNotification.message}
+                    {viewNotificationText.message}
                   </div>
 
                   {/* Link section */}
@@ -505,12 +521,13 @@ export const Notifications: React.FC<NotificationsProps> = ({ floating = false }
             ) : (
               <div className="divide-y divide-white/10">
                 {notifications.map((notification) => {
+                  const { title, message } = getNotificationText(notification);
                   // Обрезаем текст для предпросмотра (максимум 150 символов)
                   const previewLength = 150;
-                  const messagePreview = notification.message.length > previewLength
-                    ? notification.message.substring(0, previewLength) + '...'
-                    : notification.message;
-                  const isLongMessage = notification.message.length > previewLength;
+                  const messagePreview = message.length > previewLength
+                    ? message.substring(0, previewLength) + '...'
+                    : message;
+                  const isLongMessage = message.length > previewLength;
                   const hasLink = !!notification.link;
                   
                   return (
@@ -530,7 +547,7 @@ export const Notifications: React.FC<NotificationsProps> = ({ floating = false }
                             <div className="flex-1 min-w-0">
                               <div className="flex items-start justify-between gap-2 mb-1">
                                 <p className="text-xs md:text-sm font-semibold text-white">
-                                  {notification.title}
+                                  {title}
                                 </p>
                                 {!notification.read && (
                                   <div className="w-2 h-2 bg-blue-400 rounded-full flex-shrink-0 mt-1.5"></div>
@@ -637,7 +654,7 @@ export const Notifications: React.FC<NotificationsProps> = ({ floating = false }
       )}
 
       {/* Modal for viewing notification */}
-      {viewNotification && createPortal(
+      {viewNotification && viewNotificationText && createPortal(
         <div
           className={`fixed inset-0 bg-black/60 backdrop-blur-sm z-[100] overflow-y-auto ${isHeaderVisible ? 'pt-[72px] md:pt-[88px]' : ''}`}
           onClick={() => setViewNotification(null)}
@@ -660,7 +677,7 @@ export const Notifications: React.FC<NotificationsProps> = ({ floating = false }
                   </div>
                   <div className="flex-1 min-w-0">
                     <h3 className="text-base md:text-xl font-bold text-white mb-1">
-                      {viewNotification.title}
+                      {viewNotificationText.title}
                     </h3>
                     <p className="text-[10px] md:text-xs text-gray-400">
                       {formatTime(viewNotification.created_at)}
@@ -702,7 +719,7 @@ export const Notifications: React.FC<NotificationsProps> = ({ floating = false }
               {/* Content */}
               <div className="flex-1 overflow-y-auto p-4 md:p-6 custom-scrollbar">
                 <div className="text-sm md:text-base text-gray-300 whitespace-pre-wrap break-words">
-                  {viewNotification.message}
+                  {viewNotificationText.message}
                 </div>
 
                 {/* Link section */}
@@ -739,11 +756,10 @@ export const Notifications: React.FC<NotificationsProps> = ({ floating = false }
                 </button>
               </div>
             </div>
-          </div>
+            </div>
         </div>,
         document.body
       )}
     </div>
   );
 }
-

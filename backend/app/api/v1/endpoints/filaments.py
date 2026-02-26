@@ -12,7 +12,15 @@ logger = logging.getLogger(__name__)
 
 from app.core.dependencies import get_current_user
 from app.core.utils import like_pattern
-from app.core.errors import ERR_BRAND_NOT_FOUND, ERR_FILAMENT_NOT_FOUND, ERR_NO_PERMISSION_CREATE_FILAMENT, ERR_NO_PERMISSION_DELETE_FILAMENT, ERR_NO_PERMISSION_EDIT_FILAMENT, raise_error
+from app.core.errors import (
+    ERR_BRAND_NOT_FOUND,
+    ERR_FILAMENT_ALREADY_EXISTS,
+    ERR_FILAMENT_NOT_FOUND,
+    ERR_NO_PERMISSION_CREATE_FILAMENT,
+    ERR_NO_PERMISSION_DELETE_FILAMENT,
+    ERR_NO_PERMISSION_EDIT_FILAMENT,
+    raise_error,
+)
 from app.db.session import get_db
 from app.models.filament import Filament
 from app.models.printer import Printer
@@ -25,6 +33,41 @@ from app.schemas.filament import (
 )
 
 router = APIRouter(prefix="/filaments", tags=["filaments"])
+
+
+def _normalize_text(value: str | None) -> str | None:
+    if value is None:
+        return None
+    normalized = value.strip().lower()
+    return normalized or None
+
+
+def _normalize_hex(value: str | None) -> str | None:
+    if value is None:
+        return None
+    normalized = value.strip().lower()
+    return normalized or None
+
+
+def _same_filament_color(
+    existing_color_name: str | None,
+    existing_color_hex: str | None,
+    new_color_name: str | None,
+    new_color_hex: str | None,
+) -> bool:
+    # Цвет — часть идентичности материала.
+    # Приоритет: текстовое имя цвета; HEX используется только когда name отсутствует с обеих сторон.
+    existing_name = _normalize_text(existing_color_name)
+    incoming_name = _normalize_text(new_color_name)
+    if existing_name or incoming_name:
+        return existing_name == incoming_name
+
+    existing_hex = _normalize_hex(existing_color_hex)
+    incoming_hex = _normalize_hex(new_color_hex)
+    if existing_hex or incoming_hex:
+        return existing_hex == incoming_hex
+
+    return True
 
 
 @router.get("/", response_model=FilamentListResponse)
@@ -392,17 +435,66 @@ async def create_filament(
         if not is_valid:
             raise HTTPException(status_code=400, detail=error_msg)
 
+    normalized_name = data.name.strip()
+    normalized_material_type = data.material_type.strip()
+    normalized_color_name = data.color_name.strip() if data.color_name else None
+    normalized_color_hex = data.color_hex.strip().upper() if data.color_hex else None
+
+    duplicate_candidates_result = await db.execute(
+        select(Filament)
+        .where(
+            Filament.brand_id == data.brand_id,
+            Filament.active.is_(True),
+            func.lower(func.trim(Filament.name)) == normalized_name.lower(),
+            func.lower(func.trim(Filament.material_type)) == normalized_material_type.lower(),
+        )
+        .limit(20)
+    )
+    duplicate_candidates = duplicate_candidates_result.scalars().all()
+    duplicate_filament = next(
+        (
+            candidate
+            for candidate in duplicate_candidates
+            if _same_filament_color(
+                candidate.color_name,
+                candidate.color_hex,
+                normalized_color_name,
+                normalized_color_hex,
+            )
+        ),
+        None,
+    )
+
+    if duplicate_filament:
+        raise_error(
+            409,
+            ERR_FILAMENT_ALREADY_EXISTS,
+            {
+                "filament_id": duplicate_filament.id,
+                "filament_name": duplicate_filament.name,
+                "brand_name": brand.name,
+                "material_type": duplicate_filament.material_type,
+                "color_name": duplicate_filament.color_name,
+                "color_hex": duplicate_filament.color_hex,
+            },
+        )
+
     # Generate unique slug from name
     from app.services.slug_service import generate_unique_slug
     slug = await generate_unique_slug(
         db=db,
         model=Filament,
-        source=data.name,
+        source=normalized_name,
         fallback="filament",
     )
 
     # Create filament
-    filament = Filament(**data.model_dump(), slug=slug)
+    filament_payload = data.model_dump()
+    filament_payload["name"] = normalized_name
+    filament_payload["material_type"] = normalized_material_type
+    filament_payload["color_name"] = normalized_color_name
+    filament_payload["color_hex"] = normalized_color_hex
+    filament = Filament(**filament_payload, slug=slug)
     db.add(filament)
     await db.flush()  # Получаем ID без коммита
     

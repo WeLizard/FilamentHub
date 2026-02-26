@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 
 class OrcaSyncResult(BaseModel):
@@ -187,6 +187,14 @@ class OrcaFilamentPresetPayload(BaseModel):
     )
     notes: str | None = Field(default=None, max_length=10_000, description="Заметки к пресету.")
 
+    @field_validator("name")
+    @classmethod
+    def validate_name_not_blank(cls, value: str) -> str:
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("Preset name cannot be empty")
+        return normalized
+
 
 class FilamentPresetSyncRequest(BaseModel):
     """Запрос на импорт пресетов филаментов."""
@@ -251,5 +259,4 @@ class DeletedPresetActionResponse(BaseModel):
     action: str
     processed_count: int
     total_count: int
-
 

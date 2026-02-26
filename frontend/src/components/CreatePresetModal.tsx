@@ -1,7 +1,8 @@
 /** Модальное окно для создания/редактирования пресета */
 
-import { useState, useEffect, FormEvent, useRef } from 'react';
+import { useState, useEffect, FormEvent, useRef, useMemo } from 'react';
 import React from 'react';
+import { createPortal } from 'react-dom';
 import { useTranslation } from 'react-i18next';
 import { X, Save, Loader2, Check, Plus, CheckCircle } from 'lucide-react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -49,6 +50,55 @@ interface CreatePresetModalProps {
   filamentId?: number; // ID материала (если создание нового пресета)
   brandId?: number; // ID бренда (если создание из профиля бренда - автоматически is_official=true)
 }
+
+interface DuplicateFilamentSuggestion {
+  id: number;
+  name: string;
+  brandName?: string;
+  materialType?: string;
+  colorName?: string;
+  colorHex?: string;
+}
+
+const normalizeColorName = (value?: string | null): string => (value || '').trim().toLowerCase();
+const normalizeColorHex = (value?: string | null): string => (value || '').trim().toLowerCase();
+
+const sameColorIdentity = (
+  existingColorName?: string | null,
+  existingColorHex?: string | null,
+  incomingColorName?: string | null,
+  incomingColorHex?: string | null,
+): boolean => {
+  // Совпадение цвета определяем по текстовому имени.
+  // HEX учитываем только если имени цвета нет с обеих сторон.
+  const existingName = normalizeColorName(existingColorName);
+  const incomingName = normalizeColorName(incomingColorName);
+  if (existingName || incomingName) {
+    return existingName === incomingName;
+  }
+
+  const existingHex = normalizeColorHex(existingColorHex);
+  const incomingHex = normalizeColorHex(incomingColorHex);
+  if (existingHex || incomingHex) {
+    return existingHex === incomingHex;
+  }
+
+  return true;
+};
+
+const colorIdentityKey = (colorName?: string | null, colorHex?: string | null): string => {
+  const normalizedName = normalizeColorName(colorName);
+  if (normalizedName) {
+    return `name:${normalizedName}`;
+  }
+
+  const normalizedHex = normalizeColorHex(colorHex);
+  if (normalizedHex) {
+    return `hex:${normalizedHex}`;
+  }
+
+  return 'none';
+};
 
 export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
   isOpen,
@@ -186,6 +236,7 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
   const [filamentNotes, setFilamentNotes] = useState('');
   const [activeTab, setActiveTab] = useState<'profile' | 'cooling' | 'override' | 'advanced' | 'extruder' | 'notes'>('profile'); // Активная вкладка (как в OrcaSlicer)
   const [error, setError] = useState<string | null>(null);
+  const [duplicateFilamentSuggestion, setDuplicateFilamentSuggestion] = useState<DuplicateFilamentSuggestion | null>(null);
   const [selectedFilamentId, setSelectedFilamentId] = useState<number | null>(filamentId || null);
   
   // Новые поля для создания нового филамента
@@ -308,6 +359,30 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
     }),
     enabled: isOpen && showFilamentForm && !!selectedBrandId && filamentName.length > 0,
   });
+
+  const uniqueSimilarFilaments = useMemo(() => {
+    const items = similarFilamentsData?.items ?? [];
+    const seen = new Set<string>();
+    const uniqueItems: Filament[] = [];
+
+    for (const filament of items) {
+      const key = [
+        filament.brand_id,
+        filament.name.trim().toLowerCase(),
+        filament.material_type.trim().toLowerCase(),
+        colorIdentityKey(filament.color_name, filament.color_hex),
+      ].join('|');
+
+      if (seen.has(key)) {
+        continue;
+      }
+
+      seen.add(key);
+      uniqueItems.push(filament);
+    }
+
+    return uniqueItems;
+  }, [similarFilamentsData?.items]);
 
   // Загружаем уникальные типы материалов из БД (для формы создания нового материала)
   const { data: materialTypes = [] } = useQuery({
@@ -777,6 +852,7 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
       setNewBrandWebsite('');
     }
     setError(null);
+    setDuplicateFilamentSuggestion(null);
   }, [preset, filamentId, brandId, isOpen]);
 
   // Когда загрузился филамент при редактировании, обновляем filamentSearch и selectedFilament
@@ -846,6 +922,65 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
     }
   }, [filamentColorHex, filamentVisualColors]); // Добавили filamentVisualColors для отслеживания изменений
 
+  const applyDefaultsByMaterialType = (materialTypeValue?: string | null) => {
+    if (!materialTypeValue) {
+      return;
+    }
+
+    applyMaterialDefaults(materialTypeValue, {
+      setExtruderTemp,
+      setBedTemp,
+      setPrintSpeed,
+      setTravelSpeed,
+      setFlowRate,
+      setFanSpeed,
+      setRetractionLength,
+      setRetractionSpeed,
+      setTempRangeLow,
+      setTempRangeHigh,
+      setNozzleTempInitialLayer,
+      setBedTempInitialLayer,
+      setIdleTemperature,
+      setChamberTemp,
+      setEnableChamberControl,
+      setVolumetricSpeed,
+      setAdaptiveVolumetricSpeed,
+      setFilamentShrink,
+      setFilamentShrinkageCompensationZ,
+      setFilamentIsSupport,
+      setFilamentSoluble,
+      setFanMinSpeed,
+      setFanMaxSpeed,
+      setOverhangFanSpeed,
+      setCloseFanFirstXLayers,
+      setPressureAdvance,
+      setEnablePressureAdvance,
+      setAdaptivePressureAdvance,
+    });
+  };
+
+  const selectExistingFilament = (filament: {
+    id: number;
+    name: string;
+    color_name?: string | null;
+    color_hex?: string | null;
+    material_type?: string | null;
+    brand_name?: string | null;
+  }) => {
+    const matchedFromDropdown = filamentsData?.items?.find((item) => item.id === filament.id);
+    const matchedFromSimilar = uniqueSimilarFilaments.find((item) => item.id === filament.id);
+    const fullFilament = matchedFromDropdown || matchedFromSimilar || null;
+
+    setSelectedFilamentId(filament.id);
+    setSelectedFilament(fullFilament);
+    setDuplicateFilamentSuggestion(null);
+    setFilamentSearch(filament.color_name ? `${filament.name} (${filament.color_name})` : filament.name);
+    setShowFilamentDropdown(false);
+    setShowFilamentForm(false);
+    setError(null);
+    applyDefaultsByMaterialType(filament.material_type);
+  };
+
   // Мутация для создания бренда
   const createBrandMutation = useMutation({
     mutationFn: (data: { name: string; slug: string; website?: string }) => brandsAPI.create(data),
@@ -875,12 +1010,99 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
       queryClient.invalidateQueries({ queryKey: ['filaments', 'material-types'] });
       // Инвалидируем кэш филаментов, чтобы новый материал появился в каталоге
       queryClient.invalidateQueries({ queryKey: ['filaments'] });
+      setDuplicateFilamentSuggestion(null);
     },
     onError: (err: any) => {
-      setError(translateApiError(t, err?.response?.data?.detail, t('presetModal.errors.createFilament')));
-      console.error('Failed to create filament:', err);
+      const detail = err?.response?.data?.detail;
+      const isDuplicateFilamentError =
+        (detail && typeof detail === 'object' && detail.code === 'ERR_FILAMENT_ALREADY_EXISTS') ||
+        detail === 'ERR_FILAMENT_ALREADY_EXISTS';
+
+      if (isDuplicateFilamentError) {
+        let suggestion: DuplicateFilamentSuggestion | null = null;
+
+        if (detail && typeof detail === 'object') {
+          const params = detail.params || {};
+          const duplicateId = Number(params.filament_id);
+          if (Number.isFinite(duplicateId) && duplicateId > 0) {
+            suggestion = {
+              id: duplicateId,
+              name: String(params.filament_name || filamentName || ''),
+              brandName: params.brand_name ? String(params.brand_name) : undefined,
+              materialType: params.material_type ? String(params.material_type) : undefined,
+              colorName: params.color_name ? String(params.color_name) : undefined,
+              colorHex: params.color_hex ? String(params.color_hex) : undefined,
+            };
+          }
+        }
+
+        // Fallback: если сервер вернул только код без params,
+        // берём первое совпадение из подсказок бренда.
+        if (!suggestion && uniqueSimilarFilaments.length) {
+          const normalizedFilamentName = filamentName.trim().toLowerCase();
+          const currentMaterialType = (useCustomMaterial ? customMaterialType : materialType).trim().toLowerCase();
+
+          const matched = uniqueSimilarFilaments.find((candidate) => {
+            const candidateName = candidate.name?.trim().toLowerCase() || '';
+            const candidateMaterialType = candidate.material_type?.trim().toLowerCase() || '';
+
+            return (
+              candidateName === normalizedFilamentName &&
+              (!currentMaterialType || candidateMaterialType === currentMaterialType) &&
+              sameColorIdentity(
+                candidate.color_name,
+                candidate.color_hex,
+                filamentColorName,
+                filamentColorHex,
+              )
+            );
+          });
+
+          if (matched) {
+            suggestion = {
+              id: matched.id,
+              name: matched.name,
+              brandName: matched.brand_name || undefined,
+              materialType: matched.material_type || undefined,
+              colorName: matched.color_name || undefined,
+              colorHex: matched.color_hex || undefined,
+            };
+          }
+        }
+
+        setDuplicateFilamentSuggestion(suggestion);
+      } else {
+        setDuplicateFilamentSuggestion(null);
+      }
+      if (isDuplicateFilamentError) {
+        setError(
+          translateApiError(
+            t,
+            err?.response?.data?.detail,
+            t('apiErrors.ERR_FILAMENT_ALREADY_EXISTS', {
+              defaultValue: 'Такой материал уже существует. Выберите существующий.',
+            }),
+          ),
+        );
+      } else {
+        setError(translateApiError(t, err?.response?.data?.detail, t('presetModal.errors.createFilament')));
+      }
+      if (!isDuplicateFilamentError) {
+        console.error('Failed to create filament:', err);
+      }
     },
   });
+
+  const useExistingFilamentFromSuggestion = (suggestion: DuplicateFilamentSuggestion) => {
+    selectExistingFilament({
+      id: suggestion.id,
+      name: suggestion.name,
+      color_name: suggestion.colorName,
+      color_hex: suggestion.colorHex,
+      material_type: suggestion.materialType,
+      brand_name: suggestion.brandName,
+    });
+  };
 
   // Мутация для создания пресета
   const createMutation = useMutation({
@@ -1202,6 +1424,7 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
     setError(null);
+    setDuplicateFilamentSuggestion(null);
 
     // Если создаем новый филамент, сначала создаем его
     // ВАЖНО: это работает и при создании пресета, и при редактировании черновика
@@ -1504,17 +1727,17 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
 
   if (!isOpen) return null;
 
-  return (
-    <div className={`fixed inset-0 z-[100] ${isHeaderVisible ? 'pt-[88px]' : ''}`}>
+  const modalContent = (
+    <div className="fixed inset-0 z-[100]">
       {/* Backdrop - покрывает весь экран, включая хэдер */}
-      <div 
+      <div
         className="fixed inset-0 bg-black/50 backdrop-blur-sm"
         onClick={onClose}
       />
       {/* Modal Container */}
-      <div className="fixed inset-0 flex items-center justify-center pointer-events-none" style={{ top: isHeaderVisible ? '88px' : '0' }}>
+      <div className={`fixed inset-0 flex items-center justify-center pointer-events-none ${isHeaderVisible ? 'pt-[88px]' : ''}`}>
         {/* Modal */}
-        <div 
+        <div
           className={`bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900 rounded-2xl w-full max-w-5xl overflow-hidden flex flex-col border border-white/20 shadow-2xl pointer-events-auto ${isHeaderVisible ? 'max-h-[calc(100vh-100px)]' : 'max-h-[90vh]'}`}
           onClick={(e) => e.stopPropagation()}
           onMouseDown={(e) => e.stopPropagation()}
@@ -1541,6 +1764,25 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
           {error && (
             <div className="mb-4 p-3 bg-red-500/20 border border-red-500/30 rounded-lg text-red-300 text-sm">
               {error}
+            </div>
+          )}
+          {duplicateFilamentSuggestion && (
+            <div className="mb-4 p-3 bg-yellow-500/20 border border-yellow-500/30 rounded-lg text-yellow-200 text-sm">
+              <p className="font-medium">
+                {t('presetModal.duplicateFilamentFound', { defaultValue: 'Такой материал уже существует' })}
+              </p>
+              <p className="mt-1 text-yellow-100">
+                {(duplicateFilamentSuggestion.brandName ? `${duplicateFilamentSuggestion.brandName} ` : '')}
+                {duplicateFilamentSuggestion.name}
+                {duplicateFilamentSuggestion.colorName ? ` (${duplicateFilamentSuggestion.colorName})` : ''}
+              </p>
+              <button
+                type="button"
+                onClick={() => useExistingFilamentFromSuggestion(duplicateFilamentSuggestion)}
+                className="mt-3 px-3 py-2 bg-yellow-500/30 hover:bg-yellow-500/40 border border-yellow-400/40 rounded-lg text-yellow-100 transition-all"
+              >
+                {t('presetModal.useExistingFilament', { defaultValue: 'Выбрать существующий материал' })}
+              </button>
             </div>
           )}
 
@@ -1583,7 +1825,10 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                     ) : (
                       <button
                         type="button"
-                        onClick={() => setShowFilamentForm(true)}
+                        onClick={() => {
+                          setShowFilamentForm(true);
+                          setDuplicateFilamentSuggestion(null);
+                        }}
                         className="px-3 py-3 bg-purple-600 hover:bg-purple-700 rounded-xl transition-all text-white flex items-center gap-2 whitespace-nowrap"
                         title={t('presetModal.createNewFilament')}
                         aria-label={t('presetModal.createNewFilament')}
@@ -1602,46 +1847,7 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                         <button
                           key={filament.id}
                           type="button"
-                          onClick={() => {
-                            setSelectedFilamentId(filament.id);
-                            setSelectedFilament(filament);
-                            setFilamentSearch(filament.color_name ? `${filament.name} (${filament.color_name})` : filament.name);
-                            setShowFilamentDropdown(false);
-                            
-                            // Применяем стандартные значения для типа материала выбранного филамента
-                            if (filament.material_type) {
-                              applyMaterialDefaults(filament.material_type, {
-                                setExtruderTemp,
-                                setBedTemp,
-                                setPrintSpeed,
-                                setTravelSpeed,
-                                setFlowRate,
-                                setFanSpeed,
-                                setRetractionLength,
-                                setRetractionSpeed,
-                                setTempRangeLow,
-                                setTempRangeHigh,
-                                setNozzleTempInitialLayer,
-                                setBedTempInitialLayer,
-                                setIdleTemperature,
-                                setChamberTemp,
-                                setEnableChamberControl,
-                                setVolumetricSpeed,
-                                setAdaptiveVolumetricSpeed,
-                                setFilamentShrink,
-                                setFilamentShrinkageCompensationZ,
-                                setFilamentIsSupport,
-                                setFilamentSoluble,
-                                setFanMinSpeed,
-                                setFanMaxSpeed,
-                                setOverhangFanSpeed,
-                                setCloseFanFirstXLayers,
-                                setPressureAdvance,
-                                setEnablePressureAdvance,
-                                setAdaptivePressureAdvance,
-                              });
-                            }
-                          }}
+                          onClick={() => selectExistingFilament(filament)}
                           className="w-full px-4 py-3 text-left hover:bg-white/10 transition-all text-white border-b border-white/5 last:border-b-0"
                         >
                           <div className="flex items-center justify-between">
@@ -1690,7 +1896,10 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                     <h3 className="text-lg font-bold text-white">{t('presetModal.createNewFilament')}</h3>
                     <button
                       type="button"
-                      onClick={() => setShowFilamentForm(false)}
+                      onClick={() => {
+                        setShowFilamentForm(false);
+                        setDuplicateFilamentSuggestion(null);
+                      }}
                       className="text-gray-400 hover:text-white text-sm"
                     >
                       {t('presetModal.cancel')}
@@ -1989,15 +2198,24 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                       placeholder={t('presetModal.filamentNamePlaceholder')}
                       className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white placeholder-gray-400 placeholder:text-center focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all"
                     />
-                    {similarFilamentsData?.items && similarFilamentsData.items.length > 0 && (
+                    {uniqueSimilarFilaments.length > 0 && (
                       <div className="mt-2 p-3 bg-yellow-500/20 border border-yellow-500/30 rounded-lg text-yellow-300 text-sm">
                         <p className="font-medium mb-1">{t('presetModal.similarFilaments')}:</p>
-                        <ul className="list-disc list-inside space-y-1">
-                          {similarFilamentsData.items.map((f: Filament) => (
-                            <li key={f.id}>
-                              {f.brand_name && <span className="text-gray-300">{f.brand_name} </span>}
-                              {f.name}
-                              {f.color_name && <span className="text-gray-400"> ({f.color_name})</span>}
+                        <ul className="space-y-2">
+                          {uniqueSimilarFilaments.map((f: Filament) => (
+                            <li key={f.id} className="flex items-center justify-between gap-3">
+                              <div className="min-w-0">
+                                {f.brand_name && <span className="text-gray-300">{f.brand_name} </span>}
+                                <span className="break-words">{f.name}</span>
+                                {f.color_name && <span className="text-gray-400"> ({f.color_name})</span>}
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => selectExistingFilament(f)}
+                                className="shrink-0 px-2 py-1 rounded-md border border-yellow-300/40 bg-yellow-300/10 hover:bg-yellow-300/20 text-yellow-200 text-xs font-medium transition-all"
+                              >
+                                {t('presetModal.useExistingFilament', { defaultValue: 'Выбрать существующий материал' })}
+                              </button>
                             </li>
                           ))}
                         </ul>
@@ -4411,4 +4629,8 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
       </div>
     </div>
   );
+
+  if (typeof document === 'undefined') return null;
+
+  return createPortal(modalContent, document.body);
 };

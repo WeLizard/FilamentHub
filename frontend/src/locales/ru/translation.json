@@ -906,6 +906,8 @@
     "filamentName": "Название филамента",
     "filamentNamePlaceholder": "Например: PLA+ Mate R24",
     "similarFilaments": "Похожие материалы у этого производителя",
+    "duplicateFilamentFound": "Такой материал уже существует",
+    "useExistingFilament": "Выбрать существующий материал",
     "advancedColorSettings": "Расширенные характеристики цвета",
     "colorSingle": "Одноцветный",
     "colorTwo": "Двухцветный",
@@ -2435,10 +2437,13 @@
     "speed": "Скорость",
     "usages": "Использований",
     "created": "Создан",
+    "edit": "Редактировать",
     "approve": "Одобрить",
     "confirmApprove": "Одобрить пресет \"{{name}}\"?",
     "reject": "Отклонить",
-    "rejectReasonPrompt": "Укажите причину отклонения:"
+    "rejectReasonPrompt": "Укажите причину отклонения:",
+    "manualReviewFallback": "Требуется ручная модерация",
+    "flagFallback": "Требуется проверка параметров пресета"
   },
   "adminNotifications": {
     "title": "Управление уведомлениями",
@@ -2556,7 +2561,21 @@
     "markAllRead": "Отметить все как прочитанные",
     "clearing": "Очистка...",
     "clearAll": "Очистить уведомления",
-    "link": "Ссылка:"
+    "link": "Ссылка:",
+    "keys": {
+      "preset_updated": "Пресет обновлён",
+      "preset_updated_message": "Пресет «{{preset_name}}» был обновлён.",
+      "preset_deleted": "Пресет удалён",
+      "preset_deleted_message": "Пресет «{{preset_name}}» был удалён.",
+      "brand_verified": "Бренд подтверждён",
+      "brand_verified_message": "Бренд «{{brand_name}}» подтверждён.",
+      "brand_request_approved": "Заявка на бренд одобрена",
+      "brand_request_approved_message": "Ваша заявка на бренд «{{brand_name}}» одобрена.",
+      "brand_request_rejected": "Заявка на бренд отклонена",
+      "brand_request_rejected_message": "Ваша заявка на бренд «{{brand_name}}» отклонена.",
+      "deleted_presets_detected": "Обнаружены удалённые пресеты",
+      "deleted_presets_detected_message": "В OrcaSlicer обнаружены удалённые пресеты. Выберите действие."
+    }
   },
   "feedback": {
     "title": "Обратная связь",
@@ -2775,7 +2794,13 @@
     "review_comment": "Комментарий к отзыву",
     "printer_model": "Модель принтера",
     "message": "Сообщение",
-    "proof_text": "Описание документов"
+    "proof_text": "Описание документов",
+    "extruder_temp": "Температура сопла",
+    "bed_temp": "Температура стола",
+    "print_speed": "Скорость печати",
+    "fan_speed": "Скорость вентилятора",
+    "retraction_length": "Длина ретракта",
+    "retraction_speed": "Скорость ретракта"
   },
   "apiErrors": {
     "UNKNOWN_ERROR": "Произошла непредвиденная ошибка",
@@ -2784,6 +2809,7 @@
     "ERR_BRAND_NOT_FOUND": "Бренд не найден",
     "ERR_PRESET_NOT_FOUND": "Пресет не найден",
     "ERR_FILAMENT_NOT_FOUND": "Филамент не найден",
+    "ERR_FILAMENT_ALREADY_EXISTS": "Такой материал уже существует. Выберите существующий.",
     "ERR_PRINTER_NOT_FOUND": "Принтер не найден",
     "ERR_REQUEST_NOT_FOUND": "Заявка не найдена",
     "ERR_NOTIFICATION_NOT_FOUND": "Уведомление не найдено",
@@ -2947,6 +2973,9 @@
     "ERR_RETRACTION_LEN_TOO_HIGH": "Длина ретракта слишком велика ({{value}} мм). Максимум: {{max}} мм",
     "ERR_RETRACTION_SPEED_TOO_LOW": "Скорость ретракта слишком низкая ({{value}} мм/с). Минимум: {{min}} мм/с",
     "ERR_RETRACTION_SPEED_TOO_HIGH": "Скорость ретракта слишком высокая ({{value}} мм/с). Максимум: {{max}} мм/с",
-    "ERR_BED_TEMP_EXCEEDS_EXTRUDER": "Температура стола ({{bed_temp}}°C) значительно выше температуры сопла ({{extruder_temp}}°C)"
+    "ERR_BED_TEMP_EXCEEDS_EXTRUDER": "Температура стола ({{bed_temp}}°C) значительно выше температуры сопла ({{extruder_temp}}°C)",
+    "ERR_PRESET_REQUIRES_MANUAL_REVIEW": "Пресет отправлен на ручную модерацию (риск: {{risk_score}}, флагов: {{flags_count}})",
+    "WARN_PRESET_PARAM_OUTSIDE_TYPICAL_RANGE": "Параметр «{{field_name}}» вне типичного диапазона для {{material_type}}: {{value}} (норма {{soft_min}}–{{soft_max}})",
+    "WARN_PRESET_POSSIBLE_DUPLICATE": "Возможный дубликат пресета «{{duplicate_preset_name}}» (ID {{duplicate_preset_id}})"
   }
 }

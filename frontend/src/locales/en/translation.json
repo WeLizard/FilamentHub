@@ -884,6 +884,8 @@
     "filamentName": "Filament name",
     "filamentNamePlaceholder": "e.g.: PLA+ Mate R24",
     "similarFilaments": "Similar filaments from this brand",
+    "duplicateFilamentFound": "This filament already exists",
+    "useExistingFilament": "Use existing filament",
     "advancedColorSettings": "Advanced color settings",
     "colorSingle": "Single color",
     "colorTwo": "Two-color",
@@ -2413,10 +2415,13 @@
     "speed": "Speed",
     "usages": "Uses",
     "created": "Created",
+    "edit": "Edit",
     "approve": "Approve",
     "confirmApprove": "Approve preset \"{{name}}\"?",
     "reject": "Reject",
-    "rejectReasonPrompt": "Specify rejection reason:"
+    "rejectReasonPrompt": "Specify rejection reason:",
+    "manualReviewFallback": "Manual review required",
+    "flagFallback": "Preset settings check required"
   },
   "adminNotifications": {
     "title": "Notification Management",
@@ -2534,7 +2539,21 @@
     "markAllRead": "Mark all as read",
     "clearing": "Clearing...",
     "clearAll": "Clear notifications",
-    "link": "Link:"
+    "link": "Link:",
+    "keys": {
+      "preset_updated": "Preset updated",
+      "preset_updated_message": "Preset \"{{preset_name}}\" was updated.",
+      "preset_deleted": "Preset deleted",
+      "preset_deleted_message": "Preset \"{{preset_name}}\" was deleted.",
+      "brand_verified": "Brand verified",
+      "brand_verified_message": "Brand \"{{brand_name}}\" has been verified.",
+      "brand_request_approved": "Brand request approved",
+      "brand_request_approved_message": "Your request for brand \"{{brand_name}}\" has been approved.",
+      "brand_request_rejected": "Brand request rejected",
+      "brand_request_rejected_message": "Your request for brand \"{{brand_name}}\" has been rejected.",
+      "deleted_presets_detected": "Deleted presets detected",
+      "deleted_presets_detected_message": "Deleted presets were detected in OrcaSlicer. Choose an action."
+    }
   },
   "feedback": {
     "title": "Feedback",
@@ -2753,7 +2772,13 @@
     "review_comment": "Review comment",
     "printer_model": "Printer model",
     "message": "Message",
-    "proof_text": "Document description"
+    "proof_text": "Document description",
+    "extruder_temp": "Nozzle temperature",
+    "bed_temp": "Bed temperature",
+    "print_speed": "Print speed",
+    "fan_speed": "Fan speed",
+    "retraction_length": "Retraction length",
+    "retraction_speed": "Retraction speed"
   },
   "apiErrors": {
     "UNKNOWN_ERROR": "An unexpected error occurred",
@@ -2762,6 +2787,7 @@
     "ERR_BRAND_NOT_FOUND": "Brand not found",
     "ERR_PRESET_NOT_FOUND": "Preset not found",
     "ERR_FILAMENT_NOT_FOUND": "Filament not found",
+    "ERR_FILAMENT_ALREADY_EXISTS": "This filament already exists. Select the existing one.",
     "ERR_PRINTER_NOT_FOUND": "Printer not found",
     "ERR_REQUEST_NOT_FOUND": "Request not found",
     "ERR_NOTIFICATION_NOT_FOUND": "Notification not found",
@@ -2925,6 +2951,9 @@
     "ERR_RETRACTION_LEN_TOO_HIGH": "Retraction length is too high ({{value}} mm). Maximum: {{max}} mm",
     "ERR_RETRACTION_SPEED_TOO_LOW": "Retraction speed is too low ({{value}} mm/s). Minimum: {{min}} mm/s",
     "ERR_RETRACTION_SPEED_TOO_HIGH": "Retraction speed is too high ({{value}} mm/s). Maximum: {{max}} mm/s",
-    "ERR_BED_TEMP_EXCEEDS_EXTRUDER": "Bed temperature ({{bed_temp}}°C) is significantly higher than extruder temperature ({{extruder_temp}}°C)"
+    "ERR_BED_TEMP_EXCEEDS_EXTRUDER": "Bed temperature ({{bed_temp}}°C) is significantly higher than extruder temperature ({{extruder_temp}}°C)",
+    "ERR_PRESET_REQUIRES_MANUAL_REVIEW": "Preset sent to manual review (risk: {{risk_score}}, flags: {{flags_count}})",
+    "WARN_PRESET_PARAM_OUTSIDE_TYPICAL_RANGE": "Parameter \"{{field_name}}\" is outside the typical {{material_type}} range: {{value}} (expected {{soft_min}}–{{soft_max}})",
+    "WARN_PRESET_POSSIBLE_DUPLICATE": "Possible duplicate of preset \"{{duplicate_preset_name}}\" (ID {{duplicate_preset_id}})"
   }
 }

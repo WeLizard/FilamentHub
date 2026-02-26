@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import TYPE_CHECKING, Any
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from app.schemas.printer import PrinterResponse
 
@@ -48,6 +48,14 @@ class PresetBase(BaseModel):
     rating: float | None = Field(None, ge=1, le=5)
     success_rate: float | None = Field(None, ge=0.0, le=100.0, description="Процент успешных печатей (0-100)")
     usage_count: int = Field(0, ge=0)
+
+    @field_validator("name")
+    @classmethod
+    def validate_name_not_blank(cls, value: str) -> str:
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("Preset name cannot be empty")
+        return normalized
 
 
 class PresetCreate(PresetBase):
@@ -92,6 +100,16 @@ class PresetUpdate(BaseModel):
     
     # Printers
     printer_ids: list[int] | None = Field(None, description="Список ID принтеров, для которых подходит этот пресет")
+
+    @field_validator("name")
+    @classmethod
+    def validate_name_not_blank(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("Preset name cannot be empty")
+        return normalized
 
 
 class PresetResponse(PresetBase):
@@ -151,5 +169,4 @@ class RecommendedPresetResponse(BaseModel):
     avg_rating: float | None = Field(None, ge=0, le=5, description="Average rating of used presets")
     
     model_config = ConfigDict(from_attributes=True)
-
 

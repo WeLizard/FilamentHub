@@ -2,12 +2,12 @@
 
 import logging
 import re
-from typing import Optional
+from typing import Any, Optional
 
 logger = logging.getLogger(__name__)
 
 from better_profanity import profanity
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 # BadWord импортируется лениво в _load_bad_words_from_db, чтобы не падать при отсутствии таблицы
@@ -356,9 +356,146 @@ def validate_preset_settings(
     return True, None
 
 
+MANUAL_REVIEW_SCORE_THRESHOLD = 25
+
+
+def _collect_soft_range_flags(preset: Preset, filament: Filament) -> list[dict[str, Any]]:
+    """Собрать мягкие предупреждения (выбросы) по типичным диапазонам."""
+    material_type = filament.material_type.upper() if filament.material_type else None
+    if not material_type or material_type not in MATERIAL_SETTINGS_RANGES:
+        return []
+
+    ranges = MATERIAL_SETTINGS_RANGES[material_type]
+    checks: list[tuple[str, float | int | None]] = [
+        ("extruder_temp", preset.extruder_temp),
+        ("bed_temp", preset.bed_temp),
+        ("print_speed", preset.print_speed),
+        ("fan_speed", preset.fan_speed),
+        ("retraction_length", preset.retraction_length),
+        ("retraction_speed", preset.retraction_speed),
+    ]
+
+    flags: list[dict[str, Any]] = []
+    for field_name, value in checks:
+        if value is None:
+            continue
+
+        field_range = ranges.get(field_name, {})
+        soft_min = field_range.get("soft_min")
+        soft_max = field_range.get("soft_max")
+        if soft_min is None or soft_max is None:
+            continue
+
+        numeric_value = float(value)
+        if soft_min <= numeric_value <= soft_max:
+            continue
+
+        # Нормализуем отклонение к [0..]
+        if numeric_value < soft_min:
+            deviation = (soft_min - numeric_value) / max(abs(float(soft_min)), 1.0)
+        else:
+            deviation = (numeric_value - soft_max) / max(abs(float(soft_max)), 1.0)
+
+        if deviation >= 0.20:
+            score = 20
+            severity = "high"
+        elif deviation >= 0.10:
+            score = 14
+            severity = "medium"
+        else:
+            score = 8
+            severity = "low"
+
+        flags.append(
+            {
+                "code": "WARN_PRESET_PARAM_OUTSIDE_TYPICAL_RANGE",
+                "params": {
+                    "field_name": field_name,
+                    "value": round(numeric_value, 3),
+                    "soft_min": soft_min,
+                    "soft_max": soft_max,
+                    "material_type": material_type,
+                },
+                "severity": severity,
+                "score": score,
+            }
+        )
+
+    return flags
+
+
+def _is_setting_close(a: float | int | None, b: float | int | None, tolerance: float) -> bool:
+    if a is None or b is None:
+        return False
+    return abs(float(a) - float(b)) <= tolerance
+
+
+def _looks_like_duplicate_settings(preset: Preset, candidate: Preset) -> bool:
+    comparisons = [
+        (preset.extruder_temp, candidate.extruder_temp, 3.0),
+        (preset.bed_temp, candidate.bed_temp, 3.0),
+        (preset.print_speed, candidate.print_speed, 8.0),
+        (preset.flow_rate, candidate.flow_rate, 4.0),
+        (preset.fan_speed, candidate.fan_speed, 12.0),
+        (preset.retraction_length, candidate.retraction_length, 0.8),
+        (preset.retraction_speed, candidate.retraction_speed, 8.0),
+    ]
+
+    compared = 0
+    matched = 0
+    for left, right, tolerance in comparisons:
+        if left is None or right is None:
+            continue
+        compared += 1
+        if _is_setting_close(left, right, tolerance):
+            matched += 1
+
+    if compared < 4:
+        return False
+    return matched >= max(3, compared - 1)
+
+
+async def _find_duplicate_preset_flag(
+    preset: Preset,
+    db: AsyncSession,
+) -> dict[str, Any] | None:
+    """Проверить, не выглядит ли пресет как дубликат уже существующего."""
+    if not preset.user_id or not preset.filament_id or not preset.name:
+        return None
+
+    normalized_name = preset.name.strip().lower()
+    if not normalized_name:
+        return None
+
+    query = select(Preset).where(
+        Preset.user_id == preset.user_id,
+        Preset.filament_id == preset.filament_id,
+        func.lower(Preset.name) == normalized_name,
+        Preset.moderation_status != PresetModerationStatus.REJECTED,
+    )
+    if preset.id:
+        query = query.where(Preset.id != preset.id)
+
+    result = await db.execute(query.limit(10))
+    candidates = result.scalars().all()
+    for candidate in candidates:
+        if _looks_like_duplicate_settings(preset, candidate):
+            return {
+                "code": "WARN_PRESET_POSSIBLE_DUPLICATE",
+                "params": {
+                    "duplicate_preset_id": candidate.id,
+                    "duplicate_preset_name": candidate.name,
+                },
+                "severity": "medium",
+                "score": 18,
+            }
+
+    return None
+
+
 async def moderate_preset(
     preset: Preset, filament: Filament, db: AsyncSession, is_official: bool = False
-) -> tuple[PresetModerationStatus, Optional[str]]:
+) -> tuple[PresetModerationStatus, Optional[dict[str, Any] | str]]:
     """
     Автоматическая модерация пресета.
     
@@ -392,6 +529,32 @@ async def moderate_preset(
     if not is_valid_settings:
         return PresetModerationStatus.REJECTED, settings_reason
     
-    # Всё ок, одобряем
-    return PresetModerationStatus.APPROVED, None
+    # Мягкие сигналы риска -> отправляем на ручную модерацию
+    flags = _collect_soft_range_flags(preset, filament)
+    duplicate_flag = await _find_duplicate_preset_flag(preset, db)
+    if duplicate_flag is not None:
+        flags.append(duplicate_flag)
 
+    risk_score = int(sum(int(flag.get("score", 0)) for flag in flags))
+    if risk_score >= MANUAL_REVIEW_SCORE_THRESHOLD:
+        return (
+            PresetModerationStatus.PENDING,
+            {
+                "code": "ERR_PRESET_REQUIRES_MANUAL_REVIEW",
+                "params": {
+                    "risk_score": risk_score,
+                    "flags_count": len(flags),
+                },
+                "flags": [
+                    {
+                        "code": flag.get("code"),
+                        "params": flag.get("params", {}),
+                        "severity": flag.get("severity", "low"),
+                    }
+                    for flag in flags
+                ],
+            },
+        )
+
+    # Всё ок, одобряем автоматически
+    return PresetModerationStatus.APPROVED, None

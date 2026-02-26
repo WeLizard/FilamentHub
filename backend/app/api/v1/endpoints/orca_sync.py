@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import logging
 import re
 from datetime import datetime, timezone
@@ -64,12 +65,69 @@ from app.services.orcaslicer_service import (
     remove_saved_preset,
     save_user_deleted_preset_rule,
 )
-from app.services.preset_moderation import validate_text_field
+from app.services.preset_moderation import moderate_preset, validate_text_field
 from app.services.slug_service import generate_unique_slug
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/orcaslicer", tags=["orcaslicer"])
+
+
+def _serialize_moderation_reason(reason: Any) -> str | None:
+    if reason is None:
+        return None
+    if isinstance(reason, (dict, list)):
+        return json.dumps(reason, ensure_ascii=False)
+    return str(reason)
+
+
+async def _resolve_preset_filament(
+    preset: Preset,
+    filament_hint: Filament | None,
+    db: AsyncSession,
+) -> Filament | None:
+    if preset.filament_id is None:
+        return None
+    if filament_hint is not None and filament_hint.id == preset.filament_id:
+        return filament_hint
+    return await db.get(Filament, preset.filament_id)
+
+
+async def _apply_orca_import_moderation(
+    preset: Preset,
+    filament_hint: Filament | None,
+    db: AsyncSession,
+) -> None:
+    """Применить модерацию к пресету при импорте из Orca.
+
+    Для импорта мы не блокируем сохранение: всё, что не APPROVED, переводим в PENDING
+    с сохранением причины в moderation_reason.
+    """
+    if preset.is_official:
+        preset.moderation_status = PresetModerationStatus.APPROVED
+        preset.moderation_reason = None
+        return
+
+    filament = await _resolve_preset_filament(preset, filament_hint, db)
+    if filament is None:
+        preset.moderation_status = PresetModerationStatus.PENDING
+        preset.moderation_reason = None
+        return
+
+    moderation_status, moderation_reason = await moderate_preset(
+        preset,
+        filament,
+        db,
+        is_official=False,
+    )
+
+    if moderation_status == PresetModerationStatus.APPROVED:
+        preset.moderation_status = PresetModerationStatus.APPROVED
+        preset.moderation_reason = None
+        return
+
+    preset.moderation_status = PresetModerationStatus.PENDING
+    preset.moderation_reason = _serialize_moderation_reason(moderation_reason)
 
 
 def _normalize_for_match(value: str | None) -> str:
@@ -2283,6 +2341,7 @@ async def _upsert_filament_preset(
                 logger.info(f"Activated preset {preset.id} (found by cleaned name for [FilamentHub] preset)")
             # Обновляем updated_at вручную, чтобы отметить, что пресет был изменен
             preset.updated_at = datetime.now(timezone.utc)
+            await _apply_orca_import_moderation(preset, filament, db)
 
             return OrcaSyncResult(
                 external_id=payload.external_id,
@@ -2394,6 +2453,7 @@ async def _upsert_filament_preset(
             if payload.external_id:
                 preset.external_id = payload.external_id
             # КРИТИЧНО: НЕ меняем sync_enabled автоматически! Это исключительно пользовательский выбор.
+            await _apply_orca_import_moderation(preset, filament, db)
 
             await db.commit()
             await db.refresh(preset)
@@ -2480,6 +2540,8 @@ async def _upsert_filament_preset(
             # ВАЖНО: Сохраняем как строку для консистентности с JSON
             preset.orcaslicer_settings["fhub_id"] = str(preset.id)
             preset.orcaslicer_settings["fhub_source"] = "filamenthub"
+
+        await _apply_orca_import_moderation(preset, filament, db)
 
         if filament:
             logger.info(

@@ -3,14 +3,45 @@
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Settings, CheckCircle, XCircle } from 'lucide-react';
+import { Settings, CheckCircle, XCircle, Pencil } from 'lucide-react';
 import { adminAPI } from '../../api/client';
 import type { Preset } from '../../types/api';
+import { CreatePresetModal } from '../CreatePresetModal';
+import { translateApiError } from '../../utils/translateApiError';
+
+type ModerationFlag = {
+  code?: string;
+  params?: Record<string, unknown>;
+  severity?: string;
+};
+
+type ModerationReasonPayload = {
+  code?: string;
+  params?: Record<string, unknown>;
+  flags?: ModerationFlag[];
+};
+
+const parseModerationReason = (value: string | null | undefined): ModerationReasonPayload | null => {
+  if (!value) {
+    return null;
+  }
+
+  try {
+    const parsed = JSON.parse(value) as unknown;
+    if (!parsed || typeof parsed !== 'object') {
+      return null;
+    }
+    return parsed as ModerationReasonPayload;
+  } catch {
+    return null;
+  }
+};
 
 export function AdminPresets() {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
   const [page, setPage] = useState(1);
+  const [editingPreset, setEditingPreset] = useState<Preset | null>(null);
 
   // Загрузка пресетов ожидающих модерации
   const { data: pendingPresets, isLoading } = useQuery({
@@ -55,63 +86,99 @@ export function AdminPresets() {
         </div>
       ) : (
         <div className="space-y-4">
-          {presets.map((preset) => (
-            <div
-              key={preset.id}
-              className="bg-white/5 rounded-xl p-4 border border-white/10 hover:border-white/20 transition-all"
-            >
-              <div className="flex items-start justify-between">
-                <div className="flex-1">
-                  <div className="flex items-center space-x-3 mb-2">
-                    <Settings className="w-5 h-5 text-purple-400" />
-                    <h3 className="text-lg font-semibold text-white">{preset.name}</h3>
+          {presets.map((preset) => {
+            const moderationReason = parseModerationReason(preset.moderation_reason);
+            const moderationFlags = moderationReason?.flags ?? [];
+
+            return (
+              <div
+                key={preset.id}
+                className="bg-white/5 rounded-xl p-4 border border-white/10 hover:border-white/20 transition-all"
+              >
+                <div className="flex items-start justify-between">
+                  <div className="flex-1">
+                    <div className="flex items-center space-x-3 mb-2">
+                      <Settings className="w-5 h-5 text-purple-400" />
+                      <h3 className="text-lg font-semibold text-white">{preset.name}</h3>
+                    </div>
+                    {preset.description && (
+                      <p className="text-sm text-gray-400 mb-2">{preset.description}</p>
+                    )}
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-sm text-gray-400">
+                      <div>{t('adminPresets.nozzle')}: {preset.extruder_temp}°C</div>
+                      <div>{t('adminPresets.bed')}: {preset.bed_temp}°C</div>
+                      <div>{t('adminPresets.speed')}: {preset.print_speed}mm/s</div>
+                      <div>{t('adminPresets.usages')}: {preset.usage_count}</div>
+                    </div>
+                    <p className="text-xs text-gray-500 mt-2">
+                      {t('adminPresets.created')}: {new Date(preset.created_at).toLocaleString('ru-RU')}
+                    </p>
+                    {moderationReason?.code && (
+                      <div className="mt-3 rounded-lg border border-amber-500/30 bg-amber-500/10 p-3">
+                        <p className="text-xs font-medium text-amber-200">
+                          {translateApiError(t, moderationReason, t('adminPresets.manualReviewFallback'))}
+                        </p>
+                        {moderationFlags.length > 0 && (
+                          <ul className="mt-2 space-y-1">
+                            {moderationFlags.map((flag, index) => (
+                              <li key={`${preset.id}-flag-${index}`} className="text-xs text-amber-100/90">
+                                • {translateApiError(t, flag, t('adminPresets.flagFallback'))}
+                              </li>
+                            ))}
+                          </ul>
+                        )}
+                      </div>
+                    )}
                   </div>
-                  {preset.description && (
-                    <p className="text-sm text-gray-400 mb-2">{preset.description}</p>
-                  )}
-                  <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-sm text-gray-400">
-                    <div>{t('adminPresets.nozzle')}: {preset.extruder_temp}°C</div>
-                    <div>{t('adminPresets.bed')}: {preset.bed_temp}°C</div>
-                    <div>{t('adminPresets.speed')}: {preset.print_speed}mm/s</div>
-                    <div>{t('adminPresets.usages')}: {preset.usage_count}</div>
+                  <div className="flex items-center space-x-2">
+                    <button
+                      onClick={() => setEditingPreset(preset)}
+                      className="flex items-center space-x-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-all"
+                    >
+                      <Pencil className="w-4 h-4" />
+                      <span>{t('adminPresets.edit')}</span>
+                    </button>
+                    <button
+                      onClick={() => {
+                        if (confirm(t('adminPresets.confirmApprove', { name: preset.name }))) {
+                          approveMutation.mutate(preset.id);
+                        }
+                      }}
+                      disabled={approveMutation.isPending}
+                      className="flex items-center space-x-2 px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg transition-all disabled:opacity-50"
+                    >
+                      <CheckCircle className="w-4 h-4" />
+                      <span>{t('adminPresets.approve')}</span>
+                    </button>
+                    <button
+                      onClick={() => {
+                        const reason = prompt(t('adminPresets.rejectReasonPrompt'));
+                        if (reason && reason.trim()) {
+                          rejectMutation.mutate({ presetId: preset.id, reason: reason.trim() });
+                        }
+                      }}
+                      disabled={rejectMutation.isPending}
+                      className="flex items-center space-x-2 px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg transition-all disabled:opacity-50"
+                    >
+                      <XCircle className="w-4 h-4" />
+                      <span>{t('adminPresets.reject')}</span>
+                    </button>
                   </div>
-                  <p className="text-xs text-gray-500 mt-2">
-                    {t('adminPresets.created')}: {new Date(preset.created_at).toLocaleString('ru-RU')}
-                  </p>
-                </div>
-                <div className="flex items-center space-x-2">
-                  <button
-                    onClick={() => {
-                      if (confirm(t('adminPresets.confirmApprove', { name: preset.name }))) {
-                        approveMutation.mutate(preset.id);
-                      }
-                    }}
-                    disabled={approveMutation.isPending}
-                    className="flex items-center space-x-2 px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg transition-all disabled:opacity-50"
-                  >
-                    <CheckCircle className="w-4 h-4" />
-                    <span>{t('adminPresets.approve')}</span>
-                  </button>
-                  <button
-                    onClick={() => {
-                      const reason = prompt(t('adminPresets.rejectReasonPrompt'));
-                      if (reason && reason.trim()) {
-                        rejectMutation.mutate({ presetId: preset.id, reason: reason.trim() });
-                      }
-                    }}
-                    disabled={rejectMutation.isPending}
-                    className="flex items-center space-x-2 px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg transition-all disabled:opacity-50"
-                  >
-                    <XCircle className="w-4 h-4" />
-                    <span>{t('adminPresets.reject')}</span>
-                  </button>
                 </div>
               </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
+
+      <CreatePresetModal
+        isOpen={!!editingPreset}
+        onClose={() => {
+          setEditingPreset(null);
+          queryClient.invalidateQueries({ queryKey: ['admin-pending-presets'] });
+        }}
+        preset={editingPreset}
+      />
     </div>
   );
 }
-

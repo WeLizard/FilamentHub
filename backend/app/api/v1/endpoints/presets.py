@@ -1,7 +1,7 @@
 """Preset endpoints."""
 
 import logging
-from typing import Annotated
+from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from fastapi.responses import JSONResponse
@@ -48,6 +48,14 @@ from app.services.preset_recommender import get_recommended_preset_values
 from app.services.weighted_preset_service import create_or_update_weighted_preset
 
 router = APIRouter(prefix="/presets", tags=["presets"])
+
+
+def _serialize_moderation_reason(reason: Any) -> str | None:
+    if reason is None:
+        return None
+    if isinstance(reason, (dict, list)):
+        return json.dumps(reason, ensure_ascii=False)
+    return str(reason)
 
 
 @router.get("/", response_model=PresetListResponse)
@@ -244,9 +252,11 @@ async def create_preset(
                 detail=moderation_reason,  # structured {"code": "ERR_...", "params": {...}}
             )
         preset.moderation_status = moderation_status
+        preset.moderation_reason = _serialize_moderation_reason(moderation_reason) if moderation_status == PresetModerationStatus.PENDING else None
     else:
         # Официальные пресеты автоматически одобряются
         preset.moderation_status = PresetModerationStatus.APPROVED
+        preset.moderation_reason = None
     
     db.add(preset)
     await db.flush()  # Получаем ID пресета
@@ -354,16 +364,17 @@ async def update_preset(
         if not filament:
             raise_error(404, ERR_FILAMENT_NOT_FOUND)
     
-    # Сохраняем старое состояние для проверки активации черновика
+    # Сохраняем старое состояние для проверки активации черновика.
+    # sync больше управляется в user_saved_presets, поэтому здесь
+    # учитываем только переход черновика в активный пресет.
     was_draft = not preset.active or not preset.filament_id
-    old_sync_enabled = preset.sync_enabled
     
     for field, value in update_data.items():
         setattr(preset, field, value)
     
-    # Логика замены меток при активации черновика
-    # Если черновик активируется (active становится True) или включается синхронизация
-    if (was_draft and preset.active) or (not old_sync_enabled and preset.sync_enabled):
+    # Логика замены меток при активации черновика:
+    # если черновик стал активным и привязан к филаменту.
+    if was_draft and preset.active and preset.filament_id:
         # Инициализируем orcaslicer_settings если его нет
         if preset.orcaslicer_settings is None:
             preset.orcaslicer_settings = {}
@@ -388,13 +399,22 @@ async def update_preset(
         # Если пресет был одобрен, а теперь отклонён - меняем статус
         if moderation_status == PresetModerationStatus.REJECTED:
             preset.moderation_status = moderation_status
-            preset.moderation_reason = json.dumps(moderation_reason) if isinstance(moderation_reason, dict) else moderation_reason
+            preset.moderation_reason = _serialize_moderation_reason(moderation_reason)
             preset.active = False
-        # Если пресет был отклонён, но теперь проходит проверку - одобряем
-        elif preset.moderation_status == PresetModerationStatus.REJECTED and moderation_status == PresetModerationStatus.APPROVED:
+        # Требуется ручная проверка — переводим в pending и сохраняем причину/флаги.
+        elif moderation_status == PresetModerationStatus.PENDING:
+            preset.moderation_status = PresetModerationStatus.PENDING
+            preset.moderation_reason = _serialize_moderation_reason(moderation_reason)
+            if not preset.active:
+                preset.active = True
+        # Если пресет проходит проверку, а текущий статус не APPROVED
+        # (например, PENDING после импорта из OrcaSlicer), переводим в APPROVED.
+        elif moderation_status == PresetModerationStatus.APPROVED and preset.moderation_status != PresetModerationStatus.APPROVED:
             preset.moderation_status = moderation_status
             preset.moderation_reason = None
-            preset.active = True
+            # Для ранее отклонённых возвращаем активность.
+            if not preset.active:
+                preset.active = True
     
     # Обновляем связи с принтерами, если указаны
     if printer_ids is not None:
