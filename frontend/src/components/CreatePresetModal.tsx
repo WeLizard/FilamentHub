@@ -939,6 +939,7 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
         retraction_speed?: number;
         orcaslicer_settings?: Record<string, any> | null;
         printer_ids?: number[];
+        filament_id?: number | null;
         active?: boolean;
       }>
     }) => presetsAPI.update(id, data),
@@ -1203,7 +1204,8 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
     setError(null);
 
     // Если создаем новый филамент, сначала создаем его
-    if (showFilamentForm && !preset) {
+    // ВАЖНО: это работает и при создании пресета, и при редактировании черновика
+    if (showFilamentForm) {
       // Если передан brandId из пропсов - используем его (бренд создает материал для себя)
       let finalBrandId: number;
       
@@ -1312,24 +1314,65 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
         const orcaslicerSettings = buildOrcaslicerSettings(filamentColorHex);
         
         try {
-          await createMutation.mutateAsync({
-            filament_id: newFilament.id,
-            name,
-            description: description || undefined,
-            is_official: isOfficial,
-            extruder_temp: extruderTemp,
-            bed_temp: bedTemp,
-            print_speed: printSpeed,
-            travel_speed: travelSpeed,
-            flow_rate: flowRate,
-            fan_speed: fanSpeed,
-            retraction_length: retractionLength,
-            retraction_speed: retractionSpeed,
-            orcaslicer_settings: orcaslicerSettings,
-            printer_ids: selectedPrinterIds.length > 0 ? selectedPrinterIds : undefined,
-          });
+          if (preset) {
+            // Редактирование заготовки: привязываем только что созданный материал
+            // и активируем пресет
+            const updateData: {
+              name: string;
+              description?: string;
+              extruder_temp: number;
+              bed_temp: number;
+              print_speed: number;
+              travel_speed: number;
+              flow_rate: number;
+              fan_speed: number;
+              retraction_length: number;
+              retraction_speed: number;
+              orcaslicer_settings?: Record<string, unknown> | null;
+              printer_ids: number[];
+              filament_id: number;
+              active?: boolean;
+            } = {
+              name,
+              description: description || undefined,
+              extruder_temp: extruderTemp,
+              bed_temp: bedTemp,
+              print_speed: printSpeed,
+              travel_speed: travelSpeed,
+              flow_rate: flowRate,
+              fan_speed: fanSpeed,
+              retraction_length: retractionLength,
+              retraction_speed: retractionSpeed,
+              orcaslicer_settings: orcaslicerSettings,
+              printer_ids: selectedPrinterIds.length > 0 ? selectedPrinterIds : [],
+              filament_id: newFilament.id,
+              active: isDraft ? true : undefined,
+            };
+
+            await updateMutation.mutateAsync({
+              id: preset.id,
+              data: updateData,
+            });
+          } else {
+            await createMutation.mutateAsync({
+              filament_id: newFilament.id,
+              name,
+              description: description || undefined,
+              is_official: isOfficial,
+              extruder_temp: extruderTemp,
+              bed_temp: bedTemp,
+              print_speed: printSpeed,
+              travel_speed: travelSpeed,
+              flow_rate: flowRate,
+              fan_speed: fanSpeed,
+              retraction_length: retractionLength,
+              retraction_speed: retractionSpeed,
+              orcaslicer_settings: orcaslicerSettings,
+              printer_ids: selectedPrinterIds.length > 0 ? selectedPrinterIds : undefined,
+            });
+          }
         } catch (err) {
-          // Ошибка уже обработана в createMutation.onError
+          // Ошибка уже обработана в createMutation.onError / updateMutation.onError
         }
       } catch (err) {
         // Ошибка уже обработана в createFilamentMutation.onError
