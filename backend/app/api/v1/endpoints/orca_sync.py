@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import re
 from datetime import datetime, timezone
 from typing import Annotated, Any
 
@@ -76,6 +77,82 @@ def _normalize_for_match(value: str | None) -> str:
     if not value:
         return ""
     return " ".join(str(value).lower().strip().split())
+
+
+_PLACEHOLDER_IDENTITIES = {
+    "printer",
+    "принтер",
+    "unknown",
+    "default",
+    "generic",
+    "custom",
+    "none",
+    "null",
+    "n/a",
+    "na",
+    "-",
+}
+_PLACEHOLDER_PRINTER_RE = re.compile(r"^(printer|принтер)\s*[-_#:]?\s*\d+$", re.IGNORECASE)
+_VENDOR_ALIASES = {
+    "bambu": "Bambu Lab",
+    "bambulab": "Bambu Lab",
+    "creality3d": "Creality",
+    "prusa3d": "Prusa",
+    "prusaresearch": "Prusa",
+    "qiditech": "QIDI",
+}
+
+
+def _is_placeholder_identity(value: str | None) -> bool:
+    normalized = _normalize_for_match(value)
+    if not normalized:
+        return True
+    if normalized in _PLACEHOLDER_IDENTITIES:
+        return True
+    if _PLACEHOLDER_PRINTER_RE.fullmatch(normalized):
+        return True
+    return False
+
+
+def _clean_identity_value(value: Any | None) -> str:
+    if value is None:
+        return ""
+    cleaned = str(value).strip()
+    if not cleaned:
+        return ""
+    if _is_placeholder_identity(cleaned):
+        return ""
+    return cleaned
+
+
+def _normalize_vendor_name(value: Any | None) -> str:
+    cleaned = _clean_identity_value(value)
+    if not cleaned:
+        return ""
+    normalized = _normalize_for_match(cleaned).replace("-", " ").replace("_", " ")
+    normalized = " ".join(normalized.split())
+    alias_key = normalized.replace(" ", "")
+    return _VENDOR_ALIASES.get(alias_key, cleaned)
+
+
+def _vendor_search_terms(value: Any | None) -> list[str]:
+    cleaned = _clean_identity_value(value)
+    if not cleaned:
+        return []
+    canonical = _normalize_vendor_name(cleaned)
+    terms = {cleaned, canonical}
+    for candidate in (cleaned, canonical):
+        compact = candidate.replace(" ", "")
+        if compact:
+            terms.add(compact)
+    return [term for term in terms if term]
+
+
+def _normalize_vendor_key(value: str | None) -> str:
+    normalized = _normalize_for_match(value)
+    if not normalized:
+        return ""
+    return normalized.replace(" ", "").replace("-", "").replace("_", "")
 
 
 def _extract_material_type_from_inherits(inherits: str | None) -> str:
@@ -181,21 +258,29 @@ async def _ensure_printer_id(
             return printer.id
     
     # 4. Извлекаем данные для сопоставления из OrcaSlicer metadata
-    vendor_name = (
-        profile_vendor
-        or combined_metadata.get("printer_vendor")
-        or combined_metadata.get("vendor")
-        or combined_metadata.get("from")  # OrcaSlicer может указывать vendor в поле "from"
-        or ""
-    )
+    vendor_name = ""
+    for vendor_candidate in (
+        profile_vendor,
+        combined_metadata.get("printer_vendor"),
+        combined_metadata.get("vendor"),
+        combined_metadata.get("from"),  # OrcaSlicer может указывать vendor в поле "from"
+    ):
+        normalized_vendor = _normalize_vendor_name(vendor_candidate)
+        if normalized_vendor:
+            vendor_name = normalized_vendor
+            break
 
-    # Для printer_model пробуем разные поля из OrcaSlicer
-    printer_model = (
-        combined_metadata.get("printer_model")  # Основное поле для ссылки на базовую модель
-        or combined_metadata.get("model")
-        or combined_metadata.get("name")  # Иногда model хранится в name
-        or ""
-    )
+    # Для printer_model пробуем разные поля из OrcaSlicer и отбрасываем placeholder значения
+    printer_model = ""
+    for model_candidate in (
+        combined_metadata.get("printer_model"),  # Основное поле для ссылки на базовую модель
+        combined_metadata.get("model"),
+        combined_metadata.get("name"),  # Иногда model хранится в name
+    ):
+        cleaned_model = _clean_identity_value(model_candidate)
+        if cleaned_model:
+            printer_model = cleaned_model
+            break
 
     # Если model пустой, попробуем извлечь из inherits (ссылка на базовый принтер)
     if not printer_model and combined_metadata.get("inherits"):
@@ -205,11 +290,11 @@ async def _ensure_printer_id(
             parts = inherits.split("/")
             if len(parts) >= 2:
                 # Если есть vendor/model в inherits
-                vendor_name = vendor_name or parts[-2]  # Предпоследняя часть
-                printer_model = printer_model or parts[-1]  # Последняя часть
+                vendor_name = vendor_name or _normalize_vendor_name(parts[-2])  # Предпоследняя часть
+                printer_model = printer_model or _clean_identity_value(parts[-1])  # Последняя часть
             elif len(parts) == 1:
                 # Просто имя модели в inherits
-                printer_model = printer_model or inherits
+                printer_model = printer_model or _clean_identity_value(inherits)
     
     # Пытаемся определить manufacturer и model из имени профиля
     # Сначала пробуем извлечь чистое название принтера (без диаметра сопла)
@@ -218,8 +303,10 @@ async def _ensure_printer_id(
     # Для OrcaSlicer принтеров имя часто имеет формат: "Vendor Model nozzle"
     # Пример: "Creality Ender 3 0.4 nozzle" -> vendor="Creality", model="Ender 3"
     name_parts = (clean_printer_name or profile_name or "").split()
-    manufacturer_from_name = name_parts[0] if name_parts else ""
-    model_from_name = " ".join(name_parts[1:]) if len(name_parts) > 1 else (clean_printer_name or profile_name or "")
+    manufacturer_from_name = _clean_identity_value(name_parts[0] if name_parts else "")
+    model_from_name = _clean_identity_value(
+        " ".join(name_parts[1:]) if len(name_parts) > 1 else (clean_printer_name or profile_name or "")
+    )
 
     # Если vendor не указан в metadata, попробуем извлечь его из имени профиля
     # Для OrcaSlicer формат обычно: "Vendor Model nozzle" или просто "Vendor Model"
@@ -236,7 +323,9 @@ async def _ensure_printer_id(
         # Проверим, начинается ли имя принтера с какого-то известного manufacturer'а
         for manufacturer in all_manufacturers:
             if manufacturer and clean_printer_name.upper().startswith(manufacturer.upper()):
-                potential_manufacturers.add(manufacturer)
+                normalized_manufacturer = _normalize_vendor_name(manufacturer)
+                if normalized_manufacturer:
+                    potential_manufacturers.add(normalized_manufacturer)
 
         # Если нашли потенциальных manufacturer'ов, выберем самого длинного (точнее)
         if potential_manufacturers:
@@ -245,21 +334,29 @@ async def _ensure_printer_id(
             if clean_printer_name.upper().startswith(vendor_name.upper()):
                 remaining_part = clean_printer_name[len(vendor_name):].strip()
                 if remaining_part:
-                    model_from_name = remaining_part
+                    model_from_name = _clean_identity_value(remaining_part)
 
     # Извлекаем manufacturer и model из combined_metadata (если OrcaSlicer передал их отдельно)
-    manufacturer_from_metadata = combined_metadata.get("manufacturer") or ""
-    model_from_metadata = combined_metadata.get("model") or ""
+    manufacturer_from_metadata = _clean_identity_value(combined_metadata.get("manufacturer"))
+    model_from_metadata = _clean_identity_value(combined_metadata.get("model"))
     
     # Используем данные из metadata, если есть, иначе из имени
+    vendor_name = _normalize_vendor_name(vendor_name)
     manufacturer = manufacturer_from_metadata or vendor_name or manufacturer_from_name or "Custom"
-    model = model_from_metadata or printer_model or model_from_name or profile_name or "Unknown"
+    model = (
+        model_from_metadata
+        or _clean_identity_value(printer_model)
+        or model_from_name
+        or _clean_identity_value(profile_name)
+        or "Unknown"
+    )
     
     # Нормализуем для сопоставления
-    manufacturer_normalized = _normalize_for_match(manufacturer)
-    model_normalized = _normalize_for_match(model)
+    manufacturer_normalized = _normalize_for_match(_clean_identity_value(manufacturer))
+    model_normalized = _normalize_for_match(_clean_identity_value(model))
     vendor_normalized = _normalize_for_match(vendor_name)
-    name_normalized = _normalize_for_match(profile_name)
+    vendor_key = _normalize_vendor_key(vendor_name)
+    name_normalized = _normalize_for_match(_clean_identity_value(profile_name))
     
     # 5. Поиск по printer_model из OrcaSlicer (ссылка на базовую модель) - САМЫЙ ПРИОРИТЕТНЫЙ
     if printer_model:
@@ -286,13 +383,19 @@ async def _ensure_printer_id(
                 return printer.id
 
     # 6. Поиск по vendor + model (для принтеров из базы OrcaSlicer) - ПРИОРИТЕТНЫЙ
-    if vendor_normalized and (printer_model or model_normalized):
-        search_model = _normalize_for_match(printer_model) or model_normalized
+    search_model = _normalize_for_match(
+        _clean_identity_value(printer_model) or _clean_identity_value(model)
+    )
+    if vendor_normalized and search_model:
+        vendor_terms = _vendor_search_terms(vendor_name)
+        vendor_conditions = [Printer.vendor.ilike(like_pattern(term)) for term in vendor_terms] or [
+            Printer.vendor.ilike(like_pattern(vendor_name))
+        ]
 
         # Точное совпадение vendor + model
         result = await db.execute(
             select(Printer).where(
-                Printer.vendor.ilike(like_pattern(vendor_name)),
+                or_(*vendor_conditions),
                 Printer.model.ilike(like_pattern(search_model))
             )
         )
@@ -303,7 +406,7 @@ async def _ensure_printer_id(
         # Если точное не найдено, попробуем умное сопоставление моделей
         logger.info(f"  🔍 Шаг 6: Умное сопоставление для vendor='{vendor_name}', model='{search_model}'")
         result = await db.execute(
-            select(Printer).where(Printer.vendor.ilike(like_pattern(vendor_name)))
+            select(Printer).where(or_(*vendor_conditions))
         )
         vendor_printers = result.scalars().all()
         logger.info(f"  📊 Найдено {len(vendor_printers)} принтеров vendor'а {vendor_name}")
@@ -337,7 +440,10 @@ async def _ensure_printer_id(
         # Строим условия поиска
         manufacturer_conditions = [Printer.manufacturer.ilike(like_pattern(manufacturer))]
         if vendor_name:  # Добавляем только если vendor_name не пустой
-            manufacturer_conditions.append(Printer.manufacturer.ilike(like_pattern(vendor_name)))
+            vendor_terms = _vendor_search_terms(vendor_name)
+            manufacturer_conditions.extend(
+                Printer.manufacturer.ilike(like_pattern(term)) for term in vendor_terms
+            )
 
         # Точное совпадение (case-insensitive)
         result = await db.execute(
@@ -353,42 +459,48 @@ async def _ensure_printer_id(
         # Фильтруем в памяти для точного сопоставления (SQL не может нормализовать так же точно)
         for printer in printers:
             printer_manufacturer = _normalize_for_match(printer.manufacturer)
+            printer_manufacturer_key = _normalize_vendor_key(printer.manufacturer)
             printer_model_norm = _normalize_for_match(printer.model)
 
             # Точное совпадение manufacturer и model
             if (
-                (printer_manufacturer == manufacturer_normalized or printer_manufacturer == vendor_normalized)
+                (printer_manufacturer == manufacturer_normalized or printer_manufacturer_key == vendor_key)
                 and printer_model_norm == model_normalized
             ):
                 return printer.id
 
             # Частичное совпадение (если manufacturer совпадает, а model содержит искомую модель)
             if (
-                (printer_manufacturer == manufacturer_normalized or printer_manufacturer == vendor_normalized)
+                (printer_manufacturer == manufacturer_normalized or printer_manufacturer_key == vendor_key)
                 and model_normalized in printer_model_norm
             ):
                 return printer.id
     
     # 8. Поиск по vendor + name (нормализованные)
     if vendor_normalized and name_normalized:
+        vendor_terms = _vendor_search_terms(vendor_name)
+        vendor_conditions = [Printer.vendor.ilike(like_pattern(term)) for term in vendor_terms] or [
+            Printer.vendor.ilike(like_pattern(vendor_name))
+        ]
         result = await db.execute(
             select(Printer).where(
-                Printer.vendor.ilike(like_pattern(vendor_name)),
+                or_(*vendor_conditions),
                 Printer.name.ilike(like_pattern(profile_name)),
             )
         )
         printers = result.scalars().all()
         
         for printer in printers:
-            printer_vendor = _normalize_for_match(printer.vendor)
+            printer_vendor_key = _normalize_vendor_key(printer.vendor)
             printer_name = _normalize_for_match(printer.name)
             
-            if printer_vendor == vendor_normalized and printer_name == name_normalized:
+            if printer_vendor_key == vendor_key and printer_name == name_normalized:
                 return printer.id
 
     # 7. Fallback: поиск по имени принтера (для случаев когда OrcaSlicer не передает ID)
     if profile_name:
         clean_printer_name = _extract_printer_name_from_profile_name(profile_name)
+        clean_printer_name = _clean_identity_value(clean_printer_name)
         if clean_printer_name:
             result = await db.execute(
                 select(Printer).where(Printer.name.ilike(like_pattern(clean_printer_name)))
@@ -402,19 +514,23 @@ async def _ensure_printer_id(
 
     # 8. Поиск по vendor + model из metadata
     if vendor_normalized and model_normalized:
+        vendor_terms = _vendor_search_terms(vendor_name)
+        vendor_conditions = [Printer.vendor.ilike(like_pattern(term)) for term in vendor_terms] or [
+            Printer.vendor.ilike(like_pattern(vendor_name))
+        ]
         result = await db.execute(
             select(Printer).where(
-                Printer.vendor.ilike(like_pattern(vendor_name)),
+                or_(*vendor_conditions),
                 Printer.model.ilike(like_pattern(model)),
             )
         )
         printers = result.scalars().all()
 
         for printer in printers:
-            printer_vendor = _normalize_for_match(printer.vendor)
+            printer_vendor_key = _normalize_vendor_key(printer.vendor)
             printer_model_norm = _normalize_for_match(printer.model)
 
-            if printer_vendor == vendor_normalized and printer_model_norm == model_normalized:
+            if printer_vendor_key == vendor_key and printer_model_norm == model_normalized:
                 return printer.id
 
     # Принтер не найден - создаем новый
@@ -424,26 +540,27 @@ async def _ensure_printer_id(
 
         # Формируем правильное имя принтера из manufacturer и model
         # Используем очищенное имя профиля (без диаметра сопла) если оно лучше
-        printer_display_name = clean_printer_name if clean_printer_name and clean_printer_name != profile_name else None
+        clean_profile_name = _clean_identity_value(clean_printer_name) or _clean_identity_value(profile_name)
+        printer_display_name = clean_profile_name if clean_profile_name and clean_profile_name != profile_name else None
         
         # Если manufacturer и model определены правильно, используем их для имени
-        if manufacturer and model and manufacturer != "Custom" and model != "Unknown":
+        if manufacturer_normalized and model_normalized:
             # Формируем имя: "Manufacturer Model" или просто "Model" если manufacturer пустой
             if manufacturer and manufacturer.lower() != "custom":
                 printer_display_name = f"{manufacturer} {model}".strip()
             else:
                 printer_display_name = model.strip()
-        elif printer_display_name:
+        elif clean_profile_name:
             # Используем очищенное имя профиля (без диаметра сопла)
-            printer_display_name = printer_display_name
+            printer_display_name = clean_profile_name
         else:
-            # Fallback: используем исходное имя профиля
-            printer_display_name = profile_name
+            # Жесткий fallback, когда входные данные полностью placeholder
+            printer_display_name = "Custom printer"
 
         # Используем printer_slug если есть, иначе генерируем из правильного имени
         final_slug = printer_slug
         if not final_slug:
-            slug_source = f"{manufacturer} {model}".strip() if manufacturer and model else printer_display_name
+            slug_source = f"{manufacturer} {model}".strip() if manufacturer_normalized and model_normalized else printer_display_name
             final_slug = await generate_unique_slug(
                 db=db,
                 model=Printer,
@@ -2892,4 +3009,3 @@ async def get_deleted_presets(
         preset_type=request.preset_type,
     )
     return SyncDeletedPresetsResponse(deleted=deleted)
-
