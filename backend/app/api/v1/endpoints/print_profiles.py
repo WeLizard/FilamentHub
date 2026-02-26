@@ -133,12 +133,12 @@ async def create_print_profile(
 
     from app.services.preset_moderation import validate_text_field
 
-    is_valid, error_msg = await validate_text_field(data.name, db, "Название профиля печати")
+    is_valid, error_msg = await validate_text_field(data.name, db, "print_profile_name")
     if not is_valid:
         raise HTTPException(status_code=400, detail=error_msg)  # bad words validation
 
     if data.description:
-        is_valid, error_msg = await validate_text_field(data.description, db, "Описание профиля печати")
+        is_valid, error_msg = await validate_text_field(data.description, db, "print_profile_description")
         if not is_valid:
             raise HTTPException(status_code=400, detail=error_msg)  # bad words validation
 
@@ -209,12 +209,12 @@ async def update_print_profile(
     from app.services.preset_moderation import validate_text_field
 
     if "name" in update_data:
-        is_valid, error_msg = await validate_text_field(update_data["name"], db, "Название профиля печати")
+        is_valid, error_msg = await validate_text_field(update_data["name"], db, "print_profile_name")
         if not is_valid:
             raise HTTPException(status_code=400, detail=error_msg)  # bad words validation
 
     if "description" in update_data and update_data["description"]:
-        is_valid, error_msg = await validate_text_field(update_data["description"], db, "Описание профиля печати")
+        is_valid, error_msg = await validate_text_field(update_data["description"], db, "print_profile_description")
         if not is_valid:
             raise HTTPException(status_code=400, detail=error_msg)  # bad words validation
 

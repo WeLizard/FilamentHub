@@ -2716,6 +2716,32 @@
   "editGCode": {
     "searchPlaceholder": "Search placeholders..."
   },
+  "fieldNames": {
+    "field": "Field",
+    "username": "Username",
+    "full_name": "Full name",
+    "bio": "Bio",
+    "brand_name": "Brand name",
+    "brand_description": "Brand description",
+    "filament_name": "Filament name",
+    "filament_description": "Filament description",
+    "color_name": "Color name",
+    "printer_name": "Printer name",
+    "printer_description": "Printer description",
+    "printer_profile_name": "Printer profile name",
+    "printer_profile_description": "Printer profile description",
+    "printer_profile_notes": "Printer profile notes",
+    "print_profile_name": "Print profile name",
+    "print_profile_description": "Print profile description",
+    "print_profile_notes": "Print profile notes",
+    "preset_name": "Preset name",
+    "preset_description": "Preset description",
+    "preset_notes": "Preset notes",
+    "review_comment": "Review comment",
+    "printer_model": "Printer model",
+    "message": "Message",
+    "proof_text": "Document description"
+  },
   "apiErrors": {
     "UNKNOWN_ERROR": "An unexpected error occurred",
 

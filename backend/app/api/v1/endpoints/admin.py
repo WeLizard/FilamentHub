@@ -259,12 +259,12 @@ async def update_brand_admin(
     update_data = data.model_dump(exclude_unset=True)
     
     if "name" in update_data:
-        is_valid, error_msg = await validate_text_field(update_data["name"], db, "Название бренда")
+        is_valid, error_msg = await validate_text_field(update_data["name"], db, "brand_name")
         if not is_valid:
             raise HTTPException(status_code=400, detail=error_msg)
     
     if "description" in update_data and update_data["description"]:
-        is_valid, error_msg = await validate_text_field(update_data["description"], db, "Описание бренда")
+        is_valid, error_msg = await validate_text_field(update_data["description"], db, "brand_description")
         if not is_valid:
             raise HTTPException(status_code=400, detail=error_msg)
     

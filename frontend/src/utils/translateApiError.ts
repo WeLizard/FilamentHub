@@ -31,8 +31,17 @@ export function translateApiError(
   // Structured error: { code: "ERR_...", params?: {...} }
   if (typeof detail === "object" && "code" in detail) {
     const { code, params } = detail as { code: string; params?: Record<string, unknown> };
+    // Translate field_name param if present (backend sends keys like "username", "brand_name")
+    const translatedParams = params ? { ...params } : {};
+    if (translatedParams.field_name && typeof translatedParams.field_name === "string") {
+      const fieldKey = `fieldNames.${translatedParams.field_name}`;
+      const fieldTranslated = t(fieldKey);
+      if (fieldTranslated !== fieldKey) {
+        translatedParams.field_name = fieldTranslated;
+      }
+    }
     const key = `apiErrors.${code}`;
-    const translated = t(key, params ?? {});
+    const translated = t(key, translatedParams);
     // If i18next returns the key itself, the translation is missing → use fallback
     if (translated === key) {
       return fallback ?? code;

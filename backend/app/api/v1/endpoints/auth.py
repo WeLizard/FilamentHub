@@ -119,17 +119,17 @@ async def register(
     
     # Проверка текстовых полей на плохие слова
     from app.services.preset_moderation import validate_text_field
-    is_valid, error_msg = await validate_text_field(data.username, db, "Имя пользователя")
+    is_valid, error_msg = await validate_text_field(data.username, db, "username")
     if not is_valid:
         raise HTTPException(status_code=400, detail=error_msg)
     
     if data.full_name:
-        is_valid, error_msg = await validate_text_field(data.full_name, db, "Полное имя")
+        is_valid, error_msg = await validate_text_field(data.full_name, db, "full_name")
         if not is_valid:
             raise HTTPException(status_code=400, detail=error_msg)
     
     if data.bio:
-        is_valid, error_msg = await validate_text_field(data.bio, db, "Биография")
+        is_valid, error_msg = await validate_text_field(data.bio, db, "bio")
         if not is_valid:
             raise HTTPException(status_code=400, detail=error_msg)
     
@@ -480,17 +480,17 @@ async def update_current_user(
     # Проверка текстовых полей на плохие слова
     from app.services.preset_moderation import validate_text_field
     if "username" in update_data:
-        is_valid, error_msg = await validate_text_field(update_data["username"], db, "Имя пользователя")
+        is_valid, error_msg = await validate_text_field(update_data["username"], db, "username")
         if not is_valid:
             raise HTTPException(status_code=400, detail=error_msg)
     
     if "full_name" in update_data and update_data["full_name"]:
-        is_valid, error_msg = await validate_text_field(update_data["full_name"], db, "Полное имя")
+        is_valid, error_msg = await validate_text_field(update_data["full_name"], db, "full_name")
         if not is_valid:
             raise HTTPException(status_code=400, detail=error_msg)
     
     if "bio" in update_data and update_data["bio"]:
-        is_valid, error_msg = await validate_text_field(update_data["bio"], db, "Биография")
+        is_valid, error_msg = await validate_text_field(update_data["bio"], db, "bio")
         if not is_valid:
             raise HTTPException(status_code=400, detail=error_msg)
     

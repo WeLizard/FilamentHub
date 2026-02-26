@@ -205,7 +205,7 @@ async def _load_bad_words_from_db(db: AsyncSession) -> tuple[list[str], list[str
         return [], []
 
 
-async def validate_text_field(text: str | None, db: AsyncSession, field_name: str = "Поле") -> tuple[bool, Optional[dict | str]]:
+async def validate_text_field(text: str | None, db: AsyncSession, field_name: str = "field") -> tuple[bool, Optional[dict | str]]:
     """
     Универсальная функция для проверки текстового поля на плохие слова.
 
@@ -224,7 +224,7 @@ async def validate_text_field(text: str | None, db: AsyncSession, field_name: st
     return await check_bad_words(text, db, field_name)
 
 
-async def check_bad_words(text: str, db: AsyncSession, field_name: str = "Поле") -> tuple[bool, Optional[dict]]:
+async def check_bad_words(text: str, db: AsyncSession, field_name: str = "field") -> tuple[bool, Optional[dict]]:
     """
     Проверить текст на наличие плохих слов.
 

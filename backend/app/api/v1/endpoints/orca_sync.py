@@ -622,7 +622,7 @@ async def _upsert_printer_profile(
     if not isinstance(payload, OrcaPrinterProfilePayload):
         raise ValueError("Invalid payload type for printer profile import")
 
-    is_valid, error_msg = await validate_text_field(payload.name, db, "Название профиля принтера")
+    is_valid, error_msg = await validate_text_field(payload.name, db, "printer_profile_name")
     if not is_valid:
         return OrcaSyncResult(
             external_id=payload.external_id,
@@ -632,8 +632,8 @@ async def _upsert_printer_profile(
         )
 
     for field_value, label in [
-        (payload.description, "Описание профиля принтера"),
-        (payload.notes, "Заметки к профилю принтера"),
+        (payload.description, "printer_profile_description"),
+        (payload.notes, "printer_profile_notes"),
     ]:
         if field_value:
             is_valid, error_msg = await validate_text_field(field_value, db, label)
@@ -930,7 +930,7 @@ async def _upsert_print_profile(
     if not isinstance(payload, OrcaPrintProfilePayload):
         raise ValueError("Invalid payload type for print profile import")
 
-    is_valid, error_msg = await validate_text_field(payload.name, db, "Название профиля печати")
+    is_valid, error_msg = await validate_text_field(payload.name, db, "print_profile_name")
     if not is_valid:
         return OrcaSyncResult(
             external_id=payload.external_id,
@@ -940,8 +940,8 @@ async def _upsert_print_profile(
         )
 
     for field_value, label in [
-        (payload.description, "Описание профиля печати"),
-        (payload.notes, "Заметки к профилю печати"),
+        (payload.description, "print_profile_description"),
+        (payload.notes, "print_profile_notes"),
     ]:
         if field_value:
             is_valid, error_msg = await validate_text_field(field_value, db, label)
@@ -1596,7 +1596,7 @@ async def _upsert_filament_preset(
         logger.info(f"Importing user filament preset '{preset_name}' as draft template")
 
     # Валидация текстовых полей
-    is_valid, error_msg = await validate_text_field(payload.name, db, "Название пресета")
+    is_valid, error_msg = await validate_text_field(payload.name, db, "preset_name")
     if not is_valid:
         return OrcaSyncResult(
             external_id=payload.external_id,
@@ -1606,9 +1606,9 @@ async def _upsert_filament_preset(
         )
 
     for field_value, label in [
-        (payload.description, "Описание пресета"),
-        (payload.notes, "Заметки к пресету"),
-        (payload.filament_name, "Название материала"),
+        (payload.description, "preset_description"),
+        (payload.notes, "preset_notes"),
+        (payload.filament_name, "filament_name"),
     ]:
         if field_value:
             is_valid, error_msg = await validate_text_field(field_value, db, label)

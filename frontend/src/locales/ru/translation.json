@@ -2738,6 +2738,32 @@
   "editGCode": {
     "searchPlaceholder": "Поиск плейсхолдеров..."
   },
+  "fieldNames": {
+    "field": "Поле",
+    "username": "Имя пользователя",
+    "full_name": "Полное имя",
+    "bio": "Биография",
+    "brand_name": "Название бренда",
+    "brand_description": "Описание бренда",
+    "filament_name": "Название материала",
+    "filament_description": "Описание материала",
+    "color_name": "Название цвета",
+    "printer_name": "Название принтера",
+    "printer_description": "Описание принтера",
+    "printer_profile_name": "Название профиля принтера",
+    "printer_profile_description": "Описание профиля принтера",
+    "printer_profile_notes": "Заметки к профилю принтера",
+    "print_profile_name": "Название профиля печати",
+    "print_profile_description": "Описание профиля печати",
+    "print_profile_notes": "Заметки к профилю печати",
+    "preset_name": "Название пресета",
+    "preset_description": "Описание пресета",
+    "preset_notes": "Заметки к пресету",
+    "review_comment": "Комментарий к отзыву",
+    "printer_model": "Модель принтера",
+    "message": "Сообщение",
+    "proof_text": "Описание документов"
+  },
   "apiErrors": {
     "UNKNOWN_ERROR": "Произошла непредвиденная ошибка",
 

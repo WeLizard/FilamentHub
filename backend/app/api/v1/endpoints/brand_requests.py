@@ -131,23 +131,23 @@ async def create_brand_request(
         # Проверка текстовых полей на плохие слова
         from app.services.preset_moderation import validate_text_field
         if data.new_brand_name:
-            is_valid, error_msg = await validate_text_field(data.new_brand_name, db, "Название бренда")
+            is_valid, error_msg = await validate_text_field(data.new_brand_name, db, "brand_name")
             if not is_valid:
                 raise HTTPException(status_code=400, detail=error_msg)
         
         if data.new_brand_description:
-            is_valid, error_msg = await validate_text_field(data.new_brand_description, db, "Описание бренда")
+            is_valid, error_msg = await validate_text_field(data.new_brand_description, db, "brand_description")
             if not is_valid:
                 raise HTTPException(status_code=400, detail=error_msg)
     
     # Проверка текстовых полей на плохие слова (для всех типов заявок)
     if data.message:
-        is_valid, error_msg = await validate_text_field(data.message, db, "Сообщение")
+        is_valid, error_msg = await validate_text_field(data.message, db, "message")
         if not is_valid:
             raise HTTPException(status_code=400, detail=error_msg)
     
     if data.proof_text:
-        is_valid, error_msg = await validate_text_field(data.proof_text, db, "Описание документов")
+        is_valid, error_msg = await validate_text_field(data.proof_text, db, "proof_text")
         if not is_valid:
             raise HTTPException(status_code=400, detail=error_msg)
     

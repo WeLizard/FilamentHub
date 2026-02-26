@@ -378,17 +378,17 @@ async def create_filament(
     
     # Проверка текстовых полей на плохие слова
     from app.services.preset_moderation import validate_text_field
-    is_valid, error_msg = await validate_text_field(data.name, db, "Название материала")
+    is_valid, error_msg = await validate_text_field(data.name, db, "filament_name")
     if not is_valid:
         raise HTTPException(status_code=400, detail=error_msg)
     
     if data.description:
-        is_valid, error_msg = await validate_text_field(data.description, db, "Описание материала")
+        is_valid, error_msg = await validate_text_field(data.description, db, "filament_description")
         if not is_valid:
             raise HTTPException(status_code=400, detail=error_msg)
     
     if data.color_name:
-        is_valid, error_msg = await validate_text_field(data.color_name, db, "Название цвета")
+        is_valid, error_msg = await validate_text_field(data.color_name, db, "color_name")
         if not is_valid:
             raise HTTPException(status_code=400, detail=error_msg)
 
@@ -494,17 +494,17 @@ async def update_filament(
     update_data = data.model_dump(exclude_unset=True)
     
     if "name" in update_data:
-        is_valid, error_msg = await validate_text_field(update_data["name"], db, "Название материала")
+        is_valid, error_msg = await validate_text_field(update_data["name"], db, "filament_name")
         if not is_valid:
             raise HTTPException(status_code=400, detail=error_msg)
     
     if "description" in update_data:
-        is_valid, error_msg = await validate_text_field(update_data["description"], db, "Описание материала")
+        is_valid, error_msg = await validate_text_field(update_data["description"], db, "filament_description")
         if not is_valid:
             raise HTTPException(status_code=400, detail=error_msg)
     
     if "color_name" in update_data:
-        is_valid, error_msg = await validate_text_field(update_data["color_name"], db, "Название цвета")
+        is_valid, error_msg = await validate_text_field(update_data["color_name"], db, "color_name")
         if not is_valid:
             raise HTTPException(status_code=400, detail=error_msg)
 

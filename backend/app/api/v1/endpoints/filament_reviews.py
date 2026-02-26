@@ -454,12 +454,12 @@ async def create_review(
     # Проверка текстовых полей на плохие слова
     from app.services.preset_moderation import validate_text_field
     if review_data.comment:
-        is_valid, error_msg = await validate_text_field(review_data.comment, db, "Комментарий к отзыву")
+        is_valid, error_msg = await validate_text_field(review_data.comment, db, "review_comment")
         if not is_valid:
             raise HTTPException(status_code=400, detail=error_msg)
     
     if review_data.printer_model:
-        is_valid, error_msg = await validate_text_field(review_data.printer_model, db, "Модель принтера")
+        is_valid, error_msg = await validate_text_field(review_data.printer_model, db, "printer_model")
         if not is_valid:
             raise HTTPException(status_code=400, detail=error_msg)
     
@@ -543,12 +543,12 @@ async def update_review(
     update_data = review_data.model_dump(exclude_unset=True)
     
     if "comment" in update_data:
-        is_valid, error_msg = await validate_text_field(update_data["comment"], db, "Комментарий к отзыву")
+        is_valid, error_msg = await validate_text_field(update_data["comment"], db, "review_comment")
         if not is_valid:
             raise HTTPException(status_code=400, detail=error_msg)
     
     if "printer_model" in update_data:
-        is_valid, error_msg = await validate_text_field(update_data["printer_model"], db, "Модель принтера")
+        is_valid, error_msg = await validate_text_field(update_data["printer_model"], db, "printer_model")
         if not is_valid:
             raise HTTPException(status_code=400, detail=error_msg)
 
