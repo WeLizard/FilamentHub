@@ -26,8 +26,8 @@
 
 - [x] ~~Создание филамента: ошибка прав при создании для нового бренда~~ — неверифицированные бренды теперь доступны любому авторизованному юзеру
 - [x] ~~**Перевод ошибок:** Сообщения об ошибках переведены на язык пользователя~~ — 80+ ERR_* кодов, translateApiError.ts, 80+ i18n ключей (ru/en), 25 компонентов
-  - [ ] **Остаток:** `validate_text_field` передаёт русские имена полей в params → ломает EN-локаль. Подробно: [`plan_error_codes_i18n.md`](plan_error_codes_i18n.md) → Задача 1
-  - [ ] **Остаток (minor):** `admin.py` / `wiki.py` — `detail=ERR_STRING` вместо `detail={"code": ERR_STRING}` (работает, но неконсистентно). Подробно: [`plan_error_codes_i18n.md`](plan_error_codes_i18n.md) → Задача 2
+  - [x] ~~**Остаток:** `validate_text_field` — русские имена полей заменены на i18n ключи + `fieldNames` в locale~~ (cbe7411)
+  - [x] ~~**Остаток:** `admin.py` / `wiki.py` — `detail=ERR_STRING` → `raise_error()`~~ (bc597dc)
 
 ---
 
