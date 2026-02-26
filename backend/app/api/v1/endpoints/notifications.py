@@ -161,7 +161,7 @@ async def delete_notification(
     await db.delete(notification)
     await db.commit()
     
-    return {"message": "Уведомление удалено"}
+    return {"message": "notification_deleted"}
 
 
 @router.delete("/all")
@@ -188,5 +188,5 @@ async def delete_all_notifications(
     
     return {
         "deleted_count": count,
-        "message": f"Удалено {count} уведомлений" if count > 0 else "Нет уведомлений для удаления",
+        "message": "notifications_deleted" if count > 0 else "no_notifications_to_delete",
     }

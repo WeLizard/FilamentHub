@@ -21,6 +21,7 @@ from app.core.errors import (
     ERR_IMPORT_PRINT_DISABLED,
     ERR_IMPORT_PRINTER_DISABLED,
     ERR_INTERNAL_ERROR,
+    ERR_NO_PERMISSION,
     ERR_NO_NOTIFICATION_DATA,
     ERR_NOTIFICATION_NOT_FOUND,
     ERR_PRESET_IDS_REQUIRED,
@@ -662,7 +663,7 @@ async def _upsert_printer_profile(
                     external_id=payload.external_id,
                     fhub_id=payload.fhub_id,
                     status="error",
-                    message="Недостаточно прав для обновления этого профиля",
+                    message=ERR_NO_PERMISSION,
                 )
             logger.info(f"Found printer profile by fhub_id from payload: {payload.fhub_id}")
     
@@ -679,7 +680,7 @@ async def _upsert_printer_profile(
                             external_id=payload.external_id,
                             fhub_id=fhub_id_int,
                             status="error",
-                            message="Недостаточно прав для обновления этого профиля",
+                            message=ERR_NO_PERMISSION,
                         )
                     logger.info(f"Found printer profile by fhub_id from metadata: {fhub_id_int}")
             except (ValueError, TypeError):
@@ -725,7 +726,7 @@ async def _upsert_printer_profile(
                 external_id=payload.external_id,
                 fhub_id=profile.id,
                 status="skipped",
-                message="Недостаточно прав для обновления профиля",
+                message=ERR_NO_PERMISSION,
             )
 
         if payload.slug and payload.slug != profile.slug:
@@ -970,7 +971,7 @@ async def _upsert_print_profile(
                     external_id=payload.external_id,
                     fhub_id=payload.fhub_id,
                     status="error",
-                    message="Недостаточно прав для обновления этого профиля",
+                    message=ERR_NO_PERMISSION,
                 )
             logger.info(f"Found print profile by fhub_id from payload: {payload.fhub_id}")
     
@@ -987,7 +988,7 @@ async def _upsert_print_profile(
                             external_id=payload.external_id,
                             fhub_id=fhub_id_int,
                             status="error",
-                            message="Недостаточно прав для обновления этого профиля",
+                            message=ERR_NO_PERMISSION,
                         )
                     logger.info(f"Found print profile by fhub_id from metadata: {fhub_id_int}")
             except (ValueError, TypeError):
@@ -1030,7 +1031,7 @@ async def _upsert_print_profile(
                 external_id=payload.external_id,
                 fhub_id=profile.id,
                 status="skipped",
-                message="Недостаточно прав для обновления профиля",
+                message=ERR_NO_PERMISSION,
             )
 
         if payload.slug and payload.slug != profile.slug:
@@ -1646,7 +1647,7 @@ async def _upsert_filament_preset(
                 external_id=payload.external_id,
                 fhub_id=payload.fhub_id,
                 status="error",
-                message="Недостаточно прав для доступа к этому материалу",
+                message=ERR_NO_PERMISSION,
             )
     elif payload.filament_name:
         filament_name = payload.filament_name
@@ -1779,7 +1780,7 @@ async def _upsert_filament_preset(
                     external_id=payload.external_id,
                     fhub_id=payload.fhub_id,
                     status="error",
-                    message="Недостаточно прав для обновления этого пресета",
+                    message=ERR_NO_PERMISSION,
                 )
             logger.info(f"Found preset by fhub_id from payload: {payload.fhub_id}")
             
@@ -1804,7 +1805,7 @@ async def _upsert_filament_preset(
                             external_id=payload.external_id,
                             fhub_id=fhub_id_int,
                             status="error",
-                            message="Недостаточно прав для обновления этого пресета",
+                            message=ERR_NO_PERMISSION,
                         )
                     logger.info(f"Found preset by fhub_id from metadata: {fhub_id_int}")
                     

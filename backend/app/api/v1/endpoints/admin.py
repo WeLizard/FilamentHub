@@ -809,7 +809,7 @@ async def update_brand_request(
                         if created_brand:
                             brand_id_for_notification = created_brand.id
                 
-                brand_name = request.brand.name if request.brand else (request.new_brand_name or "бренд")
+                brand_name = request.brand.name if request.brand else (request.new_brand_name or "brand")
                 if brand_id_for_notification:
                     await notify_brand_request_approved(
                         user_id=request.user_id,
@@ -818,7 +818,7 @@ async def update_brand_request(
                         db=db,
                     )
             elif data.status == BrandRequestStatus.REJECTED:
-                brand_name = request.brand.name if request.brand else (request.new_brand_name or "бренд")
+                brand_name = request.brand.name if request.brand else (request.new_brand_name or "brand")
                 await notify_brand_request_rejected(
                     user_id=request.user_id,
                     brand_name=brand_name,
@@ -1378,7 +1378,7 @@ async def check_database_integrity(
     is_valid, missing_tables = await validate_migration_integrity_service(db)
     
     if is_valid:
-        message = "База данных в порядке: все необходимые таблицы существуют"
+        message = "database_ok"
     else:
         message = f"Обнаружены проблемы: отсутствуют таблицы {', '.join(missing_tables)}"
     
@@ -1701,7 +1701,7 @@ async def broadcast_notification(
     
     return {
         "success": True,
-        "message": f"Уведомление отправлено {count} пользователям",
+        "message": "notification_sent", "count": count,
         "count": count,
     }
 
@@ -1753,7 +1753,7 @@ async def send_notification_to_users(
     
     return {
         "success": True,
-        "message": f"Уведомление отправлено {count} пользователям",
+        "message": "notification_sent", "count": count,
         "count": count,
         "sent_to": valid_user_ids,
     }
@@ -1811,7 +1811,7 @@ async def manage_user_badges(
     
     return {
         "success": True,
-        "message": "Бейджи обновлены",
+        "message": "badges_updated",
         "user_id": user_id,
         "badges": user.badges,
     }
@@ -1855,7 +1855,7 @@ async def set_maintenance_status(
     
     return {
         "success": True,
-        "message": "Режим технических работ обновлен",
+        "message": "maintenance_mode_updated",
         "maintenance_mode": get_maintenance_info(),
     }
 
