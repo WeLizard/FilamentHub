@@ -421,7 +421,7 @@ export function DownloadPage() {
           <div className="bg-red-900/20 border border-red-500/30 rounded-xl p-6 mb-6">
             <p className="text-red-300">{error}</p>
           </div>
-        ) : showDetailedCard ? (
+        ) : showDetailedCard && currentVersion ? (
           <div className="bg-white/5 rounded-xl p-6 border border-white/10 mb-6">
             <div className="flex items-start justify-between mb-4">
               <div>
