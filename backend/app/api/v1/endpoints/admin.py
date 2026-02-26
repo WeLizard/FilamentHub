@@ -274,10 +274,7 @@ async def update_brand_admin(
             select(Brand).where(Brand.slug == update_data["slug"]).where(Brand.id != brand_id)
         )
         if existing_brand.scalar_one_or_none():
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=ERR_BRAND_SLUG_EXISTS
-            )
+            raise_error(status.HTTP_400_BAD_REQUEST, ERR_BRAND_SLUG_EXISTS)
 
     # Update fields
     for field, value in update_data.items():
@@ -750,10 +747,7 @@ async def update_brand_request(
     if data.status == BrandRequestStatus.APPROVED:
         user = request.user
         if not user:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail=ERR_USER_NOT_FOUND,
-            )
+            raise_error(status.HTTP_404_NOT_FOUND, ERR_USER_NOT_FOUND)
         
         # Просто привязываем к бренду, роль не меняем (админ может быть привязан к бренду, но оставаться админом)
         
@@ -777,10 +771,7 @@ async def update_brand_request(
                 select(Brand).where(Brand.slug == request.new_brand_slug)
             )
             if existing_brand.scalar_one_or_none():
-                raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail=ERR_BRAND_SLUG_EXISTS,
-                )
+                raise_error(status.HTTP_400_BAD_REQUEST, ERR_BRAND_SLUG_EXISTS)
             
             # Создаем новый бренд
             new_brand = Brand(
@@ -1082,10 +1073,7 @@ async def update_printer_request_admin(
         existing_printer = printer_result.scalar_one_or_none()
         
         if existing_printer:
-            raise HTTPException(
-                status_code=400,
-                detail=ERR_PRINTER_SLUG_EXISTS
-            )
+            raise_error(400, ERR_PRINTER_SLUG_EXISTS)
         
         # Создаём принтер из данных запроса
         printer = Printer(
@@ -1244,10 +1232,7 @@ async def download_database_dump(
     dump_file = Path(settings.UPLOAD_DIR) / "database_dumps" / filename
     
     if not dump_file.exists():
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=ERR_DUMP_NOT_FOUND,
-        )
+        raise_error(status.HTTP_404_NOT_FOUND, ERR_DUMP_NOT_FOUND)
     
     return FileResponse(
         path=str(dump_file),
@@ -1445,10 +1430,7 @@ async def get_table_data(
         )
         return TableDataResponse(**table_data)
     except ValueError:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=ERR_TABLE_NOT_FOUND,
-        )
+        raise_error(status.HTTP_404_NOT_FOUND, ERR_TABLE_NOT_FOUND)
     except Exception:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -1606,10 +1588,7 @@ async def get_bad_word(
     word = result.scalar_one_or_none()
     
     if not word:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=ERR_BANNED_WORD_NOT_FOUND,
-        )
+        raise_error(status.HTTP_404_NOT_FOUND, ERR_BANNED_WORD_NOT_FOUND)
     
     return BadWordResponse.model_validate(word)
 
@@ -1629,10 +1608,7 @@ async def update_bad_word(
     word = result.scalar_one_or_none()
     
     if not word:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=ERR_BANNED_WORD_NOT_FOUND,
-        )
+        raise_error(status.HTTP_404_NOT_FOUND, ERR_BANNED_WORD_NOT_FOUND)
     
     # Проверяем уникальность, если меняем слово или язык
     update_data = data.model_dump(exclude_unset=True)
@@ -1685,10 +1661,7 @@ async def delete_bad_word(
     word = result.scalar_one_or_none()
     
     if not word:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=ERR_BANNED_WORD_NOT_FOUND,
-        )
+        raise_error(status.HTTP_404_NOT_FOUND, ERR_BANNED_WORD_NOT_FOUND)
     
     await db.delete(word)
     await db.commit()
@@ -1823,10 +1796,7 @@ async def manage_user_badges(
     user = result.scalar_one_or_none()
     
     if not user:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=ERR_USER_NOT_FOUND
-        )
+        raise_error(status.HTTP_404_NOT_FOUND, ERR_USER_NOT_FOUND)
     
     # Обновляем бейджи
     old_badges = user.badges or []
@@ -1966,10 +1936,7 @@ async def export_wiki_article(
     filename, content = await export_article_to_markdown(db, article_id)
 
     if not filename or not content:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=ERR_ARTICLE_NOT_FOUND,
-        )
+        raise_error(status.HTTP_404_NOT_FOUND, ERR_ARTICLE_NOT_FOUND)
 
     # Write to temp file for FileResponse
     tmp = tempfile.NamedTemporaryFile(

@@ -744,15 +744,9 @@ async def create_article_feedback(
         )
         if existing.scalar_one_or_none():
             if data.feedback_type == "helpful":
-                raise HTTPException(
-                    status_code=400,
-                    detail=ERR_ALREADY_HELPFUL
-                )
+                raise_error(400, ERR_ALREADY_HELPFUL)
             else:
-                raise HTTPException(
-                    status_code=400,
-                    detail=ERR_ALREADY_FEEDBACK
-                )
+                raise_error(400, ERR_ALREADY_FEEDBACK)
     else:
         # Для анонимов проверяем по anonymous_id (только для helpful)
         existing = await db.execute(
@@ -763,10 +757,7 @@ async def create_article_feedback(
             )
         )
         if existing.scalar_one_or_none():
-            raise HTTPException(
-                status_code=400,
-                detail=ERR_ALREADY_HELPFUL
-            )
+            raise_error(400, ERR_ALREADY_HELPFUL)
 
     # Создаем feedback
     feedback = WikiArticleFeedback(
