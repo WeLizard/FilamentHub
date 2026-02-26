@@ -276,7 +276,7 @@ async def get_orcaslicer_downloads(
                     checksum=None,
                     available=False,
                     download_type="installer",
-                    github_url="https://github.com/lizardjazz1/OrcaSlicer/releases",
+                    github_url="https://github.com/WeLizard/OrcaSlicer/releases",
                 )
             )
 

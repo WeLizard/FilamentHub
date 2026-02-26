@@ -77,7 +77,7 @@ export function DownloadPage() {
           return;
         }
         // Fallback на наш репозиторий
-        window.open('https://github.com/lizardjazz1/OrcaSlicer/releases', '_blank');
+        window.open('https://github.com/WeLizard/OrcaSlicer/releases', '_blank');
         return;
       }
     }
@@ -509,7 +509,7 @@ export function DownloadPage() {
                 </p>
                 {/* GitHub ссылка */}
                 <a
-                  href="https://github.com/lizardjazz1/OrcaSlicer/releases"
+                  href="https://github.com/WeLizard/OrcaSlicer/releases"
                   target="_blank"
                   rel="noopener noreferrer"
                   className="flex items-center justify-center gap-2 text-gray-300 hover:text-white transition-colors text-sm pt-2 border-t border-white/5"
