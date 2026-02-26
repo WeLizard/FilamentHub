@@ -894,6 +894,15 @@
     "newBrandButton": "Новый производитель",
     "newBrandNamePlaceholder": "Название нового производителя...",
     "brandWebsitePlaceholder": "Сайт производителя (необязательно)",
+    "hints": {
+      "createFilamentIfMissing": "Не нашли материал в списке? Нажмите «Создать новый материал».",
+      "createBrandIfMissing": "Нет нужного производителя? Нажмите «Новый производитель».",
+      "selectFilamentToContinue": "Чтобы продолжить, выберите материал.",
+      "enterPresetNameToContinue": "Чтобы продолжить, укажите название пресета.",
+      "selectBrandToContinue": "Чтобы продолжить, выберите или создайте производителя.",
+      "enterFilamentNameToContinue": "Чтобы продолжить, укажите название материала.",
+      "selectMaterialTypeToContinue": "Чтобы продолжить, выберите или введите тип материала."
+    },
     "filamentName": "Название филамента",
     "filamentNamePlaceholder": "Например: PLA+ Mate R24",
     "similarFilaments": "Похожие материалы у этого производителя",

@@ -872,6 +872,15 @@
     "newBrandButton": "New brand",
     "newBrandNamePlaceholder": "New brand name...",
     "brandWebsitePlaceholder": "Brand website (optional)",
+    "hints": {
+      "createFilamentIfMissing": "Can't find the filament in the list? Click \"Create new filament\".",
+      "createBrandIfMissing": "Can't find the brand? Click \"New brand\".",
+      "selectFilamentToContinue": "Select a filament to continue.",
+      "enterPresetNameToContinue": "Enter a preset name to continue.",
+      "selectBrandToContinue": "Select or create a brand to continue.",
+      "enterFilamentNameToContinue": "Enter a filament name to continue.",
+      "selectMaterialTypeToContinue": "Select or enter a material type to continue."
+    },
     "filamentName": "Filament name",
     "filamentNamePlaceholder": "e.g.: PLA+ Mate R24",
     "similarFilaments": "Similar filaments from this brand",

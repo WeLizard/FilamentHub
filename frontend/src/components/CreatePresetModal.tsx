@@ -1485,6 +1485,21 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
     hasBrandSelection && filamentName.trim().length > 0 && normalizedMaterialType.length > 0;
   const canSubmit = name.trim().length > 0 && (showFilamentForm ? canSubmitFromFilamentForm : Boolean(selectedFilamentId));
   const isSubmitDisabled = isLoading || !canSubmit;
+  const submitBlockReason = !isLoading && isSubmitDisabled
+    ? !name.trim()
+      ? t('presetModal.hints.enterPresetNameToContinue')
+      : showFilamentForm
+        ? !normalizedMaterialType
+          ? t('presetModal.hints.selectMaterialTypeToContinue')
+          : !hasBrandSelection
+            ? t('presetModal.hints.selectBrandToContinue')
+            : !filamentName.trim()
+              ? t('presetModal.hints.enterFilamentNameToContinue')
+              : null
+        : !selectedFilamentId
+          ? t('presetModal.hints.selectFilamentToContinue')
+          : null
+    : null;
   const isHeaderVisible = useHeaderVisible();
 
   if (!isOpen) return null;
@@ -1574,7 +1589,7 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                         aria-label={t('presetModal.createNewFilament')}
                       >
                         <Plus className="w-5 h-5" />
-                        <span className="hidden sm:inline">{t('presetModal.createNewFilament')}</span>
+                        <span className="text-sm font-medium">{t('presetModal.createNewFilament')}</span>
                       </button>
                     )}
                   </div>
@@ -1663,6 +1678,9 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                     <div className="mt-4">
                       <FilamentSummaryCard filament={selectedFilament} />
                     </div>
+                  )}
+                  {!selectedFilamentId && (
+                    <p className="mt-2 text-xs text-gray-400">{t('presetModal.hints.createFilamentIfMissing')}</p>
                   )}
                 </div>
               ) : (
@@ -1896,7 +1914,7 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                                     aria-label={t('presetModal.newBrandButton')}
                                   >
                                     <Plus className="w-5 h-5" />
-                                    <span className="hidden sm:inline text-sm font-medium">{t('presetModal.newBrandButton')}</span>
+                                    <span className="text-sm font-medium">{t('presetModal.newBrandButton')}</span>
                                   </button>
                                 )}
                               </>
@@ -1914,6 +1932,9 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                               </button>
                             )}
                           </div>
+                          {!showBrandForm && !selectedBrandId && (
+                            <p className="mt-2 text-xs text-gray-400">{t('presetModal.hints.createBrandIfMissing')}</p>
+                          )}
                           {!showBrandForm && showBrandDropdown && brandsData?.items && brandsData.items.length > 0 && (
                             <div 
                               className="absolute z-10 w-full mt-1 max-h-48 overflow-y-auto bg-white/5 backdrop-blur-sm rounded-xl border border-white/10 shadow-xl"
@@ -4350,32 +4371,39 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
           </div>
 
           {/* Actions */}
-          <div className="flex justify-end space-x-3 pt-4 border-t border-white/10">
-            <button
-              type="button"
-              onClick={onClose}
-              disabled={isLoading}
-              className="px-6 py-3 bg-white/10 hover:bg-white/20 text-white rounded-xl transition-all disabled:opacity-50"
-            >
-              {t('presetModal.cancel')}
-            </button>
-            <button
-              type="submit"
-              disabled={isSubmitDisabled}
-              className="px-6 py-3 bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white rounded-xl transition-all shadow-lg shadow-purple-500/25 hover:shadow-purple-500/40 disabled:opacity-50 disabled:cursor-not-allowed flex items-center space-x-2"
-            >
-              {isLoading ? (
-                <>
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                  <span>{t('presetModal.saving')}</span>
-                </>
-              ) : (
-                <>
-                  <Save className="w-4 h-4" />
-                  <span>{preset ? t('presetModal.save') : t('presetModal.create')}</span>
-                </>
+          <div className="flex flex-col gap-3 pt-4 border-t border-white/10 sm:flex-row sm:items-center sm:justify-between">
+            <div className="min-h-[1rem]">
+              {submitBlockReason && (
+                <p className="text-xs text-amber-300">{submitBlockReason}</p>
               )}
-            </button>
+            </div>
+            <div className="flex items-center space-x-3 self-end sm:self-auto">
+              <button
+                type="button"
+                onClick={onClose}
+                disabled={isLoading}
+                className="px-6 py-3 bg-white/10 hover:bg-white/20 text-white rounded-xl transition-all disabled:opacity-50"
+              >
+                {t('presetModal.cancel')}
+              </button>
+              <button
+                type="submit"
+                disabled={isSubmitDisabled}
+                className="px-6 py-3 bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white rounded-xl transition-all shadow-lg shadow-purple-500/25 hover:shadow-purple-500/40 disabled:opacity-50 disabled:cursor-not-allowed flex items-center space-x-2"
+              >
+                {isLoading ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    <span>{t('presetModal.saving')}</span>
+                  </>
+                ) : (
+                  <>
+                    <Save className="w-4 h-4" />
+                    <span>{preset ? t('presetModal.save') : t('presetModal.create')}</span>
+                  </>
+                )}
+              </button>
+            </div>
           </div>
         </form>
         </div>
