@@ -7,6 +7,7 @@ Minimal MCP server for automated OrcaSlicer testing via a TCP test bridge.
 - MCP stdio server (`server.py`) with tools:
   - `orca_bridge_ping`
   - `orca_bridge_command`
+  - `orca_bridge_wait_for`
   - `orca_orcaslicer_launch`
 - Mock TCP bridge (`mock_bridge.py`) for local smoke tests without Orca changes.
 
@@ -30,6 +31,11 @@ Example response:
 ```json
 {"ok":true,"status":{"connected":true,"logged_in":false},"request_id":"abc-1"}
 ```
+
+Mock bridge also supports:
+
+- `set_status` with payload `{"status": {...}}`
+- `trigger_sync` with optional `duration_ms` (ms)
 
 ## Run mock bridge
 
@@ -61,6 +67,16 @@ From another terminal:
 {"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"manual","version":"0"}}}
 {"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}
 {"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"orca_bridge_command","arguments":{"command":"get_status"}}}
+'@ | python tools/mcp/orcaslicer-test-mcp/server.py
+```
+
+Wait-until example:
+
+```powershell
+@'
+{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"manual","version":"0"}}}
+{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"orca_bridge_command","arguments":{"command":"trigger_sync","params":{"duration_ms":1500}}}}
+{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"orca_bridge_wait_for","arguments":{"path":"status.sync_running","equals":false,"timeout_ms":10000,"interval_ms":250}}}
 '@ | python tools/mcp/orcaslicer-test-mcp/server.py
 ```
 

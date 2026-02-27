@@ -24,7 +24,7 @@ from typing import Any, Callable
 
 PROTOCOL_VERSION = "2024-11-05"
 SERVER_NAME = "orcaslicer-test-mcp"
-SERVER_VERSION = "0.1.0"
+SERVER_VERSION = "0.2.0"
 
 
 @dataclass(frozen=True)
@@ -268,6 +268,122 @@ def tool_orca_bridge_command(args: dict[str, Any], cfg: BridgeConfig) -> dict[st
     return content_text(json.dumps(response, ensure_ascii=False, indent=2))
 
 
+def _extract_path_value(payload: Any, path: str) -> tuple[bool, Any]:
+    """Extract dotted path from nested dict/list.
+
+    Rules:
+    - dict key access by token name
+    - list access by numeric token (e.g. "items.0.id")
+    """
+    if not path:
+        return True, payload
+
+    current = payload
+    for token in path.split("."):
+        if isinstance(current, dict):
+            if token not in current:
+                return False, None
+            current = current[token]
+            continue
+
+        if isinstance(current, list):
+            try:
+                index = int(token)
+            except ValueError:
+                return False, None
+            if index < 0 or index >= len(current):
+                return False, None
+            current = current[index]
+            continue
+
+        return False, None
+
+    return True, current
+
+
+def tool_orca_bridge_wait_for(args: dict[str, Any], cfg: BridgeConfig) -> dict[str, Any]:
+    command = args.get("command", "get_status")
+    if not isinstance(command, str) or not command.strip():
+        raise JsonRpcError(-32602, "Argument 'command' must be a non-empty string.")
+
+    params = args.get("params", {})
+    if params is None:
+        params = {}
+    if not isinstance(params, dict):
+        raise JsonRpcError(-32602, "Argument 'params' must be an object.")
+
+    path = args.get("path")
+    if not isinstance(path, str) or not path.strip():
+        raise JsonRpcError(-32602, "Argument 'path' must be a non-empty dotted string.")
+
+    if "equals" not in args:
+        raise JsonRpcError(-32602, "Argument 'equals' is required.")
+    expected = args.get("equals")
+    if isinstance(expected, (dict, list)):
+        raise JsonRpcError(-32602, "Argument 'equals' must be a scalar (string/number/bool/null).")
+
+    timeout_ms = args.get("timeout_ms", 10_000)
+    if not isinstance(timeout_ms, int) or timeout_ms <= 0:
+        raise JsonRpcError(-32602, "Argument 'timeout_ms' must be a positive integer.")
+
+    interval_ms = args.get("interval_ms", 300)
+    if not isinstance(interval_ms, int) or interval_ms <= 0:
+        raise JsonRpcError(-32602, "Argument 'interval_ms' must be a positive integer.")
+
+    deadline = time.monotonic() + timeout_ms / 1000.0
+    attempts = 0
+    last_response: Any = None
+    last_actual: Any = None
+    matched = False
+    t0 = time.monotonic()
+
+    while time.monotonic() < deadline:
+        attempts += 1
+        request_id = str(uuid.uuid4())
+        payload = {"command": command, "params": params, "request_id": request_id}
+        response = bridge_exchange(cfg, payload, timeout_ms=timeout_ms)
+        last_response = response
+        found, actual = _extract_path_value(response, path)
+        last_actual = actual if found else None
+        if found and actual == expected:
+            matched = True
+            break
+        time.sleep(interval_ms / 1000.0)
+
+    elapsed_ms = round((time.monotonic() - t0) * 1000.0, 2)
+    if not matched:
+        raise JsonRpcError(
+            -32003,
+            "Bridge condition was not met before timeout.",
+            {
+                "command": command,
+                "path": path,
+                "expected": expected,
+                "last_actual": last_actual,
+                "attempts": attempts,
+                "elapsed_ms": elapsed_ms,
+                "last_response": last_response,
+            },
+        )
+
+    return content_text(
+        json.dumps(
+            {
+                "ok": True,
+                "command": command,
+                "path": path,
+                "expected": expected,
+                "actual": last_actual,
+                "attempts": attempts,
+                "elapsed_ms": elapsed_ms,
+                "response": last_response,
+            },
+            ensure_ascii=False,
+            indent=2,
+        )
+    )
+
+
 def _coerce_string_list(value: Any, field_name: str) -> list[str]:
     if value is None:
         return []
@@ -358,6 +474,38 @@ TOOLS: list[dict[str, Any]] = [
         },
     },
     {
+        "name": "orca_bridge_wait_for",
+        "description": "Poll bridge command until response path equals expected value.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "command": {
+                    "type": "string",
+                    "description": "Bridge command to poll (default: get_status).",
+                    "default": "get_status",
+                },
+                "params": {"type": "object", "description": "Command payload.", "default": {}},
+                "path": {
+                    "type": "string",
+                    "description": "Dotted path in response, e.g. status.sync_running",
+                },
+                "equals": {
+                    "oneOf": [
+                        {"type": "string"},
+                        {"type": "number"},
+                        {"type": "boolean"},
+                        {"type": "null"},
+                    ],
+                    "description": "Expected scalar value at the given path.",
+                },
+                "timeout_ms": {"type": "integer", "minimum": 1, "default": 10000},
+                "interval_ms": {"type": "integer", "minimum": 1, "default": 300},
+            },
+            "required": ["path", "equals"],
+            "additionalProperties": False,
+        },
+    },
+    {
         "name": "orca_orcaslicer_launch",
         "description": "Launch OrcaSlicer executable (dev/testing only).",
         "inputSchema": {
@@ -384,6 +532,7 @@ def run() -> int:
     handlers: dict[str, Callable[[dict[str, Any], BridgeConfig], dict[str, Any]]] = {
         "orca_bridge_ping": tool_orca_bridge_ping,
         "orca_bridge_command": tool_orca_bridge_command,
+        "orca_bridge_wait_for": tool_orca_bridge_wait_for,
         "orca_orcaslicer_launch": tool_orca_orcaslicer_launch,
     }
 
