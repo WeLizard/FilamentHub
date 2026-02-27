@@ -25,6 +25,7 @@ from app.api.v1.endpoints import (
     qr,
     saved_presets,
     spoolman,
+    spools,
     wiki,
 )
 
@@ -51,6 +52,7 @@ api_router.include_router(notifications.router)
 api_router.include_router(orca_sync.router)
 api_router.include_router(orca_preset_slot_sync.router)
 api_router.include_router(preset_slots.router)
+api_router.include_router(spools.router)
 api_router.include_router(feedback.router)
 api_router.include_router(downloads.router)
 api_router.include_router(wiki.router)

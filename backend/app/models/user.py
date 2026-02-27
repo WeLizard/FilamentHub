@@ -20,6 +20,7 @@ if TYPE_CHECKING:
     from app.models.sync_device import SyncDevice
     from app.models.user_printer_device import UserPrinterDevice
     from app.models.user_saved_preset import UserSavedPreset
+    from app.models.user_spool import UserSpool
     from app.models.wiki_feedback import WikiArticleFeedback
 
 
@@ -130,6 +131,9 @@ class User(Base):
     )
     printer_devices: Mapped[list["UserPrinterDevice"]] = relationship(
         "UserPrinterDevice", back_populates="user", cascade="all, delete-orphan"
+    )
+    spools: Mapped[list["UserSpool"]] = relationship(
+        "UserSpool", back_populates="user", cascade="all, delete-orphan"
     )
 
     def __repr__(self) -> str:

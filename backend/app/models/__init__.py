@@ -22,6 +22,7 @@ from app.models.revoked_token import RevokedToken
 from app.models.user import User, UserRole
 from app.models.user_printer_device import UserPrinterDevice
 from app.models.user_saved_preset import UserSavedPreset
+from app.models.user_spool import UserSpool, UserSpoolState
 from app.models.feedback import Feedback, FeedbackType, FeedbackStatus
 from app.models.sync_device import SyncDevice
 from app.models.sync_history import SyncHistory, SyncOperation, SyncPresetType, SyncStatus
@@ -73,6 +74,8 @@ __all__ = [
     "UserPrinterDevice",
     "UserRole",
     "UserSavedPreset",
+    "UserSpool",
+    "UserSpoolState",
     "WikiArticle",
     "WikiArticleFeedback",
     "WikiArticleStatus",
