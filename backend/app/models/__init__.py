@@ -16,8 +16,11 @@ from app.models.print_profile import PrintProfile
 from app.models.print_profile_printer import PrintProfilePrinter
 from app.models.print_profile_filament import PrintProfileFilament
 from app.models.notification import Notification, NotificationType
+from app.models.preset_gate_state import PresetGateState, PresetGateStateSource
+from app.models.preset_usage_event import PresetUsageEvent, PresetUsageEventType
 from app.models.revoked_token import RevokedToken
 from app.models.user import User, UserRole
+from app.models.user_printer_device import UserPrinterDevice
 from app.models.user_saved_preset import UserSavedPreset
 from app.models.feedback import Feedback, FeedbackType, FeedbackStatus
 from app.models.sync_device import SyncDevice
@@ -45,6 +48,10 @@ __all__ = [
     "Notification",
     "NotificationType",
     "Preset",
+    "PresetGateState",
+    "PresetGateStateSource",
+    "PresetUsageEvent",
+    "PresetUsageEventType",
     "RevokedToken",
     "PresetModerationStatus",
     "PresetPrinter",
@@ -63,6 +70,7 @@ __all__ = [
     "SyncPresetType",
     "SyncStatus",
     "User",
+    "UserPrinterDevice",
     "UserRole",
     "UserSavedPreset",
     "WikiArticle",
