@@ -2,11 +2,41 @@
 
 import pytest
 from httpx import AsyncClient
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.brand import Brand
 from app.models.filament import Filament
 from app.models.preset import Preset, PresetModerationStatus
+from app.models.user import User
+
+
+async def _register_and_login(
+    client: AsyncClient,
+    suffix: str,
+) -> tuple[dict[str, str], str]:
+    """Register a user and return auth headers + email."""
+    email = f"{suffix}@example.com"
+    password = "testpassword123"
+
+    register_response = await client.post(
+        "/api/v1/auth/register",
+        json={
+            "email": email,
+            "username": f"user_{suffix}",
+            "password": password,
+            "role": "user",
+        },
+    )
+    assert register_response.status_code == 201
+
+    login_response = await client.post(
+        "/api/v1/auth/login",
+        json={"email": email, "password": password},
+    )
+    assert login_response.status_code == 200
+    token = login_response.json()["access_token"]
+    return {"Authorization": f"Bearer {token}"}, email
 
 
 @pytest.mark.asyncio
@@ -22,6 +52,8 @@ async def test_list_presets_empty(client: AsyncClient):
 @pytest.mark.asyncio
 async def test_create_preset(client: AsyncClient, db_session: AsyncSession):
     """Test creating a preset."""
+    headers, _ = await _register_and_login(client, "preset-create")
+
     # Create brand and filament
     brand = Brand(name="Test Brand", slug="test-brand", active=True)
     db_session.add(brand)
@@ -31,6 +63,7 @@ async def test_create_preset(client: AsyncClient, db_session: AsyncSession):
     filament = Filament(
         brand_id=brand.id,
         name="Test Filament",
+        slug="test-filament",
         material_type="PLA",
         active=True,
     )
@@ -54,19 +87,21 @@ async def test_create_preset(client: AsyncClient, db_session: AsyncSession):
         "retraction_length": 5.0,
         "retraction_speed": 45.0,
     }
-    response = await client.post("/api/v1/presets/", json=preset_data)
+    response = await client.post("/api/v1/presets/", json=preset_data, headers=headers)
     assert response.status_code == 201
     data = response.json()
     assert data["name"] == preset_data["name"]
     assert data["filament_id"] == filament.id
     assert data["id"] is not None
-    # User presets should be PENDING by default
-    assert data["moderation_status"] == "pending"
+    # User presets are auto-approved on create (unless hard validation fails)
+    assert data["moderation_status"] == "approved"
 
 
 @pytest.mark.asyncio
 async def test_create_official_preset(client: AsyncClient, db_session: AsyncSession):
     """Test creating an official preset (should be auto-approved)."""
+    headers, email = await _register_and_login(client, "preset-official")
+
     # Create brand and filament
     brand = Brand(name="Test Brand", slug="test-brand", active=True)
     db_session.add(brand)
@@ -76,12 +111,19 @@ async def test_create_official_preset(client: AsyncClient, db_session: AsyncSess
     filament = Filament(
         brand_id=brand.id,
         name="Test Filament",
+        slug="test-filament-official",
         material_type="PLA",
         active=True,
     )
     db_session.add(filament)
     await db_session.commit()
     await db_session.refresh(filament)
+
+    # Link current user to this brand to allow official preset creation.
+    user_result = await db_session.execute(select(User).where(User.email == email))
+    user = user_result.scalar_one()
+    user.brand_id = brand.id
+    await db_session.commit()
     
     # Create official preset
     preset_data = {
@@ -92,7 +134,7 @@ async def test_create_official_preset(client: AsyncClient, db_session: AsyncSess
         "bed_temp": 60.0,
         "print_speed": 50.0,
     }
-    response = await client.post("/api/v1/presets/", json=preset_data)
+    response = await client.post("/api/v1/presets/", json=preset_data, headers=headers)
     assert response.status_code == 201
     data = response.json()
     assert data["is_official"] is True
@@ -112,6 +154,7 @@ async def test_get_preset(client: AsyncClient, db_session: AsyncSession):
     filament = Filament(
         brand_id=brand.id,
         name="Test Filament",
+        slug="test-filament-get",
         material_type="PLA",
         active=True,
     )
@@ -162,12 +205,14 @@ async def test_list_presets_filter_by_filament(
     filament1 = Filament(
         brand_id=brand.id,
         name="Filament 1",
+        slug="filament-1",
         material_type="PLA",
         active=True,
     )
     filament2 = Filament(
         brand_id=brand.id,
         name="Filament 2",
+        slug="filament-2",
         material_type="PETG",
         active=True,
     )
@@ -222,6 +267,7 @@ async def test_list_presets_filter_by_official(
     filament = Filament(
         brand_id=brand.id,
         name="Test Filament",
+        slug="test-filament-official-filter",
         material_type="PLA",
         active=True,
     )
@@ -273,6 +319,7 @@ async def test_get_preset_recommend(client: AsyncClient, db_session: AsyncSessio
     filament = Filament(
         brand_id=brand.id,
         name="Test Filament",
+        slug="test-filament-recommended",
         material_type="PLA",
         active=True,
     )
@@ -309,7 +356,7 @@ async def test_get_preset_recommend(client: AsyncClient, db_session: AsyncSessio
     await db_session.commit()
     
     # Get recommended preset
-    response = await client.get(f"/api/v1/presets/recommend?filament_id={filament.id}")
+    response = await client.get(f"/api/v1/presets/recommended/{filament.id}")
     assert response.status_code == 200
     data = response.json()
     assert "extruder_temp" in data
@@ -321,6 +368,8 @@ async def test_get_preset_recommend(client: AsyncClient, db_session: AsyncSessio
 @pytest.mark.asyncio
 async def test_update_preset(client: AsyncClient, db_session: AsyncSession):
     """Test updating a preset."""
+    headers, email = await _register_and_login(client, "preset-update")
+
     # Create brand, filament, and preset
     brand = Brand(name="Test Brand", slug="test-brand", active=True)
     db_session.add(brand)
@@ -330,6 +379,7 @@ async def test_update_preset(client: AsyncClient, db_session: AsyncSession):
     filament = Filament(
         brand_id=brand.id,
         name="Test Filament",
+        slug="test-filament-update",
         material_type="PLA",
         active=True,
     )
@@ -337,8 +387,12 @@ async def test_update_preset(client: AsyncClient, db_session: AsyncSession):
     await db_session.commit()
     await db_session.refresh(filament)
     
+    user_result = await db_session.execute(select(User).where(User.email == email))
+    user = user_result.scalar_one()
+
     preset = Preset(
         filament_id=filament.id,
+        user_id=user.id,
         name="Original Name",
         is_official=False,
         extruder_temp=200.0,
@@ -357,7 +411,7 @@ async def test_update_preset(client: AsyncClient, db_session: AsyncSession):
         "extruder_temp": 205.0,
     }
     response = await client.patch(
-        f"/api/v1/presets/{preset.id}", json=update_data
+        f"/api/v1/presets/{preset.id}", json=update_data, headers=headers
     )
     assert response.status_code == 200
     data = response.json()

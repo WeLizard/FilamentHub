@@ -243,7 +243,11 @@ async def create_preset(
     # Автоматическая модерация пресета (только для пользовательских пресетов)
     if not data.is_official:
         moderation_status, moderation_reason = await moderate_preset(
-            preset, filament, db, is_official=False
+            preset,
+            filament,
+            db,
+            is_official=False,
+            allow_manual_review=False,
         )
         if moderation_status == PresetModerationStatus.REJECTED:
             # Не сохраняем пресет, возвращаем ошибку сразу
@@ -394,7 +398,11 @@ async def update_preset(
     # Автоматическая модерация при обновлении (только для пользовательских пресетов с filament)
     if not preset.is_official and filament:
         moderation_status, moderation_reason = await moderate_preset(
-            preset, filament, db, is_official=preset.is_official
+            preset,
+            filament,
+            db,
+            is_official=preset.is_official,
+            allow_manual_review=False,
         )
         # Если пресет был одобрен, а теперь отклонён - меняем статус
         if moderation_status == PresetModerationStatus.REJECTED:

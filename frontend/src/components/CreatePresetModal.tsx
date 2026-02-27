@@ -112,7 +112,9 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
 
   // Определяем, является ли пресет черновиком (заготовкой)
   // Черновик = пресет без привязки к филаменту ИЛИ неактивный пресет без @FilamentHub в имени
-  const isDraft = preset && (!preset.filament_id || (!preset.active && !preset.name?.includes('@FilamentHub')));
+  const isDraft = Boolean(
+    preset && (!preset.filament_id || (!preset.active && !preset.name?.includes('@FilamentHub')))
+  );
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
   const [isOfficial, setIsOfficial] = useState(false);
@@ -312,6 +314,9 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
   
   // Определяем, может ли пользователь создавать официальные пресеты
   const canCreateOfficial = user?.role === 'brand'; // TODO: добавить проверку verified бренда
+  const shouldLoadFilamentsForSelection = Boolean(
+    isOpen && (!preset || isDraft) && !filamentId && !showFilamentForm
+  );
 
   // Загружаем филамент для редактирования
   const { data: editingFilament } = useQuery({
@@ -330,7 +335,7 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
       search: filamentSearch || undefined,
       brand_id: brandId || undefined, // Фильтруем по бренду если передан brandId
     }),
-    enabled: isOpen && !preset && !filamentId && !showFilamentForm, // Загружаем только если не создаем новый
+    enabled: shouldLoadFilamentsForSelection,
   });
 
   // Загружаем информацию о бренде если передан brandId

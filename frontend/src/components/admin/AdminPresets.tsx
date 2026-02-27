@@ -3,8 +3,8 @@
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Settings, CheckCircle, XCircle, Pencil } from 'lucide-react';
-import { adminAPI } from '../../api/client';
+import { Settings, CheckCircle, XCircle, Pencil, Trash2 } from 'lucide-react';
+import { adminAPI, presetsAPI } from '../../api/client';
 import type { Preset } from '../../types/api';
 import { CreatePresetModal } from '../CreatePresetModal';
 import { translateApiError } from '../../utils/translateApiError';
@@ -61,6 +61,14 @@ export function AdminPresets() {
   const rejectMutation = useMutation({
     mutationFn: ({ presetId, reason }: { presetId: number; reason: string }) =>
       adminAPI.rejectPreset(presetId, reason),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['admin-pending-presets'] });
+    },
+  });
+
+  // Удаление пресета (жесткое удаление для явно мусорных/некорректных пресетов)
+  const deleteMutation = useMutation({
+    mutationFn: (presetId: number) => presetsAPI.delete(presetId),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['admin-pending-presets'] });
     },
@@ -130,10 +138,10 @@ export function AdminPresets() {
                       </div>
                     )}
                   </div>
-                  <div className="flex items-center space-x-2">
+                  <div className="grid grid-cols-2 gap-2 ml-4 shrink-0">
                     <button
                       onClick={() => setEditingPreset(preset)}
-                      className="flex items-center space-x-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-all"
+                      className="flex items-center justify-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-all"
                     >
                       <Pencil className="w-4 h-4" />
                       <span>{t('adminPresets.edit')}</span>
@@ -145,7 +153,7 @@ export function AdminPresets() {
                         }
                       }}
                       disabled={approveMutation.isPending}
-                      className="flex items-center space-x-2 px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg transition-all disabled:opacity-50"
+                      className="flex items-center justify-center gap-2 px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg transition-all disabled:opacity-50"
                     >
                       <CheckCircle className="w-4 h-4" />
                       <span>{t('adminPresets.approve')}</span>
@@ -158,10 +166,22 @@ export function AdminPresets() {
                         }
                       }}
                       disabled={rejectMutation.isPending}
-                      className="flex items-center space-x-2 px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg transition-all disabled:opacity-50"
+                      className="flex items-center justify-center gap-2 px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg transition-all disabled:opacity-50"
                     >
                       <XCircle className="w-4 h-4" />
                       <span>{t('adminPresets.reject')}</span>
+                    </button>
+                    <button
+                      onClick={() => {
+                        if (confirm(t('adminPresets.confirmDelete', { name: preset.name }))) {
+                          deleteMutation.mutate(preset.id);
+                        }
+                      }}
+                      disabled={deleteMutation.isPending}
+                      className="flex items-center justify-center gap-2 px-4 py-2 bg-red-900/70 hover:bg-red-900 text-white rounded-lg transition-all disabled:opacity-50 border border-red-500/40"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                      <span>{t('adminPresets.delete')}</span>
                     </button>
                   </div>
                 </div>

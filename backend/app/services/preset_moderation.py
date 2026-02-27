@@ -494,7 +494,11 @@ async def _find_duplicate_preset_flag(
 
 
 async def moderate_preset(
-    preset: Preset, filament: Filament, db: AsyncSession, is_official: bool = False
+    preset: Preset,
+    filament: Filament,
+    db: AsyncSession,
+    is_official: bool = False,
+    allow_manual_review: bool = True,
 ) -> tuple[PresetModerationStatus, Optional[dict[str, Any] | str]]:
     """
     Автоматическая модерация пресета.
@@ -504,6 +508,7 @@ async def moderate_preset(
         filament: Материал пресета
         db: Сессия БД для проверки плохих слов
         is_official: Является ли пресет официальным (от производителя)
+        allow_manual_review: Разрешать ли перевод в PENDING по мягким риск-сигналам
     
     Returns:
         (status, reason): Статус модерации и причина (если отклонен)
@@ -529,14 +534,14 @@ async def moderate_preset(
     if not is_valid_settings:
         return PresetModerationStatus.REJECTED, settings_reason
     
-    # Мягкие сигналы риска -> отправляем на ручную модерацию
+    # Мягкие сигналы риска -> отправляем на ручную модерацию (если включено)
     flags = _collect_soft_range_flags(preset, filament)
     duplicate_flag = await _find_duplicate_preset_flag(preset, db)
     if duplicate_flag is not None:
         flags.append(duplicate_flag)
 
     risk_score = int(sum(int(flag.get("score", 0)) for flag in flags))
-    if risk_score >= MANUAL_REVIEW_SCORE_THRESHOLD:
+    if allow_manual_review and risk_score >= MANUAL_REVIEW_SCORE_THRESHOLD:
         return (
             PresetModerationStatus.PENDING,
             {
@@ -554,6 +559,13 @@ async def moderate_preset(
                     for flag in flags
                 ],
             },
+        )
+
+    if not allow_manual_review and risk_score >= MANUAL_REVIEW_SCORE_THRESHOLD:
+        logger.info(
+            "Preset auto-approved with manual review disabled (risk_score=%s, flags=%s)",
+            risk_score,
+            len(flags),
         )
 
     # Всё ок, одобряем автоматически

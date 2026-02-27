@@ -1,6 +1,7 @@
 """Pytest configuration and fixtures."""
 
 import asyncio
+import os
 from typing import AsyncGenerator
 
 import pytest
@@ -9,6 +10,11 @@ from fastapi.testclient import TestClient
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sessionmaker
 from sqlalchemy.pool import StaticPool
+
+# Ensure tests are self-contained and do not require local .env/Redis.
+os.environ["SECRET_KEY"] = "test-secret-key"
+os.environ["DEBUG"] = "false"
+os.environ["REDIS_URL"] = "memory://"
 
 from app.db.base import Base
 from app.db.session import get_db
@@ -74,6 +80,8 @@ async def client(db_session: AsyncSession) -> AsyncGenerator[AsyncClient, None]:
         yield db_session
     
     app.dependency_overrides[get_db] = override_get_db
+    # Disable rate limiting in tests to keep flows deterministic.
+    app.state.limiter.enabled = False
     
     from httpx import ASGITransport
     transport = ASGITransport(app=app)
@@ -81,6 +89,7 @@ async def client(db_session: AsyncSession) -> AsyncGenerator[AsyncClient, None]:
         yield ac
     
     # Clean up
+    app.state.limiter.enabled = True
     app.dependency_overrides.clear()
 
 
@@ -92,4 +101,3 @@ def test_client() -> TestClient:
     Note: For async tests, use the 'client' fixture instead.
     """
     return TestClient(app)
-
