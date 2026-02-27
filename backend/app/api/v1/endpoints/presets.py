@@ -572,7 +572,7 @@ async def export_preset_json(
         missing_fields.append("name")
     if not preset.filament.material_type:
         missing_fields.append("filament.material_type")
-    if preset.nozzle_temperature is None:
+    if preset.extruder_temp is None:
         missing_fields.append("nozzle_temperature")
     if missing_fields:
         raise_error(422, ERR_EXPORT_MISSING_FIELDS, params={"fields": ", ".join(missing_fields)})
