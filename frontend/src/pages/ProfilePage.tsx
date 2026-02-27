@@ -49,6 +49,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { useHeaderVisible } from '../hooks/useHeaderVisible';
 import { presetsAPI, filamentsAPI, brandsAPI, savedPresetsAPI, filamentReviewsAPI, calculatorAPI, printerProfilesAPI, printProfilesAPI, authAPI, spoolsAPI } from '../api/client';
 import type { UserSpool } from '../api/client';
+import { SpoolIcon } from '../components/icons/SpoolIcon';
 import api from '../api/client';
 import { translateApiError } from '../utils/translateApiError';
 import { CreatePresetModal } from '../components/CreatePresetModal';
@@ -1360,65 +1361,60 @@ const SPOOL_STATE_COLORS: Record<string, string> = {
 
 const SpoolCard: React.FC<{ spool: UserSpool; onDelete?: () => void }> = ({ spool, onDelete }) => {
   const { t } = useTranslation();
-  const remaining = spool.remaining_weight_g;
   const pct = spool.remaining_pct;
   const stateKey = `profilePage.spoolState.${spool.state}` as const;
-  const barColor = pct > 50 ? 'bg-green-500' : pct > 20 ? 'bg-yellow-500' : 'bg-red-500';
+  const iconColor = spool.filament?.color_hex
+    ? `#${spool.filament.color_hex.replace('#', '')}`
+    : '#9333ea';
 
   return (
-    <div className="bg-white/10 backdrop-blur-sm border border-white/15 rounded-2xl p-4 md:p-5 shadow-xl flex flex-col gap-3">
-      {/* Header */}
-      <div className="flex items-start justify-between gap-2">
-        <div className="flex items-center gap-2 min-w-0">
-          {spool.filament?.color_hex ? (
-            <span
-              className="w-4 h-4 rounded-full flex-shrink-0 border border-white/20"
-              style={{ backgroundColor: `#${spool.filament.color_hex.replace('#', '')}` }}
-            />
-          ) : (
-            <Package className="w-4 h-4 text-gray-400 flex-shrink-0" />
-          )}
-          <div className="min-w-0">
-            <p className="text-white font-semibold text-sm truncate">
-              {spool.filament ? spool.filament.name : t('profilePage.spoolNoFilament')}
-            </p>
-            {spool.filament && (
-              <p className="text-gray-400 text-xs truncate">
-                {spool.filament.brand_name && `${spool.filament.brand_name} · `}{spool.filament.material_type}
-              </p>
-            )}
-          </div>
-        </div>
-        <span className={`text-xs px-2 py-0.5 rounded-full border flex-shrink-0 ${SPOOL_STATE_COLORS[spool.state] ?? ''}`}>
-          {t(stateKey)}
-        </span>
+    <div className="bg-white/10 backdrop-blur-sm border border-white/15 rounded-2xl p-4 shadow-xl flex gap-4 items-center">
+      {/* Spool icon — the visual centrepiece */}
+      <div className="flex-shrink-0">
+        <SpoolIcon pct={pct} color={iconColor} size={72} />
       </div>
 
-      {/* Progress bar */}
-      <div>
-        <div className="flex justify-between text-xs text-gray-400 mb-1">
-          <span>{t('profilePage.spoolRemaining')}</span>
-          <span className="text-white font-medium">{remaining.toFixed(0)} г ({pct.toFixed(0)}%)</span>
+      {/* Info */}
+      <div className="flex-1 min-w-0 flex flex-col gap-1.5">
+        {/* Name + state badge */}
+        <div className="flex items-start justify-between gap-2">
+          <p className="text-white font-semibold text-sm leading-tight truncate">
+            {spool.filament ? spool.filament.name : t('profilePage.spoolNoFilament')}
+          </p>
+          <span className={`text-xs px-2 py-0.5 rounded-full border flex-shrink-0 ${SPOOL_STATE_COLORS[spool.state] ?? ''}`}>
+            {t(stateKey)}
+          </span>
         </div>
-        <div className="h-2 bg-white/10 rounded-full overflow-hidden">
-          <div
-            className={`h-full rounded-full transition-all ${barColor}`}
-            style={{ width: `${pct}%` }}
-          />
-        </div>
-        <div className="flex justify-between text-xs text-gray-500 mt-1">
-          <span>{t('profilePage.spoolUsed')}: {spool.used_weight_g.toFixed(0)} г</span>
-          <span>{t('profilePage.spoolInitialWeight')}: {spool.initial_weight_g.toFixed(0)} г</span>
-        </div>
-      </div>
 
-      {/* Lot / comment */}
-      {(spool.lot_nr || spool.comment) && (
-        <p className="text-gray-400 text-xs truncate">
-          {spool.lot_nr && <span className="mr-2">Партия: {spool.lot_nr}</span>}
-          {spool.comment}
-        </p>
-      )}
+        {/* Brand · material */}
+        {spool.filament && (
+          <p className="text-gray-400 text-xs truncate">
+            {spool.filament.brand_name && `${spool.filament.brand_name} · `}
+            {spool.filament.material_type}
+          </p>
+        )}
+
+        {/* Weight stats */}
+        <div className="flex items-center gap-3 text-xs mt-0.5">
+          <span className="text-white font-medium">
+            {spool.remaining_weight_g.toFixed(0)} г
+            <span className="text-gray-400 font-normal ml-1">({pct.toFixed(0)}%)</span>
+          </span>
+          <span className="text-gray-500">
+            {t('profilePage.spoolUsed')}: {spool.used_weight_g.toFixed(0)} г
+            {' / '}
+            {spool.initial_weight_g.toFixed(0)} г
+          </span>
+        </div>
+
+        {/* Lot / comment */}
+        {(spool.lot_nr || spool.comment) && (
+          <p className="text-gray-500 text-xs truncate">
+            {spool.lot_nr && <span className="mr-2">№ {spool.lot_nr}</span>}
+            {spool.comment}
+          </p>
+        )}
+      </div>
     </div>
   );
 };
@@ -1581,28 +1577,29 @@ const RecentSpools: React.FC<RecentSpoolsProps> = ({ spools, onViewAll }) => {
           {t('profilePage.spoolsTitle')} →
         </button>
       </div>
-      <div className="space-y-2">
+      <div className="space-y-1.5">
         {spools.length > 0 ? (
           spools.map(spool => {
-            const pct = spool.remaining_pct;
-            const barColor = pct > 50 ? 'bg-green-500' : pct > 20 ? 'bg-yellow-500' : 'bg-red-500';
+            const iconColor = spool.filament?.color_hex
+              ? `#${spool.filament.color_hex.replace('#', '')}`
+              : '#9333ea';
             return (
-              <div key={spool.id} className="flex items-center gap-3 p-2.5 bg-white/5 rounded-xl">
-                {spool.filament?.color_hex ? (
-                  <span className="w-3 h-3 rounded-full flex-shrink-0 border border-white/20"
-                    style={{ backgroundColor: `#${spool.filament.color_hex.replace('#', '')}` }} />
-                ) : (
-                  <Package className="w-3 h-3 text-gray-400 flex-shrink-0" />
-                )}
+              <div key={spool.id} className="flex items-center gap-2.5 p-2 bg-white/5 rounded-xl">
+                <SpoolIcon pct={spool.remaining_pct} color={iconColor} size={38} />
                 <div className="flex-1 min-w-0">
-                  <p className="text-white text-xs font-medium truncate">
+                  <p className="text-white text-xs font-medium truncate leading-tight">
                     {spool.filament?.name ?? t('profilePage.spoolNoFilament')}
                   </p>
-                  <div className="h-1.5 bg-white/10 rounded-full mt-1 overflow-hidden">
-                    <div className={`h-full rounded-full ${barColor}`} style={{ width: `${pct}%` }} />
-                  </div>
+                  {spool.filament && (
+                    <p className="text-gray-500 text-xs truncate leading-tight">
+                      {spool.filament.material_type}
+                    </p>
+                  )}
                 </div>
-                <span className="text-gray-400 text-xs flex-shrink-0">{spool.remaining_weight_g.toFixed(0)}г</span>
+                <div className="text-right flex-shrink-0">
+                  <p className="text-white text-xs font-medium">{spool.remaining_weight_g.toFixed(0)}г</p>
+                  <p className="text-gray-500 text-xs">{spool.remaining_pct.toFixed(0)}%</p>
+                </div>
               </div>
             );
           })
