@@ -1,6 +1,6 @@
 /** Страница профиля пользователя */
 
-import { useState, useMemo, useEffect, type ReactNode } from 'react';
+import { useState, useMemo, useEffect, useRef, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
@@ -37,18 +37,21 @@ import {
   ChevronDown,
   ChevronUp,
   CheckCircle,
+  Copy,
   HelpCircle,
   X,
   BookOpen,
   Zap,
   Shield,
   RefreshCw,
+  QrCode,
+  Camera,
 } from 'lucide-react';
 import { Printer3DIcon } from '../components/icons/Printer3DIcon';
 import { useAuth } from '../contexts/AuthContext';
 import { useHeaderVisible } from '../hooks/useHeaderVisible';
-import { presetsAPI, filamentsAPI, brandsAPI, savedPresetsAPI, filamentReviewsAPI, calculatorAPI, printerProfilesAPI, printProfilesAPI, authAPI, spoolsAPI } from '../api/client';
-import type { UserSpool } from '../api/client';
+import { presetsAPI, filamentsAPI, brandsAPI, savedPresetsAPI, filamentReviewsAPI, calculatorAPI, printerProfilesAPI, printProfilesAPI, authAPI, spoolsAPI, qrAPI } from '../api/client';
+import type { UserSpool, SpoolState } from '../api/client';
 import { SpoolIcon } from '../components/icons/SpoolIcon';
 import api from '../api/client';
 import { translateApiError } from '../utils/translateApiError';
@@ -63,8 +66,9 @@ import { CreatePrinterProfileModal } from '../components/CreatePrinterProfileMod
 import { CreatePrintProfileModal } from '../components/CreatePrintProfileModal';
 import { PresetSyncToggle } from '../components/PresetSyncToggle';
 import { BadgeList } from '../components/Badge';
+import { PresetSlotsPanel } from '../components/presetSlots/PresetSlotsPanel';
 import { BrandProfilePage } from './BrandProfilePage';
-import type { Preset, PricingMethod, CalculatorEstimateRequest, PrinterProfile, PrintProfile } from '../types/api';
+import type { Preset, PricingMethod, CalculatorEstimateRequest, PrinterProfile, PrintProfile, Filament } from '../types/api';
 
 export const ProfilePage: React.FC = () => {
   const { user, refreshUser } = useAuth();
@@ -797,9 +801,11 @@ export const ProfilePage: React.FC = () => {
       {userTab === 'spools' && (
         <SpoolsTab
           spools={spoolsData}
+          printerBindings={printersWithProfiles.map((printer) => ({ id: printer.id, name: printer.name }))}
           onRefetch={refetchSpools}
           isAddOpen={isAddSpoolOpen}
           setIsAddOpen={setIsAddSpoolOpen}
+          initialApiKey={user.api_key ?? null}
         />
       )}
 
@@ -1359,19 +1365,36 @@ const SPOOL_STATE_COLORS: Record<string, string> = {
   empty: 'bg-red-500/20 text-red-300 border-red-500/30',
 };
 
-const SpoolCard: React.FC<{ spool: UserSpool; onDelete?: () => void }> = ({ spool, onDelete }) => {
+interface SpoolCardProps {
+  spool: UserSpool;
+  isBusy?: boolean;
+  onEdit?: () => void;
+  onUse?: () => void;
+  onDelete?: () => void;
+  onStateChange?: (state: SpoolState) => void;
+}
+
+const SpoolCard: React.FC<SpoolCardProps> = ({ spool, isBusy = false, onEdit, onUse, onDelete, onStateChange }) => {
   const { t } = useTranslation();
-  const pct = spool.remaining_pct;
+  const pct = Math.max(0, Math.min(100, spool.remaining_pct));
   const stateKey = `profilePage.spoolState.${spool.state}` as const;
   const iconColor = spool.filament?.color_hex
     ? `#${spool.filament.color_hex.replace('#', '')}`
     : '#9333ea';
+  const pctToneClass = pct <= 10 ? 'text-red-300' : pct <= 30 ? 'text-yellow-300' : 'text-green-300';
 
   return (
-    <div className="bg-white/10 backdrop-blur-sm border border-white/15 rounded-2xl p-4 shadow-xl flex gap-4 items-center">
+    <div className="bg-white/10 backdrop-blur-sm border border-white/15 rounded-2xl p-4 shadow-xl flex gap-4 items-stretch">
       {/* Spool icon — the visual centrepiece */}
-      <div className="flex-shrink-0">
-        <SpoolIcon pct={pct} color={iconColor} size={72} />
+      <div className="flex-shrink-0 self-stretch flex items-center justify-center w-[112px]">
+        <SpoolIcon
+          pct={pct}
+          color={iconColor}
+          remainingWeightG={spool.remaining_weight_g}
+          showMetrics
+          size={112}
+          viewBox="8 12 78 72"
+        />
       </div>
 
       {/* Info */}
@@ -1396,7 +1419,7 @@ const SpoolCard: React.FC<{ spool: UserSpool; onDelete?: () => void }> = ({ spoo
 
         {/* Weight stats */}
         <div className="flex items-center gap-3 text-xs mt-0.5">
-          <span className="text-white font-medium">
+          <span className={`font-medium ${pctToneClass}`}>
             {spool.remaining_weight_g.toFixed(0)} г
             <span className="text-gray-400 font-normal ml-1">({pct.toFixed(0)}%)</span>
           </span>
@@ -1407,6 +1430,13 @@ const SpoolCard: React.FC<{ spool: UserSpool; onDelete?: () => void }> = ({ spoo
           </span>
         </div>
 
+        <div className="h-1.5 w-full overflow-hidden rounded-full bg-white/10">
+          <div
+            className="h-full rounded-full transition-all duration-500"
+            style={{ width: `${pct}%`, backgroundColor: iconColor }}
+          />
+        </div>
+
         {/* Lot / comment */}
         {(spool.lot_nr || spool.comment) && (
           <p className="text-gray-500 text-xs truncate">
@@ -1414,39 +1444,394 @@ const SpoolCard: React.FC<{ spool: UserSpool; onDelete?: () => void }> = ({ spoo
             {spool.comment}
           </p>
         )}
+
+        <div className="grid grid-cols-2 gap-2 pt-1">
+          <button
+            type="button"
+            onClick={onEdit}
+            disabled={!onEdit || isBusy}
+            className="inline-flex items-center justify-center gap-1 rounded-lg border border-white/20 bg-white/5 px-2 py-1 text-[11px] text-gray-200 hover:bg-white/10 disabled:opacity-50"
+          >
+            <Edit className="h-3 w-3" />
+            <span>{t('profilePage.spoolActions.edit')}</span>
+          </button>
+          <button
+            type="button"
+            onClick={onUse}
+            disabled={!onUse || isBusy || spool.remaining_weight_g <= 0}
+            className="inline-flex items-center justify-center gap-1 rounded-lg border border-white/20 bg-white/5 px-2 py-1 text-[11px] text-gray-200 hover:bg-white/10 disabled:opacity-50"
+          >
+            <Gauge className="h-3 w-3" />
+            <span>{t('profilePage.spoolActions.use')}</span>
+          </button>
+          <select
+            value={spool.state}
+            onChange={(e) => onStateChange?.(e.target.value as SpoolState)}
+            disabled={!onStateChange || isBusy}
+            className="w-full rounded-lg border border-white/20 bg-white/5 px-2 py-1 text-[11px] text-gray-200 focus:border-purple-500 focus:outline-none disabled:opacity-50"
+          >
+            {(['active', 'shelf', 'archived', 'empty'] as const).map(s => (
+              <option key={s} value={s}>{t(`profilePage.spoolState.${s}`)}</option>
+            ))}
+          </select>
+          <button
+            type="button"
+            onClick={onDelete}
+            disabled={!onDelete || isBusy}
+            className="inline-flex items-center justify-center gap-1 rounded-lg border border-red-500/30 bg-red-500/10 px-2 py-1 text-[11px] text-red-200 hover:bg-red-500/20 disabled:opacity-50"
+          >
+            <Trash2 className="h-3 w-3" />
+            <span>{t('profilePage.spoolActions.delete')}</span>
+          </button>
+        </div>
       </div>
     </div>
   );
 };
 
-interface AddSpoolFormProps {
+interface SpoolFormProps {
+  mode: 'create' | 'edit';
+  spool?: UserSpool;
   onSaved: () => void;
   onCancel: () => void;
 }
 
-const AddSpoolForm: React.FC<AddSpoolFormProps> = ({ onSaved, onCancel }) => {
+const SpoolForm: React.FC<SpoolFormProps> = ({ mode, spool, onSaved, onCancel }) => {
+  const { user } = useAuth();
   const { t } = useTranslation();
   const queryClient = useQueryClient();
-  const [initialWeight, setInitialWeight] = useState('1000');
-  const [usedWeight, setUsedWeight] = useState('0');
-  const [state, setState] = useState<string>('active');
-  const [lotNr, setLotNr] = useState('');
-  const [comment, setComment] = useState('');
+  const [filamentId, setFilamentId] = useState<string>(spool?.filament_id ? String(spool.filament_id) : '');
+  const [initialWeight, setInitialWeight] = useState<string>(spool ? String(spool.initial_weight_g) : '1000');
+  const [usedWeight, setUsedWeight] = useState<string>(spool ? String(spool.used_weight_g) : '0');
+  const [state, setState] = useState<SpoolState>(spool?.state ?? 'active');
+  const [lotNr, setLotNr] = useState<string>(spool?.lot_nr ?? '');
+  const [comment, setComment] = useState<string>(spool?.comment ?? '');
+  const [isQrPanelOpen, setIsQrPanelOpen] = useState(false);
+  const [qrInput, setQrInput] = useState('');
+  const [qrBusy, setQrBusy] = useState(false);
+  const [qrError, setQrError] = useState<string | null>(null);
+  const [qrSuccess, setQrSuccess] = useState<string | null>(null);
+  const [scannedFilament, setScannedFilament] = useState<Filament | null>(null);
+  const [isCameraOpen, setIsCameraOpen] = useState(false);
+  const [isCameraBusy, setIsCameraBusy] = useState(false);
+  const [isCameraReady, setIsCameraReady] = useState(false);
+  const videoRef = useRef<HTMLVideoElement | null>(null);
+  const cameraStreamRef = useRef<MediaStream | null>(null);
+  const cameraFrameRef = useRef<number | null>(null);
+  const cameraDetectorRef = useRef<{ detect: (source: any) => Promise<Array<{ rawValue?: string }>> } | null>(null);
+  const isCameraScanningRef = useRef(false);
+  const [errorText, setErrorText] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+
+  const { data: filamentsData } = useQuery({
+    queryKey: ['spool-form-filaments'],
+    queryFn: () => filamentsAPI.list({ page: 1, size: 100, active_only: true }),
+  });
+
+  const { data: presetFilamentIds = [] } = useQuery({
+    queryKey: ['spool-form-user-preset-filaments', user?.id],
+    queryFn: async () => {
+      const response = await presetsAPI.list({
+        active_only: false,
+        page: 1,
+        size: 100,
+        user_id: user?.id,
+      });
+      const uniqueIds = new Set<number>();
+      response.items.forEach((preset) => {
+        if (preset.filament_id) {
+          uniqueIds.add(preset.filament_id);
+        }
+      });
+      return Array.from(uniqueIds);
+    },
+    enabled: !!user?.id,
+  });
+
+  const filamentOptions = useMemo(() => {
+    const allowedIds = new Set(presetFilamentIds);
+    const list = [...(filamentsData?.items ?? [])].filter((item) => allowedIds.has(item.id));
+    if (scannedFilament && !list.some((item) => item.id === scannedFilament.id)) {
+      list.unshift(scannedFilament);
+    }
+    if (spool?.filament && !list.some((item) => item.id === spool.filament!.id)) {
+      list.unshift({
+        id: spool.filament.id,
+        brand_id: 0,
+        brand_name: spool.filament.brand_name,
+        name: spool.filament.name,
+        material_type: spool.filament.material_type,
+        color_name: spool.filament.color_name,
+        color_hex: spool.filament.color_hex,
+        visual_settings: null,
+        diameter: 1.75,
+        density: null,
+        price_per_kg: null,
+        spool_weight: null,
+        description: null,
+        views_count: null,
+        scans_count: null,
+        qr_code: null,
+        active: true,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      });
+    }
+    return list;
+  }, [filamentsData?.items, presetFilamentIds, scannedFilament, spool?.filament]);
+
+  useEffect(() => {
+    if (!spool) {
+      return;
+    }
+    setFilamentId(spool.filament_id ? String(spool.filament_id) : '');
+    setInitialWeight(String(spool.initial_weight_g));
+    setUsedWeight(String(spool.used_weight_g));
+    setState(spool.state);
+    setLotNr(spool.lot_nr ?? '');
+    setComment(spool.comment ?? '');
+    setIsQrPanelOpen(false);
+    setQrInput('');
+    setQrError(null);
+    setQrSuccess(null);
+    setScannedFilament(null);
+    setIsCameraOpen(false);
+    setIsCameraBusy(false);
+    setIsCameraReady(false);
+    setErrorText(null);
+  }, [spool]);
+
+  const stopCameraScan = () => {
+    isCameraScanningRef.current = false;
+    if (cameraFrameRef.current !== null) {
+      cancelAnimationFrame(cameraFrameRef.current);
+      cameraFrameRef.current = null;
+    }
+    cameraDetectorRef.current = null;
+    if (cameraStreamRef.current) {
+      cameraStreamRef.current.getTracks().forEach((track) => track.stop());
+      cameraStreamRef.current = null;
+    }
+    if (videoRef.current) {
+      videoRef.current.srcObject = null;
+    }
+    setIsCameraReady(false);
+    setIsCameraOpen(false);
+  };
+
+  useEffect(() => {
+    if (!isQrPanelOpen) {
+      stopCameraScan();
+    }
+  }, [isQrPanelOpen]);
+
+  useEffect(() => {
+    return () => {
+      stopCameraScan();
+    };
+  }, []);
+
+  const extractQrShortCode = (rawValue: string): string | null => {
+    const normalized = rawValue.trim();
+    if (!normalized) {
+      return null;
+    }
+
+    // Поддерживаем полный URL вида https://.../qr/<SHORT_CODE>
+    if (normalized.startsWith('http://') || normalized.startsWith('https://')) {
+      try {
+        const parsed = new URL(normalized);
+        const segments = parsed.pathname.split('/').filter(Boolean);
+        const qrIndex = segments.findIndex((segment) => segment.toLowerCase() === 'qr');
+        if (qrIndex !== -1 && segments[qrIndex + 1]) {
+          return segments[qrIndex + 1];
+        }
+      } catch {
+        // Если URL невалидный — пробуем как обычный short code.
+      }
+    }
+
+    const match = normalized.match(/[A-Za-z0-9_-]{4,100}/);
+    return match ? match[0] : null;
+  };
+
+  const resolveQrCode = async (rawCode: string) => {
+    const shortCode = extractQrShortCode(rawCode);
+    if (!shortCode) {
+      setQrError(t('profilePage.spoolAddModal.scanQrInvalid'));
+      return;
+    }
+
+    setQrBusy(true);
+    setQrError(null);
+    setQrSuccess(null);
+    try {
+      const response = await qrAPI.scan(shortCode);
+      if (!response?.filament) {
+        setQrError(t('profilePage.spoolAddModal.scanQrNoFilament'));
+        return;
+      }
+
+      setScannedFilament(response.filament);
+      setFilamentId(String(response.filament.id));
+      setQrInput('');
+      setIsQrPanelOpen(false);
+      setQrSuccess(
+        response.preset_added
+          ? t('profilePage.spoolAddModal.scanQrSuccessWithPreset')
+          : t('profilePage.spoolAddModal.scanQrSuccess')
+      );
+    } catch (error: any) {
+      setQrError(translateApiError(error, t));
+    } finally {
+      setQrBusy(false);
+    }
+  };
+
+  const startCameraScan = async () => {
+    setQrError(null);
+    setQrSuccess(null);
+
+    if (!navigator.mediaDevices?.getUserMedia) {
+      setQrError(t('profilePage.spoolAddModal.scanQrCameraNotSupported'));
+      return;
+    }
+
+    const BarcodeDetectorCtor = (window as any).BarcodeDetector as
+      | (new (options?: { formats?: string[] }) => { detect: (source: any) => Promise<Array<{ rawValue?: string }>> })
+      | undefined;
+
+    if (!BarcodeDetectorCtor) {
+      setQrError(t('profilePage.spoolAddModal.scanQrCameraNotSupported'));
+      return;
+    }
+
+    setIsCameraBusy(true);
+    setIsCameraOpen(true);
+
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: { ideal: 'environment' } },
+        audio: false,
+      });
+      cameraStreamRef.current = stream;
+
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream;
+        await videoRef.current.play();
+      }
+
+      cameraDetectorRef.current = new BarcodeDetectorCtor({ formats: ['qr_code'] });
+      isCameraScanningRef.current = true;
+      setIsCameraReady(true);
+
+      const scanFrame = async () => {
+        if (!isCameraScanningRef.current) {
+          return;
+        }
+
+        const video = videoRef.current;
+        const detector = cameraDetectorRef.current;
+
+        if (!video || !detector || video.readyState < 2) {
+          cameraFrameRef.current = requestAnimationFrame(() => {
+            void scanFrame();
+          });
+          return;
+        }
+
+        try {
+          const barcodes = await detector.detect(video);
+          if (!isCameraScanningRef.current) {
+            return;
+          }
+          const rawValue = barcodes.find((item) => item.rawValue)?.rawValue;
+          if (rawValue) {
+            stopCameraScan();
+            await resolveQrCode(rawValue);
+            return;
+          }
+        } catch {
+          // Игнорируем временные ошибки декодирования и продолжаем цикл.
+        }
+
+        cameraFrameRef.current = requestAnimationFrame(() => {
+          void scanFrame();
+        });
+      };
+
+      cameraFrameRef.current = requestAnimationFrame(() => {
+        void scanFrame();
+      });
+    } catch (error: any) {
+      stopCameraScan();
+      if (error?.name === 'NotAllowedError' || error?.name === 'PermissionDeniedError') {
+        setQrError(t('profilePage.spoolAddModal.scanQrCameraPermissionDenied'));
+      } else {
+        setQrError(translateApiError(error, t));
+      }
+    } finally {
+      setIsCameraBusy(false);
+    }
+  };
+
+  const handlePasteQrFromClipboard = async () => {
+    setQrError(null);
+    try {
+      if (!navigator.clipboard?.readText) {
+        setQrError(t('profilePage.spoolAddModal.scanQrPasteFailed'));
+        return;
+      }
+      const text = await navigator.clipboard.readText();
+      if (!text.trim()) {
+        setQrError(t('profilePage.spoolAddModal.scanQrInvalid'));
+        return;
+      }
+      setQrInput(text);
+      await resolveQrCode(text);
+    } catch {
+      setQrError(t('profilePage.spoolAddModal.scanQrPasteFailed'));
+    }
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    setErrorText(null);
+    const parsedInitial = parseFloat(initialWeight);
+    const parsedUsed = parseFloat(usedWeight || '0');
+
+    if (!Number.isFinite(parsedInitial) || parsedInitial <= 0) {
+      setErrorText(t('profilePage.spoolActions.invalidInitialWeight'));
+      return;
+    }
+    if (!Number.isFinite(parsedUsed) || parsedUsed < 0) {
+      setErrorText(t('profilePage.spoolActions.invalidUsedWeight'));
+      return;
+    }
+    if (parsedUsed > parsedInitial) {
+      setErrorText(t('profilePage.spoolActions.usedGreaterThanInitial'));
+      return;
+    }
+
     setSaving(true);
     try {
-      await spoolsAPI.create({
-        initial_weight_g: parseFloat(initialWeight) || 1000,
-        used_weight_g: parseFloat(usedWeight) || 0,
-        state: state as any,
+      const payload = {
+        filament_id: filamentId ? Number(filamentId) : null,
+        initial_weight_g: parsedInitial,
+        used_weight_g: parsedUsed,
+        state,
         lot_nr: lotNr || null,
         comment: comment || null,
-      });
+      };
+      if (mode === 'edit' && spool) {
+        await spoolsAPI.update(spool.id, payload);
+      } else {
+        await spoolsAPI.create(payload);
+      }
       queryClient.invalidateQueries({ queryKey: ['user-spools'] });
       onSaved();
+    } catch (error: any) {
+      setErrorText(translateApiError(error, t));
     } finally {
       setSaving(false);
     }
@@ -1456,10 +1841,105 @@ const AddSpoolForm: React.FC<AddSpoolFormProps> = ({ onSaved, onCancel }) => {
   const labelCls = 'block text-xs text-gray-400 mb-1';
 
   return (
-    <form onSubmit={handleSubmit} className="bg-white/10 backdrop-blur-sm border border-white/20 rounded-2xl p-5 space-y-4">
-      <h3 className="text-white font-semibold text-base">{t('profilePage.spoolAddModal.title')}</h3>
+    <form onSubmit={handleSubmit} className="bg-white/10 backdrop-blur-sm border border-white/20 rounded-2xl p-4 md:p-5 space-y-4 max-w-2xl mx-auto">
+      <h3 className="text-white font-semibold text-base">
+        {mode === 'edit' ? t('profilePage.spoolEditModal.title') : t('profilePage.spoolAddModal.title')}
+      </h3>
 
-      <div className="grid grid-cols-2 gap-3">
+      <div>
+        <div className="flex items-center justify-between gap-2 mb-1">
+          <label className={`${labelCls} mb-0`}>{t('profilePage.spoolAddModal.filamentLabel')}</label>
+          <button
+            type="button"
+            onClick={() => setIsQrPanelOpen((prev) => !prev)}
+            className="inline-flex items-center gap-1.5 text-xs px-2 py-1 rounded-md border border-white/20 text-gray-300 hover:bg-white/10 transition-colors"
+          >
+            <QrCode className="w-3.5 h-3.5" />
+            <span>{t('profilePage.spoolAddModal.scanQr')}</span>
+          </button>
+        </div>
+
+        {isQrPanelOpen && (
+          <div className="mb-3 p-3 bg-white/5 border border-white/10 rounded-lg space-y-2">
+            <p className="text-xs text-gray-400">{t('profilePage.spoolAddModal.scanQrHint')}</p>
+            <input
+              type="text"
+              value={qrInput}
+              onChange={(e) => setQrInput(e.target.value)}
+              placeholder={t('profilePage.spoolAddModal.scanQrPlaceholder')}
+              className={inputCls}
+              disabled={qrBusy}
+            />
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => resolveQrCode(qrInput)}
+                disabled={qrBusy}
+                className="inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-md bg-purple-600/80 hover:bg-purple-600 text-white text-xs font-medium transition-colors disabled:opacity-60"
+              >
+                {qrBusy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <QrCode className="w-3.5 h-3.5" />}
+                <span>{t('profilePage.spoolAddModal.scanQrApply')}</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  if (isCameraOpen) {
+                    stopCameraScan();
+                    return;
+                  }
+                  void startCameraScan();
+                }}
+                disabled={isCameraBusy}
+                className="px-3 py-2 rounded-md border border-white/20 text-gray-300 text-xs hover:bg-white/10 transition-colors disabled:opacity-60 inline-flex items-center gap-1.5"
+              >
+                {isCameraBusy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Camera className="w-3.5 h-3.5" />}
+                <span>{isCameraOpen ? t('profilePage.spoolAddModal.scanQrCameraStop') : t('profilePage.spoolAddModal.scanQrCameraStart')}</span>
+              </button>
+              <button
+                type="button"
+                onClick={handlePasteQrFromClipboard}
+                disabled={qrBusy}
+                className="px-3 py-2 rounded-md border border-white/20 text-gray-300 text-xs hover:bg-white/10 transition-colors disabled:opacity-60"
+              >
+                {t('profilePage.spoolAddModal.scanQrPaste')}
+              </button>
+            </div>
+
+            {isCameraOpen && (
+              <div className="mt-2 rounded-lg overflow-hidden border border-white/15 bg-black/30">
+                <video ref={videoRef} className="w-full max-h-64 object-cover" playsInline muted autoPlay />
+                <div className="px-3 py-2 text-xs text-gray-300 border-t border-white/10">
+                  <p>{isCameraReady ? t('profilePage.spoolAddModal.scanQrCameraHint') : t('profilePage.spoolAddModal.scanQrCameraStarting')}</p>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        <select
+          value={filamentId}
+          onChange={(e) => setFilamentId(e.target.value)}
+          className={inputCls}
+        >
+          <option value="">{t('profilePage.spoolAddModal.filamentPlaceholder')}</option>
+          {filamentOptions.map((filament) => (
+            <option key={filament.id} value={filament.id}>
+              {[filament.brand_name, filament.name, filament.color_name].filter(Boolean).join(' · ') || filament.name}
+            </option>
+          ))}
+        </select>
+        {filamentOptions.length === 0 && (
+          <p className="mt-1 text-xs text-gray-500">{t('profilePage.spoolAddModal.noPresetFilaments')}</p>
+        )}
+        {qrError && (
+          <p className="mt-2 text-xs text-red-300 bg-red-500/10 border border-red-500/30 rounded-lg px-3 py-2">{qrError}</p>
+        )}
+        {qrSuccess && (
+          <p className="mt-2 text-xs text-green-300 bg-green-500/10 border border-green-500/30 rounded-lg px-3 py-2">{qrSuccess}</p>
+        )}
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
         <div>
           <label className={labelCls}>{t('profilePage.spoolAddModal.initialWeight')}</label>
           <input type="number" min="1" max="10000" step="1" value={initialWeight}
@@ -1472,19 +1952,21 @@ const AddSpoolForm: React.FC<AddSpoolFormProps> = ({ onSaved, onCancel }) => {
         </div>
       </div>
 
-      <div>
-        <label className={labelCls}>{t('profilePage.spoolAddModal.state')}</label>
-        <select value={state} onChange={e => setState(e.target.value)} className={inputCls}>
-          {(['active', 'shelf', 'archived', 'empty'] as const).map(s => (
-            <option key={s} value={s}>{t(`profilePage.spoolState.${s}`)}</option>
-          ))}
-        </select>
-      </div>
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+        <div>
+          <label className={labelCls}>{t('profilePage.spoolAddModal.state')}</label>
+          <select value={state} onChange={e => setState(e.target.value as SpoolState)} className={inputCls}>
+            {(['active', 'shelf', 'archived', 'empty'] as const).map(s => (
+              <option key={s} value={s}>{t(`profilePage.spoolState.${s}`)}</option>
+            ))}
+          </select>
+        </div>
 
-      <div>
-        <label className={labelCls}>{t('profilePage.spoolAddModal.lotNr')}</label>
-        <input type="text" value={lotNr} onChange={e => setLotNr(e.target.value)}
-          placeholder="необязательно" className={inputCls} />
+        <div>
+          <label className={labelCls}>{t('profilePage.spoolAddModal.lotNr')}</label>
+          <input type="text" value={lotNr} onChange={e => setLotNr(e.target.value)}
+            placeholder="необязательно" className={inputCls} />
+        </div>
       </div>
 
       <div>
@@ -1493,10 +1975,16 @@ const AddSpoolForm: React.FC<AddSpoolFormProps> = ({ onSaved, onCancel }) => {
           placeholder="необязательно" className={inputCls} />
       </div>
 
+      {errorText && (
+        <p className="text-xs text-red-300 bg-red-500/10 border border-red-500/30 rounded-lg px-3 py-2">{errorText}</p>
+      )}
+
       <div className="flex gap-2 pt-1">
         <button type="submit" disabled={saving}
           className="flex-1 bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white py-2 rounded-lg text-sm font-medium transition-all disabled:opacity-60">
-          {saving ? <Loader2 className="w-4 h-4 animate-spin mx-auto" /> : t('profilePage.spoolAddModal.submit')}
+          {saving ? (
+            <Loader2 className="w-4 h-4 animate-spin mx-auto" />
+          ) : mode === 'edit' ? t('profilePage.spoolEditModal.submit') : t('profilePage.spoolAddModal.submit')}
         </button>
         <button type="button" onClick={onCancel}
           className="px-4 py-2 rounded-lg border border-white/20 text-sm text-gray-300 hover:bg-white/10 transition-all">
@@ -1507,54 +1995,411 @@ const AddSpoolForm: React.FC<AddSpoolFormProps> = ({ onSaved, onCancel }) => {
   );
 };
 
+interface UseSpoolFormProps {
+  spool: UserSpool;
+  onSaved: () => void;
+  onCancel: () => void;
+}
+
+const UseSpoolForm: React.FC<UseSpoolFormProps> = ({ spool, onSaved, onCancel }) => {
+  const { t } = useTranslation();
+  const queryClient = useQueryClient();
+  const [deltaWeight, setDeltaWeight] = useState<string>('10');
+  const [errorText, setErrorText] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setErrorText(null);
+    const parsedDelta = parseFloat(deltaWeight);
+
+    if (!Number.isFinite(parsedDelta) || parsedDelta <= 0) {
+      setErrorText(t('profilePage.spoolUseModal.invalidDelta'));
+      return;
+    }
+    if (parsedDelta > spool.remaining_weight_g) {
+      setErrorText(t('profilePage.spoolUseModal.exceedsRemaining'));
+      return;
+    }
+
+    setSaving(true);
+    try {
+      await spoolsAPI.use(spool.id, parsedDelta);
+      queryClient.invalidateQueries({ queryKey: ['user-spools'] });
+      onSaved();
+    } catch (error: any) {
+      setErrorText(translateApiError(error, t));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const inputCls = 'w-full bg-white/5 border border-white/20 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-purple-500 placeholder-gray-500';
+  const labelCls = 'block text-xs text-gray-400 mb-1';
+
+  return (
+    <form onSubmit={handleSubmit} className="bg-white/10 backdrop-blur-sm border border-white/20 rounded-2xl p-4 md:p-5 space-y-4 max-w-xl mx-auto">
+      <h3 className="text-white font-semibold text-base">{t('profilePage.spoolUseModal.title')}</h3>
+      <p className="text-xs text-gray-400">
+        {spool.filament?.name ?? t('profilePage.spoolNoFilament')} · {t('profilePage.spoolRemaining')}: {spool.remaining_weight_g.toFixed(0)} г
+      </p>
+      <div>
+        <label className={labelCls}>{t('profilePage.spoolUseModal.deltaLabel')}</label>
+        <input
+          type="number"
+          min="1"
+          max={Math.max(1, Math.floor(spool.remaining_weight_g))}
+          step="0.1"
+          value={deltaWeight}
+          onChange={e => setDeltaWeight(e.target.value)}
+          className={inputCls}
+          required
+        />
+      </div>
+
+      {errorText && (
+        <p className="text-xs text-red-300 bg-red-500/10 border border-red-500/30 rounded-lg px-3 py-2">{errorText}</p>
+      )}
+
+      <div className="flex gap-2 pt-1">
+        <button type="submit" disabled={saving}
+          className="flex-1 bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white py-2 rounded-lg text-sm font-medium transition-all disabled:opacity-60">
+          {saving ? <Loader2 className="w-4 h-4 animate-spin mx-auto" /> : t('profilePage.spoolUseModal.submit')}
+        </button>
+        <button type="button" onClick={onCancel}
+          className="px-4 py-2 rounded-lg border border-white/20 text-sm text-gray-300 hover:bg-white/10 transition-all">
+          {t('profilePage.spoolUseModal.cancel')}
+        </button>
+      </div>
+    </form>
+  );
+};
+
 interface SpoolsTabProps {
   spools: UserSpool[];
+  printerBindings: Array<{ id: number; name: string }>;
   onRefetch: () => void;
   isAddOpen: boolean;
   setIsAddOpen: (v: boolean) => void;
+  initialApiKey?: string | null;
 }
 
-const SpoolsTab: React.FC<SpoolsTabProps> = ({ spools, onRefetch, isAddOpen, setIsAddOpen }) => {
+const SpoolsTab: React.FC<SpoolsTabProps> = ({
+  spools,
+  printerBindings,
+  onRefetch,
+  isAddOpen,
+  setIsAddOpen,
+  initialApiKey = null,
+}) => {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
+  const [spoolTab, setSpoolTab] = useState<'active' | 'shelf' | 'archived'>('active');
+  const [editingSpool, setEditingSpool] = useState<UserSpool | null>(null);
+  const [usingSpool, setUsingSpool] = useState<UserSpool | null>(null);
+  const [busySpoolId, setBusySpoolId] = useState<number | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
+  const [setupError, setSetupError] = useState<string | null>(null);
+  const [isSetupOpen, setIsSetupOpen] = useState(false);
+  const [generatedApiKey, setGeneratedApiKey] = useState<string | null>(initialApiKey);
+  const [isGeneratingApiKey, setIsGeneratingApiKey] = useState(false);
+  const [copiedField, setCopiedField] = useState<'config' | null>(null);
+
+  useEffect(() => {
+    setGeneratedApiKey(initialApiKey);
+  }, [initialApiKey]);
+
+  const spoolCompatBaseUrl = useMemo(() => {
+    if (typeof window === 'undefined' || !window.location?.origin) {
+      return 'https://filamenthub.ru/api/v1/spool_compat';
+    }
+    return `${window.location.origin}/api/v1/spool_compat`;
+  }, []);
+
+  const spoolCompatEndpoint = useMemo(
+    () => `${spoolCompatBaseUrl}/${generatedApiKey ?? '<YOUR_API_KEY>'}`,
+    [generatedApiKey, spoolCompatBaseUrl]
+  );
+
+  const spoolmanConfigSnippet = useMemo(
+    () => `[spoolman]\nserver: ${spoolCompatEndpoint}\nsync_rate: 5`,
+    [spoolCompatEndpoint]
+  );
+
+  const handleCopySetupValue = async (value: string, field: 'config') => {
+    setSetupError(null);
+    try {
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(value);
+      } else {
+        const textarea = document.createElement('textarea');
+        textarea.value = value;
+        textarea.style.position = 'fixed';
+        textarea.style.opacity = '0';
+        document.body.appendChild(textarea);
+        textarea.focus();
+        textarea.select();
+        document.execCommand('copy');
+        textarea.remove();
+      }
+      setCopiedField(field);
+      setTimeout(() => {
+        setCopiedField((prev) => (prev === field ? null : prev));
+      }, 1800);
+    } catch {
+      setSetupError(t('profilePage.spoolSetup.copyFailed'));
+    }
+  };
+
+  const handleGenerateApiKey = async () => {
+    setSetupError(null);
+    setIsGeneratingApiKey(true);
+    try {
+      const response = await authAPI.generateApiKey();
+      setGeneratedApiKey(response.api_key);
+    } catch (error: any) {
+      setSetupError(translateApiError(error, t));
+    } finally {
+      setIsGeneratingApiKey(false);
+    }
+  };
 
   const handleDelete = async (id: number) => {
-    await spoolsAPI.delete(id);
-    queryClient.invalidateQueries({ queryKey: ['user-spools'] });
+    if (!window.confirm(t('profilePage.spoolActions.deleteConfirm'))) {
+      return;
+    }
+    setActionError(null);
+    setBusySpoolId(id);
+    try {
+      await spoolsAPI.delete(id);
+      queryClient.invalidateQueries({ queryKey: ['user-spools'] });
+      onRefetch();
+    } catch (error: any) {
+      setActionError(translateApiError(error, t));
+    } finally {
+      setBusySpoolId(null);
+    }
   };
+
+  const handleStateChange = async (id: number, state: SpoolState) => {
+    setActionError(null);
+    setBusySpoolId(id);
+    try {
+      await spoolsAPI.update(id, { state });
+      queryClient.invalidateQueries({ queryKey: ['user-spools'] });
+      onRefetch();
+    } catch (error: any) {
+      setActionError(translateApiError(error, t));
+    } finally {
+      setBusySpoolId(null);
+    }
+  };
+
+  const spoolTabCounts = useMemo(
+    () => ({
+      active: spools.filter((spool) => spool.state === 'active').length,
+      shelf: spools.filter((spool) => spool.state === 'shelf').length,
+      archived: spools.filter((spool) => spool.state === 'archived' || spool.state === 'empty').length,
+    }),
+    [spools],
+  );
+
+  const filteredSpools = useMemo(() => {
+    if (spoolTab === 'active') {
+      return spools.filter((spool) => spool.state === 'active');
+    }
+    if (spoolTab === 'shelf') {
+      return spools.filter((spool) => spool.state === 'shelf');
+    }
+    return spools.filter((spool) => spool.state === 'archived' || spool.state === 'empty');
+  }, [spools, spoolTab]);
+
+  const spoolTabs: Array<{ key: 'active' | 'shelf' | 'archived'; label: string; count: number }> = [
+    { key: 'active', label: t('profilePage.spoolTabs.active'), count: spoolTabCounts.active },
+    { key: 'shelf', label: t('profilePage.spoolTabs.shelf'), count: spoolTabCounts.shelf },
+    { key: 'archived', label: t('profilePage.spoolTabs.archived'), count: spoolTabCounts.archived },
+  ];
 
   return (
     <div className="space-y-4 md:space-y-6">
       <div className="flex items-center justify-between">
         <h3 className="text-lg md:text-2xl font-bold text-white">{t('profilePage.spoolsTitle')}</h3>
-        <button
-          onClick={() => setIsAddOpen(true)}
-          className="flex items-center gap-1.5 bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white px-3 md:px-4 py-2 rounded-lg text-sm transition-all shadow-lg shadow-purple-500/25"
-        >
-          <Plus className="w-4 h-4" />
-          <span>{t('profilePage.spoolsAdd')}</span>
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setIsSetupOpen((prev) => !prev)}
+            className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg border border-white/20 text-gray-200 hover:bg-white/10 transition-colors text-sm"
+            title={isSetupOpen ? t('profilePage.spoolSetup.hide') : t('profilePage.spoolSetup.show')}
+          >
+            <Cog className="w-4 h-4" />
+            <span className="hidden sm:inline">
+              {isSetupOpen ? t('profilePage.spoolSetup.hide') : t('profilePage.spoolSetup.show')}
+            </span>
+          </button>
+          <button
+            onClick={() => {
+              setEditingSpool(null);
+              setUsingSpool(null);
+              setIsAddOpen(true);
+            }}
+            className="flex items-center gap-1.5 bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white px-3 md:px-4 py-2 rounded-lg text-sm transition-all shadow-lg shadow-purple-500/25"
+          >
+            <Plus className="w-4 h-4" />
+            <span>{t('profilePage.spoolsAdd')}</span>
+          </button>
+        </div>
       </div>
 
-      {isAddOpen && (
-        <AddSpoolForm
-          onSaved={() => setIsAddOpen(false)}
-          onCancel={() => setIsAddOpen(false)}
-        />
+      {isSetupOpen && (
+        <div className="bg-white/10 backdrop-blur-sm border border-white/20 rounded-2xl p-4 md:p-5 space-y-4">
+          <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+            <div>
+              <h4 className="text-white font-semibold text-base md:text-lg">{t('profilePage.spoolSetup.title')}</h4>
+              <p className="text-gray-300 text-sm mt-1">{t('profilePage.spoolSetup.description')}</p>
+            </div>
+            <button
+              onClick={handleGenerateApiKey}
+              disabled={isGeneratingApiKey}
+              className="inline-flex items-center justify-center gap-2 px-3 py-2 rounded-lg bg-purple-600/80 hover:bg-purple-600 text-white text-sm font-medium transition-colors disabled:opacity-60"
+            >
+              {isGeneratingApiKey ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
+              <span>{t('profilePage.spoolSetup.generateApiKey')}</span>
+            </button>
+          </div>
+
+          <div className="bg-black/20 border border-white/10 rounded-lg p-3 space-y-2">
+            <p className="text-xs text-gray-400">{t('profilePage.spoolSetup.endpointLabel')}</p>
+            <pre className="text-xs md:text-sm text-gray-100 bg-black/30 rounded-md px-3 py-2 overflow-x-auto">{spoolmanConfigSnippet}</pre>
+            <button
+              onClick={() => handleCopySetupValue(spoolmanConfigSnippet, 'config')}
+              className="inline-flex items-center justify-center gap-2 px-3 py-2 rounded-md border border-white/15 text-gray-200 hover:bg-white/10 transition-colors text-sm"
+            >
+              {copiedField === 'config' ? <CheckCircle className="w-4 h-4 text-green-400" /> : <Copy className="w-4 h-4" />}
+              <span>{copiedField === 'config' ? t('profilePage.spoolSetup.copied') : t('profilePage.spoolSetup.copyConfig')}</span>
+            </button>
+          </div>
+
+          <div className="text-xs text-gray-400 space-y-1">
+            <p>{t('profilePage.spoolSetup.note')}</p>
+            <p>{t('profilePage.spoolSetup.warning')}</p>
+          </div>
+
+          {setupError && (
+            <p className="text-xs text-red-300 bg-red-500/10 border border-red-500/30 rounded-lg px-3 py-2">{setupError}</p>
+          )}
+        </div>
       )}
 
-      {spools.length === 0 && !isAddOpen ? (
-        <div className="text-center py-12 md:py-16">
-          <Package className="w-14 h-14 md:w-20 md:h-20 text-gray-500 mx-auto mb-4" />
-          <p className="text-gray-400 text-base md:text-lg">{t('profilePage.spoolsEmpty')}</p>
+      <div className="grid grid-cols-1 xl:grid-cols-2 gap-4 md:gap-6 items-start">
+        <div className="space-y-4 md:space-y-6">
+          {isAddOpen && (
+            <SpoolForm
+              mode="create"
+              onSaved={() => {
+                setIsAddOpen(false);
+                onRefetch();
+              }}
+              onCancel={() => setIsAddOpen(false)}
+            />
+          )}
+
+          {editingSpool && (
+            <SpoolForm
+              mode="edit"
+              spool={editingSpool}
+              onSaved={() => {
+                setEditingSpool(null);
+                onRefetch();
+              }}
+              onCancel={() => setEditingSpool(null)}
+            />
+          )}
+
+          {usingSpool && (
+            <UseSpoolForm
+              spool={usingSpool}
+              onSaved={() => {
+                setUsingSpool(null);
+                onRefetch();
+              }}
+              onCancel={() => setUsingSpool(null)}
+            />
+          )}
+
+          {actionError && (
+            <p className="text-xs text-red-300 bg-red-500/10 border border-red-500/30 rounded-lg px-3 py-2">{actionError}</p>
+          )}
+
+          <div className="flex flex-wrap gap-2">
+            {spoolTabs.map((tab) => (
+              <button
+                key={tab.key}
+                type="button"
+                onClick={() => setSpoolTab(tab.key)}
+                className={[
+                  'inline-flex items-center gap-2 rounded-lg border px-3 py-1.5 text-sm transition-colors',
+                  spoolTab === tab.key
+                    ? 'border-purple-400/70 bg-purple-500/20 text-white'
+                    : 'border-white/15 bg-white/5 text-gray-300 hover:bg-white/10',
+                ].join(' ')}
+              >
+                <span>{tab.label}</span>
+                <span className="inline-flex min-w-[20px] items-center justify-center rounded-full bg-black/20 px-1.5 text-xs">
+                  {tab.count}
+                </span>
+              </button>
+            ))}
+          </div>
+
+          {spools.length === 0 && !isAddOpen ? (
+            <div className="text-center py-12 md:py-16">
+              <Package className="w-14 h-14 md:w-20 md:h-20 text-gray-500 mx-auto mb-4" />
+              <p className="text-gray-400 text-base md:text-lg">{t('profilePage.spoolsEmpty')}</p>
+            </div>
+          ) : filteredSpools.length === 0 ? (
+            <div className="text-center py-10 border border-white/10 rounded-2xl bg-white/5">
+              <Package className="w-10 h-10 text-gray-500 mx-auto mb-3" />
+              <p className="text-gray-400 text-sm md:text-base">
+                {t('profilePage.spoolsEmptyInTab', { tab: t(`profilePage.spoolTabs.${spoolTab}`) })}
+              </p>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {filteredSpools.map(spool => (
+                <SpoolCard
+                  key={spool.id}
+                  spool={spool}
+                  isBusy={busySpoolId === spool.id}
+                  onEdit={() => {
+                    setIsAddOpen(false);
+                    setUsingSpool(null);
+                    setEditingSpool(spool);
+                  }}
+                  onUse={() => {
+                    setIsAddOpen(false);
+                    setEditingSpool(null);
+                    setUsingSpool(spool);
+                  }}
+                  onDelete={() => handleDelete(spool.id)}
+                  onStateChange={(state) => handleStateChange(spool.id, state)}
+                />
+              ))}
+            </div>
+          )}
         </div>
-      ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {spools.map(spool => (
-            <SpoolCard key={spool.id} spool={spool} onDelete={() => handleDelete(spool.id)} />
-          ))}
+
+        <div className="xl:sticky xl:top-24">
+          <div className="bg-white/10 backdrop-blur-sm border border-white/20 rounded-2xl p-4 md:p-5 space-y-4">
+            <div className="flex items-center justify-between gap-2">
+              <h4 className="text-white font-semibold text-base md:text-lg flex items-center gap-2">
+                <Layers className="w-4 h-4 text-purple-300" />
+                {t('presetSlots.title')}
+              </h4>
+              <span className="text-xs text-gray-400 hidden sm:inline">{t('presetSlots.subtitle')}</span>
+            </div>
+            <PresetSlotsPanel compact spools={spools} printerBindings={printerBindings} />
+          </div>
         </div>
-      )}
+      </div>
     </div>
   );
 };

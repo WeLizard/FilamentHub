@@ -391,7 +391,9 @@
       "saveButton": "Сохранить",
       "saving": "Сохранение...",
       "noDataToUpdate": "Нет данных для обновления",
-      "editRowHint": "Кликните для редактирования"
+      "editRowHint": "Кликните для редактирования",
+      "jsonPlaceholder": "{\n  \"key\": \"value\"\n}",
+      "invalidJsonField": "Поле «{{field}}» содержит невалидный JSON"
     }
   },
   "adminFeedback": {
@@ -1280,7 +1282,13 @@
     "noSpools": "Нет катушек",
     "spoolsTitle": "Мои филаменты",
     "spoolsEmpty": "У вас пока нет катушек. Добавьте первую!",
+    "spoolsEmptyInTab": "В разделе «{{tab}}» пока нет катушек",
     "spoolsAdd": "Добавить катушку",
+    "spoolTabs": {
+      "active": "Активные",
+      "shelf": "В запасе",
+      "archived": "Архив"
+    },
     "spoolInitialWeight": "Начальный вес",
     "spoolRemaining": "Остаток",
     "spoolUsed": "Использовано",
@@ -1293,8 +1301,25 @@
     "spoolNoFilament": "Без привязки к каталогу",
     "spoolAddModal": {
       "title": "Добавить катушку",
-      "filamentLabel": "Филамент из каталога",
-      "filamentPlaceholder": "Выберите или оставьте пустым",
+      "filamentLabel": "Филамент из моих пресетов",
+      "filamentPlaceholder": "Выберите из ваших пресетов или оставьте пустым",
+      "noPresetFilaments": "В профиле пока нет пресетов с привязкой к материалу.",
+      "scanQr": "Сканировать QR",
+      "scanQrHint": "Отсканируйте QR-сканером или вставьте код/ссылку вида /qr/КОД.",
+      "scanQrPlaceholder": "Например: FHUB-ABC123 или https://filamenthub.ru/qr/FHUB-ABC123",
+      "scanQrApply": "Применить QR",
+      "scanQrPaste": "Вставить из буфера",
+      "scanQrCameraStart": "Камера",
+      "scanQrCameraStop": "Стоп камера",
+      "scanQrCameraStarting": "Запуск камеры...",
+      "scanQrCameraHint": "Наведите камеру на QR-код катушки. Распознавание произойдет автоматически.",
+      "scanQrCameraNotSupported": "В этом браузере нет поддержки живого сканирования QR. Используйте ввод кода или вставку.",
+      "scanQrCameraPermissionDenied": "Нет доступа к камере. Разрешите камеру в настройках браузера.",
+      "scanQrInvalid": "Не удалось распознать QR-код.",
+      "scanQrNoFilament": "Материал по этому QR-коду не найден.",
+      "scanQrSuccess": "Материал найден и выбран в форме.",
+      "scanQrSuccessWithPreset": "Материал найден. Официальный пресет добавлен в профиль и материал выбран.",
+      "scanQrPasteFailed": "Не удалось прочитать буфер обмена.",
       "initialWeight": "Начальный вес (г)",
       "usedWeight": "Уже использовано (г)",
       "state": "Состояние",
@@ -1302,6 +1327,42 @@
       "comment": "Комментарий",
       "submit": "Добавить",
       "cancel": "Отмена"
+    },
+    "spoolEditModal": {
+      "title": "Редактировать катушку",
+      "submit": "Сохранить"
+    },
+    "spoolUseModal": {
+      "title": "Списать вес с катушки",
+      "deltaLabel": "Списать (г)",
+      "invalidDelta": "Введите корректный вес для списания.",
+      "exceedsRemaining": "Нельзя списать больше, чем осталось на катушке.",
+      "submit": "Списать",
+      "cancel": "Отмена"
+    },
+    "spoolActions": {
+      "edit": "Изменить",
+      "use": "Списать",
+      "delete": "Удалить",
+      "deleteConfirm": "Удалить эту катушку?",
+      "invalidInitialWeight": "Начальный вес должен быть больше 0.",
+      "invalidUsedWeight": "Использованный вес не может быть отрицательным.",
+      "usedGreaterThanInitial": "Использованный вес не может быть больше начального."
+    },
+    "spoolSetup": {
+      "title": "Настройка Moonraker / Happy Hare",
+      "description": "Скопируйте URL совместимости и вставьте его в секцию [spoolman] вашего Moonraker/Happy Hare.",
+      "show": "Настройка HH",
+      "hide": "Скрыть HH",
+      "generateApiKey": "Сгенерировать API-ключ",
+      "endpointLabel": "Готовый эндпоинт",
+      "configLabel": "Пример конфигурации",
+      "copy": "Копировать",
+      "copyConfig": "Копировать конфиг",
+      "copied": "Скопировано",
+      "copyFailed": "Не удалось скопировать в буфер обмена.",
+      "note": "Если ключ уже используется в принтере, не генерируйте новый без необходимости.",
+      "warning": "После генерации нового ключа обновите URL в настройках Moonraker/Happy Hare."
     },
     "help": {
       "button": "Помощь",
@@ -3014,10 +3075,25 @@
     "subtitle": "Карта назначений пресетов для гейтов MMU / AMS",
     "noDevices": "Нет зарегистрированных принтеров",
     "noDevicesDesc": "Откройте FilamentHub в OrcaSlicer — ваш принтер зарегистрируется автоматически",
+    "noMappedDevices": "Нет устройств, сопоставленных с вашими профилями принтера",
+    "noMappedDevicesDesc": "Проверьте привязку устройства к принтеру и наличие профиля принтера в вашем аккаунте",
+    "mappedPrinter": "Принтер: {{name}}",
     "lastSeen": "Последний раз: {{time}}",
     "neverSeen": "Ещё не подключался",
+    "time": {
+      "ltMinute": "< 1 мин",
+      "minutesAgo": "{{count}} мин назад",
+      "hoursAgo": "{{count}} ч назад"
+    },
     "gates": "гейтов",
     "hhActive": "Happy Hare",
+    "manualMode": "Ручной режим",
+    "connection": {
+      "online": "Онлайн",
+      "stale": "Задержка",
+      "offline": "Офлайн",
+      "unknown": "Нет данных"
+    },
     "gateEmpty": "Пусто",
     "gateUnknown": "Нет данных",
     "assignPreset": "Назначить пресет",

@@ -15,7 +15,6 @@ import { DownloadPage } from './pages/DownloadPage';
 import { WikiPage } from './pages/WikiPage';
 import { WikiCategoryPage } from './pages/WikiCategoryPage';
 import { WikiArticlePage } from './pages/WikiArticlePage';
-import { PresetSlotsPage } from './pages/PresetSlotsPage';
 import { ToastContainer } from './components/Toast';
 import { useOrcaSlicerNotifications } from './hooks/useOrcaSlicerNotifications';
 import { useEffect } from 'react';
@@ -202,16 +201,6 @@ function AppContent() {
             <Layout>
               <WikiArticlePage />
             </Layout>
-          }
-        />
-        <Route
-          path="/slots"
-          element={
-            <ProtectedRoute>
-              <Layout>
-                <PresetSlotsPage />
-              </Layout>
-            </ProtectedRoute>
           }
         />
         <Route path="/user-agreement" element={<TermsPage />} />

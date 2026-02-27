@@ -388,7 +388,9 @@
       "saveButton": "Save",
       "saving": "Saving...",
       "noDataToUpdate": "No data to update",
-      "editRowHint": "Click to edit"
+      "editRowHint": "Click to edit",
+      "jsonPlaceholder": "{\n  \"key\": \"value\"\n}",
+      "invalidJsonField": "Field \"{{field}}\" contains invalid JSON"
     }
   },
   "adminFeedback": {
@@ -1258,7 +1260,13 @@
     "noSpools": "No spools",
     "spoolsTitle": "My Filaments",
     "spoolsEmpty": "You have no spools yet. Add your first one!",
+    "spoolsEmptyInTab": "No spools in “{{tab}}” yet",
     "spoolsAdd": "Add spool",
+    "spoolTabs": {
+      "active": "Active",
+      "shelf": "Storage",
+      "archived": "Archive"
+    },
     "spoolInitialWeight": "Initial weight",
     "spoolRemaining": "Remaining",
     "spoolUsed": "Used",
@@ -1271,8 +1279,25 @@
     "spoolNoFilament": "No catalog link",
     "spoolAddModal": {
       "title": "Add spool",
-      "filamentLabel": "Filament from catalog",
-      "filamentPlaceholder": "Select or leave empty",
+      "filamentLabel": "Filament from my presets",
+      "filamentPlaceholder": "Select from your presets or leave empty",
+      "noPresetFilaments": "No material-linked presets found in your profile yet.",
+      "scanQr": "Scan QR",
+      "scanQrHint": "Scan using a QR scanner or paste a code/link like /qr/CODE.",
+      "scanQrPlaceholder": "Example: FHUB-ABC123 or https://filamenthub.ru/qr/FHUB-ABC123",
+      "scanQrApply": "Apply QR",
+      "scanQrPaste": "Paste from clipboard",
+      "scanQrCameraStart": "Camera",
+      "scanQrCameraStop": "Stop camera",
+      "scanQrCameraStarting": "Starting camera...",
+      "scanQrCameraHint": "Point your camera at the spool QR code. Detection runs automatically.",
+      "scanQrCameraNotSupported": "Live QR camera scanning is not supported in this browser. Use code input or paste instead.",
+      "scanQrCameraPermissionDenied": "Camera access denied. Allow camera permissions in your browser settings.",
+      "scanQrInvalid": "Could not recognize the QR code.",
+      "scanQrNoFilament": "No filament was found for this QR code.",
+      "scanQrSuccess": "Filament found and selected.",
+      "scanQrSuccessWithPreset": "Filament found. Official preset was added to profile and selected.",
+      "scanQrPasteFailed": "Could not read clipboard.",
       "initialWeight": "Initial weight (g)",
       "usedWeight": "Already used (g)",
       "state": "State",
@@ -1280,6 +1305,42 @@
       "comment": "Comment",
       "submit": "Add",
       "cancel": "Cancel"
+    },
+    "spoolEditModal": {
+      "title": "Edit spool",
+      "submit": "Save"
+    },
+    "spoolUseModal": {
+      "title": "Consume spool weight",
+      "deltaLabel": "Consume (g)",
+      "invalidDelta": "Enter a valid amount to consume.",
+      "exceedsRemaining": "Cannot consume more than the remaining spool weight.",
+      "submit": "Consume",
+      "cancel": "Cancel"
+    },
+    "spoolActions": {
+      "edit": "Edit",
+      "use": "Consume",
+      "delete": "Delete",
+      "deleteConfirm": "Delete this spool?",
+      "invalidInitialWeight": "Initial weight must be greater than 0.",
+      "invalidUsedWeight": "Used weight cannot be negative.",
+      "usedGreaterThanInitial": "Used weight cannot exceed initial weight."
+    },
+    "spoolSetup": {
+      "title": "Moonraker / Happy Hare setup",
+      "description": "Copy the compatibility URL and paste it into the [spoolman] section of your Moonraker/Happy Hare config.",
+      "show": "HH Setup",
+      "hide": "Hide HH",
+      "generateApiKey": "Generate API key",
+      "endpointLabel": "Ready endpoint",
+      "configLabel": "Config example",
+      "copy": "Copy",
+      "copyConfig": "Copy config",
+      "copied": "Copied",
+      "copyFailed": "Failed to copy to clipboard.",
+      "note": "If this key is already used on your printer, avoid regenerating it unless needed.",
+      "warning": "After generating a new key, update the URL in your Moonraker/Happy Hare settings."
     },
     "help": {
       "button": "Help",
@@ -2992,10 +3053,25 @@
     "subtitle": "Preset assignments for MMU / AMS gates",
     "noDevices": "No registered printers",
     "noDevicesDesc": "Open FilamentHub in OrcaSlicer — your printer will register automatically",
+    "noMappedDevices": "No devices matched to your printer profiles",
+    "noMappedDevicesDesc": "Check device-to-printer binding and ensure printer profiles exist in your account",
+    "mappedPrinter": "Printer: {{name}}",
     "lastSeen": "Last seen: {{time}}",
     "neverSeen": "Never connected",
+    "time": {
+      "ltMinute": "< 1 min",
+      "minutesAgo": "{{count}} min ago",
+      "hoursAgo": "{{count}} h ago"
+    },
     "gates": "gates",
     "hhActive": "Happy Hare",
+    "manualMode": "Manual mode",
+    "connection": {
+      "online": "Online",
+      "stale": "Stale",
+      "offline": "Offline",
+      "unknown": "No data"
+    },
     "gateEmpty": "Empty",
     "gateUnknown": "No data",
     "assignPreset": "Assign preset",
