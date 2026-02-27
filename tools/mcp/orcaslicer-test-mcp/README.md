@@ -38,6 +38,13 @@ Mock bridge also supports:
 
 - `set_status` with payload `{"status": {...}}`
 - `trigger_sync` with optional `duration_ms` (ms)
+- `get_capabilities`
+- `list_printers`, `set_active_printer`
+- `list_filament_profiles`
+- `get_active_filament`, `set_active_filament`
+- `list_presets`
+- `get_filament_section_snapshot`
+- `reset_state` (mock-only helper)
 
 ## Run mock bridge
 
@@ -118,14 +125,27 @@ External mode (checks existing bridge endpoint):
 python tools/mcp/orcaslicer-test-mcp/smoke_test.py --mode external --host 127.0.0.1 --port 45454
 ```
 
+If `external` mode returns `unknown command` for filament-related checks, the old bridge process is still running.
+Restart it from this repository version:
+
+```powershell
+python tools/mcp/orcaslicer-test-mcp/mock_bridge.py --host 127.0.0.1 --port 45454
+```
+
 ## Next step (Orca side)
 
 Implement a dev-only `TestBridge` in OrcaSlicer that listens on localhost and handles commands:
 
 - `ping`
 - `get_status`
+- `get_capabilities`
 - `login_with_token`
 - `trigger_sync`
+- `list_printers`
+- `list_filament_profiles`
+- `get_active_filament`
+- `set_active_filament`
 - `list_presets`
+- `get_filament_section_snapshot`
 
 Then wire MCP tools to these commands for deterministic regression tests.

@@ -26,7 +26,7 @@ from urllib import request as urllib_request
 
 PROTOCOL_VERSION = "2024-11-05"
 SERVER_NAME = "orcaslicer-test-mcp"
-SERVER_VERSION = "0.4.0"
+SERVER_VERSION = "0.5.0"
 
 
 @dataclass(frozen=True)
@@ -444,6 +444,10 @@ def tool_orca_bridge_smoke_test(args: dict[str, Any], cfg: BridgeConfig) -> dict
     if not isinstance(trigger_sync, bool):
         raise JsonRpcError(-32602, "Argument 'trigger_sync' must be boolean.")
 
+    check_filament = args.get("check_filament", True)
+    if not isinstance(check_filament, bool):
+        raise JsonRpcError(-32602, "Argument 'check_filament' must be boolean.")
+
     sync_mode = args.get("sync_mode", "incremental")
     if not isinstance(sync_mode, str) or not sync_mode.strip():
         raise JsonRpcError(-32602, "Argument 'sync_mode' must be a non-empty string.")
@@ -484,7 +488,90 @@ def tool_orca_bridge_smoke_test(args: dict[str, Any], cfg: BridgeConfig) -> dict
         if strict:
             raise
 
-    # Step 3: optional sync lifecycle check.
+    # Step 3: capabilities (if supported by bridge).
+    capabilities_payload: dict[str, Any] | None = None
+    supported_commands: set[str] = set()
+    try:
+        capabilities_mcp = tool_orca_bridge_command(
+            {"command": "get_capabilities", "timeout_ms": timeout_ms},
+            cfg,
+        )
+        capabilities_payload = _parse_bridge_json_text(capabilities_mcp, "get_capabilities")
+        if capabilities_payload.get("ok") and isinstance(capabilities_payload.get("commands"), list):
+            supported_commands = {str(item) for item in capabilities_payload["commands"]}
+            steps.append({"name": "get_capabilities", "ok": True, "result": capabilities_payload})
+        else:
+            steps.append({"name": "get_capabilities", "ok": False, "result": capabilities_payload})
+            ok = False
+            if strict:
+                raise JsonRpcError(-32003, "Smoke get_capabilities failed.", {"result": capabilities_payload})
+    except Exception as exc:
+        message = str(exc)
+        if "unknown command" in message.lower() and not strict:
+            steps.append(
+                {
+                    "name": "get_capabilities",
+                    "ok": True,
+                    "skipped": True,
+                    "reason": "capability listing is not supported by bridge",
+                }
+            )
+        else:
+            ok = False
+            steps.append({"name": "get_capabilities", "ok": False, "error": message})
+            if strict:
+                raise
+
+    # Step 4: filament section checks (list_printers/list_filament_profiles/get_active_filament/snapshot).
+    if check_filament:
+        filament_commands = [
+            "list_printers",
+            "list_filament_profiles",
+            "get_active_filament",
+            "get_filament_section_snapshot",
+            "list_presets",
+        ]
+        for command_name in filament_commands:
+            if supported_commands and command_name not in supported_commands:
+                steps.append(
+                    {
+                        "name": command_name,
+                        "ok": True,
+                        "skipped": True,
+                        "reason": "command not declared in capabilities",
+                    }
+                )
+                continue
+            try:
+                payload_mcp = tool_orca_bridge_command(
+                    {"command": command_name, "timeout_ms": timeout_ms},
+                    cfg,
+                )
+                payload = _parse_bridge_json_text(payload_mcp, command_name)
+                command_ok = bool(payload.get("ok"))
+                steps.append({"name": command_name, "ok": command_ok, "result": payload})
+                if not command_ok:
+                    ok = False
+                    if strict:
+                        raise JsonRpcError(-32003, f"Smoke {command_name} failed.", {"result": payload})
+            except Exception as exc:
+                message = str(exc)
+                if "unknown command" in message.lower() and not strict:
+                    steps.append(
+                        {
+                            "name": command_name,
+                            "ok": True,
+                            "skipped": True,
+                            "reason": "command is not supported by bridge",
+                        }
+                    )
+                else:
+                    ok = False
+                    steps.append({"name": command_name, "ok": False, "error": message})
+                    if strict:
+                        raise
+
+    # Step 5: optional sync lifecycle check.
     if trigger_sync:
         trigger_args: dict[str, Any] = {
             "command": "trigger_sync",
@@ -815,6 +902,11 @@ TOOLS: list[dict[str, Any]] = [
                     "type": "integer",
                     "minimum": 1,
                     "description": "Optional duration override for mock bridge trigger_sync.",
+                },
+                "check_filament": {
+                    "type": "boolean",
+                    "default": True,
+                    "description": "Whether to check filament-section commands in bridge.",
                 },
                 "timeout_ms": {"type": "integer", "minimum": 1, "default": 15000},
                 "interval_ms": {"type": "integer", "minimum": 1, "default": 250},

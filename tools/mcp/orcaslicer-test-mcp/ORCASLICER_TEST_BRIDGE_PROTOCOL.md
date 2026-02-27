@@ -57,6 +57,20 @@ On errors:
 
 ## Recommended command set (v1)
 
+### `get_capabilities`
+
+Возвращает версию протокола и список поддерживаемых bridge-команд.
+
+Response example:
+
+```json
+{
+  "ok": true,
+  "protocol_version": "fh-bridge-v1",
+  "commands": ["ping", "get_status", "list_filament_profiles"]
+}
+```
+
 ### `ping`
 
 Checks bridge liveness.
@@ -118,11 +132,41 @@ Response:
 
 Returns compact list of loaded presets for verification.
 
+### `list_printers`
+
+Возвращает список принтеров и активный принтер.
+
+### `set_active_printer`
+
+Выставляет активный принтер по `printer_id`.
+
+### `list_filament_profiles`
+
+Возвращает список профилей филамента (с фильтрами `search`, `material_type`, `source`, `limit`).
+
+### `get_active_filament`
+
+Возвращает назначенный профиль филамента по слоту или карту всех слотов.
+
+### `set_active_filament`
+
+Назначает профиль филамента в слот (`profile_id`, optional `slot`).
+
+### `get_filament_section_snapshot`
+
+Комплексный snapshot секции Filament:
+- status
+- printers
+- filament_profiles
+- active_filaments
+- sync_history
+
 ## Mock-only helper commands
 
 These are test helpers implemented by `mock_bridge.py`, not required for Orca bridge:
 
 - `set_status` — set partial status fields (`connected`, `logged_in`, `sync_running`, `active_tab`)
+- `reset_state` — сброс состояния mock bridge к дефолтному
 
 ## Security constraints (required)
 
