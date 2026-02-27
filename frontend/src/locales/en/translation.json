@@ -2979,6 +2979,49 @@
     "ERR_BED_TEMP_EXCEEDS_EXTRUDER": "Bed temperature ({{bed_temp}}°C) is significantly higher than extruder temperature ({{extruder_temp}}°C)",
     "ERR_PRESET_REQUIRES_MANUAL_REVIEW": "Preset sent to manual review (risk: {{risk_score}}, flags: {{flags_count}})",
     "WARN_PRESET_PARAM_OUTSIDE_TYPICAL_RANGE": "Parameter \"{{field_name}}\" is outside the typical {{material_type}} range: {{value}} (expected {{soft_min}}–{{soft_max}})",
-    "WARN_PRESET_POSSIBLE_DUPLICATE": "Possible duplicate of preset \"{{duplicate_preset_name}}\" (ID {{duplicate_preset_id}})"
+    "WARN_PRESET_POSSIBLE_DUPLICATE": "Possible duplicate of preset \"{{duplicate_preset_name}}\" (ID {{duplicate_preset_id}})",
+    "ERR_DEVICE_NOT_FOUND": "Device not found",
+    "ERR_DEVICE_NOT_OWNER": "You do not own this device",
+    "ERR_GATE_INDEX_INVALID": "Invalid gate index: {{gate}} (max {{max}})",
+    "ERR_GATE_STATE_NOT_FOUND": "Gate {{gate}} state not found",
+    "ERR_PRESET_NOT_ACCESSIBLE": "Preset {{preset_id}} is not accessible",
+    "ERR_SNAPSHOT_TOO_FREQUENT": "Snapshots are being sent too frequently"
+  },
+  "presetSlots": {
+    "title": "Printer Slots",
+    "subtitle": "Preset assignments for MMU / AMS gates",
+    "noDevices": "No registered printers",
+    "noDevicesDesc": "Open FilamentHub in OrcaSlicer — your printer will register automatically",
+    "lastSeen": "Last seen: {{time}}",
+    "neverSeen": "Never connected",
+    "gates": "gates",
+    "hhActive": "Happy Hare",
+    "gateEmpty": "Empty",
+    "gateUnknown": "No data",
+    "assignPreset": "Assign preset",
+    "clearAll": "Clear all slots",
+    "clearAllConfirm": "Clear all assignments for \"{{name}}\"?",
+    "cleared": "All slots cleared",
+    "source": {
+      "hh_snapshot": "Happy Hare",
+      "manual_orca": "OrcaSlicer",
+      "web_manual": "Web"
+    },
+    "hhStatus": {
+      "unknown": "Unknown",
+      "empty": "Empty",
+      "spool": "Spool",
+      "buffer": "Buffer"
+    },
+    "modal": {
+      "title": "Gate {{gate}}",
+      "hhInfo": "Happy Hare: {{material}}",
+      "searchPreset": "Search preset...",
+      "noPresets": "No presets found",
+      "assign": "Assign",
+      "clear": "Clear slot",
+      "cancel": "Cancel",
+      "assigned": "Preset assigned to gate {{gate}}"
+    }
   }
 }

@@ -2,12 +2,16 @@
 
 import axios from 'axios';
 import type { Brand, BrandRequest, BrandRequestStatus, Filament, FilamentVisualSettings, FilamentReview, FilamentRatingStats, Notification, NotificationListResponse, Preset, RecommendedPreset, Printer, PrinterProfile, PrintProfile, PrinterRequest, User, Token, RefreshTokenRequest, RefreshTokenResponse, ListResponse, AccountDeletionStats, UserSavedPreset, CalculatorEstimateRequest, CalculatorEstimateResponse, Feedback, FeedbackListResponse, FeedbackType, CompatiblePrinter, CompatibleFilament, DownloadVersion, DownloadVersionsResponse, WikiCategory, WikiCategoryListResponse, WikiArticle, WikiArticleSummary, WikiArticleListResponse, WikiFeedbackStats, WikiFeedbackCreate, WikiFeedback } from '../types/api';
-import { getRefreshToken, setToken, removeToken } from '../utils/auth';
+import { getCsrfToken, getRefreshToken, isCookieAuthMode, isJwtAuthMode, removeToken, setToken, shouldPersistTokensLocally } from '../utils/auth';
 
 const API_BASE_URL = '/api/v1';
+const COOKIE_AUTH_MODE = isCookieAuthMode();
+const JWT_AUTH_MODE = isJwtAuthMode();
+const CSRF_HEADER_NAME = import.meta.env.VITE_AUTH_CSRF_HEADER_NAME || 'X-CSRF-Token';
 
 const api = axios.create({
   baseURL: API_BASE_URL,
+  withCredentials: COOKIE_AUTH_MODE,
   headers: {
     'Content-Type': 'application/json',
   },
@@ -27,9 +31,19 @@ const notifyCppLogout = () => {
 // Добавляем токен в запросы
 api.interceptors.request.use((config) => {
   const token = localStorage.getItem('access_token');
-  if (token) {
+  if (token && JWT_AUTH_MODE) {
     config.headers.Authorization = `Bearer ${token}`;
   }
+
+  const method = (config.method || 'GET').toUpperCase();
+  const hasBearer = Boolean(config.headers?.Authorization);
+  if (COOKIE_AUTH_MODE && !hasBearer && ['POST', 'PUT', 'PATCH', 'DELETE'].includes(method)) {
+    const csrfToken = getCsrfToken();
+    if (csrfToken) {
+      config.headers[CSRF_HEADER_NAME] = csrfToken;
+    }
+  }
+
   return config;
 });
 
@@ -46,14 +60,10 @@ const processQueue = (error: any, token: string | null = null) => {
     if (error) {
       prom.reject(error);
     } else {
-      // Обновляем заголовок каждого запроса в очереди
       if (token) {
         prom.config.headers.Authorization = `Bearer ${token}`;
-        // Повторяем запрос с новым токеном
-        prom.resolve(api(prom.config));
-      } else {
-        prom.reject(new Error('Token refresh failed: no token received'));
       }
+      prom.resolve(api(prom.config));
     }
   });
   
@@ -86,15 +96,18 @@ api.interceptors.response.use(
     // Для /auth/me: если токена нет, это нормально (пользователь не авторизован)
     // Не показываем ошибку в консоли и не пытаемся обновить токен
     const isMeEndpoint = originalRequest?.url?.includes('/auth/me');
-    const hasToken = localStorage.getItem('access_token');
+    const hasToken = Boolean(localStorage.getItem('access_token'));
+    const canUseCookieSession = COOKIE_AUTH_MODE;
     
-    if (isMeEndpoint && !hasToken) {
+    if (isMeEndpoint && !hasToken && !canUseCookieSession) {
       // Токена нет - это нормально, просто возвращаем ошибку без логирования
       return Promise.reject(error);
     }
     
+    const shouldTryRefreshForMe = isMeEndpoint && (hasToken || canUseCookieSession);
+
     // Не обрабатываем повторно запросы, которые уже были повторены
-    if (error.response?.status === 401 && !originalRequest._retry && !isAuthEndpoint && !isMeEndpoint) {
+    if (error.response?.status === 401 && !originalRequest._retry && !isAuthEndpoint && (!isMeEndpoint || shouldTryRefreshForMe)) {
       if (isRefreshing) {
         // Если уже обновляем токен, ждем результата
         return new Promise((resolve, reject) => {
@@ -107,7 +120,7 @@ api.interceptors.response.use(
 
       const refreshToken = getRefreshToken();
       
-      if (!refreshToken) {
+      if (!refreshToken && !canUseCookieSession) {
         // Нет refresh token, удаляем токены и перенаправляем
         // Только если это не запрос авторизации и не админ панель
         removeToken();
@@ -124,10 +137,17 @@ api.interceptors.response.use(
 
       try {
         // Пытаемся обновить токен
+        const refreshPayload = refreshToken
+          ? ({ refresh_token: refreshToken } as RefreshTokenRequest)
+          : undefined;
+
         const response = await axios.post<RefreshTokenResponse>(
           `${API_BASE_URL}/auth/refresh`,
-          { refresh_token: refreshToken } as RefreshTokenRequest,
-          { baseURL: '' } // Используем полный URL
+          refreshPayload,
+          {
+            baseURL: '', // Используем полный URL
+            withCredentials: canUseCookieSession,
+          }
         );
         
         const { access_token } = response.data;
@@ -135,14 +155,17 @@ api.interceptors.response.use(
         if (!access_token) {
           throw new Error('No access token received from refresh endpoint');
         }
-        
-        setToken(access_token);
-        
-        // Обновляем заголовок оригинального запроса
-        originalRequest.headers.Authorization = `Bearer ${access_token}`;
+
+        if (JWT_AUTH_MODE && shouldPersistTokensLocally()) {
+          setToken(access_token);
+          // Обновляем заголовок оригинального запроса
+          originalRequest.headers.Authorization = `Bearer ${access_token}`;
+        } else if (originalRequest.headers?.Authorization) {
+          delete originalRequest.headers.Authorization;
+        }
         
         // Обрабатываем очередь запросов
-        processQueue(null, access_token);
+        processQueue(null, JWT_AUTH_MODE && shouldPersistTokensLocally() ? access_token : null);
         isRefreshing = false;
         
         // Повторяем оригинальный запрос
@@ -180,10 +203,11 @@ export const authAPI = {
     return response.data;
   },
 
-  refresh: async (refreshToken: string) => {
-    const response = await api.post<RefreshTokenResponse>('/auth/refresh', {
-      refresh_token: refreshToken,
-    } as RefreshTokenRequest);
+  refresh: async (refreshToken?: string | null) => {
+    const payload = refreshToken
+      ? ({ refresh_token: refreshToken } as RefreshTokenRequest)
+      : undefined;
+    const response = await api.post<RefreshTokenResponse>('/auth/refresh', payload);
     return response.data;
   },
 
@@ -1616,6 +1640,88 @@ export const spoolsAPI = {
 
   delete: async (id: number): Promise<void> => {
     await api.delete(`/spools/${id}`);
+  },
+};
+
+// ── Devices API ──────────────────────────────────────────────────────────────
+
+export interface UserPrinterDevice {
+  id: number;
+  user_id: number;
+  printer_id: number | null;
+  name: string;
+  device_fingerprint: string;
+  supports_hh: boolean;
+  gate_count: number | null;
+  last_seen_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+/** gate_status from Happy Hare: -1=unknown, 0=empty, 1=spool, 2=buffer */
+export interface GateState {
+  id: number;
+  gate_index: number;
+  preset_id: number | null;
+  spool_id: number | null;
+  hh_material: string | null;
+  hh_color_hex: string | null;
+  hh_status: number | null;
+  source: 'hh_snapshot' | 'manual_orca' | 'web_manual';
+  source_ts: string;
+  is_active: boolean;
+  updated_at: string;
+}
+
+export interface DeviceStateResponse {
+  device: UserPrinterDevice;
+  gates: GateState[];
+}
+
+export interface DeviceRegisterPayload {
+  device_fingerprint: string;
+  name: string;
+  printer_id?: number | null;
+  supports_hh?: boolean;
+  gate_count?: number | null;
+}
+
+export interface SlotAssignPayload {
+  preset_id?: number | null;
+  spool_id?: number | null;
+}
+
+export const devicesAPI = {
+  list: async (): Promise<UserPrinterDevice[]> => {
+    const response = await api.get<UserPrinterDevice[]>('/devices');
+    return response.data;
+  },
+
+  register: async (payload: DeviceRegisterPayload): Promise<UserPrinterDevice> => {
+    const response = await api.post<UserPrinterDevice>('/devices/register-or-update', payload);
+    return response.data;
+  },
+
+  getState: async (id: number): Promise<DeviceStateResponse> => {
+    const response = await api.get<DeviceStateResponse>(`/devices/${id}/state`);
+    return response.data;
+  },
+};
+
+export const presetSlotsAPI = {
+  list: async (device_id: number): Promise<GateState[]> => {
+    const response = await api.get<GateState[]>('/preset-slots', { params: { device_id } });
+    return response.data;
+  },
+
+  assign: async (device_id: number, gate_index: number, payload: SlotAssignPayload): Promise<GateState> => {
+    const response = await api.patch<GateState>(`/preset-slots/${device_id}/${gate_index}`, payload);
+    return response.data;
+  },
+
+  clear: async (device_id: number): Promise<{ cleared: number }> => {
+    const response = await api.post<{ cleared: number }>(`/preset-slots/${device_id}/clear`);
+    return response.data;
   },
 };
 

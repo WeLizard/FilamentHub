@@ -3001,6 +3001,49 @@
     "ERR_BED_TEMP_EXCEEDS_EXTRUDER": "Температура стола ({{bed_temp}}°C) значительно выше температуры сопла ({{extruder_temp}}°C)",
     "ERR_PRESET_REQUIRES_MANUAL_REVIEW": "Пресет отправлен на ручную модерацию (риск: {{risk_score}}, флагов: {{flags_count}})",
     "WARN_PRESET_PARAM_OUTSIDE_TYPICAL_RANGE": "Параметр «{{field_name}}» вне типичного диапазона для {{material_type}}: {{value}} (норма {{soft_min}}–{{soft_max}})",
-    "WARN_PRESET_POSSIBLE_DUPLICATE": "Возможный дубликат пресета «{{duplicate_preset_name}}» (ID {{duplicate_preset_id}})"
+    "WARN_PRESET_POSSIBLE_DUPLICATE": "Возможный дубликат пресета «{{duplicate_preset_name}}» (ID {{duplicate_preset_id}})",
+    "ERR_DEVICE_NOT_FOUND": "Устройство не найдено",
+    "ERR_DEVICE_NOT_OWNER": "Нет доступа к этому устройству",
+    "ERR_GATE_INDEX_INVALID": "Неверный индекс гейта: {{gate}} (макс. {{max}})",
+    "ERR_GATE_STATE_NOT_FOUND": "Состояние гейта {{gate}} не найдено",
+    "ERR_PRESET_NOT_ACCESSIBLE": "Пресет {{preset_id}} недоступен",
+    "ERR_SNAPSHOT_TOO_FREQUENT": "Снимки отправляются слишком часто"
+  },
+  "presetSlots": {
+    "title": "Слоты принтера",
+    "subtitle": "Карта назначений пресетов для гейтов MMU / AMS",
+    "noDevices": "Нет зарегистрированных принтеров",
+    "noDevicesDesc": "Откройте FilamentHub в OrcaSlicer — ваш принтер зарегистрируется автоматически",
+    "lastSeen": "Последний раз: {{time}}",
+    "neverSeen": "Ещё не подключался",
+    "gates": "гейтов",
+    "hhActive": "Happy Hare",
+    "gateEmpty": "Пусто",
+    "gateUnknown": "Нет данных",
+    "assignPreset": "Назначить пресет",
+    "clearAll": "Очистить все слоты",
+    "clearAllConfirm": "Очистить все назначения для «{{name}}»?",
+    "cleared": "Все слоты очищены",
+    "source": {
+      "hh_snapshot": "Happy Hare",
+      "manual_orca": "OrcaSlicer",
+      "web_manual": "Web"
+    },
+    "hhStatus": {
+      "unknown": "Неизвестно",
+      "empty": "Пусто",
+      "spool": "Катушка",
+      "buffer": "Буфер"
+    },
+    "modal": {
+      "title": "Гейт {{gate}}",
+      "hhInfo": "Happy Hare: {{material}}",
+      "searchPreset": "Поиск пресета...",
+      "noPresets": "Пресеты не найдены",
+      "assign": "Назначить",
+      "clear": "Очистить слот",
+      "cancel": "Отмена",
+      "assigned": "Пресет назначен на гейт {{gate}}"
+    }
   }
 }
