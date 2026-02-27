@@ -1543,4 +1543,80 @@ export const wikiAPI = {
   },
 };
 
+// ── Spools API ───────────────────────────────────────────────────────────────
+
+export type SpoolState = 'active' | 'shelf' | 'archived' | 'empty';
+
+export interface SpoolFilamentInfo {
+  id: number;
+  name: string;
+  material_type: string;
+  color_name: string | null;
+  color_hex: string | null;
+  brand_name: string | null;
+}
+
+export interface UserSpool {
+  id: number;
+  user_id: number;
+  filament_id: number | null;
+  filament: SpoolFilamentInfo | null;
+  initial_weight_g: number;
+  used_weight_g: number;
+  remaining_weight_g: number;
+  remaining_pct: number;
+  state: SpoolState;
+  source: string;
+  lot_nr: string | null;
+  comment: string | null;
+  created_at: string;
+  updated_at: string;
+  last_used_at: string | null;
+}
+
+export interface SpoolCreatePayload {
+  filament_id?: number | null;
+  initial_weight_g: number;
+  used_weight_g?: number;
+  state?: SpoolState;
+  source?: string;
+  lot_nr?: string | null;
+  comment?: string | null;
+}
+
+export interface SpoolUpdatePayload {
+  filament_id?: number | null;
+  initial_weight_g?: number;
+  used_weight_g?: number;
+  state?: SpoolState;
+  lot_nr?: string | null;
+  comment?: string | null;
+}
+
+export const spoolsAPI = {
+  list: async (): Promise<UserSpool[]> => {
+    const response = await api.get<UserSpool[]>('/spools');
+    return response.data;
+  },
+
+  create: async (payload: SpoolCreatePayload): Promise<UserSpool> => {
+    const response = await api.post<UserSpool>('/spools', payload);
+    return response.data;
+  },
+
+  update: async (id: number, payload: SpoolUpdatePayload): Promise<UserSpool> => {
+    const response = await api.patch<UserSpool>(`/spools/${id}`, payload);
+    return response.data;
+  },
+
+  use: async (id: number, delta_weight_g: number): Promise<UserSpool> => {
+    const response = await api.post<UserSpool>(`/spools/${id}/use`, { delta_weight_g });
+    return response.data;
+  },
+
+  delete: async (id: number): Promise<void> => {
+    await api.delete(`/spools/${id}`);
+  },
+};
+
 export default api;

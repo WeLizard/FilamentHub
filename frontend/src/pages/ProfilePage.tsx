@@ -18,6 +18,7 @@ import {
   Trash2,
   Thermometer,
   Gauge,
+  MoveHorizontal,
   Edit,
   Wind,
   Fan,
@@ -46,7 +47,8 @@ import {
 import { Printer3DIcon } from '../components/icons/Printer3DIcon';
 import { useAuth } from '../contexts/AuthContext';
 import { useHeaderVisible } from '../hooks/useHeaderVisible';
-import { presetsAPI, filamentsAPI, brandsAPI, savedPresetsAPI, filamentReviewsAPI, calculatorAPI, printerProfilesAPI, printProfilesAPI, authAPI } from '../api/client';
+import { presetsAPI, filamentsAPI, brandsAPI, savedPresetsAPI, filamentReviewsAPI, calculatorAPI, printerProfilesAPI, printProfilesAPI, authAPI, spoolsAPI } from '../api/client';
+import type { UserSpool } from '../api/client';
 import api from '../api/client';
 import { translateApiError } from '../utils/translateApiError';
 import { CreatePresetModal } from '../components/CreatePresetModal';
@@ -69,9 +71,10 @@ export const ProfilePage: React.FC = () => {
   const { t } = useTranslation();
   const isHeaderVisible = useHeaderVisible();
   const [showBrandCabinet, setShowBrandCabinet] = useState(false); // Показывать ли кабинет производителя
-  const [userTab, setUserTab] = useState<'dashboard' | 'presets' | 'history' | 'calculator' | 'settings' | 'printer-profiles'>(
+  const [userTab, setUserTab] = useState<'dashboard' | 'presets' | 'spools' | 'calculator' | 'settings' | 'printer-profiles'>(
     'dashboard'
   );
+  const [isAddSpoolOpen, setIsAddSpoolOpen] = useState(false);
   const [showHelpModal, setShowHelpModal] = useState(false);
   const [isCreatePresetModalOpen, setIsCreatePresetModalOpen] = useState(false);
   const [isViewPresetModalOpen, setIsViewPresetModalOpen] = useState(false);
@@ -479,17 +482,11 @@ export const ProfilePage: React.FC = () => {
     setEditingPreset(null);
   };
 
-  // TODO: Загрузить историю печати (когда будет эндпоинт)
-  // ЗАГЛУШКА - пустой массив, история не реализована
-  const userHistory: Array<{
-    id: number;
-    material: string;
-    printer: string;
-    date: string;
-    success: boolean;
-    rating: number;
-    notes: string;
-  }> = [];
+  const { data: spoolsData = [], refetch: refetchSpools } = useQuery({
+    queryKey: ['user-spools', user?.id],
+    queryFn: () => spoolsAPI.list(),
+    enabled: !!user?.id,
+  });
 
   const formatDateTime = (value: string) =>
     new Date(value).toLocaleString('ru-RU', {
@@ -666,7 +663,7 @@ export const ProfilePage: React.FC = () => {
               { id: 'dashboard', label: t('profilePage.tabs.dashboard'), shortLabel: t('profilePage.tabs.dashboardShort'), icon: Play },
               { id: 'presets', label: t('profilePage.tabs.presets'), shortLabel: t('profilePage.tabs.presetsShort'), icon: Settings },
               { id: 'printer-profiles', label: t('profilePage.tabs.printers'), shortLabel: t('profilePage.tabs.printersShort'), icon: Printer3DIcon },
-              { id: 'history', label: t('profilePage.tabs.history'), shortLabel: t('profilePage.tabs.historyShort'), icon: TrendingUp },
+              { id: 'spools', label: t('profilePage.tabs.spools'), shortLabel: t('profilePage.tabs.spoolsShort'), icon: Package },
               { id: 'calculator', label: t('profilePage.tabs.calculator'), shortLabel: t('profilePage.tabs.calculatorShort'), icon: Calculator },
               { id: 'settings', label: t('profilePage.tabs.settings'), shortLabel: t('profilePage.tabs.settingsShort'), icon: Cog },
             ].map((tab) => (
@@ -746,7 +743,7 @@ export const ProfilePage: React.FC = () => {
           {/* Recent Activity */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             <RecentPresets presets={userPresets.slice(0, 3)} />
-            <RecentHistory history={userHistory.slice(0, 3)} />
+            <RecentSpools spools={spoolsData.slice(0, 3)} onViewAll={() => setUserTab('spools')} />
           </div>
         </div>
       )}
@@ -795,26 +792,14 @@ export const ProfilePage: React.FC = () => {
         </div>
       )}
 
-      {/* History Tab */}
-      {userTab === 'history' && (
-        <div className="space-y-4 md:space-y-6">
-          <h3 className="text-lg md:text-2xl font-bold text-white">{t('profilePage.printHistory')}</h3>
-
-          <div className="bg-white/10 backdrop-blur-sm rounded-xl md:rounded-2xl p-4 md:p-6 border border-white/20 shadow-xl">
-            {userHistory.length > 0 ? (
-              <div className="space-y-3 md:space-y-4">
-                {userHistory.map((item) => (
-                  <HistoryItem key={item.id} item={item} />
-                ))}
-              </div>
-            ) : (
-              <div className="text-center py-8 md:py-12">
-                <TrendingUp className="w-12 h-12 md:w-16 md:h-16 text-gray-400 mx-auto mb-3 md:mb-4" />
-                <p className="text-gray-400 text-base md:text-xl">{t('profilePage.printHistoryEmpty')}</p>
-              </div>
-            )}
-          </div>
-        </div>
+      {/* Spools Tab */}
+      {userTab === 'spools' && (
+        <SpoolsTab
+          spools={spoolsData}
+          onRefetch={refetchSpools}
+          isAddOpen={isAddSpoolOpen}
+          setIsAddOpen={setIsAddSpoolOpen}
+        />
       )}
 
       {/* Calculator Tab */}
@@ -1364,49 +1349,268 @@ const RecentPresets: React.FC<RecentPresetsProps> = ({ presets }) => {
   );
 };
 
-interface RecentHistoryProps {
-  history: Array<{
-    id: number;
-    material: string;
-    printer: string;
-    date: string;
-    success: boolean;
-    rating: number;
-    notes: string;
-  }>;
-}
+// ── Spool helpers ────────────────────────────────────────────────────────────
 
-const RecentHistory: React.FC<RecentHistoryProps> = ({ history }) => {
+const SPOOL_STATE_COLORS: Record<string, string> = {
+  active: 'bg-green-500/20 text-green-300 border-green-500/30',
+  shelf: 'bg-blue-500/20 text-blue-300 border-blue-500/30',
+  archived: 'bg-gray-500/20 text-gray-300 border-gray-500/30',
+  empty: 'bg-red-500/20 text-red-300 border-red-500/30',
+};
+
+const SpoolCard: React.FC<{ spool: UserSpool; onDelete?: () => void }> = ({ spool, onDelete }) => {
   const { t } = useTranslation();
+  const remaining = spool.remaining_weight_g;
+  const pct = spool.remaining_pct;
+  const stateKey = `profilePage.spoolState.${spool.state}` as const;
+  const barColor = pct > 50 ? 'bg-green-500' : pct > 20 ? 'bg-yellow-500' : 'bg-red-500';
+
   return (
-  <div className="bg-white/10 backdrop-blur-sm rounded-2xl p-6 border border-white/20 shadow-xl">
-    <h3 className="text-xl font-bold text-white mb-4 flex items-center">
-      <TrendingUp className="w-5 h-5 mr-2" />
-      {t('profilePage.recentPrints')}
-    </h3>
-    <div className="space-y-3">
-      {history.length > 0 ? (
-        history.map((item) => (
-          <div key={item.id} className="flex items-center justify-between p-3 bg-white/5 rounded-xl">
-            <div>
-              <p className="text-white font-medium">{item.material}</p>
-              <p className="text-gray-400 text-sm">{item.date}</p>
-            </div>
-            <div className="flex items-center space-x-2">
-              {item.success ? (
-                <CheckCircle className="w-5 h-5 text-green-400" />
-              ) : (
-                <XCircle className="w-5 h-5 text-red-400" />
-              )}
-              <span className="text-yellow-400">★{item.rating}</span>
-            </div>
+    <div className="bg-white/10 backdrop-blur-sm border border-white/15 rounded-2xl p-4 md:p-5 shadow-xl flex flex-col gap-3">
+      {/* Header */}
+      <div className="flex items-start justify-between gap-2">
+        <div className="flex items-center gap-2 min-w-0">
+          {spool.filament?.color_hex ? (
+            <span
+              className="w-4 h-4 rounded-full flex-shrink-0 border border-white/20"
+              style={{ backgroundColor: `#${spool.filament.color_hex.replace('#', '')}` }}
+            />
+          ) : (
+            <Package className="w-4 h-4 text-gray-400 flex-shrink-0" />
+          )}
+          <div className="min-w-0">
+            <p className="text-white font-semibold text-sm truncate">
+              {spool.filament ? spool.filament.name : t('profilePage.spoolNoFilament')}
+            </p>
+            {spool.filament && (
+              <p className="text-gray-400 text-xs truncate">
+                {spool.filament.brand_name && `${spool.filament.brand_name} · `}{spool.filament.material_type}
+              </p>
+            )}
           </div>
-        ))
-      ) : (
-        <p className="text-gray-400 text-center py-4">{t('profilePage.noPrintHistory')}</p>
+        </div>
+        <span className={`text-xs px-2 py-0.5 rounded-full border flex-shrink-0 ${SPOOL_STATE_COLORS[spool.state] ?? ''}`}>
+          {t(stateKey)}
+        </span>
+      </div>
+
+      {/* Progress bar */}
+      <div>
+        <div className="flex justify-between text-xs text-gray-400 mb-1">
+          <span>{t('profilePage.spoolRemaining')}</span>
+          <span className="text-white font-medium">{remaining.toFixed(0)} г ({pct.toFixed(0)}%)</span>
+        </div>
+        <div className="h-2 bg-white/10 rounded-full overflow-hidden">
+          <div
+            className={`h-full rounded-full transition-all ${barColor}`}
+            style={{ width: `${pct}%` }}
+          />
+        </div>
+        <div className="flex justify-between text-xs text-gray-500 mt-1">
+          <span>{t('profilePage.spoolUsed')}: {spool.used_weight_g.toFixed(0)} г</span>
+          <span>{t('profilePage.spoolInitialWeight')}: {spool.initial_weight_g.toFixed(0)} г</span>
+        </div>
+      </div>
+
+      {/* Lot / comment */}
+      {(spool.lot_nr || spool.comment) && (
+        <p className="text-gray-400 text-xs truncate">
+          {spool.lot_nr && <span className="mr-2">Партия: {spool.lot_nr}</span>}
+          {spool.comment}
+        </p>
       )}
     </div>
-  </div>
+  );
+};
+
+interface AddSpoolFormProps {
+  onSaved: () => void;
+  onCancel: () => void;
+}
+
+const AddSpoolForm: React.FC<AddSpoolFormProps> = ({ onSaved, onCancel }) => {
+  const { t } = useTranslation();
+  const queryClient = useQueryClient();
+  const [initialWeight, setInitialWeight] = useState('1000');
+  const [usedWeight, setUsedWeight] = useState('0');
+  const [state, setState] = useState<string>('active');
+  const [lotNr, setLotNr] = useState('');
+  const [comment, setComment] = useState('');
+  const [saving, setSaving] = useState(false);
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setSaving(true);
+    try {
+      await spoolsAPI.create({
+        initial_weight_g: parseFloat(initialWeight) || 1000,
+        used_weight_g: parseFloat(usedWeight) || 0,
+        state: state as any,
+        lot_nr: lotNr || null,
+        comment: comment || null,
+      });
+      queryClient.invalidateQueries({ queryKey: ['user-spools'] });
+      onSaved();
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const inputCls = 'w-full bg-white/5 border border-white/20 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-purple-500 placeholder-gray-500';
+  const labelCls = 'block text-xs text-gray-400 mb-1';
+
+  return (
+    <form onSubmit={handleSubmit} className="bg-white/10 backdrop-blur-sm border border-white/20 rounded-2xl p-5 space-y-4">
+      <h3 className="text-white font-semibold text-base">{t('profilePage.spoolAddModal.title')}</h3>
+
+      <div className="grid grid-cols-2 gap-3">
+        <div>
+          <label className={labelCls}>{t('profilePage.spoolAddModal.initialWeight')}</label>
+          <input type="number" min="1" max="10000" step="1" value={initialWeight}
+            onChange={e => setInitialWeight(e.target.value)} className={inputCls} required />
+        </div>
+        <div>
+          <label className={labelCls}>{t('profilePage.spoolAddModal.usedWeight')}</label>
+          <input type="number" min="0" max="10000" step="1" value={usedWeight}
+            onChange={e => setUsedWeight(e.target.value)} className={inputCls} />
+        </div>
+      </div>
+
+      <div>
+        <label className={labelCls}>{t('profilePage.spoolAddModal.state')}</label>
+        <select value={state} onChange={e => setState(e.target.value)} className={inputCls}>
+          {(['active', 'shelf', 'archived', 'empty'] as const).map(s => (
+            <option key={s} value={s}>{t(`profilePage.spoolState.${s}`)}</option>
+          ))}
+        </select>
+      </div>
+
+      <div>
+        <label className={labelCls}>{t('profilePage.spoolAddModal.lotNr')}</label>
+        <input type="text" value={lotNr} onChange={e => setLotNr(e.target.value)}
+          placeholder="необязательно" className={inputCls} />
+      </div>
+
+      <div>
+        <label className={labelCls}>{t('profilePage.spoolAddModal.comment')}</label>
+        <input type="text" value={comment} onChange={e => setComment(e.target.value)}
+          placeholder="необязательно" className={inputCls} />
+      </div>
+
+      <div className="flex gap-2 pt-1">
+        <button type="submit" disabled={saving}
+          className="flex-1 bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white py-2 rounded-lg text-sm font-medium transition-all disabled:opacity-60">
+          {saving ? <Loader2 className="w-4 h-4 animate-spin mx-auto" /> : t('profilePage.spoolAddModal.submit')}
+        </button>
+        <button type="button" onClick={onCancel}
+          className="px-4 py-2 rounded-lg border border-white/20 text-sm text-gray-300 hover:bg-white/10 transition-all">
+          {t('profilePage.spoolAddModal.cancel')}
+        </button>
+      </div>
+    </form>
+  );
+};
+
+interface SpoolsTabProps {
+  spools: UserSpool[];
+  onRefetch: () => void;
+  isAddOpen: boolean;
+  setIsAddOpen: (v: boolean) => void;
+}
+
+const SpoolsTab: React.FC<SpoolsTabProps> = ({ spools, onRefetch, isAddOpen, setIsAddOpen }) => {
+  const { t } = useTranslation();
+  const queryClient = useQueryClient();
+
+  const handleDelete = async (id: number) => {
+    await spoolsAPI.delete(id);
+    queryClient.invalidateQueries({ queryKey: ['user-spools'] });
+  };
+
+  return (
+    <div className="space-y-4 md:space-y-6">
+      <div className="flex items-center justify-between">
+        <h3 className="text-lg md:text-2xl font-bold text-white">{t('profilePage.spoolsTitle')}</h3>
+        <button
+          onClick={() => setIsAddOpen(true)}
+          className="flex items-center gap-1.5 bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white px-3 md:px-4 py-2 rounded-lg text-sm transition-all shadow-lg shadow-purple-500/25"
+        >
+          <Plus className="w-4 h-4" />
+          <span>{t('profilePage.spoolsAdd')}</span>
+        </button>
+      </div>
+
+      {isAddOpen && (
+        <AddSpoolForm
+          onSaved={() => setIsAddOpen(false)}
+          onCancel={() => setIsAddOpen(false)}
+        />
+      )}
+
+      {spools.length === 0 && !isAddOpen ? (
+        <div className="text-center py-12 md:py-16">
+          <Package className="w-14 h-14 md:w-20 md:h-20 text-gray-500 mx-auto mb-4" />
+          <p className="text-gray-400 text-base md:text-lg">{t('profilePage.spoolsEmpty')}</p>
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          {spools.map(spool => (
+            <SpoolCard key={spool.id} spool={spool} onDelete={() => handleDelete(spool.id)} />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+};
+
+interface RecentSpoolsProps {
+  spools: UserSpool[];
+  onViewAll: () => void;
+}
+
+const RecentSpools: React.FC<RecentSpoolsProps> = ({ spools, onViewAll }) => {
+  const { t } = useTranslation();
+  return (
+    <div className="bg-white/10 backdrop-blur-sm rounded-2xl p-6 border border-white/20 shadow-xl">
+      <div className="flex items-center justify-between mb-4">
+        <h3 className="text-xl font-bold text-white flex items-center gap-2">
+          <Package className="w-5 h-5" />
+          {t('profilePage.recentSpools')}
+        </h3>
+        <button onClick={onViewAll} className="text-xs text-purple-400 hover:text-purple-300 transition-colors">
+          {t('profilePage.spoolsTitle')} →
+        </button>
+      </div>
+      <div className="space-y-2">
+        {spools.length > 0 ? (
+          spools.map(spool => {
+            const pct = spool.remaining_pct;
+            const barColor = pct > 50 ? 'bg-green-500' : pct > 20 ? 'bg-yellow-500' : 'bg-red-500';
+            return (
+              <div key={spool.id} className="flex items-center gap-3 p-2.5 bg-white/5 rounded-xl">
+                {spool.filament?.color_hex ? (
+                  <span className="w-3 h-3 rounded-full flex-shrink-0 border border-white/20"
+                    style={{ backgroundColor: `#${spool.filament.color_hex.replace('#', '')}` }} />
+                ) : (
+                  <Package className="w-3 h-3 text-gray-400 flex-shrink-0" />
+                )}
+                <div className="flex-1 min-w-0">
+                  <p className="text-white text-xs font-medium truncate">
+                    {spool.filament?.name ?? t('profilePage.spoolNoFilament')}
+                  </p>
+                  <div className="h-1.5 bg-white/10 rounded-full mt-1 overflow-hidden">
+                    <div className={`h-full rounded-full ${barColor}`} style={{ width: `${pct}%` }} />
+                  </div>
+                </div>
+                <span className="text-gray-400 text-xs flex-shrink-0">{spool.remaining_weight_g.toFixed(0)}г</span>
+              </div>
+            );
+          })
+        ) : (
+          <p className="text-gray-400 text-center py-4 text-sm">{t('profilePage.noSpools')}</p>
+        )}
+      </div>
+    </div>
   );
 };
 
@@ -1647,22 +1851,35 @@ const PresetCard: React.FC<PresetCardProps> = ({ preset, onEdit, onView, onDelet
             </div>
           {filament && (
             <div className="mt-1 cursor-pointer hover:opacity-80 transition-opacity" onClick={() => navigate(`/filaments/${filament.id}`, { state: { from: 'profile' } })}>
-              <div className="flex items-baseline gap-x-2">
+              <div className="min-w-0 space-y-1">
                 {brand && (
-                  <span className={`text-sm font-medium ${brand.verified ? 'text-green-400' : 'text-gray-300'} break-words inline-block max-w-[calc(100%-250px)]`}>
-                    {brand.name}
-                  </span>
+                  <div className="flex items-center gap-2 min-w-0">
+                    <span
+                      className={`text-sm font-medium ${brand.verified ? 'text-green-400' : 'text-gray-300'} truncate max-w-[45%]`}
+                      title={brand.name}
+                    >
+                      {brand.name}
+                    </span>
+                    <span className="text-gray-500 flex-shrink-0">•</span>
+                    <span className="text-gray-400 text-sm truncate flex-1 min-w-0" title={filament.name}>
+                      {filament.name}
+                    </span>
+                  </div>
                 )}
-                <div className="flex items-center gap-x-2 flex-shrink-0 whitespace-nowrap">
-                  {brand && <span className="text-gray-500">•</span>}
-                  <span className="text-gray-400 text-sm">{filament.name}</span>
+                {!brand && (
+                  <div className="flex items-center gap-2 min-w-0">
+                    <span className="text-gray-400 text-sm truncate flex-1 min-w-0" title={filament.name}>
+                      {filament.name}
+                    </span>
+                  </div>
+                )}
+                <div className="flex items-center gap-2 flex-wrap">
                   {filament.color_name && (
-                    <>
-                      <span className="text-gray-500">•</span>
-                      <span className="text-gray-400 text-sm">{filament.color_name}</span>
-                    </>
+                    <span className="text-gray-400 text-sm truncate max-w-full" title={filament.color_name}>
+                      {filament.color_name}
+                    </span>
                   )}
-                  <span className="px-2 py-0.5 bg-purple-600/30 rounded text-purple-300 text-xs font-medium">
+                  <span className="px-2 py-0.5 bg-purple-600/30 rounded text-purple-300 text-xs font-medium flex-shrink-0">
                     {filament.material_type}
                   </span>
                 </div>
@@ -1713,56 +1930,64 @@ const PresetCard: React.FC<PresetCardProps> = ({ preset, onEdit, onView, onDelet
       </div>
 
       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 mb-4 text-sm">
-        <div className="flex items-center space-x-2">
-          <Thermometer className="w-4 h-4 text-red-400" />
-          <span className="text-gray-300">{t('profilePage.preset.nozzle')}: {preset.extruder_temp}°C</span>
+        <div className="flex items-start space-x-2 min-w-0">
+          <Thermometer className="w-4 h-4 text-red-400 shrink-0 mt-0.5" />
+          <span className="text-gray-300 leading-tight break-words">{t('profilePage.preset.nozzle')}: {preset.extruder_temp}°C</span>
         </div>
-        <div className="flex items-center space-x-2">
-          <Thermometer className="w-4 h-4 text-red-400" />
-          <span className="text-gray-300">{t('profilePage.preset.bed')}: {preset.bed_temp}°C</span>
+        <div className="flex items-start space-x-2 min-w-0">
+          <Thermometer className="w-4 h-4 text-red-400 shrink-0 mt-0.5" />
+          <span className="text-gray-300 leading-tight break-words">{t('profilePage.preset.bed')}: {preset.bed_temp}°C</span>
         </div>
-        <div className="flex items-center space-x-2">
-          <Gauge className="w-4 h-4 text-blue-400" />
-          <span className="text-gray-300">{t('profilePage.preset.speed')}: {preset.print_speed}mm/s</span>
+        <div className="flex items-start space-x-2 min-w-0">
+          <Gauge className="w-4 h-4 text-blue-400 shrink-0 mt-0.5" />
+          <span className="text-gray-300 leading-tight break-words">{t('profilePage.preset.speed')}: {preset.print_speed}mm/s</span>
         </div>
         {preset.travel_speed && (
-          <div className="flex items-center space-x-2">
-            <Wind className="w-4 h-4 text-cyan-400" />
-            <span className="text-gray-300">{t('profilePage.preset.travel')}: {preset.travel_speed}mm/s</span>
+          <div className="flex items-start space-x-2 min-w-0">
+            <MoveHorizontal className="w-4 h-4 text-cyan-400 shrink-0 mt-0.5" />
+            <span className="text-gray-300 leading-tight break-words">{t('profilePage.preset.travel')}: {preset.travel_speed}mm/s</span>
           </div>
         )}
         {preset.flow_rate && (
-          <div className="flex items-center space-x-2">
-            <Gauge className="w-4 h-4 text-yellow-400" />
-            <span className="text-gray-300">{t('profilePage.preset.flow')}: {preset.flow_rate}%</span>
+          <div className="flex items-start space-x-2 min-w-0">
+            <Gauge className="w-4 h-4 text-yellow-400 shrink-0 mt-0.5" />
+            <span className="text-gray-300 leading-tight break-words">{t('profilePage.preset.flow')}: {preset.flow_rate}%</span>
           </div>
         )}
         {preset.fan_speed !== null && (
-          <div className="flex items-center space-x-2">
-            <Fan className="w-4 h-4 text-orange-400" />
-            <span className="text-gray-300">{t('profilePage.preset.fan')}: {preset.fan_speed}%</span>
+          <div className="flex items-start space-x-2 min-w-0">
+            <Fan className="w-4 h-4 text-orange-400 shrink-0 mt-0.5" />
+            <span className="text-gray-300 leading-tight break-words">{t('profilePage.preset.fan')}: {preset.fan_speed}%</span>
           </div>
         )}
         {preset.retraction_length && (
-          <div className="flex items-center space-x-2">
-            <Wind className="w-4 h-4 text-purple-400" />
-            <span className="text-gray-300">{t('profilePage.preset.retract')}: {preset.retraction_length}mm</span>
+          <div className="flex items-start space-x-2 min-w-0">
+            <Wind className="w-4 h-4 text-purple-400 shrink-0 mt-0.5" />
+            <span className="text-gray-300 leading-tight break-words">{t('profilePage.preset.retract')}: {preset.retraction_length}mm</span>
           </div>
         )}
         {preset.retraction_speed && (
-          <div className="flex items-center space-x-2">
-            <Gauge className="w-4 h-4 text-indigo-400" />
-            <span className="text-gray-300">{t('profilePage.preset.retractSpeed')}: {preset.retraction_speed}mm/s</span>
+          <div className="flex items-start space-x-2 min-w-0">
+            <Gauge className="w-4 h-4 text-indigo-400 shrink-0 mt-0.5" />
+            <span className="text-gray-300 leading-tight break-words">{t('profilePage.preset.retractSpeed')}: {preset.retraction_speed}mm/s</span>
           </div>
         )}
-        <div className="flex items-center space-x-2">
-          <CheckCircle className="w-4 h-4 text-green-400" />
-          <span className="text-gray-300">{t('profilePage.preset.usageCount')}: {preset.usage_count}</span>
+        <div className="flex items-start space-x-2 min-w-0">
+          <CheckCircle className="w-4 h-4 text-green-400 shrink-0 mt-0.5" />
+          <span className="text-gray-300 leading-tight break-words">{t('profilePage.preset.usageCount')}: {preset.usage_count}</span>
         </div>
       </div>
 
-      <div className="flex items-center justify-between text-sm">
-        <div className="flex items-center space-x-3">
+      <div className="flex items-center justify-between text-xs sm:text-sm gap-3">
+        {preset.rating ? (
+          <div className="flex items-center space-x-1">
+            <Star className="w-4 h-4 text-yellow-400 fill-current" />
+            <span className="text-white">{preset.rating.toFixed(1)}</span>
+          </div>
+        ) : (
+          <span />
+        )}
+        <div className="ml-auto flex items-center gap-3 whitespace-nowrap">
           <span className="text-gray-400">
             {t('profilePage.created')}: {new Date(preset.created_at).toLocaleDateString()}
           </span>
@@ -1772,12 +1997,6 @@ const PresetCard: React.FC<PresetCardProps> = ({ preset, onEdit, onView, onDelet
             </span>
           )}
         </div>
-        {preset.rating && (
-          <div className="flex items-center space-x-1">
-            <Star className="w-4 h-4 text-yellow-400 fill-current" />
-            <span className="text-white">{preset.rating.toFixed(1)}</span>
-          </div>
-        )}
       </div>
     </div>
   );
@@ -3363,4 +3582,3 @@ const PrintProfileModal: React.FC<PrintProfileModalProps> = ({ profile, onClose,
     </div>
   );
 };
-
