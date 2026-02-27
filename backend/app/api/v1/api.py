@@ -11,6 +11,7 @@ from app.api.v1.endpoints import (
     calculator,
     devices,
     downloads,
+    spool_compat,
     filament_reviews,
     filaments,
     notifications,
@@ -24,7 +25,6 @@ from app.api.v1.endpoints import (
     print_profiles,
     qr,
     saved_presets,
-    spoolman,
     spools,
     wiki,
 )
@@ -44,7 +44,7 @@ api_router.include_router(printer_profiles.router)
 api_router.include_router(print_profiles.router)
 api_router.include_router(printer_requests.router)
 api_router.include_router(calculator.router)
-api_router.include_router(spoolman.router)
+api_router.include_router(spool_compat.router)
 api_router.include_router(admin.router)
 api_router.include_router(saved_presets.router)
 api_router.include_router(filament_reviews.router)
@@ -56,4 +56,3 @@ api_router.include_router(spools.router)
 api_router.include_router(feedback.router)
 api_router.include_router(downloads.router)
 api_router.include_router(wiki.router)
-

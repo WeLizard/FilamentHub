@@ -1,0 +1,771 @@
+"""Spool compatibility endpoints for Happy Hare / Moonraker integration."""
+
+from __future__ import annotations
+
+import math
+import re
+from datetime import datetime, timezone
+from typing import Annotated
+
+from fastapi import APIRouter, Depends, Header, Query, status
+from fastapi.responses import JSONResponse
+from pydantic import BaseModel, Field
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import joinedload
+
+from app.core.config import settings
+from app.db.session import get_db
+from app.models.filament import Filament
+from app.models.preset_gate_state import PresetGateState, PresetGateStateSource
+from app.models.user import User
+from app.models.user_printer_device import UserPrinterDevice
+from app.models.user_spool import UserSpool, UserSpoolState
+
+router = APIRouter(prefix="/spool_compat", tags=["spool_compat"])
+
+_LOCATION_PATTERN = re.compile(r"^(?P<device>.+):\s*gate\s*(?P<gate>\d+)$", re.IGNORECASE)
+_LOCATION_FALLBACK_PATTERN = re.compile(r"^(?P<device>.+):\s*(?P<gate>\d+)$")
+_DEFAULT_FILAMENT_DENSITY = 1.24
+_DEFAULT_FILAMENT_DIAMETER = 1.75
+
+
+class SpoolCompatSyncResponse(BaseModel):
+    """Legacy response schema for deprecated /sync endpoint."""
+
+    status: str
+    message: str
+
+
+class SpoolUseBody(BaseModel):
+    """Compatibility body for /v1/spool/{id}/use endpoint."""
+
+    use_length: float | None = Field(default=None, gt=0)
+    use_weight: float | None = Field(default=None, gt=0)
+
+
+class SpoolMeasureBody(BaseModel):
+    """Compatibility body for /v1/spool/{id}/measure endpoint."""
+
+    weight: float = Field(gt=0)
+
+
+class SpoolCreateBody(BaseModel):
+    """Compatibility body for POST /v1/spool."""
+
+    filament_id: int = Field(gt=0)
+    initial_weight: float | None = Field(default=None, ge=0)
+    used_weight: float | None = Field(default=None, ge=0)
+    remaining_weight: float | None = Field(default=None, ge=0)
+    location: str | None = Field(default=None, max_length=128)
+    lot_nr: str | None = Field(default=None, max_length=100)
+    comment: str | None = Field(default=None, max_length=500)
+    archived: bool = Field(default=False)
+
+
+class SpoolPatchBody(BaseModel):
+    """Compatibility body for PATCH /v1/spool/{id}."""
+
+    filament_id: int | None = Field(default=None, gt=0)
+    initial_weight: float | None = Field(default=None, ge=0)
+    used_weight: float | None = Field(default=None, ge=0)
+    remaining_weight: float | None = Field(default=None, ge=0)
+    location: str | None = Field(default=None, max_length=128)
+    lot_nr: str | None = Field(default=None, max_length=100)
+    comment: str | None = Field(default=None, max_length=500)
+    archived: bool | None = None
+
+
+def _err(code: int, message: str) -> JSONResponse:
+    return JSONResponse(status_code=code, content={"message": message})
+
+
+def _iso(dt: datetime | None) -> str | None:
+    if dt is None:
+        return None
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt.isoformat().replace("+00:00", "Z")
+
+
+def _strip_hex(value: str | None) -> str | None:
+    if not value:
+        return None
+    return value.strip().lstrip("#")
+
+
+def _length_from_weight(weight_g: float | None, density: float, diameter_mm: float) -> float | None:
+    if weight_g is None or weight_g < 0 or density <= 0 or diameter_mm <= 0:
+        return None
+    radius = diameter_mm / 2.0
+    area_mm2 = math.pi * radius * radius
+    volume_mm3 = (weight_g / density) * 1000.0
+    return max(volume_mm3 / area_mm2, 0.0)
+
+
+def _weight_from_length(length_mm: float, density: float, diameter_mm: float) -> float:
+    radius = diameter_mm / 2.0
+    area_mm2 = math.pi * radius * radius
+    volume_mm3 = length_mm * area_mm2
+    volume_cm3 = volume_mm3 / 1000.0
+    return max(volume_cm3 * density, 0.0)
+
+
+def _filament_density(filament: Filament | None) -> float:
+    if filament is not None and filament.density and filament.density > 0:
+        return filament.density
+    return _DEFAULT_FILAMENT_DENSITY
+
+
+def _filament_diameter(filament: Filament | None) -> float:
+    if filament is not None and filament.diameter and filament.diameter > 0:
+        return filament.diameter
+    return _DEFAULT_FILAMENT_DIAMETER
+
+
+def _filament_payload(filament: Filament | None, fallback_id: int) -> dict:
+    density = _filament_density(filament)
+    diameter = _filament_diameter(filament)
+    brand = filament.brand if filament is not None else None
+    return {
+        "id": filament.id if filament is not None else fallback_id,
+        "registered": _iso(filament.created_at) if filament is not None else _iso(datetime.now(timezone.utc)),
+        "name": filament.name if filament is not None else f"Spool {fallback_id}",
+        "vendor": (
+            {
+                "id": brand.id,
+                "registered": _iso(brand.created_at),
+                "name": brand.name,
+                "comment": brand.description,
+                "empty_spool_weight": None,
+                "external_id": None,
+                "extra": {},
+            }
+            if brand is not None
+            else None
+        ),
+        "material": filament.material_type if filament is not None else "Unknown",
+        "price": filament.price_per_kg if filament is not None else None,
+        "density": density,
+        "diameter": diameter,
+        "weight": filament.spool_weight if filament is not None else None,
+        "spool_weight": None,
+        "article_number": None,
+        "comment": None,
+        "settings_extruder_temp": None,
+        "settings_bed_temp": None,
+        "color_hex": _strip_hex(filament.color_hex if filament is not None else None),
+        "multi_color_hexes": None,
+        "multi_color_direction": None,
+        "external_id": None,
+        "extra": {},
+    }
+
+
+async def _resolve_user_by_api_key(db: AsyncSession, api_key: str | None) -> User | None:
+    if not api_key:
+        return None
+    result = await db.execute(select(User).where(User.api_key == api_key))
+    user = result.scalar_one_or_none()
+    if user is None or not user.active:
+        return None
+    return user
+
+
+async def _build_location_map(db: AsyncSession, user_id: int) -> dict[int, str]:
+    result = await db.execute(
+        select(PresetGateState, UserPrinterDevice)
+        .join(UserPrinterDevice, UserPrinterDevice.id == PresetGateState.device_id)
+        .where(
+            PresetGateState.user_id == user_id,
+            PresetGateState.spool_id.is_not(None),
+            PresetGateState.is_active.is_(True),
+        )
+        .order_by(PresetGateState.updated_at.desc())
+    )
+    mapping: dict[int, str] = {}
+    for gate_state, device in result.all():
+        if gate_state.spool_id is None or gate_state.spool_id in mapping:
+            continue
+        device_name = device.name or device.device_fingerprint
+        mapping[gate_state.spool_id] = f"{device_name}:Gate{gate_state.gate_index}"
+    return mapping
+
+
+def _to_spool_payload(spool: UserSpool, location_map: dict[int, str]) -> dict:
+    filament = spool.filament
+    density = _filament_density(filament)
+    diameter = _filament_diameter(filament)
+    remaining_weight = max(spool.initial_weight_g - spool.used_weight_g, 0.0)
+    return {
+        "id": spool.id,
+        "registered": _iso(spool.created_at),
+        "first_used": _iso(spool.last_used_at),
+        "last_used": _iso(spool.last_used_at),
+        "filament": _filament_payload(filament, spool.id),
+        "price": None,
+        "remaining_weight": round(remaining_weight, 3),
+        "initial_weight": round(spool.initial_weight_g, 3),
+        "spool_weight": None,
+        "used_weight": round(spool.used_weight_g, 3),
+        "remaining_length": _length_from_weight(remaining_weight, density, diameter),
+        "used_length": _length_from_weight(spool.used_weight_g, density, diameter) or 0.0,
+        "location": location_map.get(spool.id),
+        "lot_nr": spool.lot_nr,
+        "comment": spool.comment,
+        "archived": spool.state == UserSpoolState.archived,
+        "extra": {},
+    }
+
+
+def _match_filter(value: str | None, filter_raw: str | None) -> bool:
+    if filter_raw is None:
+        return True
+    normalized = (value or "").strip().lower()
+    terms = [term.strip() for term in filter_raw.split(",")]
+    for term in terms:
+        if term == "":
+            if normalized == "":
+                return True
+            continue
+        if term.startswith('"') and term.endswith('"') and len(term) >= 2:
+            if normalized == term[1:-1].lower():
+                return True
+            continue
+        if term.lower() in normalized:
+            return True
+    return False
+
+
+def _parse_int_list(raw: str | None) -> set[int] | None:
+    if raw is None:
+        return None
+    values = set()
+    for item in raw.split(","):
+        item = item.strip()
+        if not item:
+            continue
+        try:
+            values.add(int(item))
+        except ValueError:
+            continue
+    return values if values else set()
+
+
+def _sort_key(payload: dict, field_name: str):
+    if field_name == "filament.name":
+        value = payload["filament"].get("name")
+    elif field_name == "filament.vendor.id":
+        vendor = payload["filament"].get("vendor")
+        value = vendor.get("id") if isinstance(vendor, dict) else None
+    else:
+        value = payload.get(field_name)
+    return (value is None, value)
+
+
+async def _apply_location_assignment(
+    db: AsyncSession,
+    user: User,
+    spool: UserSpool,
+    location: str | None,
+) -> tuple[bool, str | None]:
+    # Clear previous location bindings for this spool in any case.
+    existing_result = await db.execute(
+        select(PresetGateState).where(
+            PresetGateState.user_id == user.id,
+            PresetGateState.spool_id == spool.id,
+        )
+    )
+    existing_states = list(existing_result.scalars().all())
+
+    if location is None or location.strip() == "":
+        for state in existing_states:
+            state.spool_id = None
+            state.source = PresetGateStateSource.web_manual
+            state.source_ts = datetime.now(timezone.utc)
+        return True, None
+
+    location_clean = location.strip()
+    match = _LOCATION_PATTERN.match(location_clean) or _LOCATION_FALLBACK_PATTERN.match(location_clean)
+    if not match:
+        return False, "Invalid location format. Expected '<device>:Gate<index>'."
+
+    device_hint = match.group("device").strip()
+    gate_index = int(match.group("gate"))
+
+    device_result = await db.execute(
+        select(UserPrinterDevice).where(
+            UserPrinterDevice.user_id == user.id,
+            (UserPrinterDevice.name == device_hint) | (UserPrinterDevice.device_fingerprint == device_hint),
+        )
+    )
+    device = device_result.scalar_one_or_none()
+    if device is None:
+        return False, f"Device '{device_hint}' not found for this API key."
+
+    target_result = await db.execute(
+        select(PresetGateState).where(
+            PresetGateState.user_id == user.id,
+            PresetGateState.device_id == device.id,
+            PresetGateState.gate_index == gate_index,
+        )
+    )
+    target_state = target_result.scalar_one_or_none()
+    now = datetime.now(timezone.utc)
+    if target_state is None:
+        target_state = PresetGateState(
+            user_id=user.id,
+            device_id=device.id,
+            gate_index=gate_index,
+            preset_id=None,
+            spool_id=spool.id,
+            source=PresetGateStateSource.web_manual,
+            source_ts=now,
+            is_active=True,
+        )
+        db.add(target_state)
+    else:
+        target_state.spool_id = spool.id
+        target_state.source = PresetGateStateSource.web_manual
+        target_state.source_ts = now
+        target_state.is_active = True
+
+    for state in existing_states:
+        if target_state.id is not None and state.id == target_state.id:
+            continue
+        state.spool_id = None
+        state.source = PresetGateStateSource.web_manual
+        state.source_ts = now
+
+    return True, None
+
+
+async def _get_user_spool(db: AsyncSession, user_id: int, spool_id: int) -> UserSpool | None:
+    result = await db.execute(
+        select(UserSpool)
+        .options(joinedload(UserSpool.filament).joinedload(Filament.brand))
+        .where(UserSpool.id == spool_id, UserSpool.user_id == user_id)
+    )
+    return result.scalar_one_or_none()
+
+
+@router.get("/sync", response_model=SpoolCompatSyncResponse)
+async def sync_spool_compat() -> SpoolCompatSyncResponse:
+    """Deprecated endpoint kept for backward compatibility."""
+    return SpoolCompatSyncResponse(
+        status="deprecated",
+        message=(
+            "Use spool_compat API: /api/v1/spool_compat/{api_key}/v1/* "
+            "(or /api/v1/spool_compat/v1/* with X-API-Key header)."
+        ),
+    )
+
+
+@router.get("/v1/health")
+async def spool_compat_health() -> dict:
+    """Compatibility health endpoint."""
+    return {"status": "healthy"}
+
+
+@router.get("/{api_key}/v1/health")
+async def spool_compat_health_scoped(api_key: str) -> dict:
+    """Compatibility health endpoint (scoped path)."""
+    # Intentionally does not validate key to match upstream health semantics.
+    _ = api_key
+    return {"status": "healthy"}
+
+
+@router.get("/v1/info")
+async def spool_compat_info() -> dict:
+    """Compatibility info endpoint."""
+    return {
+        "version": settings.VERSION,
+        "debug_mode": settings.DEBUG,
+        "automatic_backups": False,
+        "data_dir": "filamenthub",
+        "logs_dir": "filamenthub",
+        "backups_dir": "filamenthub",
+        "db_type": "postgres",
+        "git_commit": None,
+        "build_date": None,
+    }
+
+
+@router.get("/{api_key}/v1/info")
+async def spool_compat_info_scoped(api_key: str) -> dict:
+    """Compatibility info endpoint (scoped path)."""
+    _ = api_key
+    return await spool_compat_info()
+
+
+@router.get("/v1/spool")
+async def list_spools_with_header_key(
+    db: Annotated[AsyncSession, Depends(get_db)],
+    x_api_key: Annotated[str | None, Query(alias="api_key")] = None,
+    header_api_key: Annotated[str | None, Header(alias="X-API-Key")] = None,
+    allow_archived: bool = False,
+    location: str | None = None,
+    lot_nr: str | None = None,
+    filament_name: Annotated[str | None, Query(alias="filament.name")] = None,
+    filament_material: Annotated[str | None, Query(alias="filament.material")] = None,
+    filament_vendor_name: Annotated[str | None, Query(alias="filament.vendor.name")] = None,
+    filament_vendor_id: Annotated[str | None, Query(alias="filament.vendor.id")] = None,
+    filament_id: Annotated[str | None, Query(alias="filament.id")] = None,
+    sort: str | None = None,
+    limit: int | None = Query(default=None, ge=1, le=1000),
+    offset: int = Query(default=0, ge=0),
+) -> JSONResponse:
+    api_key = x_api_key or header_api_key
+    user = await _resolve_user_by_api_key(db, api_key)
+    if user is None:
+        return _err(status.HTTP_401_UNAUTHORIZED, "Invalid or missing API key.")
+
+    return await _list_spools_impl(
+        db=db,
+        user=user,
+        allow_archived=allow_archived,
+        location=location,
+        lot_nr=lot_nr,
+        filament_name=filament_name,
+        filament_material=filament_material,
+        filament_vendor_name=filament_vendor_name,
+        filament_vendor_id=filament_vendor_id,
+        filament_id=filament_id,
+        sort=sort,
+        limit=limit,
+        offset=offset,
+    )
+
+
+@router.get("/{api_key}/v1/spool")
+async def list_spools(
+    api_key: str,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    allow_archived: bool = False,
+    location: str | None = None,
+    lot_nr: str | None = None,
+    filament_name: Annotated[str | None, Query(alias="filament.name")] = None,
+    filament_material: Annotated[str | None, Query(alias="filament.material")] = None,
+    filament_vendor_name: Annotated[str | None, Query(alias="filament.vendor.name")] = None,
+    filament_vendor_id: Annotated[str | None, Query(alias="filament.vendor.id")] = None,
+    filament_id: Annotated[str | None, Query(alias="filament.id")] = None,
+    sort: str | None = None,
+    limit: int | None = Query(default=None, ge=1, le=1000),
+    offset: int = Query(default=0, ge=0),
+) -> JSONResponse:
+    user = await _resolve_user_by_api_key(db, api_key)
+    if user is None:
+        return _err(status.HTTP_401_UNAUTHORIZED, "Invalid API key.")
+
+    return await _list_spools_impl(
+        db=db,
+        user=user,
+        allow_archived=allow_archived,
+        location=location,
+        lot_nr=lot_nr,
+        filament_name=filament_name,
+        filament_material=filament_material,
+        filament_vendor_name=filament_vendor_name,
+        filament_vendor_id=filament_vendor_id,
+        filament_id=filament_id,
+        sort=sort,
+        limit=limit,
+        offset=offset,
+    )
+
+
+async def _list_spools_impl(
+    db: AsyncSession,
+    user: User,
+    allow_archived: bool,
+    location: str | None,
+    lot_nr: str | None,
+    filament_name: str | None,
+    filament_material: str | None,
+    filament_vendor_name: str | None,
+    filament_vendor_id: str | None,
+    filament_id: str | None,
+    sort: str | None,
+    limit: int | None,
+    offset: int,
+) -> JSONResponse:
+    result = await db.execute(
+        select(UserSpool)
+        .options(joinedload(UserSpool.filament).joinedload(Filament.brand))
+        .where(UserSpool.user_id == user.id)
+        .order_by(UserSpool.created_at.desc())
+    )
+    spools = list(result.scalars().all())
+    location_map = await _build_location_map(db, user.id)
+
+    filament_ids = _parse_int_list(filament_id)
+    vendor_ids = _parse_int_list(filament_vendor_id)
+
+    payloads: list[dict] = []
+    for spool in spools:
+        if not allow_archived and spool.state == UserSpoolState.archived:
+            continue
+
+        payload = _to_spool_payload(spool, location_map)
+        fil = payload["filament"]
+        vendor = fil.get("vendor") if isinstance(fil, dict) else None
+
+        if not _match_filter(payload.get("location"), location):
+            continue
+        if not _match_filter(payload.get("lot_nr"), lot_nr):
+            continue
+        if not _match_filter(fil.get("name"), filament_name):
+            continue
+        if not _match_filter(fil.get("material"), filament_material):
+            continue
+        if not _match_filter(vendor.get("name") if isinstance(vendor, dict) else None, filament_vendor_name):
+            continue
+        if filament_ids is not None and fil.get("id") not in filament_ids:
+            continue
+        if vendor_ids is not None:
+            vendor_id_value = vendor.get("id") if isinstance(vendor, dict) else -1
+            if vendor_id_value not in vendor_ids:
+                continue
+
+        payloads.append(payload)
+
+    if sort:
+        for item in reversed(sort.split(",")):
+            field, _, direction = item.partition(":")
+            direction = (direction or "asc").lower()
+            payloads.sort(key=lambda p: _sort_key(p, field), reverse=direction == "desc")
+
+    total_count = len(payloads)
+    if limit is not None:
+        payloads = payloads[offset : offset + limit]
+    elif offset:
+        payloads = payloads[offset:]
+
+    return JSONResponse(content=payloads, headers={"x-total-count": str(total_count)})
+
+
+@router.get("/{api_key}/v1/spool/{spool_id}")
+async def get_spool(
+    api_key: str,
+    spool_id: int,
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> JSONResponse:
+    user = await _resolve_user_by_api_key(db, api_key)
+    if user is None:
+        return _err(status.HTTP_401_UNAUTHORIZED, "Invalid API key.")
+
+    spool = await _get_user_spool(db, user.id, spool_id)
+    if spool is None:
+        return _err(status.HTTP_404_NOT_FOUND, f"No spool with ID {spool_id} found.")
+
+    location_map = await _build_location_map(db, user.id)
+    return JSONResponse(content=_to_spool_payload(spool, location_map))
+
+
+@router.post("/{api_key}/v1/spool")
+async def create_spool(
+    api_key: str,
+    body: SpoolCreateBody,
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> JSONResponse:
+    user = await _resolve_user_by_api_key(db, api_key)
+    if user is None:
+        return _err(status.HTTP_401_UNAUTHORIZED, "Invalid API key.")
+
+    if body.remaining_weight is not None and body.used_weight is not None:
+        return _err(status.HTTP_400_BAD_REQUEST, "Only specify either remaining_weight or used_weight.")
+
+    filament_result = await db.execute(select(Filament).where(Filament.id == body.filament_id))
+    filament = filament_result.scalar_one_or_none()
+    if filament is None:
+        return _err(status.HTTP_404_NOT_FOUND, f"No filament with ID {body.filament_id} found.")
+
+    initial_weight = body.initial_weight if body.initial_weight is not None else (filament.spool_weight or 1000.0)
+    if body.used_weight is not None:
+        used_weight = body.used_weight
+    elif body.remaining_weight is not None:
+        used_weight = max(initial_weight - body.remaining_weight, 0.0)
+    else:
+        used_weight = 0.0
+
+    spool = UserSpool(
+        user_id=user.id,
+        filament_id=body.filament_id,
+        initial_weight_g=float(initial_weight),
+        used_weight_g=float(min(max(used_weight, 0.0), initial_weight)),
+        state=UserSpoolState.archived if body.archived else UserSpoolState.active,
+        source="spool_compat",
+        lot_nr=body.lot_nr,
+        comment=body.comment,
+    )
+    db.add(spool)
+    await db.flush()
+
+    ok, err = await _apply_location_assignment(db, user, spool, body.location)
+    if not ok:
+        await db.rollback()
+        return _err(status.HTTP_400_BAD_REQUEST, err or "Failed to assign spool location.")
+
+    await db.commit()
+    created = await _get_user_spool(db, user.id, spool.id)
+    if created is None:
+        return _err(status.HTTP_500_INTERNAL_SERVER_ERROR, "Failed to create spool.")
+    location_map = await _build_location_map(db, user.id)
+    return JSONResponse(content=_to_spool_payload(created, location_map))
+
+
+@router.patch("/{api_key}/v1/spool/{spool_id}")
+async def patch_spool(
+    api_key: str,
+    spool_id: int,
+    body: SpoolPatchBody,
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> JSONResponse:
+    user = await _resolve_user_by_api_key(db, api_key)
+    if user is None:
+        return _err(status.HTTP_401_UNAUTHORIZED, "Invalid API key.")
+
+    spool = await _get_user_spool(db, user.id, spool_id)
+    if spool is None:
+        return _err(status.HTTP_404_NOT_FOUND, f"No spool with ID {spool_id} found.")
+
+    if body.remaining_weight is not None and body.used_weight is not None:
+        return _err(status.HTTP_400_BAD_REQUEST, "Only specify either remaining_weight or used_weight.")
+
+    if body.filament_id is not None:
+        filament_result = await db.execute(select(Filament).where(Filament.id == body.filament_id))
+        filament = filament_result.scalar_one_or_none()
+        if filament is None:
+            return _err(status.HTTP_404_NOT_FOUND, f"No filament with ID {body.filament_id} found.")
+        spool.filament_id = body.filament_id
+
+    if body.initial_weight is not None:
+        spool.initial_weight_g = float(body.initial_weight)
+    if body.used_weight is not None:
+        spool.used_weight_g = float(min(max(body.used_weight, 0.0), spool.initial_weight_g))
+    if body.remaining_weight is not None:
+        computed_used = max(spool.initial_weight_g - body.remaining_weight, 0.0)
+        spool.used_weight_g = float(min(max(computed_used, 0.0), spool.initial_weight_g))
+    if body.lot_nr is not None:
+        spool.lot_nr = body.lot_nr
+    if body.comment is not None:
+        spool.comment = body.comment
+    if body.archived is not None:
+        spool.state = UserSpoolState.archived if body.archived else UserSpoolState.active
+    if spool.used_weight_g >= spool.initial_weight_g:
+        spool.state = UserSpoolState.empty
+
+    if body.location is not None:
+        ok, err = await _apply_location_assignment(db, user, spool, body.location)
+        if not ok:
+            await db.rollback()
+            return _err(status.HTTP_400_BAD_REQUEST, err or "Failed to assign spool location.")
+
+    await db.commit()
+    updated = await _get_user_spool(db, user.id, spool.id)
+    if updated is None:
+        return _err(status.HTTP_500_INTERNAL_SERVER_ERROR, "Failed to update spool.")
+    location_map = await _build_location_map(db, user.id)
+    return JSONResponse(content=_to_spool_payload(updated, location_map))
+
+
+@router.put("/{api_key}/v1/spool/{spool_id}/use")
+async def use_spool(
+    api_key: str,
+    spool_id: int,
+    body: SpoolUseBody,
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> JSONResponse:
+    user = await _resolve_user_by_api_key(db, api_key)
+    if user is None:
+        return _err(status.HTTP_401_UNAUTHORIZED, "Invalid API key.")
+
+    spool = await _get_user_spool(db, user.id, spool_id)
+    if spool is None:
+        return _err(status.HTTP_404_NOT_FOUND, f"No spool with ID {spool_id} found.")
+
+    if body.use_weight is not None and body.use_length is not None:
+        return _err(status.HTTP_400_BAD_REQUEST, "Only specify either use_weight or use_length.")
+    if body.use_weight is None and body.use_length is None:
+        return _err(status.HTTP_400_BAD_REQUEST, "Either use_weight or use_length must be specified.")
+
+    filament = spool.filament
+    if body.use_length is not None:
+        density = _filament_density(filament)
+        diameter = _filament_diameter(filament)
+        delta_weight = _weight_from_length(body.use_length, density, diameter)
+    else:
+        delta_weight = body.use_weight or 0.0
+
+    spool.used_weight_g = float(min(spool.initial_weight_g, spool.used_weight_g + delta_weight))
+    spool.last_used_at = datetime.now(timezone.utc)
+    if spool.used_weight_g >= spool.initial_weight_g:
+        spool.state = UserSpoolState.empty
+
+    await db.commit()
+    updated = await _get_user_spool(db, user.id, spool.id)
+    if updated is None:
+        return _err(status.HTTP_500_INTERNAL_SERVER_ERROR, "Failed to use spool.")
+    location_map = await _build_location_map(db, user.id)
+    return JSONResponse(content=_to_spool_payload(updated, location_map))
+
+
+@router.put("/{api_key}/v1/spool/{spool_id}/measure")
+async def measure_spool(
+    api_key: str,
+    spool_id: int,
+    body: SpoolMeasureBody,
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> JSONResponse:
+    user = await _resolve_user_by_api_key(db, api_key)
+    if user is None:
+        return _err(status.HTTP_401_UNAUTHORIZED, "Invalid API key.")
+
+    spool = await _get_user_spool(db, user.id, spool_id)
+    if spool is None:
+        return _err(status.HTTP_404_NOT_FOUND, f"No spool with ID {spool_id} found.")
+
+    filament = spool.filament
+    tare = filament.spool_weight if filament is not None and filament.spool_weight else 0.0
+    remaining_weight = max(body.weight - tare, 0.0)
+    spool.used_weight_g = float(min(spool.initial_weight_g, max(spool.initial_weight_g - remaining_weight, 0.0)))
+    spool.last_used_at = datetime.now(timezone.utc)
+    if spool.used_weight_g >= spool.initial_weight_g:
+        spool.state = UserSpoolState.empty
+
+    await db.commit()
+    updated = await _get_user_spool(db, user.id, spool.id)
+    if updated is None:
+        return _err(status.HTTP_500_INTERNAL_SERVER_ERROR, "Failed to update spool measurement.")
+    location_map = await _build_location_map(db, user.id)
+    return JSONResponse(content=_to_spool_payload(updated, location_map))
+
+
+@router.delete("/{api_key}/v1/spool/{spool_id}")
+async def delete_spool(
+    api_key: str,
+    spool_id: int,
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> JSONResponse:
+    user = await _resolve_user_by_api_key(db, api_key)
+    if user is None:
+        return _err(status.HTTP_401_UNAUTHORIZED, "Invalid API key.")
+
+    spool = await _get_user_spool(db, user.id, spool_id)
+    if spool is None:
+        return _err(status.HTTP_404_NOT_FOUND, f"No spool with ID {spool_id} found.")
+
+    gate_states_result = await db.execute(
+        select(PresetGateState).where(
+            PresetGateState.user_id == user.id,
+            PresetGateState.spool_id == spool.id,
+        )
+    )
+    for gate_state in gate_states_result.scalars().all():
+        gate_state.spool_id = None
+        gate_state.source = PresetGateStateSource.web_manual
+        gate_state.source_ts = datetime.now(timezone.utc)
+
+    await db.delete(spool)
+    await db.commit()
+    return JSONResponse(content={"message": "Success!"})

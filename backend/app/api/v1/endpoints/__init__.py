@@ -7,13 +7,13 @@ from . import (
     brands,
     calculator,
     downloads,
+    spool_compat,
     filaments,
     presets,
     printer_requests,
     printers,
     qr,
     saved_presets,
-    spoolman,
     orca_sync,
 )
 
@@ -24,12 +24,12 @@ __all__ = [
     "brands",
     "calculator",
     "downloads",
+    "spool_compat",
     "filaments",
     "presets",
     "printer_requests",
     "printers",
     "qr",
     "saved_presets",
-    "spoolman",
     "orca_sync",
 ]

@@ -21,6 +21,7 @@ from app.db.base import Base
 if TYPE_CHECKING:
     from app.models.preset import Preset
     from app.models.user import User
+    from app.models.user_spool import UserSpool
     from app.models.user_printer_device import UserPrinterDevice
 
 
@@ -49,7 +50,9 @@ class PresetGateState(Base):
     preset_id: Mapped[int | None] = mapped_column(
         ForeignKey("presets.id", ondelete="SET NULL"), nullable=True, index=True
     )
-    spool_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    spool_id: Mapped[int | None] = mapped_column(
+        ForeignKey("user_spools.id", ondelete="SET NULL"), nullable=True, index=True
+    )
 
     # HH actual data (from Happy Hare snapshot)
     hh_material: Mapped[str | None] = mapped_column(String(50), nullable=True)
@@ -82,6 +85,7 @@ class PresetGateState(Base):
         "UserPrinterDevice", back_populates="gate_states"
     )
     preset: Mapped["Preset | None"] = relationship("Preset")
+    spool: Mapped["UserSpool | None"] = relationship("UserSpool")
 
     def __repr__(self) -> str:
         return (
