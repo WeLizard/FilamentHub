@@ -7,6 +7,9 @@ const proxyTarget = process.env.VITE_PROXY_TARGET || 'http://localhost:8000';
 
 export default defineConfig({
   plugins: [react(), tailwindcss()],
+  esbuild: {
+    drop: process.env.NODE_ENV === 'production' ? ['console', 'debugger'] : [],
+  },
   server: {
     port: 3000,
     host: '0.0.0.0', // Слушать на всех интерфейсах (IPv4 и IPv6)
