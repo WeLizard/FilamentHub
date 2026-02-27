@@ -24,7 +24,7 @@ from typing import Any, Callable
 
 PROTOCOL_VERSION = "2024-11-05"
 SERVER_NAME = "orcaslicer-test-mcp"
-SERVER_VERSION = "0.2.0"
+SERVER_VERSION = "0.3.0"
 
 
 @dataclass(frozen=True)
@@ -188,19 +188,25 @@ def bridge_exchange(
 ) -> Any:
     timeout_s = cfg.timeout_s if timeout_ms is None else max(timeout_ms / 1000.0, 0.001)
     encoded = (json.dumps(payload, ensure_ascii=False) + "\n").encode("utf-8")
+    log_debug(cfg, f"Bridge request -> {payload!r}")
 
-    with socket.create_connection((cfg.host, cfg.port), timeout=timeout_s) as sock:
-        sock.settimeout(timeout_s)
-        sock.sendall(encoded)
+    try:
+        with socket.create_connection((cfg.host, cfg.port), timeout=timeout_s) as sock:
+            sock.settimeout(timeout_s)
+            sock.sendall(encoded)
 
-        chunks = bytearray()
-        while True:
-            chunk = sock.recv(4096)
-            if not chunk:
-                break
-            chunks.extend(chunk)
-            if b"\n" in chunk:
-                break
+            chunks = bytearray()
+            while True:
+                chunk = sock.recv(4096)
+                if not chunk:
+                    break
+                chunks.extend(chunk)
+                if b"\n" in chunk:
+                    break
+    except TimeoutError as exc:
+        raise JsonRpcError(-32001, f"Bridge timeout after {round(timeout_s, 3)}s.") from exc
+    except OSError as exc:
+        raise JsonRpcError(-32001, f"Bridge connection failed: {exc}") from exc
 
     if not chunks:
         raise JsonRpcError(-32001, "No response from Orca bridge.")
@@ -208,6 +214,7 @@ def bridge_exchange(
     line = chunks.split(b"\n", 1)[0].decode("utf-8", errors="replace").strip()
     if not line:
         raise JsonRpcError(-32001, "Empty response from Orca bridge.")
+    log_debug(cfg, f"Bridge response <- {line}")
 
     try:
         return json.loads(line)
@@ -220,8 +227,13 @@ def tool_orca_bridge_ping(args: dict[str, Any], cfg: BridgeConfig) -> dict[str, 
         raise JsonRpcError(-32602, "orca_bridge_ping does not accept arguments.")
 
     t0 = time.monotonic()
-    with socket.create_connection((cfg.host, cfg.port), timeout=cfg.timeout_s):
-        pass
+    try:
+        with socket.create_connection((cfg.host, cfg.port), timeout=cfg.timeout_s):
+            pass
+    except TimeoutError as exc:
+        raise JsonRpcError(-32001, f"Bridge timeout after {round(cfg.timeout_s, 3)}s.") from exc
+    except OSError as exc:
+        raise JsonRpcError(-32001, f"Bridge connection failed: {exc}") from exc
     elapsed_ms = round((time.monotonic() - t0) * 1000.0, 2)
 
     return content_text(
@@ -384,6 +396,177 @@ def tool_orca_bridge_wait_for(args: dict[str, Any], cfg: BridgeConfig) -> dict[s
     )
 
 
+def _parse_bridge_json_text(payload: dict[str, Any], field_name: str) -> dict[str, Any]:
+    content = payload.get("content")
+    if not isinstance(content, list) or not content:
+        raise JsonRpcError(-32603, f"{field_name} returned invalid MCP content payload.")
+
+    first_chunk = content[0]
+    if not isinstance(first_chunk, dict):
+        raise JsonRpcError(-32603, f"{field_name} returned malformed content chunk.")
+
+    text = first_chunk.get("text")
+    if not isinstance(text, str):
+        raise JsonRpcError(-32603, f"{field_name} returned non-text content.")
+
+    try:
+        parsed = json.loads(text)
+    except json.JSONDecodeError as exc:
+        raise JsonRpcError(-32603, f"{field_name} returned non-JSON text payload.") from exc
+
+    if not isinstance(parsed, dict):
+        raise JsonRpcError(-32603, f"{field_name} JSON payload must be an object.")
+    return parsed
+
+
+def tool_orca_bridge_smoke_test(args: dict[str, Any], cfg: BridgeConfig) -> dict[str, Any]:
+    timeout_ms = args.get("timeout_ms", 15_000)
+    if not isinstance(timeout_ms, int) or timeout_ms <= 0:
+        raise JsonRpcError(-32602, "Argument 'timeout_ms' must be a positive integer.")
+
+    interval_ms = args.get("interval_ms", 250)
+    if not isinstance(interval_ms, int) or interval_ms <= 0:
+        raise JsonRpcError(-32602, "Argument 'interval_ms' must be a positive integer.")
+
+    strict = args.get("strict", False)
+    if not isinstance(strict, bool):
+        raise JsonRpcError(-32602, "Argument 'strict' must be boolean.")
+
+    trigger_sync = args.get("trigger_sync", True)
+    if not isinstance(trigger_sync, bool):
+        raise JsonRpcError(-32602, "Argument 'trigger_sync' must be boolean.")
+
+    sync_mode = args.get("sync_mode", "incremental")
+    if not isinstance(sync_mode, str) or not sync_mode.strip():
+        raise JsonRpcError(-32602, "Argument 'sync_mode' must be a non-empty string.")
+
+    sync_duration_ms = args.get("sync_duration_ms")
+    if sync_duration_ms is not None and (not isinstance(sync_duration_ms, int) or sync_duration_ms <= 0):
+        raise JsonRpcError(-32602, "Argument 'sync_duration_ms' must be a positive integer when provided.")
+
+    steps: list[dict[str, Any]] = []
+    ok = True
+
+    # Step 1: TCP ping.
+    try:
+        ping_result = json.loads(tool_orca_bridge_ping({}, cfg)["content"][0]["text"])
+        steps.append({"name": "bridge_ping", "ok": True, "result": ping_result})
+    except Exception as exc:
+        ok = False
+        steps.append({"name": "bridge_ping", "ok": False, "error": str(exc)})
+        if strict:
+            raise
+
+    # Step 2: get_status.
+    status_payload: dict[str, Any] | None = None
+    try:
+        status_mcp = tool_orca_bridge_command(
+            {"command": "get_status", "timeout_ms": timeout_ms},
+            cfg,
+        )
+        status_payload = _parse_bridge_json_text(status_mcp, "get_status")
+        status_ok = bool(status_payload.get("ok"))
+        steps.append({"name": "get_status", "ok": status_ok, "result": status_payload})
+        ok = ok and status_ok
+        if strict and not status_ok:
+            raise JsonRpcError(-32003, "Smoke get_status failed.", {"result": status_payload})
+    except Exception as exc:
+        ok = False
+        steps.append({"name": "get_status", "ok": False, "error": str(exc)})
+        if strict:
+            raise
+
+    # Step 3: optional sync lifecycle check.
+    if trigger_sync:
+        trigger_args: dict[str, Any] = {
+            "command": "trigger_sync",
+            "params": {"mode": sync_mode},
+            "timeout_ms": timeout_ms,
+        }
+        if sync_duration_ms is not None:
+            trigger_args["params"]["duration_ms"] = sync_duration_ms
+
+        try:
+            trigger_mcp = tool_orca_bridge_command(trigger_args, cfg)
+            trigger_payload = _parse_bridge_json_text(trigger_mcp, "trigger_sync")
+            trigger_ok = bool(trigger_payload.get("ok")) and bool(trigger_payload.get("accepted", True))
+
+            if trigger_ok:
+                wait_mcp = tool_orca_bridge_wait_for(
+                    {
+                        "path": "status.sync_running",
+                        "equals": False,
+                        "timeout_ms": timeout_ms,
+                        "interval_ms": interval_ms,
+                    },
+                    cfg,
+                )
+                wait_payload = _parse_bridge_json_text(wait_mcp, "wait_for")
+                steps.append(
+                    {
+                        "name": "sync_lifecycle",
+                        "ok": True,
+                        "trigger": trigger_payload,
+                        "wait": wait_payload,
+                    }
+                )
+            else:
+                trigger_error_text = str(trigger_payload.get("error") or trigger_payload.get("message") or "")
+                if "unknown command" in trigger_error_text.lower() and not strict:
+                    steps.append(
+                        {
+                            "name": "sync_lifecycle",
+                            "ok": True,
+                            "skipped": True,
+                            "reason": "trigger_sync not supported by bridge",
+                            "trigger": trigger_payload,
+                        }
+                    )
+                else:
+                    steps.append(
+                        {
+                            "name": "sync_lifecycle",
+                            "ok": False,
+                            "error": "trigger_sync not accepted",
+                            "trigger": trigger_payload,
+                        }
+                    )
+                    ok = False
+                    if strict:
+                        raise JsonRpcError(-32003, "Smoke trigger_sync failed.", {"result": trigger_payload})
+        except JsonRpcError:
+            raise
+        except Exception as exc:
+            message = str(exc)
+            skipped = "unknown command" in message.lower()
+            if skipped and not strict:
+                steps.append(
+                    {
+                        "name": "sync_lifecycle",
+                        "ok": True,
+                        "skipped": True,
+                        "reason": "trigger_sync not supported by bridge",
+                    }
+                )
+            else:
+                ok = False
+                steps.append({"name": "sync_lifecycle", "ok": False, "error": message})
+                if strict:
+                    raise
+
+    response_payload = {
+        "ok": ok,
+        "bridge": {"host": cfg.host, "port": cfg.port},
+        "server_version": SERVER_VERSION,
+        "steps": steps,
+    }
+
+    if strict and not ok:
+        raise JsonRpcError(-32003, "Smoke test failed in strict mode.", response_payload)
+
+    return content_text(json.dumps(response_payload, ensure_ascii=False, indent=2), is_error=not ok)
+
+
 def _coerce_string_list(value: Any, field_name: str) -> list[str]:
     if value is None:
         return []
@@ -506,6 +689,38 @@ TOOLS: list[dict[str, Any]] = [
         },
     },
     {
+        "name": "orca_bridge_smoke_test",
+        "description": "Run a lightweight bridge smoke test (ping/status/sync lifecycle).",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "trigger_sync": {
+                    "type": "boolean",
+                    "default": True,
+                    "description": "Whether to test trigger_sync + wait_for lifecycle.",
+                },
+                "sync_mode": {
+                    "type": "string",
+                    "default": "incremental",
+                    "description": "Value for trigger_sync.params.mode.",
+                },
+                "sync_duration_ms": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "description": "Optional duration override for mock bridge trigger_sync.",
+                },
+                "timeout_ms": {"type": "integer", "minimum": 1, "default": 15000},
+                "interval_ms": {"type": "integer", "minimum": 1, "default": 250},
+                "strict": {
+                    "type": "boolean",
+                    "default": False,
+                    "description": "If true, fail on any unsupported/failed smoke step.",
+                },
+            },
+            "additionalProperties": False,
+        },
+    },
+    {
         "name": "orca_orcaslicer_launch",
         "description": "Launch OrcaSlicer executable (dev/testing only).",
         "inputSchema": {
@@ -533,6 +748,7 @@ def run() -> int:
         "orca_bridge_ping": tool_orca_bridge_ping,
         "orca_bridge_command": tool_orca_bridge_command,
         "orca_bridge_wait_for": tool_orca_bridge_wait_for,
+        "orca_bridge_smoke_test": tool_orca_bridge_smoke_test,
         "orca_orcaslicer_launch": tool_orca_orcaslicer_launch,
     }
 

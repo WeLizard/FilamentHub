@@ -106,6 +106,7 @@ Starts FilamentHub sync.
 Params:
 
 - `mode` enum: `incremental` | `full`
+- `duration_ms` integer optional (mock bridge helper for deterministic tests)
 
 Response:
 
@@ -116,6 +117,12 @@ Response:
 ### `list_presets`
 
 Returns compact list of loaded presets for verification.
+
+## Mock-only helper commands
+
+These are test helpers implemented by `mock_bridge.py`, not required for Orca bridge:
+
+- `set_status` — set partial status fields (`connected`, `logged_in`, `sync_running`, `active_tab`)
 
 ## Security constraints (required)
 

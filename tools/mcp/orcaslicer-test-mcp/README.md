@@ -8,6 +8,7 @@ Minimal MCP server for automated OrcaSlicer testing via a TCP test bridge.
   - `orca_bridge_ping`
   - `orca_bridge_command`
   - `orca_bridge_wait_for`
+  - `orca_bridge_smoke_test`
   - `orca_orcaslicer_launch`
 - Mock TCP bridge (`mock_bridge.py`) for local smoke tests without Orca changes.
 
@@ -89,6 +90,20 @@ Use absolute paths for your machine:
 command = "python"
 args = ["F:/FilamentHub/tools/mcp/orcaslicer-test-mcp/server.py"]
 env = { ORCA_BRIDGE_HOST = "127.0.0.1", ORCA_BRIDGE_PORT = "45454" }
+```
+
+## One-command smoke test
+
+Mock mode (starts local mock bridge automatically):
+
+```powershell
+python tools/mcp/orcaslicer-test-mcp/smoke_test.py --mode mock
+```
+
+External mode (checks existing bridge endpoint):
+
+```powershell
+python tools/mcp/orcaslicer-test-mcp/smoke_test.py --mode external --host 127.0.0.1 --port 45454
 ```
 
 ## Next step (Orca side)
