@@ -63,7 +63,7 @@ async def record_usage(
     return await use_spool(db, current_user, spool_id, payload.delta_weight_g)
 
 
-@router.delete("/{spool_id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete("/{spool_id}", status_code=status.HTTP_204_NO_CONTENT, response_model=None)
 async def remove_spool(
     spool_id: int,
     current_user: Annotated[User, Depends(get_current_active_user)],
