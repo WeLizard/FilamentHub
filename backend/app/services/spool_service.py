@@ -6,7 +6,7 @@ from datetime import datetime, timezone
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload
+from sqlalchemy.orm import selectinload, joinedload
 
 from app.core.errors import ERR_ACCESS_DENIED, ERR_FILAMENT_NOT_FOUND, raise_error
 from app.models.filament import Filament
@@ -17,7 +17,9 @@ from app.schemas.spool import SpoolCreateRequest, SpoolResponse, SpoolUpdateRequ
 
 async def _load_filament_info(db: AsyncSession, filament_id: int) -> Filament | None:
     result = await db.execute(
-        select(Filament).where(Filament.id == filament_id)
+        select(Filament)
+        .options(joinedload(Filament.brand))
+        .where(Filament.id == filament_id)
     )
     return result.scalars().first()
 
@@ -31,7 +33,7 @@ def _build_response(spool: UserSpool, filament: Filament | None) -> SpoolRespons
             material_type=filament.material_type,
             color_name=filament.color_name,
             color_hex=filament.color_hex,
-            brand_name=getattr(filament.brand, "name", None) if hasattr(filament, "brand") else None,
+            brand_name=filament.brand.name if filament.brand is not None else None,
         )
     return SpoolResponse(
         id=spool.id,
@@ -65,7 +67,9 @@ async def list_spools(db: AsyncSession, user_id: int) -> list[SpoolResponse]:
     filaments: dict[int, Filament] = {}
     if fil_ids:
         fil_result = await db.execute(
-            select(Filament).where(Filament.id.in_(fil_ids))
+            select(Filament)
+            .options(joinedload(Filament.brand))
+            .where(Filament.id.in_(fil_ids))
         )
         filaments = {f.id: f for f in fil_result.scalars().all()}
 

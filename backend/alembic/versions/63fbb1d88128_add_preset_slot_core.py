@@ -1,7 +1,7 @@
 """add_preset_slot_core
 
 Revision ID: 63fbb1d88128
-Revises: e01bc3b29297
+Revises: add_preset_deleted_enum
 Create Date: 2026-02-27 00:00:00.000000
 
 Adds tables for Happy Hare / preset-slot integration:
@@ -16,7 +16,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = '63fbb1d88128'
-down_revision: Union[str, None] = 'e01bc3b29297'
+down_revision: Union[str, None] = 'add_preset_deleted_enum'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
