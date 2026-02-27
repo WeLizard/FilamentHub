@@ -57,6 +57,9 @@ services:
       ADMIN_PASSWORD: admin123
       DEBUG: "true"
       LOG_LEVEL: DEBUG
+      AUTH_WEB_MODE: dual
+      AUTH_COOKIE_SAMESITE: lax
+      AUTH_COOKIE_SECURE: "false"
     networks:
       - filamenthub_dev
 
@@ -73,6 +76,8 @@ services:
       VITE_API_URL: http://localhost:8001
       VITE_PROXY_TARGET: http://backend-dev:8000
       VITE_RECAPTCHA_SITE_KEY: ""
+      VITE_AUTH_WEB_MODE: dual
+      VITE_AUTH_CSRF_HEADER_NAME: X-CSRF-Token
     command: sh -c "npm install && npm run dev -- --host 0.0.0.0"
     depends_on:
       - backend-dev

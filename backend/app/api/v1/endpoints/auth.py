@@ -1,10 +1,11 @@
 """Authentication endpoints."""
 
 from datetime import datetime, timezone
+import secrets
 
 from typing import Annotated
 
-from fastapi import APIRouter, Body, Depends, HTTPException, Query, Request, status
+from fastapi import APIRouter, Body, Depends, HTTPException, Query, Request, Response, status
 
 from app.core.config import settings
 from slowapi import Limiter, _rate_limit_exceeded_handler
@@ -71,6 +72,7 @@ from app.core.limiter import limiter
 from app.core.errors import (
     ERR_ACCOUNT_BLOCKED,
     ERR_ACCOUNT_INACTIVE,
+    ERR_ACCESS_DENIED,
     ERR_BRAND_NOT_FOUND,
     ERR_EMAIL_EXISTS,
     ERR_EMAIL_MISMATCH,
@@ -123,6 +125,51 @@ async def _revoke_token_if_valid(
         return
 
     db.add(RevokedToken(jti=fingerprint, expires_at=expires_at))
+
+
+def _cookie_auth_enabled() -> bool:
+    return settings.AUTH_WEB_MODE in {"cookie", "dual"}
+
+
+def _cookie_common_kwargs() -> dict:
+    return {
+        "path": settings.AUTH_COOKIE_PATH,
+        "domain": settings.AUTH_COOKIE_DOMAIN,
+        "secure": settings.AUTH_COOKIE_SECURE,
+        "samesite": settings.AUTH_COOKIE_SAMESITE,
+    }
+
+
+def _set_auth_cookies(response: Response, access_token: str, refresh_token: str) -> None:
+    common = _cookie_common_kwargs()
+    response.set_cookie(
+        key=settings.AUTH_ACCESS_COOKIE_NAME,
+        value=access_token,
+        httponly=True,
+        max_age=settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60,
+        **common,
+    )
+    response.set_cookie(
+        key=settings.AUTH_REFRESH_COOKIE_NAME,
+        value=refresh_token,
+        httponly=True,
+        max_age=settings.REFRESH_TOKEN_EXPIRE_DAYS * 24 * 60 * 60,
+        **common,
+    )
+    response.set_cookie(
+        key=settings.AUTH_CSRF_COOKIE_NAME,
+        value=secrets.token_urlsafe(32),
+        httponly=False,
+        max_age=settings.REFRESH_TOKEN_EXPIRE_DAYS * 24 * 60 * 60,
+        **common,
+    )
+
+
+def _clear_auth_cookies(response: Response) -> None:
+    common = _cookie_common_kwargs()
+    response.delete_cookie(settings.AUTH_ACCESS_COOKIE_NAME, **common)
+    response.delete_cookie(settings.AUTH_REFRESH_COOKIE_NAME, **common)
+    response.delete_cookie(settings.AUTH_CSRF_COOKIE_NAME, **common)
 
 
 @router.post("/register", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
@@ -238,6 +285,7 @@ async def register(
 @limiter.limit("5/minute")  # Rate limiting: 5 попыток в минуту
 async def login(
     request: Request,
+    response: Response,
     data: LoginRequest,
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> Token:
@@ -270,21 +318,42 @@ async def login(
     token_data = {"sub": user.email, "user_id": user.id, "role": user.role.value}
     access_token = create_access_token(data=token_data)
     refresh_token = create_refresh_token(data=token_data)
+
+    if _cookie_auth_enabled():
+        _set_auth_cookies(response, access_token, refresh_token)
     
     return Token(access_token=access_token, refresh_token=refresh_token)
 
 
 @router.post("/refresh", response_model=RefreshTokenResponse)
 async def refresh_token(
-    data: RefreshTokenRequest,
+    request: Request,
+    response: Response,
     db: Annotated[AsyncSession, Depends(get_db)],
+    data: RefreshTokenRequest | None = Body(default=None),
 ) -> RefreshTokenResponse:
     """Обновить access token используя refresh token."""
-    if await is_token_revoked(data.refresh_token, db):
+    refresh_token_value = data.refresh_token if data and data.refresh_token else None
+    using_cookie_refresh = False
+    if not refresh_token_value and _cookie_auth_enabled():
+        refresh_token_value = request.cookies.get(settings.AUTH_REFRESH_COOKIE_NAME)
+        using_cookie_refresh = bool(refresh_token_value)
+
+    if not refresh_token_value:
+        raise_error(status.HTTP_401_UNAUTHORIZED, ERR_INVALID_REFRESH_TOKEN, headers={"WWW-Authenticate": "Bearer"})
+
+    # Для cookie-based refresh требуем CSRF header/cookie match.
+    if using_cookie_refresh:
+        csrf_cookie = request.cookies.get(settings.AUTH_CSRF_COOKIE_NAME)
+        csrf_header = request.headers.get(settings.AUTH_CSRF_HEADER_NAME)
+        if not csrf_cookie or not csrf_header or csrf_cookie != csrf_header:
+            raise_error(status.HTTP_403_FORBIDDEN, ERR_ACCESS_DENIED)
+
+    if await is_token_revoked(refresh_token_value, db):
         raise_error(status.HTTP_401_UNAUTHORIZED, ERR_INVALID_REFRESH_TOKEN, headers={"WWW-Authenticate": "Bearer"})
 
     # Декодируем refresh token
-    payload = decode_refresh_token(data.refresh_token)
+    payload = decode_refresh_token(refresh_token_value)
     
     if payload is None:
         raise_error(status.HTTP_401_UNAUTHORIZED, ERR_INVALID_REFRESH_TOKEN, headers={"WWW-Authenticate": "Bearer"})
@@ -307,6 +376,9 @@ async def refresh_token(
     # Создаём новый access token
     token_data = {"sub": user.email, "user_id": user.id, "role": user.role.value}
     access_token = create_access_token(data=token_data)
+
+    if _cookie_auth_enabled():
+        _set_auth_cookies(response, access_token, refresh_token_value)
     
     return RefreshTokenResponse(access_token=access_token)
 
@@ -314,6 +386,7 @@ async def refresh_token(
 @router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)
 async def logout(
     request: Request,
+    response: Response,
     current_user: Annotated[User, Depends(get_current_active_user)],
     db: Annotated[AsyncSession, Depends(get_db)],
     data: LogoutRequest | None = Body(default=None),
@@ -330,9 +403,14 @@ async def logout(
         access_payload = decode_access_token(access_token)
         await _revoke_token_if_valid(access_token, access_payload, db)
 
-    refresh_token = data.refresh_token if data else None
+    refresh_token = data.refresh_token if data and data.refresh_token else None
+    if not refresh_token and _cookie_auth_enabled():
+        refresh_token = request.cookies.get(settings.AUTH_REFRESH_COOKIE_NAME)
+
     if refresh_token:
         if await is_token_revoked(refresh_token, db):
+            if _cookie_auth_enabled():
+                _clear_auth_cookies(response)
             return
 
         refresh_payload = decode_refresh_token(refresh_token)
@@ -344,6 +422,9 @@ async def logout(
             raise_error(status.HTTP_401_UNAUTHORIZED, ERR_INVALID_REFRESH_TOKEN, headers={"WWW-Authenticate": "Bearer"})
 
         await _revoke_token_if_valid(refresh_token, refresh_payload, db)
+
+    if _cookie_auth_enabled():
+        _clear_auth_cookies(response)
 
 
 @router.get("/me", response_model=UserResponse)

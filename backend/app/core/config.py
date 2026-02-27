@@ -37,6 +37,16 @@ class Settings(BaseSettings):
     ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60  # 1 час (короткоживущий для безопасности)
     REFRESH_TOKEN_EXPIRE_DAYS: int = 30  # 30 дней для refresh token (долгоживущий для удобства)
+    AUTH_WEB_MODE: str = "jwt"  # jwt | cookie | dual
+    AUTH_ORCA_MODE: str = "bearer"  # bearer (reserved for explicit mode control)
+    AUTH_ACCESS_COOKIE_NAME: str = "fh_access_token"
+    AUTH_REFRESH_COOKIE_NAME: str = "fh_refresh_token"
+    AUTH_CSRF_COOKIE_NAME: str = "fh_csrf_token"
+    AUTH_CSRF_HEADER_NAME: str = "X-CSRF-Token"
+    AUTH_COOKIE_PATH: str = "/"
+    AUTH_COOKIE_DOMAIN: str | None = None
+    AUTH_COOKIE_SECURE: bool = False
+    AUTH_COOKIE_SAMESITE: str = "lax"  # lax | strict | none
 
     # CORS
     CORS_ORIGINS: list[str] = [
@@ -94,4 +104,3 @@ class Settings(BaseSettings):
 
 # Global settings instance
 settings = Settings()
-

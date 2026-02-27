@@ -127,7 +127,7 @@ api.interceptors.response.use(
         // Уведомляем C++ о logout (401 без refresh token)
         notifyCppLogout();
         const isAdminPage = window.location.pathname.includes('/admin');
-        if (!window.location.pathname.includes('/auth') && !isAdminPage) {
+        if (!isMeEndpoint && !window.location.pathname.includes('/auth') && !isAdminPage) {
           window.location.reload();
         }
         processQueue(error, null);
@@ -147,6 +147,12 @@ api.interceptors.response.use(
           {
             baseURL: '', // Используем полный URL
             withCredentials: canUseCookieSession,
+            headers: canUseCookieSession
+              ? (() => {
+                  const csrfToken = getCsrfToken();
+                  return csrfToken ? { [CSRF_HEADER_NAME]: csrfToken } : {};
+                })()
+              : undefined,
           }
         );
         
@@ -179,8 +185,9 @@ api.interceptors.response.use(
         isRefreshing = false;
         
         // Не перезагружаем страницу если мы в админке или на странице авторизации
+        // И не делаем reload для /auth/me, иначе возникает вечный цикл на гостевой сессии.
         const isAdminPage = window.location.pathname.includes('/admin');
-        if (!window.location.pathname.includes('/auth') && !isAdminPage) {
+        if (!isMeEndpoint && !window.location.pathname.includes('/auth') && !isAdminPage) {
           window.location.reload();
         }
         return Promise.reject(refreshError);

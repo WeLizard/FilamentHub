@@ -2,7 +2,7 @@
 
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { authAPI } from '../api/client';
-import { setToken, setRefreshToken, removeToken, getToken, getRefreshToken, setUserId, removeUserId } from '../utils/auth';
+import { getRefreshToken, getToken, isCookieAuthMode, isOrcaEmbedded, removeToken, setRefreshToken, setToken, setUserId, shouldPersistTokensLocally } from '../utils/auth';
 import type { User } from '../types/api';
 
 interface AuthContextType {
@@ -60,7 +60,8 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       // Небольшая задержка — C++ инжектирует токен через RunScript в OnLoaded,
       // который может выполниться чуть позже React mount
       const token = getToken();
-      if (token) {
+      const hasSessionCandidate = Boolean(token) || isCookieAuthMode();
+      if (hasSessionCandidate) {
         try {
           const userData = await authAPI.me();
           setUser(userData);
@@ -73,9 +74,9 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
             setIsMaintenanceMode(true);
             setMaintenanceMessage(error.response?.data?.message || null);
           } else {
-            // Токен невалидный или истек, удаляем
-            removeToken();
-            setUser(null);
+          // Токен/сессия невалидны или истекли
+          removeToken();
+          setUser(null);
           }
           // Не логируем ошибку - это нормально при первом заходе или истекшем токене
         }
@@ -121,10 +122,13 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const login = async (email: string, password: string) => {
     try {
       const tokenData = await authAPI.login({ email, password });
-      setToken(tokenData.access_token);
+      const persistLocally = shouldPersistTokensLocally();
+      if (persistLocally) {
+        setToken(tokenData.access_token);
+      }
       
       // Сохраняем refresh token если есть
-      if (tokenData.refresh_token) {
+      if (tokenData.refresh_token && persistLocally) {
         setRefreshToken(tokenData.refresh_token);
       }
       
@@ -133,12 +137,12 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       setUser(userData);
       
       // Сохраняем user_id в localStorage
-      if (userData.id) {
+      if (userData.id && persistLocally) {
         setUserId(userData.id);
       }
       
       // Отправляем сообщение в OrcaSlicer если запущено там (включая refresh_token)
-      if (typeof window !== 'undefined' && (window as any).filamenthub?.sendLoginSuccess) {
+      if (isOrcaEmbedded() && (window as any).filamenthub?.sendLoginSuccess) {
         (window as any).filamenthub.sendLoginSuccess(tokenData.access_token, userData.id, tokenData.refresh_token);
       }
     } catch (error: any) {
@@ -181,7 +185,6 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       // Сервер недоступен или токен уже истёк — всё равно выходим локально
     }
     removeToken();
-    removeUserId();
     setUser(null);
     // Уведомляем C++ (OrcaSlicer) о logout — очистить токен в AppConfig
     try {
@@ -194,7 +197,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   };
 
   const refreshUser = async () => {
-    if (getToken()) {
+    if (getToken() || isCookieAuthMode()) {
       try {
         const userData = await authAPI.me();
         setUser(userData);

@@ -3,12 +3,15 @@
 import logging
 from typing import Annotated
 
-from fastapi import Depends, Header, HTTPException, Request, status
+from fastapi import Depends, Header, Request, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import settings
 from app.core.errors import (
+    ERR_ACCESS_DENIED,
+    ERR_AUTH_REQUIRED,
     ERR_COULD_NOT_VALIDATE,
     ERR_INVALID_API_KEY,
     ERR_NOT_ADMIN,
@@ -17,7 +20,7 @@ from app.core.errors import (
     ERR_USER_NOT_FOUND,
     raise_error,
 )
-from app.core.security import decode_access_token, token_fingerprint, verify_password
+from app.core.security import decode_access_token, token_fingerprint
 from app.db.session import get_db
 from app.models.revoked_token import RevokedToken
 from app.models.user import User, UserRole
@@ -25,7 +28,25 @@ from app.schemas.user import TokenData
 
 logger = logging.getLogger(__name__)
 
-security = HTTPBearer()
+security = HTTPBearer(auto_error=False)
+
+_STATE_CHANGING_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
+
+
+def _cookie_auth_enabled() -> bool:
+    return settings.AUTH_WEB_MODE in {"cookie", "dual"}
+
+
+def _validate_cookie_csrf(request: Request) -> None:
+    """Enforce CSRF only for cookie-authenticated mutating requests."""
+    if request.method.upper() not in _STATE_CHANGING_METHODS:
+        return
+
+    csrf_cookie = request.cookies.get(settings.AUTH_CSRF_COOKIE_NAME)
+    csrf_header = request.headers.get(settings.AUTH_CSRF_HEADER_NAME)
+
+    if not csrf_cookie or not csrf_header or csrf_cookie != csrf_header:
+        raise_error(status.HTTP_403_FORBIDDEN, ERR_ACCESS_DENIED)
 
 
 async def is_token_revoked(token: str, db: AsyncSession) -> bool:
@@ -38,11 +59,26 @@ async def is_token_revoked(token: str, db: AsyncSession) -> bool:
 
 
 async def get_current_user(
-    credentials: Annotated[HTTPAuthorizationCredentials, Depends(security)],
+    request: Request,
+    credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(security)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> User:
     """Get current authenticated user from JWT token."""
-    token = credentials.credentials
+    token: str | None = None
+    using_cookie_auth = False
+
+    if credentials is not None and credentials.credentials:
+        token = credentials.credentials
+    elif _cookie_auth_enabled():
+        token = request.cookies.get(settings.AUTH_ACCESS_COOKIE_NAME)
+        using_cookie_auth = bool(token)
+
+    if not token:
+        raise_error(status.HTTP_401_UNAUTHORIZED, ERR_AUTH_REQUIRED, headers={"WWW-Authenticate": "Bearer"})
+
+    if using_cookie_auth:
+        _validate_cookie_csrf(request)
+
     token_preview = token[:20] + "..." if len(token) > 20 else token
     
     payload = decode_access_token(token)
@@ -87,10 +123,16 @@ async def get_current_active_user_optional(
 ) -> User | None:
     """Get current active user if authenticated, otherwise return None."""
     authorization = request.headers.get("Authorization")
-    if not authorization or not authorization.startswith("Bearer "):
+    token: str | None = None
+
+    if authorization and authorization.startswith("Bearer "):
+        token = authorization.split(" ")[1]
+    elif _cookie_auth_enabled():
+        token = request.cookies.get(settings.AUTH_ACCESS_COOKIE_NAME)
+
+    if not token:
         return None
-    
-    token = authorization.split(" ")[1]
+
     payload = decode_access_token(token)
     
     if payload is None:
