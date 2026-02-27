@@ -241,7 +241,13 @@ def main() -> int:
         tools_response = _require_response(responses, 2)
         tools = tools_response.get("result", {}).get("tools", [])
         tool_names = {tool.get("name") for tool in tools if isinstance(tool, dict)}
-        required_tools = {"orca_bridge_ping", "orca_bridge_command", "orca_bridge_wait_for", "orca_bridge_smoke_test"}
+        required_tools = {
+            "orca_bridge_ping",
+            "orca_bridge_command",
+            "orca_bridge_wait_for",
+            "orca_bridge_smoke_test",
+            "filamenthub_api_request",
+        }
         missing = required_tools - tool_names
         if missing:
             raise RuntimeError(f"Missing required tools: {sorted(missing)}")
@@ -284,4 +290,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

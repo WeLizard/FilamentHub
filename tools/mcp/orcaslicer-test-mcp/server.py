@@ -21,10 +21,12 @@ import traceback
 import uuid
 from dataclasses import dataclass
 from typing import Any, Callable
+from urllib import error as urllib_error
+from urllib import request as urllib_request
 
 PROTOCOL_VERSION = "2024-11-05"
 SERVER_NAME = "orcaslicer-test-mcp"
-SERVER_VERSION = "0.3.0"
+SERVER_VERSION = "0.4.0"
 
 
 @dataclass(frozen=True)
@@ -32,6 +34,9 @@ class BridgeConfig:
     host: str
     port: int
     timeout_s: float
+    api_base_url: str
+    api_token: str | None
+    api_timeout_s: float
     debug: bool
 
 
@@ -68,6 +73,9 @@ def load_config() -> BridgeConfig:
         host=os.getenv("ORCA_BRIDGE_HOST", "127.0.0.1"),
         port=_env_int("ORCA_BRIDGE_PORT", 45454),
         timeout_s=_env_float("ORCA_BRIDGE_TIMEOUT_SECONDS", 5.0),
+        api_base_url=os.getenv("FILAMENTHUB_API_BASE_URL", "").strip(),
+        api_token=os.getenv("FILAMENTHUB_API_TOKEN"),
+        api_timeout_s=_env_float("FILAMENTHUB_API_TIMEOUT_SECONDS", 8.0),
         debug=os.getenv("MCP_DEBUG", "0") in ("1", "true", "TRUE", "yes", "YES"),
     )
 
@@ -567,6 +575,105 @@ def tool_orca_bridge_smoke_test(args: dict[str, Any], cfg: BridgeConfig) -> dict
     return content_text(json.dumps(response_payload, ensure_ascii=False, indent=2), is_error=not ok)
 
 
+def _resolve_api_url(cfg: BridgeConfig, path_or_url: str) -> str:
+    if path_or_url.startswith(("http://", "https://")):
+        return path_or_url
+
+    if not cfg.api_base_url:
+        raise JsonRpcError(
+            -32602,
+            "FILAMENTHUB_API_BASE_URL is not configured and absolute URL was not provided.",
+        )
+
+    base = cfg.api_base_url.rstrip("/")
+    path = path_or_url if path_or_url.startswith("/") else f"/{path_or_url}"
+    return f"{base}{path}"
+
+
+def _decode_http_body(raw: bytes) -> tuple[str, Any | None]:
+    if not raw:
+        return "", None
+    text = raw.decode("utf-8", errors="replace")
+    try:
+        parsed = json.loads(text)
+    except json.JSONDecodeError:
+        parsed = None
+    return text, parsed
+
+
+def tool_filamenthub_api_request(args: dict[str, Any], cfg: BridgeConfig) -> dict[str, Any]:
+    method = args.get("method", "GET")
+    if not isinstance(method, str) or not method.strip():
+        raise JsonRpcError(-32602, "Argument 'method' must be a non-empty string.")
+    method = method.upper()
+
+    path = args.get("path")
+    if path is None:
+        path = args.get("url")
+    if not isinstance(path, str) or not path.strip():
+        raise JsonRpcError(-32602, "Argument 'path' (or 'url') must be a non-empty string.")
+    url = _resolve_api_url(cfg, path.strip())
+
+    headers = args.get("headers", {})
+    if headers is None:
+        headers = {}
+    if not isinstance(headers, dict) or not all(isinstance(k, str) and isinstance(v, str) for k, v in headers.items()):
+        raise JsonRpcError(-32602, "Argument 'headers' must be an object with string values.")
+    request_headers = dict(headers)
+
+    use_auth = args.get("use_auth", True)
+    if not isinstance(use_auth, bool):
+        raise JsonRpcError(-32602, "Argument 'use_auth' must be boolean.")
+    if use_auth and cfg.api_token and "Authorization" not in request_headers:
+        request_headers["Authorization"] = f"Bearer {cfg.api_token}"
+
+    json_body = args.get("json_body")
+    data: bytes | None = None
+    if json_body is not None:
+        data = json.dumps(json_body, ensure_ascii=False).encode("utf-8")
+        if "Content-Type" not in request_headers:
+            request_headers["Content-Type"] = "application/json"
+
+    timeout_ms = args.get("timeout_ms")
+    if timeout_ms is not None and (not isinstance(timeout_ms, int) or timeout_ms <= 0):
+        raise JsonRpcError(-32602, "Argument 'timeout_ms' must be a positive integer when provided.")
+    timeout_s = cfg.api_timeout_s if timeout_ms is None else max(timeout_ms / 1000.0, 0.001)
+
+    request_obj = urllib_request.Request(url=url, method=method, data=data, headers=request_headers)
+    log_debug(cfg, f"API request -> method={method} url={url!r}")
+
+    try:
+        with urllib_request.urlopen(request_obj, timeout=timeout_s) as response:
+            raw = response.read()
+            body_text, body_json = _decode_http_body(raw)
+            payload = {
+                "ok": True,
+                "url": url,
+                "method": method,
+                "status": response.getcode(),
+                "response_headers": dict(response.headers.items()),
+                "body_text": body_text,
+                "body_json": body_json,
+            }
+            return content_text(json.dumps(payload, ensure_ascii=False, indent=2))
+    except urllib_error.HTTPError as exc:
+        raw = exc.read() if hasattr(exc, "read") else b""
+        body_text, body_json = _decode_http_body(raw)
+        payload = {
+            "ok": False,
+            "url": url,
+            "method": method,
+            "status": exc.code,
+            "reason": exc.reason,
+            "response_headers": dict(exc.headers.items()) if exc.headers else {},
+            "body_text": body_text,
+            "body_json": body_json,
+        }
+        return content_text(json.dumps(payload, ensure_ascii=False, indent=2), is_error=True)
+    except (urllib_error.URLError, OSError, TimeoutError) as exc:
+        raise JsonRpcError(-32004, f"FilamentHub API request failed: {exc}") from exc
+
+
 def _coerce_string_list(value: Any, field_name: str) -> list[str]:
     if value is None:
         return []
@@ -721,6 +828,39 @@ TOOLS: list[dict[str, Any]] = [
         },
     },
     {
+        "name": "filamenthub_api_request",
+        "description": "Send HTTP request to FilamentHub API (for server <-> Orca integration testing).",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "method": {"type": "string", "default": "GET"},
+                "path": {
+                    "type": "string",
+                    "description": "Relative API path (e.g. /health) or absolute URL.",
+                },
+                "url": {
+                    "type": "string",
+                    "description": "Alias for absolute URL when not using 'path'.",
+                },
+                "headers": {
+                    "type": "object",
+                    "additionalProperties": {"type": "string"},
+                    "default": {},
+                },
+                "json_body": {
+                    "description": "Optional JSON body object.",
+                },
+                "use_auth": {
+                    "type": "boolean",
+                    "default": True,
+                    "description": "Attach Bearer token from FILAMENTHUB_API_TOKEN when available.",
+                },
+                "timeout_ms": {"type": "integer", "minimum": 1},
+            },
+            "additionalProperties": False,
+        },
+    },
+    {
         "name": "orca_orcaslicer_launch",
         "description": "Launch OrcaSlicer executable (dev/testing only).",
         "inputSchema": {
@@ -749,6 +889,7 @@ def run() -> int:
         "orca_bridge_command": tool_orca_bridge_command,
         "orca_bridge_wait_for": tool_orca_bridge_wait_for,
         "orca_bridge_smoke_test": tool_orca_bridge_smoke_test,
+        "filamenthub_api_request": tool_filamenthub_api_request,
         "orca_orcaslicer_launch": tool_orca_orcaslicer_launch,
     }
 

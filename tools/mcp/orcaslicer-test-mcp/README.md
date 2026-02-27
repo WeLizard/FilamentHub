@@ -9,6 +9,7 @@ Minimal MCP server for automated OrcaSlicer testing via a TCP test bridge.
   - `orca_bridge_command`
   - `orca_bridge_wait_for`
   - `orca_bridge_smoke_test`
+  - `filamenthub_api_request`
   - `orca_orcaslicer_launch`
 - Mock TCP bridge (`mock_bridge.py`) for local smoke tests without Orca changes.
 
@@ -57,6 +58,8 @@ Optional:
 ```powershell
 $env:MCP_DEBUG="1"
 $env:ORCA_BRIDGE_TIMEOUT_SECONDS="5"
+$env:FILAMENTHUB_API_BASE_URL="http://127.0.0.1:8000"
+$env:FILAMENTHUB_API_TOKEN="<optional-bearer-token>"
 ```
 
 ## Quick manual MCP smoke (stdin/stdout)
@@ -68,6 +71,15 @@ From another terminal:
 {"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"manual","version":"0"}}}
 {"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}
 {"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"orca_bridge_command","arguments":{"command":"get_status"}}}
+'@ | python tools/mcp/orcaslicer-test-mcp/server.py
+```
+
+Backend API check example:
+
+```powershell
+@'
+{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"manual","version":"0"}}}
+{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"filamenthub_api_request","arguments":{"method":"GET","path":"/health","use_auth":false}}}
 '@ | python tools/mcp/orcaslicer-test-mcp/server.py
 ```
 
@@ -89,7 +101,7 @@ Use absolute paths for your machine:
 [mcp_servers.orcaslicer_test]
 command = "python"
 args = ["F:/FilamentHub/tools/mcp/orcaslicer-test-mcp/server.py"]
-env = { ORCA_BRIDGE_HOST = "127.0.0.1", ORCA_BRIDGE_PORT = "45454" }
+env = { ORCA_BRIDGE_HOST = "127.0.0.1", ORCA_BRIDGE_PORT = "45454", FILAMENTHUB_API_BASE_URL = "http://127.0.0.1:8000" }
 ```
 
 ## One-command smoke test
