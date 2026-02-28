@@ -265,6 +265,7 @@ export interface User {
   allow_printer_profiles_export?: boolean;
   allow_print_profiles_import?: boolean;
   allow_print_profiles_export?: boolean;
+  api_key?: string | null;
   id: number;
   email: string;
   username: string;

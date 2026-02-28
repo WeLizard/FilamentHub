@@ -1,5 +1,7 @@
 """Centralized error codes for HTTP responses (i18n-ready)."""
 
+from typing import NoReturn
+
 from fastapi import HTTPException
 
 
@@ -199,6 +201,7 @@ ERR_DEVICE_NOT_OWNER = "ERR_DEVICE_NOT_OWNER"
 ERR_GATE_INDEX_INVALID = "ERR_GATE_INDEX_INVALID"          # params: {gate, max}
 ERR_GATE_STATE_NOT_FOUND = "ERR_GATE_STATE_NOT_FOUND"      # params: {gate}
 ERR_PRESET_NOT_ACCESSIBLE = "ERR_PRESET_NOT_ACCESSIBLE"    # params: {preset_id}
+ERR_SPOOL_NOT_ACCESSIBLE = "ERR_SPOOL_NOT_ACCESSIBLE"      # params: {spool_id}
 ERR_SNAPSHOT_TOO_FREQUENT = "ERR_SNAPSHOT_TOO_FREQUENT"
 
 
@@ -207,7 +210,7 @@ def raise_error(
     code: str,
     params: dict | None = None,
     headers: dict | None = None,
-) -> None:
+) -> NoReturn:
     """Raise HTTPException with structured error detail."""
     detail: dict = {"code": code}
     if params:

@@ -107,10 +107,10 @@ async def get_slot_state(
     if device is None:
         raise_error(404, ERR_DEVICE_NOT_FOUND)
 
-    states = await get_gate_states(db, device.id)  # type: ignore[union-attr]
+    states = await get_gate_states(db, device.id)
     return SlotStateResponse(
-        device_id=device.id,  # type: ignore[union-attr]
-        device_fingerprint=device.device_fingerprint,  # type: ignore[union-attr]
-        gate_count=device.gate_count,  # type: ignore[union-attr]
+        device_id=device.id,
+        device_fingerprint=device.device_fingerprint,
+        gate_count=device.gate_count,
         gates=[GateStateResponse.model_validate(s) for s in states],
     )

@@ -308,6 +308,57 @@ async def test_list_presets_filter_by_official(
 
 
 @pytest.mark.asyncio
+async def test_list_presets_search_by_name(
+    client: AsyncClient, db_session: AsyncSession
+):
+    """Test server-side search filter by preset name."""
+    brand = Brand(name="Search Brand", slug="search-brand", active=True)
+    db_session.add(brand)
+    await db_session.commit()
+    await db_session.refresh(brand)
+
+    filament = Filament(
+        brand_id=brand.id,
+        name="Search Filament",
+        slug="search-filament",
+        material_type="PLA",
+        active=True,
+    )
+    db_session.add(filament)
+    await db_session.commit()
+    await db_session.refresh(filament)
+
+    alpha = Preset(
+        filament_id=filament.id,
+        name="Alpha Speed",
+        is_official=False,
+        extruder_temp=205.0,
+        bed_temp=60.0,
+        print_speed=55.0,
+        moderation_status=PresetModerationStatus.APPROVED,
+        active=True,
+    )
+    beta = Preset(
+        filament_id=filament.id,
+        name="Beta Quality",
+        is_official=False,
+        extruder_temp=200.0,
+        bed_temp=60.0,
+        print_speed=45.0,
+        moderation_status=PresetModerationStatus.APPROVED,
+        active=True,
+    )
+    db_session.add_all([alpha, beta])
+    await db_session.commit()
+
+    response = await client.get("/api/v1/presets/?search=beta")
+    assert response.status_code == 200
+    data = response.json()
+    assert data["total"] == 1
+    assert data["items"][0]["name"] == "Beta Quality"
+
+
+@pytest.mark.asyncio
 async def test_get_preset_recommend(client: AsyncClient, db_session: AsyncSession):
     """Test getting recommended preset for a filament."""
     # Create brand and filament

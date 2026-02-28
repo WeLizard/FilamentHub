@@ -2094,7 +2094,7 @@ const SpoolsTab: React.FC<SpoolsTabProps> = ({
 }) => {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
-  const [spoolTab, setSpoolTab] = useState<'active' | 'shelf' | 'archived'>('active');
+  const [spoolTab, setSpoolTab] = useState<'shelf' | 'slots' | 'archived'>('shelf');
   const [editingSpool, setEditingSpool] = useState<UserSpool | null>(null);
   const [usingSpool, setUsingSpool] = useState<UserSpool | null>(null);
   const [busySpoolId, setBusySpoolId] = useState<number | null>(null);
@@ -2197,26 +2197,26 @@ const SpoolsTab: React.FC<SpoolsTabProps> = ({
 
   const spoolTabCounts = useMemo(
     () => ({
-      active: spools.filter((spool) => spool.state === 'active').length,
-      shelf: spools.filter((spool) => spool.state === 'shelf').length,
+      shelf: spools.filter((spool) => spool.state === 'active' || spool.state === 'shelf').length,
+      slots: printerBindings.length,
       archived: spools.filter((spool) => spool.state === 'archived' || spool.state === 'empty').length,
     }),
-    [spools],
+    [spools, printerBindings.length],
   );
 
   const filteredSpools = useMemo(() => {
-    if (spoolTab === 'active') {
-      return spools.filter((spool) => spool.state === 'active');
-    }
     if (spoolTab === 'shelf') {
-      return spools.filter((spool) => spool.state === 'shelf');
+      return spools.filter((spool) => spool.state === 'active' || spool.state === 'shelf');
     }
-    return spools.filter((spool) => spool.state === 'archived' || spool.state === 'empty');
+    if (spoolTab === 'archived') {
+      return spools.filter((spool) => spool.state === 'archived' || spool.state === 'empty');
+    }
+    return [];
   }, [spools, spoolTab]);
 
-  const spoolTabs: Array<{ key: 'active' | 'shelf' | 'archived'; label: string; count: number }> = [
-    { key: 'active', label: t('profilePage.spoolTabs.active'), count: spoolTabCounts.active },
+  const spoolTabs: Array<{ key: 'shelf' | 'slots' | 'archived'; label: string; count: number }> = [
     { key: 'shelf', label: t('profilePage.spoolTabs.shelf'), count: spoolTabCounts.shelf },
+    { key: 'slots', label: t('profilePage.spoolTabs.slots'), count: spoolTabCounts.slots },
     { key: 'archived', label: t('profilePage.spoolTabs.archived'), count: spoolTabCounts.archived },
   ];
 
@@ -2289,116 +2289,105 @@ const SpoolsTab: React.FC<SpoolsTabProps> = ({
         </div>
       )}
 
-      <div className="grid grid-cols-1 xl:grid-cols-2 gap-4 md:gap-6 items-start">
-        <div className="space-y-4 md:space-y-6">
-          {isAddOpen && (
-            <SpoolForm
-              mode="create"
-              onSaved={() => {
-                setIsAddOpen(false);
-                onRefetch();
-              }}
-              onCancel={() => setIsAddOpen(false)}
-            />
-          )}
+      <div className="space-y-4 md:space-y-6">
+        {isAddOpen && (
+          <SpoolForm
+            mode="create"
+            onSaved={() => {
+              setIsAddOpen(false);
+              onRefetch();
+            }}
+            onCancel={() => setIsAddOpen(false)}
+          />
+        )}
 
-          {editingSpool && (
-            <SpoolForm
-              mode="edit"
-              spool={editingSpool}
-              onSaved={() => {
-                setEditingSpool(null);
-                onRefetch();
-              }}
-              onCancel={() => setEditingSpool(null)}
-            />
-          )}
+        {editingSpool && (
+          <SpoolForm
+            mode="edit"
+            spool={editingSpool}
+            onSaved={() => {
+              setEditingSpool(null);
+              onRefetch();
+            }}
+            onCancel={() => setEditingSpool(null)}
+          />
+        )}
 
-          {usingSpool && (
-            <UseSpoolForm
-              spool={usingSpool}
-              onSaved={() => {
-                setUsingSpool(null);
-                onRefetch();
-              }}
-              onCancel={() => setUsingSpool(null)}
-            />
-          )}
+        {usingSpool && (
+          <UseSpoolForm
+            spool={usingSpool}
+            onSaved={() => {
+              setUsingSpool(null);
+              onRefetch();
+            }}
+            onCancel={() => setUsingSpool(null)}
+          />
+        )}
 
-          {actionError && (
-            <p className="text-xs text-red-300 bg-red-500/10 border border-red-500/30 rounded-lg px-3 py-2">{actionError}</p>
-          )}
+        {actionError && (
+          <p className="text-xs text-red-300 bg-red-500/10 border border-red-500/30 rounded-lg px-3 py-2">{actionError}</p>
+        )}
 
-          <div className="flex flex-wrap gap-2">
-            {spoolTabs.map((tab) => (
-              <button
-                key={tab.key}
-                type="button"
-                onClick={() => setSpoolTab(tab.key)}
-                className={[
-                  'inline-flex items-center gap-2 rounded-lg border px-3 py-1.5 text-sm transition-colors',
-                  spoolTab === tab.key
-                    ? 'border-purple-400/70 bg-purple-500/20 text-white'
-                    : 'border-white/15 bg-white/5 text-gray-300 hover:bg-white/10',
-                ].join(' ')}
-              >
-                <span>{tab.label}</span>
-                <span className="inline-flex min-w-[20px] items-center justify-center rounded-full bg-black/20 px-1.5 text-xs">
-                  {tab.count}
-                </span>
-              </button>
-            ))}
-          </div>
-
-          {spools.length === 0 && !isAddOpen ? (
-            <div className="text-center py-12 md:py-16">
-              <Package className="w-14 h-14 md:w-20 md:h-20 text-gray-500 mx-auto mb-4" />
-              <p className="text-gray-400 text-base md:text-lg">{t('profilePage.spoolsEmpty')}</p>
-            </div>
-          ) : filteredSpools.length === 0 ? (
-            <div className="text-center py-10 border border-white/10 rounded-2xl bg-white/5">
-              <Package className="w-10 h-10 text-gray-500 mx-auto mb-3" />
-              <p className="text-gray-400 text-sm md:text-base">
-                {t('profilePage.spoolsEmptyInTab', { tab: t(`profilePage.spoolTabs.${spoolTab}`) })}
-              </p>
-            </div>
-          ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {filteredSpools.map(spool => (
-                <SpoolCard
-                  key={spool.id}
-                  spool={spool}
-                  isBusy={busySpoolId === spool.id}
-                  onEdit={() => {
-                    setIsAddOpen(false);
-                    setUsingSpool(null);
-                    setEditingSpool(spool);
-                  }}
-                  onUse={() => {
-                    setIsAddOpen(false);
-                    setEditingSpool(null);
-                    setUsingSpool(spool);
-                  }}
-                  onDelete={() => handleDelete(spool.id)}
-                  onStateChange={(state) => handleStateChange(spool.id, state)}
-                />
-              ))}
-            </div>
-          )}
+        <div className="flex flex-wrap gap-2">
+          {spoolTabs.map((tab) => (
+            <button
+              key={tab.key}
+              type="button"
+              onClick={() => setSpoolTab(tab.key)}
+              className={[
+                'inline-flex items-center gap-2 rounded-lg border px-3 py-1.5 text-sm transition-colors',
+                spoolTab === tab.key
+                  ? 'border-purple-400/70 bg-purple-500/20 text-white'
+                  : 'border-white/15 bg-white/5 text-gray-300 hover:bg-white/10',
+              ].join(' ')}
+            >
+              <span>{tab.label}</span>
+              <span className="inline-flex min-w-[20px] items-center justify-center rounded-full bg-black/20 px-1.5 text-xs">
+                {tab.count}
+              </span>
+            </button>
+          ))}
         </div>
 
-        <div className="xl:sticky xl:top-24">
-          <div className="bg-white/10 backdrop-blur-sm border border-white/20 rounded-2xl p-4 md:p-5 space-y-4">
-            <div className="flex items-center justify-between gap-2">
-              <h4 className="text-white font-semibold text-base md:text-lg flex items-center gap-2">
-                <Layers className="w-4 h-4 text-purple-300" />
-                {t('presetSlots.title')}
-              </h4>
-              <span className="text-xs text-gray-400 hidden sm:inline">{t('presetSlots.subtitle')}</span>
-            </div>
+        {spoolTab === 'slots' ? (
+          <div className="bg-white/10 backdrop-blur-sm border border-white/20 rounded-2xl p-4 md:p-5">
             <PresetSlotsPanel compact spools={spools} printerBindings={printerBindings} />
           </div>
-        </div>
+        ) : spools.length === 0 && !isAddOpen ? (
+          <div className="text-center py-12 md:py-16">
+            <Package className="w-14 h-14 md:w-20 md:h-20 text-gray-500 mx-auto mb-4" />
+            <p className="text-gray-400 text-base md:text-lg">{t('profilePage.spoolsEmpty')}</p>
+          </div>
+        ) : filteredSpools.length === 0 ? (
+          <div className="text-center py-10 border border-white/10 rounded-2xl bg-white/5">
+            <Package className="w-10 h-10 text-gray-500 mx-auto mb-3" />
+            <p className="text-gray-400 text-sm md:text-base">
+              {t('profilePage.spoolsEmptyInTab', { tab: t(`profilePage.spoolTabs.${spoolTab}`) })}
+            </p>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {filteredSpools.map(spool => (
+              <SpoolCard
+                key={spool.id}
+                spool={spool}
+                isBusy={busySpoolId === spool.id}
+                onEdit={() => {
+                  setIsAddOpen(false);
+                  setUsingSpool(null);
+                  setEditingSpool(spool);
+                }}
+                onUse={() => {
+                  setIsAddOpen(false);
+                  setEditingSpool(null);
+                  setUsingSpool(spool);
+                }}
+                onDelete={() => handleDelete(spool.id)}
+                onStateChange={(state) => handleStateChange(spool.id, state)}
+              />
+            ))}
+          </div>
+        )}
       </div>
     </div>
   );

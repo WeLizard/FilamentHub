@@ -1,7 +1,7 @@
 """PresetGateState model — slot/gate state for preset-to-device mapping."""
 
 import enum
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import TYPE_CHECKING
 
 from sqlalchemy import (
@@ -13,7 +13,7 @@ from sqlalchemy import (
     String,
     UniqueConstraint,
 )
-from sqlalchemy.orm import Mapped, mapped_column, relationship
+from sqlalchemy.orm import Mapped, mapped_column, reconstructor, relationship
 from sqlalchemy.sql import func
 
 from app.db.base import Base
@@ -31,6 +31,22 @@ class PresetGateStateSource(str, enum.Enum):
     hh_snapshot = "hh_snapshot"
     manual_orca = "manual_orca"
     web_manual = "web_manual"
+
+
+class HHGateStatus(int, enum.Enum):
+    """Happy Hare gate status codes.
+
+    Values:
+        -1: unknown
+         0: empty
+         1: spool_loaded
+         2: in_buffer
+    """
+
+    unknown = -1
+    empty = 0
+    spool_loaded = 1
+    in_buffer = 2
 
 
 class PresetGateState(Base):
@@ -57,6 +73,8 @@ class PresetGateState(Base):
     # HH actual data (from Happy Hare snapshot)
     hh_material: Mapped[str | None] = mapped_column(String(50), nullable=True)
     hh_color_hex: Mapped[str | None] = mapped_column(String(7), nullable=True)
+    # HH status code semantics:
+    # -1=unknown, 0=empty, 1=spool_loaded, 2=in_buffer
     hh_status: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
     source: Mapped[PresetGateStateSource] = mapped_column(
@@ -86,6 +104,16 @@ class PresetGateState(Base):
     )
     preset: Mapped["Preset | None"] = relationship("Preset")
     spool: Mapped["UserSpool | None"] = relationship("UserSpool")
+
+    @staticmethod
+    def _to_aware_utc(ts: datetime) -> datetime:
+        if ts.tzinfo is None:
+            return ts.replace(tzinfo=timezone.utc)
+        return ts.astimezone(timezone.utc)
+
+    @reconstructor
+    def _normalize_datetimes_on_load(self) -> None:
+        self.source_ts = self._to_aware_utc(self.source_ts)
 
     def __repr__(self) -> str:
         return (

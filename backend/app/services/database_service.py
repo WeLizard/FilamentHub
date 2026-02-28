@@ -1,13 +1,14 @@
 """Service for database management operations."""
 
 import asyncio
+import json
 import logging
 import math
 import os
 import subprocess
 from datetime import datetime
 from pathlib import Path
-from typing import Optional
+from typing import Any, Optional
 
 from alembic import command
 from alembic.config import Config
@@ -21,6 +22,7 @@ logger = logging.getLogger(__name__)
 # Path to migrations directory
 ALEMBIC_CONFIG_PATH = Path(__file__).parent.parent.parent / "alembic.ini"
 ALEMBIC_VERSIONS_PATH = Path(__file__).parent.parent.parent / "alembic" / "versions"
+JSON_COLUMN_TYPES = {"json", "jsonb"}
 
 
 def get_alembic_config() -> Config:
@@ -1129,3 +1131,134 @@ async def get_table_data(
         "pages": pages,
     }
 
+
+def _normalize_admin_table_value(column_name: str, data_type: str, value: Any) -> Any:
+    """Normalize incoming value for dynamic admin table update."""
+    if value is None:
+        return None
+
+    lowered_type = (data_type or "").lower()
+
+    if lowered_type in JSON_COLUMN_TYPES:
+        if isinstance(value, str):
+            stripped = value.strip()
+            if stripped == "":
+                return None
+            try:
+                return json.loads(stripped)
+            except json.JSONDecodeError as exc:
+                raise ValueError(f"Invalid JSON in column '{column_name}': {exc.msg}") from exc
+        if isinstance(value, (dict, list, bool, int, float)):
+            return value
+        raise ValueError(f"Unsupported JSON value type for column '{column_name}'")
+
+    if lowered_type == "boolean" and isinstance(value, str):
+        normalized = value.strip().lower()
+        if normalized in {"true", "t", "1", "yes", "y", "on"}:
+            return True
+        if normalized in {"false", "f", "0", "no", "n", "off"}:
+            return False
+
+    return value
+
+
+async def update_table_row_service(
+    db: AsyncSession,
+    table_name: str,
+    schema_name: str,
+    primary_key: dict[str, Any],
+    update_data: dict[str, Any],
+) -> tuple[bool, str]:
+    """Update one row in an arbitrary table from admin panel."""
+    if not primary_key:
+        return False, "Primary key is required"
+    if not update_data:
+        return False, "No update data provided"
+
+    safe_table_name = table_name.replace('"', '""')
+    safe_schema_name = schema_name.replace('"', '""')
+    qualified_table = f'"{safe_schema_name}"."{safe_table_name}"'
+
+    try:
+        columns_result = await db.execute(
+            text(
+                """
+                SELECT column_name, data_type
+                FROM information_schema.columns
+                WHERE table_schema = :schema_name AND table_name = :table_name
+                """
+            ),
+            {"schema_name": schema_name, "table_name": table_name},
+        )
+        column_types = {row[0]: row[1] for row in columns_result.fetchall()}
+
+        if not column_types:
+            return False, f"Table {schema_name}.{table_name} not found"
+
+        unknown_columns = [
+            key for key in list(primary_key.keys()) + list(update_data.keys()) if key not in column_types
+        ]
+        if unknown_columns:
+            return False, f"Unknown columns: {', '.join(sorted(set(unknown_columns)))}"
+
+        normalized_primary_key: dict[str, Any] = {}
+        for key, value in primary_key.items():
+            normalized_primary_key[key] = _normalize_admin_table_value(key, column_types[key], value)
+
+        normalized_update_data: dict[str, Any] = {}
+        for key, value in update_data.items():
+            if key in primary_key:
+                continue
+            normalized_update_data[key] = _normalize_admin_table_value(key, column_types[key], value)
+
+        if not normalized_update_data:
+            return False, "No mutable fields provided for update"
+
+        set_clauses: list[str] = []
+        where_clauses: list[str] = []
+        params: dict[str, Any] = {}
+
+        for idx, (column, value) in enumerate(normalized_update_data.items()):
+            safe_column = column.replace('"', '""')
+            param_name = f"set_{idx}"
+            set_clauses.append(f'"{safe_column}" = :{param_name}')
+            params[param_name] = value
+
+        for idx, (column, value) in enumerate(normalized_primary_key.items()):
+            safe_column = column.replace('"', '""')
+            param_name = f"pk_{idx}"
+            where_clauses.append(f'"{safe_column}" = :{param_name}')
+            params[param_name] = value
+
+        update_query = text(
+            f"""
+            UPDATE {qualified_table}
+            SET {", ".join(set_clauses)}
+            WHERE {" AND ".join(where_clauses)}
+            RETURNING 1
+            """
+        )
+
+        result = await db.execute(update_query, params)
+        updated_rows = result.fetchall()
+        updated_count = len(updated_rows)
+
+        if updated_count == 0:
+            await db.rollback()
+            return False, "Row not found or no changes applied"
+
+        await db.commit()
+        return True, f"Updated {updated_count} row(s)"
+    except ValueError as exc:
+        await db.rollback()
+        return False, str(exc)
+    except Exception as exc:
+        logger.error(
+            "Failed to update row in %s.%s: %s",
+            schema_name,
+            table_name,
+            exc,
+            exc_info=True,
+        )
+        await db.rollback()
+        return False, f"Update failed: {exc}"

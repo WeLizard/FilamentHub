@@ -5,7 +5,8 @@ from __future__ import annotations
 import logging
 from datetime import datetime, timezone
 
-from sqlalchemy import select
+from sqlalchemy import and_, case, or_, select, update
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.errors import (
@@ -13,13 +14,16 @@ from app.core.errors import (
     ERR_DEVICE_NOT_OWNER,
     ERR_GATE_INDEX_INVALID,
     ERR_PRESET_NOT_ACCESSIBLE,
+    ERR_SPOOL_NOT_ACCESSIBLE,
     raise_error,
 )
+from app.models.filament import Filament
 from app.models.preset import Preset, PresetModerationStatus
 from app.models.preset_gate_state import PresetGateState, PresetGateStateSource
 from app.models.preset_usage_event import PresetUsageEvent, PresetUsageEventType
 from app.models.user import User
 from app.models.user_printer_device import UserPrinterDevice
+from app.models.user_spool import UserSpool
 from app.schemas.preset_slot_sync import (
     DeviceRegisterRequest,
     HHSnapshotRequest,
@@ -28,6 +32,13 @@ from app.schemas.preset_slot_sync import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+def _normalize_utc(ts: datetime) -> datetime:
+    """Normalize datetime to timezone-aware UTC for safe ordering comparisons."""
+    if ts.tzinfo is None:
+        return ts.replace(tzinfo=timezone.utc)
+    return ts.astimezone(timezone.utc)
 
 
 # ── Device helpers ─────────────────────────────────────────────────────────
@@ -60,7 +71,7 @@ async def require_device(
         raise_error(404, ERR_DEVICE_NOT_FOUND)
     if device.user_id != user_id:
         raise_error(403, ERR_DEVICE_NOT_OWNER)
-    return device  # type: ignore[return-value]
+    return device
 
 
 async def register_or_update_device(
@@ -130,16 +141,110 @@ async def _upsert_gate_state(
     source: PresetGateStateSource,
     source_ts: datetime,
     preset_id: int | None = None,
+    preset_id_provided: bool = True,
     spool_id: int | None = None,
+    spool_id_provided: bool = True,
     hh_material: str | None = None,
     hh_color_hex: str | None = None,
     hh_status: int | None = None,
 ) -> PresetGateState:
+    bind = db.get_bind()
+    dialect_name = bind.dialect.name if bind is not None else ""
+
+    priority = {
+        PresetGateStateSource.hh_snapshot: 3,
+        PresetGateStateSource.manual_orca: 2,
+        PresetGateStateSource.web_manual: 1,
+    }
+    source_ts = _normalize_utc(source_ts)
+
+    if dialect_name == "postgresql":
+        insert_values: dict[str, object | None] = {
+            "user_id": user_id,
+            "device_id": device_id,
+            "gate_index": gate_index,
+            "preset_id": preset_id,
+            "spool_id": spool_id,
+            "hh_material": hh_material,
+            "hh_color_hex": hh_color_hex,
+            "hh_status": hh_status,
+            "source": source,
+            "source_ts": source_ts,
+            "is_active": True,
+        }
+
+        stmt = pg_insert(PresetGateState).values(**insert_values)
+        excluded = stmt.excluded
+
+        incoming_priority = case(
+            (excluded.source == PresetGateStateSource.hh_snapshot, 3),
+            (excluded.source == PresetGateStateSource.manual_orca, 2),
+            else_=1,
+        )
+        current_priority = case(
+            (PresetGateState.source == PresetGateStateSource.hh_snapshot, 3),
+            (PresetGateState.source == PresetGateStateSource.manual_orca, 2),
+            else_=1,
+        )
+        can_override = incoming_priority >= current_priority
+        hh_ts_is_fresh = or_(
+            excluded.source != PresetGateStateSource.hh_snapshot,
+            excluded.source_ts > PresetGateState.source_ts,
+        )
+
+        update_values: dict[str, object] = {
+            "user_id": excluded.user_id,
+            "source": excluded.source,
+            "source_ts": excluded.source_ts,
+            "is_active": True,
+            "hh_material": case(
+                (excluded.source == PresetGateStateSource.hh_snapshot, excluded.hh_material),
+                else_=PresetGateState.hh_material,
+            ),
+            "hh_color_hex": case(
+                (excluded.source == PresetGateStateSource.hh_snapshot, excluded.hh_color_hex),
+                else_=PresetGateState.hh_color_hex,
+            ),
+            "hh_status": case(
+                (excluded.source == PresetGateStateSource.hh_snapshot, excluded.hh_status),
+                else_=PresetGateState.hh_status,
+            ),
+        }
+
+        if preset_id_provided:
+            update_values["preset_id"] = excluded.preset_id
+        if spool_id_provided:
+            update_values["spool_id"] = excluded.spool_id
+
+        upsert_stmt = stmt.on_conflict_do_update(
+            index_elements=[PresetGateState.device_id, PresetGateState.gate_index],
+            set_=update_values,
+            where=and_(can_override, hh_ts_is_fresh),
+        ).returning(PresetGateState)
+
+        result = await db.execute(upsert_stmt)
+        state = result.scalars().first()
+        if state is not None:
+            return state
+
+        existing_result = await db.execute(
+            select(PresetGateState).where(
+                PresetGateState.device_id == device_id,
+                PresetGateState.gate_index == gate_index,
+            )
+        )
+        existing = existing_result.scalars().first()
+        if existing is None:
+            raise RuntimeError("Failed to upsert gate state")
+        return existing
+
     result = await db.execute(
-        select(PresetGateState).where(
+        select(PresetGateState)
+        .where(
             PresetGateState.device_id == device_id,
             PresetGateState.gate_index == gate_index,
         )
+        .with_for_update()
     )
     state = result.scalars().first()
 
@@ -158,30 +263,29 @@ async def _upsert_gate_state(
             is_active=True,
         )
         db.add(state)
-    else:
-        # Priority: hh_snapshot > manual_orca > web_manual
-        # Only update HH fields if source has higher or equal priority
-        _priority = {
-            PresetGateStateSource.hh_snapshot: 3,
-            PresetGateStateSource.manual_orca: 2,
-            PresetGateStateSource.web_manual: 1,
-        }
-        if _priority[source] >= _priority[state.source]:
-            state.source = source
-            state.source_ts = source_ts
+        return state
+
+    can_override = priority[source] >= priority[state.source]
+    hh_ts_is_fresh = (
+        source != PresetGateStateSource.hh_snapshot
+        or _normalize_utc(source_ts) > _normalize_utc(state.source_ts)
+    )
+
+    if can_override and hh_ts_is_fresh:
+        state.source = source
+        state.source_ts = source_ts
 
         if source == PresetGateStateSource.hh_snapshot:
             state.hh_material = hh_material
             state.hh_color_hex = hh_color_hex
             state.hh_status = hh_status
         else:
-            if preset_id is not None or source != PresetGateStateSource.hh_snapshot:
+            if preset_id_provided:
                 state.preset_id = preset_id
-            if spool_id is not None:
+            if spool_id_provided:
                 state.spool_id = spool_id
 
-        state.is_active = True
-
+    state.is_active = True
     return state
 
 
@@ -250,35 +354,67 @@ async def handle_hh_snapshot(
         device.supports_hh = True
         device.gate_count = payload.gate_count
 
-    mismatches: list[int] = []
+    snapshot_ts = _normalize_utc(payload.snapshot_ts)
+    current_states = await get_gate_states(db, device.id)
+    state_by_gate = {s.gate_index: s for s in current_states}
+
     updated = 0
+    gate_state_updates: list[tuple[int, PresetGateState]] = []
 
     for gate_item in payload.gates:
+        prev_state = state_by_gate.get(gate_item.gate)
+        if prev_state is not None:
+            prev_ts = _normalize_utc(prev_state.source_ts)
+            if snapshot_ts <= prev_ts:
+                # Ignore out-of-order HH snapshots, keep freshest known gate state.
+                continue
+
         state = await _upsert_gate_state(
             db,
             user_id=user.id,
             device_id=device.id,
             gate_index=gate_item.gate,
             source=PresetGateStateSource.hh_snapshot,
-            source_ts=payload.snapshot_ts,
+            source_ts=snapshot_ts,
+            preset_id_provided=False,
+            spool_id_provided=False,
             hh_material=gate_item.material or None,
             hh_color_hex=gate_item.color_hex or None,
             hh_status=gate_item.status,
         )
         await db.flush()
-
-        # Check mismatch: preset assigned but HH material doesn't match
-        if state.preset_id is not None and state.hh_material:
-            # Simple mismatch check — can be extended with material mapping lookup
-            result = await db.execute(
-                select(Preset).where(Preset.id == state.preset_id)
-            )
-            preset = result.scalars().first()
-            if preset and preset.filament_id:
-                # Flag as mismatch — frontend will show warning
-                mismatches.append(gate_item.gate)
+        state_by_gate[gate_item.gate] = state
+        gate_state_updates.append((gate_item.gate, state))
 
         updated += 1
+
+    # Check mismatches in a single query (avoid N+1 by gate).
+    mismatches: list[int] = []
+    preset_ids_for_check = {
+        state.preset_id
+        for _, state in gate_state_updates
+        if state.preset_id is not None and state.hh_material
+    }
+    preset_material_types: dict[int, str | None] = {}
+    if preset_ids_for_check:
+        preset_result = await db.execute(
+            select(Preset.id, Filament.material_type)
+            .select_from(Preset)
+            .join(Filament, Preset.filament_id == Filament.id, isouter=True)
+            .where(Preset.id.in_(preset_ids_for_check))
+        )
+        preset_material_types = {
+            preset_id: material_type
+            for preset_id, material_type in preset_result.all()
+        }
+
+    for gate_index, state in gate_state_updates:
+        if state.preset_id is None or not state.hh_material:
+            continue
+        preset_material = (preset_material_types.get(state.preset_id) or "").strip().upper()
+        hh_material = state.hh_material.strip().upper()
+        if preset_material and hh_material and preset_material != hh_material:
+            mismatches.append(gate_index)
 
     await db.commit()
     await db.refresh(device)
@@ -299,10 +435,26 @@ async def _check_preset_accessible(
     preset = result.scalars().first()
     if not preset:
         raise_error(404, ERR_PRESET_NOT_ACCESSIBLE, {"preset_id": preset_id})
-    is_public = preset.moderation_status == PresetModerationStatus.approved
+    is_public = preset.moderation_status == PresetModerationStatus.APPROVED
     is_own = preset.user_id == user_id
     if not (is_public or is_own):
         raise_error(403, ERR_PRESET_NOT_ACCESSIBLE, {"preset_id": preset_id})
+
+
+async def _check_spool_accessible(
+    db: AsyncSession,
+    user_id: int,
+    spool_id: int,
+) -> None:
+    result = await db.execute(
+        select(UserSpool).where(
+            UserSpool.id == spool_id,
+            UserSpool.user_id == user_id,
+        )
+    )
+    spool = result.scalars().first()
+    if spool is None:
+        raise_error(404, ERR_SPOOL_NOT_ACCESSIBLE, {"spool_id": spool_id})
 
 
 async def handle_manual_assignment(
@@ -310,27 +462,51 @@ async def handle_manual_assignment(
     user: User,
     payload: ManualAssignmentRequest,
     source: PresetGateStateSource,
+    *,
+    device: UserPrinterDevice | None = None,
+    preset_id_provided: bool | None = None,
+    spool_id_provided: bool | None = None,
 ) -> PresetGateState:
-    device = await get_device_by_fingerprint(db, user.id, payload.device_fingerprint)
-    if device is None:
-        raise_error(404, ERR_DEVICE_NOT_FOUND)
+    resolved_device = device
+    if resolved_device is None:
+        resolved_device = await get_device_by_fingerprint(
+            db, user.id, payload.device_fingerprint
+        )
+        if resolved_device is None:
+            raise_error(404, ERR_DEVICE_NOT_FOUND)
+    elif resolved_device.user_id != user.id:
+        raise_error(403, ERR_DEVICE_NOT_OWNER)
 
-    if device.gate_count is not None and payload.gate >= device.gate_count:
-        raise_error(400, ERR_GATE_INDEX_INVALID, {"gate": payload.gate, "max": device.gate_count - 1})
+    if resolved_device.gate_count is not None and payload.gate >= resolved_device.gate_count:
+        raise_error(
+            400,
+            ERR_GATE_INDEX_INVALID,
+            {"gate": payload.gate, "max": resolved_device.gate_count - 1},
+        )
 
     if payload.preset_id is not None:
         await _check_preset_accessible(db, user.id, payload.preset_id)
+
+    if payload.spool_id is not None:
+        await _check_spool_accessible(db, user.id, payload.spool_id)
+
+    if preset_id_provided is None:
+        preset_id_provided = "preset_id" in payload.model_fields_set
+    if spool_id_provided is None:
+        spool_id_provided = "spool_id" in payload.model_fields_set
 
     now = datetime.now(timezone.utc)
     state = await _upsert_gate_state(
         db,
         user_id=user.id,
-        device_id=device.id,  # type: ignore[union-attr]
+        device_id=resolved_device.id,
         gate_index=payload.gate,
         source=source,
         source_ts=now,
         preset_id=payload.preset_id,
+        preset_id_provided=preset_id_provided,
         spool_id=payload.spool_id,
+        spool_id_provided=spool_id_provided,
     )
     await db.commit()
     await db.refresh(state)
@@ -346,6 +522,9 @@ async def handle_usage_estimate(
     payload: UsageEstimateRequest,
 ) -> PresetUsageEvent:
     device = await get_device_by_fingerprint(db, user.id, payload.device_fingerprint)
+
+    if payload.spool_id is not None:
+        await _check_spool_accessible(db, user.id, payload.spool_id)
 
     event = PresetUsageEvent(
         user_id=user.id,
@@ -373,6 +552,9 @@ async def web_assign_preset_to_slot(
     gate_index: int,
     preset_id: int | None,
     spool_id: int | None,
+    *,
+    preset_id_provided: bool = True,
+    spool_id_provided: bool = True,
 ) -> PresetGateState:
     device = await require_device(db, user.id, device_id)
 
@@ -388,7 +570,15 @@ async def web_assign_preset_to_slot(
         preset_id=preset_id,
         spool_id=spool_id,
     )
-    return await handle_manual_assignment(db, user, payload, PresetGateStateSource.web_manual)
+    return await handle_manual_assignment(
+        db,
+        user,
+        payload,
+        PresetGateStateSource.web_manual,
+        device=device,
+        preset_id_provided=preset_id_provided,
+        spool_id_provided=spool_id_provided,
+    )
 
 
 async def clear_device_slots(
@@ -397,11 +587,17 @@ async def clear_device_slots(
     device_id: int,
 ) -> int:
     device = await require_device(db, user.id, device_id)
-    states = await get_gate_states(db, device.id)
-    cleared = 0
-    for state in states:
-        state.preset_id = None
-        state.spool_id = None
-        cleared += 1
+    now = _normalize_utc(datetime.now(timezone.utc))
+    result = await db.execute(
+        update(PresetGateState)
+        .where(PresetGateState.device_id == device.id)
+        .values(
+            preset_id=None,
+            spool_id=None,
+            source=PresetGateStateSource.web_manual,
+            source_ts=now,
+            is_active=True,
+        )
+    )
     await db.commit()
-    return cleared
+    return int(result.rowcount or 0)

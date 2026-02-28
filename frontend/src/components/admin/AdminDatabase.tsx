@@ -36,6 +36,20 @@ import { adminAPI } from '../../api/client';
 import { translateApiError } from '../../utils/translateApiError';
 import { useTranslation } from 'react-i18next';
 
+const JSON_COLUMN_TYPES = new Set(['json', 'jsonb']);
+
+function stringifyForAdminCell(value: unknown): string {
+  if (value === null || value === undefined) return '';
+  if (typeof value === 'object') {
+    try {
+      return JSON.stringify(value);
+    } catch {
+      return String(value);
+    }
+  }
+  return String(value);
+}
+
 function IntegrityCheck() {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
@@ -657,6 +671,73 @@ export function AdminDatabase() {
     }) : Promise.resolve(null),
     enabled: !!selectedTable,
   });
+
+  const { data: tableStructure } = useQuery({
+    queryKey: ['admin-table-structure', selectedTable?.name, selectedTable?.schema],
+    queryFn: () => selectedTable
+      ? adminAPI.getTableStructure(selectedTable.name, selectedTable.schema)
+      : Promise.resolve(null),
+    enabled: !!selectedTable,
+    staleTime: 60_000,
+  });
+
+  const columnTypeMap = useMemo(() => {
+    const map = new Map<string, string>();
+    tableStructure?.columns.forEach((column) => {
+      map.set(column.column_name, column.data_type.toLowerCase());
+    });
+    return map;
+  }, [tableStructure]);
+
+  const isJsonColumn = (columnName: string): boolean => {
+    const dataType = columnTypeMap.get(columnName);
+    return !!dataType && JSON_COLUMN_TYPES.has(dataType);
+  };
+
+  const toEditableFieldValue = (columnName: string, value: unknown): string => {
+    if (value === null || value === undefined) return '';
+    if (isJsonColumn(columnName) || typeof value === 'object') {
+      try {
+        return JSON.stringify(value, null, 2);
+      } catch {
+        return String(value);
+      }
+    }
+    return String(value);
+  };
+
+  const parseEditableFieldValue = (
+    columnName: string,
+    rawValue: unknown,
+  ): { ok: true; value: unknown } | { ok: false; error: string } => {
+    if (rawValue === null || rawValue === undefined) return { ok: true, value: null };
+
+    if (typeof rawValue !== 'string') {
+      return { ok: true, value: rawValue };
+    }
+
+    const trimmed = rawValue.trim();
+
+    if (isJsonColumn(columnName)) {
+      if (!trimmed) {
+        return { ok: true, value: null };
+      }
+      try {
+        return { ok: true, value: JSON.parse(trimmed) };
+      } catch {
+        return {
+          ok: false,
+          error: t('adminDatabase.tableViewer.invalidJsonField', { field: columnName }),
+        };
+      }
+    }
+
+    if (trimmed.toLowerCase() === 'true') return { ok: true, value: true };
+    if (trimmed.toLowerCase() === 'false') return { ok: true, value: false };
+    if (trimmed.toLowerCase() === 'null') return { ok: true, value: null };
+
+    return { ok: true, value: rawValue };
+  };
 
   const handleTableClick = (table: { table: string; schema: string }) => {
     setSelectedTable({ name: table.table, schema: table.schema });
@@ -1587,14 +1668,18 @@ export function AdminDatabase() {
                                 className="border-b border-white/5 hover:bg-white/10 transition-colors cursor-pointer"
                                 onClick={() => {
                                   setEditingRow({ row, primaryKey });
-                                  setEditFormData({ ...row });
+                                  const normalizedFormData: Record<string, any> = {};
+                                  tableData.columns.forEach((columnName: string) => {
+                                    normalizedFormData[columnName] = toEditableFieldValue(columnName, row[columnName]);
+                                  });
+                                  setEditFormData(normalizedFormData);
                                   setEditError(null);
                                 }}
                                 title={t('adminDatabase.tableViewer.editRowHint')}
                               >
                                 {tableData.columns.map((col: string) => (
                                   <td key={col} className="py-2 px-4 text-gray-300 text-xs">
-                                    <div className="max-w-xs truncate" title={String(row[col] ?? 'NULL')}>
+                                    <div className="max-w-xs truncate" title={row[col] === null ? 'NULL' : stringifyForAdminCell(row[col])}>
                                       {row[col] === null ? (
                                         <span className="text-gray-500 italic">{t('adminDatabase.tableViewer.nullValue')}</span>
                                       ) : typeof row[col] === 'boolean' ? (
@@ -1602,7 +1687,7 @@ export function AdminDatabase() {
                                           {row[col] ? 'true' : 'false'}
                                         </span>
                                       ) : (
-                                        String(row[col])
+                                        stringifyForAdminCell(row[col])
                                       )}
                                     </div>
                                   </td>
@@ -1691,6 +1776,7 @@ export function AdminDatabase() {
                     // Пропускаем первичный ключ - его нельзя редактировать
                     const isPrimaryKey = Object.keys(editingRow.primaryKey).includes(col);
                     const value = editFormData[col];
+                    const jsonField = isJsonColumn(col);
                     
                     return (
                       <div key={col}>
@@ -1706,19 +1792,35 @@ export function AdminDatabase() {
                             className="w-full bg-white/5 border border-white/10 rounded-lg px-4 py-2 text-white text-sm disabled:opacity-50 disabled:cursor-not-allowed"
                           />
                         ) : (
-                          <input
-                            type="text"
-                            value={value ?? ''}
-                            onChange={(e) => {
-                              const newValue = e.target.value;
-                              setEditFormData(prev => ({
-                                ...prev,
-                                [col]: newValue === '' ? null : (newValue === 'true' ? true : newValue === 'false' ? false : newValue)
-                              }));
-                            }}
-                            className="w-full bg-white/5 border border-white/10 rounded-lg px-4 py-2 text-white text-sm focus:outline-none focus:border-purple-500"
-                            placeholder={value === null ? t('adminDatabase.tableViewer.nullValue') : ''}
-                          />
+                          jsonField ? (
+                            <textarea
+                              value={value ?? ''}
+                              onChange={(e) => {
+                                const newValue = e.target.value;
+                                setEditFormData(prev => ({
+                                  ...prev,
+                                  [col]: newValue,
+                                }));
+                              }}
+                              rows={8}
+                              className="w-full bg-white/5 border border-white/10 rounded-lg px-4 py-2 text-white text-sm font-mono focus:outline-none focus:border-purple-500"
+                              placeholder={t('adminDatabase.tableViewer.jsonPlaceholder')}
+                            />
+                          ) : (
+                            <input
+                              type="text"
+                              value={value ?? ''}
+                              onChange={(e) => {
+                                const newValue = e.target.value;
+                                setEditFormData(prev => ({
+                                  ...prev,
+                                  [col]: newValue,
+                                }));
+                              }}
+                              className="w-full bg-white/5 border border-white/10 rounded-lg px-4 py-2 text-white text-sm focus:outline-none focus:border-purple-500"
+                              placeholder={value === null ? t('adminDatabase.tableViewer.nullValue') : ''}
+                            />
+                          )
                         )}
                       </div>
                     );
@@ -1742,18 +1844,34 @@ export function AdminDatabase() {
                     setEditError(null);
                     if (!selectedTable) return;
                     
-                    // Убираем первичный ключ из данных для обновления
-                    const updateData = { ...editFormData };
-                    Object.keys(editingRow.primaryKey).forEach(key => {
-                      delete updateData[key];
-                    });
-                    
-                    // Убираем пустые значения
-                    Object.keys(updateData).forEach(key => {
-                      if (updateData[key] === '' || updateData[key] === null) {
-                        delete updateData[key];
+                    // Готовим payload: отправляем только реально изменённые поля
+                    const updateData: Record<string, unknown> = {};
+                    for (const [key, rawValue] of Object.entries(editFormData)) {
+                      if (Object.keys(editingRow.primaryKey).includes(key)) {
+                        continue;
                       }
-                    });
+
+                      const parsed = parseEditableFieldValue(key, rawValue);
+                      if (!parsed.ok) {
+                        setEditError(parsed.error);
+                        return;
+                      }
+
+                      const originalEditableValue = toEditableFieldValue(key, editingRow.row[key]);
+                      const parsedOriginal = parseEditableFieldValue(key, originalEditableValue);
+                      if (!parsedOriginal.ok) {
+                        setEditError(parsedOriginal.error);
+                        return;
+                      }
+
+                      const currentComparable = toEditableFieldValue(key, parsed.value);
+                      const originalComparable = toEditableFieldValue(key, parsedOriginal.value);
+                      if (currentComparable === originalComparable) {
+                        continue;
+                      }
+
+                      updateData[key] = parsed.value;
+                    }
                     
                     if (Object.keys(updateData).length === 0) {
                       setEditError(t('adminDatabase.tableViewer.noDataToUpdate'));

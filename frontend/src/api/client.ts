@@ -537,6 +537,7 @@ export const presetsAPI = {
     printer_id?: number;
     is_official?: boolean;
     user_id?: number;
+    search?: string;
   }) => {
     const response = await api.get<ListResponse<Preset>>('/presets/', { params });
     return response.data;

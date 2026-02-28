@@ -1265,6 +1265,7 @@
     "spoolTabs": {
       "active": "Active",
       "shelf": "Storage",
+      "slots": "Printer Slots",
       "archived": "Archive"
     },
     "spoolInitialWeight": "Initial weight",
@@ -3046,6 +3047,7 @@
     "ERR_GATE_INDEX_INVALID": "Invalid gate index: {{gate}} (max {{max}})",
     "ERR_GATE_STATE_NOT_FOUND": "Gate {{gate}} state not found",
     "ERR_PRESET_NOT_ACCESSIBLE": "Preset {{preset_id}} is not accessible",
+    "ERR_SPOOL_NOT_ACCESSIBLE": "Spool {{spool_id}} is not accessible",
     "ERR_SNAPSHOT_TOO_FREQUENT": "Snapshots are being sent too frequently"
   },
   "presetSlots": {

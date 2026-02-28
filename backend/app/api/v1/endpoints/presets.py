@@ -13,6 +13,7 @@ from sqlalchemy.orm import selectinload
 logger = logging.getLogger(__name__)
 
 from app.core.dependencies import get_current_active_user, get_current_brand_user, get_current_active_user_optional
+from app.core.utils import like_pattern
 from app.core.errors import (
     ERR_EXPORT_MISSING_FIELDS,
     ERR_EXPORT_PRESET_ERROR,
@@ -68,6 +69,7 @@ async def list_presets(
     printer_id: int | None = Query(None, gt=0, description="Фильтр по принтеру"),
     is_official: bool | None = Query(None),
     user_id: int | None = Query(None, gt=0),
+    search: str | None = Query(None, max_length=120),
 ) -> PresetListResponse:
     """Получить список пресетов."""
     # Build query
@@ -93,6 +95,8 @@ async def list_presets(
                 Preset.is_official == True  # Официальные всегда видимы
             )
         )
+    if search:
+        query = query.where(Preset.name.ilike(like_pattern(search), escape="\\"))
 
     # Count total
     count_query = select(func.count()).select_from(Preset)
@@ -113,6 +117,8 @@ async def list_presets(
                 Preset.is_official == True
             )
         )
+    if search:
+        count_query = count_query.where(Preset.name.ilike(like_pattern(search), escape="\\"))
 
     total_result = await db.execute(count_query)
     total = total_result.scalar_one()

@@ -177,7 +177,7 @@ function DeviceSection({ device, presetsSeedMap, spools, printerProfileName = nu
           <button
             type="button"
             onClick={handleClearAll}
-            disabled={clearing || gates.every((g) => !g.preset_id)}
+            disabled={clearing || gates.every((g) => !g.preset_id && !g.spool_id)}
             className="flex items-center gap-1.5 rounded-xl border border-white/10 bg-white/5 px-3 py-1.5 text-xs text-red-400 transition hover:bg-red-500/10 disabled:opacity-40"
           >
             {clearing ? (

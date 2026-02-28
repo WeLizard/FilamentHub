@@ -7,7 +7,7 @@ import re
 from datetime import datetime, timezone
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Header, Query, status
+from fastapi import APIRouter, Depends, Header, Query, WebSocket, WebSocketDisconnect, status
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 from sqlalchemy import select
@@ -22,10 +22,14 @@ from app.models.user import User
 from app.models.user_printer_device import UserPrinterDevice
 from app.models.user_spool import UserSpool, UserSpoolState
 
+from . import spool_compat_fields
+from .spool_compat_ws import spool_ws_manager
+
 router = APIRouter(prefix="/spool_compat", tags=["spool_compat"])
 
 _LOCATION_PATTERN = re.compile(r"^(?P<device>.+):\s*gate\s*(?P<gate>\d+)$", re.IGNORECASE)
 _LOCATION_FALLBACK_PATTERN = re.compile(r"^(?P<device>.+):\s*(?P<gate>\d+)$")
+_LOCATION_HH_PATTERN = re.compile(r"^(?P<device>.+?)\s*@\s*MMU\s+Gate\s*:\s*(?P<gate>\d+)$", re.IGNORECASE)
 _DEFAULT_FILAMENT_DENSITY = 1.24
 _DEFAULT_FILAMENT_DIAMETER = 1.75
 
@@ -61,6 +65,7 @@ class SpoolCreateBody(BaseModel):
     lot_nr: str | None = Field(default=None, max_length=100)
     comment: str | None = Field(default=None, max_length=500)
     archived: bool = Field(default=False)
+    extra: dict[str, str] | None = None
 
 
 class SpoolPatchBody(BaseModel):
@@ -74,6 +79,7 @@ class SpoolPatchBody(BaseModel):
     lot_nr: str | None = Field(default=None, max_length=100)
     comment: str | None = Field(default=None, max_length=500)
     archived: bool | None = None
+    extra: dict[str, str] | None = None
 
 
 def _err(code: int, message: str) -> JSONResponse:
@@ -188,7 +194,7 @@ async def _build_location_map(db: AsyncSession, user_id: int) -> dict[int, str]:
         if gate_state.spool_id is None or gate_state.spool_id in mapping:
             continue
         device_name = device.name or device.device_fingerprint
-        mapping[gate_state.spool_id] = f"{device_name}:Gate{gate_state.gate_index}"
+        mapping[gate_state.spool_id] = f"{device_name} @ MMU Gate:{gate_state.gate_index}"
     return mapping
 
 
@@ -214,7 +220,7 @@ def _to_spool_payload(spool: UserSpool, location_map: dict[int, str]) -> dict:
         "lot_nr": spool.lot_nr,
         "comment": spool.comment,
         "archived": spool.state == UserSpoolState.archived,
-        "extra": {},
+        "extra": spool.extra or {},
     }
 
 
@@ -286,7 +292,11 @@ async def _apply_location_assignment(
         return True, None
 
     location_clean = location.strip()
-    match = _LOCATION_PATTERN.match(location_clean) or _LOCATION_FALLBACK_PATTERN.match(location_clean)
+    match = (
+        _LOCATION_PATTERN.match(location_clean)
+        or _LOCATION_FALLBACK_PATTERN.match(location_clean)
+        or _LOCATION_HH_PATTERN.match(location_clean)
+    )
     if not match:
         return False, "Invalid location format. Expected '<device>:Gate<index>'."
 
@@ -349,6 +359,17 @@ async def _get_user_spool(db: AsyncSession, user_id: int, spool_id: int) -> User
     return result.scalar_one_or_none()
 
 
+async def _broadcast_spool_event(event_type: str, payload: dict) -> None:
+    await spool_ws_manager.broadcast(
+        {
+            "type": event_type,
+            "resource": "spool",
+            "date": _iso(datetime.now(timezone.utc)),
+            "payload": payload,
+        }
+    )
+
+
 @router.get("/sync", response_model=SpoolCompatSyncResponse)
 async def sync_spool_compat() -> SpoolCompatSyncResponse:
     """Deprecated endpoint kept for backward compatibility."""
@@ -379,7 +400,7 @@ async def spool_compat_health_scoped(api_key: str) -> dict:
 async def spool_compat_info() -> dict:
     """Compatibility info endpoint."""
     return {
-        "version": settings.VERSION,
+        "version": "0.21.0",
         "debug_mode": settings.DEBUG,
         "automatic_backups": False,
         "data_dir": "filamenthub",
@@ -396,6 +417,29 @@ async def spool_compat_info_scoped(api_key: str) -> dict:
     """Compatibility info endpoint (scoped path)."""
     _ = api_key
     return await spool_compat_info()
+
+
+@router.websocket("/v1/spool")
+async def spool_ws(websocket: WebSocket) -> None:
+    await websocket.accept()
+    spool_ws_manager.connect(websocket)
+    try:
+        while True:
+            await websocket.receive_text()
+    except WebSocketDisconnect:
+        spool_ws_manager.disconnect(websocket)
+
+
+@router.websocket("/{api_key}/v1/spool")
+async def spool_ws_scoped(websocket: WebSocket, api_key: str) -> None:
+    _ = api_key
+    await websocket.accept()
+    spool_ws_manager.connect(websocket)
+    try:
+        while True:
+            await websocket.receive_text()
+    except WebSocketDisconnect:
+        spool_ws_manager.disconnect(websocket)
 
 
 @router.get("/v1/spool")
@@ -597,6 +641,7 @@ async def create_spool(
         source="spool_compat",
         lot_nr=body.lot_nr,
         comment=body.comment,
+        extra=body.extra or {},
     )
     db.add(spool)
     await db.flush()
@@ -611,7 +656,9 @@ async def create_spool(
     if created is None:
         return _err(status.HTTP_500_INTERNAL_SERVER_ERROR, "Failed to create spool.")
     location_map = await _build_location_map(db, user.id)
-    return JSONResponse(content=_to_spool_payload(created, location_map))
+    payload = _to_spool_payload(created, location_map)
+    await _broadcast_spool_event("added", payload)
+    return JSONResponse(content=payload)
 
 
 @router.patch("/{api_key}/v1/spool/{spool_id}")
@@ -632,6 +679,8 @@ async def patch_spool(
     if body.remaining_weight is not None and body.used_weight is not None:
         return _err(status.HTTP_400_BAD_REQUEST, "Only specify either remaining_weight or used_weight.")
 
+    fields_set = body.model_fields_set
+
     if body.filament_id is not None:
         filament_result = await db.execute(select(Filament).where(Filament.id == body.filament_id))
         filament = filament_result.scalar_one_or_none()
@@ -646,27 +695,37 @@ async def patch_spool(
     if body.remaining_weight is not None:
         computed_used = max(spool.initial_weight_g - body.remaining_weight, 0.0)
         spool.used_weight_g = float(min(max(computed_used, 0.0), spool.initial_weight_g))
-    if body.lot_nr is not None:
+    if "lot_nr" in fields_set:
         spool.lot_nr = body.lot_nr
-    if body.comment is not None:
+    if "comment" in fields_set:
         spool.comment = body.comment
     if body.archived is not None:
         spool.state = UserSpoolState.archived if body.archived else UserSpoolState.active
     if spool.used_weight_g >= spool.initial_weight_g:
         spool.state = UserSpoolState.empty
 
-    if body.location is not None:
+    if "location" in fields_set:
         ok, err = await _apply_location_assignment(db, user, spool, body.location)
         if not ok:
             await db.rollback()
             return _err(status.HTTP_400_BAD_REQUEST, err or "Failed to assign spool location.")
+
+    if "extra" in fields_set:
+        if body.extra is None:
+            spool.extra = {}
+        else:
+            merged_extra = dict(spool.extra or {})
+            merged_extra.update(body.extra)
+            spool.extra = merged_extra
 
     await db.commit()
     updated = await _get_user_spool(db, user.id, spool.id)
     if updated is None:
         return _err(status.HTTP_500_INTERNAL_SERVER_ERROR, "Failed to update spool.")
     location_map = await _build_location_map(db, user.id)
-    return JSONResponse(content=_to_spool_payload(updated, location_map))
+    payload = _to_spool_payload(updated, location_map)
+    await _broadcast_spool_event("updated", payload)
+    return JSONResponse(content=payload)
 
 
 @router.put("/{api_key}/v1/spool/{spool_id}/use")
@@ -707,7 +766,9 @@ async def use_spool(
     if updated is None:
         return _err(status.HTTP_500_INTERNAL_SERVER_ERROR, "Failed to use spool.")
     location_map = await _build_location_map(db, user.id)
-    return JSONResponse(content=_to_spool_payload(updated, location_map))
+    payload = _to_spool_payload(updated, location_map)
+    await _broadcast_spool_event("updated", payload)
+    return JSONResponse(content=payload)
 
 
 @router.put("/{api_key}/v1/spool/{spool_id}/measure")
@@ -738,7 +799,9 @@ async def measure_spool(
     if updated is None:
         return _err(status.HTTP_500_INTERNAL_SERVER_ERROR, "Failed to update spool measurement.")
     location_map = await _build_location_map(db, user.id)
-    return JSONResponse(content=_to_spool_payload(updated, location_map))
+    payload = _to_spool_payload(updated, location_map)
+    await _broadcast_spool_event("updated", payload)
+    return JSONResponse(content=payload)
 
 
 @router.delete("/{api_key}/v1/spool/{spool_id}")
@@ -768,4 +831,8 @@ async def delete_spool(
 
     await db.delete(spool)
     await db.commit()
+    await _broadcast_spool_event("deleted", {"id": spool_id})
     return JSONResponse(content={"message": "Success!"})
+
+
+router.include_router(spool_compat_fields.router)

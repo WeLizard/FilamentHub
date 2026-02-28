@@ -42,6 +42,8 @@ async def assign_preset_to_slot(
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> GateStateResponse:
     """Assign (or clear) a preset on a specific gate (web manual source)."""
+    preset_id_provided = "preset_id" in payload.model_fields_set
+    spool_id_provided = "spool_id" in payload.model_fields_set
     state = await web_assign_preset_to_slot(
         db,
         current_user,
@@ -49,6 +51,8 @@ async def assign_preset_to_slot(
         gate_index=gate_index,
         preset_id=payload.preset_id,
         spool_id=payload.spool_id,
+        preset_id_provided=preset_id_provided,
+        spool_id_provided=spool_id_provided,
     )
     return GateStateResponse.model_validate(state)
 

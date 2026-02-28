@@ -6,7 +6,7 @@ from datetime import datetime, timezone
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload, joinedload
+from sqlalchemy.orm import joinedload
 
 from app.core.errors import ERR_ACCESS_DENIED, ERR_FILAMENT_NOT_FOUND, raise_error
 from app.models.filament import Filament
@@ -21,7 +21,7 @@ async def _load_filament_info(db: AsyncSession, filament_id: int) -> Filament | 
         .options(joinedload(Filament.brand))
         .where(Filament.id == filament_id)
     )
-    return result.scalars().first()
+    return result.unique().scalars().first()
 
 
 def _build_response(spool: UserSpool, filament: Filament | None) -> SpoolResponse:
@@ -71,7 +71,7 @@ async def list_spools(db: AsyncSession, user_id: int) -> list[SpoolResponse]:
             .options(joinedload(Filament.brand))
             .where(Filament.id.in_(fil_ids))
         )
-        filaments = {f.id: f for f in fil_result.scalars().all()}
+        filaments = {f.id: f for f in fil_result.unique().scalars().all()}
 
     return [_build_response(s, filaments.get(s.filament_id) if s.filament_id else None) for s in spools]
 
@@ -117,10 +117,13 @@ async def update_spool(
     if spool is None or spool.user_id != user.id:
         raise_error(404, ERR_ACCESS_DENIED)
 
-    if payload.filament_id is not None:
-        filament = await _load_filament_info(db, payload.filament_id)
-        if filament is None:
-            raise_error(404, ERR_FILAMENT_NOT_FOUND)
+    if "filament_id" in payload.model_fields_set:
+        if payload.filament_id is not None:
+            filament = await _load_filament_info(db, payload.filament_id)
+            if filament is None:
+                raise_error(404, ERR_FILAMENT_NOT_FOUND)
+        else:
+            filament = None
         spool.filament_id = payload.filament_id
     else:
         filament = await _load_filament_info(db, spool.filament_id) if spool.filament_id else None
@@ -131,9 +134,9 @@ async def update_spool(
         spool.used_weight_g = payload.used_weight_g
     if payload.state is not None:
         spool.state = UserSpoolState(payload.state)
-    if payload.lot_nr is not None:
+    if "lot_nr" in payload.model_fields_set:
         spool.lot_nr = payload.lot_nr
-    if payload.comment is not None:
+    if "comment" in payload.model_fields_set:
         spool.comment = payload.comment
 
     await db.commit()

@@ -82,6 +82,7 @@ from app.schemas.database import (
     TableStructureResponse,
     TableDataRequest,
     TableDataResponse,
+    TableDataUpdateRequest,
 )
 from app.schemas.preset import PresetResponse
 from app.schemas.printer import PrinterCreate, PrinterListResponse, PrinterResponse, PrinterUpdate
@@ -1441,7 +1442,7 @@ async def get_table_data(
 @router.patch("/database/tables/{table_name}/data", response_model=dict)
 async def update_table_data(
     table_name: str,
-    data: dict,
+    request: TableDataUpdateRequest,
     admin: Annotated[User, Depends(get_current_admin_user)],
     db: Annotated[AsyncSession, Depends(get_db)],
     schema_name: str = Query("public", description="Имя схемы"),
@@ -1450,9 +1451,8 @@ async def update_table_data(
     from app.services.database_service import update_table_row_service as update_table_row_service_func
     
     try:
-        # Ожидаем формат: { "primary_key": {...}, "data": {...} }
-        primary_key = data.get("primary_key", {})
-        update_data = data.get("data", {})
+        primary_key = request.primary_key
+        update_data = request.data
         
         if not primary_key:
             raise_error(status.HTTP_400_BAD_REQUEST, ERR_PRIMARY_KEY_REQUIRED)

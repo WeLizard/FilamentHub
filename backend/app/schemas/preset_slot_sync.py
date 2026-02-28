@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 from datetime import datetime
+import enum
 from typing import Any
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 
 # ── Device schemas ─────────────────────────────────────────────────────────
@@ -48,6 +49,18 @@ class DeviceStateResponse(BaseModel):
 # ── Gate state schemas ─────────────────────────────────────────────────────
 
 
+class HHGateStatus(int, enum.Enum):
+    """Happy Hare gate status values.
+
+    -1 = unknown, 0 = empty, 1 = spool_loaded, 2 = in_buffer.
+    """
+
+    unknown = -1
+    empty = 0
+    spool_loaded = 1
+    in_buffer = 2
+
+
 class GateStateResponse(BaseModel):
     """Current state of a single gate/slot."""
 
@@ -57,7 +70,10 @@ class GateStateResponse(BaseModel):
     spool_id: int | None
     hh_material: str | None
     hh_color_hex: str | None
-    hh_status: int | None
+    hh_status: int | None = Field(
+        default=None,
+        description="Happy Hare gate status: -1=unknown, 0=empty, 1=spool_loaded, 2=in_buffer",
+    )
     source: str
     source_ts: datetime
     is_active: bool
@@ -97,7 +113,10 @@ class HHGateItem(BaseModel):
     """A single gate entry from a Happy Hare snapshot."""
 
     gate: int = Field(..., ge=0)
-    status: int = Field(..., ge=-1, le=2)
+    status: HHGateStatus = Field(
+        ...,
+        description="Happy Hare gate status: -1=unknown, 0=empty, 1=spool_loaded, 2=in_buffer",
+    )
     material: str = Field(default="", max_length=50)
     color_hex: str = Field(default="", max_length=7)
     temperature: int = Field(default=0, ge=0)
@@ -125,6 +144,16 @@ class HHSnapshotRequest(BaseModel):
                 raise ValueError(f"Duplicate gate index: {g.gate}")
             seen.add(g.gate)
         return gates
+
+    @model_validator(mode="after")
+    def gate_indices_within_gate_count(self) -> "HHSnapshotRequest":
+        max_gate = self.gate_count - 1
+        for gate_item in self.gates:
+            if gate_item.gate > max_gate:
+                raise ValueError(
+                    f"Gate index {gate_item.gate} is out of range for gate_count={self.gate_count}"
+                )
+        return self
 
 
 class HHSnapshotResponse(BaseModel):

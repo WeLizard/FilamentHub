@@ -65,17 +65,18 @@ export function PresetAssignModal({
 
   const { data: presetsPage, isLoading: loadingPresets } = useQuery({
     queryKey: ['presets-for-assign', debouncedSearch],
-    queryFn: () => presetsAPI.list({ page: 1, size: 50, active_only: true }),
+    queryFn: () =>
+      presetsAPI.list({
+        page: 1,
+        size: 50,
+        active_only: true,
+        search: debouncedSearch || undefined,
+      }),
     enabled: isOpen,
     staleTime: 30_000,
   });
 
-  const allPresets = presetsPage?.items ?? [];
-  const filtered = debouncedSearch
-    ? allPresets.filter((p) =>
-        p.name.toLowerCase().includes(debouncedSearch.toLowerCase())
-      )
-    : allPresets;
+  const filtered = presetsPage?.items ?? [];
 
   // Only active spools are useful to assign
   const activeSpools = spools.filter((s) => s.state === 'active');
@@ -91,7 +92,6 @@ export function PresetAssignModal({
       await queryClient.invalidateQueries({ queryKey: ['gates', deviceId] });
       toast.success(t('presetSlots.modal.assigned', { gate: gateIndex }));
       onAssigned();
-      onClose();
     } catch (err: any) {
       toast.error(translateApiError(t, err?.response?.data?.detail, t('common.error')));
     } finally {
@@ -106,7 +106,6 @@ export function PresetAssignModal({
       await queryClient.invalidateQueries({ queryKey: ['gates', deviceId] });
       toast.success(t('presetSlots.modal.assigned', { gate: gateIndex }));
       onAssigned();
-      onClose();
     } catch (err: any) {
       toast.error(translateApiError(t, err?.response?.data?.detail, t('common.error')));
     } finally {

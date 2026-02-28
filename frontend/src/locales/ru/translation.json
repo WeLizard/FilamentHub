@@ -1287,6 +1287,7 @@
     "spoolTabs": {
       "active": "Активные",
       "shelf": "В запасе",
+      "slots": "Слоты принтера",
       "archived": "Архив"
     },
     "spoolInitialWeight": "Начальный вес",
@@ -3068,6 +3069,7 @@
     "ERR_GATE_INDEX_INVALID": "Неверный индекс гейта: {{gate}} (макс. {{max}})",
     "ERR_GATE_STATE_NOT_FOUND": "Состояние гейта {{gate}} не найдено",
     "ERR_PRESET_NOT_ACCESSIBLE": "Пресет {{preset_id}} недоступен",
+    "ERR_SPOOL_NOT_ACCESSIBLE": "Катушка {{spool_id}} недоступна",
     "ERR_SNAPSHOT_TOO_FREQUENT": "Снимки отправляются слишком часто"
   },
   "presetSlots": {
