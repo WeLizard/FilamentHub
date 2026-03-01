@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import logging
 import math
 import re
@@ -283,8 +284,10 @@ def _to_spool_payload(
     extra: dict = dict(spool.extra or {})
     if gate_meta_map and spool.id in gate_meta_map:
         device_name, gate_index = gate_meta_map[spool.id]
-        extra.setdefault("printer_name", device_name)
-        extra.setdefault("mmu_gate_map", gate_index)
+        # HH reads: json.loads(extra.get('printer_name', '""')) and int(extra.get('mmu_gate_map', -1))
+        # So printer_name must be JSON-encoded string ('"voron"'), mmu_gate_map must be string int ('0')
+        extra.setdefault("printer_name", json.dumps(device_name))
+        extra.setdefault("mmu_gate_map", json.dumps(gate_index))
 
     return {
         "id": spool.id,
