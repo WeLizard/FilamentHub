@@ -2292,6 +2292,7 @@ const SpoolsTab: React.FC<SpoolsTabProps> = ({
   const [actionError, setActionError] = useState<string | null>(null);
   const [setupError, setSetupError] = useState<string | null>(null);
   const [isSetupOpen, setIsSetupOpen] = useState(false);
+  const [isHelpOpen, setIsHelpOpen] = useState(false);
   const [generatedApiKey, setGeneratedApiKey] = useState<string | null>(initialApiKey);
   const [isGeneratingApiKey, setIsGeneratingApiKey] = useState(false);
   const [copiedField, setCopiedField] = useState<'config' | null>(null);
@@ -2414,7 +2415,21 @@ const SpoolsTab: React.FC<SpoolsTabProps> = ({
   return (
     <div className="space-y-4 md:space-y-6">
       <div className="flex items-center justify-between">
-        <h3 className="text-lg md:text-2xl font-bold text-white">{t('profilePage.spoolsTitle')}</h3>
+        <div className="flex items-center gap-2">
+          <h3 className="text-lg md:text-2xl font-bold text-white">{t('profilePage.spoolsTitle')}</h3>
+          <button
+            type="button"
+            onClick={() => setIsHelpOpen((prev) => !prev)}
+            className={`flex items-center justify-center w-6 h-6 rounded-full border transition-colors ${
+              isHelpOpen
+                ? 'border-purple-500 bg-purple-500/20 text-purple-300'
+                : 'border-white/20 text-gray-400 hover:border-white/40 hover:text-gray-200'
+            }`}
+            title={t('profilePage.spoolHelp.toggle')}
+          >
+            <HelpCircle className="w-3.5 h-3.5" />
+          </button>
+        </div>
         <div className="flex items-center gap-2">
           <button
             onClick={() => setIsSetupOpen((prev) => !prev)}
@@ -2439,6 +2454,18 @@ const SpoolsTab: React.FC<SpoolsTabProps> = ({
           </button>
         </div>
       </div>
+
+      {isHelpOpen && (
+        <div className="bg-blue-500/10 border border-blue-500/20 rounded-2xl p-4 text-sm text-gray-300 space-y-2">
+          <p className="font-semibold text-white">{t('profilePage.spoolHelp.title')}</p>
+          <ul className="space-y-1 list-disc list-inside text-gray-400">
+            <li>{t('profilePage.spoolHelp.line1')}</li>
+            <li>{t('profilePage.spoolHelp.line2')}</li>
+            <li>{t('profilePage.spoolHelp.line3')}</li>
+            <li>{t('profilePage.spoolHelp.line4')}</li>
+          </ul>
+        </div>
+      )}
 
       {isSetupOpen && (
         <div className="bg-white/10 backdrop-blur-sm border border-white/20 rounded-2xl p-4 md:p-5 space-y-4">

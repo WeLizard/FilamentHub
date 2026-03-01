@@ -1339,6 +1339,14 @@
       "invalidUsedWeight": "Used weight cannot be negative.",
       "usedGreaterThanInitial": "Used weight cannot exceed initial weight."
     },
+    "spoolHelp": {
+      "toggle": "How does this work?",
+      "title": "My Filaments — how it works",
+      "line1": "Add a spool manually or via QR code — the system will match the material from the catalog.",
+      "line2": "Spool price is calculated automatically: price per kg × initial weight.",
+      "line3": "If you have Happy Hare MMU configured — after adding a spool you can immediately assign it to a gate slot.",
+      "line4": "Gate assignment is done from the web UI; Happy Hare sees it via the Spoolman-compatible API."
+    },
     "spoolSetup": {
       "title": "Moonraker / Happy Hare setup",
       "description": "Copy the compatibility URL and paste it into the [spoolman] section of your Moonraker/Happy Hare config.",
