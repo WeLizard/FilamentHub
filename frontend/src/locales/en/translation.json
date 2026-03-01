@@ -1280,6 +1280,15 @@
       "empty": "Empty"
     },
     "spoolNoFilament": "No catalog link",
+    "spoolGateStep": {
+      "title": "Spool added! Where to put it?",
+      "hint": "Assign the spool to an MMU gate slot, or skip — you can assign it later from the gate map.",
+      "deviceLabel": "MMU device",
+      "selectDevice": "Select device",
+      "gateLabel": "Gate slot",
+      "assign": "Assign",
+      "skip": "Put on shelf (skip)"
+    },
     "spoolAddModal": {
       "title": "Add spool",
       "filamentLabel": "Filament from my presets",

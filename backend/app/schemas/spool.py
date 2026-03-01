@@ -44,6 +44,7 @@ class SpoolResponse(BaseModel):
     created_at: datetime
     updated_at: datetime
     last_used_at: datetime | None
+    extra: dict | None
 
     model_config = {"from_attributes": True}
 

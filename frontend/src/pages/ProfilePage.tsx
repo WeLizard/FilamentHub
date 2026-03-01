@@ -50,8 +50,8 @@ import {
 import { Printer3DIcon } from '../components/icons/Printer3DIcon';
 import { useAuth } from '../contexts/AuthContext';
 import { useHeaderVisible } from '../hooks/useHeaderVisible';
-import { presetsAPI, filamentsAPI, brandsAPI, savedPresetsAPI, filamentReviewsAPI, calculatorAPI, printerProfilesAPI, printProfilesAPI, authAPI, spoolsAPI, qrAPI } from '../api/client';
-import type { UserSpool, SpoolState } from '../api/client';
+import { presetsAPI, filamentsAPI, brandsAPI, savedPresetsAPI, filamentReviewsAPI, calculatorAPI, printerProfilesAPI, printProfilesAPI, authAPI, spoolsAPI, qrAPI, devicesAPI, presetSlotsAPI } from '../api/client';
+import type { UserSpool, SpoolState, UserPrinterDevice } from '../api/client';
 import { SpoolIcon } from '../components/icons/SpoolIcon';
 import api from '../api/client';
 import { translateApiError } from '../utils/translateApiError';
@@ -1487,6 +1487,27 @@ const SpoolCard: React.FC<SpoolCardProps> = ({ spool, isBusy = false, onEdit, on
           </p>
         )}
 
+        {/* MMU gate badge */}
+        {(() => {
+          const printerNameRaw = spool.extra?.printer_name;
+          const gateRaw = spool.extra?.mmu_gate_map;
+          if (!printerNameRaw || gateRaw == null) return null;
+          try {
+            const printerName = JSON.parse(printerNameRaw) as string;
+            const gate = typeof gateRaw === 'string' ? parseInt(gateRaw, 10) : Number(gateRaw);
+            if (!printerName || gate < 0) return null;
+            return (
+              <span className="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded bg-purple-500/20 border border-purple-500/30 text-purple-300 w-fit">
+                <span className="font-mono">MMU</span>
+                <span className="text-purple-400">{printerName}</span>
+                <span>#{gate}</span>
+              </span>
+            );
+          } catch {
+            return null;
+          }
+        })()}
+
         <div className="grid grid-cols-2 gap-2 pt-1">
           <button
             type="button"
@@ -1564,6 +1585,11 @@ const SpoolForm: React.FC<SpoolFormProps> = ({ mode, spool, onSaved, onCancel })
   const isCameraScanningRef = useRef(false);
   const [errorText, setErrorText] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [gateStep, setGateStep] = useState(false);
+  const [createdSpool, setCreatedSpool] = useState<UserSpool | null>(null);
+  const [selectedDeviceId, setSelectedDeviceId] = useState<string>('');
+  const [selectedGate, setSelectedGate] = useState<string>('');
+  const [assigning, setAssigning] = useState(false);
 
   const { data: filamentsData } = useQuery({
     queryKey: ['spool-form-filaments'],
@@ -1589,6 +1615,17 @@ const SpoolForm: React.FC<SpoolFormProps> = ({ mode, spool, onSaved, onCancel })
     },
     enabled: !!user?.id,
   });
+
+  const { data: allDevices = [] } = useQuery<UserPrinterDevice[]>({
+    queryKey: ['spool-form-devices'],
+    queryFn: () => devicesAPI.list(),
+    enabled: mode === 'create',
+  });
+
+  const hhDevices = useMemo(
+    () => allDevices.filter((d) => d.supports_hh && d.gate_count && d.gate_count > 0),
+    [allDevices],
+  );
 
   const filamentOptions = useMemo(() => {
     const allowedIds = new Set(presetFilamentIds);
@@ -1867,11 +1904,19 @@ const SpoolForm: React.FC<SpoolFormProps> = ({ mode, spool, onSaved, onCancel })
       };
       if (mode === 'edit' && spool) {
         await spoolsAPI.update(spool.id, payload);
+        queryClient.invalidateQueries({ queryKey: ['user-spools'] });
+        onSaved();
       } else {
-        await spoolsAPI.create(payload);
+        const newSpool = await spoolsAPI.create(payload);
+        queryClient.invalidateQueries({ queryKey: ['user-spools'] });
+        if (hhDevices.length > 0) {
+          setCreatedSpool(newSpool);
+          if (hhDevices.length === 1) setSelectedDeviceId(String(hhDevices[0].id));
+          setGateStep(true);
+        } else {
+          onSaved();
+        }
       }
-      queryClient.invalidateQueries({ queryKey: ['user-spools'] });
-      onSaved();
     } catch (error: any) {
       setErrorText(translateApiError(error, t));
     } finally {
@@ -1879,8 +1924,97 @@ const SpoolForm: React.FC<SpoolFormProps> = ({ mode, spool, onSaved, onCancel })
     }
   };
 
+  const handleAssignToGate = async () => {
+    if (!createdSpool || !selectedDeviceId || selectedGate === '') return;
+    setAssigning(true);
+    setErrorText(null);
+    try {
+      await presetSlotsAPI.assign(Number(selectedDeviceId), Number(selectedGate), { spool_id: createdSpool.id });
+      queryClient.invalidateQueries({ queryKey: ['user-spools'] });
+      onSaved();
+    } catch (err: any) {
+      setErrorText(translateApiError(err, t));
+      setAssigning(false);
+    }
+  };
+
   const inputCls = 'w-full bg-white/5 border border-white/20 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-purple-500 placeholder-gray-500';
   const labelCls = 'block text-xs text-gray-400 mb-1';
+
+  if (gateStep && createdSpool) {
+    const selectedDevice = hhDevices.find((d) => d.id === Number(selectedDeviceId));
+    const gateCount = selectedDevice?.gate_count ?? 0;
+    return (
+      <div className="bg-white/10 backdrop-blur-sm border border-white/20 rounded-2xl p-4 md:p-5 space-y-4 max-w-2xl mx-auto">
+        <div className="flex items-center gap-2">
+          <CheckCircle className="w-5 h-5 text-green-400 flex-shrink-0" />
+          <h3 className="text-white font-semibold text-base">{t('profilePage.spoolGateStep.title')}</h3>
+        </div>
+        <p className="text-gray-400 text-sm">{t('profilePage.spoolGateStep.hint')}</p>
+
+        <div className="space-y-3">
+          {hhDevices.length > 1 && (
+            <div>
+              <label className={labelCls}>{t('profilePage.spoolGateStep.deviceLabel')}</label>
+              <select
+                value={selectedDeviceId}
+                onChange={(e) => { setSelectedDeviceId(e.target.value); setSelectedGate(''); }}
+                className={inputCls}
+              >
+                <option value="">{t('profilePage.spoolGateStep.selectDevice')}</option>
+                {hhDevices.map((d) => (
+                  <option key={d.id} value={d.id}>{d.name}</option>
+                ))}
+              </select>
+            </div>
+          )}
+
+          {selectedDeviceId && gateCount > 0 && (
+            <div>
+              <label className={labelCls}>{t('profilePage.spoolGateStep.gateLabel')}</label>
+              <div className="flex flex-wrap gap-2">
+                {Array.from({ length: gateCount }, (_, i) => (
+                  <button
+                    key={i}
+                    type="button"
+                    onClick={() => setSelectedGate(String(i))}
+                    className={`w-10 h-10 rounded-lg border text-sm font-mono font-semibold transition-colors ${
+                      selectedGate === String(i)
+                        ? 'border-purple-500 bg-purple-500/30 text-purple-200'
+                        : 'border-white/20 bg-white/5 text-gray-300 hover:bg-white/10'
+                    }`}
+                  >
+                    {i}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+
+        {errorText && <p className="text-red-400 text-xs">{errorText}</p>}
+
+        <div className="flex gap-2 pt-1">
+          <button
+            type="button"
+            onClick={handleAssignToGate}
+            disabled={assigning || !selectedDeviceId || selectedGate === ''}
+            className="inline-flex items-center justify-center gap-1.5 px-4 py-2 rounded-lg bg-purple-600 hover:bg-purple-500 text-white text-sm font-medium disabled:opacity-50 transition-colors"
+          >
+            {assigning && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+            {t('profilePage.spoolGateStep.assign')}
+          </button>
+          <button
+            type="button"
+            onClick={onSaved}
+            className="px-4 py-2 rounded-lg border border-white/20 text-gray-300 text-sm hover:bg-white/10 transition-colors"
+          >
+            {t('profilePage.spoolGateStep.skip')}
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <form onSubmit={handleSubmit} className="bg-white/10 backdrop-blur-sm border border-white/20 rounded-2xl p-4 md:p-5 space-y-4 max-w-2xl mx-auto">
