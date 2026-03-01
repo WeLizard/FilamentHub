@@ -1699,6 +1699,12 @@ export interface SlotAssignPayload {
   spool_id?: number | null;
 }
 
+export interface DeviceUpdatePayload {
+  name?: string | null;
+  gate_count?: number | null;
+  supports_hh?: boolean | null;
+}
+
 export const devicesAPI = {
   list: async (): Promise<UserPrinterDevice[]> => {
     const response = await api.get<UserPrinterDevice[]>('/devices');
@@ -1707,6 +1713,11 @@ export const devicesAPI = {
 
   register: async (payload: DeviceRegisterPayload): Promise<UserPrinterDevice> => {
     const response = await api.post<UserPrinterDevice>('/devices/register-or-update', payload);
+    return response.data;
+  },
+
+  update: async (id: number, payload: DeviceUpdatePayload): Promise<UserPrinterDevice> => {
+    const response = await api.patch<UserPrinterDevice>(`/devices/${id}`, payload);
     return response.data;
   },
 

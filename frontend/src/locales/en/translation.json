@@ -1261,11 +1261,12 @@
     "spoolsTitle": "My Filaments",
     "spoolsEmpty": "You have no spools yet. Add your first one!",
     "spoolsEmptyInTab": "No spools in “{{tab}}” yet",
+    "spoolsActiveEmpty": "No active spools",
     "spoolsAdd": "Add spool",
     "spoolTabs": {
       "active": "Active",
       "shelf": "Storage",
-      "slots": "Printer Slots",
+      "slots": "Slots (devices)",
       "archived": "Archive"
     },
     "spoolInitialWeight": "Initial weight",
@@ -3100,6 +3101,15 @@
       "clear": "Clear slot",
       "cancel": "Cancel",
       "assigned": "Preset assigned to gate {{gate}}"
+    },
+    "edit": {
+      "button": "Settings",
+      "name": "Device name",
+      "gateCount": "Gate count",
+      "gateCountHint": "1–256, leave empty for auto-detect",
+      "save": "Save",
+      "cancel": "Cancel",
+      "saved": "Device settings saved"
     }
   }
 }

@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
-import { Cpu, Clock, Layers, Zap, Trash2, Loader2, Wifi, WifiOff, AlertTriangle } from 'lucide-react';
+import { Cpu, Clock, Layers, Zap, Trash2, Loader2, Wifi, WifiOff, AlertTriangle, Settings2 } from 'lucide-react';
 import { devicesAPI, presetSlotsAPI, presetsAPI, spoolsAPI } from '../../api/client';
 import type { GateState, UserPrinterDevice, UserSpool } from '../../api/client';
 import type { Preset } from '../../types/api';
@@ -47,7 +47,31 @@ function DeviceSection({ device, presetsSeedMap, spools, printerProfileName = nu
   const { t, i18n } = useTranslation();
   const queryClient = useQueryClient();
   const [clearing, setClearing] = useState(false);
+  const [editOpen, setEditOpen] = useState(false);
+  const [editName, setEditName] = useState(device.name);
+  const [editGateCount, setEditGateCount] = useState<string>(device.gate_count?.toString() ?? '');
   const connectionState = getDeviceConnectionState(device.last_seen_at);
+
+  const updateMutation = useMutation({
+    mutationFn: (payload: { name?: string; gate_count?: number | null }) =>
+      devicesAPI.update(device.id, payload),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['devices'] });
+      toast.success(t('presetSlots.edit.saved'));
+      setEditOpen(false);
+    },
+    onError: (err: any) => {
+      toast.error(translateApiError(t, err?.response?.data?.detail, t('common.error')));
+    },
+  });
+
+  const handleEditSave = () => {
+    const gateCountNum = editGateCount.trim() === '' ? null : parseInt(editGateCount, 10);
+    updateMutation.mutate({
+      name: editName.trim() || device.name,
+      gate_count: gateCountNum,
+    });
+  };
 
   const { data: gates = [], isLoading } = useQuery({
     queryKey: ['gates', device.id],
@@ -187,8 +211,69 @@ function DeviceSection({ device, presetsSeedMap, spools, printerProfileName = nu
             )}
             {t('presetSlots.clearAll')}
           </button>
+
+          <button
+            type="button"
+            onClick={() => {
+              setEditName(device.name);
+              setEditGateCount(device.gate_count?.toString() ?? '');
+              setEditOpen((v) => !v);
+            }}
+            className="flex items-center gap-1.5 rounded-xl border border-white/10 bg-white/5 px-3 py-1.5 text-xs text-gray-300 transition hover:bg-white/10"
+          >
+            <Settings2 className="h-3.5 w-3.5" />
+            {t('presetSlots.edit.button')}
+          </button>
         </div>
       </div>
+
+      {editOpen && (
+        <div className="mb-4 rounded-xl border border-white/10 bg-white/5 p-4">
+          <div className="flex flex-wrap gap-3">
+            <div className="flex-1 min-w-[160px]">
+              <label className="mb-1 block text-xs text-gray-400">{t('presetSlots.edit.name')}</label>
+              <input
+                type="text"
+                value={editName}
+                onChange={(e) => setEditName(e.target.value)}
+                maxLength={200}
+                className="w-full rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 text-sm text-white placeholder-gray-600 focus:border-purple-500 focus:outline-none"
+              />
+            </div>
+            <div className="w-36">
+              <label className="mb-1 block text-xs text-gray-400">{t('presetSlots.edit.gateCount')}</label>
+              <input
+                type="number"
+                value={editGateCount}
+                onChange={(e) => setEditGateCount(e.target.value)}
+                min={1}
+                max={256}
+                placeholder="auto"
+                className="w-full rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 text-sm text-white placeholder-gray-600 focus:border-purple-500 focus:outline-none"
+              />
+              <p className="mt-0.5 text-[10px] text-gray-600">{t('presetSlots.edit.gateCountHint')}</p>
+            </div>
+          </div>
+          <div className="mt-3 flex gap-2">
+            <button
+              type="button"
+              onClick={handleEditSave}
+              disabled={updateMutation.isPending}
+              className="flex items-center gap-1.5 rounded-lg bg-purple-600 px-4 py-1.5 text-xs font-medium text-white transition hover:bg-purple-500 disabled:opacity-50"
+            >
+              {updateMutation.isPending && <Loader2 className="h-3 w-3 animate-spin" />}
+              {t('presetSlots.edit.save')}
+            </button>
+            <button
+              type="button"
+              onClick={() => setEditOpen(false)}
+              className="rounded-lg border border-white/10 bg-white/5 px-4 py-1.5 text-xs text-gray-400 transition hover:bg-white/10"
+            >
+              {t('presetSlots.edit.cancel')}
+            </button>
+          </div>
+        </div>
+      )}
 
       {isLoading ? (
         <div className="flex items-center justify-center py-10">
