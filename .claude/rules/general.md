@@ -19,7 +19,7 @@ paths:
 После завершения каждой задачи (фикс, фича, рефакторинг):
 
 1. **Код** — написать/исправить
-2. **Отметить в `docs/TODO_CONSOLIDATED.md`** — поставить `[x]` или обновить статус
+2. **Отметить в `docs/current/TODO_CONSOLIDATED.md`** — поставить `[x]` или обновить статус
 3. **Коммит** — сразу, не накапливая (`git add` поимённо → `git commit`)
 4. **Обновить `HANDOFF.md`** — что сделано, что дальше, нужный контекст
 5. **Пуш** — по разрешению владельца
@@ -108,15 +108,14 @@ FilamentHub/
 
 | Задача | Где искать |
 |--------|-----------|
-| Все задачи (единый вход) | `docs/TODO_CONSOLIDATED.md` |
-| Аудит безопасности | `docs/TODO.md` |
-| Прогресс MVP | `docs/TODO_Main.md` |
-| Стратегический план | `docs/ROADMAP.md` |
+| Все задачи (единый вход) | `docs/current/TODO_CONSOLIDATED.md` |
+| Аудит безопасности | `docs/current/TODO.md` |
+| Прогресс MVP | `docs/current/TODO_Main.md` |
+| Стратегический план | `docs/current/ROADMAP.md` |
 | OrcaSlicer C++ код | `submodule/OrcaSlicer/src/` |
-| Вендор-бандлы | `docs/PENDING_TASKS.md` |
-| Рекомендации пресетов | `docs/plan.md` |
-| Error codes i18n (остатки) | `docs/plan_error_codes_i18n.md` |
-| Деплой | `docs/DEPLOY.md`, `docs/DEPLOYMENT.md` |
+| Вендор-бандлы | `docs/current/PENDING_TASKS.md` |
+| Error codes i18n (завершено) | `docs/current/plan_error_codes_i18n.md` |
+| Деплой | `docs/current/DEPLOY.md` |
 | Скрипты | `scripts/` |
 
 ## Docker
