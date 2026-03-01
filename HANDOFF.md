@@ -1,83 +1,80 @@
-# HANDOFF — FilamentHub HH Integration
+# HANDOFF — FilamentHub
 
-**Дата:** 2026-02-27
+**Дата:** 2026-03-01
 **Ветка:** main
-**Последний коммит:** `feat(slots): Etap C — printer slot map page`
+**Последний коммит:** `004092f` feat(hh-integration): gate badge on SpoolCard + post-create gate assignment step
 
 ---
 
-## Что сделано в этой сессии
+## Что сделано (сессия 2026-03-01 — продолжение: HH integration)
 
-### Этап A — Backend core models ✅
-- `backend/app/models/user_printer_device.py` — UserPrinterDevice
-- `backend/app/models/preset_gate_state.py` — PresetGateState + Source enum
-- `backend/app/models/preset_usage_event.py` — PresetUsageEvent + Type enum
-- `backend/alembic/versions/63fbb1d88128_add_preset_slot_core.py`
-- `backend/app/core/errors.py` — +6 ERR_* констант
+### 1. Фикс: `_to_spool_payload` — JSON-кодирование HH extra полей (`f7aa313`)
 
-### Этап B — Backend API ✅
-- `backend/app/schemas/preset_slot_sync.py`
-- `backend/app/services/preset_slot_sync_service.py`
-- `backend/app/api/v1/endpoints/devices.py`
-- `backend/app/api/v1/endpoints/preset_slots.py`
-- `backend/app/api/v1/endpoints/orca_preset_slot_sync.py`
-- `backend/app/api/v1/api.py` — роутеры добавлены
+HH читает `extra.printer_name` через `json.loads()`, ожидая `'"voron"'` (строка внутри JSON).
+Мы хранили голую строку `"voron"` → HH не находил устройство.
+Исправлено: `json.dumps(device_name)` и `json.dumps(gate_index)` в `spool_compat.py`.
 
-### Этап F — Spool layer ✅
-- `backend/app/models/user_spool.py`
-- `backend/app/schemas/spool.py`
-- `backend/app/services/spool_service.py`
-- `backend/app/api/v1/endpoints/spools.py` (fix: response_model=None на DELETE 204)
-- `backend/alembic/versions/042335145290_add_user_spools.py`
-- `frontend/src/pages/ProfilePage.tsx` — вкладка "Мои филаменты" (SpoolCard, AddSpoolForm, SpoolsTab, RecentSpools)
-- `frontend/src/components/icons/SpoolIcon.tsx` — SVG катушка 3/4, анимированное заполнение
+### 2. Фикс: `handle_manual_assignment` — sync spool.extra при web-назначении (`5dbef4b`)
 
-### Этап C — Frontend Web MVP ✅
-- `frontend/src/api/client.ts` — +devicesAPI, +presetSlotsAPI (UserPrinterDevice, GateState, etc.)
-- `frontend/src/locales/ru/translation.json` — +presetSlots секция, +ERR_DEVICE_*
-- `frontend/src/locales/en/translation.json` — то же
-- `frontend/src/components/presetSlots/GateMapGrid.tsx` — грид гейтов
-- `frontend/src/components/presetSlots/PresetAssignModal.tsx` — модал (Preset + Spool вкладки)
-- `frontend/src/pages/PresetSlotsPage.tsx` — страница `/slots`
-- `frontend/src/App.tsx` — роут `/slots` добавлен
+**Критический баг**: web UI назначение через `presetSlotsAPI.assign` обновляло `PresetGateState`
+но НЕ `spool.extra`. HH читает gate map из `spool.extra` напрямую → web-назначения были невидимы для HH.
 
----
+Исправлено в `backend/app/services/preset_slot_sync_service.py`:
+- Добавлен `import json`
+- Перед upsert: запоминаем `old_spool_id` (что было на этом gate)
+- После upsert+commit+refresh:
+  - Старая катушка (если изменилась): очищаем HH поля (`printer_name=json.dumps("")`, `mmu_gate_map=json.dumps(-1)`)
+  - Новая катушка: ставим `printer_name=json.dumps(device.name)`, `mmu_gate_map=json.dumps(gate_index)`
+  - Второй commit для `spool.extra`
 
-## Следующий этап
+### 3. Feat: gate badge в SpoolCard + post-create gate step (`004092f`)
 
-### Этап D — OrcaSlicer C++ manual preset assignment
+**Backend:**
+- `backend/app/schemas/spool.py`: добавлено поле `extra: dict | None` в `SpoolResponse`
 
-Файлы:
-- `submodule/OrcaSlicer/src/slic3r/Utils/FilamentHubClient.hpp` — объявить новые методы
-- `submodule/OrcaSlicer/src/slic3r/Utils/FilamentHubClient.cpp` — реализация
-- `submodule/OrcaSlicer/src/slic3r/GUI/FilamentHubPanel.cpp` — UI
-
-Новые методы:
-```cpp
-bool post_device_heartbeat(const std::string& fingerprint, int gate_count, bool supports_hh);
-bool post_manual_preset_assignment(const std::string& fingerprint, int gate, int preset_id);
-std::string get_preset_slot_state(const std::string& fingerprint); // → JSON
-```
-
-Логика:
-1. При коннекте к принтеру → `post_device_heartbeat()`
-2. При выборе пресета в dropdown гейта → `post_manual_preset_assignment()`
-3. При открытии FilamentHub tab → `get_preset_slot_state()` → обновить UI
-
-### Этап E — OrcaSlicer HH snapshot sync
-
-- После `fetch_hh_filament_info()` → `post_hh_snapshot()` в FilamentHub
-- Триггеры: connect printer, open tab, change assignment, post-print
-- Moonraker: `http://192.168.0.122:7125/` (локальный сервер пользователя)
+**Frontend:**
+- `UserSpool` тип: добавлено `extra: Record<string,string> | null`
+- `ProfilePage.tsx` импорты: добавлены `devicesAPI`, `presetSlotsAPI`, `UserPrinterDevice`
+- `SpoolCard`: показывает MMU badge с `printerName @ gate#` если `spool.extra.printer_name/mmu_gate_map` заполнены (JSON.parse)
+- `SpoolForm` (create mode):
+  - Запрашивает `devicesAPI.list()`, фильтрует HH-устройства (`supports_hh=true && gate_count>0`)
+  - После успешного создания катушки (если есть HH-устройства): переходит на шаг `gateStep` вместо `onSaved()`
+  - GateStep: выбор устройства (если >1) + визуальная сетка gate-кнопок (0..gate_count-1)
+  - Кнопки "Назначить" → `presetSlotsAPI.assign` → `onSaved()` / "На полку (пропустить)" → `onSaved()`
+- i18n: `profilePage.spoolGateStep.*` (7 ключей, ru + en)
 
 ---
 
-## Ключевые файлы
+## Из прошлой сессии (не исправлено)
+
+- **OrcaSlicer submodule** — 5 файлов изменены (fhub_source fix), нужен ребилд и проверка
+- **Filament import 500** — detached session баг в `orca_sync.py:_upsert_filament_preset`, идентифицирован но не исправлен
+- **Printer profiles 404** — все `active=false` в prod, нужно решение: активировать или поменять фильтр
+- **Docker dev** — не поднят
+- **docs/ мусор в корне** — `3dcalc.md`, `Issues.md`, `project_analysis*.md`, `ошибка_билда.md` — решить: архив или удалить
+
+---
+
+## Что ещё нужно для HH integration
+
+- **Тестирование** — поднять Docker dev, проверить полный цикл: create spool → gate step → HH pull_gate_map видит spool
+- **`[ ? ]` help кнопка** в секции "Мои Филаменты" — P2
+- **Device linking UI** — связать OrcaSlicer-профиль с HH-устройством того же физического принтера — P2
+- **"Sync Materials" кнопка в OrcaSlicer** — вызывает `fetch_hh_filament_info` → GET Moonraker напрямую. Работает только когда принтер online. Не наш баг.
+- **Deploy** — локальные коммиты (`f7aa313`, `5dbef4b`, `004092f` + предыдущие) не задеплоены на prod
+
+---
+
+## Ключевые файлы (HH integration)
 
 | Что | Где |
 |-----|-----|
-| API контракты | `backend/app/api/v1/endpoints/{devices,preset_slots,spools}.py` |
-| Схемы | `backend/app/schemas/{preset_slot_sync,spool}.py` |
-| Сервис | `backend/app/services/preset_slot_sync_service.py` |
-| Фронт страница | `frontend/src/pages/PresetSlotsPage.tsx` |
-| HH план | `docs/plan_hh_integration.md` |
+| Spool compat PATCH/GET | `backend/app/api/v1/endpoints/spool_compat.py` |
+| Gate sync logic | `backend/app/services/preset_slot_sync_service.py` |
+| Spool schema | `backend/app/schemas/spool.py` |
+| SpoolCard + SpoolForm | `frontend/src/pages/ProfilePage.tsx` |
+| API клиент (типы) | `frontend/src/api/client.ts` |
+| HH документация | `docs/reference/Happy-Hare/` |
+| HH план | `docs/current/plan_hh_integration.md` |
+
+— Claude
