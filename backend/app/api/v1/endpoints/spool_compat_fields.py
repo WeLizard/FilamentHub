@@ -56,6 +56,7 @@ def _set_entity_fields(entity_type: EntityType, fields: list[dict]) -> list[dict
 
 @router.get("/v1/field/{entity_type}")
 @router.get("/{api_key}/v1/field/{entity_type}")
+@router.get("/{api_key}/api/v1/field/{entity_type}")
 async def get_fields(entity_type: EntityType, api_key: str | None = None) -> list[dict]:
     _ = api_key
     return _get_entity_fields(entity_type)
@@ -63,6 +64,7 @@ async def get_fields(entity_type: EntityType, api_key: str | None = None) -> lis
 
 @router.post("/v1/field/{entity_type}/{key}")
 @router.post("/{api_key}/v1/field/{entity_type}/{key}")
+@router.post("/{api_key}/api/v1/field/{entity_type}/{key}")
 async def add_or_update_field(
     entity_type: EntityType,
     key: str,
@@ -83,6 +85,11 @@ async def add_or_update_field(
 )
 @router.delete(
     "/{api_key}/v1/field/{entity_type}/{key}",
+    response_model=list[dict],
+    responses={404: {"description": "Not found"}},
+)
+@router.delete(
+    "/{api_key}/api/v1/field/{entity_type}/{key}",
     response_model=list[dict],
     responses={404: {"description": "Not found"}},
 )
