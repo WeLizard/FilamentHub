@@ -325,6 +325,7 @@ async def _apply_location_assignment(
     user: User,
     spool: UserSpool,
     location: str | None,
+    api_key: str | None = None,
 ) -> tuple[bool, str | None]:
     # Clear previous location bindings for this spool in any case.
     existing_result = await db.execute(
@@ -354,6 +355,7 @@ async def _apply_location_assignment(
     device_hint = match.group("device").strip()
     gate_index = int(match.group("gate"))
 
+    # Try to find device by name or fingerprint
     device_result = await db.execute(
         select(UserPrinterDevice).where(
             UserPrinterDevice.user_id == user.id,
@@ -361,6 +363,22 @@ async def _apply_location_assignment(
         )
     )
     device = device_result.scalar_one_or_none()
+
+    # Fallback: if called from spool_compat with api_key, use the auto-registered HH device
+    # and update its name to match the printer name from Happy Hare location string
+    if device is None and api_key:
+        fingerprint = "hh-" + hashlib.sha256(api_key.encode()).hexdigest()[:12]
+        fp_result = await db.execute(
+            select(UserPrinterDevice).where(
+                UserPrinterDevice.user_id == user.id,
+                UserPrinterDevice.device_fingerprint == fingerprint,
+            )
+        )
+        device = fp_result.scalar_one_or_none()
+        if device is not None and device.name != device_hint:
+            device.name = device_hint
+            logger.info("Updated HH device id=%s name to '%s' from location string", device.id, device_hint)
+
     if device is None:
         return False, f"Device '{device_hint}' not found for this API key."
 
@@ -711,7 +729,7 @@ async def create_spool(
     db.add(spool)
     await db.flush()
 
-    ok, err = await _apply_location_assignment(db, user, spool, body.location)
+    ok, err = await _apply_location_assignment(db, user, spool, body.location, api_key=api_key)
     if not ok:
         await db.rollback()
         return _err(status.HTTP_400_BAD_REQUEST, err or "Failed to assign spool location.")
@@ -771,7 +789,7 @@ async def patch_spool(
         spool.state = UserSpoolState.empty
 
     if "location" in fields_set:
-        ok, err = await _apply_location_assignment(db, user, spool, body.location)
+        ok, err = await _apply_location_assignment(db, user, spool, body.location, api_key=api_key)
         if not ok:
             await db.rollback()
             return _err(status.HTTP_400_BAD_REQUEST, err or "Failed to assign spool location.")
