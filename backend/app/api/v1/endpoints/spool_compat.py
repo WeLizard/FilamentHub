@@ -389,6 +389,7 @@ async def spool_compat_health() -> dict:
 
 
 @router.get("/{api_key}/v1/health")
+@router.get("/{api_key}/api/v1/health")
 async def spool_compat_health_scoped(api_key: str) -> dict:
     """Compatibility health endpoint (scoped path)."""
     # Intentionally does not validate key to match upstream health semantics.
@@ -413,6 +414,7 @@ async def spool_compat_info() -> dict:
 
 
 @router.get("/{api_key}/v1/info")
+@router.get("/{api_key}/api/v1/info")
 async def spool_compat_info_scoped(api_key: str) -> dict:
     """Compatibility info endpoint (scoped path)."""
     _ = api_key
@@ -431,6 +433,7 @@ async def spool_ws(websocket: WebSocket) -> None:
 
 
 @router.websocket("/{api_key}/v1/spool")
+@router.websocket("/{api_key}/api/v1/spool")
 async def spool_ws_scoped(websocket: WebSocket, api_key: str) -> None:
     _ = api_key
     await websocket.accept()
@@ -482,6 +485,7 @@ async def list_spools_with_header_key(
 
 
 @router.get("/{api_key}/v1/spool")
+@router.get("/{api_key}/api/v1/spool")
 async def list_spools(
     api_key: str,
     db: Annotated[AsyncSession, Depends(get_db)],
@@ -589,6 +593,7 @@ async def _list_spools_impl(
 
 
 @router.get("/{api_key}/v1/spool/{spool_id}")
+@router.get("/{api_key}/api/v1/spool/{spool_id}")
 async def get_spool(
     api_key: str,
     spool_id: int,
@@ -607,6 +612,7 @@ async def get_spool(
 
 
 @router.post("/{api_key}/v1/spool")
+@router.post("/{api_key}/api/v1/spool")
 async def create_spool(
     api_key: str,
     body: SpoolCreateBody,
@@ -662,6 +668,7 @@ async def create_spool(
 
 
 @router.patch("/{api_key}/v1/spool/{spool_id}")
+@router.patch("/{api_key}/api/v1/spool/{spool_id}")
 async def patch_spool(
     api_key: str,
     spool_id: int,
@@ -729,6 +736,7 @@ async def patch_spool(
 
 
 @router.put("/{api_key}/v1/spool/{spool_id}/use")
+@router.put("/{api_key}/api/v1/spool/{spool_id}/use")
 async def use_spool(
     api_key: str,
     spool_id: int,
@@ -772,6 +780,7 @@ async def use_spool(
 
 
 @router.put("/{api_key}/v1/spool/{spool_id}/measure")
+@router.put("/{api_key}/api/v1/spool/{spool_id}/measure")
 async def measure_spool(
     api_key: str,
     spool_id: int,
@@ -805,6 +814,7 @@ async def measure_spool(
 
 
 @router.delete("/{api_key}/v1/spool/{spool_id}")
+@router.delete("/{api_key}/api/v1/spool/{spool_id}")
 async def delete_spool(
     api_key: str,
     spool_id: int,
