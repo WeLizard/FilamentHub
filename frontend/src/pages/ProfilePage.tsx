@@ -1623,7 +1623,7 @@ const SpoolForm: React.FC<SpoolFormProps> = ({ mode, spool, onSaved, onCancel })
   });
 
   const hhDevices = useMemo(
-    () => allDevices.filter((d) => d.supports_hh && d.gate_count && d.gate_count > 0),
+    () => allDevices.filter((d) => d.supports_hh),
     [allDevices],
   );
 
@@ -1943,7 +1943,7 @@ const SpoolForm: React.FC<SpoolFormProps> = ({ mode, spool, onSaved, onCancel })
 
   if (gateStep && createdSpool) {
     const selectedDevice = hhDevices.find((d) => d.id === Number(selectedDeviceId));
-    const gateCount = selectedDevice?.gate_count ?? 0;
+    const gateCount = selectedDevice?.gate_count ?? null;
     return (
       <div className="bg-white/10 backdrop-blur-sm border border-white/20 rounded-2xl p-4 md:p-5 space-y-4 max-w-2xl mx-auto">
         <div className="flex items-center gap-2">
@@ -1969,7 +1969,7 @@ const SpoolForm: React.FC<SpoolFormProps> = ({ mode, spool, onSaved, onCancel })
             </div>
           )}
 
-          {selectedDeviceId && gateCount > 0 && (
+          {selectedDeviceId && gateCount !== null && gateCount > 0 && (
             <div>
               <label className={labelCls}>{t('profilePage.spoolGateStep.gateLabel')}</label>
               <div className="flex flex-wrap gap-2">
@@ -1988,6 +1988,21 @@ const SpoolForm: React.FC<SpoolFormProps> = ({ mode, spool, onSaved, onCancel })
                   </button>
                 ))}
               </div>
+            </div>
+          )}
+
+          {selectedDeviceId && gateCount === null && (
+            <div>
+              <label className={labelCls}>{t('profilePage.spoolGateStep.gateLabel')}</label>
+              <input
+                type="number"
+                min={0}
+                max={99}
+                value={selectedGate}
+                onChange={(e) => setSelectedGate(e.target.value)}
+                placeholder="0"
+                className={`w-24 ${inputCls}`}
+              />
             </div>
           )}
         </div>
