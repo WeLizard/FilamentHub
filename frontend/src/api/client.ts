@@ -1586,6 +1586,7 @@ export interface SpoolFilamentInfo {
   color_name: string | null;
   color_hex: string | null;
   brand_name: string | null;
+  price_per_kg: number | null;
 }
 
 export interface UserSpool {

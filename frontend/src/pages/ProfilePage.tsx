@@ -1466,6 +1466,19 @@ const SpoolCard: React.FC<SpoolCardProps> = ({ spool, isBusy = false, onEdit, on
           />
         </div>
 
+        {/* Price per spool */}
+        {spool.filament?.price_per_kg != null && (
+          <p className="text-gray-400 text-xs">
+            <span className="text-gray-500">{t('profilePage.spoolPrice')}: </span>
+            <span className="font-medium">
+              {((spool.filament.price_per_kg * spool.initial_weight_g) / 1000).toFixed(0)} ₽
+            </span>
+            <span className="text-gray-600 ml-1">
+              ({spool.filament.price_per_kg.toFixed(0)} ₽/кг)
+            </span>
+          </p>
+        )}
+
         {/* Lot / comment */}
         {(spool.lot_nr || spool.comment) && (
           <p className="text-gray-500 text-xs truncate">

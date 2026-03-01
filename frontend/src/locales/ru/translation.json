@@ -1294,6 +1294,7 @@
     "spoolInitialWeight": "Начальный вес",
     "spoolRemaining": "Остаток",
     "spoolUsed": "Использовано",
+    "spoolPrice": "Стоимость катушки",
     "spoolState": {
       "active": "Активна",
       "shelf": "На полке",

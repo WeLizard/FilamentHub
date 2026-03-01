@@ -21,6 +21,7 @@ class SpoolFilamentInfo(BaseModel):
     color_name: str | None
     color_hex: str | None
     brand_name: str | None
+    price_per_kg: float | None
 
     model_config = {"from_attributes": True}
 

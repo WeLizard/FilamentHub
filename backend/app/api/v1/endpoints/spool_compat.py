@@ -991,4 +991,64 @@ async def list_vendors(
     return await _list_vendors_impl(db=db, name=name)
 
 
+async def _list_filaments_impl(
+    db: AsyncSession,
+    vendor_id: str | None,
+    name: str | None,
+    material: str | None,
+) -> JSONResponse:
+    stmt = (
+        select(Filament)
+        .options(joinedload(Filament.brand))
+        .order_by(Filament.name)
+    )
+    result = await db.execute(stmt)
+    filaments = list(result.unique().scalars().all())
+
+    vendor_ids = _parse_int_list(vendor_id)
+
+    payloads: list[dict] = []
+    for f in filaments:
+        if vendor_ids is not None and f.brand_id not in vendor_ids:
+            continue
+        if not _match_filter(f.name, name):
+            continue
+        if not _match_filter(f.material_type, material):
+            continue
+        payloads.append(_filament_payload(f, f.id))
+
+    return JSONResponse(content=payloads)
+
+
+@router.get("/v1/filament")
+async def list_filaments_with_header_key(
+    db: Annotated[AsyncSession, Depends(get_db)],
+    x_api_key: Annotated[str | None, Query(alias="api_key")] = None,
+    header_api_key: Annotated[str | None, Header(alias="X-API-Key")] = None,
+    vendor_id: Annotated[str | None, Query(alias="vendor.id")] = None,
+    name: str | None = None,
+    material: str | None = None,
+) -> JSONResponse:
+    api_key = x_api_key or header_api_key
+    user = await _resolve_user_by_api_key(db, api_key)
+    if user is None:
+        return _err(status.HTTP_401_UNAUTHORIZED, "Invalid or missing API key.")
+    return await _list_filaments_impl(db=db, vendor_id=vendor_id, name=name, material=material)
+
+
+@router.get("/{api_key}/v1/filament")
+@router.get("/{api_key}/api/v1/filament")
+async def list_filaments(
+    api_key: str,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    vendor_id: Annotated[str | None, Query(alias="vendor.id")] = None,
+    name: str | None = None,
+    material: str | None = None,
+) -> JSONResponse:
+    user = await _resolve_user_by_api_key(db, api_key)
+    if user is None:
+        return _err(status.HTTP_401_UNAUTHORIZED, "Invalid API key.")
+    return await _list_filaments_impl(db=db, vendor_id=vendor_id, name=name, material=material)
+
+
 router.include_router(spool_compat_fields.router)

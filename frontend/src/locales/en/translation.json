@@ -1272,6 +1272,7 @@
     "spoolInitialWeight": "Initial weight",
     "spoolRemaining": "Remaining",
     "spoolUsed": "Used",
+    "spoolPrice": "Spool price",
     "spoolState": {
       "active": "Active",
       "shelf": "On shelf",
