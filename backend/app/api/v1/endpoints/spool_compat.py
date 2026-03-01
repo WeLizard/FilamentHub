@@ -173,6 +173,14 @@ def _filament_payload(filament: Filament | None, fallback_id: int) -> dict:
     }
 
 
+def _spool_price(spool: UserSpool, filament: Filament | None) -> float | None:
+    if filament is None or filament.price_per_kg is None:
+        return None
+    if filament.price_per_kg < 0 or spool.initial_weight_g <= 0:
+        return None
+    return round((filament.price_per_kg * spool.initial_weight_g) / 1000.0, 4)
+
+
 async def _resolve_user_by_api_key(db: AsyncSession, api_key: str | None) -> User | None:
     if not api_key:
         return None
@@ -261,7 +269,7 @@ def _to_spool_payload(spool: UserSpool, location_map: dict[int, str]) -> dict:
         "first_used": _iso(spool.last_used_at),
         "last_used": _iso(spool.last_used_at),
         "filament": _filament_payload(filament, spool.id),
-        "price": None,
+        "price": _spool_price(spool, filament),
         "remaining_weight": round(remaining_weight, 3),
         "initial_weight": round(spool.initial_weight_g, 3),
         "spool_weight": None,
