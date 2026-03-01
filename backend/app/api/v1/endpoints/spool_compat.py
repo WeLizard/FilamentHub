@@ -238,7 +238,14 @@ async def _update_device_gate_count(db: AsyncSession, device: UserPrinterDevice,
             logger.info("Updated HH device id=%s gate_count=%s", device.id, new_count)
 
 
-async def _build_location_map(db: AsyncSession, user_id: int) -> dict[int, str]:
+async def _build_location_map(
+    db: AsyncSession, user_id: int
+) -> tuple[dict[int, str], dict[int, tuple[str, int]]]:
+    """Return (location_map, gate_meta_map).
+
+    location_map:  spool_id → "DeviceName @ MMU Gate:N"
+    gate_meta_map: spool_id → (device_name, gate_index)
+    """
     result = await db.execute(
         select(PresetGateState, UserPrinterDevice)
         .join(UserPrinterDevice, UserPrinterDevice.id == PresetGateState.device_id)
@@ -249,20 +256,36 @@ async def _build_location_map(db: AsyncSession, user_id: int) -> dict[int, str]:
         )
         .order_by(PresetGateState.updated_at.desc())
     )
-    mapping: dict[int, str] = {}
+    location_map: dict[int, str] = {}
+    gate_meta_map: dict[int, tuple[str, int]] = {}
     for gate_state, device in result.all():
-        if gate_state.spool_id is None or gate_state.spool_id in mapping:
+        if gate_state.spool_id is None or gate_state.spool_id in location_map:
             continue
         device_name = device.name or device.device_fingerprint
-        mapping[gate_state.spool_id] = f"{device_name} @ MMU Gate:{gate_state.gate_index}"
-    return mapping
+        location_map[gate_state.spool_id] = f"{device_name} @ MMU Gate:{gate_state.gate_index}"
+        gate_meta_map[gate_state.spool_id] = (device_name, gate_state.gate_index)
+    return location_map, gate_meta_map
 
 
-def _to_spool_payload(spool: UserSpool, location_map: dict[int, str]) -> dict:
+def _to_spool_payload(
+    spool: UserSpool,
+    location_map: dict[int, str],
+    gate_meta_map: dict[int, tuple[str, int]] | None = None,
+) -> dict:
     filament = spool.filament
     density = _filament_density(filament)
     diameter = _filament_diameter(filament)
     remaining_weight = max(spool.initial_weight_g - spool.used_weight_g, 0.0)
+    location = location_map.get(spool.id)
+
+    # Merge extra: start from stored spool.extra, then fill in HH gate fields
+    # from our PresetGateState if HH hasn't already pushed them (setdefault).
+    extra: dict = dict(spool.extra or {})
+    if gate_meta_map and spool.id in gate_meta_map:
+        device_name, gate_index = gate_meta_map[spool.id]
+        extra.setdefault("printer_name", device_name)
+        extra.setdefault("mmu_gate_map", gate_index)
+
     return {
         "id": spool.id,
         "registered": _iso(spool.created_at),
@@ -276,11 +299,11 @@ def _to_spool_payload(spool: UserSpool, location_map: dict[int, str]) -> dict:
         "used_weight": round(spool.used_weight_g, 3),
         "remaining_length": _length_from_weight(remaining_weight, density, diameter),
         "used_length": _length_from_weight(spool.used_weight_g, density, diameter) or 0.0,
-        "location": location_map.get(spool.id),
+        "location": location,
         "lot_nr": spool.lot_nr,
         "comment": spool.comment,
         "archived": spool.state == UserSpoolState.archived,
-        "extra": spool.extra or {},
+        "extra": extra,
     }
 
 
@@ -500,6 +523,13 @@ async def spool_compat_info_scoped(api_key: str) -> dict:
     return await spool_compat_info()
 
 
+@router.get("/{api_key}")
+async def spool_compat_root(api_key: str) -> dict:
+    """Base URL handler — returned when Mainsail or browser hits the bare api_key path."""
+    _ = api_key
+    return await spool_compat_info()
+
+
 @router.websocket("/v1/spool")
 async def spool_ws(websocket: WebSocket) -> None:
     # No api_key — accept but never emit events (no user context).
@@ -633,7 +663,7 @@ async def _list_spools_impl(
         .order_by(UserSpool.created_at.desc())
     )
     spools = list(result.scalars().all())
-    location_map = await _build_location_map(db, user.id)
+    location_map, gate_meta_map = await _build_location_map(db, user.id)
 
     # Auto-register/update Happy Hare device when accessed via scoped api_key
     if api_key:
@@ -649,7 +679,7 @@ async def _list_spools_impl(
         if not allow_archived and spool.state == UserSpoolState.archived:
             continue
 
-        payload = _to_spool_payload(spool, location_map)
+        payload = _to_spool_payload(spool, location_map, gate_meta_map)
         fil = payload["filament"]
         vendor = fil.get("vendor") if isinstance(fil, dict) else None
 
@@ -702,8 +732,8 @@ async def get_spool(
     if spool is None:
         return _err(status.HTTP_404_NOT_FOUND, f"No spool with ID {spool_id} found.")
 
-    location_map = await _build_location_map(db, user.id)
-    return JSONResponse(content=_to_spool_payload(spool, location_map))
+    location_map, gate_meta_map = await _build_location_map(db, user.id)
+    return JSONResponse(content=_to_spool_payload(spool, location_map, gate_meta_map))
 
 
 @router.post("/{api_key}/v1/spool")
@@ -756,8 +786,8 @@ async def create_spool(
     created = await _get_user_spool(db, user.id, spool.id)
     if created is None:
         return _err(status.HTTP_500_INTERNAL_SERVER_ERROR, "Failed to create spool.")
-    location_map = await _build_location_map(db, user.id)
-    payload = _to_spool_payload(created, location_map)
+    location_map, gate_meta_map = await _build_location_map(db, user.id)
+    payload = _to_spool_payload(created, location_map, gate_meta_map)
     await _broadcast_spool_event(user.id, "added", payload)
     return JSONResponse(content=payload)
 
@@ -824,8 +854,8 @@ async def patch_spool(
     updated = await _get_user_spool(db, user.id, spool.id)
     if updated is None:
         return _err(status.HTTP_500_INTERNAL_SERVER_ERROR, "Failed to update spool.")
-    location_map = await _build_location_map(db, user.id)
-    payload = _to_spool_payload(updated, location_map)
+    location_map, gate_meta_map = await _build_location_map(db, user.id)
+    payload = _to_spool_payload(updated, location_map, gate_meta_map)
     await _broadcast_spool_event(user.id, "updated", payload)
     return JSONResponse(content=payload)
 
@@ -868,8 +898,8 @@ async def use_spool(
     updated = await _get_user_spool(db, user.id, spool.id)
     if updated is None:
         return _err(status.HTTP_500_INTERNAL_SERVER_ERROR, "Failed to use spool.")
-    location_map = await _build_location_map(db, user.id)
-    payload = _to_spool_payload(updated, location_map)
+    location_map, gate_meta_map = await _build_location_map(db, user.id)
+    payload = _to_spool_payload(updated, location_map, gate_meta_map)
     await _broadcast_spool_event(user.id, "updated", payload)
     return JSONResponse(content=payload)
 
@@ -902,8 +932,8 @@ async def measure_spool(
     updated = await _get_user_spool(db, user.id, spool.id)
     if updated is None:
         return _err(status.HTTP_500_INTERNAL_SERVER_ERROR, "Failed to update spool measurement.")
-    location_map = await _build_location_map(db, user.id)
-    payload = _to_spool_payload(updated, location_map)
+    location_map, gate_meta_map = await _build_location_map(db, user.id)
+    payload = _to_spool_payload(updated, location_map, gate_meta_map)
     await _broadcast_spool_event(user.id, "updated", payload)
     return JSONResponse(content=payload)
 
