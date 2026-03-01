@@ -1213,6 +1213,35 @@ export const ProfilePage: React.FC = () => {
                 </ul>
               </HelpSection>
 
+              <HelpSection icon={Layers} title={t('profilePage.help.hhTitle')}>
+                <p>{t('profilePage.help.hhDesc')}</p>
+
+                <p className="mt-3 text-gray-400 text-sm font-medium">{t('profilePage.help.hhConnectHow')}</p>
+                <ul className="list-disc list-inside space-y-1 text-gray-400 text-sm mt-1">
+                  <li>{t('profilePage.help.hhConnectStep1')}</li>
+                  <li>{t('profilePage.help.hhConnectStep2')}</li>
+                  <li>{t('profilePage.help.hhConnectStep3')}</li>
+                </ul>
+
+                <p className="mt-3 text-gray-400 text-sm font-medium">{t('profilePage.help.hhSpoolmanTitle')}</p>
+                <ul className="space-y-1 text-sm mt-1 ml-2">
+                  <li className="text-gray-500">{t('profilePage.help.hhSpoolmanOff')}</li>
+                  <li className="text-gray-500">{t('profilePage.help.hhSpoolmanReadonly')}</li>
+                  <li className="text-gray-500">{t('profilePage.help.hhSpoolmanPush')}</li>
+                  <li className="text-green-400 font-medium">{t('profilePage.help.hhSpoolmanPull')}</li>
+                </ul>
+
+                <p className="mt-3 text-gray-400 text-sm font-medium">{t('profilePage.help.hhColorTitle')}</p>
+                <ul className="space-y-1 text-sm mt-1 ml-2">
+                  <li className="text-gray-500">{t('profilePage.help.hhColorSlicer')}</li>
+                  <li className="text-green-400 font-medium">{t('profilePage.help.hhColorGatemap')}</li>
+                  <li className="text-gray-500">{t('profilePage.help.hhColorAllgates')}</li>
+                  <li className="text-gray-500">{t('profilePage.help.hhColorOff')}</li>
+                </ul>
+
+                <p className="mt-3 text-purple-300 text-sm">{t('profilePage.help.hhWorkflow')}</p>
+              </HelpSection>
+
               <HelpSection icon={Zap} title={t('profilePage.help.tipsTitle')}>
                 <ul className="list-disc list-inside space-y-1 text-gray-400 text-sm">
                   <li>{t('profilePage.help.tip1')}</li>
@@ -2094,7 +2123,7 @@ const SpoolsTab: React.FC<SpoolsTabProps> = ({
 }) => {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
-  const [spoolTab, setSpoolTab] = useState<'shelf' | 'slots' | 'archived'>('shelf');
+  const [spoolTab, setSpoolTab] = useState<'shelf' | 'active' | 'archived'>('shelf');
   const [editingSpool, setEditingSpool] = useState<UserSpool | null>(null);
   const [usingSpool, setUsingSpool] = useState<UserSpool | null>(null);
   const [busySpoolId, setBusySpoolId] = useState<number | null>(null);
@@ -2197,26 +2226,26 @@ const SpoolsTab: React.FC<SpoolsTabProps> = ({
 
   const spoolTabCounts = useMemo(
     () => ({
-      shelf: spools.filter((spool) => spool.state === 'active' || spool.state === 'shelf').length,
-      slots: printerBindings.length,
+      shelf: spools.filter((spool) => spool.state === 'shelf').length,
+      active: spools.filter((spool) => spool.state === 'active').length,
       archived: spools.filter((spool) => spool.state === 'archived' || spool.state === 'empty').length,
     }),
-    [spools, printerBindings.length],
+    [spools],
   );
 
   const filteredSpools = useMemo(() => {
     if (spoolTab === 'shelf') {
-      return spools.filter((spool) => spool.state === 'active' || spool.state === 'shelf');
+      return spools.filter((spool) => spool.state === 'shelf');
     }
-    if (spoolTab === 'archived') {
-      return spools.filter((spool) => spool.state === 'archived' || spool.state === 'empty');
+    if (spoolTab === 'active') {
+      return spools.filter((spool) => spool.state === 'active');
     }
-    return [];
+    return spools.filter((spool) => spool.state === 'archived' || spool.state === 'empty');
   }, [spools, spoolTab]);
 
-  const spoolTabs: Array<{ key: 'shelf' | 'slots' | 'archived'; label: string; count: number }> = [
+  const spoolTabs: Array<{ key: 'shelf' | 'active' | 'archived'; label: string; count: number }> = [
     { key: 'shelf', label: t('profilePage.spoolTabs.shelf'), count: spoolTabCounts.shelf },
-    { key: 'slots', label: t('profilePage.spoolTabs.slots'), count: spoolTabCounts.slots },
+    { key: 'active', label: t('profilePage.spoolTabs.active'), count: spoolTabCounts.active },
     { key: 'archived', label: t('profilePage.spoolTabs.archived'), count: spoolTabCounts.archived },
   ];
 
@@ -2349,9 +2378,43 @@ const SpoolsTab: React.FC<SpoolsTabProps> = ({
           ))}
         </div>
 
-        {spoolTab === 'slots' ? (
-          <div className="bg-white/10 backdrop-blur-sm border border-white/20 rounded-2xl p-4 md:p-5">
-            <PresetSlotsPanel compact spools={spools} printerBindings={printerBindings} />
+        {spoolTab === 'active' ? (
+          <div className="space-y-4 md:space-y-5">
+            <div className="bg-white/10 backdrop-blur-sm border border-white/20 rounded-2xl p-4 md:p-5">
+              <PresetSlotsPanel compact spools={spools} printerBindings={printerBindings} />
+            </div>
+
+            <div className="space-y-3">
+              <h4 className="text-base md:text-lg font-semibold text-white">{t('profilePage.spoolTabs.active')}</h4>
+              {filteredSpools.length === 0 ? (
+                <div className="text-center py-10 border border-white/10 rounded-2xl bg-white/5">
+                  <Package className="w-10 h-10 text-gray-500 mx-auto mb-3" />
+                  <p className="text-gray-400 text-sm md:text-base">{t('profilePage.spoolsActiveEmpty')}</p>
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {filteredSpools.map((spool) => (
+                    <SpoolCard
+                      key={spool.id}
+                      spool={spool}
+                      isBusy={busySpoolId === spool.id}
+                      onEdit={() => {
+                        setIsAddOpen(false);
+                        setUsingSpool(null);
+                        setEditingSpool(spool);
+                      }}
+                      onUse={() => {
+                        setIsAddOpen(false);
+                        setEditingSpool(null);
+                        setUsingSpool(spool);
+                      }}
+                      onDelete={() => handleDelete(spool.id)}
+                      onStateChange={(state) => handleStateChange(spool.id, state)}
+                    />
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
         ) : spools.length === 0 && !isAddOpen ? (
           <div className="text-center py-12 md:py-16">
