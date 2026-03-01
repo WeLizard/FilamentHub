@@ -1871,35 +1871,42 @@ async def _upsert_filament_preset(
     # Для черновиков filament остается None
     # Для пресетов с [FilamentHub] или @FilamentHub filament должен быть найден или создан
     if is_our_preset and not filament:
-        # Пресеты с [FilamentHub] или @FilamentHub должны иметь Filament
-        # Если не найден - создаем новый
-        filament_name = payload.filament_name or f"Imported from OrcaSlicer"
-        material_type = payload.material_type or "PLA"
+        if not current_user.brand_id:
+            # Regular user: no brand_id, cannot create catalog Filament (NOT NULL).
+            # Downgrade to draft — filament stays None, preset stored as inactive.
+            logger.warning(
+                f"[FilamentHub] preset '{payload.name}' has no matching catalog filament "
+                f"and user has no brand_id. Storing as draft."
+            )
+            is_our_preset = False
+        else:
+            # Brand admin can create a new catalog Filament entry.
+            filament_name = payload.filament_name or f"Imported from OrcaSlicer"
+            material_type = payload.material_type or "PLA"
 
-        # Генерируем уникальный slug для Filament
-        filament_slug_source = filament_name
-        filament_slug = await generate_unique_slug(
-            db=db,
-            model=Filament,
-            source=filament_slug_source,
-            fallback=f"filament-{current_user.id}-{int(datetime.now(timezone.utc).timestamp())}",
-        )
+            filament_slug_source = filament_name
+            filament_slug = await generate_unique_slug(
+                db=db,
+                model=Filament,
+                source=filament_slug_source,
+                fallback=f"filament-{current_user.id}-{int(datetime.now(timezone.utc).timestamp())}",
+            )
 
-        filament = Filament(
-            name=filament_name,
-            slug=filament_slug,
-            material_type=material_type,
-            brand_id=current_user.brand_id if current_user.brand_id else None,
-            diameter=1.75,  # По умолчанию
-            active=True,  # Активный филамент для наших пресетов
-        )
-        db.add(filament)
-        await db.flush()  # Получаем ID филамента
+            filament = Filament(
+                name=filament_name,
+                slug=filament_slug,
+                material_type=material_type,
+                brand_id=current_user.brand_id,
+                diameter=1.75,
+                active=True,
+            )
+            db.add(filament)
+            await db.flush()
 
-        logger.info(
-            f"Created Filament (id={filament.id}, name='{filament_name}') "
-            f"for preset '{payload.name}'"
-        )
+            logger.info(
+                f"Created Filament (id={filament.id}, name='{filament_name}') "
+                f"for preset '{payload.name}'"
+            )
 
     # 2. Найти или создать Preset
     preset: Preset | None = None
