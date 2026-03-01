@@ -506,7 +506,7 @@ async def spool_ws(websocket: WebSocket) -> None:
 @router.websocket("/{api_key}/api/v1/spool")
 async def spool_ws_scoped(websocket: WebSocket, api_key: str) -> None:
     async with AsyncSessionLocal() as db:
-        user = await _get_user_by_api_key(db, api_key)
+        user = await _resolve_user_by_api_key(db, api_key)
 
     if user is None:
         await websocket.accept()
