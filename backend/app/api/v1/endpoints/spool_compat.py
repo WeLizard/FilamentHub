@@ -18,6 +18,7 @@ from sqlalchemy.orm import joinedload
 
 from app.core.config import settings
 from app.db.session import AsyncSessionLocal, get_db
+from app.models.brand import Brand
 from app.models.filament import Filament
 from app.models.preset_gate_state import PresetGateState, PresetGateStateSource
 from app.models.user import User
@@ -929,6 +930,57 @@ async def delete_spool(
     await db.commit()
     await _broadcast_spool_event(user.id, "deleted", {"id": spool_id})
     return JSONResponse(content={"message": "Success!"})
+
+
+def _vendor_payload(brand: Brand) -> dict:
+    return {
+        "id": brand.id,
+        "registered": _iso(brand.created_at),
+        "name": brand.name,
+        "comment": brand.description,
+        "empty_spool_weight": None,
+        "external_id": None,
+        "extra": {},
+    }
+
+
+async def _list_vendors_impl(
+    db: AsyncSession,
+    name: str | None,
+) -> JSONResponse:
+    stmt = select(Brand).where(Brand.active.is_(True)).order_by(Brand.name)
+    result = await db.execute(stmt)
+    brands = list(result.scalars().all())
+
+    payloads = [_vendor_payload(b) for b in brands if _match_filter(b.name, name)]
+    return JSONResponse(content=payloads)
+
+
+@router.get("/v1/vendor")
+async def list_vendors_with_header_key(
+    db: Annotated[AsyncSession, Depends(get_db)],
+    x_api_key: Annotated[str | None, Query(alias="api_key")] = None,
+    header_api_key: Annotated[str | None, Header(alias="X-API-Key")] = None,
+    name: str | None = None,
+) -> JSONResponse:
+    api_key = x_api_key or header_api_key
+    user = await _resolve_user_by_api_key(db, api_key)
+    if user is None:
+        return _err(status.HTTP_401_UNAUTHORIZED, "Invalid or missing API key.")
+    return await _list_vendors_impl(db=db, name=name)
+
+
+@router.get("/{api_key}/v1/vendor")
+@router.get("/{api_key}/api/v1/vendor")
+async def list_vendors(
+    api_key: str,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    name: str | None = None,
+) -> JSONResponse:
+    user = await _resolve_user_by_api_key(db, api_key)
+    if user is None:
+        return _err(status.HTTP_401_UNAUTHORIZED, "Invalid API key.")
+    return await _list_vendors_impl(db=db, name=name)
 
 
 router.include_router(spool_compat_fields.router)
