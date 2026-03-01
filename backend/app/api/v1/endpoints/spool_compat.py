@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import hashlib
+import logging
 import math
 import re
 from datetime import datetime, timezone
@@ -24,6 +26,8 @@ from app.models.user_spool import UserSpool, UserSpoolState
 
 from . import spool_compat_fields
 from .spool_compat_ws import spool_ws_manager
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/spool_compat", tags=["spool_compat"])
 
@@ -176,6 +180,53 @@ async def _resolve_user_by_api_key(db: AsyncSession, api_key: str | None) -> Use
     if user is None or not user.active:
         return None
     return user
+
+
+async def _ensure_hh_device(db: AsyncSession, user: User, api_key: str) -> UserPrinterDevice:
+    """Auto-register or update a Happy Hare MMU device on first spool_compat contact.
+
+    Uses a stable fingerprint derived from the api_key so that the same
+    Moonraker instance always maps to the same device record.
+    """
+    fingerprint = "hh-" + hashlib.sha256(api_key.encode()).hexdigest()[:12]
+    result = await db.execute(
+        select(UserPrinterDevice).where(
+            UserPrinterDevice.user_id == user.id,
+            UserPrinterDevice.device_fingerprint == fingerprint,
+        )
+    )
+    device = result.scalar_one_or_none()
+    now = datetime.now(timezone.utc)
+
+    if device is None:
+        device = UserPrinterDevice(
+            user_id=user.id,
+            device_fingerprint=fingerprint,
+            name="Moonraker MMU",
+            supports_hh=True,
+            last_seen_at=now,
+        )
+        db.add(device)
+        await db.flush()
+        logger.info("Auto-registered HH device id=%s for user_id=%s", device.id, user.id)
+    else:
+        device.last_seen_at = now
+
+    return device
+
+
+async def _update_device_gate_count(db: AsyncSession, device: UserPrinterDevice, location_map: dict[int, str]) -> None:
+    """Derive gate_count from the highest gate index seen in location map."""
+    max_gate = -1
+    for loc in location_map.values():
+        match = _LOCATION_HH_PATTERN.match(loc) or _LOCATION_PATTERN.match(loc) or _LOCATION_FALLBACK_PATTERN.match(loc)
+        if match:
+            max_gate = max(max_gate, int(match.group("gate")))
+    if max_gate >= 0:
+        new_count = max_gate + 1
+        if device.gate_count != new_count:
+            device.gate_count = new_count
+            logger.info("Updated HH device id=%s gate_count=%s", device.id, new_count)
 
 
 async def _build_location_map(db: AsyncSession, user_id: int) -> dict[int, str]:
@@ -519,6 +570,7 @@ async def list_spools(
         sort=sort,
         limit=limit,
         offset=offset,
+        api_key=api_key,
     )
 
 
@@ -536,6 +588,7 @@ async def _list_spools_impl(
     sort: str | None,
     limit: int | None,
     offset: int,
+    api_key: str | None = None,
 ) -> JSONResponse:
     result = await db.execute(
         select(UserSpool)
@@ -545,6 +598,12 @@ async def _list_spools_impl(
     )
     spools = list(result.scalars().all())
     location_map = await _build_location_map(db, user.id)
+
+    # Auto-register/update Happy Hare device when accessed via scoped api_key
+    if api_key:
+        device = await _ensure_hh_device(db, user, api_key)
+        await _update_device_gate_count(db, device, location_map)
+        await db.commit()
 
     filament_ids = _parse_int_list(filament_id)
     vendor_ids = _parse_int_list(filament_vendor_id)
