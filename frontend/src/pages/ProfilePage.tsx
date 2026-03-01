@@ -1494,8 +1494,8 @@ const SpoolCard: React.FC<SpoolCardProps> = ({ spool, isBusy = false, onEdit, on
           if (!printerNameRaw || gateRaw == null) return null;
           try {
             const printerName = JSON.parse(printerNameRaw) as string;
-            const gate = typeof gateRaw === 'string' ? parseInt(gateRaw, 10) : Number(gateRaw);
-            if (!printerName || gate < 0) return null;
+            const gate = typeof gateRaw === 'string' ? JSON.parse(gateRaw) : Number(gateRaw);
+            if (!printerName || typeof gate !== 'number' || !Number.isFinite(gate) || gate < 0) return null;
             return (
               <span className="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded bg-purple-500/20 border border-purple-500/30 text-purple-300 w-fit">
                 <span className="font-mono">MMU</span>
@@ -1761,7 +1761,7 @@ const SpoolForm: React.FC<SpoolFormProps> = ({ mode, spool, onSaved, onCancel })
           : t('profilePage.spoolAddModal.scanQrSuccess')
       );
     } catch (error: any) {
-      setQrError(translateApiError(error, t));
+      setQrError(translateApiError(t, error?.response?.data?.detail));
     } finally {
       setQrBusy(false);
     }
@@ -1847,7 +1847,7 @@ const SpoolForm: React.FC<SpoolFormProps> = ({ mode, spool, onSaved, onCancel })
       if (error?.name === 'NotAllowedError' || error?.name === 'PermissionDeniedError') {
         setQrError(t('profilePage.spoolAddModal.scanQrCameraPermissionDenied'));
       } else {
-        setQrError(translateApiError(error, t));
+        setQrError(translateApiError(t, error?.response?.data?.detail));
       }
     } finally {
       setIsCameraBusy(false);
@@ -1918,7 +1918,7 @@ const SpoolForm: React.FC<SpoolFormProps> = ({ mode, spool, onSaved, onCancel })
         }
       }
     } catch (error: any) {
-      setErrorText(translateApiError(error, t));
+      setErrorText(translateApiError(t, error?.response?.data?.detail));
     } finally {
       setSaving(false);
     }
@@ -1933,7 +1933,7 @@ const SpoolForm: React.FC<SpoolFormProps> = ({ mode, spool, onSaved, onCancel })
       queryClient.invalidateQueries({ queryKey: ['user-spools'] });
       onSaved();
     } catch (err: any) {
-      setErrorText(translateApiError(err, t));
+      setErrorText(translateApiError(t, err?.response?.data?.detail));
       setAssigning(false);
     }
   };
@@ -2219,7 +2219,7 @@ const UseSpoolForm: React.FC<UseSpoolFormProps> = ({ spool, onSaved, onCancel })
       queryClient.invalidateQueries({ queryKey: ['user-spools'] });
       onSaved();
     } catch (error: any) {
-      setErrorText(translateApiError(error, t));
+      setErrorText(translateApiError(t, error?.response?.data?.detail));
     } finally {
       setSaving(false);
     }
@@ -2350,7 +2350,7 @@ const SpoolsTab: React.FC<SpoolsTabProps> = ({
       const response = await authAPI.generateApiKey();
       setGeneratedApiKey(response.api_key);
     } catch (error: any) {
-      setSetupError(translateApiError(error, t));
+      setSetupError(translateApiError(t, error?.response?.data?.detail));
     } finally {
       setIsGeneratingApiKey(false);
     }
@@ -2367,7 +2367,7 @@ const SpoolsTab: React.FC<SpoolsTabProps> = ({
       queryClient.invalidateQueries({ queryKey: ['user-spools'] });
       onRefetch();
     } catch (error: any) {
-      setActionError(translateApiError(error, t));
+      setActionError(translateApiError(t, error?.response?.data?.detail));
     } finally {
       setBusySpoolId(null);
     }
@@ -2381,7 +2381,7 @@ const SpoolsTab: React.FC<SpoolsTabProps> = ({
       queryClient.invalidateQueries({ queryKey: ['user-spools'] });
       onRefetch();
     } catch (error: any) {
-      setActionError(translateApiError(error, t));
+      setActionError(translateApiError(t, error?.response?.data?.detail));
     } finally {
       setBusySpoolId(null);
     }
