@@ -10,12 +10,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.dependencies import get_current_active_user
 from app.db.session import get_db
 from app.models.user import User
-from app.schemas.preset_slot_sync import DeviceRegisterRequest, DeviceResponse, DeviceStateResponse, GateStateResponse
+from app.schemas.preset_slot_sync import DeviceRegisterRequest, DeviceResponse, DeviceStateResponse, DeviceUpdateRequest, GateStateResponse
 from app.services.preset_slot_sync_service import (
     get_gate_states,
     list_user_devices,
     register_or_update_device,
     require_device,
+    update_device,
 )
 
 router = APIRouter(prefix="/devices", tags=["devices"])
@@ -39,6 +40,18 @@ async def register_or_update(
 ) -> DeviceResponse:
     """Register a new device or update an existing one by fingerprint."""
     device = await register_or_update_device(db, current_user, payload)
+    return DeviceResponse.model_validate(device)
+
+
+@router.patch("/{device_id}", response_model=DeviceResponse)
+async def patch_device(
+    device_id: int,
+    payload: DeviceUpdateRequest,
+    current_user: Annotated[User, Depends(get_current_active_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> DeviceResponse:
+    """Update device settings (name, gate_count, supports_hh)."""
+    device = await update_device(db, current_user.id, device_id, payload)
     return DeviceResponse.model_validate(device)
 
 

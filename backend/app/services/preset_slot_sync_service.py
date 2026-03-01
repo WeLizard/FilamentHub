@@ -26,6 +26,7 @@ from app.models.user_printer_device import UserPrinterDevice
 from app.models.user_spool import UserSpool
 from app.schemas.preset_slot_sync import (
     DeviceRegisterRequest,
+    DeviceUpdateRequest,
     HHSnapshotRequest,
     ManualAssignmentRequest,
     UsageEstimateRequest,
@@ -102,6 +103,24 @@ async def register_or_update_device(
             device.gate_count = payload.gate_count
         device.last_seen_at = now
 
+    await db.commit()
+    await db.refresh(device)
+    return device
+
+
+async def update_device(
+    db: AsyncSession,
+    user_id: int,
+    device_id: int,
+    payload: DeviceUpdateRequest,
+) -> UserPrinterDevice:
+    device = await require_device(db, user_id, device_id)
+    if payload.name is not None:
+        device.name = payload.name
+    if payload.gate_count is not None:
+        device.gate_count = payload.gate_count
+    if payload.supports_hh is not None:
+        device.supports_hh = payload.supports_hh
     await db.commit()
     await db.refresh(device)
     return device

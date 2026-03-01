@@ -22,6 +22,14 @@ class DeviceRegisterRequest(BaseModel):
     gate_count: int | None = Field(default=None, ge=1, le=256)
 
 
+class DeviceUpdateRequest(BaseModel):
+    """Update a user's printer device."""
+
+    name: str | None = Field(default=None, max_length=200)
+    gate_count: int | None = Field(default=None, ge=1, le=256)
+    supports_hh: bool | None = None
+
+
 class DeviceResponse(BaseModel):
     """Printer device info."""
 
