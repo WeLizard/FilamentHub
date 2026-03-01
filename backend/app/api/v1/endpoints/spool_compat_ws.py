@@ -11,39 +11,47 @@ logger = logging.getLogger(__name__)
 
 
 class SpoolWebSocketManager:
-    """Singleton manager for Spoolman-compatible spool websocket clients."""
+    """Per-user manager for Spoolman-compatible spool websocket clients.
+
+    Tracks connections by user_id so broadcasts are scoped to the owning user.
+    """
 
     def __init__(self) -> None:
-        self._connections: set[WebSocket] = set()
+        self._connections: dict[int, set[WebSocket]] = {}
 
-    def connect(self, websocket: WebSocket) -> None:
-        """Register connected websocket client."""
-        self._connections.add(websocket)
+    def connect(self, user_id: int, websocket: WebSocket) -> None:
+        """Register a connected websocket for a specific user."""
+        self._connections.setdefault(user_id, set()).add(websocket)
 
-    def disconnect(self, websocket: WebSocket) -> None:
-        """Unregister websocket client."""
-        self._connections.discard(websocket)
+    def disconnect(self, user_id: int, websocket: WebSocket) -> None:
+        """Unregister a websocket for a specific user."""
+        user_sockets = self._connections.get(user_id)
+        if user_sockets:
+            user_sockets.discard(websocket)
+            if not user_sockets:
+                del self._connections[user_id]
 
-    async def broadcast(self, event: dict) -> None:
-        """Send event to all active websocket clients."""
-        stale_connections: list[WebSocket] = []
+    async def broadcast(self, user_id: int, event: dict) -> None:
+        """Send event only to websocket clients belonging to the given user."""
+        user_sockets = list(self._connections.get(user_id, set()))
+        stale: list[WebSocket] = []
 
-        for websocket in self._connections:
+        for websocket in user_sockets:
             if (
                 websocket.client_state == WebSocketState.DISCONNECTED
                 or websocket.application_state == WebSocketState.DISCONNECTED
             ):
-                stale_connections.append(websocket)
+                stale.append(websocket)
                 continue
 
             try:
                 await websocket.send_json(event)
             except Exception:
-                logger.exception("Failed to send spool websocket event")
-                stale_connections.append(websocket)
+                logger.exception("Failed to send spool websocket event to user %s", user_id)
+                stale.append(websocket)
 
-        for websocket in stale_connections:
-            self._connections.discard(websocket)
+        for websocket in stale:
+            self.disconnect(user_id, websocket)
 
 
 spool_ws_manager = SpoolWebSocketManager()

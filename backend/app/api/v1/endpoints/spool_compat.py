@@ -17,7 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import joinedload
 
 from app.core.config import settings
-from app.db.session import get_db
+from app.db.session import AsyncSessionLocal, get_db
 from app.models.filament import Filament
 from app.models.preset_gate_state import PresetGateState, PresetGateStateSource
 from app.models.user import User
@@ -428,14 +428,15 @@ async def _get_user_spool(db: AsyncSession, user_id: int, spool_id: int) -> User
     return result.scalar_one_or_none()
 
 
-async def _broadcast_spool_event(event_type: str, payload: dict) -> None:
+async def _broadcast_spool_event(user_id: int, event_type: str, payload: dict) -> None:
     await spool_ws_manager.broadcast(
+        user_id,
         {
             "type": event_type,
             "resource": "spool",
             "date": _iso(datetime.now(timezone.utc)),
             "payload": payload,
-        }
+        },
     )
 
 
@@ -492,26 +493,34 @@ async def spool_compat_info_scoped(api_key: str) -> dict:
 
 @router.websocket("/v1/spool")
 async def spool_ws(websocket: WebSocket) -> None:
+    # No api_key — accept but never emit events (no user context).
     await websocket.accept()
-    spool_ws_manager.connect(websocket)
     try:
         while True:
             await websocket.receive_text()
     except WebSocketDisconnect:
-        spool_ws_manager.disconnect(websocket)
+        pass
 
 
 @router.websocket("/{api_key}/v1/spool")
 @router.websocket("/{api_key}/api/v1/spool")
 async def spool_ws_scoped(websocket: WebSocket, api_key: str) -> None:
-    _ = api_key
+    async with AsyncSessionLocal() as db:
+        user = await _get_user_by_api_key(db, api_key)
+
+    if user is None:
+        await websocket.accept()
+        await websocket.close(code=1008)
+        return
+
+    user_id = user.id
     await websocket.accept()
-    spool_ws_manager.connect(websocket)
+    spool_ws_manager.connect(user_id, websocket)
     try:
         while True:
             await websocket.receive_text()
     except WebSocketDisconnect:
-        spool_ws_manager.disconnect(websocket)
+        spool_ws_manager.disconnect(user_id, websocket)
 
 
 @router.get("/v1/spool")
@@ -740,7 +749,7 @@ async def create_spool(
         return _err(status.HTTP_500_INTERNAL_SERVER_ERROR, "Failed to create spool.")
     location_map = await _build_location_map(db, user.id)
     payload = _to_spool_payload(created, location_map)
-    await _broadcast_spool_event("added", payload)
+    await _broadcast_spool_event(user.id, "added", payload)
     return JSONResponse(content=payload)
 
 
@@ -808,7 +817,7 @@ async def patch_spool(
         return _err(status.HTTP_500_INTERNAL_SERVER_ERROR, "Failed to update spool.")
     location_map = await _build_location_map(db, user.id)
     payload = _to_spool_payload(updated, location_map)
-    await _broadcast_spool_event("updated", payload)
+    await _broadcast_spool_event(user.id, "updated", payload)
     return JSONResponse(content=payload)
 
 
@@ -852,7 +861,7 @@ async def use_spool(
         return _err(status.HTTP_500_INTERNAL_SERVER_ERROR, "Failed to use spool.")
     location_map = await _build_location_map(db, user.id)
     payload = _to_spool_payload(updated, location_map)
-    await _broadcast_spool_event("updated", payload)
+    await _broadcast_spool_event(user.id, "updated", payload)
     return JSONResponse(content=payload)
 
 
@@ -886,7 +895,7 @@ async def measure_spool(
         return _err(status.HTTP_500_INTERNAL_SERVER_ERROR, "Failed to update spool measurement.")
     location_map = await _build_location_map(db, user.id)
     payload = _to_spool_payload(updated, location_map)
-    await _broadcast_spool_event("updated", payload)
+    await _broadcast_spool_event(user.id, "updated", payload)
     return JSONResponse(content=payload)
 
 
@@ -918,7 +927,7 @@ async def delete_spool(
 
     await db.delete(spool)
     await db.commit()
-    await _broadcast_spool_event("deleted", {"id": spool_id})
+    await _broadcast_spool_event(user.id, "deleted", {"id": spool_id})
     return JSONResponse(content={"message": "Success!"})
 
 
