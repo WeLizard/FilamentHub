@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import logging
 from datetime import datetime, timezone
 
@@ -514,6 +515,17 @@ async def handle_manual_assignment(
     if spool_id_provided is None:
         spool_id_provided = "spool_id" in payload.model_fields_set
 
+    # Capture old spool at this gate before upsert (to clear its HH extra fields later)
+    old_spool_id: int | None = None
+    if spool_id_provided:
+        old_spool_row = await db.execute(
+            select(PresetGateState.spool_id).where(
+                PresetGateState.device_id == resolved_device.id,
+                PresetGateState.gate_index == payload.gate,
+            )
+        )
+        old_spool_id = old_spool_row.scalar_one_or_none()
+
     now = datetime.now(timezone.utc)
     state = await _upsert_gate_state(
         db,
@@ -529,6 +541,50 @@ async def handle_manual_assignment(
     )
     await db.commit()
     await db.refresh(state)
+
+    # Sync spool.extra with HH-format fields so HH can read gate assignments from GET /spool
+    # HH reads: json.loads(extra.get('printer_name', '""')) and int(extra.get('mmu_gate_map', -1))
+    if spool_id_provided:
+        new_spool_id = state.spool_id
+        if old_spool_id != new_spool_id:
+            # Clear HH fields on the previously assigned spool
+            if old_spool_id is not None:
+                old_spool_row2 = await db.execute(
+                    select(UserSpool).where(UserSpool.id == old_spool_id)
+                )
+                old_spool = old_spool_row2.scalars().first()
+                if old_spool is not None:
+                    extra = dict(old_spool.extra or {})
+                    extra["printer_name"] = json.dumps("")
+                    extra["mmu_gate_map"] = json.dumps(-1)
+                    old_spool.extra = extra
+                    logger.debug(
+                        "Cleared HH extra fields on spool %d (unassigned from gate %d)",
+                        old_spool_id,
+                        payload.gate,
+                    )
+
+            # Set HH fields on the newly assigned spool
+            if new_spool_id is not None:
+                new_spool_row = await db.execute(
+                    select(UserSpool).where(UserSpool.id == new_spool_id)
+                )
+                new_spool = new_spool_row.scalars().first()
+                if new_spool is not None:
+                    extra = dict(new_spool.extra or {})
+                    extra["printer_name"] = json.dumps(resolved_device.name)
+                    extra["mmu_gate_map"] = json.dumps(payload.gate)
+                    new_spool.extra = extra
+                    logger.debug(
+                        "Set HH extra fields on spool %d: printer=%r gate=%d",
+                        new_spool_id,
+                        resolved_device.name,
+                        payload.gate,
+                    )
+
+            if old_spool_id is not None or new_spool_id is not None:
+                await db.commit()
+
     return state
 
 
