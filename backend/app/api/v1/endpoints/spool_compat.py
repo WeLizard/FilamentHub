@@ -31,7 +31,7 @@ from .spool_compat_ws import spool_ws_manager
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(prefix="/spool_compat", tags=["spool_compat"])
+router = APIRouter(tags=["spool_compat"])
 
 _LOCATION_PATTERN = re.compile(r"^(?P<device>.+):\s*gate\s*(?P<gate>\d+)$", re.IGNORECASE)
 _LOCATION_FALLBACK_PATTERN = re.compile(r"^(?P<device>.+):\s*(?P<gate>\d+)$")
@@ -454,6 +454,105 @@ async def _apply_location_assignment(
     return True, None
 
 
+async def _sync_extra_to_gate_state(
+    db: AsyncSession,
+    user: User,
+    spool: UserSpool,
+    api_key: str | None = None,
+) -> None:
+    """Sync HH extra fields (printer_name, mmu_gate_map) to PresetGateState.
+
+    When Happy Hare PATCHes spool.extra with gate assignment info,
+    this ensures our internal PresetGateState records stay in sync.
+    """
+    extra = spool.extra or {}
+    raw_printer = extra.get("printer_name", "")
+    raw_gate = extra.get("mmu_gate_map", "-1")
+
+    try:
+        printer_name = json.loads(raw_printer) if raw_printer else ""
+    except (json.JSONDecodeError, TypeError):
+        printer_name = str(raw_printer) if raw_printer else ""
+
+    try:
+        gate_index = int(json.loads(raw_gate)) if raw_gate not in ("", "-1") else -1
+    except (json.JSONDecodeError, TypeError, ValueError):
+        gate_index = -1
+
+    now = datetime.now(timezone.utc)
+
+    existing_result = await db.execute(
+        select(PresetGateState).where(
+            PresetGateState.user_id == user.id,
+            PresetGateState.spool_id == spool.id,
+        )
+    )
+    existing_states = list(existing_result.scalars().all())
+
+    if not printer_name or gate_index < 0:
+        for state in existing_states:
+            state.spool_id = None
+            state.source = PresetGateStateSource.hh_snapshot
+            state.source_ts = now
+        return
+
+    device: UserPrinterDevice | None = None
+    if api_key:
+        device = await _ensure_hh_device(db, user, api_key)
+        if device.name != printer_name:
+            device.name = printer_name
+
+    if device is None:
+        device_result = await db.execute(
+            select(UserPrinterDevice).where(
+                UserPrinterDevice.user_id == user.id,
+                UserPrinterDevice.name == printer_name,
+            )
+        )
+        device = device_result.scalar_one_or_none()
+
+    if device is None:
+        logger.warning(
+            "Cannot sync HH extra to gate state: no device '%s' for user_id=%s",
+            printer_name, user.id,
+        )
+        return
+
+    target_result = await db.execute(
+        select(PresetGateState).where(
+            PresetGateState.user_id == user.id,
+            PresetGateState.device_id == device.id,
+            PresetGateState.gate_index == gate_index,
+        )
+    )
+    target_state = target_result.scalar_one_or_none()
+
+    if target_state is None:
+        target_state = PresetGateState(
+            user_id=user.id,
+            device_id=device.id,
+            gate_index=gate_index,
+            preset_id=None,
+            spool_id=spool.id,
+            source=PresetGateStateSource.hh_snapshot,
+            source_ts=now,
+            is_active=True,
+        )
+        db.add(target_state)
+    else:
+        target_state.spool_id = spool.id
+        target_state.source = PresetGateStateSource.hh_snapshot
+        target_state.source_ts = now
+        target_state.is_active = True
+
+    for state in existing_states:
+        if target_state.id is not None and state.id == target_state.id:
+            continue
+        state.spool_id = None
+        state.source = PresetGateStateSource.hh_snapshot
+        state.source_ts = now
+
+
 async def _get_user_spool(db: AsyncSession, user_id: int, spool_id: int) -> UserSpool | None:
     result = await db.execute(
         select(UserSpool)
@@ -852,6 +951,11 @@ async def patch_spool(
             merged_extra = dict(spool.extra or {})
             merged_extra.update(body.extra)
             spool.extra = merged_extra
+
+    # Sync HH extra fields (printer_name, mmu_gate_map) to PresetGateState
+    # so gate assignments from Happy Hare are reflected in our internal model.
+    if "extra" in fields_set and "location" not in fields_set:
+        await _sync_extra_to_gate_state(db, user, spool, api_key=api_key)
 
     await db.commit()
     updated = await _get_user_spool(db, user.id, spool.id)

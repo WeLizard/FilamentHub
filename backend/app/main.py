@@ -100,8 +100,11 @@ async def root() -> dict[str, str]:
 
 # Include API routers
 from app.api.v1.api import api_router
-from app.api.v1.endpoints import sitemap
+from app.api.v1.endpoints import sitemap, spool_compat
 
 app.include_router(api_router, prefix=settings.API_V1_PREFIX)
 # Sitemap доступен без префикса API для SEO
 app.include_router(sitemap.router)
+# Clean spool_compat mount: /spool_compat/{api_key}/api/v1/spool
+# Moonraker config: server: https://filamenthub.ru/spool_compat/{api_key}
+app.include_router(spool_compat.router, prefix="/spool_compat")
