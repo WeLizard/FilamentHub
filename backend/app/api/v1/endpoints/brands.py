@@ -7,9 +7,11 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.utils import like_pattern
-from app.core.errors import ERR_BRAND_NOT_FOUND, ERR_BRAND_SLUG_EXISTS, raise_error
+from app.core.dependencies import get_current_user
+from app.core.errors import ERR_BRAND_NOT_FOUND, ERR_BRAND_SLUG_EXISTS, ERR_NO_PERMISSION, raise_error
 from app.db.session import get_db
 from app.models.brand import Brand
+from app.models.user import User, UserRole
 from app.schemas.brand import BrandCreate, BrandListResponse, BrandResponse, BrandUpdate
 
 router = APIRouter(prefix="/brands", tags=["brands"])
@@ -128,6 +130,7 @@ async def update_brand(
     brand_id: int,
     data: BrandUpdate,
     db: Annotated[AsyncSession, Depends(get_db)],
+    current_user: Annotated[User, Depends(get_current_user)],
 ) -> BrandResponse:
     """Обновить производителя."""
     result = await db.execute(select(Brand).where(Brand.id == brand_id))
@@ -136,15 +139,29 @@ async def update_brand(
     if not brand:
         raise_error(404, ERR_BRAND_NOT_FOUND)
 
+    is_admin = current_user.role == UserRole.ADMIN
+    is_employee = current_user.brand_id == brand_id
+
+    if not is_admin and not is_employee:
+        raise_error(403, ERR_NO_PERMISSION)
+
+    update_data = data.model_dump(exclude_unset=True)
+
+    # Сотрудник может менять только description, website, logo_url
+    # name, slug, verified, active — только админ
+    if not is_admin:
+        admin_only = {"name", "slug", "verified", "active"}
+        for field in admin_only:
+            update_data.pop(field, None)
+
     # Проверка текстовых полей на плохие слова
     from app.services.preset_moderation import validate_text_field
-    update_data = data.model_dump(exclude_unset=True)
-    
+
     if "name" in update_data:
         is_valid, error_msg = await validate_text_field(update_data["name"], db, "brand_name")
         if not is_valid:
             raise HTTPException(status_code=400, detail=error_msg)
-    
+
     if "description" in update_data:
         is_valid, error_msg = await validate_text_field(update_data["description"], db, "brand_description")
         if not is_valid:

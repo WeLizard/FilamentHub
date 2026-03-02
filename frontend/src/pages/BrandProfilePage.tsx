@@ -61,6 +61,11 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({ onBack }) =>
   const [editingPreset, setEditingPreset] = useState<Preset | null>(null);
   const [deletingFilamentId, setDeletingFilamentId] = useState<number | null>(null);
   const [showQRFilament, setShowQRFilament] = useState<Filament | null>(null);
+  const [isEditingProfile, setIsEditingProfile] = useState(false);
+  const [profileDescription, setProfileDescription] = useState('');
+  const [profileWebsite, setProfileWebsite] = useState('');
+  const [profileLogoUrl, setProfileLogoUrl] = useState('');
+  const [profileError, setProfileError] = useState<string | null>(null);
 
   // Загружаем данные бренда
   const { data: brandData, isLoading: isLoadingBrand } = useQuery({
@@ -122,6 +127,38 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({ onBack }) =>
       setDeletingFilamentId(null);
     },
   });
+
+  // Мутация для обновления профиля бренда
+  const updateBrandMutation = useMutation({
+    mutationFn: (data: { description?: string | null; website?: string | null; logo_url?: string | null }) =>
+      brandsAPI.update(user!.brand_id!, data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['brand', user?.brand_id] });
+      setIsEditingProfile(false);
+      setProfileError(null);
+    },
+    onError: (err: any) => {
+      setProfileError(translateApiError(t, err.response?.data?.detail, t('brandProfile.errorUpdateProfile')));
+    },
+  });
+
+  const handleEditProfile = () => {
+    if (brandData) {
+      setProfileDescription(brandData.description || '');
+      setProfileWebsite(brandData.website || '');
+      setProfileLogoUrl(brandData.logo_url || '');
+      setProfileError(null);
+      setIsEditingProfile(true);
+    }
+  };
+
+  const handleSaveProfile = () => {
+    updateBrandMutation.mutate({
+      description: profileDescription.trim() || null,
+      website: profileWebsite.trim() || null,
+      logo_url: profileLogoUrl.trim() || null,
+    });
+  };
 
   const handleCreateFilament = () => {
     setEditingFilament(null);
@@ -209,11 +246,28 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({ onBack }) =>
             <Factory className="w-8 h-8 text-white" />
           </div>
           <div>
-            <h2 className="text-3xl font-bold text-white">{brandData.name}</h2>
+            <div className="flex items-center justify-center space-x-2">
+              <h2 className="text-3xl font-bold text-white">{brandData.name}</h2>
+              <button
+                onClick={handleEditProfile}
+                className="p-1.5 text-gray-400 hover:text-white hover:bg-white/10 rounded-lg transition-all"
+                title={t('brandProfile.editProfile')}
+              >
+                <Edit className="w-4 h-4" />
+              </button>
+            </div>
             <div className="flex items-center justify-center space-x-2 text-gray-300">
               {brandData.verified && <Shield className="w-4 h-4 text-green-400" />}
               <span>{brandData.verified ? t('brandProfile.verifiedManufacturer') : t('brandProfile.manufacturer')}</span>
             </div>
+            {brandData.description && (
+              <p className="text-gray-400 text-sm mt-1 max-w-md mx-auto">{brandData.description}</p>
+            )}
+            {brandData.website && (
+              <a href={brandData.website.startsWith('http') ? brandData.website : `https://${brandData.website}`} target="_blank" rel="noopener noreferrer" className="text-purple-400 hover:text-purple-300 text-sm mt-1 inline-block">
+                {brandData.website}
+              </a>
+            )}
           </div>
         </div>
 
@@ -742,6 +796,91 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({ onBack }) =>
                 className="w-full px-6 py-3 bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white rounded-xl transition-all shadow-lg shadow-purple-500/25 hover:shadow-purple-500/40"
               >
                 {t('brandProfile.close')}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Edit Profile Modal */}
+      {isEditingProfile && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
+          <div className="bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900 rounded-2xl w-full max-w-lg overflow-hidden border border-white/20 shadow-2xl">
+            <div className="flex items-center justify-between p-6 border-b border-white/10">
+              <div className="flex items-center space-x-3">
+                <Edit className="w-6 h-6 text-purple-400" />
+                <h2 className="text-2xl font-bold text-white">{t('brandProfile.editProfile')}</h2>
+              </div>
+              <button onClick={() => setIsEditingProfile(false)} className="text-gray-400 hover:text-white transition-colors">
+                <X className="w-6 h-6" />
+              </button>
+            </div>
+            <div className="p-6 space-y-4">
+              {profileError && (
+                <div className="p-3 bg-red-500/20 border border-red-500/30 rounded-lg text-red-300 text-sm">
+                  {profileError}
+                </div>
+              )}
+              <div>
+                <label className="block text-gray-300 mb-2 text-sm font-medium">{t('brandProfile.descriptionLabel')}</label>
+                <textarea
+                  value={profileDescription}
+                  onChange={(e) => setProfileDescription(e.target.value)}
+                  rows={3}
+                  className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all resize-none"
+                  placeholder={t('brandProfile.descriptionPlaceholder')}
+                />
+              </div>
+              <div>
+                <label className="block text-gray-300 mb-2 text-sm font-medium">{t('brandProfile.websiteLabel')}</label>
+                <input
+                  type="url"
+                  value={profileWebsite}
+                  onChange={(e) => setProfileWebsite(e.target.value)}
+                  className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all"
+                  placeholder="https://example.com"
+                />
+              </div>
+              <div>
+                <label className="block text-gray-300 mb-2 text-sm font-medium">{t('brandProfile.logoUrlLabel')}</label>
+                <input
+                  type="url"
+                  value={profileLogoUrl}
+                  onChange={(e) => setProfileLogoUrl(e.target.value)}
+                  className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all"
+                  placeholder="https://example.com/logo.png"
+                />
+                {profileLogoUrl && (
+                  <div className="mt-2 flex items-center space-x-3">
+                    <img
+                      src={profileLogoUrl}
+                      alt="Logo preview"
+                      className="w-12 h-12 rounded-lg object-contain bg-white/5"
+                      onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
+                    />
+                    <span className="text-gray-500 text-xs">{t('brandProfile.logoPreview')}</span>
+                  </div>
+                )}
+              </div>
+            </div>
+            <div className="p-6 border-t border-white/10 flex justify-end space-x-3">
+              <button
+                onClick={() => setIsEditingProfile(false)}
+                className="px-6 py-2.5 text-gray-300 hover:text-white hover:bg-white/10 rounded-xl transition-all"
+              >
+                {t('brandProfile.cancel')}
+              </button>
+              <button
+                onClick={handleSaveProfile}
+                disabled={updateBrandMutation.isPending}
+                className="px-6 py-2.5 bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white rounded-xl transition-all shadow-lg shadow-purple-500/25 flex items-center space-x-2 disabled:opacity-50"
+              >
+                {updateBrandMutation.isPending ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  <Check className="w-4 h-4" />
+                )}
+                <span>{t('brandProfile.save')}</span>
               </button>
             </div>
           </div>

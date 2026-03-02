@@ -332,6 +332,11 @@ export const brandsAPI = {
     const response = await api.post<Brand>('/brands/', data);
     return response.data;
   },
+
+  update: async (id: number, data: { description?: string | null; website?: string | null; logo_url?: string | null }) => {
+    const response = await api.patch<Brand>(`/brands/${id}`, data);
+    return response.data;
+  },
 };
 
 // Filaments API
