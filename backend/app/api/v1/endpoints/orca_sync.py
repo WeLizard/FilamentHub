@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 import re
@@ -9,7 +10,8 @@ from datetime import datetime, timezone
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy import or_, select
+from sqlalchemy import cast, or_, select
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -2000,9 +2002,6 @@ async def _upsert_filament_preset(
         elif fhub_draft_id:
             # Ищем пресет с таким fhub_draft_id в orcaslicer_settings
             # Используем оператор PostgreSQL JSONB для поиска
-            from sqlalchemy import cast, String
-            from sqlalchemy.dialects.postgresql import JSONB
-            
             # Для PostgreSQL JSONB используем оператор ->> для извлечения текста
             result = await db.execute(
                 select(Preset).where(
@@ -2010,7 +2009,7 @@ async def _upsert_filament_preset(
                     Preset.user_id == current_user.id,
                 )
             )
-            preset = result.scalar_one_or_none()
+            preset = result.scalars().first()
             if preset:
                 logger.info(
                     f"Found draft preset by fhub_draft_id: {fhub_draft_id} "
@@ -2029,6 +2028,7 @@ async def _upsert_filament_preset(
                     Preset.user_id == current_user.id,
                 )
             )
+            preset = result.scalars().first()
         else:
             # Для черновиков - ищем по external_id + filament_id IS NULL
             result = await db.execute(
@@ -2038,7 +2038,32 @@ async def _upsert_filament_preset(
                     Preset.user_id == current_user.id,
                 )
             )
-        preset = result.scalar_one_or_none()
+            preset = result.scalars().first()
+
+            # 3b. Если черновик не найден — проверяем, не был ли он уже промоутирован
+            # (external_id совпадает, но filament_id уже != NULL и пресет активен)
+            if preset is None and not is_our_preset:
+                result = await db.execute(
+                    select(Preset).where(
+                        Preset.external_id == payload.external_id,
+                        Preset.filament_id.isnot(None),
+                        Preset.active == True,
+                        Preset.user_id == current_user.id,
+                    )
+                )
+                promoted = result.scalars().first()
+                if promoted:
+                    logger.info(
+                        f"Template '{payload.name}' external_id='{payload.external_id}' "
+                        f"already promoted to preset id={promoted.id} name='{promoted.name}' — skipping"
+                    )
+                    return OrcaSyncResult(
+                        external_id=payload.external_id,
+                        fhub_id=promoted.id,
+                        status="skipped",
+                        message="Template already promoted to FilamentHub preset",
+                    )
+
         if preset:
             logger.info(
                 f"Found preset by external_id '{payload.external_id}' "
@@ -2057,8 +2082,8 @@ async def _upsert_filament_preset(
                     Preset.user_id == current_user.id,
                 )
             )
-            preset = result.scalar_one_or_none()
-            
+            preset = result.scalars().first()
+
             # Если не найдено точное совпадение, ищем по очищенному имени (без @FilamentHub)
             if preset is None:
                 clean_name = payload.name.replace(' @FilamentHub', '').replace('@FilamentHub', '').strip()
@@ -2070,8 +2095,8 @@ async def _upsert_filament_preset(
                             Preset.user_id == current_user.id,
                         )
                     )
-                    preset = result.scalar_one_or_none()
-            
+                    preset = result.scalars().first()
+
             if preset:
                 logger.info(
                     f"Found preset by name '{payload.name}' + filament_id {filament.id} "
@@ -2082,12 +2107,12 @@ async def _upsert_filament_preset(
             result = await db.execute(
                 select(Preset).where(
                     Preset.name == payload.name,
-                    Preset.filament_id.is_(None),  # КРИТИЧНО: Черновики без filament_id
+                    Preset.filament_id.is_(None),
                     Preset.user_id == current_user.id,
                 )
             )
-            preset = result.scalar_one_or_none()
-            
+            preset = result.scalars().first()
+
             if preset:
                 logger.info(
                     f"Found draft preset by name '{payload.name}' (filament_id=None) "
@@ -2112,17 +2137,65 @@ async def _upsert_filament_preset(
                     Preset.active == True,  # Только активные пресеты
                 )
             )
-            preset = result.scalar_one_or_none()
+            preset = result.scalars().first()
             if preset:
                 logger.info(
-                    f"✅ Found active preset by cleaned name '{clean_name}' (original: '{payload.name}') "
+                    f"Found active preset by cleaned name '{clean_name}' (original: '{payload.name}') "
                     f"(id={preset.id}, filament_id={preset.filament_id}, active={preset.active})"
                 )
                 # Обновляем external_id если его нет
                 if not preset.external_id and payload.external_id:
                     preset.external_id = payload.external_id
                     logger.info(f"Updated preset {preset.id} external_id to {payload.external_id}")
-    
+
+    # Приоритет 5: Проверка derived-меток (anti-cycle)
+    # Если пресет не найден — возможно, черновик уже был промоутирован в FH-пресет.
+    # Проверяем, есть ли активный пресет, созданный из шаблона с таким же external_id или draft_id.
+    if preset is None and not is_our_preset:
+        derived_preset = None
+
+        # 5a. Проверяем по derived_from_external_id
+        if payload.external_id:
+            result = await db.execute(
+                select(Preset).where(
+                    cast(Preset.orcaslicer_settings, JSONB)['derived_from_external_id'].astext == payload.external_id,
+                    Preset.user_id == current_user.id,
+                    Preset.active == True,
+                )
+            )
+            derived_preset = result.scalars().first()
+
+        # 5b. Проверяем по derived_from_draft_id (для шаблонов без external_id)
+        if derived_preset is None:
+            # Генерируем draft_id так же, как при создании черновика
+            if fhub_draft_id:
+                check_draft_id = fhub_draft_id
+            elif payload.external_id:
+                check_draft_id = f"draft_{current_user.id}_{payload.external_id}"
+            else:
+                name_hash = hashlib.md5((payload.name or "").encode()).hexdigest()[:8]
+                check_draft_id = f"draft_{current_user.id}_{name_hash}"
+
+            result = await db.execute(
+                select(Preset).where(
+                    cast(Preset.orcaslicer_settings, JSONB)['derived_from_draft_id'].astext == check_draft_id,
+                    Preset.user_id == current_user.id,
+                    Preset.active == True,
+                )
+            )
+            derived_preset = result.scalars().first()
+
+        if derived_preset:
+            logger.info(
+                f"Skipping template '{payload.name}' — already promoted to "
+                f"FH preset id={derived_preset.id} name='{derived_preset.name}'"
+            )
+            return OrcaSyncResult(
+                external_id=payload.external_id,
+                fhub_id=derived_preset.id,
+                status="skipped",
+                message="Template already promoted to FilamentHub preset",
+            )
 
     if preset:
         # Обновляем существующий пресет
@@ -2144,9 +2217,6 @@ async def _upsert_filament_preset(
         # OrcaSlicer НЕ отправляет updated_at в JSON (только в .info файле)
         # Сравниваем весь orcaslicer_settings целиком (включая start_gcode, end_gcode и все параметры)
         if not payload_updated_at:
-            import json
-            import hashlib
-            
             # Нормализуем JSON для сравнения (сортируем ключи, убираем None)
             def normalize_for_hash(data: dict | None) -> str:
                 if not data:
@@ -2491,7 +2561,14 @@ async def _upsert_filament_preset(
         # Если это не наш пресет (черновик) - добавляем fhub_draft_id для предотвращения дубликатов
         if not is_our_preset:
             # Генерируем уникальный ID черновика
-            draft_id = fhub_draft_id or f"draft_{current_user.id}_{payload.external_id or 'new'}"
+            # Используем хеш имени вместо 'new' для уникальности при null external_id
+            if fhub_draft_id:
+                draft_id = fhub_draft_id
+            elif payload.external_id:
+                draft_id = f"draft_{current_user.id}_{payload.external_id}"
+            else:
+                name_hash = hashlib.md5((payload.name or "").encode()).hexdigest()[:8]
+                draft_id = f"draft_{current_user.id}_{name_hash}"
             preset_orcaslicer_settings["fhub_draft_id"] = draft_id
             logger.debug(f"Adding fhub_draft_id={draft_id} to new draft preset")
         else:

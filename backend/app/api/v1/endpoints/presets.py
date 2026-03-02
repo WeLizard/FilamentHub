@@ -391,13 +391,24 @@ async def update_preset(
         elif not isinstance(preset.orcaslicer_settings, dict):
             preset.orcaslicer_settings = {}
         
+        # Сохраняем derived-метки для предотвращения повторного создания черновиков:
+        # При следующей синхронизации OrcaSlicer пришлёт тот же шаблон,
+        # и мы должны распознать, что из него уже создан FH-пресет.
+        old_draft_id = preset.orcaslicer_settings.get("fhub_draft_id")
+        old_external_id = preset.external_id
+        if old_external_id:
+            preset.orcaslicer_settings["derived_from_external_id"] = old_external_id
+        if old_draft_id:
+            preset.orcaslicer_settings["derived_from_draft_id"] = old_draft_id
+
         # Убираем метку черновика, добавляем метки "нашего" пресета
         preset.orcaslicer_settings.pop("fhub_draft_id", None)
         preset.orcaslicer_settings["fhub_id"] = preset.id
         preset.orcaslicer_settings["fhub_source"] = "filamenthub"
-        
+
         logger.info(
-            f"Activated draft preset {preset.id}: removed fhub_draft_id, "
+            f"Activated draft preset {preset.id}: removed fhub_draft_id={old_draft_id}, "
+            f"saved derived_from_external_id={old_external_id}, derived_from_draft_id={old_draft_id}, "
             f"added fhub_id={preset.id} and fhub_source='filamenthub'"
         )
     
