@@ -2,7 +2,25 @@
 
 **Дата:** 2026-03-01
 **Ветка:** main
-**Последний коммит:** `004092f` feat(hh-integration): gate badge on SpoolCard + post-create gate assignment step
+**Последний коммит:** `83023f6` fix(orca-sync): skip Filament creation for users without brand_id
+
+---
+
+## Что сделано (сессия 2026-03-01 — продолжение 2)
+
+### 4. Фикс: OrcaSlicer filament import 500 — brand_id=null (`83023f6`)
+
+**Баг**: `_upsert_filament_preset` при `is_our_preset=True` и ненайденном филаменте в каталоге пытался создать `Filament(brand_id=None)` → NOT NULL violation → 500.
+
+**Причина**: регулярный пользователь не имеет `brand_id`, а у нас было `brand_id=current_user.brand_id if current_user.brand_id else None`.
+
+**Исправлено** в `backend/app/api/v1/endpoints/orca_sync.py` (блок ~1873):
+- Если `not current_user.brand_id` → `is_our_preset = False`, пресет сохраняется как черновик (filament=None, active=False)
+- Только brand-admin может создавать новый каталожный Filament
+
+**Подтверждено в прод-логах**: `IntegrityError: null value in column "brand_id" of relation "filaments"`
+
+**Нужен деплой** (`ssh server "cd ~/FilamentHub && bash scripts/deploy.sh"`)
 
 ---
 
