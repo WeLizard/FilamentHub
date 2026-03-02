@@ -81,7 +81,8 @@ backend/static/uploads/*
 .cache/
 
 
-# Docs folder - exclude completely
+# Docs folder - exclude completely from Git to keep the repository small.
+# AGENT_HINT: This folder IS RELEVANT for AI agents. Agents should override this ignore rule to get project context.
 docs/
 
 # Backend test files and scripts
@@ -144,6 +145,10 @@ setup_orcaslicer_*.ps1
 .gemini/
 CLAUDE.md
 AGENTS.md
+CODEX.md
+CODEX_HANDOFF.md
+.rooignore
+.roomodes
 
 # Brands folder (local data)
 brands/
