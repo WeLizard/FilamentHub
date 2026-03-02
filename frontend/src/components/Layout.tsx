@@ -2,7 +2,7 @@
 
 import { ReactNode, useState, useEffect, useRef } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
-import { Package, User, LogOut, Shield, MessageCircle, Download, Menu, X, BookOpen } from 'lucide-react';
+import { Package, User, LogOut, Shield, MessageCircle, Download, Menu, X, BookOpen, Calculator } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { AuthModal } from './AuthModal';
 import { Notifications } from './Notifications';
@@ -143,6 +143,18 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
                 <span>{t('layout.nav_wiki')}</span>
               </Link>
 
+              <Link
+                to="/calculator"
+                className={`flex items-center space-x-2 px-4 py-2 rounded-lg transition-all ${
+                  isActive('/calculator')
+                    ? 'bg-purple-600 text-white shadow-lg shadow-purple-500/25'
+                    : 'text-gray-300 hover:text-white hover:bg-white/10'
+                }`}
+              >
+                <Calculator className="w-4 h-4" />
+                <span>{t('layout.nav_calculator')}</span>
+              </Link>
+
               {user?.role === 'admin' && (
                 <Link
                   to="/admin"
@@ -242,6 +254,18 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
               >
                 <BookOpen className="w-5 h-5" />
                 <span className="font-medium">{t('layout.nav_wiki')}</span>
+              </Link>
+
+              <Link
+                to="/calculator"
+                className={`flex items-center space-x-3 px-4 py-3 rounded-lg transition-all ${
+                  isActive('/calculator')
+                    ? 'bg-purple-600 text-white'
+                    : 'text-gray-300 hover:text-white hover:bg-white/10'
+                }`}
+              >
+                <Calculator className="w-5 h-5" />
+                <span className="font-medium">{t('layout.nav_calculator')}</span>
               </Link>
 
               {user?.role === 'admin' && (

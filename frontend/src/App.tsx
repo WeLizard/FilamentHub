@@ -5,6 +5,7 @@ import { ProtectedRoute } from './components/ProtectedRoute';
 import { Layout } from './components/Layout';
 import { CatalogPage } from './pages/CatalogPage';
 import { ProfilePage } from './pages/ProfilePage';
+import { CalculatorPage } from './pages/CalculatorPage';
 import { FilamentDetailPage } from './pages/FilamentDetailPage';
 import { BrandDetailPage } from './pages/BrandDetailPage';
 import { AdminPanel } from './pages/AdminPanel';
@@ -159,6 +160,16 @@ function AppContent() {
             <ProtectedRoute>
               <Layout>
                 <ProfilePage />
+              </Layout>
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/calculator"
+          element={
+            <ProtectedRoute>
+              <Layout>
+                <CalculatorPage />
               </Layout>
             </ProtectedRoute>
           }
