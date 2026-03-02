@@ -155,6 +155,9 @@ HANDOFF.md
 frontend/src/tests/
 frontend/tests/
 
+# Local MCP tools and utilities
+tools/
+
 # Brands folder (local data)
 brands/
 
