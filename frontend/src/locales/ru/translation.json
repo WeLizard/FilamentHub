@@ -842,6 +842,7 @@
     "pricePerKg": "За кг",
     "pricePerSpool": "За катушку",
     "spoolWeightLabel": "Вес катушки (g)",
+    "emptySpoolWeightLabel": "Вес пустой катушки (g)",
     "descriptionLabel": "Описание",
     "descriptionPlaceholder": "Описание материала...",
     "createSuccess": "Материал успешно создан!",
@@ -1337,6 +1338,9 @@
       "state": "Состояние",
       "lotNr": "Номер партии",
       "comment": "Комментарий",
+      "price": "Цена покупки (₽)",
+      "pricePlaceholder": "необязательно",
+      "optional": "необязательно",
       "submit": "Добавить",
       "cancel": "Отмена"
     },

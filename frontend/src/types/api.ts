@@ -53,6 +53,7 @@ export interface Filament {
   density: number | null;
   price_per_kg: number | null;
   spool_weight: number | null;
+  empty_spool_weight_g: number | null;
   description: string | null;
   views_count: number | null;
   scans_count: number | null;

@@ -37,6 +37,7 @@ class SpoolResponse(BaseModel):
     used_weight_g: float
     remaining_weight_g: float
     remaining_pct: float
+    price: float | None
     state: str
     source: str
     lot_nr: str | None
@@ -55,6 +56,7 @@ class SpoolCreateRequest(BaseModel):
     filament_id: int | None = Field(default=None, ge=1)
     initial_weight_g: float = Field(..., gt=0, le=10_000)
     used_weight_g: float = Field(default=0.0, ge=0)
+    price: float | None = Field(default=None, ge=0)
     state: SpoolState = "active"
     source: SpoolSource = "manual"
     lot_nr: str | None = Field(default=None, max_length=100)
@@ -67,6 +69,7 @@ class SpoolUpdateRequest(BaseModel):
     filament_id: int | None = Field(default=None, ge=1)
     initial_weight_g: float | None = Field(default=None, gt=0, le=10_000)
     used_weight_g: float | None = Field(default=None, ge=0)
+    price: float | None = Field(default=None, ge=0)
     state: SpoolState | None = None
     lot_nr: str | None = Field(default=None, max_length=100)
     comment: str | None = Field(default=None, max_length=500)

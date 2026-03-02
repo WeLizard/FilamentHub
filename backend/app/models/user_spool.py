@@ -45,6 +45,8 @@ class UserSpool(Base):
         nullable=False,
         index=True,
     )
+    price: Mapped[float | None] = mapped_column(Float, nullable=True)
+    # price: фактическая цена покупки этой катушки (пользователь заполняет)
     source: Mapped[str] = mapped_column(
         String(30), default="manual", nullable=False
     )

@@ -373,6 +373,7 @@ export const filamentsAPI = {
     density?: number;
     price_per_kg?: number;
     spool_weight?: number;
+    empty_spool_weight_g?: number;
     description?: string;
   }) => {
     const response = await api.post<Filament>('/filaments/', data);
@@ -389,6 +390,7 @@ export const filamentsAPI = {
     density?: number;
     price_per_kg?: number;
     spool_weight?: number;
+    empty_spool_weight_g?: number;
     description?: string;
     active?: boolean;
   }>) => {
@@ -1598,6 +1600,7 @@ export interface UserSpool {
   used_weight_g: number;
   remaining_weight_g: number;
   remaining_pct: number;
+  price: number | null;
   state: SpoolState;
   source: string;
   lot_nr: string | null;
@@ -1612,6 +1615,7 @@ export interface SpoolCreatePayload {
   filament_id?: number | null;
   initial_weight_g: number;
   used_weight_g?: number;
+  price?: number | null;
   state?: SpoolState;
   source?: string;
   lot_nr?: string | null;
@@ -1622,6 +1626,7 @@ export interface SpoolUpdatePayload {
   filament_id?: number | null;
   initial_weight_g?: number;
   used_weight_g?: number;
+  price?: number | null;
   state?: SpoolState;
   lot_nr?: string | null;
   comment?: string | null;

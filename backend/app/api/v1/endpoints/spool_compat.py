@@ -161,7 +161,7 @@ def _filament_payload(filament: Filament | None, fallback_id: int) -> dict:
         "density": density,
         "diameter": diameter,
         "weight": filament.spool_weight if filament is not None else None,
-        "spool_weight": None,
+        "spool_weight": filament.empty_spool_weight_g if filament is not None else None,
         "article_number": None,
         "comment": None,
         "settings_extruder_temp": None,
@@ -175,6 +175,8 @@ def _filament_payload(filament: Filament | None, fallback_id: int) -> dict:
 
 
 def _spool_price(spool: UserSpool, filament: Filament | None) -> float | None:
+    if spool.price is not None:
+        return round(spool.price, 4)
     if filament is None or filament.price_per_kg is None:
         return None
     if filament.price_per_kg < 0 or spool.initial_weight_g <= 0:
@@ -298,7 +300,7 @@ def _to_spool_payload(
         "price": _spool_price(spool, filament),
         "remaining_weight": round(remaining_weight, 3),
         "initial_weight": round(spool.initial_weight_g, 3),
-        "spool_weight": None,
+        "spool_weight": filament.empty_spool_weight_g if filament is not None else None,
         "used_weight": round(spool.used_weight_g, 3),
         "remaining_length": _length_from_weight(remaining_weight, density, diameter),
         "used_length": _length_from_weight(spool.used_weight_g, density, diameter) or 0.0,
@@ -1028,7 +1030,7 @@ async def measure_spool(
         return _err(status.HTTP_404_NOT_FOUND, f"No spool with ID {spool_id} found.")
 
     filament = spool.filament
-    tare = filament.spool_weight if filament is not None and filament.spool_weight else 0.0
+    tare = filament.empty_spool_weight_g if filament is not None and filament.empty_spool_weight_g else 0.0
     remaining_weight = max(body.weight - tare, 0.0)
     spool.used_weight_g = float(min(spool.initial_weight_g, max(spool.initial_weight_g - remaining_weight, 0.0)))
     spool.last_used_at = datetime.now(timezone.utc)

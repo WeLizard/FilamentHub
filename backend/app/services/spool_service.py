@@ -45,6 +45,7 @@ def _build_response(spool: UserSpool, filament: Filament | None) -> SpoolRespons
         used_weight_g=spool.used_weight_g,
         remaining_weight_g=spool.remaining_weight_g,
         remaining_pct=spool.remaining_pct,
+        price=spool.price,
         state=spool.state.value,
         source=spool.source,
         lot_nr=spool.lot_nr,
@@ -95,6 +96,7 @@ async def create_spool(
         filament_id=payload.filament_id,
         initial_weight_g=payload.initial_weight_g,
         used_weight_g=payload.used_weight_g,
+        price=payload.price,
         state=UserSpoolState(payload.state),
         source=payload.source,
         lot_nr=payload.lot_nr,
@@ -136,6 +138,8 @@ async def update_spool(
         spool.used_weight_g = payload.used_weight_g
     if payload.state is not None:
         spool.state = UserSpoolState(payload.state)
+    if "price" in payload.model_fields_set:
+        spool.price = payload.price
     if "lot_nr" in payload.model_fields_set:
         spool.lot_nr = payload.lot_nr
     if "comment" in payload.model_fields_set:

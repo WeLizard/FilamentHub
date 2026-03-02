@@ -51,6 +51,7 @@ export const CreateFilamentModal: React.FC<CreateFilamentModalProps> = ({
   const [pricePerKg, setPricePerKg] = useState(0);
   const [pricePerSpool, setPricePerSpool] = useState(0);
   const [spoolWeight, setSpoolWeight] = useState(1000);
+  const [emptySpoolWeight, setEmptySpoolWeight] = useState<number | null>(null);
   const [description, setDescription] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
@@ -178,6 +179,7 @@ export const CreateFilamentModal: React.FC<CreateFilamentModalProps> = ({
       const initialSpoolWeight = filament.spool_weight || 1000;
       setPricePerKg(initialPricePerKg);
       setSpoolWeight(initialSpoolWeight);
+      setEmptySpoolWeight(filament.empty_spool_weight_g ?? null);
       // Вычисляем цену за катушку из цены за кг
       setPricePerSpool(initialPricePerKg > 0 && initialSpoolWeight > 0 ? (initialPricePerKg * initialSpoolWeight) / 1000 : 0);
       setPriceMode('per_kg'); // По умолчанию показываем за кг
@@ -207,6 +209,7 @@ export const CreateFilamentModal: React.FC<CreateFilamentModalProps> = ({
       setPricePerKg(0);
       setPricePerSpool(0);
       setSpoolWeight(1000);
+      setEmptySpoolWeight(null);
       setPriceMode('per_kg');
       setDescription('');
     }
@@ -254,6 +257,7 @@ export const CreateFilamentModal: React.FC<CreateFilamentModalProps> = ({
       density?: number;
       price_per_kg?: number;
       spool_weight?: number;
+      empty_spool_weight_g?: number;
       description?: string;
     }) => filamentsAPI.create(data),
     onSuccess: (data: Filament) => {
@@ -295,6 +299,7 @@ export const CreateFilamentModal: React.FC<CreateFilamentModalProps> = ({
         density?: number;
         price_per_kg?: number;
         spool_weight?: number;
+        empty_spool_weight_g?: number;
         description?: string;
         active?: boolean;
       }>
@@ -354,6 +359,7 @@ export const CreateFilamentModal: React.FC<CreateFilamentModalProps> = ({
           density,
           price_per_kg: pricePerKg || undefined,
           spool_weight: spoolWeight || undefined,
+          empty_spool_weight_g: emptySpoolWeight ?? undefined,
           description: description || undefined,
         },
       });
@@ -386,6 +392,7 @@ export const CreateFilamentModal: React.FC<CreateFilamentModalProps> = ({
         density,
         price_per_kg: pricePerKg || undefined,
         spool_weight: spoolWeight || undefined,
+        empty_spool_weight_g: emptySpoolWeight ?? undefined,
         description: description || undefined,
       });
     }
@@ -980,6 +987,20 @@ export const CreateFilamentModal: React.FC<CreateFilamentModalProps> = ({
                 placeholder="1000"
               />
             </div>
+          </div>
+
+          {/* Empty spool weight (tare) */}
+          <div>
+            <label className="block text-gray-300 mb-2 text-sm font-medium">{t('createFilament.emptySpoolWeightLabel')}</label>
+            <input
+              type="number"
+              value={emptySpoolWeight ?? ''}
+              onChange={(e) => setEmptySpoolWeight(e.target.value === '' ? null : Number(e.target.value))}
+              min={0}
+              step="1"
+              className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all"
+              placeholder={t('spoolAddModal.optional')}
+            />
           </div>
 
           {/* Description */}

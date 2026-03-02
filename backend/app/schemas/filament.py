@@ -52,6 +52,7 @@ class FilamentBase(BaseModel):
     density: float | None = Field(None, gt=0)
     price_per_kg: float | None = Field(None, ge=0)
     spool_weight: float | None = Field(None, gt=0)
+    empty_spool_weight_g: float | None = Field(None, ge=0)
     description: str | None = None
 
 
@@ -73,6 +74,7 @@ class FilamentUpdate(BaseModel):
     density: float | None = Field(None, gt=0)
     price_per_kg: float | None = Field(None, ge=0)
     spool_weight: float | None = Field(None, gt=0)
+    empty_spool_weight_g: float | None = Field(None, ge=0)
     description: str | None = None
     active: bool | None = None
 

@@ -1467,15 +1467,19 @@ const SpoolCard: React.FC<SpoolCardProps> = ({ spool, isBusy = false, onEdit, on
         </div>
 
         {/* Price per spool */}
-        {spool.filament?.price_per_kg != null && (
+        {(spool.price != null || spool.filament?.price_per_kg != null) && (
           <p className="text-gray-400 text-xs">
             <span className="text-gray-500">{t('profilePage.spoolPrice')}: </span>
             <span className="font-medium">
-              {((spool.filament.price_per_kg * spool.initial_weight_g) / 1000).toFixed(0)} ₽
+              {spool.price != null
+                ? `${spool.price.toFixed(0)} ₽`
+                : `${((spool.filament!.price_per_kg! * spool.initial_weight_g) / 1000).toFixed(0)} ₽`}
             </span>
-            <span className="text-gray-600 ml-1">
-              ({spool.filament.price_per_kg.toFixed(0)} ₽/кг)
-            </span>
+            {spool.price == null && spool.filament?.price_per_kg != null && (
+              <span className="text-gray-600 ml-1">
+                ({spool.filament.price_per_kg.toFixed(0)} ₽/кг, рек.)
+              </span>
+            )}
           </p>
         )}
 
@@ -1567,6 +1571,7 @@ const SpoolForm: React.FC<SpoolFormProps> = ({ mode, spool, onSaved, onCancel })
   const [initialWeight, setInitialWeight] = useState<string>(spool ? String(spool.initial_weight_g) : '1000');
   const [usedWeight, setUsedWeight] = useState<string>(spool ? String(spool.used_weight_g) : '0');
   const [state, setState] = useState<SpoolState>(spool?.state ?? 'active');
+  const [price, setPrice] = useState<string>(spool?.price != null ? String(spool.price) : '');
   const [lotNr, setLotNr] = useState<string>(spool?.lot_nr ?? '');
   const [comment, setComment] = useState<string>(spool?.comment ?? '');
   const [isQrPanelOpen, setIsQrPanelOpen] = useState(false);
@@ -1647,6 +1652,7 @@ const SpoolForm: React.FC<SpoolFormProps> = ({ mode, spool, onSaved, onCancel })
         density: null,
         price_per_kg: null,
         spool_weight: null,
+        empty_spool_weight_g: null,
         description: null,
         views_count: null,
         scans_count: null,
@@ -1667,6 +1673,7 @@ const SpoolForm: React.FC<SpoolFormProps> = ({ mode, spool, onSaved, onCancel })
     setInitialWeight(String(spool.initial_weight_g));
     setUsedWeight(String(spool.used_weight_g));
     setState(spool.state);
+    setPrice(spool.price != null ? String(spool.price) : '');
     setLotNr(spool.lot_nr ?? '');
     setComment(spool.comment ?? '');
     setIsQrPanelOpen(false);
@@ -1894,10 +1901,12 @@ const SpoolForm: React.FC<SpoolFormProps> = ({ mode, spool, onSaved, onCancel })
 
     setSaving(true);
     try {
+      const parsedPrice = price !== '' ? parseFloat(price) : null;
       const payload = {
         filament_id: filamentId ? Number(filamentId) : null,
         initial_weight_g: parsedInitial,
         used_weight_g: parsedUsed,
+        price: parsedPrice != null && Number.isFinite(parsedPrice) ? parsedPrice : null,
         state,
         lot_nr: lotNr || null,
         comment: comment || null,
@@ -2154,9 +2163,18 @@ const SpoolForm: React.FC<SpoolFormProps> = ({ mode, spool, onSaved, onCancel })
         </div>
 
         <div>
+          <label className={labelCls}>{t('profilePage.spoolAddModal.price')}</label>
+          <input type="number" min="0" step="1" value={price}
+            onChange={e => setPrice(e.target.value)}
+            placeholder={t('profilePage.spoolAddModal.pricePlaceholder')} className={inputCls} />
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+        <div>
           <label className={labelCls}>{t('profilePage.spoolAddModal.lotNr')}</label>
           <input type="text" value={lotNr} onChange={e => setLotNr(e.target.value)}
-            placeholder="необязательно" className={inputCls} />
+            placeholder={t('profilePage.spoolAddModal.optional')} className={inputCls} />
         </div>
       </div>
 

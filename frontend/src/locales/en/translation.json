@@ -820,6 +820,7 @@
     "pricePerKg": "Per kg",
     "pricePerSpool": "Per spool",
     "spoolWeightLabel": "Spool weight (g)",
+    "emptySpoolWeightLabel": "Empty spool weight (g)",
     "descriptionLabel": "Description",
     "descriptionPlaceholder": "Material description...",
     "createSuccess": "Material created successfully!",
@@ -1315,6 +1316,9 @@
       "state": "State",
       "lotNr": "Lot number",
       "comment": "Comment",
+      "price": "Purchase price (₽)",
+      "pricePlaceholder": "optional",
+      "optional": "optional",
       "submit": "Add",
       "cancel": "Cancel"
     },

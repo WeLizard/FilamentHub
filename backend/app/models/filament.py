@@ -61,8 +61,11 @@ class Filament(Base):
 
     # Pricing (для калькулятора)
     price_per_kg: Mapped[float | None] = mapped_column(Float, nullable=True)
+    # price_per_kg: рекомендованная цена за кг (вендор заполняет)
     spool_weight: Mapped[float | None] = mapped_column(Float, nullable=True)
-    # spool_weight: вес катушки в граммах (обычно 1000г)
+    # spool_weight: вес нетто филамента в граммах (обычно 1000г)
+    empty_spool_weight_g: Mapped[float | None] = mapped_column(Float, nullable=True)
+    # empty_spool_weight_g: вес пустой катушки (тара) в граммах, для взвешивания
 
     # Description
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
