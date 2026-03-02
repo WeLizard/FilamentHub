@@ -278,6 +278,8 @@ export interface User {
   brand_id: number | null;
   brand_name: string | null; // Название бренда (для админки)
   badges: string[] | null; // Бейджи пользователя (founder, beta_tester, contributor, verified, early_adopter, supporter)
+  is_premium: boolean; // Premium подписка
+  premium_expires_at: string | null; // Дата окончания подписки
   created_at: string;
   updated_at: string;
 }
