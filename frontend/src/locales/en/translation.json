@@ -1204,6 +1204,8 @@
       "spoolsShort": "Filaments",
       "calculator": "Calculator",
       "calculatorShort": "Calc.",
+      "calculatorPro": "Calculator Pro",
+      "calculatorProShort": "Pro",
       "settings": "Settings",
       "settingsShort": "Settings"
     },
@@ -1428,7 +1430,10 @@
       "tip2": "Enable sync on each preset (🔄) to make it available in OrcaSlicer",
       "tip3": "Use material type (PLA, PETG, ABS...) and brand filters in the catalog",
       "tip4": "Click on a preset card to view all settings in a modal — you can also download JSON from there",
-      "tip5": "Use the \"Dashboard\" tab for a quick overview: recent presets, statistics, activity"
+      "tip5": "Use the \"Dashboard\" tab for a quick overview: recent presets, statistics, activity",
+      "premiumRequired": "Available in Premium",
+      "premiumCalculatorDesc": "Advanced calculator with G-code upload, calculation history, quote generation, and automatic print parameter parsing",
+      "getPremium": "Get Premium"
     },
     "calculatorTitle": "Print Cost Calculator",
     "calculatorSubtitleShort": "Calculate the cost of a part",

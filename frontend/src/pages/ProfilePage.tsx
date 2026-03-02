@@ -46,6 +46,7 @@ import {
   RefreshCw,
   QrCode,
   Camera,
+  Lock,
 } from 'lucide-react';
 import { Printer3DIcon } from '../components/icons/Printer3DIcon';
 import { useAuth } from '../contexts/AuthContext';
@@ -68,6 +69,7 @@ import { PresetSyncToggle } from '../components/PresetSyncToggle';
 import { BadgeList } from '../components/Badge';
 import { PresetSlotsPanel } from '../components/presetSlots/PresetSlotsPanel';
 import { BrandProfilePage } from './BrandProfilePage';
+import { CalculatorPage } from './CalculatorPage';
 import type { Preset, PricingMethod, CalculatorEstimateRequest, PrinterProfile, PrintProfile, Filament } from '../types/api';
 
 export const ProfilePage: React.FC = () => {
@@ -76,7 +78,7 @@ export const ProfilePage: React.FC = () => {
   const { t } = useTranslation();
   const isHeaderVisible = useHeaderVisible();
   const [showBrandCabinet, setShowBrandCabinet] = useState(false); // Показывать ли кабинет производителя
-  const [userTab, setUserTab] = useState<'dashboard' | 'presets' | 'spools' | 'calculator' | 'settings' | 'printer-profiles'>(
+  const [userTab, setUserTab] = useState<'dashboard' | 'presets' | 'spools' | 'calculator' | 'calculator-pro' | 'settings' | 'printer-profiles'>(
     'dashboard'
   );
   const [isAddSpoolOpen, setIsAddSpoolOpen] = useState(false);
@@ -670,22 +672,39 @@ export const ProfilePage: React.FC = () => {
               { id: 'printer-profiles', label: t('profilePage.tabs.printers'), shortLabel: t('profilePage.tabs.printersShort'), icon: Printer3DIcon },
               { id: 'spools', label: t('profilePage.tabs.spools'), shortLabel: t('profilePage.tabs.spoolsShort'), icon: Package },
               { id: 'calculator', label: t('profilePage.tabs.calculator'), shortLabel: t('profilePage.tabs.calculatorShort'), icon: Calculator },
+              { 
+                id: 'calculator-pro', 
+                label: t('profilePage.tabs.calculatorPro'), 
+                shortLabel: t('profilePage.tabs.calculatorProShort'), 
+                icon: Calculator,
+                premium: true,
+              },
               { id: 'settings', label: t('profilePage.tabs.settings'), shortLabel: t('profilePage.tabs.settingsShort'), icon: Cog },
-            ].map((tab) => (
-              <button
-                key={tab.id}
-                onClick={() => setUserTab(tab.id as any)}
-                className={`flex items-center gap-1.5 md:gap-2 px-2.5 md:px-4 py-1.5 md:py-2 rounded-lg transition-all text-xs md:text-sm whitespace-nowrap ${
-                  userTab === tab.id
-                    ? 'bg-purple-600 text-white shadow-lg shadow-purple-500/25'
-                    : 'text-gray-300 hover:text-white hover:bg-white/10 active:bg-white/15'
-                }`}
-              >
-                <tab.icon className="w-3.5 h-3.5 md:w-4 md:h-4" />
-                <span className="hidden md:inline">{tab.label}</span>
-                <span className="md:hidden">{tab.shortLabel}</span>
-              </button>
-            ))}
+            ].map((tab) => {
+              const isPremiumTab = tab.premium === true;
+              const isLocked = isPremiumTab && !user?.is_premium;
+              
+              return (
+                <button
+                  key={tab.id}
+                  onClick={() => !isLocked && setUserTab(tab.id as any)}
+                  disabled={isLocked}
+                  className={`flex items-center gap-1.5 md:gap-2 px-2.5 md:px-4 py-1.5 md:py-2 rounded-lg transition-all text-xs md:text-sm whitespace-nowrap ${
+                    userTab === tab.id
+                      ? 'bg-purple-600 text-white shadow-lg shadow-purple-500/25'
+                      : isLocked
+                      ? 'text-gray-500 cursor-not-allowed'
+                      : 'text-gray-300 hover:text-white hover:bg-white/10 active:bg-white/15'
+                  } ${isLocked ? 'opacity-60' : ''}`}
+                  title={isLocked ? t('profilePage.premiumRequired') : undefined}
+                >
+                  <tab.icon className="w-3.5 h-3.5 md:w-4 md:h-4" />
+                  <span className="hidden md:inline">{tab.label}</span>
+                  <span className="md:hidden">{tab.shortLabel}</span>
+                  {isLocked && <Lock className="w-3 h-3 md:w-3.5 md:h-3.5 ml-1" />}
+                </button>
+              );
+            })}
             <button
               onClick={() => setShowHelpModal(true)}
               className="flex items-center gap-1.5 px-2 md:px-3 py-1.5 md:py-2 rounded-lg transition-all text-xs md:text-sm text-gray-400 hover:text-white hover:bg-white/10 active:bg-white/15"
@@ -821,6 +840,30 @@ export const ProfilePage: React.FC = () => {
           </div>
 
           <CalculatorComponent />
+        </div>
+      )}
+
+      {/* Calculator Pro Tab (Premium) */}
+      {userTab === 'calculator-pro' && (
+        <div className="max-w-7xl mx-auto">
+          {user?.is_premium ? (
+            <CalculatorPage />
+          ) : (
+            <div className="flex flex-col items-center justify-center py-20">
+              <div className="p-6 bg-purple-600/20 rounded-full mb-6">
+                <Lock className="w-16 h-16 text-purple-400" />
+              </div>
+              <h2 className="text-3xl font-bold text-white mb-4">
+                {t('profilePage.premiumRequired')}
+              </h2>
+              <p className="text-gray-400 mb-8 text-center max-w-md">
+                {t('profilePage.premiumCalculatorDesc')}
+              </p>
+              <button className="px-8 py-4 bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-500 hover:to-pink-500 text-white font-bold rounded-xl shadow-lg shadow-purple-500/25 transition-all">
+                {t('profilePage.getPremium')}
+              </button>
+            </div>
+          )}
         </div>
       )}
 
