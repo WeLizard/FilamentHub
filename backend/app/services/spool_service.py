@@ -52,6 +52,7 @@ def _build_response(spool: UserSpool, filament: Filament | None) -> SpoolRespons
         created_at=spool.created_at,
         updated_at=spool.updated_at,
         last_used_at=spool.last_used_at,
+        extra=spool.extra,
     )
 
 
