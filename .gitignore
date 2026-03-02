@@ -147,8 +147,13 @@ CLAUDE.md
 AGENTS.md
 CODEX.md
 CODEX_HANDOFF.md
+HANDOFF.md
 .rooignore
 .roomodes
+
+# Frontend tests (local development only)
+frontend/src/tests/
+frontend/tests/
 
 # Brands folder (local data)
 brands/
