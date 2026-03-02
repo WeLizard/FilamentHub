@@ -871,12 +871,12 @@ async def _upsert_printer_profile(
                 PrinterProfile.owner_user_id == current_user.id,
             )
         )
-        profile = result.scalar_one_or_none()
+        profile = result.scalars().first()
         if profile:
             logger.info(
                 f"Found printer profile by external_id {payload.external_id} instead of fhub_id {payload.fhub_id}"
             )
-    
+
     # Приоритет 4: Ищем по slug (fallback)
     if profile is None and payload.slug:
         result = await db.execute(
@@ -885,7 +885,7 @@ async def _upsert_printer_profile(
                 PrinterProfile.owner_user_id == current_user.id,
             )
         )
-        profile = result.scalar_one_or_none()
+        profile = result.scalars().first()
 
     printer_id = await _ensure_printer_id(
         db=db,
@@ -1179,12 +1179,12 @@ async def _upsert_print_profile(
                 PrintProfile.owner_user_id == current_user.id,
             )
         )
-        profile = result.scalar_one_or_none()
+        profile = result.scalars().first()
         if profile:
             logger.info(
                 f"Found print profile by external_id {payload.external_id} instead of fhub_id {payload.fhub_id}"
             )
-    
+
     # Приоритет 4: Ищем по slug (fallback)
     if profile is None and payload.slug:
         result = await db.execute(
@@ -1193,7 +1193,7 @@ async def _upsert_print_profile(
                 PrintProfile.owner_user_id == current_user.id,
             )
         )
-        profile = result.scalar_one_or_none()
+        profile = result.scalars().first()
 
     compatible_printers = (
         [str(item) for item in payload.compatible_printers] if payload.compatible_printers else None
@@ -1798,131 +1798,18 @@ async def _upsert_filament_preset(
                     message=error_msg,
                 )
 
-    # 1. Определяем, нужен ли Filament
-    # Для пресетов с @FilamentHub - нужен Filament (это наши синхронизированные пресеты)
-    # Для черновиков - НЕ создаем Filament, создаем Preset с filament_id=None
-    filament: Filament | None = None
-    
-    if payload.filament_id:
-        # Если указан filament_id - используем его (явное указание)
-        filament = await db.get(Filament, payload.filament_id)
-        if filament is None:
-            return OrcaSyncResult(
-                external_id=payload.external_id,
-                fhub_id=payload.fhub_id,
-                status="error",
-                message="Filament not found in FilamentHub",
-            )
-        # Проверяем права доступа
-        # КРИТИЧНО: Филаменты без производителя (brand_id=None) доступны только их создателю или админу
-        if (
-            filament.brand_id is not None  # Если есть производитель
-            and current_user.brand_id != filament.brand_id  # И это не бренд пользователя
-            and current_user.role != UserRole.ADMIN  # И пользователь не админ
-        ):
-            return OrcaSyncResult(
-                external_id=payload.external_id,
-                fhub_id=payload.fhub_id,
-                status="error",
-                message=ERR_NO_PERMISSION,
-            )
-    elif payload.filament_name:
-        filament_name = payload.filament_name
-        # Определяем material_type: из payload или из inherits
-        material_type = payload.material_type
-        if not material_type and payload.inherits:
-            material_type = _extract_material_type_from_inherits(payload.inherits)
-        material_type = material_type or "PLA"
-        
-        if is_our_preset:
-            # Пресеты с [FilamentHub] или @FilamentHub - ищем существующий филамент в каталоге
-            # Если найден - используем его (это наши синхронизированные пресеты)
-            # ВАЖНО: Убираем постфикс [FilamentHub] из имени филамента перед поиском
-            clean_filament_name = filament_name.replace(' [FilamentHub]', '').replace('[FilamentHub]', '').strip()
-            
-            existing_filament = await _find_existing_filament(
-                filament_name=clean_filament_name,
-                material_type=material_type,
-                db=db,
-            )
-            
-            if existing_filament:
-                # Найден существующий филамент в базе - используем его
-                filament = existing_filament
-                logger.info(
-                    f"✅ Using existing Filament (id={filament.id}, name='{filament.name}', "
-                    f"brand_id={filament.brand_id}, brand_name='{filament.brand.name if filament.brand else None}') "
-                    f"for preset '{payload.name}' (searched as '{clean_filament_name}')"
-                )
-            else:
-                # Не найден - создадим новый (но это редко, т.к. наши пресеты обычно уже в каталоге)
-                logger.warning(
-                    f"⚠️ Existing Filament not found for preset '{payload.name}' "
-                    f"(searched: name='{clean_filament_name}', material_type='{material_type}'). "
-                    f"Will create new draft filament."
-                )
-                filament = None
-        else:
-            # Пресеты БЕЗ [FilamentHub] и @FilamentHub - это черновики пользователя
-            # КРИТИЧНО: Для черновиков НЕ создаем Filament!
-            # Черновик = Preset с filament_id=None и active=False
-            # Пользователь активирует черновик, выбрав/создав филамент в UI
-            filament = None
-            logger.info(f"Preset '{payload.name}' is a draft - will create Preset without Filament")
-
-    # Для черновиков filament остается None
-    # Для пресетов с [FilamentHub] или @FilamentHub filament должен быть найден или создан
-    if is_our_preset and not filament:
-        if not current_user.brand_id:
-            # Regular user: no brand_id, cannot create catalog Filament (NOT NULL).
-            # Downgrade to draft — filament stays None, preset stored as inactive.
-            logger.warning(
-                f"[FilamentHub] preset '{payload.name}' has no matching catalog filament "
-                f"and user has no brand_id. Storing as draft."
-            )
-            is_our_preset = False
-        else:
-            # Brand admin can create a new catalog Filament entry.
-            filament_name = payload.filament_name or f"Imported from OrcaSlicer"
-            material_type = payload.material_type or "PLA"
-
-            filament_slug_source = filament_name
-            filament_slug = await generate_unique_slug(
-                db=db,
-                model=Filament,
-                source=filament_slug_source,
-                fallback=f"filament-{current_user.id}-{int(datetime.now(timezone.utc).timestamp())}",
-            )
-
-            filament = Filament(
-                name=filament_name,
-                slug=filament_slug,
-                material_type=material_type,
-                brand_id=current_user.brand_id,
-                diameter=1.75,
-                active=True,
-            )
-            db.add(filament)
-            await db.flush()
-
-            logger.info(
-                f"Created Filament (id={filament.id}, name='{filament_name}') "
-                f"for preset '{payload.name}'"
-            )
-
-    # 2. Найти или создать Preset
+    # =====================================================================
+    # 1. НАЙТИ ПРЕСЕТ (ПЕРЕД филаментом — чтобы переиспользовать filament_id)
+    # =====================================================================
     preset: Preset | None = None
-    
-    # НОВОЕ: Читаем .info файл (если есть в payload) - САМЫЙ ПРИОРИТЕТНЫЙ источник
+
+    # Читаем .info файл (если есть в payload) — САМЫЙ ПРИОРИТЕТНЫЙ источник
     fhub_id_from_info = None
     if payload.info_content:
-        # Парсим .info файл
-        # Формат: sync_info = fhub:<preset_id>:<source>
         for line in payload.info_content.split('\n'):
             line = line.strip()
             if line.startswith('sync_info = '):
                 sync_info = line.split(' = ', 1)[1].strip()
-                # Формат: fhub:<preset_id>:<source>
                 if sync_info.startswith('fhub:'):
                     parts = sync_info.split(':')
                     if len(parts) >= 2:
@@ -1932,30 +1819,23 @@ async def _upsert_filament_preset(
                         except ValueError:
                             logger.warning(f"Failed to parse fhub_id from sync_info: {sync_info}")
                 break
-    
-    # Проверяем метки из orcaslicer_settings (второй приоритет после .info)
+
+    # Метки из orcaslicer_settings
     orcaslicer_settings = payload.orcaslicer_settings or {}
     fhub_id_from_metadata = orcaslicer_settings.get("fhub_id")
     fhub_source = orcaslicer_settings.get("fhub_source")
     fhub_draft_id = orcaslicer_settings.get("fhub_draft_id")
-    
-    # Приоритет идентификации пресета:
-    # 1. fhub_id из .info файла (САМЫЙ НАДЕЖНЫЙ)
-    # 2. fhub_id из payload (явное указание)
-    # 3. fhub_id из JSON metadata
-    # 4. external_id + user_id (fallback)
-    
-    # Приоритет 1: Ищем по fhub_id из .info файла (самый надежный)
+
+    # Приоритет 1: fhub_id из .info файла (самый надежный)
     if fhub_id_from_info:
         preset = await db.get(Preset, fhub_id_from_info)
         if preset:
             logger.info(f"Found preset by fhub_id from .info file: {fhub_id_from_info} (preset.name='{preset.name}')")
-    
-    # Приоритет 2: Ищем по fhub_id из payload (явное указание)
+
+    # Приоритет 2: fhub_id из payload (явное указание)
     if not preset and payload.fhub_id:
         preset = await db.get(Preset, payload.fhub_id)
         if preset:
-            # Проверяем права доступа
             if (
                 preset.user_id != current_user.id
                 and current_user.role != UserRole.ADMIN
@@ -1967,20 +1847,14 @@ async def _upsert_filament_preset(
                     message=ERR_NO_PERMISSION,
                 )
             logger.info(f"Found preset by fhub_id from payload: {payload.fhub_id}")
-            
-            # КРИТИЧНО: НЕ проверяем sync_enabled при импорте из OrcaSlicer!
-            # sync_enabled контролирует только экспорт из FilamentHub в OrcaSlicer.
-            # При импорте из OrcaSlicer пользователь явно экспортировал пресет, значит хочет его синхронизировать.
-    
-    # Приоритет 2: Ищем по меткам из orcaslicer_settings
+
+    # Приоритет 3: fhub_id из orcaslicer_settings metadata
     if preset is None:
-        # 2a. Если есть fhub_id и fhub_source в метаданных - это наш пресет
         if fhub_id_from_metadata and fhub_source == "filamenthub":
             try:
                 fhub_id_int = int(fhub_id_from_metadata)
                 preset = await db.get(Preset, fhub_id_int)
                 if preset:
-                    # Проверяем права доступа
                     if (
                         preset.user_id != current_user.id
                         and current_user.role != UserRole.ADMIN
@@ -1992,17 +1866,10 @@ async def _upsert_filament_preset(
                             message=ERR_NO_PERMISSION,
                         )
                     logger.info(f"Found preset by fhub_id from metadata: {fhub_id_int}")
-                    
-                    # КРИТИЧНО: НЕ проверяем sync_enabled при импорте из OrcaSlicer!
-                    # sync_enabled контролирует только экспорт из FilamentHub в OrcaSlicer.
             except (ValueError, TypeError):
                 logger.warning(f"Invalid fhub_id in metadata: {fhub_id_from_metadata}")
-        
-        # 2b. Если есть fhub_draft_id - это черновик, ищем по нему
+
         elif fhub_draft_id:
-            # Ищем пресет с таким fhub_draft_id в orcaslicer_settings
-            # Используем оператор PostgreSQL JSONB для поиска
-            # Для PostgreSQL JSONB используем оператор ->> для извлечения текста
             result = await db.execute(
                 select(Preset).where(
                     cast(Preset.orcaslicer_settings, JSONB)['fhub_draft_id'].astext == fhub_draft_id,
@@ -2015,140 +1882,195 @@ async def _upsert_filament_preset(
                     f"Found draft preset by fhub_draft_id: {fhub_draft_id} "
                     f"(preset_id={preset.id}, name='{preset.name}')"
                 )
-    
-    # Приоритет 3: Поиск по external_id (OrcaSlicer's preset.setting_id)
-    # Это стабильный идентификатор, который не меняется при перезагрузке OrcaSlicer
-    if preset is None and payload.external_id:
-        if filament:
-            # Для пресетов с Filament - ищем по external_id + filament_id
-            result = await db.execute(
-                select(Preset).where(
-                    Preset.external_id == payload.external_id,
-                    Preset.filament_id == filament.id,
-                    Preset.user_id == current_user.id,
-                )
-            )
-            preset = result.scalars().first()
-        else:
-            # Для черновиков - ищем по external_id + filament_id IS NULL
-            result = await db.execute(
-                select(Preset).where(
-                    Preset.external_id == payload.external_id,
-                    Preset.filament_id.is_(None),
-                    Preset.user_id == current_user.id,
-                )
-            )
-            preset = result.scalars().first()
 
-            # 3b. Если черновик не найден — проверяем, не был ли он уже промоутирован
-            # (external_id совпадает, но filament_id уже != NULL и пресет активен)
-            if preset is None and not is_our_preset:
-                result = await db.execute(
-                    select(Preset).where(
-                        Preset.external_id == payload.external_id,
-                        Preset.filament_id.isnot(None),
-                        Preset.active == True,
-                        Preset.user_id == current_user.id,
-                    )
-                )
-                promoted = result.scalars().first()
-                if promoted:
-                    logger.info(
-                        f"Template '{payload.name}' external_id='{payload.external_id}' "
-                        f"already promoted to preset id={promoted.id} name='{promoted.name}' — skipping"
-                    )
-                    return OrcaSyncResult(
-                        external_id=payload.external_id,
-                        fhub_id=promoted.id,
-                        status="skipped",
-                        message="Template already promoted to FilamentHub preset",
-                    )
+    # Приоритет 4: external_id (OrcaSlicer's preset.setting_id)
+    # Ищем БЕЗ привязки к filament_id — пресет мог поменять филамент
+    if preset is None and payload.external_id:
+        result = await db.execute(
+            select(Preset).where(
+                Preset.external_id == payload.external_id,
+                Preset.user_id == current_user.id,
+            )
+        )
+        preset = result.scalars().first()
+
+        # Если найден промоутированный черновик — не пересоздавать
+        if preset and preset.active and preset.filament_id and not is_our_preset:
+            logger.info(
+                f"Template '{payload.name}' external_id='{payload.external_id}' "
+                f"already promoted to preset id={preset.id} name='{preset.name}' — skipping"
+            )
+            return OrcaSyncResult(
+                external_id=payload.external_id,
+                fhub_id=preset.id,
+                status="skipped",
+                message="Template already promoted to FilamentHub preset",
+            )
 
         if preset:
             logger.info(
                 f"Found preset by external_id '{payload.external_id}' "
                 f"(id={preset.id}, name='{preset.name}', active={preset.active})"
             )
-    
-    # Приоритет 4: Fallback - ищем по имени + filament_id + user_id
-    # Ищем ВСЕ пресеты (активные и черновики), чтобы не создавать дубликаты
+
+    # Приоритет 5: Fallback — имя + user_id
     if preset is None and payload.name:
-        if filament:
-            # Для пресетов с Filament - ищем по имени + filament_id
-            result = await db.execute(
-                select(Preset).where(
-                    Preset.name == payload.name,
-                    Preset.filament_id == filament.id,
-                    Preset.user_id == current_user.id,
-                )
+        result = await db.execute(
+            select(Preset).where(
+                Preset.name == payload.name,
+                Preset.user_id == current_user.id,
             )
-            preset = result.scalars().first()
+        )
+        preset = result.scalars().first()
 
-            # Если не найдено точное совпадение, ищем по очищенному имени (без @FilamentHub)
-            if preset is None:
-                clean_name = payload.name.replace(' @FilamentHub', '').replace('@FilamentHub', '').strip()
-                if clean_name != payload.name:
-                    result = await db.execute(
-                        select(Preset).where(
-                            Preset.name == clean_name,
-                            Preset.filament_id == filament.id,
-                            Preset.user_id == current_user.id,
-                        )
+        if preset is None:
+            clean_name = payload.name.replace(' @FilamentHub', '').replace('@FilamentHub', '').strip()
+            if clean_name != payload.name:
+                result = await db.execute(
+                    select(Preset).where(
+                        Preset.name == clean_name,
+                        Preset.user_id == current_user.id,
                     )
-                    preset = result.scalars().first()
-
-            if preset:
-                logger.info(
-                    f"Found preset by name '{payload.name}' + filament_id {filament.id} "
-                    f"(id={preset.id}, external_id={preset.external_id}, active={preset.active})"
                 )
+                preset = result.scalars().first()
+
+    # =====================================================================
+    # 2. ОПРЕДЕЛИТЬ FILAMENT
+    # Если пресет уже существует и привязан к филаменту — переиспользуем его
+    # =====================================================================
+    filament: Filament | None = None
+
+    if preset and preset.filament_id:
+        # Пресет найден и привязан к филаменту — проверяем что филамент ещё жив
+        filament = await db.get(Filament, preset.filament_id)
+        if filament:
+            logger.info(
+                f"Reusing existing filament from preset (filament_id={filament.id}, "
+                f"name='{filament.name}') — skipping filament search"
+            )
         else:
-            # Для черновиков (без Filament) - ищем по имени + filament_id IS NULL
-            result = await db.execute(
-                select(Preset).where(
-                    Preset.name == payload.name,
-                    Preset.filament_id.is_(None),
-                    Preset.user_id == current_user.id,
-                )
+            logger.warning(
+                f"Preset {preset.id} had filament_id={preset.filament_id} but filament was deleted. "
+                f"Will search for a replacement."
             )
-            preset = result.scalars().first()
 
-            if preset:
-                logger.info(
-                    f"Found draft preset by name '{payload.name}' (filament_id=None) "
-                    f"(id={preset.id}, external_id={preset.external_id}, active={preset.active})"
+    # Если филамент ещё не определён — ищем/создаём
+    if not filament:
+        if payload.filament_id:
+            # Явное указание filament_id в payload
+            filament = await db.get(Filament, payload.filament_id)
+            if filament is None:
+                return OrcaSyncResult(
+                    external_id=payload.external_id,
+                    fhub_id=payload.fhub_id,
+                    status="error",
+                    message="Filament not found in FilamentHub",
                 )
-        
-        # Если у найденного пресета нет external_id, но он пришёл в payload - обновляем
-        if preset and not preset.external_id and payload.external_id:
-            preset.external_id = payload.external_id
-            logger.info(f"Updated preset {preset.id} external_id to {payload.external_id}")
-    
-    # Приоритет 4.5: Для пресетов с [FilamentHub] - поиск активных пресетов по очищенному имени БЕЗ проверки filament_id
-    # Это нужно, потому что филамент мог быть найден по очищенному имени, и его ID может отличаться
-    if preset is None and is_our_preset and payload.name:
-        clean_name = payload.name.replace(' [FilamentHub]', '').replace('[FilamentHub]', '').strip()
-        if clean_name != payload.name:
-            # Ищем активные пресеты по очищенному имени (без проверки filament_id)
-            result = await db.execute(
-                select(Preset).where(
-                    Preset.name == clean_name,
-                    Preset.user_id == current_user.id,
-                    Preset.active == True,  # Только активные пресеты
+            if (
+                filament.brand_id is not None
+                and current_user.brand_id != filament.brand_id
+                and current_user.role != UserRole.ADMIN
+            ):
+                return OrcaSyncResult(
+                    external_id=payload.external_id,
+                    fhub_id=payload.fhub_id,
+                    status="error",
+                    message=ERR_NO_PERMISSION,
                 )
+        elif payload.filament_name:
+            # Определяем material_type: inherits приоритетнее payload (OrcaSlicer часто шлёт неточный тип)
+            if payload.inherits:
+                material_type = _extract_material_type_from_inherits(payload.inherits)
+            else:
+                material_type = payload.material_type or "PLA"
+
+            if is_our_preset:
+                clean_filament_name = payload.filament_name.replace(' [FilamentHub]', '').replace('[FilamentHub]', '').strip()
+
+                existing_filament = await _find_existing_filament(
+                    filament_name=clean_filament_name,
+                    material_type=material_type,
+                    db=db,
+                )
+
+                if existing_filament:
+                    filament = existing_filament
+                    logger.info(
+                        f"Found existing Filament (id={filament.id}, name='{filament.name}') "
+                        f"for preset '{payload.name}' (searched as '{clean_filament_name}')"
+                    )
+                else:
+                    logger.warning(
+                        f"Existing Filament not found for preset '{payload.name}' "
+                        f"(searched: name='{clean_filament_name}', material_type='{material_type}'). "
+                        f"Will try dedup guard or create new."
+                    )
+            else:
+                # Черновики — НЕ создаем Filament
+                filament = None
+                logger.info(f"Preset '{payload.name}' is a draft - will create Preset without Filament")
+
+    # Dedup guard: если филамент не найден, но is_our_preset — попробуем найти по brand + name
+    if is_our_preset and not filament:
+        if not current_user.brand_id:
+            logger.warning(
+                f"[FilamentHub] preset '{payload.name}' has no matching catalog filament "
+                f"and user has no brand_id. Storing as draft."
             )
-            preset = result.scalars().first()
-            if preset:
-                logger.info(
-                    f"Found active preset by cleaned name '{clean_name}' (original: '{payload.name}') "
-                    f"(id={preset.id}, filament_id={preset.filament_id}, active={preset.active})"
-                )
-                # Обновляем external_id если его нет
-                if not preset.external_id and payload.external_id:
-                    preset.external_id = payload.external_id
-                    logger.info(f"Updated preset {preset.id} external_id to {payload.external_id}")
+            is_our_preset = False
+        else:
+            filament_name = payload.filament_name or "Imported from OrcaSlicer"
+            if payload.inherits:
+                material_type = _extract_material_type_from_inherits(payload.inherits)
+            else:
+                material_type = payload.material_type or "PLA"
 
-    # Приоритет 5: Проверка derived-меток (anti-cycle)
+            # Dedup: проверяем нет ли уже такого филамента у бренда
+            clean_name = filament_name.replace(' [FilamentHub]', '').replace('[FilamentHub]', '').strip()
+            result = await db.execute(
+                select(Filament).where(
+                    Filament.name == clean_name,
+                    Filament.brand_id == current_user.brand_id,
+                ).order_by(Filament.id.asc())
+            )
+            existing_brand_filament = result.scalars().first()
+
+            if existing_brand_filament:
+                filament = existing_brand_filament
+                logger.info(
+                    f"Dedup guard: found existing filament (id={filament.id}, name='{filament.name}') "
+                    f"for brand_id={current_user.brand_id} — reusing instead of creating duplicate"
+                )
+            else:
+                filament_slug = await generate_unique_slug(
+                    db=db,
+                    model=Filament,
+                    source=clean_name,
+                    fallback=f"filament-{current_user.id}-{int(datetime.now(timezone.utc).timestamp())}",
+                )
+
+                filament = Filament(
+                    name=clean_name,
+                    slug=filament_slug,
+                    material_type=material_type,
+                    brand_id=current_user.brand_id,
+                    diameter=1.75,
+                    active=True,
+                )
+                db.add(filament)
+                await db.flush()
+
+                logger.info(
+                    f"Created Filament (id={filament.id}, name='{clean_name}') "
+                    f"for preset '{payload.name}'"
+                )
+
+    # Обновляем external_id если его нет
+    if preset and not preset.external_id and payload.external_id:
+        preset.external_id = payload.external_id
+        logger.info(f"Updated preset {preset.id} external_id to {payload.external_id}")
+
+    # Приоритет 6: Проверка derived-меток (anti-cycle)
     # Если пресет не найден — возможно, черновик уже был промоутирован в FH-пресет.
     # Проверяем, есть ли активный пресет, созданный из шаблона с таким же external_id или draft_id.
     if preset is None and not is_our_preset:
