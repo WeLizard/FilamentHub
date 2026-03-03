@@ -1255,6 +1255,10 @@
       "connectionError": "Could not connect to the server. Check your connection."
     },
     "filamentProfiles": "Filament Profiles",
+    "presetFilterAll": "All",
+    "presetFilterOwn": "My own",
+    "presetFilterSaved": "Saved",
+    "presetFilterDrafts": "Drafts",
     "newPreset": "New preset",
     "add": "Add",
     "noPresetsShort": "No saved presets",

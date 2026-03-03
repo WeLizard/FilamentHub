@@ -1277,6 +1277,10 @@
       "connectionError": "Не удалось подключиться к серверу. Проверьте подключение."
     },
     "filamentProfiles": "Профили филамента",
+    "presetFilterAll": "Все",
+    "presetFilterOwn": "Мои",
+    "presetFilterSaved": "Сохранённые",
+    "presetFilterDrafts": "Заготовки",
     "newPreset": "Новый пресет",
     "add": "Добавить",
     "noPresetsShort": "Нет сохраненных пресетов",

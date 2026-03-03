@@ -1025,14 +1025,7 @@ export function AdminDatabase() {
                   </div>
                 )}
               </div>
-            ) : migrationHistory.current_revision ? (
-              <div className="bg-green-600/10 rounded-lg p-4 border border-green-500/30">
-                <p className="text-green-400 text-sm flex items-center space-x-2">
-                  <CheckCircle className="w-4 h-4" />
-                  <span>{t('adminDatabase.migrations.allApplied')}</span>
-                </p>
-              </div>
-            ) : (
+            ) : migrationHistory.current_revision ? null : (
               <div className="bg-yellow-600/10 rounded-lg p-4 border border-yellow-500/30">
                 <p className="text-yellow-400 text-sm flex items-center space-x-2">
                   <AlertCircle className="w-4 h-4" />
@@ -1115,33 +1108,36 @@ export function AdminDatabase() {
               </select>
             </div>
 
-            {/* Информационная подсказка */}
+            {/* Информационная подсказка (сворачиваемая) */}
             {!applyMigrationMutation.isPending && !downgradeMigrationMutation.isPending && (
-              <div className="bg-blue-600/10 rounded-lg p-4 border border-blue-500/30">
-                <p className="text-blue-400 text-sm font-semibold mb-2 flex items-center space-x-2">
-                  <Info className="w-4 h-4" />
+              <details className="group bg-blue-600/10 rounded-lg border border-blue-500/30">
+                <summary className="p-4 text-blue-400 text-sm font-semibold flex items-center space-x-2 cursor-pointer select-none hover:text-blue-300 transition-colors list-none [&::-webkit-details-marker]:hidden">
+                  <Info className="w-4 h-4 flex-shrink-0" />
                   <span>{t('adminDatabase.migrations.howToUseTitle')}</span>
-                </p>
-                <ul className="text-gray-300 text-xs space-y-1 ml-6 list-disc">
-                  <li><strong>{t('adminDatabase.migrations.applyToHeadButton')}</strong> — {t('adminDatabase.migrations.howToUseHead')}</li>
-                  <li>
-                    <strong>{t('adminDatabase.migrations.applyButton')}</strong> — {t('adminDatabase.migrations.howToUseApply')}
-                    <ul className="ml-4 mt-1 space-y-0.5 list-disc">
-                      <li><code className="bg-white/5 px-1 rounded">head</code> — {t('adminDatabase.migrations.howToUseApplyHead')}</li>
-                      <li><code className="bg-white/5 px-1 rounded">+1</code> — {t('adminDatabase.migrations.howToUseApplyPlusOne')}</li>
-                      <li><code className="bg-white/5 px-1 rounded">a2b3c4d5e6f7</code> — {t('adminDatabase.migrations.howToUseApplyRevision')}</li>
-                    </ul>
-                  </li>
-                  <li>
-                    <strong>{t('adminDatabase.migrations.downgradeButton')}</strong> — {t('adminDatabase.migrations.howToUseDowngrade')}
-                    <ul className="ml-4 mt-1 space-y-0.5 list-disc">
-                      <li><code className="bg-white/5 px-1 rounded">-1</code> — {t('adminDatabase.migrations.howToUseDowngradeMinusOne')}</li>
-                      <li><code className="bg-white/5 px-1 rounded">base</code> — {t('adminDatabase.migrations.howToUseDowngradeBase')}</li>
-                    </ul>
-                  </li>
-                  <li>{t('adminDatabase.migrations.howToUseClickHint')}</li>
-                </ul>
-              </div>
+                  <ChevronRight className="w-4 h-4 ml-auto transition-transform group-open:rotate-90" />
+                </summary>
+                <div className="px-4 pb-4">
+                  <ul className="text-gray-300 text-xs space-y-1 ml-6 list-disc">
+                    <li><strong>{t('adminDatabase.migrations.applyToHeadButton')}</strong> — {t('adminDatabase.migrations.howToUseHead')}</li>
+                    <li>
+                      <strong>{t('adminDatabase.migrations.applyButton')}</strong> — {t('adminDatabase.migrations.howToUseApply')}
+                      <ul className="ml-4 mt-1 space-y-0.5 list-disc">
+                        <li><code className="bg-white/5 px-1 rounded">head</code> — {t('adminDatabase.migrations.howToUseApplyHead')}</li>
+                        <li><code className="bg-white/5 px-1 rounded">+1</code> — {t('adminDatabase.migrations.howToUseApplyPlusOne')}</li>
+                        <li><code className="bg-white/5 px-1 rounded">a2b3c4d5e6f7</code> — {t('adminDatabase.migrations.howToUseApplyRevision')}</li>
+                      </ul>
+                    </li>
+                    <li>
+                      <strong>{t('adminDatabase.migrations.downgradeButton')}</strong> — {t('adminDatabase.migrations.howToUseDowngrade')}
+                      <ul className="ml-4 mt-1 space-y-0.5 list-disc">
+                        <li><code className="bg-white/5 px-1 rounded">-1</code> — {t('adminDatabase.migrations.howToUseDowngradeMinusOne')}</li>
+                        <li><code className="bg-white/5 px-1 rounded">base</code> — {t('adminDatabase.migrations.howToUseDowngradeBase')}</li>
+                      </ul>
+                    </li>
+                    <li>{t('adminDatabase.migrations.howToUseClickHint')}</li>
+                  </ul>
+                </div>
+              </details>
             )}
 
             {/* Сообщения об успехе/ошибке */}
@@ -1183,41 +1179,44 @@ export function AdminDatabase() {
               </div>
             )}
 
-            {/* Объяснение статусов */}
-            <div className="bg-blue-600/10 rounded-lg p-4 border border-blue-500/30">
-              <p className="text-blue-400 text-sm font-semibold mb-2 flex items-center space-x-2">
-                <Info className="w-4 h-4" />
+            {/* Объяснение статусов (сворачиваемое) */}
+            <details className="group bg-blue-600/10 rounded-lg border border-blue-500/30">
+              <summary className="p-4 text-blue-400 text-sm font-semibold flex items-center space-x-2 cursor-pointer select-none hover:text-blue-300 transition-colors list-none [&::-webkit-details-marker]:hidden">
+                <Info className="w-4 h-4 flex-shrink-0" />
                 <span>{t('adminDatabase.migrations.statusExplanationTitle')}</span>
-              </p>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-xs">
-                <div className="flex items-start space-x-2">
-                  <CheckCircle className="w-4 h-4 text-green-400 flex-shrink-0 mt-0.5" />
-                  <div>
-                    <p className="text-green-400 font-semibold">✓ {t('adminDatabase.migrations.statusApplied')}</p>
-                    <p className="text-gray-400">{t('adminDatabase.migrations.statusAppliedDesc')}</p>
+                <ChevronRight className="w-4 h-4 ml-auto transition-transform group-open:rotate-90" />
+              </summary>
+              <div className="px-4 pb-4">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-xs">
+                  <div className="flex items-start space-x-2">
+                    <CheckCircle className="w-4 h-4 text-green-400 flex-shrink-0 mt-0.5" />
+                    <div>
+                      <p className="text-green-400 font-semibold">✓ {t('adminDatabase.migrations.statusApplied')}</p>
+                      <p className="text-gray-400">{t('adminDatabase.migrations.statusAppliedDesc')}</p>
+                    </div>
+                  </div>
+                  <div className="flex items-start space-x-2">
+                    <Clock className="w-4 h-4 text-gray-500 flex-shrink-0 mt-0.5" />
+                    <div>
+                      <p className="text-gray-400 font-semibold">⏳ {t('adminDatabase.migrations.statusPending')}</p>
+                      <p className="text-gray-400">{t('adminDatabase.migrations.statusPendingDesc')}</p>
+                    </div>
+                  </div>
+                  <div className="flex items-start space-x-2">
+                    <TrendingUp className="w-4 h-4 text-yellow-400 flex-shrink-0 mt-0.5" />
+                    <div>
+                      <p className="text-yellow-400 font-semibold">↑ {t('adminDatabase.migrations.statusHead')}</p>
+                      <p className="text-gray-400">{t('adminDatabase.migrations.statusHeadDesc')}</p>
+                    </div>
                   </div>
                 </div>
-                <div className="flex items-start space-x-2">
-                  <Clock className="w-4 h-4 text-gray-500 flex-shrink-0 mt-0.5" />
-                  <div>
-                    <p className="text-gray-400 font-semibold">⏳ {t('adminDatabase.migrations.statusPending')}</p>
-                    <p className="text-gray-400">{t('adminDatabase.migrations.statusPendingDesc')}</p>
-                  </div>
-                </div>
-                <div className="flex items-start space-x-2">
-                  <TrendingUp className="w-4 h-4 text-yellow-400 flex-shrink-0 mt-0.5" />
-                  <div>
-                    <p className="text-yellow-400 font-semibold">↑ {t('adminDatabase.migrations.statusHead')}</p>
-                    <p className="text-gray-400">{t('adminDatabase.migrations.statusHeadDesc')}</p>
-                  </div>
+                <div className="mt-3 pt-3 border-t border-blue-500/20">
+                  <p className="text-gray-300 text-xs">
+                    <strong className="text-purple-400">{t('adminDatabase.migrations.currentLabel')}</strong> — {t('adminDatabase.migrations.currentLabelHint')}
+                  </p>
                 </div>
               </div>
-              <div className="mt-3 pt-3 border-t border-blue-500/20">
-                <p className="text-gray-300 text-xs">
-                  <strong className="text-purple-400">{t('adminDatabase.migrations.currentLabel')}</strong> — {t('adminDatabase.migrations.currentLabelHint')}
-                </p>
-              </div>
-            </div>
+            </details>
 
             {/* Таблица миграций */}
             <div className="bg-white/5 rounded-lg overflow-hidden border border-white/10">

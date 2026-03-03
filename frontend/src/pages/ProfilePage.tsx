@@ -97,6 +97,7 @@ export const ProfilePage: React.FC = () => {
   const [editingPrinterProfile, setEditingPrinterProfile] = useState<PrinterProfile | null>(null);
   const [editingPrintProfile, setEditingPrintProfile] = useState<PrintProfile | null>(null);
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
+  const [presetFilter, setPresetFilter] = useState<'all' | 'own' | 'saved' | 'drafts'>('all');
 
   // Загружаем все пресеты пользователя (активные + черновики)
   const { data: userPresetsData } = useQuery({
@@ -184,7 +185,20 @@ export const ProfilePage: React.FC = () => {
     return [...created, ...saved];
   }, [userPresetsData, savedPresetsDetails]);
 
-  const userPresets = allMyPresets;
+  const filteredPresets = useMemo(() => {
+    switch (presetFilter) {
+      case 'own':
+        return allMyPresets.filter(p => p.source === 'own' && p.active);
+      case 'saved':
+        return allMyPresets.filter(p => p.source === 'saved');
+      case 'drafts':
+        return allMyPresets.filter(p => p.source === 'own' && (!p.active || p.moderation_status === 'pending'));
+      default:
+        return allMyPresets;
+    }
+  }, [allMyPresets, presetFilter]);
+
+  const userPresets = filteredPresets;
 
   const myPrinterProfiles = useMemo(() => printerProfilesData?.items ?? [], [printerProfilesData]);
   const myPrintProfiles = useMemo(() => printProfilesData?.items ?? [], [printProfilesData]);
@@ -791,6 +805,33 @@ export const ProfilePage: React.FC = () => {
               </button>
             </div>
           </div>
+
+          {/* Filter chips */}
+          {allMyPresets.length > 0 && (
+            <div className="flex flex-wrap gap-2">
+              {([
+                { key: 'all' as const, label: t('profilePage.presetFilterAll'), count: allMyPresets.length },
+                { key: 'own' as const, label: t('profilePage.presetFilterOwn'), count: allMyPresets.filter(p => p.source === 'own' && p.active).length },
+                { key: 'saved' as const, label: t('profilePage.presetFilterSaved'), count: allMyPresets.filter(p => p.source === 'saved').length },
+                { key: 'drafts' as const, label: t('profilePage.presetFilterDrafts'), count: allMyPresets.filter(p => p.source === 'own' && (!p.active || p.moderation_status === 'pending')).length },
+              ]).filter(f => f.key === 'all' || f.count > 0).map(f => (
+                <button
+                  key={f.key}
+                  onClick={() => setPresetFilter(f.key)}
+                  className={`px-3 py-1.5 rounded-lg text-sm transition-all ${
+                    presetFilter === f.key
+                      ? 'bg-purple-600 text-white shadow-lg shadow-purple-500/25'
+                      : 'bg-white/5 text-gray-400 hover:bg-white/10 hover:text-white border border-white/10'
+                  }`}
+                >
+                  {f.label}
+                  <span className={`ml-1.5 text-xs ${presetFilter === f.key ? 'text-purple-200' : 'text-gray-500'}`}>
+                    {f.count}
+                  </span>
+                </button>
+              ))}
+            </div>
+          )}
 
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 md:gap-6">
             {userPresets.map((preset) => (
