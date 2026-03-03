@@ -137,10 +137,18 @@ def _filament_diameter(filament: Filament | None) -> float:
     return _DEFAULT_FILAMENT_DIAMETER
 
 
-def _filament_payload(filament: Filament | None, fallback_id: int) -> dict:
+def _filament_payload(
+    filament: Filament | None,
+    fallback_id: int,
+    initial_weight: float | None = None,
+) -> dict:
     density = _filament_density(filament)
     diameter = _filament_diameter(filament)
     brand = filament.brand if filament is not None else None
+    # Spoolman filament.weight = net weight of filament in a full spool (grams).
+    # Use filament.spool_weight from DB; fallback to spool's initial_weight_g
+    # when the filament-level field is not populated.
+    filament_weight = (filament.spool_weight if filament is not None else None) or initial_weight
     return {
         "id": filament.id if filament is not None else fallback_id,
         "registered": _iso(filament.created_at) if filament is not None else _iso(datetime.now(timezone.utc)),
@@ -162,7 +170,7 @@ def _filament_payload(filament: Filament | None, fallback_id: int) -> dict:
         "price": filament.price_per_kg if filament is not None else None,
         "density": density,
         "diameter": diameter,
-        "weight": filament.spool_weight if filament is not None else None,
+        "weight": filament_weight,
         "spool_weight": filament.empty_spool_weight_g if filament is not None else None,
         "article_number": None,
         "comment": None,
@@ -284,21 +292,35 @@ def _to_spool_payload(
     location = location_map.get(spool.id)
 
     # Merge extra: start from stored spool.extra, then fill in HH gate fields
-    # from our PresetGateState if HH hasn't already pushed them (setdefault).
+    # from our PresetGateState if the stored values are empty/unset.
     extra: dict = dict(spool.extra or {})
     if gate_meta_map and spool.id in gate_meta_map:
         device_name, gate_index = gate_meta_map[spool.id]
         # HH reads: json.loads(extra.get('printer_name', '""')) and int(extra.get('mmu_gate_map', -1))
         # So printer_name must be JSON-encoded string ('"voron"'), mmu_gate_map must be string int ('0')
-        extra.setdefault("printer_name", json.dumps(device_name))
-        extra.setdefault("mmu_gate_map", json.dumps(gate_index))
+        # Override empty / unset / default values left by previous unset_spool_gate
+        stored_name = extra.get("printer_name", "")
+        if not stored_name or stored_name == '""':
+            extra["printer_name"] = json.dumps(device_name)
+        stored_gate = extra.get("mmu_gate_map", "")
+        if not stored_gate or stored_gate in ("", "-1"):
+            extra["mmu_gate_map"] = json.dumps(gate_index)
+
+    # Sanitize extra values for HH compatibility: bare empty strings are not
+    # valid JSON and cause json.loads("") → ValueError in HH mmu_server.py.
+    # Ensure printer_name is a JSON-encoded string and mmu_gate_map is a
+    # JSON-encoded integer so HH can safely parse them.
+    if "printer_name" in extra and extra["printer_name"] == "":
+        extra["printer_name"] = json.dumps("")
+    if "mmu_gate_map" in extra and extra["mmu_gate_map"] == "":
+        extra["mmu_gate_map"] = json.dumps(-1)
 
     return {
         "id": spool.id,
         "registered": _iso(spool.created_at),
         "first_used": _iso(spool.first_used_at),
         "last_used": _iso(spool.last_used_at),
-        "filament": _filament_payload(filament, spool.id),
+        "filament": _filament_payload(filament, spool.id, spool.initial_weight_g),
         "filament_id": spool.filament_id,
         "price": _spool_price(spool, filament),
         "remaining_weight": round(remaining_weight, 3),
