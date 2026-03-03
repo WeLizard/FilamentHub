@@ -1852,7 +1852,12 @@ async def _upsert_filament_preset(
     if preset is None:
         if fhub_id_from_metadata and fhub_source == "filamenthub":
             try:
-                fhub_id_int = int(fhub_id_from_metadata)
+                # Parse FHUB-prefix format: "FHUB000013" → 13, or plain int "13" → 13
+                fhub_id_str = str(fhub_id_from_metadata)
+                if fhub_id_str.upper().startswith("FHUB"):
+                    fhub_id_int = int(fhub_id_str[4:])
+                else:
+                    fhub_id_int = int(fhub_id_str)
                 preset = await db.get(Preset, fhub_id_int)
                 if preset:
                     if (
@@ -1933,6 +1938,22 @@ async def _upsert_filament_preset(
                     )
                 )
                 preset = result.scalars().first()
+
+        # Reverse match: DB name has "[FilamentHub]" suffix, payload.name doesn't
+        if preset is None:
+            suffixed_name = f"{payload.name} [FilamentHub]"
+            result = await db.execute(
+                select(Preset).where(
+                    Preset.name == suffixed_name,
+                    Preset.user_id == current_user.id,
+                )
+            )
+            preset = result.scalars().first()
+            if preset:
+                logger.info(
+                    f"Found preset by reverse [FilamentHub] name match: "
+                    f"'{payload.name}' → '{preset.name}' (id={preset.id})"
+                )
 
     # =====================================================================
     # 2. ОПРЕДЕЛИТЬ FILAMENT
