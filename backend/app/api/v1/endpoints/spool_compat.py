@@ -36,6 +36,8 @@ router = APIRouter(tags=["spool_compat"])
 _LOCATION_PATTERN = re.compile(r"^(?P<device>.+):\s*gate\s*(?P<gate>\d+)$", re.IGNORECASE)
 _LOCATION_FALLBACK_PATTERN = re.compile(r"^(?P<device>.+):\s*(?P<gate>\d+)$")
 _LOCATION_HH_PATTERN = re.compile(r"^(?P<device>.+?)\s*@\s*MMU\s+Gate\s*:\s*(?P<gate>\d+)$", re.IGNORECASE)
+_LOCATION_FILTER_TOOL = re.compile(r"^[Tt](\d+)$")
+_LOCATION_FILTER_GATE = re.compile(r"^[Gg]ate\s*(\d+)$")
 _DEFAULT_FILAMENT_DENSITY = 1.24
 _DEFAULT_FILAMENT_DIAMETER = 1.75
 
@@ -294,9 +296,10 @@ def _to_spool_payload(
     return {
         "id": spool.id,
         "registered": _iso(spool.created_at),
-        "first_used": _iso(spool.last_used_at),
+        "first_used": _iso(spool.first_used_at),
         "last_used": _iso(spool.last_used_at),
         "filament": _filament_payload(filament, spool.id),
+        "filament_id": spool.filament_id,
         "price": _spool_price(spool, filament),
         "remaining_weight": round(remaining_weight, 3),
         "initial_weight": round(spool.initial_weight_g, 3),
@@ -328,6 +331,62 @@ def _match_filter(value: str | None, filter_raw: str | None) -> bool:
             continue
         if term.lower() in normalized:
             return True
+    return False
+
+
+def _extract_gate_index(location: str | None) -> int | None:
+    """Extract gate index from our internal location format."""
+    if not location:
+        return None
+    m = _LOCATION_HH_PATTERN.match(location.strip())
+    if m:
+        return int(m.group("gate"))
+    m = _LOCATION_PATTERN.match(location.strip())
+    if m:
+        return int(m.group("gate"))
+    m = _LOCATION_FALLBACK_PATTERN.match(location.strip())
+    if m:
+        return int(m.group("gate"))
+    return None
+
+
+def _match_location_filter(location: str | None, filter_raw: str | None) -> bool:
+    """Match location with support for T<N> and Gate <N> shorthand filters.
+
+    Moonraker and Happy Hare may filter by tool index (T0, T1) or gate (Gate 0).
+    Our location format is "DeviceName @ MMU Gate:N", so plain substring match
+    on "T0" would not work. This function handles both shorthand and regular
+    substring matching.
+    """
+    if filter_raw is None:
+        return True
+    terms = [term.strip() for term in filter_raw.split(",")]
+    for term in terms:
+        if not term:
+            if not (location or "").strip():
+                return True
+            continue
+
+        # Check T<N> pattern (e.g. "T0" → gate 0)
+        m = _LOCATION_FILTER_TOOL.match(term)
+        if m:
+            gate = _extract_gate_index(location)
+            if gate is not None and gate == int(m.group(1)):
+                return True
+            continue
+
+        # Check "Gate <N>" pattern (e.g. "Gate 0" → gate 0)
+        m = _LOCATION_FILTER_GATE.match(term)
+        if m:
+            gate = _extract_gate_index(location)
+            if gate is not None and gate == int(m.group(1)):
+                return True
+            continue
+
+        # Fallback: standard substring/exact match via _match_filter
+        if _match_filter(location, term):
+            return True
+
     return False
 
 
@@ -787,7 +846,7 @@ async def _list_spools_impl(
         fil = payload["filament"]
         vendor = fil.get("vendor") if isinstance(fil, dict) else None
 
-        if not _match_filter(payload.get("location"), location):
+        if not _match_location_filter(payload.get("location"), location):
             continue
         if not _match_filter(payload.get("lot_nr"), lot_nr):
             continue
@@ -821,6 +880,33 @@ async def _list_spools_impl(
     return JSONResponse(content=payloads, headers={"x-total-count": str(total_count)})
 
 
+async def _get_spool_impl(
+    db: AsyncSession,
+    user: User,
+    spool_id: int,
+) -> JSONResponse:
+    spool = await _get_user_spool(db, user.id, spool_id)
+    if spool is None:
+        return _err(status.HTTP_404_NOT_FOUND, f"No spool with ID {spool_id} found.")
+
+    location_map, gate_meta_map = await _build_location_map(db, user.id)
+    return JSONResponse(content=_to_spool_payload(spool, location_map, gate_meta_map))
+
+
+@router.get("/v1/spool/{spool_id}")
+async def get_spool_with_header_key(
+    spool_id: int,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    x_api_key: Annotated[str | None, Query(alias="api_key")] = None,
+    header_api_key: Annotated[str | None, Header(alias="X-API-Key")] = None,
+) -> JSONResponse:
+    api_key = x_api_key or header_api_key
+    user = await _resolve_user_by_api_key(db, api_key)
+    if user is None:
+        return _err(status.HTTP_401_UNAUTHORIZED, "Invalid or missing API key.")
+    return await _get_spool_impl(db, user, spool_id)
+
+
 @router.get("/{api_key}/v1/spool/{spool_id}")
 @router.get("/{api_key}/api/v1/spool/{spool_id}")
 async def get_spool(
@@ -831,13 +917,7 @@ async def get_spool(
     user = await _resolve_user_by_api_key(db, api_key)
     if user is None:
         return _err(status.HTTP_401_UNAUTHORIZED, "Invalid API key.")
-
-    spool = await _get_user_spool(db, user.id, spool_id)
-    if spool is None:
-        return _err(status.HTTP_404_NOT_FOUND, f"No spool with ID {spool_id} found.")
-
-    location_map, gate_meta_map = await _build_location_map(db, user.id)
-    return JSONResponse(content=_to_spool_payload(spool, location_map, gate_meta_map))
+    return await _get_spool_impl(db, user, spool_id)
 
 
 @router.post("/{api_key}/v1/spool")
@@ -998,8 +1078,11 @@ async def use_spool(
     else:
         delta_weight = body.use_weight or 0.0
 
+    now = datetime.now(timezone.utc)
     spool.used_weight_g = float(min(spool.initial_weight_g, spool.used_weight_g + delta_weight))
-    spool.last_used_at = datetime.now(timezone.utc)
+    if spool.first_used_at is None:
+        spool.first_used_at = now
+    spool.last_used_at = now
     if spool.used_weight_g >= spool.initial_weight_g:
         spool.state = UserSpoolState.empty
 
@@ -1033,7 +1116,10 @@ async def measure_spool(
     tare = filament.empty_spool_weight_g if filament is not None and filament.empty_spool_weight_g else 0.0
     remaining_weight = max(body.weight - tare, 0.0)
     spool.used_weight_g = float(min(spool.initial_weight_g, max(spool.initial_weight_g - remaining_weight, 0.0)))
-    spool.last_used_at = datetime.now(timezone.utc)
+    now = datetime.now(timezone.utc)
+    if spool.first_used_at is None:
+        spool.first_used_at = now
+    spool.last_used_at = now
     if spool.used_weight_g >= spool.initial_weight_g:
         spool.state = UserSpoolState.empty
 
