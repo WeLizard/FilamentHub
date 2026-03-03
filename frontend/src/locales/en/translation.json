@@ -2654,7 +2654,16 @@
     "defaultDescription": "Filament catalog, printer profiles and print settings for 3D printers"
   },
   "filamentSummary": {
-    "noColor": "No color"
+    "noColor": "No color",
+    "diameter": "Diameter",
+    "mm": "mm",
+    "density": "Density",
+    "cm3": "cm³",
+    "cost": "Cost",
+    "kg": "kg",
+    "spoolWeight": "Spool weight",
+    "g": "g",
+    "currencyPerKg": "$/kg"
   },
   "shareMenu": {
     "share": "Share",

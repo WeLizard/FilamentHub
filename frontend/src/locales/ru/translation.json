@@ -2734,7 +2734,16 @@
     "defaultDescription": "Каталог филаментов, профили принтеров и настройки печати для 3D-принтеров"
   },
   "filamentSummary": {
-    "noColor": "Без цвета"
+    "noColor": "Без цвета",
+    "diameter": "Диаметр",
+    "mm": "мм",
+    "density": "Плотность",
+    "cm3": "см³",
+    "cost": "Цена",
+    "kg": "кг",
+    "spoolWeight": "Вес катушки",
+    "g": "г",
+    "currencyPerKg": "₽/кг"
   },
   "shareMenu": {
     "share": "Поделиться",

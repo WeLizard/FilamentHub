@@ -36,8 +36,8 @@ export const FilamentSummaryCard: React.FC<FilamentSummaryCardProps> = ({
 
   const detailItems: DetailItem[] = [
     { label: t('filamentSummary.diameter'), value: diameter !== null && diameter !== undefined ? `${diameter} ${t('filamentSummary.mm')}` : null },
-    { label: t('filamentSummary.density'), value: density !== null && density !== undefined ? `${density} g/${t('filamentSummary.cm3')}` : null },
-    { label: t('filamentSummary.cost'), value: price_per_kg !== null && price_per_kg !== undefined ? `${price_per_kg} ₽/${t('filamentSummary.kg')}` : null },
+    { label: t('filamentSummary.density'), value: density !== null && density !== undefined ? `${density} ${t('filamentSummary.g')}/${t('filamentSummary.cm3')}` : null },
+    { label: t('filamentSummary.cost'), value: price_per_kg !== null && price_per_kg !== undefined ? `${price_per_kg} ${t('filamentSummary.currencyPerKg')}` : null },
     { label: t('filamentSummary.spoolWeight'), value: spool_weight !== null && spool_weight !== undefined ? `${spool_weight} ${t('filamentSummary.g')}` : null },
   ];
 
