@@ -62,7 +62,6 @@ import { CreatePrinterRequestModal } from '../components/CreatePrinterRequestMod
 import { SettingsTab } from '../components/SettingsTab';
 import { ExportFromOrcaSlicerButton } from '../components/ExportFromOrcaSlicerButton';
 import { ExportPrinterProfilesButton } from '../components/ExportPrinterProfilesButton';
-import { ExportPrintProfilesButton } from '../components/ExportPrintProfilesButton';
 import { CreatePrinterProfileModal } from '../components/CreatePrinterProfileModal';
 import { CreatePrintProfileModal } from '../components/CreatePrintProfileModal';
 import { PresetSyncToggle } from '../components/PresetSyncToggle';
