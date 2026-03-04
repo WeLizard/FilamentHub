@@ -102,6 +102,28 @@ docker compose up -d --build
 echo -e "   ${GREEN}✅ Контейнеры запущены${NC}"
 
 # -----------------------------------------------------------------------------
+# 3.5. Очистка старых Docker образов (оставляем текущий + предыдущий)
+# -----------------------------------------------------------------------------
+echo ""
+echo -e "${YELLOW}🧹 Шаг 3.5: Очистка старых Docker образов...${NC}"
+
+# Remove dangling images (untagged, not used by any container)
+DANGLING=$(docker images -f "dangling=true" -q 2>/dev/null | wc -l)
+if [ "$DANGLING" -gt 0 ]; then
+    docker image prune -f > /dev/null 2>&1
+    echo "   Удалено $DANGLING неиспользуемых образов"
+fi
+
+# Clean build cache
+CACHE_SIZE=$(docker system df --format '{{.Size}}' 2>/dev/null | tail -1)
+docker builder prune -f > /dev/null 2>&1
+echo "   Build cache очищен"
+
+# Show disk usage
+AVAIL=$(df -h / | awk 'NR==2{print $4}')
+echo -e "   ${GREEN}✅ Очистка завершена. Свободно: ${AVAIL}${NC}"
+
+# -----------------------------------------------------------------------------
 # 4. Проверка здоровья
 # -----------------------------------------------------------------------------
 echo ""
