@@ -5,23 +5,73 @@ import type { Preset } from '../../types/api';
 interface GateMapGridProps {
   device: UserPrinterDevice;
   gates: GateState[];
-  /** Cached preset data by id */
   presets: Record<number, Pick<Preset, 'id' | 'name' | 'extruder_temp' | 'bed_temp'>>;
-  /** User's spools for spool-to-gate display */
   spools: UserSpool[];
   onGateClick: (gate: GateState | null, gateIndex: number) => void;
 }
 
-function hhStatusLabel(status: number | null, t: (k: string) => string): string {
-  if (status === null || status === -1) return t('presetSlots.hhStatus.unknown');
-  if (status === 0) return t('presetSlots.hhStatus.empty');
-  if (status === 1) return t('presetSlots.hhStatus.spool');
-  if (status === 2) return t('presetSlots.hhStatus.buffer');
-  return '';
+function SpoolIcon({
+  color,
+  remainingPct,
+  isEmpty,
+  size = 56,
+}: {
+  color?: string | null;
+  remainingPct?: number | null;
+  isEmpty?: boolean;
+  size?: number;
+}) {
+  const center = size / 2;
+  const outerR = size / 2 - 2;
+  const filamentR = size * 0.36;
+  const innerR = size / 7;
+  const circumference = 2 * Math.PI * filamentR;
+  const pct = remainingPct != null ? Math.max(0, Math.min(100, remainingPct)) : 100;
+  const dashOffset = circumference * (1 - pct / 100);
+  const fillColor = color || 'rgba(168, 85, 247, 0.5)';
+
+  if (isEmpty) {
+    return (
+      <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
+        <circle cx={center} cy={center} r={outerR} fill="none" stroke="rgba(255,255,255,0.07)" strokeWidth="1" strokeDasharray="3 3" />
+        <circle cx={center} cy={center} r={filamentR} fill="none" stroke="rgba(255,255,255,0.04)" strokeWidth="7" strokeDasharray="3 3" />
+        <circle cx={center} cy={center} r={innerR} fill="rgba(255,255,255,0.02)" stroke="rgba(255,255,255,0.07)" strokeWidth="0.75" />
+      </svg>
+    );
+  }
+
+  return (
+    <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} className="drop-shadow">
+      {/* Outer flange */}
+      <circle cx={center} cy={center} r={outerR} fill="none" stroke="rgba(255,255,255,0.1)" strokeWidth="1.5" />
+      {/* Filament track background */}
+      <circle cx={center} cy={center} r={filamentR} fill="none" stroke="rgba(255,255,255,0.05)" strokeWidth="8" />
+      {/* Filament remaining (colored arc) */}
+      <circle
+        cx={center} cy={center} r={filamentR}
+        fill="none"
+        stroke={fillColor}
+        strokeWidth="8"
+        strokeDasharray={circumference}
+        strokeDashoffset={dashOffset}
+        strokeLinecap="round"
+        transform={`rotate(-90 ${center} ${center})`}
+        opacity={0.9}
+      />
+      {/* Inner hub */}
+      <circle cx={center} cy={center} r={innerR} fill="rgba(0,0,0,0.35)" stroke="rgba(255,255,255,0.1)" strokeWidth="0.75" />
+      {/* Hub cross marks */}
+      <line x1={center - innerR + 2} y1={center} x2={center + innerR - 2} y2={center} stroke="rgba(255,255,255,0.08)" strokeWidth="0.5" />
+      <line x1={center} y1={center - innerR + 2} x2={center} y2={center + innerR - 2} stroke="rgba(255,255,255,0.08)" strokeWidth="0.5" />
+    </svg>
+  );
 }
 
-function sourceLabel(source: GateState['source'], t: (k: string) => string): string {
-  return t(`presetSlots.source.${source}`);
+function hhStatusBadge(status: number | null, t: (k: string) => string): { label: string; cls: string } | null {
+  if (status === null || status === -1 || status === 1) return null;
+  if (status === 0) return { label: t('presetSlots.hhStatus.empty'), cls: 'bg-gray-700/50 text-gray-400' };
+  if (status === 2) return { label: t('presetSlots.hhStatus.buffer'), cls: 'bg-amber-500/15 text-amber-400' };
+  return null;
 }
 
 export function GateMapGrid({ device, gates, presets, spools, onGateClick }: GateMapGridProps) {
@@ -39,18 +89,14 @@ export function GateMapGrid({ device, gates, presets, spools, onGateClick }: Gat
         const preset = gate?.preset_id != null ? presets[gate.preset_id] : null;
         const spool = gate?.spool_id != null ? spoolMap.get(gate.spool_id) : null;
 
-        // Color priority: spool filament color → HH color
         const spoolColor = spool?.filament?.color_hex
           ? `#${spool.filament.color_hex.replace(/^#/, '')}`
           : null;
         const hhColor = gate?.hh_color_hex ? `#${gate.hh_color_hex.replace(/^#/, '')}` : null;
         const displayColor = spoolColor ?? hhColor;
-
-        // Material: spool filament material → HH material
-        const displayMaterial =
-          spool?.filament?.material_type ?? gate?.hh_material ?? null;
-
-        const hasAssignment = !!(gate?.preset_id || gate?.spool_id);
+        const displayMaterial = spool?.filament?.material_type ?? gate?.hh_material ?? null;
+        const hasContent = !!(gate?.preset_id || gate?.spool_id || displayMaterial);
+        const hhBadge = gate ? hhStatusBadge(gate.hh_status, t) : null;
 
         return (
           <button
@@ -58,69 +104,80 @@ export function GateMapGrid({ device, gates, presets, spools, onGateClick }: Gat
             type="button"
             onClick={() => onGateClick(gate, i)}
             className={[
-              'group relative flex flex-col gap-1.5 rounded-xl border p-3 text-left transition',
-              'hover:border-purple-500/60 hover:bg-purple-500/10 focus:outline-none focus:ring-2 focus:ring-purple-500/50',
-              hasAssignment
-                ? 'border-purple-500/40 bg-purple-500/10'
-                : 'border-white/10 bg-white/[0.02]',
+              'group relative flex flex-col items-center gap-1.5 rounded-xl border p-3 text-center transition',
+              'hover:border-purple-500/50 hover:bg-purple-500/8 focus:outline-none focus:ring-2 focus:ring-purple-500/40',
+              hasContent
+                ? 'border-purple-500/25 bg-purple-500/[0.04]'
+                : 'border-white/[0.06] bg-white/[0.015]',
             ].join(' ')}
           >
-            {/* Gate number + source */}
-            <div className="flex items-center justify-between gap-1">
-              <span className="flex h-5 w-5 items-center justify-center rounded-full bg-white/10 text-xs font-bold text-white">
+            {/* Header: gate number + source */}
+            <div className="flex w-full items-center justify-between">
+              <span
+                className={[
+                  'flex h-5 min-w-[20px] items-center justify-center rounded-md px-1.5 text-[11px] font-bold',
+                  hasContent ? 'bg-purple-500/20 text-purple-300' : 'bg-white/5 text-gray-600',
+                ].join(' ')}
+              >
                 {i}
               </span>
               {gate && (
-                <span className="rounded px-1 py-0.5 text-[10px] text-gray-500">
-                  {sourceLabel(gate.source, t)}
+                <span className="text-[9px] font-medium text-gray-600">
+                  {gate.source === 'hh_snapshot' ? 'HH' : gate.source === 'manual_orca' ? 'Orca' : ''}
                 </span>
               )}
             </div>
 
-            {/* Color swatch + material */}
-            {(displayColor || displayMaterial) && (
-              <div className="flex items-center gap-1.5">
-                {displayColor && (
-                  <span
-                    className="h-3.5 w-3.5 flex-shrink-0 rounded-full border border-white/20 shadow"
-                    style={{ backgroundColor: displayColor }}
-                  />
-                )}
-                {displayMaterial && (
-                  <span className="truncate text-xs text-gray-300">{displayMaterial}</span>
-                )}
-                {gate?.hh_status != null && gate.hh_status !== 1 && (
-                  <span className="text-xs text-gray-500">
-                    · {hhStatusLabel(gate.hh_status, t)}
-                  </span>
-                )}
-              </div>
+            {/* Spool icon */}
+            <div className="py-1">
+              <SpoolIcon
+                color={displayColor}
+                remainingPct={spool?.remaining_pct}
+                isEmpty={!hasContent}
+              />
+            </div>
+
+            {/* Material type */}
+            {displayMaterial ? (
+              <span className="text-xs font-medium text-gray-200">{displayMaterial}</span>
+            ) : (
+              <span className="text-[11px] text-gray-600">{t('presetSlots.gateEmpty')}</span>
             )}
 
-            {/* Spool filament name */}
+            {/* Brand + filament name */}
             {spool?.filament && (
-              <p className="truncate text-[11px] text-gray-400">
-                {[spool.filament.brand_name, spool.filament.name]
-                  .filter(Boolean)
-                  .join(' ')}
+              <p className="max-w-full truncate text-[10px] leading-tight text-gray-400">
+                {[spool.filament.brand_name, spool.filament.name].filter(Boolean).join(' ')}
               </p>
             )}
 
-            {/* Preset name */}
-            {preset ? (
-              <div className="min-w-0">
-                <p className="truncate text-xs font-medium text-purple-300">{preset.name}</p>
-                <p className="text-[10px] text-gray-500">
-                  {preset.extruder_temp}°C / {preset.bed_temp}°C
-                </p>
-              </div>
-            ) : (
-              <p className="text-xs text-gray-600">{t('presetSlots.gateEmpty')}</p>
+            {/* HH status badge (empty / buffer) */}
+            {hhBadge && (
+              <span className={`rounded-full px-1.5 py-0.5 text-[9px] font-medium ${hhBadge.cls}`}>
+                {hhBadge.label}
+              </span>
             )}
 
-            {/* Hover hint overlay */}
-            <span className="absolute inset-0 flex items-center justify-center rounded-xl bg-black/0 opacity-0 transition group-hover:opacity-100">
-              <span className="rounded-lg bg-purple-600/85 px-2 py-1 text-xs font-medium text-white backdrop-blur-sm">
+            {/* Remaining weight */}
+            {spool && (
+              <span className="text-[10px] tabular-nums text-gray-500">
+                {spool.remaining_weight_g}g &middot; {spool.remaining_pct}%
+              </span>
+            )}
+
+            {/* Preset info */}
+            {preset && (
+              <div className="mt-0.5 w-full min-w-0 border-t border-white/5 pt-1.5">
+                <p className="truncate text-[10px] font-medium text-purple-300">{preset.name}</p>
+                <p className="text-[9px] tabular-nums text-gray-500">
+                  {preset.extruder_temp}&deg;C / {preset.bed_temp}&deg;C
+                </p>
+              </div>
+            )}
+
+            {/* Hover overlay */}
+            <span className="absolute inset-0 flex items-center justify-center rounded-xl opacity-0 transition group-hover:opacity-100">
+              <span className="rounded-lg bg-purple-600/90 px-2.5 py-1 text-[10px] font-medium text-white shadow-lg backdrop-blur-sm">
                 {t('presetSlots.assignPreset')}
               </span>
             </span>

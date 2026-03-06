@@ -221,7 +221,8 @@ async def _update_device_gate_count(db: AsyncSession, device: UserPrinterDevice,
             max_gate = max(max_gate, int(match.group("gate")))
     if max_gate >= 0:
         new_count = max_gate + 1
-        if device.gate_count != new_count:
+        # Only auto-increment gate_count, never shrink (user may have set it manually)
+        if device.gate_count is None or new_count > device.gate_count:
             device.gate_count = new_count
             logger.info("Updated HH device id=%s gate_count=%s", device.id, new_count)
 
