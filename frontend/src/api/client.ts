@@ -1673,9 +1673,19 @@ export interface UserPrinterDevice {
   device_fingerprint: string;
   supports_hh: boolean;
   gate_count: number | null;
+  has_api_key: boolean;
   last_seen_at: string | null;
   created_at: string;
   updated_at: string;
+}
+
+export interface DeviceCreateWithKeyResponse {
+  device: UserPrinterDevice;
+  api_key: string;
+}
+
+export interface DeviceRegenerateKeyResponse {
+  api_key: string;
 }
 
 /** gate_status from Happy Hare: -1=unknown, 0=empty, 1=spool, 2=buffer */
@@ -1736,6 +1746,20 @@ export const devicesAPI = {
   getState: async (id: number): Promise<DeviceStateResponse> => {
     const response = await api.get<DeviceStateResponse>(`/devices/${id}/state`);
     return response.data;
+  },
+
+  createWithKey: async (name: string): Promise<DeviceCreateWithKeyResponse> => {
+    const response = await api.post<DeviceCreateWithKeyResponse>('/devices/create-with-key', { name });
+    return response.data;
+  },
+
+  regenerateKey: async (id: number): Promise<DeviceRegenerateKeyResponse> => {
+    const response = await api.post<DeviceRegenerateKeyResponse>(`/devices/${id}/regenerate-key`);
+    return response.data;
+  },
+
+  remove: async (id: number): Promise<void> => {
+    await api.delete(`/devices/${id}`);
   },
 };
 

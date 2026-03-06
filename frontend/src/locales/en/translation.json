@@ -1374,6 +1374,30 @@
       "note": "If this key is already used on your printer, avoid regenerating it unless needed.",
       "warning": "After generating a new key, update the URL in your Moonraker/Happy Hare settings."
     },
+    "deviceSetup": {
+      "title": "My Printers",
+      "description": "Add a printer, copy the config to Moonraker — it will connect automatically.",
+      "addPrinter": "Add Printer",
+      "nameLabel": "Printer name",
+      "namePlaceholder": "E.g.: Voron 2.4",
+      "create": "Create",
+      "noDevices": "No printers connected. Click \"Add Printer\" to get started.",
+      "connected": "Connected",
+      "connectedGates": "Connected ({{count}} gates)",
+      "awaitingConnection": "Awaiting connection",
+      "configLabel": "Moonraker config",
+      "copyConfig": "Copy config",
+      "copied": "Copied",
+      "copyFailed": "Failed to copy.",
+      "keyShownOnce": "API key is shown once. Copy the config now or regenerate later.",
+      "keyHidden": "API key is hidden. Regenerate if needed.",
+      "noKey": "No key generated.",
+      "regenerateKey": "Regenerate key",
+      "regenerateConfirm": "The old key will stop working. Continue?",
+      "deleteDevice": "Delete printer",
+      "deleteConfirm": "Delete printer and all its gates? This cannot be undone.",
+      "note": "After adding the config, restart Moonraker. The printer will connect automatically on first request."
+    },
     "help": {
       "button": "Help",
       "title": "How to use your profile",
@@ -2643,7 +2667,8 @@
     "messageGeneric": "Are you sure you want to delete this item? This action cannot be undone."
   },
   "common": {
-    "select": "Select..."
+    "select": "Select...",
+    "cancel": "Cancel"
   },
   "reviewCard": {
     "anonymousUser": "Anonymous user",

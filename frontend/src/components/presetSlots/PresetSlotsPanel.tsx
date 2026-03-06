@@ -348,7 +348,10 @@ export function PresetSlotsPanel({
     if (!printerBindings || printerBindings.length === 0) {
       return devices;
     }
-    return devices.filter((device) => device.printer_id != null && printerNameById.has(device.printer_id));
+    return devices.filter(
+      (device) => device.supports_hh ||
+      (device.printer_id != null && printerNameById.has(device.printer_id))
+    );
   }, [devices, printerBindings, printerNameById]);
 
   const presetsMap: Record<number, Pick<Preset, 'id' | 'name' | 'extruder_temp' | 'bed_temp'>> = {};

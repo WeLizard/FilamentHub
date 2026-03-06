@@ -40,11 +40,20 @@ class DeviceResponse(BaseModel):
     device_fingerprint: str
     supports_hh: bool
     gate_count: int | None
+    has_api_key: bool = False
     last_seen_at: datetime | None
     created_at: datetime
     updated_at: datetime
 
     model_config = {"from_attributes": True}
+
+    @model_validator(mode="wrap")
+    @classmethod
+    def _compute_has_api_key(cls, values: Any, handler: Any) -> "DeviceResponse":
+        result = handler(values)
+        if hasattr(values, "api_key"):
+            result.has_api_key = values.api_key is not None
+        return result
 
 
 class DeviceStateResponse(BaseModel):
@@ -213,3 +222,25 @@ class SlotStateResponse(BaseModel):
     device_fingerprint: str
     gate_count: int | None
     gates: list[GateStateResponse]
+
+
+# ── Device key management schemas ─────────────────────────────────────────
+
+
+class DeviceCreateWithKeyRequest(BaseModel):
+    """Create a new printer device with a generated API key."""
+
+    name: str = Field(..., min_length=1, max_length=200)
+
+
+class DeviceCreateWithKeyResponse(BaseModel):
+    """Response with device info and the generated API key (shown once)."""
+
+    device: DeviceResponse
+    api_key: str
+
+
+class DeviceRegenerateKeyResponse(BaseModel):
+    """Response with the newly generated API key (shown once)."""
+
+    api_key: str

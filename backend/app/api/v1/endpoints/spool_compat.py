@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import hashlib
 import json
 import logging
 import math
@@ -194,47 +193,23 @@ def _spool_price(spool: UserSpool, filament: Filament | None) -> float | None:
     return round((filament.price_per_kg * spool.initial_weight_g) / 1000.0, 4)
 
 
-async def _resolve_user_by_api_key(db: AsyncSession, api_key: str | None) -> User | None:
+async def _resolve_user_and_device(
+    db: AsyncSession, api_key: str | None
+) -> tuple[User | None, UserPrinterDevice | None]:
+    """Resolve user and device by per-device API key."""
     if not api_key:
-        return None
-    result = await db.execute(select(User).where(User.api_key == api_key))
-    user = result.scalar_one_or_none()
-    if user is None or not user.active:
-        return None
-    return user
-
-
-async def _ensure_hh_device(db: AsyncSession, user: User, api_key: str) -> UserPrinterDevice:
-    """Auto-register or update a Happy Hare MMU device on first spool_compat contact.
-
-    Uses a stable fingerprint derived from the api_key so that the same
-    Moonraker instance always maps to the same device record.
-    """
-    fingerprint = "hh-" + hashlib.sha256(api_key.encode()).hexdigest()[:12]
-    result = await db.execute(
-        select(UserPrinterDevice).where(
-            UserPrinterDevice.user_id == user.id,
-            UserPrinterDevice.device_fingerprint == fingerprint,
-        )
+        return None, None
+    row = await db.execute(
+        select(UserPrinterDevice, User)
+        .join(User, UserPrinterDevice.user_id == User.id)
+        .where(UserPrinterDevice.api_key == api_key, User.active.is_(True))
     )
-    device = result.scalar_one_or_none()
-    now = datetime.now(timezone.utc)
-
-    if device is None:
-        device = UserPrinterDevice(
-            user_id=user.id,
-            device_fingerprint=fingerprint,
-            name="Moonraker MMU",
-            supports_hh=True,
-            last_seen_at=now,
-        )
-        db.add(device)
-        await db.flush()
-        logger.info("Auto-registered HH device id=%s for user_id=%s", device.id, user.id)
-    else:
-        device.last_seen_at = now
-
-    return device
+    result = row.first()
+    if result is None:
+        return None, None
+    device, user = result.tuple()
+    device.last_seen_at = datetime.now(timezone.utc)
+    return user, device
 
 
 async def _update_device_gate_count(db: AsyncSession, device: UserPrinterDevice, location_map: dict[int, str]) -> None:
@@ -443,7 +418,7 @@ async def _apply_location_assignment(
     user: User,
     spool: UserSpool,
     location: str | None,
-    api_key: str | None = None,
+    device_from_key: UserPrinterDevice | None = None,
 ) -> tuple[bool, str | None]:
     # Clear previous location bindings for this spool in any case.
     existing_result = await db.execute(
@@ -482,20 +457,12 @@ async def _apply_location_assignment(
     )
     device = device_result.scalar_one_or_none()
 
-    # Fallback: if called from spool_compat with api_key, use the auto-registered HH device
-    # and update its name to match the printer name from Happy Hare location string
-    if device is None and api_key:
-        fingerprint = "hh-" + hashlib.sha256(api_key.encode()).hexdigest()[:12]
-        fp_result = await db.execute(
-            select(UserPrinterDevice).where(
-                UserPrinterDevice.user_id == user.id,
-                UserPrinterDevice.device_fingerprint == fingerprint,
-            )
-        )
-        device = fp_result.scalar_one_or_none()
-        if device is not None and device.name != device_hint:
+    # Fallback: use the device resolved from the API key
+    if device is None and device_from_key is not None:
+        device = device_from_key
+        if device.name != device_hint:
             device.name = device_hint
-            logger.info("Updated HH device id=%s name to '%s' from location string", device.id, device_hint)
+            logger.info("Updated device id=%s name to '%s' from location string", device.id, device_hint)
 
     if device is None:
         return False, f"Device '{device_hint}' not found for this API key."
@@ -541,7 +508,7 @@ async def _sync_extra_to_gate_state(
     db: AsyncSession,
     user: User,
     spool: UserSpool,
-    api_key: str | None = None,
+    device: UserPrinterDevice | None = None,
 ) -> None:
     """Sync HH extra fields (printer_name, mmu_gate_map) to PresetGateState.
 
@@ -579,11 +546,8 @@ async def _sync_extra_to_gate_state(
             state.source_ts = now
         return
 
-    device: UserPrinterDevice | None = None
-    if api_key:
-        device = await _ensure_hh_device(db, user, api_key)
-        if device.name != printer_name:
-            device.name = printer_name
+    if device is not None and device.name != printer_name:
+        device.name = printer_name
 
     if device is None:
         device_result = await db.execute(
@@ -730,7 +694,7 @@ async def spool_ws(websocket: WebSocket) -> None:
 @router.websocket("/{api_key}/api/v1/spool")
 async def spool_ws_scoped(websocket: WebSocket, api_key: str) -> None:
     async with AsyncSessionLocal() as db:
-        user = await _resolve_user_by_api_key(db, api_key)
+        user, _device = await _resolve_user_and_device(db, api_key)
 
     if user is None:
         await websocket.accept()
@@ -765,7 +729,7 @@ async def list_spools_with_header_key(
     offset: int = Query(default=0, ge=0),
 ) -> JSONResponse:
     api_key = x_api_key or header_api_key
-    user = await _resolve_user_by_api_key(db, api_key)
+    user, _device = await _resolve_user_and_device(db, api_key)
     if user is None:
         return _err(status.HTTP_401_UNAUTHORIZED, "Invalid or missing API key.")
 
@@ -803,7 +767,7 @@ async def list_spools(
     limit: int | None = Query(default=None, ge=1, le=1000),
     offset: int = Query(default=0, ge=0),
 ) -> JSONResponse:
-    user = await _resolve_user_by_api_key(db, api_key)
+    user, _device = await _resolve_user_and_device(db, api_key)
     if user is None:
         return _err(status.HTTP_401_UNAUTHORIZED, "Invalid API key.")
 
@@ -821,7 +785,7 @@ async def list_spools(
         sort=sort,
         limit=limit,
         offset=offset,
-        api_key=api_key,
+        device=_device,
     )
 
 
@@ -839,7 +803,7 @@ async def _list_spools_impl(
     sort: str | None,
     limit: int | None,
     offset: int,
-    api_key: str | None = None,
+    device: UserPrinterDevice | None = None,
 ) -> JSONResponse:
     result = await db.execute(
         select(UserSpool)
@@ -850,9 +814,8 @@ async def _list_spools_impl(
     spools = list(result.scalars().all())
     location_map, gate_meta_map = await _build_location_map(db, user.id)
 
-    # Auto-register/update Happy Hare device when accessed via scoped api_key
-    if api_key:
-        device = await _ensure_hh_device(db, user, api_key)
+    # Update gate_count from location data when accessed via device api_key
+    if device is not None:
         await _update_device_gate_count(db, device, location_map)
         await db.commit()
 
@@ -923,7 +886,7 @@ async def get_spool_with_header_key(
     header_api_key: Annotated[str | None, Header(alias="X-API-Key")] = None,
 ) -> JSONResponse:
     api_key = x_api_key or header_api_key
-    user = await _resolve_user_by_api_key(db, api_key)
+    user, _device = await _resolve_user_and_device(db, api_key)
     if user is None:
         return _err(status.HTTP_401_UNAUTHORIZED, "Invalid or missing API key.")
     return await _get_spool_impl(db, user, spool_id)
@@ -936,7 +899,7 @@ async def get_spool(
     spool_id: int,
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> JSONResponse:
-    user = await _resolve_user_by_api_key(db, api_key)
+    user, _device = await _resolve_user_and_device(db, api_key)
     if user is None:
         return _err(status.HTTP_401_UNAUTHORIZED, "Invalid API key.")
     return await _get_spool_impl(db, user, spool_id)
@@ -949,7 +912,7 @@ async def create_spool(
     body: SpoolCreateBody,
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> JSONResponse:
-    user = await _resolve_user_by_api_key(db, api_key)
+    user, _device = await _resolve_user_and_device(db, api_key)
     if user is None:
         return _err(status.HTTP_401_UNAUTHORIZED, "Invalid API key.")
 
@@ -983,7 +946,7 @@ async def create_spool(
     db.add(spool)
     await db.flush()
 
-    ok, err = await _apply_location_assignment(db, user, spool, body.location, api_key=api_key)
+    ok, err = await _apply_location_assignment(db, user, spool, body.location, device_from_key=_device)
     if not ok:
         await db.rollback()
         return _err(status.HTTP_400_BAD_REQUEST, err or "Failed to assign spool location.")
@@ -1006,7 +969,7 @@ async def patch_spool(
     body: SpoolPatchBody,
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> JSONResponse:
-    user = await _resolve_user_by_api_key(db, api_key)
+    user, _device = await _resolve_user_and_device(db, api_key)
     if user is None:
         return _err(status.HTTP_401_UNAUTHORIZED, "Invalid API key.")
 
@@ -1043,7 +1006,7 @@ async def patch_spool(
         spool.state = UserSpoolState.empty
 
     if "location" in fields_set:
-        ok, err = await _apply_location_assignment(db, user, spool, body.location, api_key=api_key)
+        ok, err = await _apply_location_assignment(db, user, spool, body.location, device_from_key=_device)
         if not ok:
             await db.rollback()
             return _err(status.HTTP_400_BAD_REQUEST, err or "Failed to assign spool location.")
@@ -1059,7 +1022,7 @@ async def patch_spool(
     # Sync HH extra fields (printer_name, mmu_gate_map) to PresetGateState
     # so gate assignments from Happy Hare are reflected in our internal model.
     if "extra" in fields_set and "location" not in fields_set:
-        await _sync_extra_to_gate_state(db, user, spool, api_key=api_key)
+        await _sync_extra_to_gate_state(db, user, spool, device=_device)
 
     await db.commit()
     updated = await _get_user_spool(db, user.id, spool.id)
@@ -1079,7 +1042,7 @@ async def use_spool(
     body: SpoolUseBody,
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> JSONResponse:
-    user = await _resolve_user_by_api_key(db, api_key)
+    user, _device = await _resolve_user_and_device(db, api_key)
     if user is None:
         return _err(status.HTTP_401_UNAUTHORIZED, "Invalid API key.")
 
@@ -1126,7 +1089,7 @@ async def measure_spool(
     body: SpoolMeasureBody,
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> JSONResponse:
-    user = await _resolve_user_by_api_key(db, api_key)
+    user, _device = await _resolve_user_and_device(db, api_key)
     if user is None:
         return _err(status.HTTP_401_UNAUTHORIZED, "Invalid API key.")
 
@@ -1162,7 +1125,7 @@ async def delete_spool(
     spool_id: int,
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> JSONResponse:
-    user = await _resolve_user_by_api_key(db, api_key)
+    user, _device = await _resolve_user_and_device(db, api_key)
     if user is None:
         return _err(status.HTTP_401_UNAUTHORIZED, "Invalid API key.")
 
@@ -1219,7 +1182,7 @@ async def list_vendors_with_header_key(
     name: str | None = None,
 ) -> JSONResponse:
     api_key = x_api_key or header_api_key
-    user = await _resolve_user_by_api_key(db, api_key)
+    user, _device = await _resolve_user_and_device(db, api_key)
     if user is None:
         return _err(status.HTTP_401_UNAUTHORIZED, "Invalid or missing API key.")
     return await _list_vendors_impl(db=db, name=name)
@@ -1232,7 +1195,7 @@ async def list_vendors(
     db: Annotated[AsyncSession, Depends(get_db)],
     name: str | None = None,
 ) -> JSONResponse:
-    user = await _resolve_user_by_api_key(db, api_key)
+    user, _device = await _resolve_user_and_device(db, api_key)
     if user is None:
         return _err(status.HTTP_401_UNAUTHORIZED, "Invalid API key.")
     return await _list_vendors_impl(db=db, name=name)
@@ -1277,7 +1240,7 @@ async def list_filaments_with_header_key(
     material: str | None = None,
 ) -> JSONResponse:
     api_key = x_api_key or header_api_key
-    user = await _resolve_user_by_api_key(db, api_key)
+    user, _device = await _resolve_user_and_device(db, api_key)
     if user is None:
         return _err(status.HTTP_401_UNAUTHORIZED, "Invalid or missing API key.")
     return await _list_filaments_impl(db=db, vendor_id=vendor_id, name=name, material=material)
@@ -1292,7 +1255,7 @@ async def list_filaments(
     name: str | None = None,
     material: str | None = None,
 ) -> JSONResponse:
-    user = await _resolve_user_by_api_key(db, api_key)
+    user, _device = await _resolve_user_and_device(db, api_key)
     if user is None:
         return _err(status.HTTP_401_UNAUTHORIZED, "Invalid API key.")
     return await _list_filaments_impl(db=db, vendor_id=vendor_id, name=name, material=material)

@@ -37,6 +37,7 @@ class UserPrinterDevice(Base):
     )
     name: Mapped[str] = mapped_column(String(200), nullable=False)
     device_fingerprint: Mapped[str] = mapped_column(String(200), nullable=False)
+    api_key: Mapped[str | None] = mapped_column(String(64), unique=True, index=True, nullable=True)
     supports_hh: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     gate_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
     last_seen_at: Mapped[datetime | None] = mapped_column(
