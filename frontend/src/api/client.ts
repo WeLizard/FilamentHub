@@ -1673,6 +1673,7 @@ export interface UserPrinterDevice {
   device_fingerprint: string;
   supports_hh: boolean;
   gate_count: number | null;
+  printer_hostname: string | null;
   has_api_key: boolean;
   last_seen_at: string | null;
   created_at: string;
@@ -1725,6 +1726,7 @@ export interface DeviceUpdatePayload {
   name?: string | null;
   gate_count?: number | null;
   supports_hh?: boolean | null;
+  printer_hostname?: string | null;
 }
 
 export const devicesAPI = {

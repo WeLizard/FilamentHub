@@ -40,6 +40,7 @@ class UserPrinterDevice(Base):
     api_key: Mapped[str | None] = mapped_column(String(64), unique=True, index=True, nullable=True)
     supports_hh: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     gate_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    printer_hostname: Mapped[str | None] = mapped_column(String(200), nullable=True)
     last_seen_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )

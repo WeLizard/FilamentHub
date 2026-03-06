@@ -2396,6 +2396,8 @@ const SpoolsTab: React.FC<SpoolsTabProps> = ({
   const [showNewDeviceForm, setShowNewDeviceForm] = useState(false);
   const [revealedKeys, setRevealedKeys] = useState<Record<number, string>>({});
   const [copiedDeviceId, setCopiedDeviceId] = useState<number | null>(null);
+  const [editingHostname, setEditingHostname] = useState<Record<number, string>>({});
+  const [savingHostname, setSavingHostname] = useState<number | null>(null);
 
   const { data: devices = [], refetch: refetchDevices } = useQuery({
     queryKey: ['devices'],
@@ -2465,6 +2467,26 @@ const SpoolsTab: React.FC<SpoolsTabProps> = ({
       queryClient.invalidateQueries({ queryKey: ['devices'] });
     } catch (error: any) {
       setSetupError(translateApiError(t, error?.response?.data?.detail));
+    }
+  };
+
+  const handleSaveHostname = async (deviceId: number) => {
+    const hostname = (editingHostname[deviceId] ?? '').trim();
+    setSavingHostname(deviceId);
+    setSetupError(null);
+    try {
+      await devicesAPI.update(deviceId, { printer_hostname: hostname || null });
+      setEditingHostname((prev) => {
+        const next = { ...prev };
+        delete next[deviceId];
+        return next;
+      });
+      queryClient.invalidateQueries({ queryKey: ['devices'] });
+      await refetchDevices();
+    } catch (error: any) {
+      setSetupError(translateApiError(t, error?.response?.data?.detail));
+    } finally {
+      setSavingHostname(null);
     }
   };
 
@@ -2690,6 +2712,41 @@ const SpoolsTab: React.FC<SpoolsTabProps> = ({
                       <Trash2 className="w-3.5 h-3.5" />
                     </button>
                   </div>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-gray-400">{t('profilePage.deviceSetup.hostnameLabel')}:</span>
+                  {editingHostname[device.id] !== undefined ? (
+                    <div className="flex items-center gap-1.5">
+                      <input
+                        type="text"
+                        value={editingHostname[device.id]}
+                        onChange={(e) => setEditingHostname((prev) => ({ ...prev, [device.id]: e.target.value }))}
+                        onKeyDown={(e) => { if (e.key === 'Enter') handleSaveHostname(device.id); }}
+                        className="bg-black/30 border border-white/20 rounded px-2 py-0.5 text-xs text-white w-32 focus:border-blue-500 focus:outline-none"
+                        placeholder="voron"
+                        autoFocus
+                      />
+                      <button
+                        onClick={() => handleSaveHostname(device.id)}
+                        disabled={savingHostname === device.id}
+                        className="text-xs text-blue-400 hover:text-blue-300"
+                      >
+                        {savingHostname === device.id ? '...' : '✓'}
+                      </button>
+                      <button
+                        onClick={() => setEditingHostname((prev) => { const n = { ...prev }; delete n[device.id]; return n; })}
+                        className="text-xs text-gray-500 hover:text-gray-300"
+                      >✕</button>
+                    </div>
+                  ) : (
+                    <button
+                      onClick={() => setEditingHostname((prev) => ({ ...prev, [device.id]: device.printer_hostname ?? '' }))}
+                      className="text-xs text-gray-300 hover:text-white transition-colors"
+                    >
+                      {device.printer_hostname || <span className="text-amber-400 italic">{t('profilePage.deviceSetup.hostnameNotSet')}</span>}
+                    </button>
+                  )}
                 </div>
 
                 {apiKey && configSnippet ? (

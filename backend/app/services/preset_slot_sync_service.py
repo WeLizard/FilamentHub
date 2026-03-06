@@ -122,6 +122,8 @@ async def update_device(
         device.gate_count = payload.gate_count
     if payload.supports_hh is not None:
         device.supports_hh = payload.supports_hh
+    if payload.printer_hostname is not None:
+        device.printer_hostname = payload.printer_hostname
     await db.commit()
     await db.refresh(device)
     return device

@@ -28,6 +28,7 @@ class DeviceUpdateRequest(BaseModel):
     name: str | None = Field(default=None, max_length=200)
     gate_count: int | None = Field(default=None, ge=1, le=256)
     supports_hh: bool | None = None
+    printer_hostname: str | None = Field(default=None, max_length=200)
 
 
 class DeviceResponse(BaseModel):
@@ -40,6 +41,7 @@ class DeviceResponse(BaseModel):
     device_fingerprint: str
     supports_hh: bool
     gate_count: int | None
+    printer_hostname: str | None
     has_api_key: bool = False
     last_seen_at: datetime | None
     created_at: datetime

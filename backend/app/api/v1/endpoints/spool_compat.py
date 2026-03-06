@@ -228,11 +228,11 @@ async def _update_device_gate_count(db: AsyncSession, device: UserPrinterDevice,
 
 async def _build_location_map(
     db: AsyncSession, user_id: int
-) -> tuple[dict[int, str], dict[int, tuple[str, int]]]:
+) -> tuple[dict[int, str], dict[int, tuple[str, int, str]]]:
     """Return (location_map, gate_meta_map).
 
     location_map:  spool_id → "DeviceName @ MMU Gate:N"
-    gate_meta_map: spool_id → (device_name, gate_index)
+    gate_meta_map: spool_id → (device_name, gate_index, printer_hostname)
     """
     result = await db.execute(
         select(PresetGateState, UserPrinterDevice)
@@ -245,20 +245,21 @@ async def _build_location_map(
         .order_by(PresetGateState.updated_at.desc())
     )
     location_map: dict[int, str] = {}
-    gate_meta_map: dict[int, tuple[str, int]] = {}
+    gate_meta_map: dict[int, tuple[str, int, str]] = {}
     for gate_state, device in result.all():
         if gate_state.spool_id is None or gate_state.spool_id in location_map:
             continue
         device_name = device.name or device.device_fingerprint
+        hostname = device.printer_hostname or ""
         location_map[gate_state.spool_id] = f"{device_name} @ MMU Gate:{gate_state.gate_index}"
-        gate_meta_map[gate_state.spool_id] = (device_name, gate_state.gate_index)
+        gate_meta_map[gate_state.spool_id] = (device_name, gate_state.gate_index, hostname)
     return location_map, gate_meta_map
 
 
 def _to_spool_payload(
     spool: UserSpool,
     location_map: dict[int, str],
-    gate_meta_map: dict[int, tuple[str, int]] | None = None,
+    gate_meta_map: dict[int, tuple[str, int, str]] | None = None,
 ) -> dict:
     filament = spool.filament
     density = _filament_density(filament)
@@ -270,13 +271,15 @@ def _to_spool_payload(
     # from our PresetGateState if the stored values are empty/unset.
     extra: dict = dict(spool.extra or {})
     if gate_meta_map and spool.id in gate_meta_map:
-        device_name, gate_index = gate_meta_map[spool.id]
+        _device_name, gate_index, printer_hostname = gate_meta_map[spool.id]
         # HH reads: json.loads(extra.get('printer_name', '""')) and int(extra.get('mmu_gate_map', -1))
         # So printer_name must be JSON-encoded string ('"voron"'), mmu_gate_map must be string int ('0')
+        # IMPORTANT: printer_name must match the Klipper printer hostname, NOT the device display name.
         # Override empty / unset / default values left by previous unset_spool_gate
         stored_name = extra.get("printer_name", "")
         if not stored_name or stored_name == '""':
-            extra["printer_name"] = json.dumps(device_name)
+            if printer_hostname:
+                extra["printer_name"] = json.dumps(printer_hostname)
         stored_gate = extra.get("mmu_gate_map", "")
         if not stored_gate or stored_gate in ("", "-1"):
             extra["mmu_gate_map"] = json.dumps(gate_index)
@@ -448,11 +451,13 @@ async def _apply_location_assignment(
     device_hint = match.group("device").strip()
     gate_index = int(match.group("gate"))
 
-    # Try to find device by name or fingerprint
+    # Try to find device by name, hostname, or fingerprint
     device_result = await db.execute(
         select(UserPrinterDevice).where(
             UserPrinterDevice.user_id == user.id,
-            (UserPrinterDevice.name == device_hint) | (UserPrinterDevice.device_fingerprint == device_hint),
+            (UserPrinterDevice.name == device_hint)
+            | (UserPrinterDevice.printer_hostname == device_hint)
+            | (UserPrinterDevice.device_fingerprint == device_hint),
         )
     )
     device = device_result.scalar_one_or_none()
@@ -460,9 +465,12 @@ async def _apply_location_assignment(
     # Fallback: use the device resolved from the API key
     if device is None and device_from_key is not None:
         device = device_from_key
-        if device.name != device_hint:
-            device.name = device_hint
-            logger.info("Updated device id=%s name to '%s' from location string", device.id, device_hint)
+
+    # Save the hostname from location string (HH sends "voron @ MMU Gate:1")
+    if device is not None and device_hint:
+        if device.printer_hostname != device_hint:
+            device.printer_hostname = device_hint
+            logger.info("Detected printer hostname '%s' for device id=%s", device_hint, device.id)
 
     if device is None:
         return False, f"Device '{device_hint}' not found for this API key."
@@ -546,17 +554,20 @@ async def _sync_extra_to_gate_state(
             state.source_ts = now
         return
 
-    if device is not None and device.name != printer_name:
-        device.name = printer_name
+    if device is not None and printer_name:
+        device.printer_hostname = printer_name
 
     if device is None:
         device_result = await db.execute(
             select(UserPrinterDevice).where(
                 UserPrinterDevice.user_id == user.id,
-                UserPrinterDevice.name == printer_name,
+                (UserPrinterDevice.printer_hostname == printer_name)
+                | (UserPrinterDevice.name == printer_name),
             )
         )
         device = device_result.scalar_one_or_none()
+        if device is not None:
+            device.printer_hostname = printer_name
 
     if device is None:
         logger.warning(

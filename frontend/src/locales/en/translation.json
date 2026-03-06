@@ -1396,6 +1396,8 @@
       "regenerateConfirm": "The old key will stop working. Continue?",
       "deleteDevice": "Delete printer",
       "deleteConfirm": "Delete printer and all its gates? This cannot be undone.",
+      "hostnameLabel": "Klipper hostname",
+      "hostnameNotSet": "not set (click to enter)",
       "note": "After adding the config, restart Moonraker. The printer will connect automatically on first request."
     },
     "help": {
