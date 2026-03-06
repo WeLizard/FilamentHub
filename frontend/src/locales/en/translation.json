@@ -1383,7 +1383,8 @@
       "create": "Create",
       "noDevices": "No printers connected. Click \"Add Printer\" to get started.",
       "connected": "Connected",
-      "connectedGates": "Connected ({{count}} gates)",
+      "connectedGates_one": "Connected ({{count}} slot)",
+      "connectedGates_other": "Connected ({{count}} slots)",
       "awaitingConnection": "Awaiting connection",
       "configLabel": "Moonraker config",
       "copyConfig": "Copy config",
@@ -3160,7 +3161,8 @@
       "minutesAgo": "{{count}} min ago",
       "hoursAgo": "{{count}} h ago"
     },
-    "gates": "gates",
+    "gates_one": "{{count}} slot",
+    "gates_other": "{{count}} slots",
     "hhActive": "Happy Hare",
     "manualMode": "Manual mode",
     "connection": {

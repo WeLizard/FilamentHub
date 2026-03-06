@@ -191,7 +191,7 @@ function DeviceSection({ device, presetsSeedMap, spools, printerProfileName = nu
           {device.gate_count != null && (
             <span className="flex items-center gap-1 rounded-full bg-white/5 px-2.5 py-1 text-xs text-gray-400">
               <Layers className="h-3 w-3" />
-              {device.gate_count} {t('presetSlots.gates')}
+              {t('presetSlots.gates', { count: device.gate_count })}
             </span>
           )}
           <span className="flex items-center gap-1 rounded-full bg-white/5 px-2.5 py-1 text-xs text-gray-500">
