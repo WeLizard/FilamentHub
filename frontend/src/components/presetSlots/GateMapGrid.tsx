@@ -116,13 +116,13 @@ export function GateMapGrid({ device, gates, presets, spools, onGateClick }: Gat
               <span
                 className={[
                   'flex h-5 min-w-[20px] items-center justify-center rounded-md px-1.5 text-[11px] font-bold',
-                  hasContent ? 'bg-purple-500/20 text-purple-300' : 'bg-white/5 text-gray-600',
+                  hasContent ? 'bg-purple-500/20 text-purple-300' : 'bg-white/8 text-gray-400',
                 ].join(' ')}
               >
                 {i}
               </span>
               {gate && (
-                <span className="text-[9px] font-medium text-gray-600">
+                <span className="text-[9px] font-medium text-gray-400">
                   {gate.source === 'hh_snapshot' ? 'HH' : gate.source === 'manual_orca' ? 'Orca' : ''}
                 </span>
               )}
@@ -141,12 +141,12 @@ export function GateMapGrid({ device, gates, presets, spools, onGateClick }: Gat
             {displayMaterial ? (
               <span className="text-xs font-medium text-gray-200">{displayMaterial}</span>
             ) : (
-              <span className="text-[11px] text-gray-600">{t('presetSlots.gateEmpty')}</span>
+              <span className="text-[11px] text-gray-400">{t('presetSlots.gateEmpty')}</span>
             )}
 
             {/* Brand + filament name */}
             {spool?.filament && (
-              <p className="max-w-full truncate text-[10px] leading-tight text-gray-400">
+              <p className="max-w-full truncate text-[10px] leading-tight text-gray-300">
                 {[spool.filament.brand_name, spool.filament.name].filter(Boolean).join(' ')}
               </p>
             )}
@@ -160,7 +160,7 @@ export function GateMapGrid({ device, gates, presets, spools, onGateClick }: Gat
 
             {/* Remaining weight */}
             {spool && (
-              <span className="text-[10px] tabular-nums text-gray-500">
+              <span className="text-[10px] tabular-nums text-gray-300">
                 {spool.remaining_weight_g}g &middot; {spool.remaining_pct}%
               </span>
             )}
@@ -169,7 +169,7 @@ export function GateMapGrid({ device, gates, presets, spools, onGateClick }: Gat
             {preset && (
               <div className="w-full min-w-0 border-t border-white/5 pt-1">
                 <p className="truncate text-[10px] font-medium text-purple-300">{preset.name}</p>
-                <p className="text-[9px] tabular-nums text-gray-500">
+                <p className="text-[9px] tabular-nums text-gray-400">
                   {preset.extruder_temp}&deg;C / {preset.bed_temp}&deg;C
                 </p>
               </div>
