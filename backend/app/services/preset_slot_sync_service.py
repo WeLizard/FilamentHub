@@ -176,7 +176,7 @@ async def _upsert_gate_state(
     priority = {
         PresetGateStateSource.hh_snapshot: 3,
         PresetGateStateSource.manual_orca: 2,
-        PresetGateStateSource.web_manual: 1,
+        PresetGateStateSource.web_manual: 3,  # explicit user action always overrides
     }
     source_ts = _normalize_utc(source_ts)
 
