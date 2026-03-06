@@ -83,7 +83,7 @@ export function GateMapGrid({ device, gates, presets, spools, onGateClick }: Gat
   const totalGates = device.gate_count ?? Math.max(gates.length, 4);
 
   return (
-    <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+    <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-4 xl:grid-cols-8">
       {Array.from({ length: totalGates }, (_, i) => {
         const gate = gateMap.get(i) ?? null;
         const preset = gate?.preset_id != null ? presets[gate.preset_id] : null;
@@ -104,7 +104,7 @@ export function GateMapGrid({ device, gates, presets, spools, onGateClick }: Gat
             type="button"
             onClick={() => onGateClick(gate, i)}
             className={[
-              'group relative flex flex-col items-center gap-1.5 rounded-xl border p-3 text-center transition',
+              'group relative flex flex-col items-center gap-1 rounded-xl border px-2 py-2 text-center transition',
               'hover:border-purple-500/50 hover:bg-purple-500/8 focus:outline-none focus:ring-2 focus:ring-purple-500/40',
               hasContent
                 ? 'border-purple-500/25 bg-purple-500/[0.04]'
@@ -129,7 +129,7 @@ export function GateMapGrid({ device, gates, presets, spools, onGateClick }: Gat
             </div>
 
             {/* Spool icon */}
-            <div className="py-1">
+            <div className="py-0.5">
               <SpoolIcon
                 color={displayColor}
                 remainingPct={spool?.remaining_pct}
@@ -167,7 +167,7 @@ export function GateMapGrid({ device, gates, presets, spools, onGateClick }: Gat
 
             {/* Preset info */}
             {preset && (
-              <div className="mt-0.5 w-full min-w-0 border-t border-white/5 pt-1.5">
+              <div className="w-full min-w-0 border-t border-white/5 pt-1">
                 <p className="truncate text-[10px] font-medium text-purple-300">{preset.name}</p>
                 <p className="text-[9px] tabular-nums text-gray-500">
                   {preset.extruder_temp}&deg;C / {preset.bed_temp}&deg;C
