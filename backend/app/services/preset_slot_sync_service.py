@@ -200,11 +200,13 @@ async def _upsert_gate_state(
 
         incoming_priority = case(
             (excluded.source == PresetGateStateSource.hh_snapshot, 3),
+            (excluded.source == PresetGateStateSource.web_manual, 3),
             (excluded.source == PresetGateStateSource.manual_orca, 2),
             else_=1,
         )
         current_priority = case(
             (PresetGateState.source == PresetGateStateSource.hh_snapshot, 3),
+            (PresetGateState.source == PresetGateStateSource.web_manual, 3),
             (PresetGateState.source == PresetGateStateSource.manual_orca, 2),
             else_=1,
         )
