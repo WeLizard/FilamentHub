@@ -9,7 +9,7 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { notificationsAPI } from '../api/client';
-import type { Notification, NotificationType } from '../types/api';
+import type { Notification, NotificationListResponse, NotificationType } from '../types/api';
 import { DeletedPresetsModal } from './DeletedPresetsModal';
 
 interface NotificationsProps {
@@ -71,8 +71,11 @@ export const Notifications: React.FC<NotificationsProps> = ({ floating = false }
   // Мутация для удаления всех уведомлений
   const deleteAllNotificationsMutation = useMutation({
     mutationFn: () => notificationsAPI.deleteAll(),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['notifications', user?.id] });
+    onSuccess: async () => {
+      queryClient.setQueryData(['notifications', user?.id], (old: NotificationListResponse | undefined) =>
+        old ? { ...old, items: [], total: 0, unread_count: 0 } : old
+      );
+      await queryClient.invalidateQueries({ queryKey: ['notifications', user?.id] });
       setIsOpen(false);
     },
   });
