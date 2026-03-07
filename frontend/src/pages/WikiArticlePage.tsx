@@ -372,12 +372,25 @@ export function WikiArticlePage() {
                         );
                       }
 
-                      // Обычный code блок
+                      // Обычный code блок с языком
                       if (!inline && match) {
                         return (
                           <SyntaxHighlighter
                             style={vscDarkPlus as any}
                             language={match[1]}
+                            PreTag="div"
+                          >
+                            {String(children).replace(/\n$/, '')}
+                          </SyntaxHighlighter>
+                        );
+                      }
+
+                      // Code блок без языка (``` без указания языка)
+                      if (!inline) {
+                        return (
+                          <SyntaxHighlighter
+                            style={vscDarkPlus as any}
+                            language="text"
                             PreTag="div"
                           >
                             {String(children).replace(/\n$/, '')}

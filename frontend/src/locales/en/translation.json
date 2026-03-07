@@ -429,7 +429,8 @@
     "modal_close_button": "Close",
     "modal_save_button": "Save Response",
     "modal_saving_button": "Saving...",
-    "alert_enter_response": "Please enter a response to the user"
+    "alert_enter_response": "Please enter a response to the user",
+    "updateError": "Error saving response"
   },
   "adminPanel": {
     "accessDenied": "Access Denied",

@@ -432,7 +432,8 @@
     "modal_close_button": "Закрыть",
     "modal_save_button": "Сохранить ответ",
     "modal_saving_button": "Сохранение...",
-    "alert_enter_response": "Введите ответ пользователю"
+    "alert_enter_response": "Введите ответ пользователю",
+    "updateError": "Ошибка сохранения ответа"
   },
   "adminPanel": {
     "accessDenied": "Доступ запрещен",

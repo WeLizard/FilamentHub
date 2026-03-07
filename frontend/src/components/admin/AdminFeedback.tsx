@@ -8,6 +8,8 @@ import { adminFeedbackAPI } from '../../api/client';
 import type { Feedback, FeedbackType, FeedbackStatus } from '../../types/api';
 import { useHeaderVisible } from '../../hooks/useHeaderVisible';
 import { useTranslation } from 'react-i18next';
+import { toast } from '../Toast';
+import { translateApiError } from '../../utils/translateApiError';
 
 export function AdminFeedback() {
   const { t } = useTranslation();
@@ -43,6 +45,9 @@ export function AdminFeedback() {
       queryClient.invalidateQueries({ queryKey: ['admin-feedback'] });
       setSelectedFeedback(null);
       setAdminResponse('');
+    },
+    onError: (error: any) => {
+      toast.error(translateApiError(t, error?.response?.data?.detail, t('adminFeedback.updateError')));
     },
   });
 

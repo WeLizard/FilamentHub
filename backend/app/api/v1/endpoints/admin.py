@@ -554,9 +554,19 @@ async def unlink_user_from_brand(
     # Отвязываем от бренда (роль не меняем)
     user.brand_id = None
     await db.commit()
-    await db.refresh(user)
-    
-    return UserResponse.model_validate(user)
+
+    # Загружаем пользователя с брендом для корректной сериализации
+    from sqlalchemy.orm import selectinload
+    result = await db.execute(
+        select(User).where(User.id == user_id).options(selectinload(User.brand))
+    )
+    user = result.scalar_one()
+
+    response = UserResponse.model_validate(user)
+    if user.brand:
+        response.brand_name = user.brand.name  # type: ignore
+
+    return response
 
 
 @router.get("/stats", response_model=dict)
