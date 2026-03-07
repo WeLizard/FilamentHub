@@ -140,6 +140,34 @@ async def mark_all_as_read(
     return {"marked_count": count}
 
 
+@router.delete("/all")
+async def delete_all_notifications(
+    current_user: Annotated[User, Depends(get_current_active_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+    read_only: bool = Query(False, description="Удалить только прочитанные уведомления"),
+) -> dict[str, int]:
+    """Удалить все уведомления пользователя (или только прочитанные)."""
+    query = select(Notification).where(Notification.user_id == current_user.id)
+
+    if read_only:
+        query = query.where(Notification.read == True)
+
+    result = await db.execute(query)
+    notifications = result.scalars().all()
+
+    count = 0
+    for notification in notifications:
+        await db.delete(notification)
+        count += 1
+
+    await db.commit()
+
+    return {
+        "deleted_count": count,
+        "message": "notifications_deleted" if count > 0 else "no_notifications_to_delete",
+    }
+
+
 @router.delete("/{notification_id}")
 async def delete_notification(
     notification_id: int,
@@ -154,39 +182,11 @@ async def delete_notification(
         )
     )
     notification = result.scalar_one_or_none()
-    
+
     if not notification:
         raise_error(404, ERR_NOTIFICATION_NOT_FOUND)
-    
+
     await db.delete(notification)
     await db.commit()
-    
+
     return {"message": "notification_deleted"}
-
-
-@router.delete("/all")
-async def delete_all_notifications(
-    current_user: Annotated[User, Depends(get_current_active_user)],
-    db: Annotated[AsyncSession, Depends(get_db)],
-    read_only: bool = Query(False, description="Удалить только прочитанные уведомления"),
-) -> dict[str, int]:
-    """Удалить все уведомления пользователя (или только прочитанные)."""
-    query = select(Notification).where(Notification.user_id == current_user.id)
-    
-    if read_only:
-        query = query.where(Notification.read == True)
-    
-    result = await db.execute(query)
-    notifications = result.scalars().all()
-    
-    count = 0
-    for notification in notifications:
-        await db.delete(notification)
-        count += 1
-    
-    await db.commit()
-    
-    return {
-        "deleted_count": count,
-        "message": "notifications_deleted" if count > 0 else "no_notifications_to_delete",
-    }
