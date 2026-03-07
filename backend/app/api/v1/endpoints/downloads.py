@@ -31,11 +31,8 @@ def _parse_version(filename: str) -> tuple[str, str, str] | None:
     - OrcaSlicer-FilamentHub-2.1.0-fh-win64-portable.zip -> ('2.1.0-fh', 'windows', 'portable')
     - OrcaSlicer-FilamentHub-2.1.0-fh-linux-x64.AppImage -> ('2.1.0-fh', 'linux', 'installer')
     """
-    # Паттерн:
-    # OrcaSlicer-FilamentHub-{version}-{platform}[-portable|-setup].{ext}
-    # Поддерживаем setup-суффикс для Windows installer:
-    # OrcaSlicer-FilamentHub-2.1.0-fh-win64-setup.exe
-    pattern = r"^OrcaSlicer-FilamentHub-(\d+\.\d+\.\d+-fh)-([A-Za-z0-9_-]+?)(?:-(portable|setup))?\.(exe|zip|dmg|AppImage)$"
+    # Платформы перечислены явно, всё между префиксом и платформой — версия.
+    pattern = r"^OrcaSlicer-FilamentHub-(.+?)-(win64|linux-x64|macos-x64|macos-arm64)(?:-(portable|setup))?\.(exe|zip|dmg|AppImage)$"
     match = re.match(pattern, filename)
 
     if not match:
