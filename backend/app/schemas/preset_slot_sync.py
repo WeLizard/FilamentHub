@@ -233,6 +233,7 @@ class DeviceCreateWithKeyRequest(BaseModel):
     """Create a new printer device with a generated API key."""
 
     name: str = Field(..., min_length=1, max_length=200)
+    printer_id: int | None = Field(None, gt=0, description="Link to a printer model from the catalog")
 
 
 class DeviceCreateWithKeyResponse(BaseModel):

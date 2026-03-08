@@ -1779,8 +1779,11 @@ export const devicesAPI = {
     return response.data;
   },
 
-  createWithKey: async (name: string): Promise<DeviceCreateWithKeyResponse> => {
-    const response = await api.post<DeviceCreateWithKeyResponse>('/devices/create-with-key', { name });
+  createWithKey: async (name: string, printerId?: number): Promise<DeviceCreateWithKeyResponse> => {
+    const response = await api.post<DeviceCreateWithKeyResponse>('/devices/create-with-key', {
+      name,
+      ...(printerId ? { printer_id: printerId } : {}),
+    });
     return response.data;
   },
 

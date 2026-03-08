@@ -51,7 +51,7 @@ import {
 import { Printer3DIcon } from '../components/icons/Printer3DIcon';
 import { useAuth } from '../contexts/AuthContext';
 import { useHeaderVisible } from '../hooks/useHeaderVisible';
-import { presetsAPI, filamentsAPI, brandsAPI, savedPresetsAPI, filamentReviewsAPI, calculatorAPI, printerProfilesAPI, printProfilesAPI, authAPI, spoolsAPI, qrAPI, devicesAPI, presetSlotsAPI } from '../api/client';
+import { presetsAPI, filamentsAPI, brandsAPI, savedPresetsAPI, filamentReviewsAPI, calculatorAPI, printerProfilesAPI, printProfilesAPI, authAPI, spoolsAPI, qrAPI, devicesAPI, presetSlotsAPI, printersAPI } from '../api/client';
 import type { UserSpool, SpoolState, UserPrinterDevice } from '../api/client';
 import { SpoolIcon } from '../components/icons/SpoolIcon';
 import api from '../api/client';
@@ -2364,6 +2364,111 @@ interface SpoolsTabProps {
   setIsAddOpen: (v: boolean) => void;
 }
 
+const AddDeviceForm: React.FC<{
+  newDeviceName: string;
+  setNewDeviceName: (v: string) => void;
+  selectedPrinterId: number | null;
+  setSelectedPrinterId: (v: number | null) => void;
+  printerSearchQuery: string;
+  setPrinterSearchQuery: (v: string) => void;
+  isCreatingDevice: boolean;
+  handleCreateDevice: () => void;
+  onCancel: () => void;
+}> = ({
+  newDeviceName, setNewDeviceName,
+  selectedPrinterId, setSelectedPrinterId,
+  printerSearchQuery, setPrinterSearchQuery,
+  isCreatingDevice, handleCreateDevice, onCancel,
+}) => {
+  const { t } = useTranslation();
+  const [showDropdown, setShowDropdown] = useState(false);
+
+  const { data: printersData } = useQuery({
+    queryKey: ['printers-for-device', printerSearchQuery],
+    queryFn: () => printersAPI.list({
+      active_only: true,
+      page: 1,
+      size: 20,
+      search: printerSearchQuery || undefined,
+    }),
+  });
+
+  const printers = printersData?.items || [];
+  const selectedPrinter = printers.find(p => p.id === selectedPrinterId);
+
+  return (
+    <div className="bg-black/20 border border-white/10 rounded-lg p-3 space-y-3">
+      {/* Printer selection */}
+      <div>
+        <p className="text-xs text-gray-400 mb-1">{t('profilePage.deviceSetup.selectPrinter')}</p>
+        <div className="relative">
+          <input
+            type="text"
+            value={selectedPrinterId ? (selectedPrinter ? `${selectedPrinter.manufacturer || ''} ${selectedPrinter.name}`.trim() : printerSearchQuery) : printerSearchQuery}
+            onChange={(e) => {
+              setPrinterSearchQuery(e.target.value);
+              setSelectedPrinterId(null);
+              setShowDropdown(true);
+            }}
+            onFocus={() => setShowDropdown(true)}
+            placeholder={t('profilePage.deviceSetup.searchPrinter')}
+            className="w-full rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 text-sm text-white placeholder-gray-600 focus:border-purple-500 focus:outline-none"
+          />
+          {showDropdown && printers.length > 0 && !selectedPrinterId && (
+            <div className="absolute z-10 w-full mt-1 max-h-40 overflow-y-auto bg-gray-800 border border-white/20 rounded-lg shadow-lg">
+              {printers.map((printer) => (
+                <button
+                  key={printer.id}
+                  type="button"
+                  onClick={() => {
+                    setSelectedPrinterId(printer.id);
+                    setNewDeviceName(`${printer.manufacturer || ''} ${printer.name}`.trim());
+                    setPrinterSearchQuery('');
+                    setShowDropdown(false);
+                  }}
+                  className="w-full text-left px-3 py-2 text-sm text-gray-200 hover:bg-purple-600/30 transition-colors"
+                >
+                  <span className="text-gray-400">{printer.manufacturer}</span>{' '}
+                  <span className="text-white font-medium">{printer.name}</span>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+      {/* Device name */}
+      <div>
+        <p className="text-xs text-gray-400 mb-1">{t('profilePage.deviceSetup.nameLabel')}</p>
+        <div className="flex gap-2">
+          <input
+            type="text"
+            value={newDeviceName}
+            onChange={(e) => setNewDeviceName(e.target.value)}
+            placeholder={t('profilePage.deviceSetup.namePlaceholder')}
+            maxLength={200}
+            className="flex-1 rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 text-sm text-white placeholder-gray-600 focus:border-purple-500 focus:outline-none"
+            onKeyDown={(e) => { if (e.key === 'Enter') handleCreateDevice(); }}
+          />
+          <button
+            onClick={handleCreateDevice}
+            disabled={isCreatingDevice || !newDeviceName.trim()}
+            className="inline-flex items-center gap-1.5 px-4 py-1.5 rounded-lg bg-purple-600 text-white text-sm font-medium transition-colors hover:bg-purple-500 disabled:opacity-50"
+          >
+            {isCreatingDevice && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+            {t('profilePage.deviceSetup.create')}
+          </button>
+          <button
+            onClick={onCancel}
+            className="px-3 py-1.5 rounded-lg border border-white/10 text-gray-400 text-sm hover:bg-white/10"
+          >
+            {t('common.cancel')}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 const SpoolsTab: React.FC<SpoolsTabProps> = ({
   spools,
   printerBindings,
@@ -2384,6 +2489,8 @@ const SpoolsTab: React.FC<SpoolsTabProps> = ({
   const [newDeviceName, setNewDeviceName] = useState('');
   const [isCreatingDevice, setIsCreatingDevice] = useState(false);
   const [showNewDeviceForm, setShowNewDeviceForm] = useState(false);
+  const [selectedPrinterId, setSelectedPrinterId] = useState<number | null>(null);
+  const [printerSearchQuery, setPrinterSearchQuery] = useState('');
   const [revealedKeys, setRevealedKeys] = useState<Record<number, string>>({});
   const [copiedDeviceId, setCopiedDeviceId] = useState<number | null>(null);
   const [editingHostname, setEditingHostname] = useState<Record<number, string>>({});
@@ -2435,9 +2542,11 @@ const SpoolsTab: React.FC<SpoolsTabProps> = ({
     setSetupError(null);
     setIsCreatingDevice(true);
     try {
-      const result = await devicesAPI.createWithKey(name);
+      const result = await devicesAPI.createWithKey(name, selectedPrinterId || undefined);
       setRevealedKeys((prev) => ({ ...prev, [result.device.id]: result.api_key }));
       setNewDeviceName('');
+      setSelectedPrinterId(null);
+      setPrinterSearchQuery('');
       setShowNewDeviceForm(false);
       queryClient.invalidateQueries({ queryKey: ['devices'] });
       await refetchDevices();
@@ -2626,34 +2735,22 @@ const SpoolsTab: React.FC<SpoolsTabProps> = ({
           </div>
 
           {showNewDeviceForm && (
-            <div className="bg-black/20 border border-white/10 rounded-lg p-3 space-y-3">
-              <p className="text-xs text-gray-400">{t('profilePage.deviceSetup.nameLabel')}</p>
-              <div className="flex gap-2">
-                <input
-                  type="text"
-                  value={newDeviceName}
-                  onChange={(e) => setNewDeviceName(e.target.value)}
-                  placeholder={t('profilePage.deviceSetup.namePlaceholder')}
-                  maxLength={200}
-                  className="flex-1 rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 text-sm text-white placeholder-gray-600 focus:border-purple-500 focus:outline-none"
-                  onKeyDown={(e) => { if (e.key === 'Enter') handleCreateDevice(); }}
-                />
-                <button
-                  onClick={handleCreateDevice}
-                  disabled={isCreatingDevice || !newDeviceName.trim()}
-                  className="inline-flex items-center gap-1.5 px-4 py-1.5 rounded-lg bg-purple-600 text-white text-sm font-medium transition-colors hover:bg-purple-500 disabled:opacity-50"
-                >
-                  {isCreatingDevice && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
-                  {t('profilePage.deviceSetup.create')}
-                </button>
-                <button
-                  onClick={() => { setShowNewDeviceForm(false); setNewDeviceName(''); }}
-                  className="px-3 py-1.5 rounded-lg border border-white/10 text-gray-400 text-sm hover:bg-white/10"
-                >
-                  {t('common.cancel')}
-                </button>
-              </div>
-            </div>
+            <AddDeviceForm
+              newDeviceName={newDeviceName}
+              setNewDeviceName={setNewDeviceName}
+              selectedPrinterId={selectedPrinterId}
+              setSelectedPrinterId={setSelectedPrinterId}
+              printerSearchQuery={printerSearchQuery}
+              setPrinterSearchQuery={setPrinterSearchQuery}
+              isCreatingDevice={isCreatingDevice}
+              handleCreateDevice={handleCreateDevice}
+              onCancel={() => {
+                setShowNewDeviceForm(false);
+                setNewDeviceName('');
+                setSelectedPrinterId(null);
+                setPrinterSearchQuery('');
+              }}
+            />
           )}
 
           {devices.length === 0 && !showNewDeviceForm && (

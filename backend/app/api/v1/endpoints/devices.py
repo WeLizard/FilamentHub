@@ -97,6 +97,7 @@ async def create_device_with_key(
         device_fingerprint=fingerprint,
         api_key=new_key,
         supports_hh=True,
+        printer_id=payload.printer_id,
     )
     db.add(device)
     await db.commit()

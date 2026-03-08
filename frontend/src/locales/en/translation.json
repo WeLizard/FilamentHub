@@ -1384,6 +1384,8 @@
       "title": "My Printers",
       "description": "Add a printer, copy the config to Moonraker — it will connect automatically.",
       "addPrinter": "Add Printer",
+      "selectPrinter": "Printer model (from catalog)",
+      "searchPrinter": "Search printer catalog...",
       "nameLabel": "Printer name",
       "namePlaceholder": "E.g.: Voron 2.4",
       "create": "Create",
