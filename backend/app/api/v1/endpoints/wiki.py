@@ -23,7 +23,7 @@ from app.core.errors import (
 )
 from app.core.utils import like_pattern
 from app.db.session import get_db
-from app.models.user import User
+from app.models.user import User, UserRole
 from app.models.wiki_article import WikiArticle, WikiArticleStatus
 from app.models.wiki_category import WikiCategory
 from app.models.wiki_feedback import WikiArticleFeedback, WikiFeedbackType
@@ -353,28 +353,40 @@ async def list_articles(
 @router.get("/articles/{article_slug}", response_model=WikiArticleResponse)
 async def get_article(
     article_slug: str,
+    request: Request,
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> WikiArticleResponse:
     """
     Получить статью по slug.
-    
-    Автоматически увеличивает счетчик просмотров.
+
+    Автоматически увеличивает счетчик просмотров (только для published).
+    Админы могут получить любую статью (включая черновики).
     """
     result = await db.execute(
         select(WikiArticle).where(WikiArticle.slug == article_slug)
     )
     article = result.scalar_one_or_none()
-    
+
     if not article:
         raise_error(404, ERR_ARTICLE_NOT_FOUND)
-    
-    if article.status != WikiArticleStatus.PUBLISHED:
+
+    # Проверяем, является ли пользователь админом
+    is_admin = False
+    try:
+        user = await get_current_active_user_optional(request, db)
+        if user and user.role == UserRole.ADMIN:
+            is_admin = True
+    except Exception:
+        pass
+
+    if article.status != WikiArticleStatus.PUBLISHED and not is_admin:
         raise_error(404, ERR_ARTICLE_NOT_PUBLISHED)
     
-    # Увеличиваем счетчик просмотров
-    article.views += 1
-    await db.commit()
-    await db.refresh(article)
+    # Увеличиваем счетчик просмотров (только для публичных просмотров)
+    if article.status == WikiArticleStatus.PUBLISHED:
+        article.views += 1
+        await db.commit()
+        await db.refresh(article)
     
     # Получаем имя категории
     category_result = await db.execute(
