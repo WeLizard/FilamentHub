@@ -1,76 +1,70 @@
 /**
- * Страница Калькулятора стоимости 3D-печати
- * Новая улучшенная версия с историей расчётов и загрузкой G-кода
+ * Страница Калькулятора стоимости 3D-печати.
+ * Пока это UI-слой, поэтому оболочка должна нормально жить и в route, и внутри ProfilePage.
  */
 
-import { useState } from 'react';
+import { type ReactNode, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Calculator, Upload, FileText, Save, Download, Trash2, Eye, Clock, DollarSign, Weight, Printer } from 'lucide-react';
+import { Calculator, Upload, FileText, Save, Download, Trash2, Clock, DollarSign, Weight, Printer } from 'lucide-react';
+
+const surfaceClass = 'relative overflow-hidden rounded-[2rem] border border-white/10 bg-[linear-gradient(180deg,rgba(15,23,42,0.88),rgba(15,23,42,0.72))] shadow-[0_30px_90px_-50px_rgba(15,23,42,0.95)] backdrop-blur-xl';
+const inputClass = 'w-full rounded-2xl border border-white/10 bg-slate-950/60 px-4 py-3 text-white placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-cyan-400/60 focus:border-transparent transition-all';
+const ghostButtonClass = 'inline-flex items-center justify-center gap-2 rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm font-medium text-white transition-all hover:bg-white/10';
 
 export const CalculatorPage: React.FC = () => {
   const { t } = useTranslation();
   const [activeTab, setActiveTab] = useState<'calculator' | 'history'>('calculator');
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-gray-900 via-purple-900 to-gray-900">
-      {/* Header */}
-      <div className="bg-black/20 backdrop-blur-sm border-b border-white/10">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <div className="p-3 bg-purple-600/20 rounded-xl border border-purple-500/30">
-                <Calculator className="w-8 h-8 text-purple-400" />
+    <div className="space-y-6">
+      <section className={`${surfaceClass} p-0`}>
+        <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top_left,rgba(34,211,238,0.18),transparent_34%),radial-gradient(circle_at_85%_18%,rgba(168,85,247,0.28),transparent_38%),radial-gradient(circle_at_50%_120%,rgba(59,130,246,0.16),transparent_42%)]" />
+        <div className="relative px-6 py-7 md:px-8 md:py-8">
+          <div className="flex flex-col gap-6 xl:flex-row xl:items-end xl:justify-between">
+            <div className="max-w-3xl">
+              <div className="inline-flex items-center gap-2 rounded-full border border-cyan-400/20 bg-cyan-400/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.22em] text-cyan-200">
+                Calculator Pro
               </div>
-              <div>
-                <h1 className="text-2xl md:text-3xl font-bold text-white">
-                  {t('calculator.title')}
-                </h1>
-                <p className="text-sm text-gray-400 mt-1">
-                  {t('calculator.subtitle')}
-                </p>
+              <div className="mt-4 flex items-start gap-4">
+                <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded-[1.4rem] border border-white/10 bg-white/10 shadow-[inset_0_1px_0_rgba(255,255,255,0.15)]">
+                  <Calculator className="h-8 w-8 text-cyan-300" />
+                </div>
+                <div>
+                  <h1 className="text-2xl font-bold text-white md:text-4xl">
+                    {t('calculator.title')}
+                  </h1>
+                  <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-300 md:text-base">
+                    {t('calculator.subtitle')}
+                  </p>
+                </div>
               </div>
             </div>
 
-            {/* Tabs */}
-            <div className="flex gap-2">
-              <button
-                onClick={() => setActiveTab('calculator')}
-                className={`px-4 py-2 rounded-lg transition-all text-sm font-medium ${
-                  activeTab === 'calculator'
-                    ? 'bg-purple-600 text-white shadow-lg shadow-purple-500/25'
-                    : 'text-gray-300 hover:text-white hover:bg-white/10'
-                }`}
-              >
-                <Calculator className="w-4 h-4 inline mr-2" />
-                {t('calculator.tabs.calculator')}
-              </button>
-              <button
-                onClick={() => setActiveTab('history')}
-                className={`px-4 py-2 rounded-lg transition-all text-sm font-medium ${
-                  activeTab === 'history'
-                    ? 'bg-purple-600 text-white shadow-lg shadow-purple-500/25'
-                    : 'text-gray-300 hover:text-white hover:bg-white/10'
-                }`}
-              >
-                <Clock className="w-4 h-4 inline mr-2" />
-                {t('calculator.tabs.history')}
-                <span className="ml-2 px-2 py-0.5 bg-purple-500/30 rounded-full text-xs">
-                  0
-                </span>
-              </button>
+            <div className="grid grid-cols-2 gap-3 sm:min-w-[18rem]">
+              <MetricTile label={t('calculator.totalCost')} value="0.00 ₽" />
+              <MetricTile label={t('calculator.tabs.history')} value="0" />
             </div>
           </div>
-        </div>
-      </div>
 
-      {/* Content */}
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        {activeTab === 'calculator' ? (
-          <CalculatorView />
-        ) : (
-          <HistoryView />
-        )}
-      </div>
+          <div className="mt-6 inline-flex flex-wrap gap-2 rounded-[1.4rem] border border-white/10 bg-black/20 p-1.5">
+            <TabButton
+              active={activeTab === 'calculator'}
+              icon={<Calculator className="h-4 w-4" />}
+              label={t('calculator.tabs.calculator')}
+              onClick={() => setActiveTab('calculator')}
+            />
+            <TabButton
+              active={activeTab === 'history'}
+              icon={<Clock className="h-4 w-4" />}
+              label={t('calculator.tabs.history')}
+              badge="0"
+              onClick={() => setActiveTab('history')}
+            />
+          </div>
+        </div>
+      </section>
+
+      {activeTab === 'calculator' ? <CalculatorView /> : <HistoryView />}
     </div>
   );
 };
@@ -80,325 +74,133 @@ const CalculatorView: React.FC = () => {
   const { t } = useTranslation();
 
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-      {/* Левая панель: Ввод параметров */}
-      <div className="lg:col-span-2 space-y-6">
-        {/* Загрузка G-кода */}
-        <div className="bg-gray-800/50 backdrop-blur-sm rounded-2xl border border-white/10 p-6">
-          <h3 className="text-lg font-bold text-white mb-4 flex items-center gap-2">
-            <Upload className="w-5 h-5 text-purple-400" />
-            {t('calculator.uploadGcode')}
-          </h3>
-          
-          <div className="border-2 border-dashed border-gray-600 hover:border-purple-500 rounded-xl p-8 transition-all cursor-pointer bg-gray-900/50">
-            <div className="text-center">
-              <Upload className="w-12 h-12 text-gray-500 mx-auto mb-4" />
-              <p className="text-white font-medium mb-2">
-                {t('calculator.dragDropGcode')}
-              </p>
-              <p className="text-sm text-gray-400">
-                {t('calculator.orClickToSelect')}
-              </p>
-              <p className="text-xs text-gray-500 mt-2">
-                {t('calculator.supportedFormats')}
-              </p>
+    <div className="grid grid-cols-1 gap-5 xl:grid-cols-[minmax(0,1.45fr)_minmax(20rem,0.9fr)]">
+      <div className="space-y-5">
+        <SurfaceCard className="p-6 md:p-7">
+          <SectionHeading icon={<Upload className="h-5 w-5 text-cyan-300" />} title={t('calculator.uploadGcode')} />
+          <div className="mt-5 rounded-[1.6rem] border border-dashed border-cyan-400/30 bg-[radial-gradient(circle_at_top,rgba(34,211,238,0.14),transparent_52%),linear-gradient(180deg,rgba(15,23,42,0.8),rgba(2,6,23,0.85))] p-8 text-center shadow-[inset_0_1px_0_rgba(255,255,255,0.08)] transition-all hover:border-cyan-300/50 md:p-10">
+            <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-[1.35rem] border border-white/10 bg-white/5">
+              <Upload className="h-7 w-7 text-cyan-300" />
             </div>
+            <p className="mt-5 text-base font-semibold text-white">{t('calculator.dragDropGcode')}</p>
+            <p className="mt-2 text-sm text-slate-300">{t('calculator.orClickToSelect')}</p>
+            <p className="mt-3 text-xs uppercase tracking-[0.18em] text-slate-500">{t('calculator.supportedFormats')}</p>
           </div>
-        </div>
+        </SurfaceCard>
 
-        {/* Параметры материала */}
-        <div className="bg-gray-800/50 backdrop-blur-sm rounded-2xl border border-white/10 p-6">
-          <h3 className="text-lg font-bold text-white mb-4 flex items-center gap-2">
-            <Weight className="w-5 h-5 text-purple-400" />
-            {t('calculator.materialSection')}
-          </h3>
-          
-          <div className="space-y-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-300 mb-2">
-                {t('calculator.selectMaterial')}
-              </label>
-              <select className="w-full bg-gray-900 border border-gray-700 rounded-lg px-4 py-2.5 text-white focus:ring-2 focus:ring-purple-500 focus:border-transparent">
+        <SurfaceCard className="p-6 md:p-7">
+          <SectionHeading icon={<Weight className="h-5 w-5 text-cyan-300" />} title={t('calculator.materialSection')} />
+          <div className="mt-5 space-y-5">
+            <FieldBlock label={t('calculator.selectMaterial')}>
+              <select className={inputClass} defaultValue="">
                 <option value="">{t('calculator.chooseFromCatalog')}</option>
-                {/* Здесь будет список материалов из API */}
               </select>
-            </div>
+            </FieldBlock>
 
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-300 mb-2">
-                  {t('calculator.partWeight')}
-                </label>
-                <div className="relative">
-                  <input
-                    type="number"
-                    className="w-full bg-gray-900 border border-gray-700 rounded-lg px-4 py-2.5 text-white focus:ring-2 focus:ring-purple-500 focus:border-transparent pr-12"
-                    placeholder="0"
-                  />
-                  <span className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-500 text-sm">
-                    {t('calculator.grams')}
-                  </span>
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-300 mb-2">
-                  {t('calculator.supportsWeight')}
-                </label>
-                <div className="relative">
-                  <input
-                    type="number"
-                    className="w-full bg-gray-900 border border-gray-700 rounded-lg px-4 py-2.5 text-white focus:ring-2 focus:ring-purple-500 focus:border-transparent pr-12"
-                    placeholder="0"
-                  />
-                  <span className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-500 text-sm">
-                    {t('calculator.grams')}
-                  </span>
-                </div>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-300 mb-2">
-                  {t('calculator.spoolPrice')}
-                </label>
-                <div className="relative">
-                  <input
-                    type="number"
-                    className="w-full bg-gray-900 border border-gray-700 rounded-lg px-4 py-2.5 text-white focus:ring-2 focus:ring-purple-500 focus:border-transparent pr-12"
-                    placeholder="0"
-                  />
-                  <span className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-500 text-sm">
-                    ₽
-                  </span>
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-300 mb-2">
-                  {t('calculator.spoolWeight')}
-                </label>
-                <div className="relative">
-                  <input
-                    type="number"
-                    className="w-full bg-gray-900 border border-gray-700 rounded-lg px-4 py-2.5 text-white focus:ring-2 focus:ring-purple-500 focus:border-transparent pr-12"
-                    placeholder="1"
-                    step="0.1"
-                  />
-                  <span className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-500 text-sm">
-                    {t('calculator.kg')}
-                  </span>
-                </div>
-              </div>
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+              <FieldBlock label={t('calculator.partWeight')}>
+                <InputWithSuffix placeholder="0" suffix={t('calculator.grams')} />
+              </FieldBlock>
+              <FieldBlock label={t('calculator.supportsWeight')}>
+                <InputWithSuffix placeholder="0" suffix={t('calculator.grams')} />
+              </FieldBlock>
+              <FieldBlock label={t('calculator.spoolPrice')}>
+                <InputWithSuffix placeholder="0" suffix="₽" />
+              </FieldBlock>
+              <FieldBlock label={t('calculator.spoolWeight')}>
+                <InputWithSuffix placeholder="1" suffix={t('calculator.kg')} step="0.1" />
+              </FieldBlock>
             </div>
           </div>
-        </div>
+        </SurfaceCard>
 
-        {/* Время печати */}
-        <div className="bg-gray-800/50 backdrop-blur-sm rounded-2xl border border-white/10 p-6">
-          <h3 className="text-lg font-bold text-white mb-4 flex items-center gap-2">
-            <Clock className="w-5 h-5 text-purple-400" />
-            {t('calculator.printTimeSection')}
-          </h3>
-          
-          <div className="grid grid-cols-3 gap-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-300 mb-2">
-                {t('calculator.hours')}
-              </label>
-              <input
-                type="number"
-                className="w-full bg-gray-900 border border-gray-700 rounded-lg px-4 py-2.5 text-white focus:ring-2 focus:ring-purple-500 focus:border-transparent"
-                placeholder="0"
-              />
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-300 mb-2">
-                {t('calculator.minutes')}
-              </label>
-              <input
-                type="number"
-                className="w-full bg-gray-900 border border-gray-700 rounded-lg px-4 py-2.5 text-white focus:ring-2 focus:ring-purple-500 focus:border-transparent"
-                placeholder="0"
-              />
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-300 mb-2">
-                {t('calculator.seconds')}
-              </label>
-              <input
-                type="number"
-                className="w-full bg-gray-900 border border-gray-700 rounded-lg px-4 py-2.5 text-white focus:ring-2 focus:ring-purple-500 focus:border-transparent"
-                placeholder="0"
-              />
-            </div>
+        <SurfaceCard className="p-6 md:p-7">
+          <SectionHeading icon={<Clock className="h-5 w-5 text-cyan-300" />} title={t('calculator.printTimeSection')} />
+          <div className="mt-5 grid grid-cols-1 gap-4 sm:grid-cols-3">
+            <FieldBlock label={t('calculator.hours')}>
+              <input type="number" className={inputClass} placeholder="0" />
+            </FieldBlock>
+            <FieldBlock label={t('calculator.minutes')}>
+              <input type="number" className={inputClass} placeholder="0" />
+            </FieldBlock>
+            <FieldBlock label={t('calculator.seconds')}>
+              <input type="number" className={inputClass} placeholder="0" />
+            </FieldBlock>
           </div>
-        </div>
+        </SurfaceCard>
 
-        {/* Дополнительные параметры */}
-        <div className="bg-gray-800/50 backdrop-blur-sm rounded-2xl border border-white/10 p-6">
-          <h3 className="text-lg font-bold text-white mb-4 flex items-center gap-2">
-            <DollarSign className="w-5 h-5 text-purple-400" />
-            {t('calculator.ratesSection')}
-          </h3>
-          
-          <div className="space-y-4">
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-300 mb-2">
-                  {t('calculator.printingRate')}
-                </label>
-                <div className="relative">
-                  <input
-                    type="number"
-                    className="w-full bg-gray-900 border border-gray-700 rounded-lg px-4 py-2.5 text-white focus:ring-2 focus:ring-purple-500 focus:border-transparent pr-16"
-                    placeholder="170"
-                  />
-                  <span className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-500 text-sm">
-                    ₽/{t('calculator.hourAbbr')}
-                  </span>
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-300 mb-2">
-                  {t('calculator.electricityCost')}
-                </label>
-                <div className="relative">
-                  <input
-                    type="number"
-                    className="w-full bg-gray-900 border border-gray-700 rounded-lg px-4 py-2.5 text-white focus:ring-2 focus:ring-purple-500 focus:border-transparent pr-16"
-                    placeholder="6"
-                  />
-                  <span className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-500 text-sm">
-                    ₽/{t('calculator.kwhAbbr')}
-                  </span>
-                </div>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-300 mb-2">
-                  {t('calculator.quantity')}
-                </label>
-                <input
-                  type="number"
-                  className="w-full bg-gray-900 border border-gray-700 rounded-lg px-4 py-2.5 text-white focus:ring-2 focus:ring-purple-500 focus:border-transparent"
-                  placeholder="1"
-                  min="1"
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-300 mb-2">
-                  {t('calculator.printerPower')}
-                </label>
-                <div className="relative">
-                  <input
-                    type="number"
-                    className="w-full bg-gray-900 border border-gray-700 rounded-lg px-4 py-2.5 text-white focus:ring-2 focus:ring-purple-500 focus:border-transparent pr-12"
-                    placeholder="350"
-                  />
-                  <span className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-500 text-sm">
-                    {t('calculator.wattAbbr')}
-                  </span>
-                </div>
-              </div>
-            </div>
+        <SurfaceCard className="p-6 md:p-7">
+          <SectionHeading icon={<DollarSign className="h-5 w-5 text-cyan-300" />} title={t('calculator.ratesSection')} />
+          <div className="mt-5 grid grid-cols-1 gap-4 md:grid-cols-2">
+            <FieldBlock label={t('calculator.printingRate')}>
+              <InputWithSuffix placeholder="170" suffix={`₽/${t('calculator.hourAbbr')}`} />
+            </FieldBlock>
+            <FieldBlock label={t('calculator.electricityCost')}>
+              <InputWithSuffix placeholder="6" suffix={`₽/${t('calculator.kwhAbbr')}`} />
+            </FieldBlock>
+            <FieldBlock label={t('calculator.quantity')}>
+              <input type="number" className={inputClass} placeholder="1" min="1" />
+            </FieldBlock>
+            <FieldBlock label={t('calculator.printerPower')}>
+              <InputWithSuffix placeholder="350" suffix={t('calculator.wattAbbr')} />
+            </FieldBlock>
           </div>
-        </div>
+        </SurfaceCard>
 
-        {/* Кнопка расчёта */}
-        <button
-          className="w-full bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-500 hover:to-pink-500 text-white font-bold py-4 px-6 rounded-xl shadow-lg shadow-purple-500/25 transition-all transform hover:scale-[1.02] active:scale-[0.98]"
-        >
-          <Calculator className="w-5 h-5 inline mr-2" />
+        <button className="inline-flex w-full items-center justify-center gap-2 rounded-[1.6rem] bg-[linear-gradient(135deg,#0891b2,#7c3aed)] px-6 py-4 text-base font-semibold text-white shadow-[0_18px_35px_-18px_rgba(6,182,212,0.7)] transition-all hover:translate-y-[-1px] hover:shadow-[0_22px_42px_-18px_rgba(124,58,237,0.72)]">
+          <Calculator className="h-5 w-5" />
           {t('calculator.calculateButton')}
         </button>
       </div>
 
-      {/* Правая панель: Результаты */}
-      <div className="lg:col-span-1">
-        <div className="bg-gray-800/50 backdrop-blur-sm rounded-2xl border border-white/10 p-6 sticky top-6">
-          <h3 className="text-lg font-bold text-white mb-6">
-            {t('calculator.resultsTitle')}
-          </h3>
-
-          {/* Итоговая сумма */}
-          <div className="bg-gradient-to-br from-purple-600/20 to-pink-600/20 rounded-xl p-6 border border-purple-500/30 mb-6">
-            <p className="text-sm text-gray-400 mb-2">
-              {t('calculator.totalCost')}
-            </p>
-            <p className="text-4xl font-bold text-white">
-              0.00 ₽
-            </p>
-            <p className="text-xs text-gray-500 mt-1">
-              {t('calculator.perPart')}: 0.00 ₽
-            </p>
-          </div>
-
-          {/* Детализация */}
-          <div className="space-y-3 mb-6">
-            <div className="flex justify-between text-sm">
-              <span className="text-gray-400">{t('calculator.material')}</span>
-              <span className="text-white">0.00 ₽</span>
-            </div>
-            <div className="flex justify-between text-sm">
-              <span className="text-gray-400">{t('calculator.electricity')}</span>
-              <span className="text-white">0.00 ₽</span>
-            </div>
-            <div className="flex justify-between text-sm">
-              <span className="text-gray-400">{t('calculator.printing')}</span>
-              <span className="text-white">0.00 ₽</span>
-            </div>
-            <div className="flex justify-between text-sm">
-              <span className="text-gray-400">{t('calculator.overhead')}</span>
-              <span className="text-white">0.00 ₽</span>
-            </div>
-            <div className="flex justify-between text-sm">
-              <span className="text-gray-400">{t('calculator.markup')}</span>
-              <span className="text-white">0.00 ₽</span>
+      <div className="xl:pt-1">
+        <SurfaceCard className="p-6 md:p-7 xl:sticky xl:top-8">
+          <div className="flex items-center justify-between gap-4">
+            <SectionHeading icon={<Calculator className="h-5 w-5 text-cyan-300" />} title={t('calculator.resultsTitle')} compact />
+            <div className="rounded-full border border-cyan-400/20 bg-cyan-400/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-cyan-200">
+              {t('calculator.perPart')}
             </div>
           </div>
 
-          {/* Кнопки действий */}
-          <div className="space-y-3">
-            <button
-              className="w-full bg-gray-700 hover:bg-gray-600 text-white font-medium py-3 px-4 rounded-lg transition-all flex items-center justify-center gap-2"
-            >
-              <Save className="w-4 h-4" />
+          <div className="mt-6 overflow-hidden rounded-[1.7rem] border border-cyan-400/20 bg-[radial-gradient(circle_at_top_left,rgba(34,211,238,0.18),transparent_45%),linear-gradient(145deg,rgba(14,116,144,0.2),rgba(76,29,149,0.26))] p-6 shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]">
+            <p className="text-xs uppercase tracking-[0.18em] text-slate-300">{t('calculator.totalCost')}</p>
+            <p className="mt-3 text-4xl font-bold tracking-tight text-white">0.00 ₽</p>
+            <p className="mt-2 text-sm text-slate-300">
+              {t('calculator.perPart')}: <span className="text-white">0.00 ₽</span>
+            </p>
+          </div>
+
+          <div className="mt-6 divide-y divide-white/10 overflow-hidden rounded-[1.6rem] border border-white/[0.08] bg-black/20">
+            <MetricRow label={t('calculator.material')} value="0.00 ₽" />
+            <MetricRow label={t('calculator.electricity')} value="0.00 ₽" />
+            <MetricRow label={t('calculator.printing')} value="0.00 ₽" />
+            <MetricRow label={t('calculator.overhead')} value="0.00 ₽" />
+            <MetricRow label={t('calculator.markup')} value="0.00 ₽" />
+          </div>
+
+          <div className="mt-6 space-y-3">
+            <button className={`${ghostButtonClass} w-full`}>
+              <Save className="h-4 w-4" />
               {t('calculator.saveToHistory')}
             </button>
-
-            <button
-              className="w-full bg-gray-700 hover:bg-gray-600 text-white font-medium py-3 px-4 rounded-lg transition-all flex items-center justify-center gap-2"
-            >
-              <FileText className="w-4 h-4" />
+            <button className={`${ghostButtonClass} w-full`}>
+              <FileText className="h-4 w-4" />
               {t('calculator.generateQuote')}
             </button>
           </div>
 
-          {/* Инфо */}
-          <div className="mt-6 pt-6 border-t border-gray-700">
+          <div className="mt-6 rounded-[1.45rem] border border-amber-400/20 bg-amber-400/[0.08] p-4">
             <div className="flex items-start gap-3">
-              <div className="p-2 bg-yellow-500/10 rounded-lg">
-                <Printer className="w-5 h-5 text-yellow-400" />
+              <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl border border-amber-300/15 bg-black/20">
+                <Printer className="h-5 w-5 text-amber-300" />
               </div>
               <div>
-                <p className="text-sm text-gray-300">
-                  {t('calculator.printTimeEstimate')}
-                </p>
-                <p className="text-xs text-gray-500 mt-1">
-                  {t('calculator.basedOnGcode')}
-                </p>
+                <p className="text-sm font-medium text-white">{t('calculator.printTimeEstimate')}</p>
+                <p className="mt-1 text-xs leading-5 text-slate-300">{t('calculator.basedOnGcode')}</p>
               </div>
             </div>
           </div>
-        </div>
+        </SurfaceCard>
       </div>
     </div>
   );
@@ -409,71 +211,112 @@ const HistoryView: React.FC = () => {
   const { t } = useTranslation();
 
   return (
-    <div className="bg-gray-800/50 backdrop-blur-sm rounded-2xl border border-white/10 p-6">
-      <div className="flex items-center justify-between mb-6">
-        <h2 className="text-xl font-bold text-white">
-          {t('calculator.historyTitle')}
-        </h2>
-        
-        <div className="flex gap-2">
-          <button className="px-4 py-2 bg-gray-700 hover:bg-gray-600 text-white text-sm rounded-lg transition-all">
-            <Download className="w-4 h-4 inline mr-2" />
+    <SurfaceCard className="p-6 md:p-7">
+      <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+        <SectionHeading icon={<Clock className="h-5 w-5 text-cyan-300" />} title={t('calculator.historyTitle')} compact />
+        <div className="flex flex-col gap-2 sm:flex-row">
+          <button className={ghostButtonClass}>
+            <Download className="h-4 w-4" />
             {t('calculator.export')}
           </button>
-          <button className="px-4 py-2 bg-red-600/20 hover:bg-red-600/30 text-red-400 text-sm rounded-lg transition-all border border-red-500/30">
-            <Trash2 className="w-4 h-4 inline mr-2" />
+          <button className="inline-flex items-center justify-center gap-2 rounded-2xl border border-red-400/25 bg-red-500/10 px-4 py-3 text-sm font-medium text-red-200 transition-all hover:bg-red-500/15">
+            <Trash2 className="h-4 w-4" />
             {t('calculator.deleteSelected')}
           </button>
         </div>
       </div>
 
-      {/* Пустое состояние */}
-      <div className="text-center py-16">
-        <Clock className="w-16 h-16 text-gray-600 mx-auto mb-4" />
-        <h3 className="text-lg font-medium text-white mb-2">
-          {t('calculator.noHistory')}
-        </h3>
-        <p className="text-gray-400 mb-6">
+      <div className="mt-6 rounded-[1.8rem] border border-dashed border-white/12 bg-[radial-gradient(circle_at_top,rgba(34,211,238,0.08),transparent_44%),linear-gradient(180deg,rgba(2,6,23,0.35),rgba(2,6,23,0.62))] px-6 py-16 text-center shadow-[inset_0_1px_0_rgba(255,255,255,0.05)]">
+        <div className="mx-auto flex h-[4.5rem] w-[4.5rem] items-center justify-center rounded-[1.6rem] border border-white/10 bg-white/5">
+          <Clock className="h-9 w-9 text-slate-500" />
+        </div>
+        <h2 className="mt-6 text-2xl font-semibold text-white">{t('calculator.noHistory')}</h2>
+        <p className="mx-auto mt-3 max-w-xl text-sm leading-6 text-slate-300">
           {t('calculator.noHistoryDescription')}
         </p>
-        <button className="px-6 py-3 bg-purple-600 hover:bg-purple-500 text-white font-medium rounded-lg transition-all">
+        <button className="mt-8 inline-flex items-center justify-center rounded-[1.3rem] bg-[linear-gradient(135deg,#0891b2,#7c3aed)] px-6 py-3 text-sm font-semibold text-white shadow-[0_18px_35px_-18px_rgba(6,182,212,0.7)] transition-all hover:translate-y-[-1px]">
           {t('calculator.createFirstCalculation')}
         </button>
       </div>
-
-      {/* Таблица (когда будут данные) */}
-      {/* <div className="overflow-x-auto">
-        <table className="w-full">
-          <thead>
-            <tr className="border-b border-gray-700">
-              <th className="text-left py-3 px-4 text-sm font-medium text-gray-400">
-                <input type="checkbox" className="rounded bg-gray-700 border-gray-600" />
-              </th>
-              <th className="text-left py-3 px-4 text-sm font-medium text-gray-400">
-                {t('calculator.name')}
-              </th>
-              <th className="text-left py-3 px-4 text-sm font-medium text-gray-400">
-                {t('calculator.date')}
-              </th>
-              <th className="text-left py-3 px-4 text-sm font-medium text-gray-400">
-                {t('calculator.client')}
-              </th>
-              <th className="text-left py-3 px-4 text-sm font-medium text-gray-400">
-                {t('calculator.status')}
-              </th>
-              <th className="text-right py-3 px-4 text-sm font-medium text-gray-400">
-                {t('calculator.cost')}
-              </th>
-              <th className="text-right py-3 px-4 text-sm font-medium text-gray-400">
-                {t('calculator.actions')}
-              </th>
-            </tr>
-          </thead>
-          <tbody>
-            {/* Строки таблицы * /}
-          </tbody>
-        </table>
-      </div> */}
-    </div>
+    </SurfaceCard>
   );
 };
+
+const SurfaceCard: React.FC<{ children: ReactNode; className?: string }> = ({ children, className = '' }) => (
+  <section className={`${surfaceClass} ${className}`}>
+    <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top,rgba(255,255,255,0.06),transparent_40%)]" />
+    <div className="relative">{children}</div>
+  </section>
+);
+
+const SectionHeading: React.FC<{ icon: ReactNode; title: string; compact?: boolean }> = ({
+  icon,
+  title,
+  compact = false,
+}) => (
+  <div className="flex items-center gap-3">
+    <div className={`flex items-center justify-center rounded-[1.1rem] border border-white/10 bg-white/[0.06] ${compact ? 'h-10 w-10' : 'h-11 w-11'}`}>
+      {icon}
+    </div>
+    <h2 className={`${compact ? 'text-lg' : 'text-xl'} font-semibold text-white`}>{title}</h2>
+  </div>
+);
+
+const FieldBlock: React.FC<{ label: string; children: ReactNode }> = ({ label, children }) => (
+  <label className="block">
+    <span className="mb-2 block text-sm font-medium text-slate-300">{label}</span>
+    {children}
+  </label>
+);
+
+const InputWithSuffix: React.FC<{ placeholder: string; suffix: string; step?: string }> = ({
+  placeholder,
+  suffix,
+  step,
+}) => (
+  <div className="relative">
+    <input type="number" className={`${inputClass} pr-20`} placeholder={placeholder} step={step} />
+    <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 rounded-xl border border-white/[0.08] bg-white/[0.06] px-2.5 py-1 text-xs font-medium text-slate-300">
+      {suffix}
+    </span>
+  </div>
+);
+
+const MetricTile: React.FC<{ label: string; value: string }> = ({ label, value }) => (
+  <div className="rounded-[1.45rem] border border-white/10 bg-white/5 px-4 py-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.06)]">
+    <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">{label}</p>
+    <p className="mt-2 text-2xl font-semibold tracking-tight text-white">{value}</p>
+  </div>
+);
+
+const MetricRow: React.FC<{ label: string; value: string }> = ({ label, value }) => (
+  <div className="flex items-center justify-between gap-4 px-4 py-3 text-sm">
+    <span className="text-slate-400">{label}</span>
+    <span className="font-medium text-white">{value}</span>
+  </div>
+);
+
+const TabButton: React.FC<{
+  active: boolean;
+  icon: ReactNode;
+  label: string;
+  badge?: string;
+  onClick: () => void;
+}> = ({ active, icon, label, badge, onClick }) => (
+  <button
+    onClick={onClick}
+    className={`inline-flex items-center gap-2 rounded-[1.1rem] px-4 py-2.5 text-sm font-medium transition-all ${
+      active
+        ? 'bg-white text-slate-950 shadow-[0_12px_28px_-18px_rgba(255,255,255,0.9)]'
+        : 'text-slate-300 hover:bg-white/[0.08] hover:text-white'
+    }`}
+  >
+    {icon}
+    <span>{label}</span>
+    {badge ? (
+      <span className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${active ? 'bg-slate-950/10 text-slate-700' : 'bg-white/10 text-slate-300'}`}>
+        {badge}
+      </span>
+    ) : null}
+  </button>
+);
