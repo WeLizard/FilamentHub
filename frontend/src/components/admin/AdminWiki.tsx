@@ -90,7 +90,7 @@ function ArticleModal({
                 value={slug}
                 onChange={(e) => setSlug(e.target.value)}
                 required
-                pattern="[a-z0-9-]+"
+                pattern="[-a-z0-9]+"
                 className="w-full bg-white/10 border border-white/20 rounded-lg px-3 py-2 text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-purple-500"
               />
             </div>
@@ -243,7 +243,7 @@ function CategoryModal({
               value={slug}
               onChange={(e) => setSlug(e.target.value)}
               required
-              pattern="[a-z0-9-]+"
+              pattern="[-a-z0-9]+"
               className="w-full bg-white/10 border border-white/20 rounded-lg px-3 py-2 text-white focus:outline-none focus:ring-2 focus:ring-purple-500"
             />
           </div>
