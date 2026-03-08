@@ -2,7 +2,7 @@
 
 import logging
 from datetime import datetime
-from typing import Annotated, Optional
+from typing import Annotated, Any, Optional
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Query, status, UploadFile, File
 from fastapi.responses import FileResponse
@@ -40,6 +40,7 @@ from app.core.errors import (
     ERR_TABLE_DATA_ERROR,
     ERR_TABLE_NOT_FOUND,
     ERR_TABLE_STRUCTURE_ERROR,
+    ERR_TABLE_DELETE_ERROR,
     ERR_TABLE_UPDATE_ERROR,
     ERR_USER_ALREADY_IN_BRAND,
     ERR_USER_IDS_EMPTY,
@@ -1491,6 +1492,44 @@ async def update_table_data(
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail={"code": ERR_TABLE_UPDATE_ERROR},
+        )
+
+
+@router.delete("/database/tables/{table_name}/data", response_model=dict)
+async def delete_table_data(
+    table_name: str,
+    primary_key: dict[str, Any] = Body(..., description="Значения первичного ключа для идентификации строки"),
+    admin: Annotated[User, Depends(get_current_admin_user)] = None,
+    db: Annotated[AsyncSession, Depends(get_db)] = None,
+    schema_name: str = Query("public", description="Имя схемы"),
+) -> dict:
+    """Удалить строку из таблицы."""
+    from app.services.database_service import delete_table_row_service
+
+    try:
+        if not primary_key:
+            raise_error(status.HTTP_400_BAD_REQUEST, ERR_PRIMARY_KEY_REQUIRED)
+
+        success, message = await delete_table_row_service(
+            db,
+            table_name=table_name,
+            schema_name=schema_name,
+            primary_key=primary_key,
+        )
+
+        if not success:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=message,
+            )
+
+        return {"success": True, "message": message}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={"code": ERR_TABLE_DELETE_ERROR},
         )
 
 

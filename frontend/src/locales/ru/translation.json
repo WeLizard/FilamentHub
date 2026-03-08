@@ -394,7 +394,9 @@
       "noDataToUpdate": "Нет данных для обновления",
       "editRowHint": "Кликните для редактирования",
       "jsonPlaceholder": "{\n  \"key\": \"value\"\n}",
-      "invalidJsonField": "Поле «{{field}}» содержит невалидный JSON"
+      "invalidJsonField": "Поле «{{field}}» содержит невалидный JSON",
+      "deleteButton": "Удалить",
+      "confirmDelete": "Удалить эту строку? Действие необратимо."
     }
   },
   "adminFeedback": {
@@ -433,7 +435,10 @@
     "modal_save_button": "Сохранить ответ",
     "modal_saving_button": "Сохранение...",
     "alert_enter_response": "Введите ответ пользователю",
-    "updateError": "Ошибка сохранения ответа"
+    "updateError": "Ошибка сохранения ответа",
+    "deleteButton": "Удалить",
+    "deleteError": "Ошибка удаления",
+    "confirmDelete": "Удалить это сообщение? Действие необратимо."
   },
   "adminPanel": {
     "accessDenied": "Доступ запрещен",

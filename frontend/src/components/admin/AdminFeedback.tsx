@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { MessageCircle, Eye, Send, CheckCircle, Clock, XCircle, AlertCircle, Bug, Lightbulb, HelpCircle, MessageSquare, Filter, Search } from 'lucide-react';
+import { MessageCircle, Eye, Send, CheckCircle, Clock, XCircle, AlertCircle, Bug, Lightbulb, HelpCircle, MessageSquare, Filter, Search, Trash2 } from 'lucide-react';
 import { adminFeedbackAPI } from '../../api/client';
 import type { Feedback, FeedbackType, FeedbackStatus } from '../../types/api';
 import { useHeaderVisible } from '../../hooks/useHeaderVisible';
@@ -48,6 +48,17 @@ export function AdminFeedback() {
     },
     onError: (error: any) => {
       toast.error(translateApiError(t, error?.response?.data?.detail, t('adminFeedback.updateError')));
+    },
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: (id: number) => adminFeedbackAPI.delete(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['admin-feedback'] });
+      setSelectedFeedback(null);
+    },
+    onError: (error: any) => {
+      toast.error(translateApiError(t, error?.response?.data?.detail, t('adminFeedback.deleteError')));
     },
   });
 
@@ -360,7 +371,19 @@ export function AdminFeedback() {
                 </div>
 
                 {/* Footer */}
-                <div className="flex items-center justify-end gap-3 px-6 py-4 border-t border-white/10">
+                <div className="flex items-center justify-between px-6 py-4 border-t border-white/10">
+                  <button
+                    onClick={() => {
+                      if (!confirm(t('adminFeedback.confirmDelete'))) return;
+                      deleteMutation.mutate(selectedFeedback.id);
+                    }}
+                    disabled={deleteMutation.isPending}
+                    className="px-4 py-2 rounded-lg bg-red-600 hover:bg-red-700 text-white text-sm font-medium transition-all disabled:opacity-50 flex items-center gap-2"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                    {t('adminFeedback.deleteButton')}
+                  </button>
+                  <div className="flex items-center gap-3">
                   <button
                     onClick={() => {
                       setSelectedFeedback(null);
@@ -387,6 +410,7 @@ export function AdminFeedback() {
                       </>
                     )}
                   </button>
+                  </div>
                 </div>
               </div>
             </div>

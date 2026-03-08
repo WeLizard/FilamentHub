@@ -180,6 +180,24 @@ async def update_feedback(
     return FeedbackResponse.model_validate(feedback)
 
 
+@router.delete("/{feedback_id}", status_code=status.HTTP_200_OK)
+async def delete_feedback(
+    feedback_id: int,
+    admin: Annotated[User, Depends(get_current_admin_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> dict:
+    """Удалить обратную связь (только для админов)."""
+    feedback = await db.get(Feedback, feedback_id)
+
+    if not feedback:
+        raise_error(status.HTTP_404_NOT_FOUND, ERR_FEEDBACK_NOT_FOUND)
+
+    await db.delete(feedback)
+    await db.commit()
+
+    return {"success": True}
+
+
 @router.get("/my/list", response_model=FeedbackListResponse)
 async def list_my_feedback(
     current_user: Annotated[User, Depends(get_current_active_user)],

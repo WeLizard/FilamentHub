@@ -30,7 +30,8 @@ import {
   ChevronLeft,
   ChevronRight as ChevronRightIcon,
   Edit,
-  Save
+  Save,
+  Trash2
 } from 'lucide-react';
 import { adminAPI } from '../../api/client';
 import { translateApiError } from '../../utils/translateApiError';
@@ -404,6 +405,23 @@ export function AdminDatabase() {
       data: Record<string, any>;
       schemaName?: string;
     }) => adminAPI.updateTableData(tableName, { primary_key: primaryKey, data }, schemaName),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['admin-table-data'] });
+      setEditingRow(null);
+      setEditError(null);
+    },
+    onError: (error: any) => {
+      setEditError(translateApiError(t, error?.response?.data?.detail, t('adminDatabase.tableViewer.error')));
+    },
+  });
+
+  // Удаление строки таблицы
+  const deleteTableRowMutation = useMutation({
+    mutationFn: ({ tableName, primaryKey, schemaName }: {
+      tableName: string;
+      primaryKey: Record<string, any>;
+      schemaName?: string;
+    }) => adminAPI.deleteTableData(tableName, primaryKey, schemaName),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['admin-table-data'] });
       setEditingRow(null);
@@ -1828,7 +1846,28 @@ export function AdminDatabase() {
               </div>
 
               {/* Footer */}
-              <div className="flex items-center justify-end space-x-4 p-6 border-t border-white/10">
+              <div className="flex items-center justify-between p-6 border-t border-white/10">
+                <button
+                  onClick={async () => {
+                    if (!selectedTable) return;
+                    if (!confirm(t('adminDatabase.tableViewer.confirmDelete'))) return;
+                    await deleteTableRowMutation.mutateAsync({
+                      tableName: selectedTable.name,
+                      primaryKey: editingRow.primaryKey,
+                      schemaName: selectedTable.schema,
+                    });
+                  }}
+                  disabled={deleteTableRowMutation.isPending}
+                  className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg transition-all disabled:opacity-50 flex items-center space-x-2"
+                >
+                  {deleteTableRowMutation.isPending ? (
+                    <Loader className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <Trash2 className="w-4 h-4" />
+                  )}
+                  <span>{t('adminDatabase.tableViewer.deleteButton')}</span>
+                </button>
+                <div className="flex items-center space-x-4">
                 <button
                   onClick={() => {
                     setEditingRow(null);
@@ -1899,6 +1938,7 @@ export function AdminDatabase() {
                     </>
                   )}
                 </button>
+                </div>
               </div>
             </div>
           </div>

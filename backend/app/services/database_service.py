@@ -1262,3 +1262,79 @@ async def update_table_row_service(
         )
         await db.rollback()
         return False, f"Update failed: {exc}"
+
+
+async def delete_table_row_service(
+    db: AsyncSession,
+    table_name: str,
+    schema_name: str,
+    primary_key: dict[str, Any],
+) -> tuple[bool, str]:
+    """Delete one row in an arbitrary table from admin panel."""
+    if not primary_key:
+        return False, "Primary key is required"
+
+    safe_table_name = table_name.replace('"', '""')
+    safe_schema_name = schema_name.replace('"', '""')
+    qualified_table = f'"{safe_schema_name}"."{safe_table_name}"'
+
+    try:
+        columns_result = await db.execute(
+            text(
+                """
+                SELECT column_name, data_type
+                FROM information_schema.columns
+                WHERE table_schema = :schema_name AND table_name = :table_name
+                """
+            ),
+            {"schema_name": schema_name, "table_name": table_name},
+        )
+        column_types = {row[0]: row[1] for row in columns_result.fetchall()}
+
+        if not column_types:
+            return False, f"Table {schema_name}.{table_name} not found"
+
+        unknown_columns = [key for key in primary_key if key not in column_types]
+        if unknown_columns:
+            return False, f"Unknown columns: {', '.join(sorted(set(unknown_columns)))}"
+
+        where_clauses: list[str] = []
+        params: dict[str, Any] = {}
+
+        for idx, (column, value) in enumerate(primary_key.items()):
+            safe_column = column.replace('"', '""')
+            param_name = f"pk_{idx}"
+            where_clauses.append(f'"{safe_column}" = :{param_name}')
+            params[param_name] = _normalize_admin_table_value(column, column_types[column], value)
+
+        delete_query = text(
+            f"""
+            DELETE FROM {qualified_table}
+            WHERE {" AND ".join(where_clauses)}
+            RETURNING 1
+            """
+        )
+
+        result = await db.execute(delete_query, params)
+        deleted_rows = result.fetchall()
+        deleted_count = len(deleted_rows)
+
+        if deleted_count == 0:
+            await db.rollback()
+            return False, "Row not found"
+
+        await db.commit()
+        return True, f"Deleted {deleted_count} row(s)"
+    except ValueError as exc:
+        await db.rollback()
+        return False, str(exc)
+    except Exception as exc:
+        logger.error(
+            "Failed to delete row in %s.%s: %s",
+            schema_name,
+            table_name,
+            exc,
+            exc_info=True,
+        )
+        await db.rollback()
+        return False, f"Delete failed: {exc}"

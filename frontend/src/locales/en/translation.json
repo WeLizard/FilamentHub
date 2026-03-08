@@ -391,7 +391,9 @@
       "noDataToUpdate": "No data to update",
       "editRowHint": "Click to edit",
       "jsonPlaceholder": "{\n  \"key\": \"value\"\n}",
-      "invalidJsonField": "Field \"{{field}}\" contains invalid JSON"
+      "invalidJsonField": "Field \"{{field}}\" contains invalid JSON",
+      "deleteButton": "Delete",
+      "confirmDelete": "Delete this row? This action cannot be undone."
     }
   },
   "adminFeedback": {
@@ -430,7 +432,10 @@
     "modal_save_button": "Save Response",
     "modal_saving_button": "Saving...",
     "alert_enter_response": "Please enter a response to the user",
-    "updateError": "Error saving response"
+    "updateError": "Error saving response",
+    "deleteButton": "Delete",
+    "deleteError": "Error deleting feedback",
+    "confirmDelete": "Delete this message? This action cannot be undone."
   },
   "adminPanel": {
     "accessDenied": "Access Denied",

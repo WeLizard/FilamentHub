@@ -1228,6 +1228,18 @@ export const adminAPI = {
     return response.data;
   },
 
+  deleteTableData: async (
+    tableName: string,
+    primaryKey: Record<string, any>,
+    schemaName?: string
+  ): Promise<{ success: boolean; message: string }> => {
+    const response = await api.delete(`/admin/database/tables/${tableName}/data`, {
+      data: primaryKey,
+      params: { schema_name: schemaName || 'public' },
+    });
+    return response.data;
+  },
+
   // Wiki Sync & Export
   syncWiki: async (): Promise<{
     success: boolean;
@@ -1425,6 +1437,12 @@ export const adminFeedbackAPI = {
     admin_response?: string | null;
   }): Promise<Feedback> => {
     const response = await api.patch<Feedback>(`/feedback/${feedbackId}`, data);
+    return response.data;
+  },
+
+  // Удалить обратную связь
+  delete: async (feedbackId: number): Promise<{ success: boolean }> => {
+    const response = await api.delete(`/feedback/${feedbackId}`);
     return response.data;
   },
 };
