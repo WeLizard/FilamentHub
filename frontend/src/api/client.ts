@@ -866,6 +866,15 @@ export const adminAPI = {
     return response.data;
   },
 
+  uploadBrandLogo: async (brandId: number, file: File): Promise<Brand> => {
+    const formData = new FormData();
+    formData.append('file', file);
+    const response = await api.post<Brand>(`/admin/brands/${brandId}/logo`, formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    });
+    return response.data;
+  },
+
   // Printers
   createPrinter: async (data: {
     name: string;

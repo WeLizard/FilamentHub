@@ -1,10 +1,10 @@
 /** Компонент для управления брендами */
 
-import { useState, useEffect, FormEvent } from 'react';
+import { useState, useEffect, useRef, FormEvent } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
-import { Building2, CheckCircle, XCircle, Shield, Search, ExternalLink, Edit, X, Save, Loader2 } from 'lucide-react';
+import { Building2, CheckCircle, XCircle, Shield, Search, ExternalLink, Edit, X, Save, Loader2, Upload } from 'lucide-react';
 import { adminAPI } from '../../api/client';
 import { translateApiError } from '../../utils/translateApiError';
 import type { Brand } from '../../types/api';
@@ -25,6 +25,8 @@ export function AdminBrands() {
   const [editWebsite, setEditWebsite] = useState('');
   const [editLogoUrl, setEditLogoUrl] = useState('');
   const [editError, setEditError] = useState<string | null>(null);
+  const [isUploading, setIsUploading] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Определяем параметр verified для API
   const verifiedParam = filter === 'all' ? null : filter === 'verified' ? true : false;
@@ -401,14 +403,62 @@ export function AdminBrands() {
                 <label htmlFor="edit-logo-url" className="block text-sm font-medium text-gray-300 mb-2">
                   {t('adminBrands.logoUrl')}
                 </label>
-                <input
-                  id="edit-logo-url"
-                  type="url"
-                  value={editLogoUrl}
-                  onChange={(e) => setEditLogoUrl(e.target.value)}
-                  className="w-full px-4 py-2 bg-white/5 border border-white/20 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500"
-                  placeholder="https://example.com/logo.png"
-                />
+                <div className="flex gap-2">
+                  <input
+                    id="edit-logo-url"
+                    type="text"
+                    value={editLogoUrl}
+                    onChange={(e) => setEditLogoUrl(e.target.value)}
+                    className="flex-1 px-4 py-2 bg-white/5 border border-white/20 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500"
+                    placeholder={t('adminBrands.logoUrlPlaceholder')}
+                  />
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept=".png,.jpg,.jpeg,.webp,.svg"
+                    className="hidden"
+                    onChange={async (e) => {
+                      const file = e.target.files?.[0];
+                      if (!file || !editingBrand) return;
+                      setIsUploading(true);
+                      setEditError(null);
+                      try {
+                        const updated = await adminAPI.uploadBrandLogo(editingBrand.id, file);
+                        setEditLogoUrl(updated.logo_url || '');
+                        queryClient.invalidateQueries({ queryKey: ['admin-brands'] });
+                      } catch (err: any) {
+                        setEditError(translateApiError(t, err?.response?.data?.detail, t('adminBrands.uploadError')));
+                      } finally {
+                        setIsUploading(false);
+                        if (fileInputRef.current) fileInputRef.current.value = '';
+                      }
+                    }}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => fileInputRef.current?.click()}
+                    disabled={isUploading}
+                    className="flex items-center space-x-1 px-3 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg transition-all disabled:opacity-50 whitespace-nowrap"
+                  >
+                    {isUploading ? (
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                    ) : (
+                      <Upload className="w-4 h-4" />
+                    )}
+                    <span>{t('adminBrands.uploadLogo')}</span>
+                  </button>
+                </div>
+                {editLogoUrl && (
+                  <div className="mt-2 flex items-center space-x-3">
+                    <img
+                      src={editLogoUrl}
+                      alt="Logo preview"
+                      className="h-10 w-10 object-contain rounded bg-white/10 p-1"
+                      onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
+                    />
+                    <span className="text-xs text-gray-400 truncate">{editLogoUrl}</span>
+                  </div>
+                )}
               </div>
 
               <div className="flex items-center justify-end space-x-3 pt-4">

@@ -25,8 +25,11 @@ from app.core.errors import (
     ERR_DATA_REQUIRED,
     ERR_DB_IMPORT_ERROR,
     ERR_DUMP_NOT_FOUND,
+    ERR_FILE_EXT_NOT_ALLOWED,
+    ERR_FILE_SIZE_EXCEEDED,
     ERR_FILE_TOO_LARGE,
     ERR_FILENAME_REQUIRED,
+    ERR_INVALID_FILE_PATH,
     ERR_INVALID_BADGES,
     ERR_INVALID_FILE_EXT,
     ERR_INVALID_FILENAME,
@@ -282,6 +285,64 @@ async def update_brand_admin(
     for field, value in update_data.items():
         setattr(brand, field, value)
 
+    await db.commit()
+    await db.refresh(brand)
+
+    return BrandResponse.model_validate(brand)
+
+
+@router.post("/brands/{brand_id}/logo", response_model=BrandResponse)
+async def upload_brand_logo(
+    brand_id: int,
+    file: UploadFile = File(...),
+    admin: Annotated[User, Depends(get_current_admin_user)] = None,
+    db: Annotated[AsyncSession, Depends(get_db)] = None,
+) -> BrandResponse:
+    """Upload brand logo image."""
+    import uuid
+    from pathlib import Path
+    from app.core.config import settings
+
+    result = await db.execute(select(Brand).where(Brand.id == brand_id))
+    brand = result.scalar_one_or_none()
+    if not brand:
+        raise_error(status.HTTP_404_NOT_FOUND, ERR_BRAND_NOT_FOUND)
+
+    # Validate extension
+    allowed_ext = {".png", ".jpg", ".jpeg", ".webp", ".svg"}
+    file_ext = Path(file.filename or "").suffix.lower()
+    if file_ext not in allowed_ext:
+        raise_error(
+            status.HTTP_400_BAD_REQUEST,
+            ERR_FILE_EXT_NOT_ALLOWED,
+            {"ext": file_ext, "allowed": ", ".join(sorted(allowed_ext))},
+        )
+
+    # Read and validate size (max 2 MB)
+    content = await file.read()
+    max_size = 2 * 1024 * 1024
+    if len(content) > max_size:
+        raise_error(
+            status.HTTP_400_BAD_REQUEST,
+            ERR_FILE_SIZE_EXCEEDED,
+            {"size_mb": f"{len(content) / (1024*1024):.2f}", "max_mb": "2"},
+        )
+
+    # Save file
+    base_upload_dir = Path(__file__).parent.parent.parent.parent / settings.UPLOAD_DIR
+    logo_dir = base_upload_dir / "brand_logos"
+    logo_dir.mkdir(parents=True, exist_ok=True)
+    file_name = f"{brand_id}_{uuid.uuid4().hex[:8]}{file_ext}"
+    file_path = (logo_dir / file_name).resolve()
+
+    if not str(file_path).startswith(str(logo_dir.resolve())):
+        raise_error(status.HTTP_400_BAD_REQUEST, ERR_INVALID_FILE_PATH)
+
+    with open(file_path, "wb") as f:
+        f.write(content)
+
+    # Update brand logo_url
+    brand.logo_url = f"/uploads/brand_logos/{file_name}"
     await db.commit()
     await db.refresh(brand)
 

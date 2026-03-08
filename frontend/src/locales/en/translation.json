@@ -2580,7 +2580,10 @@
     "nameRequired": "Brand name is required",
     "slugRequired": "Brand slug is required",
     "slugInvalid": "Slug can only contain Latin letters, numbers, hyphens and underscores",
-    "invalidUrl": "Invalid website URL format"
+    "invalidUrl": "Invalid website URL format",
+    "uploadLogo": "Upload",
+    "uploadError": "Error uploading logo",
+    "logoUrlPlaceholder": "URL or upload a file"
   },
   "adminPresets": {
     "title": "Preset Moderation",
