@@ -94,7 +94,8 @@ async def list_presets(
                     for link in p.printer_links
                 ]
                 responses.append(PresetResponse(**d))
-            return PresetListResponse(items=responses, total=total, page=1, size=len(id_list))
+            pages = (total + len(id_list) - 1) // len(id_list) if id_list else 1
+            return PresetListResponse(items=responses, total=total, page=1, size=len(id_list), pages=pages)
 
     if active_only:
         query = query.where(Preset.active == True)

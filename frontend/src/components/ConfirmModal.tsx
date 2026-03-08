@@ -30,13 +30,12 @@ export const ConfirmModal: React.FC<ConfirmModalProps> = ({
   icon,
 }) => {
   const { t } = useTranslation();
+  const isHeaderVisible = useHeaderVisible();
   const title = titleProp ?? t('confirmModal.defaultTitle');
   const confirmText = confirmTextProp ?? t('confirmModal.confirm');
   const cancelText = cancelTextProp ?? t('confirmModal.cancel');
 
   if (!isOpen) return null;
-
-  const isHeaderVisible = useHeaderVisible();
 
   const variantStyles = {
     danger: {
