@@ -685,7 +685,8 @@ export const ProfilePage: React.FC = () => {
               { id: 'settings', label: t('profilePage.tabs.settings'), shortLabel: t('profilePage.tabs.settingsShort'), icon: Cog },
             ].map((tab) => {
               const isPremiumTab = tab.premium === true;
-              const isLocked = isPremiumTab && !user?.is_premium;
+              const hasCalculatorProAccess = user?.role === 'admin' || user?.is_premium === true;
+              const isLocked = isPremiumTab && !hasCalculatorProAccess;
               
               return (
                 <button
@@ -875,7 +876,7 @@ export const ProfilePage: React.FC = () => {
       {/* Calculator Pro Tab (Premium) */}
       {userTab === 'calculator-pro' && (
         <div className="max-w-7xl mx-auto">
-          {user?.is_premium ? (
+          {user?.role === 'admin' || user?.is_premium === true ? (
             <CalculatorPage />
           ) : (
             <div className="flex flex-col items-center justify-center py-20">
