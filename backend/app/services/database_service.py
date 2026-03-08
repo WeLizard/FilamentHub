@@ -6,9 +6,11 @@ import logging
 import math
 import os
 import subprocess
-from datetime import datetime
+from datetime import date, datetime, time
+from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from typing import Any, Optional
+from uuid import UUID
 
 from alembic import command
 from alembic.config import Config
@@ -1060,7 +1062,24 @@ async def get_table_data(
     safe_table_name = table_name.replace('"', '""')
     safe_schema_name = schema_name.replace('"', '""')
     qualified_table = f'"{safe_schema_name}"."{safe_table_name}"'
-    
+
+    # Получаем реальный primary key из information_schema
+    pk_result = await db.execute(
+        text("""
+            SELECT kcu.column_name
+            FROM information_schema.table_constraints tc
+            JOIN information_schema.key_column_usage kcu
+              ON tc.constraint_name = kcu.constraint_name
+              AND tc.table_schema = kcu.table_schema
+            WHERE tc.constraint_type = 'PRIMARY KEY'
+              AND tc.table_schema = :schema_name
+              AND tc.table_name = :table_name
+            ORDER BY kcu.ordinal_position
+        """),
+        {"schema_name": schema_name, "table_name": table_name},
+    )
+    primary_key_columns = [row[0] for row in pk_result.fetchall()]
+
     # Получаем список колонок
     columns_result = await db.execute(
         text(f"""
@@ -1124,6 +1143,7 @@ async def get_table_data(
         "table_name": table_name,
         "schema_name": schema_name,
         "columns": columns,
+        "primary_key_columns": primary_key_columns,
         "rows": rows,
         "total": total,
         "page": page,
@@ -1132,12 +1152,32 @@ async def get_table_data(
     }
 
 
+INTEGER_TYPES = {"integer", "bigint", "smallint", "int", "int2", "int4", "int8", "serial", "bigserial", "smallserial"}
+FLOAT_TYPES = {"real", "double precision", "float4", "float8"}
+NUMERIC_TYPES = {"numeric", "decimal"}
+TIMESTAMP_TYPES = {"timestamp without time zone", "timestamp with time zone", "timestamp", "timestamptz"}
+DATE_TYPES = {"date"}
+TIME_TYPES = {"time without time zone", "time with time zone", "time", "timetz"}
+UUID_TYPES = {"uuid"}
+
+
 def _normalize_admin_table_value(column_name: str, data_type: str, value: Any) -> Any:
-    """Normalize incoming value for dynamic admin table update."""
+    """Normalize incoming value for dynamic admin table update.
+
+    asyncpg is strict about parameter types — strings must be cast to the
+    correct Python type before binding.
+    """
     if value is None:
         return None
 
     lowered_type = (data_type or "").lower()
+
+    # Empty string → NULL for non-text types
+    if isinstance(value, str) and value.strip() == "" and lowered_type not in {
+        "text", "character varying", "varchar", "char", "character", "name",
+        "citext", "USER-DEFINED",
+    }:
+        return None
 
     if lowered_type in JSON_COLUMN_TYPES:
         if isinstance(value, str):
@@ -1152,12 +1192,94 @@ def _normalize_admin_table_value(column_name: str, data_type: str, value: Any) -
             return value
         raise ValueError(f"Unsupported JSON value type for column '{column_name}'")
 
-    if lowered_type == "boolean" and isinstance(value, str):
-        normalized = value.strip().lower()
-        if normalized in {"true", "t", "1", "yes", "y", "on"}:
-            return True
-        if normalized in {"false", "f", "0", "no", "n", "off"}:
-            return False
+    if lowered_type == "boolean":
+        if isinstance(value, bool):
+            return value
+        if isinstance(value, str):
+            normalized = value.strip().lower()
+            if normalized in {"true", "t", "1", "yes", "y", "on"}:
+                return True
+            if normalized in {"false", "f", "0", "no", "n", "off"}:
+                return False
+        if isinstance(value, (int, float)):
+            return bool(value)
+
+    if lowered_type in INTEGER_TYPES:
+        if isinstance(value, int) and not isinstance(value, bool):
+            return value
+        if isinstance(value, str):
+            try:
+                return int(value.strip())
+            except ValueError:
+                raise ValueError(f"Invalid integer for column '{column_name}': {value}")
+        if isinstance(value, float):
+            return int(value)
+
+    if lowered_type in FLOAT_TYPES:
+        if isinstance(value, (int, float)) and not isinstance(value, bool):
+            return float(value)
+        if isinstance(value, str):
+            try:
+                return float(value.strip())
+            except ValueError:
+                raise ValueError(f"Invalid float for column '{column_name}': {value}")
+
+    if lowered_type in NUMERIC_TYPES:
+        if isinstance(value, (int, float, Decimal)) and not isinstance(value, bool):
+            return Decimal(str(value))
+        if isinstance(value, str):
+            try:
+                return Decimal(value.strip())
+            except InvalidOperation:
+                raise ValueError(f"Invalid numeric for column '{column_name}': {value}")
+
+    if lowered_type in TIMESTAMP_TYPES:
+        if isinstance(value, datetime):
+            return value
+        if isinstance(value, str):
+            stripped = value.strip()
+            for fmt in (
+                "%Y-%m-%dT%H:%M:%S.%f%z",
+                "%Y-%m-%dT%H:%M:%S%z",
+                "%Y-%m-%dT%H:%M:%S.%f",
+                "%Y-%m-%dT%H:%M:%S",
+                "%Y-%m-%d %H:%M:%S.%f%z",
+                "%Y-%m-%d %H:%M:%S%z",
+                "%Y-%m-%d %H:%M:%S.%f",
+                "%Y-%m-%d %H:%M:%S",
+            ):
+                try:
+                    return datetime.strptime(stripped, fmt)
+                except ValueError:
+                    continue
+            raise ValueError(f"Invalid timestamp for column '{column_name}': {value}")
+
+    if lowered_type in DATE_TYPES:
+        if isinstance(value, date) and not isinstance(value, datetime):
+            return value
+        if isinstance(value, str):
+            try:
+                return date.fromisoformat(value.strip())
+            except ValueError:
+                raise ValueError(f"Invalid date for column '{column_name}': {value}")
+
+    if lowered_type in TIME_TYPES:
+        if isinstance(value, time):
+            return value
+        if isinstance(value, str):
+            try:
+                return time.fromisoformat(value.strip())
+            except ValueError:
+                raise ValueError(f"Invalid time for column '{column_name}': {value}")
+
+    if lowered_type in UUID_TYPES:
+        if isinstance(value, UUID):
+            return value
+        if isinstance(value, str):
+            try:
+                return UUID(value.strip())
+            except ValueError:
+                raise ValueError(f"Invalid UUID for column '{column_name}': {value}")
 
     return value
 

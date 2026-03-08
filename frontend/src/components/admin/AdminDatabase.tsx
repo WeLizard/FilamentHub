@@ -1673,11 +1673,14 @@ export function AdminDatabase() {
                           </tr>
                         ) : (
                           tableData.rows.map((row: any, idx: number) => {
-                            // Определяем первичный ключ (обычно это первая колонка или колонка 'id')
-                            const primaryKeyCol = tableData.columns.find((col: string) => 
-                              col.toLowerCase() === 'id' || col.toLowerCase().endsWith('_id')
-                            ) || tableData.columns[0];
-                            const primaryKey = { [primaryKeyCol]: row[primaryKeyCol] };
+                            // Используем реальный primary key из бэкенда
+                            const pkCols: string[] = tableData.primary_key_columns?.length
+                              ? tableData.primary_key_columns
+                              : [tableData.columns.find((col: string) =>
+                                  col.toLowerCase() === 'id'
+                                ) || tableData.columns[0]];
+                            const primaryKey: Record<string, any> = {};
+                            pkCols.forEach((col: string) => { primaryKey[col] = row[col]; });
                             
                             return (
                               <tr 

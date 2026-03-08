@@ -545,6 +545,7 @@ export const presetsAPI = {
     is_official?: boolean;
     user_id?: number;
     search?: string;
+    ids?: string;
   }) => {
     const response = await api.get<ListResponse<Preset>>('/presets/', { params });
     return response.data;
@@ -1209,6 +1210,7 @@ export const adminAPI = {
     page: number;
     size: number;
     pages: number;
+    primary_key_columns: string[];
   }> => {
     const response = await api.get(`/admin/database/tables/${tableName}/data`, { params });
     return response.data;
