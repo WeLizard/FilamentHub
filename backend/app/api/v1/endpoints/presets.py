@@ -70,11 +70,32 @@ async def list_presets(
     is_official: bool | None = Query(None),
     user_id: int | None = Query(None, gt=0),
     search: str | None = Query(None, max_length=120),
+    ids: str | None = Query(None, description="Comma-separated preset IDs to fetch"),
 ) -> PresetListResponse:
     """Получить список пресетов."""
     # Build query
     query = select(Preset).options(selectinload(Preset.printer_links).selectinload(PresetPrinter.printer))
-    
+
+    # Filter by explicit IDs (batch fetch, bypasses other filters)
+    if ids:
+        id_list = [int(x) for x in ids.split(",") if x.strip().isdigit()]
+        if id_list:
+            query = query.where(Preset.id.in_(id_list))
+            count_q = select(func.count()).select_from(Preset).where(Preset.id.in_(id_list))
+            total_result = await db.execute(count_q)
+            total = total_result.scalar_one()
+            result = await db.execute(query.limit(len(id_list)))
+            items = list(result.unique().scalars().all())
+            responses = []
+            for p in items:
+                d = PresetResponse.model_validate(p).model_dump()
+                d["printers"] = [
+                    PrinterResponse.model_validate(link.printer).model_dump()
+                    for link in p.printer_links
+                ]
+                responses.append(PresetResponse(**d))
+            return PresetListResponse(items=responses, total=total, page=1, size=len(id_list))
+
     if active_only:
         query = query.where(Preset.active == True)
     if filament_id:

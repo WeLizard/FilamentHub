@@ -128,23 +128,13 @@ export const ProfilePage: React.FC = () => {
   const { data: savedPresetsDetails } = useQuery({
     queryKey: ['saved-presets-details', savedPresetIds],
     queryFn: async () => {
-      // Используем Promise.allSettled для обработки ошибок
-      const results = await Promise.allSettled(
-        savedPresetIds.map(presetId => presetsAPI.get(presetId))
-      );
-      // Фильтруем успешные запросы
-      const details = results
-        .filter((result): result is PromiseFulfilledResult<any> => result.status === 'fulfilled')
-        .map(result => result.value)
-        .filter(p => p !== null && p !== undefined);
-      
-      // Логируем ошибки для отладки
-      const errors = results.filter(result => result.status === 'rejected');
-      if (errors.length > 0) {
-        console.warn('Some presets failed to load:', errors);
-      }
-      
-      return details;
+      // Batch fetch all saved presets in one API call
+      const response = await presetsAPI.list({
+        ids: savedPresetIds.join(','),
+        active_only: false,
+        size: 100,
+      });
+      return response.items || [];
     },
     enabled: savedPresetIds.length > 0,
   });
