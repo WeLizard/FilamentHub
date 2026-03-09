@@ -122,6 +122,105 @@ const ORCA_PRINTER_GCODE_FIELDS = [
   { key: 'template_custom_gcode', labelKey: 'printerProfile.gcode.templateCustom' },
 ] as const;
 
+const LEGACY_COMPATIBILITY_GCODE_FIELDS = [
+  { key: 'machine_resume_gcode', labelKey: 'printerProfile.gcode.machineResume' },
+  { key: 'machine_cancel_gcode', labelKey: 'printerProfile.gcode.machineCancel' },
+  { key: 'machine_custom_gcode', labelKey: 'printerProfile.gcode.machineCustom' },
+  { key: 'toolchange_gcode', labelKey: 'printerProfile.gcode.toolchange' },
+] as const;
+
+const parsePrintableAreaPoint = (rawPoint: string): { x: number; y: number } | null => {
+  const trimmed = rawPoint.trim();
+  if (!trimmed) {
+    return null;
+  }
+
+  const [xRaw, yRaw] = trimmed.split('x');
+  if (xRaw === undefined || yRaw === undefined) {
+    return null;
+  }
+
+  const x = Number(xRaw);
+  const y = Number(yRaw);
+  if (!Number.isFinite(x) || !Number.isFinite(y)) {
+    return null;
+  }
+
+  return { x, y };
+};
+
+const parsePrintableAreaPolygon = (rawValue: string): string[] | null => {
+  const normalized = rawValue
+    .split(',')
+    .map((item) => item.trim())
+    .filter((item) => item.length > 0);
+
+  if (normalized.length === 0) {
+    return [];
+  }
+
+  return normalized.every((item) => parsePrintableAreaPoint(item) !== null) ? normalized : null;
+};
+
+const getPrintableAreaDimensions = (area: unknown): { x: string; y: string } => {
+  if (!area) {
+    return { x: '', y: '' };
+  }
+
+  if (Array.isArray(area)) {
+    const points = area
+      .map((point) => parsePrintableAreaPoint(String(point)))
+      .filter((point): point is { x: number; y: number } => point !== null);
+    if (points.length === 0) {
+      return { x: '', y: '' };
+    }
+
+    const xMin = Math.min(...points.map((point) => point.x));
+    const xMax = Math.max(...points.map((point) => point.x));
+    const yMin = Math.min(...points.map((point) => point.y));
+    const yMax = Math.max(...points.map((point) => point.y));
+
+    return {
+      x: String(xMax - xMin),
+      y: String(yMax - yMin),
+    };
+  }
+
+  if (typeof area === 'object') {
+    const areaRecord = area as Record<string, unknown>;
+    if (areaRecord.x !== undefined || areaRecord.y !== undefined) {
+      return {
+        x: areaRecord.x !== undefined ? String(areaRecord.x) : '',
+        y: areaRecord.y !== undefined ? String(areaRecord.y) : '',
+      };
+    }
+    if (
+      typeof areaRecord.x_min === 'number' &&
+      typeof areaRecord.x_max === 'number' &&
+      typeof areaRecord.y_min === 'number' &&
+      typeof areaRecord.y_max === 'number'
+    ) {
+      return {
+        x: String(areaRecord.x_max - areaRecord.x_min),
+        y: String(areaRecord.y_max - areaRecord.y_min),
+      };
+    }
+  }
+
+  return { x: '', y: '' };
+};
+
+const getPrintableAreaPolygonString = (area: unknown): string => {
+  if (!Array.isArray(area)) {
+    return '';
+  }
+
+  return area
+    .map((item) => String(item).trim())
+    .filter((item) => item.length > 0)
+    .join(', ');
+};
+
 export const CreatePrinterProfileModal: React.FC<CreatePrinterProfileModalProps> = ({
   isOpen,
   onClose,
@@ -178,6 +277,7 @@ export const CreatePrinterProfileModal: React.FC<CreatePrinterProfileModalProps>
   const [vendor, setVendor] = useState('');
   const [printableAreaX, setPrintableAreaX] = useState('');
   const [printableAreaY, setPrintableAreaY] = useState('');
+  const [printableAreaPolygon, setPrintableAreaPolygon] = useState('');
   const [printableHeightMm, setPrintableHeightMm] = useState('');
   const [nozzleDiameters, setNozzleDiameters] = useState<string[]>([]);
   const [newNozzleDiameter, setNewNozzleDiameter] = useState('');
@@ -334,6 +434,8 @@ export const CreatePrinterProfileModal: React.FC<CreatePrinterProfileModalProps>
 
   const ARRAY_FIELDS_WITH_EMPTY_VALID = [
     'bed_exclude_area',
+    'bed_shape',
+    'bed_custom_rectangle',
     'extruder_type',
     'printer_extruder_id',
     'printer_extruder_variant',
@@ -347,7 +449,6 @@ export const CreatePrinterProfileModal: React.FC<CreatePrinterProfileModalProps>
     'retract_lift_enforce',
     'retract_length_toolchange',
     'long_retractions_when_cut',
-    'enable_long_retraction_when_cut',
   ];
 
   const updateMetadataValue = (key: string, value: any, aliasesToDelete: string[] = []) => {
@@ -416,6 +517,20 @@ export const CreatePrinterProfileModal: React.FC<CreatePrinterProfileModalProps>
     updateMetadataValue(key, rawValue, aliasesToDelete);
   };
 
+  const handlePrinterVariantChange = (rawValue: string) => {
+    const currentValue = getMetadataValue('printer_variant');
+    if (Array.isArray(currentValue)) {
+      const normalized = rawValue
+        .split(',')
+        .map((item) => item.trim())
+        .filter((item) => item.length > 0);
+      updateMetadataValue('printer_variant', normalized.length > 0 ? normalized : []);
+      return;
+    }
+
+    handleMetadataStringChange('printer_variant', rawValue);
+  };
+
   const handleMetadataBooleanChange = (key: string, checked: boolean, aliasesToDelete: string[] = []) => {
     updateMetadataValue(key, checked ? '1' : '0', aliasesToDelete);
   };
@@ -442,13 +557,10 @@ export const CreatePrinterProfileModal: React.FC<CreatePrinterProfileModalProps>
         setPrinterId(profile.printer_id);
         setPrinterSearch('');
         setVendor(profile.vendor || '');
-        if (profile.printable_area) {
-          setPrintableAreaX(profile.printable_area.x?.toString() || '');
-          setPrintableAreaY(profile.printable_area.y?.toString() || '');
-        } else {
-          setPrintableAreaX('');
-          setPrintableAreaY('');
-        }
+        const dimensions = getPrintableAreaDimensions(profile.printable_area);
+        setPrintableAreaX(dimensions.x);
+        setPrintableAreaY(dimensions.y);
+        setPrintableAreaPolygon(getPrintableAreaPolygonString(profile.printable_area));
         setPrintableHeightMm(profile.printable_height_mm?.toString() || '');
         setNozzleDiameters(profile.nozzle_diameters?.map(d => d.toString()) || []);
         setNotes(profile.notes || '');
@@ -463,13 +575,10 @@ export const CreatePrinterProfileModal: React.FC<CreatePrinterProfileModalProps>
         setPrinterId(baseProfile.printer_id);
         setPrinterSearch('');
         setVendor(baseProfile.vendor || '');
-        if (baseProfile.printable_area) {
-          setPrintableAreaX(baseProfile.printable_area.x?.toString() || '');
-          setPrintableAreaY(baseProfile.printable_area.y?.toString() || '');
-        } else {
-          setPrintableAreaX('');
-          setPrintableAreaY('');
-        }
+        const dimensions = getPrintableAreaDimensions(baseProfile.printable_area);
+        setPrintableAreaX(dimensions.x);
+        setPrintableAreaY(dimensions.y);
+        setPrintableAreaPolygon(getPrintableAreaPolygonString(baseProfile.printable_area));
         setPrintableHeightMm(baseProfile.printable_height_mm?.toString() || '');
         setNozzleDiameters(baseProfile.nozzle_diameters?.map(d => d.toString()) || []);
         setNotes(baseProfile.notes || '');
@@ -486,6 +595,7 @@ export const CreatePrinterProfileModal: React.FC<CreatePrinterProfileModalProps>
         setVendor('');
         setPrintableAreaX('');
         setPrintableAreaY('');
+        setPrintableAreaPolygon('');
         setPrintableHeightMm('');
         setNozzleDiameters([]);
         setNotes('');
@@ -592,10 +702,18 @@ export const CreatePrinterProfileModal: React.FC<CreatePrinterProfileModalProps>
     const startGcode = extraMetadataObj.machine_start_gcode || '';
     const endGcode = extraMetadataObj.machine_end_gcode || '';
 
-    const printableArea = (printableAreaX && printableAreaY) ? {
-      x: parseFloat(printableAreaX),
-      y: parseFloat(printableAreaY),
-    } : null;
+    const printableAreaPolygonValues = parsePrintableAreaPolygon(printableAreaPolygon);
+    if (printableAreaPolygon.trim() && printableAreaPolygonValues === null) {
+      alert(t('printerProfile.printAreaPolygonInvalid'));
+      return;
+    }
+
+    const printableArea = printableAreaPolygonValues && printableAreaPolygonValues.length > 0
+      ? printableAreaPolygonValues
+      : (printableAreaX && printableAreaY) ? {
+          x: parseFloat(printableAreaX),
+          y: parseFloat(printableAreaY),
+        } : null;
 
     const nozzleDiametersArray = nozzleDiameters
       .map(d => parseFloat(d))
@@ -724,8 +842,11 @@ export const CreatePrinterProfileModal: React.FC<CreatePrinterProfileModalProps>
       { key: 'adaptive_bed_mesh_margin', labelKey: 'printerProfile.mesh.margin', placeholder: '5' },
     ];
     const bedGeometryFields: Array<{ key: string; labelKey: string; isList?: boolean; placeholder?: string; unit?: string }> = [
+      { key: 'bed_shape', labelKey: 'printerProfile.bed.shape', isList: true, placeholder: '0x0, 256x0, 256x256, 0x256' },
       { key: 'best_object_pos', labelKey: 'printerProfile.bed.bestObjectPos', placeholder: '0.5,0.5' },
       { key: 'bed_exclude_area', labelKey: 'printerProfile.bed.excludeArea', isList: true, placeholder: '90x90, 166x166' },
+      { key: 'bed_custom_rectangle', labelKey: 'printerProfile.bed.customRectangle', isList: true, placeholder: '0x0, 256x0, 256x256, 0x256' },
+      { key: 'origin_z', labelKey: 'printerProfile.bed.originZ', placeholder: '0' },
       { key: 'z_offset', labelKey: 'printerProfile.bed.zOffset', placeholder: '0', unit: t('printerProfile.units.mm') },
       { key: 'preferred_orientation', labelKey: 'printerProfile.bed.preferredOrientation', placeholder: '0', unit: t('printerProfile.units.deg') },
     ];
@@ -887,6 +1008,17 @@ export const CreatePrinterProfileModal: React.FC<CreatePrinterProfileModalProps>
                 placeholder="250"
               />
             </div>
+          </div>
+          <div className="mt-4">
+            <label className="block text-xs text-gray-400 mb-1">{t('printerProfile.printAreaPolygon')}</label>
+            <textarea
+              value={printableAreaPolygon}
+              onChange={(e) => setPrintableAreaPolygon(e.target.value)}
+              rows={3}
+              className="w-full bg-white/5 border border-white/10 rounded-lg px-4 py-2 text-white placeholder-gray-500 focus:outline-none focus:border-purple-500 font-mono text-sm resize-none"
+              placeholder="0x0, 256x0, 256x256, 0x256"
+            />
+            <p className="text-xs text-gray-500 mt-1">{t('printerProfile.printAreaPolygonHint')}</p>
           </div>
         </div>
 
@@ -1097,7 +1229,7 @@ export const CreatePrinterProfileModal: React.FC<CreatePrinterProfileModalProps>
                 <input
                   type="text"
                   value={getMetadataString('printer_variant')}
-                  onChange={(e) => handleMetadataStringChange('printer_variant', e.target.value)}
+                  onChange={(e) => handlePrinterVariantChange(e.target.value)}
                   placeholder="0.4"
                   className="w-full bg-white/5 border border-white/10 rounded-lg px-4 py-2 text-white placeholder-gray-500 focus:outline-none focus:border-purple-500"
                 />
@@ -2061,6 +2193,61 @@ export const CreatePrinterProfileModal: React.FC<CreatePrinterProfileModalProps>
                     value={value}
                     onChange={(e) => handleMetadataStringChange(key, e.target.value)}
                     rows={8}
+                    className="flex-1 bg-white/5 border border-white/10 rounded-lg px-4 py-2 pr-10 text-white placeholder-gray-500 focus:outline-none focus:border-purple-500 font-mono text-sm resize-none"
+                    placeholder={t('printerProfile.gcode.placeholder')}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => toggleGcodeModal(key)}
+                    className={`absolute right-2 top-2 p-1.5 rounded hover:bg-white/10 transition-all ${
+                      showGcodeModals[key]
+                        ? 'text-purple-400 bg-purple-500/20'
+                        : 'text-gray-400 hover:text-purple-400'
+                    }`}
+                    title={t('printerProfile.gcode.insertPlaceholder')}
+                  >
+                    <Pencil className="w-4 h-4" />
+                  </button>
+                  {showGcodeModals[key] && (
+                    <EditGCodeModal
+                      isOpen={showGcodeModals[key]}
+                      onClose={() => toggleGcodeModal(key)}
+                      onInsert={(placeholderText) => handleInsertGcodePlaceholder(key, textareaId, placeholderText)}
+                      title={t('printerProfile.gcode.insertPlaceholderIn', { label })}
+                    />
+                  )}
+                </div>
+              </div>
+            );
+          })}
+
+          <div className="rounded-xl border border-white/10 bg-white/5 px-4 py-3">
+            <h5 className="text-xs font-semibold uppercase tracking-wide text-purple-200/70 mb-2">
+              {t('printerProfile.gcode.legacyCompatibility')}
+            </h5>
+            <p className="text-xs text-gray-500">{t('printerProfile.gcode.legacyCompatibilityHint')}</p>
+          </div>
+
+          {LEGACY_COMPATIBILITY_GCODE_FIELDS.map(({ key, labelKey }) => {
+            const textareaId = `printer-gcode-legacy-${key}`;
+            const value = getMetadataString(key);
+            const label = t(labelKey);
+            return (
+              <div key={key}>
+                <div className="flex items-center justify-between gap-3 mb-2">
+                  <label className="text-gray-300 text-sm font-medium">{label}</label>
+                  {value ? (
+                    <span className="text-[10px] uppercase tracking-wider text-purple-200/60">
+                      {t('printerProfile.gcode.chars')}: {value.length}
+                    </span>
+                  ) : null}
+                </div>
+                <div className="relative flex items-start gap-3">
+                  <textarea
+                    id={textareaId}
+                    value={value}
+                    onChange={(e) => handleMetadataStringChange(key, e.target.value)}
+                    rows={6}
                     className="flex-1 bg-white/5 border border-white/10 rounded-lg px-4 py-2 pr-10 text-white placeholder-gray-500 focus:outline-none focus:border-purple-500 font-mono text-sm resize-none"
                     placeholder={t('printerProfile.gcode.placeholder')}
                   />
