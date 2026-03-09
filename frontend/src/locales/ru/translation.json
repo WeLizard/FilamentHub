@@ -1715,12 +1715,12 @@
     "noPrintersHint": "Принтеры не найдены. Сначала запросите добавление принтера в базу.",
     "printerMissing": "Ваш принтер отсутствует в списке?",
     "requestPrinter": "Запросить добавление принтера",
-    "vendor": "Vendor (производитель/поставщик)",
+    "vendor": "Производитель / поставщик",
     "vendorPlaceholder": "Например: Bambu Lab, Creality",
-    "printArea": "Рабочая область (мм)",
-    "printAreaPolygon": "Полигон printable_area (Orca)",
-    "printAreaPolygonHint": "Необязательный расширенный полигон. Если заполнен, сохраняется как Orca printable_area и имеет приоритет над простым прямоугольником X/Y.",
-    "printAreaPolygonInvalid": "Полигон printable_area должен содержать точки через запятую в формате XxY.",
+    "printArea": "Область печати (мм)",
+    "printAreaPolygon": "Полигон области печати (printable_area)",
+    "printAreaPolygonHint": "Дополнительный полигон Orca `printable_area`. Если заполнен, он сохраняется с приоритетом над простым прямоугольником X/Y.",
+    "printAreaPolygonInvalid": "Полигон области печати должен содержать точки через запятую в формате XxY.",
     "widthX": "Ширина X (мм)",
     "depthY": "Глубина Y (мм)",
     "heightZ": "Высота Z (мм)",
@@ -1780,9 +1780,12 @@
     "sections": {
       "bedConstraints": "Стол и ограничения",
       "flagsAndModes": "Флаги и режимы",
-      "coolingFan": "Вентилятор охлаждения",
-      "extruderClearance": "Экструдер: рабочая область",
-      "adaptiveBedMesh": "Адаптивная сетка стола",
+      "printableSpace": "Область печати",
+      "advanced": "Расширенные",
+      "coolingFan": "Вентилятор обдува модели",
+      "extruderClearance": "Безопасная зона печатающей головы",
+      "adaptiveBedMesh": "Адаптивная карта высот стола",
+      "accessory": "Аксессуары",
       "thumbnails": "Миниатюры",
       "commonReferences": "Отраслевые справочники",
       "extruderHardware": "Экструдеры, варианты и привязки",
@@ -1794,6 +1797,12 @@
       "multimaterialWipeTower": "Башня очистки",
       "multimaterialSemm": "Параметры SEMM",
       "multimaterialAdvanced": "Дополнительно"
+    },
+    "spoilers": {
+      "bedAssets": "Модель и текстура стола",
+      "printableSpaceCompatibility": "Поля совместимости области печати",
+      "moreProfileFields": "Дополнительные поля профиля",
+      "thumbnails": "Миниатюры G-code"
     },
     "units": {
       "mm": "мм",
@@ -1814,13 +1823,13 @@
       "auxiliaryFan": "Внешний вентилятор",
       "scanFirstLayer": "Сканирование первого слоя",
       "disableM73": "Отключить отчёт времени M73",
-      "usePrinthost": "Использовать PrintHost"
+      "usePrinthost": "Использовать сторонний хост печати"
     },
     "cooling": {
       "speedupTime": "Время разгона вентилятора",
       "speedupOverhangs": "Разгон для свесов",
       "speedupOverhangsDesc": "В Orca это булев флаг, а не процент.",
-      "kickstart": "Kickstart"
+      "kickstart": "Продолжительность принудительного запуска вентилятора"
     },
     "extruderClearance": {
       "radius": "Радиус рабочей зоны экструдера",
@@ -1828,8 +1837,8 @@
       "heightToLid": "Высота до крышки"
     },
     "mesh": {
-      "min": "Bed mesh min (координаты)",
-      "max": "Bed mesh max (координаты)",
+      "min": "Мин. координаты",
+      "max": "Макс. координаты",
       "probeDistance": "Расстояние между точками сетки (мм)",
       "margin": "Отступ сетки (мм)"
     },
@@ -1837,8 +1846,12 @@
       "shape": "Форма стола (мм)",
       "excludeArea": "Запретные зоны стола",
       "customRectangle": "Пользовательский прямоугольник",
+      "model": "Модель стола",
+      "texture": "Текстура стола",
+      "customModel": "Пользовательская модель стола",
+      "customTexture": "Пользовательская текстура стола",
       "originZ": "Смещение по Z",
-      "bestObjectPos": "Предпочтительная позиция объекта",
+      "bestObjectPos": "Наилучшее расположение модели",
       "zOffset": "Смещение по Z",
       "preferredOrientation": "Предпочтительная ориентация"
     },
@@ -1913,9 +1926,9 @@
       "boolArrayHint": "Используйте 0/1 по одному значению на экструдер, каждая строка отдельно."
     },
     "multi": {
-      "singleExtruderMultiMaterial": "Single Extruder Multi Material (SEMM)",
+      "singleExtruderMultiMaterial": "Мультиматериал на одном экструдере (SEMM)",
       "purgeInTower": "Очищать в башне (purge_in_prime_tower)",
-      "enableRamming": "Включить ramming",
+      "enableRamming": "Рэмминг для сменных насадок",
       "manualFilamentChange": "Ручная замена филамента",
       "extrudersCount": "Количество экструдеров",
       "bedTemperatureFormula": "Формула температуры стола",

@@ -1,7 +1,7 @@
 /** Модальное окно для создания printer profile */
 
 import { useState, useEffect, FormEvent, useMemo } from 'react';
-import { X, Save, Loader2, Pencil } from 'lucide-react';
+import { X, Save, Loader2, Pencil, ChevronRight } from 'lucide-react';
 import { Printer3DIcon } from './icons/Printer3DIcon';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { printerProfilesAPI, printersAPI } from '../api/client';
@@ -284,9 +284,6 @@ export const CreatePrinterProfileModal: React.FC<CreatePrinterProfileModalProps>
   const [notes, setNotes] = useState('');
   const [extraMetadata, setExtraMetadata] = useState('');
   const [jsonError, setJsonError] = useState<string | null>(null);
-  const [newMaterial, setNewMaterial] = useState('');
-  const [defaultMaterials, setDefaultMaterials] = useState<string[]>([]);
-  const [imageUrl, setImageUrl] = useState('');
   const [showGcodeModals, setShowGcodeModals] = useState<Record<string, boolean>>({});
 
   // Флаг для отслеживания, было ли имя изменено пользователем вручную
@@ -576,8 +573,6 @@ export const CreatePrinterProfileModal: React.FC<CreatePrinterProfileModalProps>
         setNozzleDiameters(profile.nozzle_diameters?.map(d => d.toString()) || []);
         setNotes(profile.notes || '');
         setExtraMetadata(profile.extra_metadata ? JSON.stringify(profile.extra_metadata, null, 2) : '');
-        setDefaultMaterials([]); // TODO: если будет поле в модели
-        setImageUrl(''); // TODO: если будет поле в модели
       } else if (baseProfile) {
         // Клонирование
         setName(`${baseProfile.name} (${t('printerProfile.copyLabel')})`);
@@ -594,8 +589,6 @@ export const CreatePrinterProfileModal: React.FC<CreatePrinterProfileModalProps>
         setNozzleDiameters(baseProfile.nozzle_diameters?.map(d => d.toString()) || []);
         setNotes(baseProfile.notes || '');
         setExtraMetadata(baseProfile.extra_metadata ? JSON.stringify(baseProfile.extra_metadata, null, 2) : '');
-        setDefaultMaterials([]);
-        setImageUrl('');
       } else {
         // Создание нового
         setName('');
@@ -611,12 +604,9 @@ export const CreatePrinterProfileModal: React.FC<CreatePrinterProfileModalProps>
         setNozzleDiameters([]);
         setNotes('');
         setExtraMetadata('');
-        setDefaultMaterials([]);
-        setImageUrl('');
       }
       setActiveTab('general');
       setNewNozzleDiameter('');
-      setNewMaterial('');
       setJsonError(null);
       setShowGcodeModals({});
     }
@@ -640,17 +630,6 @@ export const CreatePrinterProfileModal: React.FC<CreatePrinterProfileModalProps>
       alert(translateApiError(t, error?.response?.data?.detail, t('printerProfile.saveError')));
     },
   });
-
-  const handleAddMaterial = () => {
-    const trimmed = newMaterial.trim();
-    if (!trimmed) return;
-    if (defaultMaterials.includes(trimmed)) {
-      setNewMaterial('');
-      return;
-    }
-    setDefaultMaterials([...defaultMaterials, trimmed]);
-    setNewMaterial('');
-  };
 
   const handleInsertGcodePlaceholder = (metadataKey: string, textareaId: string, placeholderText: string) => {
     const currentValue = getMetadataString(metadataKey);
@@ -825,17 +804,18 @@ export const CreatePrinterProfileModal: React.FC<CreatePrinterProfileModalProps>
     const selectedPrinterTechnology = getMetadataString('printer_technology') || null;
     const selectedDefaultBedType = getMetadataString('default_bed_type') || null;
     const selectedPowerLossRecovery = getMetadataString('enable_power_loss_recovery') || null;
-    const firmwareFlagOptions: Array<{ key: string; labelKey: string; descriptionKey?: string }> = [
+    const advancedFlagOptions: Array<{ key: string; labelKey: string; descriptionKey?: string }> = [
       { key: 'use_relative_e_distances', labelKey: 'printerProfile.flags.relativeE', descriptionKey: 'printerProfile.flags.relativeEDesc' },
       { key: 'use_firmware_retraction', labelKey: 'printerProfile.flags.firmwareRetraction', descriptionKey: 'printerProfile.flags.firmwareRetractionDesc' },
       { key: 'pellet_modded_printer', labelKey: 'printerProfile.flags.pelletMod', descriptionKey: 'printerProfile.flags.pelletModDesc' },
-      { key: 'support_multi_bed_types', labelKey: 'printerProfile.flags.multiBedTypes', descriptionKey: 'printerProfile.flags.multiBedTypesDesc' },
-      { key: 'support_air_filtration', labelKey: 'printerProfile.flags.airFiltration' },
-      { key: 'support_chamber_temp_control', labelKey: 'printerProfile.flags.chamberTemp' },
-      { key: 'auxiliary_fan', labelKey: 'printerProfile.flags.auxiliaryFan' },
       { key: 'scan_first_layer', labelKey: 'printerProfile.flags.scanFirstLayer' },
       { key: 'disable_m73', labelKey: 'printerProfile.flags.disableM73' },
       { key: 'bbl_use_printhost', labelKey: 'printerProfile.flags.usePrinthost' },
+    ];
+    const accessoryFlagOptions: Array<{ key: string; labelKey: string }> = [
+      { key: 'auxiliary_fan', labelKey: 'printerProfile.flags.auxiliaryFan' },
+      { key: 'support_chamber_temp_control', labelKey: 'printerProfile.flags.chamberTemp' },
+      { key: 'support_air_filtration', labelKey: 'printerProfile.flags.airFiltration' },
     ];
     const coolingFanFields: Array<{ key: string; labelKey: string; placeholder?: string; unit?: string }> = [
       { key: 'fan_speedup_time', labelKey: 'printerProfile.cooling.speedupTime', placeholder: '2', unit: t('printerProfile.units.sec') },
@@ -852,14 +832,22 @@ export const CreatePrinterProfileModal: React.FC<CreatePrinterProfileModalProps>
       { key: 'bed_mesh_probe_distance', labelKey: 'printerProfile.mesh.probeDistance', placeholder: '50,50' },
       { key: 'adaptive_bed_mesh_margin', labelKey: 'printerProfile.mesh.margin', placeholder: '5' },
     ];
-    const bedGeometryFields: Array<{ key: string; labelKey: string; isList?: boolean; placeholder?: string; unit?: string }> = [
-      { key: 'bed_shape', labelKey: 'printerProfile.bed.shape', isList: true, placeholder: '0x0, 256x0, 256x256, 0x256' },
+    const printableSpaceFields: Array<{ key: string; labelKey: string; isList?: boolean; placeholder?: string; unit?: string }> = [
       { key: 'best_object_pos', labelKey: 'printerProfile.bed.bestObjectPos', placeholder: '0.5,0.5' },
       { key: 'bed_exclude_area', labelKey: 'printerProfile.bed.excludeArea', isList: true, placeholder: '90x90, 166x166' },
-      { key: 'bed_custom_rectangle', labelKey: 'printerProfile.bed.customRectangle', isList: true, placeholder: '0x0, 256x0, 256x256, 0x256' },
-      { key: 'origin_z', labelKey: 'printerProfile.bed.originZ', placeholder: '0' },
       { key: 'z_offset', labelKey: 'printerProfile.bed.zOffset', placeholder: '0', unit: t('printerProfile.units.mm') },
       { key: 'preferred_orientation', labelKey: 'printerProfile.bed.preferredOrientation', placeholder: '0', unit: t('printerProfile.units.deg') },
+    ];
+    const printableSpaceCompatibilityFields: Array<{ key: string; labelKey: string; isList?: boolean; placeholder?: string; unit?: string }> = [
+      { key: 'bed_shape', labelKey: 'printerProfile.bed.shape', isList: true, placeholder: '0x0, 256x0, 256x256, 0x256' },
+      { key: 'bed_custom_rectangle', labelKey: 'printerProfile.bed.customRectangle', isList: true, placeholder: '0x0, 256x0, 256x256, 0x256' },
+      { key: 'origin_z', labelKey: 'printerProfile.bed.originZ', placeholder: '0' },
+    ];
+    const bedAssetFields: Array<{ key: string; labelKey: string; placeholder?: string }> = [
+      { key: 'bed_model', labelKey: 'printerProfile.bed.model', placeholder: 'bbl-3dp-X1.stl' },
+      { key: 'bed_texture', labelKey: 'printerProfile.bed.texture', placeholder: 'bbl-3dp-logo.svg' },
+      { key: 'bed_custom_model', labelKey: 'printerProfile.bed.customModel', placeholder: 'custom-bed.stl' },
+      { key: 'bed_custom_texture', labelKey: 'printerProfile.bed.customTexture', placeholder: 'custom-bed.png' },
     ];
     const thumbnailsFields: Array<{ key: string; labelKey: string; placeholder?: string }> = [
       { key: 'thumbnails', labelKey: 'printerProfile.thumbnails.sizes', placeholder: '48x48/PNG,300x300/PNG' },
@@ -982,58 +970,6 @@ export const CreatePrinterProfileModal: React.FC<CreatePrinterProfileModalProps>
         </div>
 
         <div>
-          <label className="block text-sm font-medium text-gray-300 mb-3">
-            {t('printerProfile.printArea')}
-          </label>
-          <div className="grid grid-cols-3 gap-4">
-            <div>
-              <label className="block text-xs text-gray-400 mb-1">{t('printerProfile.widthX')}</label>
-              <input
-                type="number"
-                step="0.1"
-                value={printableAreaX}
-                onChange={(e) => setPrintableAreaX(e.target.value)}
-                className="w-full bg-white/5 border border-white/10 rounded-lg px-4 py-2 text-white placeholder-gray-500 focus:outline-none focus:border-purple-500"
-                placeholder="220"
-              />
-            </div>
-            <div>
-              <label className="block text-xs text-gray-400 mb-1">{t('printerProfile.depthY')}</label>
-              <input
-                type="number"
-                step="0.1"
-                value={printableAreaY}
-                onChange={(e) => setPrintableAreaY(e.target.value)}
-                className="w-full bg-white/5 border border-white/10 rounded-lg px-4 py-2 text-white placeholder-gray-500 focus:outline-none focus:border-purple-500"
-                placeholder="220"
-              />
-            </div>
-            <div>
-              <label className="block text-xs text-gray-400 mb-1">{t('printerProfile.heightZ')}</label>
-              <input
-                type="number"
-                step="0.1"
-                value={printableHeightMm}
-                onChange={(e) => setPrintableHeightMm(e.target.value)}
-                className="w-full bg-white/5 border border-white/10 rounded-lg px-4 py-2 text-white placeholder-gray-500 focus:outline-none focus:border-purple-500"
-                placeholder="250"
-              />
-            </div>
-          </div>
-          <div className="mt-4">
-            <label className="block text-xs text-gray-400 mb-1">{t('printerProfile.printAreaPolygon')}</label>
-            <textarea
-              value={printableAreaPolygon}
-              onChange={(e) => setPrintableAreaPolygon(e.target.value)}
-              rows={3}
-              className="w-full bg-white/5 border border-white/10 rounded-lg px-4 py-2 text-white placeholder-gray-500 focus:outline-none focus:border-purple-500 font-mono text-sm resize-none"
-              placeholder="0x0, 256x0, 256x256, 0x256"
-            />
-            <p className="text-xs text-gray-500 mt-1">{t('printerProfile.printAreaPolygonHint')}</p>
-          </div>
-        </div>
-
-        <div>
           <label className="block text-sm font-medium text-gray-300 mb-2">
             {t('printerProfile.nozzleDiameters')}
           </label>
@@ -1085,172 +1021,77 @@ export const CreatePrinterProfileModal: React.FC<CreatePrinterProfileModalProps>
           </div>
         </div>
 
-        <div>
-          <label className="block text-sm font-medium text-gray-300 mb-2">
-            {t('printerProfile.defaultMaterials')}
-          </label>
-          <div className="flex flex-wrap gap-2 mb-2">
-            {defaultMaterials.map((material) => (
-              <span
-                key={material}
-                className="inline-flex items-center gap-1 px-3 py-1 rounded-full bg-indigo-500/20 text-indigo-100 text-xs"
-              >
-                {material}
-                <button
-                  type="button"
-                  onClick={() => setDefaultMaterials(defaultMaterials.filter((m) => m !== material))}
-                  className="hover:text-white transition"
-                  aria-label={t('printerProfile.removeMaterial')}
-                >
-                  ×
-                </button>
-              </span>
-            ))}
-          </div>
-          <div className="flex gap-2">
-            <input
-              type="text"
-              value={newMaterial}
-              onChange={(e) => setNewMaterial(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') {
-                  e.preventDefault();
-                  handleAddMaterial();
-                }
-              }}
-              placeholder="PLA"
-              className="flex-1 bg-white/5 border border-white/10 rounded-lg px-4 py-2 text-white placeholder-gray-500 focus:outline-none focus:border-purple-500"
-            />
-            <button
-              type="button"
-              onClick={handleAddMaterial}
-              className="px-4 py-2 bg-white/10 hover:bg-white/20 text-white rounded-lg transition-all"
-            >
-              {t('printerProfile.add')}
-            </button>
-          </div>
-        </div>
-
-        <div>
-          <label className="block text-sm font-medium text-gray-300 mb-2">
-            {t('printerProfile.imageUrl')}
-          </label>
-          <input
-            type="url"
-            value={imageUrl}
-            onChange={(e) => setImageUrl(e.target.value)}
-            className="w-full bg-white/5 border border-white/10 rounded-lg px-4 py-2 text-white placeholder-gray-500 focus:outline-none focus:border-purple-500"
-          />
-        </div>
-
         {metadataInvalid ? (
           <div className="rounded-lg border border-red-500/40 bg-red-500/10 px-4 py-3 text-sm text-red-200">
             {t('printerProfile.jsonParseError')}
           </div>
         ) : (
           <div className="space-y-6">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div>
-                <label className="block text-gray-300 mb-2 text-sm font-medium">{t('printerProfile.printerStructure')}</label>
-                <CustomSelect
-                  value={selectedPrinterStructure}
-                  onChange={(value) => handleMetadataStringChange('printer_structure', (value as string) || '')}
-                  options={buildTranslatedOptions(ORCA_PRINTER_STRUCTURE_OPTIONS, selectedPrinterStructure)}
-                  placeholder={t('printerProfile.selectStructure')}
-                />
-              </div>
-              <div>
-                <label className="block text-gray-300 mb-2 text-sm font-medium">{t('printerProfile.gcodeFlavor')}</label>
-                <CustomSelect
-                  value={selectedGcodeFlavor}
-                  onChange={(value) => handleMetadataStringChange('gcode_flavor', (value as string) || '')}
-                  options={buildTranslatedOptions(ORCA_GCODE_FLAVOR_OPTIONS, selectedGcodeFlavor)}
-                  placeholder={t('printerProfile.selectFlavor')}
-                />
-              </div>
-              <div>
-                <label className="block text-gray-300 mb-2 text-sm font-medium">{t('printerProfile.printTechnology')}</label>
-                <CustomSelect
-                  value={selectedPrinterTechnology}
-                  onChange={(value) => handleMetadataStringChange('printer_technology', (value as string) || '')}
-                  options={buildTranslatedOptions(ORCA_PRINTER_TECHNOLOGY_OPTIONS, selectedPrinterTechnology)}
-                  placeholder={t('printerProfile.selectTechnology')}
-                />
-              </div>
-              <div>
-                <label className="block text-gray-300 mb-2 text-sm font-medium">{t('printerProfile.defaultBedType')}</label>
-                <CustomSelect
-                  value={selectedDefaultBedType}
-                  onChange={(value) => handleMetadataStringChange('default_bed_type', (value as string) || '')}
-                  options={buildTranslatedOptions(ORCA_DEFAULT_BED_TYPE_OPTIONS, selectedDefaultBedType)}
-                  placeholder={t('printerProfile.selectBedType')}
-                />
-              </div>
-              <div>
-                <label className="block text-gray-300 mb-2 text-sm font-medium">{t('printerProfile.powerLossRecovery')}</label>
-                <CustomSelect
-                  value={selectedPowerLossRecovery}
-                  onChange={(value) => handleMetadataStringChange('enable_power_loss_recovery', (value as string) || '')}
-                  options={buildTranslatedOptions(ORCA_POWER_LOSS_RECOVERY_OPTIONS, selectedPowerLossRecovery)}
-                  placeholder={t('printerProfile.selectPowerLossRecovery')}
-                />
-              </div>
-              <div>
-                <label className="block text-gray-300 mb-2 text-sm font-medium">{t('printerProfile.hotend')}</label>
-                <input
-                  type="text"
-                  value={getMetadataString('hotend_model')}
-                  onChange={(e) => handleMetadataStringChange('hotend_model', e.target.value)}
-                  placeholder="Phaetus Rapido..."
-                  className="w-full bg-white/5 border border-white/10 rounded-lg px-4 py-2 text-white placeholder-gray-500 focus:outline-none focus:border-purple-500"
-                />
-              </div>
-              <div>
-                <label className="block text-gray-300 mb-2 text-sm font-medium">{t('printerProfile.nozzleHrc')}</label>
-                <input
-                  type="text"
-                  value={getMetadataString('nozzle_hrc')}
-                  onChange={(e) => handleMetadataStringChange('nozzle_hrc', e.target.value)}
-                  placeholder="0"
-                  className="w-full bg-white/5 border border-white/10 rounded-lg px-4 py-2 text-white placeholder-gray-500 focus:outline-none focus:border-purple-500"
-                />
-              </div>
-              <div>
-                <label className="block text-gray-300 mb-2 text-sm font-medium">{t('printerProfile.timeCost')}</label>
-                <input
-                  type="text"
-                  value={getMetadataString('time_cost')}
-                  onChange={(e) => handleMetadataStringChange('time_cost', e.target.value)}
-                  placeholder="0.0"
-                  className="w-full bg-white/5 border border-white/10 rounded-lg px-4 py-2 text-white placeholder-gray-500 focus:outline-none focus:border-purple-500"
-                />
-              </div>
-              <div>
-                <label className="block text-gray-300 mb-2 text-sm font-medium">{t('printerProfile.defaultFilamentProfile')}</label>
-                <input
-                  type="text"
-                  value={getMetadataListString('default_filament_profile')}
-                  onChange={(e) => handleMetadataListChange('default_filament_profile', e.target.value)}
-                  placeholder="Generic PLA"
-                  className="w-full bg-white/5 border border-white/10 rounded-lg px-4 py-2 text-white placeholder-gray-500 focus:outline-none focus:border-purple-500"
-                />
-              </div>
-              <div>
-                <label className="block text-gray-300 mb-2 text-sm font-medium">{t('printerProfile.printerVariant')}</label>
-                <input
-                  type="text"
-                  value={getMetadataString('printer_variant')}
-                  onChange={(e) => handlePrinterVariantChange(e.target.value)}
-                  placeholder="0.4"
-                  className="w-full bg-white/5 border border-white/10 rounded-lg px-4 py-2 text-white placeholder-gray-500 focus:outline-none focus:border-purple-500"
-                />
-              </div>
-            </div>
-
             <div>
-              <h5 className="text-xs font-semibold uppercase tracking-wide text-purple-200/70 mb-3">{t('printerProfile.sections.bedConstraints')}</h5>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {bedGeometryFields.map((field) => (
+              <h5 className="text-xs font-semibold uppercase tracking-wide text-purple-200/70 mb-3">{t('printerProfile.sections.printableSpace')}</h5>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div>
+                  <label className="block text-xs text-gray-400 mb-1">{t('printerProfile.widthX')}</label>
+                  <input
+                    type="number"
+                    step="0.1"
+                    value={printableAreaX}
+                    onChange={(e) => setPrintableAreaX(e.target.value)}
+                    className="w-full bg-white/5 border border-white/10 rounded-lg px-4 py-2 text-white placeholder-gray-500 focus:outline-none focus:border-purple-500"
+                    placeholder="220"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs text-gray-400 mb-1">{t('printerProfile.depthY')}</label>
+                  <input
+                    type="number"
+                    step="0.1"
+                    value={printableAreaY}
+                    onChange={(e) => setPrintableAreaY(e.target.value)}
+                    className="w-full bg-white/5 border border-white/10 rounded-lg px-4 py-2 text-white placeholder-gray-500 focus:outline-none focus:border-purple-500"
+                    placeholder="220"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs text-gray-400 mb-1">{t('printerProfile.heightZ')}</label>
+                  <input
+                    type="number"
+                    step="0.1"
+                    value={printableHeightMm}
+                    onChange={(e) => setPrintableHeightMm(e.target.value)}
+                    className="w-full bg-white/5 border border-white/10 rounded-lg px-4 py-2 text-white placeholder-gray-500 focus:outline-none focus:border-purple-500"
+                    placeholder="250"
+                  />
+                </div>
+              </div>
+              <div className="mt-4">
+                <label className="block text-sm font-medium text-gray-300 mb-2">{t('printerProfile.printAreaPolygon')}</label>
+                <textarea
+                  value={printableAreaPolygon}
+                  onChange={(e) => setPrintableAreaPolygon(e.target.value)}
+                  rows={3}
+                  className="w-full bg-white/5 border border-white/10 rounded-lg px-4 py-2 text-white placeholder-gray-500 focus:outline-none focus:border-purple-500 font-mono text-sm resize-none"
+                  placeholder="0x0, 256x0, 256x256, 0x256"
+                />
+                <p className="text-xs text-gray-500 mt-1">{t('printerProfile.printAreaPolygonHint')}</p>
+              </div>
+              <div className="mt-4 flex items-start gap-3">
+                <input
+                  type="checkbox"
+                  id="support_multi_bed_types"
+                  checked={getMetadataBoolean('support_multi_bed_types')}
+                  onChange={(e) => handleMetadataBooleanChange('support_multi_bed_types', e.target.checked)}
+                  className="w-4 h-4 mt-1 rounded border-white/30 bg-white/10"
+                />
+                <div>
+                  <label htmlFor="support_multi_bed_types" className="text-gray-300 text-sm font-medium">
+                    {t('printerProfile.flags.multiBedTypes')}
+                  </label>
+                  <p className="text-xs text-gray-500">{t('printerProfile.flags.multiBedTypesDesc')}</p>
+                </div>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
+                {printableSpaceFields.map((field) => (
                   <div key={field.key}>
                     <label className="block text-gray-300 mb-2 text-sm font-medium">{t(field.labelKey)}</label>
                     <div className="relative">
@@ -1278,12 +1119,110 @@ export const CreatePrinterProfileModal: React.FC<CreatePrinterProfileModalProps>
                   </div>
                 ))}
               </div>
+              <details className="group mt-4 rounded-lg border border-white/10 bg-white/[0.03]">
+                <summary className="flex cursor-pointer list-none items-center gap-2 px-4 py-3 text-sm font-medium text-gray-300 transition-colors hover:text-white [&::-webkit-details-marker]:hidden">
+                  <span>{t('printerProfile.spoilers.bedAssets')}</span>
+                  <ChevronRight className="ml-auto h-4 w-4 text-gray-400 transition-transform group-open:rotate-90" />
+                </summary>
+                <div className="px-4 pb-4">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {bedAssetFields.map((field) => (
+                      <div key={field.key}>
+                        <label className="block text-gray-300 mb-2 text-sm font-medium">{t(field.labelKey)}</label>
+                        <input
+                          type="text"
+                          value={getMetadataString(field.key)}
+                          onChange={(e) => handleMetadataStringChange(field.key, e.target.value)}
+                          placeholder={field.placeholder}
+                          className="w-full bg-white/5 border border-white/10 rounded-lg px-4 py-2 text-white placeholder-gray-500 focus:outline-none focus:border-purple-500"
+                        />
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </details>
+              <details className="group mt-4 rounded-lg border border-white/10 bg-white/[0.03]">
+                <summary className="flex cursor-pointer list-none items-center gap-2 px-4 py-3 text-sm font-medium text-gray-300 transition-colors hover:text-white [&::-webkit-details-marker]:hidden">
+                  <span>{t('printerProfile.spoilers.printableSpaceCompatibility')}</span>
+                  <ChevronRight className="ml-auto h-4 w-4 text-gray-400 transition-transform group-open:rotate-90" />
+                </summary>
+                <div className="px-4 pb-4">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {printableSpaceCompatibilityFields.map((field) => (
+                      <div key={field.key}>
+                        <label className="block text-gray-300 mb-2 text-sm font-medium">{t(field.labelKey)}</label>
+                        <div className="relative">
+                          <input
+                            type="text"
+                            value={
+                              field.isList
+                                ? getMetadataListString(field.key)
+                                : getMetadataString(field.key)
+                            }
+                            onChange={(e) =>
+                              field.isList
+                                ? handleMetadataListChange(field.key, e.target.value)
+                                : handleMetadataStringChange(field.key, e.target.value)
+                            }
+                            placeholder={field.placeholder}
+                            className={`w-full bg-white/5 border border-white/10 rounded-lg px-4 py-2 text-white placeholder-gray-500 focus:outline-none focus:border-purple-500 ${field.unit ? 'pr-16' : ''}`}
+                          />
+                          {field.unit && (
+                            <span className="absolute inset-y-0 right-4 flex items-center text-xs text-gray-400 pointer-events-none">
+                              {field.unit}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </details>
             </div>
 
             <div>
-              <h5 className="text-xs font-semibold uppercase tracking-wide text-purple-200/70 mb-3">{t('printerProfile.sections.flagsAndModes')}</h5>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                {firmwareFlagOptions.map((option) => (
+              <h5 className="text-xs font-semibold uppercase tracking-wide text-purple-200/70 mb-3">{t('printerProfile.sections.advanced')}</h5>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-gray-300 mb-2 text-sm font-medium">{t('printerProfile.printerStructure')}</label>
+                  <CustomSelect
+                    value={selectedPrinterStructure}
+                    onChange={(value) => handleMetadataStringChange('printer_structure', (value as string) || '')}
+                    options={buildTranslatedOptions(ORCA_PRINTER_STRUCTURE_OPTIONS, selectedPrinterStructure)}
+                    placeholder={t('printerProfile.selectStructure')}
+                  />
+                </div>
+                <div>
+                  <label className="block text-gray-300 mb-2 text-sm font-medium">{t('printerProfile.gcodeFlavor')}</label>
+                  <CustomSelect
+                    value={selectedGcodeFlavor}
+                    onChange={(value) => handleMetadataStringChange('gcode_flavor', (value as string) || '')}
+                    options={buildTranslatedOptions(ORCA_GCODE_FLAVOR_OPTIONS, selectedGcodeFlavor)}
+                    placeholder={t('printerProfile.selectFlavor')}
+                  />
+                </div>
+                <div>
+                  <label className="block text-gray-300 mb-2 text-sm font-medium">{t('printerProfile.powerLossRecovery')}</label>
+                  <CustomSelect
+                    value={selectedPowerLossRecovery}
+                    onChange={(value) => handleMetadataStringChange('enable_power_loss_recovery', (value as string) || '')}
+                    options={buildTranslatedOptions(ORCA_POWER_LOSS_RECOVERY_OPTIONS, selectedPowerLossRecovery)}
+                    placeholder={t('printerProfile.selectPowerLossRecovery')}
+                  />
+                </div>
+                <div>
+                  <label className="block text-gray-300 mb-2 text-sm font-medium">{t('printerProfile.timeCost')}</label>
+                  <input
+                    type="text"
+                    value={getMetadataString('time_cost')}
+                    onChange={(e) => handleMetadataStringChange('time_cost', e.target.value)}
+                    placeholder="0.0"
+                    className="w-full bg-white/5 border border-white/10 rounded-lg px-4 py-2 text-white placeholder-gray-500 focus:outline-none focus:border-purple-500"
+                  />
+                </div>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mt-4">
+                {advancedFlagOptions.map((option) => (
                   <div key={option.key} className="flex items-start gap-3">
                     <input
                       type="checkbox"
@@ -1301,6 +1240,86 @@ export const CreatePrinterProfileModal: React.FC<CreatePrinterProfileModalProps>
                   </div>
                 ))}
               </div>
+              <details className="group mt-4 rounded-lg border border-white/10 bg-white/[0.03]">
+                <summary className="flex cursor-pointer list-none items-center gap-2 px-4 py-3 text-sm font-medium text-gray-300 transition-colors hover:text-white [&::-webkit-details-marker]:hidden">
+                  <span>{t('printerProfile.spoilers.moreProfileFields')}</span>
+                  <ChevronRight className="ml-auto h-4 w-4 text-gray-400 transition-transform group-open:rotate-90" />
+                </summary>
+                <div className="px-4 pb-4">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-gray-300 mb-2 text-sm font-medium">{t('printerProfile.printTechnology')}</label>
+                      <CustomSelect
+                        value={selectedPrinterTechnology}
+                        onChange={(value) => handleMetadataStringChange('printer_technology', (value as string) || '')}
+                        options={buildTranslatedOptions(ORCA_PRINTER_TECHNOLOGY_OPTIONS, selectedPrinterTechnology)}
+                        placeholder={t('printerProfile.selectTechnology')}
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-gray-300 mb-2 text-sm font-medium">{t('printerProfile.defaultBedType')}</label>
+                      <CustomSelect
+                        value={selectedDefaultBedType}
+                        onChange={(value) => handleMetadataStringChange('default_bed_type', (value as string) || '')}
+                        options={buildTranslatedOptions(ORCA_DEFAULT_BED_TYPE_OPTIONS, selectedDefaultBedType)}
+                        placeholder={t('printerProfile.selectBedType')}
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-gray-300 mb-2 text-sm font-medium">{t('printerProfile.hotend')}</label>
+                      <input
+                        type="text"
+                        value={getMetadataString('hotend_model')}
+                        onChange={(e) => handleMetadataStringChange('hotend_model', e.target.value)}
+                        placeholder="Phaetus Rapido..."
+                        className="w-full bg-white/5 border border-white/10 rounded-lg px-4 py-2 text-white placeholder-gray-500 focus:outline-none focus:border-purple-500"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-gray-300 mb-2 text-sm font-medium">{t('printerProfile.defaultFilamentProfile')}</label>
+                      <input
+                        type="text"
+                        value={getMetadataListString('default_filament_profile')}
+                        onChange={(e) => handleMetadataListChange('default_filament_profile', e.target.value)}
+                        placeholder="Generic PLA"
+                        className="w-full bg-white/5 border border-white/10 rounded-lg px-4 py-2 text-white placeholder-gray-500 focus:outline-none focus:border-purple-500"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-gray-300 mb-2 text-sm font-medium">{t('printerProfile.printerVariant')}</label>
+                      <input
+                        type="text"
+                        value={getMetadataString('printer_variant')}
+                        onChange={(e) => handlePrinterVariantChange(e.target.value)}
+                        placeholder="0.4"
+                        className="w-full bg-white/5 border border-white/10 rounded-lg px-4 py-2 text-white placeholder-gray-500 focus:outline-none focus:border-purple-500"
+                      />
+                    </div>
+                  </div>
+                </div>
+              </details>
+              <details className="group mt-4 rounded-lg border border-white/10 bg-white/[0.03]">
+                <summary className="flex cursor-pointer list-none items-center gap-2 px-4 py-3 text-sm font-medium text-gray-300 transition-colors hover:text-white [&::-webkit-details-marker]:hidden">
+                  <span>{t('printerProfile.spoilers.thumbnails')}</span>
+                  <ChevronRight className="ml-auto h-4 w-4 text-gray-400 transition-transform group-open:rotate-90" />
+                </summary>
+                <div className="px-4 pb-4">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {thumbnailsFields.map((field) => (
+                      <div key={field.key}>
+                        <label className="block text-gray-300 mb-2 text-sm font-medium">{t(field.labelKey)}</label>
+                        <input
+                          type="text"
+                          value={getMetadataString(field.key)}
+                          onChange={(e) => handleMetadataStringChange(field.key, e.target.value)}
+                          placeholder={field.placeholder}
+                          className="w-full bg-white/5 border border-white/10 rounded-lg px-4 py-2 text-white placeholder-gray-500 focus:outline-none focus:border-purple-500"
+                        />
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </details>
             </div>
 
             <div>
@@ -1391,18 +1410,32 @@ export const CreatePrinterProfileModal: React.FC<CreatePrinterProfileModalProps>
             </div>
 
             <div>
-              <h5 className="text-xs font-semibold uppercase tracking-wide text-purple-200/70 mb-3">{t('printerProfile.sections.thumbnails')}</h5>
+              <h5 className="text-xs font-semibold uppercase tracking-wide text-purple-200/70 mb-3">{t('printerProfile.sections.accessory')}</h5>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {thumbnailsFields.map((field) => (
-                  <div key={field.key}>
-                    <label className="block text-gray-300 mb-2 text-sm font-medium">{t(field.labelKey)}</label>
+                <div>
+                  <label className="block text-gray-300 mb-2 text-sm font-medium">{t('printerProfile.nozzleHrc')}</label>
+                  <input
+                    type="text"
+                    value={getMetadataString('nozzle_hrc')}
+                    onChange={(e) => handleMetadataStringChange('nozzle_hrc', e.target.value)}
+                    placeholder="0"
+                    className="w-full bg-white/5 border border-white/10 rounded-lg px-4 py-2 text-white placeholder-gray-500 focus:outline-none focus:border-purple-500"
+                  />
+                </div>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mt-4">
+                {accessoryFlagOptions.map((option) => (
+                  <div key={option.key} className="flex items-start gap-3">
                     <input
-                      type="text"
-                      value={getMetadataString(field.key)}
-                      onChange={(e) => handleMetadataStringChange(field.key, e.target.value)}
-                      placeholder={field.placeholder}
-                      className="w-full bg-white/5 border border-white/10 rounded-lg px-4 py-2 text-white placeholder-gray-500 focus:outline-none focus:border-purple-500"
+                      type="checkbox"
+                      id={`accessory-${option.key}`}
+                      checked={getMetadataBoolean(option.key)}
+                      onChange={(e) => handleMetadataBooleanChange(option.key, e.target.checked)}
+                      className="w-4 h-4 mt-1 rounded border-white/30 bg-white/10"
                     />
+                    <label htmlFor={`accessory-${option.key}`} className="text-gray-300 text-sm font-medium">
+                      {t(option.labelKey)}
+                    </label>
                   </div>
                 ))}
               </div>

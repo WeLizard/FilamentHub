@@ -1634,11 +1634,11 @@
     "noPrintersHint": "No printers found. Request a printer to be added first.",
     "printerMissing": "Your printer is not in the list?",
     "requestPrinter": "Request printer addition",
-    "vendor": "Vendor (manufacturer/supplier)",
+    "vendor": "Manufacturer / supplier",
     "vendorPlaceholder": "e.g. Bambu Lab, Creality",
-    "printArea": "Print area (mm)",
-    "printAreaPolygon": "Printable area polygon (Orca printable_area)",
-    "printAreaPolygonHint": "Optional advanced polygon. If filled, it is saved as Orca printable_area and takes priority over the simple X/Y rectangle.",
+    "printArea": "Printable space (mm)",
+    "printAreaPolygon": "Printable area polygon (printable_area)",
+    "printAreaPolygonHint": "Optional Orca `printable_area` polygon. When filled, it takes priority over the simple X/Y rectangle.",
     "printAreaPolygonInvalid": "Printable area polygon must contain comma-separated points in the form XxY.",
     "widthX": "Width X (mm)",
     "depthY": "Depth Y (mm)",
@@ -1699,9 +1699,12 @@
     "sections": {
       "bedConstraints": "Bed & constraints",
       "flagsAndModes": "Flags & modes",
+      "printableSpace": "Printable space",
+      "advanced": "Advanced",
       "coolingFan": "Cooling fan",
       "extruderClearance": "Extruder clearance",
       "adaptiveBedMesh": "Adaptive bed mesh",
+      "accessory": "Accessory",
       "thumbnails": "Thumbnails",
       "commonReferences": "Industry references",
       "extruderHardware": "Extruder hardware & variants",
@@ -1713,6 +1716,12 @@
       "multimaterialWipeTower": "Wipe tower",
       "multimaterialSemm": "SEMM parameters",
       "multimaterialAdvanced": "Advanced"
+    },
+    "spoilers": {
+      "bedAssets": "Bed model and texture",
+      "printableSpaceCompatibility": "Printable space compatibility fields",
+      "moreProfileFields": "Additional profile fields",
+      "thumbnails": "G-code thumbnails"
     },
     "units": {
       "mm": "mm",
@@ -1733,13 +1742,13 @@
       "auxiliaryFan": "Auxiliary fan",
       "scanFirstLayer": "Scan first layer",
       "disableM73": "Disable M73 time report",
-      "usePrinthost": "Use PrintHost"
+      "usePrinthost": "Use 3rd-party print host"
     },
     "cooling": {
       "speedupTime": "Fan speedup time",
       "speedupOverhangs": "Speedup for overhangs",
       "speedupOverhangsDesc": "Orca stores this as a boolean flag, not as a percent.",
-      "kickstart": "Kickstart"
+      "kickstart": "Fan kick-start time"
     },
     "extruderClearance": {
       "radius": "Extruder clearance radius",
@@ -1756,6 +1765,10 @@
       "shape": "Bed shape (mm)",
       "excludeArea": "Bed exclude areas",
       "customRectangle": "Custom rectangle",
+      "model": "Bed model",
+      "texture": "Bed texture",
+      "customModel": "Custom bed model",
+      "customTexture": "Custom bed texture",
       "originZ": "Z offset",
       "bestObjectPos": "Best object position",
       "zOffset": "Z offset",
@@ -1834,7 +1847,7 @@
     "multi": {
       "singleExtruderMultiMaterial": "Single Extruder Multi Material (SEMM)",
       "purgeInTower": "Purge in prime tower",
-      "enableRamming": "Enable ramming",
+      "enableRamming": "Ramming for multi-tool setups",
       "manualFilamentChange": "Manual filament change",
       "extrudersCount": "Extruders count",
       "bedTemperatureFormula": "Bed temperature formula",
