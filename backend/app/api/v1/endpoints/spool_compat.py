@@ -276,14 +276,15 @@ def _to_spool_payload(
         # HH reads: json.loads(extra.get('printer_name', '""')) and int(extra.get('mmu_gate_map', -1))
         # So printer_name must be JSON-encoded string ('"voron"'), mmu_gate_map must be string int ('0')
         # IMPORTANT: printer_name must match the Klipper printer hostname, NOT the device display name.
-        # Override empty / unset / default values left by previous unset_spool_gate
-        stored_name = extra.get("printer_name", "")
-        if not stored_name or stored_name == '""':
-            if printer_hostname:
-                extra["printer_name"] = json.dumps(printer_hostname)
-        stored_gate = extra.get("mmu_gate_map", "")
-        if not stored_gate or stored_gate in ("", "-1"):
-            extra["mmu_gate_map"] = json.dumps(gate_index)
+        # Always override with the authoritative hostname from device record when available,
+        # because stored extra may contain the display name (e.g. "Voron R2.4 350" vs "voron").
+        if printer_hostname:
+            extra["printer_name"] = json.dumps(printer_hostname)
+        else:
+            stored_name = extra.get("printer_name", "")
+            if not stored_name or stored_name == '""':
+                extra["printer_name"] = json.dumps("")
+        extra["mmu_gate_map"] = json.dumps(gate_index)
 
     # Sanitize extra values for HH compatibility: bare empty strings are not
     # valid JSON and cause json.loads("") → ValueError in HH mmu_server.py.
