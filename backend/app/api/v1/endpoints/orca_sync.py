@@ -44,6 +44,7 @@ from app.models.printer import Printer
 from app.models.printer_profile import PrinterProfile
 from app.models.user import User, UserRole
 from app.models.user_saved_preset import UserSavedPreset
+from app.models.user_spool import UserSpool
 from app.schemas.orca_sync import (
     DeletedPresetAction,
     DeletedPresetActionResponse,
@@ -3098,3 +3099,59 @@ async def get_deleted_presets(
         preset_type=request.preset_type,
     )
     return SyncDeletedPresetsResponse(deleted=deleted)
+
+
+@router.get("/orcaslicer/spool-preset-mapping")
+async def spool_preset_mapping(
+    current_user: Annotated[User, Depends(get_current_active_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+    spool_ids: str = Query(..., description="Comma-separated spool IDs"),
+):
+    """Resolve spool IDs to OrcaSlicer preset setting_ids.
+
+    Used by MoonrakerPrinterAgent to map HH gate spool assignments
+    to the correct installed filament preset during AMS sync.
+    """
+    id_list = [int(x) for x in spool_ids.split(",") if x.strip().isdigit()]
+    if not id_list:
+        return {"mapping": {}}
+
+    spool_result = await db.execute(
+        select(UserSpool.id, UserSpool.filament_id)
+        .where(UserSpool.id.in_(id_list), UserSpool.user_id == current_user.id)
+    )
+    spool_to_filament: dict[int, int] = {}
+    filament_ids: set[int] = set()
+    for spool_id, filament_id in spool_result.all():
+        if filament_id is not None:
+            spool_to_filament[spool_id] = filament_id
+            filament_ids.add(filament_id)
+
+    filament_to_preset: dict[int, int] = {}
+    if filament_ids:
+        preset_result = await db.execute(
+            select(Preset.id, Preset.filament_id)
+            .where(
+                Preset.filament_id.in_(filament_ids),
+                Preset.active == True,
+                Preset.moderation_status == PresetModerationStatus.APPROVED,
+            )
+            .order_by(Preset.is_official.desc(), Preset.usage_count.desc())
+        )
+        for preset_id, filament_id in preset_result.all():
+            if filament_id not in filament_to_preset:
+                filament_to_preset[filament_id] = preset_id
+
+    mapping: dict[str, dict | None] = {}
+    for sid in id_list:
+        fil_id = spool_to_filament.get(sid)
+        preset_id = filament_to_preset.get(fil_id) if fil_id else None
+        if preset_id is not None:
+            mapping[str(sid)] = {
+                "setting_id": f"FHUB{preset_id:06d}",
+                "preset_id": preset_id,
+            }
+        else:
+            mapping[str(sid)] = None
+
+    return {"mapping": mapping}

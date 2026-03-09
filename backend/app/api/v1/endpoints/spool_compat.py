@@ -20,7 +20,6 @@ from app.core.config import settings
 from app.db.session import AsyncSessionLocal, get_db
 from app.models.brand import Brand
 from app.models.filament import Filament
-from app.models.preset import Preset, PresetModerationStatus
 from app.models.preset_gate_state import PresetGateState, PresetGateStateSource
 from app.models.user import User
 from app.models.user_printer_device import UserPrinterDevice
@@ -917,92 +916,6 @@ async def get_spool(
     if user is None:
         return _err(status.HTTP_401_UNAUTHORIZED, "Invalid API key.")
     return await _get_spool_impl(db, user, spool_id)
-
-
-@router.get("/v1/spool/setting_ids")
-async def batch_setting_ids_header(
-    db: Annotated[AsyncSession, Depends(get_db)],
-    spool_ids: str = Query(..., description="Comma-separated spool IDs"),
-    header_api_key: Annotated[str | None, Header(alias="X-API-Key")] = None,
-) -> JSONResponse:
-    """Batch resolve spool IDs to OrcaSlicer preset setting_ids (header auth)."""
-    user, _device = await _resolve_user_and_device(db, header_api_key)
-    if user is None:
-        return _err(status.HTTP_401_UNAUTHORIZED, "Invalid or missing API key.")
-    return await _batch_setting_ids_impl(db, user, spool_ids)
-
-
-@router.get("/{api_key}/v1/spool/setting_ids")
-@router.get("/{api_key}/api/v1/spool/setting_ids")
-async def batch_setting_ids(
-    api_key: str,
-    db: Annotated[AsyncSession, Depends(get_db)],
-    spool_ids: str = Query(..., description="Comma-separated spool IDs"),
-) -> JSONResponse:
-    """Batch resolve spool IDs to OrcaSlicer preset setting_ids."""
-    user, _device = await _resolve_user_and_device(db, api_key)
-    if user is None:
-        return _err(status.HTTP_401_UNAUTHORIZED, "Invalid API key.")
-    return await _batch_setting_ids_impl(db, user, spool_ids)
-
-
-async def _batch_setting_ids_impl(
-    db: AsyncSession, user: User, spool_ids_raw: str
-) -> JSONResponse:
-    """Resolve spool_ids to best-matching OrcaSlicer preset setting_ids.
-
-    Returns {"mapping": {"1": {"setting_id": "FHUB000042", "preset_id": 42}, ...}}
-    Spools without a matching preset get null values.
-    """
-    id_list = [int(x) for x in spool_ids_raw.split(",") if x.strip().isdigit()]
-    if not id_list:
-        return JSONResponse(content={"mapping": {}})
-
-    # Get filament_ids for requested spools owned by this user
-    spool_result = await db.execute(
-        select(UserSpool.id, UserSpool.filament_id)
-        .where(UserSpool.id.in_(id_list), UserSpool.user_id == user.id)
-    )
-    spool_to_filament: dict[int, int] = {}
-    filament_ids: set[int] = set()
-    for spool_id, filament_id in spool_result.all():
-        if filament_id is not None:
-            spool_to_filament[spool_id] = filament_id
-            filament_ids.add(filament_id)
-
-    # Find best preset for each filament_id
-    filament_to_preset: dict[int, int] = {}
-    if filament_ids:
-        preset_result = await db.execute(
-            select(Preset.id, Preset.filament_id)
-            .where(
-                Preset.filament_id.in_(filament_ids),
-                Preset.active == True,
-                Preset.moderation_status == PresetModerationStatus.APPROVED,
-            )
-            .order_by(
-                Preset.is_official.desc(),
-                Preset.usage_count.desc(),
-            )
-        )
-        for preset_id, filament_id in preset_result.all():
-            if filament_id not in filament_to_preset:
-                filament_to_preset[filament_id] = preset_id
-
-    # Build response mapping
-    mapping: dict[str, dict | None] = {}
-    for sid in id_list:
-        fil_id = spool_to_filament.get(sid)
-        preset_id = filament_to_preset.get(fil_id) if fil_id else None
-        if preset_id is not None:
-            mapping[str(sid)] = {
-                "setting_id": f"FHUB{preset_id:06d}",
-                "preset_id": preset_id,
-            }
-        else:
-            mapping[str(sid)] = None
-
-    return JSONResponse(content={"mapping": mapping})
 
 
 @router.post("/{api_key}/v1/spool")
