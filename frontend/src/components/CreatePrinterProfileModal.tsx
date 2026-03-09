@@ -377,6 +377,17 @@ export const CreatePrinterProfileModal: React.FC<CreatePrinterProfileModalProps>
     return String(value);
   };
 
+  const getMetadataListValues = (key: string): string[] => {
+    const value = getMetadataValue(key);
+    if (Array.isArray(value)) {
+      return value.map((item) => String(item));
+    }
+    if (value === undefined || value === null || value === '') {
+      return [];
+    }
+    return [String(value)];
+  };
+
   const getMetadataBoolean = (key: string): boolean => {
     const value = getMetadataValue(key);
     if (Array.isArray(value)) {
@@ -1639,23 +1650,17 @@ export const CreatePrinterProfileModal: React.FC<CreatePrinterProfileModalProps>
       helpKey?: string;
       helpText?: string;
     };
-
-    const extruderTypeHelp = buildTranslatedOptions(ORCA_EXTRUDER_TYPE_OPTIONS)
-      .map((option) => option.label)
-      .join(', ');
-    const nozzleVolumeTypeHelp = buildTranslatedOptions(ORCA_NOZZLE_VOLUME_TYPE_OPTIONS)
-      .map((option) => option.label)
-      .join(', ');
-    const nozzleTypeHelp = buildTranslatedOptions(ORCA_NOZZLE_TYPE_OPTIONS)
-      .map((option) => option.label)
-      .join(', ');
-    const zHopTypeHelp = buildTranslatedOptions(ORCA_Z_HOP_TYPE_OPTIONS)
-      .map((option) => option.label)
-      .join(', ');
-    const retractLiftEnforceHelp = buildTranslatedOptions(ORCA_RETRACT_LIFT_ENFORCE_OPTIONS)
-      .map((option) => option.label)
-      .join(', ');
     const longRetractionLevel = getMetadataString('enable_long_retraction_when_cut') || '0';
+    const extruderSlotsCount = Math.max(
+      1,
+      nozzleDiameters.length,
+      Number.parseInt(getMetadataString('extruders_count') || '0', 10) || 0,
+      getMetadataListValues('extruder_type').length,
+      getMetadataListValues('default_nozzle_volume_type').length,
+      getMetadataListValues('nozzle_type').length,
+      getMetadataListValues('retract_lift_enforce').length,
+      getMetadataListValues('z_hop_types').length,
+    );
 
     const renderMetadataField = (field: MetadataFieldConfig) => {
       const mode = field.mode ?? 'string';
@@ -1722,23 +1727,54 @@ export const CreatePrinterProfileModal: React.FC<CreatePrinterProfileModalProps>
       );
     };
 
+    const renderEnumArrayField = (
+      key: string,
+      labelKey: string,
+      options: CanonicalOption[],
+      placeholder: string,
+    ) => {
+      const values = getMetadataListValues(key);
+
+      const handleSelectChange = (index: number, selectedValue: string | null) => {
+        const nextValues = Array.from({ length: Math.max(extruderSlotsCount, values.length) }, (_, valueIndex) => values[valueIndex] ?? '');
+        nextValues[index] = selectedValue || '';
+
+        while (nextValues.length > 0 && !nextValues[nextValues.length - 1]) {
+          nextValues.pop();
+        }
+
+        if (nextValues.length === 0) {
+          updateMetadataValue(key, []);
+          return;
+        }
+
+        updateMetadataValue(key, nextValues);
+      };
+
+      return (
+        <div className="space-y-2">
+          <label className="block text-gray-300 text-sm font-medium">{t(labelKey)}</label>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            {Array.from({ length: extruderSlotsCount }, (_, index) => {
+              const currentValue = values[index] ?? null;
+              return (
+                <div key={`${key}-${index}`} className="space-y-1">
+                  <span className="block text-xs text-gray-500">#{index + 1}</span>
+                  <CustomSelect
+                    value={currentValue}
+                    onChange={(value) => handleSelectChange(index, (value as string) || null)}
+                    options={buildTranslatedOptions(options, currentValue)}
+                    placeholder={placeholder}
+                  />
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      );
+    };
+
     const hardwareFields: MetadataFieldConfig[] = [
-      {
-        key: 'extruder_type',
-        labelKey: 'printerProfile.extruder.type',
-        mode: 'lineList',
-        rows: 2,
-        placeholder: 'Direct Drive',
-        helpText: extruderTypeHelp,
-      },
-      {
-        key: 'default_nozzle_volume_type',
-        labelKey: 'printerProfile.extruder.defaultNozzleVolumeType',
-        mode: 'lineList',
-        rows: 2,
-        placeholder: 'Standard',
-        helpText: nozzleVolumeTypeHelp,
-      },
       {
         key: 'extruder_variant_list',
         labelKey: 'printerProfile.extruder.variants',
@@ -1777,14 +1813,6 @@ export const CreatePrinterProfileModal: React.FC<CreatePrinterProfileModalProps>
     ];
 
     const nozzleAndGeometryFields: MetadataFieldConfig[] = [
-      {
-        key: 'nozzle_type',
-        labelKey: 'printerProfile.extruder.nozzleType',
-        mode: 'lineList',
-        rows: 3,
-        placeholder: 'brass',
-        helpText: nozzleTypeHelp,
-      },
       {
         key: 'nozzle_volume',
         labelKey: 'printerProfile.extruder.nozzleVolume',
@@ -1856,22 +1884,6 @@ export const CreatePrinterProfileModal: React.FC<CreatePrinterProfileModalProps>
     ];
 
     const zHopFields: MetadataFieldConfig[] = [
-      {
-        key: 'retract_lift_enforce',
-        labelKey: 'printerProfile.retraction.liftEnforce',
-        mode: 'lineList',
-        rows: 2,
-        placeholder: 'All Surfaces',
-        helpText: retractLiftEnforceHelp,
-      },
-      {
-        key: 'z_hop_types',
-        labelKey: 'printerProfile.retraction.zhopType',
-        mode: 'lineList',
-        rows: 2,
-        placeholder: 'Normal Lift',
-        helpText: zHopTypeHelp,
-      },
       { key: 'z_hop', labelKey: 'printerProfile.retraction.zHop', mode: 'list', placeholder: '0.4' },
       { key: 'travel_slope', labelKey: 'printerProfile.retraction.travelSlope', mode: 'list', placeholder: '3' },
       { key: 'retract_lift_above', labelKey: 'printerProfile.retraction.liftAbove', mode: 'list', placeholder: '0' },
@@ -1908,18 +1920,23 @@ export const CreatePrinterProfileModal: React.FC<CreatePrinterProfileModalProps>
           <div className="rounded-lg border border-red-500/40 bg-red-500/10 px-4 py-3 text-sm text-red-200">
             {t('printerProfile.jsonErrorExtruder')}
           </div>
-        ) : (
+      ) : (
           <div className="space-y-6">
-            <div className="rounded-xl border border-white/10 bg-white/5 px-4 py-3">
-              <h5 className="text-xs font-semibold uppercase tracking-wide text-purple-200/70 mb-2">{t('printerProfile.sections.commonReferences')}</h5>
-              <p className="text-xs text-gray-400">{t('printerProfile.extruder.commonArchitectures')}</p>
-              <p className="text-xs text-gray-400 mt-2">{t('printerProfile.extruder.commonNozzleMaterials')}</p>
-              <p className="text-xs text-gray-400 mt-2">{t('printerProfile.extruder.commonNozzleFlowFamilies')}</p>
-            </div>
-
             <div>
               <h5 className="text-xs font-semibold uppercase tracking-wide text-purple-200/70 mb-3">{t('printerProfile.sections.extruderHardware')}</h5>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {renderEnumArrayField(
+                  'extruder_type',
+                  'printerProfile.extruder.type',
+                  ORCA_EXTRUDER_TYPE_OPTIONS,
+                  t('printerProfile.selectType'),
+                )}
+                {renderEnumArrayField(
+                  'default_nozzle_volume_type',
+                  'printerProfile.extruder.defaultNozzleVolumeType',
+                  ORCA_NOZZLE_VOLUME_TYPE_OPTIONS,
+                  t('printerProfile.selectType'),
+                )}
                 {hardwareFields.map(renderMetadataField)}
               </div>
             </div>
@@ -1927,6 +1944,12 @@ export const CreatePrinterProfileModal: React.FC<CreatePrinterProfileModalProps>
             <div>
               <h5 className="text-xs font-semibold uppercase tracking-wide text-purple-200/70 mb-3">{t('printerProfile.sections.extruderGeometry')}</h5>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {renderEnumArrayField(
+                  'nozzle_type',
+                  'printerProfile.extruder.nozzleType',
+                  ORCA_NOZZLE_TYPE_OPTIONS,
+                  t('printerProfile.selectType'),
+                )}
                 {nozzleAndGeometryFields.map(renderMetadataField)}
               </div>
             </div>
@@ -1948,6 +1971,18 @@ export const CreatePrinterProfileModal: React.FC<CreatePrinterProfileModalProps>
               <div>
                 <h6 className="text-xs font-semibold uppercase tracking-wide text-purple-200/70 mb-3">{t('printerProfile.sections.zHop')}</h6>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {renderEnumArrayField(
+                    'retract_lift_enforce',
+                    'printerProfile.retraction.liftEnforce',
+                    ORCA_RETRACT_LIFT_ENFORCE_OPTIONS,
+                    t('printerProfile.selectType'),
+                  )}
+                  {renderEnumArrayField(
+                    'z_hop_types',
+                    'printerProfile.retraction.zhopType',
+                    ORCA_Z_HOP_TYPE_OPTIONS,
+                    t('printerProfile.selectType'),
+                  )}
                   {zHopFields.map(renderMetadataField)}
                 </div>
               </div>

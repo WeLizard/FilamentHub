@@ -1768,7 +1768,7 @@
     "createProfile": "Создать профиль",
     "notesLabel": "Заметки (только для вас)",
     "notesPlaceholder": "Личные заметки о профиле...",
-    "notesHint": "Эти заметки видны только вам и не отображаются при экспорте в OrcaSlicer",
+    "notesHint": "Эти заметки экспортируются в OrcaSlicer во вкладку Notes как printer_notes.",
     "tabs": {
       "general": "Общая информация",
       "motion": "Кинематика",

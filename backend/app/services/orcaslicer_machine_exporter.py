@@ -321,8 +321,14 @@ async def printer_profile_to_orca_json(
     if "machine_end_gcode" not in settings and profile.end_gcode:
         settings["machine_end_gcode"] = profile.end_gcode
 
-    # Printer notes - используем значения из orcaslicer_settings (приоритет), если нет - из отдельных колонок
-    if "printer_notes" not in settings and profile.notes:
+    # Printer notes - используем значения из orcaslicer_settings, но пустое значение
+    # не должно блокировать заметки, отредактированные в веб-профиле.
+    existing_printer_notes = settings.get("printer_notes")
+    if profile.notes and (
+        "printer_notes" not in settings
+        or existing_printer_notes is None
+        or (isinstance(existing_printer_notes, str) and existing_printer_notes.strip() == "")
+    ):
         settings["printer_notes"] = profile.notes
 
     # Default print profile - преобразуем slug в name
@@ -540,5 +546,4 @@ def print_profile_info(profile: PrintProfile) -> str:
         f"updated_time = {int(updated_at.timestamp())}",
     ]
     return "\n".join(lines)
-
 

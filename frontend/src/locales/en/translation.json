@@ -1687,7 +1687,7 @@
     "createProfile": "Create profile",
     "notesLabel": "Notes (private)",
     "notesPlaceholder": "Personal notes about this profile...",
-    "notesHint": "These notes are visible only to you and are not exported to OrcaSlicer",
+    "notesHint": "These notes are exported to OrcaSlicer into the Notes tab as printer_notes.",
     "tabs": {
       "general": "General info",
       "motion": "Motion ability",
