@@ -76,16 +76,25 @@ async def list_presets(
     # Build query
     query = select(Preset).options(selectinload(Preset.printer_links).selectinload(PresetPrinter.printer))
 
-    # Filter by explicit IDs (batch fetch, bypasses other filters)
+    # Filter by explicit IDs (batch fetch, same visibility rules as normal list)
     if ids:
         id_list = [int(x) for x in ids.split(",") if x.strip().isdigit()]
         if id_list:
             query = query.where(Preset.id.in_(id_list))
-            count_q = select(func.count()).select_from(Preset).where(Preset.id.in_(id_list))
-            total_result = await db.execute(count_q)
-            total = total_result.scalar_one()
+            if active_only:
+                query = query.where(Preset.active == True)
+            if user_id is not None:
+                query = query.where(Preset.user_id == user_id)
+            else:
+                query = query.where(
+                    or_(
+                        Preset.moderation_status == PresetModerationStatus.APPROVED,
+                        Preset.is_official == True,
+                    )
+                )
             result = await db.execute(query.limit(len(id_list)))
             items = list(result.unique().scalars().all())
+            total = len(items)
             responses = []
             for p in items:
                 d = PresetResponse.model_validate(p).model_dump()
@@ -94,8 +103,7 @@ async def list_presets(
                     for link in p.printer_links
                 ]
                 responses.append(PresetResponse(**d))
-            pages = (total + len(id_list) - 1) // len(id_list) if id_list else 1
-            return PresetListResponse(items=responses, total=total, page=1, size=len(id_list), pages=pages)
+            return PresetListResponse(items=responses, total=total, page=1, size=len(id_list), pages=1)
 
     if active_only:
         query = query.where(Preset.active == True)
