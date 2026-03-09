@@ -2,6 +2,7 @@
 
 import logging
 from typing import Annotated, Any
+from urllib.parse import quote
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from fastapi.responses import JSONResponse
@@ -740,12 +741,22 @@ async def export_preset_info(
     brand_name = preset.filament.brand.name if preset.filament.brand else "Generic"
     filename = f"{brand_name}_{preset.filament.material_type}_{preset.name}.info"
     filename = filename.replace(" ", "_").replace("/", "_")
-    
+
+    # RFC 5987: non-ASCII filenames need filename* with UTF-8 encoding;
+    # plain filename= must be ASCII-safe (latin-1 encoding limit in HTTP headers).
+    try:
+        filename.encode("latin-1")
+        disposition = f'attachment; filename="{filename}"'
+    except UnicodeEncodeError:
+        ascii_fallback = filename.encode("ascii", errors="replace").decode("ascii")
+        utf8_encoded = quote(filename, safe="")
+        disposition = f'attachment; filename="{ascii_fallback}"; filename*=UTF-8\'\'{utf8_encoded}'
+
     return PlainTextResponse(
         content=info_content,
         media_type="text/plain",
         headers={
-            "Content-Disposition": f'attachment; filename="{filename}"',
+            "Content-Disposition": disposition,
         }
     )
 
