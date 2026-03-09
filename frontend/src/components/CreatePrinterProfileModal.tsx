@@ -1,6 +1,6 @@
 /** Модальное окно для создания printer profile */
 
-import { useState, useEffect, FormEvent, useRef, useMemo } from 'react';
+import { useState, useEffect, FormEvent, useMemo } from 'react';
 import { X, Save, Loader2, Pencil } from 'lucide-react';
 import { Printer3DIcon } from './icons/Printer3DIcon';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -22,6 +22,105 @@ interface CreatePrinterProfileModalProps {
   baseProfile?: PrinterProfile | null; // Базовый профиль для клонирования
   onRequestPrinter?: () => void; // Callback для открытия модалки создания заявки на принтер
 }
+
+type CanonicalOption = {
+  value: string;
+  labelKey: string;
+};
+
+const ORCA_PRINTER_STRUCTURE_OPTIONS: CanonicalOption[] = [
+  { value: 'undefine', labelKey: 'printerProfile.options.printerStructure.undefine' },
+  { value: 'corexy', labelKey: 'printerProfile.options.printerStructure.corexy' },
+  { value: 'i3', labelKey: 'printerProfile.options.printerStructure.i3' },
+  { value: 'hbot', labelKey: 'printerProfile.options.printerStructure.hbot' },
+  { value: 'delta', labelKey: 'printerProfile.options.printerStructure.delta' },
+];
+
+const ORCA_GCODE_FLAVOR_OPTIONS: CanonicalOption[] = [
+  { value: 'marlin', labelKey: 'printerProfile.options.gcodeFlavor.marlin' },
+  { value: 'klipper', labelKey: 'printerProfile.options.gcodeFlavor.klipper' },
+  { value: 'reprapfirmware', labelKey: 'printerProfile.options.gcodeFlavor.reprapfirmware' },
+  { value: 'marlin2', labelKey: 'printerProfile.options.gcodeFlavor.marlin2' },
+];
+
+const ORCA_PRINTER_TECHNOLOGY_OPTIONS: CanonicalOption[] = [
+  { value: 'FFF', labelKey: 'printerProfile.options.printerTechnology.fff' },
+  { value: 'SLA', labelKey: 'printerProfile.options.printerTechnology.sla' },
+];
+
+const ORCA_DEFAULT_BED_TYPE_OPTIONS: CanonicalOption[] = [
+  { value: 'Cool Plate', labelKey: 'printerProfile.options.defaultBedType.coolPlate' },
+  { value: 'Engineering Plate', labelKey: 'printerProfile.options.defaultBedType.engineeringPlate' },
+  { value: 'High Temp Plate', labelKey: 'printerProfile.options.defaultBedType.highTempPlate' },
+  { value: 'Textured PEI Plate', labelKey: 'printerProfile.options.defaultBedType.texturedPeiPlate' },
+  { value: 'Textured Cool Plate', labelKey: 'printerProfile.options.defaultBedType.texturedCoolPlate' },
+  { value: 'SuperTack Plate', labelKey: 'printerProfile.options.defaultBedType.superTackPlate' },
+];
+
+const ORCA_POWER_LOSS_RECOVERY_OPTIONS: CanonicalOption[] = [
+  { value: 'printer_configuration', labelKey: 'printerProfile.options.powerLossRecovery.printerConfiguration' },
+  { value: 'enable', labelKey: 'printerProfile.options.powerLossRecovery.enable' },
+  { value: 'disable', labelKey: 'printerProfile.options.powerLossRecovery.disable' },
+];
+
+const ORCA_BED_TEMPERATURE_FORMULA_OPTIONS: CanonicalOption[] = [
+  { value: 'by_first_filament', labelKey: 'printerProfile.options.bedTemperatureFormula.byFirstFilament' },
+  { value: 'by_highest_temp', labelKey: 'printerProfile.options.bedTemperatureFormula.byHighestTemp' },
+];
+
+const ORCA_NOZZLE_VOLUME_TYPE_OPTIONS: CanonicalOption[] = [
+  { value: 'Standard', labelKey: 'printerProfile.options.nozzleVolumeType.standard' },
+  { value: 'High Flow', labelKey: 'printerProfile.options.nozzleVolumeType.highFlow' },
+];
+
+const ORCA_EXTRUDER_TYPE_OPTIONS: CanonicalOption[] = [
+  { value: 'Direct Drive', labelKey: 'printerProfile.options.extruderType.directDrive' },
+  { value: 'Bowden', labelKey: 'printerProfile.options.extruderType.bowden' },
+];
+
+const ORCA_NOZZLE_TYPE_OPTIONS: CanonicalOption[] = [
+  { value: 'undefine', labelKey: 'printerProfile.options.nozzleType.undefine' },
+  { value: 'brass', labelKey: 'printerProfile.options.nozzleType.brass' },
+  { value: 'hardened_steel', labelKey: 'printerProfile.options.nozzleType.hardenedSteel' },
+  { value: 'stainless_steel', labelKey: 'printerProfile.options.nozzleType.stainlessSteel' },
+  { value: 'tungsten_carbide', labelKey: 'printerProfile.options.nozzleType.tungstenCarbide' },
+  { value: 'E3D', labelKey: 'printerProfile.options.nozzleType.e3d' },
+];
+
+const ORCA_Z_HOP_TYPE_OPTIONS: CanonicalOption[] = [
+  { value: 'Auto Lift', labelKey: 'printerProfile.options.zHopType.autoLift' },
+  { value: 'Normal Lift', labelKey: 'printerProfile.options.zHopType.normalLift' },
+  { value: 'Slope Lift', labelKey: 'printerProfile.options.zHopType.slopeLift' },
+  { value: 'Spiral Lift', labelKey: 'printerProfile.options.zHopType.spiralLift' },
+];
+
+const ORCA_RETRACT_LIFT_ENFORCE_OPTIONS: CanonicalOption[] = [
+  { value: 'All Surfaces', labelKey: 'printerProfile.options.retractLiftEnforce.allSurfaces' },
+  { value: 'Top Only', labelKey: 'printerProfile.options.retractLiftEnforce.topOnly' },
+  { value: 'Bottom Only', labelKey: 'printerProfile.options.retractLiftEnforce.bottomOnly' },
+  { value: 'Top and Bottom', labelKey: 'printerProfile.options.retractLiftEnforce.topAndBottom' },
+];
+
+const ORCA_LONG_RETRACTION_LEVEL_OPTIONS: CanonicalOption[] = [
+  { value: '0', labelKey: 'printerProfile.options.longRetractionLevel.disabled' },
+  { value: '1', labelKey: 'printerProfile.options.longRetractionLevel.machine' },
+  { value: '2', labelKey: 'printerProfile.options.longRetractionLevel.filament' },
+];
+
+const ORCA_PRINTER_GCODE_FIELDS = [
+  { key: 'file_start_gcode', labelKey: 'printerProfile.gcode.fileStart' },
+  { key: 'machine_start_gcode', labelKey: 'printerProfile.gcode.machineStart' },
+  { key: 'machine_end_gcode', labelKey: 'printerProfile.gcode.machineEnd' },
+  { key: 'printing_by_object_gcode', labelKey: 'printerProfile.gcode.printingByObject' },
+  { key: 'before_layer_change_gcode', labelKey: 'printerProfile.gcode.beforeLayerChange' },
+  { key: 'layer_change_gcode', labelKey: 'printerProfile.gcode.layerChange' },
+  { key: 'time_lapse_gcode', labelKey: 'printerProfile.gcode.timelapse' },
+  { key: 'wrapping_detection_gcode', labelKey: 'printerProfile.gcode.clumpingDetection' },
+  { key: 'change_filament_gcode', labelKey: 'printerProfile.gcode.changeFilament' },
+  { key: 'change_extrusion_role_gcode', labelKey: 'printerProfile.gcode.changeExtrusionRole' },
+  { key: 'machine_pause_gcode', labelKey: 'printerProfile.gcode.pause' },
+  { key: 'template_custom_gcode', labelKey: 'printerProfile.gcode.templateCustom' },
+] as const;
 
 export const CreatePrinterProfileModal: React.FC<CreatePrinterProfileModalProps> = ({
   isOpen,
@@ -151,6 +250,22 @@ export const CreatePrinterProfileModal: React.FC<CreatePrinterProfileModalProps>
     return (parsedMetadata as Record<string, any>)[key];
   };
 
+  const buildTranslatedOptions = (options: CanonicalOption[], currentValue?: string | null) => {
+    const translated = options.map((option) => ({
+      value: option.value,
+      label: t(option.labelKey),
+    }));
+
+    if (currentValue && !translated.some((option) => option.value === currentValue)) {
+      translated.unshift({
+        value: currentValue,
+        label: `${currentValue} (${t('printerProfile.options.legacyValue')})`,
+      });
+    }
+
+    return translated;
+  };
+
   const getMetadataString = (key: string): string => {
     const value = getMetadataValue(key);
     if (Array.isArray(value)) {
@@ -190,48 +305,65 @@ export const CreatePrinterProfileModal: React.FC<CreatePrinterProfileModalProps>
     return String(value);
   };
 
-  const getMetadataListValues = (key: string): string[] => {
-    if (!extraMetadata.trim()) {
-      return [];
+  const getMetadataLineListString = (key: string): string => {
+    const value = getMetadataValue(key);
+    if (Array.isArray(value)) {
+      return value.map((item) => String(item)).join('\n');
     }
-    try {
-      const parsed = JSON.parse(extraMetadata);
-      const value = parsed?.[key];
-      if (Array.isArray(value)) {
-        return value
-          .map((item) => (typeof item === 'string' ? item.trim() : String(item)))
-          .filter((item) => item.length > 0);
-      }
-      if (typeof value === 'string' && value.trim().length > 0) {
-        return [value.trim()];
-      }
-    } catch {
-      return [];
+    if (value === undefined || value === null) {
+      return '';
     }
-    return [];
+    return String(value);
+  };
+
+  const getMetadataStringWithAliases = (key: string, aliases: string[] = []): string => {
+    const primaryValue = getMetadataString(key);
+    if (primaryValue) {
+      return primaryValue;
+    }
+
+    for (const alias of aliases) {
+      const aliasValue = getMetadataString(alias);
+      if (aliasValue) {
+        return aliasValue;
+      }
+    }
+
+    return '';
   };
 
   const ARRAY_FIELDS_WITH_EMPTY_VALID = [
+    'bed_exclude_area',
+    'extruder_type',
     'printer_extruder_id',
     'printer_extruder_variant',
     'physical_extruder_map',
     'extruder_variant_list',
+    'extruder_printable_area',
+    'default_nozzle_volume_type',
     'nozzle_type',
+    'extruder_ams_count',
     'z_hop_types',
+    'retract_lift_enforce',
     'retract_length_toolchange',
+    'long_retractions_when_cut',
     'enable_long_retraction_when_cut',
   ];
 
-  const updateMetadataValue = (key: string, value: any) => {
+  const updateMetadataValue = (key: string, value: any, aliasesToDelete: string[] = []) => {
     let base: Record<string, any> = {};
     try {
       base = extraMetadata.trim() ? JSON.parse(extraMetadata) : {};
     } catch (error) {
       base = {};
     }
-    
+
+    aliasesToDelete.forEach((alias) => {
+      delete base[alias];
+    });
+
     const isSpecialArrayField = ARRAY_FIELDS_WITH_EMPTY_VALID.includes(key);
-    
+
     if (
       value === undefined ||
       value === null ||
@@ -246,37 +378,46 @@ export const CreatePrinterProfileModal: React.FC<CreatePrinterProfileModalProps>
     setExtraMetadata(Object.keys(base).length ? JSON.stringify(base, null, 2) : '');
   };
 
-  const handleMetadataListChange = (key: string, rawValue: string) => {
+  const handleMetadataListChange = (key: string, rawValue: string, aliasesToDelete: string[] = []) => {
     const normalized = rawValue
       .split(',')
       .map((item) => item.trim())
       .filter((item) => item.length > 0);
-    
+
     const isSpecialArrayField = ARRAY_FIELDS_WITH_EMPTY_VALID.includes(key);
-    
+
     if (normalized.length > 0) {
-      updateMetadataValue(key, normalized);
+      updateMetadataValue(key, normalized, aliasesToDelete);
     } else if (isSpecialArrayField) {
-      updateMetadataValue(key, []);
+      updateMetadataValue(key, [], aliasesToDelete);
     } else {
-      updateMetadataValue(key, undefined);
+      updateMetadataValue(key, undefined, aliasesToDelete);
     }
   };
 
-  const handleMetadataStringChange = (key: string, rawValue: string) => {
-    updateMetadataValue(key, rawValue);
-  };
+  const handleMetadataLineListChange = (key: string, rawValue: string, aliasesToDelete: string[] = []) => {
+    const normalized = rawValue
+      .split(/\r?\n/)
+      .map((item) => item.trim())
+      .filter((item) => item.length > 0);
 
-  const handleMetadataSelectFromOptions = (key: string, selected: string | null) => {
-    if (!selected) {
-      updateMetadataValue(key, undefined);
-      return;
+    const isSpecialArrayField = ARRAY_FIELDS_WITH_EMPTY_VALID.includes(key);
+
+    if (normalized.length > 0) {
+      updateMetadataValue(key, normalized, aliasesToDelete);
+    } else if (isSpecialArrayField) {
+      updateMetadataValue(key, [], aliasesToDelete);
+    } else {
+      updateMetadataValue(key, undefined, aliasesToDelete);
     }
-    updateMetadataValue(key, [selected]);
   };
 
-  const handleMetadataBooleanChange = (key: string, checked: boolean) => {
-    updateMetadataValue(key, checked ? '1' : '0');
+  const handleMetadataStringChange = (key: string, rawValue: string, aliasesToDelete: string[] = []) => {
+    updateMetadataValue(key, rawValue, aliasesToDelete);
+  };
+
+  const handleMetadataBooleanChange = (key: string, checked: boolean, aliasesToDelete: string[] = []) => {
+    updateMetadataValue(key, checked ? '1' : '0', aliasesToDelete);
   };
 
   const handleFormatJson = () => {
@@ -428,10 +569,15 @@ export const CreatePrinterProfileModal: React.FC<CreatePrinterProfileModalProps>
       return;
     }
 
-    let extraMetadataObj: Record<string, any> | undefined;
+    let extraMetadataObj: Record<string, any> = {};
     if (extraMetadata.trim()) {
       try {
-        extraMetadataObj = JSON.parse(extraMetadata);
+        const parsedExtraMetadata = JSON.parse(extraMetadata) as Record<string, any>;
+        if (parsedExtraMetadata.machine_switch_extruder_time && !parsedExtraMetadata.machine_tool_change_time) {
+          parsedExtraMetadata.machine_tool_change_time = parsedExtraMetadata.machine_switch_extruder_time;
+        }
+        delete parsedExtraMetadata.machine_switch_extruder_time;
+        extraMetadataObj = parsedExtraMetadata;
         setJsonError(null);
       } catch (error) {
         console.error('Invalid extra metadata JSON', error);
@@ -443,8 +589,8 @@ export const CreatePrinterProfileModal: React.FC<CreatePrinterProfileModalProps>
     }
 
     // Извлекаем start_gcode и end_gcode из extra_metadata для обратной совместимости
-    const startGcode = extraMetadataObj?.machine_start_gcode || '';
-    const endGcode = extraMetadataObj?.machine_end_gcode || '';
+    const startGcode = extraMetadataObj.machine_start_gcode || '';
+    const endGcode = extraMetadataObj.machine_end_gcode || '';
 
     const printableArea = (printableAreaX && printableAreaY) ? {
       x: parseFloat(printableAreaX),
@@ -467,7 +613,7 @@ export const CreatePrinterProfileModal: React.FC<CreatePrinterProfileModalProps>
       start_gcode: startGcode || null,
       end_gcode: endGcode || null,
       notes: notes.trim() || null,
-      extra_metadata: extraMetadataObj,
+      extra_metadata: Object.keys(extraMetadataObj).length > 0 ? extraMetadataObj : null,
       active: true,
     };
 
@@ -519,24 +665,6 @@ export const CreatePrinterProfileModal: React.FC<CreatePrinterProfileModalProps>
     return options;
   }, [printers, printerId, printersCache]);
 
-  const PRINTER_GCODE_FIELDS = [
-    { key: 'machine_start_gcode', label: 'Machine start G-code' },
-    { key: 'machine_end_gcode', label: 'Machine end G-code' },
-    { key: 'machine_resume_gcode', label: 'Machine resume G-code' },
-    { key: 'machine_pause_gcode', label: 'Machine pause G-code' },
-    { key: 'machine_cancel_gcode', label: 'Machine cancel G-code' },
-    { key: 'machine_custom_gcode', label: 'Machine custom G-code' },
-    { key: 'printing_by_object_gcode', label: 'Printing by object G-code' },
-    { key: 'before_layer_change_gcode', label: 'Before layer change G-code' },
-    { key: 'layer_change_gcode', label: 'Layer change G-code' },
-    { key: 'time_lapse_gcode', label: 'Time-lapse G-code' },
-    { key: 'change_filament_gcode', label: 'Change filament G-code' },
-    { key: 'change_extrusion_role_gcode', label: 'Change extrusion role G-code' },
-    { key: 'wrapping_detection_gcode', label: 'Wrapping detection G-code' },
-    { key: 'toolchange_gcode', label: 'Toolchange G-code' },
-    { key: 'template_custom_gcode', label: 'Template custom G-code' },
-  ] as const;
-
   const handleAddNozzleDiameter = () => {
     const trimmed = newNozzleDiameter.trim();
     if (!trimmed) return;
@@ -562,18 +690,12 @@ export const CreatePrinterProfileModal: React.FC<CreatePrinterProfileModalProps>
   const renderGeneralTab = () => {
     // Получаем выбранный принтер для использования в UI
     const selectedPrinter = printerId ? (printers.find(p => p.id === printerId) || printersCache[printerId]) : null;
-    
-    const printerStructureOptions = ['corexy', 'cartesian', 'i3', 'delta', 'belt', 'polar', 'scara', 'undefine'];
-    const gcodeFlavorOptions = ['marlin', 'marlin2', 'klipper', 'reprapfirmware'];
-    const printerTechnologyOptions = ['FFF', 'FDM', 'CoreXY enclosed'];
-    const defaultBedTypeOptions = [
-      'Textured PEI Plate',
-      'Smooth PEI Plate',
-      'Engineering Plate',
-      'High Temp Plate',
-      'Cool Plate',
-      'Auto',
-    ];
+
+    const selectedPrinterStructure = getMetadataString('printer_structure') || null;
+    const selectedGcodeFlavor = getMetadataString('gcode_flavor') || null;
+    const selectedPrinterTechnology = getMetadataString('printer_technology') || null;
+    const selectedDefaultBedType = getMetadataString('default_bed_type') || null;
+    const selectedPowerLossRecovery = getMetadataString('enable_power_loss_recovery') || null;
     const firmwareFlagOptions: Array<{ key: string; labelKey: string; descriptionKey?: string }> = [
       { key: 'use_relative_e_distances', labelKey: 'printerProfile.flags.relativeE', descriptionKey: 'printerProfile.flags.relativeEDesc' },
       { key: 'use_firmware_retraction', labelKey: 'printerProfile.flags.firmwareRetraction', descriptionKey: 'printerProfile.flags.firmwareRetractionDesc' },
@@ -588,29 +710,28 @@ export const CreatePrinterProfileModal: React.FC<CreatePrinterProfileModalProps>
     ];
     const coolingFanFields: Array<{ key: string; labelKey: string; placeholder?: string; unit?: string }> = [
       { key: 'fan_speedup_time', labelKey: 'printerProfile.cooling.speedupTime', placeholder: '2', unit: t('printerProfile.units.sec') },
-      { key: 'fan_speedup_overhangs', labelKey: 'printerProfile.cooling.speedupOverhangs', placeholder: '30', unit: '%' },
-      { key: 'fan_kickstart', labelKey: 'printerProfile.cooling.kickstart', placeholder: '100', unit: '%' },
+      { key: 'fan_kickstart', labelKey: 'printerProfile.cooling.kickstart', placeholder: '0.25', unit: t('printerProfile.units.sec') },
     ];
     const extruderClearanceFields: Array<{ key: string; labelKey: string; placeholder?: string; unit?: string }> = [
       { key: 'extruder_clearance_radius', labelKey: 'printerProfile.extruderClearance.radius', placeholder: '65', unit: t('printerProfile.units.mm') },
       { key: 'extruder_clearance_height_to_rod', labelKey: 'printerProfile.extruderClearance.heightToRod', placeholder: '36', unit: t('printerProfile.units.mm') },
       { key: 'extruder_clearance_height_to_lid', labelKey: 'printerProfile.extruderClearance.heightToLid', placeholder: '140', unit: t('printerProfile.units.mm') },
     ];
-    const adaptiveMeshFields: Array<{ key: string; labelKey: string; placeholder?: string }> = [
-      { key: 'bed_mesh_min', labelKey: 'printerProfile.mesh.min', placeholder: '0x0, 256x0...' },
-      { key: 'bed_mesh_max', labelKey: 'printerProfile.mesh.max', placeholder: '256x256...' },
-      { key: 'bed_mesh_probe_distance', labelKey: 'printerProfile.mesh.probeDistance', placeholder: '30' },
+    const adaptiveMeshFields: Array<{ key: string; labelKey: string; placeholder?: string; isList?: boolean }> = [
+      { key: 'bed_mesh_min', labelKey: 'printerProfile.mesh.min', placeholder: '32,5' },
+      { key: 'bed_mesh_max', labelKey: 'printerProfile.mesh.max', placeholder: '210,205' },
+      { key: 'bed_mesh_probe_distance', labelKey: 'printerProfile.mesh.probeDistance', placeholder: '50,50' },
       { key: 'adaptive_bed_mesh_margin', labelKey: 'printerProfile.mesh.margin', placeholder: '5' },
     ];
-    const bedGeometryFields: Array<{ key: string; labelKey: string; isList?: boolean; placeholder?: string }> = [
-      { key: 'bed_shape', labelKey: 'printerProfile.bed.shape', isList: true, placeholder: '0x0, 256x0, 256x256, 0x256' },
+    const bedGeometryFields: Array<{ key: string; labelKey: string; isList?: boolean; placeholder?: string; unit?: string }> = [
+      { key: 'best_object_pos', labelKey: 'printerProfile.bed.bestObjectPos', placeholder: '0.5,0.5' },
       { key: 'bed_exclude_area', labelKey: 'printerProfile.bed.excludeArea', isList: true, placeholder: '90x90, 166x166' },
-      { key: 'bed_custom_rectangle', labelKey: 'printerProfile.bed.customRectangle', isList: true, placeholder: '0x0, 256x0, 256x256, 0x256' },
-      { key: 'origin_z', labelKey: 'printerProfile.bed.originZ', placeholder: '0' },
+      { key: 'z_offset', labelKey: 'printerProfile.bed.zOffset', placeholder: '0', unit: t('printerProfile.units.mm') },
+      { key: 'preferred_orientation', labelKey: 'printerProfile.bed.preferredOrientation', placeholder: '0', unit: t('printerProfile.units.deg') },
     ];
     const thumbnailsFields: Array<{ key: string; labelKey: string; placeholder?: string }> = [
-      { key: 'thumbnails', labelKey: 'printerProfile.thumbnails.sizes', placeholder: '32x32,64x64' },
-      { key: 'thumbnails_format', labelKey: 'printerProfile.thumbnails.format', placeholder: 'png,gcode,ufp...' },
+      { key: 'thumbnails', labelKey: 'printerProfile.thumbnails.sizes', placeholder: '48x48/PNG,300x300/PNG' },
+      { key: 'thumbnails_format', labelKey: 'printerProfile.thumbnails.format', placeholder: 'PNG' },
     ];
 
     return (
@@ -889,37 +1010,46 @@ export const CreatePrinterProfileModal: React.FC<CreatePrinterProfileModalProps>
               <div>
                 <label className="block text-gray-300 mb-2 text-sm font-medium">{t('printerProfile.printerStructure')}</label>
                 <CustomSelect
-                  value={getMetadataString('printer_structure') || null}
+                  value={selectedPrinterStructure}
                   onChange={(value) => handleMetadataStringChange('printer_structure', (value as string) || '')}
-                  options={printerStructureOptions.map((option) => ({ value: option, label: option }))}
+                  options={buildTranslatedOptions(ORCA_PRINTER_STRUCTURE_OPTIONS, selectedPrinterStructure)}
                   placeholder={t('printerProfile.selectStructure')}
                 />
               </div>
               <div>
-                <label className="block text-gray-300 mb-2 text-sm font-medium">G-code flavor</label>
+                <label className="block text-gray-300 mb-2 text-sm font-medium">{t('printerProfile.gcodeFlavor')}</label>
                 <CustomSelect
-                  value={getMetadataString('gcode_flavor') || null}
+                  value={selectedGcodeFlavor}
                   onChange={(value) => handleMetadataStringChange('gcode_flavor', (value as string) || '')}
-                  options={gcodeFlavorOptions.map((option) => ({ value: option, label: option }))}
+                  options={buildTranslatedOptions(ORCA_GCODE_FLAVOR_OPTIONS, selectedGcodeFlavor)}
                   placeholder={t('printerProfile.selectFlavor')}
                 />
               </div>
               <div>
                 <label className="block text-gray-300 mb-2 text-sm font-medium">{t('printerProfile.printTechnology')}</label>
                 <CustomSelect
-                  value={getMetadataString('printer_technology') || null}
+                  value={selectedPrinterTechnology}
                   onChange={(value) => handleMetadataStringChange('printer_technology', (value as string) || '')}
-                  options={printerTechnologyOptions.map((option) => ({ value: option, label: option }))}
+                  options={buildTranslatedOptions(ORCA_PRINTER_TECHNOLOGY_OPTIONS, selectedPrinterTechnology)}
                   placeholder={t('printerProfile.selectTechnology')}
                 />
               </div>
               <div>
                 <label className="block text-gray-300 mb-2 text-sm font-medium">{t('printerProfile.defaultBedType')}</label>
                 <CustomSelect
-                  value={getMetadataString('default_bed_type') || null}
+                  value={selectedDefaultBedType}
                   onChange={(value) => handleMetadataStringChange('default_bed_type', (value as string) || '')}
-                  options={defaultBedTypeOptions.map((option) => ({ value: option, label: option }))}
+                  options={buildTranslatedOptions(ORCA_DEFAULT_BED_TYPE_OPTIONS, selectedDefaultBedType)}
                   placeholder={t('printerProfile.selectBedType')}
+                />
+              </div>
+              <div>
+                <label className="block text-gray-300 mb-2 text-sm font-medium">{t('printerProfile.powerLossRecovery')}</label>
+                <CustomSelect
+                  value={selectedPowerLossRecovery}
+                  onChange={(value) => handleMetadataStringChange('enable_power_loss_recovery', (value as string) || '')}
+                  options={buildTranslatedOptions(ORCA_POWER_LOSS_RECOVERY_OPTIONS, selectedPowerLossRecovery)}
+                  placeholder={t('printerProfile.selectPowerLossRecovery')}
                 />
               </div>
               <div>
@@ -929,6 +1059,16 @@ export const CreatePrinterProfileModal: React.FC<CreatePrinterProfileModalProps>
                   value={getMetadataString('hotend_model')}
                   onChange={(e) => handleMetadataStringChange('hotend_model', e.target.value)}
                   placeholder="Phaetus Rapido..."
+                  className="w-full bg-white/5 border border-white/10 rounded-lg px-4 py-2 text-white placeholder-gray-500 focus:outline-none focus:border-purple-500"
+                />
+              </div>
+              <div>
+                <label className="block text-gray-300 mb-2 text-sm font-medium">{t('printerProfile.nozzleHrc')}</label>
+                <input
+                  type="text"
+                  value={getMetadataString('nozzle_hrc')}
+                  onChange={(e) => handleMetadataStringChange('nozzle_hrc', e.target.value)}
+                  placeholder="0"
                   className="w-full bg-white/5 border border-white/10 rounded-lg px-4 py-2 text-white placeholder-gray-500 focus:outline-none focus:border-purple-500"
                 />
               </div>
@@ -956,8 +1096,8 @@ export const CreatePrinterProfileModal: React.FC<CreatePrinterProfileModalProps>
                 <label className="block text-gray-300 mb-2 text-sm font-medium">{t('printerProfile.printerVariant')}</label>
                 <input
                   type="text"
-                  value={getMetadataListString('printer_variant')}
-                  onChange={(e) => handleMetadataListChange('printer_variant', e.target.value)}
+                  value={getMetadataString('printer_variant')}
+                  onChange={(e) => handleMetadataStringChange('printer_variant', e.target.value)}
                   placeholder="0.4"
                   className="w-full bg-white/5 border border-white/10 rounded-lg px-4 py-2 text-white placeholder-gray-500 focus:outline-none focus:border-purple-500"
                 />
@@ -970,21 +1110,28 @@ export const CreatePrinterProfileModal: React.FC<CreatePrinterProfileModalProps>
                 {bedGeometryFields.map((field) => (
                   <div key={field.key}>
                     <label className="block text-gray-300 mb-2 text-sm font-medium">{t(field.labelKey)}</label>
-                    <input
-                      type="text"
-                      value={
-                        field.isList
-                          ? getMetadataListString(field.key)
-                          : getMetadataString(field.key)
-                      }
-                      onChange={(e) =>
-                        field.isList
-                          ? handleMetadataListChange(field.key, e.target.value)
-                          : handleMetadataStringChange(field.key, e.target.value)
-                      }
-                      placeholder={field.placeholder}
-                      className="w-full bg-white/5 border border-white/10 rounded-lg px-4 py-2 text-white placeholder-gray-500 focus:outline-none focus:border-purple-500"
-                    />
+                    <div className="relative">
+                      <input
+                        type="text"
+                        value={
+                          field.isList
+                            ? getMetadataListString(field.key)
+                            : getMetadataString(field.key)
+                        }
+                        onChange={(e) =>
+                          field.isList
+                            ? handleMetadataListChange(field.key, e.target.value)
+                            : handleMetadataStringChange(field.key, e.target.value)
+                        }
+                        placeholder={field.placeholder}
+                        className={`w-full bg-white/5 border border-white/10 rounded-lg px-4 py-2 text-white placeholder-gray-500 focus:outline-none focus:border-purple-500 ${field.unit ? 'pr-16' : ''}`}
+                      />
+                      {field.unit && (
+                        <span className="absolute inset-y-0 right-4 flex items-center text-xs text-gray-400 pointer-events-none">
+                          {field.unit}
+                        </span>
+                      )}
+                    </div>
                   </div>
                 ))}
               </div>
@@ -1014,7 +1161,7 @@ export const CreatePrinterProfileModal: React.FC<CreatePrinterProfileModalProps>
             </div>
 
             <div>
-              <h5 className="text-xs font-semibold uppercase tracking-wide text-purple-200/70 mb-3">Cooling Fan</h5>
+              <h5 className="text-xs font-semibold uppercase tracking-wide text-purple-200/70 mb-3">{t('printerProfile.sections.coolingFan')}</h5>
               <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
                 {coolingFanFields.map((field) => (
                   <div key={field.key} className="space-y-2">
@@ -1035,6 +1182,21 @@ export const CreatePrinterProfileModal: React.FC<CreatePrinterProfileModalProps>
                     </div>
                   </div>
                 ))}
+              </div>
+              <div className="mt-4 flex items-start gap-3">
+                <input
+                  type="checkbox"
+                  id="fan_speedup_overhangs"
+                  checked={getMetadataBoolean('fan_speedup_overhangs')}
+                  onChange={(e) => handleMetadataBooleanChange('fan_speedup_overhangs', e.target.checked)}
+                  className="w-4 h-4 mt-1 rounded border-white/30 bg-white/10"
+                />
+                <div>
+                  <label htmlFor="fan_speedup_overhangs" className="text-gray-300 text-sm font-medium">
+                    {t('printerProfile.cooling.speedupOverhangs')}
+                  </label>
+                  <p className="text-xs text-gray-500">{t('printerProfile.cooling.speedupOverhangsDesc')}</p>
+                </div>
               </div>
             </div>
 
@@ -1064,15 +1226,19 @@ export const CreatePrinterProfileModal: React.FC<CreatePrinterProfileModalProps>
             </div>
 
             <div>
-              <h5 className="text-xs font-semibold uppercase tracking-wide text-purple-200/70 mb-3">Adaptive bed mesh</h5>
+              <h5 className="text-xs font-semibold uppercase tracking-wide text-purple-200/70 mb-3">{t('printerProfile.sections.adaptiveBedMesh')}</h5>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 {adaptiveMeshFields.map((field) => (
                   <div key={field.key}>
                     <label className="block text-gray-300 mb-2 text-sm font-medium">{t(field.labelKey)}</label>
                     <input
                       type="text"
-                      value={getMetadataListString(field.key)}
-                      onChange={(e) => handleMetadataListChange(field.key, e.target.value)}
+                      value={field.isList ? getMetadataListString(field.key) : getMetadataString(field.key)}
+                      onChange={(e) =>
+                        field.isList
+                          ? handleMetadataListChange(field.key, e.target.value)
+                          : handleMetadataStringChange(field.key, e.target.value)
+                      }
                       placeholder={field.placeholder}
                       className="w-full bg-white/5 border border-white/10 rounded-lg px-4 py-2 text-white placeholder-gray-500 focus:outline-none focus:border-purple-500"
                     />
@@ -1135,120 +1301,474 @@ export const CreatePrinterProfileModal: React.FC<CreatePrinterProfileModalProps>
     );
   };
 
-  const renderMotionTab = () => (
-    <div className="space-y-6">
-      {metadataInvalid ? (
-        <div className="rounded-lg border border-red-500/40 bg-red-500/10 px-4 py-3 text-sm text-red-200">
-          {t('printerProfile.jsonErrorMotion')}
-        </div>
-      ) : (
-        <div className="space-y-6">
-          <div>
-            <h5 className="text-xs font-semibold uppercase tracking-wide text-purple-200/70 mb-3">{t('printerProfile.motion.maxSpeed')}</h5>
-            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
-              {(['machine_max_speed_x', 'machine_max_speed_y', 'machine_max_speed_z', 'machine_max_speed_e'] as const).map((key) => (
-                <div key={key}>
-                  <label className="block text-gray-300 mb-2 text-sm font-medium">{key.replace('machine_max_speed_', '').toUpperCase()}</label>
-                  <input
-                    type="text"
-                    value={getMetadataListString(key)}
-                    onChange={(e) => handleMetadataListChange(key, e.target.value)}
-                    placeholder="500, 200"
-                    className="w-full bg-white/5 border border-white/10 rounded-lg px-4 py-2 text-white placeholder-gray-500 focus:outline-none focus:border-purple-500"
-                  />
-                </div>
-              ))}
-            </div>
-          </div>
+  const renderMotionTab = () => {
+    const motionFlagOptions: Array<{ key: string; labelKey: string; descriptionKey?: string }> = [
+      {
+        key: 'emit_machine_limits_to_gcode',
+        labelKey: 'printerProfile.motion.emitMachineLimits',
+        descriptionKey: 'printerProfile.motion.emitMachineLimitsDesc',
+      },
+    ];
+    const resonanceSpeedFields: Array<{ key: string; labelKey: string; placeholder: string }> = [
+      { key: 'min_resonance_avoidance_speed', labelKey: 'printerProfile.motion.resonanceSpeedMin', placeholder: '70' },
+      { key: 'max_resonance_avoidance_speed', labelKey: 'printerProfile.motion.resonanceSpeedMax', placeholder: '120' },
+    ];
 
-          <div>
-            <h5 className="text-xs font-semibold uppercase tracking-wide text-purple-200/70 mb-3">{t('printerProfile.motion.acceleration')}</h5>
-            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
-              {(['machine_max_acceleration_x', 'machine_max_acceleration_y', 'machine_max_acceleration_z', 'machine_max_acceleration_e'] as const).map((key) => (
-                <div key={key}>
-                  <label className="block text-gray-300 mb-2 text-sm font-medium">{key.replace('machine_max_acceleration_', '').toUpperCase()}</label>
-                  <input
-                    type="text"
-                    value={getMetadataListString(key)}
-                    onChange={(e) => handleMetadataListChange(key, e.target.value)}
-                    placeholder="20000, 20000"
-                    className="w-full bg-white/5 border border-white/10 rounded-lg px-4 py-2 text-white placeholder-gray-500 focus:outline-none focus:border-purple-500"
-                  />
-                </div>
-              ))}
-            </div>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-4">
-              {([
-                { key: 'machine_max_acceleration_extruding', label: t('printerProfile.motion.extruding') },
-                { key: 'machine_max_acceleration_retracting', label: t('printerProfile.motion.retracting') },
-                { key: 'machine_max_acceleration_travel', label: t('printerProfile.motion.travel') },
-              ] as const).map(({ key, label }) => (
-                <div key={key}>
-                  <label className="block text-gray-300 mb-2 text-sm font-medium">{label}</label>
-                  <input
-                    type="text"
-                    value={getMetadataListString(key)}
-                    onChange={(e) => handleMetadataListChange(key, e.target.value)}
-                    placeholder="20000"
-                    className="w-full bg-white/5 border border-white/10 rounded-lg px-4 py-2 text-white placeholder-gray-500 focus:outline-none focus:border-purple-500"
-                  />
-                </div>
-              ))}
-            </div>
+    return (
+      <div className="space-y-6">
+        {metadataInvalid ? (
+          <div className="rounded-lg border border-red-500/40 bg-red-500/10 px-4 py-3 text-sm text-red-200">
+            {t('printerProfile.jsonErrorMotion')}
           </div>
-
-          <div>
-            <h5 className="text-xs font-semibold uppercase tracking-wide text-purple-200/70 mb-3">{t('adminPrinters.speed.jerk')}</h5>
-            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
-              {(['machine_max_jerk_x', 'machine_max_jerk_y', 'machine_max_jerk_z', 'machine_max_jerk_e'] as const).map((key) => (
-                <div key={key}>
-                  <label className="block text-gray-300 mb-2 text-sm font-medium">{key.replace('machine_max_jerk_', '').toUpperCase()}</label>
-                  <input
-                    type="text"
-                    value={getMetadataListString(key)}
-                    onChange={(e) => handleMetadataListChange(key, e.target.value)}
-                    placeholder="8, 8"
-                    className="w-full bg-white/5 border border-white/10 rounded-lg px-4 py-2 text-white placeholder-gray-500 focus:outline-none focus:border-purple-500"
-                  />
-                </div>
-              ))}
-            </div>
-          </div>
-
-          <div>
-            <h5 className="text-xs font-semibold uppercase tracking-wide text-purple-200/70 mb-3">{t('printerProfile.motion.minSpeeds')}</h5>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div>
-                <label className="block text-gray-300 mb-2 text-sm font-medium">{t('printerProfile.motion.minExtrudingRate')}</label>
-                <input
-                  type="text"
-                  value={getMetadataListString('machine_min_extruding_rate')}
-                  onChange={(e) => handleMetadataListChange('machine_min_extruding_rate', e.target.value)}
-                  placeholder="0"
-                  className="w-full bg-white/5 border border-white/10 rounded-lg px-4 py-2 text-white placeholder-gray-500 focus:outline-none focus:border-purple-500"
-                />
-              </div>
-              <div>
-                <label className="block text-gray-300 mb-2 text-sm font-medium">{t('printerProfile.motion.minTravelRate')}</label>
-                <input
-                  type="text"
-                  value={getMetadataListString('machine_min_travel_rate')}
-                  onChange={(e) => handleMetadataListChange('machine_min_travel_rate', e.target.value)}
-                  placeholder="0"
-                  className="w-full bg-white/5 border border-white/10 rounded-lg px-4 py-2 text-white placeholder-gray-500 focus:outline-none focus:border-purple-500"
-                />
+        ) : (
+          <div className="space-y-6">
+            <div>
+              <h5 className="text-xs font-semibold uppercase tracking-wide text-purple-200/70 mb-3">{t('printerProfile.motion.advanced')}</h5>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                {motionFlagOptions.map((option) => (
+                  <div key={option.key} className="flex items-start gap-3">
+                    <input
+                      type="checkbox"
+                      id={`motion-flag-${option.key}`}
+                      checked={getMetadataBoolean(option.key)}
+                      onChange={(e) => handleMetadataBooleanChange(option.key, e.target.checked)}
+                      className="w-4 h-4 mt-1 rounded border-white/30 bg-white/10"
+                    />
+                    <div>
+                      <label htmlFor={`motion-flag-${option.key}`} className="text-gray-300 text-sm font-medium">
+                        {t(option.labelKey)}
+                      </label>
+                      {option.descriptionKey && <p className="text-xs text-gray-500">{t(option.descriptionKey)}</p>}
+                    </div>
+                  </div>
+                ))}
               </div>
             </div>
+
+            <div>
+              <h5 className="text-xs font-semibold uppercase tracking-wide text-purple-200/70 mb-3">{t('printerProfile.motion.resonanceAvoidanceTitle')}</h5>
+              <div className="space-y-4">
+                <div className="flex items-start gap-3">
+                  <input
+                    type="checkbox"
+                    id="resonance_avoidance"
+                    checked={getMetadataBoolean('resonance_avoidance')}
+                    onChange={(e) => handleMetadataBooleanChange('resonance_avoidance', e.target.checked)}
+                    className="w-4 h-4 mt-1 rounded border-white/30 bg-white/10"
+                  />
+                  <div>
+                    <label htmlFor="resonance_avoidance" className="text-gray-300 text-sm font-medium">
+                      {t('printerProfile.motion.resonanceAvoidance')}
+                    </label>
+                    <p className="text-xs text-gray-500">{t('printerProfile.motion.resonanceAvoidanceDesc')}</p>
+                  </div>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {resonanceSpeedFields.map((field) => (
+                    <div key={field.key}>
+                      <label className="block text-gray-300 mb-2 text-sm font-medium">{t(field.labelKey)}</label>
+                      <input
+                        type="text"
+                        value={getMetadataString(field.key)}
+                        onChange={(e) => handleMetadataStringChange(field.key, e.target.value)}
+                        placeholder={field.placeholder}
+                        className="w-full bg-white/5 border border-white/10 rounded-lg px-4 py-2 text-white placeholder-gray-500 focus:outline-none focus:border-purple-500"
+                      />
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            <div>
+              <h5 className="text-xs font-semibold uppercase tracking-wide text-purple-200/70 mb-3">{t('printerProfile.motion.maxSpeed')}</h5>
+              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
+                {(['machine_max_speed_x', 'machine_max_speed_y', 'machine_max_speed_z', 'machine_max_speed_e'] as const).map((key) => (
+                  <div key={key}>
+                    <label className="block text-gray-300 mb-2 text-sm font-medium">{key.replace('machine_max_speed_', '').toUpperCase()}</label>
+                    <input
+                      type="text"
+                      value={getMetadataListString(key)}
+                      onChange={(e) => handleMetadataListChange(key, e.target.value)}
+                      placeholder="500, 200"
+                      className="w-full bg-white/5 border border-white/10 rounded-lg px-4 py-2 text-white placeholder-gray-500 focus:outline-none focus:border-purple-500"
+                    />
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div>
+              <h5 className="text-xs font-semibold uppercase tracking-wide text-purple-200/70 mb-3">{t('printerProfile.motion.acceleration')}</h5>
+              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
+                {(['machine_max_acceleration_x', 'machine_max_acceleration_y', 'machine_max_acceleration_z', 'machine_max_acceleration_e'] as const).map((key) => (
+                  <div key={key}>
+                    <label className="block text-gray-300 mb-2 text-sm font-medium">{key.replace('machine_max_acceleration_', '').toUpperCase()}</label>
+                    <input
+                      type="text"
+                      value={getMetadataListString(key)}
+                      onChange={(e) => handleMetadataListChange(key, e.target.value)}
+                      placeholder="20000, 20000"
+                      className="w-full bg-white/5 border border-white/10 rounded-lg px-4 py-2 text-white placeholder-gray-500 focus:outline-none focus:border-purple-500"
+                    />
+                  </div>
+                ))}
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-4">
+                {([
+                  { key: 'machine_max_acceleration_extruding', label: t('printerProfile.motion.extruding') },
+                  { key: 'machine_max_acceleration_retracting', label: t('printerProfile.motion.retracting') },
+                  { key: 'machine_max_acceleration_travel', label: t('printerProfile.motion.travel') },
+                ] as const).map(({ key, label }) => (
+                  <div key={key}>
+                    <label className="block text-gray-300 mb-2 text-sm font-medium">{label}</label>
+                    <input
+                      type="text"
+                      value={getMetadataListString(key)}
+                      onChange={(e) => handleMetadataListChange(key, e.target.value)}
+                      placeholder="20000"
+                      className="w-full bg-white/5 border border-white/10 rounded-lg px-4 py-2 text-white placeholder-gray-500 focus:outline-none focus:border-purple-500"
+                    />
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div>
+              <h5 className="text-xs font-semibold uppercase tracking-wide text-purple-200/70 mb-3">{t('adminPrinters.speed.jerk')}</h5>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                <div>
+                  <label className="block text-gray-300 mb-2 text-sm font-medium">{t('printerProfile.motion.junctionDeviation')}</label>
+                  <input
+                    type="text"
+                    value={getMetadataListString('machine_max_junction_deviation')}
+                    onChange={(e) => handleMetadataListChange('machine_max_junction_deviation', e.target.value)}
+                    placeholder="0.01"
+                    className="w-full bg-white/5 border border-white/10 rounded-lg px-4 py-2 text-white placeholder-gray-500 focus:outline-none focus:border-purple-500"
+                  />
+                </div>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
+                {(['machine_max_jerk_x', 'machine_max_jerk_y', 'machine_max_jerk_z', 'machine_max_jerk_e'] as const).map((key) => (
+                  <div key={key}>
+                    <label className="block text-gray-300 mb-2 text-sm font-medium">{key.replace('machine_max_jerk_', '').toUpperCase()}</label>
+                    <input
+                      type="text"
+                      value={getMetadataListString(key)}
+                      onChange={(e) => handleMetadataListChange(key, e.target.value)}
+                      placeholder="8, 8"
+                      className="w-full bg-white/5 border border-white/10 rounded-lg px-4 py-2 text-white placeholder-gray-500 focus:outline-none focus:border-purple-500"
+                    />
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div>
+              <h5 className="text-xs font-semibold uppercase tracking-wide text-purple-200/70 mb-3">{t('printerProfile.motion.minSpeeds')}</h5>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-gray-300 mb-2 text-sm font-medium">{t('printerProfile.motion.minExtrudingRate')}</label>
+                  <input
+                    type="text"
+                    value={getMetadataListString('machine_min_extruding_rate')}
+                    onChange={(e) => handleMetadataListChange('machine_min_extruding_rate', e.target.value)}
+                    placeholder="0"
+                    className="w-full bg-white/5 border border-white/10 rounded-lg px-4 py-2 text-white placeholder-gray-500 focus:outline-none focus:border-purple-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-gray-300 mb-2 text-sm font-medium">{t('printerProfile.motion.minTravelRate')}</label>
+                  <input
+                    type="text"
+                    value={getMetadataListString('machine_min_travel_rate')}
+                    onChange={(e) => handleMetadataListChange('machine_min_travel_rate', e.target.value)}
+                    placeholder="0"
+                    className="w-full bg-white/5 border border-white/10 rounded-lg px-4 py-2 text-white placeholder-gray-500 focus:outline-none focus:border-purple-500"
+                  />
+                </div>
+              </div>
+            </div>
           </div>
-        </div>
-      )}
-    </div>
-  );
+        )}
+      </div>
+    );
+  };
 
   const renderExtrudersTab = () => {
-    const extruderTypeOptions = ['Direct Drive', 'Bowden'];
-    const nozzleTypeOptions = ['brass', 'hardened_steel', 'stainless_steel', 'undefine'];
-    const selectedNozzleType = getMetadataListValues('nozzle_type')[0] ?? '';
+    type MetadataFieldMode = 'string' | 'list' | 'lineList';
+    type MetadataFieldConfig = {
+      key: string;
+      labelKey: string;
+      placeholder?: string;
+      mode?: MetadataFieldMode;
+      rows?: number;
+      unit?: string;
+      helpKey?: string;
+      helpText?: string;
+    };
+
+    const extruderTypeHelp = buildTranslatedOptions(ORCA_EXTRUDER_TYPE_OPTIONS)
+      .map((option) => option.label)
+      .join(', ');
+    const nozzleVolumeTypeHelp = buildTranslatedOptions(ORCA_NOZZLE_VOLUME_TYPE_OPTIONS)
+      .map((option) => option.label)
+      .join(', ');
+    const nozzleTypeHelp = buildTranslatedOptions(ORCA_NOZZLE_TYPE_OPTIONS)
+      .map((option) => option.label)
+      .join(', ');
+    const zHopTypeHelp = buildTranslatedOptions(ORCA_Z_HOP_TYPE_OPTIONS)
+      .map((option) => option.label)
+      .join(', ');
+    const retractLiftEnforceHelp = buildTranslatedOptions(ORCA_RETRACT_LIFT_ENFORCE_OPTIONS)
+      .map((option) => option.label)
+      .join(', ');
+    const longRetractionLevel = getMetadataString('enable_long_retraction_when_cut') || '0';
+
+    const renderMetadataField = (field: MetadataFieldConfig) => {
+      const mode = field.mode ?? 'string';
+      const value =
+        mode === 'list'
+          ? getMetadataListString(field.key)
+          : mode === 'lineList'
+            ? getMetadataLineListString(field.key)
+            : getMetadataString(field.key);
+      const handleChange = (rawValue: string) => {
+        if (mode === 'list') {
+          handleMetadataListChange(field.key, rawValue);
+          return;
+        }
+        if (mode === 'lineList') {
+          handleMetadataLineListChange(field.key, rawValue);
+          return;
+        }
+        handleMetadataStringChange(field.key, rawValue);
+      };
+      const helpTexts = [
+        field.helpKey ? t(field.helpKey) : null,
+        field.helpText ? t('printerProfile.help.canonicalValues', { values: field.helpText }) : null,
+        mode === 'lineList' ? t('printerProfile.help.oneValuePerLine') : null,
+      ].filter(Boolean) as string[];
+
+      return (
+        <div key={field.key} className="space-y-2">
+          <label className="block text-gray-300 text-sm font-medium">{t(field.labelKey)}</label>
+          {field.rows ? (
+            <textarea
+              value={value}
+              onChange={(e) => handleChange(e.target.value)}
+              rows={field.rows}
+              placeholder={field.placeholder}
+              className="w-full bg-white/5 border border-white/10 rounded-lg px-4 py-2 text-white placeholder-gray-500 focus:outline-none focus:border-purple-500 font-mono text-sm resize-none"
+            />
+          ) : (
+            <div className="relative">
+              <input
+                type="text"
+                value={value}
+                onChange={(e) => handleChange(e.target.value)}
+                placeholder={field.placeholder}
+                className={`w-full bg-white/5 border border-white/10 rounded-lg px-4 py-2 text-white placeholder-gray-500 focus:outline-none focus:border-purple-500 ${field.unit ? 'pr-16' : ''}`}
+              />
+              {field.unit && (
+                <span className="absolute inset-y-0 right-4 flex items-center text-xs text-gray-400 pointer-events-none">
+                  {field.unit}
+                </span>
+              )}
+            </div>
+          )}
+          {helpTexts.length > 0 && (
+            <div className="space-y-1">
+              {helpTexts.map((helpText, index) => (
+                <p key={`${field.key}-${index}`} className="text-xs text-gray-500">
+                  {helpText}
+                </p>
+              ))}
+            </div>
+          )}
+        </div>
+      );
+    };
+
+    const hardwareFields: MetadataFieldConfig[] = [
+      {
+        key: 'extruder_type',
+        labelKey: 'printerProfile.extruder.type',
+        mode: 'lineList',
+        rows: 2,
+        placeholder: 'Direct Drive',
+        helpText: extruderTypeHelp,
+      },
+      {
+        key: 'default_nozzle_volume_type',
+        labelKey: 'printerProfile.extruder.defaultNozzleVolumeType',
+        mode: 'lineList',
+        rows: 2,
+        placeholder: 'Standard',
+        helpText: nozzleVolumeTypeHelp,
+      },
+      {
+        key: 'extruder_variant_list',
+        labelKey: 'printerProfile.extruder.variants',
+        mode: 'lineList',
+        rows: 3,
+        placeholder: 'Direct Drive Standard,Direct Drive High Flow',
+        helpKey: 'printerProfile.extruder.variantsHint',
+      },
+      {
+        key: 'extruder_ams_count',
+        labelKey: 'printerProfile.extruder.amsCount',
+        mode: 'lineList',
+        rows: 3,
+        placeholder: '0#1|1#1',
+        helpKey: 'printerProfile.extruder.amsCountHint',
+      },
+      {
+        key: 'printer_extruder_id',
+        labelKey: 'printerProfile.extruder.printerId',
+        mode: 'list',
+        placeholder: '1, 2',
+      },
+      {
+        key: 'printer_extruder_variant',
+        labelKey: 'printerProfile.extruder.printerVariant',
+        mode: 'lineList',
+        rows: 3,
+        placeholder: 'Direct Drive Standard',
+      },
+      {
+        key: 'physical_extruder_map',
+        labelKey: 'printerProfile.extruder.physicalMap',
+        mode: 'list',
+        placeholder: '0, 1',
+      },
+    ];
+
+    const nozzleAndGeometryFields: MetadataFieldConfig[] = [
+      {
+        key: 'nozzle_type',
+        labelKey: 'printerProfile.extruder.nozzleType',
+        mode: 'lineList',
+        rows: 3,
+        placeholder: 'brass',
+        helpText: nozzleTypeHelp,
+      },
+      {
+        key: 'nozzle_volume',
+        labelKey: 'printerProfile.extruder.nozzleVolume',
+        mode: 'list',
+        placeholder: '107',
+        unit: t('adminPrinters.units.mm3'),
+      },
+      {
+        key: 'extruder_printable_height',
+        labelKey: 'printerProfile.extruder.printableHeight',
+        mode: 'list',
+        placeholder: '320',
+        unit: t('printerProfile.units.mm'),
+      },
+      {
+        key: 'extruder_printable_area',
+        labelKey: 'printerProfile.extruder.printableArea',
+        mode: 'lineList',
+        rows: 3,
+        placeholder: '0x0,325x0,325x320,0x320',
+      },
+      {
+        key: 'extruder_offset',
+        labelKey: 'printerProfile.extruder.offset',
+        mode: 'lineList',
+        rows: 2,
+        placeholder: '0x0',
+      },
+      {
+        key: 'max_layer_height',
+        labelKey: 'printerProfile.extruder.maxLayerHeight',
+        mode: 'list',
+        placeholder: '0.3',
+        unit: t('printerProfile.units.mm'),
+      },
+      {
+        key: 'min_layer_height',
+        labelKey: 'printerProfile.extruder.minLayerHeight',
+        mode: 'list',
+        placeholder: '0.1',
+        unit: t('printerProfile.units.mm'),
+      },
+    ];
+
+    const retractionFields: MetadataFieldConfig[] = [
+      { key: 'retraction_length', labelKey: 'printerProfile.retraction.length', mode: 'list', placeholder: '0.8' },
+      { key: 'retract_restart_extra', labelKey: 'printerProfile.retraction.restartExtra', mode: 'list', placeholder: '0' },
+      { key: 'retraction_speed', labelKey: 'printerProfile.retraction.speed', mode: 'list', placeholder: '30' },
+      { key: 'deretraction_speed', labelKey: 'printerProfile.retraction.deretractSpeed', mode: 'list', placeholder: '30' },
+      { key: 'retraction_minimum_travel', labelKey: 'printerProfile.retraction.minTravel', mode: 'list', placeholder: '1' },
+      {
+        key: 'retract_when_changing_layer',
+        labelKey: 'printerProfile.retraction.whenChangingLayer',
+        mode: 'lineList',
+        rows: 2,
+        placeholder: '1',
+        helpKey: 'printerProfile.retraction.boolArrayHint',
+      },
+      {
+        key: 'wipe',
+        labelKey: 'printerProfile.retraction.wipe',
+        mode: 'lineList',
+        rows: 2,
+        placeholder: '0',
+        helpKey: 'printerProfile.retraction.boolArrayHint',
+      },
+      { key: 'wipe_distance', labelKey: 'printerProfile.retraction.wipeDistance', mode: 'list', placeholder: '2' },
+      { key: 'retract_before_wipe', labelKey: 'printerProfile.retraction.beforeWipe', mode: 'list', placeholder: '0%, 70%' },
+    ];
+
+    const zHopFields: MetadataFieldConfig[] = [
+      {
+        key: 'retract_lift_enforce',
+        labelKey: 'printerProfile.retraction.liftEnforce',
+        mode: 'lineList',
+        rows: 2,
+        placeholder: 'All Surfaces',
+        helpText: retractLiftEnforceHelp,
+      },
+      {
+        key: 'z_hop_types',
+        labelKey: 'printerProfile.retraction.zhopType',
+        mode: 'lineList',
+        rows: 2,
+        placeholder: 'Normal Lift',
+        helpText: zHopTypeHelp,
+      },
+      { key: 'z_hop', labelKey: 'printerProfile.retraction.zHop', mode: 'list', placeholder: '0.4' },
+      { key: 'travel_slope', labelKey: 'printerProfile.retraction.travelSlope', mode: 'list', placeholder: '3' },
+      { key: 'retract_lift_above', labelKey: 'printerProfile.retraction.liftAbove', mode: 'list', placeholder: '0' },
+      { key: 'retract_lift_below', labelKey: 'printerProfile.retraction.liftBelow', mode: 'list', placeholder: '259' },
+    ];
+
+    const materialChangeFields: MetadataFieldConfig[] = [
+      { key: 'retract_length_toolchange', labelKey: 'printerProfile.retraction.toolchange', mode: 'list', placeholder: '0.8' },
+      {
+        key: 'retract_restart_extra_toolchange',
+        labelKey: 'printerProfile.retraction.restartExtraToolchange',
+        mode: 'list',
+        placeholder: '0',
+      },
+      {
+        key: 'long_retractions_when_cut',
+        labelKey: 'printerProfile.retraction.longRetractionOnCut',
+        mode: 'lineList',
+        rows: 2,
+        placeholder: '0',
+        helpKey: 'printerProfile.retraction.boolArrayHint',
+      },
+      {
+        key: 'retraction_distances_when_cut',
+        labelKey: 'printerProfile.retraction.distanceWhenCut',
+        mode: 'list',
+        placeholder: '18',
+      },
+    ];
 
     return (
       <div className="space-y-6">
@@ -1257,123 +1777,26 @@ export const CreatePrinterProfileModal: React.FC<CreatePrinterProfileModalProps>
             {t('printerProfile.jsonErrorExtruder')}
           </div>
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
-              <label className="block text-gray-300 mb-2 text-sm font-medium">{t('printerProfile.extruder.type')}</label>
-              <CustomSelect
-                value={getMetadataString('extruder_type') || null}
-                onChange={(value) => handleMetadataStringChange('extruder_type', (value as string) || '')}
-                options={extruderTypeOptions.map((option) => ({ value: option, label: option }))}
-                placeholder={t('printerProfile.selectType')}
-              />
+          <div className="space-y-6">
+            <div className="rounded-xl border border-white/10 bg-white/5 px-4 py-3">
+              <h5 className="text-xs font-semibold uppercase tracking-wide text-purple-200/70 mb-2">{t('printerProfile.sections.commonReferences')}</h5>
+              <p className="text-xs text-gray-400">{t('printerProfile.extruder.commonArchitectures')}</p>
+              <p className="text-xs text-gray-400 mt-2">{t('printerProfile.extruder.commonNozzleMaterials')}</p>
+              <p className="text-xs text-gray-400 mt-2">{t('printerProfile.extruder.commonNozzleFlowFamilies')}</p>
             </div>
+
             <div>
-              <label className="block text-gray-300 mb-2 text-sm font-medium">{t('printerProfile.extruder.variants')}</label>
-              <input
-                type="text"
-                value={getMetadataListString('extruder_variant_list')}
-                onChange={(e) => handleMetadataListChange('extruder_variant_list', e.target.value)}
-                placeholder="Direct Drive Standard"
-                className="w-full bg-white/5 border border-white/10 rounded-lg px-4 py-2 text-white placeholder-gray-500 focus:outline-none focus:border-purple-500"
-              />
-            </div>
-            <div>
-              <label className="block text-gray-300 mb-2 text-sm font-medium">{t('printerProfile.extruder.nozzleType')}</label>
-              <CustomSelect
-                value={selectedNozzleType || null}
-                onChange={(value) => handleMetadataSelectFromOptions('nozzle_type', (value as string) || null)}
-                options={nozzleTypeOptions.map((option) => ({ value: option, label: option }))}
-                placeholder={t('printerProfile.selectType')}
-              />
-            </div>
-            <div>
-              <label className="block text-gray-300 mb-2 text-sm font-medium">{t('printerProfile.extruder.nozzleVolume')}</label>
-              <div className="relative">
-                <input
-                  type="text"
-                  value={getMetadataListString('nozzle_volume')}
-                  onChange={(e) => handleMetadataListChange('nozzle_volume', e.target.value)}
-                  placeholder="107"
-                  className="w-full bg-white/5 border border-white/10 rounded-lg px-4 py-2 text-white placeholder-gray-500 focus:outline-none focus:border-purple-500 pr-16"
-                />
-                <span className="absolute inset-y-0 right-4 flex items-center text-xs text-gray-400 pointer-events-none">{t('adminPrinters.units.mm3')}</span>
+              <h5 className="text-xs font-semibold uppercase tracking-wide text-purple-200/70 mb-3">{t('printerProfile.sections.extruderHardware')}</h5>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {hardwareFields.map(renderMetadataField)}
               </div>
             </div>
+
             <div>
-              <label className="block text-gray-300 mb-2 text-sm font-medium">{t('printerProfile.extruder.clearanceToLid')}</label>
-              <div className="relative">
-                <input
-                  type="text"
-                  value={getMetadataString('extruder_clearance_height_to_lid')}
-                  onChange={(e) => handleMetadataStringChange('extruder_clearance_height_to_lid', e.target.value)}
-                  placeholder="90"
-                  className="w-full bg-white/5 border border-white/10 rounded-lg px-4 py-2 text-white placeholder-gray-500 focus:outline-none focus:border-purple-500 pr-16"
-                />
-                <span className="absolute inset-y-0 right-4 flex items-center text-xs text-gray-400 pointer-events-none">{t('adminPrinters.units.mm')}</span>
+              <h5 className="text-xs font-semibold uppercase tracking-wide text-purple-200/70 mb-3">{t('printerProfile.sections.extruderGeometry')}</h5>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {nozzleAndGeometryFields.map(renderMetadataField)}
               </div>
-            </div>
-            <div>
-              <label className="block text-gray-300 mb-2 text-sm font-medium">{t('printerProfile.extruder.maxRadius')}</label>
-              <div className="relative">
-                <input
-                  type="text"
-                  value={getMetadataString('extruder_clearance_max_radius')}
-                  onChange={(e) => handleMetadataStringChange('extruder_clearance_max_radius', e.target.value)}
-                  placeholder="68"
-                  className="w-full bg-white/5 border border-white/10 rounded-lg px-4 py-2 text-white placeholder-gray-500 focus:outline-none focus:border-purple-500 pr-16"
-                />
-                <span className="absolute inset-y-0 right-4 flex items-center text-xs text-gray-400 pointer-events-none">{t('adminPrinters.units.mm')}</span>
-              </div>
-            </div>
-            <div>
-              <label className="block text-gray-300 mb-2 text-sm font-medium">{t('printerProfile.extruder.printerId')}</label>
-              <input
-                type="text"
-                value={getMetadataListString('printer_extruder_id')}
-                onChange={(e) => handleMetadataListChange('printer_extruder_id', e.target.value)}
-                placeholder="0"
-                className="w-full bg-white/5 border border-white/10 rounded-lg px-4 py-2 text-white placeholder-gray-500 focus:outline-none focus:border-purple-500"
-              />
-            </div>
-            <div>
-              <label className="block text-gray-300 mb-2 text-sm font-medium">{t('printerProfile.extruder.printerVariant')}</label>
-              <input
-                type="text"
-                value={getMetadataListString('printer_extruder_variant')}
-                onChange={(e) => handleMetadataListChange('printer_extruder_variant', e.target.value)}
-                placeholder="0"
-                className="w-full bg-white/5 border border-white/10 rounded-lg px-4 py-2 text-white placeholder-gray-500 focus:outline-none focus:border-purple-500"
-              />
-            </div>
-            <div>
-              <label className="block text-gray-300 mb-2 text-sm font-medium">{t('printerProfile.extruder.physicalMap')}</label>
-              <input
-                type="text"
-                value={getMetadataListString('physical_extruder_map')}
-                onChange={(e) => handleMetadataListChange('physical_extruder_map', e.target.value)}
-                placeholder="0, 1"
-                className="w-full bg-white/5 border border-white/10 rounded-lg px-4 py-2 text-white placeholder-gray-500 focus:outline-none focus:border-purple-500"
-              />
-            </div>
-            <div>
-              <label className="block text-gray-300 mb-2 text-sm font-medium">{t('printerProfile.extruder.maxLayerHeight')}</label>
-              <input
-                type="text"
-                value={getMetadataString('max_layer_height')}
-                onChange={(e) => handleMetadataStringChange('max_layer_height', e.target.value)}
-                placeholder="0.3"
-                className="w-full bg-white/5 border border-white/10 rounded-lg px-4 py-2 text-white placeholder-gray-500 focus:outline-none focus:border-purple-500"
-              />
-            </div>
-            <div>
-              <label className="block text-gray-300 mb-2 text-sm font-medium">{t('printerProfile.extruder.minLayerHeight')}</label>
-              <input
-                type="text"
-                value={getMetadataString('min_layer_height')}
-                onChange={(e) => handleMetadataStringChange('min_layer_height', e.target.value)}
-                placeholder="0.1"
-                className="w-full bg-white/5 border border-white/10 rounded-lg px-4 py-2 text-white placeholder-gray-500 focus:outline-none focus:border-purple-500"
-              />
             </div>
           </div>
         )}
@@ -1385,110 +1808,32 @@ export const CreatePrinterProfileModal: React.FC<CreatePrinterProfileModalProps>
               {t('printerProfile.jsonErrorGeneric')}
             </p>
           ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div>
-                <label className="block text-gray-300 mb-2 text-sm font-medium">{t('printerProfile.retraction.length')}</label>
-                <input
-                  type="text"
-                  value={getMetadataListString('retraction_length')}
-                  onChange={(e) => handleMetadataListChange('retraction_length', e.target.value)}
-                  placeholder="0.8"
-                  className="w-full bg-white/5 border border-white/10 rounded-lg px-4 py-2 text-white placeholder-gray-500 focus:outline-none focus:border-purple-500"
-                />
+            <div className="space-y-6">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {retractionFields.map(renderMetadataField)}
               </div>
+
               <div>
-                <label className="block text-gray-300 mb-2 text-sm font-medium">{t('printerProfile.retraction.speed')}</label>
-                <input
-                  type="text"
-                  value={getMetadataListString('retraction_speed')}
-                  onChange={(e) => handleMetadataListChange('retraction_speed', e.target.value)}
-                  placeholder="30"
-                  className="w-full bg-white/5 border border-white/10 rounded-lg px-4 py-2 text-white placeholder-gray-500 focus:outline-none focus:border-purple-500"
-                />
+                <h6 className="text-xs font-semibold uppercase tracking-wide text-purple-200/70 mb-3">{t('printerProfile.sections.zHop')}</h6>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {zHopFields.map(renderMetadataField)}
+                </div>
               </div>
+
               <div>
-                <label className="block text-gray-300 mb-2 text-sm font-medium">{t('printerProfile.retraction.deretractSpeed')}</label>
-                <input
-                  type="text"
-                  value={getMetadataListString('deretraction_speed')}
-                  onChange={(e) => handleMetadataListChange('deretraction_speed', e.target.value)}
-                  placeholder="30"
-                  className="w-full bg-white/5 border border-white/10 rounded-lg px-4 py-2 text-white placeholder-gray-500 focus:outline-none focus:border-purple-500"
-                />
-              </div>
-              <div>
-                <label className="block text-gray-300 mb-2 text-sm font-medium">{t('printerProfile.retraction.minTravel')}</label>
-                <input
-                  type="text"
-                  value={getMetadataListString('retraction_minimum_travel')}
-                  onChange={(e) => handleMetadataListChange('retraction_minimum_travel', e.target.value)}
-                  placeholder="1"
-                  className="w-full bg-white/5 border border-white/10 rounded-lg px-4 py-2 text-white placeholder-gray-500 focus:outline-none focus:border-purple-500"
-                />
-              </div>
-              <div>
-                <label className="block text-gray-300 mb-2 text-sm font-medium">{t('printerProfile.retraction.beforeWipe')}</label>
-                <input
-                  type="text"
-                  value={getMetadataListString('retract_before_wipe')}
-                  onChange={(e) => handleMetadataListChange('retract_before_wipe', e.target.value)}
-                  placeholder="0%, 70%"
-                  className="w-full bg-white/5 border border-white/10 rounded-lg px-4 py-2 text-white placeholder-gray-500 focus:outline-none focus:border-purple-500"
-                />
-              </div>
-              <div>
-                <label className="block text-gray-300 mb-2 text-sm font-medium">{t('adminPrinters.retraction.wipeDistance')}</label>
-                <input
-                  type="text"
-                  value={getMetadataListString('wipe_distance')}
-                  onChange={(e) => handleMetadataListChange('wipe_distance', e.target.value)}
-                  placeholder="2"
-                  className="w-full bg-white/5 border border-white/10 rounded-lg px-4 py-2 text-white placeholder-gray-500 focus:outline-none focus:border-purple-500"
-                />
-              </div>
-              <div>
-                <label className="block text-gray-300 mb-2 text-sm font-medium">{t('adminPrinters.retraction.zHop')}</label>
-                <input
-                  type="text"
-                  value={getMetadataListString('z_hop')}
-                  onChange={(e) => handleMetadataListChange('z_hop', e.target.value)}
-                  placeholder="0.4"
-                  className="w-full bg-white/5 border border-white/10 rounded-lg px-4 py-2 text-white placeholder-gray-500 focus:outline-none focus:border-purple-500"
-                />
-              </div>
-              <div>
-                <label className="block text-gray-300 mb-2 text-sm font-medium">{t('printerProfile.retraction.zhopType')}</label>
-                <input
-                  type="text"
-                  value={getMetadataListString('z_hop_types')}
-                  onChange={(e) => handleMetadataListChange('z_hop_types', e.target.value)}
-                  placeholder="Auto Lift"
-                  className="w-full bg-white/5 border border-white/10 rounded-lg px-4 py-2 text-white placeholder-gray-500 focus:outline-none focus:border-purple-500"
-                />
-              </div>
-              <div>
-                <label className="block text-gray-300 mb-2 text-sm font-medium">{t('printerProfile.retraction.toolchange')}</label>
-                <input
-                  type="text"
-                  value={getMetadataListString('retract_length_toolchange')}
-                  onChange={(e) => handleMetadataListChange('retract_length_toolchange', e.target.value)}
-                  placeholder="0.8"
-                  className="w-full bg-white/5 border border-white/10 rounded-lg px-4 py-2 text-white placeholder-gray-500 focus:outline-none focus:border-purple-500"
-                />
-              </div>
-              <div className="flex items-start gap-3">
-                <input
-                  type="checkbox"
-                  id="enable_long_retraction_when_cut"
-                  checked={getMetadataBoolean('enable_long_retraction_when_cut')}
-                  onChange={(e) => handleMetadataBooleanChange('enable_long_retraction_when_cut', e.target.checked)}
-                  className="w-4 h-4 mt-1 rounded border-white/30 bg-white/10"
-                />
-                <div>
-                  <label htmlFor="enable_long_retraction_when_cut" className="text-gray-300 text-sm font-medium">
-                    {t('printerProfile.retraction.longRetractionOnCut')}
-                  </label>
-                  <p className="text-xs text-gray-500">{t('printerProfile.retraction.longRetractionOnCutDesc')}</p>
+                <h6 className="text-xs font-semibold uppercase tracking-wide text-purple-200/70 mb-3">{t('printerProfile.sections.retractionMaterialChange')}</h6>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <label className="block text-gray-300 text-sm font-medium">{t('printerProfile.retraction.enableLongRetractionWhenCut')}</label>
+                    <CustomSelect
+                      value={longRetractionLevel}
+                      onChange={(value) => handleMetadataStringChange('enable_long_retraction_when_cut', (value as string) || '0')}
+                      options={buildTranslatedOptions(ORCA_LONG_RETRACTION_LEVEL_OPTIONS, longRetractionLevel)}
+                      placeholder={t('printerProfile.selectType')}
+                    />
+                    <p className="text-xs text-gray-500">{t('printerProfile.retraction.longRetractionOnCutDesc')}</p>
+                  </div>
+                  {materialChangeFields.map(renderMetadataField)}
                 </div>
               </div>
             </div>
@@ -1498,151 +1843,195 @@ export const CreatePrinterProfileModal: React.FC<CreatePrinterProfileModalProps>
     );
   };
 
-  const renderMultimaterialTab = () => (
-    <div className="space-y-6">
-      {metadataInvalid ? (
-        <div className="rounded-lg border border-red-500/40 bg-red-500/10 px-4 py-3 text-sm text-red-200">
-          {t('printerProfile.jsonErrorMultimaterial')}
-        </div>
-      ) : (
-        <div className="space-y-6">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div className="flex items-center gap-3">
-              <input
-                type="checkbox"
-                id="single_extruder_multi_material"
-                checked={getMetadataBoolean('single_extruder_multi_material')}
-                onChange={(e) => handleMetadataBooleanChange('single_extruder_multi_material', e.target.checked)}
-                className="w-4 h-4 rounded border-white/30 bg-white/10"
-              />
-              <label htmlFor="single_extruder_multi_material" className="text-gray-300 text-sm">
-                Single Extruder Multi Material (SEMM)
-              </label>
-            </div>
-            <div className="flex items-center gap-3">
-              <input
-                type="checkbox"
-                id="purge_in_prime_tower"
-                checked={getMetadataBoolean('purge_in_prime_tower')}
-                onChange={(e) => handleMetadataBooleanChange('purge_in_prime_tower', e.target.checked)}
-                className="w-4 h-4 rounded border-white/30 bg-white/10"
-              />
-              <label htmlFor="purge_in_prime_tower" className="text-gray-300 text-sm">
-                {t('printerProfile.multi.purgeInTower')}
-              </label>
-            </div>
-            <div className="flex items-center gap-3">
-              <input
-                type="checkbox"
-                id="enable_filament_ramming"
-                checked={getMetadataBoolean('enable_filament_ramming')}
-                onChange={(e) => handleMetadataBooleanChange('enable_filament_ramming', e.target.checked)}
-                className="w-4 h-4 rounded border-white/30 bg-white/10"
-              />
-              <label htmlFor="enable_filament_ramming" className="text-gray-300 text-sm">
-                {t('printerProfile.multi.enableRamming')}
-              </label>
-            </div>
-            <div className="flex items-center gap-3">
-              <input
-                type="checkbox"
-                id="manual_filament_change"
-                checked={getMetadataBoolean('manual_filament_change')}
-                onChange={(e) => handleMetadataBooleanChange('manual_filament_change', e.target.checked)}
-                className="w-4 h-4 rounded border-white/30 bg-white/10"
-              />
-              <label htmlFor="manual_filament_change" className="text-gray-300 text-sm">
-                {t('printerProfile.multi.manualFilamentChange')}
-              </label>
-            </div>
-          </div>
+  const renderMultimaterialTab = () => {
+    const selectedBedTemperatureFormula = getMetadataString('bed_temperature_formula') || null;
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+    return (
+      <div className="space-y-6">
+        {metadataInvalid ? (
+          <div className="rounded-lg border border-red-500/40 bg-red-500/10 px-4 py-3 text-sm text-red-200">
+            {t('printerProfile.jsonErrorMultimaterial')}
+          </div>
+        ) : (
+          <div className="space-y-6">
             <div>
-              <label className="block text-gray-300 mb-2 text-sm font-medium">{t('printerProfile.multi.loadTime')}</label>
-              <input
-                type="text"
-                value={getMetadataString('machine_load_filament_time')}
-                onChange={(e) => handleMetadataStringChange('machine_load_filament_time', e.target.value)}
-                placeholder="29"
-                className="w-full bg-white/5 border border-white/10 rounded-lg px-4 py-2 text-white placeholder-gray-500 focus:outline-none focus:border-purple-500"
-              />
+              <h5 className="text-xs font-semibold uppercase tracking-wide text-purple-200/70 mb-3">{t('printerProfile.sections.multimaterialSetup')}</h5>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="flex items-center gap-3">
+                  <input
+                    type="checkbox"
+                    id="single_extruder_multi_material"
+                    checked={getMetadataBoolean('single_extruder_multi_material')}
+                    onChange={(e) => handleMetadataBooleanChange('single_extruder_multi_material', e.target.checked)}
+                    className="w-4 h-4 rounded border-white/30 bg-white/10"
+                  />
+                  <label htmlFor="single_extruder_multi_material" className="text-gray-300 text-sm">
+                    {t('printerProfile.multi.singleExtruderMultiMaterial')}
+                  </label>
+                </div>
+                <div className="flex items-center gap-3">
+                  <input
+                    type="checkbox"
+                    id="manual_filament_change"
+                    checked={getMetadataBoolean('manual_filament_change')}
+                    onChange={(e) => handleMetadataBooleanChange('manual_filament_change', e.target.checked)}
+                    className="w-4 h-4 rounded border-white/30 bg-white/10"
+                  />
+                  <label htmlFor="manual_filament_change" className="text-gray-300 text-sm">
+                    {t('printerProfile.multi.manualFilamentChange')}
+                  </label>
+                </div>
+                <div>
+                  <label className="block text-gray-300 mb-2 text-sm font-medium">{t('printerProfile.multi.extrudersCount')}</label>
+                  <input
+                    type="text"
+                    value={getMetadataString('extruders_count')}
+                    onChange={(e) => handleMetadataStringChange('extruders_count', e.target.value)}
+                    placeholder="1"
+                    className="w-full bg-white/5 border border-white/10 rounded-lg px-4 py-2 text-white placeholder-gray-500 focus:outline-none focus:border-purple-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-gray-300 mb-2 text-sm font-medium">{t('printerProfile.multi.bedTemperatureFormula')}</label>
+                  <CustomSelect
+                    value={selectedBedTemperatureFormula}
+                    onChange={(value) => handleMetadataStringChange('bed_temperature_formula', (value as string) || '')}
+                    options={buildTranslatedOptions(ORCA_BED_TEMPERATURE_FORMULA_OPTIONS, selectedBedTemperatureFormula)}
+                    placeholder={t('printerProfile.selectType')}
+                  />
+                </div>
+              </div>
             </div>
+
             <div>
-              <label className="block text-gray-300 mb-2 text-sm font-medium">{t('printerProfile.multi.unloadTime')}</label>
-              <input
-                type="text"
-                value={getMetadataString('machine_unload_filament_time')}
-                onChange={(e) => handleMetadataStringChange('machine_unload_filament_time', e.target.value)}
-                placeholder="29"
-                className="w-full bg-white/5 border border-white/10 rounded-lg px-4 py-2 text-white placeholder-gray-500 focus:outline-none focus:border-purple-500"
-              />
+              <h5 className="text-xs font-semibold uppercase tracking-wide text-purple-200/70 mb-3">{t('printerProfile.sections.multimaterialWipeTower')}</h5>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="flex items-center gap-3">
+                  <input
+                    type="checkbox"
+                    id="purge_in_prime_tower"
+                    checked={getMetadataBoolean('purge_in_prime_tower')}
+                    onChange={(e) => handleMetadataBooleanChange('purge_in_prime_tower', e.target.checked)}
+                    className="w-4 h-4 rounded border-white/30 bg-white/10"
+                  />
+                  <label htmlFor="purge_in_prime_tower" className="text-gray-300 text-sm">
+                    {t('printerProfile.multi.purgeInTower')}
+                  </label>
+                </div>
+                <div className="flex items-center gap-3">
+                  <input
+                    type="checkbox"
+                    id="enable_filament_ramming"
+                    checked={getMetadataBoolean('enable_filament_ramming')}
+                    onChange={(e) => handleMetadataBooleanChange('enable_filament_ramming', e.target.checked)}
+                    className="w-4 h-4 rounded border-white/30 bg-white/10"
+                  />
+                  <label htmlFor="enable_filament_ramming" className="text-gray-300 text-sm">
+                    {t('printerProfile.multi.enableRamming')}
+                  </label>
+                </div>
+              </div>
             </div>
+
             <div>
-              <label className="block text-gray-300 mb-2 text-sm font-medium">{t('printerProfile.multi.switchExtruderTime')}</label>
-              <input
-                type="text"
-                value={getMetadataString('machine_switch_extruder_time')}
-                onChange={(e) => handleMetadataStringChange('machine_switch_extruder_time', e.target.value)}
-                placeholder="0"
-                className="w-full bg-white/5 border border-white/10 rounded-lg px-4 py-2 text-white placeholder-gray-500 focus:outline-none focus:border-purple-500"
-              />
+              <h5 className="text-xs font-semibold uppercase tracking-wide text-purple-200/70 mb-3">{t('printerProfile.sections.multimaterialSemm')}</h5>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-gray-300 mb-2 text-sm font-medium">{t('printerProfile.multi.parkingRetraction')}</label>
+                  <input
+                    type="text"
+                    value={getMetadataString('parking_pos_retraction')}
+                    onChange={(e) => handleMetadataStringChange('parking_pos_retraction', e.target.value)}
+                    placeholder="16"
+                    className="w-full bg-white/5 border border-white/10 rounded-lg px-4 py-2 text-white placeholder-gray-500 focus:outline-none focus:border-purple-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-gray-300 mb-2 text-sm font-medium">{t('printerProfile.multi.coolingTubeRetraction')}</label>
+                  <input
+                    type="text"
+                    value={getMetadataString('cooling_tube_retraction')}
+                    onChange={(e) => handleMetadataStringChange('cooling_tube_retraction', e.target.value)}
+                    placeholder="60"
+                    className="w-full bg-white/5 border border-white/10 rounded-lg px-4 py-2 text-white placeholder-gray-500 focus:outline-none focus:border-purple-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-gray-300 mb-2 text-sm font-medium">{t('printerProfile.multi.coolingTubeLength')}</label>
+                  <input
+                    type="text"
+                    value={getMetadataString('cooling_tube_length')}
+                    onChange={(e) => handleMetadataStringChange('cooling_tube_length', e.target.value)}
+                    placeholder="20"
+                    className="w-full bg-white/5 border border-white/10 rounded-lg px-4 py-2 text-white placeholder-gray-500 focus:outline-none focus:border-purple-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-gray-300 mb-2 text-sm font-medium">{t('printerProfile.multi.extraLoadingMove')}</label>
+                  <input
+                    type="text"
+                    value={getMetadataString('extra_loading_move')}
+                    onChange={(e) => handleMetadataStringChange('extra_loading_move', e.target.value)}
+                    placeholder="0"
+                    className="w-full bg-white/5 border border-white/10 rounded-lg px-4 py-2 text-white placeholder-gray-500 focus:outline-none focus:border-purple-500"
+                  />
+                </div>
+                <div className="flex items-center gap-3">
+                  <input
+                    type="checkbox"
+                    id="high_current_on_filament_swap"
+                    checked={getMetadataBoolean('high_current_on_filament_swap')}
+                    onChange={(e) => handleMetadataBooleanChange('high_current_on_filament_swap', e.target.checked)}
+                    className="w-4 h-4 rounded border-white/30 bg-white/10"
+                  />
+                  <label htmlFor="high_current_on_filament_swap" className="text-gray-300 text-sm">
+                    {t('printerProfile.multi.highCurrentOnSwap')}
+                  </label>
+                </div>
+              </div>
             </div>
+
             <div>
-              <label className="block text-gray-300 mb-2 text-sm font-medium">{t('printerProfile.multi.parkingRetraction')}</label>
-              <input
-                type="text"
-                value={getMetadataString('parking_pos_retraction')}
-                onChange={(e) => handleMetadataStringChange('parking_pos_retraction', e.target.value)}
-                placeholder="16"
-                className="w-full bg-white/5 border border-white/10 rounded-lg px-4 py-2 text-white placeholder-gray-500 focus:outline-none focus:border-purple-500"
-              />
-            </div>
-            <div>
-              <label className="block text-gray-300 mb-2 text-sm font-medium">{t('adminPrinters.multimaterial.coolingTubeRetraction')}</label>
-              <input
-                type="text"
-                value={getMetadataString('cooling_tube_retraction')}
-                onChange={(e) => handleMetadataStringChange('cooling_tube_retraction', e.target.value)}
-                placeholder="60"
-                className="w-full bg-white/5 border border-white/10 rounded-lg px-4 py-2 text-white placeholder-gray-500 focus:outline-none focus:border-purple-500"
-              />
-            </div>
-            <div>
-              <label className="block text-gray-300 mb-2 text-sm font-medium">{t('adminPrinters.multimaterial.coolingTubeLength')}</label>
-              <input
-                type="text"
-                value={getMetadataString('cooling_tube_length')}
-                onChange={(e) => handleMetadataStringChange('cooling_tube_length', e.target.value)}
-                placeholder="20"
-                className="w-full bg-white/5 border border-white/10 rounded-lg px-4 py-2 text-white placeholder-gray-500 focus:outline-none focus:border-purple-500"
-              />
-            </div>
-            <div>
-              <label className="block text-gray-300 mb-2 text-sm font-medium">{t('adminPrinters.multimaterial.extraLoadingMove')}</label>
-              <input
-                type="text"
-                value={getMetadataString('extra_loading_move')}
-                onChange={(e) => handleMetadataStringChange('extra_loading_move', e.target.value)}
-                placeholder="0"
-                className="w-full bg-white/5 border border-white/10 rounded-lg px-4 py-2 text-white placeholder-gray-500 focus:outline-none focus:border-purple-500"
-              />
-            </div>
-            <div>
-              <label className="block text-gray-300 mb-2 text-sm font-medium">High current on swap</label>
-              <input
-                type="text"
-                value={getMetadataString('high_current_on_filament_swap')}
-                onChange={(e) => handleMetadataStringChange('high_current_on_filament_swap', e.target.value)}
-                placeholder="0"
-                className="w-full bg-white/5 border border-white/10 rounded-lg px-4 py-2 text-white placeholder-gray-500 focus:outline-none focus:border-purple-500"
-              />
+              <h5 className="text-xs font-semibold uppercase tracking-wide text-purple-200/70 mb-3">{t('printerProfile.sections.multimaterialAdvanced')}</h5>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-gray-300 mb-2 text-sm font-medium">{t('printerProfile.multi.loadTime')}</label>
+                  <input
+                    type="text"
+                    value={getMetadataString('machine_load_filament_time')}
+                    onChange={(e) => handleMetadataStringChange('machine_load_filament_time', e.target.value)}
+                    placeholder="29"
+                    className="w-full bg-white/5 border border-white/10 rounded-lg px-4 py-2 text-white placeholder-gray-500 focus:outline-none focus:border-purple-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-gray-300 mb-2 text-sm font-medium">{t('printerProfile.multi.unloadTime')}</label>
+                  <input
+                    type="text"
+                    value={getMetadataString('machine_unload_filament_time')}
+                    onChange={(e) => handleMetadataStringChange('machine_unload_filament_time', e.target.value)}
+                    placeholder="29"
+                    className="w-full bg-white/5 border border-white/10 rounded-lg px-4 py-2 text-white placeholder-gray-500 focus:outline-none focus:border-purple-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-gray-300 mb-2 text-sm font-medium">{t('printerProfile.multi.machineToolChangeTime')}</label>
+                  <input
+                    type="text"
+                    value={getMetadataStringWithAliases('machine_tool_change_time', ['machine_switch_extruder_time'])}
+                    onChange={(e) => handleMetadataStringChange('machine_tool_change_time', e.target.value, ['machine_switch_extruder_time'])}
+                    placeholder="0"
+                    className="w-full bg-white/5 border border-white/10 rounded-lg px-4 py-2 text-white placeholder-gray-500 focus:outline-none focus:border-purple-500"
+                  />
+                  <p className="text-xs text-gray-500 mt-1">{t('printerProfile.multi.machineToolChangeTimeHint')}</p>
+                </div>
+              </div>
             </div>
           </div>
-        </div>
-      )}
-    </div>
-  );
+        )}
+      </div>
+    );
+  };
 
   const renderGcodeTab = () => (
     <div className="space-y-6">
@@ -1652,9 +2041,10 @@ export const CreatePrinterProfileModal: React.FC<CreatePrinterProfileModalProps>
         </div>
       ) : (
         <div className="space-y-6">
-          {PRINTER_GCODE_FIELDS.map(({ key, label }) => {
+          {ORCA_PRINTER_GCODE_FIELDS.map(({ key, labelKey }) => {
             const textareaId = `printer-gcode-${key}`;
             const value = getMetadataString(key);
+            const label = t(labelKey);
             return (
               <div key={key}>
                 <div className="flex items-center justify-between gap-3 mb-2">
@@ -1758,7 +2148,7 @@ export const CreatePrinterProfileModal: React.FC<CreatePrinterProfileModalProps>
                 : 'text-gray-400 hover:text-white hover:bg-white/5'
             }`}
           >
-            Motion ability
+            {t('printerProfile.tabs.motion')}
           </button>
           <button
             type="button"
@@ -1780,7 +2170,7 @@ export const CreatePrinterProfileModal: React.FC<CreatePrinterProfileModalProps>
                 : 'text-gray-400 hover:text-white hover:bg-white/5'
             }`}
           >
-            Multimaterial
+            {t('printerProfile.tabs.multimaterial')}
           </button>
           <button
             type="button"
@@ -1791,7 +2181,7 @@ export const CreatePrinterProfileModal: React.FC<CreatePrinterProfileModalProps>
                 : 'text-gray-400 hover:text-white hover:bg-white/5'
             }`}
           >
-            G-code
+            {t('printerProfile.tabs.gcode')}
           </button>
           <button
             type="button"
@@ -1868,4 +2258,3 @@ export const CreatePrinterProfileModal: React.FC<CreatePrinterProfileModalProps>
     </div>
   );
 };
-

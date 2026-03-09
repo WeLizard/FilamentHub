@@ -1660,13 +1660,17 @@
     "jsonErrorMultimaterial": "Cannot display multi-material settings: extra_metadata contains invalid JSON.",
     "jsonErrorGcode": "Cannot display G-code: extra_metadata contains invalid JSON.",
     "printerStructure": "Printer structure",
+    "gcodeFlavor": "G-code flavor",
     "selectStructure": "Select structure",
-    "selectFlavor": "Select flavor",
+    "selectFlavor": "Select G-code flavor",
     "printTechnology": "Print technology",
     "selectTechnology": "Select technology",
     "defaultBedType": "Default bed plate",
     "selectBedType": "Select bed plate",
+    "powerLossRecovery": "Power loss recovery",
+    "selectPowerLossRecovery": "Select power loss recovery mode",
     "hotend": "Hotend",
+    "nozzleHrc": "Nozzle HRC",
     "timeCost": "Print hour cost",
     "defaultFilamentProfile": "Default filament profile",
     "printerVariant": "Printer variant",
@@ -1683,19 +1687,34 @@
     "notesHint": "These notes are visible only to you and are not exported to OrcaSlicer",
     "tabs": {
       "general": "General info",
+      "motion": "Motion ability",
       "extruders": "Extruders",
+      "multimaterial": "Multimaterial",
+      "gcode": "Machine G-code",
       "notes": "Notes"
     },
     "sections": {
       "bedConstraints": "Bed & constraints",
       "flagsAndModes": "Flags & modes",
+      "coolingFan": "Cooling fan",
       "extruderClearance": "Extruder clearance",
+      "adaptiveBedMesh": "Adaptive bed mesh",
       "thumbnails": "Thumbnails",
-      "retractionZhop": "Retraction & Z-hop"
+      "commonReferences": "Industry references",
+      "extruderHardware": "Extruder hardware & variants",
+      "extruderGeometry": "Nozzles & geometry",
+      "retractionZhop": "Retraction & Z-hop",
+      "zHop": "Z-hop",
+      "retractionMaterialChange": "Retraction when switching material",
+      "multimaterialSetup": "Multimaterial setup",
+      "multimaterialWipeTower": "Wipe tower",
+      "multimaterialSemm": "SEMM parameters",
+      "multimaterialAdvanced": "Advanced"
     },
     "units": {
       "mm": "mm",
-      "sec": "s"
+      "sec": "s",
+      "deg": "deg"
     },
     "flags": {
       "relativeE": "Relative E coordinates",
@@ -1716,6 +1735,7 @@
     "cooling": {
       "speedupTime": "Fan speedup time",
       "speedupOverhangs": "Speedup for overhangs",
+      "speedupOverhangsDesc": "Orca stores this as a boolean flag, not as a percent.",
       "kickstart": "Kickstart"
     },
     "extruderClearance": {
@@ -1733,25 +1753,41 @@
       "shape": "Bed shape (mm)",
       "excludeArea": "Bed exclude areas",
       "customRectangle": "Custom rectangle",
-      "originZ": "Z offset"
+      "originZ": "Z offset",
+      "bestObjectPos": "Best object position",
+      "zOffset": "Z offset",
+      "preferredOrientation": "Preferred orientation"
     },
     "thumbnails": {
       "sizes": "Thumbnails",
       "format": "Thumbnail format"
     },
     "motion": {
+      "advanced": "Advanced",
+      "emitMachineLimits": "Emit machine limits to G-code",
+      "emitMachineLimitsDesc": "Writes machine limit commands into generated G-code when the firmware profile expects them.",
+      "resonanceAvoidanceTitle": "Resonance avoidance",
+      "resonanceAvoidance": "Enable resonance avoidance",
+      "resonanceAvoidanceDesc": "Matches Orca's QIDI-derived ringing mitigation by slowing outer walls inside the resonance speed band.",
+      "resonanceSpeedMin": "Min resonance avoidance speed (mm/s)",
+      "resonanceSpeedMax": "Max resonance avoidance speed (mm/s)",
       "maxSpeed": "Max speed (mm/s)",
       "acceleration": "Acceleration (mm/s²)",
       "extruding": "Extruding",
       "retracting": "Retracting",
       "travel": "Travel",
+      "junctionDeviation": "Maximum junction deviation (mm)",
       "minSpeeds": "Min speeds (mm/s)",
       "minExtrudingRate": "Min extrusion speed",
       "minTravelRate": "Min travel speed"
     },
     "extruder": {
       "type": "Extruder type",
+      "defaultNozzleVolumeType": "Default nozzle volume type",
       "variants": "Extruder variants",
+      "variantsHint": "One line per extruder. Each line may contain comma-separated supported variants for that extruder.",
+      "amsCount": "Extruder AMS count",
+      "amsCountHint": "One line per extruder. Orca uses AMS pairs like 0#1|1#1.",
       "nozzleType": "Nozzle type",
       "nozzleVolume": "Nozzle volume",
       "clearanceToLid": "Clearance to lid",
@@ -1759,30 +1795,144 @@
       "printerId": "Printer extruder ID",
       "printerVariant": "Printer extruder variant",
       "physicalMap": "Physical extruder map",
+      "printableHeight": "Extruder printable height",
+      "printableArea": "Extruder printable area",
+      "offset": "Extruder offset",
       "maxLayerHeight": "Max layer height (mm)",
-      "minLayerHeight": "Min layer height (mm)"
+      "minLayerHeight": "Min layer height (mm)",
+      "commonArchitectures": "Vendor docs commonly reference direct drive and Bowden layouts. Bondtech BMG supports both; Micro Swiss NG is a geared direct-drive example; Dyze Pulsar represents pellet extrusion. Keep stored Orca enum values compatible: Direct Drive or Bowden.",
+      "commonNozzleMaterials": "Vendor docs commonly reference brass, hardened steel, stainless steel, tungsten carbide, plus more specialized constructions like vanadium, ruby-tip, and diamond-tip nozzles. Keep Orca-compatible enum values in metadata and record finer vendor details in variants or notes.",
+      "commonNozzleFlowFamilies": "Flow families are typically Standard vs High Flow. Common vendor examples include Prusa CHT and E3D/Revo High Flow style nozzles."
     },
     "retraction": {
       "length": "Retraction (mm)",
+      "restartExtra": "Extra length on restart (mm)",
       "speed": "Retraction speed (mm/s)",
       "deretractSpeed": "Deretraction speed (mm/s)",
       "minTravel": "Min travel for retract (mm)",
+      "whenChangingLayer": "Retract when changing layer",
+      "wipe": "Wipe while retracting",
+      "wipeDistance": "Wipe distance (mm)",
       "beforeWipe": "Retract before wipe (%)",
+      "zHop": "Z-hop height (mm)",
       "zhopType": "Z-hop type",
+      "travelSlope": "Traveling angle",
+      "liftAbove": "Only lift Z above",
+      "liftBelow": "Only lift Z below",
+      "liftEnforce": "Lift on surfaces",
       "toolchange": "Retract on toolchange (mm)",
+      "restartExtraToolchange": "Extra length on restart after toolchange (mm)",
+      "enableLongRetractionWhenCut": "Long retraction control mode",
       "longRetractionOnCut": "Long retraction on cut",
-      "longRetractionOnCutDesc": "Enables long retraction when cutting filament"
+      "longRetractionOnCutDesc": "Controls whether long retraction while cutting is configured at machine level or deferred to filament overrides.",
+      "distanceWhenCut": "Retraction distance when cut",
+      "boolArrayHint": "Use 0/1 per extruder, one value per line."
     },
     "multi": {
+      "singleExtruderMultiMaterial": "Single Extruder Multi Material (SEMM)",
       "purgeInTower": "Purge in prime tower",
       "enableRamming": "Enable ramming",
       "manualFilamentChange": "Manual filament change",
+      "extrudersCount": "Extruders count",
+      "bedTemperatureFormula": "Bed temperature formula",
       "loadTime": "Filament load time (sec)",
       "unloadTime": "Filament unload time (sec)",
       "switchExtruderTime": "Extruder switch time (sec)",
-      "parkingRetraction": "Parking retraction (mm)"
+      "machineToolChangeTime": "Tool change time (sec)",
+      "machineToolChangeTimeHint": "Uses the canonical Orca key machine_tool_change_time. Legacy machine_switch_extruder_time is normalized on save.",
+      "parkingRetraction": "Parking retraction (mm)",
+      "coolingTubeRetraction": "Cooling tube retraction (mm)",
+      "coolingTubeLength": "Cooling tube length (mm)",
+      "extraLoadingMove": "Extra loading move (mm)",
+      "highCurrentOnSwap": "High current on filament swap"
+    },
+    "help": {
+      "canonicalValues": "Canonical Orca values: {{values}}",
+      "oneValuePerLine": "One value per line. This preserves arrays whose items may include commas."
+    },
+    "options": {
+      "legacyValue": "legacy value",
+      "printerStructure": {
+        "undefine": "Undefined",
+        "corexy": "CoreXY",
+        "i3": "i3",
+        "hbot": "H-Bot",
+        "delta": "Delta"
+      },
+      "gcodeFlavor": {
+        "marlin": "Marlin",
+        "klipper": "Klipper",
+        "reprapfirmware": "RepRapFirmware",
+        "marlin2": "Marlin 2"
+      },
+      "printerTechnology": {
+        "fff": "FFF",
+        "sla": "SLA"
+      },
+      "defaultBedType": {
+        "coolPlate": "Cool Plate",
+        "engineeringPlate": "Engineering Plate",
+        "highTempPlate": "High Temp Plate",
+        "texturedPeiPlate": "Textured PEI Plate",
+        "texturedCoolPlate": "Textured Cool Plate",
+        "superTackPlate": "SuperTack Plate"
+      },
+      "powerLossRecovery": {
+        "printerConfiguration": "Use printer configuration",
+        "enable": "Enable",
+        "disable": "Disable"
+      },
+      "bedTemperatureFormula": {
+        "byFirstFilament": "By first filament",
+        "byHighestTemp": "By highest temperature"
+      },
+      "nozzleVolumeType": {
+        "standard": "Standard",
+        "highFlow": "High Flow"
+      },
+      "extruderType": {
+        "directDrive": "Direct Drive",
+        "bowden": "Bowden"
+      },
+      "nozzleType": {
+        "undefine": "Undefined",
+        "brass": "Brass",
+        "hardenedSteel": "Hardened steel",
+        "stainlessSteel": "Stainless steel",
+        "tungstenCarbide": "Tungsten carbide",
+        "e3d": "E3D"
+      },
+      "zHopType": {
+        "autoLift": "Auto Lift",
+        "normalLift": "Normal Lift",
+        "slopeLift": "Slope Lift",
+        "spiralLift": "Spiral Lift"
+      },
+      "retractLiftEnforce": {
+        "allSurfaces": "All Surfaces",
+        "topOnly": "Top Only",
+        "bottomOnly": "Bottom Only",
+        "topAndBottom": "Top and Bottom"
+      },
+      "longRetractionLevel": {
+        "disabled": "Disabled",
+        "machine": "Machine-level",
+        "filament": "Filament override"
+      }
     },
     "gcode": {
+      "fileStart": "File header G-code",
+      "machineStart": "Machine start G-code",
+      "machineEnd": "Machine end G-code",
+      "printingByObject": "Printing by object G-code",
+      "beforeLayerChange": "Before layer change G-code",
+      "layerChange": "Layer change G-code",
+      "timelapse": "Timelapse G-code",
+      "clumpingDetection": "Clumping detection G-code",
+      "changeFilament": "Change filament G-code",
+      "changeExtrusionRole": "Change extrusion role G-code",
+      "pause": "Pause G-code",
+      "templateCustom": "Template custom G-code",
       "chars": "Chars",
       "placeholder": "; Your custom G-code...",
       "insertPlaceholder": "Insert placeholder",

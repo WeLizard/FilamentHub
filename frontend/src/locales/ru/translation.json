@@ -1741,13 +1741,17 @@
     "jsonErrorMultimaterial": "Невозможно отобразить параметры мульти-материала: extra_metadata содержит некорректный JSON.",
     "jsonErrorGcode": "Невозможно отобразить G-code: extra_metadata содержит некорректный JSON.",
     "printerStructure": "Структура принтера",
+    "gcodeFlavor": "Тип G-code",
     "selectStructure": "Выберите структуру",
-    "selectFlavor": "Выберите flavor",
+    "selectFlavor": "Выберите тип G-code",
     "printTechnology": "Технология печати",
     "selectTechnology": "Выберите технологию",
     "defaultBedType": "Пластина стола по умолчанию",
     "selectBedType": "Выберите пластину",
+    "powerLossRecovery": "Восстановление после потери питания",
+    "selectPowerLossRecovery": "Выберите режим восстановления после потери питания",
     "hotend": "Хотэнд",
+    "nozzleHrc": "Твёрдость сопла (HRC)",
     "timeCost": "Стоимость часа печати",
     "defaultFilamentProfile": "Профиль филамента по умолчанию",
     "printerVariant": "Вариант принтера",
@@ -1764,19 +1768,34 @@
     "notesHint": "Эти заметки видны только вам и не отображаются при экспорте в OrcaSlicer",
     "tabs": {
       "general": "Общая информация",
+      "motion": "Кинематика",
       "extruders": "Экструдеры",
+      "multimaterial": "Мультиматериал",
+      "gcode": "G-code принтера",
       "notes": "Заметки"
     },
     "sections": {
       "bedConstraints": "Стол и ограничения",
       "flagsAndModes": "Флаги и режимы",
+      "coolingFan": "Вентилятор охлаждения",
       "extruderClearance": "Экструдер: рабочая область",
-      "thumbnails": "Thumbnails",
-      "retractionZhop": "Ретракция и Z-hop"
+      "adaptiveBedMesh": "Адаптивная сетка стола",
+      "thumbnails": "Миниатюры",
+      "commonReferences": "Отраслевые справочники",
+      "extruderHardware": "Экструдеры, варианты и привязки",
+      "extruderGeometry": "Сопла и геометрия",
+      "retractionZhop": "Ретракция и Z-hop",
+      "zHop": "Z-hop",
+      "retractionMaterialChange": "Ретракция при смене материала",
+      "multimaterialSetup": "Настройка мультиматериала",
+      "multimaterialWipeTower": "Башня очистки",
+      "multimaterialSemm": "Параметры SEMM",
+      "multimaterialAdvanced": "Дополнительно"
     },
     "units": {
       "mm": "мм",
-      "sec": "с"
+      "sec": "с",
+      "deg": "°"
     },
     "flags": {
       "relativeE": "Относительные координаты E",
@@ -1797,6 +1816,7 @@
     "cooling": {
       "speedupTime": "Время разгона вентилятора",
       "speedupOverhangs": "Разгон для свесов",
+      "speedupOverhangsDesc": "В Orca это булев флаг, а не процент.",
       "kickstart": "Kickstart"
     },
     "extruderClearance": {
@@ -1814,25 +1834,41 @@
       "shape": "Форма стола (мм)",
       "excludeArea": "Запретные зоны стола",
       "customRectangle": "Пользовательский прямоугольник",
-      "originZ": "Смещение по Z"
+      "originZ": "Смещение по Z",
+      "bestObjectPos": "Предпочтительная позиция объекта",
+      "zOffset": "Смещение по Z",
+      "preferredOrientation": "Предпочтительная ориентация"
     },
     "thumbnails": {
-      "sizes": "Thumbnails",
+      "sizes": "Миниатюры",
       "format": "Формат миниатюр"
     },
     "motion": {
+      "advanced": "Расширенные настройки",
+      "emitMachineLimits": "Добавлять лимиты принтера в G-code",
+      "emitMachineLimitsDesc": "Записывает команды лимитов принтера в итоговый G-code, если прошивка ожидает такие значения из профиля.",
+      "resonanceAvoidanceTitle": "Подавление резонанса",
+      "resonanceAvoidance": "Включить подавление резонанса",
+      "resonanceAvoidanceDesc": "Соответствует Orca-настройке для снижения ringing: внешние стенки замедляются в диапазоне резонансных скоростей.",
+      "resonanceSpeedMin": "Минимальная скорость подавления резонанса (мм/с)",
+      "resonanceSpeedMax": "Максимальная скорость подавления резонанса (мм/с)",
       "maxSpeed": "Максимальная скорость (мм/с)",
       "acceleration": "Ускорения (мм/с²)",
       "extruding": "Экструзия",
       "retracting": "Ретракция",
       "travel": "Перемещения",
+      "junctionDeviation": "Максимальное отклонение на стыках (мм)",
       "minSpeeds": "Минимальные скорости (мм/с)",
       "minExtrudingRate": "Минимальная скорость экструзии",
       "minTravelRate": "Минимальная скорость перемещения"
     },
     "extruder": {
       "type": "Тип экструдера",
+      "defaultNozzleVolumeType": "Тип объёма сопла по умолчанию",
       "variants": "Варианты экструдера",
+      "variantsHint": "Одна строка на экструдер. Внутри строки можно перечислить поддерживаемые варианты через запятую.",
+      "amsCount": "Счётчик AMS для экструдера",
+      "amsCountHint": "Одна строка на экструдер. Формат Orca: пары AMS#count, например 0#1|1#1.",
       "nozzleType": "Тип сопла",
       "nozzleVolume": "Объем сопла",
       "clearanceToLid": "Зазор до крышки",
@@ -1840,30 +1876,144 @@
       "printerId": "ID экструдера принтера",
       "printerVariant": "Вариант экструдера принтера",
       "physicalMap": "Физическая карта экструдеров",
+      "printableHeight": "Печатаемая высота экструдера",
+      "printableArea": "Печатаемая область экструдера",
+      "offset": "Смещение экструдера",
       "maxLayerHeight": "Макс. высота слоя (мм)",
-      "minLayerHeight": "Мин. высота слоя (мм)"
+      "minLayerHeight": "Мин. высота слоя (мм)",
+      "commonArchitectures": "В документации производителей чаще всего встречаются схемы direct drive и Bowden. Bondtech BMG поддерживает обе, Micro Swiss NG относится к geared direct drive, а Dyze Pulsar представляет pellet extruder. Для Orca-совместимого enum храните значения Direct Drive или Bowden, а детали уносите в variant и notes.",
+      "commonNozzleMaterials": "У производителей часто встречаются латунь, закалённая и нержавеющая сталь, карбид вольфрама, а также более специфичные варианты вроде vanadium, ruby-tip и diamond-tip. Для Orca-совместимых метаданных держите enum-значения из Orca, а детали производителя храните в variant или notes.",
+      "commonNozzleFlowFamilies": "По пропускной способности обычно различают Standard и High Flow. В документации часто встречаются примеры вроде Prusa CHT и E3D/Revo High Flow."
     },
     "retraction": {
       "length": "Ретракция (мм)",
+      "restartExtra": "Доп. длина при возобновлении (мм)",
       "speed": "Скорость ретракции (мм/с)",
       "deretractSpeed": "Скорость деретракции (мм/с)",
       "minTravel": "Минимальное движение для ретракта (мм)",
+      "whenChangingLayer": "Ретракт при смене слоя",
+      "wipe": "Wipe при ретракте",
+      "wipeDistance": "Дистанция wipe (мм)",
       "beforeWipe": "Ретракт перед очисткой (%)",
+      "zHop": "Высота Z-hop (мм)",
       "zhopType": "Тип Z-hop",
+      "travelSlope": "Угол перемещения",
+      "liftAbove": "Поднимать Z только выше",
+      "liftBelow": "Поднимать Z только ниже",
+      "liftEnforce": "На каких поверхностях включать подъём",
       "toolchange": "Ретракт при смене инструмента (мм)",
+      "restartExtraToolchange": "Доп. длина при возобновлении после toolchange (мм)",
+      "enableLongRetractionWhenCut": "Режим управления длинной ретракцией при резке",
       "longRetractionOnCut": "Длинная ретракция при резке",
-      "longRetractionOnCutDesc": "Включает длинную ретракцию при резке нити"
+      "longRetractionOnCutDesc": "Определяет, задаётся ли длинная ретракция при резке на уровне принтера или переопределяется профилем филамента.",
+      "distanceWhenCut": "Дистанция ретракции при резке",
+      "boolArrayHint": "Используйте 0/1 по одному значению на экструдер, каждая строка отдельно."
     },
     "multi": {
+      "singleExtruderMultiMaterial": "Single Extruder Multi Material (SEMM)",
       "purgeInTower": "Очищать в башне (purge_in_prime_tower)",
       "enableRamming": "Включить ramming",
       "manualFilamentChange": "Ручная замена филамента",
+      "extrudersCount": "Количество экструдеров",
+      "bedTemperatureFormula": "Формула температуры стола",
       "loadTime": "Время загрузки филамента (сек)",
       "unloadTime": "Время выгрузки филамента (сек)",
       "switchExtruderTime": "Время смены экструдера (сек)",
-      "parkingRetraction": "Очистка перед парковкой (мм)"
+      "machineToolChangeTime": "Время смены инструмента (сек)",
+      "machineToolChangeTimeHint": "Используется канонический ключ Orca machine_tool_change_time. Legacy machine_switch_extruder_time нормализуется при сохранении.",
+      "parkingRetraction": "Очистка перед парковкой (мм)",
+      "coolingTubeRetraction": "Положение ретракции в охлаждающей трубке (мм)",
+      "coolingTubeLength": "Длина охлаждающей трубки (мм)",
+      "extraLoadingMove": "Дополнительная длина загрузки (мм)",
+      "highCurrentOnSwap": "Повышенный ток при смене филамента"
+    },
+    "help": {
+      "canonicalValues": "Канонические значения Orca: {{values}}",
+      "oneValuePerLine": "По одному значению на строку. Так массивы не ломаются, даже если внутри значений есть запятые."
+    },
+    "options": {
+      "legacyValue": "старое значение",
+      "printerStructure": {
+        "undefine": "Не задано",
+        "corexy": "CoreXY",
+        "i3": "i3",
+        "hbot": "H-Bot",
+        "delta": "Delta"
+      },
+      "gcodeFlavor": {
+        "marlin": "Marlin",
+        "klipper": "Klipper",
+        "reprapfirmware": "RepRapFirmware",
+        "marlin2": "Marlin 2"
+      },
+      "printerTechnology": {
+        "fff": "FFF",
+        "sla": "SLA"
+      },
+      "defaultBedType": {
+        "coolPlate": "Cool Plate",
+        "engineeringPlate": "Engineering Plate",
+        "highTempPlate": "High Temp Plate",
+        "texturedPeiPlate": "Textured PEI Plate",
+        "texturedCoolPlate": "Textured Cool Plate",
+        "superTackPlate": "SuperTack Plate"
+      },
+      "powerLossRecovery": {
+        "printerConfiguration": "Использовать конфигурацию принтера",
+        "enable": "Включить",
+        "disable": "Отключить"
+      },
+      "bedTemperatureFormula": {
+        "byFirstFilament": "По первому филаменту",
+        "byHighestTemp": "По максимальной температуре"
+      },
+      "nozzleVolumeType": {
+        "standard": "Стандартное",
+        "highFlow": "Высокопоточное"
+      },
+      "extruderType": {
+        "directDrive": "Прямой привод",
+        "bowden": "Боуден"
+      },
+      "nozzleType": {
+        "undefine": "Не задано",
+        "brass": "Латунь",
+        "hardenedSteel": "Закалённая сталь",
+        "stainlessSteel": "Нержавеющая сталь",
+        "tungstenCarbide": "Карбид вольфрама",
+        "e3d": "E3D"
+      },
+      "zHopType": {
+        "autoLift": "Автоподъём",
+        "normalLift": "Обычный подъём",
+        "slopeLift": "Наклонный подъём",
+        "spiralLift": "Спиральный подъём"
+      },
+      "retractLiftEnforce": {
+        "allSurfaces": "На всех поверхностях",
+        "topOnly": "Только сверху",
+        "bottomOnly": "Только снизу",
+        "topAndBottom": "Сверху и снизу"
+      },
+      "longRetractionLevel": {
+        "disabled": "Отключено",
+        "machine": "На уровне принтера",
+        "filament": "Переопределение филаментом"
+      }
     },
     "gcode": {
+      "fileStart": "G-code заголовка файла",
+      "machineStart": "Стартовый G-code принтера",
+      "machineEnd": "Финальный G-code принтера",
+      "printingByObject": "G-code печати по объектам",
+      "beforeLayerChange": "G-code перед сменой слоя",
+      "layerChange": "G-code смены слоя",
+      "timelapse": "G-code таймлапса",
+      "clumpingDetection": "G-code обнаружения налипания",
+      "changeFilament": "G-code смены филамента",
+      "changeExtrusionRole": "G-code смены роли экструзии",
+      "pause": "G-code паузы",
+      "templateCustom": "Template custom G-code",
       "chars": "Символов",
       "placeholder": "; Ваш кастомный G-code...",
       "insertPlaceholder": "Вставить плейсхолдер",
