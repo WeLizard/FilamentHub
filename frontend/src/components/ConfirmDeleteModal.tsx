@@ -27,6 +27,7 @@ export const ConfirmDeleteModal: React.FC<ConfirmDeleteModalProps> = ({
   itemName,
 }) => {
   const { t } = useTranslation();
+  const isHeaderVisible = useHeaderVisible();
   const title = titleProp ?? t('confirmDeleteModal.defaultTitle');
   const confirmText = confirmTextProp ?? t('confirmDeleteModal.delete');
   const cancelText = cancelTextProp ?? t('confirmDeleteModal.cancel');
@@ -38,7 +39,6 @@ export const ConfirmDeleteModal: React.FC<ConfirmDeleteModalProps> = ({
     : t('confirmDeleteModal.messageGeneric');
 
   const displayMessage = message || defaultMessage;
-  const isHeaderVisible = useHeaderVisible();
 
   return createPortal(
     <div className={`fixed inset-0 bg-black/50 backdrop-blur-sm z-50 overflow-y-auto ${isHeaderVisible ? 'pt-[88px]' : ''}`}>
