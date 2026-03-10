@@ -77,22 +77,22 @@ async def list_presets(
     # Build query
     query = select(Preset).options(selectinload(Preset.printer_links).selectinload(PresetPrinter.printer))
 
-    # Filter by explicit IDs (batch fetch, same visibility rules as normal list)
+    # Filter by explicit IDs (batch fetch — always enforce visibility)
     if ids:
         id_list = [int(x) for x in ids.split(",") if x.strip().isdigit()]
         if id_list:
             query = query.where(Preset.id.in_(id_list))
             if active_only:
                 query = query.where(Preset.active == True)
+            # Always enforce moderation filter for batch fetch (no auth context)
+            query = query.where(
+                or_(
+                    Preset.moderation_status == PresetModerationStatus.APPROVED,
+                    Preset.is_official == True,
+                )
+            )
             if user_id is not None:
                 query = query.where(Preset.user_id == user_id)
-            else:
-                query = query.where(
-                    or_(
-                        Preset.moderation_status == PresetModerationStatus.APPROVED,
-                        Preset.is_official == True,
-                    )
-                )
             result = await db.execute(query.limit(len(id_list)))
             items = list(result.unique().scalars().all())
             total = len(items)

@@ -7,7 +7,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.utils import like_pattern
-from app.core.dependencies import get_current_user
+from app.core.dependencies import get_current_admin_user, get_current_user
 from app.core.errors import ERR_BRAND_NOT_FOUND, ERR_BRAND_SLUG_EXISTS, ERR_NO_PERMISSION, raise_error
 from app.db.session import get_db
 from app.models.brand import Brand
@@ -98,6 +98,7 @@ async def get_brand(
 async def create_brand(
     data: BrandCreate,
     db: Annotated[AsyncSession, Depends(get_db)],
+    current_user: Annotated[User, Depends(get_current_user)],
 ) -> BrandResponse:
     """Создать производителя."""
     # Проверка текстовых полей на плохие слова
@@ -181,17 +182,8 @@ async def update_brand(
 async def delete_brand(
     brand_id: int,
     db: Annotated[AsyncSession, Depends(get_db)],
+    current_user: Annotated[User, Depends(get_current_admin_user)],
 ) -> None:
-    """Удалить производителя."""
-    result = await db.execute(select(Brand).where(Brand.id == brand_id))
-    brand = result.scalar_one_or_none()
-
-    if not brand:
-        raise_error(404, ERR_BRAND_NOT_FOUND)
-
-    await db.delete(brand)
-    await db.commit()
-
     """Удалить производителя."""
     result = await db.execute(select(Brand).where(Brand.id == brand_id))
     brand = result.scalar_one_or_none()
