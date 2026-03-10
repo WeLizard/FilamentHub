@@ -3,7 +3,7 @@
 from datetime import datetime
 from typing import TYPE_CHECKING
 
-from sqlalchemy import Boolean, Float, ForeignKey, Integer, Text
+from sqlalchemy import Boolean, Float, ForeignKey, Integer, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.sql import func
 
@@ -19,6 +19,12 @@ class FilamentReview(Base):
     """Отзыв о филаменте от пользователя."""
 
     __tablename__ = "filament_reviews"
+    __table_args__ = (
+        UniqueConstraint(
+            "user_id", "filament_id", "preset_id",
+            name="uq_user_filament_preset_review",
+        ),
+    )
 
     # Primary key
     id: Mapped[int] = mapped_column(primary_key=True, index=True)
