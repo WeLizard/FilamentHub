@@ -212,7 +212,7 @@
 - [x] Добавить секрет для `/hook`
 - [x] Добавить проверку GitHub webhook signature
 - [x] Добавить health endpoint
-- [ ] Привести `bot.ps1` / launcher к модели одного источника статуса
+- [x] Привести `bot.ps1` / launcher к модели одного источника статуса
 
 ### Этап 6. Cleanup legacy glue
 

@@ -68,7 +68,7 @@
 - [x] Добавить webhook secret
 - [x] Добавить GitHub webhook signature verification
 - [x] Добавить health endpoint
-- [ ] Привести launcher к одному источнику статуса
+- [x] Привести launcher к одному источнику статуса
 
 ---
 

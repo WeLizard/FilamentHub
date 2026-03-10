@@ -128,6 +128,11 @@ powershell -ExecutionPolicy Bypass -File bot\bot.ps1
 powershell -ExecutionPolicy Bypass -File bot\bot.ps1 start
 ```
 
+Интерактивный режим `bot.ps1` теперь не закрывается после одного действия:
+- показывает меню `status / start / stop / restart / exit`
+- после действия ждёт `Press Enter to continue`
+- для `status` и `start` опирается на `/healthz`, а не только на PID/порт
+
 ### Локально
 
 ```powershell

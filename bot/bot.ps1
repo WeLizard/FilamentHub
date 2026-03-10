@@ -33,30 +33,20 @@ $PromptMode = -not $PSBoundParameters.ContainsKey("Action")
 # Unset CLAUDECODE to avoid nested session detection
 [Environment]::SetEnvironmentVariable("CLAUDECODE", $null, "Process")
 
-if ($PromptMode) {
-    Write-Host "FHAgents Bot Launcher" -ForegroundColor Cyan
-    Write-Host "1. status" -ForegroundColor Gray
-    Write-Host "2. start" -ForegroundColor Gray
-    Write-Host "3. stop" -ForegroundColor Gray
-    Write-Host "4. restart" -ForegroundColor Gray
-    $choice = (Read-Host "Choose action [1-4, Enter=status]").Trim().ToLower()
-
-    switch ($choice) {
-        "" { $Action = "status" }
-        "1" { $Action = "status" }
-        "2" { $Action = "start" }
-        "3" { $Action = "stop" }
-        "4" { $Action = "restart" }
-        "status" { $Action = "status" }
-        "start" { $Action = "start" }
-        "stop" { $Action = "stop" }
-        "restart" { $Action = "restart" }
-        default {
-            Write-Host "Unknown action: $choice" -ForegroundColor Red
-            Write-Host ""
-            Read-Host "Press Enter to close" | Out-Null
-            exit 1
-        }
+function Resolve-MenuAction([string]$Choice) {
+    switch ($Choice.Trim().ToLower()) {
+        "" { return "status" }
+        "1" { return "status" }
+        "2" { return "start" }
+        "3" { return "stop" }
+        "4" { return "restart" }
+        "5" { return "exit" }
+        "status" { return "status" }
+        "start" { return "start" }
+        "stop" { return "stop" }
+        "restart" { return "restart" }
+        "exit" { return "exit" }
+        default { return $null }
     }
 }
 
@@ -141,6 +131,14 @@ function Get-WebhookOwnerProcess {
     }
 }
 
+function Get-BotHealth {
+    try {
+        Invoke-RestMethod -Uri "http://127.0.0.1:$WebhookPort/healthz" -Method Get -TimeoutSec 2 -ErrorAction Stop
+    } catch {
+        return $null
+    }
+}
+
 function Get-BotProcess {
     $storedPid = Read-BotPid
     if ($storedPid) {
@@ -189,8 +187,20 @@ function Get-AgentProcesses {
 
 function Show-Status {
     $proc = Get-BotProcess
+    $health = Get-BotHealth
     if ($proc) {
         Write-Host "Bot: RUNNING (PID $($proc.Id))" -ForegroundColor Green
+        if ($health) {
+            $agents = @($health.available_agents)
+            $activeRuns = if ($null -ne $health.active_runs) { [int]$health.active_runs } else { 0 }
+            Write-Host "Health: OK on port $WebhookPort" -ForegroundColor Green
+            Write-Host "Active runs: $activeRuns" -ForegroundColor Gray
+            if ($agents.Count -gt 0) {
+                Write-Host "Available CLIs: $($agents -join ', ')" -ForegroundColor Gray
+            }
+        } else {
+            Write-Host "Health: no /healthz response on port $WebhookPort" -ForegroundColor Yellow
+        }
         $agents = Get-AgentProcesses
         if ($agents) {
             Write-Host "Active agents:" -ForegroundColor Yellow
@@ -259,35 +269,75 @@ function Start-Bot {
         -PassThru
 
     Write-BotPidFile -ProcessId $proc.Id
-    Start-Sleep -Seconds 2
+    $started = $false
+    for ($attempt = 0; $attempt -lt 10; $attempt++) {
+        Start-Sleep -Seconds 1
+        $check = Get-Process -Id $proc.Id -ErrorAction SilentlyContinue
+        $owner = Get-WebhookOwnerProcess
+        $health = Get-BotHealth
 
-    # Verify it started
+        if ($owner -and $owner.Id -eq $proc.Id -and $health) {
+            Write-Host "Bot started (PID $($proc.Id)). Port $WebhookPort is healthy. Log: $LogFile" -ForegroundColor Green
+            $started = $true
+            break
+        }
+
+        if (-not $check) {
+            break
+        }
+    }
+
+    if ($started) {
+        return
+    }
+
     $check = Get-Process -Id $proc.Id -ErrorAction SilentlyContinue
     $owner = Get-WebhookOwnerProcess
-    if ($owner -and $owner.Id -eq $proc.Id) {
-        Write-Host "Bot started (PID $($proc.Id)). Log: $LogFile" -ForegroundColor Green
-    } elseif ($owner) {
+    $health = Get-BotHealth
+    if ($owner -and $owner.Id -ne $proc.Id) {
         Write-Host "Bot is already running on port $WebhookPort (PID $($owner.Id)). New process was not used." -ForegroundColor Yellow
         Write-BotPidFile -ProcessId $owner.Id
         if ($check) {
             Stop-Process -Id $proc.Id -Force -ErrorAction SilentlyContinue
         }
-    } elseif ($check) {
-        Write-Host "Bot process started (PID $($proc.Id)), but webhook port $WebhookPort is not listening yet. Check $ErrLogFile" -ForegroundColor Yellow
+    } elseif ($check -and -not $health) {
+        Write-Host "Bot process started (PID $($proc.Id)), but /healthz is not ready yet. Check $ErrLogFile" -ForegroundColor Yellow
     } else {
         Write-Host "Bot failed to start. Check $ErrLogFile" -ForegroundColor Red
         Remove-Item $PidFile -Force -ErrorAction SilentlyContinue
     }
 }
 
-switch ($Action) {
-    "start"   { Start-Bot }
-    "stop"    { Stop-Bot }
-    "restart" { Stop-Bot; Start-Sleep -Seconds 1; Start-Bot }
-    "status"  { Show-Status }
+function Invoke-BotAction([string]$ResolvedAction) {
+    switch ($ResolvedAction) {
+        "start"   { Start-Bot }
+        "stop"    { Stop-Bot }
+        "restart" { Stop-Bot; Start-Sleep -Seconds 1; Start-Bot }
+        "status"  { Show-Status }
+    }
 }
 
 if ($PromptMode) {
-    Write-Host ""
-    Read-Host "Press Enter to close" | Out-Null
+    while ($true) {
+        Write-Host ""
+        Write-Host "FHAgents Bot Launcher" -ForegroundColor Cyan
+        Write-Host "1. status" -ForegroundColor Gray
+        Write-Host "2. start" -ForegroundColor Gray
+        Write-Host "3. stop" -ForegroundColor Gray
+        Write-Host "4. restart" -ForegroundColor Gray
+        Write-Host "5. exit" -ForegroundColor Gray
+        $resolved = Resolve-MenuAction (Read-Host "Choose action [1-5, Enter=status]")
+        if (-not $resolved) {
+            Write-Host "Unknown action." -ForegroundColor Red
+            continue
+        }
+        if ($resolved -eq "exit") {
+            break
+        }
+        Invoke-BotAction $resolved
+        Write-Host ""
+        Read-Host "Press Enter to continue" | Out-Null
+    }
+} else {
+    Invoke-BotAction $Action
 }
