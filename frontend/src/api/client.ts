@@ -337,6 +337,15 @@ export const brandsAPI = {
     const response = await api.patch<Brand>(`/brands/${id}`, data);
     return response.data;
   },
+
+  uploadLogo: async (id: number, file: File): Promise<Brand> => {
+    const formData = new FormData();
+    formData.append('file', file);
+    const response = await api.post<Brand>(`/brands/${id}/logo`, formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    });
+    return response.data;
+  },
 };
 
 // Filaments API

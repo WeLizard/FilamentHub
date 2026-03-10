@@ -2357,6 +2357,8 @@
     "websiteLabel": "Сайт",
     "logoUrlLabel": "URL логотипа",
     "logoPreview": "Предпросмотр",
+    "uploadLogo": "Загрузить",
+    "logoUploadError": "Ошибка загрузки логотипа",
     "save": "Сохранить",
     "errorUpdateProfile": "Ошибка при обновлении профиля",
     "errorSubmitRequest": "Ошибка при отправке заявки",

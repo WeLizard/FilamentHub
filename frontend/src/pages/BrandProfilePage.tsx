@@ -34,6 +34,7 @@ import {
   AlertTriangle,
   Grid3x3,
   List,
+  Upload,
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { authAPI, brandsAPI, filamentsAPI, brandRequestsAPI, presetsAPI, qrAPI } from '../api/client';
@@ -66,6 +67,7 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({ onBack }) =>
   const [profileWebsite, setProfileWebsite] = useState('');
   const [profileLogoUrl, setProfileLogoUrl] = useState('');
   const [profileError, setProfileError] = useState<string | null>(null);
+  const [isUploadingLogo, setIsUploadingLogo] = useState(false);
 
   // Загружаем данные бренда
   const { data: brandData, isLoading: isLoadingBrand } = useQuery({
@@ -158,6 +160,23 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({ onBack }) =>
       website: profileWebsite.trim() || null,
       logo_url: profileLogoUrl.trim() || null,
     });
+  };
+
+  const handleLogoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !brandData?.id) return;
+    setIsUploadingLogo(true);
+    try {
+      const updated = await brandsAPI.uploadLogo(brandData.id, file);
+      setProfileLogoUrl(updated.logo_url || '');
+      queryClient.invalidateQueries({ queryKey: ['brand', user?.brand_id] });
+    } catch (err: unknown) {
+      const detail = (err as { response?: { data?: { detail?: unknown } } })?.response?.data?.detail;
+      setProfileError(translateApiError(t, detail, t('brandProfile.logoUploadError')));
+    } finally {
+      setIsUploadingLogo(false);
+      e.target.value = '';
+    }
   };
 
   const handleCreateFilament = () => {
@@ -843,13 +862,26 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({ onBack }) =>
               </div>
               <div>
                 <label className="block text-gray-300 mb-2 text-sm font-medium">{t('brandProfile.logoUrlLabel')}</label>
-                <input
-                  type="url"
-                  value={profileLogoUrl}
-                  onChange={(e) => setProfileLogoUrl(e.target.value)}
-                  className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all"
-                  placeholder="https://example.com/logo.png"
-                />
+                <div className="flex gap-2">
+                  <input
+                    type="url"
+                    value={profileLogoUrl}
+                    onChange={(e) => setProfileLogoUrl(e.target.value)}
+                    className="flex-1 px-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all"
+                    placeholder="https://example.com/logo.png"
+                  />
+                  <label className="px-4 py-3 bg-white/10 border border-white/20 rounded-xl text-gray-300 hover:text-white hover:bg-white/20 cursor-pointer transition-all flex items-center gap-2 whitespace-nowrap">
+                    {isUploadingLogo ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />}
+                    <span className="text-sm">{t('brandProfile.uploadLogo')}</span>
+                    <input
+                      type="file"
+                      accept=".png,.jpg,.jpeg,.webp,.svg"
+                      onChange={handleLogoUpload}
+                      className="hidden"
+                      disabled={isUploadingLogo}
+                    />
+                  </label>
+                </div>
                 {profileLogoUrl && (
                   <div className="mt-2 flex items-center space-x-3">
                     <img

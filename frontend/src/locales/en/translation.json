@@ -2276,6 +2276,8 @@
     "websiteLabel": "Website",
     "logoUrlLabel": "Logo URL",
     "logoPreview": "Preview",
+    "uploadLogo": "Upload",
+    "logoUploadError": "Error uploading logo",
     "save": "Save",
     "errorUpdateProfile": "Error updating profile",
     "errorSubmitRequest": "Error submitting request",
