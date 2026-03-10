@@ -129,12 +129,14 @@ export const BrandDetailPage: React.FC = () => {
         <div className="flex flex-col md:flex-row items-start md:items-center gap-6">
           {/* Логотип (если есть) */}
           {isBrandLogoVisible && brand.logo_url ? (
-            <img
-              src={brand.logo_url}
-              alt={brand.name}
-              className="w-24 h-24 object-contain rounded-xl bg-white/5 p-2"
-              onError={() => setIsBrandLogoVisible(false)}
-            />
+            <div className="inline-flex h-24 shrink-0 overflow-hidden rounded-xl border border-white/10 bg-white/10 shadow-lg shadow-black/10">
+              <img
+                src={brand.logo_url}
+                alt={brand.name}
+                className="block h-full w-auto max-w-[20rem] object-contain"
+                onError={() => setIsBrandLogoVisible(false)}
+              />
+            </div>
           ) : (
             <div className="w-24 h-24 flex items-center justify-center bg-purple-500/20 rounded-xl border border-purple-500/30">
               <Building2 className="w-12 h-12 text-purple-400" />

@@ -2301,6 +2301,7 @@
     "brandNotFound": "Бренд не найден",
     "verifiedManufacturer": "Верифицированный производитель",
     "manufacturer": "Производитель",
+    "openPublicPage": "Открыть страницу бренда",
     "tabs": {
       "materials": "Материалы",
       "presets": "Пресеты",

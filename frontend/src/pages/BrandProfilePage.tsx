@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useNavigate } from 'react-router-dom';
 import {
   Factory,
   Package,
@@ -53,6 +54,7 @@ interface BrandProfilePageProps {
 export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({ onBack }) => {
   const { t } = useTranslation();
   const { user } = useAuth();
+  const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [brandTab, setBrandTab] = useState<'materials' | 'presets' | 'qr' | 'analytics' | 'usage'>('materials');
   const [materialsViewMode, setMaterialsViewMode] = useState<'grid' | 'list'>('grid');
@@ -265,48 +267,64 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({ onBack }) =>
     <div className="space-y-6">
       {/* Header */}
       <div className="text-center mb-8">
-        <div className="flex items-center justify-center space-x-3 mb-4">
-          <div
-            className={`w-16 h-16 rounded-xl flex items-center justify-center shadow-lg overflow-hidden ${
-              isBrandLogoVisible && brandData.logo_url
-                ? 'bg-white/10 border border-white/10'
-                : 'bg-gradient-to-r from-green-500 to-emerald-500 shadow-green-500/25'
-            }`}
-          >
-            {isBrandLogoVisible && brandData.logo_url ? (
-              <img
-                src={brandData.logo_url}
-                alt={brandData.name}
-                className="w-full h-full object-contain p-2"
-                onError={() => setIsBrandLogoVisible(false)}
-              />
-            ) : (
-              <Factory className="w-8 h-8 text-white" />
-            )}
-          </div>
-          <div>
-            <div className="flex items-center justify-center space-x-2">
-              <h2 className="text-3xl font-bold text-white">{brandData.name}</h2>
-              <button
-                onClick={handleEditProfile}
-                className="p-1.5 text-gray-400 hover:text-white hover:bg-white/10 rounded-lg transition-all"
-                title={t('brandProfile.editProfile')}
-              >
-                <Edit className="w-4 h-4" />
-              </button>
+        <div className="flex justify-center mb-4">
+          <div className="relative flex flex-col items-center md:inline-flex md:flex-row md:items-center">
+            <div
+              className={`mb-3 inline-flex h-16 shrink-0 items-center justify-center overflow-hidden rounded-xl shadow-lg md:mb-0 md:absolute md:right-full md:top-1/2 md:mr-3 md:-translate-y-1/2 ${
+                isBrandLogoVisible && brandData.logo_url
+                  ? 'border border-white/10 bg-white/10'
+                  : 'w-16 bg-gradient-to-r from-green-500 to-emerald-500 shadow-green-500/25'
+              }`}
+            >
+              {isBrandLogoVisible && brandData.logo_url ? (
+                <img
+                  src={brandData.logo_url}
+                  alt={brandData.name}
+                  className="block h-full w-auto max-w-[15rem] object-contain"
+                  onError={() => setIsBrandLogoVisible(false)}
+                />
+              ) : (
+                <Factory className="w-8 h-8 text-white" />
+              )}
             </div>
-            <div className="flex items-center justify-center space-x-2 text-gray-300">
-              {brandData.verified && <Shield className="w-4 h-4 text-green-400" />}
-              <span>{brandData.verified ? t('brandProfile.verifiedManufacturer') : t('brandProfile.manufacturer')}</span>
+            <div className="text-center md:text-left">
+              <div className="flex items-center justify-center space-x-2 md:justify-start">
+                <h2 className="text-3xl font-bold text-white">{brandData.name}</h2>
+                <button
+                  onClick={handleEditProfile}
+                  className="p-1.5 text-gray-400 hover:text-white hover:bg-white/10 rounded-lg transition-all"
+                  title={t('brandProfile.editProfile')}
+                >
+                  <Edit className="w-4 h-4" />
+                </button>
+              </div>
+              <div className="mt-1 flex items-center justify-center space-x-2 text-gray-300 md:justify-start">
+                {brandData.verified && <Shield className="w-4 h-4 text-green-400" />}
+                <span>{brandData.verified ? t('brandProfile.verifiedManufacturer') : t('brandProfile.manufacturer')}</span>
+              </div>
+              {brandData.description && (
+                <p className="mt-1 max-w-md text-sm text-gray-400 md:mx-0">{brandData.description}</p>
+              )}
+              {brandData.website && (
+                <a
+                  href={brandData.website.startsWith('http') ? brandData.website : `https://${brandData.website}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="mt-1 inline-block text-sm text-purple-400 hover:text-purple-300"
+                >
+                  {brandData.website}
+                </a>
+              )}
+              <div className="mt-3">
+                <button
+                  onClick={() => navigate(`/brands/${brandData.id}`)}
+                  className="inline-flex items-center gap-2 rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 text-sm text-white transition-all hover:bg-white/10"
+                >
+                  <Eye className="w-4 h-4" />
+                  <span>{t('brandProfile.openPublicPage')}</span>
+                </button>
+              </div>
             </div>
-            {brandData.description && (
-              <p className="text-gray-400 text-sm mt-1 max-w-md mx-auto">{brandData.description}</p>
-            )}
-            {brandData.website && (
-              <a href={brandData.website.startsWith('http') ? brandData.website : `https://${brandData.website}`} target="_blank" rel="noopener noreferrer" className="text-purple-400 hover:text-purple-300 text-sm mt-1 inline-block">
-                {brandData.website}
-              </a>
-            )}
           </div>
         </div>
 
