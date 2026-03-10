@@ -4,7 +4,7 @@
 param(
     [Parameter(Position=0)]
     [ValidateSet("start", "stop", "restart", "status")]
-    [string]$Action = "status"
+    [string]$Action
 )
 
 $BotDir = Split-Path -Parent $MyInvocation.MyCommand.Path
@@ -28,9 +28,37 @@ $env:BOT_TOKEN = $env:TG_BOT_TOKEN
 $env:CHAT_ID = $env:TG_CHAT_ID
 $env:REPO_PATH = $RepoDir
 $WebhookPort = if ($env:WEBHOOK_PORT) { [int]$env:WEBHOOK_PORT } else { 8090 }
+$PromptMode = -not $PSBoundParameters.ContainsKey("Action")
 
 # Unset CLAUDECODE to avoid nested session detection
 [Environment]::SetEnvironmentVariable("CLAUDECODE", $null, "Process")
+
+if ($PromptMode) {
+    Write-Host "FHAgents Bot Launcher" -ForegroundColor Cyan
+    Write-Host "1. status" -ForegroundColor Gray
+    Write-Host "2. start" -ForegroundColor Gray
+    Write-Host "3. stop" -ForegroundColor Gray
+    Write-Host "4. restart" -ForegroundColor Gray
+    $choice = (Read-Host "Choose action [1-4, Enter=status]").Trim().ToLower()
+
+    switch ($choice) {
+        "" { $Action = "status" }
+        "1" { $Action = "status" }
+        "2" { $Action = "start" }
+        "3" { $Action = "stop" }
+        "4" { $Action = "restart" }
+        "status" { $Action = "status" }
+        "start" { $Action = "start" }
+        "stop" { $Action = "stop" }
+        "restart" { $Action = "restart" }
+        default {
+            Write-Host "Unknown action: $choice" -ForegroundColor Red
+            Write-Host ""
+            Read-Host "Press Enter to close" | Out-Null
+            exit 1
+        }
+    }
+}
 
 function Read-BotPid {
     if (-not (Test-Path $PidFile)) {
@@ -257,4 +285,9 @@ switch ($Action) {
     "stop"    { Stop-Bot }
     "restart" { Stop-Bot; Start-Sleep -Seconds 1; Start-Bot }
     "status"  { Show-Status }
+}
+
+if ($PromptMode) {
+    Write-Host ""
+    Read-Host "Press Enter to close" | Out-Null
 }
