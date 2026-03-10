@@ -638,7 +638,7 @@ async def get_admin_stats(
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> dict:
     """Получить расширенную статистику для админки."""
-    from datetime import timedelta, timezone
+    from datetime import timedelta
     from app.models.filament import Filament
     from app.models.filament_review import FilamentReview
     from app.models.user_printer_device import UserPrinterDevice
@@ -649,7 +649,8 @@ async def get_admin_stats(
     from app.models.notification import Notification
     from app.models.wiki_article import WikiArticle
 
-    now = datetime.now(timezone.utc)
+    # Use naive UTC datetimes — all timestamp columns are TIMESTAMP WITHOUT TIME ZONE
+    now = datetime.utcnow()
     day_ago = now - timedelta(days=1)
     week_ago = now - timedelta(days=7)
     month_ago = now - timedelta(days=30)
