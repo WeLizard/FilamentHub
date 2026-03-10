@@ -284,6 +284,7 @@ export const CreatePrinterProfileModal: React.FC<CreatePrinterProfileModalProps>
   const [notes, setNotes] = useState('');
   const [extraMetadata, setExtraMetadata] = useState('');
   const [jsonError, setJsonError] = useState<string | null>(null);
+  const [formError, setFormError] = useState<string | null>(null);
   const [showGcodeModals, setShowGcodeModals] = useState<Record<string, boolean>>({});
 
   // Флаг для отслеживания, было ли имя изменено пользователем вручную
@@ -443,7 +444,6 @@ export const CreatePrinterProfileModal: React.FC<CreatePrinterProfileModalProps>
   const ARRAY_FIELDS_WITH_EMPTY_VALID = [
     'bed_exclude_area',
     'bed_shape',
-    'bed_custom_rectangle',
     'extruder_type',
     'printer_extruder_id',
     'printer_extruder_variant',
@@ -607,6 +607,7 @@ export const CreatePrinterProfileModal: React.FC<CreatePrinterProfileModalProps>
       }
       setActiveTab('general');
       setNewNozzleDiameter('');
+      setFormError(null);
       setJsonError(null);
       setShowGcodeModals({});
     }
@@ -658,6 +659,7 @@ export const CreatePrinterProfileModal: React.FC<CreatePrinterProfileModalProps>
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
+    setFormError(null);
     
     if (!name.trim()) {
       alert(t('printerProfile.nameRequired'));
@@ -676,7 +678,17 @@ export const CreatePrinterProfileModal: React.FC<CreatePrinterProfileModalProps>
         if (parsedExtraMetadata.machine_switch_extruder_time && !parsedExtraMetadata.machine_tool_change_time) {
           parsedExtraMetadata.machine_tool_change_time = parsedExtraMetadata.machine_switch_extruder_time;
         }
+        if (parsedExtraMetadata.bed_model && !parsedExtraMetadata.bed_custom_model) {
+          parsedExtraMetadata.bed_custom_model = parsedExtraMetadata.bed_model;
+        }
+        if (parsedExtraMetadata.bed_texture && !parsedExtraMetadata.bed_custom_texture) {
+          parsedExtraMetadata.bed_custom_texture = parsedExtraMetadata.bed_texture;
+        }
         delete parsedExtraMetadata.machine_switch_extruder_time;
+        delete parsedExtraMetadata.bed_model;
+        delete parsedExtraMetadata.bed_texture;
+        delete parsedExtraMetadata.bed_custom_rectangle;
+        delete parsedExtraMetadata.origin_z;
         extraMetadataObj = parsedExtraMetadata;
         setJsonError(null);
       } catch (error) {
@@ -694,7 +706,8 @@ export const CreatePrinterProfileModal: React.FC<CreatePrinterProfileModalProps>
 
     const printableAreaPolygonValues = parsePrintableAreaPolygon(printableAreaPolygon);
     if (printableAreaPolygon.trim() && printableAreaPolygonValues === null) {
-      alert(t('printerProfile.printAreaPolygonInvalid'));
+      setActiveTab('general');
+      setFormError(t('printerProfile.printAreaPolygonInvalid'));
       return;
     }
 
@@ -840,12 +853,8 @@ export const CreatePrinterProfileModal: React.FC<CreatePrinterProfileModalProps>
     ];
     const printableSpaceCompatibilityFields: Array<{ key: string; labelKey: string; isList?: boolean; placeholder?: string; unit?: string }> = [
       { key: 'bed_shape', labelKey: 'printerProfile.bed.shape', isList: true, placeholder: '0x0, 256x0, 256x256, 0x256' },
-      { key: 'bed_custom_rectangle', labelKey: 'printerProfile.bed.customRectangle', isList: true, placeholder: '0x0, 256x0, 256x256, 0x256' },
-      { key: 'origin_z', labelKey: 'printerProfile.bed.originZ', placeholder: '0' },
     ];
     const bedAssetFields: Array<{ key: string; labelKey: string; placeholder?: string }> = [
-      { key: 'bed_model', labelKey: 'printerProfile.bed.model', placeholder: 'bbl-3dp-X1.stl' },
-      { key: 'bed_texture', labelKey: 'printerProfile.bed.texture', placeholder: 'bbl-3dp-logo.svg' },
       { key: 'bed_custom_model', labelKey: 'printerProfile.bed.customModel', placeholder: 'custom-bed.stl' },
       { key: 'bed_custom_texture', labelKey: 'printerProfile.bed.customTexture', placeholder: 'custom-bed.png' },
     ];
@@ -1068,7 +1077,12 @@ export const CreatePrinterProfileModal: React.FC<CreatePrinterProfileModalProps>
                 <label className="block text-sm font-medium text-gray-300 mb-2">{t('printerProfile.printAreaPolygon')}</label>
                 <textarea
                   value={printableAreaPolygon}
-                  onChange={(e) => setPrintableAreaPolygon(e.target.value)}
+                  onChange={(e) => {
+                    setPrintableAreaPolygon(e.target.value);
+                    if (formError) {
+                      setFormError(null);
+                    }
+                  }}
                   rows={3}
                   className="w-full bg-white/5 border border-white/10 rounded-lg px-4 py-2 text-white placeholder-gray-500 focus:outline-none focus:border-purple-500 font-mono text-sm resize-none"
                   placeholder="0x0, 256x0, 256x256, 0x256"
@@ -1684,15 +1698,46 @@ export const CreatePrinterProfileModal: React.FC<CreatePrinterProfileModalProps>
       helpText?: string;
     };
     const longRetractionLevel = getMetadataString('enable_long_retraction_when_cut') || '0';
+    const perExtruderArrayKeys = [
+      'extruder_type',
+      'default_nozzle_volume_type',
+      'extruder_variant_list',
+      'extruder_ams_count',
+      'printer_extruder_id',
+      'printer_extruder_variant',
+      'physical_extruder_map',
+      'nozzle_type',
+      'nozzle_volume',
+      'extruder_printable_height',
+      'extruder_printable_area',
+      'extruder_offset',
+      'max_layer_height',
+      'min_layer_height',
+      'retraction_length',
+      'retract_restart_extra',
+      'retraction_speed',
+      'deretraction_speed',
+      'retraction_minimum_travel',
+      'retract_when_changing_layer',
+      'wipe',
+      'wipe_distance',
+      'retract_before_wipe',
+      'retract_lift_enforce',
+      'z_hop_types',
+      'z_hop',
+      'travel_slope',
+      'retract_lift_above',
+      'retract_lift_below',
+      'retract_length_toolchange',
+      'retract_restart_extra_toolchange',
+      'long_retractions_when_cut',
+      'retraction_distances_when_cut',
+    ] as const;
     const extruderSlotsCount = Math.max(
       1,
       nozzleDiameters.length,
       Number.parseInt(getMetadataString('extruders_count') || '0', 10) || 0,
-      getMetadataListValues('extruder_type').length,
-      getMetadataListValues('default_nozzle_volume_type').length,
-      getMetadataListValues('nozzle_type').length,
-      getMetadataListValues('retract_lift_enforce').length,
-      getMetadataListValues('z_hop_types').length,
+      ...perExtruderArrayKeys.map((key) => getMetadataListValues(key).length),
     );
 
     const renderMetadataField = (field: MetadataFieldConfig) => {
@@ -2453,6 +2498,11 @@ export const CreatePrinterProfileModal: React.FC<CreatePrinterProfileModalProps>
 
         {/* Form */}
         <form onSubmit={handleSubmit} className="flex-1 overflow-y-auto p-6 space-y-6">
+          {formError ? (
+            <div className="rounded-lg border border-red-500/40 bg-red-500/10 px-4 py-3 text-sm text-red-200">
+              {formError}
+            </div>
+          ) : null}
           {activeTab === 'general' && renderGeneralTab()}
           {activeTab === 'motion' && renderMotionTab()}
           {activeTab === 'extruders' && renderExtrudersTab()}

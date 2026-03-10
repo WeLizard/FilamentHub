@@ -36,6 +36,63 @@ def _merge_settings(base: Mapping[str, Any] | None) -> dict[str, Any]:
     return dict(base or {})
 
 
+def _parse_printable_area_point(raw_point: Any) -> tuple[float, float] | None:
+    """Разобрать точку printable_area формата XxY."""
+    if raw_point is None:
+        return None
+
+    normalized = str(raw_point).strip().replace("X", "x")
+    if not normalized:
+        return None
+
+    x_raw, separator, y_raw = normalized.partition("x")
+    if not separator:
+        return None
+
+    try:
+        return float(x_raw), float(y_raw)
+    except (TypeError, ValueError):
+        return None
+
+
+def _normalize_printable_area(area: Any) -> list[str] | None:
+    """Нормализовать printable_area в Orca-совместимый список точек."""
+    if not area:
+        return None
+
+    if isinstance(area, list):
+        normalized_points: list[str] = []
+        for raw_point in area:
+            parsed = _parse_printable_area_point(raw_point)
+            if parsed is None:
+                return None
+            x, y = parsed
+            normalized_points.append(f"{x:g}x{y:g}")
+
+        return normalized_points or None
+
+    if isinstance(area, dict):
+        if "x" in area and "y" in area:
+            x_size = float(area.get("x", 0))
+            y_size = float(area.get("y", 0))
+            return [
+                "0x0",
+                f"{x_size:g}x0",
+                f"{x_size:g}x{y_size:g}",
+                f"0x{y_size:g}",
+            ]
+
+        if "x_min" in area and "y_min" in area and "x_max" in area and "y_max" in area:
+            return [
+                f"{float(area['x_min']):g}x{float(area['y_min']):g}",
+                f"{float(area['x_max']):g}x{float(area['y_min']):g}",
+                f"{float(area['x_max']):g}x{float(area['y_max']):g}",
+                f"{float(area['x_min']):g}x{float(area['y_max']):g}",
+            ]
+
+    return None
+
+
 def _generate_orca_tag(printer: Printer | None, vendor: str | None) -> str:
     """
     Генерировать тег для OrcaSlicer на основе принтера или vendor.
@@ -270,27 +327,9 @@ async def printer_profile_to_orca_json(
     # Printable area / height - используем значения из orcaslicer_settings (приоритет), если нет - из отдельных колонок
     if "printable_area" not in settings:
         if profile.printable_area:
-            area = profile.printable_area
-            # Поддерживаем оба формата: {x, y} и {x_min, y_min, x_max, y_max}
-            if isinstance(area, dict):
-                if "x" in area and "y" in area:
-                    # Новый формат: {x, y} - ширина и глубина
-                    x_size = float(area.get("x", 0))
-                    y_size = float(area.get("y", 0))
-                    settings["printable_area"] = [
-                        "0x0",
-                        f"{x_size}x0",
-                        f"{x_size}x{y_size}",
-                        f"0x{y_size}",
-                    ]
-                elif "x_min" in area and "y_min" in area and "x_max" in area and "y_max" in area:
-                    # Старый формат: {x_min, y_min, x_max, y_max}
-                    settings["printable_area"] = [
-                        f"{area['x_min']}x{area['y_min']}",
-                        f"{area['x_max']}x{area['y_min']}",
-                        f"{area['x_max']}x{area['y_max']}",
-                        f"{area['x_min']}x{area['y_max']}",
-                    ]
+            normalized_area = _normalize_printable_area(profile.printable_area)
+            if normalized_area:
+                settings["printable_area"] = normalized_area
         # Если нет в профиле, пробуем построить из build_volume принтера
         elif profile.printer:
             printer = profile.printer
@@ -306,6 +345,11 @@ async def printer_profile_to_orca_json(
     
     if "printable_height" not in settings and profile.printable_height_mm:
         settings["printable_height"] = str(profile.printable_height_mm)
+
+    if profile.extra_metadata:
+        for key in ("bed_custom_model", "bed_custom_texture"):
+            if key not in settings and profile.extra_metadata.get(key):
+                settings[key] = str(profile.extra_metadata[key])
 
     # printer_model - используем значения из orcaslicer_settings (приоритет), если нет - из printer.name
     if "printer_model" not in settings:
@@ -546,4 +590,3 @@ def print_profile_info(profile: PrintProfile) -> str:
         f"updated_time = {int(updated_at.timestamp())}",
     ]
     return "\n".join(lines)
-
