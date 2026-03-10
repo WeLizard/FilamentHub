@@ -41,6 +41,8 @@ services:
       dockerfile: Dockerfile.prod
     container_name: filamenthub_backend_prod
     command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 4 --no-access-log
+    group_add:
+      - "110"  # host docker GID — for read-only docker.sock access
     volumes:
       # Персистентные данные
       - uploads_data:/app/uploads

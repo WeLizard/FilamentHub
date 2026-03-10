@@ -30,9 +30,8 @@ RUN chmod +x /app/docker-entrypoint.sh
 # Create directories for uploads and logs
 RUN mkdir -p uploads logs
 
-# Create non-root user with docker group access for stats endpoint
-RUN groupadd -g 999 docker || true && \
-    useradd -m -u 1000 -G docker appuser && \
+# Create non-root user (docker socket access via group_add in docker-compose)
+RUN useradd -m -u 1000 appuser && \
     chown -R appuser:appuser /app
 USER appuser
 
