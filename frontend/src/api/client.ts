@@ -650,9 +650,14 @@ type CreatePrinterProfilePayload = {
   description?: string | null;
   printer_id?: number | null;
   owner_user_id?: number | null;
+  vendor?: string | null;
   is_official?: boolean;
   active?: boolean;
-  orcaslicer_settings?: Record<string, any>;
+  printable_area?: Record<string, number> | string[] | null;
+  printable_height_mm?: number | null;
+  nozzle_diameters?: number[] | null;
+  orcaslicer_settings?: Record<string, any> | null;
+  extra_metadata?: Record<string, any> | null;
   start_gcode?: string | null;
   end_gcode?: string | null;
   notes?: string | null;

@@ -129,6 +129,316 @@ const LEGACY_COMPATIBILITY_GCODE_FIELDS = [
   { key: 'toolchange_gcode', labelKey: 'printerProfile.gcode.toolchange' },
 ] as const;
 
+const COMPATIBILITY_METADATA_KEYS = [
+  'bed_shape',
+  'machine_resume_gcode',
+  'machine_cancel_gcode',
+  'machine_custom_gcode',
+  'toolchange_gcode',
+] as const;
+
+const EXTRA_METADATA_ONLY_KEYS = [
+  ...COMPATIBILITY_METADATA_KEYS,
+  'bed_custom_rectangle',
+  'origin_z',
+  'base_id',
+  '_inherits_chain',
+] as const;
+
+const LEGACY_TO_ORCA_SETTING_ALIASES = {
+  machine_switch_extruder_time: 'machine_tool_change_time',
+  bed_model: 'bed_custom_model',
+  bed_texture: 'bed_custom_texture',
+} as const;
+
+const KNOWN_ORCA_MACHINE_SETTING_KEYS = new Set<string>([
+  'adaptive_bed_mesh_margin',
+  'auxiliary_fan',
+  'bbl_use_printhost',
+  'bed_custom_model',
+  'bed_custom_texture',
+  'bed_exclude_area',
+  'bed_mesh_max',
+  'bed_mesh_min',
+  'bed_mesh_probe_distance',
+  'bed_temperature_formula',
+  'before_layer_change_gcode',
+  'best_object_pos',
+  'change_extrusion_role_gcode',
+  'change_filament_gcode',
+  'cooling_tube_length',
+  'cooling_tube_retraction',
+  'default_bed_type',
+  'default_filament_profile',
+  'default_nozzle_volume_type',
+  'deretraction_speed',
+  'disable_m73',
+  'emit_machine_limits_to_gcode',
+  'enable_filament_ramming',
+  'enable_long_retraction_when_cut',
+  'enable_power_loss_recovery',
+  'extra_loading_move',
+  'extruder_ams_count',
+  'extruder_clearance_height_to_lid',
+  'extruder_clearance_height_to_rod',
+  'extruder_clearance_radius',
+  'extruder_offset',
+  'extruder_printable_area',
+  'extruder_printable_height',
+  'extruder_type',
+  'extruder_variant_list',
+  'extruders_count',
+  'fan_kickstart',
+  'fan_speedup_overhangs',
+  'fan_speedup_time',
+  'file_start_gcode',
+  'gcode_flavor',
+  'high_current_on_filament_swap',
+  'hotend_model',
+  'layer_change_gcode',
+  'long_retractions_when_cut',
+  'machine_end_gcode',
+  'machine_load_filament_time',
+  'machine_max_acceleration_e',
+  'machine_max_acceleration_extruding',
+  'machine_max_acceleration_retracting',
+  'machine_max_acceleration_travel',
+  'machine_max_acceleration_x',
+  'machine_max_acceleration_y',
+  'machine_max_acceleration_z',
+  'machine_max_jerk_e',
+  'machine_max_jerk_x',
+  'machine_max_jerk_y',
+  'machine_max_jerk_z',
+  'machine_max_junction_deviation',
+  'machine_max_speed_e',
+  'machine_max_speed_x',
+  'machine_max_speed_y',
+  'machine_max_speed_z',
+  'machine_min_extruding_rate',
+  'machine_min_travel_rate',
+  'machine_pause_gcode',
+  'machine_start_gcode',
+  'machine_tool_change_time',
+  'machine_unload_filament_time',
+  'manual_filament_change',
+  'max_layer_height',
+  'max_resonance_avoidance_speed',
+  'min_layer_height',
+  'min_resonance_avoidance_speed',
+  'nozzle_diameter',
+  'nozzle_hrc',
+  'nozzle_type',
+  'nozzle_volume',
+  'parking_pos_retraction',
+  'pellet_modded_printer',
+  'physical_extruder_map',
+  'preferred_orientation',
+  'printer_extruder_id',
+  'printer_extruder_variant',
+  'printer_model',
+  'printer_notes',
+  'printer_structure',
+  'printer_technology',
+  'printer_variant',
+  'printing_by_object_gcode',
+  'printable_area',
+  'printable_height',
+  'purge_in_prime_tower',
+  'resonance_avoidance',
+  'retract_before_wipe',
+  'retract_length_toolchange',
+  'retract_lift_above',
+  'retract_lift_below',
+  'retract_lift_enforce',
+  'retract_restart_extra',
+  'retract_restart_extra_toolchange',
+  'retract_when_changing_layer',
+  'retraction_distances_when_cut',
+  'retraction_length',
+  'retraction_minimum_travel',
+  'retraction_speed',
+  'scan_first_layer',
+  'single_extruder_multi_material',
+  'support_air_filtration',
+  'support_chamber_temp_control',
+  'support_multi_bed_types',
+  'template_custom_gcode',
+  'thumbnails',
+  'thumbnails_format',
+  'time_cost',
+  'time_lapse_gcode',
+  'travel_slope',
+  'use_firmware_retraction',
+  'use_relative_e_distances',
+  'wipe',
+  'wipe_distance',
+  'wrapping_detection_gcode',
+  'z_hop',
+  'z_hop_types',
+  'z_offset',
+]);
+
+const EXTRA_METADATA_ONLY_KEY_SET = new Set<string>(EXTRA_METADATA_ONLY_KEYS);
+
+const sanitizeMachineSettings = (settings: Record<string, any>): Record<string, any> => {
+  const next = { ...settings };
+
+  Object.keys(LEGACY_TO_ORCA_SETTING_ALIASES).forEach((legacyKey) => {
+    delete next[legacyKey];
+  });
+
+  EXTRA_METADATA_ONLY_KEYS.forEach((key) => {
+    delete next[key];
+  });
+
+  return next;
+};
+
+const extractMachineSettingsFromExtraMetadata = (extraMetadata: Record<string, any> | null | undefined): Record<string, any> => {
+  if (!extraMetadata || typeof extraMetadata !== 'object') {
+    return {};
+  }
+
+  const extracted: Record<string, any> = {};
+
+  Object.entries(extraMetadata).forEach(([key, value]) => {
+    if (
+      EXTRA_METADATA_ONLY_KEY_SET.has(key) ||
+      key in LEGACY_TO_ORCA_SETTING_ALIASES ||
+      !KNOWN_ORCA_MACHINE_SETTING_KEYS.has(key)
+    ) {
+      return;
+    }
+    extracted[key] = value;
+  });
+
+  Object.entries(LEGACY_TO_ORCA_SETTING_ALIASES).forEach(([legacyKey, canonicalKey]) => {
+    if (extraMetadata[legacyKey] !== undefined && extracted[canonicalKey] === undefined) {
+      extracted[canonicalKey] = extraMetadata[legacyKey];
+    }
+  });
+
+  return sanitizeMachineSettings(extracted);
+};
+
+const mergeCompatibilityExtraMetadata = (
+  extraMetadata: Record<string, any> | null | undefined,
+  orcaSettings: Record<string, any> | null | undefined,
+): Record<string, any> => {
+  const merged = { ...(extraMetadata ?? {}) };
+  const settings = orcaSettings ?? {};
+
+  EXTRA_METADATA_ONLY_KEYS.forEach((key) => {
+    if (merged[key] === undefined && settings[key] !== undefined) {
+      merged[key] = settings[key];
+    }
+  });
+
+  return merged;
+};
+
+const serializePrintableAreaForOrcaSettings = (area: string[] | { x: number; y: number } | null): string[] | undefined => {
+  if (!area) {
+    return undefined;
+  }
+
+  if (Array.isArray(area)) {
+    return area.map((item) => String(item).trim()).filter((item) => item.length > 0);
+  }
+
+  const x = Number(area.x);
+  const y = Number(area.y);
+  if (!Number.isFinite(x) || !Number.isFinite(y)) {
+    return undefined;
+  }
+
+  return [
+    '0x0',
+    `${x}x0`,
+    `${x}x${y}`,
+    `0x${y}`,
+  ];
+};
+
+const getProfilePrintableAreaSource = (profileLike: PrinterProfile | null | undefined): unknown => {
+  const orcaArea = profileLike?.orcaslicer_settings?.printable_area;
+  if (orcaArea !== undefined && orcaArea !== null) {
+    return orcaArea;
+  }
+  return profileLike?.printable_area ?? null;
+};
+
+const getProfilePrintableHeightValue = (profileLike: PrinterProfile | null | undefined): string => {
+  const rawValue = profileLike?.orcaslicer_settings?.printable_height;
+  if (Array.isArray(rawValue)) {
+    return rawValue[0] !== undefined ? String(rawValue[0]) : '';
+  }
+  if (rawValue !== undefined && rawValue !== null && rawValue !== '') {
+    return String(rawValue);
+  }
+  return profileLike?.printable_height_mm?.toString() || '';
+};
+
+const getProfileNozzleDiameterValues = (profileLike: PrinterProfile | null | undefined): string[] => {
+  const rawValue = profileLike?.orcaslicer_settings?.nozzle_diameter;
+  if (Array.isArray(rawValue)) {
+    return rawValue.map((item) => String(item));
+  }
+  if (rawValue !== undefined && rawValue !== null && rawValue !== '') {
+    return [String(rawValue)];
+  }
+  return profileLike?.nozzle_diameters?.map((item) => item.toString()) || [];
+};
+
+const getProfileNotesValue = (profileLike: PrinterProfile | null | undefined): string => {
+  const printerNotes = profileLike?.orcaslicer_settings?.printer_notes;
+  if (typeof printerNotes === 'string' && printerNotes.trim() !== '') {
+    return printerNotes;
+  }
+  return profileLike?.notes || '';
+};
+
+const buildInitialMachineSettings = (profileLike: PrinterProfile | null | undefined): Record<string, any> => {
+  const settings = sanitizeMachineSettings({
+    ...extractMachineSettingsFromExtraMetadata(profileLike?.extra_metadata),
+    ...(profileLike?.orcaslicer_settings ?? {}),
+  });
+
+  if (settings.machine_start_gcode === undefined && profileLike?.start_gcode) {
+    settings.machine_start_gcode = profileLike.start_gcode;
+  }
+  if (settings.machine_end_gcode === undefined && profileLike?.end_gcode) {
+    settings.machine_end_gcode = profileLike.end_gcode;
+  }
+  if (settings.printable_area === undefined) {
+    const printableArea = serializePrintableAreaForOrcaSettings(
+      Array.isArray(profileLike?.printable_area)
+        ? profileLike?.printable_area
+        : profileLike?.printable_area
+          ? {
+              x: Number((profileLike.printable_area as Record<string, any>).x),
+              y: Number((profileLike.printable_area as Record<string, any>).y),
+            }
+          : null,
+    );
+    if (printableArea && printableArea.length > 0) {
+      settings.printable_area = printableArea;
+    }
+  }
+  if (settings.printable_height === undefined && profileLike?.printable_height_mm !== null && profileLike?.printable_height_mm !== undefined) {
+    settings.printable_height = String(profileLike.printable_height_mm);
+  }
+  if (settings.nozzle_diameter === undefined && profileLike?.nozzle_diameters?.length) {
+    settings.nozzle_diameter = profileLike.nozzle_diameters.map((item) => String(item));
+  }
+  if (settings.printer_notes === undefined && profileLike?.notes) {
+    settings.printer_notes = profileLike.notes;
+  }
+
+  return sanitizeMachineSettings(settings);
+};
+
 const parsePrintableAreaPoint = (rawPoint: string): { x: number; y: number } | null => {
   const trimmed = rawPoint.trim();
   if (!trimmed) {
@@ -282,6 +592,7 @@ export const CreatePrinterProfileModal: React.FC<CreatePrinterProfileModalProps>
   const [nozzleDiameters, setNozzleDiameters] = useState<string[]>([]);
   const [newNozzleDiameter, setNewNozzleDiameter] = useState('');
   const [notes, setNotes] = useState('');
+  const [machineSettings, setMachineSettings] = useState<Record<string, any>>({});
   const [extraMetadata, setExtraMetadata] = useState('');
   const [jsonError, setJsonError] = useState<string | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
@@ -327,8 +638,8 @@ export const CreatePrinterProfileModal: React.FC<CreatePrinterProfileModalProps>
     }
   }, [name, profile, baseProfile]);
 
-  // Парсинг extra_metadata
-  const parsedMetadata = useMemo(() => {
+  // Парсинг raw extra_metadata JSON (только compatibility/service хвосты).
+  const parsedExtraMetadata = useMemo(() => {
     if (!extraMetadata.trim()) {
       return {};
     }
@@ -339,13 +650,16 @@ export const CreatePrinterProfileModal: React.FC<CreatePrinterProfileModalProps>
     }
   }, [extraMetadata]);
 
-  const metadataInvalid = parsedMetadata === null;
+  const metadataInvalid = false;
 
   const getMetadataValue = (key: string): any => {
-    if (!parsedMetadata || typeof parsedMetadata !== 'object') {
-      return undefined;
+    if (EXTRA_METADATA_ONLY_KEY_SET.has(key)) {
+      if (!parsedExtraMetadata || typeof parsedExtraMetadata !== 'object') {
+        return undefined;
+      }
+      return (parsedExtraMetadata as Record<string, any>)[key];
     }
-    return (parsedMetadata as Record<string, any>)[key];
+    return machineSettings[key];
   };
 
   const buildTranslatedOptions = (options: CanonicalOption[], currentValue?: string | null) => {
@@ -460,31 +774,60 @@ export const CreatePrinterProfileModal: React.FC<CreatePrinterProfileModalProps>
   ];
 
   const updateMetadataValue = (key: string, value: any, aliasesToDelete: string[] = []) => {
-    let base: Record<string, any> = {};
-    try {
-      base = extraMetadata.trim() ? JSON.parse(extraMetadata) : {};
-    } catch (error) {
-      base = {};
-    }
-
-    aliasesToDelete.forEach((alias) => {
-      delete base[alias];
-    });
-
+    const isCompatibilityKey = EXTRA_METADATA_ONLY_KEY_SET.has(key);
     const isSpecialArrayField = ARRAY_FIELDS_WITH_EMPTY_VALID.includes(key);
 
-    if (
-      value === undefined ||
-      value === null ||
-      (typeof value === 'string' && value.trim() === '') ||
-      (Array.isArray(value) && value.length === 0 && !isSpecialArrayField)
-    ) {
-      delete base[key];
-    } else {
-      base[key] = value;
+    if (isCompatibilityKey) {
+      if (extraMetadata.trim() && parsedExtraMetadata === null) {
+        setJsonError(t('printerProfile.jsonInvalid'));
+        return;
+      }
+
+      const base =
+        parsedExtraMetadata && typeof parsedExtraMetadata === 'object'
+          ? { ...(parsedExtraMetadata as Record<string, any>) }
+          : {};
+
+      aliasesToDelete.forEach((alias) => {
+        delete base[alias];
+      });
+
+      if (
+        value === undefined ||
+        value === null ||
+        (typeof value === 'string' && value.trim() === '') ||
+        (Array.isArray(value) && value.length === 0 && !isSpecialArrayField)
+      ) {
+        delete base[key];
+      } else {
+        base[key] = value;
+      }
+
+      setJsonError(null);
+      setExtraMetadata(Object.keys(base).length ? JSON.stringify(base, null, 2) : '');
+      return;
     }
-    setJsonError(null);
-    setExtraMetadata(Object.keys(base).length ? JSON.stringify(base, null, 2) : '');
+
+    setMachineSettings((prev) => {
+      const next = { ...prev };
+
+      aliasesToDelete.forEach((alias) => {
+        delete next[alias];
+      });
+
+      if (
+        value === undefined ||
+        value === null ||
+        (typeof value === 'string' && value.trim() === '') ||
+        (Array.isArray(value) && value.length === 0 && !isSpecialArrayField)
+      ) {
+        delete next[key];
+      } else {
+        next[key] = value;
+      }
+
+      return sanitizeMachineSettings(next);
+    });
   };
 
   const handleMetadataListChange = (key: string, rawValue: string, aliasesToDelete: string[] = []) => {
@@ -565,14 +908,18 @@ export const CreatePrinterProfileModal: React.FC<CreatePrinterProfileModalProps>
         setPrinterId(profile.printer_id);
         setPrinterSearch('');
         setVendor(profile.vendor || '');
-        const dimensions = getPrintableAreaDimensions(profile.printable_area);
+        const machineSettingsSource = buildInitialMachineSettings(profile);
+        const extraMetadataSource = mergeCompatibilityExtraMetadata(profile.extra_metadata, profile.orcaslicer_settings);
+        const printableAreaSource = getProfilePrintableAreaSource(profile);
+        const dimensions = getPrintableAreaDimensions(printableAreaSource);
         setPrintableAreaX(dimensions.x);
         setPrintableAreaY(dimensions.y);
-        setPrintableAreaPolygon(getPrintableAreaPolygonString(profile.printable_area));
-        setPrintableHeightMm(profile.printable_height_mm?.toString() || '');
-        setNozzleDiameters(profile.nozzle_diameters?.map(d => d.toString()) || []);
-        setNotes(profile.notes || '');
-        setExtraMetadata(profile.extra_metadata ? JSON.stringify(profile.extra_metadata, null, 2) : '');
+        setPrintableAreaPolygon(getPrintableAreaPolygonString(printableAreaSource));
+        setPrintableHeightMm(getProfilePrintableHeightValue(profile));
+        setNozzleDiameters(getProfileNozzleDiameterValues(profile));
+        setNotes(getProfileNotesValue(profile));
+        setMachineSettings(machineSettingsSource);
+        setExtraMetadata(Object.keys(extraMetadataSource).length ? JSON.stringify(extraMetadataSource, null, 2) : '');
       } else if (baseProfile) {
         // Клонирование
         setName(`${baseProfile.name} (${t('printerProfile.copyLabel')})`);
@@ -581,14 +928,18 @@ export const CreatePrinterProfileModal: React.FC<CreatePrinterProfileModalProps>
         setPrinterId(baseProfile.printer_id);
         setPrinterSearch('');
         setVendor(baseProfile.vendor || '');
-        const dimensions = getPrintableAreaDimensions(baseProfile.printable_area);
+        const machineSettingsSource = buildInitialMachineSettings(baseProfile);
+        const extraMetadataSource = mergeCompatibilityExtraMetadata(baseProfile.extra_metadata, baseProfile.orcaslicer_settings);
+        const printableAreaSource = getProfilePrintableAreaSource(baseProfile);
+        const dimensions = getPrintableAreaDimensions(printableAreaSource);
         setPrintableAreaX(dimensions.x);
         setPrintableAreaY(dimensions.y);
-        setPrintableAreaPolygon(getPrintableAreaPolygonString(baseProfile.printable_area));
-        setPrintableHeightMm(baseProfile.printable_height_mm?.toString() || '');
-        setNozzleDiameters(baseProfile.nozzle_diameters?.map(d => d.toString()) || []);
-        setNotes(baseProfile.notes || '');
-        setExtraMetadata(baseProfile.extra_metadata ? JSON.stringify(baseProfile.extra_metadata, null, 2) : '');
+        setPrintableAreaPolygon(getPrintableAreaPolygonString(printableAreaSource));
+        setPrintableHeightMm(getProfilePrintableHeightValue(baseProfile));
+        setNozzleDiameters(getProfileNozzleDiameterValues(baseProfile));
+        setNotes(getProfileNotesValue(baseProfile));
+        setMachineSettings(machineSettingsSource);
+        setExtraMetadata(Object.keys(extraMetadataSource).length ? JSON.stringify(extraMetadataSource, null, 2) : '');
       } else {
         // Создание нового
         setName('');
@@ -603,6 +954,7 @@ export const CreatePrinterProfileModal: React.FC<CreatePrinterProfileModalProps>
         setPrintableHeightMm('');
         setNozzleDiameters([]);
         setNotes('');
+        setMachineSettings({});
         setExtraMetadata('');
       }
       setActiveTab('general');
@@ -671,25 +1023,14 @@ export const CreatePrinterProfileModal: React.FC<CreatePrinterProfileModalProps>
       return;
     }
 
-    let extraMetadataObj: Record<string, any> = {};
+    let rawExtraMetadataObj: Record<string, any> = {};
     if (extraMetadata.trim()) {
       try {
-        const parsedExtraMetadata = JSON.parse(extraMetadata) as Record<string, any>;
-        if (parsedExtraMetadata.machine_switch_extruder_time && !parsedExtraMetadata.machine_tool_change_time) {
-          parsedExtraMetadata.machine_tool_change_time = parsedExtraMetadata.machine_switch_extruder_time;
+        const parsedExtraMetadata = JSON.parse(extraMetadata);
+        if (!parsedExtraMetadata || typeof parsedExtraMetadata !== 'object' || Array.isArray(parsedExtraMetadata)) {
+          throw new Error('extra_metadata must be an object');
         }
-        if (parsedExtraMetadata.bed_model && !parsedExtraMetadata.bed_custom_model) {
-          parsedExtraMetadata.bed_custom_model = parsedExtraMetadata.bed_model;
-        }
-        if (parsedExtraMetadata.bed_texture && !parsedExtraMetadata.bed_custom_texture) {
-          parsedExtraMetadata.bed_custom_texture = parsedExtraMetadata.bed_texture;
-        }
-        delete parsedExtraMetadata.machine_switch_extruder_time;
-        delete parsedExtraMetadata.bed_model;
-        delete parsedExtraMetadata.bed_texture;
-        delete parsedExtraMetadata.bed_custom_rectangle;
-        delete parsedExtraMetadata.origin_z;
-        extraMetadataObj = parsedExtraMetadata;
+        rawExtraMetadataObj = parsedExtraMetadata as Record<string, any>;
         setJsonError(null);
       } catch (error) {
         console.error('Invalid extra metadata JSON', error);
@@ -699,10 +1040,6 @@ export const CreatePrinterProfileModal: React.FC<CreatePrinterProfileModalProps>
     } else {
       setJsonError(null);
     }
-
-    // Извлекаем start_gcode и end_gcode из extra_metadata для обратной совместимости
-    const startGcode = extraMetadataObj.machine_start_gcode || '';
-    const endGcode = extraMetadataObj.machine_end_gcode || '';
 
     const printableAreaPolygonValues = parsePrintableAreaPolygon(printableAreaPolygon);
     if (printableAreaPolygon.trim() && printableAreaPolygonValues === null) {
@@ -722,6 +1059,58 @@ export const CreatePrinterProfileModal: React.FC<CreatePrinterProfileModalProps>
       .map(d => parseFloat(d))
       .filter(d => !isNaN(d) && d > 0);
 
+    const orcaSettings = sanitizeMachineSettings({
+      ...extractMachineSettingsFromExtraMetadata(rawExtraMetadataObj),
+      ...machineSettings,
+    });
+
+    const printableAreaForOrcaSettings = serializePrintableAreaForOrcaSettings(printableArea);
+    if (printableAreaForOrcaSettings && printableAreaForOrcaSettings.length > 0) {
+      orcaSettings.printable_area = printableAreaForOrcaSettings;
+    } else {
+      delete orcaSettings.printable_area;
+    }
+
+    const printableHeightValue = printableHeightMm.trim();
+    if (printableHeightValue) {
+      orcaSettings.printable_height = printableHeightValue;
+    } else {
+      delete orcaSettings.printable_height;
+    }
+
+    if (nozzleDiametersArray.length > 0) {
+      orcaSettings.nozzle_diameter = nozzleDiametersArray.map((diameter) => String(diameter));
+    } else {
+      delete orcaSettings.nozzle_diameter;
+    }
+
+    const trimmedNotes = notes.trim();
+    if (trimmedNotes) {
+      orcaSettings.printer_notes = trimmedNotes;
+    } else {
+      delete orcaSettings.printer_notes;
+    }
+
+    const cleanedExtraMetadata = { ...rawExtraMetadataObj };
+    KNOWN_ORCA_MACHINE_SETTING_KEYS.forEach((key) => {
+      delete cleanedExtraMetadata[key];
+    });
+    Object.keys(LEGACY_TO_ORCA_SETTING_ALIASES).forEach((legacyKey) => {
+      delete cleanedExtraMetadata[legacyKey];
+    });
+
+    const extraMetadataObj = mergeCompatibilityExtraMetadata(cleanedExtraMetadata, orcaSettings);
+    const startGcode = typeof orcaSettings.machine_start_gcode === 'string'
+      ? orcaSettings.machine_start_gcode
+      : orcaSettings.machine_start_gcode !== undefined && orcaSettings.machine_start_gcode !== null
+        ? String(orcaSettings.machine_start_gcode)
+        : '';
+    const endGcode = typeof orcaSettings.machine_end_gcode === 'string'
+      ? orcaSettings.machine_end_gcode
+      : orcaSettings.machine_end_gcode !== undefined && orcaSettings.machine_end_gcode !== null
+        ? String(orcaSettings.machine_end_gcode)
+        : '';
+
     const data = {
       name: name.trim(),
       slug: slug.trim(),
@@ -733,7 +1122,8 @@ export const CreatePrinterProfileModal: React.FC<CreatePrinterProfileModalProps>
       nozzle_diameters: nozzleDiametersArray.length > 0 ? nozzleDiametersArray : null,
       start_gcode: startGcode || null,
       end_gcode: endGcode || null,
-      notes: notes.trim() || null,
+      notes: trimmedNotes || null,
+      orcaslicer_settings: Object.keys(orcaSettings).length > 0 ? orcaSettings : {},
       extra_metadata: Object.keys(extraMetadataObj).length > 0 ? extraMetadataObj : null,
       active: true,
     };

@@ -128,7 +128,7 @@ export interface PrinterProfile {
   external_id: string | null;
   setting_id: string | null;
   nozzle_diameters: number[] | null;
-  printable_area: Record<string, number> | null;
+  printable_area: Record<string, number> | string[] | null;
   printable_height_mm: number | null;
   default_print_profile_slug: string | null;
   orcaslicer_settings: Record<string, any>;
