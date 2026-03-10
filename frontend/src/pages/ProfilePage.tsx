@@ -101,6 +101,21 @@ export const ProfilePage: React.FC = () => {
     const validBadgeTypes = new Set<BadgeType>(Object.keys(BADGE_CONFIG) as BadgeType[]);
     return (user?.badges ?? []).filter((badge): badge is BadgeType => validBadgeTypes.has(badge as BadgeType));
   }, [user?.badges]);
+  const renderExpandableProfileBadge = (badge: BadgeType) => (
+    <span
+      key={badge}
+      className="group inline-flex h-10 items-center overflow-hidden rounded-full border border-white/10 bg-black/25 px-2 text-gray-100 shadow-md shadow-black/10 transition-all duration-300 hover:border-amber-300/35 hover:bg-black/40 focus-within:border-amber-300/35 focus-within:bg-black/40"
+      title={t(BADGE_CONFIG[badge].titleKey)}
+      tabIndex={0}
+    >
+      <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-white/8 transition-colors duration-300 group-hover:bg-white/12 group-focus-within:bg-white/12">
+        <Badge type={badge} size="sm" />
+      </span>
+      <span className="ml-0 max-w-0 overflow-hidden whitespace-nowrap text-xs font-medium opacity-0 transition-all duration-300 group-hover:ml-2 group-hover:max-w-40 group-hover:opacity-100 group-focus-within:ml-2 group-focus-within:max-w-40 group-focus-within:opacity-100">
+        {t(BADGE_CONFIG[badge].labelKey)}
+      </span>
+    </span>
+  );
 
   // Загружаем все пресеты пользователя (активные + черновики)
   const { data: userPresetsData } = useQuery({
@@ -656,20 +671,9 @@ export const ProfilePage: React.FC = () => {
         <div className="flex flex-col md:flex-row items-center justify-center gap-3 md:gap-4 mb-3 md:mb-4">
           <div className="order-1 md:order-2 relative flex items-center justify-center">
             {profileBadges.length > 0 && (
-              <div className="hidden md:block absolute right-full top-1/2 mr-4 w-max max-w-[min(42rem,calc(100vw-16rem))] -translate-y-1/2 rounded-xl border border-white/10 bg-black/20 px-3 py-2 text-left shadow-lg shadow-black/10">
-                <p className="mb-1 text-[11px] uppercase tracking-[0.24em] text-amber-200/80">
-                  {t('profilePage.achievements')}
-                </p>
+              <div className="hidden md:block absolute right-full top-1/2 mr-4 w-max max-w-[min(44rem,calc(100vw-14rem))] -translate-y-1/2">
                 <div className="flex items-center gap-2 overflow-x-auto whitespace-nowrap scrollbar-hide">
-                  {profileBadges.map((badge) => (
-                    <span
-                      key={badge}
-                      className="inline-flex items-center gap-1.5 rounded-lg border border-white/10 bg-white/10 px-2.5 py-1.5 text-xs text-gray-100"
-                    >
-                      <Badge type={badge} size="sm" />
-                      <span className="leading-none">{t(BADGE_CONFIG[badge].labelKey)}</span>
-                    </span>
-                  ))}
+                  {profileBadges.map(renderExpandableProfileBadge)}
                 </div>
               </div>
             )}
@@ -687,20 +691,9 @@ export const ProfilePage: React.FC = () => {
           </div>
         </div>
         {profileBadges.length > 0 && (
-          <div className="md:hidden mx-auto mt-3 w-full max-w-sm rounded-xl border border-white/10 bg-black/20 px-3 py-2 text-left shadow-lg shadow-black/10">
-            <p className="mb-1 text-[11px] uppercase tracking-[0.24em] text-amber-200/80">
-              {t('profilePage.achievements')}
-            </p>
+          <div className="md:hidden mx-auto mt-3 w-full max-w-sm">
             <div className="flex items-center gap-2 overflow-x-auto whitespace-nowrap scrollbar-hide">
-              {profileBadges.map((badge) => (
-                <span
-                  key={badge}
-                  className="inline-flex items-center gap-1.5 rounded-lg border border-white/10 bg-white/10 px-2.5 py-1.5 text-xs text-gray-100"
-                >
-                  <Badge type={badge} size="sm" />
-                  <span className="leading-none">{t(BADGE_CONFIG[badge].labelKey)}</span>
-                </span>
-              ))}
+              {profileBadges.map(renderExpandableProfileBadge)}
             </div>
           </div>
         )}
