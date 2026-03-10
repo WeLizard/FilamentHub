@@ -727,7 +727,7 @@ async def get_admin_stats(
 
     # --- Notifications ---
     notifications_unread = await db.scalar(
-        select(func.count(Notification.id)).where(Notification.is_read == False)
+        select(func.count(Notification.id)).where(Notification.read == False)
     )
 
     return {
