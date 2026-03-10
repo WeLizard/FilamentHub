@@ -2953,6 +2953,16 @@
       "yandexDesc": "Индексация, ошибки, поисковые запросы",
       "googleConsole": "Google Search Console",
       "googleDesc": "Производительность, покрытие, Core Web Vitals"
+    },
+    "docker": {
+      "title": "Docker-контейнеры",
+      "load": "Загрузить метрики",
+      "loading": "Загрузка метрик Docker..."
+    },
+    "pagespeed": {
+      "check": "Проверить",
+      "hint": "Нажмите «Проверить» для анализа скорости сайта через Google PageSpeed API",
+      "analyzing": "Анализ скорости..."
     }
   },
   "confirmModal": {

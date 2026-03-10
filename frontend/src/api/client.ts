@@ -1072,6 +1072,18 @@ export const adminAPI = {
     return response.data;
   },
 
+  getDockerStats: async (): Promise<{
+    containers: Array<{
+      name: string; cpu: string; mem_usage: string; mem_perc: string;
+      net_io: string; block_io: string; pids: string;
+      restart_count: number; status: string;
+    }>;
+    error?: string;
+  }> => {
+    const response = await api.get('/admin/docker-stats');
+    return response.data;
+  },
+
   // Database Management
   getMigrationHistory: async (): Promise<{
     current_revision: string | null;

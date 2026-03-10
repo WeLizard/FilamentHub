@@ -775,6 +775,67 @@ async def get_admin_stats(
     }
 
 
+# ==================== Docker Stats ====================
+
+
+@router.get("/docker-stats")
+async def get_docker_stats(
+    admin: Annotated[User, Depends(get_current_admin_user)],
+) -> dict:
+    """Get Docker container metrics (on-demand, not cached)."""
+    import asyncio
+    import json
+
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            "docker", "stats", "--no-stream", "--format",
+            '{"name":"{{.Name}}","cpu":"{{.CPUPerc}}","mem_usage":"{{.MemUsage}}","mem_perc":"{{.MemPerc}}","net_io":"{{.NetIO}}","block_io":"{{.BlockIO}}","pids":"{{.PIDs}}"}',
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=10)
+
+        if proc.returncode != 0:
+            logger.warning("docker stats failed: %s", stderr.decode())
+            return {"containers": [], "error": "Docker stats unavailable"}
+
+        containers = []
+        for line in stdout.decode().strip().split("\n"):
+            if line.strip():
+                try:
+                    containers.append(json.loads(line))
+                except json.JSONDecodeError:
+                    continue
+
+        # Get restart counts via docker inspect
+        for c in containers:
+            try:
+                insp = await asyncio.create_subprocess_exec(
+                    "docker", "inspect", "--format",
+                    '{{.RestartCount}} {{.State.Status}}',
+                    c["name"],
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE,
+                )
+                out, _ = await asyncio.wait_for(insp.communicate(), timeout=5)
+                parts = out.decode().strip().split(" ", 1)
+                c["restart_count"] = int(parts[0]) if parts[0].isdigit() else 0
+                c["status"] = parts[1] if len(parts) > 1 else "unknown"
+            except Exception:
+                c["restart_count"] = 0
+                c["status"] = "unknown"
+
+        return {"containers": containers}
+
+    except asyncio.TimeoutError:
+        return {"containers": [], "error": "Docker stats timeout"}
+    except FileNotFoundError:
+        return {"containers": [], "error": "Docker CLI not available"}
+    except Exception as e:
+        logger.warning("Docker stats error: %s", e, exc_info=True)
+        return {"containers": [], "error": "Docker stats unavailable"}
+
+
 # ==================== Brand Requests ====================
 
 

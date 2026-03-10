@@ -9,6 +9,10 @@ RUN apt-get update && apt-get install -y \
     curl \
     && rm -rf /var/lib/apt/lists/*
 
+# Install Docker CLI only (for admin docker-stats endpoint)
+RUN curl -fsSL https://download.docker.com/linux/static/stable/x86_64/docker-27.5.1.tgz \
+    | tar xz --strip-components=1 -C /usr/local/bin docker/docker
+
 # Copy dependency files first
 COPY pyproject.toml ./
 
@@ -26,8 +30,9 @@ RUN chmod +x /app/docker-entrypoint.sh
 # Create directories for uploads and logs
 RUN mkdir -p uploads logs
 
-# Create non-root user
-RUN useradd -m -u 1000 appuser && \
+# Create non-root user with docker group access for stats endpoint
+RUN groupadd -g 999 docker || true && \
+    useradd -m -u 1000 -G docker appuser && \
     chown -R appuser:appuser /app
 USER appuser
 

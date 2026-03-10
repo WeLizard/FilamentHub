@@ -50,6 +50,8 @@ services:
       - ./backend/logs:/app/logs
       # Wiki content - чтобы можно было редактировать без пересборки
       - ./backend/wiki_content:/app/wiki_content
+      # Docker socket for admin stats (read-only)
+      - /var/run/docker.sock:/var/run/docker.sock:ro
     # Backend НЕ пробрасываем наружу - доступ только через nginx (frontend)
     # ports:
     #   - "${BACKEND_PORT:-8000}:8000"
