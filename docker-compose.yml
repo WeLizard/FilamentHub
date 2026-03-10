@@ -2,6 +2,7 @@ services:
   postgres:
     image: postgres:15-alpine
     container_name: filamenthub_postgres_prod
+    command: postgres -c log_checkpoints=off -c log_min_messages=warning
     env_file:
       - .env
     environment:
