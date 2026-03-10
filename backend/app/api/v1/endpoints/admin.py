@@ -775,6 +775,46 @@ async def get_admin_stats(
     }
 
 
+# ==================== Admin Settings (Redis) ====================
+
+ADMIN_SETTINGS_PREFIX = "admin:settings:"
+
+
+async def _get_redis():
+    import redis.asyncio as aioredis
+    from app.core.config import settings as cfg
+    return aioredis.from_url(cfg.REDIS_URL, decode_responses=True)
+
+
+@router.get("/settings/{key}")
+async def get_admin_setting(
+    key: str,
+    admin: Annotated[User, Depends(get_current_admin_user)],
+) -> dict:
+    """Get an admin setting from Redis."""
+    r = await _get_redis()
+    val = await r.get(f"{ADMIN_SETTINGS_PREFIX}{key}")
+    await r.aclose()
+    return {"key": key, "value": val}
+
+
+@router.put("/settings/{key}")
+async def set_admin_setting(
+    key: str,
+    admin: Annotated[User, Depends(get_current_admin_user)],
+    body: dict = Body(...),
+) -> dict:
+    """Save an admin setting to Redis."""
+    r = await _get_redis()
+    val = body.get("value", "")
+    if val:
+        await r.set(f"{ADMIN_SETTINGS_PREFIX}{key}", str(val))
+    else:
+        await r.delete(f"{ADMIN_SETTINGS_PREFIX}{key}")
+    await r.aclose()
+    return {"key": key, "value": val}
+
+
 # ==================== Docker Stats ====================
 
 

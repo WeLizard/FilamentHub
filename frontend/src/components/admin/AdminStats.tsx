@@ -1,7 +1,7 @@
 /** Admin dashboard — platform statistics, Docker metrics & SEO tools */
 
 import { useTranslation } from 'react-i18next';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import {
   BarChart3, Users, Building2, Settings, TrendingUp,
@@ -107,26 +107,28 @@ function PageSpeedMetric({ label, value, unit }: { label: string; value: string;
 }
 
 /* ─── PageSpeed Widget ─── */
-const PAGESPEED_KEY_STORAGE = 'fh_pagespeed_api_key';
-
 function PageSpeedWidget({ t }: { t: (key: string) => string }) {
   const [strategy, setStrategy] = useState<'mobile' | 'desktop'>('mobile');
   const [enabled, setEnabled] = useState(false);
-  const [apiKey, setApiKey] = useState(() => localStorage.getItem(PAGESPEED_KEY_STORAGE) || '');
   const [showKeyInput, setShowKeyInput] = useState(false);
-  const [keyDraft, setKeyDraft] = useState(apiKey);
+  const [keyDraft, setKeyDraft] = useState('');
   const [error, setError] = useState('');
 
-  const saveKey = () => {
+  // Load API key from backend
+  const { data: keyData } = useQuery({
+    queryKey: ['admin-setting', 'pagespeed_api_key'],
+    queryFn: () => adminAPI.getSetting('pagespeed_api_key'),
+  });
+  const apiKey = keyData?.value || '';
+
+  const queryClient = useQueryClient();
+
+  const saveKey = async () => {
     const trimmed = keyDraft.trim();
-    if (trimmed) {
-      localStorage.setItem(PAGESPEED_KEY_STORAGE, trimmed);
-    } else {
-      localStorage.removeItem(PAGESPEED_KEY_STORAGE);
-    }
-    setApiKey(trimmed);
+    await adminAPI.setSetting('pagespeed_api_key', trimmed);
     setShowKeyInput(false);
     setError('');
+    queryClient.invalidateQueries({ queryKey: ['admin-setting', 'pagespeed_api_key'] });
   };
 
   const { data, isLoading, isFetching } = useQuery({

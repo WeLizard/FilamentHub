@@ -1072,6 +1072,16 @@ export const adminAPI = {
     return response.data;
   },
 
+  getSetting: async (key: string): Promise<{ key: string; value: string | null }> => {
+    const response = await api.get(`/admin/settings/${key}`);
+    return response.data;
+  },
+
+  setSetting: async (key: string, value: string): Promise<{ key: string; value: string }> => {
+    const response = await api.put(`/admin/settings/${key}`, { value });
+    return response.data;
+  },
+
   getDockerStats: async (): Promise<{
     containers: Array<{
       name: string; cpu: string; mem_usage: string; mem_perc: string;
