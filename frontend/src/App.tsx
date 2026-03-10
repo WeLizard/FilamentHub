@@ -27,6 +27,21 @@ const WikiPage = lazy(() => import('./pages/WikiPage').then(m => ({ default: m.W
 const WikiCategoryPage = lazy(() => import('./pages/WikiCategoryPage').then(m => ({ default: m.WikiCategoryPage })));
 const WikiArticlePage = lazy(() => import('./pages/WikiArticlePage').then(m => ({ default: m.WikiArticlePage })));
 
+// Prefetch all lazy chunks after initial page load so navigation feels instant
+if (typeof window !== 'undefined') {
+  window.addEventListener('load', () => {
+    setTimeout(() => {
+      import('./pages/ProfilePage');
+      import('./pages/CalculatorPage');
+      import('./pages/BrandDetailPage');
+      import('./pages/AdminPanel');
+      import('./pages/WikiPage');
+      import('./pages/WikiCategoryPage');
+      import('./pages/WikiArticlePage');
+    }, 2000);
+  }, { once: true });
+}
+
 function PageLoader() {
   return (
     <div className="flex items-center justify-center min-h-[50vh]">
