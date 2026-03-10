@@ -2897,8 +2897,12 @@
     },
     "pagespeed": {
       "check": "Check",
-      "hint": "Click \"Check\" to analyze site speed via Google PageSpeed API",
-      "analyzing": "Analyzing speed..."
+      "hint": "Click \"Check\" to analyze site speed",
+      "noKey": "Add a Google API Key (gear icon) to remove rate limits",
+      "analyzing": "Analyzing speed...",
+      "apiKeySettings": "API Key settings",
+      "saveKey": "Save",
+      "rateLimited": "Rate limited. Add an API Key to increase quota."
     }
   },
   "confirmModal": {

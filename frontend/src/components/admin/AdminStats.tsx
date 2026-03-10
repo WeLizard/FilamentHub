@@ -107,16 +107,40 @@ function PageSpeedMetric({ label, value, unit }: { label: string; value: string;
 }
 
 /* ─── PageSpeed Widget ─── */
+const PAGESPEED_KEY_STORAGE = 'fh_pagespeed_api_key';
+
 function PageSpeedWidget({ t }: { t: (key: string) => string }) {
   const [strategy, setStrategy] = useState<'mobile' | 'desktop'>('mobile');
   const [enabled, setEnabled] = useState(false);
+  const [apiKey, setApiKey] = useState(() => localStorage.getItem(PAGESPEED_KEY_STORAGE) || '');
+  const [showKeyInput, setShowKeyInput] = useState(false);
+  const [keyDraft, setKeyDraft] = useState(apiKey);
+  const [error, setError] = useState('');
+
+  const saveKey = () => {
+    const trimmed = keyDraft.trim();
+    if (trimmed) {
+      localStorage.setItem(PAGESPEED_KEY_STORAGE, trimmed);
+    } else {
+      localStorage.removeItem(PAGESPEED_KEY_STORAGE);
+    }
+    setApiKey(trimmed);
+    setShowKeyInput(false);
+    setError('');
+  };
 
   const { data, isLoading, isFetching } = useQuery({
-    queryKey: ['pagespeed', strategy],
+    queryKey: ['pagespeed', strategy, apiKey],
     queryFn: async () => {
-      const url = `https://www.googleapis.com/pagespeedonline/v5/runPagespeed?url=https://filamenthub.ru&strategy=${strategy}&category=performance`;
+      let url = `https://www.googleapis.com/pagespeedonline/v5/runPagespeed?url=https://filamenthub.ru&strategy=${strategy}&category=performance`;
+      if (apiKey) url += `&key=${apiKey}`;
       const res = await fetch(url);
+      if (res.status === 429) {
+        setError(t('adminStats.pagespeed.rateLimited'));
+        throw new Error('Rate limited');
+      }
       if (!res.ok) throw new Error('PageSpeed API error');
+      setError('');
       return res.json();
     },
     enabled,
@@ -134,6 +158,14 @@ function PageSpeedWidget({ t }: { t: (key: string) => string }) {
         <div className="flex items-center gap-2">
           <Gauge className="w-4 h-4 text-purple-400" />
           <span className="text-white text-sm font-medium">PageSpeed Insights</span>
+          <button
+            onClick={() => { setShowKeyInput(!showKeyInput); setKeyDraft(apiKey); }}
+            className="text-gray-500 hover:text-gray-300 transition-colors"
+            title={t('adminStats.pagespeed.apiKeySettings')}
+          >
+            <Settings className="w-3.5 h-3.5" />
+          </button>
+          {apiKey && <span className="text-green-500 text-[10px]">API Key</span>}
         </div>
         <div className="flex items-center gap-2">
           <div className="flex bg-white/5 rounded-lg p-0.5">
@@ -161,8 +193,30 @@ function PageSpeedWidget({ t }: { t: (key: string) => string }) {
         </div>
       </div>
 
-      {!enabled && (
-        <p className="text-gray-500 text-xs">{t('adminStats.pagespeed.hint')}</p>
+      {/* API Key input */}
+      {showKeyInput && (
+        <div className="flex items-center gap-2 mb-3">
+          <input
+            type="password"
+            value={keyDraft}
+            onChange={e => setKeyDraft(e.target.value)}
+            placeholder="Google API Key"
+            className="flex-1 bg-white/5 border border-white/10 rounded-lg px-3 py-1.5 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-purple-500"
+          />
+          <button onClick={saveKey}
+            className="px-3 py-1.5 text-xs bg-purple-600 hover:bg-purple-500 text-white rounded-lg transition-colors"
+          >
+            {t('adminStats.pagespeed.saveKey')}
+          </button>
+        </div>
+      )}
+
+      {error && <p className="text-orange-400 text-xs mb-2">{error}</p>}
+
+      {!enabled && !showKeyInput && (
+        <p className="text-gray-500 text-xs">
+          {apiKey ? t('adminStats.pagespeed.hint') : t('adminStats.pagespeed.noKey')}
+        </p>
       )}
 
       {(isLoading || isFetching) && (
