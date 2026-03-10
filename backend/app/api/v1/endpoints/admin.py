@@ -52,7 +52,7 @@ from app.core.errors import (
     raise_error,
 )
 from app.db.session import get_db
-from app.services.file_service import get_upload_root_dir
+from app.services.file_service import get_upload_root_dir, normalize_brand_logo_upload
 from app.services.maintenance_service import (
     get_maintenance_info,
     get_maintenance_mode,
@@ -327,12 +327,13 @@ async def upload_brand_logo(
             ERR_FILE_SIZE_EXCEEDED,
             {"size_mb": f"{len(content) / (1024*1024):.2f}", "max_mb": "2"},
         )
+    content, stored_ext = normalize_brand_logo_upload(content, file_ext)
 
     # Save file
     base_upload_dir = get_upload_root_dir()
     logo_dir = base_upload_dir / "brand_logos"
     logo_dir.mkdir(parents=True, exist_ok=True)
-    file_name = f"{brand_id}_{uuid.uuid4().hex[:8]}{file_ext}"
+    file_name = f"{brand_id}_{uuid.uuid4().hex[:8]}{stored_ext}"
     file_path = (logo_dir / file_name).resolve()
 
     if not str(file_path).startswith(str(logo_dir.resolve())):

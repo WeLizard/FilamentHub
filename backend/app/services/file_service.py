@@ -5,9 +5,11 @@ import logging
 import shutil
 import uuid
 from datetime import datetime, timedelta
+from io import BytesIO
 from pathlib import Path
 
 from fastapi import UploadFile, HTTPException, status
+from PIL import Image, UnidentifiedImageError
 
 from app.core.config import settings
 from app.core.errors import (
@@ -20,6 +22,8 @@ from app.core.errors import (
 )
 
 logger = logging.getLogger(__name__)
+
+BRAND_LOGO_RASTER_EXTENSIONS = {".png", ".jpg", ".jpeg"}
 
 
 def get_upload_root_dir() -> Path:
@@ -75,6 +79,31 @@ def ensure_upload_dir_compatibility() -> None:
             legacy_dir,
             canonical_dir,
         )
+
+
+def normalize_brand_logo_upload(content: bytes, file_ext: str) -> tuple[bytes, str]:
+    """
+    Convert raster brand logos to WebP before saving them.
+
+    SVG and already-WebP files are returned unchanged.
+    """
+    if file_ext not in BRAND_LOGO_RASTER_EXTENSIONS:
+        return content, file_ext
+
+    try:
+        with Image.open(BytesIO(content)) as image:
+            image.load()
+            has_alpha = "A" in image.getbands() or (
+                image.mode == "P" and "transparency" in image.info
+            )
+            converted = image.convert("RGBA" if has_alpha else "RGB")
+
+            output = BytesIO()
+            converted.save(output, "WEBP", quality=90, method=6)
+            return output.getvalue(), ".webp"
+    except (UnidentifiedImageError, OSError, ValueError) as exc:
+        logger.warning("Failed to convert brand logo to WebP, keeping original: %s", exc)
+        return content, file_ext
 
 
 def get_allowed_extensions() -> list[str]:
