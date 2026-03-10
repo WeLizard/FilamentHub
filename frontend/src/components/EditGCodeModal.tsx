@@ -221,6 +221,14 @@ export const EditGCodeModal: React.FC<EditGCodeModalProps> = ({
 
   return (
     <div className="relative flex-shrink-0 w-[380px] h-[258px] bg-gray-900 rounded-lg border border-white/20 shadow-xl flex flex-col" onClick={(e) => e.stopPropagation()} onMouseDown={(e) => e.stopPropagation()}>
+      {/* Close button */}
+      <button
+        type="button"
+        onClick={(e) => { e.stopPropagation(); onClose(); }}
+        className="absolute top-2 right-2 z-10 p-1 rounded-md text-gray-400 hover:text-white hover:bg-white/10 transition-colors"
+      >
+        <X className="w-4 h-4" />
+      </button>
       {/* Search */}
       <div className="p-3 border-b border-white/10">
         <div className="relative">

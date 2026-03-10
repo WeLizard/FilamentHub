@@ -45,7 +45,6 @@ const ORCA_GCODE_FLAVOR_OPTIONS: CanonicalOption[] = [
 
 const ORCA_PRINTER_TECHNOLOGY_OPTIONS: CanonicalOption[] = [
   { value: 'FFF', labelKey: 'printerProfile.options.printerTechnology.fff' },
-  { value: 'SLA', labelKey: 'printerProfile.options.printerTechnology.sla' },
 ];
 
 const ORCA_DEFAULT_BED_TYPE_OPTIONS: CanonicalOption[] = [
@@ -84,7 +83,31 @@ const ORCA_NOZZLE_TYPE_OPTIONS: CanonicalOption[] = [
   { value: 'hardened_steel', labelKey: 'printerProfile.options.nozzleType.hardenedSteel' },
   { value: 'stainless_steel', labelKey: 'printerProfile.options.nozzleType.stainlessSteel' },
   { value: 'tungsten_carbide', labelKey: 'printerProfile.options.nozzleType.tungstenCarbide' },
+  { value: 'copper_alloy', labelKey: 'printerProfile.options.nozzleType.copperAlloy' },
+  { value: 'ruby', labelKey: 'printerProfile.options.nozzleType.ruby' },
+  { value: 'titanium', labelKey: 'printerProfile.options.nozzleType.titanium' },
+  { value: 'nickel_plated_copper', labelKey: 'printerProfile.options.nozzleType.nickelPlatedCopper' },
   { value: 'E3D', labelKey: 'printerProfile.options.nozzleType.e3d' },
+];
+
+const HOTEND_OPTIONS: CanonicalOption[] = [
+  { value: '', labelKey: 'printerProfile.options.hotend.notSpecified' },
+  { value: 'E3D V6', labelKey: 'printerProfile.options.hotend.e3dV6' },
+  { value: 'E3D Revo', labelKey: 'printerProfile.options.hotend.e3dRevo' },
+  { value: 'E3D Revo Voron', labelKey: 'printerProfile.options.hotend.e3dRevoVoron' },
+  { value: 'Phaetus Rapido', labelKey: 'printerProfile.options.hotend.phaetusRapido' },
+  { value: 'Phaetus Rapido 2', labelKey: 'printerProfile.options.hotend.phaetusRapido2' },
+  { value: 'Phaetus Dragonfly', labelKey: 'printerProfile.options.hotend.phaetusDragonfly' },
+  { value: 'Phaetus Dragon', labelKey: 'printerProfile.options.hotend.phaetusDragon' },
+  { value: 'Slice Mosquito', labelKey: 'printerProfile.options.hotend.sliceMosquito' },
+  { value: 'Slice Mosquito Magnum+', labelKey: 'printerProfile.options.hotend.sliceMosquitoMagnum' },
+  { value: 'Bambu Lab', labelKey: 'printerProfile.options.hotend.bambuLab' },
+  { value: 'Creality Spider', labelKey: 'printerProfile.options.hotend.crealitySpider' },
+  { value: 'Creality K1', labelKey: 'printerProfile.options.hotend.crealityK1' },
+  { value: 'Trianglelab CHC Pro', labelKey: 'printerProfile.options.hotend.trianglelabChcPro' },
+  { value: 'Trianglelab TD6S', labelKey: 'printerProfile.options.hotend.trianglelabTd6s' },
+  { value: 'Goliath', labelKey: 'printerProfile.options.hotend.goliath' },
+  { value: 'NF Zone', labelKey: 'printerProfile.options.hotend.nfZone' },
 ];
 
 const ORCA_Z_HOP_TYPE_OPTIONS: CanonicalOption[] = [
@@ -1671,12 +1694,11 @@ export const CreatePrinterProfileModal: React.FC<CreatePrinterProfileModalProps>
                     </div>
                     <div>
                       <label className="block text-gray-300 mb-2 text-sm font-medium">{t('printerProfile.hotend')}</label>
-                      <input
-                        type="text"
-                        value={getMetadataString('hotend_model')}
-                        onChange={(e) => handleMetadataStringChange('hotend_model', e.target.value)}
-                        placeholder="Phaetus Rapido..."
-                        className="w-full bg-white/5 border border-white/10 rounded-lg px-4 py-2 text-white placeholder-gray-500 focus:outline-none focus:border-purple-500"
+                      <CustomSelect
+                        value={getMetadataString('hotend_model') || null}
+                        onChange={(value) => handleMetadataStringChange('hotend_model', (value as string) || '')}
+                        options={buildTranslatedOptions(HOTEND_OPTIONS, getMetadataString('hotend_model') || null)}
+                        placeholder={t('printerProfile.selectHotend')}
                       />
                     </div>
                     <div>
@@ -1960,40 +1982,43 @@ export const CreatePrinterProfileModal: React.FC<CreatePrinterProfileModalProps>
               </div>
             </div>
 
-            <div>
-              <h5 className="text-xs font-semibold uppercase tracking-wide text-purple-200/70 mb-3">{t('printerProfile.motion.maxSpeed')}</h5>
-              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
-                {(['machine_max_speed_x', 'machine_max_speed_y', 'machine_max_speed_z', 'machine_max_speed_e'] as const).map((key) => (
-                  <div key={key}>
-                    <label className="block text-gray-300 mb-2 text-sm font-medium">{key.replace('machine_max_speed_', '').toUpperCase()}</label>
-                    <input
-                      type="text"
-                      value={getMetadataListString(key)}
-                      onChange={(e) => handleMetadataListChange(key, e.target.value)}
-                      placeholder="500, 200"
-                      className="w-full bg-white/5 border border-white/10 rounded-lg px-4 py-2 text-white placeholder-gray-500 focus:outline-none focus:border-purple-500"
-                    />
-                  </div>
-                ))}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              <div>
+                <h5 className="text-xs font-semibold uppercase tracking-wide text-purple-200/70 mb-3">{t('printerProfile.motion.maxSpeed')}</h5>
+                <div className="grid grid-cols-4 gap-2">
+                  {(['machine_max_speed_x', 'machine_max_speed_y', 'machine_max_speed_z', 'machine_max_speed_e'] as const).map((key) => (
+                    <div key={key}>
+                      <label className="block text-gray-400 mb-1 text-xs text-center">{key.replace('machine_max_speed_', '').toUpperCase()}</label>
+                      <input
+                        type="text"
+                        value={getMetadataListString(key)}
+                        onChange={(e) => handleMetadataListChange(key, e.target.value)}
+                        placeholder="500"
+                        className="w-full bg-white/5 border border-white/10 rounded-lg px-2 py-1.5 text-white placeholder-gray-500 focus:outline-none focus:border-purple-500 text-sm text-center"
+                      />
+                    </div>
+                  ))}
+                </div>
+              </div>
+              <div>
+                <h5 className="text-xs font-semibold uppercase tracking-wide text-purple-200/70 mb-3">{t('printerProfile.motion.acceleration')}</h5>
+                <div className="grid grid-cols-4 gap-2">
+                  {(['machine_max_acceleration_x', 'machine_max_acceleration_y', 'machine_max_acceleration_z', 'machine_max_acceleration_e'] as const).map((key) => (
+                    <div key={key}>
+                      <label className="block text-gray-400 mb-1 text-xs text-center">{key.replace('machine_max_acceleration_', '').toUpperCase()}</label>
+                      <input
+                        type="text"
+                        value={getMetadataListString(key)}
+                        onChange={(e) => handleMetadataListChange(key, e.target.value)}
+                        placeholder="20000"
+                        className="w-full bg-white/5 border border-white/10 rounded-lg px-2 py-1.5 text-white placeholder-gray-500 focus:outline-none focus:border-purple-500 text-sm text-center"
+                      />
+                    </div>
+                  ))}
+                </div>
               </div>
             </div>
-
             <div>
-              <h5 className="text-xs font-semibold uppercase tracking-wide text-purple-200/70 mb-3">{t('printerProfile.motion.acceleration')}</h5>
-              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
-                {(['machine_max_acceleration_x', 'machine_max_acceleration_y', 'machine_max_acceleration_z', 'machine_max_acceleration_e'] as const).map((key) => (
-                  <div key={key}>
-                    <label className="block text-gray-300 mb-2 text-sm font-medium">{key.replace('machine_max_acceleration_', '').toUpperCase()}</label>
-                    <input
-                      type="text"
-                      value={getMetadataListString(key)}
-                      onChange={(e) => handleMetadataListChange(key, e.target.value)}
-                      placeholder="20000, 20000"
-                      className="w-full bg-white/5 border border-white/10 rounded-lg px-4 py-2 text-white placeholder-gray-500 focus:outline-none focus:border-purple-500"
-                    />
-                  </div>
-                ))}
-              </div>
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-4">
                 {([
                   { key: 'machine_max_acceleration_extruding', label: t('printerProfile.motion.extruding') },
@@ -2014,33 +2039,33 @@ export const CreatePrinterProfileModal: React.FC<CreatePrinterProfileModalProps>
               </div>
             </div>
 
-            <div>
-              <h5 className="text-xs font-semibold uppercase tracking-wide text-purple-200/70 mb-3">{t('adminPrinters.speed.jerk')}</h5>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-                <div>
-                  <label className="block text-gray-300 mb-2 text-sm font-medium">{t('printerProfile.motion.junctionDeviation')}</label>
-                  <input
-                    type="text"
-                    value={getMetadataListString('machine_max_junction_deviation')}
-                    onChange={(e) => handleMetadataListChange('machine_max_junction_deviation', e.target.value)}
-                    placeholder="0.01"
-                    className="w-full bg-white/5 border border-white/10 rounded-lg px-4 py-2 text-white placeholder-gray-500 focus:outline-none focus:border-purple-500"
-                  />
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              <div>
+                <h5 className="text-xs font-semibold uppercase tracking-wide text-purple-200/70 mb-3">{t('adminPrinters.speed.jerk')}</h5>
+                <div className="grid grid-cols-4 gap-2">
+                  {(['machine_max_jerk_x', 'machine_max_jerk_y', 'machine_max_jerk_z', 'machine_max_jerk_e'] as const).map((key) => (
+                    <div key={key}>
+                      <label className="block text-gray-400 mb-1 text-xs text-center">{key.replace('machine_max_jerk_', '').toUpperCase()}</label>
+                      <input
+                        type="text"
+                        value={getMetadataListString(key)}
+                        onChange={(e) => handleMetadataListChange(key, e.target.value)}
+                        placeholder="8"
+                        className="w-full bg-white/5 border border-white/10 rounded-lg px-2 py-1.5 text-white placeholder-gray-500 focus:outline-none focus:border-purple-500 text-sm text-center"
+                      />
+                    </div>
+                  ))}
                 </div>
               </div>
-              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
-                {(['machine_max_jerk_x', 'machine_max_jerk_y', 'machine_max_jerk_z', 'machine_max_jerk_e'] as const).map((key) => (
-                  <div key={key}>
-                    <label className="block text-gray-300 mb-2 text-sm font-medium">{key.replace('machine_max_jerk_', '').toUpperCase()}</label>
-                    <input
-                      type="text"
-                      value={getMetadataListString(key)}
-                      onChange={(e) => handleMetadataListChange(key, e.target.value)}
-                      placeholder="8, 8"
-                      className="w-full bg-white/5 border border-white/10 rounded-lg px-4 py-2 text-white placeholder-gray-500 focus:outline-none focus:border-purple-500"
-                    />
-                  </div>
-                ))}
+              <div>
+                <h5 className="text-xs font-semibold uppercase tracking-wide text-purple-200/70 mb-3">{t('printerProfile.motion.junctionDeviation')}</h5>
+                <input
+                  type="text"
+                  value={getMetadataListString('machine_max_junction_deviation')}
+                  onChange={(e) => handleMetadataListChange('machine_max_junction_deviation', e.target.value)}
+                  placeholder="0.01"
+                  className="w-full bg-white/5 border border-white/10 rounded-lg px-2 py-1.5 text-white placeholder-gray-500 focus:outline-none focus:border-purple-500 text-sm"
+                />
               </div>
             </div>
 
@@ -2227,7 +2252,7 @@ export const CreatePrinterProfileModal: React.FC<CreatePrinterProfileModalProps>
               const currentValue = values[index] ?? null;
               return (
                 <div key={`${key}-${index}`} className="space-y-1">
-                  <span className="block text-xs text-gray-500">#{index + 1}</span>
+                  {extruderSlotsCount > 1 && <span className="block text-xs text-gray-500">#{index + 1}</span>}
                   <CustomSelect
                     value={currentValue}
                     onChange={(value) => handleSelectChange(index, (value as string) || null)}
