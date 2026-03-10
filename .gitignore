@@ -180,3 +180,11 @@ NUL
 debug_*.log*
 *.log.*
 Снимок.JPG
+
+# Bot runtime state
+bot/state*.json
+bot/state*.tmp
+bot/fhbot-state-*.json
+bot/*.pid
+bot/*.log
+bot/start.bat
