@@ -1050,9 +1050,23 @@ export const adminAPI = {
 
   // Stats
   getStats: async (): Promise<{
-    users: { total: number; brands: number; admins: number };
+    users: {
+      total: number; brands: number; admins: number;
+      registered_24h: number; registered_7d: number; registered_30d: number;
+      active_24h: number; active_7d: number;
+    };
     brands: { total: number; verified: number; pending_verification: number };
     presets: { total: number; pending_moderation: number; approved: number; rejected: number };
+    content: {
+      filaments: number; printers: number; printer_profiles: number;
+      reviews_total: number; reviews_7d: number; wiki_articles: number;
+    };
+    hardware: {
+      devices: number; spools: number;
+      gate_slots: number; gate_slots_assigned: number;
+      sync_devices: number; sync_devices_active_7d: number;
+    };
+    notifications: { unread: number };
   }> => {
     const response = await api.get('/admin/stats');
     return response.data;

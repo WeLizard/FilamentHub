@@ -637,18 +637,49 @@ async def get_admin_stats(
     admin: Annotated[User, Depends(get_current_admin_user)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> dict:
-    """Получить статистику для админки."""
-    # Users
+    """Получить расширенную статистику для админки."""
+    from datetime import timedelta, timezone
+    from app.models.filament import Filament
+    from app.models.filament_review import FilamentReview
+    from app.models.user_printer_device import UserPrinterDevice
+    from app.models.user_spool import UserSpool
+    from app.models.printer_profile import PrinterProfile
+    from app.models.sync_device import SyncDevice
+    from app.models.preset_gate_state import PresetGateState
+    from app.models.notification import Notification
+    from app.models.wiki_article import WikiArticle
+
+    now = datetime.now(timezone.utc)
+    day_ago = now - timedelta(days=1)
+    week_ago = now - timedelta(days=7)
+    month_ago = now - timedelta(days=30)
+
+    # --- Users ---
     users_total = await db.scalar(select(func.count(User.id)))
     users_brands = await db.scalar(select(func.count(User.id)).where(User.brand_id.isnot(None)))
     users_admins = await db.scalar(select(func.count(User.id)).where(User.role == UserRole.ADMIN))
-    
-    # Brands
+    users_24h = await db.scalar(
+        select(func.count(User.id)).where(User.created_at >= day_ago)
+    )
+    users_7d = await db.scalar(
+        select(func.count(User.id)).where(User.created_at >= week_ago)
+    )
+    users_30d = await db.scalar(
+        select(func.count(User.id)).where(User.created_at >= month_ago)
+    )
+    users_active_24h = await db.scalar(
+        select(func.count(User.id)).where(User.last_login >= day_ago)
+    )
+    users_active_7d = await db.scalar(
+        select(func.count(User.id)).where(User.last_login >= week_ago)
+    )
+
+    # --- Brands ---
     brands_total = await db.scalar(select(func.count(Brand.id)))
     brands_verified = await db.scalar(select(func.count(Brand.id)).where(Brand.verified == True))
     brands_pending = await db.scalar(select(func.count(Brand.id)).where(Brand.verified == False))
-    
-    # Presets
+
+    # --- Presets ---
     presets_total = await db.scalar(select(func.count(Preset.id)))
     presets_pending = await db.scalar(
         select(func.count(Preset.id)).where(Preset.moderation_status == PresetModerationStatus.PENDING)
@@ -659,23 +690,86 @@ async def get_admin_stats(
     presets_rejected = await db.scalar(
         select(func.count(Preset.id)).where(Preset.moderation_status == PresetModerationStatus.REJECTED)
     )
-    
+
+    # --- Filaments ---
+    filaments_total = await db.scalar(select(func.count(Filament.id)))
+
+    # --- Reviews ---
+    reviews_total = await db.scalar(select(func.count(FilamentReview.id)))
+    reviews_7d = await db.scalar(
+        select(func.count(FilamentReview.id)).where(FilamentReview.created_at >= week_ago)
+    )
+
+    # --- Printers & Profiles ---
+    printers_total = await db.scalar(select(func.count(Printer.id)))
+    printer_profiles_total = await db.scalar(select(func.count(PrinterProfile.id)))
+
+    # --- Devices (user's physical printers) ---
+    devices_total = await db.scalar(select(func.count(UserPrinterDevice.id)))
+
+    # --- Spools ---
+    spools_total = await db.scalar(select(func.count(UserSpool.id)))
+
+    # --- Gate states (slot assignments) ---
+    gates_total = await db.scalar(select(func.count(PresetGateState.id)))
+    gates_with_preset = await db.scalar(
+        select(func.count(PresetGateState.id)).where(PresetGateState.preset_id.isnot(None))
+    )
+
+    # --- Sync devices (OrcaSlicer installations) ---
+    sync_devices_total = await db.scalar(select(func.count(SyncDevice.id)))
+    sync_devices_active_7d = await db.scalar(
+        select(func.count(SyncDevice.id)).where(SyncDevice.last_sync_at >= week_ago)
+    )
+
+    # --- Wiki ---
+    wiki_articles = await db.scalar(select(func.count(WikiArticle.id)))
+
+    # --- Notifications ---
+    notifications_unread = await db.scalar(
+        select(func.count(Notification.id)).where(Notification.is_read == False)
+    )
+
     return {
         "users": {
-            "total": users_total,
-            "brands": users_brands,
-            "admins": users_admins,
+            "total": users_total or 0,
+            "brands": users_brands or 0,
+            "admins": users_admins or 0,
+            "registered_24h": users_24h or 0,
+            "registered_7d": users_7d or 0,
+            "registered_30d": users_30d or 0,
+            "active_24h": users_active_24h or 0,
+            "active_7d": users_active_7d or 0,
         },
         "brands": {
-            "total": brands_total,
-            "verified": brands_verified,
-            "pending_verification": brands_pending,
+            "total": brands_total or 0,
+            "verified": brands_verified or 0,
+            "pending_verification": brands_pending or 0,
         },
         "presets": {
-            "total": presets_total,
-            "pending_moderation": presets_pending,
-            "approved": presets_approved,
-            "rejected": presets_rejected,
+            "total": presets_total or 0,
+            "pending_moderation": presets_pending or 0,
+            "approved": presets_approved or 0,
+            "rejected": presets_rejected or 0,
+        },
+        "content": {
+            "filaments": filaments_total or 0,
+            "printers": printers_total or 0,
+            "printer_profiles": printer_profiles_total or 0,
+            "reviews_total": reviews_total or 0,
+            "reviews_7d": reviews_7d or 0,
+            "wiki_articles": wiki_articles or 0,
+        },
+        "hardware": {
+            "devices": devices_total or 0,
+            "spools": spools_total or 0,
+            "gate_slots": gates_total or 0,
+            "gate_slots_assigned": gates_with_preset or 0,
+            "sync_devices": sync_devices_total or 0,
+            "sync_devices_active_7d": sync_devices_active_7d or 0,
+        },
+        "notifications": {
+            "unread": notifications_unread or 0,
         },
     }
 
