@@ -1,29 +1,39 @@
 import { Routes, Route, useNavigate, Link } from 'react-router-dom';
-import { ArrowLeft, Home, SearchX } from 'lucide-react';
+import { ArrowLeft, Home, SearchX, Loader2 } from 'lucide-react';
 import { AuthProvider } from './contexts/AuthContext';
 import { ProtectedRoute } from './components/ProtectedRoute';
 import { Layout } from './components/Layout';
 import { CatalogPage } from './pages/CatalogPage';
-import { ProfilePage } from './pages/ProfilePage';
-import { CalculatorPage } from './pages/CalculatorPage';
 import { FilamentDetailPage } from './pages/FilamentDetailPage';
-import { BrandDetailPage } from './pages/BrandDetailPage';
-import { AdminPanel } from './pages/AdminPanel';
 import { TermsPage } from './pages/TermsPage';
 import { ConsentPage } from './pages/ConsentPage';
 import { ResetPasswordPage } from './pages/ResetPasswordPage';
 import { DownloadPage } from './pages/DownloadPage';
-import { WikiPage } from './pages/WikiPage';
-import { WikiCategoryPage } from './pages/WikiCategoryPage';
-import { WikiArticlePage } from './pages/WikiArticlePage';
 import { ToastContainer } from './components/Toast';
 import { useOrcaSlicerNotifications } from './hooks/useOrcaSlicerNotifications';
-import { useEffect } from 'react';
+import { lazy, Suspense, useEffect } from 'react';
 import { Notifications } from './components/Notifications';
 import { useAuth } from './contexts/AuthContext';
 import { MaintenancePage } from './components/MaintenancePage';
 
 import { useTranslation } from 'react-i18next';
+
+// Lazy-loaded pages (code splitting)
+const ProfilePage = lazy(() => import('./pages/ProfilePage').then(m => ({ default: m.ProfilePage })));
+const CalculatorPage = lazy(() => import('./pages/CalculatorPage').then(m => ({ default: m.CalculatorPage })));
+const BrandDetailPage = lazy(() => import('./pages/BrandDetailPage').then(m => ({ default: m.BrandDetailPage })));
+const AdminPanel = lazy(() => import('./pages/AdminPanel').then(m => ({ default: m.AdminPanel })));
+const WikiPage = lazy(() => import('./pages/WikiPage').then(m => ({ default: m.WikiPage })));
+const WikiCategoryPage = lazy(() => import('./pages/WikiCategoryPage').then(m => ({ default: m.WikiCategoryPage })));
+const WikiArticlePage = lazy(() => import('./pages/WikiArticlePage').then(m => ({ default: m.WikiArticlePage })));
+
+function PageLoader() {
+  return (
+    <div className="flex items-center justify-center min-h-[50vh]">
+      <Loader2 className="w-8 h-8 text-purple-400 animate-spin" />
+    </div>
+  );
+}
 
 /** Страница 404 */
 function NotFoundPage() {
@@ -150,7 +160,9 @@ function AppContent() {
           path="/brands/:id"
           element={
             <Layout>
-              <BrandDetailPage />
+              <Suspense fallback={<PageLoader />}>
+                <BrandDetailPage />
+              </Suspense>
             </Layout>
           }
         />
@@ -159,7 +171,9 @@ function AppContent() {
           element={
             <ProtectedRoute>
               <Layout>
-                <ProfilePage />
+                <Suspense fallback={<PageLoader />}>
+                  <ProfilePage />
+                </Suspense>
               </Layout>
             </ProtectedRoute>
           }
@@ -169,7 +183,9 @@ function AppContent() {
           element={
             <ProtectedRoute>
               <Layout>
-                <CalculatorPage />
+                <Suspense fallback={<PageLoader />}>
+                  <CalculatorPage />
+                </Suspense>
               </Layout>
             </ProtectedRoute>
           }
@@ -178,7 +194,9 @@ function AppContent() {
           path="/admin"
           element={
             <ProtectedRoute requiredRole="admin">
-              <AdminPanel />
+              <Suspense fallback={<PageLoader />}>
+                <AdminPanel />
+              </Suspense>
             </ProtectedRoute>
           }
         />
@@ -194,7 +212,9 @@ function AppContent() {
           path="/wiki"
           element={
             <Layout>
-              <WikiPage />
+              <Suspense fallback={<PageLoader />}>
+                <WikiPage />
+              </Suspense>
             </Layout>
           }
         />
@@ -202,7 +222,9 @@ function AppContent() {
           path="/wiki/:slug"
           element={
             <Layout>
-              <WikiCategoryPage />
+              <Suspense fallback={<PageLoader />}>
+                <WikiCategoryPage />
+              </Suspense>
             </Layout>
           }
         />
@@ -210,7 +232,9 @@ function AppContent() {
           path="/wiki/articles/:slug"
           element={
             <Layout>
-              <WikiArticlePage />
+              <Suspense fallback={<PageLoader />}>
+                <WikiArticlePage />
+              </Suspense>
             </Layout>
           }
         />
