@@ -822,7 +822,7 @@
       "thermochromic": "Термохромный",
       "thermochromicHint": "Термохромный: меняет цвет при нагреве (210-230°C)"
     },
-    "colorNamePlaceholder": "Например: Красный, Blue, Green",
+    "colorNamePlaceholder": "Например: Красный, Синий, Зелёный",
     "clickToPickColor": "Нажмите для выбора цвета",
     "surfaceTypeLabel": "Тип поверхности",
     "surface": {
