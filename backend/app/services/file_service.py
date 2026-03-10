@@ -1,6 +1,8 @@
 """File upload service for brand requests."""
 
 import json
+import logging
+import shutil
 import uuid
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -16,6 +18,63 @@ from app.core.errors import (
     ERR_MAX_FILES_EXCEEDED,
     raise_error,
 )
+
+logger = logging.getLogger(__name__)
+
+
+def get_upload_root_dir() -> Path:
+    """Canonical uploads root directory mounted by FastAPI StaticFiles."""
+    return Path(__file__).resolve().parents[2] / settings.UPLOAD_DIR
+
+
+def get_legacy_app_upload_root_dir() -> Path:
+    """Legacy uploads root accidentally used by some endpoints."""
+    return Path(__file__).resolve().parents[1] / settings.UPLOAD_DIR
+
+
+def ensure_upload_dir_compatibility() -> None:
+    """
+    Copy files from the legacy app-local uploads directory into the canonical uploads
+    directory if they are missing there.
+
+    This keeps already uploaded files accessible after path fixes without deleting
+    anything from the legacy location.
+    """
+    canonical_dir = get_upload_root_dir()
+    canonical_dir.mkdir(parents=True, exist_ok=True)
+
+    legacy_dir = get_legacy_app_upload_root_dir()
+    if not legacy_dir.exists():
+        return
+
+    try:
+        if canonical_dir.resolve() == legacy_dir.resolve():
+            return
+    except OSError:
+        return
+
+    copied_files = 0
+
+    for source_path in legacy_dir.rglob("*"):
+        if not source_path.is_file():
+            continue
+
+        relative_path = source_path.relative_to(legacy_dir)
+        destination_path = canonical_dir / relative_path
+        if destination_path.exists():
+            continue
+
+        destination_path.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(source_path, destination_path)
+        copied_files += 1
+
+    if copied_files > 0:
+        logger.info(
+            "Copied %s legacy upload files from %s to %s",
+            copied_files,
+            legacy_dir,
+            canonical_dir,
+        )
 
 
 def get_allowed_extensions() -> list[str]:
@@ -78,7 +137,7 @@ async def save_proof_file(
     
     # Создаем директорию для заявки
     # Определяем базовую директорию: из app/services/ поднимаемся на 2 уровня вверх (к backend/)
-    base_upload_dir = Path(__file__).parent.parent.parent / settings.UPLOAD_DIR
+    base_upload_dir = get_upload_root_dir()
     upload_dir = base_upload_dir / folder / str(request_id)
     upload_dir.mkdir(parents=True, exist_ok=True)
     
@@ -153,7 +212,7 @@ async def delete_proof_file(file_path: str) -> None:
         file_path = file_path.get("path", "")
     
     # Используем абсолютный путь относительно корня проекта
-    base_upload_dir = Path(__file__).parent.parent.parent / settings.UPLOAD_DIR
+    base_upload_dir = get_upload_root_dir()
     full_path = (base_upload_dir / file_path).resolve()
 
     # Path traversal protection
@@ -193,7 +252,7 @@ async def cleanup_old_files(
     if cutoff_date is None:
         cutoff_date = datetime.now() - timedelta(days=settings.CLEANUP_FILES_AFTER_DAYS)
     
-    base_upload_dir = Path(__file__).parent.parent.parent / settings.UPLOAD_DIR
+    base_upload_dir = get_upload_root_dir()
     if not base_upload_dir.exists():
         return {"files_deleted": 0, "space_freed_mb": 0}
     
@@ -238,4 +297,3 @@ async def cleanup_old_files(
         "files_deleted": files_deleted,
         "space_freed_mb": space_freed_mb,
     }
-

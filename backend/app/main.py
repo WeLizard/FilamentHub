@@ -13,6 +13,7 @@ from slowapi.errors import RateLimitExceeded
 from app.core.config import settings
 from app.core.limiter import limiter
 from app.middleware.maintenance import MaintenanceMiddleware
+from app.services.file_service import ensure_upload_dir_compatibility, get_upload_root_dir
 from app.services.maintenance_service import get_maintenance_info
 
 # Create FastAPI app
@@ -49,10 +50,9 @@ app.add_middleware(
     ],
 )
 
-# Static files for uploaded proof files
-# Используем абсолютный путь относительно корня проекта
-upload_dir = Path(__file__).parent.parent / settings.UPLOAD_DIR
-upload_dir.mkdir(parents=True, exist_ok=True)
+# Static files for uploaded files
+upload_dir = get_upload_root_dir()
+ensure_upload_dir_compatibility()
 app.mount("/uploads", StaticFiles(directory=str(upload_dir)), name="uploads")
 
 # Static files for distributions (OrcaSlicer builds)

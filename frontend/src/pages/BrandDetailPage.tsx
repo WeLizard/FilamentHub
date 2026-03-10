@@ -1,6 +1,6 @@
 /** Страница бренда с карточкой и списком филаментов */
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
@@ -26,6 +26,7 @@ export const BrandDetailPage: React.FC = () => {
   const navigate = useNavigate();
   const [searchQuery, setSearchQuery] = useState('');
   const [materialTypeFilter, setMaterialTypeFilter] = useState<string | null>(null);
+  const [isBrandLogoVisible, setIsBrandLogoVisible] = useState(false);
 
   // Загружаем бренд
   const {
@@ -68,6 +69,10 @@ export const BrandDetailPage: React.FC = () => {
     },
     enabled: filamentIds.length > 0,
   });
+
+  useEffect(() => {
+    setIsBrandLogoVisible(Boolean(brand?.logo_url));
+  }, [brand?.logo_url]);
 
   if (isLoadingBrand) {
     return (
@@ -123,11 +128,12 @@ export const BrandDetailPage: React.FC = () => {
       <div className="bg-white/10 backdrop-blur-sm rounded-2xl p-8 border border-white/20 shadow-xl">
         <div className="flex flex-col md:flex-row items-start md:items-center gap-6">
           {/* Логотип (если есть) */}
-          {brand.logo_url ? (
+          {isBrandLogoVisible && brand.logo_url ? (
             <img
               src={brand.logo_url}
               alt={brand.name}
               className="w-24 h-24 object-contain rounded-xl bg-white/5 p-2"
+              onError={() => setIsBrandLogoVisible(false)}
             />
           ) : (
             <div className="w-24 h-24 flex items-center justify-center bg-purple-500/20 rounded-xl border border-purple-500/30">

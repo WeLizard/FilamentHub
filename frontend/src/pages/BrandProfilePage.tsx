@@ -68,6 +68,7 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({ onBack }) =>
   const [profileLogoUrl, setProfileLogoUrl] = useState('');
   const [profileError, setProfileError] = useState<string | null>(null);
   const [isUploadingLogo, setIsUploadingLogo] = useState(false);
+  const [isBrandLogoVisible, setIsBrandLogoVisible] = useState(false);
 
   // Загружаем данные бренда
   const { data: brandData, isLoading: isLoadingBrand } = useQuery({
@@ -114,6 +115,10 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({ onBack }) =>
   });
 
   const brandPresets = presetsData?.items || [];
+
+  useEffect(() => {
+    setIsBrandLogoVisible(Boolean(brandData?.logo_url));
+  }, [brandData?.logo_url]);
 
   // Мутация для удаления материала
   const deleteFilamentMutation = useMutation({
@@ -261,8 +266,23 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({ onBack }) =>
       {/* Header */}
       <div className="text-center mb-8">
         <div className="flex items-center justify-center space-x-3 mb-4">
-          <div className="w-16 h-16 bg-gradient-to-r from-green-500 to-emerald-500 rounded-xl flex items-center justify-center shadow-lg shadow-green-500/25">
-            <Factory className="w-8 h-8 text-white" />
+          <div
+            className={`w-16 h-16 rounded-xl flex items-center justify-center shadow-lg overflow-hidden ${
+              isBrandLogoVisible && brandData.logo_url
+                ? 'bg-white/10 border border-white/10'
+                : 'bg-gradient-to-r from-green-500 to-emerald-500 shadow-green-500/25'
+            }`}
+          >
+            {isBrandLogoVisible && brandData.logo_url ? (
+              <img
+                src={brandData.logo_url}
+                alt={brandData.name}
+                className="w-full h-full object-contain p-2"
+                onError={() => setIsBrandLogoVisible(false)}
+              />
+            ) : (
+              <Factory className="w-8 h-8 text-white" />
+            )}
           </div>
           <div>
             <div className="flex items-center justify-center space-x-2">
@@ -2948,4 +2968,3 @@ const MaterialStatCard: React.FC<MaterialStatCardProps> = ({ filament }) => {
     </div>
   );
 };
-

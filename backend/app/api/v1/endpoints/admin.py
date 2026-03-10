@@ -52,6 +52,7 @@ from app.core.errors import (
     raise_error,
 )
 from app.db.session import get_db
+from app.services.file_service import get_upload_root_dir
 from app.services.maintenance_service import (
     get_maintenance_info,
     get_maintenance_mode,
@@ -301,7 +302,6 @@ async def upload_brand_logo(
     """Upload brand logo image."""
     import uuid
     from pathlib import Path
-    from app.core.config import settings
 
     result = await db.execute(select(Brand).where(Brand.id == brand_id))
     brand = result.scalar_one_or_none()
@@ -329,7 +329,7 @@ async def upload_brand_logo(
         )
 
     # Save file
-    base_upload_dir = Path(__file__).parent.parent.parent.parent / settings.UPLOAD_DIR
+    base_upload_dir = get_upload_root_dir()
     logo_dir = base_upload_dir / "brand_logos"
     logo_dir.mkdir(parents=True, exist_ok=True)
     file_name = f"{brand_id}_{uuid.uuid4().hex[:8]}{file_ext}"

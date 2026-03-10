@@ -21,6 +21,7 @@ from app.db.session import get_db
 from app.models.brand import Brand
 from app.models.user import User, UserRole
 from app.schemas.brand import BrandCreate, BrandListResponse, BrandResponse, BrandUpdate
+from app.services.file_service import get_upload_root_dir
 
 router = APIRouter(prefix="/brands", tags=["brands"])
 
@@ -196,7 +197,6 @@ async def upload_brand_logo(
     """Upload brand logo. Allowed for brand employees and admins."""
     import uuid
     from pathlib import Path
-    from app.core.config import settings
 
     result = await db.execute(select(Brand).where(Brand.id == brand_id))
     brand = result.scalar_one_or_none()
@@ -226,7 +226,7 @@ async def upload_brand_logo(
             {"size_mb": f"{len(content) / (1024*1024):.2f}", "max_mb": "2"},
         )
 
-    base_upload_dir = Path(__file__).parent.parent.parent.parent / settings.UPLOAD_DIR
+    base_upload_dir = get_upload_root_dir()
     logo_dir = base_upload_dir / "brand_logos"
     logo_dir.mkdir(parents=True, exist_ok=True)
     file_name = f"{brand_id}_{uuid.uuid4().hex[:8]}{file_ext}"
