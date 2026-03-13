@@ -188,3 +188,6 @@ bot/fhbot-state-*.json
 bot/*.pid
 bot/*.log
 bot/start.bat
+
+# Telegram bot - keep local only, do not track in git
+/bot/
