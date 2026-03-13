@@ -184,11 +184,6 @@ async def register(
     import logging
     logger = logging.getLogger(__name__)
 
-    # reCAPTCHA v3 verification
-    from app.core.utils import verify_recaptcha
-    if not await verify_recaptcha(data.recaptcha_token or ""):
-        raise_error(status.HTTP_400_BAD_REQUEST, ERR_RECAPTCHA_FAILED)
-
     # Проверка домена email: опечатки + DNS MX/A
     domain_error = await validate_email_domain(data.email)
     if domain_error:
@@ -196,6 +191,11 @@ async def register(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=domain_error,  # already {"code": ..., "params": ...} from validator
         )
+
+    # reCAPTCHA v3 verification
+    from app.core.utils import verify_recaptcha
+    if not await verify_recaptcha(data.recaptcha_token or ""):
+        raise_error(status.HTTP_400_BAD_REQUEST, ERR_RECAPTCHA_FAILED)
 
     # Проверка существования email
     result = await db.execute(select(User).where(User.email == data.email))
