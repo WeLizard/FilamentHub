@@ -1,7 +1,7 @@
 /** Модальное окно для создания printer profile */
 
 import { useState, useEffect, FormEvent, useMemo } from 'react';
-import { X, Save, Loader2, Pencil, ChevronRight } from 'lucide-react';
+import { X, Save, Loader2, Pencil, ChevronRight, HelpCircle } from 'lucide-react';
 import { Printer3DIcon } from './icons/Printer3DIcon';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { printerProfilesAPI, printersAPI } from '../api/client';
@@ -26,6 +26,76 @@ interface CreatePrinterProfileModalProps {
 type CanonicalOption = {
   value: string;
   labelKey: string;
+};
+
+interface HelpTooltipProps {
+  text: string;
+}
+
+const HelpTooltip = ({ text }: HelpTooltipProps) => (
+  <span className="group/tooltip relative inline-flex shrink-0 align-middle">
+    <button
+      type="button"
+      className="inline-flex h-4 w-4 items-center justify-center rounded-full text-gray-500 transition-colors hover:text-purple-200 focus:outline-none focus:text-purple-200"
+      aria-label={text}
+      title={text}
+      onClick={(event) => {
+        event.preventDefault();
+        event.stopPropagation();
+      }}
+    >
+      <HelpCircle className="h-3.5 w-3.5" />
+    </button>
+    <span
+      role="tooltip"
+      className="pointer-events-none absolute left-1/2 top-full z-30 mt-2 hidden w-64 -translate-x-1/2 rounded-lg border border-white/10 bg-slate-950/95 px-3 py-2 text-left text-xs leading-relaxed text-gray-200 shadow-2xl shadow-black/30 group-hover/tooltip:block group-focus-within/tooltip:block"
+    >
+      {text}
+    </span>
+  </span>
+);
+
+interface TooltipLabelProps {
+  label: string;
+  tooltipText?: string;
+  htmlFor?: string;
+  className?: string;
+}
+
+const TooltipLabel = ({ label, tooltipText, htmlFor, className }: TooltipLabelProps) => {
+  const content = (
+    <>
+      <span>{label}</span>
+      {tooltipText ? <HelpTooltip text={tooltipText} /> : null}
+    </>
+  );
+
+  if (htmlFor) {
+    return (
+      <label htmlFor={htmlFor} className={className ?? 'inline-flex items-center gap-1.5 text-sm font-medium text-gray-300'}>
+        {content}
+      </label>
+    );
+  }
+
+  return <label className={className ?? 'inline-flex items-center gap-1.5 text-sm font-medium text-gray-300'}>{content}</label>;
+};
+
+interface TooltipHeadingProps {
+  title: string;
+  tooltipText?: string;
+  level?: 'h5' | 'h6';
+}
+
+const TooltipHeading = ({ title, tooltipText, level = 'h5' }: TooltipHeadingProps) => {
+  const Tag = level;
+
+  return (
+    <div className="mb-3 flex items-center gap-1.5">
+      <Tag className="text-xs font-semibold uppercase tracking-wide text-purple-200/70">{title}</Tag>
+      {tooltipText ? <HelpTooltip text={tooltipText} /> : null}
+    </div>
+  );
 };
 
 const ORCA_PRINTER_STRUCTURE_OPTIONS: CanonicalOption[] = [
@@ -2058,7 +2128,10 @@ export const CreatePrinterProfileModal: React.FC<CreatePrinterProfileModalProps>
                 </div>
               </div>
               <div>
-                <h5 className="text-xs font-semibold uppercase tracking-wide text-purple-200/70 mb-3">{t('printerProfile.motion.junctionDeviation')}</h5>
+                <TooltipHeading
+                  title={t('printerProfile.motion.junctionDeviation')}
+                  tooltipText={t('printerProfile.help.tooltips.junctionDeviation')}
+                />
                 <input
                   type="text"
                   value={getMetadataListString('machine_max_junction_deviation')}
@@ -2525,9 +2598,12 @@ export const CreatePrinterProfileModal: React.FC<CreatePrinterProfileModalProps>
                     onChange={(e) => handleMetadataBooleanChange('single_extruder_multi_material', e.target.checked)}
                     className="w-4 h-4 rounded border-white/30 bg-white/10"
                   />
-                  <label htmlFor="single_extruder_multi_material" className="text-gray-300 text-sm">
-                    {t('printerProfile.multi.singleExtruderMultiMaterial')}
-                  </label>
+                  <TooltipLabel
+                    htmlFor="single_extruder_multi_material"
+                    label={t('printerProfile.multi.singleExtruderMultiMaterial')}
+                    tooltipText={t('printerProfile.help.tooltips.singleExtruderMultiMaterial')}
+                    className="inline-flex items-center gap-1.5 text-sm text-gray-300"
+                  />
                 </div>
                 <div className="flex items-center gap-3">
                   <input
@@ -2552,7 +2628,11 @@ export const CreatePrinterProfileModal: React.FC<CreatePrinterProfileModalProps>
                   />
                 </div>
                 <div>
-                  <label className="block text-gray-300 mb-2 text-sm font-medium">{t('printerProfile.multi.bedTemperatureFormula')}</label>
+                  <TooltipLabel
+                    label={t('printerProfile.multi.bedTemperatureFormula')}
+                    tooltipText={t('printerProfile.help.tooltips.bedTemperatureFormula')}
+                    className="mb-2 inline-flex items-center gap-1.5 text-sm font-medium text-gray-300"
+                  />
                   <CustomSelect
                     value={selectedBedTemperatureFormula}
                     onChange={(value) => handleMetadataStringChange('bed_temperature_formula', (value as string) || '')}
@@ -2564,7 +2644,10 @@ export const CreatePrinterProfileModal: React.FC<CreatePrinterProfileModalProps>
             </div>
 
             <div>
-              <h5 className="text-xs font-semibold uppercase tracking-wide text-purple-200/70 mb-3">{t('printerProfile.sections.multimaterialWipeTower')}</h5>
+              <TooltipHeading
+                title={t('printerProfile.sections.multimaterialWipeTower')}
+                tooltipText={t('printerProfile.help.tooltips.wipeTower')}
+              />
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="flex items-center gap-3">
                   <input
@@ -2574,9 +2657,12 @@ export const CreatePrinterProfileModal: React.FC<CreatePrinterProfileModalProps>
                     onChange={(e) => handleMetadataBooleanChange('purge_in_prime_tower', e.target.checked)}
                     className="w-4 h-4 rounded border-white/30 bg-white/10"
                   />
-                  <label htmlFor="purge_in_prime_tower" className="text-gray-300 text-sm">
-                    {t('printerProfile.multi.purgeInTower')}
-                  </label>
+                  <TooltipLabel
+                    htmlFor="purge_in_prime_tower"
+                    label={t('printerProfile.multi.purgeInTower')}
+                    tooltipText={t('printerProfile.help.tooltips.purgeInPrimeTower')}
+                    className="inline-flex items-center gap-1.5 text-sm text-gray-300"
+                  />
                 </div>
                 <div className="flex items-center gap-3">
                   <input
@@ -2586,18 +2672,28 @@ export const CreatePrinterProfileModal: React.FC<CreatePrinterProfileModalProps>
                     onChange={(e) => handleMetadataBooleanChange('enable_filament_ramming', e.target.checked)}
                     className="w-4 h-4 rounded border-white/30 bg-white/10"
                   />
-                  <label htmlFor="enable_filament_ramming" className="text-gray-300 text-sm">
-                    {t('printerProfile.multi.enableRamming')}
-                  </label>
+                  <TooltipLabel
+                    htmlFor="enable_filament_ramming"
+                    label={t('printerProfile.multi.enableRamming')}
+                    tooltipText={t('printerProfile.help.tooltips.ramming')}
+                    className="inline-flex items-center gap-1.5 text-sm text-gray-300"
+                  />
                 </div>
               </div>
             </div>
 
             <div>
-              <h5 className="text-xs font-semibold uppercase tracking-wide text-purple-200/70 mb-3">{t('printerProfile.sections.multimaterialSemm')}</h5>
+              <TooltipHeading
+                title={t('printerProfile.sections.multimaterialSemm')}
+                tooltipText={t('printerProfile.help.tooltips.semm')}
+              />
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-gray-300 mb-2 text-sm font-medium">{t('printerProfile.multi.parkingRetraction')}</label>
+                  <TooltipLabel
+                    label={t('printerProfile.multi.parkingRetraction')}
+                    tooltipText={t('printerProfile.help.tooltips.parkingRetraction')}
+                    className="mb-2 inline-flex items-center gap-1.5 text-sm font-medium text-gray-300"
+                  />
                   <input
                     type="text"
                     value={getMetadataString('parking_pos_retraction')}
@@ -2607,7 +2703,11 @@ export const CreatePrinterProfileModal: React.FC<CreatePrinterProfileModalProps>
                   />
                 </div>
                 <div>
-                  <label className="block text-gray-300 mb-2 text-sm font-medium">{t('printerProfile.multi.coolingTubeRetraction')}</label>
+                  <TooltipLabel
+                    label={t('printerProfile.multi.coolingTubeRetraction')}
+                    tooltipText={t('printerProfile.help.tooltips.coolingTubeRetraction')}
+                    className="mb-2 inline-flex items-center gap-1.5 text-sm font-medium text-gray-300"
+                  />
                   <input
                     type="text"
                     value={getMetadataString('cooling_tube_retraction')}
@@ -2617,7 +2717,11 @@ export const CreatePrinterProfileModal: React.FC<CreatePrinterProfileModalProps>
                   />
                 </div>
                 <div>
-                  <label className="block text-gray-300 mb-2 text-sm font-medium">{t('printerProfile.multi.coolingTubeLength')}</label>
+                  <TooltipLabel
+                    label={t('printerProfile.multi.coolingTubeLength')}
+                    tooltipText={t('printerProfile.help.tooltips.coolingTubeLength')}
+                    className="mb-2 inline-flex items-center gap-1.5 text-sm font-medium text-gray-300"
+                  />
                   <input
                     type="text"
                     value={getMetadataString('cooling_tube_length')}
@@ -2627,7 +2731,11 @@ export const CreatePrinterProfileModal: React.FC<CreatePrinterProfileModalProps>
                   />
                 </div>
                 <div>
-                  <label className="block text-gray-300 mb-2 text-sm font-medium">{t('printerProfile.multi.extraLoadingMove')}</label>
+                  <TooltipLabel
+                    label={t('printerProfile.multi.extraLoadingMove')}
+                    tooltipText={t('printerProfile.help.tooltips.extraLoadingMove')}
+                    className="mb-2 inline-flex items-center gap-1.5 text-sm font-medium text-gray-300"
+                  />
                   <input
                     type="text"
                     value={getMetadataString('extra_loading_move')}
@@ -2675,7 +2783,11 @@ export const CreatePrinterProfileModal: React.FC<CreatePrinterProfileModalProps>
                   />
                 </div>
                 <div>
-                  <label className="block text-gray-300 mb-2 text-sm font-medium">{t('printerProfile.multi.machineToolChangeTime')}</label>
+                  <TooltipLabel
+                    label={t('printerProfile.multi.machineToolChangeTime')}
+                    tooltipText={t('printerProfile.help.tooltips.toolChangeTime')}
+                    className="mb-2 inline-flex items-center gap-1.5 text-sm font-medium text-gray-300"
+                  />
                   <input
                     type="text"
                     value={getMetadataStringWithAliases('machine_tool_change_time', ['machine_switch_extruder_time'])}

@@ -1886,7 +1886,21 @@
     },
     "help": {
       "canonicalValues": "Canonical Orca values: {{values}}",
-      "oneValuePerLine": "One value per line. This preserves arrays whose items may include commas."
+      "oneValuePerLine": "One value per line. This preserves arrays whose items may include commas.",
+      "tooltips": {
+        "junctionDeviation": "Controls how much paths are rounded through corners. Lower values hold corners more accurately but can slow the printer more; higher values smooth turns more aggressively and may increase ringing.",
+        "singleExtruderMultiMaterial": "SEMM stands for Single Extruder Multi Material. Use it when multiple materials or colors share one hotend and are fed through it one after another instead of using separate nozzles.",
+        "bedTemperatureFormula": "Chooses which loaded filament drives the bed temperature in multi-material prints: the first filament or the one with the highest bed-temperature requirement.",
+        "wipeTower": "A wipe tower is a sacrificial structure printed next to the part. It receives purge material during color or material changes so the previous material does not contaminate the model.",
+        "purgeInPrimeTower": "When enabled, purge and cleaning moves during material changes are sent into the wipe tower instead of the model or open air.",
+        "ramming": "Ramming shapes the filament tip before unloading by compressing molten material in a controlled way. This reduces jams and stringy tips during material changes.",
+        "semm": "This block tunes loading and unloading behavior for SEMM workflows: how far to retract, where to stop the filament in the cooling tube, and how much extra push to apply on reload.",
+        "parkingRetraction": "How far the filament retracts before parking or switching. This helps release pressure in the hotend before unloading or waiting.",
+        "coolingTubeRetraction": "The target filament position inside the cooling tube before the rest of the unload sequence continues. It strongly affects how repeatable the filament tip shape is.",
+        "coolingTubeLength": "The effective cooling tube length in the unload path. If this is wrong, the slicer will mistime where the tip is formed.",
+        "extraLoadingMove": "An extra push after the main load move. Useful when the filament needs a little more travel to reliably reach the melt zone.",
+        "toolChangeTime": "A slicer-side estimate for how long a tool or material change takes. It affects time calculation and planning, not the printer mechanics directly."
+      }
     },
     "options": {
       "legacyValue": "legacy value",
