@@ -98,7 +98,7 @@ echo -e "${YELLOW}🔄 Шаг 3: Перезапуск контейнеров...$
 
 # Используем docker compose (V2) вместо docker-compose (V1)
 echo "   Пересобираю и запускаю контейнеры..."
-docker compose up -d --build
+COMPOSE_BAKE=false docker compose up -d --build
 
 echo -e "   ${GREEN}✅ Контейнеры запущены${NC}"
 
