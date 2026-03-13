@@ -194,7 +194,12 @@ async def register(
 
     # reCAPTCHA v3 verification
     from app.core.utils import verify_recaptcha
-    if not await verify_recaptcha(data.recaptcha_token or ""):
+    forwarded_for = request.headers.get("x-forwarded-for", "")
+    remote_ip = forwarded_for.split(",", 1)[0].strip() if forwarded_for else None
+    if not remote_ip and request.client:
+        remote_ip = request.client.host
+
+    if not await verify_recaptcha(data.recaptcha_token or "", remote_ip=remote_ip):
         raise_error(status.HTTP_400_BAD_REQUEST, ERR_RECAPTCHA_FAILED)
 
     # Проверка существования email

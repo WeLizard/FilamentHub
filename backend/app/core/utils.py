@@ -9,7 +9,7 @@ from app.core.config import settings
 logger = logging.getLogger(__name__)
 
 
-async def verify_recaptcha(token: str) -> bool:
+async def verify_recaptcha(token: str, remote_ip: str | None = None) -> bool:
     """Проверить reCAPTCHA v3 токен через Google API.
 
     Возвращает True если проверка пройдена (score >= threshold).
@@ -20,13 +20,17 @@ async def verify_recaptcha(token: str) -> bool:
         return True
 
     try:
+        payload = {
+            "secret": settings.RECAPTCHA_SECRET_KEY,
+            "response": token,
+        }
+        if remote_ip:
+            payload["remoteip"] = remote_ip
+
         async with httpx.AsyncClient(timeout=5.0) as client:
             resp = await client.post(
                 "https://www.google.com/recaptcha/api/siteverify",
-                data={
-                    "secret": settings.RECAPTCHA_SECRET_KEY,
-                    "response": token,
-                },
+                data=payload,
             )
             result = resp.json()
     except Exception:
@@ -35,12 +39,24 @@ async def verify_recaptcha(token: str) -> bool:
         return True
 
     if not result.get("success"):
-        logger.warning("reCAPTCHA verification failed: %s", result.get("error-codes"))
+        logger.warning(
+            "reCAPTCHA verification failed: errors=%s action=%s hostname=%s score=%s",
+            result.get("error-codes"),
+            result.get("action"),
+            result.get("hostname"),
+            result.get("score"),
+        )
         return False
 
     score = result.get("score", 0.0)
     if score < settings.RECAPTCHA_SCORE_THRESHOLD:
-        logger.warning("reCAPTCHA score too low: %.2f (threshold: %.2f)", score, settings.RECAPTCHA_SCORE_THRESHOLD)
+        logger.warning(
+            "reCAPTCHA score too low: %.2f (threshold: %.2f) action=%s hostname=%s",
+            score,
+            settings.RECAPTCHA_SCORE_THRESHOLD,
+            result.get("action"),
+            result.get("hostname"),
+        )
         return False
 
     return True

@@ -81,7 +81,7 @@ class Settings(BaseSettings):
 
     # reCAPTCHA v3
     RECAPTCHA_SECRET_KEY: str = ""  # Пустая строка = пропуск проверки (для разработки)
-    RECAPTCHA_SCORE_THRESHOLD: float = 0.5
+    RECAPTCHA_SCORE_THRESHOLD: float = 0.3
 
     model_config = SettingsConfigDict(
         env_file=".env",
