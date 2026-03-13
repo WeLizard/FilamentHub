@@ -110,12 +110,6 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
         }
         
         const freshRecaptchaToken = await getRecaptchaToken('register');
-        const siteKeyConfigured = Boolean(import.meta.env.VITE_RECAPTCHA_SITE_KEY);
-        if (siteKeyConfigured && !freshRecaptchaToken) {
-          setError(t('apiErrors.ERR_RECAPTCHA_FAILED'));
-          setIsLoading(false);
-          return;
-        }
 
         // Все проверки пройдены - регистрируем со свежим reCAPTCHA токеном
         await register({
