@@ -104,7 +104,7 @@ export const ProfilePage: React.FC = () => {
   const renderExpandableProfileBadge = (badge: BadgeType) => (
     <span
       key={badge}
-      className="group inline-flex h-10 items-center overflow-hidden rounded-full border border-white/10 bg-black/25 px-2 text-gray-100 shadow-md shadow-black/10 transition-all duration-300 hover:border-amber-300/35 hover:bg-black/40 focus-within:border-amber-300/35 focus-within:bg-black/40"
+      className="group inline-flex h-10 cursor-default items-center overflow-hidden rounded-full border border-white/10 bg-black/25 px-2 text-gray-100 shadow-md shadow-black/10 transition-all duration-300 hover:border-amber-300/35 hover:bg-black/40 focus-within:border-amber-300/35 focus-within:bg-black/40"
       title={t(BADGE_CONFIG[badge].titleKey)}
       tabIndex={0}
     >
