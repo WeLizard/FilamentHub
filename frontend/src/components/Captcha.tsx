@@ -1,11 +1,11 @@
-/** reCAPTCHA v3 — невидимая капча с серверной проверкой.
+/** reCAPTCHA v3 — preload script + helper для получения свежего токена перед submit.
  *
  * Site key берётся из VITE_RECAPTCHA_SITE_KEY (.env).
- * Если ключ не задан — компонент не рендерится и onToken не вызывается
+ * Если ключ не задан — helper возвращает null
  * (бэкенд при пустом RECAPTCHA_SECRET_KEY тоже пропускает проверку).
  */
 
-import { useCallback, useEffect, useRef } from 'react';
+import { useEffect } from 'react';
 
 const SITE_KEY = import.meta.env.VITE_RECAPTCHA_SITE_KEY as string | undefined;
 
@@ -16,13 +16,6 @@ declare global {
       execute: (siteKey: string, options: { action: string }) => Promise<string>;
     };
   }
-}
-
-interface RecaptchaProps {
-  /** Вызывается с токеном reCAPTCHA, который нужно отправить на сервер */
-  onToken: (token: string) => void;
-  /** action label для reCAPTCHA analytics (по умолчанию "register") */
-  action?: string;
 }
 
 let scriptLoaded = false;
@@ -46,26 +39,38 @@ function loadScript(): Promise<void> {
   });
 }
 
-export const Recaptcha: React.FC<RecaptchaProps> = ({ onToken, action = 'register' }) => {
-  const called = useRef(false);
+export async function getRecaptchaToken(action = 'register'): Promise<string | null> {
+  if (!SITE_KEY) {
+    return null;
+  }
 
-  const execute = useCallback(async () => {
-    if (!SITE_KEY || called.current) return;
-    called.current = true;
-    await loadScript();
+  await loadScript();
+
+  if (!window.grecaptcha) {
+    return null;
+  }
+
+  return new Promise((resolve) => {
     window.grecaptcha.ready(async () => {
       try {
         const token = await window.grecaptcha.execute(SITE_KEY, { action });
-        onToken(token);
+        resolve(token);
       } catch {
-        // Если не удалось — просто не отправляем токен, сервер решит
+        resolve(null);
       }
     });
-  }, [onToken, action]);
+  });
+}
 
+interface RecaptchaProps {
+  /** action label для reCAPTCHA analytics (по умолчанию "register") */
+  action?: string;
+}
+
+export const Recaptcha: React.FC<RecaptchaProps> = () => {
   useEffect(() => {
-    execute();
-  }, [execute]);
+    void loadScript();
+  }, []);
 
   // reCAPTCHA v3 невидима — ничего не рендерим
   return null;

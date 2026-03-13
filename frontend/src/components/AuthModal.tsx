@@ -3,7 +3,7 @@
 import { useState, useEffect, FormEvent } from 'react';
 import { Mail, Lock, LogIn, UserPlus, User, Factory, Package, X, Check, Eye, EyeOff, AlertCircle, KeyRound } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
-import { Recaptcha } from './Captcha';
+import { Recaptcha, getRecaptchaToken } from './Captcha';
 import { TermsModal } from './TermsModal';
 import { ConsentModal } from './ConsentModal';
 import { ForgotPasswordModal } from './ForgotPasswordModal';
@@ -29,7 +29,6 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [username, setUsername] = useState('');
   const [agreed, setAgreed] = useState(false);
-  const [recaptchaToken, setRecaptchaToken] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [isTermsModalOpen, setIsTermsModalOpen] = useState(false);
@@ -63,7 +62,6 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
       setError(null);
       setIsLoading(false);
       setAuthMethod('email'); // Сбрасываем метод входа
-      setRecaptchaToken(null);
     }
   }, [isOpen]);
 
@@ -111,13 +109,21 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
           return;
         }
         
-        // Все проверки пройдены - регистрируем (с reCAPTCHA токеном если есть)
+        const freshRecaptchaToken = await getRecaptchaToken('register');
+        const siteKeyConfigured = Boolean(import.meta.env.VITE_RECAPTCHA_SITE_KEY);
+        if (siteKeyConfigured && !freshRecaptchaToken) {
+          setError(t('apiErrors.ERR_RECAPTCHA_FAILED'));
+          setIsLoading(false);
+          return;
+        }
+
+        // Все проверки пройдены - регистрируем со свежим reCAPTCHA токеном
         await register({
           email,
           username,
           password,
           role: 'user',
-          recaptcha_token: recaptchaToken ?? undefined,
+          recaptcha_token: freshRecaptchaToken ?? undefined,
         });
         
         // Успешная регистрация - закрываем модальное окно
@@ -129,7 +135,6 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
         setConfirmPassword('');
         setUsername('');
         setAgreed(false);
-        setRecaptchaToken(null);
         setIsLoading(false);
       }
     } catch (err: any) {
@@ -214,7 +219,6 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
               setAuthMode('login');
               setAuthMethod('email'); // Сбрасываем метод входа на email
               setError(null);
-              setRecaptchaToken(null);
             }}
             className={`flex-1 py-3 px-4 rounded-l-xl transition-all ${
               authMode === 'login'
@@ -229,7 +233,6 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
               setAuthMode('register');
               setAuthMethod('email'); // Регистрация всегда через email
               setError(null);
-              setRecaptchaToken(null);
             }}
             className={`flex-1 py-3 px-4 rounded-r-xl transition-all ${
               authMode === 'register'
@@ -504,8 +507,8 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
                   </label>
                 </div>
 
-                {/* reCAPTCHA v3 — невидимая, запускается автоматически */}
-                <Recaptcha onToken={setRecaptchaToken} action="register" />
+                {/* reCAPTCHA v3 — скрипт прогревается заранее, токен берём перед submit */}
+                <Recaptcha action="register" />
               </>
             )}
 
