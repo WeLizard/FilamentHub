@@ -1902,6 +1902,61 @@
         "toolChangeTime": "A slicer-side estimate for how long a tool or material change takes. It affects time calculation and planning, not the printer mechanics directly."
       }
     },
+    "nozzleGuide": {
+      "title": "Nozzle material guide",
+      "caption": "Use this as a selection aid. Final temperatures and speed still depend on the hotend, the specific filament, and the vendor profile for that material.",
+      "selectedBadge": "Selected: {{material}}",
+      "active": "selected",
+      "headers": {
+        "material": "Nozzle material",
+        "temperature": "Temperature behavior",
+        "speed": "Speed and flow",
+        "abrasive": "Abrasive filaments"
+      },
+      "compatibility": {
+        "yes": "recommended",
+        "conditional": "conditional",
+        "no": "not recommended"
+      },
+      "rows": {
+        "brass": {
+          "temperature": "Baseline reference for PLA, PETG, and other non-abrasive materials. Usually does not need extra temperature versus the profile.",
+          "speed": "Best everyday heat transfer balance for standard print speeds and typical flow."
+        },
+        "hardened_steel": {
+          "temperature": "Often needs a small bump compared with brass because thermal transfer is lower.",
+          "speed": "Strong all-round choice, but at very high speeds it usually carries less heat than copper or carbide."
+        },
+        "stainless_steel": {
+          "temperature": "Usually works with a slight increase over brass temperatures, especially on more viscous materials.",
+          "speed": "Better kept at moderate speeds; not the strongest option for aggressive high-flow setups."
+        },
+        "tungsten_carbide": {
+          "temperature": "Typically stays stable across the working range and keeps flow consistent even on hotter engineering materials.",
+          "speed": "Well suited to faster printing and higher flow if the rest of the extrusion path can keep up."
+        },
+        "copper_alloy": {
+          "temperature": "High thermal transfer helps with hotter materials, but the exact window still depends on coating and nozzle construction.",
+          "speed": "Works well for increased flow as long as the nozzle is not a soft copper design intended only for non-abrasive use."
+        },
+        "ruby": {
+          "temperature": "Usually stable across normal printing temperatures, but the nozzle should not be stressed by crashes or misalignment.",
+          "speed": "Normal to moderately high speeds are fine when the machine is well aligned and mechanically stable."
+        },
+        "titanium": {
+          "temperature": "Lower thermal transfer can require a higher setpoint or a more conservative material profile.",
+          "speed": "Usually better for calmer print speeds and controlled flow than for chasing maximum throughput."
+        },
+        "nickel_plated_copper": {
+          "temperature": "Handles hotter materials well and often supports more stable feeding near the upper end of the temperature range.",
+          "speed": "A good fit for higher-flow printing when the specific model has enough wear resistance for the job."
+        },
+        "E3D": {
+          "temperature": "This is an Orca vendor bucket rather than a single material. Check the actual nozzle material in the spec for that model.",
+          "speed": "Speed behavior depends on the exact E3D nozzle family: standard, hardened, ObXidian, High Flow, and so on."
+        }
+      }
+    },
     "options": {
       "legacyValue": "legacy value",
       "printerStructure": {

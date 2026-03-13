@@ -28,6 +28,47 @@ type CanonicalOption = {
   labelKey: string;
 };
 
+type NozzleGuideType =
+  | 'brass'
+  | 'hardened_steel'
+  | 'stainless_steel'
+  | 'tungsten_carbide'
+  | 'copper_alloy'
+  | 'ruby'
+  | 'titanium'
+  | 'nickel_plated_copper'
+  | 'E3D';
+
+const NOZZLE_GUIDE_TYPES: readonly NozzleGuideType[] = [
+  'brass',
+  'hardened_steel',
+  'stainless_steel',
+  'tungsten_carbide',
+  'copper_alloy',
+  'ruby',
+  'titanium',
+  'nickel_plated_copper',
+  'E3D',
+] as const;
+
+const NOZZLE_TYPE_LABEL_KEYS: Record<NozzleGuideType, string> = {
+  brass: 'printerProfile.options.nozzleType.brass',
+  hardened_steel: 'printerProfile.options.nozzleType.hardenedSteel',
+  stainless_steel: 'printerProfile.options.nozzleType.stainlessSteel',
+  tungsten_carbide: 'printerProfile.options.nozzleType.tungstenCarbide',
+  copper_alloy: 'printerProfile.options.nozzleType.copperAlloy',
+  ruby: 'printerProfile.options.nozzleType.ruby',
+  titanium: 'printerProfile.options.nozzleType.titanium',
+  nickel_plated_copper: 'printerProfile.options.nozzleType.nickelPlatedCopper',
+  E3D: 'printerProfile.options.nozzleType.e3d',
+};
+
+const NOZZLE_GUIDE_COMPATIBILITY_TONES: Record<'yes' | 'conditional' | 'no', string> = {
+  yes: 'border-green-500/30 bg-green-500/15 text-green-200',
+  conditional: 'border-yellow-500/30 bg-yellow-500/15 text-yellow-200',
+  no: 'border-rose-500/30 bg-rose-500/15 text-rose-200',
+};
+
 interface HelpTooltipProps {
   text: string;
 }
@@ -94,6 +135,105 @@ const TooltipHeading = ({ title, tooltipText, level = 'h5' }: TooltipHeadingProp
     <div className="mb-3 flex items-center gap-1.5">
       <Tag className="text-xs font-semibold uppercase tracking-wide text-purple-200/70">{title}</Tag>
       {tooltipText ? <HelpTooltip text={tooltipText} /> : null}
+    </div>
+  );
+};
+
+interface NozzleGuideRow {
+  value: NozzleGuideType;
+  abrasiveCompatibility: 'yes' | 'conditional' | 'no';
+}
+
+const NOZZLE_GUIDE_ROWS: readonly NozzleGuideRow[] = [
+  { value: 'brass', abrasiveCompatibility: 'no' },
+  { value: 'hardened_steel', abrasiveCompatibility: 'yes' },
+  { value: 'stainless_steel', abrasiveCompatibility: 'conditional' },
+  { value: 'tungsten_carbide', abrasiveCompatibility: 'yes' },
+  { value: 'copper_alloy', abrasiveCompatibility: 'conditional' },
+  { value: 'ruby', abrasiveCompatibility: 'yes' },
+  { value: 'titanium', abrasiveCompatibility: 'conditional' },
+  { value: 'nickel_plated_copper', abrasiveCompatibility: 'conditional' },
+  { value: 'E3D', abrasiveCompatibility: 'conditional' },
+] as const;
+
+interface NozzleGuideTableProps {
+  selectedTypes: string[];
+}
+
+const NozzleGuideTable = ({ selectedTypes }: NozzleGuideTableProps) => {
+  const { t } = useTranslation();
+  const selectedSet = new Set<NozzleGuideType>(
+    selectedTypes.filter((value): value is NozzleGuideType => NOZZLE_GUIDE_TYPES.includes(value as NozzleGuideType)),
+  );
+
+  return (
+    <div className="rounded-2xl border border-white/10 bg-black/15 p-4 shadow-inner shadow-black/20">
+      <div className="mb-3 flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+        <div className="space-y-1">
+          <p className="text-sm font-semibold text-white">{t('printerProfile.nozzleGuide.title')}</p>
+          <p className="text-xs leading-relaxed text-gray-400">{t('printerProfile.nozzleGuide.caption')}</p>
+        </div>
+        {selectedSet.size > 0 && (
+          <div className="flex flex-wrap gap-2">
+            {Array.from(selectedSet).map((type) => (
+              <span
+                key={type}
+                className="inline-flex items-center rounded-full border border-purple-400/30 bg-purple-500/10 px-2.5 py-1 text-[11px] font-medium text-purple-100"
+              >
+                {t('printerProfile.nozzleGuide.selectedBadge', { material: t(NOZZLE_TYPE_LABEL_KEYS[type]) })}
+              </span>
+            ))}
+          </div>
+        )}
+      </div>
+
+      <div className="overflow-x-auto">
+        <table className="min-w-full text-left text-xs md:text-sm">
+          <thead>
+            <tr className="border-b border-white/10 text-gray-400">
+              <th className="px-3 py-2 font-medium">{t('printerProfile.nozzleGuide.headers.material')}</th>
+              <th className="px-3 py-2 font-medium">{t('printerProfile.nozzleGuide.headers.temperature')}</th>
+              <th className="px-3 py-2 font-medium">{t('printerProfile.nozzleGuide.headers.speed')}</th>
+              <th className="px-3 py-2 font-medium">{t('printerProfile.nozzleGuide.headers.abrasive')}</th>
+            </tr>
+          </thead>
+          <tbody>
+            {NOZZLE_GUIDE_ROWS.map((row) => {
+              const isSelected = selectedSet.has(row.value);
+              return (
+                <tr
+                  key={row.value}
+                  className={`border-b border-white/5 align-top last:border-b-0 ${isSelected ? 'bg-purple-500/8' : ''}`}
+                >
+                  <td className="px-3 py-3">
+                    <div className="flex items-center gap-2">
+                      <span className="font-medium text-white">{t(NOZZLE_TYPE_LABEL_KEYS[row.value])}</span>
+                      {isSelected && (
+                        <span className="inline-flex items-center rounded-full border border-purple-400/30 bg-purple-500/15 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-purple-100">
+                          {t('printerProfile.nozzleGuide.active')}
+                        </span>
+                      )}
+                    </div>
+                  </td>
+                  <td className="px-3 py-3 text-gray-300">
+                    {t(`printerProfile.nozzleGuide.rows.${row.value}.temperature`)}
+                  </td>
+                  <td className="px-3 py-3 text-gray-300">
+                    {t(`printerProfile.nozzleGuide.rows.${row.value}.speed`)}
+                  </td>
+                  <td className="px-3 py-3">
+                    <span
+                      className={`inline-flex items-center rounded-full border px-2.5 py-1 text-[11px] font-medium ${NOZZLE_GUIDE_COMPATIBILITY_TONES[row.abrasiveCompatibility]}`}
+                    >
+                      {t(`printerProfile.nozzleGuide.compatibility.${row.abrasiveCompatibility}`)}
+                    </span>
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 };
@@ -2510,12 +2650,15 @@ export const CreatePrinterProfileModal: React.FC<CreatePrinterProfileModalProps>
             <div>
               <h5 className="text-xs font-semibold uppercase tracking-wide text-purple-200/70 mb-3">{t('printerProfile.sections.extruderGeometry')}</h5>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {renderEnumArrayField(
-                  'nozzle_type',
-                  'printerProfile.extruder.nozzleType',
-                  ORCA_NOZZLE_TYPE_OPTIONS,
-                  t('printerProfile.selectType'),
-                )}
+                <div className="space-y-4 md:col-span-2">
+                  {renderEnumArrayField(
+                    'nozzle_type',
+                    'printerProfile.extruder.nozzleType',
+                    ORCA_NOZZLE_TYPE_OPTIONS,
+                    t('printerProfile.selectType'),
+                  )}
+                  <NozzleGuideTable selectedTypes={getMetadataListValues('nozzle_type')} />
+                </div>
                 {nozzleAndGeometryFields.map(renderMetadataField)}
               </div>
             </div>
