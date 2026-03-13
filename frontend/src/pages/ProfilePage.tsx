@@ -995,8 +995,9 @@ export const ProfilePage: React.FC = () => {
                                 const hasPrinterLink = pp.printer_links?.some(
                                   (link) => link.printer_slug === profile.printer_slug
                                 );
-                                const hasCompatiblePrinter = pp.compatible_printers?.includes(profile.printer_slug || '');
-                                return hasPrinterLink || hasCompatiblePrinter;
+                                const hasCompatiblePrinterSlug = pp.compatible_printers?.includes(profile.printer_slug || '');
+                                const hasCompatiblePrinterName = pp.compatible_printers?.includes(profile.name || '');
+                                return hasPrinterLink || hasCompatiblePrinterSlug || hasCompatiblePrinterName;
                               })
                             : [];
 
