@@ -174,12 +174,17 @@ def validate_print_profile(profile: dict[str, Any]) -> ValidationResult:
         if profile["from"] not in VALID_FROM_VALUES:
             result.add_error(f"from должен быть 'system' или 'user', получено: {profile['from']}")
 
-    # 4. Проверяем print_settings_id (должен быть массивом)
+    # 4. Проверяем print_settings_id (в живых Orca process JSON обычно строка, но legacy может быть массивом)
     if "print_settings_id" in profile:
-        if not isinstance(profile["print_settings_id"], list):
-            result.add_error("print_settings_id должен быть массивом")
-        elif len(profile["print_settings_id"]) == 0:
-            result.add_error("print_settings_id не может быть пустым массивом")
+        print_settings_id = profile["print_settings_id"]
+        if isinstance(print_settings_id, str):
+            if not print_settings_id.strip():
+                result.add_error("print_settings_id не может быть пустой строкой")
+        elif isinstance(print_settings_id, list):
+            if len(print_settings_id) == 0 or not any(str(item).strip() for item in print_settings_id):
+                result.add_error("print_settings_id не может быть пустым массивом")
+        else:
+            result.add_error("print_settings_id должен быть строкой или массивом")
 
     # 5. ВАЖНО: compatible_printers НЕ должен быть пустым для print profiles!
     if "compatible_printers" in profile:

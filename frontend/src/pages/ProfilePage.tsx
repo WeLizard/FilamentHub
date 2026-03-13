@@ -95,6 +95,7 @@ export const ProfilePage: React.FC = () => {
   const [isCreatePrintProfileModalOpen, setIsCreatePrintProfileModalOpen] = useState(false);
   const [editingPrinterProfile, setEditingPrinterProfile] = useState<PrinterProfile | null>(null);
   const [editingPrintProfile, setEditingPrintProfile] = useState<PrintProfile | null>(null);
+  const [createPrintProfileContext, setCreatePrintProfileContext] = useState<PrinterProfile | null>(null);
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
   const [presetFilter, setPresetFilter] = useState<'all' | 'own' | 'saved' | 'drafts'>('all');
   const profileBadges = useMemo(() => {
@@ -1155,6 +1156,7 @@ export const ProfilePage: React.FC = () => {
                                     type="button"
                                     onClick={() => {
                                       setEditingPrintProfile(null);
+                                      setCreatePrintProfileContext(profile);
                                       setIsCreatePrintProfileModalOpen(true);
                                     }}
                                     className="w-full px-3 py-2 rounded-lg border border-dashed border-white/20 text-xs text-gray-400 hover:text-white hover:border-white/40 transition-all flex items-center justify-center gap-2"
@@ -1237,8 +1239,10 @@ export const ProfilePage: React.FC = () => {
         onClose={() => {
           setIsCreatePrintProfileModalOpen(false);
           setEditingPrintProfile(null);
+          setCreatePrintProfileContext(null);
         }}
         profile={editingPrintProfile}
+        printerProfileContext={createPrintProfileContext}
       />
 
       {/* Help Modal */}

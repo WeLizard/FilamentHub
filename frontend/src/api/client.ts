@@ -706,9 +706,16 @@ type CreatePrintProfilePayload = {
   owner_user_id?: number | null;
   is_official?: boolean;
   active?: boolean;
+  source?: string;
+  vendor?: string | null;
+  setting_id?: string | null;
+  quality_tier?: string | null;
+  default_nozzle?: string | null;
+  layer_height_mm?: number | null;
   compatible_printers?: string[] | null;
   compatible_filaments?: string[] | null;
   orcaslicer_settings?: Record<string, any>;
+  extra_metadata?: Record<string, any> | null;
   notes?: string | null;
 };
 
