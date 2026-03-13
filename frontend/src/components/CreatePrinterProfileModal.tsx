@@ -167,74 +167,79 @@ const NozzleGuideTable = ({ selectedTypes }: NozzleGuideTableProps) => {
   );
 
   return (
-    <div className="rounded-2xl border border-white/10 bg-black/15 p-4 shadow-inner shadow-black/20">
-      <div className="mb-3 flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-        <div className="space-y-1">
-          <p className="text-sm font-semibold text-white">{t('printerProfile.nozzleGuide.title')}</p>
-          <p className="text-xs leading-relaxed text-gray-400">{t('printerProfile.nozzleGuide.caption')}</p>
-        </div>
-        {selectedSet.size > 0 && (
-          <div className="flex flex-wrap gap-2">
-            {Array.from(selectedSet).map((type) => (
-              <span
-                key={type}
-                className="inline-flex items-center rounded-full border border-purple-400/30 bg-purple-500/10 px-2.5 py-1 text-[11px] font-medium text-purple-100"
-              >
-                {t('printerProfile.nozzleGuide.selectedBadge', { material: t(NOZZLE_TYPE_LABEL_KEYS[type]) })}
-              </span>
-            ))}
+    <details className="group rounded-lg border border-white/10 bg-white/[0.03]">
+      <summary className="flex cursor-pointer list-none items-center gap-2 px-4 py-3 text-sm font-medium text-gray-300 transition-colors hover:text-white [&::-webkit-details-marker]:hidden">
+        <span>{t('printerProfile.nozzleGuide.title')}</span>
+        <ChevronRight className="h-4 w-4 transition-transform group-open:rotate-90" />
+      </summary>
+      <div className="border-t border-white/10 px-4 py-4">
+        <div className="mb-3 flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+          <div className="space-y-1">
+            <p className="text-xs leading-relaxed text-gray-400">{t('printerProfile.nozzleGuide.caption')}</p>
           </div>
-        )}
-      </div>
-
-      <div className="overflow-x-auto">
-        <table className="min-w-full text-left text-xs md:text-sm">
-          <thead>
-            <tr className="border-b border-white/10 text-gray-400">
-              <th className="px-3 py-2 font-medium">{t('printerProfile.nozzleGuide.headers.material')}</th>
-              <th className="px-3 py-2 font-medium">{t('printerProfile.nozzleGuide.headers.temperature')}</th>
-              <th className="px-3 py-2 font-medium">{t('printerProfile.nozzleGuide.headers.speed')}</th>
-              <th className="px-3 py-2 font-medium">{t('printerProfile.nozzleGuide.headers.abrasive')}</th>
-            </tr>
-          </thead>
-          <tbody>
-            {NOZZLE_GUIDE_ROWS.map((row) => {
-              const isSelected = selectedSet.has(row.value);
-              return (
-                <tr
-                  key={row.value}
-                  className={`border-b border-white/5 align-top last:border-b-0 ${isSelected ? 'bg-purple-500/8' : ''}`}
+          {selectedSet.size > 0 && (
+            <div className="flex flex-wrap gap-2">
+              {Array.from(selectedSet).map((type) => (
+                <span
+                  key={type}
+                  className="inline-flex items-center rounded-full border border-purple-400/30 bg-purple-500/10 px-2.5 py-1 text-[11px] font-medium text-purple-100"
                 >
-                  <td className="px-3 py-3">
-                    <div className="flex items-center gap-2">
-                      <span className="font-medium text-white">{t(NOZZLE_TYPE_LABEL_KEYS[row.value])}</span>
-                      {isSelected && (
-                        <span className="inline-flex items-center rounded-full border border-purple-400/30 bg-purple-500/15 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-purple-100">
-                          {t('printerProfile.nozzleGuide.active')}
-                        </span>
-                      )}
-                    </div>
-                  </td>
-                  <td className="px-3 py-3 text-gray-300">
-                    {t(`printerProfile.nozzleGuide.rows.${row.value}.temperature`)}
-                  </td>
-                  <td className="px-3 py-3 text-gray-300">
-                    {t(`printerProfile.nozzleGuide.rows.${row.value}.speed`)}
-                  </td>
-                  <td className="px-3 py-3">
-                    <span
-                      className={`inline-flex items-center rounded-full border px-2.5 py-1 text-[11px] font-medium ${NOZZLE_GUIDE_COMPATIBILITY_TONES[row.abrasiveCompatibility]}`}
-                    >
-                      {t(`printerProfile.nozzleGuide.compatibility.${row.abrasiveCompatibility}`)}
-                    </span>
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
+                  {t('printerProfile.nozzleGuide.selectedBadge', { material: t(NOZZLE_TYPE_LABEL_KEYS[type]) })}
+                </span>
+              ))}
+            </div>
+          )}
+        </div>
+
+        <div className="overflow-x-auto">
+          <table className="min-w-full text-left text-xs md:text-sm">
+            <thead>
+              <tr className="border-b border-white/10 text-gray-400">
+                <th className="px-3 py-2 font-medium">{t('printerProfile.nozzleGuide.headers.material')}</th>
+                <th className="px-3 py-2 font-medium">{t('printerProfile.nozzleGuide.headers.temperature')}</th>
+                <th className="px-3 py-2 font-medium">{t('printerProfile.nozzleGuide.headers.speed')}</th>
+                <th className="px-3 py-2 font-medium">{t('printerProfile.nozzleGuide.headers.abrasive')}</th>
+              </tr>
+            </thead>
+            <tbody>
+              {NOZZLE_GUIDE_ROWS.map((row) => {
+                const isSelected = selectedSet.has(row.value);
+                return (
+                  <tr
+                    key={row.value}
+                    className={`border-b border-white/5 align-top last:border-b-0 ${isSelected ? 'bg-purple-500/8' : ''}`}
+                  >
+                    <td className="px-3 py-3">
+                      <div className="flex items-center gap-2">
+                        <span className="font-medium text-white">{t(NOZZLE_TYPE_LABEL_KEYS[row.value])}</span>
+                        {isSelected && (
+                          <span className="inline-flex items-center rounded-full border border-purple-400/30 bg-purple-500/15 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-purple-100">
+                            {t('printerProfile.nozzleGuide.active')}
+                          </span>
+                        )}
+                      </div>
+                    </td>
+                    <td className="px-3 py-3 text-gray-300">
+                      {t(`printerProfile.nozzleGuide.rows.${row.value}.temperature`)}
+                    </td>
+                    <td className="px-3 py-3 text-gray-300">
+                      {t(`printerProfile.nozzleGuide.rows.${row.value}.speed`)}
+                    </td>
+                    <td className="px-3 py-3">
+                      <span
+                        className={`inline-flex items-center rounded-full border px-2.5 py-1 text-[11px] font-medium ${NOZZLE_GUIDE_COMPATIBILITY_TONES[row.abrasiveCompatibility]}`}
+                      >
+                        {t(`printerProfile.nozzleGuide.compatibility.${row.abrasiveCompatibility}`)}
+                      </span>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
       </div>
-    </div>
+    </details>
   );
 };
 
