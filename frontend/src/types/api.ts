@@ -485,6 +485,7 @@ export interface CalculatorEstimateRequest {
   // Накладные расходы и наценка
   overhead_percent?: number | null;
   markup_percent?: number | null;
+  tax_rate_percent?: number | null;
   
   // Коэффициенты корректировки
   urgency_coefficient?: number | null;
@@ -510,6 +511,7 @@ export interface CalculatorEstimateResponse {
   cost_printing: number;
   cost_postprocessing: number;
   cost_amortization: number;
+  cost_tax: number;
   
   // Промежуточные расчеты
   cost_direct: number;
@@ -541,6 +543,7 @@ export interface CalculatorEstimateResponse {
   applied_urgency_coefficient?: number | null;
   applied_complexity_coefficient?: number | null;
   applied_volume_discount?: number | null;
+  applied_tax_rate_percent?: number | null;
 }
 
 export interface CalculatorParsedMaterial {

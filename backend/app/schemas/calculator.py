@@ -115,6 +115,9 @@ class CalculatorEstimateRequest(BaseModel):
     markup_percent: float | None = Field(
         None, ge=0, le=200, description="Процент наценки (20-70% в зависимости от сегмента)"
     )
+    tax_rate_percent: float | None = Field(
+        None, ge=0, le=100, description="Налоговая ставка в процентах (например 0, 4, 6)"
+    )
     
     # ========== Коэффициенты корректировки ==========
     urgency_coefficient: float | None = Field(
@@ -157,6 +160,7 @@ class CalculatorEstimateResponse(BaseModel):
     cost_printing: float = Field(0, ge=0, description="Стоимость печати (почасовая)")
     cost_postprocessing: float = Field(0, ge=0, description="Стоимость постобработки")
     cost_amortization: float = Field(0, ge=0, description="Стоимость амортизации")
+    cost_tax: float = Field(0, ge=0, description="Сумма налога, включенная в итоговую цену")
     
     # Промежуточные расчеты
     cost_direct: float = Field(0, ge=0, description="Прямые затраты (материалы + время + труд)")
@@ -177,9 +181,9 @@ class CalculatorEstimateResponse(BaseModel):
     quantity: int = Field(..., gt=0, description="Количество деталей")
     
     # Финансовые показатели (только для combined)
-    cost_of_goods_sold: float | None = Field(None, ge=0, description="Себестоимость (прямые затраты + накладные + фиксированные)")
-    profit_margin: float | None = Field(None, description="Маржа (прибыль) = Финальная цена - Себестоимость")
-    profit_margin_percent: float | None = Field(None, description="Маржа в процентах от финальной цены")
+    cost_of_goods_sold: float | None = Field(None, ge=0, description="Себестоимость (прямые затраты + накладные + фиксированные, без налога)")
+    profit_margin: float | None = Field(None, description="Маржинальность / прибыль = цена без налога - себестоимость")
+    profit_margin_percent: float | None = Field(None, description="Маржинальность в процентах от цены без налога")
     
     # Метод расчета
     pricing_method: PricingMethod = Field(..., description="Использованный метод расчета")
@@ -188,6 +192,7 @@ class CalculatorEstimateResponse(BaseModel):
     applied_urgency_coefficient: float | None = Field(None, description="Примененный коэффициент срочности")
     applied_complexity_coefficient: float | None = Field(None, description="Примененный коэффициент сложности")
     applied_volume_discount: float | None = Field(None, description="Примененный коэффициент скидки за объем")
+    applied_tax_rate_percent: float | None = Field(None, description="Примененная налоговая ставка")
 
 
 class CalculatorParsedMaterial(BaseModel):

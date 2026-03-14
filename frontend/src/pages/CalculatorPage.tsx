@@ -78,6 +78,7 @@ interface CalculatorFormState {
   partsPerPrint: number;
   overheadPercent: number;
   markupPercent: number;
+  taxRatePercent: number;
   urgencyCoefficient: number;
   complexityCoefficient: number;
   volumeDiscountCoefficient: number;
@@ -123,6 +124,7 @@ const DEFAULT_FORM_STATE: CalculatorFormState = {
   partsPerPrint: 1,
   overheadPercent: 20,
   markupPercent: 30,
+  taxRatePercent: 0,
   urgencyCoefficient: 1.0,
   complexityCoefficient: 1.0,
   volumeDiscountCoefficient: 1.0,
@@ -141,6 +143,7 @@ const CALCULATOR_STATIC_FIELDS = [
   'amortizationRatePerHour',
   'overheadPercent',
   'markupPercent',
+  'taxRatePercent',
   'fixedCosts',
   'minOrderPrice',
   'roundToNearest',
@@ -230,6 +233,7 @@ const buildEstimateRequest = (form: CalculatorFormState): CalculatorEstimateRequ
 
   requestData.overhead_percent = form.overheadPercent || undefined;
   requestData.markup_percent = form.markupPercent || undefined;
+  requestData.tax_rate_percent = form.taxRatePercent || undefined;
   requestData.urgency_coefficient = form.urgencyCoefficient !== 1.0 ? form.urgencyCoefficient : undefined;
   requestData.complexity_coefficient = form.complexityCoefficient !== 1.0 ? form.complexityCoefficient : undefined;
   requestData.volume_discount_coefficient =
@@ -316,6 +320,7 @@ const extractStaticSettings = (form: CalculatorFormState): CalculatorStaticSetti
   amortizationRatePerHour: form.amortizationRatePerHour,
   overheadPercent: form.overheadPercent,
   markupPercent: form.markupPercent,
+  taxRatePercent: form.taxRatePercent,
   fixedCosts: form.fixedCosts,
   minOrderPrice: form.minOrderPrice,
   roundToNearest: form.roundToNearest,
@@ -348,6 +353,7 @@ const loadStoredCalculatorDefaults = (): CalculatorStaticSettings => {
       amortizationRatePerHour: numberOrFallback(parsed.amortizationRatePerHour, fallback.amortizationRatePerHour),
       overheadPercent: numberOrFallback(parsed.overheadPercent, fallback.overheadPercent),
       markupPercent: numberOrFallback(parsed.markupPercent, fallback.markupPercent),
+      taxRatePercent: numberOrFallback(parsed.taxRatePercent, fallback.taxRatePercent),
       fixedCosts: numberOrFallback(parsed.fixedCosts, fallback.fixedCosts),
       minOrderPrice: numberOrFallback(parsed.minOrderPrice, fallback.minOrderPrice),
       roundToNearest: numberOrFallback(parsed.roundToNearest, fallback.roundToNearest),
@@ -478,6 +484,7 @@ const buildFormFromHistoryEntry = (entry: CalculatorHistoryEntry): CalculatorFor
     partsPerPrint: request.parts_per_print ?? DEFAULT_FORM_STATE.partsPerPrint,
     overheadPercent: request.overhead_percent ?? DEFAULT_FORM_STATE.overheadPercent,
     markupPercent: request.markup_percent ?? DEFAULT_FORM_STATE.markupPercent,
+    taxRatePercent: request.tax_rate_percent ?? DEFAULT_FORM_STATE.taxRatePercent,
     urgencyCoefficient: request.urgency_coefficient ?? DEFAULT_FORM_STATE.urgencyCoefficient,
     complexityCoefficient: request.complexity_coefficient ?? DEFAULT_FORM_STATE.complexityCoefficient,
     volumeDiscountCoefficient:
@@ -681,6 +688,7 @@ const buildQuoteDocumentHtml = ({
         <div class="totals-row"><span>${escapeHtml(t('profilePage.calc.printing'))}</span><strong>${escapeHtml(formatCurrency(result.cost_printing))}</strong></div>
         <div class="totals-row"><span>${escapeHtml(t('profilePage.calc.postprocessing'))}</span><strong>${escapeHtml(formatCurrency(result.cost_postprocessing))}</strong></div>
         <div class="totals-row"><span>${escapeHtml(t('profilePage.calc.amortization'))}</span><strong>${escapeHtml(formatCurrency(result.cost_amortization))}</strong></div>
+        ${result.cost_tax > 0 ? `<div class="totals-row"><span>${escapeHtml(t('profilePage.calc.taxAmount'))}</span><strong>${escapeHtml(formatCurrency(result.cost_tax))}</strong></div>` : ''}
         <div class="totals-row total-strong"><span>${escapeHtml(t('calculator.totalCost'))}</span><strong>${escapeHtml(formatCurrency(result.cost_total))}</strong></div>
       </div>
 
@@ -1171,6 +1179,7 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
   const staticSettingsSummary = [
     `${t('profilePage.calc.printingRate')}: ${form.printingRatePerHour} ₽/${tc('hourAbbr')}`,
     `${t('profilePage.calc.electricityCost')}: ${form.electricityCostPerKwh} ₽/${tc('kwhAbbr')}`,
+    `${t('profilePage.calc.taxRatePercent')}: ${form.taxRatePercent}%`,
     `${t('profilePage.calc.roundTo')}: ${form.roundToNearest} ₽ · ${roundingModeLabel}`,
   ].join(' · ');
 
@@ -1260,6 +1269,15 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
                   value={form.markupPercent}
                   onChange={(value) => onStaticChange('markupPercent', value)}
                   placeholder="30"
+                  suffix="%"
+                  step="0.1"
+                />
+              </FieldBlock>
+              <FieldBlock label={t('profilePage.calc.taxRatePercent')} hint={t('profilePage.calc.taxRateHint')}>
+                <InputWithSuffix
+                  value={form.taxRatePercent}
+                  onChange={(value) => onStaticChange('taxRatePercent', value)}
+                  placeholder="0"
                   suffix="%"
                   step="0.1"
                 />
@@ -1719,6 +1737,9 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
                   <MetricRow label={t('profilePage.calc.printing')} value={formatCurrency(result.cost_printing)} />
                   <MetricRow label={t('profilePage.calc.postprocessing')} value={formatCurrency(result.cost_postprocessing)} />
                   <MetricRow label={t('profilePage.calc.amortization')} value={formatCurrency(result.cost_amortization)} />
+                  {result.cost_tax > 0 ? (
+                    <MetricRow label={t('profilePage.calc.taxAmount')} value={formatCurrency(result.cost_tax)} />
+                  ) : null}
                 </SectionPanel>
 
                 <SectionPanel title={t('profilePage.calc.intermediateCalcs')}>

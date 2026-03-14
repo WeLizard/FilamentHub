@@ -73,6 +73,13 @@ def _apply_rounding(value: float, step: int, mode: RoundingMode) -> float:
     return math.ceil(normalized) * step
 
 
+def _calculate_tax(value: float, tax_rate_percent: float | None) -> float:
+    """Calculate tax amount for a taxable subtotal."""
+    if not tax_rate_percent or tax_rate_percent <= 0 or value <= 0:
+        return 0.0
+    return value * (tax_rate_percent / 100.0)
+
+
 def _strip_history_thumbnail(parsed_gcode: CalculatorGcodeParseResponse | None) -> dict | None:
     """Remove heavy preview payload before persisting calculator history."""
     if not parsed_gcode:
@@ -140,6 +147,7 @@ async def estimate_cost(
     quantity = data.quantity
     parts_per_print = max(1, min(quantity, data.parts_per_print or 1))
     print_runs = math.ceil(quantity / parts_per_print)
+    tax_rate_percent = data.tax_rate_percent or 0.0
     
     # ========== Простые методы (для обратной совместимости) ==========
     if data.pricing_method == PricingMethod.BY_WEIGHT:
@@ -163,7 +171,9 @@ async def estimate_cost(
                 power_kw = data.printer_power_w / 1000.0
                 cost_electricity = time_hours_total * power_kw * data.electricity_cost_per_kwh
         
-        cost_total = cost_material + cost_electricity
+        cost_subtotal = cost_material + cost_electricity
+        cost_tax = _calculate_tax(cost_subtotal, tax_rate_percent)
+        cost_total = cost_subtotal + cost_tax
     
         return CalculatorEstimateResponse(
             cost_material=round(cost_material, 2),
@@ -172,13 +182,16 @@ async def estimate_cost(
             cost_printing=0.0,
             cost_postprocessing=0.0,
             cost_amortization=0.0,
+            cost_tax=round(cost_tax, 2),
             cost_first_part=round(cost_total, 2),
             cost_subsequent_parts=round(cost_total, 2),
             cost_total=round(cost_total, 2),
+            cost_final=round(cost_total, 2),
             weight_kg=round(weight_kg, 3),
             time_hours=round(time_hours, 2) if time_hours else None,
             quantity=quantity,
             pricing_method=data.pricing_method,
+            applied_tax_rate_percent=tax_rate_percent if tax_rate_percent > 0 else None,
         )
     
     elif data.pricing_method == PricingMethod.BY_TIME:
@@ -200,7 +213,9 @@ async def estimate_cost(
             power_kw = data.printer_power_w / 1000.0
             cost_electricity = time_hours_total * power_kw * data.electricity_cost_per_kwh
         
-        cost_total = cost_printing + cost_electricity
+        cost_subtotal = cost_printing + cost_electricity
+        cost_tax = _calculate_tax(cost_subtotal, tax_rate_percent)
+        cost_total = cost_subtotal + cost_tax
         
         weight_kg = None
         if data.weight_g:
@@ -213,13 +228,16 @@ async def estimate_cost(
             cost_printing=round(cost_printing, 2),
             cost_postprocessing=0.0,
             cost_amortization=0.0,
+            cost_tax=round(cost_tax, 2),
             cost_first_part=round(cost_total / quantity, 2) if quantity > 0 else round(cost_total, 2),  # Цена одной детали
             cost_subsequent_parts=round(cost_total / quantity, 2) if quantity > 0 else round(cost_total, 2),
             cost_total=round(cost_total, 2),  # Общая стоимость всей партии
+            cost_final=round(cost_total, 2),
             weight_kg=round(weight_kg, 3) if weight_kg else None,
             time_hours=round(time_hours_per_run, 2) if time_hours_per_run > 0 else None,  # Время одного запуска / стола
             quantity=quantity,
             pricing_method=data.pricing_method,
+            applied_tax_rate_percent=tax_rate_percent if tax_rate_percent > 0 else None,
         )
     
     # ========== Комбинированный метод (полная формула из Excel + профессиональная формула) ==========
@@ -314,17 +332,22 @@ async def estimate_cost(
         volume_discount_coef = data.volume_discount_coefficient or 1.0
         
         # Применяем коэффициенты
-        cost_final = intermediate_price * urgency_coef * complexity_coef * volume_discount_coef
-        
+        taxable_subtotal = intermediate_price * urgency_coef * complexity_coef * volume_discount_coef
+
         # 15. Минимальная цена заказа (если указана)
-        if data.min_order_price and cost_final < data.min_order_price:
-            cost_final = data.min_order_price
-        
-        # 16. Округление (если указано)
+        if data.min_order_price and taxable_subtotal < data.min_order_price:
+            taxable_subtotal = data.min_order_price
+
+        # 16. Налог (если указан)
+        cost_tax = _calculate_tax(taxable_subtotal, tax_rate_percent)
+        cost_final_before_rounding = taxable_subtotal + cost_tax
+        cost_final = cost_final_before_rounding
+
+        # 17. Округление (если указано)
         if data.round_to_nearest and data.round_to_nearest > 0:
             cost_final = _apply_rounding(cost_final, data.round_to_nearest, data.rounding_mode)
-        
-        # 17. Расчет цены первой детали и последующих (для отображения)
+
+        # 18. Расчет цены первой детали и последующих (для отображения)
         # В combined-mode все промежуточные суммы выше считаются для всей партии.
         # Поэтому:
         # - subsequent = цена одной детали без one-time затрат на моделирование
@@ -339,18 +362,18 @@ async def estimate_cost(
             )
             cost_without_modeling_with_overhead = (cost_without_modeling + (cost_without_modeling * overhead_percent / 100.0) + fixed_costs)
             cost_without_modeling_final = (cost_without_modeling_with_overhead * (1 + markup_percent / 100.0)) * urgency_coef * complexity_coef * volume_discount_coef
-            cost_subsequent_parts = cost_without_modeling_final / quantity
+            cost_subsequent_parts = (cost_without_modeling_final + _calculate_tax(cost_without_modeling_final, tax_rate_percent)) / quantity
             cost_first_part = cost_final - (cost_subsequent_parts * (quantity - 1))
         else:
             cost_first_part = cost_final
             cost_subsequent_parts = cost_first_part
         
-        # 18. Общая стоимость партии
+        # 19. Общая стоимость партии
         cost_total = cost_final
         
-        # 19. Расчет общего времени (печать + подготовка + постобработка)
+        # 20. Расчет общего времени (печать + подготовка + постобработка)
         # Общее время = время печати всех деталей + время моделирования (1 раз) + время постобработки всех деталей
-        total_time_hours = time_hours_total  # Уже умножено на quantity
+        total_time_hours = time_hours_total
         if data.modeling_hours or data.modeling_minutes:
             modeling_time = _convert_time_to_hours(data.modeling_hours, data.modeling_minutes)
             total_time_hours = total_time_hours + modeling_time  # Моделирование делается один раз
@@ -359,13 +382,12 @@ async def estimate_cost(
             postprocessing_time_total = postprocessing_time_per_part * quantity  # Постобработка каждой детали
             total_time_hours = total_time_hours + postprocessing_time_total
         
-        # 20. Расчет маржи (прибыли)
+        # 21. Расчет маржинальности / прибыли
         # Себестоимость = прямые затраты + накладные + фиксированные расходы
         cost_of_goods_sold = cost_before_markup
-        # Маржа = Финальная цена - Себестоимость
-        profit_margin = cost_final - cost_of_goods_sold
-        # Маржа в процентах
-        profit_margin_percent = (profit_margin / cost_final * 100.0) if cost_final > 0 else 0.0
+        revenue_before_tax = max(cost_final - cost_tax, 0.0)
+        profit_margin = revenue_before_tax - cost_of_goods_sold
+        profit_margin_percent = (profit_margin / revenue_before_tax * 100.0) if revenue_before_tax > 0 else 0.0
         
         return CalculatorEstimateResponse(
             cost_material=round(cost_material, 2),
@@ -374,6 +396,7 @@ async def estimate_cost(
             cost_printing=round(cost_printing, 2),
             cost_postprocessing=round(cost_postprocessing, 2),
             cost_amortization=round(cost_amortization, 2),
+            cost_tax=round(cost_tax, 2),
             cost_direct=round(cost_direct, 2),
             cost_overhead=round(cost_overhead, 2),
             cost_before_markup=round(cost_before_markup, 2),
@@ -393,6 +416,7 @@ async def estimate_cost(
             applied_urgency_coefficient=urgency_coef if urgency_coef != 1.0 else None,
             applied_complexity_coefficient=complexity_coef if complexity_coef != 1.0 else None,
             applied_volume_discount=volume_discount_coef if volume_discount_coef != 1.0 else None,
+            applied_tax_rate_percent=tax_rate_percent if tax_rate_percent > 0 else None,
         )
     
     else:
