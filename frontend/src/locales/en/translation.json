@@ -557,6 +557,7 @@
     "notFound": "Brand not found",
     "back": "Back",
     "verified": "Verified",
+    "filaments": "Filaments",
     "filamentsCount_one": "{{count}} filament",
     "filamentsCount_other": "{{count}} filaments",
     "avgRating": "average rating",

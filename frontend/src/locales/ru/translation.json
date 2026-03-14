@@ -529,6 +529,7 @@
     "notFound": "Бренд не найден",
     "back": "Назад",
     "verified": "Верифицирован",
+    "filaments": "Филаменты",
     "filamentsCount_one": "{{count}} филамент",
     "filamentsCount_few": "{{count}} филамента",
     "filamentsCount_many": "{{count}} филаментов",
