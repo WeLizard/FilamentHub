@@ -1,9 +1,14 @@
 """Calculator endpoints."""
 
 import math
-from fastapi import APIRouter, HTTPException
+import logging
+
+from fastapi import APIRouter, File, UploadFile, status
 
 from app.core.errors import (
+    ERR_FILE_TOO_LARGE,
+    ERR_GCODE_PARSE_FAILED,
+    ERR_INVALID_FILE_EXT,
     ERR_WEIGHT_REQUIRED,
     ERR_SPOOL_PRICE_REQUIRED,
     ERR_TIME_REQUIRED,
@@ -11,9 +16,21 @@ from app.core.errors import (
     ERR_UNSUPPORTED_PRICING_METHOD,
     raise_error,
 )
-from app.schemas.calculator import CalculatorEstimateRequest, CalculatorEstimateResponse, PricingMethod
+from app.core.config import settings
+from app.schemas.calculator import (
+    CalculatorEstimateRequest,
+    CalculatorEstimateResponse,
+    CalculatorGcodeParseResponse,
+    PricingMethod,
+)
+from app.services.calculator_gcode_parser import (
+    SUPPORTED_GCODE_EXTENSIONS,
+    is_supported_gcode_filename,
+    parse_gcode_payload,
+)
 
 router = APIRouter(prefix="/calculator", tags=["calculator"])
+logger = logging.getLogger(__name__)
 
 
 def _convert_time_to_hours(
@@ -306,3 +323,30 @@ async def estimate_cost(
     else:
         raise_error(400, ERR_UNSUPPORTED_PRICING_METHOD, params={"method": data.pricing_method})
 
+
+@router.post("/parse-gcode", response_model=CalculatorGcodeParseResponse)
+async def parse_gcode(
+    file: UploadFile = File(...),
+) -> CalculatorGcodeParseResponse:
+    """Parse uploaded G-code metadata for Calculator Pro auto-fill."""
+    if not is_supported_gcode_filename(file.filename):
+        file_name = file.filename or ""
+        file_ext = ".gcode.gz" if file_name.lower().endswith(".gcode.gz") else file_name[file_name.rfind(".") :].lower() if "." in file_name else ""
+        raise_error(
+            status.HTTP_400_BAD_REQUEST,
+            ERR_INVALID_FILE_EXT,
+            {"ext": file_ext, "expected": ", ".join(SUPPORTED_GCODE_EXTENSIONS)},
+        )
+
+    raw_bytes = await file.read()
+    max_bytes = settings.MAX_UPLOAD_SIZE_MB * 1024 * 1024
+    if len(raw_bytes) > max_bytes:
+        raise_error(status.HTTP_400_BAD_REQUEST, ERR_FILE_TOO_LARGE, {"max_size": f"{settings.MAX_UPLOAD_SIZE_MB}MB"})
+
+    try:
+        parsed = parse_gcode_payload(file_name=file.filename or "gcode", raw_bytes=raw_bytes)
+    except ValueError as exc:
+        logger.warning("Calculator G-code parse failed for %s: %s", file.filename, exc)
+        raise_error(status.HTTP_400_BAD_REQUEST, ERR_GCODE_PARSE_FAILED, {"reason": str(exc)})
+
+    return CalculatorGcodeParseResponse(**parsed)

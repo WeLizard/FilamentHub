@@ -3,7 +3,8 @@
  * G-code parsing and history persistence remain separate future phases.
  */
 
-import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import type { TFunction } from 'i18next';
 import { useTranslation } from 'react-i18next';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import {
@@ -25,7 +26,14 @@ import {
 } from 'lucide-react';
 import { calculatorAPI, filamentsAPI } from '../api/client';
 import { translateApiError } from '../utils/translateApiError';
-import type { CalculatorEstimateRequest, CalculatorEstimateResponse, Filament, PricingMethod } from '../types/api';
+import type {
+  CalculatorEstimateRequest,
+  CalculatorEstimateResponse,
+  CalculatorGcodeParseResponse,
+  CalculatorParsedMaterial,
+  Filament,
+  PricingMethod,
+} from '../types/api';
 
 const surfaceClass =
   'relative overflow-hidden rounded-[2rem] border border-white/10 bg-[linear-gradient(180deg,rgba(15,23,42,0.88),rgba(15,23,42,0.72))] shadow-[0_30px_90px_-50px_rgba(15,23,42,0.95)] backdrop-blur-xl';
@@ -211,10 +219,61 @@ const formatHoursShort = (value: number | null | undefined, hourLabel: string, m
   return `${wholeHours} ${hourLabel} ${wholeMinutes} ${minLabel}`;
 };
 
+const splitSeconds = (totalSeconds: number): { hours: number; minutes: number; seconds: number } => {
+  const safeSeconds = Math.max(0, Math.round(totalSeconds));
+  return {
+    hours: Math.floor(safeSeconds / 3600),
+    minutes: Math.floor((safeSeconds % 3600) / 60),
+    seconds: safeSeconds % 60,
+  };
+};
+
+const formatFileSize = (bytes: number): string => {
+  if (!Number.isFinite(bytes) || bytes <= 0) {
+    return '—';
+  }
+
+  if (bytes < 1024 * 1024) {
+    return `${(bytes / 1024).toFixed(1)} KB`;
+  }
+
+  return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
+};
+
+const translateCalculator = (t: TFunction, key: string): string =>
+  t(`calculator.${key}`, { defaultValue: t(`profilePage.calculator.${key}`) });
+
+const buildParsedMaterialLabel = (material: CalculatorParsedMaterial, fallbackLabel: string): string =>
+  [material.vendor, material.name, material.type].filter(Boolean).join(' · ') || fallbackLabel;
+
+const applyParsedGcodeToForm = (
+  current: CalculatorFormState,
+  parsed: CalculatorGcodeParseResponse,
+): CalculatorFormState => {
+  const nextForm: CalculatorFormState = { ...current };
+
+  if (parsed.total_filament_weight_g != null && Number.isFinite(parsed.total_filament_weight_g)) {
+    nextForm.weightG = Number(parsed.total_filament_weight_g.toFixed(2));
+  }
+
+  if (parsed.print_time_seconds != null && Number.isFinite(parsed.print_time_seconds)) {
+    const duration = splitSeconds(parsed.print_time_seconds);
+    nextForm.timeHours = duration.hours;
+    nextForm.timeMinutes = duration.minutes;
+    nextForm.timeSec = duration.seconds;
+  }
+
+  return nextForm;
+};
+
 export const CalculatorPage: React.FC = () => {
   const { t } = useTranslation();
+  const tc = (key: string) => translateCalculator(t, key);
   const [activeTab, setActiveTab] = useState<CalculatorTab>('calculator');
   const [form, setForm] = useState<CalculatorFormState>(DEFAULT_FORM_STATE);
+  const [parsedGcode, setParsedGcode] = useState<CalculatorGcodeParseResponse | null>(null);
+  const [dragActive, setDragActive] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   const filamentsQuery = useQuery({
     queryKey: ['calculator-pro', 'filaments'],
@@ -228,6 +287,10 @@ export const CalculatorPage: React.FC = () => {
 
   const calculateMutation = useMutation({
     mutationFn: (data: CalculatorEstimateRequest) => calculatorAPI.estimate(data),
+  });
+
+  const parseGcodeMutation = useMutation({
+    mutationFn: (file: File) => calculatorAPI.parseGcode(file),
   });
 
   const result = calculateMutation.data ?? null;
@@ -267,6 +330,23 @@ export const CalculatorPage: React.FC = () => {
     );
   }, [calculateMutation.error, t]);
 
+  const parseGcodeError = useMemo(() => {
+    if (!parseGcodeMutation.error) {
+      return null;
+    }
+
+    const errorWithResponse = parseGcodeMutation.error as {
+      response?: { data?: { detail?: unknown } };
+      message?: string;
+    };
+
+    return translateApiError(
+      t,
+      errorWithResponse.response?.data?.detail ?? errorWithResponse.message,
+      t('profilePage.calc.unknownError'),
+    );
+  }, [parseGcodeMutation.error, t]);
+
   const currentWorkTimeHours = useMemo(
     () => toHours(form.timeHours, form.timeMinutes, form.timeSec),
     [form.timeHours, form.timeMinutes, form.timeSec],
@@ -283,6 +363,21 @@ export const CalculatorPage: React.FC = () => {
     calculateMutation.mutate(buildEstimateRequest(form));
   };
 
+  const handleGcodeFile = async (file: File) => {
+    const parsed = await parseGcodeMutation.mutateAsync(file);
+    setParsedGcode(parsed);
+    setForm((prev) => applyParsedGcodeToForm(prev, parsed));
+  };
+
+  const handleFileSelection = async (files: FileList | null) => {
+    const file = files?.[0];
+    if (!file) {
+      return;
+    }
+
+    await handleGcodeFile(file);
+  };
+
   return (
     <div className="space-y-6">
       <section className={`${surfaceClass} p-0`}>
@@ -291,23 +386,23 @@ export const CalculatorPage: React.FC = () => {
           <div className="flex flex-col gap-6 xl:flex-row xl:items-end xl:justify-between">
             <div className="max-w-3xl">
               <div className="inline-flex items-center gap-2 rounded-full border border-cyan-400/20 bg-cyan-400/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.22em] text-cyan-200">
-                Calculator Pro
+                {tc('proBadge')}
               </div>
               <div className="mt-4 flex items-start gap-4">
                 <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded-[1.4rem] border border-white/10 bg-white/10 shadow-[inset_0_1px_0_rgba(255,255,255,0.15)]">
                   <Calculator className="h-8 w-8 text-cyan-300" />
                 </div>
                 <div>
-                  <h1 className="text-2xl font-bold text-white md:text-4xl">{t('calculator.title')}</h1>
+                  <h1 className="text-2xl font-bold text-white md:text-4xl">{tc('title')}</h1>
                   <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-300 md:text-base">
-                    {t('calculator.subtitle')}
+                    {tc('subtitle')}
                   </p>
                 </div>
               </div>
             </div>
 
             <div className="grid gap-3 sm:min-w-[24rem] sm:grid-cols-3">
-              <MetricTile label={t('calculator.totalCost')} value={formatCurrency(summaryTotal)} />
+              <MetricTile label={tc('totalCost')} value={formatCurrency(summaryTotal)} />
               <MetricTile
                 label={t('profilePage.calc.totalWorkTime')}
                 value={formatHoursShort(summaryTime, t('profilePage.calc.h'), t('profilePage.calc.min'))}
@@ -320,13 +415,13 @@ export const CalculatorPage: React.FC = () => {
             <TabButton
               active={activeTab === 'calculator'}
               icon={<Calculator className="h-4 w-4" />}
-              label={t('calculator.tabs.calculator')}
+              label={tc('tabs.calculator')}
               onClick={() => setActiveTab('calculator')}
             />
             <TabButton
               active={activeTab === 'history'}
               icon={<Clock className="h-4 w-4" />}
-              label={t('calculator.tabs.history')}
+              label={tc('tabs.history')}
               onClick={() => setActiveTab('history')}
             />
           </div>
@@ -338,13 +433,20 @@ export const CalculatorPage: React.FC = () => {
           form={form}
           result={result}
           selectedFilament={selectedFilament}
+          parsedGcode={parsedGcode}
+          dragActive={dragActive}
           filaments={filamentsQuery.data?.items ?? []}
           isFilamentsLoading={filamentsQuery.isPending}
-          filamentsLoadError={filamentsQuery.isError ? t('calculator.materialsLoadError') : null}
+          filamentsLoadError={filamentsQuery.isError ? tc('materialsLoadError') : null}
+          isParsingGcode={parseGcodeMutation.isPending}
+          parseGcodeError={parseGcodeError}
           isCalculating={calculateMutation.isPending}
           estimateError={estimateError}
+          fileInputRef={fileInputRef}
           onCalculate={handleCalculate}
           onChange={updateField}
+          onFileSelect={handleFileSelection}
+          onDragStateChange={setDragActive}
         />
       ) : (
         <HistoryView />
@@ -357,28 +459,43 @@ interface CalculatorViewProps {
   form: CalculatorFormState;
   result: CalculatorEstimateResponse | null;
   selectedFilament: Filament | null;
+  parsedGcode: CalculatorGcodeParseResponse | null;
+  dragActive: boolean;
   filaments: Filament[];
   isFilamentsLoading: boolean;
   filamentsLoadError: string | null;
+  isParsingGcode: boolean;
+  parseGcodeError: string | null;
   isCalculating: boolean;
   estimateError: string | null;
+  fileInputRef: React.RefObject<HTMLInputElement | null>;
   onCalculate: () => void;
   onChange: <K extends keyof CalculatorFormState>(field: K, value: CalculatorFormState[K]) => void;
+  onFileSelect: (files: FileList | null) => Promise<void>;
+  onDragStateChange: (active: boolean) => void;
 }
 
 const CalculatorView: React.FC<CalculatorViewProps> = ({
   form,
   result,
   selectedFilament,
+  parsedGcode,
+  dragActive,
   filaments,
   isFilamentsLoading,
   filamentsLoadError,
+  isParsingGcode,
+  parseGcodeError,
   isCalculating,
   estimateError,
+  fileInputRef,
   onCalculate,
   onChange,
+  onFileSelect,
+  onDragStateChange,
 }) => {
   const { t } = useTranslation();
+  const tc = (key: string) => translateCalculator(t, key);
 
   const materialCatalogSummary =
     selectedFilament && (selectedFilament.price_per_kg != null || selectedFilament.spool_weight != null)
@@ -394,10 +511,10 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
           <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
             <div>
               <SectionHeading icon={<Calculator className="h-5 w-5 text-cyan-300" />} title={t('profilePage.calc.pricingMethod')} />
-              <p className="mt-3 max-w-xl text-sm leading-6 text-slate-300">{t('calculator.methodHint')}</p>
+              <p className="mt-3 max-w-xl text-sm leading-6 text-slate-300">{tc('methodHint')}</p>
             </div>
             <div className="rounded-[1.3rem] border border-white/10 bg-white/5 px-4 py-3 text-sm text-slate-300">
-              <span className="text-slate-400">{t('calculator.activeMethodLabel')}: </span>
+              <span className="text-slate-400">{tc('activeMethodLabel')}: </span>
               <span className="font-semibold text-white">
                 {t(
                   form.pricingMethod === 'combined'
@@ -432,23 +549,172 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
         </SurfaceCard>
 
         <SurfaceCard className="p-6 md:p-7">
-          <SectionHeading icon={<Upload className="h-5 w-5 text-cyan-300" />} title={t('calculator.uploadGcode')} />
-          <div className="mt-5 rounded-[1.6rem] border border-dashed border-cyan-400/30 bg-[radial-gradient(circle_at_top,rgba(34,211,238,0.14),transparent_52%),linear-gradient(180deg,rgba(15,23,42,0.8),rgba(2,6,23,0.85))] p-8 md:p-10">
-            <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-              <div className="flex items-start gap-4">
-                <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-[1.25rem] border border-white/10 bg-white/5">
-                  <Upload className="h-6 w-6 text-cyan-300" />
+          <SectionHeading icon={<Upload className="h-5 w-5 text-cyan-300" />} title={tc('uploadGcode')} />
+          <div className="mt-5 space-y-4">
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept=".gcode,.txt,.gz"
+              className="hidden"
+              onChange={async (event) => {
+                await onFileSelect(event.target.files);
+                event.currentTarget.value = '';
+              }}
+            />
+
+            <button
+              type="button"
+              onClick={() => fileInputRef.current?.click()}
+              onDragEnter={(event) => {
+                event.preventDefault();
+                onDragStateChange(true);
+              }}
+              onDragOver={(event) => {
+                event.preventDefault();
+                onDragStateChange(true);
+              }}
+              onDragLeave={(event) => {
+                event.preventDefault();
+                onDragStateChange(false);
+              }}
+              onDrop={async (event) => {
+                event.preventDefault();
+                onDragStateChange(false);
+                await onFileSelect(event.dataTransfer.files);
+              }}
+              className={`w-full rounded-[1.6rem] border border-dashed p-8 text-left transition-all md:p-10 ${
+                dragActive
+                  ? 'border-cyan-300/80 bg-cyan-400/12 shadow-[0_25px_50px_-35px_rgba(34,211,238,0.65)]'
+                  : 'border-cyan-400/30 bg-[radial-gradient(circle_at_top,rgba(34,211,238,0.14),transparent_52%),linear-gradient(180deg,rgba(15,23,42,0.8),rgba(2,6,23,0.85))] hover:border-cyan-300/50'
+              }`}
+            >
+              <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+                <div className="flex items-start gap-4">
+                  <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-[1.25rem] border border-white/10 bg-white/5">
+                    {isParsingGcode ? <Loader2 className="h-6 w-6 animate-spin text-cyan-300" /> : <Upload className="h-6 w-6 text-cyan-300" />}
+                  </div>
+                  <div>
+                    <p className="text-base font-semibold text-white">
+                      {isParsingGcode ? tc('uploadingGcode') : tc('gcodeDropTitle')}
+                    </p>
+                    <p className="mt-2 max-w-xl text-sm leading-6 text-slate-300">{tc('gcodeDropDescription')}</p>
+                    <p className="mt-3 text-xs uppercase tracking-[0.16em] text-slate-400">{tc('supportedFormats')}</p>
+                  </div>
                 </div>
-                <div>
-                  <p className="text-base font-semibold text-white">{t('calculator.gcodeSoonTitle')}</p>
-                  <p className="mt-2 max-w-xl text-sm leading-6 text-slate-300">{t('calculator.gcodeSoonDescription')}</p>
+                <div className="inline-flex items-center gap-2 self-start rounded-full border border-cyan-300/20 bg-cyan-400/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-cyan-100">
+                  <Upload className="h-3.5 w-3.5" />
+                  {tc('chooseGcode')}
                 </div>
               </div>
-              <div className="inline-flex items-center gap-2 self-start rounded-full border border-amber-300/20 bg-amber-400/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-amber-200">
-                <Clock className="h-3.5 w-3.5" />
-                {t('downloadPage.comingSoon')}
+            </button>
+
+            {parseGcodeError && (
+              <div className="rounded-[1.25rem] border border-red-400/25 bg-red-500/10 px-4 py-3 text-sm text-red-100">
+                {parseGcodeError}
               </div>
-            </div>
+            )}
+
+            {parsedGcode && (
+              <div className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1.25fr)_minmax(14rem,0.75fr)]">
+                <div className="rounded-[1.5rem] border border-white/10 bg-white/5 p-5">
+                  <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                    <div>
+                      <p className="text-base font-semibold text-white">{tc('gcodeParsed')}</p>
+                      <p className="mt-1 text-sm leading-6 text-slate-300">{tc('gcodeParsedDescription')}</p>
+                    </div>
+                    <div className="rounded-full border border-emerald-400/20 bg-emerald-500/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.16em] text-emerald-200">
+                      {tc('autoFilled')}
+                    </div>
+                  </div>
+
+                  <div className="mt-5 grid grid-cols-1 gap-3 sm:grid-cols-2">
+                    <MetricRow label={tc('parsedFile')} value={parsedGcode.file_name} />
+                    <MetricRow label={tc('fileSize')} value={formatFileSize(parsedGcode.file_size_bytes)} />
+                    <MetricRow
+                      label={tc('parsedSlicer')}
+                      value={
+                        [parsedGcode.slicer_name, parsedGcode.slicer_version].filter(Boolean).join(' ') ||
+                        tc('notDetected')
+                      }
+                    />
+                    <MetricRow
+                      label={tc('parsedPrintTime')}
+                      value={
+                        parsedGcode.print_time_seconds != null
+                          ? formatHoursShort(parsedGcode.print_time_seconds / 3600, t('profilePage.calc.h'), t('profilePage.calc.min'))
+                          : '—'
+                      }
+                    />
+                    <MetricRow
+                      label={tc('parsedWeight')}
+                      value={
+                        parsedGcode.total_filament_weight_g != null
+                          ? `${parsedGcode.total_filament_weight_g.toFixed(2)} ${tc('grams')}`
+                          : '—'
+                      }
+                    />
+                    <MetricRow
+                      label={tc('parsedLength')}
+                      value={
+                        parsedGcode.total_filament_length_mm != null
+                          ? `${(parsedGcode.total_filament_length_mm / 1000).toFixed(2)} m`
+                          : '—'
+                      }
+                    />
+                    <MetricRow
+                      label={tc('parsedLayerHeight')}
+                      value={parsedGcode.layer_height_mm != null ? `${parsedGcode.layer_height_mm} mm` : '—'}
+                    />
+                    <MetricRow
+                      label={tc('parsedInfill')}
+                      value={
+                        parsedGcode.sparse_infill_density_percent != null
+                          ? `${parsedGcode.sparse_infill_density_percent}%${
+                              parsedGcode.sparse_infill_pattern ? ` · ${parsedGcode.sparse_infill_pattern}` : ''
+                            }`
+                          : '—'
+                      }
+                    />
+                  </div>
+
+                  {parsedGcode.materials.length > 0 && (
+                    <div className="mt-5">
+                      <p className="text-sm font-semibold text-white">{tc('parsedMaterials')}</p>
+                      <div className="mt-3 flex flex-wrap gap-2">
+                        {parsedGcode.materials.map((material, index) => (
+                          <div
+                            key={`${material.name ?? material.type ?? 'material'}-${index}`}
+                            className="rounded-full border border-cyan-400/20 bg-cyan-400/10 px-3 py-2 text-xs text-cyan-100"
+                          >
+                            <span className="font-semibold text-white">
+                              {buildParsedMaterialLabel(material, tc('unknownMaterial'))}
+                            </span>
+                            {material.weight_g != null ? ` · ${material.weight_g.toFixed(2)} ${tc('grams')}` : ''}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                <div className="rounded-[1.5rem] border border-white/10 bg-white/5 p-5">
+                  <p className="text-sm font-semibold text-white">{tc('parsedPreview')}</p>
+                  {parsedGcode.thumbnail_data_url ? (
+                    <div className="mt-4 overflow-hidden rounded-[1.25rem] border border-white/10 bg-slate-950/60">
+                      <img
+                        src={parsedGcode.thumbnail_data_url}
+                        alt={tc('parsedPreviewAlt')}
+                        className="block h-auto w-full object-contain"
+                      />
+                    </div>
+                  ) : (
+                    <div className="mt-4 rounded-[1.25rem] border border-dashed border-white/12 bg-slate-950/40 px-4 py-8 text-center text-sm text-slate-400">
+                      {tc('previewUnavailable')}
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
           </div>
         </SurfaceCard>
 
@@ -456,13 +722,13 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
           <SurfaceCard className="p-6 md:p-7">
             <SectionHeading icon={<Weight className="h-5 w-5 text-cyan-300" />} title={t('profilePage.calc.materialParams')} />
             <div className="mt-5 space-y-5">
-              <FieldBlock label={t('calculator.selectMaterial')}>
+              <FieldBlock label={tc('selectMaterial')}>
                 <select
                   className={inputClass}
                   value={form.selectedFilamentId}
                   onChange={(event) => onChange('selectedFilamentId', event.target.value ? Number(event.target.value) : '')}
                 >
-                  <option value="">{t('calculator.chooseFromCatalog')}</option>
+                  <option value="">{tc('chooseFromCatalog')}</option>
                   {filaments.map((filament) => (
                     <option key={filament.id} value={filament.id}>
                       {buildFilamentLabel(filament)}
@@ -487,7 +753,7 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
 
               {isFilamentsLoading && (
                 <div className="rounded-[1.25rem] border border-white/10 bg-white/5 px-4 py-3 text-sm text-slate-300">
-                  {t('calculator.loadingMaterials')}
+                  {tc('loadingMaterials')}
                 </div>
               )}
 
@@ -497,7 +763,7 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
                     value={form.weightG}
                     onChange={(value) => onChange('weightG', value)}
                     placeholder="531"
-                    suffix={t('calculator.grams')}
+                    suffix={tc('grams')}
                   />
                 </FieldBlock>
                 <FieldBlock label={t('profilePage.calc.supportsWeight')} hint={t('profilePage.calc.supportsWeightHint')}>
@@ -505,7 +771,7 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
                     value={form.supportsWeightG}
                     onChange={(value) => onChange('supportsWeightG', value)}
                     placeholder="0"
-                    suffix={t('calculator.grams')}
+                    suffix={tc('grams')}
                   />
                 </FieldBlock>
                 <FieldBlock label={t('profilePage.calc.supportsLossCoeff')} hint={t('profilePage.calc.supportsLossHint')}>
@@ -531,7 +797,7 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
                     value={form.spoolWeightKg}
                     onChange={(value) => onChange('spoolWeightKg', value)}
                     placeholder="1"
-                    suffix={t('calculator.kg')}
+                    suffix={tc('kg')}
                     step="0.1"
                   />
                 </FieldBlock>
@@ -574,7 +840,7 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
                   value={form.pricePerHour}
                   onChange={(value) => onChange('pricePerHour', value)}
                   placeholder="170"
-                  suffix={`₽/${t('calculator.hourAbbr')}`}
+                  suffix={`₽/${tc('hourAbbr')}`}
                 />
               </FieldBlock>
             </div>
@@ -585,22 +851,22 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
           <SectionHeading icon={<Zap className="h-5 w-5 text-cyan-300" />} title={t('profilePage.calc.electricity')} />
           <div className="mt-5 grid grid-cols-1 gap-4 md:grid-cols-2">
             <FieldBlock label={t('profilePage.calc.electricityCost')}>
-              <InputWithSuffix
-                value={form.electricityCostPerKwh}
-                onChange={(value) => onChange('electricityCostPerKwh', value)}
-                placeholder="6"
-                suffix={`₽/${t('calculator.kwhAbbr')}`}
-                step="0.1"
-              />
-            </FieldBlock>
-            <FieldBlock label={t('profilePage.calc.printerPower')}>
-              <InputWithSuffix
-                value={form.printerPowerW}
-                onChange={(value) => onChange('printerPowerW', value)}
-                placeholder="350"
-                suffix={t('calculator.wattAbbr')}
-              />
-            </FieldBlock>
+                <InputWithSuffix
+                  value={form.electricityCostPerKwh}
+                  onChange={(value) => onChange('electricityCostPerKwh', value)}
+                  placeholder="6"
+                  suffix={`₽/${tc('kwhAbbr')}`}
+                  step="0.1"
+                />
+              </FieldBlock>
+              <FieldBlock label={t('profilePage.calc.printerPower')}>
+                <InputWithSuffix
+                  value={form.printerPowerW}
+                  onChange={(value) => onChange('printerPowerW', value)}
+                  placeholder="350"
+                  suffix={tc('wattAbbr')}
+                />
+              </FieldBlock>
           </div>
         </SurfaceCard>
 
@@ -621,7 +887,7 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
                       value={form.modelingRatePerHour}
                       onChange={(value) => onChange('modelingRatePerHour', value)}
                       placeholder="934"
-                      suffix={`₽/${t('calculator.hourAbbr')}`}
+                      suffix={`₽/${tc('hourAbbr')}`}
                     />
                   </FieldBlock>
                 </div>
@@ -631,7 +897,7 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
                     value={form.printingRatePerHour}
                     onChange={(value) => onChange('printingRatePerHour', value)}
                     placeholder="170"
-                    suffix={`₽/${t('calculator.hourAbbr')}`}
+                    suffix={`₽/${tc('hourAbbr')}`}
                   />
                 </FieldBlock>
 
@@ -655,7 +921,7 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
                       value={form.postprocessingRatePerHour}
                       onChange={(value) => onChange('postprocessingRatePerHour', value)}
                       placeholder="100"
-                      suffix={`₽/${t('calculator.hourAbbr')}`}
+                      suffix={`₽/${tc('hourAbbr')}`}
                     />
                   </FieldBlock>
                 </div>
@@ -665,7 +931,7 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
                     value={form.amortizationRatePerHour}
                     onChange={(value) => onChange('amortizationRatePerHour', value)}
                     placeholder="16"
-                    suffix={`₽/${t('calculator.hourAbbr')}`}
+                    suffix={`₽/${tc('hourAbbr')}`}
                   />
                 </FieldBlock>
               </div>
@@ -734,7 +1000,7 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
         )}
 
         <SurfaceCard className="p-6 md:p-7">
-          <SectionHeading icon={<Package className="h-5 w-5 text-cyan-300" />} title={t('calculator.batchSection')} />
+          <SectionHeading icon={<Package className="h-5 w-5 text-cyan-300" />} title={tc('batchSection')} />
           <div className="mt-5 grid grid-cols-1 gap-4 md:grid-cols-2">
             <FieldBlock label={t('profilePage.calc.quantity')}>
               <NumberInput value={form.quantity} onChange={(value) => onChange('quantity', Math.max(1, value))} min="1" placeholder="4" />
@@ -799,19 +1065,19 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
       <div className="xl:pt-1">
         <SurfaceCard className="p-6 md:p-7 xl:sticky xl:top-8">
           <div className="flex items-center justify-between gap-4">
-            <SectionHeading icon={<Calculator className="h-5 w-5 text-cyan-300" />} title={t('calculator.resultsTitle')} compact />
+            <SectionHeading icon={<Calculator className="h-5 w-5 text-cyan-300" />} title={tc('resultsTitle')} compact />
             <div className="rounded-full border border-cyan-400/20 bg-cyan-400/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-cyan-200">
-              {result ? t('calculator.lastEstimate') : t('calculator.readyForEstimate')}
+              {result ? tc('lastEstimate') : tc('readyForEstimate')}
             </div>
           </div>
 
           {result ? (
             <>
               <div className="mt-6 overflow-hidden rounded-[1.7rem] border border-cyan-400/20 bg-[radial-gradient(circle_at_top_left,rgba(34,211,238,0.18),transparent_45%),linear-gradient(145deg,rgba(14,116,144,0.2),rgba(76,29,149,0.26))] p-6 shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]">
-                <p className="text-xs uppercase tracking-[0.18em] text-slate-300">{t('calculator.totalCost')}</p>
+                <p className="text-xs uppercase tracking-[0.18em] text-slate-300">{tc('totalCost')}</p>
                 <p className="mt-3 text-4xl font-bold tracking-tight text-white">{formatCurrency(result.cost_final || result.cost_total)}</p>
                 <p className="mt-2 text-sm text-slate-300">
-                  {t('calculator.perPart')}: <span className="text-white">{formatCurrency(result.cost_first_part)}</span>
+                  {tc('perPart')}: <span className="text-white">{formatCurrency(result.cost_first_part)}</span>
                 </p>
               </div>
 
@@ -866,11 +1132,11 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
               <div className="mt-6 space-y-3">
                 <button className={`${ghostButtonClass} w-full opacity-60`} disabled>
                   <Save className="h-4 w-4" />
-                  {t('calculator.saveToHistory')}
+                  {tc('saveToHistory')}
                 </button>
                 <button className={`${ghostButtonClass} w-full opacity-60`} disabled>
                   <FileText className="h-4 w-4" />
-                  {t('calculator.generateQuote')}
+                  {tc('generateQuote')}
                 </button>
               </div>
             </>
@@ -881,8 +1147,8 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
                   <CheckCircle2 className="h-6 w-6 text-cyan-300" />
                 </div>
                 <div>
-                  <h3 className="text-lg font-semibold text-white">{t('calculator.resultsEmptyTitle')}</h3>
-                  <p className="mt-2 text-sm leading-6 text-slate-300">{t('calculator.resultsEmptyDescription')}</p>
+                  <h3 className="text-lg font-semibold text-white">{tc('resultsEmptyTitle')}</h3>
+                  <p className="mt-2 text-sm leading-6 text-slate-300">{tc('resultsEmptyDescription')}</p>
                 </div>
               </div>
             </div>
@@ -895,19 +1161,20 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
 
 const HistoryView: React.FC = () => {
   const { t } = useTranslation();
+  const tc = (key: string) => translateCalculator(t, key);
 
   return (
     <SurfaceCard className="p-6 md:p-7">
       <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-        <SectionHeading icon={<Clock className="h-5 w-5 text-cyan-300" />} title={t('calculator.historyTitle')} compact />
+        <SectionHeading icon={<Clock className="h-5 w-5 text-cyan-300" />} title={tc('historyTitle')} compact />
         <div className="flex flex-col gap-2 sm:flex-row">
           <button className={`${ghostButtonClass} opacity-60`} disabled>
             <Download className="h-4 w-4" />
-            {t('calculator.export')}
+            {tc('export')}
           </button>
           <button className="inline-flex items-center justify-center gap-2 rounded-2xl border border-red-400/25 bg-red-500/10 px-4 py-3 text-sm font-medium text-red-200 opacity-60" disabled>
             <Trash2 className="h-4 w-4" />
-            {t('calculator.deleteSelected')}
+            {tc('deleteSelected')}
           </button>
         </div>
       </div>
@@ -916,10 +1183,10 @@ const HistoryView: React.FC = () => {
         <div className="mx-auto flex h-[4.5rem] w-[4.5rem] items-center justify-center rounded-[1.6rem] border border-white/10 bg-white/5">
           <Clock className="h-9 w-9 text-slate-500" />
         </div>
-        <h2 className="mt-6 text-2xl font-semibold text-white">{t('calculator.noHistory')}</h2>
-        <p className="mx-auto mt-3 max-w-xl text-sm leading-6 text-slate-300">{t('calculator.noHistoryDescription')}</p>
+        <h2 className="mt-6 text-2xl font-semibold text-white">{tc('noHistory')}</h2>
+        <p className="mx-auto mt-3 max-w-xl text-sm leading-6 text-slate-300">{tc('noHistoryDescription')}</p>
         <button className="mt-8 inline-flex items-center justify-center rounded-[1.3rem] bg-[linear-gradient(135deg,#0891b2,#7c3aed)] px-6 py-3 text-sm font-semibold text-white opacity-60 shadow-[0_18px_35px_-18px_rgba(6,182,212,0.7)]" disabled>
-          {t('calculator.createFirstCalculation')}
+          {tc('createFirstCalculation')}
         </button>
       </div>
     </SurfaceCard>
@@ -1042,3 +1309,4 @@ const TabButton: React.FC<{
     <span>{label}</span>
   </button>
 );
+

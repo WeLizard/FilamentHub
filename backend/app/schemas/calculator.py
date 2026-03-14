@@ -174,3 +174,32 @@ class CalculatorEstimateResponse(BaseModel):
     applied_complexity_coefficient: float | None = Field(None, description="Примененный коэффициент сложности")
     applied_volume_discount: float | None = Field(None, description="Примененный коэффициент скидки за объем")
 
+
+class CalculatorParsedMaterial(BaseModel):
+    """Parsed material row extracted from G-code metadata."""
+
+    type: str | None = Field(None, description="Тип материала из G-code metadata")
+    name: str | None = Field(None, description="Имя / settings id материала")
+    vendor: str | None = Field(None, description="Вендор материала")
+    color: str | None = Field(None, description="Цвет материала")
+    weight_g: float | None = Field(None, ge=0, description="Вес материала в граммах")
+    length_mm: float | None = Field(None, ge=0, description="Длина материала в миллиметрах")
+
+
+class CalculatorGcodeParseResponse(BaseModel):
+    """Schema for parsed G-code metadata used by Calculator Pro."""
+
+    file_name: str = Field(..., description="Имя загруженного файла")
+    file_size_bytes: int = Field(..., ge=0, description="Размер исходного файла в байтах")
+    slicer_name: str | None = Field(None, description="Определённый слайсер")
+    slicer_version: str | None = Field(None, description="Версия слайсера")
+    print_time_seconds: int | None = Field(None, ge=0, description="Оценка времени печати в секундах")
+    total_filament_weight_g: float | None = Field(None, ge=0, description="Суммарный вес филамента в граммах")
+    total_filament_length_mm: float | None = Field(None, ge=0, description="Суммарная длина филамента в миллиметрах")
+    layer_height_mm: float | None = Field(None, ge=0, description="Высота слоя")
+    initial_layer_height_mm: float | None = Field(None, ge=0, description="Высота первого слоя")
+    sparse_infill_density_percent: float | None = Field(None, ge=0, description="Плотность заполнения в процентах")
+    sparse_infill_pattern: str | None = Field(None, description="Паттерн заполнения")
+    wall_loops: int | None = Field(None, ge=0, description="Количество периметров / стенок")
+    thumbnail_data_url: str | None = Field(None, description="Data URL превью G-code, если найден")
+    materials: list[CalculatorParsedMaterial] = Field(default_factory=list, description="Материалы, извлечённые из G-code")

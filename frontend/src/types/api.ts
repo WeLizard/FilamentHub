@@ -540,6 +540,32 @@ export interface CalculatorEstimateResponse {
   applied_volume_discount?: number | null;
 }
 
+export interface CalculatorParsedMaterial {
+  type?: string | null;
+  name?: string | null;
+  vendor?: string | null;
+  color?: string | null;
+  weight_g?: number | null;
+  length_mm?: number | null;
+}
+
+export interface CalculatorGcodeParseResponse {
+  file_name: string;
+  file_size_bytes: number;
+  slicer_name?: string | null;
+  slicer_version?: string | null;
+  print_time_seconds?: number | null;
+  total_filament_weight_g?: number | null;
+  total_filament_length_mm?: number | null;
+  layer_height_mm?: number | null;
+  initial_layer_height_mm?: number | null;
+  sparse_infill_density_percent?: number | null;
+  sparse_infill_pattern?: string | null;
+  wall_loops?: number | null;
+  thumbnail_data_url?: string | null;
+  materials: CalculatorParsedMaterial[];
+}
+
 export interface DownloadVersion {
   platform: 'windows' | 'macos' | 'linux';
   architecture: 'x64' | 'arm64';
