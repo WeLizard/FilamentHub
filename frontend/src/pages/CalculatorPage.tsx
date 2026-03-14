@@ -10,6 +10,7 @@ import { useTranslation } from 'react-i18next';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   Calculator,
+  ChevronDown,
   CheckCircle2,
   Clock,
   FileText,
@@ -19,11 +20,9 @@ import {
   Save,
   Settings2,
   Trash2,
-  TrendingUp,
   Upload,
   Weight,
   X,
-  Zap,
 } from 'lucide-react';
 import { calculatorAPI, filamentsAPI } from '../api/client';
 import { useAuth } from '../contexts/AuthContext';
@@ -46,6 +45,7 @@ const surfaceClass =
   'relative overflow-hidden rounded-[2rem] border border-white/10 bg-[linear-gradient(180deg,rgba(15,23,42,0.88),rgba(15,23,42,0.72))] shadow-[0_30px_90px_-50px_rgba(15,23,42,0.95)] backdrop-blur-xl';
 const inputClass =
   'w-full rounded-2xl border border-white/10 bg-slate-950/60 px-4 py-3 text-white placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-cyan-400/60 focus:border-transparent transition-all';
+const compactNumericInputClass = `${inputClass} w-full sm:max-w-[15rem]`;
 const ghostButtonClass =
   'inline-flex items-center justify-center gap-2 rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm font-medium text-white transition-all hover:bg-white/10';
 
@@ -130,6 +130,25 @@ const DEFAULT_FORM_STATE: CalculatorFormState = {
   roundingMode: 'up',
 };
 
+const CALCULATOR_STATIC_FIELDS = [
+  'electricityCostPerKwh',
+  'printerPowerW',
+  'modelingRatePerHour',
+  'postprocessingRatePerHour',
+  'printingRatePerHour',
+  'amortizationRatePerHour',
+  'overheadPercent',
+  'markupPercent',
+  'fixedCosts',
+  'minOrderPrice',
+  'roundToNearest',
+  'roundingMode',
+] as const;
+
+type CalculatorStaticSettingKey = (typeof CALCULATOR_STATIC_FIELDS)[number];
+type CalculatorStaticSettings = Pick<CalculatorFormState, CalculatorStaticSettingKey>;
+
+const CALCULATOR_DEFAULTS_STORAGE_KEY = 'filamenthub_calculator_defaults_v1';
 const QUOTE_PROFILE_STORAGE_KEY = 'filamenthub_calculator_quote_profile_v1';
 const DEFAULT_QUOTE_PARTY_FORM: QuotePartyFormState = {
   sellerName: '',
@@ -283,6 +302,68 @@ const saveStoredQuoteProfile = (data: QuotePartyFormState): void => {
       buyerAddress: data.buyerAddress,
     }),
   );
+};
+
+const extractStaticSettings = (form: CalculatorFormState): CalculatorStaticSettings => ({
+  electricityCostPerKwh: form.electricityCostPerKwh,
+  printerPowerW: form.printerPowerW,
+  modelingRatePerHour: form.modelingRatePerHour,
+  postprocessingRatePerHour: form.postprocessingRatePerHour,
+  printingRatePerHour: form.printingRatePerHour,
+  amortizationRatePerHour: form.amortizationRatePerHour,
+  overheadPercent: form.overheadPercent,
+  markupPercent: form.markupPercent,
+  fixedCosts: form.fixedCosts,
+  minOrderPrice: form.minOrderPrice,
+  roundToNearest: form.roundToNearest,
+  roundingMode: form.roundingMode,
+});
+
+const loadStoredCalculatorDefaults = (): CalculatorStaticSettings => {
+  const fallback = extractStaticSettings(DEFAULT_FORM_STATE);
+
+  if (typeof window === 'undefined') {
+    return fallback;
+  }
+
+  try {
+    const raw = window.localStorage.getItem(CALCULATOR_DEFAULTS_STORAGE_KEY);
+    if (!raw) {
+      return fallback;
+    }
+
+    const parsed = JSON.parse(raw) as Partial<Record<CalculatorStaticSettingKey, unknown>>;
+    const numberOrFallback = (value: unknown, defaultValue: number): number =>
+      typeof value === 'number' && Number.isFinite(value) ? value : defaultValue;
+
+    return {
+      electricityCostPerKwh: numberOrFallback(parsed.electricityCostPerKwh, fallback.electricityCostPerKwh),
+      printerPowerW: numberOrFallback(parsed.printerPowerW, fallback.printerPowerW),
+      modelingRatePerHour: numberOrFallback(parsed.modelingRatePerHour, fallback.modelingRatePerHour),
+      postprocessingRatePerHour: numberOrFallback(parsed.postprocessingRatePerHour, fallback.postprocessingRatePerHour),
+      printingRatePerHour: numberOrFallback(parsed.printingRatePerHour, fallback.printingRatePerHour),
+      amortizationRatePerHour: numberOrFallback(parsed.amortizationRatePerHour, fallback.amortizationRatePerHour),
+      overheadPercent: numberOrFallback(parsed.overheadPercent, fallback.overheadPercent),
+      markupPercent: numberOrFallback(parsed.markupPercent, fallback.markupPercent),
+      fixedCosts: numberOrFallback(parsed.fixedCosts, fallback.fixedCosts),
+      minOrderPrice: numberOrFallback(parsed.minOrderPrice, fallback.minOrderPrice),
+      roundToNearest: numberOrFallback(parsed.roundToNearest, fallback.roundToNearest),
+      roundingMode:
+        parsed.roundingMode === 'up' || parsed.roundingMode === 'nearest' || parsed.roundingMode === 'down'
+          ? parsed.roundingMode
+          : fallback.roundingMode,
+    };
+  } catch {
+    return fallback;
+  }
+};
+
+const saveStoredCalculatorDefaults = (data: CalculatorStaticSettings): void => {
+  if (typeof window === 'undefined') {
+    return;
+  }
+
+  window.localStorage.setItem(CALCULATOR_DEFAULTS_STORAGE_KEY, JSON.stringify(data));
 };
 
 const splitSeconds = (totalSeconds: number): { hours: number; minutes: number; seconds: number } => {
@@ -680,6 +761,13 @@ export const CalculatorPage: React.FC = () => {
   );
 
   useEffect(() => {
+    setForm((prev) => ({
+      ...prev,
+      ...loadStoredCalculatorDefaults(),
+    }));
+  }, []);
+
+  useEffect(() => {
     if (!selectedFilament) {
       return;
     }
@@ -775,6 +863,14 @@ export const CalculatorPage: React.FC = () => {
 
   const updateField = <K extends keyof CalculatorFormState>(field: K, value: CalculatorFormState[K]) => {
     setForm((prev) => ({ ...prev, [field]: value }));
+  };
+
+  const updateStaticField = <K extends CalculatorStaticSettingKey>(field: K, value: CalculatorFormState[K]) => {
+    setForm((prev) => {
+      const next = { ...prev, [field]: value };
+      saveStoredCalculatorDefaults(extractStaticSettings(next));
+      return next;
+    });
   };
 
   const handleCalculate = () => {
@@ -965,9 +1061,9 @@ export const CalculatorPage: React.FC = () => {
           canSaveHistory={Boolean(result)}
           fileInputRef={fileInputRef}
           isSavingHistory={saveHistoryMutation.isPending}
-          currentSource={estimateSource}
           onCalculate={handleCalculate}
           onChange={updateField}
+          onStaticChange={updateStaticField}
           onFileSelect={handleFileSelection}
           onDragStateChange={setDragActive}
           onOpenQuote={() => setQuoteModalOpen(true)}
@@ -1019,9 +1115,9 @@ interface CalculatorViewProps {
   canSaveHistory: boolean;
   fileInputRef: React.RefObject<HTMLInputElement | null>;
   isSavingHistory: boolean;
-  currentSource: 'manual' | 'gcode';
   onCalculate: () => void;
   onChange: <K extends keyof CalculatorFormState>(field: K, value: CalculatorFormState[K]) => void;
+  onStaticChange: <K extends CalculatorStaticSettingKey>(field: K, value: CalculatorFormState[K]) => void;
   onFileSelect: (files: FileList | null) => Promise<void>;
   onDragStateChange: (active: boolean) => void;
   onOpenQuote: () => void;
@@ -1044,9 +1140,9 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
   canSaveHistory,
   fileInputRef,
   isSavingHistory,
-  currentSource,
   onCalculate,
   onChange,
+  onStaticChange,
   onFileSelect,
   onDragStateChange,
   onOpenQuote,
@@ -1054,6 +1150,7 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
 }) => {
   const { t } = useTranslation();
   const tc = (key: string) => translateCalculator(t, key);
+  const [staticSettingsOpen, setStaticSettingsOpen] = useState(false);
 
   const materialCatalogSummary =
     selectedFilament && (selectedFilament.price_per_kg != null || selectedFilament.spool_weight != null)
@@ -1061,7 +1158,17 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
           selectedFilament.spool_weight != null ? `${selectedFilament.spool_weight.toFixed(0)} г` : '—'
         }`
       : null;
-  const sourceLabel = currentSource === 'gcode' ? tc('sourceGcode') : tc('sourceManual');
+  const roundingModeLabel =
+    form.roundingMode === 'down'
+      ? t('profilePage.calc.roundingModeDown')
+      : form.roundingMode === 'nearest'
+        ? t('profilePage.calc.roundingModeNearest')
+        : t('profilePage.calc.roundingModeUp');
+  const staticSettingsSummary = [
+    `${t('profilePage.calc.printingRate')}: ${form.printingRatePerHour} ₽/${tc('hourAbbr')}`,
+    `${t('profilePage.calc.electricityCost')}: ${form.electricityCostPerKwh} ₽/${tc('kwhAbbr')}`,
+    `${t('profilePage.calc.roundTo')}: ${form.roundToNearest} ₽ · ${roundingModeLabel}`,
+  ].join(' · ');
 
   return (
     <div className="grid grid-cols-1 gap-5 xl:grid-cols-[minmax(0,1.45fr)_minmax(22rem,0.92fr)]">
@@ -1069,38 +1176,127 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
         <SurfaceCard className="p-6 md:p-7">
           <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
             <div>
-              <SectionHeading icon={<FileText className="h-5 w-5 text-cyan-300" />} title={tc('workflowTitle')} />
-              <p className="mt-3 max-w-2xl text-sm leading-6 text-slate-300">{tc('workflowDescription')}</p>
+              <SectionHeading icon={<Settings2 className="h-5 w-5 text-cyan-300" />} title={tc('staticSettingsTitle')} />
+              <p className="mt-2 text-sm text-slate-300">{tc('staticSettingsDescription')}</p>
+              <p className="mt-3 text-xs leading-5 text-slate-400">{staticSettingsSummary}</p>
             </div>
-            <div className="rounded-[1.3rem] border border-white/10 bg-white/5 px-4 py-3 text-sm text-slate-300">
-              <span className="text-slate-400">{tc('sourceLabel')}: </span>
-              <span className="font-semibold text-white">{sourceLabel}</span>
-            </div>
+            <button
+              type="button"
+              onClick={() => setStaticSettingsOpen((prev) => !prev)}
+              className={`${ghostButtonClass} shrink-0 self-start`}
+            >
+              <Settings2 className="h-4 w-4" />
+              {staticSettingsOpen ? tc('hideStaticSettings') : tc('showStaticSettings')}
+              <ChevronDown className={`h-4 w-4 transition-transform ${staticSettingsOpen ? 'rotate-180' : ''}`} />
+            </button>
           </div>
-          <div className="mt-5 grid grid-cols-1 gap-3 md:grid-cols-2">
-            <div className="rounded-[1.35rem] border border-white/10 bg-white/5 p-4">
-              <div className="flex items-center gap-3">
-                <div className="flex h-10 w-10 items-center justify-center rounded-[1rem] border border-white/10 bg-white/5">
-                  <Calculator className="h-5 w-5 text-cyan-300" />
-                </div>
-                <div>
-                  <p className="text-sm font-semibold text-white">{tc('sourceManual')}</p>
-                  <p className="mt-1 text-xs leading-5 text-slate-400">{tc('sourceManualDescription')}</p>
-                </div>
-              </div>
+
+          {staticSettingsOpen && (
+            <div className="mt-6 grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
+              <FieldBlock label={t('profilePage.calc.electricityCost')}>
+                <InputWithSuffix
+                  value={form.electricityCostPerKwh}
+                  onChange={(value) => onStaticChange('electricityCostPerKwh', value)}
+                  placeholder="6"
+                  suffix={`₽/${tc('kwhAbbr')}`}
+                  step="0.1"
+                />
+              </FieldBlock>
+              <FieldBlock label={t('profilePage.calc.printerPower')}>
+                <InputWithSuffix
+                  value={form.printerPowerW}
+                  onChange={(value) => onStaticChange('printerPowerW', value)}
+                  placeholder="350"
+                  suffix={tc('wattAbbr')}
+                />
+              </FieldBlock>
+              <FieldBlock label={t('profilePage.calc.printingRate')}>
+                <InputWithSuffix
+                  value={form.printingRatePerHour}
+                  onChange={(value) => onStaticChange('printingRatePerHour', value)}
+                  placeholder="170"
+                  suffix={`₽/${tc('hourAbbr')}`}
+                />
+              </FieldBlock>
+              <FieldBlock label={t('profilePage.calc.modeling')} hint={t('profilePage.calc.rate')}>
+                <InputWithSuffix
+                  value={form.modelingRatePerHour}
+                  onChange={(value) => onStaticChange('modelingRatePerHour', value)}
+                  placeholder="934"
+                  suffix={`₽/${tc('hourAbbr')}`}
+                />
+              </FieldBlock>
+              <FieldBlock label={t('profilePage.calc.postprocessing')} hint={t('profilePage.calc.rate')}>
+                <InputWithSuffix
+                  value={form.postprocessingRatePerHour}
+                  onChange={(value) => onStaticChange('postprocessingRatePerHour', value)}
+                  placeholder="100"
+                  suffix={`₽/${tc('hourAbbr')}`}
+                />
+              </FieldBlock>
+              <FieldBlock label={t('profilePage.calc.amortizationRate')}>
+                <InputWithSuffix
+                  value={form.amortizationRatePerHour}
+                  onChange={(value) => onStaticChange('amortizationRatePerHour', value)}
+                  placeholder="16"
+                  suffix={`₽/${tc('hourAbbr')}`}
+                />
+              </FieldBlock>
+              <FieldBlock label={t('profilePage.calc.overheadPercent')} hint={t('profilePage.calc.overheadHint')}>
+                <InputWithSuffix
+                  value={form.overheadPercent}
+                  onChange={(value) => onStaticChange('overheadPercent', value)}
+                  placeholder="20"
+                  suffix="%"
+                  step="0.1"
+                />
+              </FieldBlock>
+              <FieldBlock label={t('profilePage.calc.markupPercent')} hint={t('profilePage.calc.markupHint')}>
+                <InputWithSuffix
+                  value={form.markupPercent}
+                  onChange={(value) => onStaticChange('markupPercent', value)}
+                  placeholder="30"
+                  suffix="%"
+                  step="0.1"
+                />
+              </FieldBlock>
+              <FieldBlock label={t('profilePage.calc.fixedCosts')} hint={t('profilePage.calc.fixedCostsHint')}>
+                <InputWithSuffix
+                  value={form.fixedCosts}
+                  onChange={(value) => onStaticChange('fixedCosts', value)}
+                  placeholder="0"
+                  suffix="₽"
+                />
+              </FieldBlock>
+              <FieldBlock label={t('profilePage.calc.minOrderPrice')} hint={t('profilePage.calc.minOrderPriceHint')}>
+                <InputWithSuffix
+                  value={form.minOrderPrice}
+                  onChange={(value) => onStaticChange('minOrderPrice', value)}
+                  placeholder="0"
+                  suffix="₽"
+                />
+              </FieldBlock>
+              <FieldBlock label={t('profilePage.calc.roundTo')}>
+                <InputWithSuffix
+                  value={form.roundToNearest}
+                  onChange={(value) => onStaticChange('roundToNearest', value)}
+                  placeholder="10"
+                  suffix="₽"
+                />
+              </FieldBlock>
+              <FieldBlock label={t('profilePage.calc.roundingMode')}>
+                <select
+                  className={`${inputClass} w-full sm:max-w-[15rem]`}
+                  value={form.roundingMode}
+                  onChange={(event) => onStaticChange('roundingMode', event.target.value as RoundingMode)}
+                >
+                  <option value="up">{t('profilePage.calc.roundingModeUp')}</option>
+                  <option value="nearest">{t('profilePage.calc.roundingModeNearest')}</option>
+                  <option value="down">{t('profilePage.calc.roundingModeDown')}</option>
+                </select>
+              </FieldBlock>
             </div>
-            <div className="rounded-[1.35rem] border border-white/10 bg-white/5 p-4">
-              <div className="flex items-center gap-3">
-                <div className="flex h-10 w-10 items-center justify-center rounded-[1rem] border border-white/10 bg-white/5">
-                  <Upload className="h-5 w-5 text-cyan-300" />
-                </div>
-                <div>
-                  <p className="text-sm font-semibold text-white">{tc('sourceGcode')}</p>
-                  <p className="mt-1 text-xs leading-5 text-slate-400">{tc('sourceGcodeDescription')}</p>
-                </div>
-              </div>
-            </div>
-          </div>
+          )}
         </SurfaceCard>
 
         <SurfaceCard className="p-6 md:p-7">
@@ -1383,58 +1579,18 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
         </SurfaceCard>
 
         <SurfaceCard className="p-6 md:p-7">
-          <SectionHeading icon={<Zap className="h-5 w-5 text-cyan-300" />} title={t('profilePage.calc.electricity')} />
-          <div className="mt-5 grid grid-cols-1 gap-4 md:grid-cols-2">
-            <FieldBlock label={t('profilePage.calc.electricityCost')}>
-                <InputWithSuffix
-                  value={form.electricityCostPerKwh}
-                  onChange={(value) => onChange('electricityCostPerKwh', value)}
-                  placeholder="6"
-                  suffix={`₽/${tc('kwhAbbr')}`}
-                  step="0.1"
-                />
-              </FieldBlock>
-              <FieldBlock label={t('profilePage.calc.printerPower')}>
-                <InputWithSuffix
-                  value={form.printerPowerW}
-                  onChange={(value) => onChange('printerPowerW', value)}
-                  placeholder="350"
-                  suffix={tc('wattAbbr')}
-                />
-              </FieldBlock>
-          </div>
-        </SurfaceCard>
-
-        <SurfaceCard className="p-6 md:p-7">
           <SectionHeading icon={<Settings2 className="h-5 w-5 text-cyan-300" />} title={t('profilePage.calc.additionalServices')} />
           <div className="mt-5 space-y-6">
-            <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
               <FieldBlock label={t('profilePage.calc.modelingHours')}>
                 <NumberInput value={form.modelingHours} onChange={(value) => onChange('modelingHours', value)} placeholder="0" />
               </FieldBlock>
               <FieldBlock label={t('profilePage.calc.modelingMinutes')}>
                 <NumberInput value={form.modelingMinutes} onChange={(value) => onChange('modelingMinutes', value)} placeholder="0" />
               </FieldBlock>
-              <FieldBlock label={t('profilePage.calc.rate')}>
-                <InputWithSuffix
-                  value={form.modelingRatePerHour}
-                  onChange={(value) => onChange('modelingRatePerHour', value)}
-                  placeholder="934"
-                  suffix={`₽/${tc('hourAbbr')}`}
-                />
-              </FieldBlock>
             </div>
 
-            <FieldBlock label={t('profilePage.calc.printingRate')}>
-              <InputWithSuffix
-                value={form.printingRatePerHour}
-                onChange={(value) => onChange('printingRatePerHour', value)}
-                placeholder="170"
-                suffix={`₽/${tc('hourAbbr')}`}
-              />
-            </FieldBlock>
-
-            <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
               <FieldBlock label={t('profilePage.calc.postprocessingHours')}>
                 <NumberInput
                   value={form.postprocessingHours}
@@ -1449,48 +1605,7 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
                   placeholder="2"
                 />
               </FieldBlock>
-              <FieldBlock label={t('profilePage.calc.rate')}>
-                <InputWithSuffix
-                  value={form.postprocessingRatePerHour}
-                  onChange={(value) => onChange('postprocessingRatePerHour', value)}
-                  placeholder="100"
-                  suffix={`₽/${tc('hourAbbr')}`}
-                />
-              </FieldBlock>
             </div>
-
-            <FieldBlock label={t('profilePage.calc.amortizationRate')}>
-              <InputWithSuffix
-                value={form.amortizationRatePerHour}
-                onChange={(value) => onChange('amortizationRatePerHour', value)}
-                placeholder="16"
-                suffix={`₽/${tc('hourAbbr')}`}
-              />
-            </FieldBlock>
-          </div>
-        </SurfaceCard>
-
-        <SurfaceCard className="p-6 md:p-7">
-          <SectionHeading icon={<TrendingUp className="h-5 w-5 text-cyan-300" />} title={t('profilePage.calc.overheadAndMarkup')} />
-          <div className="mt-5 grid grid-cols-1 gap-4 md:grid-cols-2">
-            <FieldBlock label={t('profilePage.calc.overheadPercent')} hint={t('profilePage.calc.overheadHint')}>
-              <InputWithSuffix
-                value={form.overheadPercent}
-                onChange={(value) => onChange('overheadPercent', value)}
-                placeholder="20"
-                suffix="%"
-                step="0.1"
-              />
-            </FieldBlock>
-            <FieldBlock label={t('profilePage.calc.markupPercent')} hint={t('profilePage.calc.markupHint')}>
-              <InputWithSuffix
-                value={form.markupPercent}
-                onChange={(value) => onChange('markupPercent', value)}
-                placeholder="30"
-                suffix="%"
-                step="0.1"
-              />
-            </FieldBlock>
           </div>
         </SurfaceCard>
 
@@ -1532,44 +1647,9 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
 
         <SurfaceCard className="p-6 md:p-7">
           <SectionHeading icon={<Package className="h-5 w-5 text-cyan-300" />} title={tc('batchSection')} />
-          <div className="mt-5 grid grid-cols-1 gap-4 md:grid-cols-2">
+          <div className="mt-5 grid grid-cols-1 gap-4">
             <FieldBlock label={t('profilePage.calc.quantity')}>
               <NumberInput value={form.quantity} onChange={(value) => onChange('quantity', Math.max(1, value))} min="1" placeholder="4" />
-            </FieldBlock>
-            <FieldBlock label={t('profilePage.calc.fixedCosts')} hint={t('profilePage.calc.fixedCostsHint')}>
-              <InputWithSuffix
-                value={form.fixedCosts}
-                onChange={(value) => onChange('fixedCosts', value)}
-                placeholder="0"
-                suffix="₽"
-              />
-            </FieldBlock>
-            <FieldBlock label={t('profilePage.calc.minOrderPrice')} hint={t('profilePage.calc.minOrderPriceHint')}>
-              <InputWithSuffix
-                value={form.minOrderPrice}
-                onChange={(value) => onChange('minOrderPrice', value)}
-                placeholder="0"
-                suffix="₽"
-              />
-            </FieldBlock>
-            <FieldBlock label={t('profilePage.calc.roundTo')}>
-              <InputWithSuffix
-                value={form.roundToNearest}
-                onChange={(value) => onChange('roundToNearest', value)}
-                placeholder="10"
-                suffix="₽"
-              />
-            </FieldBlock>
-            <FieldBlock label={t('profilePage.calc.roundingMode')}>
-              <select
-                className={inputClass}
-                value={form.roundingMode}
-                onChange={(event) => onChange('roundingMode', event.target.value as RoundingMode)}
-              >
-                <option value="up">{t('profilePage.calc.roundingModeUp')}</option>
-                <option value="nearest">{t('profilePage.calc.roundingModeNearest')}</option>
-                <option value="down">{t('profilePage.calc.roundingModeDown')}</option>
-              </select>
             </FieldBlock>
           </div>
         </SurfaceCard>
@@ -2052,7 +2132,7 @@ const NumberInput: React.FC<{
 }> = ({ value, onChange, placeholder, min, max, step }) => (
   <input
     type="number"
-    className={inputClass}
+    className={compactNumericInputClass}
     value={value}
     min={min}
     max={max}
@@ -2096,10 +2176,10 @@ const InputWithSuffix: React.FC<{
   suffix: string;
   step?: string;
 }> = ({ value, onChange, placeholder, suffix, step }) => (
-  <div className="relative">
+  <div className="relative w-full sm:max-w-[15rem]">
     <input
       type="number"
-      className={`${inputClass} pr-20`}
+      className={`${inputClass} w-full pr-20`}
       value={value}
       placeholder={placeholder}
       step={step}
