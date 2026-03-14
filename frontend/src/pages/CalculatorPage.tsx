@@ -24,7 +24,7 @@ import {
   Weight,
   X,
 } from 'lucide-react';
-import { calculatorAPI, filamentsAPI } from '../api/client';
+import { calculatorAPI, filamentsAPI, spoolsAPI, type UserSpool } from '../api/client';
 import { useAuth } from '../contexts/AuthContext';
 import { useHeaderVisible } from '../hooks/useHeaderVisible';
 import { translateApiError } from '../utils/translateApiError';
@@ -102,6 +102,14 @@ interface QuotePartyFormState extends QuoteProfileState {
   buyerName: string;
   buyerInn: string;
   buyerAddress: string;
+}
+
+interface MaterialSelectionSnapshot {
+  id: number | null;
+  name: string;
+  brand_name: string | null;
+  material_type: string | null;
+  color_name: string | null;
 }
 
 const DEFAULT_FORM_STATE: CalculatorFormState = {
@@ -185,10 +193,10 @@ const formatQuantity = (value: number): string => `${value}`;
 const toHours = (hours: number, minutes: number, seconds: number): number =>
   hours + minutes / 60 + seconds / 3600;
 
-const buildFilamentLabel = (filament: Filament): string =>
+const buildFilamentLabel = (filament: Pick<MaterialSelectionSnapshot, 'brand_name' | 'name' | 'material_type'>): string =>
   [filament.brand_name, filament.name, filament.material_type].filter(Boolean).join(' · ');
 
-const deriveSpoolDefaults = (
+const deriveCatalogFilamentDefaults = (
   filament: Filament,
 ): { spoolPrice: number | null; spoolWeightKg: number | null } => {
   const spoolWeightKg = filament.spool_weight ? Number((filament.spool_weight / 1000).toFixed(3)) : null;
@@ -198,6 +206,154 @@ const deriveSpoolDefaults = (
       : null;
 
   return { spoolPrice, spoolWeightKg };
+};
+
+const deriveUserSpoolDefaults = (
+  spool: UserSpool,
+): { spoolPrice: number | null; spoolWeightKg: number | null } => {
+  const spoolWeightKg =
+    spool.initial_weight_g > 0 ? Number((spool.initial_weight_g / 1000).toFixed(3)) : null;
+  const spoolPrice =
+    spool.price != null
+      ? Number(spool.price.toFixed(2))
+      : spool.filament?.price_per_kg != null
+        ? Number(((spool.initial_weight_g * spool.filament.price_per_kg) / 1000).toFixed(2))
+        : null;
+
+  return { spoolPrice, spoolWeightKg };
+};
+
+const buildSpoolLabel = (spool: UserSpool): string => {
+  if (!spool.filament) {
+    return `#${spool.id}`;
+  }
+
+  return `${buildFilamentLabel(spool.filament)} · ${Math.round(spool.remaining_weight_g)} g`;
+};
+
+const normalizeMaterialText = (value: string | null | undefined): string =>
+  (value ?? '')
+    .toLowerCase()
+    .replace(/[\[\](){}"'`@.,;:/\\|+-]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+const MATERIAL_NOISE_TOKENS = new Set([
+  'generic',
+  'system',
+  'copy',
+  'copied',
+  'копировать',
+  'копия',
+  'filamenthub',
+]);
+
+const materialTokens = (value: string | null | undefined): string[] =>
+  normalizeMaterialText(value)
+    .split(' ')
+    .map((token) => token.trim())
+    .filter((token) => token.length > 1 && !MATERIAL_NOISE_TOKENS.has(token));
+
+const countSharedTokens = (left: string[], right: string[]): number => {
+  if (left.length === 0 || right.length === 0) {
+    return 0;
+  }
+
+  const rightSet = new Set(right);
+  return left.reduce((count, token) => count + (rightSet.has(token) ? 1 : 0), 0);
+};
+
+const scoreMaterialCandidate = (
+  parsed: CalculatorParsedMaterial,
+  candidate: {
+    name: string | null | undefined;
+    vendor: string | null | undefined;
+    materialType: string | null | undefined;
+    color: string | null | undefined;
+  },
+): number => {
+  let score = 0;
+
+  const parsedType = normalizeMaterialText(parsed.type);
+  const candidateType = normalizeMaterialText(candidate.materialType);
+  const parsedVendor = normalizeMaterialText(parsed.vendor);
+  const candidateVendor = normalizeMaterialText(candidate.vendor);
+  const parsedName = normalizeMaterialText(parsed.name);
+  const candidateName = normalizeMaterialText(candidate.name);
+  const parsedColor = normalizeMaterialText(parsed.color);
+  const candidateColor = normalizeMaterialText(candidate.color);
+
+  if (parsedType && candidateType) {
+    if (parsedType === candidateType) {
+      score += 6;
+    } else {
+      const sharedTypeTokens = countSharedTokens(materialTokens(parsed.type), materialTokens(candidate.materialType));
+      score += Math.min(sharedTypeTokens * 2, 4);
+    }
+  }
+
+  if (parsedVendor && candidateVendor) {
+    if (parsedVendor === candidateVendor) {
+      score += 4;
+    } else {
+      const sharedVendorTokens = countSharedTokens(materialTokens(parsed.vendor), materialTokens(candidate.vendor));
+      score += Math.min(sharedVendorTokens * 2, 3);
+    }
+  }
+
+  if (parsedName && candidateName) {
+    if (parsedName === candidateName) {
+      score += 8;
+    } else if (parsedName.includes(candidateName) || candidateName.includes(parsedName)) {
+      score += 6;
+    } else {
+      const sharedNameTokens = countSharedTokens(materialTokens(parsed.name), materialTokens(candidate.name));
+      score += Math.min(sharedNameTokens * 2, 6);
+    }
+  }
+
+  if (parsedColor && candidateColor && parsedColor === candidateColor) {
+    score += 1;
+  }
+
+  return score;
+};
+
+const pickPrimaryParsedMaterial = (parsed: CalculatorGcodeParseResponse | null): CalculatorParsedMaterial | null => {
+  if (!parsed) {
+    return null;
+  }
+
+  if (parsed.active_material_count != null && parsed.active_material_count > 1) {
+    return null;
+  }
+
+  const weightedMaterial =
+    parsed.materials.find((material) => (material.weight_g ?? 0) > 0 || (material.length_mm ?? 0) > 0) ??
+    parsed.materials[0];
+
+  return weightedMaterial ?? null;
+};
+
+const findBestMatch = <T,>(
+  items: T[],
+  getScore: (item: T) => number,
+): T | null => {
+  const ranked = items
+    .map((item) => ({ item, score: getScore(item) }))
+    .filter((entry) => entry.score >= 8)
+    .sort((left, right) => right.score - left.score);
+
+  if (ranked.length === 0) {
+    return null;
+  }
+
+  const [best, second] = ranked;
+  if (second && best.score - second.score < 2) {
+    return null;
+  }
+
+  return best.item;
 };
 
 const buildEstimateRequest = (form: CalculatorFormState): CalculatorEstimateRequest => {
@@ -453,7 +609,9 @@ const applyParsedGcodeToForm = (
   return nextForm;
 };
 
-const buildHistoryFilamentSnapshot = (filament: Filament | null): CalculatorHistoryFilamentSnapshot | null => {
+const buildHistoryFilamentSnapshot = (
+  filament: MaterialSelectionSnapshot | null,
+): CalculatorHistoryFilamentSnapshot | null => {
   if (!filament) {
     return null;
   }
@@ -471,7 +629,7 @@ const buildHistoryPayload = (
   form: CalculatorFormState,
   result: CalculatorEstimateResponse,
   parsedGcode: CalculatorGcodeParseResponse | null,
-  selectedFilament: Filament | null,
+  selectedFilament: MaterialSelectionSnapshot | null,
 ): CalculatorHistoryEntryCreate => ({
   request_data: buildEstimateRequest(form),
   result_data: result,
@@ -546,7 +704,7 @@ interface BuildQuoteHtmlParams {
   form: CalculatorFormState;
   result: CalculatorEstimateResponse;
   parsedGcode: CalculatorGcodeParseResponse | null;
-  selectedFilament: Filament | null;
+  selectedFilament: MaterialSelectionSnapshot | null;
   parties: QuotePartyFormState;
 }
 
@@ -555,7 +713,7 @@ const buildQuoteLineItems = (
   form: CalculatorFormState,
   result: CalculatorEstimateResponse,
   parsedGcode: CalculatorGcodeParseResponse | null,
-  selectedFilament: Filament | null,
+  selectedFilament: MaterialSelectionSnapshot | null,
 ): QuoteLineItem[] => {
   const itemTitle = parsedGcode?.file_name || t('calculator.quoteDefaultItemTitle');
   const details = [
@@ -776,8 +934,10 @@ export const CalculatorPage: React.FC = () => {
   const [quoteModalOpen, setQuoteModalOpen] = useState(false);
   const [quoteProfile, setQuoteProfile] = useState<QuoteProfileState>(DEFAULT_QUOTE_PROFILE);
   const [quoteParties, setQuoteParties] = useState<QuotePartyFormState>(DEFAULT_QUOTE_PARTY_FORM);
+  const [selectedSpoolId, setSelectedSpoolId] = useState<number | ''>('');
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const skipNextFilamentDefaultsRef = useRef(false);
+  const lastAutoMatchedGcodeKeyRef = useRef<string | null>(null);
 
   const filamentsQuery = useQuery({
     queryKey: ['calculator-pro', 'filaments'],
@@ -787,6 +947,12 @@ export const CalculatorPage: React.FC = () => {
         size: 100,
       }),
     staleTime: 60_000,
+  });
+
+  const spoolsQuery = useQuery({
+    queryKey: ['calculator-pro', 'spools'],
+    queryFn: spoolsAPI.list,
+    staleTime: 30_000,
   });
 
   const calculateMutation = useMutation({
@@ -819,10 +985,44 @@ export const CalculatorPage: React.FC = () => {
 
   const result = calculateMutation.data ?? null;
   const estimateSource: 'manual' | 'gcode' = parsedGcode ? 'gcode' : 'manual';
-  const selectedFilament = useMemo(
+  const availableSpools = useMemo(
+    () =>
+      (spoolsQuery.data ?? []).filter(
+        (spool) => spool.filament && spool.state !== 'archived' && spool.state !== 'empty',
+      ),
+    [spoolsQuery.data],
+  );
+  const selectedSpool = useMemo(
+    () => availableSpools.find((spool) => spool.id === selectedSpoolId) ?? null,
+    [availableSpools, selectedSpoolId],
+  );
+  const selectedCatalogFilament = useMemo(
     () => filamentsQuery.data?.items.find((filament) => filament.id === form.selectedFilamentId) ?? null,
     [filamentsQuery.data?.items, form.selectedFilamentId],
   );
+  const selectedMaterial = useMemo<MaterialSelectionSnapshot | null>(() => {
+    if (selectedSpool?.filament) {
+      return {
+        id: selectedSpool.filament_id,
+        name: selectedSpool.filament.name,
+        brand_name: selectedSpool.filament.brand_name,
+        material_type: selectedSpool.filament.material_type,
+        color_name: selectedSpool.filament.color_name,
+      };
+    }
+
+    if (selectedCatalogFilament) {
+      return {
+        id: selectedCatalogFilament.id,
+        name: selectedCatalogFilament.name,
+        brand_name: selectedCatalogFilament.brand_name,
+        material_type: selectedCatalogFilament.material_type,
+        color_name: selectedCatalogFilament.color_name,
+      };
+    }
+
+    return null;
+  }, [selectedSpool, selectedCatalogFilament]);
 
   useEffect(() => {
     setForm((prev) => ({
@@ -832,7 +1032,23 @@ export const CalculatorPage: React.FC = () => {
   }, []);
 
   useEffect(() => {
-    if (!selectedFilament) {
+    if (selectedSpool) {
+      if (skipNextFilamentDefaultsRef.current) {
+        skipNextFilamentDefaultsRef.current = false;
+        return;
+      }
+
+      const defaults = deriveUserSpoolDefaults(selectedSpool);
+
+      setForm((prev) => ({
+        ...prev,
+        spoolPrice: defaults.spoolPrice ?? prev.spoolPrice,
+        spoolWeightKg: defaults.spoolWeightKg ?? prev.spoolWeightKg,
+      }));
+      return;
+    }
+
+    if (!selectedCatalogFilament) {
       return;
     }
 
@@ -841,14 +1057,14 @@ export const CalculatorPage: React.FC = () => {
       return;
     }
 
-    const defaults = deriveSpoolDefaults(selectedFilament);
+    const defaults = deriveCatalogFilamentDefaults(selectedCatalogFilament);
 
     setForm((prev) => ({
       ...prev,
       spoolPrice: defaults.spoolPrice ?? prev.spoolPrice,
       spoolWeightKg: defaults.spoolWeightKg ?? prev.spoolWeightKg,
     }));
-  }, [selectedFilament]);
+  }, [selectedCatalogFilament, selectedSpool]);
 
   useEffect(() => {
     const stored = loadStoredQuoteProfile();
@@ -934,6 +1150,28 @@ export const CalculatorPage: React.FC = () => {
     setForm((prev) => ({ ...prev, [field]: value }));
   };
 
+  const handleSelectSpool = (spoolId: number | '') => {
+    setSelectedSpoolId(spoolId);
+
+    if (!spoolId) {
+      return;
+    }
+
+    const matchedSpool = availableSpools.find((spool) => spool.id === spoolId);
+    setForm((prev) => ({
+      ...prev,
+      selectedFilamentId: matchedSpool?.filament_id ?? prev.selectedFilamentId,
+    }));
+  };
+
+  const handleSelectCatalogFilament = (filamentId: number | '') => {
+    setSelectedSpoolId('');
+    setForm((prev) => ({
+      ...prev,
+      selectedFilamentId: filamentId,
+    }));
+  };
+
   const updateStaticField = <K extends CalculatorStaticSettingKey>(field: K, value: CalculatorFormState[K]) => {
     setForm((prev) => {
       const next = { ...prev, [field]: value };
@@ -959,6 +1197,7 @@ export const CalculatorPage: React.FC = () => {
 
   const handleGcodeFile = async (file: File) => {
     const parsed = await parseGcodeMutation.mutateAsync(file);
+    lastAutoMatchedGcodeKeyRef.current = null;
     setParsedGcode(parsed);
     setForm((prev) => applyParsedGcodeToForm(prev, parsed));
   };
@@ -980,7 +1219,7 @@ export const CalculatorPage: React.FC = () => {
     setHistoryFeedback(null);
 
     try {
-      await saveHistoryMutation.mutateAsync(buildHistoryPayload(form, result, parsedGcode, selectedFilament));
+      await saveHistoryMutation.mutateAsync(buildHistoryPayload(form, result, parsedGcode, selectedMaterial));
       setHistoryFeedback({ kind: 'success', message: tc('historySaved') });
       setActiveTab('history');
     } catch (error) {
@@ -1001,6 +1240,10 @@ export const CalculatorPage: React.FC = () => {
 
   const handleRestoreHistory = (entry: CalculatorHistoryEntry) => {
     skipNextFilamentDefaultsRef.current = true;
+    setSelectedSpoolId('');
+    lastAutoMatchedGcodeKeyRef.current = entry.parsed_gcode
+      ? `${entry.parsed_gcode.file_name}:${entry.parsed_gcode.file_size_bytes}`
+      : null;
     setForm(buildFormFromHistoryEntry(entry));
     setParsedGcode(entry.parsed_gcode ?? null);
     setActiveTab('calculator');
@@ -1049,7 +1292,7 @@ export const CalculatorPage: React.FC = () => {
       form,
       result,
       parsedGcode,
-      selectedFilament,
+      selectedFilament: selectedMaterial,
       parties: quoteParties,
     });
 
@@ -1069,6 +1312,55 @@ export const CalculatorPage: React.FC = () => {
     }));
     setQuoteModalOpen(true);
   };
+
+  useEffect(() => {
+    const currentParsedKey = parsedGcode ? `${parsedGcode.file_name}:${parsedGcode.file_size_bytes}` : null;
+    if (!parsedGcode || !currentParsedKey || lastAutoMatchedGcodeKeyRef.current === currentParsedKey) {
+      return;
+    }
+
+    const primaryMaterial = pickPrimaryParsedMaterial(parsedGcode);
+    lastAutoMatchedGcodeKeyRef.current = currentParsedKey;
+
+    if (!primaryMaterial) {
+      return;
+    }
+
+    const matchedSpool = findBestMatch(availableSpools, (spool) =>
+      scoreMaterialCandidate(primaryMaterial, {
+        name: spool.filament?.name,
+        vendor: spool.filament?.brand_name,
+        materialType: spool.filament?.material_type,
+        color: spool.filament?.color_name,
+      }),
+    );
+
+    if (matchedSpool) {
+      setSelectedSpoolId(matchedSpool.id);
+      setForm((prev) => ({
+        ...prev,
+        selectedFilamentId: matchedSpool.filament_id ?? prev.selectedFilamentId,
+      }));
+      return;
+    }
+
+    const matchedFilament = findBestMatch(filamentsQuery.data?.items ?? [], (filament) =>
+      scoreMaterialCandidate(primaryMaterial, {
+        name: filament.name,
+        vendor: filament.brand_name,
+        materialType: filament.material_type,
+        color: filament.color_name,
+      }),
+    );
+
+    if (matchedFilament) {
+      setSelectedSpoolId('');
+      setForm((prev) => ({
+        ...prev,
+        selectedFilamentId: matchedFilament.id,
+      }));
+    }
+  }, [availableSpools, filamentsQuery.data?.items, parsedGcode]);
 
   return (
     <div className="space-y-6">
@@ -1136,12 +1428,17 @@ export const CalculatorPage: React.FC = () => {
         <CalculatorView
           form={form}
           result={result}
-          selectedFilament={selectedFilament}
+          selectedFilament={selectedMaterial}
+          selectedCatalogFilament={selectedCatalogFilament}
+          selectedSpool={selectedSpool}
           parsedGcode={parsedGcode}
           dragActive={dragActive}
           filaments={filamentsQuery.data?.items ?? []}
           isFilamentsLoading={filamentsQuery.isPending}
           filamentsLoadError={filamentsQuery.isError ? tc('materialsLoadError') : null}
+          spools={availableSpools}
+          isSpoolsLoading={spoolsQuery.isPending}
+          spoolsLoadError={spoolsQuery.isError ? tc('spoolsLoadError') : null}
           isParsingGcode={parseGcodeMutation.isPending}
           parseGcodeError={parseGcodeError}
           isCalculating={calculateMutation.isPending}
@@ -1152,6 +1449,8 @@ export const CalculatorPage: React.FC = () => {
           onCalculate={handleCalculate}
           onChange={updateField}
           onStaticChange={updateStaticField}
+          onSpoolSelect={handleSelectSpool}
+          onCatalogFilamentSelect={handleSelectCatalogFilament}
           onFileSelect={handleFileSelection}
           onDragStateChange={setDragActive}
           quoteProfile={quoteProfile}
@@ -1193,12 +1492,17 @@ interface CalculatorViewProps {
   form: CalculatorFormState;
   quoteProfile: QuoteProfileState;
   result: CalculatorEstimateResponse | null;
-  selectedFilament: Filament | null;
+  selectedFilament: MaterialSelectionSnapshot | null;
+  selectedCatalogFilament: Filament | null;
+  selectedSpool: UserSpool | null;
   parsedGcode: CalculatorGcodeParseResponse | null;
   dragActive: boolean;
   filaments: Filament[];
   isFilamentsLoading: boolean;
   filamentsLoadError: string | null;
+  spools: UserSpool[];
+  isSpoolsLoading: boolean;
+  spoolsLoadError: string | null;
   isParsingGcode: boolean;
   parseGcodeError: string | null;
   isCalculating: boolean;
@@ -1209,6 +1513,8 @@ interface CalculatorViewProps {
   onCalculate: () => void;
   onChange: <K extends keyof CalculatorFormState>(field: K, value: CalculatorFormState[K]) => void;
   onStaticChange: <K extends CalculatorStaticSettingKey>(field: K, value: CalculatorFormState[K]) => void;
+  onSpoolSelect: (spoolId: number | '') => void;
+  onCatalogFilamentSelect: (filamentId: number | '') => void;
   onQuoteProfileChange: <K extends keyof QuoteProfileState>(field: K, value: QuoteProfileState[K]) => void;
   onFileSelect: (files: FileList | null) => Promise<void>;
   onDragStateChange: (active: boolean) => void;
@@ -1221,11 +1527,16 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
   quoteProfile,
   result,
   selectedFilament,
+  selectedCatalogFilament,
+  selectedSpool,
   parsedGcode,
   dragActive,
   filaments,
   isFilamentsLoading,
   filamentsLoadError,
+  spools,
+  isSpoolsLoading,
+  spoolsLoadError,
   isParsingGcode,
   parseGcodeError,
   isCalculating,
@@ -1236,6 +1547,8 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
   onCalculate,
   onChange,
   onStaticChange,
+  onSpoolSelect,
+  onCatalogFilamentSelect,
   onQuoteProfileChange,
   onFileSelect,
   onDragStateChange,
@@ -1247,12 +1560,27 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
   const [staticSettingsOpen, setStaticSettingsOpen] = useState(false);
   const [advancedSettingsOpen, setAdvancedSettingsOpen] = useState(false);
 
-  const materialCatalogSummary =
-    selectedFilament && (selectedFilament.price_per_kg != null || selectedFilament.spool_weight != null)
-      ? `${selectedFilament.price_per_kg != null ? `${selectedFilament.price_per_kg.toFixed(0)} ₽/кг` : '—'} · ${
-          selectedFilament.spool_weight != null ? `${selectedFilament.spool_weight.toFixed(0)} г` : '—'
-        }`
-      : null;
+  const materialSourceLabel = selectedSpool
+    ? tc('materialSourceSpool')
+    : selectedFilament
+      ? tc('materialSourceCatalog')
+      : tc('materialSourceManual');
+  const materialSourceTone = selectedSpool ? 'success' : selectedFilament ? 'neutral' : 'neutral';
+  const materialSummary =
+    selectedSpool
+      ? [
+          selectedSpool.price != null ? formatCurrency(selectedSpool.price) : tc('materialPriceUnknown'),
+          `${Math.round(selectedSpool.initial_weight_g)} ${tc('grams')}`,
+          `${Math.round(selectedSpool.remaining_weight_g)} ${tc('grams')} ${tc('remainingShort')}`,
+        ].join(' · ')
+      : selectedCatalogFilament &&
+          (selectedCatalogFilament.price_per_kg != null || selectedCatalogFilament.spool_weight != null)
+        ? `${selectedCatalogFilament.price_per_kg != null ? `${selectedCatalogFilament.price_per_kg.toFixed(0)} ₽/кг` : '—'} · ${
+            selectedCatalogFilament.spool_weight != null
+              ? `${selectedCatalogFilament.spool_weight.toFixed(0)} ${tc('grams')}`
+              : '—'
+          }`
+        : null;
   const roundingModeLabel =
     form.roundingMode === 'down'
       ? t('profilePage.calc.roundingModeDown')
@@ -1645,11 +1973,28 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
                 title={tc('workspaceMaterialTitle')}
                 description={tc('workspaceMaterialDescription')}
               >
-                <FieldBlock label={tc('selectMaterial')}>
+                <FieldBlock label={tc('selectSpool')} hint={tc('selectSpoolHint')}>
+                  <select
+                    className={inputClass}
+                    value={selectedSpool?.id ?? ''}
+                    onChange={(event) => onSpoolSelect(event.target.value ? Number(event.target.value) : '')}
+                  >
+                    <option value="">{tc('chooseFromMyFilaments')}</option>
+                    {spools.map((spool) => (
+                      <option key={spool.id} value={spool.id}>
+                        {buildSpoolLabel(spool)}
+                      </option>
+                    ))}
+                  </select>
+                </FieldBlock>
+
+                <FieldBlock label={tc('selectMaterial')} hint={tc('selectCatalogFallbackHint')}>
                   <select
                     className={inputClass}
                     value={form.selectedFilamentId}
-                    onChange={(event) => onChange('selectedFilamentId', event.target.value ? Number(event.target.value) : '')}
+                    onChange={(event) =>
+                      onCatalogFilamentSelect(event.target.value ? Number(event.target.value) : '')
+                    }
                   >
                     <option value="">{tc('chooseFromCatalog')}</option>
                     {filaments.map((filament) => (
@@ -1660,17 +2005,34 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
                   </select>
                 </FieldBlock>
 
-                {selectedFilament && materialCatalogSummary && (
+                <div className="flex flex-wrap gap-2">
+                  <StatusPill tone={materialSourceTone}>{materialSourceLabel}</StatusPill>
+                  {selectedSpool ? <StatusPill tone="success">{tc('materialPrioritySpool')}</StatusPill> : null}
+                </div>
+
+                {selectedFilament && materialSummary && (
                   <div className="rounded-[1.25rem] border border-cyan-400/20 bg-cyan-400/10 px-4 py-3 text-sm text-cyan-100">
                     <span className="font-semibold text-white">{selectedFilament.name}</span>
                     <span className="mx-2 text-cyan-200/70">·</span>
-                    {materialCatalogSummary}
+                    {materialSummary}
+                  </div>
+                )}
+
+                {spoolsLoadError && (
+                  <div className="rounded-[1.25rem] border border-amber-400/20 bg-amber-500/10 px-4 py-3 text-sm text-amber-100">
+                    {spoolsLoadError}
                   </div>
                 )}
 
                 {filamentsLoadError && (
                   <div className="rounded-[1.25rem] border border-amber-400/20 bg-amber-500/10 px-4 py-3 text-sm text-amber-100">
                     {filamentsLoadError}
+                  </div>
+                )}
+
+                {isSpoolsLoading && (
+                  <div className="rounded-[1.25rem] border border-white/10 bg-white/5 px-4 py-3 text-sm text-slate-300">
+                    {tc('loadingSpools')}
                   </div>
                 )}
 
