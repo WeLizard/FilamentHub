@@ -441,6 +441,7 @@ export interface UserSavedPreset {
 }
 
 export type PricingMethod = 'by_weight' | 'by_time' | 'combined';
+export type RoundingMode = 'up' | 'down' | 'nearest';
 
 export interface CalculatorEstimateRequest {
   pricing_method?: PricingMethod;
@@ -497,6 +498,7 @@ export interface CalculatorEstimateRequest {
   
   // Округление
   round_to_nearest?: number | null;
+  rounding_mode?: RoundingMode;
 }
 
 export interface CalculatorEstimateResponse {

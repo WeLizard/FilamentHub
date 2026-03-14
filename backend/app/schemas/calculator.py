@@ -12,6 +12,13 @@ class PricingMethod(str, Enum):
     COMBINED = "combined"  # Комбинированный (материал + время + дополнительные затраты)
 
 
+class RoundingMode(str, Enum):
+    """Стратегия округления итоговой цены."""
+    UP = "up"
+    DOWN = "down"
+    NEAREST = "nearest"
+
+
 class CalculatorEstimateRequest(BaseModel):
     """Schema for calculator estimate request."""
 
@@ -130,6 +137,10 @@ class CalculatorEstimateRequest(BaseModel):
     # ========== Округление ==========
     round_to_nearest: int | None = Field(
         None, ge=0, description="Округлять итоговую сумму до ближайшего N (например, 10 для округления до десятков)"
+    )
+    rounding_mode: RoundingMode = Field(
+        default=RoundingMode.UP,
+        description="Стратегия округления итоговой суммы: up, down или nearest"
     )
 
 

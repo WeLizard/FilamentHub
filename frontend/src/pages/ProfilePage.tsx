@@ -69,7 +69,7 @@ import { Badge, BADGE_CONFIG, type BadgeType } from '../components/Badge';
 import { PresetSlotsPanel } from '../components/presetSlots/PresetSlotsPanel';
 import { BrandProfilePage } from './BrandProfilePage';
 import { CalculatorPage } from './CalculatorPage';
-import type { Preset, PricingMethod, CalculatorEstimateRequest, PrinterProfile, PrintProfile, Filament } from '../types/api';
+import type { Preset, PricingMethod, RoundingMode, CalculatorEstimateRequest, PrinterProfile, PrintProfile, Filament } from '../types/api';
 
 export const ProfilePage: React.FC = () => {
   const { user, refreshUser } = useAuth();
@@ -3579,6 +3579,7 @@ const CalculatorComponent: React.FC = () => {
   
   // Округление
   const [roundToNearest, setRoundToNearest] = useState<number>(10);
+  const [roundingMode, setRoundingMode] = useState<RoundingMode>('up');
 
   // Мутация для расчета
   const calculateMutation = useMutation({
@@ -3590,6 +3591,7 @@ const CalculatorComponent: React.FC = () => {
       pricing_method: pricingMethod,
       quantity,
       round_to_nearest: roundToNearest || undefined,
+      rounding_mode: roundingMode,
     };
 
     // Добавляем параметры в зависимости от метода
@@ -4094,6 +4096,18 @@ const CalculatorComponent: React.FC = () => {
                   className="w-full px-4 py-2 bg-white/10 border border-white/20 rounded-xl text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500"
                   placeholder="10"
                 />
+              </div>
+              <div>
+                <label className="block text-gray-300 mb-2 text-sm font-medium">{t('profilePage.calc.roundingMode')}</label>
+                <select
+                  value={roundingMode}
+                  onChange={(e) => setRoundingMode(e.target.value as RoundingMode)}
+                  className="w-full px-4 py-2 bg-white/10 border border-white/20 rounded-xl text-white focus:outline-none focus:ring-2 focus:ring-purple-500"
+                >
+                  <option value="up">{t('profilePage.calc.roundingModeUp')}</option>
+                  <option value="nearest">{t('profilePage.calc.roundingModeNearest')}</option>
+                  <option value="down">{t('profilePage.calc.roundingModeDown')}</option>
+                </select>
               </div>
             </>
           )}

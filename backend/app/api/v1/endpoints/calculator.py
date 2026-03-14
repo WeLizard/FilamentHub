@@ -34,6 +34,7 @@ from app.schemas.calculator import (
     CalculatorHistoryEntryListResponse,
     CalculatorHistoryEntryResponse,
     PricingMethod,
+    RoundingMode,
 )
 from app.services.calculator_gcode_parser import (
     SUPPORTED_GCODE_EXTENSIONS,
@@ -57,6 +58,19 @@ def _convert_time_to_hours(
     if seconds:
         total_hours += seconds / 3600.0
     return total_hours
+
+
+def _apply_rounding(value: float, step: int, mode: RoundingMode) -> float:
+    """Apply configurable commercial rounding to a positive price."""
+    if step <= 0:
+        return value
+
+    normalized = value / step
+    if mode == RoundingMode.DOWN:
+        return math.floor(normalized) * step
+    if mode == RoundingMode.NEAREST:
+        return math.floor(normalized + 0.5) * step
+    return math.ceil(normalized) * step
 
 
 def _strip_history_thumbnail(parsed_gcode: CalculatorGcodeParseResponse | None) -> dict | None:
@@ -305,7 +319,7 @@ async def estimate_cost(
         
         # 16. Округление (если указано)
         if data.round_to_nearest and data.round_to_nearest > 0:
-            cost_final = math.floor(cost_final / data.round_to_nearest) * data.round_to_nearest
+            cost_final = _apply_rounding(cost_final, data.round_to_nearest, data.rounding_mode)
         
         # 17. Расчет цены первой детали и последующих (для отображения)
         # Первая деталь включает все затраты (включая моделирование)

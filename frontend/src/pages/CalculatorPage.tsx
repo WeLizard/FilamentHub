@@ -39,6 +39,7 @@ import type {
   CalculatorParsedMaterial,
   Filament,
   PricingMethod,
+  RoundingMode,
 } from '../types/api';
 
 const surfaceClass =
@@ -82,6 +83,7 @@ interface CalculatorFormState {
   fixedCosts: number;
   minOrderPrice: number;
   roundToNearest: number;
+  roundingMode: RoundingMode;
 }
 
 interface QuotePartyFormState {
@@ -125,6 +127,7 @@ const DEFAULT_FORM_STATE: CalculatorFormState = {
   fixedCosts: 0,
   minOrderPrice: 0,
   roundToNearest: 10,
+  roundingMode: 'up',
 };
 
 const QUOTE_PROFILE_STORAGE_KEY = 'filamenthub_calculator_quote_profile_v1';
@@ -165,6 +168,7 @@ const buildEstimateRequest = (form: CalculatorFormState): CalculatorEstimateRequ
     pricing_method: 'combined',
     quantity: form.quantity,
     round_to_nearest: form.roundToNearest || undefined,
+    rounding_mode: form.roundingMode,
   }
 
   requestData.weight_g = form.weightG;
@@ -396,6 +400,7 @@ const buildFormFromHistoryEntry = (entry: CalculatorHistoryEntry): CalculatorFor
     fixedCosts: request.fixed_costs ?? DEFAULT_FORM_STATE.fixedCosts,
     minOrderPrice: request.min_order_price ?? DEFAULT_FORM_STATE.minOrderPrice,
     roundToNearest: request.round_to_nearest ?? DEFAULT_FORM_STATE.roundToNearest,
+    roundingMode: request.rounding_mode ?? DEFAULT_FORM_STATE.roundingMode,
   };
 };
 
@@ -1554,6 +1559,17 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
                 placeholder="10"
                 suffix="₽"
               />
+            </FieldBlock>
+            <FieldBlock label={t('profilePage.calc.roundingMode')}>
+              <select
+                className={inputClass}
+                value={form.roundingMode}
+                onChange={(event) => onChange('roundingMode', event.target.value as RoundingMode)}
+              >
+                <option value="up">{t('profilePage.calc.roundingModeUp')}</option>
+                <option value="nearest">{t('profilePage.calc.roundingModeNearest')}</option>
+                <option value="down">{t('profilePage.calc.roundingModeDown')}</option>
+              </select>
             </FieldBlock>
           </div>
         </SurfaceCard>
