@@ -56,6 +56,7 @@ interface QuoteProfileState {
   sellerInn: string;
   sellerPhone: string;
   paymentTerms: string;
+  validityDays: number;
 }
 
 interface CalculatorFormState {
@@ -164,6 +165,7 @@ const DEFAULT_QUOTE_PROFILE: QuoteProfileState = {
   sellerInn: '',
   sellerPhone: '',
   paymentTerms: '',
+  validityDays: 14,
 };
 const DEFAULT_QUOTE_PARTY_FORM: QuotePartyFormState = {
   ...DEFAULT_QUOTE_PROFILE,
@@ -295,7 +297,16 @@ const loadStoredQuoteProfile = (): Partial<QuoteProfileState> => {
       return {};
     }
 
-    return parsed as Partial<QuoteProfileState>;
+    return {
+      sellerName: typeof parsed.sellerName === 'string' ? parsed.sellerName : undefined,
+      sellerInn: typeof parsed.sellerInn === 'string' ? parsed.sellerInn : undefined,
+      sellerPhone: typeof parsed.sellerPhone === 'string' ? parsed.sellerPhone : undefined,
+      paymentTerms: typeof parsed.paymentTerms === 'string' ? parsed.paymentTerms : undefined,
+      validityDays:
+        typeof parsed.validityDays === 'number' && Number.isFinite(parsed.validityDays)
+          ? parsed.validityDays
+          : undefined,
+    };
   } catch {
     return {};
   }
@@ -313,8 +324,15 @@ const saveStoredQuoteProfile = (data: QuoteProfileState): void => {
       sellerInn: data.sellerInn,
       sellerPhone: data.sellerPhone,
       paymentTerms: data.paymentTerms,
+      validityDays: data.validityDays,
     }),
   );
+};
+
+const addDays = (value: Date, days: number): Date => {
+  const next = new Date(value);
+  next.setDate(next.getDate() + days);
+  return next;
 };
 
 const extractStaticSettings = (form: CalculatorFormState): CalculatorStaticSettings => ({
@@ -592,7 +610,10 @@ const buildQuoteDocumentHtml = ({
 }: BuildQuoteHtmlParams): string => {
   const lineItems = buildQuoteLineItems(t, form, result, parsedGcode, selectedFilament);
   const includedItems = buildQuoteIncludedItems(t, result);
-  const today = new Intl.DateTimeFormat(undefined, { dateStyle: 'long' }).format(new Date());
+  const issuedAt = new Date();
+  const today = new Intl.DateTimeFormat(undefined, { dateStyle: 'long' }).format(issuedAt);
+  const validityDays = Math.max(1, Math.round(parties.validityDays || DEFAULT_QUOTE_PROFILE.validityDays));
+  const validUntil = new Intl.DateTimeFormat(undefined, { dateStyle: 'long' }).format(addDays(issuedAt, validityDays));
   const documentTitle = `${t('calculator.quoteDocumentTitle')} — ${today}`;
   const buyerFallback = t('calculator.quoteBuyerFallback');
 
@@ -662,6 +683,7 @@ const buildQuoteDocumentHtml = ({
           <div style="margin-top: 8px;">${escapeHtml(parties.sellerName.trim() || '—')}</div>
           <div class="muted">${escapeHtml(t('calculator.quoteInn'))}: ${escapeHtml(parties.sellerInn.trim() || '—')}</div>
           <div class="muted">${escapeHtml(t('calculator.quotePhone'))}: ${escapeHtml(parties.sellerPhone.trim() || '—')}</div>
+          <div class="muted">${escapeHtml(t('calculator.quoteValidUntil'))}: ${escapeHtml(validUntil)}</div>
           <div class="muted" style="margin-top: 8px;">${escapeHtml(t('calculator.quoteTaxStatus'))}</div>
         </div>
       </div>
@@ -1230,6 +1252,7 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
   const quoteProfileSummary = [
     quoteProfile.sellerName || tc('quoteProfileSummaryEmpty'),
     quoteProfile.paymentTerms ? `${tc('quotePaymentTerms')}: ${quoteProfile.paymentTerms}` : null,
+    `${tc('quoteValidityDaysShort')}: ${quoteProfile.validityDays} ${tc('dayAbbr')}`,
   ]
     .filter(Boolean)
     .join(' · ');
@@ -1462,6 +1485,14 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
                       value={quoteProfile.sellerPhone}
                       onChange={(value) => onQuoteProfileChange('sellerPhone', value)}
                       placeholder="+7 (999) 000-00-00"
+                    />
+                  </FieldBlock>
+                  <FieldBlock label={tc('quoteValidityDays')} hint={tc('quoteValidityDaysHint')}>
+                    <NumberInput
+                      value={quoteProfile.validityDays}
+                      onChange={(value) => onQuoteProfileChange('validityDays', Math.max(1, value))}
+                      min="1"
+                      placeholder="14"
                     />
                   </FieldBlock>
                   <div className="md:col-span-2 xl:col-span-3">
@@ -2238,6 +2269,14 @@ const QuoteModal: React.FC<QuoteModalProps> = ({
                       placeholder="+7 (999) 000-00-00"
                     />
                   </FieldBlock>
+                  <FieldBlock label={tc('quoteValidityDays')} hint={tc('quoteValidityDaysHint')}>
+                    <NumberInput
+                      value={quoteParties.validityDays}
+                      onChange={(value) => onPartyChange('validityDays', Math.max(1, value))}
+                      min="1"
+                      placeholder="14"
+                    />
+                  </FieldBlock>
                   <div className="md:col-span-2">
                     <FieldBlock label={tc('quotePaymentTerms')}>
                       <TextareaInput
@@ -2306,6 +2345,14 @@ const QuoteModal: React.FC<QuoteModalProps> = ({
                     <span className="text-slate-300">{t('profilePage.calc.totalWorkTime')}</span>
                     <span className="font-medium text-white">
                       {formatHoursShort(result.total_time_hours ?? result.time_hours, t('profilePage.calc.h'), t('profilePage.calc.min'))}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between gap-4">
+                    <span className="text-slate-300">{tc('quoteValidUntil')}</span>
+                    <span className="font-medium text-white">
+                      {new Intl.DateTimeFormat(undefined, { dateStyle: 'medium' }).format(
+                        addDays(new Date(), Math.max(1, Math.round(quoteParties.validityDays || DEFAULT_QUOTE_PROFILE.validityDays))),
+                      )}
                     </span>
                   </div>
                 </div>
