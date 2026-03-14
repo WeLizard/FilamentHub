@@ -9,6 +9,7 @@ import {
   ORCA_ADVANCED_ENUM_OPTIONS,
   ORCA_ADVANCED_FIELD_DEFS,
   ORCA_ADVANCED_FIELD_KEYS,
+  ORCA_ADVANCED_FIELD_LABELS,
   ORCA_STRUCTURED_TAB_ORDER,
   type OrcaStructuredFieldDef,
   type OrcaStructuredFieldTab,
@@ -500,7 +501,7 @@ export const CreatePrintProfileModal: React.FC<CreatePrintProfileModalProps> = (
   baseProfile,
   printerProfileContext,
 }) => {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const { user } = useAuth();
   const queryClient = useQueryClient();
 
@@ -1113,9 +1114,10 @@ export const CreatePrintProfileModal: React.FC<CreatePrintProfileModalProps> = (
   };
   const getBooleanOverrideLabel = (option: string) =>
     option ? t(`createPrintProfile.booleanOptions.${option}`) : t('createPrintProfile.notSpecified');
+  const structuredLabelLocale = i18n.resolvedLanguage?.startsWith('ru') ? 'ru' : 'en';
   const getStructuredFieldLabel = (fieldKey: string) =>
     t(`createPrintProfile.fieldLabels.${fieldKey}`, {
-      defaultValue: humanizeOrcaFieldKey(fieldKey),
+      defaultValue: ORCA_ADVANCED_FIELD_LABELS[fieldKey]?.[structuredLabelLocale] ?? humanizeOrcaFieldKey(fieldKey),
     });
   const getStructuredEnumLabel = (fieldKey: string, option: string) =>
     t(`createPrintProfile.fieldValues.${fieldKey}.${normalizeI18nKeyPart(option)}`, {
@@ -1128,15 +1130,9 @@ export const CreatePrintProfileModal: React.FC<CreatePrintProfileModalProps> = (
     const commonClassName =
       'w-full rounded-lg border border-white/10 bg-white/5 px-4 py-2 text-white placeholder-gray-500 focus:border-purple-500 focus:outline-none';
     const commonHint =
-      field.kind === 'stringList' || field.kind === 'integerList' || field.kind === 'floatList' ? (
-        <>
-          <span className="font-mono text-[11px]">{field.key}</span>
-          <span className="mx-1">·</span>
-          <span>{t('createPrintProfile.structuredListHint')}</span>
-        </>
-      ) : (
-        <span className="font-mono text-[11px]">{field.key}</span>
-      );
+      field.kind === 'stringList' || field.kind === 'integerList' || field.kind === 'floatList'
+        ? t('createPrintProfile.structuredListHint')
+        : undefined;
 
     let control: ReactNode;
     switch (field.kind) {
