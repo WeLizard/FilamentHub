@@ -362,10 +362,9 @@ const buildEstimateRequest = (form: CalculatorFormState): CalculatorEstimateRequ
   const requestData: CalculatorEstimateRequest = {
     pricing_method: 'combined',
     quantity: form.quantity,
-    parts_per_print: form.partsPerPrint || undefined,
     round_to_nearest: form.roundToNearest || undefined,
     rounding_mode: form.roundingMode,
-  }
+  };
 
   requestData.weight_g = form.weightG;
   requestData.supports_weight_g = form.supportsWeightG || undefined;
@@ -2079,34 +2078,21 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
               title={tc('workspaceProductionTitle')}
               description={tc('workspaceProductionDescription')}
             >
-              <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-5">
-                <FieldBlock label={t('profilePage.calc.quantity')}>
-                  <NumberInput value={form.quantity} onChange={(value) => onChange('quantity', Math.max(1, value))} min="1" placeholder="4" />
-                </FieldBlock>
-                <FieldBlock label={t('profilePage.calc.partsPerPrint')} hint={t('profilePage.calc.partsPerPrintHint')}>
-                  <NumberInput
-                    value={form.partsPerPrint}
-                    onChange={(value) => onChange('partsPerPrint', Math.max(1, value))}
-                    min="1"
-                    placeholder="1"
-                  />
-                </FieldBlock>
-                <FieldBlock label={t('profilePage.calc.hours')}>
-                  <NumberInput value={form.timeHours} onChange={(value) => onChange('timeHours', value)} placeholder="13" />
-                </FieldBlock>
+                <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
+                  <FieldBlock label={t('profilePage.calc.quantity')}>
+                    <NumberInput value={form.quantity} onChange={(value) => onChange('quantity', Math.max(1, value))} min="1" placeholder="4" />
+                  </FieldBlock>
+                  <FieldBlock label={t('profilePage.calc.hours')}>
+                    <NumberInput value={form.timeHours} onChange={(value) => onChange('timeHours', value)} placeholder="13" />
+                  </FieldBlock>
                 <FieldBlock label={t('profilePage.calc.minutes')}>
                   <NumberInput value={form.timeMinutes} onChange={(value) => onChange('timeMinutes', value)} placeholder="40" />
                 </FieldBlock>
-                <FieldBlock label={t('profilePage.calc.seconds')}>
-                  <NumberInput value={form.timeSec} onChange={(value) => onChange('timeSec', value)} placeholder="0" />
-                </FieldBlock>
-              </div>
-
-              <div className="flex flex-wrap gap-2">
-                <StatusPill tone="neutral">{tc('workspaceBatchHint')}</StatusPill>
-                <StatusPill tone="neutral">{tc('workspaceTimeHint')}</StatusPill>
-              </div>
-            </WorkspacePanel>
+                  <FieldBlock label={t('profilePage.calc.seconds')}>
+                    <NumberInput value={form.timeSec} onChange={(value) => onChange('timeSec', value)} placeholder="0" />
+                  </FieldBlock>
+                </div>
+              </WorkspacePanel>
 
             {parsedGcode && (
               <WorkspacePanel
@@ -2171,10 +2157,6 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
                       <MetricRow
                         label={tc('parsedMaxHeight')}
                         value={parsedGcode.max_z_height_mm != null ? `${parsedGcode.max_z_height_mm} mm` : '—'}
-                      />
-                      <MetricRow
-                        label={tc('parsedObjectCount')}
-                        value={parsedGcode.object_count != null ? String(parsedGcode.object_count) : '—'}
                       />
                       <MetricRow label={tc('parsedSupports')} value={parsedSupportsSummary ?? '—'} />
                       <MetricRow label={tc('parsedAdhesion')} value={parsedAdhesionSummary ?? '—'} />
@@ -2370,24 +2352,6 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
           </div>
         )}
 
-        <button
-          type="button"
-          onClick={onCalculate}
-          disabled={isCalculating}
-          className="inline-flex w-full items-center justify-center gap-2 rounded-[1.6rem] bg-[linear-gradient(135deg,#0891b2,#7c3aed)] px-6 py-4 text-base font-semibold text-white shadow-[0_18px_35px_-18px_rgba(6,182,212,0.7)] transition-all hover:translate-y-[-1px] hover:shadow-[0_22px_42px_-18px_rgba(124,58,237,0.72)] disabled:cursor-not-allowed disabled:opacity-60"
-        >
-          {isCalculating ? (
-            <>
-              <Loader2 className="h-5 w-5 animate-spin" />
-              {t('profilePage.calc.calculating')}
-            </>
-          ) : (
-            <>
-              <Calculator className="h-5 w-5" />
-              {t('profilePage.calc.calculate')}
-            </>
-          )}
-        </button>
       </div>
 
       <div className="xl:pt-1">
@@ -2398,6 +2362,25 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
               {result ? tc('lastEstimate') : tc('readyForEstimate')}
             </div>
           </div>
+
+          <button
+            type="button"
+            onClick={onCalculate}
+            disabled={isCalculating}
+            className="mt-5 inline-flex w-full items-center justify-center gap-2 rounded-[1.6rem] bg-[linear-gradient(135deg,#0891b2,#7c3aed)] px-6 py-4 text-base font-semibold text-white shadow-[0_18px_35px_-18px_rgba(6,182,212,0.7)] transition-all hover:translate-y-[-1px] hover:shadow-[0_22px_42px_-18px_rgba(124,58,237,0.72)] disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {isCalculating ? (
+              <>
+                <Loader2 className="h-5 w-5 animate-spin" />
+                {t('profilePage.calc.calculating')}
+              </>
+            ) : (
+              <>
+                <Calculator className="h-5 w-5" />
+                {t('profilePage.calc.calculate')}
+              </>
+            )}
+          </button>
 
           {result ? (
             <>
