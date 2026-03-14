@@ -142,12 +142,13 @@ export function DownloadPage() {
         <div className="grid md:grid-cols-2 gap-6">
           {/* Screenshot 1: FilamentHub Tab */}
           <div className="bg-white/5 rounded-xl p-4 border border-white/10">
-            <div className="aspect-video bg-gradient-to-br from-gray-800 to-gray-900 rounded-lg flex items-center justify-center border-2 border-dashed border-white/20 mb-4">
-              <div className="text-center">
-                <ImageIcon className="w-12 h-12 text-gray-500 mx-auto mb-2" />
-                <p className="text-sm text-gray-500">{t('downloadPage.screenshotTabAlt')}</p>
-                <p className="text-xs text-gray-600 mt-1">{t('downloadPage.comingSoon')}</p>
-              </div>
+            <div className="aspect-video overflow-hidden rounded-lg border border-white/10 bg-black/20 mb-4">
+              <img
+                src="/downloads/orcaslicer-win-main.png"
+                alt={t('downloadPage.screenshotTabAlt')}
+                className="h-full w-full object-cover"
+                loading="lazy"
+              />
             </div>
             <h3 className="text-lg font-semibold text-white mb-2">{t('downloadPage.screenshotTabTitle')}</h3>
             <p className="text-gray-300 text-sm">
