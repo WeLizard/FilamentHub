@@ -322,10 +322,10 @@ async def estimate_cost(
             cost_final = _apply_rounding(cost_final, data.round_to_nearest, data.rounding_mode)
         
         # 17. Расчет цены первой детали и последующих (для отображения)
-        # Первая деталь включает все затраты (включая моделирование)
-        cost_first_part = cost_final / quantity if quantity > 0 else cost_final
-        
-        # Последующие детали без моделирования (если количество > 1)
+        # В combined-mode все промежуточные суммы выше считаются для всей партии.
+        # Поэтому:
+        # - subsequent = цена одной детали без one-time затрат на моделирование
+        # - first part = остаток от общей партии после вычитания остальных subsequent деталей
         if quantity > 1:
             cost_without_modeling = (
                 cost_material +
@@ -337,7 +337,9 @@ async def estimate_cost(
             cost_without_modeling_with_overhead = (cost_without_modeling + (cost_without_modeling * overhead_percent / 100.0) + fixed_costs)
             cost_without_modeling_final = (cost_without_modeling_with_overhead * (1 + markup_percent / 100.0)) * urgency_coef * complexity_coef * volume_discount_coef
             cost_subsequent_parts = cost_without_modeling_final / quantity
+            cost_first_part = cost_final - (cost_subsequent_parts * (quantity - 1))
         else:
+            cost_first_part = cost_final
             cost_subsequent_parts = cost_first_part
         
         # 18. Общая стоимость партии

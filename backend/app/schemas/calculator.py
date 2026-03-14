@@ -35,7 +35,7 @@ class CalculatorEstimateRequest(BaseModel):
         None, ge=0, description="Вес поддержек в граммах"
     )
     supports_loss_coefficient: float | None = Field(
-        None, ge=1.0, le=2.0, description="Коэффициент потерь на поддержки (1.0-2.0, обычно 1.2-1.3)"
+        None, ge=1.0, le=3.0, description="Коэффициент потерь на поддержки (1.0-3.0, обычно 1.2-1.5)"
     )
     spool_price: float | None = Field(
         None, ge=0, description="Цена катушки материала (руб)"
