@@ -497,9 +497,6 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({ user, onUserUpdate }) 
                   </div>
                 </div>
               </label>
-              <p className="text-xs text-gray-500">
-                {t('settings.filamentPresetsImportHint')}
-              </p>
             </div>
           </div>
 

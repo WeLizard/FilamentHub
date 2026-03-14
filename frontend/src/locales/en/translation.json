@@ -2734,7 +2734,6 @@
     "syncTitle": "OrcaSlicer Sync",
     "syncDescription": "Manage import and export of filament presets, printer profiles, and print profiles",
     "filamentPresets": "Filament presets",
-    "filamentPresetsImportHint": "Disable this if you do not want OrcaSlicer to automatically import local presets to the website.",
     "printerProfiles": "Printer profiles",
     "printProfiles": "Print profiles",
     "import": "Import",

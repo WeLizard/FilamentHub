@@ -2798,7 +2798,6 @@
     "syncTitle": "Синхронизация с OrcaSlicer",
     "syncDescription": "Управление импортом и экспортом пресетов филамента, профилей принтеров и печати",
     "filamentPresets": "Пресеты филамента",
-    "filamentPresetsImportHint": "Отключите, если не хотите, чтобы OrcaSlicer автоматически импортировал локальные пресеты на сайт.",
     "printerProfiles": "Профили принтеров",
     "printProfiles": "Профили печати",
     "import": "Импорт",
