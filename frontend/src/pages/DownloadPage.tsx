@@ -144,7 +144,7 @@ export function DownloadPage() {
           <div className="bg-white/5 rounded-xl p-4 border border-white/10">
             <div className="aspect-video overflow-hidden rounded-lg border border-white/10 bg-black/20 mb-4">
               <img
-                src="/downloads/orcaslicer-win-main.png"
+                src="/download-media/orcaslicer-win-main.png"
                 alt={t('downloadPage.screenshotTabAlt')}
                 className="h-full w-full object-cover"
                 loading="lazy"
