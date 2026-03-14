@@ -2030,7 +2030,17 @@ async def _upsert_filament_preset(
     if fhub_id_from_info:
         preset = await db.get(Preset, fhub_id_from_info)
         if preset:
-            logger.info(f"Found preset by fhub_id from .info file: {fhub_id_from_info} (preset.name='{preset.name}')")
+            if (
+                preset.user_id != current_user.id
+                and current_user.role != UserRole.ADMIN
+            ):
+                logger.info(
+                    f"Preset fhub_id={fhub_id_from_info} (from .info) belongs to user_id={preset.user_id}, "
+                    f"current user_id={current_user.id} — will create new preset instead"
+                )
+                preset = None
+            else:
+                logger.info(f"Found preset by fhub_id from .info file: {fhub_id_from_info} (preset.name='{preset.name}')")
 
     # Приоритет 2: fhub_id из payload (явное указание)
     if not preset and payload.fhub_id:
@@ -2040,13 +2050,13 @@ async def _upsert_filament_preset(
                 preset.user_id != current_user.id
                 and current_user.role != UserRole.ADMIN
             ):
-                return OrcaSyncResult(
-                    external_id=payload.external_id,
-                    fhub_id=payload.fhub_id,
-                    status="error",
-                    message=ERR_NO_PERMISSION,
+                logger.info(
+                    f"Preset fhub_id={payload.fhub_id} belongs to user_id={preset.user_id}, "
+                    f"current user_id={current_user.id} — will create new preset instead"
                 )
-            logger.info(f"Found preset by fhub_id from payload: {payload.fhub_id}")
+                preset = None
+            else:
+                logger.info(f"Found preset by fhub_id from payload: {payload.fhub_id}")
 
     # Приоритет 3: fhub_id из orcaslicer_settings metadata
     if preset is None:
@@ -2064,13 +2074,13 @@ async def _upsert_filament_preset(
                         preset.user_id != current_user.id
                         and current_user.role != UserRole.ADMIN
                     ):
-                        return OrcaSyncResult(
-                            external_id=payload.external_id,
-                            fhub_id=fhub_id_int,
-                            status="error",
-                            message=ERR_NO_PERMISSION,
+                        logger.info(
+                            f"Preset fhub_id={fhub_id_int} (from metadata) belongs to user_id={preset.user_id}, "
+                            f"current user_id={current_user.id} — will create new preset instead"
                         )
-                    logger.info(f"Found preset by fhub_id from metadata: {fhub_id_int}")
+                        preset = None
+                    else:
+                        logger.info(f"Found preset by fhub_id from metadata: {fhub_id_int}")
             except (ValueError, TypeError):
                 logger.warning(f"Invalid fhub_id in metadata: {fhub_id_from_metadata}")
 
