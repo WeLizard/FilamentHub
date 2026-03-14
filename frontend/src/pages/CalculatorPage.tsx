@@ -15,7 +15,6 @@ import {
   Clock,
   FileText,
   Loader2,
-  Package,
   Printer,
   Save,
   Settings2,
@@ -1207,6 +1206,7 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
   const { t } = useTranslation();
   const tc = (key: string) => translateCalculator(t, key);
   const [staticSettingsOpen, setStaticSettingsOpen] = useState(false);
+  const [advancedSettingsOpen, setAdvancedSettingsOpen] = useState(false);
 
   const materialCatalogSummary =
     selectedFilament && (selectedFilament.price_per_kg != null || selectedFilament.spool_weight != null)
@@ -1236,7 +1236,7 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
   return (
     <div className="grid grid-cols-1 gap-5 xl:grid-cols-[minmax(0,1.45fr)_minmax(22rem,0.92fr)]">
       <div className="space-y-5">
-        <SurfaceCard className="p-6 md:p-7">
+        <SurfaceCard className="p-5 md:p-6">
           <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
             <div>
               <SectionHeading icon={<Settings2 className="h-5 w-5 text-cyan-300" />} title={tc('staticSettingsTitle')} />
@@ -1256,7 +1256,7 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
           </div>
 
           {staticSettingsOpen && (
-            <div className="mt-6 space-y-6">
+            <div className="mt-5 space-y-5">
               <div>
                 <p className="text-sm font-semibold text-white">{tc('staticEconomicsTitle')}</p>
                 <p className="mt-1 text-xs leading-5 text-slate-400">{tc('staticEconomicsDescription')}</p>
@@ -1375,7 +1375,7 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
                 </div>
               </div>
 
-              <div className="border-t border-white/10 pt-6">
+              <div className="border-t border-white/10 pt-5">
                 <p className="text-sm font-semibold text-white">{tc('quoteProfileTitle')}</p>
                 <p className="mt-1 text-xs leading-5 text-slate-400">{tc('quoteProfileDescription')}</p>
                 <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
@@ -1415,9 +1415,9 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
           )}
         </SurfaceCard>
 
-        <SurfaceCard className="p-6 md:p-7">
+        <SurfaceCard className="p-5 md:p-6">
           <SectionHeading icon={<Upload className="h-5 w-5 text-cyan-300" />} title={tc('uploadGcode')} />
-          <div className="mt-5 space-y-4">
+          <div className="mt-4 space-y-4">
             <input
               ref={fileInputRef}
               type="file"
@@ -1585,9 +1585,10 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
           </div>
         </SurfaceCard>
 
-        <SurfaceCard className="p-6 md:p-7">
-          <SectionHeading icon={<Weight className="h-5 w-5 text-cyan-300" />} title={t('profilePage.calc.materialParams')} />
-          <div className="mt-5 space-y-5">
+        <SurfaceCard className="p-5 md:p-6">
+          <SectionHeading icon={<Weight className="h-5 w-5 text-cyan-300" />} title={tc('coreInputsTitle')} />
+          <p className="mt-2 text-sm leading-6 text-slate-300">{tc('coreInputsDescription')}</p>
+          <div className="mt-4 space-y-4">
             <FieldBlock label={tc('selectMaterial')}>
               <select
                 className={inputClass}
@@ -1623,31 +1624,13 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
               </div>
             )}
 
-            <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
               <FieldBlock label={t('profilePage.calc.partWeight')}>
                 <InputWithSuffix
                   value={form.weightG}
                   onChange={(value) => onChange('weightG', value)}
                   placeholder="531"
                   suffix={tc('grams')}
-                />
-              </FieldBlock>
-              <FieldBlock label={t('profilePage.calc.supportsWeight')} hint={t('profilePage.calc.supportsWeightHint')}>
-                <InputWithSuffix
-                  value={form.supportsWeightG}
-                  onChange={(value) => onChange('supportsWeightG', value)}
-                  placeholder="0"
-                  suffix={tc('grams')}
-                />
-              </FieldBlock>
-              <FieldBlock label={t('profilePage.calc.supportsLossCoeff')} hint={t('profilePage.calc.supportsLossHint')}>
-                <NumberInput
-                  value={form.supportsLossCoefficient}
-                  onChange={(value) => onChange('supportsLossCoefficient', value)}
-                  min="1"
-                  max="2"
-                  step="0.1"
-                  placeholder="1.2"
                 />
               </FieldBlock>
               <FieldBlock label={t('profilePage.calc.spoolPrice')}>
@@ -1667,115 +1650,155 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
                   step="0.1"
                 />
               </FieldBlock>
-              <FieldBlock label={t('profilePage.calc.deliveryCost')}>
-                <InputWithSuffix
-                  value={form.deliveryCost}
-                  onChange={(value) => onChange('deliveryCost', value)}
-                  placeholder="0"
-                  suffix="₽"
-                />
+              <FieldBlock label={t('profilePage.calc.quantity')}>
+                <NumberInput value={form.quantity} onChange={(value) => onChange('quantity', Math.max(1, value))} min="1" placeholder="4" />
               </FieldBlock>
-            </div>
-          </div>
-        </SurfaceCard>
-
-        <SurfaceCard className="p-6 md:p-7">
-          <SectionHeading icon={<Clock className="h-5 w-5 text-cyan-300" />} title={t('profilePage.calc.printTime')} />
-          <div className="mt-5 grid grid-cols-1 gap-4 sm:grid-cols-3">
-            <FieldBlock label={t('profilePage.calc.hours')}>
-              <NumberInput value={form.timeHours} onChange={(value) => onChange('timeHours', value)} placeholder="13" />
-            </FieldBlock>
-            <FieldBlock label={t('profilePage.calc.minutes')}>
-              <NumberInput value={form.timeMinutes} onChange={(value) => onChange('timeMinutes', value)} placeholder="40" />
-            </FieldBlock>
-            <FieldBlock label={t('profilePage.calc.seconds')}>
-              <NumberInput value={form.timeSec} onChange={(value) => onChange('timeSec', value)} placeholder="0" />
-            </FieldBlock>
-          </div>
-        </SurfaceCard>
-
-        <SurfaceCard className="p-6 md:p-7">
-          <SectionHeading icon={<Settings2 className="h-5 w-5 text-cyan-300" />} title={t('profilePage.calc.additionalServices')} />
-          <div className="mt-5 space-y-6">
-            <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-              <FieldBlock label={t('profilePage.calc.modelingHours')}>
-                <NumberInput value={form.modelingHours} onChange={(value) => onChange('modelingHours', value)} placeholder="0" />
-              </FieldBlock>
-              <FieldBlock label={t('profilePage.calc.modelingMinutes')}>
-                <NumberInput value={form.modelingMinutes} onChange={(value) => onChange('modelingMinutes', value)} placeholder="0" />
-              </FieldBlock>
-            </div>
-
-            <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-              <FieldBlock label={t('profilePage.calc.postprocessingHours')}>
+              <FieldBlock label={t('profilePage.calc.partsPerPrint')} hint={t('profilePage.calc.partsPerPrintHint')}>
                 <NumberInput
-                  value={form.postprocessingHours}
-                  onChange={(value) => onChange('postprocessingHours', value)}
-                  placeholder="0"
+                  value={form.partsPerPrint}
+                  onChange={(value) => onChange('partsPerPrint', Math.max(1, value))}
+                  min="1"
+                  placeholder="1"
                 />
               </FieldBlock>
-              <FieldBlock label={t('profilePage.calc.postprocessingMinutes')}>
-                <NumberInput
-                  value={form.postprocessingMinutes}
-                  onChange={(value) => onChange('postprocessingMinutes', value)}
-                  placeholder="2"
-                />
-              </FieldBlock>
+            </div>
+
+            <div className="rounded-[1.45rem] border border-white/10 bg-white/5 p-4">
+              <div className="flex items-center gap-2">
+                <Clock className="h-4 w-4 text-cyan-300" />
+                <p className="text-sm font-semibold text-white">{t('profilePage.calc.printTime')}</p>
+              </div>
+              <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-3">
+                <FieldBlock label={t('profilePage.calc.hours')}>
+                  <NumberInput value={form.timeHours} onChange={(value) => onChange('timeHours', value)} placeholder="13" />
+                </FieldBlock>
+                <FieldBlock label={t('profilePage.calc.minutes')}>
+                  <NumberInput value={form.timeMinutes} onChange={(value) => onChange('timeMinutes', value)} placeholder="40" />
+                </FieldBlock>
+                <FieldBlock label={t('profilePage.calc.seconds')}>
+                  <NumberInput value={form.timeSec} onChange={(value) => onChange('timeSec', value)} placeholder="0" />
+                </FieldBlock>
+              </div>
             </div>
           </div>
         </SurfaceCard>
 
-        <SurfaceCard className="p-6 md:p-7">
-          <SectionHeading icon={<Settings2 className="h-5 w-5 text-cyan-300" />} title={t('profilePage.calc.adjustmentCoeffs')} />
-          <div className="mt-5 grid grid-cols-1 gap-4 md:grid-cols-3">
-            <FieldBlock label={t('profilePage.calc.urgency')} hint={t('profilePage.calc.urgencyHint')}>
-              <NumberInput
-                value={form.urgencyCoefficient}
-                onChange={(value) => onChange('urgencyCoefficient', value)}
-                min="1"
-                max="2"
-                step="0.1"
-                placeholder="1.0"
-              />
-            </FieldBlock>
-            <FieldBlock label={t('profilePage.calc.complexity')} hint={t('profilePage.calc.complexityHint')}>
-              <NumberInput
-                value={form.complexityCoefficient}
-                onChange={(value) => onChange('complexityCoefficient', value)}
-                min="1"
-                max="3"
-                step="0.1"
-                placeholder="1.0"
-              />
-            </FieldBlock>
-            <FieldBlock label={t('profilePage.calc.volumeDiscount')} hint={t('profilePage.calc.volumeDiscountHint')}>
-              <NumberInput
-                value={form.volumeDiscountCoefficient}
-                onChange={(value) => onChange('volumeDiscountCoefficient', value)}
-                min="0.85"
-                max="1"
-                step="0.01"
-                placeholder="1.0"
-              />
-            </FieldBlock>
-          </div>
-        </SurfaceCard>
+        <SurfaceCard className="p-5 md:p-6">
+          <button
+            type="button"
+            onClick={() => setAdvancedSettingsOpen((prev) => !prev)}
+            className="flex w-full flex-col gap-4 text-left md:flex-row md:items-start md:justify-between"
+          >
+            <div>
+              <SectionHeading icon={<Settings2 className="h-5 w-5 text-cyan-300" />} title={tc('advancedInputsTitle')} compact />
+              <p className="mt-2 text-sm leading-6 text-slate-300">{tc('advancedInputsDescription')}</p>
+              <p className="mt-2 text-xs leading-5 text-slate-400">{tc('advancedInputsSummary')}</p>
+            </div>
+            <div className={`${ghostButtonClass} shrink-0 self-start`}>
+              {advancedSettingsOpen ? tc('hideAdvancedInputs') : tc('showAdvancedInputs')}
+              <ChevronDown className={`h-4 w-4 transition-transform ${advancedSettingsOpen ? 'rotate-180' : ''}`} />
+            </div>
+          </button>
 
-        <SurfaceCard className="p-6 md:p-7">
-          <SectionHeading icon={<Package className="h-5 w-5 text-cyan-300" />} title={tc('batchSection')} />
-          <div className="mt-5 grid grid-cols-1 gap-4 md:grid-cols-2">
-            <FieldBlock label={t('profilePage.calc.quantity')}>
-              <NumberInput value={form.quantity} onChange={(value) => onChange('quantity', Math.max(1, value))} min="1" placeholder="4" />
-            </FieldBlock>
-            <FieldBlock label={t('profilePage.calc.partsPerPrint')} hint={t('profilePage.calc.partsPerPrintHint')}>
-              <NumberInput
-                value={form.partsPerPrint}
-                onChange={(value) => onChange('partsPerPrint', Math.max(1, value))}
-                min="1"
-                placeholder="1"
-              />
-            </FieldBlock>
-          </div>
+          {advancedSettingsOpen ? (
+            <div className="mt-5 space-y-5 border-t border-white/10 pt-5">
+              <div>
+                <p className="text-sm font-semibold text-white">{tc('advancedMaterialTitle')}</p>
+                <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
+                  <FieldBlock label={t('profilePage.calc.supportsWeight')} hint={t('profilePage.calc.supportsWeightHint')}>
+                    <InputWithSuffix
+                      value={form.supportsWeightG}
+                      onChange={(value) => onChange('supportsWeightG', value)}
+                      placeholder="0"
+                      suffix={tc('grams')}
+                    />
+                  </FieldBlock>
+                  <FieldBlock label={t('profilePage.calc.supportsLossCoeff')} hint={t('profilePage.calc.supportsLossHint')}>
+                    <NumberInput
+                      value={form.supportsLossCoefficient}
+                      onChange={(value) => onChange('supportsLossCoefficient', value)}
+                      min="1"
+                      max="3"
+                      step="0.1"
+                      placeholder="1.2"
+                    />
+                  </FieldBlock>
+                  <FieldBlock label={t('profilePage.calc.deliveryCost')}>
+                    <InputWithSuffix
+                      value={form.deliveryCost}
+                      onChange={(value) => onChange('deliveryCost', value)}
+                      placeholder="0"
+                      suffix="₽"
+                    />
+                  </FieldBlock>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 gap-5 xl:grid-cols-2">
+                <div>
+                  <p className="text-sm font-semibold text-white">{t('profilePage.calc.additionalServices')}</p>
+                  <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2">
+                    <FieldBlock label={t('profilePage.calc.modelingHours')}>
+                      <NumberInput value={form.modelingHours} onChange={(value) => onChange('modelingHours', value)} placeholder="0" />
+                    </FieldBlock>
+                    <FieldBlock label={t('profilePage.calc.modelingMinutes')}>
+                      <NumberInput value={form.modelingMinutes} onChange={(value) => onChange('modelingMinutes', value)} placeholder="0" />
+                    </FieldBlock>
+                    <FieldBlock label={t('profilePage.calc.postprocessingHours')}>
+                      <NumberInput
+                        value={form.postprocessingHours}
+                        onChange={(value) => onChange('postprocessingHours', value)}
+                        placeholder="0"
+                      />
+                    </FieldBlock>
+                    <FieldBlock label={t('profilePage.calc.postprocessingMinutes')}>
+                      <NumberInput
+                        value={form.postprocessingMinutes}
+                        onChange={(value) => onChange('postprocessingMinutes', value)}
+                        placeholder="2"
+                      />
+                    </FieldBlock>
+                  </div>
+                </div>
+
+                <div>
+                  <p className="text-sm font-semibold text-white">{t('profilePage.calc.adjustmentCoeffs')}</p>
+                  <div className="mt-4 grid grid-cols-1 gap-4">
+                    <FieldBlock label={t('profilePage.calc.urgency')} hint={t('profilePage.calc.urgencyHint')}>
+                      <NumberInput
+                        value={form.urgencyCoefficient}
+                        onChange={(value) => onChange('urgencyCoefficient', value)}
+                        min="1"
+                        max="2"
+                        step="0.1"
+                        placeholder="1.0"
+                      />
+                    </FieldBlock>
+                    <FieldBlock label={t('profilePage.calc.complexity')} hint={t('profilePage.calc.complexityHint')}>
+                      <NumberInput
+                        value={form.complexityCoefficient}
+                        onChange={(value) => onChange('complexityCoefficient', value)}
+                        min="1"
+                        max="3"
+                        step="0.1"
+                        placeholder="1.0"
+                      />
+                    </FieldBlock>
+                    <FieldBlock label={t('profilePage.calc.volumeDiscount')} hint={t('profilePage.calc.volumeDiscountHint')}>
+                      <NumberInput
+                        value={form.volumeDiscountCoefficient}
+                        onChange={(value) => onChange('volumeDiscountCoefficient', value)}
+                        min="0.85"
+                        max="1"
+                        step="0.01"
+                        placeholder="1.0"
+                      />
+                    </FieldBlock>
+                  </div>
+                </div>
+              </div>
+            </div>
+          ) : null}
         </SurfaceCard>
 
         {estimateError && (
@@ -1805,7 +1828,7 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
       </div>
 
       <div className="xl:pt-1">
-        <SurfaceCard className="p-6 md:p-7 xl:sticky xl:top-8">
+        <SurfaceCard className="p-5 md:p-6 xl:sticky xl:top-8">
           <div className="flex items-center justify-between gap-4">
             <SectionHeading icon={<Calculator className="h-5 w-5 text-cyan-300" />} title={tc('resultsTitle')} compact />
             <div className="rounded-full border border-cyan-400/20 bg-cyan-400/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-cyan-200">
@@ -2252,9 +2275,9 @@ const SectionHeading: React.FC<{ icon: ReactNode; title: string; compact?: boole
 
 const FieldBlock: React.FC<{ label: string; children: ReactNode; hint?: string | null }> = ({ label, children, hint }) => (
   <label className="block">
-    <span className="mb-2 block text-sm font-medium text-slate-300">{label}</span>
+    <span className="mb-1.5 block text-sm font-medium text-slate-300">{label}</span>
     {children}
-    {hint ? <span className="mt-2 block text-xs leading-5 text-slate-400">{hint}</span> : null}
+    {hint ? <span className="mt-1.5 block text-xs leading-5 text-slate-400">{hint}</span> : null}
   </label>
 );
 
