@@ -42,10 +42,12 @@ import type {
 } from '../types/api';
 
 const surfaceClass =
-  'relative overflow-hidden rounded-[2rem] border border-white/10 bg-[linear-gradient(180deg,rgba(15,23,42,0.88),rgba(15,23,42,0.72))] shadow-[0_30px_90px_-50px_rgba(15,23,42,0.95)] backdrop-blur-xl';
+  'relative rounded-[2rem] border border-white/10 bg-[linear-gradient(180deg,rgba(15,23,42,0.88),rgba(15,23,42,0.72))] shadow-[0_30px_90px_-50px_rgba(15,23,42,0.95)] backdrop-blur-xl';
 const inputClass =
   'w-full rounded-2xl border border-white/10 bg-slate-950/60 px-4 py-3 text-white placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-cyan-400/60 focus:border-transparent transition-all';
-const compactNumericInputClass = `${inputClass} w-full sm:max-w-[15rem]`;
+const numberInputResetClass =
+  '[appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none';
+const compactNumericInputClass = `${inputClass} ${numberInputResetClass} w-full sm:max-w-[15rem]`;
 const ghostButtonClass =
   'inline-flex items-center justify-center gap-2 rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm font-medium text-white transition-all hover:bg-white/10';
 
@@ -2860,7 +2862,9 @@ const QuoteModal: React.FC<QuoteModalProps> = ({
 
 const SurfaceCard: React.FC<{ children: ReactNode; className?: string }> = ({ children, className = '' }) => (
   <section className={`${surfaceClass} ${className}`}>
-    <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top,rgba(255,255,255,0.06),transparent_40%)]" />
+    <div className="pointer-events-none absolute inset-0 overflow-hidden rounded-[inherit]">
+      <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,rgba(255,255,255,0.06),transparent_40%)]" />
+    </div>
     <div className="relative">{children}</div>
   </section>
 );
@@ -2881,7 +2885,7 @@ const HelpTooltip: React.FC<{ text: string }> = ({ text }) => (
     </button>
     <span
       role="tooltip"
-      className="pointer-events-none absolute left-1/2 top-full z-30 mt-2 hidden w-64 -translate-x-1/2 rounded-lg border border-white/10 bg-slate-950/95 px-3 py-2 text-left text-xs leading-relaxed text-slate-200 shadow-2xl shadow-black/30 group-hover/tooltip:block group-focus-within/tooltip:block"
+      className="pointer-events-none absolute left-0 top-full z-[70] mt-2 hidden w-64 rounded-lg border border-white/10 bg-slate-950/95 px-3 py-2 text-left text-xs leading-relaxed text-slate-200 shadow-2xl shadow-black/30 group-hover/tooltip:block group-focus-within/tooltip:block"
     >
       {text}
     </span>
@@ -3013,7 +3017,7 @@ const InputWithSuffix: React.FC<{
   <div className="relative w-full sm:max-w-[15rem]">
     <input
       type="number"
-      className={`${inputClass} w-full pr-20`}
+      className={`${inputClass} ${numberInputResetClass} w-full pr-24`}
       value={value}
       placeholder={placeholder}
       step={step}
