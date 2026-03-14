@@ -1293,6 +1293,7 @@
     "presetFilterDrafts": "Заготовки",
     "newPreset": "Новый пресет",
     "add": "Добавить",
+    "noPresets": "У вас пока нет пресетов",
     "noPresetsShort": "Нет сохраненных пресетов",
     "noPresetsLong": "У вас пока нет сохраненных пресетов",
     "recentPresets": "Последние пресеты",

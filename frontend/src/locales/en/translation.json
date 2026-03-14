@@ -1288,6 +1288,7 @@
     "presetFilterDrafts": "Drafts",
     "newPreset": "New preset",
     "add": "Add",
+    "noPresets": "You don't have any presets yet",
     "noPresetsShort": "No saved presets",
     "noPresetsLong": "You don't have any saved presets yet",
     "recentPresets": "Recent Presets",
