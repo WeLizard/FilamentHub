@@ -271,6 +271,12 @@ const humanizeOrcaFieldKey = (value: string): string =>
     })
     .join(' ');
 
+const normalizeI18nKeyPart = (value: string): string =>
+  value
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '');
+
 const buildRecommendedName = (layerHeight: string, qualityTier: string, printerTag: string): string => {
   const normalizedLayerHeight = normalizeNumericString(layerHeight);
   if (!normalizedLayerHeight || !qualityTier.trim()) {
@@ -537,7 +543,6 @@ export const CreatePrintProfileModal: React.FC<CreatePrintProfileModalProps> = (
   const [compatibleFilamentSearch, setCompatibleFilamentSearch] = useState('');
   const [compatiblePrintersCondition, setCompatiblePrintersCondition] = useState('');
   const [structuredAdvancedValues, setStructuredAdvancedValues] = useState<Record<string, string>>({});
-  const [structuredAdvancedSearch, setStructuredAdvancedSearch] = useState('');
   const [advancedSettings, setAdvancedSettings] = useState('');
   const [advancedSettingsError, setAdvancedSettingsError] = useState<string | null>(null);
   const [notes, setNotes] = useState('');
@@ -607,23 +612,10 @@ export const CreatePrintProfileModal: React.FC<CreatePrintProfileModalProps> = (
     availableFilaments.map((filament) => normalizeComparableValue(buildCompatibleFilamentValue(filament))),
   );
   const showSupportThresholdField = enableSupport === '1' && supportType.includes('(auto)');
-  const structuredAdvancedSearchValue = structuredAdvancedSearch.trim().toLowerCase();
-  const filteredStructuredFields = useMemo(
-    () =>
-      ORCA_ADVANCED_FIELD_DEFS.filter((field) => {
-        if (!structuredAdvancedSearchValue) {
-          return true;
-        }
-
-        const label = humanizeOrcaFieldKey(field.key).toLowerCase();
-        return label.includes(structuredAdvancedSearchValue) || field.key.includes(structuredAdvancedSearchValue);
-      }),
-    [structuredAdvancedSearchValue],
-  );
   const structuredFieldsByTabAndSection = useMemo(() => {
     const next = new Map<string, OrcaStructuredFieldDef[]>();
 
-    filteredStructuredFields.forEach((field) => {
+    ORCA_ADVANCED_FIELD_DEFS.forEach((field) => {
       const mapKey = `${field.tab}:${field.section}`;
       const existing = next.get(mapKey);
       if (existing) {
@@ -634,7 +626,7 @@ export const CreatePrintProfileModal: React.FC<CreatePrintProfileModalProps> = (
     });
 
     return next;
-  }, [filteredStructuredFields]);
+  }, []);
 
   useEffect(() => {
     if (isOpen) {
@@ -725,7 +717,6 @@ export const CreatePrintProfileModal: React.FC<CreatePrintProfileModalProps> = (
       setCompatibleFilamentSearch('');
       setCompatiblePrintersCondition(nextCompatiblePrintersCondition);
       setStructuredAdvancedValues(nextStructuredAdvancedValues);
-      setStructuredAdvancedSearch('');
       setAdvancedSettings(Object.keys(nextAdvancedSettings).length ? JSON.stringify(nextAdvancedSettings, null, 2) : '');
       setAdvancedSettingsError(null);
       setNotes(profile.notes || '');
@@ -772,7 +763,6 @@ export const CreatePrintProfileModal: React.FC<CreatePrintProfileModalProps> = (
       setCompatibleFilamentSearch('');
       setCompatiblePrintersCondition(nextCompatiblePrintersCondition);
       setStructuredAdvancedValues(nextStructuredAdvancedValues);
-      setStructuredAdvancedSearch('');
       setAdvancedSettings(Object.keys(nextAdvancedSettings).length ? JSON.stringify(nextAdvancedSettings, null, 2) : '');
       setAdvancedSettingsError(null);
       setNotes(baseProfile.notes || '');
@@ -818,7 +808,6 @@ export const CreatePrintProfileModal: React.FC<CreatePrintProfileModalProps> = (
     setCompatibleFilamentSearch('');
     setCompatiblePrintersCondition('');
     setStructuredAdvancedValues(buildStructuredAdvancedValues(undefined));
-    setStructuredAdvancedSearch('');
     setAdvancedSettings('');
     setAdvancedSettingsError(null);
     setNotes('');
@@ -1122,10 +1111,20 @@ export const CreatePrintProfileModal: React.FC<CreatePrintProfileModalProps> = (
       [key]: value,
     }));
   };
+  const getBooleanOverrideLabel = (option: string) =>
+    option ? t(`createPrintProfile.booleanOptions.${option}`) : t('createPrintProfile.notSpecified');
+  const getStructuredFieldLabel = (fieldKey: string) =>
+    t(`createPrintProfile.fieldLabels.${fieldKey}`, {
+      defaultValue: humanizeOrcaFieldKey(fieldKey),
+    });
+  const getStructuredEnumLabel = (fieldKey: string, option: string) =>
+    t(`createPrintProfile.fieldValues.${fieldKey}.${normalizeI18nKeyPart(option)}`, {
+      defaultValue: humanizeOrcaValue(option),
+    });
   const renderStructuredAdvancedField = (field: OrcaStructuredFieldDef) => {
     const value = structuredAdvancedValues[field.key] ?? '';
     const enumOptions = ORCA_ADVANCED_ENUM_OPTIONS[field.key] ?? [];
-    const label = humanizeOrcaFieldKey(field.key);
+    const label = getStructuredFieldLabel(field.key);
     const commonClassName =
       'w-full rounded-lg border border-white/10 bg-white/5 px-4 py-2 text-white placeholder-gray-500 focus:border-purple-500 focus:outline-none';
     const commonHint =
@@ -1149,8 +1148,8 @@ export const CreatePrintProfileModal: React.FC<CreatePrintProfileModalProps> = (
             className={commonClassName}
           >
             {BOOLEAN_OVERRIDE_OPTIONS.map((option) => (
-              <option key={option || 'inherit'} value={option}>
-                {t(`createPrintProfile.booleanOptions.${option || 'inherit'}`)}
+              <option key={option || 'not-specified'} value={option}>
+                {getBooleanOverrideLabel(option)}
               </option>
             ))}
           </select>
@@ -1166,7 +1165,7 @@ export const CreatePrintProfileModal: React.FC<CreatePrintProfileModalProps> = (
             <option value="">{t('createPrintProfile.notSpecified')}</option>
             {enumOptions.map((option) => (
               <option key={option} value={option}>
-                {humanizeOrcaValue(option)}
+                {getStructuredEnumLabel(field.key, option)}
               </option>
             ))}
           </select>
@@ -1357,8 +1356,8 @@ export const CreatePrintProfileModal: React.FC<CreatePrintProfileModalProps> = (
               className="w-full rounded-lg border border-white/10 bg-white/5 px-4 py-2 text-white focus:border-purple-500 focus:outline-none"
             >
               {BOOLEAN_OVERRIDE_OPTIONS.map((option) => (
-                <option key={option || 'inherit'} value={option}>
-                  {t(`createPrintProfile.booleanOptions.${option || 'inherit'}`)}
+                <option key={option || 'not-specified'} value={option}>
+                  {getBooleanOverrideLabel(option)}
                 </option>
               ))}
             </select>
@@ -1637,8 +1636,8 @@ export const CreatePrintProfileModal: React.FC<CreatePrintProfileModalProps> = (
               className="w-full rounded-lg border border-white/10 bg-white/5 px-4 py-2 text-white focus:border-purple-500 focus:outline-none"
             >
               {BOOLEAN_OVERRIDE_OPTIONS.map((option) => (
-                <option key={option || 'inherit'} value={option}>
-                  {t(`createPrintProfile.booleanOptions.${option || 'inherit'}`)}
+                <option key={option || 'not-specified'} value={option}>
+                  {getBooleanOverrideLabel(option)}
                 </option>
               ))}
             </select>
@@ -1756,8 +1755,8 @@ export const CreatePrintProfileModal: React.FC<CreatePrintProfileModalProps> = (
               className="w-full rounded-lg border border-white/10 bg-white/5 px-4 py-2 text-white focus:border-purple-500 focus:outline-none"
             >
               {BOOLEAN_OVERRIDE_OPTIONS.map((option) => (
-                <option key={option || 'inherit'} value={option}>
-                  {t(`createPrintProfile.booleanOptions.${option || 'inherit'}`)}
+                <option key={option || 'not-specified'} value={option}>
+                  {getBooleanOverrideLabel(option)}
                 </option>
               ))}
             </select>
@@ -1784,8 +1783,6 @@ export const CreatePrintProfileModal: React.FC<CreatePrintProfileModalProps> = (
     </div>
   );
 
-  const activeTabHasStructuredFields = filteredStructuredFields.some((field) => field.tab === activeTab);
-
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4 backdrop-blur-sm">
       <div className="flex max-h-[90vh] w-full max-w-4xl flex-col overflow-hidden rounded-2xl border border-white/20 bg-gradient-to-br from-gray-900 to-gray-800 shadow-2xl">
@@ -1805,17 +1802,13 @@ export const CreatePrintProfileModal: React.FC<CreatePrintProfileModalProps> = (
         </div>
 
         <form onSubmit={handleSubmit} className="flex-1 space-y-6 overflow-y-auto p-6">
-          <div className="rounded-xl border border-cyan-500/20 bg-cyan-500/10 p-4">
-            <h3 className="text-sm font-semibold text-cyan-200">{t('createPrintProfile.orcaSection')}</h3>
-            <p className="mt-1 text-xs leading-relaxed text-cyan-100/80">{t('createPrintProfile.phaseOneHint')}</p>
-            {printerProfileContext && (
-              <p className="mt-3 text-xs text-cyan-100/80">
-                {t('createPrintProfile.contextPrinter')}: <span className="font-medium text-cyan-100">{printerProfileContext.name}</span>
-              </p>
-            )}
-          </div>
-
           <SectionCard title={t('createPrintProfile.profileMetaSection')}>
+            {printerProfileContext && (
+              <div className="mb-6 rounded-xl border border-cyan-500/20 bg-cyan-500/10 px-4 py-3 text-sm text-cyan-100">
+                {t('createPrintProfile.contextPrinter')}: <span className="font-medium text-white">{printerProfileContext.name}</span>
+              </div>
+            )}
+
             <div className="grid gap-6 lg:grid-cols-2">
               <FormField
                 label={
@@ -2113,22 +2106,10 @@ export const CreatePrintProfileModal: React.FC<CreatePrintProfileModalProps> = (
             </div>
 
             <div className="space-y-6 p-4">
-              <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
+              <div>
                 <div>
                   <h3 className="text-sm font-semibold text-white">{t(`createPrintProfile.tabs.${activeTab}`)}</h3>
                   <p className="mt-1 text-xs leading-relaxed text-gray-400">{t(`createPrintProfile.tabDescriptions.${activeTab}`)}</p>
-                </div>
-                <div className="w-full md:max-w-sm">
-                  <label className="mb-2 block text-xs font-medium uppercase tracking-wide text-gray-400">
-                    {t('createPrintProfile.structuredFieldSearch')}
-                  </label>
-                  <input
-                    type="text"
-                    value={structuredAdvancedSearch}
-                    onChange={(event) => setStructuredAdvancedSearch(event.target.value)}
-                    className="w-full rounded-lg border border-white/10 bg-white/5 px-4 py-2 text-sm text-white placeholder-gray-500 focus:border-purple-500 focus:outline-none"
-                    placeholder={t('createPrintProfile.structuredFieldSearchPlaceholder')}
-                  />
                 </div>
               </div>
 
@@ -2138,64 +2119,8 @@ export const CreatePrintProfileModal: React.FC<CreatePrintProfileModalProps> = (
               {activeTab === 'support' && renderSupportTab()}
               {activeTab === 'multimaterial' && renderMultimaterialTab()}
               {activeTab === 'others' && renderOthersTab()}
-
-              {structuredAdvancedSearchValue && !activeTabHasStructuredFields && (
-                <div className="rounded-xl border border-dashed border-white/10 bg-black/10 px-4 py-5 text-sm text-gray-400">
-                  {t('createPrintProfile.structuredFieldSearchEmpty')}
-                </div>
-              )}
             </div>
           </div>
-
-          <details className="overflow-hidden rounded-xl border border-white/10 bg-white/[0.03]">
-            <summary className="cursor-pointer list-none px-4 py-3 text-sm font-semibold text-white transition-colors hover:bg-white/5">
-              {t('createPrintProfile.advancedOverridesSection')}
-            </summary>
-            <div className="border-t border-white/10 px-4 py-4">
-              <FormField
-                label={t('createPrintProfile.advancedOverrides')}
-                hint={t('createPrintProfile.advancedOverridesHint')}
-                labelMinHeightClassName="min-h-0"
-              >
-                <div className="flex flex-col gap-3">
-                  <textarea
-                    value={advancedSettings}
-                    onChange={(event) => {
-                      setAdvancedSettings(event.target.value);
-                      if (advancedSettingsError) {
-                        setAdvancedSettingsError(null);
-                      }
-                    }}
-                    rows={10}
-                    className="w-full resize-y rounded-lg border border-white/10 bg-white/5 px-4 py-3 font-mono text-sm text-white placeholder-gray-500 focus:border-purple-500 focus:outline-none"
-                    placeholder={t('createPrintProfile.advancedOverridesPlaceholder')}
-                  />
-                  <div className="flex justify-end">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        if (!advancedSettings.trim()) {
-                          return;
-                        }
-                        try {
-                          const formatted = JSON.stringify(JSON.parse(advancedSettings), null, 2);
-                          setAdvancedSettings(formatted);
-                          setAdvancedSettingsError(null);
-                        } catch (error) {
-                          console.error('Invalid advanced process settings JSON', error);
-                          setAdvancedSettingsError(t('createPrintProfile.jsonFormatError'));
-                        }
-                      }}
-                      className="rounded-lg border border-white/15 px-4 py-2 text-xs font-medium text-white transition-all hover:bg-white/10"
-                    >
-                      {t('createPrintProfile.formatJson')}
-                    </button>
-                  </div>
-                </div>
-              </FormField>
-              {advancedSettingsError && <p className="mt-2 text-xs text-red-400">{advancedSettingsError}</p>}
-            </div>
-          </details>
 
           <div className="flex items-center justify-end gap-3 border-t border-white/10 pt-4">
             <button
