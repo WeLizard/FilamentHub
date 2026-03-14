@@ -1,6 +1,6 @@
 /** Modal for creating and editing Orca process profiles. */
 
-import { useEffect, useState, type FormEvent, type ReactNode } from 'react';
+import { useEffect, useMemo, useState, type FormEvent, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { X, Save, Loader2, Layers } from 'lucide-react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -9,9 +9,9 @@ import {
   ORCA_ADVANCED_ENUM_OPTIONS,
   ORCA_ADVANCED_FIELD_DEFS,
   ORCA_ADVANCED_FIELD_KEYS,
-  ORCA_ADVANCED_FIELD_KIND_ORDER,
+  ORCA_STRUCTURED_TAB_ORDER,
   type OrcaStructuredFieldDef,
-  type OrcaStructuredFieldKind,
+  type OrcaStructuredFieldTab,
 } from './createPrintProfileOrcaFields';
 import { Dropdown } from './Dropdown';
 import { translateApiError } from '../utils/translateApiError';
@@ -25,6 +25,8 @@ interface CreatePrintProfileModalProps {
   baseProfile?: PrintProfile | null;
   printerProfileContext?: PrinterProfile | null;
 }
+
+type PrintProfileTabKey = OrcaStructuredFieldTab;
 
 const DEFAULT_PROCESS_BASE = 'fdm_process_common';
 const DEFAULT_PROCESS_VERSION = '01.00.00.00';
@@ -467,6 +469,18 @@ const FormField: React.FC<FormFieldProps> = ({
   </div>
 );
 
+interface SectionCardProps {
+  title: string;
+  children: ReactNode;
+}
+
+const SectionCard: React.FC<SectionCardProps> = ({ title, children }) => (
+  <div className="rounded-xl border border-white/10 bg-white/[0.03] p-4">
+    <h3 className="text-sm font-semibold text-white">{title}</h3>
+    <div className="mt-4">{children}</div>
+  </div>
+);
+
 export const CreatePrintProfileModal: React.FC<CreatePrintProfileModalProps> = ({
   isOpen,
   onClose,
@@ -522,6 +536,7 @@ export const CreatePrintProfileModal: React.FC<CreatePrintProfileModalProps> = (
   const [advancedSettingsError, setAdvancedSettingsError] = useState<string | null>(null);
   const [notes, setNotes] = useState('');
   const [nameManuallyChanged, setNameManuallyChanged] = useState(false);
+  const [activeTab, setActiveTab] = useState<PrintProfileTabKey>('quality');
 
   const sourceProfile = profile ?? baseProfile ?? null;
   const sourceSettings = (sourceProfile?.orcaslicer_settings ?? {}) as Record<string, unknown>;
@@ -532,7 +547,7 @@ export const CreatePrintProfileModal: React.FC<CreatePrintProfileModalProps> = (
       printerProfilesAPI.list({
         owner_user_id: user?.id,
         active_only: true,
-        size: 200,
+        size: 100,
       }),
     enabled: isOpen && Boolean(user?.id),
     staleTime: 60_000,
@@ -543,7 +558,7 @@ export const CreatePrintProfileModal: React.FC<CreatePrintProfileModalProps> = (
     queryFn: () =>
       filamentsAPI.list({
         active_only: true,
-        size: 200,
+        size: 100,
       }),
     enabled: isOpen,
     staleTime: 60_000,
@@ -572,27 +587,38 @@ export const CreatePrintProfileModal: React.FC<CreatePrintProfileModalProps> = (
   const knownCompatibleFilamentNames = new Set(availableFilaments.map(buildCompatibleFilamentValue));
   const showSupportThresholdField = enableSupport === '1' && supportType.includes('(auto)');
   const structuredAdvancedSearchValue = structuredAdvancedSearch.trim().toLowerCase();
+  const filteredStructuredFields = useMemo(
+    () =>
+      ORCA_ADVANCED_FIELD_DEFS.filter((field) => {
+        if (!structuredAdvancedSearchValue) {
+          return true;
+        }
 
-  const filteredStructuredFieldGroups = ORCA_ADVANCED_FIELD_KIND_ORDER.map((kind) => {
-    const fields = ORCA_ADVANCED_FIELD_DEFS.filter((field) => {
-      if (field.kind !== kind) {
-        return false;
+        const label = humanizeOrcaFieldKey(field.key).toLowerCase();
+        return label.includes(structuredAdvancedSearchValue) || field.key.includes(structuredAdvancedSearchValue);
+      }),
+    [structuredAdvancedSearchValue],
+  );
+  const structuredFieldsByTabAndSection = useMemo(() => {
+    const next = new Map<string, OrcaStructuredFieldDef[]>();
+
+    filteredStructuredFields.forEach((field) => {
+      const mapKey = `${field.tab}:${field.section}`;
+      const existing = next.get(mapKey);
+      if (existing) {
+        existing.push(field);
+      } else {
+        next.set(mapKey, [field]);
       }
-
-      if (!structuredAdvancedSearchValue) {
-        return true;
-      }
-
-      const label = humanizeOrcaFieldKey(field.key).toLowerCase();
-      return label.includes(structuredAdvancedSearchValue) || field.key.includes(structuredAdvancedSearchValue);
     });
 
-    return { kind, fields };
-  }).filter((group) => group.fields.length > 0);
+    return next;
+  }, [filteredStructuredFields]);
 
   useEffect(() => {
     if (isOpen) {
       setNameManuallyChanged(false);
+      setActiveTab('quality');
     }
   }, [isOpen, profile, baseProfile]);
 
@@ -1217,6 +1243,527 @@ export const CreatePrintProfileModal: React.FC<CreatePrintProfileModalProps> = (
       </FormField>
     );
   };
+  const getStructuredFields = (tab: PrintProfileTabKey, section: string): OrcaStructuredFieldDef[] =>
+    structuredFieldsByTabAndSection.get(`${tab}:${section}`) ?? [];
+
+  const renderStructuredSectionCard = (
+    tab: PrintProfileTabKey,
+    section: string,
+    coreContent?: ReactNode,
+    gridClassName = 'grid gap-4 md:grid-cols-2 xl:grid-cols-3',
+  ) => {
+    const fields = getStructuredFields(tab, section);
+    const hasCoreContent = coreContent !== undefined && coreContent !== null;
+
+    if (!hasCoreContent && fields.length === 0) {
+      return null;
+    }
+
+    return (
+      <SectionCard key={`${tab}-${section}`} title={t(`createPrintProfile.sections.${section}`)}>
+        {hasCoreContent ? coreContent : null}
+        {fields.length > 0 ? (
+          <div className={hasCoreContent ? 'mt-4 border-t border-white/10 pt-4' : ''}>
+            <div className={gridClassName}>{fields.map((field) => renderStructuredAdvancedField(field))}</div>
+          </div>
+        ) : null}
+      </SectionCard>
+    );
+  };
+
+  const renderQualityTab = () => (
+    <div className="space-y-6">
+      {renderStructuredSectionCard(
+        'quality',
+        'layerHeight',
+        <div className="grid gap-4 md:grid-cols-2">
+          <FormField label={t('createPrintProfile.layerHeight')}>
+            <input
+              type="number"
+              step="0.01"
+              min="0.01"
+              max="1.0"
+              value={layerHeight}
+              onChange={(event) => setLayerHeight(event.target.value)}
+              className="w-full rounded-lg border border-white/10 bg-white/5 px-4 py-2 text-white placeholder-gray-500 focus:border-purple-500 focus:outline-none"
+              placeholder="0.2"
+            />
+          </FormField>
+          <FormField label={t('createPrintProfile.initialLayerHeight')}>
+            <input
+              type="number"
+              step="0.01"
+              min="0.01"
+              max="1.0"
+              value={initialLayerHeight}
+              onChange={(event) => setInitialLayerHeight(event.target.value)}
+              className="w-full rounded-lg border border-white/10 bg-white/5 px-4 py-2 text-white placeholder-gray-500 focus:border-purple-500 focus:outline-none"
+              placeholder={layerHeight || '0.2'}
+            />
+          </FormField>
+        </div>,
+        'grid gap-4 md:grid-cols-2',
+      )}
+      {renderStructuredSectionCard('quality', 'lineWidth', undefined, 'grid gap-4 md:grid-cols-2 xl:grid-cols-3')}
+      {renderStructuredSectionCard(
+        'quality',
+        'seam',
+        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+          <FormField label={t('createPrintProfile.seamPosition')}>
+            <select
+              value={seamPosition}
+              onChange={(event) => setSeamPosition(event.target.value)}
+              className="w-full rounded-lg border border-white/10 bg-white/5 px-4 py-2 text-white focus:border-purple-500 focus:outline-none"
+            >
+              <option value="">{t('createPrintProfile.notSpecified')}</option>
+              {SEAM_POSITION_OPTIONS.map((option) => (
+                <option key={option} value={option}>
+                  {t(`createPrintProfile.seamPositions.${option}`)}
+                </option>
+              ))}
+            </select>
+          </FormField>
+        </div>,
+      )}
+      {renderStructuredSectionCard(
+        'quality',
+        'precision',
+        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+          <FormField label={t('createPrintProfile.enableArcFitting')}>
+            <select
+              value={enableArcFitting}
+              onChange={(event) => setEnableArcFitting(event.target.value)}
+              className="w-full rounded-lg border border-white/10 bg-white/5 px-4 py-2 text-white focus:border-purple-500 focus:outline-none"
+            >
+              {BOOLEAN_OVERRIDE_OPTIONS.map((option) => (
+                <option key={option || 'inherit'} value={option}>
+                  {t(`createPrintProfile.booleanOptions.${option || 'inherit'}`)}
+                </option>
+              ))}
+            </select>
+          </FormField>
+        </div>,
+      )}
+      {renderStructuredSectionCard(
+        'quality',
+        'ironing',
+        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+          <FormField label={t('createPrintProfile.ironingType')}>
+            <select
+              value={ironingType}
+              onChange={(event) => setIroningType(event.target.value)}
+              className="w-full rounded-lg border border-white/10 bg-white/5 px-4 py-2 text-white focus:border-purple-500 focus:outline-none"
+            >
+              <option value="">{t('createPrintProfile.notSpecified')}</option>
+              {IRONING_TYPE_OPTIONS.map((option) => (
+                <option key={option} value={option}>
+                  {t(`createPrintProfile.ironingTypes.${option}`)}
+                </option>
+              ))}
+            </select>
+          </FormField>
+        </div>,
+      )}
+      {renderStructuredSectionCard('quality', 'wallGenerator')}
+      {renderStructuredSectionCard('quality', 'wallsAndSurfaces')}
+      {renderStructuredSectionCard('quality', 'bridging')}
+      {renderStructuredSectionCard('quality', 'overhangs')}
+    </div>
+  );
+
+  const renderStrengthTab = () => (
+    <div className="space-y-6">
+      {renderStructuredSectionCard(
+        'strength',
+        'walls',
+        <div className="grid gap-4 md:grid-cols-3">
+          <FormField label={t('createPrintProfile.wallLoops')}>
+            <input
+              type="number"
+              min="0"
+              step="1"
+              value={wallLoops}
+              onChange={(event) => setWallLoops(event.target.value)}
+              className="w-full rounded-lg border border-white/10 bg-white/5 px-4 py-2 text-white placeholder-gray-500 focus:border-purple-500 focus:outline-none"
+              placeholder="2"
+            />
+          </FormField>
+        </div>,
+      )}
+      {renderStructuredSectionCard(
+        'strength',
+        'topBottomShells',
+        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+          <FormField label={t('createPrintProfile.topShellLayers')}>
+            <input
+              type="number"
+              min="0"
+              step="1"
+              value={topShellLayers}
+              onChange={(event) => setTopShellLayers(event.target.value)}
+              className="w-full rounded-lg border border-white/10 bg-white/5 px-4 py-2 text-white placeholder-gray-500 focus:border-purple-500 focus:outline-none"
+              placeholder="3"
+            />
+          </FormField>
+          <FormField label={t('createPrintProfile.bottomShellLayers')}>
+            <input
+              type="number"
+              min="0"
+              step="1"
+              value={bottomShellLayers}
+              onChange={(event) => setBottomShellLayers(event.target.value)}
+              className="w-full rounded-lg border border-white/10 bg-white/5 px-4 py-2 text-white placeholder-gray-500 focus:border-purple-500 focus:outline-none"
+              placeholder="3"
+            />
+          </FormField>
+        </div>,
+      )}
+      {renderStructuredSectionCard(
+        'strength',
+        'infill',
+        <div className="grid gap-4 md:grid-cols-2">
+          <FormField label={t('createPrintProfile.infillDensity')}>
+            <input
+              type="number"
+              min="0"
+              max="100"
+              step="1"
+              value={infillDensity}
+              onChange={(event) => setInfillDensity(event.target.value)}
+              className="w-full rounded-lg border border-white/10 bg-white/5 px-4 py-2 text-white placeholder-gray-500 focus:border-purple-500 focus:outline-none"
+              placeholder="15"
+            />
+          </FormField>
+          <FormField label={t('createPrintProfile.infillPattern')}>
+            <select
+              value={infillPattern}
+              onChange={(event) => setInfillPattern(event.target.value)}
+              className="w-full rounded-lg border border-white/10 bg-white/5 px-4 py-2 text-white focus:border-purple-500 focus:outline-none"
+            >
+              <option value="">{t('createPrintProfile.notSpecified')}</option>
+              {INFILL_PATTERN_OPTIONS.map((option) => (
+                <option key={option} value={option}>
+                  {t(`createPrintProfile.infillPatterns.${option}`)}
+                </option>
+              ))}
+            </select>
+          </FormField>
+        </div>,
+      )}
+      {renderStructuredSectionCard('strength', 'advanced')}
+    </div>
+  );
+
+  const renderSpeedTab = () => (
+    <div className="space-y-6">
+      {renderStructuredSectionCard(
+        'speed',
+        'initialLayerSpeed',
+        <div className="grid gap-4 md:grid-cols-2">
+          <FormField label={t('createPrintProfile.initialLayerSpeed')}>
+            <input
+              type="text"
+              value={initialLayerSpeed}
+              onChange={(event) => setInitialLayerSpeed(event.target.value)}
+              className="w-full rounded-lg border border-white/10 bg-white/5 px-4 py-2 text-white placeholder-gray-500 focus:border-purple-500 focus:outline-none"
+              placeholder="50 or 35%"
+            />
+          </FormField>
+          <FormField label={t('createPrintProfile.initialLayerInfillSpeed')}>
+            <input
+              type="text"
+              value={initialLayerInfillSpeed}
+              onChange={(event) => setInitialLayerInfillSpeed(event.target.value)}
+              className="w-full rounded-lg border border-white/10 bg-white/5 px-4 py-2 text-white placeholder-gray-500 focus:border-purple-500 focus:outline-none"
+              placeholder="105 or 35%"
+            />
+          </FormField>
+        </div>,
+      )}
+      {renderStructuredSectionCard(
+        'speed',
+        'otherLayersSpeed',
+        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+          <FormField label={t('createPrintProfile.outerWallSpeed')}>
+            <input
+              type="number"
+              min="0"
+              step="1"
+              value={outerWallSpeed}
+              onChange={(event) => setOuterWallSpeed(event.target.value)}
+              className="w-full rounded-lg border border-white/10 bg-white/5 px-4 py-2 text-white placeholder-gray-500 focus:border-purple-500 focus:outline-none"
+              placeholder="200"
+            />
+          </FormField>
+          <FormField label={t('createPrintProfile.innerWallSpeed')}>
+            <input
+              type="number"
+              min="0"
+              step="1"
+              value={innerWallSpeed}
+              onChange={(event) => setInnerWallSpeed(event.target.value)}
+              className="w-full rounded-lg border border-white/10 bg-white/5 px-4 py-2 text-white placeholder-gray-500 focus:border-purple-500 focus:outline-none"
+              placeholder="300"
+            />
+          </FormField>
+          <FormField label={t('createPrintProfile.infillSpeed')}>
+            <input
+              type="number"
+              min="0"
+              step="1"
+              value={infillSpeed}
+              onChange={(event) => setInfillSpeed(event.target.value)}
+              className="w-full rounded-lg border border-white/10 bg-white/5 px-4 py-2 text-white placeholder-gray-500 focus:border-purple-500 focus:outline-none"
+              placeholder="270"
+            />
+          </FormField>
+          <FormField label={t('createPrintProfile.internalSolidInfillSpeed')}>
+            <input
+              type="number"
+              min="0"
+              step="1"
+              value={internalSolidInfillSpeed}
+              onChange={(event) => setInternalSolidInfillSpeed(event.target.value)}
+              className="w-full rounded-lg border border-white/10 bg-white/5 px-4 py-2 text-white placeholder-gray-500 focus:border-purple-500 focus:outline-none"
+              placeholder="250"
+            />
+          </FormField>
+        </div>,
+      )}
+      {renderStructuredSectionCard(
+        'speed',
+        'overhangSpeed',
+        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+          <FormField label={t('createPrintProfile.bridgeSpeed')}>
+            <input
+              type="number"
+              min="0"
+              step="1"
+              value={bridgeSpeed}
+              onChange={(event) => setBridgeSpeed(event.target.value)}
+              className="w-full rounded-lg border border-white/10 bg-white/5 px-4 py-2 text-white placeholder-gray-500 focus:border-purple-500 focus:outline-none"
+              placeholder="50"
+            />
+          </FormField>
+        </div>,
+      )}
+      {renderStructuredSectionCard(
+        'speed',
+        'travelSpeed',
+        <div className="grid gap-4 md:grid-cols-2">
+          <FormField label={t('createPrintProfile.travelSpeed')}>
+            <input
+              type="number"
+              min="0"
+              step="1"
+              value={travelSpeed}
+              onChange={(event) => setTravelSpeed(event.target.value)}
+              className="w-full rounded-lg border border-white/10 bg-white/5 px-4 py-2 text-white placeholder-gray-500 focus:border-purple-500 focus:outline-none"
+              placeholder="500"
+            />
+          </FormField>
+        </div>,
+      )}
+      {renderStructuredSectionCard(
+        'speed',
+        'acceleration',
+        <div className="grid gap-4 md:grid-cols-2">
+          <FormField label={t('createPrintProfile.defaultAcceleration')}>
+            <input
+              type="number"
+              min="0"
+              step="1"
+              value={defaultAcceleration}
+              onChange={(event) => setDefaultAcceleration(event.target.value)}
+              className="w-full rounded-lg border border-white/10 bg-white/5 px-4 py-2 text-white placeholder-gray-500 focus:border-purple-500 focus:outline-none"
+              placeholder="10000"
+            />
+          </FormField>
+          <FormField label={t('createPrintProfile.travelAcceleration')}>
+            <input
+              type="number"
+              min="0"
+              step="1"
+              value={travelAcceleration}
+              onChange={(event) => setTravelAcceleration(event.target.value)}
+              className="w-full rounded-lg border border-white/10 bg-white/5 px-4 py-2 text-white placeholder-gray-500 focus:border-purple-500 focus:outline-none"
+              placeholder="12000"
+            />
+          </FormField>
+        </div>,
+      )}
+      {renderStructuredSectionCard('speed', 'jerk')}
+      {renderStructuredSectionCard('speed', 'advanced')}
+    </div>
+  );
+
+  const renderSupportTab = () => (
+    <div className="space-y-6">
+      {renderStructuredSectionCard(
+        'support',
+        'support',
+        <div className="grid gap-4 md:grid-cols-3">
+          <FormField label={t('createPrintProfile.enableSupport')}>
+            <select
+              value={enableSupport}
+              onChange={(event) => {
+                const nextValue = event.target.value;
+                setEnableSupport(nextValue);
+                if (nextValue === '1' && !supportType) {
+                  setSupportType('normal(auto)');
+                }
+              }}
+              className="w-full rounded-lg border border-white/10 bg-white/5 px-4 py-2 text-white focus:border-purple-500 focus:outline-none"
+            >
+              {BOOLEAN_OVERRIDE_OPTIONS.map((option) => (
+                <option key={option || 'inherit'} value={option}>
+                  {t(`createPrintProfile.booleanOptions.${option || 'inherit'}`)}
+                </option>
+              ))}
+            </select>
+          </FormField>
+          <FormField label={t('createPrintProfile.supportType')}>
+            <select
+              value={supportType}
+              onChange={(event) => setSupportType(event.target.value)}
+              className="w-full rounded-lg border border-white/10 bg-white/5 px-4 py-2 text-white focus:border-purple-500 focus:outline-none"
+            >
+              <option value="">{t('createPrintProfile.notSpecified')}</option>
+              {SUPPORT_TYPE_OPTIONS.map((option) => (
+                <option key={option} value={option}>
+                  {t(`createPrintProfile.supportTypes.${option}`)}
+                </option>
+              ))}
+            </select>
+          </FormField>
+          <FormField
+            label={t('createPrintProfile.supportThresholdAngle')}
+            hint={!showSupportThresholdField ? t('createPrintProfile.supportThresholdAngleHint') : undefined}
+          >
+            <input
+              type="number"
+              min="0"
+              max="90"
+              step="1"
+              value={supportThresholdAngle}
+              onChange={(event) => setSupportThresholdAngle(event.target.value)}
+              disabled={!showSupportThresholdField}
+              className="w-full rounded-lg border border-white/10 bg-white/5 px-4 py-2 text-white placeholder-gray-500 focus:border-purple-500 focus:outline-none disabled:cursor-not-allowed disabled:opacity-50"
+              placeholder="30"
+            />
+          </FormField>
+        </div>,
+      )}
+      {renderStructuredSectionCard(
+        'support',
+        'raft',
+        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+          <FormField label={t('createPrintProfile.raftLayers')}>
+            <input
+              type="number"
+              min="0"
+              step="1"
+              value={raftLayers}
+              onChange={(event) => setRaftLayers(event.target.value)}
+              className="w-full rounded-lg border border-white/10 bg-white/5 px-4 py-2 text-white placeholder-gray-500 focus:border-purple-500 focus:outline-none"
+              placeholder="0"
+            />
+          </FormField>
+        </div>,
+      )}
+      {renderStructuredSectionCard('support', 'supportFilament')}
+      {renderStructuredSectionCard('support', 'supportIroning')}
+      {renderStructuredSectionCard('support', 'advanced')}
+      {renderStructuredSectionCard('support', 'treeSupports')}
+    </div>
+  );
+
+  const renderMultimaterialTab = () => (
+    <div className="space-y-6">
+      {renderStructuredSectionCard('multimaterial', 'primeTower')}
+      {renderStructuredSectionCard('multimaterial', 'featureFilaments')}
+      {renderStructuredSectionCard('multimaterial', 'oozePrevention')}
+      {renderStructuredSectionCard('multimaterial', 'flushOptions')}
+      {renderStructuredSectionCard('multimaterial', 'advanced')}
+    </div>
+  );
+
+  const renderOthersTab = () => (
+    <div className="space-y-6">
+      {renderStructuredSectionCard(
+        'others',
+        'skirt',
+        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+          <FormField label={t('createPrintProfile.skirtLoops')}>
+            <input
+              type="number"
+              min="0"
+              step="1"
+              value={skirtLoops}
+              onChange={(event) => setSkirtLoops(event.target.value)}
+              className="w-full rounded-lg border border-white/10 bg-white/5 px-4 py-2 text-white placeholder-gray-500 focus:border-purple-500 focus:outline-none"
+              placeholder="0"
+            />
+          </FormField>
+        </div>,
+      )}
+      {renderStructuredSectionCard(
+        'others',
+        'brim',
+        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+          <FormField label={t('createPrintProfile.brimWidth')}>
+            <input
+              type="number"
+              min="0"
+              step="0.1"
+              value={brimWidth}
+              onChange={(event) => setBrimWidth(event.target.value)}
+              className="w-full rounded-lg border border-white/10 bg-white/5 px-4 py-2 text-white placeholder-gray-500 focus:border-purple-500 focus:outline-none"
+              placeholder="5"
+            />
+          </FormField>
+        </div>,
+      )}
+      {renderStructuredSectionCard(
+        'others',
+        'specialMode',
+        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+          <FormField label={t('createPrintProfile.spiralMode')}>
+            <select
+              value={spiralMode}
+              onChange={(event) => setSpiralMode(event.target.value)}
+              className="w-full rounded-lg border border-white/10 bg-white/5 px-4 py-2 text-white focus:border-purple-500 focus:outline-none"
+            >
+              {BOOLEAN_OVERRIDE_OPTIONS.map((option) => (
+                <option key={option || 'inherit'} value={option}>
+                  {t(`createPrintProfile.booleanOptions.${option || 'inherit'}`)}
+                </option>
+              ))}
+            </select>
+          </FormField>
+        </div>,
+      )}
+      {renderStructuredSectionCard('others', 'fuzzySkin')}
+      {renderStructuredSectionCard('others', 'gcodeOutput')}
+      {renderStructuredSectionCard('others', 'postProcessing')}
+      {renderStructuredSectionCard(
+        'others',
+        'notes',
+        <FormField label={t('createPrintProfile.notes')} labelMinHeightClassName="min-h-0">
+          <textarea
+            value={notes}
+            onChange={(event) => setNotes(event.target.value)}
+            rows={5}
+            className="w-full resize-none rounded-lg border border-white/10 bg-white/5 px-4 py-2 text-white placeholder-gray-500 focus:border-purple-500 focus:outline-none"
+            placeholder={t('createPrintProfile.notesPlaceholder')}
+          />
+        </FormField>,
+        'grid gap-4',
+      )}
+    </div>
+  );
+
+  const activeTabHasStructuredFields = filteredStructuredFields.some((field) => field.tab === activeTab);
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4 backdrop-blur-sm">
@@ -1247,107 +1794,108 @@ export const CreatePrintProfileModal: React.FC<CreatePrintProfileModalProps> = (
             )}
           </div>
 
-          <div className="grid gap-6 lg:grid-cols-2">
-            <FormField
-              label={
-                <>
-                  {t('createPrintProfile.name')}
-                  {recommendedName && (
-                    <span className="ml-2 text-xs text-gray-400">
-                      ({t('createPrintProfile.recommendedFormat')}: &quot;{recommendedName}&quot;)
-                    </span>
-                  )}
-                </>
-              }
-              required
-              hint={recommendedName && name && name.trim() !== recommendedName ? `${t('createPrintProfile.recommendedFormatHint')}: "${recommendedName}"` : undefined}
-            >
-              <input
-                type="text"
-                value={name}
-                onChange={(event) => {
-                  setName(event.target.value);
-                  setNameManuallyChanged(true);
-                }}
-                className="w-full rounded-lg border border-white/10 bg-white/5 px-4 py-2 text-white placeholder-gray-500 focus:border-purple-500 focus:outline-none"
-                placeholder={recommendedName || t('createPrintProfile.namePlaceholder')}
+          <SectionCard title={t('createPrintProfile.profileMetaSection')}>
+            <div className="grid gap-6 lg:grid-cols-2">
+              <FormField
+                label={
+                  <>
+                    {t('createPrintProfile.name')}
+                    {recommendedName && (
+                      <span className="ml-2 text-xs text-gray-400">
+                        ({t('createPrintProfile.recommendedFormat')}: &quot;{recommendedName}&quot;)
+                      </span>
+                    )}
+                  </>
+                }
                 required
-              />
-            </FormField>
-
-            <FormField label={t('createPrintProfile.slug')} required hint={t('createPrintProfile.slugHint')}>
-              <input
-                type="text"
-                value={slug}
-                onChange={(event) => setSlug(event.target.value)}
-                className="w-full rounded-lg border border-white/10 bg-white/5 px-4 py-2 font-mono text-sm text-white placeholder-gray-500 focus:border-purple-500 focus:outline-none"
-                placeholder="0-20mm-standard-vendor-printer-0-4-nozzle"
-                required
-              />
-            </FormField>
-          </div>
-
-          <div className="grid gap-6 lg:grid-cols-4">
-            <FormField label={t('createPrintProfile.qualityTier')}>
-              <select
-                value={qualityTier}
-                onChange={(event) => setQualityTier(event.target.value)}
-                className="w-full rounded-lg border border-white/10 bg-white/5 px-4 py-2 text-white focus:border-purple-500 focus:outline-none"
+                hint={
+                  recommendedName && name && name.trim() !== recommendedName
+                    ? `${t('createPrintProfile.recommendedFormatHint')}: "${recommendedName}"`
+                    : undefined
+                }
               >
-                <option value="">{t('createPrintProfile.notSpecified')}</option>
-                {QUALITY_TIER_OPTIONS.map((option) => (
-                  <option key={option} value={option}>
-                    {t(`createPrintProfile.qualityOptions.${option}`)}
-                  </option>
-                ))}
-              </select>
-            </FormField>
+                <input
+                  type="text"
+                  value={name}
+                  onChange={(event) => {
+                    setName(event.target.value);
+                    setNameManuallyChanged(true);
+                  }}
+                  className="w-full rounded-lg border border-white/10 bg-white/5 px-4 py-2 text-white placeholder-gray-500 focus:border-purple-500 focus:outline-none"
+                  placeholder={recommendedName || t('createPrintProfile.namePlaceholder')}
+                  required
+                />
+              </FormField>
 
-            <FormField label={t('createPrintProfile.defaultNozzle')}>
-              <select
-                value={defaultNozzle}
-                onChange={(event) => setDefaultNozzle(event.target.value)}
-                className="w-full rounded-lg border border-white/10 bg-white/5 px-4 py-2 text-white focus:border-purple-500 focus:outline-none"
-              >
-                <option value="">{t('createPrintProfile.notSpecified')}</option>
-                {nozzleOptions.map((size) => (
-                  <option key={size} value={size}>
-                    {size} {t('createPrintProfile.mm')}
-                  </option>
-                ))}
-              </select>
-            </FormField>
+              <FormField label={t('createPrintProfile.slug')} required hint={t('createPrintProfile.slugHint')}>
+                <input
+                  type="text"
+                  value={slug}
+                  onChange={(event) => setSlug(event.target.value)}
+                  className="w-full rounded-lg border border-white/10 bg-white/5 px-4 py-2 font-mono text-sm text-white placeholder-gray-500 focus:border-purple-500 focus:outline-none"
+                  placeholder="0-20mm-standard-vendor-printer-0-4-nozzle"
+                  required
+                />
+              </FormField>
+            </div>
 
-            <FormField label={t('createPrintProfile.layerHeight')}>
-              <input
-                type="number"
-                step="0.01"
-                min="0.01"
-                max="1.0"
-                value={layerHeight}
-                onChange={(event) => setLayerHeight(event.target.value)}
-                className="w-full rounded-lg border border-white/10 bg-white/5 px-4 py-2 text-white placeholder-gray-500 focus:border-purple-500 focus:outline-none"
-                placeholder="0.2"
-              />
-            </FormField>
+            <div className="mt-6 grid gap-6 lg:grid-cols-4">
+              <FormField label={t('createPrintProfile.qualityTier')}>
+                <select
+                  value={qualityTier}
+                  onChange={(event) => setQualityTier(event.target.value)}
+                  className="w-full rounded-lg border border-white/10 bg-white/5 px-4 py-2 text-white focus:border-purple-500 focus:outline-none"
+                >
+                  <option value="">{t('createPrintProfile.notSpecified')}</option>
+                  {QUALITY_TIER_OPTIONS.map((option) => (
+                    <option key={option} value={option}>
+                      {t(`createPrintProfile.qualityOptions.${option}`)}
+                    </option>
+                  ))}
+                </select>
+              </FormField>
 
-            <FormField label={t('createPrintProfile.initialLayerHeight')}>
-              <input
-                type="number"
-                step="0.01"
-                min="0.01"
-                max="1.0"
-                value={initialLayerHeight}
-                onChange={(event) => setInitialLayerHeight(event.target.value)}
-                className="w-full rounded-lg border border-white/10 bg-white/5 px-4 py-2 text-white placeholder-gray-500 focus:border-purple-500 focus:outline-none"
-                placeholder={layerHeight || '0.2'}
-              />
-            </FormField>
-          </div>
+              <FormField label={t('createPrintProfile.defaultNozzle')}>
+                <select
+                  value={defaultNozzle}
+                  onChange={(event) => setDefaultNozzle(event.target.value)}
+                  className="w-full rounded-lg border border-white/10 bg-white/5 px-4 py-2 text-white focus:border-purple-500 focus:outline-none"
+                >
+                  <option value="">{t('createPrintProfile.notSpecified')}</option>
+                  {nozzleOptions.map((size) => (
+                    <option key={size} value={size}>
+                      {size} {t('createPrintProfile.mm')}
+                    </option>
+                  ))}
+                </select>
+              </FormField>
 
-          <div className="rounded-xl border border-white/10 bg-white/[0.03] p-4">
-            <h3 className="text-sm font-semibold text-white">{t('createPrintProfile.compatibilitySection')}</h3>
-            <div className="mt-4 grid gap-6 xl:grid-cols-2">
+              <FormField label={t('createPrintProfile.category')}>
+                <input
+                  type="text"
+                  value={category}
+                  onChange={(event) => setCategory(event.target.value)}
+                  className="w-full rounded-lg border border-white/10 bg-white/5 px-4 py-2 text-white placeholder-gray-500 focus:border-purple-500 focus:outline-none"
+                  placeholder={t('createPrintProfile.categoryPlaceholder')}
+                />
+              </FormField>
+            </div>
+
+            <div className="mt-6">
+              <FormField label={t('createPrintProfile.description')} labelMinHeightClassName="min-h-0">
+                <textarea
+                  value={description}
+                  onChange={(event) => setDescription(event.target.value)}
+                  rows={3}
+                  className="w-full resize-none rounded-lg border border-white/10 bg-white/5 px-4 py-2 text-white placeholder-gray-500 focus:border-purple-500 focus:outline-none"
+                  placeholder={t('createPrintProfile.descriptionPlaceholder')}
+                />
+              </FormField>
+            </div>
+          </SectionCard>
+
+          <SectionCard title={t('createPrintProfile.compatibilitySection')}>
+            <div className="grid gap-6 xl:grid-cols-2">
               <div>
                 <FormField
                   label={t('createPrintProfile.compatiblePrinters')}
@@ -1370,7 +1918,11 @@ export const CreatePrintProfileModal: React.FC<CreatePrintProfileModalProps> = (
                       setSelectedCompatiblePrinters((prev) => dedupeStringValues([...prev, selectedPrinter.name]));
                       setCompatiblePrinterSearch('');
                     }}
-                    placeholder={printerProfilesQuery.isPending ? t('createPrintProfile.loadingCompatiblePrinters') : t('createPrintProfile.addCompatiblePrinter')}
+                    placeholder={
+                      printerProfilesQuery.isPending
+                        ? t('createPrintProfile.loadingCompatiblePrinters')
+                        : t('createPrintProfile.addCompatiblePrinter')
+                    }
                     filterable
                     filterValue={compatiblePrinterSearch}
                     onFilterChange={setCompatiblePrinterSearch}
@@ -1444,7 +1996,11 @@ export const CreatePrintProfileModal: React.FC<CreatePrintProfileModalProps> = (
                       );
                       setCompatibleFilamentSearch('');
                     }}
-                    placeholder={filamentsQuery.isPending ? t('createPrintProfile.loadingCompatibleFilaments') : t('createPrintProfile.addCompatibleFilament')}
+                    placeholder={
+                      filamentsQuery.isPending
+                        ? t('createPrintProfile.loadingCompatibleFilaments')
+                        : t('createPrintProfile.addCompatibleFilament')
+                    }
                     filterable
                     filterValue={compatibleFilamentSearch}
                     onFilterChange={setCompatibleFilamentSearch}
@@ -1511,395 +2067,54 @@ export const CreatePrintProfileModal: React.FC<CreatePrintProfileModalProps> = (
                 />
               </FormField>
             </div>
-          </div>
+          </SectionCard>
 
-          <div className="rounded-xl border border-white/10 bg-white/[0.03] p-4">
-            <h3 className="text-sm font-semibold text-white">{t('createPrintProfile.structureSection')}</h3>
-            <div className="mt-4 grid gap-4 md:grid-cols-3">
-              <FormField label={t('createPrintProfile.wallLoops')}>
-                <input
-                  type="number"
-                  min="0"
-                  step="1"
-                  value={wallLoops}
-                  onChange={(event) => setWallLoops(event.target.value)}
-                  className="w-full rounded-lg border border-white/10 bg-white/5 px-4 py-2 text-white placeholder-gray-500 focus:border-purple-500 focus:outline-none"
-                  placeholder="2"
-                />
-              </FormField>
-              <FormField label={t('createPrintProfile.topShellLayers')}>
-                <input
-                  type="number"
-                  min="0"
-                  step="1"
-                  value={topShellLayers}
-                  onChange={(event) => setTopShellLayers(event.target.value)}
-                  className="w-full rounded-lg border border-white/10 bg-white/5 px-4 py-2 text-white placeholder-gray-500 focus:border-purple-500 focus:outline-none"
-                  placeholder="3"
-                />
-              </FormField>
-              <FormField label={t('createPrintProfile.bottomShellLayers')}>
-                <input
-                  type="number"
-                  min="0"
-                  step="1"
-                  value={bottomShellLayers}
-                  onChange={(event) => setBottomShellLayers(event.target.value)}
-                  className="w-full rounded-lg border border-white/10 bg-white/5 px-4 py-2 text-white placeholder-gray-500 focus:border-purple-500 focus:outline-none"
-                  placeholder="3"
-                />
-              </FormField>
-            </div>
-          </div>
-
-          <div className="rounded-xl border border-white/10 bg-white/[0.03] p-4">
-            <h3 className="text-sm font-semibold text-white">{t('createPrintProfile.infillSection')}</h3>
-            <div className="mt-4 grid gap-4 md:grid-cols-2">
-              <FormField label={t('createPrintProfile.infillDensity')}>
-                <input
-                  type="number"
-                  min="0"
-                  max="100"
-                  step="1"
-                  value={infillDensity}
-                  onChange={(event) => setInfillDensity(event.target.value)}
-                  className="w-full rounded-lg border border-white/10 bg-white/5 px-4 py-2 text-white placeholder-gray-500 focus:border-purple-500 focus:outline-none"
-                  placeholder="15"
-                />
-              </FormField>
-              <FormField label={t('createPrintProfile.infillPattern')}>
-                <select
-                  value={infillPattern}
-                  onChange={(event) => setInfillPattern(event.target.value)}
-                  className="w-full rounded-lg border border-white/10 bg-white/5 px-4 py-2 text-white focus:border-purple-500 focus:outline-none"
+          <div className="rounded-xl border border-white/10 bg-white/[0.03]">
+            <div className="flex flex-wrap gap-2 border-b border-white/10 px-4 pt-4">
+              {ORCA_STRUCTURED_TAB_ORDER.map((tab) => (
+                <button
+                  key={tab}
+                  type="button"
+                  onClick={() => setActiveTab(tab)}
+                  className={`rounded-t-lg px-4 py-2 text-sm font-medium transition-all ${
+                    activeTab === tab
+                      ? 'border-b-2 border-purple-500 bg-white/10 text-white'
+                      : 'text-gray-400 hover:bg-white/5 hover:text-white'
+                  }`}
                 >
-                  <option value="">{t('createPrintProfile.notSpecified')}</option>
-                  {INFILL_PATTERN_OPTIONS.map((option) => (
-                    <option key={option} value={option}>
-                      {t(`createPrintProfile.infillPatterns.${option}`)}
-                    </option>
-                  ))}
-                </select>
-              </FormField>
+                  {t(`createPrintProfile.tabs.${tab}`)}
+                </button>
+              ))}
             </div>
-          </div>
 
-          <div className="rounded-xl border border-white/10 bg-white/[0.03] p-4">
-            <h3 className="text-sm font-semibold text-white">{t('createPrintProfile.speedSection')}</h3>
-            <div className="mt-4 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-              <FormField label={t('createPrintProfile.outerWallSpeed')}>
-                <input
-                  type="number"
-                  min="0"
-                  step="1"
-                  value={outerWallSpeed}
-                  onChange={(event) => setOuterWallSpeed(event.target.value)}
-                  className="w-full rounded-lg border border-white/10 bg-white/5 px-4 py-2 text-white placeholder-gray-500 focus:border-purple-500 focus:outline-none"
-                  placeholder="200"
-                />
-              </FormField>
-              <FormField label={t('createPrintProfile.innerWallSpeed')}>
-                <input
-                  type="number"
-                  min="0"
-                  step="1"
-                  value={innerWallSpeed}
-                  onChange={(event) => setInnerWallSpeed(event.target.value)}
-                  className="w-full rounded-lg border border-white/10 bg-white/5 px-4 py-2 text-white placeholder-gray-500 focus:border-purple-500 focus:outline-none"
-                  placeholder="300"
-                />
-              </FormField>
-              <FormField label={t('createPrintProfile.infillSpeed')}>
-                <input
-                  type="number"
-                  min="0"
-                  step="1"
-                  value={infillSpeed}
-                  onChange={(event) => setInfillSpeed(event.target.value)}
-                  className="w-full rounded-lg border border-white/10 bg-white/5 px-4 py-2 text-white placeholder-gray-500 focus:border-purple-500 focus:outline-none"
-                  placeholder="270"
-                />
-              </FormField>
-              <FormField label={t('createPrintProfile.travelSpeed')}>
-                <input
-                  type="number"
-                  min="0"
-                  step="1"
-                  value={travelSpeed}
-                  onChange={(event) => setTravelSpeed(event.target.value)}
-                  className="w-full rounded-lg border border-white/10 bg-white/5 px-4 py-2 text-white placeholder-gray-500 focus:border-purple-500 focus:outline-none"
-                  placeholder="500"
-                />
-              </FormField>
-              <FormField label={t('createPrintProfile.initialLayerSpeed')}>
-                <input
-                  type="text"
-                  value={initialLayerSpeed}
-                  onChange={(event) => setInitialLayerSpeed(event.target.value)}
-                  className="w-full rounded-lg border border-white/10 bg-white/5 px-4 py-2 text-white placeholder-gray-500 focus:border-purple-500 focus:outline-none"
-                  placeholder="50 or 35%"
-                />
-              </FormField>
-              <FormField label={t('createPrintProfile.initialLayerInfillSpeed')}>
-                <input
-                  type="text"
-                  value={initialLayerInfillSpeed}
-                  onChange={(event) => setInitialLayerInfillSpeed(event.target.value)}
-                  className="w-full rounded-lg border border-white/10 bg-white/5 px-4 py-2 text-white placeholder-gray-500 focus:border-purple-500 focus:outline-none"
-                  placeholder="105 or 35%"
-                />
-              </FormField>
-              <FormField label={t('createPrintProfile.internalSolidInfillSpeed')}>
-                <input
-                  type="number"
-                  min="0"
-                  step="1"
-                  value={internalSolidInfillSpeed}
-                  onChange={(event) => setInternalSolidInfillSpeed(event.target.value)}
-                  className="w-full rounded-lg border border-white/10 bg-white/5 px-4 py-2 text-white placeholder-gray-500 focus:border-purple-500 focus:outline-none"
-                  placeholder="250"
-                />
-              </FormField>
-              <FormField label={t('createPrintProfile.bridgeSpeed')}>
-                <input
-                  type="number"
-                  min="0"
-                  step="1"
-                  value={bridgeSpeed}
-                  onChange={(event) => setBridgeSpeed(event.target.value)}
-                  className="w-full rounded-lg border border-white/10 bg-white/5 px-4 py-2 text-white placeholder-gray-500 focus:border-purple-500 focus:outline-none"
-                  placeholder="50"
-                />
-              </FormField>
-            </div>
-          </div>
-
-          <div className="rounded-xl border border-white/10 bg-white/[0.03] p-4">
-            <h3 className="text-sm font-semibold text-white">{t('createPrintProfile.accelerationSection')}</h3>
-            <div className="mt-4 grid gap-4 md:grid-cols-2">
-              <FormField label={t('createPrintProfile.defaultAcceleration')}>
-                <input
-                  type="number"
-                  min="0"
-                  step="1"
-                  value={defaultAcceleration}
-                  onChange={(event) => setDefaultAcceleration(event.target.value)}
-                  className="w-full rounded-lg border border-white/10 bg-white/5 px-4 py-2 text-white placeholder-gray-500 focus:border-purple-500 focus:outline-none"
-                  placeholder="10000"
-                />
-              </FormField>
-              <FormField label={t('createPrintProfile.travelAcceleration')}>
-                <input
-                  type="number"
-                  min="0"
-                  step="1"
-                  value={travelAcceleration}
-                  onChange={(event) => setTravelAcceleration(event.target.value)}
-                  className="w-full rounded-lg border border-white/10 bg-white/5 px-4 py-2 text-white placeholder-gray-500 focus:border-purple-500 focus:outline-none"
-                  placeholder="12000"
-                />
-              </FormField>
-            </div>
-          </div>
-
-          <div className="rounded-xl border border-white/10 bg-white/[0.03] p-4">
-            <h3 className="text-sm font-semibold text-white">{t('createPrintProfile.supportSection')}</h3>
-            <div className="mt-4 grid gap-4 md:grid-cols-3">
-              <FormField label={t('createPrintProfile.enableSupport')}>
-                <select
-                  value={enableSupport}
-                  onChange={(event) => {
-                    const nextValue = event.target.value;
-                    setEnableSupport(nextValue);
-                    if (nextValue === '1' && !supportType) {
-                      setSupportType('normal(auto)');
-                    }
-                  }}
-                  className="w-full rounded-lg border border-white/10 bg-white/5 px-4 py-2 text-white focus:border-purple-500 focus:outline-none"
-                >
-                  {BOOLEAN_OVERRIDE_OPTIONS.map((option) => (
-                    <option key={option || 'inherit'} value={option}>
-                      {t(`createPrintProfile.booleanOptions.${option || 'inherit'}`)}
-                    </option>
-                  ))}
-                </select>
-              </FormField>
-              <FormField label={t('createPrintProfile.supportType')}>
-                <select
-                  value={supportType}
-                  onChange={(event) => setSupportType(event.target.value)}
-                  className="w-full rounded-lg border border-white/10 bg-white/5 px-4 py-2 text-white focus:border-purple-500 focus:outline-none"
-                >
-                  <option value="">{t('createPrintProfile.notSpecified')}</option>
-                  {SUPPORT_TYPE_OPTIONS.map((option) => (
-                    <option key={option} value={option}>
-                      {t(`createPrintProfile.supportTypes.${option}`)}
-                    </option>
-                  ))}
-                </select>
-              </FormField>
-              <FormField
-                label={t('createPrintProfile.supportThresholdAngle')}
-                hint={!showSupportThresholdField ? t('createPrintProfile.supportThresholdAngleHint') : undefined}
-              >
-                <input
-                  type="number"
-                  min="0"
-                  max="90"
-                  step="1"
-                  value={supportThresholdAngle}
-                  onChange={(event) => setSupportThresholdAngle(event.target.value)}
-                  disabled={!showSupportThresholdField}
-                  className="w-full rounded-lg border border-white/10 bg-white/5 px-4 py-2 text-white placeholder-gray-500 focus:border-purple-500 focus:outline-none disabled:cursor-not-allowed disabled:opacity-50"
-                  placeholder="30"
-                />
-              </FormField>
-            </div>
-          </div>
-
-          <div className="rounded-xl border border-white/10 bg-white/[0.03] p-4">
-            <h3 className="text-sm font-semibold text-white">{t('createPrintProfile.adhesionSection')}</h3>
-            <div className="mt-4 grid gap-4 md:grid-cols-3">
-              <FormField label={t('createPrintProfile.brimWidth')}>
-                <input
-                  type="number"
-                  min="0"
-                  step="0.1"
-                  value={brimWidth}
-                  onChange={(event) => setBrimWidth(event.target.value)}
-                  className="w-full rounded-lg border border-white/10 bg-white/5 px-4 py-2 text-white placeholder-gray-500 focus:border-purple-500 focus:outline-none"
-                  placeholder="5"
-                />
-              </FormField>
-              <FormField label={t('createPrintProfile.skirtLoops')}>
-                <input
-                  type="number"
-                  min="0"
-                  step="1"
-                  value={skirtLoops}
-                  onChange={(event) => setSkirtLoops(event.target.value)}
-                  className="w-full rounded-lg border border-white/10 bg-white/5 px-4 py-2 text-white placeholder-gray-500 focus:border-purple-500 focus:outline-none"
-                  placeholder="0"
-                />
-              </FormField>
-              <FormField label={t('createPrintProfile.raftLayers')}>
-                <input
-                  type="number"
-                  min="0"
-                  step="1"
-                  value={raftLayers}
-                  onChange={(event) => setRaftLayers(event.target.value)}
-                  className="w-full rounded-lg border border-white/10 bg-white/5 px-4 py-2 text-white placeholder-gray-500 focus:border-purple-500 focus:outline-none"
-                  placeholder="0"
-                />
-              </FormField>
-            </div>
-          </div>
-
-          <div className="rounded-xl border border-white/10 bg-white/[0.03] p-4">
-            <h3 className="text-sm font-semibold text-white">{t('createPrintProfile.specialModesSection')}</h3>
-            <div className="mt-4 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-              <FormField label={t('createPrintProfile.seamPosition')}>
-                <select
-                  value={seamPosition}
-                  onChange={(event) => setSeamPosition(event.target.value)}
-                  className="w-full rounded-lg border border-white/10 bg-white/5 px-4 py-2 text-white focus:border-purple-500 focus:outline-none"
-                >
-                  <option value="">{t('createPrintProfile.notSpecified')}</option>
-                  {SEAM_POSITION_OPTIONS.map((option) => (
-                    <option key={option} value={option}>
-                      {t(`createPrintProfile.seamPositions.${option}`)}
-                    </option>
-                  ))}
-                </select>
-              </FormField>
-              <FormField label={t('createPrintProfile.ironingType')}>
-                <select
-                  value={ironingType}
-                  onChange={(event) => setIroningType(event.target.value)}
-                  className="w-full rounded-lg border border-white/10 bg-white/5 px-4 py-2 text-white focus:border-purple-500 focus:outline-none"
-                >
-                  <option value="">{t('createPrintProfile.notSpecified')}</option>
-                  {IRONING_TYPE_OPTIONS.map((option) => (
-                    <option key={option} value={option}>
-                      {t(`createPrintProfile.ironingTypes.${option}`)}
-                    </option>
-                  ))}
-                </select>
-              </FormField>
-              <FormField label={t('createPrintProfile.enableArcFitting')}>
-                <select
-                  value={enableArcFitting}
-                  onChange={(event) => setEnableArcFitting(event.target.value)}
-                  className="w-full rounded-lg border border-white/10 bg-white/5 px-4 py-2 text-white focus:border-purple-500 focus:outline-none"
-                >
-                  {BOOLEAN_OVERRIDE_OPTIONS.map((option) => (
-                    <option key={option || 'inherit'} value={option}>
-                      {t(`createPrintProfile.booleanOptions.${option || 'inherit'}`)}
-                    </option>
-                  ))}
-                </select>
-              </FormField>
-              <FormField label={t('createPrintProfile.spiralMode')}>
-                <select
-                  value={spiralMode}
-                  onChange={(event) => setSpiralMode(event.target.value)}
-                  className="w-full rounded-lg border border-white/10 bg-white/5 px-4 py-2 text-white focus:border-purple-500 focus:outline-none"
-                >
-                  {BOOLEAN_OVERRIDE_OPTIONS.map((option) => (
-                    <option key={option || 'inherit'} value={option}>
-                      {t(`createPrintProfile.booleanOptions.${option || 'inherit'}`)}
-                    </option>
-                  ))}
-                </select>
-              </FormField>
-            </div>
-          </div>
-
-          <div className="rounded-xl border border-white/10 bg-white/[0.03] p-4">
-            <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
-              <div>
-                <h3 className="text-sm font-semibold text-white">{t('createPrintProfile.structuredCoverageSection')}</h3>
-                <p className="mt-1 text-xs leading-relaxed text-gray-400">{t('createPrintProfile.structuredCoverageHint')}</p>
+            <div className="space-y-6 p-4">
+              <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
+                <div>
+                  <h3 className="text-sm font-semibold text-white">{t(`createPrintProfile.tabs.${activeTab}`)}</h3>
+                  <p className="mt-1 text-xs leading-relaxed text-gray-400">{t(`createPrintProfile.tabDescriptions.${activeTab}`)}</p>
+                </div>
+                <div className="w-full md:max-w-sm">
+                  <label className="mb-2 block text-xs font-medium uppercase tracking-wide text-gray-400">
+                    {t('createPrintProfile.structuredFieldSearch')}
+                  </label>
+                  <input
+                    type="text"
+                    value={structuredAdvancedSearch}
+                    onChange={(event) => setStructuredAdvancedSearch(event.target.value)}
+                    className="w-full rounded-lg border border-white/10 bg-white/5 px-4 py-2 text-sm text-white placeholder-gray-500 focus:border-purple-500 focus:outline-none"
+                    placeholder={t('createPrintProfile.structuredFieldSearchPlaceholder')}
+                  />
+                </div>
               </div>
-              <div className="w-full md:max-w-sm">
-                <label className="mb-2 block text-xs font-medium uppercase tracking-wide text-gray-400">
-                  {t('createPrintProfile.structuredFieldSearch')}
-                </label>
-                <input
-                  type="text"
-                  value={structuredAdvancedSearch}
-                  onChange={(event) => setStructuredAdvancedSearch(event.target.value)}
-                  className="w-full rounded-lg border border-white/10 bg-white/5 px-4 py-2 text-sm text-white placeholder-gray-500 focus:border-purple-500 focus:outline-none"
-                  placeholder={t('createPrintProfile.structuredFieldSearchPlaceholder')}
-                />
-              </div>
-            </div>
 
-            <div className="mt-4 space-y-3">
-              {filteredStructuredFieldGroups.length > 0 ? (
-                filteredStructuredFieldGroups.map((group) => (
-                  <details
-                    key={group.kind}
-                    className="overflow-hidden rounded-xl border border-white/10 bg-black/10"
-                    open={structuredAdvancedSearchValue.length > 0 || group.kind === 'enum'}
-                  >
-                    <summary className="cursor-pointer list-none px-4 py-3 text-sm font-medium text-white transition-colors hover:bg-white/5">
-                      <div className="flex items-center justify-between gap-3">
-                        <span>{t(`createPrintProfile.structuredGroups.${group.kind}`)}</span>
-                        <span className="rounded-full border border-white/10 px-2 py-0.5 text-xs text-gray-300">
-                          {group.fields.length}
-                        </span>
-                      </div>
-                    </summary>
-                    <div className="border-t border-white/10 px-4 py-4">
-                      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-                        {group.fields.map((field) => renderStructuredAdvancedField(field))}
-                      </div>
-                    </div>
-                  </details>
-                ))
-              ) : (
+              {activeTab === 'quality' && renderQualityTab()}
+              {activeTab === 'strength' && renderStrengthTab()}
+              {activeTab === 'speed' && renderSpeedTab()}
+              {activeTab === 'support' && renderSupportTab()}
+              {activeTab === 'multimaterial' && renderMultimaterialTab()}
+              {activeTab === 'others' && renderOthersTab()}
+
+              {structuredAdvancedSearchValue && !activeTabHasStructuredFields && (
                 <div className="rounded-xl border border-dashed border-white/10 bg-black/10 px-4 py-5 text-sm text-gray-400">
                   {t('createPrintProfile.structuredFieldSearchEmpty')}
                 </div>
@@ -1907,9 +2122,11 @@ export const CreatePrintProfileModal: React.FC<CreatePrintProfileModalProps> = (
             </div>
           </div>
 
-          <div className="rounded-xl border border-white/10 bg-white/[0.03] p-4">
-            <h3 className="text-sm font-semibold text-white">{t('createPrintProfile.advancedOverridesSection')}</h3>
-            <div className="mt-4">
+          <details className="overflow-hidden rounded-xl border border-white/10 bg-white/[0.03]">
+            <summary className="cursor-pointer list-none px-4 py-3 text-sm font-semibold text-white transition-colors hover:bg-white/5">
+              {t('createPrintProfile.advancedOverridesSection')}
+            </summary>
+            <div className="border-t border-white/10 px-4 py-4">
               <FormField
                 label={t('createPrintProfile.advancedOverrides')}
                 hint={t('createPrintProfile.advancedOverridesHint')}
@@ -1953,39 +2170,7 @@ export const CreatePrintProfileModal: React.FC<CreatePrintProfileModalProps> = (
               </FormField>
               {advancedSettingsError && <p className="mt-2 text-xs text-red-400">{advancedSettingsError}</p>}
             </div>
-          </div>
-
-          <div className="grid gap-6 lg:grid-cols-2">
-            <FormField label={t('createPrintProfile.category')}>
-              <input
-                type="text"
-                value={category}
-                onChange={(event) => setCategory(event.target.value)}
-                className="w-full rounded-lg border border-white/10 bg-white/5 px-4 py-2 text-white placeholder-gray-500 focus:border-purple-500 focus:outline-none"
-                placeholder={t('createPrintProfile.categoryPlaceholder')}
-              />
-            </FormField>
-
-            <FormField label={t('createPrintProfile.description')}>
-              <textarea
-                value={description}
-                onChange={(event) => setDescription(event.target.value)}
-                rows={3}
-                className="w-full resize-none rounded-lg border border-white/10 bg-white/5 px-4 py-2 text-white placeholder-gray-500 focus:border-purple-500 focus:outline-none"
-                placeholder={t('createPrintProfile.descriptionPlaceholder')}
-              />
-            </FormField>
-          </div>
-
-          <FormField label={t('createPrintProfile.notes')} labelMinHeightClassName="min-h-0">
-            <textarea
-              value={notes}
-              onChange={(event) => setNotes(event.target.value)}
-              rows={3}
-              className="w-full resize-none rounded-lg border border-white/10 bg-white/5 px-4 py-2 text-white placeholder-gray-500 focus:border-purple-500 focus:outline-none"
-              placeholder={t('createPrintProfile.notesPlaceholder')}
-            />
-          </FormField>
+          </details>
 
           <div className="flex items-center justify-end gap-3 border-t border-white/10 pt-4">
             <button

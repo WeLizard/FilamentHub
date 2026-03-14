@@ -10,9 +10,19 @@ export type OrcaStructuredFieldKind =
   | 'integerList'
   | 'floatList';
 
+export type OrcaStructuredFieldTab =
+  | 'quality'
+  | 'strength'
+  | 'speed'
+  | 'support'
+  | 'multimaterial'
+  | 'others';
+
 export interface OrcaStructuredFieldDef {
   key: string;
   kind: OrcaStructuredFieldKind;
+  tab: OrcaStructuredFieldTab;
+  section: string;
 }
 
 const splitLines = (value: string): string[] =>
@@ -22,58 +32,201 @@ const splitLines = (value: string): string[] =>
     .map((line) => line.trim())
     .filter((line) => line.length > 0);
 
-const buildFieldDefs = (kind: OrcaStructuredFieldKind, keysBlock: string): OrcaStructuredFieldDef[] =>
-  splitLines(keysBlock).map((key) => ({ key, kind }));
+const buildFieldDefs = (
+  kind: OrcaStructuredFieldKind,
+  tab: OrcaStructuredFieldTab,
+  section: string,
+  keysBlock: string,
+): OrcaStructuredFieldDef[] => splitLines(keysBlock).map((key) => ({ key, kind, tab, section }));
 
 const enumValues = (valuesBlock: string): string[] => splitLines(valuesBlock);
 
-export const ORCA_ADVANCED_FIELD_KIND_ORDER: OrcaStructuredFieldKind[] = [
-  'enum',
-  'boolean',
-  'integer',
-  'float',
-  'percent',
-  'floatOrPercent',
-  'string',
-  'stringList',
-  'integerList',
-  'floatList',
+export const ORCA_STRUCTURED_TAB_ORDER: OrcaStructuredFieldTab[] = [
+  'quality',
+  'strength',
+  'speed',
+  'support',
+  'multimaterial',
+  'others',
 ];
+
+export const ORCA_STRUCTURED_SECTION_ORDER: Record<OrcaStructuredFieldTab, string[]> = {
+  quality: [
+    'layerHeight',
+    'lineWidth',
+    'seam',
+    'precision',
+    'ironing',
+    'wallGenerator',
+    'wallsAndSurfaces',
+    'bridging',
+    'overhangs',
+  ],
+  strength: ['walls', 'topBottomShells', 'infill', 'advanced'],
+  speed: ['initialLayerSpeed', 'otherLayersSpeed', 'overhangSpeed', 'travelSpeed', 'acceleration', 'jerk', 'advanced'],
+  support: ['support', 'raft', 'supportFilament', 'supportIroning', 'advanced', 'treeSupports'],
+  multimaterial: ['primeTower', 'featureFilaments', 'oozePrevention', 'flushOptions', 'advanced'],
+  others: ['skirt', 'brim', 'specialMode', 'fuzzySkin', 'gcodeOutput', 'postProcessing', 'notes'],
+};
 
 export const ORCA_ADVANCED_FIELD_DEFS: OrcaStructuredFieldDef[] = [
   ...buildFieldDefs(
     'boolean',
+    'strength',
+    'walls',
     `
 alternate_extra_wall
-spiral_mode_smooth
-extra_perimeters_on_overhangs
-reduce_crossing_wall
 detect_thin_wall
+`,
+  ),
+  ...buildFieldDefs(
+    'boolean',
+    'quality',
+    'overhangs',
+    `
+extra_perimeters_on_overhangs
 detect_overhang_wall
 overhang_reverse
 overhang_reverse_internal_only
+make_overhang_printable
+`,
+  ),
+  ...buildFieldDefs(
+    'boolean',
+    'quality',
+    'seam',
+    `
 staggered_inner_seams
+role_based_wipe_speed
+wipe_on_loops
+wipe_before_external_loop
+seam_slope_conditional
+seam_slope_entire_loop
+seam_slope_inner_walls
+`,
+  ),
+  ...buildFieldDefs(
+    'boolean',
+    'quality',
+    'wallsAndSurfaces',
+    `
+reduce_crossing_wall
 is_infill_first
+only_one_wall_top
+only_one_wall_first_layer
+set_other_flow_ratios
+small_area_infill_flow_compensation
+`,
+  ),
+  ...buildFieldDefs(
+    'boolean',
+    'strength',
+    'infill',
+    `
 symmetric_infill_y_axis
+`,
+  ),
+  ...buildFieldDefs(
+    'boolean',
+    'strength',
+    'advanced',
+    `
 align_infill_direction_to_model
-reduce_infill_retraction
+infill_combination
+detect_narrow_internal_solid_infill
+`,
+  ),
+  ...buildFieldDefs(
+    'boolean',
+    'quality',
+    'ironing',
+    `
 ironing_angle_fixed
+`,
+  ),
+  ...buildFieldDefs(
+    'boolean',
+    'support',
+    'supportIroning',
+    `
 support_ironing
-fuzzy_skin_first_layer
-extrusion_rate_smoothing_external_perimeter_only
-single_loop_draft_shield
-brim_use_efc_outline
+`,
+  ),
+  ...buildFieldDefs(
+    'boolean',
+    'support',
+    'advanced',
+    `
 independent_support_layer_height
 support_interface_loop_pattern
+bridge_no_support
+`,
+  ),
+  ...buildFieldDefs(
+    'boolean',
+    'support',
+    'support',
+    `
 support_on_build_plate_only
 support_critical_regions_only
-bridge_no_support
+support_remove_small_overhang
+`,
+  ),
+  ...buildFieldDefs(
+    'boolean',
+    'support',
+    'supportFilament',
+    `
+support_interface_not_for_body
+`,
+  ),
+  ...buildFieldDefs(
+    'boolean',
+    'support',
+    'treeSupports',
+    `
+tree_support_auto_brim
+`,
+  ),
+  ...buildFieldDefs(
+    'boolean',
+    'quality',
+    'bridging',
+    `
 thick_bridges
 thick_internal_bridges
-support_remove_small_overhang
-support_interface_not_for_body
-ooze_prevention
-interface_shells
+`,
+  ),
+  ...buildFieldDefs(
+    'boolean',
+    'speed',
+    'advanced',
+    `
+extrusion_rate_smoothing_external_perimeter_only
+`,
+  ),
+  ...buildFieldDefs(
+    'boolean',
+    'speed',
+    'overhangSpeed',
+    `
+enable_overhang_speed
+slowdown_for_curled_perimeters
+`,
+  ),
+  ...buildFieldDefs(
+    'boolean',
+    'speed',
+    'acceleration',
+    `
+accel_to_decel_enable
+`,
+  ),
+  ...buildFieldDefs(
+    'boolean',
+    'multimaterial',
+    'primeTower',
+    `
 enable_prime_tower
 prime_tower_enable_framework
 prime_tower_skip_points
@@ -81,98 +234,351 @@ prime_tower_flat_ironing
 enable_tower_interface_features
 enable_tower_interface_cooldown_during_tower
 wipe_tower_no_sparse_layers
+wipe_tower_fillet_wall
+single_extruder_multi_material_priming
+`,
+  ),
+  ...buildFieldDefs(
+    'boolean',
+    'multimaterial',
+    'oozePrevention',
+    `
+ooze_prevention
+`,
+  ),
+  ...buildFieldDefs(
+    'boolean',
+    'multimaterial',
+    'flushOptions',
+    `
 flush_into_infill
 flush_into_objects
 flush_into_support
-detect_narrow_internal_solid_infill
-gcode_add_line_number
+`,
+  ),
+  ...buildFieldDefs(
+    'boolean',
+    'multimaterial',
+    'advanced',
+    `
+interface_shells
+interlocking_beam
+`,
+  ),
+  ...buildFieldDefs(
+    'boolean',
+    'quality',
+    'precision',
+    `
 precise_z_height
-infill_combination
-adaptive_layer_height
-enable_overhang_speed
-slowdown_for_curled_perimeters
-only_one_wall_top
-only_one_wall_first_layer
-set_other_flow_ratios
-role_based_wipe_speed
-accel_to_decel_enable
-wipe_on_loops
-wipe_before_external_loop
 precise_outer_wall
-tree_support_auto_brim
-gcode_comments
-gcode_label_objects
-exclude_object
-make_overhang_printable
-wipe_tower_fillet_wall
-single_extruder_multi_material_priming
 hole_to_polyhole
 hole_to_polyhole_twisted
-small_area_infill_flow_compensation
+`,
+  ),
+  ...buildFieldDefs(
+    'boolean',
+    'quality',
+    'layerHeight',
+    `
+adaptive_layer_height
+`,
+  ),
+  ...buildFieldDefs(
+    'boolean',
+    'others',
+    'skirt',
+    `
+single_loop_draft_shield
+`,
+  ),
+  ...buildFieldDefs(
+    'boolean',
+    'others',
+    'brim',
+    `
+brim_use_efc_outline
+`,
+  ),
+  ...buildFieldDefs(
+    'boolean',
+    'others',
+    'specialMode',
+    `
+spiral_mode_smooth
 enable_wrapping_detection
-seam_slope_conditional
-seam_slope_entire_loop
-seam_slope_inner_walls
-interlocking_beam
 calib_flowrate_topinfill_special_order
 `,
   ),
   ...buildFieldDefs(
+    'boolean',
+    'others',
+    'fuzzySkin',
+    `
+fuzzy_skin_first_layer
+`,
+  ),
+  ...buildFieldDefs(
+    'boolean',
+    'others',
+    'gcodeOutput',
+    `
+reduce_infill_retraction
+gcode_add_line_number
+gcode_comments
+gcode_label_objects
+exclude_object
+`,
+  ),
+  ...buildFieldDefs(
     'enum',
+    'others',
+    'specialMode',
     `
 slicing_mode
-ensure_vertical_shell_thickness
-wall_direction
-wall_sequence
-top_surface_pattern
-bottom_surface_pattern
-counterbore_hole_bridging
-internal_solid_infill_pattern
-gap_fill_target
-ironing_pattern
-support_ironing_pattern
-fuzzy_skin
-fuzzy_skin_noise_type
-fuzzy_skin_mode
-skirt_type
-draft_shield
-brim_type
-support_base_pattern
-support_style
-support_interface_pattern
-dont_filter_internal_bridges
-enable_extra_bridge_layer
 print_sequence
 print_order
 timelapse_type
+`,
+  ),
+  ...buildFieldDefs(
+    'enum',
+    'strength',
+    'advanced',
+    `
+ensure_vertical_shell_thickness
+`,
+  ),
+  ...buildFieldDefs(
+    'enum',
+    'quality',
+    'wallsAndSurfaces',
+    `
+wall_direction
+wall_sequence
+`,
+  ),
+  ...buildFieldDefs(
+    'enum',
+    'strength',
+    'topBottomShells',
+    `
+top_surface_pattern
+bottom_surface_pattern
+`,
+  ),
+  ...buildFieldDefs(
+    'enum',
+    'quality',
+    'bridging',
+    `
+counterbore_hole_bridging
+dont_filter_internal_bridges
+enable_extra_bridge_layer
+`,
+  ),
+  ...buildFieldDefs(
+    'enum',
+    'strength',
+    'infill',
+    `
+internal_solid_infill_pattern
+gap_fill_target
+`,
+  ),
+  ...buildFieldDefs(
+    'enum',
+    'quality',
+    'ironing',
+    `
+ironing_pattern
+`,
+  ),
+  ...buildFieldDefs(
+    'enum',
+    'support',
+    'supportIroning',
+    `
+support_ironing_pattern
+`,
+  ),
+  ...buildFieldDefs(
+    'enum',
+    'others',
+    'fuzzySkin',
+    `
+fuzzy_skin
+fuzzy_skin_noise_type
+fuzzy_skin_mode
+`,
+  ),
+  ...buildFieldDefs(
+    'enum',
+    'others',
+    'skirt',
+    `
+skirt_type
+draft_shield
+`,
+  ),
+  ...buildFieldDefs(
+    'enum',
+    'others',
+    'brim',
+    `
+brim_type
+`,
+  ),
+  ...buildFieldDefs(
+    'enum',
+    'support',
+    'support',
+    `
+support_style
+`,
+  ),
+  ...buildFieldDefs(
+    'enum',
+    'support',
+    'advanced',
+    `
+support_base_pattern
+support_interface_pattern
+`,
+  ),
+  ...buildFieldDefs(
+    'enum',
+    'quality',
+    'wallGenerator',
+    `
 wall_generator
+`,
+  ),
+  ...buildFieldDefs(
+    'enum',
+    'multimaterial',
+    'primeTower',
+    `
 wipe_tower_wall_type
+`,
+  ),
+  ...buildFieldDefs(
+    'enum',
+    'quality',
+    'seam',
+    `
 seam_slope_type
 `,
   ),
   ...buildFieldDefs(
     'integer',
+    'strength',
+    'infill',
     `
 fill_multiline
+`,
+  ),
+  ...buildFieldDefs(
+    'integer',
+    'others',
+    'fuzzySkin',
+    `
 fuzzy_skin_octaves
+`,
+  ),
+  ...buildFieldDefs(
+    'integer',
+    'others',
+    'skirt',
+    `
 skirt_height
+`,
+  ),
+  ...buildFieldDefs(
+    'integer',
+    'support',
+    'support',
+    `
 enforce_support_layers
+`,
+  ),
+  ...buildFieldDefs(
+    'integer',
+    'support',
+    'advanced',
+    `
 support_interface_top_layers
 support_interface_bottom_layers
+tree_support_wall_count
+`,
+  ),
+  ...buildFieldDefs(
+    'integer',
+    'support',
+    'supportFilament',
+    `
+support_filament
+support_interface_filament
+`,
+  ),
+  ...buildFieldDefs(
+    'integer',
+    'multimaterial',
+    'featureFilaments',
+    `
 wall_filament
 sparse_infill_filament
 solid_infill_filament
-support_filament
-support_interface_filament
+wipe_tower_filament
+`,
+  ),
+  ...buildFieldDefs(
+    'integer',
+    'multimaterial',
+    'oozePrevention',
+    `
 standby_temperature_delta
 preheat_steps
+`,
+  ),
+  ...buildFieldDefs(
+    'integer',
+    'quality',
+    'precision',
+    `
 elefant_foot_compensation_layers
-tree_support_wall_count
+`,
+  ),
+  ...buildFieldDefs(
+    'integer',
+    'quality',
+    'wallGenerator',
+    `
 wall_distribution_count
+`,
+  ),
+  ...buildFieldDefs(
+    'integer',
+    'speed',
+    'initialLayerSpeed',
+    `
 slow_down_layers
-wipe_tower_filament
+`,
+  ),
+  ...buildFieldDefs(
+    'integer',
+    'quality',
+    'seam',
+    `
 scarf_angle_threshold
 seam_slope_steps
+`,
+  ),
+  ...buildFieldDefs(
+    'integer',
+    'multimaterial',
+    'advanced',
+    `
 interlocking_beam_layer_count
 interlocking_depth
 interlocking_boundary_avoidance
@@ -180,12 +586,39 @@ interlocking_boundary_avoidance
   ),
   ...buildFieldDefs(
     'float',
+    'quality',
+    'precision',
     `
 slice_closing_radius
+elefant_foot_compensation
+xy_contour_compensation
+xy_hole_compensation
+resolution
+`,
+  ),
+  ...buildFieldDefs(
+    'float',
+    'others',
+    'specialMode',
+    `
 spiral_starting_flow_ratio
 spiral_finishing_flow_ratio
+`,
+  ),
+  ...buildFieldDefs(
+    'float',
+    'strength',
+    'topBottomShells',
+    `
 top_shell_thickness
 bottom_shell_thickness
+`,
+  ),
+  ...buildFieldDefs(
+    'float',
+    'strength',
+    'infill',
+    `
 lateral_lattice_angle_1
 lateral_lattice_angle_2
 infill_overhang_angle
@@ -194,38 +627,67 @@ solid_infill_direction
 infill_shift_step
 infill_lock_depth
 skin_infill_depth
+filter_out_gap_fill
+`,
+  ),
+  ...buildFieldDefs(
+    'float',
+    'strength',
+    'advanced',
+    `
 minimum_sparse_infill_area
+bridge_angle
+internal_bridge_angle
+`,
+  ),
+  ...buildFieldDefs(
+    'float',
+    'speed',
+    'otherLayersSpeed',
+    `
 ironing_speed
-ironing_spacing
-ironing_angle
-ironing_inset
+top_surface_speed
+support_speed
+support_interface_speed
+gap_infill_speed
+small_perimeter_threshold
+`,
+  ),
+  ...buildFieldDefs(
+    'float',
+    'support',
+    'supportIroning',
+    `
 support_ironing_spacing
+`,
+  ),
+  ...buildFieldDefs(
+    'float',
+    'others',
+    'fuzzySkin',
+    `
 fuzzy_skin_thickness
 fuzzy_skin_point_distance
 fuzzy_skin_scale
 fuzzy_skin_persistence
+`,
+  ),
+  ...buildFieldDefs(
+    'float',
+    'speed',
+    'advanced',
+    `
 max_volumetric_extrusion_rate_slope
 max_volumetric_extrusion_rate_slope_segment_length
-top_surface_speed
-support_speed
+`,
+  ),
+  ...buildFieldDefs(
+    'float',
+    'support',
+    'advanced',
+    `
 support_object_xy_distance
 support_object_first_layer_gap
-support_interface_speed
-gap_infill_speed
-travel_speed_z
-outer_wall_acceleration
-initial_layer_acceleration
-top_surface_acceleration
-skirt_speed
-min_skirt_length
-skirt_distance
-skirt_start_angle
-brim_object_gap
-brim_ears_max_angle
-brim_ears_detection_length
-raft_first_layer_expansion
-raft_contact_distance
-raft_expansion
 support_base_pattern_spacing
 support_expansion
 support_angle
@@ -233,30 +695,130 @@ support_interface_spacing
 support_top_z_distance
 max_bridge_length
 support_bottom_z_distance
+support_bottom_interface_spacing
+`,
+  ),
+  ...buildFieldDefs(
+    'float',
+    'speed',
+    'travelSpeed',
+    `
+travel_speed_z
+`,
+  ),
+  ...buildFieldDefs(
+    'float',
+    'speed',
+    'acceleration',
+    `
+outer_wall_acceleration
+initial_layer_acceleration
+top_surface_acceleration
+inner_wall_acceleration
+`,
+  ),
+  ...buildFieldDefs(
+    'float',
+    'others',
+    'skirt',
+    `
+skirt_speed
+min_skirt_length
+skirt_distance
+skirt_start_angle
+`,
+  ),
+  ...buildFieldDefs(
+    'float',
+    'others',
+    'brim',
+    `
+brim_object_gap
+brim_ears_max_angle
+brim_ears_detection_length
+`,
+  ),
+  ...buildFieldDefs(
+    'float',
+    'support',
+    'support',
+    `
+raft_first_layer_expansion
+`,
+  ),
+  ...buildFieldDefs(
+    'float',
+    'support',
+    'raft',
+    `
+raft_contact_distance
+raft_expansion
+`,
+  ),
+  ...buildFieldDefs(
+    'float',
+    'multimaterial',
+    'oozePrevention',
+    `
 preheat_time
+`,
+  ),
+  ...buildFieldDefs(
+    'float',
+    'quality',
+    'bridging',
+    `
 bridge_flow
 internal_bridge_flow
-elefant_foot_compensation
-xy_contour_compensation
-xy_hole_compensation
-resolution
+`,
+  ),
+  ...buildFieldDefs(
+    'float',
+    'multimaterial',
+    'primeTower',
+    `
 prime_tower_width
 prime_tower_brim_width
 prime_volume
+wipe_tower_cone_angle
+wipe_tower_max_purge_speed
+wipe_tower_extra_rib_length
+wipe_tower_rib_width
+wipe_tower_bridging
+wipe_tower_rotation_angle
+`,
+  ),
+  ...buildFieldDefs(
+    'float',
+    'support',
+    'treeSupports',
+    `
 tree_support_branch_angle
 tree_support_angle_slow
 tree_support_branch_distance
 tree_support_tip_diameter
 tree_support_branch_diameter
 tree_support_branch_diameter_angle
-support_bottom_interface_spacing
+tree_support_brim_width
+tree_support_branch_distance_organic
+tree_support_branch_diameter_organic
+tree_support_branch_angle_organic
+`,
+  ),
+  ...buildFieldDefs(
+    'float',
+    'quality',
+    'wallGenerator',
+    `
 wall_transition_angle
 min_length_factor
-small_perimeter_threshold
-bridge_angle
-internal_bridge_angle
-filter_out_gap_fill
-inner_wall_acceleration
+`,
+  ),
+  ...buildFieldDefs(
+    'float',
+    'speed',
+    'jerk',
+    `
 default_jerk
 outer_wall_jerk
 inner_wall_jerk
@@ -265,6 +827,13 @@ top_surface_jerk
 initial_layer_jerk
 travel_jerk
 default_junction_deviation
+`,
+  ),
+  ...buildFieldDefs(
+    'float',
+    'quality',
+    'wallsAndSurfaces',
+    `
 top_solid_infill_flow_ratio
 bottom_solid_infill_flow_ratio
 print_flow_ratio
@@ -277,61 +846,186 @@ internal_solid_infill_flow_ratio
 gap_fill_flow_ratio
 support_flow_ratio
 support_interface_flow_ratio
-tree_support_brim_width
+`,
+  ),
+  ...buildFieldDefs(
+    'float',
+    'quality',
+    'overhangs',
+    `
 make_overhang_printable_angle
 make_overhang_printable_hole_size
-wipe_tower_cone_angle
-wipe_tower_max_purge_speed
-wipe_tower_extra_rib_length
-wipe_tower_rib_width
-wipe_tower_bridging
-wipe_tower_rotation_angle
-tree_support_branch_distance_organic
-tree_support_branch_diameter_organic
-tree_support_branch_angle_organic
+`,
+  ),
+  ...buildFieldDefs(
+    'float',
+    'multimaterial',
+    'advanced',
+    `
 mmu_segmented_region_max_width
 mmu_segmented_region_interlocking_depth
-scarf_joint_flow_ratio
-seam_slope_min_length
 interlocking_orientation
 interlocking_beam_width
 `,
   ),
   ...buildFieldDefs(
+    'float',
+    'quality',
+    'seam',
+    `
+scarf_joint_flow_ratio
+seam_slope_min_length
+`,
+  ),
+  ...buildFieldDefs(
     'percent',
+    'strength',
+    'topBottomShells',
     `
 top_surface_density
 bottom_surface_density
+top_bottom_infill_wall_overlap
+`,
+  ),
+  ...buildFieldDefs(
+    'percent',
+    'strength',
+    'infill',
+    `
 skeleton_infill_density
 skin_infill_density
-ironing_flow
-support_ironing_flow
-raft_first_layer_density
 infill_wall_overlap
-top_bottom_infill_wall_overlap
+`,
+  ),
+  ...buildFieldDefs(
+    'percent',
+    'quality',
+    'ironing',
+    `
+ironing_flow
+`,
+  ),
+  ...buildFieldDefs(
+    'percent',
+    'support',
+    'supportIroning',
+    `
+support_ironing_flow
+`,
+  ),
+  ...buildFieldDefs(
+    'percent',
+    'support',
+    'support',
+    `
+raft_first_layer_density
+`,
+  ),
+  ...buildFieldDefs(
+    'percent',
+    'multimaterial',
+    'primeTower',
+    `
 prime_tower_infill_gap
+wipe_tower_extra_spacing
+wipe_tower_extra_flow
+`,
+  ),
+  ...buildFieldDefs(
+    'percent',
+    'support',
+    'treeSupports',
+    `
 tree_support_top_rate
+`,
+  ),
+  ...buildFieldDefs(
+    'percent',
+    'quality',
+    'wallGenerator',
+    `
 wall_transition_length
 wall_transition_filter_deviation
 min_feature_size
 min_bead_width
+initial_layer_min_bead_width
+`,
+  ),
+  ...buildFieldDefs(
+    'percent',
+    'speed',
+    'acceleration',
+    `
 accel_to_decel_factor
+`,
+  ),
+  ...buildFieldDefs(
+    'percent',
+    'quality',
+    'bridging',
+    `
 bridge_density
 internal_bridge_density
-initial_layer_min_bead_width
-wipe_tower_extra_spacing
-wipe_tower_extra_flow
+`,
+  ),
+  ...buildFieldDefs(
+    'percent',
+    'quality',
+    'seam',
+    `
 scarf_overhang_threshold
 `,
   ),
   ...buildFieldDefs(
     'floatOrPercent',
+    'others',
+    'specialMode',
     `
 spiral_mode_max_xy_smoothing
+`,
+  ),
+  ...buildFieldDefs(
+    'floatOrPercent',
+    'quality',
+    'overhangs',
+    `
 overhang_reverse_threshold
+`,
+  ),
+  ...buildFieldDefs(
+    'floatOrPercent',
+    'quality',
+    'wallsAndSurfaces',
+    `
 max_travel_detour_distance
+min_width_top_surface
+`,
+  ),
+  ...buildFieldDefs(
+    'floatOrPercent',
+    'speed',
+    'overhangSpeed',
+    `
 internal_bridge_speed
+overhang_1_4_speed
+overhang_2_4_speed
+overhang_3_4_speed
+overhang_4_4_speed
+`,
+  ),
+  ...buildFieldDefs(
+    'floatOrPercent',
+    'support',
+    'support',
+    `
 support_threshold_overlap
+`,
+  ),
+  ...buildFieldDefs(
+    'floatOrPercent',
+    'quality',
+    'lineWidth',
+    `
 line_width
 initial_layer_line_width
 inner_wall_line_width
@@ -342,51 +1036,131 @@ skin_infill_line_width
 skeleton_infill_line_width
 top_surface_line_width
 support_line_width
+`,
+  ),
+  ...buildFieldDefs(
+    'floatOrPercent',
+    'strength',
+    'advanced',
+    `
 infill_combination_max_layer_height
-overhang_1_4_speed
-overhang_2_4_speed
-overhang_3_4_speed
-overhang_4_4_speed
+`,
+  ),
+  ...buildFieldDefs(
+    'floatOrPercent',
+    'speed',
+    'otherLayersSpeed',
+    `
 small_perimeter_speed
-min_width_top_surface
+`,
+  ),
+  ...buildFieldDefs(
+    'floatOrPercent',
+    'quality',
+    'seam',
+    `
 seam_gap
 wipe_speed
-bridge_acceleration
-sparse_infill_acceleration
-internal_solid_infill_acceleration
-initial_layer_travel_speed
-infill_anchor
-infill_anchor_max
-hole_to_polyhole_threshold
 scarf_joint_speed
 seam_slope_start_height
 `,
   ),
   ...buildFieldDefs(
+    'floatOrPercent',
+    'speed',
+    'acceleration',
+    `
+bridge_acceleration
+sparse_infill_acceleration
+internal_solid_infill_acceleration
+`,
+  ),
+  ...buildFieldDefs(
+    'floatOrPercent',
+    'speed',
+    'initialLayerSpeed',
+    `
+initial_layer_travel_speed
+`,
+  ),
+  ...buildFieldDefs(
+    'floatOrPercent',
+    'strength',
+    'infill',
+    `
+infill_anchor
+infill_anchor_max
+`,
+  ),
+  ...buildFieldDefs(
+    'floatOrPercent',
+    'quality',
+    'precision',
+    `
+hole_to_polyhole_threshold
+`,
+  ),
+  ...buildFieldDefs(
     'string',
+    'strength',
+    'infill',
     `
 sparse_infill_rotate_template
 solid_infill_rotate_template
+`,
+  ),
+  ...buildFieldDefs(
+    'string',
+    'strength',
+    'advanced',
+    `
 extra_solid_infills
+`,
+  ),
+  ...buildFieldDefs(
+    'string',
+    'others',
+    'gcodeOutput',
+    `
 filename_format
 `,
   ),
   ...buildFieldDefs(
     'stringList',
+    'others',
+    'specialMode',
     `
 print_extruder_variant
+`,
+  ),
+  ...buildFieldDefs(
+    'stringList',
+    'others',
+    'postProcessing',
+    `
 post_process
+`,
+  ),
+  ...buildFieldDefs(
+    'stringList',
+    'quality',
+    'wallsAndSurfaces',
+    `
 small_area_infill_flow_compensation_model
 `,
   ),
   ...buildFieldDefs(
     'integerList',
+    'multimaterial',
+    'featureFilaments',
     `
 print_extruder_id
 `,
   ),
   ...buildFieldDefs(
     'floatList',
+    'multimaterial',
+    'flushOptions',
     `
 wiping_volumes_extruders
 `,
