@@ -568,6 +568,16 @@ export interface CalculatorGcodeParseResponse {
   sparse_infill_density_percent?: number | null;
   sparse_infill_pattern?: string | null;
   wall_loops?: number | null;
+  object_count?: number | null;
+  total_layers?: number | null;
+  max_z_height_mm?: number | null;
+  support_type?: string | null;
+  support_threshold_angle_deg?: number | null;
+  brim_width_mm?: number | null;
+  raft_layers?: number | null;
+  active_material_count?: number | null;
+  is_multi_material?: boolean | null;
+  toolchange_count?: number | null;
   thumbnail_data_url?: string | null;
   materials: CalculatorParsedMaterial[];
 }

@@ -1272,6 +1272,26 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
   ]
     .filter(Boolean)
     .join(' · ');
+  const parsedSupportsSummary = parsedGcode
+    ? [
+        parsedGcode.support_type,
+        parsedGcode.support_threshold_angle_deg != null ? `${parsedGcode.support_threshold_angle_deg}°` : null,
+      ]
+        .filter(Boolean)
+        .join(' · ') || tc('parsedNone')
+    : null;
+  const parsedAdhesionSummary = parsedGcode
+    ? [
+        parsedGcode.brim_width_mm != null && parsedGcode.brim_width_mm > 0
+          ? `${tc('parsedBrim')} ${parsedGcode.brim_width_mm} mm`
+          : null,
+        parsedGcode.raft_layers != null && parsedGcode.raft_layers > 0
+          ? `${tc('parsedRaft')} ${parsedGcode.raft_layers}`
+          : null,
+      ]
+        .filter(Boolean)
+        .join(' · ') || tc('parsedNone')
+    : null;
 
   return (
     <div className="grid grid-cols-1 gap-5 xl:grid-cols-[minmax(0,1.45fr)_minmax(22rem,0.92fr)]">
@@ -1778,6 +1798,44 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
                                 parsedGcode.sparse_infill_pattern ? ` · ${parsedGcode.sparse_infill_pattern}` : ''
                               }`
                             : '—'
+                        }
+                      />
+                      <MetricRow
+                        label={tc('parsedLayers')}
+                        value={parsedGcode.total_layers != null ? String(parsedGcode.total_layers) : '—'}
+                      />
+                      <MetricRow
+                        label={tc('parsedMaxHeight')}
+                        value={parsedGcode.max_z_height_mm != null ? `${parsedGcode.max_z_height_mm} mm` : '—'}
+                      />
+                      <MetricRow
+                        label={tc('parsedObjectCount')}
+                        value={parsedGcode.object_count != null ? String(parsedGcode.object_count) : '—'}
+                      />
+                      <MetricRow label={tc('parsedSupports')} value={parsedSupportsSummary ?? '—'} />
+                      <MetricRow label={tc('parsedAdhesion')} value={parsedAdhesionSummary ?? '—'} />
+                      <MetricRow
+                        label={tc('parsedActiveMaterials')}
+                        value={
+                          parsedGcode.active_material_count != null
+                            ? String(parsedGcode.active_material_count)
+                            : parsedGcode.materials.length > 0
+                              ? String(parsedGcode.materials.length)
+                              : '—'
+                        }
+                      />
+                      <MetricRow
+                        label={tc('parsedToolchanges')}
+                        value={parsedGcode.toolchange_count != null ? String(parsedGcode.toolchange_count) : '—'}
+                      />
+                      <MetricRow
+                        label={tc('parsedMultiMaterial')}
+                        value={
+                          parsedGcode.is_multi_material == null
+                            ? '—'
+                            : parsedGcode.is_multi_material
+                              ? tc('parsedYes')
+                              : tc('parsedNo')
                         }
                       />
                     </div>

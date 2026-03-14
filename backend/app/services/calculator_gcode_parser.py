@@ -19,6 +19,7 @@ _THUMBNAIL_END_RE = re.compile(r"^;\s*thumbnail end", re.IGNORECASE)
 _THUMBNAIL_BLOCK_START_RE = re.compile(r"^;\s*THUMBNAIL_BLOCK_START", re.IGNORECASE)
 _THUMBNAIL_BLOCK_END_RE = re.compile(r"^;\s*THUMBNAIL_BLOCK_END", re.IGNORECASE)
 _KEY_VALUE_RE = re.compile(r"^([^:=]+?)\s*(?:=|:)\s*(.+)$")
+_INLINE_ASSIGNMENT_RE = re.compile(r"\b([A-Z_]+)=([^\s]+)")
 
 _SLICER_KEYWORDS: dict[str, tuple[str, ...]] = {
     "OrcaSlicer": ("orcaslicer", "orca slicer", "orca_slicer"),
@@ -56,6 +57,16 @@ def parse_gcode_payload(file_name: str, raw_bytes: bytes) -> dict[str, Any]:
         "sparse_infill_density_percent": None,
         "sparse_infill_pattern": None,
         "wall_loops": None,
+        "object_count": 0,
+        "total_layers": None,
+        "max_z_height_mm": None,
+        "support_type": None,
+        "support_threshold_angle_deg": None,
+        "brim_width_mm": None,
+        "raft_layers": None,
+        "active_material_count": None,
+        "is_multi_material": None,
+        "toolchange_count": None,
         "thumbnail_data_url": _extract_thumbnail_data_url(lines),
         "materials": [],
     }
@@ -69,11 +80,20 @@ def parse_gcode_payload(file_name: str, raw_bytes: bytes) -> dict[str, Any]:
         "filament_lengths_mm": None,
         "estimated_normal_seconds": None,
         "estimated_first_layer_seconds": None,
+        "referenced_tools": None,
+        "multi_material_hint": None,
         "cura_setting_fragments": [],
     }
 
     for line in lines:
         stripped = line.strip()
+        if stripped.upper().startswith("EXCLUDE_OBJECT_DEFINE"):
+            parsed["object_count"] += 1
+            continue
+
+        if stripped:
+            _collect_inline_command_metadata(parsed, collector, stripped)
+
         if not stripped.startswith(";"):
             continue
 
@@ -251,6 +271,45 @@ def _collect_key_value_metadata(parsed: dict[str, Any], collector: dict[str, Any
             parsed["wall_loops"] = wall_loops
         return
 
+    if normalized_key in {"total_layers_count", "total_layers", "total_layer"} and parsed["total_layers"] is None:
+        total_layers = _parse_first_int(value)
+        if total_layers is not None:
+            parsed["total_layers"] = total_layers
+        return
+
+    if normalized_key == "max_z_height" and parsed["max_z_height_mm"] is None:
+        parsed["max_z_height_mm"] = _parse_first_float(value)
+        return
+
+    if normalized_key == "support_type" and parsed["support_type"] is None:
+        parsed["support_type"] = value.strip()
+        return
+
+    if normalized_key == "support_threshold_angle" and parsed["support_threshold_angle_deg"] is None:
+        parsed["support_threshold_angle_deg"] = _parse_first_float(value)
+        return
+
+    if normalized_key == "brim_width" and parsed["brim_width_mm"] is None:
+        parsed["brim_width_mm"] = _parse_first_float(value)
+        return
+
+    if normalized_key == "raft_layers" and parsed["raft_layers"] is None:
+        parsed["raft_layers"] = _parse_first_int(value)
+        return
+
+    if normalized_key == "single_extruder_multi_material" and collector["multi_material_hint"] is None:
+        multi_material_value = _parse_first_int(value)
+        collector["multi_material_hint"] = multi_material_value == 1 if multi_material_value is not None else None
+        return
+
+    if normalized_key == "referenced_tools" and collector["referenced_tools"] is None:
+        collector["referenced_tools"] = _parse_string_list(value)
+        return
+
+    if normalized_key == "total_toolchanges" and parsed["toolchange_count"] is None:
+        parsed["toolchange_count"] = _parse_first_int(value)
+        return
+
     if normalized_key == "filament_type" and collector["filament_types"] is None:
         collector["filament_types"] = _parse_string_list(value)
         return
@@ -306,6 +365,21 @@ def _apply_cura_ini_block(parsed: dict[str, Any], block: str) -> None:
             parsed["initial_layer_height_mm"] = _parse_first_float(value)
 
 
+def _collect_inline_command_metadata(parsed: dict[str, Any], collector: dict[str, Any], line: str) -> None:
+    assignments = {match.group(1).lower(): match.group(2) for match in _INLINE_ASSIGNMENT_RE.finditer(line)}
+    if not assignments:
+        return
+
+    if parsed["toolchange_count"] is None and assignments.get("total_toolchanges") is not None:
+        parsed["toolchange_count"] = _parse_first_int(assignments["total_toolchanges"])
+
+    if collector["referenced_tools"] is None and assignments.get("referenced_tools") is not None:
+        collector["referenced_tools"] = _parse_string_list(assignments["referenced_tools"])
+
+    if parsed["total_layers"] is None and assignments.get("total_layer") is not None:
+        parsed["total_layers"] = _parse_first_int(assignments["total_layer"])
+
+
 def _finalize_materials(parsed: dict[str, Any], collector: dict[str, Any]) -> None:
     lengths = [
         len(values)
@@ -331,7 +405,11 @@ def _finalize_materials(parsed: dict[str, Any], collector: dict[str, Any]) -> No
             "weight_g": _get_list_value(collector["filament_weights_g"], index),
             "length_mm": _get_list_value(collector["filament_lengths_mm"], index),
         }
-        if any(value not in (None, "", 0, 0.0) for value in material.values()):
+        has_real_usage = (
+            (material["weight_g"] is not None and float(material["weight_g"]) > 0)
+            or (material["length_mm"] is not None and float(material["length_mm"]) > 0)
+        )
+        if has_real_usage:
             materials.append(material)
 
     if not materials and parsed["total_filament_weight_g"] is not None:
@@ -347,6 +425,17 @@ def _finalize_materials(parsed: dict[str, Any], collector: dict[str, Any]) -> No
         )
 
     parsed["materials"] = materials
+    parsed["active_material_count"] = len(materials)
+
+    referenced_tools = collector["referenced_tools"] or []
+    if referenced_tools:
+        parsed["active_material_count"] = max(parsed["active_material_count"], len(referenced_tools))
+
+    parsed["is_multi_material"] = bool(
+        collector["multi_material_hint"]
+        or (parsed["active_material_count"] is not None and parsed["active_material_count"] > 1)
+        or (parsed["toolchange_count"] is not None and parsed["toolchange_count"] > 0)
+    )
 
 
 def _finalize_totals(parsed: dict[str, Any]) -> None:
@@ -370,6 +459,14 @@ def _finalize_totals(parsed: dict[str, Any]) -> None:
         parsed["initial_layer_height_mm"] = round(float(parsed["initial_layer_height_mm"]), 3)
     if parsed["sparse_infill_density_percent"] is not None:
         parsed["sparse_infill_density_percent"] = round(float(parsed["sparse_infill_density_percent"]), 2)
+    if parsed["max_z_height_mm"] is not None:
+        parsed["max_z_height_mm"] = round(float(parsed["max_z_height_mm"]), 2)
+    if parsed["support_threshold_angle_deg"] is not None:
+        parsed["support_threshold_angle_deg"] = round(float(parsed["support_threshold_angle_deg"]), 2)
+    if parsed["brim_width_mm"] is not None:
+        parsed["brim_width_mm"] = round(float(parsed["brim_width_mm"]), 2)
+    if parsed["object_count"] == 0:
+        parsed["object_count"] = None
 
 
 def _extract_thumbnail_data_url(lines: list[str]) -> str | None:
