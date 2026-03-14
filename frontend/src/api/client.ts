@@ -2,16 +2,17 @@
 
 import axios from 'axios';
 import type { Brand, BrandRequest, BrandRequestStatus, Filament, FilamentVisualSettings, FilamentReview, FilamentRatingStats, Notification, NotificationListResponse, Preset, RecommendedPreset, Printer, PrinterProfile, PrintProfile, PrinterRequest, User, Token, RefreshTokenRequest, RefreshTokenResponse, ListResponse, AccountDeletionStats, UserSavedPreset, CalculatorEstimateRequest, CalculatorEstimateResponse, Feedback, FeedbackListResponse, FeedbackType, CompatiblePrinter, CompatibleFilament, DownloadVersion, DownloadVersionsResponse, WikiCategory, WikiCategoryListResponse, WikiArticle, WikiArticleSummary, WikiArticleListResponse, WikiFeedbackStats, WikiFeedbackCreate, WikiFeedback } from '../types/api';
-import { getCsrfToken, getRefreshToken, isCookieAuthMode, isJwtAuthMode, removeToken, setToken, shouldPersistTokensLocally } from '../utils/auth';
+import { getCsrfToken, getRefreshToken, isCookieAuthMode, isJwtAuthMode, isOrcaEmbedded, removeToken, setToken, shouldPersistTokensLocally } from '../utils/auth';
 
 const API_BASE_URL = '/api/v1';
 const COOKIE_AUTH_MODE = isCookieAuthMode();
 const JWT_AUTH_MODE = isJwtAuthMode();
 const CSRF_HEADER_NAME = import.meta.env.VITE_AUTH_CSRF_HEADER_NAME || 'X-CSRF-Token';
+const canUseCookieSession = (): boolean => COOKIE_AUTH_MODE && !isOrcaEmbedded();
 
 const api = axios.create({
   baseURL: API_BASE_URL,
-  withCredentials: COOKIE_AUTH_MODE,
+  withCredentials: canUseCookieSession(),
   headers: {
     'Content-Type': 'application/json',
   },
@@ -37,7 +38,7 @@ api.interceptors.request.use((config) => {
 
   const method = (config.method || 'GET').toUpperCase();
   const hasBearer = Boolean(config.headers?.Authorization);
-  if (COOKIE_AUTH_MODE && !hasBearer && ['POST', 'PUT', 'PATCH', 'DELETE'].includes(method)) {
+  if (canUseCookieSession() && !hasBearer && ['POST', 'PUT', 'PATCH', 'DELETE'].includes(method)) {
     const csrfToken = getCsrfToken();
     if (csrfToken) {
       config.headers[CSRF_HEADER_NAME] = csrfToken;
@@ -97,14 +98,14 @@ api.interceptors.response.use(
     // Не показываем ошибку в консоли и не пытаемся обновить токен
     const isMeEndpoint = originalRequest?.url?.includes('/auth/me');
     const hasToken = Boolean(localStorage.getItem('access_token'));
-    const canUseCookieSession = COOKIE_AUTH_MODE;
+    const cookieSessionAvailable = canUseCookieSession();
     
-    if (isMeEndpoint && !hasToken && !canUseCookieSession) {
+    if (isMeEndpoint && !hasToken && !cookieSessionAvailable) {
       // Токена нет - это нормально, просто возвращаем ошибку без логирования
       return Promise.reject(error);
     }
     
-    const shouldTryRefreshForMe = isMeEndpoint && (hasToken || canUseCookieSession);
+    const shouldTryRefreshForMe = isMeEndpoint && (hasToken || cookieSessionAvailable);
 
     // Не обрабатываем повторно запросы, которые уже были повторены
     if (error.response?.status === 401 && !originalRequest._retry && !isAuthEndpoint && (!isMeEndpoint || shouldTryRefreshForMe)) {
@@ -120,7 +121,7 @@ api.interceptors.response.use(
 
       const refreshToken = getRefreshToken();
       
-      if (!refreshToken && !canUseCookieSession) {
+      if (!refreshToken && !cookieSessionAvailable) {
         // Нет refresh token, удаляем токены и перенаправляем
         // Только если это не запрос авторизации и не админ панель
         removeToken();
@@ -146,8 +147,8 @@ api.interceptors.response.use(
           refreshPayload,
           {
             baseURL: '', // Используем полный URL
-            withCredentials: canUseCookieSession,
-            headers: canUseCookieSession
+            withCredentials: cookieSessionAvailable,
+            headers: cookieSessionAvailable
               ? (() => {
                   const csrfToken = getCsrfToken();
                   return csrfToken ? { [CSRF_HEADER_NAME]: csrfToken } : {};

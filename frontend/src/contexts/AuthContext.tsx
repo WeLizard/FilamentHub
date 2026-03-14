@@ -57,10 +57,34 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   // Используем небольшую задержку чтобы C++ успел инжектировать токен в localStorage
   useEffect(() => {
     const loadUser = async () => {
+      const embeddedOrca = isOrcaEmbedded();
+      const cookieSessionAvailable = isCookieAuthMode() && !embeddedOrca;
+      const waitForEmbeddedToken = async (): Promise<string | null> => {
+        if (!embeddedOrca) {
+          return getToken();
+        }
+
+        const initialToken = getToken();
+        if (initialToken) {
+          return initialToken;
+        }
+
+        const deadline = Date.now() + 2500;
+        while (Date.now() < deadline) {
+          await new Promise((resolve) => setTimeout(resolve, 100));
+          const token = getToken();
+          if (token) {
+            return token;
+          }
+        }
+
+        return null;
+      };
+
       // Небольшая задержка — C++ инжектирует токен через RunScript в OnLoaded,
       // который может выполниться чуть позже React mount
-      const token = getToken();
-      const hasSessionCandidate = Boolean(token) || isCookieAuthMode();
+      const token = await waitForEmbeddedToken();
+      const hasSessionCandidate = Boolean(token) || cookieSessionAvailable;
       if (hasSessionCandidate) {
         try {
           const userData = await authAPI.me();
@@ -197,7 +221,8 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   };
 
   const refreshUser = async () => {
-    if (getToken() || isCookieAuthMode()) {
+    const cookieSessionAvailable = isCookieAuthMode() && !isOrcaEmbedded();
+    if (getToken() || cookieSessionAvailable) {
       try {
         const userData = await authAPI.me();
         setUser(userData);
