@@ -5,6 +5,14 @@ import { useTranslation } from 'react-i18next';
 import { X, Save, Loader2, Layers } from 'lucide-react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { filamentsAPI, printerProfilesAPI, printProfilesAPI } from '../api/client';
+import {
+  ORCA_ADVANCED_ENUM_OPTIONS,
+  ORCA_ADVANCED_FIELD_DEFS,
+  ORCA_ADVANCED_FIELD_KEYS,
+  ORCA_ADVANCED_FIELD_KIND_ORDER,
+  type OrcaStructuredFieldDef,
+  type OrcaStructuredFieldKind,
+} from './createPrintProfileOrcaFields';
 import { Dropdown } from './Dropdown';
 import { translateApiError } from '../utils/translateApiError';
 import { useAuth } from '../contexts/AuthContext';
@@ -62,7 +70,7 @@ const SEAM_POSITION_OPTIONS = ['aligned', 'aligned_back', 'nearest', 'back', 'ra
 const IRONING_TYPE_OPTIONS = ['no ironing', 'top', 'topmost', 'solid'];
 const BOOLEAN_OVERRIDE_OPTIONS = ['', '1', '0'];
 const DEFAULT_NOZZLE_SIZES = ['0.2', '0.25', '0.3', '0.4', '0.5', '0.6', '0.8', '1.0'];
-const ADVANCED_PROCESS_EXCLUDED_KEYS = new Set([
+const CORE_STRUCTURED_PROCESS_KEYS = new Set([
   'type',
   'name',
   'from',
@@ -104,7 +112,9 @@ const ADVANCED_PROCESS_EXCLUDED_KEYS = new Set([
   'compatible_printers',
   'compatible_filaments',
   'compatible_printers_condition',
+  'notes',
 ]);
+const ADVANCED_PROCESS_EXCLUDED_KEYS = new Set([...CORE_STRUCTURED_PROCESS_KEYS, ...ORCA_ADVANCED_FIELD_KEYS]);
 
 const slugifyValue = (value: string): string =>
   value
@@ -194,6 +204,8 @@ const normalizePercentString = (value: string): string => {
   return `${parsed}%`;
 };
 
+const stripPercentSuffix = (value: string): string => value.trim().replace(/%$/, '');
+
 const normalizeNumericOrPercentString = (value: string): string => {
   const trimmed = value.trim();
   if (!trimmed) {
@@ -216,6 +228,41 @@ const dedupeStringValues = (values: string[]): string[] =>
 
 const qualityTierLabel = (value: string): string => QUALITY_TIER_LABELS[value.toLowerCase()] ?? value;
 
+const titleCaseWord = (value: string): string =>
+  value.length > 0 ? `${value.charAt(0).toUpperCase()}${value.slice(1)}` : value;
+
+const humanizeOrcaValue = (value: string): string => {
+  if (/^\d+$/.test(value)) {
+    return value;
+  }
+
+  return value
+    .split(/[_-]/g)
+    .map((segment) => titleCaseWord(segment))
+    .join(' ');
+};
+
+const humanizeOrcaFieldKey = (value: string): string =>
+  value
+    .split('_')
+    .map((segment) => {
+      const normalized = segment.toLowerCase();
+      if (normalized === 'xy') {
+        return 'XY';
+      }
+      if (normalized === 'z') {
+        return 'Z';
+      }
+      if (normalized === 'mmu') {
+        return 'MMU';
+      }
+      if (normalized === 'gcode') {
+        return 'G-code';
+      }
+      return titleCaseWord(segment);
+    })
+    .join(' ');
+
 const buildRecommendedName = (layerHeight: string, qualityTier: string, printerTag: string): string => {
   const normalizedLayerHeight = normalizeNumericString(layerHeight);
   if (!normalizedLayerHeight || !qualityTier.trim()) {
@@ -230,6 +277,12 @@ const areStringArraysEqual = (left: string[], right: string[]): boolean => {
   }
   return left.every((value, index) => value === right[index]);
 };
+
+const splitStructuredListInput = (value: string): string[] =>
+  value
+    .split(/\r?\n|,/g)
+    .map((item) => item.trim())
+    .filter((item) => item.length > 0);
 
 const buildPrinterProfileOptionLabel = (printerProfile: PrinterProfile): string => {
   const printerDetails = [printerProfile.printer_manufacturer, printerProfile.printer_model]
@@ -270,6 +323,90 @@ const pickAdvancedProcessSettings = (settings: Record<string, unknown> | undefin
 
   return next;
 };
+
+const readStructuredAdvancedFieldValue = (
+  settings: Record<string, unknown> | undefined,
+  field: OrcaStructuredFieldDef,
+): string => {
+  switch (field.kind) {
+    case 'boolean':
+      return readSettingBooleanString(settings, field.key);
+    case 'integerList':
+    case 'floatList':
+    case 'stringList':
+      return readSettingList(settings, field.key).join('\n');
+    case 'percent':
+      return stripPercentSuffix(readSettingString(settings, field.key));
+    default:
+      return readSettingString(settings, field.key);
+  }
+};
+
+const buildStructuredAdvancedValues = (settings: Record<string, unknown> | undefined): Record<string, string> =>
+  ORCA_ADVANCED_FIELD_DEFS.reduce<Record<string, string>>((acc, field) => {
+    acc[field.key] = readStructuredAdvancedFieldValue(settings, field);
+    return acc;
+  }, {});
+
+const normalizeStructuredAdvancedFieldValue = (field: OrcaStructuredFieldDef, rawValue: string): unknown => {
+  switch (field.kind) {
+    case 'boolean':
+      return rawValue;
+    case 'integer':
+      return normalizeNumericString(rawValue);
+    case 'float':
+      return normalizeNumericString(rawValue);
+    case 'percent':
+      return normalizePercentString(rawValue);
+    case 'floatOrPercent':
+      return normalizeNumericOrPercentString(rawValue);
+    case 'enum':
+    case 'string':
+      return rawValue.trim();
+    case 'stringList': {
+      const values = splitStructuredListInput(rawValue);
+      return values;
+    }
+    case 'integerList': {
+      const values = splitStructuredListInput(rawValue)
+        .map((value) => normalizeNumericString(value))
+        .filter((value) => value.length > 0)
+        .map((value) => Number(value));
+      return values;
+    }
+    case 'floatList': {
+      const values = splitStructuredListInput(rawValue)
+        .map((value) => normalizeNumericString(value))
+        .filter((value) => value.length > 0)
+        .map((value) => Number(value));
+      return values;
+    }
+    default:
+      return rawValue.trim();
+  }
+};
+
+const buildStructuredAdvancedSettings = (values: Record<string, string>): Record<string, unknown> =>
+  ORCA_ADVANCED_FIELD_DEFS.reduce<Record<string, unknown>>((acc, field) => {
+    const normalized = normalizeStructuredAdvancedFieldValue(field, values[field.key] ?? '');
+
+    if (Array.isArray(normalized)) {
+      if (normalized.length > 0) {
+        acc[field.key] = normalized;
+      }
+      return acc;
+    }
+
+    if (typeof normalized === 'string') {
+      if (normalized.length > 0) {
+        acc[field.key] = normalized;
+      }
+      return acc;
+    }
+
+    acc[field.key] = normalized;
+    return acc;
+  }, {});
 
 const stripAdvancedProcessSettings = (settings: Record<string, unknown> | undefined): Record<string, unknown> => {
   if (!settings) {
@@ -379,6 +516,8 @@ export const CreatePrintProfileModal: React.FC<CreatePrintProfileModalProps> = (
   const [selectedCompatibleFilaments, setSelectedCompatibleFilaments] = useState<string[]>([]);
   const [compatibleFilamentSearch, setCompatibleFilamentSearch] = useState('');
   const [compatiblePrintersCondition, setCompatiblePrintersCondition] = useState('');
+  const [structuredAdvancedValues, setStructuredAdvancedValues] = useState<Record<string, string>>({});
+  const [structuredAdvancedSearch, setStructuredAdvancedSearch] = useState('');
   const [advancedSettings, setAdvancedSettings] = useState('');
   const [advancedSettingsError, setAdvancedSettingsError] = useState<string | null>(null);
   const [notes, setNotes] = useState('');
@@ -432,6 +571,24 @@ export const CreatePrintProfileModal: React.FC<CreatePrintProfileModalProps> = (
     }));
   const knownCompatibleFilamentNames = new Set(availableFilaments.map(buildCompatibleFilamentValue));
   const showSupportThresholdField = enableSupport === '1' && supportType.includes('(auto)');
+  const structuredAdvancedSearchValue = structuredAdvancedSearch.trim().toLowerCase();
+
+  const filteredStructuredFieldGroups = ORCA_ADVANCED_FIELD_KIND_ORDER.map((kind) => {
+    const fields = ORCA_ADVANCED_FIELD_DEFS.filter((field) => {
+      if (field.kind !== kind) {
+        return false;
+      }
+
+      if (!structuredAdvancedSearchValue) {
+        return true;
+      }
+
+      const label = humanizeOrcaFieldKey(field.key).toLowerCase();
+      return label.includes(structuredAdvancedSearchValue) || field.key.includes(structuredAdvancedSearchValue);
+    });
+
+    return { kind, fields };
+  }).filter((group) => group.fields.length > 0);
 
   useEffect(() => {
     if (isOpen) {
@@ -479,6 +636,7 @@ export const CreatePrintProfileModal: React.FC<CreatePrintProfileModalProps> = (
         ? sourceExtraMetadata.compatible_printers_condition
         : readSettingString(sourceSettings, 'compatible_printers_condition');
     const nextAdvancedSettings = pickAdvancedProcessSettings(sourceSettings);
+    const nextStructuredAdvancedValues = buildStructuredAdvancedValues(sourceSettings);
 
     if (profile) {
       setName(profile.name || '');
@@ -519,6 +677,8 @@ export const CreatePrintProfileModal: React.FC<CreatePrintProfileModalProps> = (
       setSelectedCompatibleFilaments(nextCompatibleFilaments);
       setCompatibleFilamentSearch('');
       setCompatiblePrintersCondition(nextCompatiblePrintersCondition);
+      setStructuredAdvancedValues(nextStructuredAdvancedValues);
+      setStructuredAdvancedSearch('');
       setAdvancedSettings(Object.keys(nextAdvancedSettings).length ? JSON.stringify(nextAdvancedSettings, null, 2) : '');
       setAdvancedSettingsError(null);
       setNotes(profile.notes || '');
@@ -564,6 +724,8 @@ export const CreatePrintProfileModal: React.FC<CreatePrintProfileModalProps> = (
       setSelectedCompatibleFilaments(nextCompatibleFilaments);
       setCompatibleFilamentSearch('');
       setCompatiblePrintersCondition(nextCompatiblePrintersCondition);
+      setStructuredAdvancedValues(nextStructuredAdvancedValues);
+      setStructuredAdvancedSearch('');
       setAdvancedSettings(Object.keys(nextAdvancedSettings).length ? JSON.stringify(nextAdvancedSettings, null, 2) : '');
       setAdvancedSettingsError(null);
       setNotes(baseProfile.notes || '');
@@ -608,6 +770,8 @@ export const CreatePrintProfileModal: React.FC<CreatePrintProfileModalProps> = (
     setSelectedCompatibleFilaments([]);
     setCompatibleFilamentSearch('');
     setCompatiblePrintersCondition('');
+    setStructuredAdvancedValues(buildStructuredAdvancedValues(undefined));
+    setStructuredAdvancedSearch('');
     setAdvancedSettings('');
     setAdvancedSettingsError(null);
     setNotes('');
@@ -673,6 +837,8 @@ export const CreatePrintProfileModal: React.FC<CreatePrintProfileModalProps> = (
       setAdvancedSettingsError(null);
     }
 
+    const structuredAdvancedSettingsObject = buildStructuredAdvancedSettings(structuredAdvancedValues);
+
     const layerHeightValue = normalizeNumericString(layerHeight);
     const initialLayerHeightValue = normalizeNumericString(initialLayerHeight);
     const wallLoopsValue = normalizeNumericString(wallLoops);
@@ -708,6 +874,7 @@ export const CreatePrintProfileModal: React.FC<CreatePrintProfileModalProps> = (
 
     const mergedSettings: Record<string, unknown> = {
       ...stripAdvancedProcessSettings(sourceSettings),
+      ...structuredAdvancedSettingsObject,
       ...advancedSettingsObject,
       type: 'process',
       name: trimmedName,
@@ -764,6 +931,7 @@ export const CreatePrintProfileModal: React.FC<CreatePrintProfileModalProps> = (
     setOrDelete('ironing_type', ironingType.trim());
     setOrDelete('enable_arc_fitting', enableArcFitting);
     setOrDelete('spiral_mode', spiralMode);
+    setOrDelete('notes', notes.trim());
     setOrDeleteList('compatible_filaments', compatibleFilaments);
 
     const data: Parameters<typeof printProfilesAPI.create>[0] = {
@@ -803,6 +971,7 @@ export const CreatePrintProfileModal: React.FC<CreatePrintProfileModalProps> = (
           ? baseProfile.extra_metadata.compatible_printers_condition.trim()
           : readSettingString(baseSettings, 'compatible_printers_condition');
       const baseAdvancedSettings = pickAdvancedProcessSettings(baseSettings);
+      const baseStructuredAdvancedSettings = buildStructuredAdvancedSettings(buildStructuredAdvancedValues(baseSettings));
       const baseComparableValues = {
         qualityTier: baseProfile.quality_tier ?? '',
         defaultNozzle: baseProfile.default_nozzle ?? readSettingString(baseSettings, 'default_nozzle_diameter'),
@@ -834,7 +1003,9 @@ export const CreatePrintProfileModal: React.FC<CreatePrintProfileModalProps> = (
         ironingType: readSettingString(baseSettings, 'ironing_type'),
         enableArcFitting: readSettingBooleanString(baseSettings, 'enable_arc_fitting'),
         spiralMode: readSettingBooleanString(baseSettings, 'spiral_mode'),
+        notes: baseProfile.notes ?? readSettingString(baseSettings, 'notes'),
         compatiblePrintersCondition: baseCompatiblePrintersCondition,
+        structuredAdvancedSettings: stableStringify(baseStructuredAdvancedSettings),
         advancedSettings: stableStringify(baseAdvancedSettings),
       };
 
@@ -868,7 +1039,9 @@ export const CreatePrintProfileModal: React.FC<CreatePrintProfileModalProps> = (
         ironingType: ironingType.trim(),
         enableArcFitting,
         spiralMode,
+        notes: notes.trim(),
         compatiblePrintersCondition: compatiblePrintersConditionValue,
+        structuredAdvancedSettings: stableStringify(structuredAdvancedSettingsObject),
         advancedSettings: stableStringify(advancedSettingsObject),
       };
 
@@ -896,6 +1069,154 @@ export const CreatePrintProfileModal: React.FC<CreatePrintProfileModalProps> = (
       ...DEFAULT_NOZZLE_SIZES,
     ]),
   );
+  const setStructuredAdvancedFieldValue = (key: string, value: string) => {
+    setStructuredAdvancedValues((prev) => ({
+      ...prev,
+      [key]: value,
+    }));
+  };
+  const renderStructuredAdvancedField = (field: OrcaStructuredFieldDef) => {
+    const value = structuredAdvancedValues[field.key] ?? '';
+    const enumOptions = ORCA_ADVANCED_ENUM_OPTIONS[field.key] ?? [];
+    const label = humanizeOrcaFieldKey(field.key);
+    const commonClassName =
+      'w-full rounded-lg border border-white/10 bg-white/5 px-4 py-2 text-white placeholder-gray-500 focus:border-purple-500 focus:outline-none';
+    const commonHint =
+      field.kind === 'stringList' || field.kind === 'integerList' || field.kind === 'floatList' ? (
+        <>
+          <span className="font-mono text-[11px]">{field.key}</span>
+          <span className="mx-1">·</span>
+          <span>{t('createPrintProfile.structuredListHint')}</span>
+        </>
+      ) : (
+        <span className="font-mono text-[11px]">{field.key}</span>
+      );
+
+    let control: ReactNode;
+    switch (field.kind) {
+      case 'boolean':
+        control = (
+          <select
+            value={value}
+            onChange={(event) => setStructuredAdvancedFieldValue(field.key, event.target.value)}
+            className={commonClassName}
+          >
+            {BOOLEAN_OVERRIDE_OPTIONS.map((option) => (
+              <option key={option || 'inherit'} value={option}>
+                {t(`createPrintProfile.booleanOptions.${option || 'inherit'}`)}
+              </option>
+            ))}
+          </select>
+        );
+        break;
+      case 'enum':
+        control = (
+          <select
+            value={value}
+            onChange={(event) => setStructuredAdvancedFieldValue(field.key, event.target.value)}
+            className={commonClassName}
+          >
+            <option value="">{t('createPrintProfile.notSpecified')}</option>
+            {enumOptions.map((option) => (
+              <option key={option} value={option}>
+                {humanizeOrcaValue(option)}
+              </option>
+            ))}
+          </select>
+        );
+        break;
+      case 'integer':
+        control = (
+          <input
+            type="number"
+            step="1"
+            value={value}
+            onChange={(event) => setStructuredAdvancedFieldValue(field.key, event.target.value)}
+            className={commonClassName}
+          />
+        );
+        break;
+      case 'float':
+        control = (
+          <input
+            type="number"
+            step="0.01"
+            value={value}
+            onChange={(event) => setStructuredAdvancedFieldValue(field.key, event.target.value)}
+            className={commonClassName}
+          />
+        );
+        break;
+      case 'percent':
+        control = (
+          <input
+            type="number"
+            step="0.01"
+            value={value}
+            onChange={(event) => setStructuredAdvancedFieldValue(field.key, event.target.value)}
+            className={commonClassName}
+            placeholder="0-100"
+          />
+        );
+        break;
+      case 'floatOrPercent':
+        control = (
+          <input
+            type="text"
+            value={value}
+            onChange={(event) => setStructuredAdvancedFieldValue(field.key, event.target.value)}
+            className={commonClassName}
+            placeholder="20 or 35%"
+          />
+        );
+        break;
+      case 'string':
+        control = (
+          <input
+            type="text"
+            value={value}
+            onChange={(event) => setStructuredAdvancedFieldValue(field.key, event.target.value)}
+            className={commonClassName}
+          />
+        );
+        break;
+      case 'stringList':
+      case 'integerList':
+      case 'floatList':
+        control = (
+          <textarea
+            value={value}
+            onChange={(event) => setStructuredAdvancedFieldValue(field.key, event.target.value)}
+            rows={3}
+            className={`${commonClassName} resize-y font-mono text-sm`}
+            placeholder={t('createPrintProfile.structuredListPlaceholder')}
+          />
+        );
+        break;
+      default:
+        control = (
+          <input
+            type="text"
+            value={value}
+            onChange={(event) => setStructuredAdvancedFieldValue(field.key, event.target.value)}
+            className={commonClassName}
+          />
+        );
+        break;
+    }
+
+    return (
+      <FormField
+        key={field.key}
+        label={label}
+        hint={commonHint}
+        labelMinHeightClassName="min-h-0"
+        className="min-w-0"
+      >
+        {control}
+      </FormField>
+    );
+  };
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4 backdrop-blur-sm">
@@ -1532,6 +1853,57 @@ export const CreatePrintProfileModal: React.FC<CreatePrintProfileModalProps> = (
                   ))}
                 </select>
               </FormField>
+            </div>
+          </div>
+
+          <div className="rounded-xl border border-white/10 bg-white/[0.03] p-4">
+            <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
+              <div>
+                <h3 className="text-sm font-semibold text-white">{t('createPrintProfile.structuredCoverageSection')}</h3>
+                <p className="mt-1 text-xs leading-relaxed text-gray-400">{t('createPrintProfile.structuredCoverageHint')}</p>
+              </div>
+              <div className="w-full md:max-w-sm">
+                <label className="mb-2 block text-xs font-medium uppercase tracking-wide text-gray-400">
+                  {t('createPrintProfile.structuredFieldSearch')}
+                </label>
+                <input
+                  type="text"
+                  value={structuredAdvancedSearch}
+                  onChange={(event) => setStructuredAdvancedSearch(event.target.value)}
+                  className="w-full rounded-lg border border-white/10 bg-white/5 px-4 py-2 text-sm text-white placeholder-gray-500 focus:border-purple-500 focus:outline-none"
+                  placeholder={t('createPrintProfile.structuredFieldSearchPlaceholder')}
+                />
+              </div>
+            </div>
+
+            <div className="mt-4 space-y-3">
+              {filteredStructuredFieldGroups.length > 0 ? (
+                filteredStructuredFieldGroups.map((group) => (
+                  <details
+                    key={group.kind}
+                    className="overflow-hidden rounded-xl border border-white/10 bg-black/10"
+                    open={structuredAdvancedSearchValue.length > 0 || group.kind === 'enum'}
+                  >
+                    <summary className="cursor-pointer list-none px-4 py-3 text-sm font-medium text-white transition-colors hover:bg-white/5">
+                      <div className="flex items-center justify-between gap-3">
+                        <span>{t(`createPrintProfile.structuredGroups.${group.kind}`)}</span>
+                        <span className="rounded-full border border-white/10 px-2 py-0.5 text-xs text-gray-300">
+                          {group.fields.length}
+                        </span>
+                      </div>
+                    </summary>
+                    <div className="border-t border-white/10 px-4 py-4">
+                      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+                        {group.fields.map((field) => renderStructuredAdvancedField(field))}
+                      </div>
+                    </div>
+                  </details>
+                ))
+              ) : (
+                <div className="rounded-xl border border-dashed border-white/10 bg-black/10 px-4 py-5 text-sm text-gray-400">
+                  {t('createPrintProfile.structuredFieldSearchEmpty')}
+                </div>
+              )}
             </div>
           </div>
 
