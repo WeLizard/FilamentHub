@@ -1416,8 +1416,10 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
         </SurfaceCard>
 
         <SurfaceCard className="p-5 md:p-6">
-          <SectionHeading icon={<Upload className="h-5 w-5 text-cyan-300" />} title={tc('uploadGcode')} />
-          <div className="mt-4 space-y-4">
+          <SectionHeading icon={<Printer className="h-5 w-5 text-cyan-300" />} title={tc('workspaceTitle')} />
+          <p className="mt-2 text-sm leading-6 text-slate-300">{tc('workspaceDescription')}</p>
+
+          <div className="mt-5 space-y-5">
             <input
               ref={fileInputRef}
               type="file"
@@ -1429,246 +1431,159 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
               }}
             />
 
-            <button
-              type="button"
-              onClick={() => fileInputRef.current?.click()}
-              onDragEnter={(event) => {
-                event.preventDefault();
-                onDragStateChange(true);
-              }}
-              onDragOver={(event) => {
-                event.preventDefault();
-                onDragStateChange(true);
-              }}
-              onDragLeave={(event) => {
-                event.preventDefault();
-                onDragStateChange(false);
-              }}
-              onDrop={async (event) => {
-                event.preventDefault();
-                onDragStateChange(false);
-                await onFileSelect(event.dataTransfer.files);
-              }}
-              className={`w-full rounded-[1.6rem] border border-dashed p-8 text-left transition-all md:p-10 ${
-                dragActive
-                  ? 'border-cyan-300/80 bg-cyan-400/12 shadow-[0_25px_50px_-35px_rgba(34,211,238,0.65)]'
-                  : 'border-cyan-400/30 bg-[radial-gradient(circle_at_top,rgba(34,211,238,0.14),transparent_52%),linear-gradient(180deg,rgba(15,23,42,0.8),rgba(2,6,23,0.85))] hover:border-cyan-300/50'
-              }`}
-            >
-              <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-                <div className="flex items-start gap-4">
-                  <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-[1.25rem] border border-white/10 bg-white/5">
-                    {isParsingGcode ? <Loader2 className="h-6 w-6 animate-spin text-cyan-300" /> : <Upload className="h-6 w-6 text-cyan-300" />}
-                  </div>
-                  <div>
-                    <p className="text-base font-semibold text-white">
-                      {isParsingGcode ? tc('uploadingGcode') : tc('gcodeDropTitle')}
-                    </p>
-                    <p className="mt-2 max-w-xl text-sm leading-6 text-slate-300">{tc('gcodeDropDescription')}</p>
-                    <p className="mt-3 text-xs uppercase tracking-[0.16em] text-slate-400">{tc('supportedFormats')}</p>
-                  </div>
-                </div>
-                <div className="inline-flex items-center gap-2 self-start rounded-full border border-cyan-300/20 bg-cyan-400/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-cyan-100">
-                  <Upload className="h-3.5 w-3.5" />
-                  {tc('chooseGcode')}
-                </div>
-              </div>
-            </button>
-
-            {parseGcodeError && (
-              <div className="rounded-[1.25rem] border border-red-400/25 bg-red-500/10 px-4 py-3 text-sm text-red-100">
-                {parseGcodeError}
-              </div>
-            )}
-
-            {parsedGcode && (
-              <div className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1.25fr)_minmax(14rem,0.75fr)]">
-                <div className="rounded-[1.5rem] border border-white/10 bg-white/5 p-5">
-                  <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-                    <div>
-                      <p className="text-base font-semibold text-white">{tc('gcodeParsed')}</p>
-                      <p className="mt-1 text-sm leading-6 text-slate-300">{tc('gcodeParsedDescription')}</p>
-                    </div>
-                    <div className="rounded-full border border-emerald-400/20 bg-emerald-500/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.16em] text-emerald-200">
-                      {tc('autoFilled')}
-                    </div>
-                  </div>
-
-                  <div className="mt-5 grid grid-cols-1 gap-3 sm:grid-cols-2">
-                    <MetricRow label={tc('parsedFile')} value={parsedGcode.file_name} />
-                    <MetricRow label={tc('fileSize')} value={formatFileSize(parsedGcode.file_size_bytes)} />
-                    <MetricRow
-                      label={tc('parsedSlicer')}
-                      value={
-                        [parsedGcode.slicer_name, parsedGcode.slicer_version].filter(Boolean).join(' ') ||
-                        tc('notDetected')
-                      }
-                    />
-                    <MetricRow
-                      label={tc('parsedPrintTime')}
-                      value={
-                        parsedGcode.print_time_seconds != null
-                          ? formatHoursShort(parsedGcode.print_time_seconds / 3600, t('profilePage.calc.h'), t('profilePage.calc.min'))
-                          : '—'
-                      }
-                    />
-                    <MetricRow
-                      label={tc('parsedWeight')}
-                      value={
-                        parsedGcode.total_filament_weight_g != null
-                          ? `${parsedGcode.total_filament_weight_g.toFixed(2)} ${tc('grams')}`
-                          : '—'
-                      }
-                    />
-                    <MetricRow
-                      label={tc('parsedLength')}
-                      value={
-                        parsedGcode.total_filament_length_mm != null
-                          ? `${(parsedGcode.total_filament_length_mm / 1000).toFixed(2)} m`
-                          : '—'
-                      }
-                    />
-                    <MetricRow
-                      label={tc('parsedLayerHeight')}
-                      value={parsedGcode.layer_height_mm != null ? `${parsedGcode.layer_height_mm} mm` : '—'}
-                    />
-                    <MetricRow
-                      label={tc('parsedInfill')}
-                      value={
-                        parsedGcode.sparse_infill_density_percent != null
-                          ? `${parsedGcode.sparse_infill_density_percent}%${
-                              parsedGcode.sparse_infill_pattern ? ` · ${parsedGcode.sparse_infill_pattern}` : ''
-                            }`
-                          : '—'
-                      }
-                    />
-                  </div>
-
-                  {parsedGcode.materials.length > 0 && (
-                    <div className="mt-5">
-                      <p className="text-sm font-semibold text-white">{tc('parsedMaterials')}</p>
-                      <div className="mt-3 flex flex-wrap gap-2">
-                        {parsedGcode.materials.map((material, index) => (
-                          <div
-                            key={`${material.name ?? material.type ?? 'material'}-${index}`}
-                            className="rounded-full border border-cyan-400/20 bg-cyan-400/10 px-3 py-2 text-xs text-cyan-100"
-                          >
-                            <span className="font-semibold text-white">
-                              {buildParsedMaterialLabel(material, tc('unknownMaterial'))}
-                            </span>
-                            {material.weight_g != null ? ` · ${material.weight_g.toFixed(2)} ${tc('grams')}` : ''}
-                          </div>
-                        ))}
+            <div className="grid grid-cols-1 gap-5 xl:grid-cols-[minmax(0,1.1fr)_minmax(0,0.9fr)]">
+              <WorkspacePanel
+                step="1"
+                title={tc('workspaceSourceTitle')}
+                description={tc('workspaceSourceDescription')}
+              >
+                <button
+                  type="button"
+                  onClick={() => fileInputRef.current?.click()}
+                  onDragEnter={(event) => {
+                    event.preventDefault();
+                    onDragStateChange(true);
+                  }}
+                  onDragOver={(event) => {
+                    event.preventDefault();
+                    onDragStateChange(true);
+                  }}
+                  onDragLeave={(event) => {
+                    event.preventDefault();
+                    onDragStateChange(false);
+                  }}
+                  onDrop={async (event) => {
+                    event.preventDefault();
+                    onDragStateChange(false);
+                    await onFileSelect(event.dataTransfer.files);
+                  }}
+                  className={`w-full rounded-[1.5rem] border border-dashed p-6 text-left transition-all ${
+                    dragActive
+                      ? 'border-cyan-300/80 bg-cyan-400/12 shadow-[0_25px_50px_-35px_rgba(34,211,238,0.65)]'
+                      : 'border-cyan-400/30 bg-[radial-gradient(circle_at_top,rgba(34,211,238,0.14),transparent_52%),linear-gradient(180deg,rgba(15,23,42,0.8),rgba(2,6,23,0.85))] hover:border-cyan-300/50'
+                  }`}
+                >
+                  <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+                    <div className="flex items-start gap-4">
+                      <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-[1.1rem] border border-white/10 bg-white/5">
+                        {isParsingGcode ? <Loader2 className="h-5 w-5 animate-spin text-cyan-300" /> : <Upload className="h-5 w-5 text-cyan-300" />}
+                      </div>
+                      <div>
+                        <p className="text-base font-semibold text-white">
+                          {isParsingGcode ? tc('uploadingGcode') : tc('gcodeDropTitle')}
+                        </p>
+                        <p className="mt-2 max-w-xl text-sm leading-6 text-slate-300">{tc('gcodeDropDescription')}</p>
+                        <p className="mt-3 text-xs uppercase tracking-[0.16em] text-slate-400">{tc('supportedFormats')}</p>
                       </div>
                     </div>
-                  )}
-                </div>
-
-                <div className="rounded-[1.5rem] border border-white/10 bg-white/5 p-5">
-                  <p className="text-sm font-semibold text-white">{tc('parsedPreview')}</p>
-                  {parsedGcode.thumbnail_data_url ? (
-                    <div className="mt-4 overflow-hidden rounded-[1.25rem] border border-white/10 bg-slate-950/60">
-                      <img
-                        src={parsedGcode.thumbnail_data_url}
-                        alt={tc('parsedPreviewAlt')}
-                        className="block h-auto w-full object-contain"
-                      />
+                    <div className="inline-flex items-center gap-2 self-start rounded-full border border-cyan-300/20 bg-cyan-400/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-cyan-100">
+                      <Upload className="h-3.5 w-3.5" />
+                      {tc('chooseGcode')}
                     </div>
-                  ) : (
-                    <div className="mt-4 rounded-[1.25rem] border border-dashed border-white/12 bg-slate-950/40 px-4 py-8 text-center text-sm text-slate-400">
-                      {tc('previewUnavailable')}
-                    </div>
-                  )}
-                </div>
-              </div>
-            )}
-          </div>
-        </SurfaceCard>
+                  </div>
+                </button>
 
-        <SurfaceCard className="p-5 md:p-6">
-          <SectionHeading icon={<Weight className="h-5 w-5 text-cyan-300" />} title={tc('coreInputsTitle')} />
-          <p className="mt-2 text-sm leading-6 text-slate-300">{tc('coreInputsDescription')}</p>
-          <div className="mt-4 space-y-4">
-            <FieldBlock label={tc('selectMaterial')}>
-              <select
-                className={inputClass}
-                value={form.selectedFilamentId}
-                onChange={(event) => onChange('selectedFilamentId', event.target.value ? Number(event.target.value) : '')}
+                {parseGcodeError && (
+                  <div className="rounded-[1.25rem] border border-red-400/25 bg-red-500/10 px-4 py-3 text-sm text-red-100">
+                    {parseGcodeError}
+                  </div>
+                )}
+
+                <div className="flex flex-wrap gap-2">
+                  <StatusPill tone={parsedGcode ? 'success' : 'neutral'}>
+                    {parsedGcode ? tc('sourceGcode') : tc('sourceManual')}
+                  </StatusPill>
+                  <StatusPill tone="neutral">{tc('workspaceSourceHint')}</StatusPill>
+                </div>
+              </WorkspacePanel>
+
+              <WorkspacePanel
+                step="2"
+                title={tc('workspaceMaterialTitle')}
+                description={tc('workspaceMaterialDescription')}
               >
-                <option value="">{tc('chooseFromCatalog')}</option>
-                {filaments.map((filament) => (
-                  <option key={filament.id} value={filament.id}>
-                    {buildFilamentLabel(filament)}
-                  </option>
-                ))}
-              </select>
-            </FieldBlock>
+                <FieldBlock label={tc('selectMaterial')}>
+                  <select
+                    className={inputClass}
+                    value={form.selectedFilamentId}
+                    onChange={(event) => onChange('selectedFilamentId', event.target.value ? Number(event.target.value) : '')}
+                  >
+                    <option value="">{tc('chooseFromCatalog')}</option>
+                    {filaments.map((filament) => (
+                      <option key={filament.id} value={filament.id}>
+                        {buildFilamentLabel(filament)}
+                      </option>
+                    ))}
+                  </select>
+                </FieldBlock>
 
-            {selectedFilament && materialCatalogSummary && (
-              <div className="rounded-[1.35rem] border border-cyan-400/20 bg-cyan-400/10 px-4 py-3 text-sm text-cyan-100">
-                <span className="font-semibold text-white">{selectedFilament.name}</span>
-                <span className="mx-2 text-cyan-200/70">·</span>
-                {materialCatalogSummary}
-              </div>
-            )}
+                {selectedFilament && materialCatalogSummary && (
+                  <div className="rounded-[1.25rem] border border-cyan-400/20 bg-cyan-400/10 px-4 py-3 text-sm text-cyan-100">
+                    <span className="font-semibold text-white">{selectedFilament.name}</span>
+                    <span className="mx-2 text-cyan-200/70">·</span>
+                    {materialCatalogSummary}
+                  </div>
+                )}
 
-            {filamentsLoadError && (
-              <div className="rounded-[1.25rem] border border-amber-400/20 bg-amber-500/10 px-4 py-3 text-sm text-amber-100">
-                {filamentsLoadError}
-              </div>
-            )}
+                {filamentsLoadError && (
+                  <div className="rounded-[1.25rem] border border-amber-400/20 bg-amber-500/10 px-4 py-3 text-sm text-amber-100">
+                    {filamentsLoadError}
+                  </div>
+                )}
 
-            {isFilamentsLoading && (
-              <div className="rounded-[1.25rem] border border-white/10 bg-white/5 px-4 py-3 text-sm text-slate-300">
-                {tc('loadingMaterials')}
-              </div>
-            )}
+                {isFilamentsLoading && (
+                  <div className="rounded-[1.25rem] border border-white/10 bg-white/5 px-4 py-3 text-sm text-slate-300">
+                    {tc('loadingMaterials')}
+                  </div>
+                )}
 
-            <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
-              <FieldBlock label={t('profilePage.calc.partWeight')}>
-                <InputWithSuffix
-                  value={form.weightG}
-                  onChange={(value) => onChange('weightG', value)}
-                  placeholder="531"
-                  suffix={tc('grams')}
-                />
-              </FieldBlock>
-              <FieldBlock label={t('profilePage.calc.spoolPrice')}>
-                <InputWithSuffix
-                  value={form.spoolPrice}
-                  onChange={(value) => onChange('spoolPrice', value)}
-                  placeholder="1200"
-                  suffix="₽"
-                />
-              </FieldBlock>
-              <FieldBlock label={t('profilePage.calc.spoolWeight')}>
-                <InputWithSuffix
-                  value={form.spoolWeightKg}
-                  onChange={(value) => onChange('spoolWeightKg', value)}
-                  placeholder="1"
-                  suffix={tc('kg')}
-                  step="0.1"
-                />
-              </FieldBlock>
-              <FieldBlock label={t('profilePage.calc.quantity')}>
-                <NumberInput value={form.quantity} onChange={(value) => onChange('quantity', Math.max(1, value))} min="1" placeholder="4" />
-              </FieldBlock>
-              <FieldBlock label={t('profilePage.calc.partsPerPrint')} hint={t('profilePage.calc.partsPerPrintHint')}>
-                <NumberInput
-                  value={form.partsPerPrint}
-                  onChange={(value) => onChange('partsPerPrint', Math.max(1, value))}
-                  min="1"
-                  placeholder="1"
-                />
-              </FieldBlock>
+                <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                  <FieldBlock label={t('profilePage.calc.partWeight')}>
+                    <InputWithSuffix
+                      value={form.weightG}
+                      onChange={(value) => onChange('weightG', value)}
+                      placeholder="531"
+                      suffix={tc('grams')}
+                    />
+                  </FieldBlock>
+                  <FieldBlock label={t('profilePage.calc.spoolPrice')}>
+                    <InputWithSuffix
+                      value={form.spoolPrice}
+                      onChange={(value) => onChange('spoolPrice', value)}
+                      placeholder="1200"
+                      suffix="₽"
+                    />
+                  </FieldBlock>
+                  <FieldBlock label={t('profilePage.calc.spoolWeight')}>
+                    <InputWithSuffix
+                      value={form.spoolWeightKg}
+                      onChange={(value) => onChange('spoolWeightKg', value)}
+                      placeholder="1"
+                      suffix={tc('kg')}
+                      step="0.1"
+                    />
+                  </FieldBlock>
+                </div>
+              </WorkspacePanel>
             </div>
 
-            <div className="rounded-[1.45rem] border border-white/10 bg-white/5 p-4">
-              <div className="flex items-center gap-2">
-                <Clock className="h-4 w-4 text-cyan-300" />
-                <p className="text-sm font-semibold text-white">{t('profilePage.calc.printTime')}</p>
-              </div>
-              <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-3">
+            <WorkspacePanel
+              step="3"
+              title={tc('workspaceProductionTitle')}
+              description={tc('workspaceProductionDescription')}
+            >
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-5">
+                <FieldBlock label={t('profilePage.calc.quantity')}>
+                  <NumberInput value={form.quantity} onChange={(value) => onChange('quantity', Math.max(1, value))} min="1" placeholder="4" />
+                </FieldBlock>
+                <FieldBlock label={t('profilePage.calc.partsPerPrint')} hint={t('profilePage.calc.partsPerPrintHint')}>
+                  <NumberInput
+                    value={form.partsPerPrint}
+                    onChange={(value) => onChange('partsPerPrint', Math.max(1, value))}
+                    min="1"
+                    placeholder="1"
+                  />
+                </FieldBlock>
                 <FieldBlock label={t('profilePage.calc.hours')}>
                   <NumberInput value={form.timeHours} onChange={(value) => onChange('timeHours', value)} placeholder="13" />
                 </FieldBlock>
@@ -1679,7 +1594,110 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
                   <NumberInput value={form.timeSec} onChange={(value) => onChange('timeSec', value)} placeholder="0" />
                 </FieldBlock>
               </div>
-            </div>
+
+              <div className="flex flex-wrap gap-2">
+                <StatusPill tone="neutral">{tc('workspaceBatchHint')}</StatusPill>
+                <StatusPill tone="neutral">{tc('workspaceTimeHint')}</StatusPill>
+              </div>
+            </WorkspacePanel>
+
+            {parsedGcode && (
+              <WorkspacePanel
+                step="4"
+                title={tc('workspaceGcodeSummaryTitle')}
+                description={tc('workspaceGcodeSummaryDescription')}
+              >
+                <div className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1.25fr)_minmax(14rem,0.75fr)]">
+                  <div className="rounded-[1.3rem] border border-white/10 bg-white/5 p-4">
+                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                      <MetricRow label={tc('parsedFile')} value={parsedGcode.file_name} />
+                      <MetricRow label={tc('fileSize')} value={formatFileSize(parsedGcode.file_size_bytes)} />
+                      <MetricRow
+                        label={tc('parsedSlicer')}
+                        value={
+                          [parsedGcode.slicer_name, parsedGcode.slicer_version].filter(Boolean).join(' ') ||
+                          tc('notDetected')
+                        }
+                      />
+                      <MetricRow
+                        label={tc('parsedPrintTime')}
+                        value={
+                          parsedGcode.print_time_seconds != null
+                            ? formatHoursShort(parsedGcode.print_time_seconds / 3600, t('profilePage.calc.h'), t('profilePage.calc.min'))
+                            : '—'
+                        }
+                      />
+                      <MetricRow
+                        label={tc('parsedWeight')}
+                        value={
+                          parsedGcode.total_filament_weight_g != null
+                            ? `${parsedGcode.total_filament_weight_g.toFixed(2)} ${tc('grams')}`
+                            : '—'
+                        }
+                      />
+                      <MetricRow
+                        label={tc('parsedLength')}
+                        value={
+                          parsedGcode.total_filament_length_mm != null
+                            ? `${(parsedGcode.total_filament_length_mm / 1000).toFixed(2)} m`
+                            : '—'
+                        }
+                      />
+                      <MetricRow
+                        label={tc('parsedLayerHeight')}
+                        value={parsedGcode.layer_height_mm != null ? `${parsedGcode.layer_height_mm} mm` : '—'}
+                      />
+                      <MetricRow
+                        label={tc('parsedInfill')}
+                        value={
+                          parsedGcode.sparse_infill_density_percent != null
+                            ? `${parsedGcode.sparse_infill_density_percent}%${
+                                parsedGcode.sparse_infill_pattern ? ` · ${parsedGcode.sparse_infill_pattern}` : ''
+                              }`
+                            : '—'
+                        }
+                      />
+                    </div>
+
+                    {parsedGcode.materials.length > 0 && (
+                      <div className="mt-4">
+                        <p className="text-sm font-semibold text-white">{tc('parsedMaterials')}</p>
+                        <div className="mt-3 flex flex-wrap gap-2">
+                          {parsedGcode.materials.map((material, index) => (
+                            <div
+                              key={`${material.name ?? material.type ?? 'material'}-${index}`}
+                              className="rounded-full border border-cyan-400/20 bg-cyan-400/10 px-3 py-2 text-xs text-cyan-100"
+                            >
+                              <span className="font-semibold text-white">
+                                {buildParsedMaterialLabel(material, tc('unknownMaterial'))}
+                              </span>
+                              {material.weight_g != null ? ` · ${material.weight_g.toFixed(2)} ${tc('grams')}` : ''}
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="rounded-[1.3rem] border border-white/10 bg-white/5 p-4">
+                    <p className="text-sm font-semibold text-white">{tc('parsedPreview')}</p>
+                    {parsedGcode.thumbnail_data_url ? (
+                      <div className="mt-4 overflow-hidden rounded-[1.15rem] border border-white/10 bg-slate-950/60">
+                        <img
+                          src={parsedGcode.thumbnail_data_url}
+                          alt={tc('parsedPreviewAlt')}
+                          className="block h-auto w-full object-contain"
+                        />
+                      </div>
+                    ) : (
+                      <div className="mt-4 rounded-[1.15rem] border border-dashed border-white/12 bg-slate-950/40 px-4 py-8 text-center text-sm text-slate-400">
+                        {tc('previewUnavailable')}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </WorkspacePanel>
+            )}
           </div>
         </SurfaceCard>
 
@@ -1839,15 +1857,31 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
           {result ? (
             <>
               <div className="mt-6 overflow-hidden rounded-[1.7rem] border border-cyan-400/20 bg-[radial-gradient(circle_at_top_left,rgba(34,211,238,0.18),transparent_45%),linear-gradient(145deg,rgba(14,116,144,0.2),rgba(76,29,149,0.26))] p-6 shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]">
-                <p className="text-xs uppercase tracking-[0.18em] text-slate-300">{tc('totalCost')}</p>
+                <p className="text-xs uppercase tracking-[0.18em] text-slate-300">{tc('customerPriceTitle')}</p>
                 <p className="mt-3 text-4xl font-bold tracking-tight text-white">{formatCurrency(result.cost_final || result.cost_total)}</p>
                 <p className="mt-2 text-sm text-slate-300">
                   {tc('perPart')}: <span className="text-white">{formatCurrency(result.cost_first_part)}</span>
                 </p>
               </div>
 
+              <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-3">
+                <MetricTile label={tc('summaryCostOfGoods')} value={formatCurrency(result.cost_of_goods_sold)} />
+                <MetricTile
+                  label={tc('summaryProfit')}
+                  value={
+                    result.profit_margin_percent != null
+                      ? `${formatCurrency(result.profit_margin)} · ${result.profit_margin_percent.toFixed(1)}%`
+                      : formatCurrency(result.profit_margin)
+                  }
+                />
+                <MetricTile
+                  label={tc('summaryWorkTime')}
+                  value={formatHoursShort(result.total_time_hours, t('profilePage.calc.h'), t('profilePage.calc.min'))}
+                />
+              </div>
+
               <div className="mt-6 space-y-4">
-                <SectionPanel title={t('profilePage.calc.costComponents')}>
+                <SectionPanel title={tc('resultsCostStructureTitle')}>
                   <MetricRow label={t('profilePage.calc.material')} value={formatCurrency(result.cost_material)} />
                   <MetricRow label={t('profilePage.calc.electricityLabel')} value={formatCurrency(result.cost_electricity)} />
                   <MetricRow label={t('profilePage.calc.modeling')} value={formatCurrency(result.cost_modeling)} />
@@ -1859,14 +1893,14 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
                   ) : null}
                 </SectionPanel>
 
-                <SectionPanel title={t('profilePage.calc.intermediateCalcs')}>
+                <SectionPanel title={tc('resultsCommercialModelTitle')}>
                   <MetricRow label={t('profilePage.calc.directCosts')} value={formatCurrency(result.cost_direct)} />
                   <MetricRow label={t('profilePage.calc.overhead')} value={formatCurrency(result.cost_overhead)} />
                   <MetricRow label={t('profilePage.calc.costBeforeMarkup')} value={formatCurrency(result.cost_before_markup)} />
                   <MetricRow label={t('profilePage.calc.markup')} value={formatCurrency(result.cost_markup)} />
                 </SectionPanel>
 
-                <SectionPanel title={t('profilePage.calc.financialMetrics')}>
+                <SectionPanel title={tc('resultsMarginTitle')}>
                   <MetricRow label={t('profilePage.calc.costOfGoods')} value={formatCurrency(result.cost_of_goods_sold)} />
                   <MetricRow
                     label={t('profilePage.calc.profitMargin')}
@@ -1882,7 +1916,7 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
                   />
                 </SectionPanel>
 
-                <SectionPanel title={t('profilePage.calc.totalSums')}>
+                <SectionPanel title={tc('resultsBatchTitle')}>
                   <MetricRow label={t('profilePage.calc.firstPartPrice')} value={formatCurrency(result.cost_first_part)} strong />
                   <MetricRow label={t('profilePage.calc.subsequentPrice')} value={formatCurrency(result.cost_subsequent_parts)} />
                   <MetricRow
@@ -2254,6 +2288,42 @@ const SurfaceCard: React.FC<{ children: ReactNode; className?: string }> = ({ ch
     <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top,rgba(255,255,255,0.06),transparent_40%)]" />
     <div className="relative">{children}</div>
   </section>
+);
+
+const StepBadge: React.FC<{ step: string }> = ({ step }) => (
+  <div className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-cyan-400/20 bg-cyan-400/10 text-xs font-semibold text-cyan-200">
+    {step}
+  </div>
+);
+
+const WorkspacePanel: React.FC<{
+  step: string;
+  title: string;
+  description?: string;
+  children: ReactNode;
+}> = ({ step, title, description, children }) => (
+  <div className="rounded-[1.55rem] border border-white/10 bg-white/5 p-5 shadow-[inset_0_1px_0_rgba(255,255,255,0.05)]">
+    <div className="flex items-start gap-3">
+      <StepBadge step={step} />
+      <div>
+        <p className="text-base font-semibold text-white">{title}</p>
+        {description ? <p className="mt-1 text-sm leading-6 text-slate-300">{description}</p> : null}
+      </div>
+    </div>
+    <div className="mt-4 space-y-4">{children}</div>
+  </div>
+);
+
+const StatusPill: React.FC<{ children: ReactNode; tone?: 'neutral' | 'success' }> = ({ children, tone = 'neutral' }) => (
+  <div
+    className={`rounded-full border px-3 py-1.5 text-xs font-medium ${
+      tone === 'success'
+        ? 'border-emerald-400/20 bg-emerald-500/10 text-emerald-100'
+        : 'border-white/10 bg-black/20 text-slate-300'
+    }`}
+  >
+    {children}
+  </div>
 );
 
 const SectionHeading: React.FC<{ icon: ReactNode; title: string; compact?: boolean }> = ({
