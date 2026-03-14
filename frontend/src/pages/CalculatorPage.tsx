@@ -1608,6 +1608,7 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
         .filter(Boolean)
         .join(' · ') || tc('parsedNone')
     : null;
+  const primaryParsedMaterial = parsedGcode?.materials[0] ?? null;
 
   return (
     <div className="grid grid-cols-1 gap-5 xl:grid-cols-[minmax(0,1.45fr)_minmax(22rem,0.92fr)]">
@@ -2094,6 +2095,12 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
                           <StatusPill tone="neutral">
                             {tc('fileSize')}: {formatFileSize(parsedGcode.file_size_bytes)}
                           </StatusPill>
+                          {primaryParsedMaterial ? (
+                            <StatusPill tone="neutral">
+                              {tc('parsedMaterial')}: {buildParsedMaterialLabel(primaryParsedMaterial, tc('unknownMaterial'))}
+                              {primaryParsedMaterial.weight_g != null ? ` · ${primaryParsedMaterial.weight_g.toFixed(2)} ${tc('grams')}` : ''}
+                            </StatusPill>
+                          ) : null}
                         </div>
                       </div>
 
@@ -2190,7 +2197,7 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
                         }
                       />
 
-                      {parsedGcode.materials.length > 0 ? (
+                      {parsedGcode.materials.length > 1 ? (
                         <div className="mt-4 flex flex-wrap gap-2">
                           {parsedGcode.materials.map((material, index) => (
                             <div
