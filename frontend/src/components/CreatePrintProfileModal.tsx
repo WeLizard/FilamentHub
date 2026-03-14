@@ -228,6 +228,12 @@ const dedupeStringValues = (values: string[]): string[] =>
     ),
   );
 
+const normalizeComparableValue = (value: string): string =>
+  value
+    .trim()
+    .replace(/\s+/g, ' ')
+    .toLowerCase();
+
 const qualityTierLabel = (value: string): string => QUALITY_TIER_LABELS[value.toLowerCase()] ?? value;
 
 const titleCaseWord = (value: string): string =>
@@ -571,20 +577,35 @@ export const CreatePrintProfileModal: React.FC<CreatePrintProfileModalProps> = (
     !profile && !baseProfile && layerHeight.trim() && qualityTier.trim()
       ? buildRecommendedName(layerHeight, qualityTier, recommendedPrinterTag)
       : '';
+  const normalizedSelectedCompatiblePrinterNames = new Set(
+    selectedCompatiblePrinters.map(normalizeComparableValue),
+  );
   const availableCompatiblePrinterOptions = availablePrinterProfiles
-    .filter((printerProfile) => !selectedCompatiblePrinters.includes(printerProfile.name))
+    .filter((printerProfile) => !normalizedSelectedCompatiblePrinterNames.has(normalizeComparableValue(printerProfile.name)))
     .map((printerProfile) => ({
       value: printerProfile.id,
       label: buildPrinterProfileOptionLabel(printerProfile),
     }));
-  const knownCompatiblePrinterNames = new Set(availablePrinterProfiles.map((printerProfile) => printerProfile.name));
+  const knownCompatiblePrinterNames = new Set(
+    availablePrinterProfiles.map((printerProfile) => normalizeComparableValue(printerProfile.name)),
+  );
+  const normalizedSelectedCompatibleFilamentNames = new Set(
+    selectedCompatibleFilaments.map(normalizeComparableValue),
+  );
   const availableCompatibleFilamentOptions = availableFilaments
-    .filter((filament) => !selectedCompatibleFilaments.includes(buildCompatibleFilamentValue(filament)))
+    .filter(
+      (filament) =>
+        !normalizedSelectedCompatibleFilamentNames.has(
+          normalizeComparableValue(buildCompatibleFilamentValue(filament)),
+        ),
+    )
     .map((filament) => ({
       value: filament.id,
       label: buildFilamentOptionLabel(filament),
     }));
-  const knownCompatibleFilamentNames = new Set(availableFilaments.map(buildCompatibleFilamentValue));
+  const knownCompatibleFilamentNames = new Set(
+    availableFilaments.map((filament) => normalizeComparableValue(buildCompatibleFilamentValue(filament))),
+  );
   const showSupportThresholdField = enableSupport === '1' && supportType.includes('(auto)');
   const structuredAdvancedSearchValue = structuredAdvancedSearch.trim().toLowerCase();
   const filteredStructuredFields = useMemo(
@@ -1933,7 +1954,9 @@ export const CreatePrintProfileModal: React.FC<CreatePrintProfileModalProps> = (
                 {selectedCompatiblePrinters.length > 0 && (
                   <div className="mt-3 flex flex-wrap gap-2">
                     {selectedCompatiblePrinters.map((printerName) => {
-                      const isKnownPrinter = printerProfilesQuery.isPending || knownCompatiblePrinterNames.has(printerName);
+                      const isKnownPrinter =
+                        printerProfilesQuery.isPending ||
+                        knownCompatiblePrinterNames.has(normalizeComparableValue(printerName));
 
                       return (
                         <span
@@ -1946,7 +1969,7 @@ export const CreatePrintProfileModal: React.FC<CreatePrintProfileModalProps> = (
                         >
                           <span>{printerName}</span>
                           {!isKnownPrinter && (
-                            <span className="text-[10px] uppercase tracking-wide text-amber-200/80">
+                            <span className="rounded-full border border-amber-400/20 bg-amber-500/15 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-amber-100">
                               {t('createPrintProfile.unresolvedCompatiblePrinter')}
                             </span>
                           )}
@@ -2011,7 +2034,9 @@ export const CreatePrintProfileModal: React.FC<CreatePrintProfileModalProps> = (
                 {selectedCompatibleFilaments.length > 0 && (
                   <div className="mt-3 flex flex-wrap gap-2">
                     {selectedCompatibleFilaments.map((filamentName) => {
-                      const isKnownFilament = filamentsQuery.isPending || knownCompatibleFilamentNames.has(filamentName);
+                      const isKnownFilament =
+                        filamentsQuery.isPending ||
+                        knownCompatibleFilamentNames.has(normalizeComparableValue(filamentName));
 
                       return (
                         <span
@@ -2024,7 +2049,7 @@ export const CreatePrintProfileModal: React.FC<CreatePrintProfileModalProps> = (
                         >
                           <span>{filamentName}</span>
                           {!isKnownFilament && (
-                            <span className="text-[10px] uppercase tracking-wide text-amber-200/80">
+                            <span className="rounded-full border border-amber-400/20 bg-amber-500/15 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-amber-100">
                               {t('createPrintProfile.unresolvedCompatibleFilament')}
                             </span>
                           )}
