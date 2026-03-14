@@ -1559,6 +1559,7 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
   const { t } = useTranslation();
   const tc = (key: string) => translateCalculator(t, key);
   const [staticSettingsOpen, setStaticSettingsOpen] = useState(false);
+  const [quoteProfileOpen, setQuoteProfileOpen] = useState(false);
   const [advancedSettingsOpen, setAdvancedSettingsOpen] = useState(false);
 
   const materialSourceLabel = selectedSpool
@@ -1566,7 +1567,6 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
     : selectedFilament
       ? tc('materialSourceCatalog')
       : tc('materialSourceManual');
-  const materialSourceTone = selectedSpool ? 'success' : selectedFilament ? 'neutral' : 'neutral';
   const materialSummary =
     selectedSpool
       ? [
@@ -1588,19 +1588,6 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
       : form.roundingMode === 'nearest'
         ? t('profilePage.calc.roundingModeNearest')
         : t('profilePage.calc.roundingModeUp');
-  const staticSettingsSummary = [
-    `${t('profilePage.calc.printingRate')}: ${form.printingRatePerHour} ₽/${tc('hourAbbr')}`,
-    `${t('profilePage.calc.electricityCost')}: ${form.electricityCostPerKwh} ₽/${tc('kwhAbbr')}`,
-    `${t('profilePage.calc.taxRatePercent')}: ${form.taxRatePercent}%`,
-    `${t('profilePage.calc.roundTo')}: ${form.roundToNearest} ₽ · ${roundingModeLabel}`,
-  ].join(' · ');
-  const quoteProfileSummary = [
-    quoteProfile.sellerName || tc('quoteProfileSummaryEmpty'),
-    quoteProfile.paymentTerms ? `${tc('quotePaymentTerms')}: ${quoteProfile.paymentTerms}` : null,
-    `${tc('quoteValidityDaysShort')}: ${quoteProfile.validityDays} ${tc('dayAbbr')}`,
-  ]
-    .filter(Boolean)
-    .join(' · ');
   const parsedSupportsSummary = parsedGcode
     ? [
         parsedGcode.support_type,
@@ -1625,33 +1612,43 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
   return (
     <div className="grid grid-cols-1 gap-5 xl:grid-cols-[minmax(0,1.45fr)_minmax(22rem,0.92fr)]">
       <div className="space-y-5">
-        <SurfaceCard className="p-5 md:p-6">
-          <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-            <div>
-              <SectionHeading icon={<Settings2 className="h-5 w-5 text-cyan-300" />} title={tc('staticSettingsTitle')} />
-              <p className="mt-2 text-sm text-slate-300">{tc('staticSettingsDescription')}</p>
-              <p className="mt-3 text-xs leading-5 text-slate-400">{staticSettingsSummary}</p>
-              <p className="mt-2 text-xs leading-5 text-slate-400">{quoteProfileSummary}</p>
+        <SurfaceCard className="p-4 md:p-5">
+          <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+            <SectionHeading icon={<Settings2 className="h-5 w-5 text-cyan-300" />} title={tc('staticSettingsTitle')} compact />
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={() => setStaticSettingsOpen((prev) => !prev)}
+                className={ghostButtonClass}
+              >
+                <Settings2 className="h-4 w-4" />
+                {tc('staticEconomicsTitle')}
+                <ChevronDown className={`h-4 w-4 transition-transform ${staticSettingsOpen ? 'rotate-180' : ''}`} />
+              </button>
+              <button
+                type="button"
+                onClick={() => setQuoteProfileOpen((prev) => !prev)}
+                className={ghostButtonClass}
+              >
+                <FileText className="h-4 w-4" />
+                {tc('quoteProfileTitle')}
+                <ChevronDown className={`h-4 w-4 transition-transform ${quoteProfileOpen ? 'rotate-180' : ''}`} />
+              </button>
             </div>
-            <button
-              type="button"
-              onClick={() => setStaticSettingsOpen((prev) => !prev)}
-              className={`${ghostButtonClass} shrink-0 self-start`}
-            >
-              <Settings2 className="h-4 w-4" />
-              {staticSettingsOpen ? tc('hideStaticSettings') : tc('showStaticSettings')}
-              <ChevronDown className={`h-4 w-4 transition-transform ${staticSettingsOpen ? 'rotate-180' : ''}`} />
-            </button>
           </div>
 
-          {staticSettingsOpen && (
-            <div className="mt-5 space-y-5">
-              <div>
-                <p className="text-sm font-semibold text-white">{tc('staticEconomicsTitle')}</p>
-                <p className="mt-1 text-xs leading-5 text-slate-400">{tc('staticEconomicsDescription')}</p>
-                <div className="mt-3 rounded-[1rem] border border-cyan-400/20 bg-cyan-400/10 px-4 py-3 text-xs leading-5 text-cyan-100">
-                  {tc('staticEconomicsNote')}
+          {staticSettingsOpen || quoteProfileOpen ? (
+            <div className="mt-4 space-y-4 border-t border-white/10 pt-4">
+              {staticSettingsOpen ? (
+                <div>
+                  <p className="text-sm font-semibold text-white">{tc('staticEconomicsTitle')}</p>
+                  <p className="mt-1 text-xs leading-5 text-slate-400">
+                    {`${t('profilePage.calc.printingRate')}: ${form.printingRatePerHour} ₽/${tc('hourAbbr')} · ${t('profilePage.calc.taxRatePercent')}: ${form.taxRatePercent}% · ${t('profilePage.calc.roundTo')}: ${form.roundToNearest} ₽ · ${roundingModeLabel}`}
+                  </p>
                 </div>
+              ) : null}
+
+              {staticSettingsOpen ? (
                 <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
                   <FieldBlock
                     label={
@@ -1825,11 +1822,15 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
                     </select>
                   </FieldBlock>
                 </div>
-              </div>
+              ) : null}
 
-              <div className="border-t border-white/10 pt-5">
-                <p className="text-sm font-semibold text-white">{tc('quoteProfileTitle')}</p>
-                <p className="mt-1 text-xs leading-5 text-slate-400">{tc('quoteProfileDescription')}</p>
+              {quoteProfileOpen ? (
+                <div className={staticSettingsOpen ? 'border-t border-white/10 pt-4' : ''}>
+                  <p className="text-sm font-semibold text-white">{tc('quoteProfileTitle')}</p>
+                  <p className="mt-1 text-xs leading-5 text-slate-400">
+                    {(quoteProfile.sellerName || tc('quoteProfileSummaryEmpty')) +
+                      ` · ${tc('quoteValidityDaysShort')}: ${quoteProfile.validityDays} ${tc('dayAbbr')}`}
+                  </p>
                 <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
                   <FieldBlock label={tc('quoteSellerName')}>
                     <TextInput
@@ -1882,14 +1883,14 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
                     </FieldBlock>
                   </div>
                 </div>
-              </div>
+                </div>
+              ) : null}
             </div>
-          )}
+          ) : null}
         </SurfaceCard>
 
         <SurfaceCard className="p-5 md:p-6">
           <SectionHeading icon={<Printer className="h-5 w-5 text-cyan-300" />} title={tc('workspaceTitle')} />
-          <p className="mt-2 text-sm leading-6 text-slate-300">{tc('workspaceDescription')}</p>
 
           <div className="mt-5 space-y-5">
             <input
@@ -1907,7 +1908,6 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
               <WorkspacePanel
                 step="1"
                 title={tc('workspaceSourceTitle')}
-                description={tc('workspaceSourceDescription')}
               >
                 <button
                   type="button"
@@ -1944,8 +1944,7 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
                         <p className="text-base font-semibold text-white">
                           {isParsingGcode ? tc('uploadingGcode') : tc('gcodeDropTitle')}
                         </p>
-                        <p className="mt-2 max-w-xl text-sm leading-6 text-slate-300">{tc('gcodeDropDescription')}</p>
-                        <p className="mt-3 text-xs uppercase tracking-[0.16em] text-slate-400">{tc('supportedFormats')}</p>
+                        <p className="mt-2 text-xs uppercase tracking-[0.16em] text-slate-400">{tc('supportedFormats')}</p>
                       </div>
                     </div>
                     <div className="inline-flex items-center gap-2 self-start rounded-full border border-cyan-300/20 bg-cyan-400/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-cyan-100">
@@ -1960,21 +1959,13 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
                     {parseGcodeError}
                   </div>
                 )}
-
-                <div className="flex flex-wrap gap-2">
-                  <StatusPill tone={parsedGcode ? 'success' : 'neutral'}>
-                    {parsedGcode ? tc('sourceGcode') : tc('sourceManual')}
-                  </StatusPill>
-                  <StatusPill tone="neutral">{tc('workspaceSourceHint')}</StatusPill>
-                </div>
               </WorkspacePanel>
 
               <WorkspacePanel
                 step="2"
                 title={tc('workspaceMaterialTitle')}
-                description={tc('workspaceMaterialDescription')}
               >
-                <FieldBlock label={tc('selectSpool')} hint={tc('selectSpoolHint')}>
+                <FieldBlock label={tc('selectSpool')}>
                   <select
                     className={inputClass}
                     value={selectedSpool?.id ?? ''}
@@ -1989,7 +1980,7 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
                   </select>
                 </FieldBlock>
 
-                <FieldBlock label={tc('selectMaterial')} hint={tc('selectCatalogFallbackHint')}>
+                <FieldBlock label={tc('selectMaterial')}>
                   <select
                     className={inputClass}
                     value={form.selectedFilamentId}
@@ -2006,10 +1997,7 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
                   </select>
                 </FieldBlock>
 
-                <div className="flex flex-wrap gap-2">
-                  <StatusPill tone={materialSourceTone}>{materialSourceLabel}</StatusPill>
-                  {selectedSpool ? <StatusPill tone="success">{tc('materialPrioritySpool')}</StatusPill> : null}
-                </div>
+                <StatusPill tone={selectedSpool ? 'success' : 'neutral'}>{materialSourceLabel}</StatusPill>
 
                 {selectedFilament && materialSummary && (
                   <div className="rounded-[1.25rem] border border-cyan-400/20 bg-cyan-400/10 px-4 py-3 text-sm text-cyan-100">
@@ -2076,7 +2064,6 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
             <WorkspacePanel
               step="3"
               title={tc('workspaceProductionTitle')}
-              description={tc('workspaceProductionDescription')}
             >
                 <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
                   <FieldBlock label={t('profilePage.calc.quantity')}>
@@ -2098,7 +2085,6 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
               <WorkspacePanel
                 step="4"
                 title={tc('workspaceGcodeSummaryTitle')}
-                description={tc('workspaceGcodeSummaryDescription')}
               >
                 <div className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1.25fr)_minmax(14rem,0.75fr)]">
                   <div className="rounded-[1.3rem] border border-white/10 bg-white/5 p-4">
@@ -2236,8 +2222,6 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
           >
             <div>
               <SectionHeading icon={<Settings2 className="h-5 w-5 text-cyan-300" />} title={tc('advancedInputsTitle')} compact />
-              <p className="mt-2 text-sm leading-6 text-slate-300">{tc('advancedInputsDescription')}</p>
-              <p className="mt-2 text-xs leading-5 text-slate-400">{tc('advancedInputsSummary')}</p>
             </div>
             <div className={`${ghostButtonClass} shrink-0 self-start`}>
               {advancedSettingsOpen ? tc('hideAdvancedInputs') : tc('showAdvancedInputs')}
