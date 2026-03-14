@@ -104,6 +104,9 @@ class CalculatorEstimateRequest(BaseModel):
     quantity: int = Field(
         default=1, gt=0, description="Количество деталей для печати"
     )
+    parts_per_print: int | None = Field(
+        default=None, ge=1, le=1000, description="Сколько деталей печатается за один запуск / на одном столе"
+    )
     
     # ========== Накладные расходы и наценка ==========
     overhead_percent: float | None = Field(

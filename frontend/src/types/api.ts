@@ -480,6 +480,7 @@ export interface CalculatorEstimateRequest {
   
   // Количество деталей
   quantity?: number;
+  parts_per_print?: number | null;
   
   // Накладные расходы и наценка
   overhead_percent?: number | null;

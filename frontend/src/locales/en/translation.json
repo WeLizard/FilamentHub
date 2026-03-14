@@ -1603,6 +1603,8 @@
       "volumeDiscount": "Volume discount",
       "volumeDiscountHint": "1.0 = no discount, 0.85-0.95 = 5-15% discount",
       "quantity": "Part quantity",
+      "partsPerPrint": "Parts per print",
+      "partsPerPrintHint": "How many parts fit into one print run. Affects the total machine time for the batch.",
       "fixedCosts": "Fixed costs (₽)",
       "fixedCostsHint": "Packaging, shipping to pickup point (usually 50-100 ₽)",
       "minOrderPrice": "Minimum order price (₽)",

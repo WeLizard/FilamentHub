@@ -138,6 +138,8 @@ async def estimate_cost(
        Первая деталь включает все затраты, последующие - без моделирования.
     """
     quantity = data.quantity
+    parts_per_print = max(1, min(quantity, data.parts_per_print or 1))
+    print_runs = math.ceil(quantity / parts_per_print)
     
     # ========== Простые методы (для обратной совместимости) ==========
     if data.pricing_method == PricingMethod.BY_WEIGHT:
@@ -156,9 +158,10 @@ async def estimate_cost(
         time_hours = None
         if data.time_sec or data.time_hours or data.time_minutes:
             time_hours = _convert_time_to_hours(data.time_hours, data.time_minutes, data.time_sec)
-            if data.electricity_cost_per_kwh and data.printer_power_w and time_hours > 0:
+            time_hours_total = time_hours * print_runs
+            if data.electricity_cost_per_kwh and data.printer_power_w and time_hours_total > 0:
                 power_kw = data.printer_power_w / 1000.0
-                cost_electricity = time_hours * power_kw * data.electricity_cost_per_kwh
+                cost_electricity = time_hours_total * power_kw * data.electricity_cost_per_kwh
         
         cost_total = cost_material + cost_electricity
     
@@ -184,10 +187,10 @@ async def estimate_cost(
         if data.price_per_hour is None:
             raise_error(400, ERR_PRICE_PER_HOUR_REQUIRED)
         
-        # Время печати на 1 деталь (для отображения)
-        time_hours_per_part = _convert_time_to_hours(data.time_hours, data.time_minutes, data.time_sec)
-        # Время печати для всей партии (умножаем на количество деталей)
-        time_hours_total = time_hours_per_part * quantity
+        # Время одного запуска / одной укладки на столе
+        time_hours_per_run = _convert_time_to_hours(data.time_hours, data.time_minutes, data.time_sec)
+        # Общее время печати партии с учётом количества запусков
+        time_hours_total = time_hours_per_run * print_runs
         
         cost_printing = time_hours_total * data.price_per_hour
         
@@ -214,7 +217,7 @@ async def estimate_cost(
             cost_subsequent_parts=round(cost_total / quantity, 2) if quantity > 0 else round(cost_total, 2),
             cost_total=round(cost_total, 2),  # Общая стоимость всей партии
             weight_kg=round(weight_kg, 3) if weight_kg else None,
-            time_hours=round(time_hours_per_part, 2) if time_hours_per_part > 0 else None,  # Время на 1 деталь для отображения
+            time_hours=round(time_hours_per_run, 2) if time_hours_per_run > 0 else None,  # Время одного запуска / стола
             quantity=quantity,
             pricing_method=data.pricing_method,
         )
@@ -239,10 +242,10 @@ async def estimate_cost(
             # Формула из документа: (Вес детали × Цена материала) + (Вес поддержек × Цена материала × Коэффициент потерь)
             cost_material = (part_weight * price_per_gram) + (supports_weight * price_per_gram * supports_loss_coef)
         
-        # 2. Время печати на 1 деталь (для отображения в результатах)
-        time_hours_per_part = _convert_time_to_hours(data.time_hours, data.time_minutes, data.time_sec)
-        # Время печати для всей партии (умножаем на количество деталей)
-        time_hours_total = time_hours_per_part * quantity
+        # 2. Время одного запуска / одной укладки на столе
+        time_hours_per_run = _convert_time_to_hours(data.time_hours, data.time_minutes, data.time_sec)
+        # Время печати всей партии с учётом количества запусков
+        time_hours_total = time_hours_per_run * print_runs
         
         # 3. Электроэнергия (рассчитывается на общее время печати партии)
         cost_electricity = 0.0
@@ -380,7 +383,7 @@ async def estimate_cost(
             cost_total=round(cost_total, 2),
             cost_final=round(cost_final, 2),
             weight_kg=round(weight_kg, 3) if weight_kg else None,
-            time_hours=round(time_hours_per_part, 2) if time_hours_per_part > 0 else None,  # Время на 1 деталь для отображения
+            time_hours=round(time_hours_per_run, 2) if time_hours_per_run > 0 else None,  # Время одного запуска / стола
             total_time_hours=round(total_time_hours, 2) if total_time_hours and total_time_hours > 0 else None,
             quantity=quantity,
             cost_of_goods_sold=round(cost_of_goods_sold, 2) if data.pricing_method == PricingMethod.COMBINED else None,

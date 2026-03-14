@@ -75,6 +75,7 @@ interface CalculatorFormState {
   printingRatePerHour: number;
   amortizationRatePerHour: number;
   quantity: number;
+  partsPerPrint: number;
   overheadPercent: number;
   markupPercent: number;
   urgencyCoefficient: number;
@@ -119,6 +120,7 @@ const DEFAULT_FORM_STATE: CalculatorFormState = {
   printingRatePerHour: 170,
   amortizationRatePerHour: 16,
   quantity: 4,
+  partsPerPrint: 1,
   overheadPercent: 20,
   markupPercent: 30,
   urgencyCoefficient: 1.0,
@@ -186,6 +188,7 @@ const buildEstimateRequest = (form: CalculatorFormState): CalculatorEstimateRequ
   const requestData: CalculatorEstimateRequest = {
     pricing_method: 'combined',
     quantity: form.quantity,
+    parts_per_print: form.partsPerPrint || undefined,
     round_to_nearest: form.roundToNearest || undefined,
     rounding_mode: form.roundingMode,
   }
@@ -472,6 +475,7 @@ const buildFormFromHistoryEntry = (entry: CalculatorHistoryEntry): CalculatorFor
     printingRatePerHour: request.printing_rate_per_hour ?? DEFAULT_FORM_STATE.printingRatePerHour,
     amortizationRatePerHour: request.amortization_rate_per_hour ?? DEFAULT_FORM_STATE.amortizationRatePerHour,
     quantity: request.quantity ?? DEFAULT_FORM_STATE.quantity,
+    partsPerPrint: request.parts_per_print ?? DEFAULT_FORM_STATE.partsPerPrint,
     overheadPercent: request.overhead_percent ?? DEFAULT_FORM_STATE.overheadPercent,
     markupPercent: request.markup_percent ?? DEFAULT_FORM_STATE.markupPercent,
     urgencyCoefficient: request.urgency_coefficient ?? DEFAULT_FORM_STATE.urgencyCoefficient,
@@ -1647,9 +1651,17 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
 
         <SurfaceCard className="p-6 md:p-7">
           <SectionHeading icon={<Package className="h-5 w-5 text-cyan-300" />} title={tc('batchSection')} />
-          <div className="mt-5 grid grid-cols-1 gap-4">
+          <div className="mt-5 grid grid-cols-1 gap-4 md:grid-cols-2">
             <FieldBlock label={t('profilePage.calc.quantity')}>
               <NumberInput value={form.quantity} onChange={(value) => onChange('quantity', Math.max(1, value))} min="1" placeholder="4" />
+            </FieldBlock>
+            <FieldBlock label={t('profilePage.calc.partsPerPrint')} hint={t('profilePage.calc.partsPerPrintHint')}>
+              <NumberInput
+                value={form.partsPerPrint}
+                onChange={(value) => onChange('partsPerPrint', Math.max(1, value))}
+                min="1"
+                placeholder="1"
+              />
             </FieldBlock>
           </div>
         </SurfaceCard>

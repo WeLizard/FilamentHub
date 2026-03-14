@@ -3563,6 +3563,7 @@ const CalculatorComponent: React.FC = () => {
   
   // Количество деталей
   const [quantity, setQuantity] = useState<number>(4);
+  const [partsPerPrint, setPartsPerPrint] = useState<number>(1);
   
   // Накладные расходы и наценка
   const [overheadPercent, setOverheadPercent] = useState<number>(20);
@@ -3590,6 +3591,7 @@ const CalculatorComponent: React.FC = () => {
     const requestData: CalculatorEstimateRequest = {
       pricing_method: pricingMethod,
       quantity,
+      parts_per_print: partsPerPrint || undefined,
       round_to_nearest: roundToNearest || undefined,
       rounding_mode: roundingMode,
     };
@@ -4063,6 +4065,20 @@ const CalculatorComponent: React.FC = () => {
               min="1"
             />
           </div>
+          {(pricingMethod === 'by_time' || pricingMethod === 'combined') && (
+            <div>
+              <label className="block text-gray-300 mb-2 text-sm font-medium">{t('profilePage.calc.partsPerPrint')}</label>
+              <input
+                type="number"
+                value={partsPerPrint}
+                onChange={(e) => setPartsPerPrint(Math.max(1, Number(e.target.value) || 1))}
+                className="w-full px-4 py-2 bg-white/10 border border-white/20 rounded-xl text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500"
+                placeholder="1"
+                min="1"
+              />
+              <p className="text-xs text-gray-400 mt-1">{t('profilePage.calc.partsPerPrintHint')}</p>
+            </div>
+          )}
           {pricingMethod === 'combined' && (
             <>
               <div>
