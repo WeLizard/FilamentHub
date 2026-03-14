@@ -3486,49 +3486,49 @@
       "0": "Выключено"
     },
     "qualityOptions": {
-      "superdraft": "Extra Draft",
-      "draft": "Draft",
-      "standard": "Standard",
-      "optimal": "Optimal",
-      "fine": "Fine",
-      "highdetail": "Extra Fine"
+      "superdraft": "Экстра черновой",
+      "draft": "Черновой",
+      "standard": "Стандартный",
+      "optimal": "Оптимальный",
+      "fine": "Точный",
+      "highdetail": "Экстра точный"
     },
     "infillPatterns": {
-      "crosshatch": "Crosshatch",
-      "gyroid": "Gyroid",
-      "grid": "Grid",
-      "line": "Line",
-      "rectilinear": "Rectilinear",
-      "alignedrectilinear": "Aligned Rectilinear",
-      "cubic": "Cubic",
-      "adaptivecubic": "Adaptive Cubic",
-      "supportcubic": "Support Cubic",
-      "honeycomb": "Honeycomb",
-      "3dhoneycomb": "3D Honeycomb",
-      "lightning": "Lightning",
-      "concentric": "Concentric",
-      "hilbertcurve": "Hilbert Curve",
-      "archimedeanchords": "Archimedean Chords",
-      "octagramspiral": "Octagram Spiral"
+      "crosshatch": "Перекрёстная штриховка",
+      "gyroid": "Гироид",
+      "grid": "Сетка",
+      "line": "Линии",
+      "rectilinear": "Прямолинейный",
+      "alignedrectilinear": "Выровненный прямолинейный",
+      "cubic": "Кубический",
+      "adaptivecubic": "Адаптивный кубический",
+      "supportcubic": "Кубический для поддержек",
+      "honeycomb": "Соты",
+      "3dhoneycomb": "3D соты",
+      "lightning": "Молния",
+      "concentric": "Концентрический",
+      "hilbertcurve": "Кривая Гильберта",
+      "archimedeanchords": "Архимедовы хорды",
+      "octagramspiral": "Восьмиконечная спираль"
     },
     "supportTypes": {
-      "normal(auto)": "Normal (Auto)",
-      "tree(auto)": "Tree (Auto)",
-      "normal(manual)": "Normal (Manual)",
-      "tree(manual)": "Tree (Manual)"
+      "normal(auto)": "Обычные (авто)",
+      "tree(auto)": "Древовидные (авто)",
+      "normal(manual)": "Обычные (вручную)",
+      "tree(manual)": "Древовидные (вручную)"
     },
     "seamPositions": {
-      "aligned": "Aligned",
-      "aligned_back": "Aligned Back",
-      "nearest": "Nearest",
-      "back": "Back",
-      "random": "Random"
+      "aligned": "Выровненный",
+      "aligned_back": "Выровненный сзади",
+      "nearest": "Ближайший",
+      "back": "Сзади",
+      "random": "Случайный"
     },
     "ironingTypes": {
-      "no ironing": "No Ironing",
-      "top": "Top Surfaces",
-      "topmost": "Topmost Surface Only",
-      "solid": "All Solid Layers"
+      "no ironing": "Без разглаживания",
+      "top": "Верхние поверхности",
+      "topmost": "Только самая верхняя поверхность",
+      "solid": "Все сплошные слои"
     },
     "description": "Описание",
     "descriptionPlaceholder": "Краткое описание профиля...",

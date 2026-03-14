@@ -1580,3 +1580,172 @@ external
 all
 `),
 };
+
+export const ORCA_ADVANCED_ENUM_LABELS: Record<string, Record<string, { en: string; ru: string }>> = {
+  slicing_mode: {
+    regular: { en: 'Regular', ru: 'Обычный' },
+    even_odd: { en: 'Even-odd', ru: 'Чёт-нечёт' },
+    close_holes: { en: 'Close holes', ru: 'Закрывать отверстия' },
+  },
+  ensure_vertical_shell_thickness: {
+    none: { en: 'None', ru: 'Нет' },
+    ensure_critical_only: { en: 'Critical only', ru: 'Только критичные' },
+    ensure_moderate: { en: 'Moderate', ru: 'Умеренно' },
+    ensure_all: { en: 'All', ru: 'Везде' },
+  },
+  wall_direction: {
+    auto: { en: 'Auto', ru: 'Авто' },
+    ccw: { en: 'Counter clockwise', ru: 'Против часовой стрелки' },
+    cw: { en: 'Clockwise', ru: 'По часовой стрелке' },
+  },
+  wall_sequence: {
+    'inner wall/outer wall': { en: 'Inner/Outer', ru: 'Внутренний / внешний' },
+    'outer wall/inner wall': { en: 'Outer/Inner', ru: 'Внешний / внутренний' },
+    'inner-outer-inner wall': { en: 'Inner/Outer/Inner', ru: 'Внутренний / внешний / внутренний' },
+  },
+  top_surface_pattern: {
+    monotonic: { en: 'Monotonic', ru: 'Монотонный' },
+    monotonicline: { en: 'Monotonic line', ru: 'Монотонные линии' },
+    rectilinear: { en: 'Rectilinear', ru: 'Прямолинейный' },
+    alignedrectilinear: { en: 'Aligned Rectilinear', ru: 'Выровненный прямолинейный' },
+    concentric: { en: 'Concentric', ru: 'Концентрический' },
+    hilbertcurve: { en: 'Hilbert Curve', ru: 'Кривая Гильберта' },
+    archimedeanchords: { en: 'Archimedean Chords', ru: 'Архимедовы хорды' },
+    octagramspiral: { en: 'Octagram Spiral', ru: 'Восьмиконечная спираль' },
+  },
+  bottom_surface_pattern: {
+    monotonic: { en: 'Monotonic', ru: 'Монотонный' },
+    monotonicline: { en: 'Monotonic line', ru: 'Монотонные линии' },
+    rectilinear: { en: 'Rectilinear', ru: 'Прямолинейный' },
+    alignedrectilinear: { en: 'Aligned Rectilinear', ru: 'Выровненный прямолинейный' },
+    concentric: { en: 'Concentric', ru: 'Концентрический' },
+    hilbertcurve: { en: 'Hilbert Curve', ru: 'Кривая Гильберта' },
+    archimedeanchords: { en: 'Archimedean Chords', ru: 'Архимедовы хорды' },
+    octagramspiral: { en: 'Octagram Spiral', ru: 'Восьмиконечная спираль' },
+  },
+  internal_solid_infill_pattern: {
+    monotonic: { en: 'Monotonic', ru: 'Монотонный' },
+    monotonicline: { en: 'Monotonic line', ru: 'Монотонные линии' },
+    rectilinear: { en: 'Rectilinear', ru: 'Прямолинейный' },
+    alignedrectilinear: { en: 'Aligned Rectilinear', ru: 'Выровненный прямолинейный' },
+    concentric: { en: 'Concentric', ru: 'Концентрический' },
+    hilbertcurve: { en: 'Hilbert Curve', ru: 'Кривая Гильберта' },
+    archimedeanchords: { en: 'Archimedean Chords', ru: 'Архимедовы хорды' },
+    octagramspiral: { en: 'Octagram Spiral', ru: 'Восьмиконечная спираль' },
+  },
+  counterbore_hole_bridging: {
+    none: { en: 'None', ru: 'Нет' },
+    partiallybridge: { en: 'Partially bridged', ru: 'Частичный мост' },
+    sacrificiallayer: { en: 'Sacrificial layer', ru: 'Жертвенный слой' },
+  },
+  gap_fill_target: {
+    everywhere: { en: 'Everywhere', ru: 'Везде' },
+    topbottom: { en: 'Top and bottom surfaces', ru: 'Только верх и низ' },
+    nowhere: { en: 'Nowhere', ru: 'Нигде' },
+  },
+  ironing_pattern: {
+    rectilinear: { en: 'Rectilinear', ru: 'Прямолинейный' },
+    concentric: { en: 'Concentric', ru: 'Концентрический' },
+  },
+  support_ironing_pattern: {
+    rectilinear: { en: 'Rectilinear', ru: 'Прямолинейный' },
+    concentric: { en: 'Concentric', ru: 'Концентрический' },
+  },
+  fuzzy_skin: {
+    none: { en: 'None', ru: 'Нет' },
+    external: { en: 'Contour', ru: 'Только контур' },
+    all: { en: 'Contour and hole', ru: 'Контур и отверстия' },
+    allwalls: { en: 'All walls', ru: 'Все стенки' },
+    disabled_fuzzy: { en: 'Disabled', ru: 'Выключено' },
+  },
+  fuzzy_skin_noise_type: {
+    classic: { en: 'Classic', ru: 'Классический' },
+    perlin: { en: 'Perlin', ru: 'Перлин' },
+    billow: { en: 'Billow', ru: 'Billow' },
+    ridgedmulti: { en: 'Ridged Multifractal', ru: 'Ridged Multifractal' },
+    voronoi: { en: 'Voronoi', ru: 'Вороной' },
+  },
+  fuzzy_skin_mode: {
+    displacement: { en: 'Displacement', ru: 'Смещение' },
+    extrusion: { en: 'Extrusion', ru: 'Экструзия' },
+    combined: { en: 'Combined', ru: 'Комбинированный' },
+  },
+  skirt_type: {
+    combined: { en: 'Combined', ru: 'Общая' },
+    perobject: { en: 'Per object', ru: 'Отдельно для каждой модели' },
+  },
+  draft_shield: {
+    disabled: { en: 'Disabled', ru: 'Выключено' },
+    enabled: { en: 'Enabled', ru: 'Включено' },
+  },
+  brim_type: {
+    auto_brim: { en: 'Auto', ru: 'Авто' },
+    brim_ears: { en: 'Mouse ear', ru: 'Ушки' },
+    painted: { en: 'Painted', ru: 'Нарисованная' },
+    outer_only: { en: 'Outer brim only', ru: 'Только внешняя кайма' },
+    inner_only: { en: 'Inner brim only', ru: 'Только внутренняя кайма' },
+    outer_and_inner: { en: 'Outer and inner brim', ru: 'Внешняя и внутренняя кайма' },
+    no_brim: { en: 'No-brim', ru: 'Без каймы' },
+  },
+  support_base_pattern: {
+    default: { en: 'Default', ru: 'По умолчанию' },
+    rectilinear: { en: 'Rectilinear', ru: 'Прямолинейный' },
+    'rectilinear-grid': { en: 'Rectilinear grid', ru: 'Прямолинейная сетка' },
+    honeycomb: { en: 'Honeycomb', ru: 'Соты' },
+    lightning: { en: 'Lightning', ru: 'Молния' },
+    hollow: { en: 'Hollow', ru: 'Полый' },
+  },
+  support_style: {
+    default: { en: 'Default (Grid/Organic)', ru: 'По умолчанию (сетка / organic)' },
+    grid: { en: 'Grid', ru: 'Сетка' },
+    snug: { en: 'Snug', ru: 'Плотная' },
+    organic: { en: 'Organic', ru: 'Organic' },
+    tree_slim: { en: 'Tree Slim', ru: 'Дерево Slim' },
+    tree_strong: { en: 'Tree Strong', ru: 'Дерево Strong' },
+    tree_hybrid: { en: 'Tree Hybrid', ru: 'Дерево Hybrid' },
+  },
+  support_interface_pattern: {
+    auto: { en: 'Auto', ru: 'Авто' },
+    rectilinear: { en: 'Rectilinear', ru: 'Прямолинейный' },
+    concentric: { en: 'Concentric', ru: 'Концентрический' },
+    rectilinear_interlaced: { en: 'Rectilinear Interlaced', ru: 'Чересстрочный прямолинейный' },
+    grid: { en: 'Grid', ru: 'Сетка' },
+  },
+  dont_filter_internal_bridges: {
+    disabled: { en: 'Filter', ru: 'Фильтровать' },
+    limited: { en: 'Limited filtering', ru: 'Ограниченная фильтрация' },
+    nofilter: { en: 'No filtering', ru: 'Без фильтрации' },
+  },
+  enable_extra_bridge_layer: {
+    disabled: { en: 'Disabled', ru: 'Выключено' },
+    external_bridge_only: { en: 'External bridge only', ru: 'Только внешние мосты' },
+    internal_bridge_only: { en: 'Internal bridge only', ru: 'Только внутренние мосты' },
+    apply_to_all: { en: 'Apply to all', ru: 'Для всех мостов' },
+  },
+  print_sequence: {
+    'by layer': { en: 'By layer', ru: 'По слоям' },
+    'by object': { en: 'By object', ru: 'По моделям' },
+  },
+  print_order: {
+    default: { en: 'Default', ru: 'По умолчанию' },
+    as_obj_list: { en: 'As object list', ru: 'Как в списке моделей' },
+  },
+  timelapse_type: {
+    '0': { en: 'Traditional', ru: 'Обычный' },
+    '1': { en: 'Smooth', ru: 'Плавный' },
+  },
+  wall_generator: {
+    classic: { en: 'Classic', ru: 'Классический' },
+    arachne: { en: 'Arachne', ru: 'Arachne' },
+  },
+  wipe_tower_wall_type: {
+    rectangle: { en: 'Rectangle', ru: 'Прямоугольник' },
+    cone: { en: 'Cone', ru: 'Конус' },
+    rib: { en: 'Rib', ru: 'Рёбра' },
+  },
+  seam_slope_type: {
+    none: { en: 'None', ru: 'Нет' },
+    external: { en: 'External', ru: 'Только внешние' },
+    all: { en: 'All', ru: 'Все' },
+  },
+};

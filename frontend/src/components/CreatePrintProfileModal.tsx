@@ -7,6 +7,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { filamentsAPI, printerProfilesAPI, printProfilesAPI } from '../api/client';
 import {
   ORCA_ADVANCED_ENUM_OPTIONS,
+  ORCA_ADVANCED_ENUM_LABELS,
   ORCA_ADVANCED_FIELD_DEFS,
   ORCA_ADVANCED_FIELD_KEYS,
   ORCA_ADVANCED_FIELD_LABELS,
@@ -71,7 +72,7 @@ const INFILL_PATTERN_OPTIONS = [
 const SUPPORT_TYPE_OPTIONS = ['normal(auto)', 'tree(auto)', 'normal(manual)', 'tree(manual)'];
 const SEAM_POSITION_OPTIONS = ['aligned', 'aligned_back', 'nearest', 'back', 'random'];
 const IRONING_TYPE_OPTIONS = ['no ironing', 'top', 'topmost', 'solid'];
-const BOOLEAN_OVERRIDE_OPTIONS = ['', '1', '0'];
+const BOOLEAN_OVERRIDE_OPTIONS = ['0', '1'];
 const DEFAULT_NOZZLE_SIZES = ['0.2', '0.25', '0.3', '0.4', '0.5', '0.6', '0.8', '1.0'];
 const CORE_STRUCTURED_PROCESS_KEYS = new Set([
   'type',
@@ -1112,8 +1113,8 @@ export const CreatePrintProfileModal: React.FC<CreatePrintProfileModalProps> = (
       [key]: value,
     }));
   };
-  const getBooleanOverrideLabel = (option: string) =>
-    option ? t(`createPrintProfile.booleanOptions.${option}`) : t('createPrintProfile.notSpecified');
+  const getBooleanOverrideLabel = (option: string) => t(`createPrintProfile.booleanOptions.${option}`);
+  const getBooleanSelectValue = (value: string) => (value === '1' ? '1' : '0');
   const structuredLabelLocale = i18n.resolvedLanguage?.startsWith('ru') ? 'ru' : 'en';
   const getStructuredFieldLabel = (fieldKey: string) =>
     t(`createPrintProfile.fieldLabels.${fieldKey}`, {
@@ -1121,7 +1122,7 @@ export const CreatePrintProfileModal: React.FC<CreatePrintProfileModalProps> = (
     });
   const getStructuredEnumLabel = (fieldKey: string, option: string) =>
     t(`createPrintProfile.fieldValues.${fieldKey}.${normalizeI18nKeyPart(option)}`, {
-      defaultValue: humanizeOrcaValue(option),
+      defaultValue: ORCA_ADVANCED_ENUM_LABELS[fieldKey]?.[option]?.[structuredLabelLocale] ?? humanizeOrcaValue(option),
     });
   const renderStructuredAdvancedField = (field: OrcaStructuredFieldDef) => {
     const value = structuredAdvancedValues[field.key] ?? '';
@@ -1139,12 +1140,12 @@ export const CreatePrintProfileModal: React.FC<CreatePrintProfileModalProps> = (
       case 'boolean':
         control = (
           <select
-            value={value}
+            value={getBooleanSelectValue(value)}
             onChange={(event) => setStructuredAdvancedFieldValue(field.key, event.target.value)}
             className={commonClassName}
           >
             {BOOLEAN_OVERRIDE_OPTIONS.map((option) => (
-              <option key={option || 'not-specified'} value={option}>
+              <option key={option} value={option}>
                 {getBooleanOverrideLabel(option)}
               </option>
             ))}
@@ -1347,12 +1348,12 @@ export const CreatePrintProfileModal: React.FC<CreatePrintProfileModalProps> = (
         <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
           <FormField label={t('createPrintProfile.enableArcFitting')}>
             <select
-              value={enableArcFitting}
+              value={getBooleanSelectValue(enableArcFitting)}
               onChange={(event) => setEnableArcFitting(event.target.value)}
               className="w-full rounded-lg border border-white/10 bg-white/5 px-4 py-2 text-white focus:border-purple-500 focus:outline-none"
             >
               {BOOLEAN_OVERRIDE_OPTIONS.map((option) => (
-                <option key={option || 'not-specified'} value={option}>
+                <option key={option} value={option}>
                   {getBooleanOverrideLabel(option)}
                 </option>
               ))}
@@ -1621,7 +1622,7 @@ export const CreatePrintProfileModal: React.FC<CreatePrintProfileModalProps> = (
         <div className="grid gap-4 md:grid-cols-3">
           <FormField label={t('createPrintProfile.enableSupport')}>
             <select
-              value={enableSupport}
+              value={getBooleanSelectValue(enableSupport)}
               onChange={(event) => {
                 const nextValue = event.target.value;
                 setEnableSupport(nextValue);
@@ -1632,7 +1633,7 @@ export const CreatePrintProfileModal: React.FC<CreatePrintProfileModalProps> = (
               className="w-full rounded-lg border border-white/10 bg-white/5 px-4 py-2 text-white focus:border-purple-500 focus:outline-none"
             >
               {BOOLEAN_OVERRIDE_OPTIONS.map((option) => (
-                <option key={option || 'not-specified'} value={option}>
+                <option key={option} value={option}>
                   {getBooleanOverrideLabel(option)}
                 </option>
               ))}
@@ -1746,12 +1747,12 @@ export const CreatePrintProfileModal: React.FC<CreatePrintProfileModalProps> = (
         <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
           <FormField label={t('createPrintProfile.spiralMode')}>
             <select
-              value={spiralMode}
+              value={getBooleanSelectValue(spiralMode)}
               onChange={(event) => setSpiralMode(event.target.value)}
               className="w-full rounded-lg border border-white/10 bg-white/5 px-4 py-2 text-white focus:border-purple-500 focus:outline-none"
             >
               {BOOLEAN_OVERRIDE_OPTIONS.map((option) => (
-                <option key={option || 'not-specified'} value={option}>
+                <option key={option} value={option}>
                   {getBooleanOverrideLabel(option)}
                 </option>
               ))}
