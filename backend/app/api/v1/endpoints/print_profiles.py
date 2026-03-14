@@ -1,6 +1,7 @@
 """Print profile endpoints."""
 
 import logging
+import re
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
@@ -21,7 +22,12 @@ from app.core.errors import (
 )
 from app.core.utils import like_pattern
 from app.db.session import get_db
+from app.models.filament import Filament
 from app.models.print_profile import PrintProfile
+from app.models.print_profile_filament import PrintProfileFilament
+from app.models.print_profile_printer import PrintProfilePrinter
+from app.models.printer import Printer
+from app.models.printer_profile import PrinterProfile
 from app.models.user import User, UserRole
 from app.schemas.print_profile import (
     PrintProfileCreate,
@@ -34,6 +40,218 @@ from app.services.orcaslicer_machine_exporter import export_print_profile
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/print-profiles", tags=["print-profiles"])
+
+
+def _extract_base_printer_name(name: str) -> str:
+    """Remove the common Orca nozzle suffix from printer profile names."""
+    match = re.match(r"^(.*?)\s+\d+(?:\.\d+)?\s*nozzle$", name.strip(), re.IGNORECASE)
+    if match:
+        return match.group(1).strip()
+    return name.strip()
+
+
+def _slugify_string(value: str, fallback: str = "item") -> str:
+    """Generate a stable slug-like value for compatibility links."""
+    slug = re.sub(r"[^a-z0-9]+", "-", value.lower()).strip("-")
+    return slug or fallback
+
+
+async def _resolve_print_profile_printer_link(
+    *,
+    db: AsyncSession,
+    owner_user_id: int | None,
+    identifier: str,
+) -> tuple[int | None, str]:
+    """Resolve compatible printer entry to a FilamentHub printer link."""
+    name = (identifier or "").strip()
+    if not name:
+        return None, ""
+
+    printer: Printer | None = None
+
+    if name.isdigit():
+        printer = await db.get(Printer, int(name))
+
+    if printer is None:
+        result = await db.execute(
+            select(Printer).where(
+                or_(
+                    Printer.slug == name,
+                    Printer.name == name,
+                    Printer.model == name,
+                )
+            )
+        )
+        printer = result.scalars().first()
+
+    if printer is not None:
+        return printer.id, printer.slug
+
+    printer_profile: PrinterProfile | None = None
+    if owner_user_id is not None:
+        result = await db.execute(
+            select(PrinterProfile).where(
+                PrinterProfile.owner_user_id == owner_user_id,
+                or_(
+                    PrinterProfile.name == name,
+                    PrinterProfile.slug == name,
+                ),
+            )
+        )
+        printer_profile = result.scalars().first()
+
+    if printer_profile is None:
+        result = await db.execute(
+            select(PrinterProfile).where(
+                or_(
+                    PrinterProfile.name == name,
+                    PrinterProfile.slug == name,
+                )
+            )
+        )
+        printer_profile = result.scalars().first()
+
+    if printer_profile is not None and printer_profile.printer_id:
+        printer = await db.get(Printer, printer_profile.printer_id)
+        if printer is not None:
+            return printer.id, printer.slug
+
+    base_name = _extract_base_printer_name(name)
+    if base_name and base_name != name:
+        result = await db.execute(
+            select(Printer).where(
+                or_(
+                    Printer.name == base_name,
+                    Printer.model == base_name,
+                    Printer.slug == _slugify_string(base_name),
+                )
+            )
+        )
+        printer = result.scalars().first()
+        if printer is not None:
+            return printer.id, printer.slug
+
+    return None, _slugify_string(name)[:200]
+
+
+async def _resolve_print_profile_filament_link(
+    *,
+    db: AsyncSession,
+    identifier: str,
+) -> tuple[int | None, str]:
+    """Resolve compatible filament entry to a FilamentHub filament link."""
+    name = (identifier or "").strip()
+    if not name:
+        return None, ""
+
+    filament: Filament | None = None
+    if name.isdigit():
+        filament = await db.get(Filament, int(name))
+
+    if filament is None:
+        result = await db.execute(
+            select(Filament).where(
+                or_(
+                    Filament.slug == name,
+                    Filament.name == name,
+                )
+            )
+        )
+        filament = result.scalars().first()
+
+    if filament is None and "@" in name:
+        short_name = name.split("@", 1)[0].strip()
+        if short_name:
+            result = await db.execute(select(Filament).where(Filament.name == short_name))
+            filament = result.scalars().first()
+
+    if filament is not None:
+        return filament.id, filament.slug
+
+    return None, _slugify_string(name)[:200]
+
+
+async def _sync_print_profile_links(
+    *,
+    db: AsyncSession,
+    profile: PrintProfile,
+) -> None:
+    """Synchronise print profile compatibility junction tables."""
+    await profile.awaitable_attrs.printer_links
+    await profile.awaitable_attrs.filament_links
+    profile.printer_links.clear()
+    profile.filament_links.clear()
+
+    printer_slugs: set[str] = set()
+    for entry in profile.compatible_printers or []:
+        printer_id, printer_slug = await _resolve_print_profile_printer_link(
+            db=db,
+            owner_user_id=profile.owner_user_id,
+            identifier=entry,
+        )
+        if not printer_slug or printer_slug in printer_slugs:
+            continue
+        printer_slugs.add(printer_slug)
+        profile.printer_links.append(
+            PrintProfilePrinter(
+                printer_id=printer_id,
+                printer_slug=printer_slug,
+                relation_type="explicit",
+            )
+        )
+
+    condition = ""
+    if isinstance(profile.extra_metadata, dict):
+        condition = str(profile.extra_metadata.get("compatible_printers_condition") or "").strip()
+    if condition:
+        condition_slug = _slugify_string(condition, fallback="condition")[:200]
+        if condition_slug in printer_slugs:
+            condition_slug = f"{condition_slug}-{len(printer_slugs) + 1}"[:200]
+        profile.printer_links.append(
+            PrintProfilePrinter(
+                printer_id=None,
+                printer_slug=condition_slug,
+                relation_type="condition",
+                condition=condition,
+            )
+        )
+
+    filament_slugs: set[str] = set()
+    for entry in profile.compatible_filaments or []:
+        filament_id, filament_slug = await _resolve_print_profile_filament_link(
+            db=db,
+            identifier=entry,
+        )
+        if not filament_slug or filament_slug in filament_slugs:
+            continue
+        filament_slugs.add(filament_slug)
+        profile.filament_links.append(
+            PrintProfileFilament(
+                filament_id=filament_id,
+                filament_slug=filament_slug,
+                relation_type="explicit",
+            )
+        )
+
+    await db.flush()
+
+
+async def _load_print_profile_with_links(
+    *,
+    db: AsyncSession,
+    profile_id: int,
+) -> PrintProfile | None:
+    """Load a print profile with compatibility links eagerly fetched."""
+    return (
+        await db.execute(
+            select(PrintProfile)
+            .options(
+                selectinload(PrintProfile.printer_links),
+                selectinload(PrintProfile.filament_links),
+            )
+            .where(PrintProfile.id == profile_id)
+        )
+    ).scalar_one_or_none()
 
 
 @router.get("/", response_model=PrintProfileListResponse)
@@ -96,16 +314,7 @@ async def get_print_profile(
 ) -> PrintProfileResponse:
     """Get print profile by ID."""
 
-    profile = (
-        await db.execute(
-            select(PrintProfile)
-            .options(
-                selectinload(PrintProfile.printer_links),
-                selectinload(PrintProfile.filament_links),
-            )
-            .where(PrintProfile.id == profile_id)
-        )
-    ).scalar_one_or_none()
+    profile = await _load_print_profile_with_links(db=db, profile_id=profile_id)
     if profile is None:
         raise_error(status.HTTP_404_NOT_FOUND, ERR_PRINT_PROFILE_NOT_FOUND)
     return PrintProfileResponse.model_validate(profile)
@@ -165,10 +374,15 @@ async def create_print_profile(
     )
 
     db.add(profile)
+    await db.flush()
+    await _sync_print_profile_links(db=db, profile=profile)
     await db.commit()
-    await db.refresh(profile)
 
-    return PrintProfileResponse.model_validate(profile)
+    profile_with_links = await _load_print_profile_with_links(db=db, profile_id=profile.id)
+    if profile_with_links is None:
+        raise_error(status.HTTP_404_NOT_FOUND, ERR_PRINT_PROFILE_NOT_FOUND)
+
+    return PrintProfileResponse.model_validate(profile_with_links)
 
 
 @router.patch("/{profile_id}", response_model=PrintProfileResponse)
@@ -221,10 +435,14 @@ async def update_print_profile(
     for field, value in update_data.items():
         setattr(profile, field, value)
 
+    await _sync_print_profile_links(db=db, profile=profile)
     await db.commit()
-    await db.refresh(profile)
 
-    return PrintProfileResponse.model_validate(profile)
+    profile_with_links = await _load_print_profile_with_links(db=db, profile_id=profile_id)
+    if profile_with_links is None:
+        raise_error(status.HTTP_404_NOT_FOUND, ERR_PRINT_PROFILE_NOT_FOUND)
+
+    return PrintProfileResponse.model_validate(profile_with_links)
 
 
 @router.delete("/{profile_id}", status_code=status.HTTP_204_NO_CONTENT)

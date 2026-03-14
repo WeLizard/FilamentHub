@@ -4,11 +4,11 @@ import { useEffect, useState, type FormEvent, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { X, Save, Loader2, Layers } from 'lucide-react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { printerProfilesAPI, printProfilesAPI } from '../api/client';
+import { filamentsAPI, printerProfilesAPI, printProfilesAPI } from '../api/client';
 import { Dropdown } from './Dropdown';
 import { translateApiError } from '../utils/translateApiError';
 import { useAuth } from '../contexts/AuthContext';
-import type { PrintProfile, PrinterProfile } from '../types/api';
+import type { Filament, PrintProfile, PrinterProfile } from '../types/api';
 
 interface CreatePrintProfileModalProps {
   isOpen: boolean;
@@ -62,6 +62,49 @@ const SEAM_POSITION_OPTIONS = ['aligned', 'aligned_back', 'nearest', 'back', 'ra
 const IRONING_TYPE_OPTIONS = ['no ironing', 'top', 'topmost', 'solid'];
 const BOOLEAN_OVERRIDE_OPTIONS = ['', '1', '0'];
 const DEFAULT_NOZZLE_SIZES = ['0.2', '0.25', '0.3', '0.4', '0.5', '0.6', '0.8', '1.0'];
+const ADVANCED_PROCESS_EXCLUDED_KEYS = new Set([
+  'type',
+  'name',
+  'from',
+  'instantiation',
+  'inherits',
+  'version',
+  'print_settings_id',
+  'setting_id',
+  'fhub_id',
+  'fhub_source',
+  'default_nozzle_diameter',
+  'layer_height',
+  'initial_layer_print_height',
+  'wall_loops',
+  'top_shell_layers',
+  'bottom_shell_layers',
+  'sparse_infill_density',
+  'sparse_infill_pattern',
+  'initial_layer_speed',
+  'initial_layer_infill_speed',
+  'internal_solid_infill_speed',
+  'bridge_speed',
+  'outer_wall_speed',
+  'inner_wall_speed',
+  'sparse_infill_speed',
+  'travel_speed',
+  'default_acceleration',
+  'travel_acceleration',
+  'enable_support',
+  'support_type',
+  'support_threshold_angle',
+  'brim_width',
+  'skirt_loops',
+  'raft_layers',
+  'seam_position',
+  'ironing_type',
+  'enable_arc_fitting',
+  'spiral_mode',
+  'compatible_printers',
+  'compatible_filaments',
+  'compatible_printers_condition',
+]);
 
 const slugifyValue = (value: string): string =>
   value
@@ -204,6 +247,61 @@ const buildPrinterProfileOptionLabel = (printerProfile: PrinterProfile): string 
   return printerProfile.name;
 };
 
+const buildCompatibleFilamentValue = (filament: Filament): string =>
+  filament.brand_name ? `${filament.name} @${filament.brand_name}` : filament.name;
+
+const buildFilamentOptionLabel = (filament: Filament): string => {
+  const parts = [filament.brand_name, filament.name, filament.material_type].filter(Boolean);
+  return parts.join(' · ');
+};
+
+const pickAdvancedProcessSettings = (settings: Record<string, unknown> | undefined): Record<string, unknown> => {
+  if (!settings) {
+    return {};
+  }
+
+  const next: Record<string, unknown> = {};
+  Object.entries(settings).forEach(([key, value]) => {
+    if (ADVANCED_PROCESS_EXCLUDED_KEYS.has(key) || value === undefined) {
+      return;
+    }
+    next[key] = value;
+  });
+
+  return next;
+};
+
+const stripAdvancedProcessSettings = (settings: Record<string, unknown> | undefined): Record<string, unknown> => {
+  if (!settings) {
+    return {};
+  }
+
+  const next = { ...settings };
+  Object.keys(pickAdvancedProcessSettings(settings)).forEach((key) => {
+    delete next[key];
+  });
+  delete next.compatible_printers_condition;
+
+  return next;
+};
+
+const sortJsonValue = (value: unknown): unknown => {
+  if (Array.isArray(value)) {
+    return value.map(sortJsonValue);
+  }
+  if (value && typeof value === 'object') {
+    return Object.keys(value as Record<string, unknown>)
+      .sort()
+      .reduce<Record<string, unknown>>((acc, key) => {
+        acc[key] = sortJsonValue((value as Record<string, unknown>)[key]);
+        return acc;
+      }, {});
+  }
+  return value;
+};
+
+const stableStringify = (value: unknown): string => JSON.stringify(sortJsonValue(value));
+
 interface FormFieldProps {
   label: ReactNode;
   children: ReactNode;
@@ -278,6 +376,11 @@ export const CreatePrintProfileModal: React.FC<CreatePrintProfileModalProps> = (
   const [spiralMode, setSpiralMode] = useState('');
   const [selectedCompatiblePrinters, setSelectedCompatiblePrinters] = useState<string[]>([]);
   const [compatiblePrinterSearch, setCompatiblePrinterSearch] = useState('');
+  const [selectedCompatibleFilaments, setSelectedCompatibleFilaments] = useState<string[]>([]);
+  const [compatibleFilamentSearch, setCompatibleFilamentSearch] = useState('');
+  const [compatiblePrintersCondition, setCompatiblePrintersCondition] = useState('');
+  const [advancedSettings, setAdvancedSettings] = useState('');
+  const [advancedSettingsError, setAdvancedSettingsError] = useState<string | null>(null);
   const [notes, setNotes] = useState('');
   const [nameManuallyChanged, setNameManuallyChanged] = useState(false);
 
@@ -296,7 +399,19 @@ export const CreatePrintProfileModal: React.FC<CreatePrintProfileModalProps> = (
     staleTime: 60_000,
   });
 
+  const filamentsQuery = useQuery({
+    queryKey: ['create-print-profile-modal', 'filaments'],
+    queryFn: () =>
+      filamentsAPI.list({
+        active_only: true,
+        size: 200,
+      }),
+    enabled: isOpen,
+    staleTime: 60_000,
+  });
+
   const availablePrinterProfiles = printerProfilesQuery.data?.items ?? [];
+  const availableFilaments = filamentsQuery.data?.items ?? [];
   const recommendedPrinterTag = selectedCompatiblePrinters[0] || printerProfileContext?.name || 'FilamentHub';
   const recommendedName =
     !profile && !baseProfile && layerHeight.trim() && qualityTier.trim()
@@ -309,6 +424,13 @@ export const CreatePrintProfileModal: React.FC<CreatePrintProfileModalProps> = (
       label: buildPrinterProfileOptionLabel(printerProfile),
     }));
   const knownCompatiblePrinterNames = new Set(availablePrinterProfiles.map((printerProfile) => printerProfile.name));
+  const availableCompatibleFilamentOptions = availableFilaments
+    .filter((filament) => !selectedCompatibleFilaments.includes(buildCompatibleFilamentValue(filament)))
+    .map((filament) => ({
+      value: filament.id,
+      label: buildFilamentOptionLabel(filament),
+    }));
+  const knownCompatibleFilamentNames = new Set(availableFilaments.map(buildCompatibleFilamentValue));
   const showSupportThresholdField = enableSupport === '1' && supportType.includes('(auto)');
 
   useEffect(() => {
@@ -338,6 +460,10 @@ export const CreatePrintProfileModal: React.FC<CreatePrintProfileModalProps> = (
       ...(sourceProfile?.compatible_printers?.filter(Boolean) ?? []),
       ...readSettingList(sourceSettings, 'compatible_printers'),
     ]);
+    const nextCompatibleFilaments = dedupeStringValues([
+      ...(sourceProfile?.compatible_filaments?.filter(Boolean) ?? []),
+      ...readSettingList(sourceSettings, 'compatible_filaments'),
+    ]);
     const contextNozzle =
       printerProfileContext?.nozzle_diameters?.[0] != null ? String(printerProfileContext.nozzle_diameters[0]) : '';
     const fallbackCompatiblePrinters =
@@ -346,6 +472,13 @@ export const CreatePrintProfileModal: React.FC<CreatePrintProfileModalProps> = (
         : printerProfileContext?.name
           ? [printerProfileContext.name]
           : [];
+    const sourceExtraMetadata =
+      sourceProfile?.extra_metadata && typeof sourceProfile.extra_metadata === 'object' ? sourceProfile.extra_metadata : null;
+    const nextCompatiblePrintersCondition =
+      typeof sourceExtraMetadata?.compatible_printers_condition === 'string'
+        ? sourceExtraMetadata.compatible_printers_condition
+        : readSettingString(sourceSettings, 'compatible_printers_condition');
+    const nextAdvancedSettings = pickAdvancedProcessSettings(sourceSettings);
 
     if (profile) {
       setName(profile.name || '');
@@ -383,6 +516,11 @@ export const CreatePrintProfileModal: React.FC<CreatePrintProfileModalProps> = (
       setSpiralMode(readSettingBooleanString(sourceSettings, 'spiral_mode'));
       setSelectedCompatiblePrinters(fallbackCompatiblePrinters);
       setCompatiblePrinterSearch('');
+      setSelectedCompatibleFilaments(nextCompatibleFilaments);
+      setCompatibleFilamentSearch('');
+      setCompatiblePrintersCondition(nextCompatiblePrintersCondition);
+      setAdvancedSettings(Object.keys(nextAdvancedSettings).length ? JSON.stringify(nextAdvancedSettings, null, 2) : '');
+      setAdvancedSettingsError(null);
       setNotes(profile.notes || '');
       return;
     }
@@ -423,6 +561,11 @@ export const CreatePrintProfileModal: React.FC<CreatePrintProfileModalProps> = (
       setSpiralMode(readSettingBooleanString(sourceSettings, 'spiral_mode'));
       setSelectedCompatiblePrinters(fallbackCompatiblePrinters);
       setCompatiblePrinterSearch('');
+      setSelectedCompatibleFilaments(nextCompatibleFilaments);
+      setCompatibleFilamentSearch('');
+      setCompatiblePrintersCondition(nextCompatiblePrintersCondition);
+      setAdvancedSettings(Object.keys(nextAdvancedSettings).length ? JSON.stringify(nextAdvancedSettings, null, 2) : '');
+      setAdvancedSettingsError(null);
       setNotes(baseProfile.notes || '');
       return;
     }
@@ -462,6 +605,11 @@ export const CreatePrintProfileModal: React.FC<CreatePrintProfileModalProps> = (
     setSpiralMode('');
     setSelectedCompatiblePrinters(printerProfileContext?.name ? [printerProfileContext.name] : []);
     setCompatiblePrinterSearch('');
+    setSelectedCompatibleFilaments([]);
+    setCompatibleFilamentSearch('');
+    setCompatiblePrintersCondition('');
+    setAdvancedSettings('');
+    setAdvancedSettingsError(null);
     setNotes('');
   }, [isOpen, profile, baseProfile, printerProfileContext, t]);
 
@@ -489,6 +637,8 @@ export const CreatePrintProfileModal: React.FC<CreatePrintProfileModalProps> = (
     const trimmedName = name.trim();
     const trimmedSlug = slug.trim();
     const compatiblePrinters = dedupeStringValues(selectedCompatiblePrinters);
+    const compatibleFilaments = dedupeStringValues(selectedCompatibleFilaments);
+    const compatiblePrintersConditionValue = compatiblePrintersCondition.trim();
 
     if (!trimmedName) {
       alert(t('createPrintProfile.nameRequired'));
@@ -503,6 +653,24 @@ export const CreatePrintProfileModal: React.FC<CreatePrintProfileModalProps> = (
     if (compatiblePrinters.length === 0) {
       alert(t('createPrintProfile.compatiblePrintersRequired'));
       return;
+    }
+
+    let advancedSettingsObject: Record<string, unknown> = {};
+    if (advancedSettings.trim()) {
+      try {
+        const parsed = JSON.parse(advancedSettings);
+        if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+          throw new Error('advanced settings must be an object');
+        }
+        advancedSettingsObject = pickAdvancedProcessSettings(parsed as Record<string, unknown>);
+        setAdvancedSettingsError(null);
+      } catch (error) {
+        console.error('Invalid advanced process settings JSON', error);
+        setAdvancedSettingsError(t('createPrintProfile.jsonInvalid'));
+        return;
+      }
+    } else {
+      setAdvancedSettingsError(null);
     }
 
     const layerHeightValue = normalizeNumericString(layerHeight);
@@ -526,9 +694,21 @@ export const CreatePrintProfileModal: React.FC<CreatePrintProfileModalProps> = (
     const skirtLoopsValue = normalizeNumericString(skirtLoops);
     const raftLayersValue = normalizeNumericString(raftLayers);
     const profileSource = profile?.source === 'system' ? 'system' : 'user';
+    const extraMetadataBase =
+      sourceProfile?.extra_metadata && typeof sourceProfile.extra_metadata === 'object'
+        ? { ...(sourceProfile.extra_metadata as Record<string, unknown>) }
+        : {};
+    const nextExtraMetadata = { ...extraMetadataBase };
+
+    if (compatiblePrintersConditionValue) {
+      nextExtraMetadata.compatible_printers_condition = compatiblePrintersConditionValue;
+    } else {
+      delete nextExtraMetadata.compatible_printers_condition;
+    }
 
     const mergedSettings: Record<string, unknown> = {
-      ...sourceSettings,
+      ...stripAdvancedProcessSettings(sourceSettings),
+      ...advancedSettingsObject,
       type: 'process',
       name: trimmedName,
       from: profileSource,
@@ -538,10 +718,19 @@ export const CreatePrintProfileModal: React.FC<CreatePrintProfileModalProps> = (
       print_settings_id: readSettingString(sourceSettings, 'print_settings_id') || trimmedName,
       compatible_printers: compatiblePrinters,
     };
+    delete mergedSettings.compatible_printers_condition;
 
     const setOrDelete = (key: string, value: string) => {
       if (value) {
         mergedSettings[key] = value;
+      } else {
+        delete mergedSettings[key];
+      }
+    };
+
+    const setOrDeleteList = (key: string, values: string[]) => {
+      if (values.length > 0) {
+        mergedSettings[key] = values;
       } else {
         delete mergedSettings[key];
       }
@@ -575,6 +764,7 @@ export const CreatePrintProfileModal: React.FC<CreatePrintProfileModalProps> = (
     setOrDelete('ironing_type', ironingType.trim());
     setOrDelete('enable_arc_fitting', enableArcFitting);
     setOrDelete('spiral_mode', spiralMode);
+    setOrDeleteList('compatible_filaments', compatibleFilaments);
 
     const data: Parameters<typeof printProfilesAPI.create>[0] = {
       name: trimmedName,
@@ -585,16 +775,14 @@ export const CreatePrintProfileModal: React.FC<CreatePrintProfileModalProps> = (
       default_nozzle: defaultNozzle.trim() || null,
       layer_height_mm: layerHeightValue ? Number(layerHeightValue) : null,
       compatible_printers: compatiblePrinters,
+      compatible_filaments: compatibleFilaments.length > 0 ? compatibleFilaments : null,
+      extra_metadata: Object.keys(nextExtraMetadata).length > 0 ? nextExtraMetadata : null,
       notes: notes.trim() || null,
       active: true,
       source: profileSource,
       vendor: profile?.vendor ?? baseProfile?.vendor ?? printerProfileContext?.vendor ?? null,
       orcaslicer_settings: mergedSettings,
     };
-
-    if (!profile && baseProfile?.compatible_filaments?.length) {
-      data.compatible_filaments = baseProfile.compatible_filaments;
-    }
 
     if (!profile && baseProfile) {
       const baseSettings = (baseProfile.orcaslicer_settings ?? {}) as Record<string, unknown>;
@@ -605,6 +793,16 @@ export const CreatePrintProfileModal: React.FC<CreatePrintProfileModalProps> = (
         ]),
       ).sort();
       const normalizedCurrentCompatiblePrinters = [...compatiblePrinters].sort();
+      const normalizedBaseCompatibleFilaments = dedupeStringValues([
+        ...(baseProfile.compatible_filaments?.filter(Boolean) ?? []),
+        ...readSettingList(baseSettings, 'compatible_filaments'),
+      ]).sort();
+      const normalizedCurrentCompatibleFilaments = [...compatibleFilaments].sort();
+      const baseCompatiblePrintersCondition =
+        typeof baseProfile.extra_metadata?.compatible_printers_condition === 'string'
+          ? baseProfile.extra_metadata.compatible_printers_condition.trim()
+          : readSettingString(baseSettings, 'compatible_printers_condition');
+      const baseAdvancedSettings = pickAdvancedProcessSettings(baseSettings);
       const baseComparableValues = {
         qualityTier: baseProfile.quality_tier ?? '',
         defaultNozzle: baseProfile.default_nozzle ?? readSettingString(baseSettings, 'default_nozzle_diameter'),
@@ -636,6 +834,8 @@ export const CreatePrintProfileModal: React.FC<CreatePrintProfileModalProps> = (
         ironingType: readSettingString(baseSettings, 'ironing_type'),
         enableArcFitting: readSettingBooleanString(baseSettings, 'enable_arc_fitting'),
         spiralMode: readSettingBooleanString(baseSettings, 'spiral_mode'),
+        compatiblePrintersCondition: baseCompatiblePrintersCondition,
+        advancedSettings: stableStringify(baseAdvancedSettings),
       };
 
       const currentComparableValues = {
@@ -668,11 +868,14 @@ export const CreatePrintProfileModal: React.FC<CreatePrintProfileModalProps> = (
         ironingType: ironingType.trim(),
         enableArcFitting,
         spiralMode,
+        compatiblePrintersCondition: compatiblePrintersConditionValue,
+        advancedSettings: stableStringify(advancedSettingsObject),
       };
 
       const isIdenticalClone =
         Object.entries(currentComparableValues).every(([key, value]) => baseComparableValues[key as keyof typeof baseComparableValues] === value) &&
-        areStringArraysEqual(normalizedBaseCompatiblePrinters, normalizedCurrentCompatiblePrinters);
+        areStringArraysEqual(normalizedBaseCompatiblePrinters, normalizedCurrentCompatiblePrinters) &&
+        areStringArraysEqual(normalizedBaseCompatibleFilaments, normalizedCurrentCompatibleFilaments);
 
       if (isIdenticalClone) {
         alert(t('createPrintProfile.duplicateCloneError'));
@@ -823,77 +1026,169 @@ export const CreatePrintProfileModal: React.FC<CreatePrintProfileModalProps> = (
 
           <div className="rounded-xl border border-white/10 bg-white/[0.03] p-4">
             <h3 className="text-sm font-semibold text-white">{t('createPrintProfile.compatibilitySection')}</h3>
-            <div className="mt-4">
+            <div className="mt-4 grid gap-6 xl:grid-cols-2">
+              <div>
+                <FormField
+                  label={t('createPrintProfile.compatiblePrinters')}
+                  required
+                  hint={t('createPrintProfile.compatiblePrintersHint')}
+                  labelMinHeightClassName="min-h-0"
+                >
+                  <Dropdown
+                    label=""
+                    value=""
+                    options={availableCompatiblePrinterOptions}
+                    onChange={(value) => {
+                      if (typeof value !== 'number') {
+                        return;
+                      }
+                      const selectedPrinter = availablePrinterProfiles.find((printerProfile) => printerProfile.id === value);
+                      if (!selectedPrinter) {
+                        return;
+                      }
+                      setSelectedCompatiblePrinters((prev) => dedupeStringValues([...prev, selectedPrinter.name]));
+                      setCompatiblePrinterSearch('');
+                    }}
+                    placeholder={printerProfilesQuery.isPending ? t('createPrintProfile.loadingCompatiblePrinters') : t('createPrintProfile.addCompatiblePrinter')}
+                    filterable
+                    filterValue={compatiblePrinterSearch}
+                    onFilterChange={setCompatiblePrinterSearch}
+                    emptyMessage={t('createPrintProfile.compatiblePrintersEmpty')}
+                  />
+                </FormField>
+
+                {selectedCompatiblePrinters.length > 0 && (
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    {selectedCompatiblePrinters.map((printerName) => {
+                      const isKnownPrinter = printerProfilesQuery.isPending || knownCompatiblePrinterNames.has(printerName);
+
+                      return (
+                        <span
+                          key={printerName}
+                          className={`flex items-center gap-2 rounded-lg border px-3 py-1.5 text-sm ${
+                            isKnownPrinter
+                              ? 'border-purple-500/30 bg-purple-600/20 text-white'
+                              : 'border-amber-500/30 bg-amber-500/10 text-amber-100'
+                          }`}
+                        >
+                          <span>{printerName}</span>
+                          {!isKnownPrinter && (
+                            <span className="text-[10px] uppercase tracking-wide text-amber-200/80">
+                              {t('createPrintProfile.unresolvedCompatiblePrinter')}
+                            </span>
+                          )}
+                          <button
+                            type="button"
+                            onClick={() => setSelectedCompatiblePrinters((prev) => prev.filter((value) => value !== printerName))}
+                            className="rounded p-0.5 text-inherit transition-colors hover:text-red-300"
+                            title={t('createPrintProfile.removeCompatiblePrinter')}
+                          >
+                            <X className="h-4 w-4" />
+                          </button>
+                        </span>
+                      );
+                    })}
+                  </div>
+                )}
+
+                {printerProfilesQuery.isError && (
+                  <p className="mt-2 text-xs text-amber-400">{t('createPrintProfile.compatiblePrintersLoadError')}</p>
+                )}
+
+                {!printerProfilesQuery.isPending && availablePrinterProfiles.length === 0 && selectedCompatiblePrinters.length === 0 && (
+                  <p className="mt-2 text-xs text-gray-400">{t('createPrintProfile.noCompatiblePrintersAvailable')}</p>
+                )}
+              </div>
+
+              <div>
+                <FormField
+                  label={t('createPrintProfile.compatibleFilaments')}
+                  hint={t('createPrintProfile.compatibleFilamentsHint')}
+                  labelMinHeightClassName="min-h-0"
+                >
+                  <Dropdown
+                    label=""
+                    value=""
+                    options={availableCompatibleFilamentOptions}
+                    onChange={(value) => {
+                      if (typeof value !== 'number') {
+                        return;
+                      }
+                      const selectedFilament = availableFilaments.find((filament) => filament.id === value);
+                      if (!selectedFilament) {
+                        return;
+                      }
+                      setSelectedCompatibleFilaments((prev) =>
+                        dedupeStringValues([...prev, buildCompatibleFilamentValue(selectedFilament)]),
+                      );
+                      setCompatibleFilamentSearch('');
+                    }}
+                    placeholder={filamentsQuery.isPending ? t('createPrintProfile.loadingCompatibleFilaments') : t('createPrintProfile.addCompatibleFilament')}
+                    filterable
+                    filterValue={compatibleFilamentSearch}
+                    onFilterChange={setCompatibleFilamentSearch}
+                    emptyMessage={t('createPrintProfile.compatibleFilamentsEmpty')}
+                  />
+                </FormField>
+
+                {selectedCompatibleFilaments.length > 0 && (
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    {selectedCompatibleFilaments.map((filamentName) => {
+                      const isKnownFilament = filamentsQuery.isPending || knownCompatibleFilamentNames.has(filamentName);
+
+                      return (
+                        <span
+                          key={filamentName}
+                          className={`flex items-center gap-2 rounded-lg border px-3 py-1.5 text-sm ${
+                            isKnownFilament
+                              ? 'border-cyan-500/30 bg-cyan-600/20 text-white'
+                              : 'border-amber-500/30 bg-amber-500/10 text-amber-100'
+                          }`}
+                        >
+                          <span>{filamentName}</span>
+                          {!isKnownFilament && (
+                            <span className="text-[10px] uppercase tracking-wide text-amber-200/80">
+                              {t('createPrintProfile.unresolvedCompatibleFilament')}
+                            </span>
+                          )}
+                          <button
+                            type="button"
+                            onClick={() => setSelectedCompatibleFilaments((prev) => prev.filter((value) => value !== filamentName))}
+                            className="rounded p-0.5 text-inherit transition-colors hover:text-red-300"
+                            title={t('createPrintProfile.removeCompatibleFilament')}
+                          >
+                            <X className="h-4 w-4" />
+                          </button>
+                        </span>
+                      );
+                    })}
+                  </div>
+                )}
+
+                {filamentsQuery.isError && (
+                  <p className="mt-2 text-xs text-amber-400">{t('createPrintProfile.compatibleFilamentsLoadError')}</p>
+                )}
+
+                {!filamentsQuery.isPending && availableFilaments.length === 0 && selectedCompatibleFilaments.length === 0 && (
+                  <p className="mt-2 text-xs text-gray-400">{t('createPrintProfile.noCompatibleFilamentsAvailable')}</p>
+                )}
+              </div>
+            </div>
+
+            <div className="mt-6">
               <FormField
-                label={t('createPrintProfile.compatiblePrinters')}
-                required
-                hint={t('createPrintProfile.compatiblePrintersHint')}
+                label={t('createPrintProfile.compatiblePrintersCondition')}
+                hint={t('createPrintProfile.compatiblePrintersConditionHint')}
                 labelMinHeightClassName="min-h-0"
               >
-                <Dropdown
-                  label=""
-                  value=""
-                  options={availableCompatiblePrinterOptions}
-                  onChange={(value) => {
-                    if (typeof value !== 'number') {
-                      return;
-                    }
-                    const selectedPrinter = availablePrinterProfiles.find((printerProfile) => printerProfile.id === value);
-                    if (!selectedPrinter) {
-                      return;
-                    }
-                    setSelectedCompatiblePrinters((prev) => dedupeStringValues([...prev, selectedPrinter.name]));
-                    setCompatiblePrinterSearch('');
-                  }}
-                  placeholder={printerProfilesQuery.isPending ? t('createPrintProfile.loadingCompatiblePrinters') : t('createPrintProfile.addCompatiblePrinter')}
-                  filterable
-                  filterValue={compatiblePrinterSearch}
-                  onFilterChange={setCompatiblePrinterSearch}
-                  emptyMessage={t('createPrintProfile.compatiblePrintersEmpty')}
+                <textarea
+                  value={compatiblePrintersCondition}
+                  onChange={(event) => setCompatiblePrintersCondition(event.target.value)}
+                  rows={2}
+                  className="w-full resize-none rounded-lg border border-white/10 bg-white/5 px-4 py-2 font-mono text-sm text-white placeholder-gray-500 focus:border-purple-500 focus:outline-none"
+                  placeholder="printer_notes=~/.*0.4 nozzle.*/ and nozzle_diameter[0]==0.4"
                 />
               </FormField>
-
-              {selectedCompatiblePrinters.length > 0 && (
-                <div className="mt-3 flex flex-wrap gap-2">
-                  {selectedCompatiblePrinters.map((printerName) => {
-                    const isKnownPrinter = printerProfilesQuery.isPending || knownCompatiblePrinterNames.has(printerName);
-
-                    return (
-                      <span
-                        key={printerName}
-                        className={`flex items-center gap-2 rounded-lg border px-3 py-1.5 text-sm ${
-                          isKnownPrinter
-                            ? 'border-purple-500/30 bg-purple-600/20 text-white'
-                            : 'border-amber-500/30 bg-amber-500/10 text-amber-100'
-                        }`}
-                      >
-                        <span>{printerName}</span>
-                        {!isKnownPrinter && (
-                          <span className="text-[10px] uppercase tracking-wide text-amber-200/80">
-                            {t('createPrintProfile.unresolvedCompatiblePrinter')}
-                          </span>
-                        )}
-                        <button
-                          type="button"
-                          onClick={() => setSelectedCompatiblePrinters((prev) => prev.filter((value) => value !== printerName))}
-                          className="rounded p-0.5 text-inherit transition-colors hover:text-red-300"
-                          title={t('createPrintProfile.removeCompatiblePrinter')}
-                        >
-                          <X className="h-4 w-4" />
-                        </button>
-                      </span>
-                    );
-                  })}
-                </div>
-              )}
-
-              {printerProfilesQuery.isError && (
-                <p className="mt-2 text-xs text-amber-400">{t('createPrintProfile.compatiblePrintersLoadError')}</p>
-              )}
-
-              {!printerProfilesQuery.isPending && availablePrinterProfiles.length === 0 && selectedCompatiblePrinters.length === 0 && (
-                <p className="mt-2 text-xs text-gray-400">{t('createPrintProfile.noCompatiblePrintersAvailable')}</p>
-              )}
             </div>
           </div>
 
@@ -1237,6 +1532,54 @@ export const CreatePrintProfileModal: React.FC<CreatePrintProfileModalProps> = (
                   ))}
                 </select>
               </FormField>
+            </div>
+          </div>
+
+          <div className="rounded-xl border border-white/10 bg-white/[0.03] p-4">
+            <h3 className="text-sm font-semibold text-white">{t('createPrintProfile.advancedOverridesSection')}</h3>
+            <div className="mt-4">
+              <FormField
+                label={t('createPrintProfile.advancedOverrides')}
+                hint={t('createPrintProfile.advancedOverridesHint')}
+                labelMinHeightClassName="min-h-0"
+              >
+                <div className="flex flex-col gap-3">
+                  <textarea
+                    value={advancedSettings}
+                    onChange={(event) => {
+                      setAdvancedSettings(event.target.value);
+                      if (advancedSettingsError) {
+                        setAdvancedSettingsError(null);
+                      }
+                    }}
+                    rows={10}
+                    className="w-full resize-y rounded-lg border border-white/10 bg-white/5 px-4 py-3 font-mono text-sm text-white placeholder-gray-500 focus:border-purple-500 focus:outline-none"
+                    placeholder={t('createPrintProfile.advancedOverridesPlaceholder')}
+                  />
+                  <div className="flex justify-end">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (!advancedSettings.trim()) {
+                          return;
+                        }
+                        try {
+                          const formatted = JSON.stringify(JSON.parse(advancedSettings), null, 2);
+                          setAdvancedSettings(formatted);
+                          setAdvancedSettingsError(null);
+                        } catch (error) {
+                          console.error('Invalid advanced process settings JSON', error);
+                          setAdvancedSettingsError(t('createPrintProfile.jsonFormatError'));
+                        }
+                      }}
+                      className="rounded-lg border border-white/15 px-4 py-2 text-xs font-medium text-white transition-all hover:bg-white/10"
+                    >
+                      {t('createPrintProfile.formatJson')}
+                    </button>
+                  </div>
+                </div>
+              </FormField>
+              {advancedSettingsError && <p className="mt-2 text-xs text-red-400">{advancedSettingsError}</p>}
             </div>
           </div>
 
