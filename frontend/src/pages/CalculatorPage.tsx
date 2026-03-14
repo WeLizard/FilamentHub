@@ -50,6 +50,7 @@ const ghostButtonClass =
   'inline-flex items-center justify-center gap-2 rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm font-medium text-white transition-all hover:bg-white/10';
 
 type CalculatorTab = 'calculator' | 'history';
+type QuoteDisclaimerMode = 'not_offer' | 'offer';
 
 interface QuoteProfileState {
   sellerName: string;
@@ -57,6 +58,7 @@ interface QuoteProfileState {
   sellerPhone: string;
   paymentTerms: string;
   validityDays: number;
+  disclaimerMode: QuoteDisclaimerMode;
 }
 
 interface CalculatorFormState {
@@ -166,6 +168,7 @@ const DEFAULT_QUOTE_PROFILE: QuoteProfileState = {
   sellerPhone: '',
   paymentTerms: '',
   validityDays: 14,
+  disclaimerMode: 'not_offer',
 };
 const DEFAULT_QUOTE_PARTY_FORM: QuotePartyFormState = {
   ...DEFAULT_QUOTE_PROFILE,
@@ -306,6 +309,9 @@ const loadStoredQuoteProfile = (): Partial<QuoteProfileState> => {
         typeof parsed.validityDays === 'number' && Number.isFinite(parsed.validityDays)
           ? parsed.validityDays
           : undefined,
+      disclaimerMode: parsed.disclaimerMode === 'offer' || parsed.disclaimerMode === 'not_offer'
+        ? parsed.disclaimerMode
+        : undefined,
     };
   } catch {
     return {};
@@ -325,6 +331,7 @@ const saveStoredQuoteProfile = (data: QuoteProfileState): void => {
       sellerPhone: data.sellerPhone,
       paymentTerms: data.paymentTerms,
       validityDays: data.validityDays,
+      disclaimerMode: data.disclaimerMode,
     }),
   );
 };
@@ -600,6 +607,9 @@ const buildQuoteIncludedItems = (t: TFunction, result: CalculatorEstimateRespons
   return included.length > 0 ? included : [t('calculator.quoteIncluded.none')];
 };
 
+const buildQuoteDisclaimerLabel = (t: TFunction, mode: QuoteDisclaimerMode): string =>
+  mode === 'offer' ? t('calculator.quoteDisclaimerOffer') : t('calculator.quoteDisclaimerNotOffer');
+
 const buildQuoteDocumentHtml = ({
   t,
   form,
@@ -614,6 +624,7 @@ const buildQuoteDocumentHtml = ({
   const today = new Intl.DateTimeFormat(undefined, { dateStyle: 'long' }).format(issuedAt);
   const validityDays = Math.max(1, Math.round(parties.validityDays || DEFAULT_QUOTE_PROFILE.validityDays));
   const validUntil = new Intl.DateTimeFormat(undefined, { dateStyle: 'long' }).format(addDays(issuedAt, validityDays));
+  const disclaimerLabel = buildQuoteDisclaimerLabel(t, parties.disclaimerMode || DEFAULT_QUOTE_PROFILE.disclaimerMode);
   const documentTitle = `${t('calculator.quoteDocumentTitle')} — ${today}`;
   const buyerFallback = t('calculator.quoteBuyerFallback');
 
@@ -700,6 +711,11 @@ const buildQuoteDocumentHtml = ({
         <div><strong>${escapeHtml(t('calculator.quotePaymentTerms'))}</strong></div>
         <div class="muted" style="margin-top: 8px;">${escapeHtml(paymentTerms)}</div>
       </div>` : ''}
+
+      <div class="box" style="margin-top: 16px;">
+        <div><strong>${escapeHtml(t('calculator.quoteLegalStatus'))}</strong></div>
+        <div class="muted" style="margin-top: 8px;">${escapeHtml(disclaimerLabel)}</div>
+      </div>
 
       <table>
         <thead>
@@ -1495,6 +1511,18 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
                       placeholder="14"
                     />
                   </FieldBlock>
+                  <FieldBlock label={tc('quoteLegalStatus')} hint={tc('quoteDisclaimerHint')}>
+                    <select
+                      className={`${inputClass} w-full sm:max-w-[18rem]`}
+                      value={quoteProfile.disclaimerMode}
+                      onChange={(event) =>
+                        onQuoteProfileChange('disclaimerMode', event.target.value as QuoteDisclaimerMode)
+                      }
+                    >
+                      <option value="not_offer">{tc('quoteDisclaimerNotOffer')}</option>
+                      <option value="offer">{tc('quoteDisclaimerOffer')}</option>
+                    </select>
+                  </FieldBlock>
                   <div className="md:col-span-2 xl:col-span-3">
                     <FieldBlock label={tc('quotePaymentTerms')}>
                       <TextareaInput
@@ -2277,6 +2305,16 @@ const QuoteModal: React.FC<QuoteModalProps> = ({
                       placeholder="14"
                     />
                   </FieldBlock>
+                  <FieldBlock label={tc('quoteLegalStatus')} hint={tc('quoteDisclaimerHint')}>
+                    <select
+                      className={`${inputClass} w-full sm:max-w-[18rem]`}
+                      value={quoteParties.disclaimerMode}
+                      onChange={(event) => onPartyChange('disclaimerMode', event.target.value as QuoteDisclaimerMode)}
+                    >
+                      <option value="not_offer">{tc('quoteDisclaimerNotOffer')}</option>
+                      <option value="offer">{tc('quoteDisclaimerOffer')}</option>
+                    </select>
+                  </FieldBlock>
                   <div className="md:col-span-2">
                     <FieldBlock label={tc('quotePaymentTerms')}>
                       <TextareaInput
@@ -2353,6 +2391,12 @@ const QuoteModal: React.FC<QuoteModalProps> = ({
                       {new Intl.DateTimeFormat(undefined, { dateStyle: 'medium' }).format(
                         addDays(new Date(), Math.max(1, Math.round(quoteParties.validityDays || DEFAULT_QUOTE_PROFILE.validityDays))),
                       )}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between gap-4">
+                    <span className="text-slate-300">{tc('quoteLegalStatus')}</span>
+                    <span className="text-right font-medium text-white">
+                      {buildQuoteDisclaimerLabel(t, quoteParties.disclaimerMode || DEFAULT_QUOTE_PROFILE.disclaimerMode)}
                     </span>
                   </div>
                 </div>
