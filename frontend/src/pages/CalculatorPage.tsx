@@ -51,6 +51,13 @@ const ghostButtonClass =
 
 type CalculatorTab = 'calculator' | 'history';
 
+interface QuoteProfileState {
+  sellerName: string;
+  sellerInn: string;
+  sellerPhone: string;
+  paymentTerms: string;
+}
+
 interface CalculatorFormState {
   selectedFilamentId: number | '';
   pricingMethod: PricingMethod;
@@ -88,10 +95,7 @@ interface CalculatorFormState {
   roundingMode: RoundingMode;
 }
 
-interface QuotePartyFormState {
-  sellerName: string;
-  sellerInn: string;
-  sellerPhone: string;
+interface QuotePartyFormState extends QuoteProfileState {
   buyerName: string;
   buyerInn: string;
   buyerAddress: string;
@@ -155,10 +159,14 @@ type CalculatorStaticSettings = Pick<CalculatorFormState, CalculatorStaticSettin
 
 const CALCULATOR_DEFAULTS_STORAGE_KEY = 'filamenthub_calculator_defaults_v1';
 const QUOTE_PROFILE_STORAGE_KEY = 'filamenthub_calculator_quote_profile_v1';
-const DEFAULT_QUOTE_PARTY_FORM: QuotePartyFormState = {
+const DEFAULT_QUOTE_PROFILE: QuoteProfileState = {
   sellerName: '',
   sellerInn: '',
   sellerPhone: '',
+  paymentTerms: '',
+};
+const DEFAULT_QUOTE_PARTY_FORM: QuotePartyFormState = {
+  ...DEFAULT_QUOTE_PROFILE,
   buyerName: '',
   buyerInn: '',
   buyerAddress: '',
@@ -271,7 +279,7 @@ const escapeHtml = (value: string): string =>
     .replaceAll('"', '&quot;')
     .replaceAll("'", '&#39;');
 
-const loadStoredQuoteProfile = (): Partial<QuotePartyFormState> => {
+const loadStoredQuoteProfile = (): Partial<QuoteProfileState> => {
   if (typeof window === 'undefined') {
     return {};
   }
@@ -287,13 +295,13 @@ const loadStoredQuoteProfile = (): Partial<QuotePartyFormState> => {
       return {};
     }
 
-    return parsed as Partial<QuotePartyFormState>;
+    return parsed as Partial<QuoteProfileState>;
   } catch {
     return {};
   }
 };
 
-const saveStoredQuoteProfile = (data: QuotePartyFormState): void => {
+const saveStoredQuoteProfile = (data: QuoteProfileState): void => {
   if (typeof window === 'undefined') {
     return;
   }
@@ -304,9 +312,7 @@ const saveStoredQuoteProfile = (data: QuotePartyFormState): void => {
       sellerName: data.sellerName,
       sellerInn: data.sellerInn,
       sellerPhone: data.sellerPhone,
-      buyerName: data.buyerName,
-      buyerInn: data.buyerInn,
-      buyerAddress: data.buyerAddress,
+      paymentTerms: data.paymentTerms,
     }),
   );
 };
@@ -612,6 +618,7 @@ const buildQuoteDocumentHtml = ({
   const buyerName = parties.buyerName.trim() || buyerFallback;
   const buyerInn = parties.buyerInn.trim();
   const buyerAddress = parties.buyerAddress.trim();
+  const paymentTerms = parties.paymentTerms.trim();
 
   return `<!doctype html>
 <html lang="ru">
@@ -665,6 +672,12 @@ const buildQuoteDocumentHtml = ({
         ${buyerInn ? `<div class="muted">${escapeHtml(t('calculator.quoteInn'))}: ${escapeHtml(buyerInn)}</div>` : ''}
         ${buyerAddress ? `<div class="muted">${escapeHtml(t('calculator.quoteAddress'))}: ${escapeHtml(buyerAddress)}</div>` : ''}
       </div>
+
+      ${paymentTerms ? `
+      <div class="box" style="margin-top: 16px;">
+        <div><strong>${escapeHtml(t('calculator.quotePaymentTerms'))}</strong></div>
+        <div class="muted" style="margin-top: 8px;">${escapeHtml(paymentTerms)}</div>
+      </div>` : ''}
 
       <table>
         <thead>
@@ -723,6 +736,7 @@ export const CalculatorPage: React.FC = () => {
   const [dragActive, setDragActive] = useState(false);
   const [historyFeedback, setHistoryFeedback] = useState<{ kind: 'success' | 'error'; message: string } | null>(null);
   const [quoteModalOpen, setQuoteModalOpen] = useState(false);
+  const [quoteProfile, setQuoteProfile] = useState<QuoteProfileState>(DEFAULT_QUOTE_PROFILE);
   const [quoteParties, setQuoteParties] = useState<QuotePartyFormState>(DEFAULT_QUOTE_PARTY_FORM);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const skipNextFilamentDefaultsRef = useRef(false);
@@ -800,19 +814,24 @@ export const CalculatorPage: React.FC = () => {
 
   useEffect(() => {
     const stored = loadStoredQuoteProfile();
-    setQuoteParties((prev) => ({
-      ...prev,
+    const nextProfile: QuoteProfileState = {
+      ...DEFAULT_QUOTE_PROFILE,
       ...stored,
       sellerName:
         typeof stored.sellerName === 'string' && stored.sellerName.trim()
           ? stored.sellerName
-          : user?.full_name?.trim() || user?.username || prev.sellerName,
+          : user?.full_name?.trim() || user?.username || DEFAULT_QUOTE_PROFILE.sellerName,
+    };
+    setQuoteProfile(nextProfile);
+    setQuoteParties((prev) => ({
+      ...prev,
+      ...nextProfile,
     }));
   }, [user?.full_name, user?.username]);
 
   useEffect(() => {
-    saveStoredQuoteProfile(quoteParties);
-  }, [quoteParties]);
+    saveStoredQuoteProfile(quoteProfile);
+  }, [quoteProfile]);
 
   const estimateError = useMemo(() => {
     if (!calculateMutation.error) {
@@ -883,6 +902,17 @@ export const CalculatorPage: React.FC = () => {
       saveStoredCalculatorDefaults(extractStaticSettings(next));
       return next;
     });
+  };
+
+  const updateQuoteProfileField = <K extends keyof QuoteProfileState>(field: K, value: QuoteProfileState[K]) => {
+    setQuoteProfile((prev) => {
+      const next = { ...prev, [field]: value };
+      return next;
+    });
+    setQuoteParties((prev) => ({
+      ...prev,
+      [field]: value,
+    }));
   };
 
   const handleCalculate = () => {
@@ -994,6 +1024,14 @@ export const CalculatorPage: React.FC = () => {
     }, 250);
   };
 
+  const handleOpenQuote = () => {
+    setQuoteParties((prev) => ({
+      ...prev,
+      ...quoteProfile,
+    }));
+    setQuoteModalOpen(true);
+  };
+
   return (
     <div className="space-y-6">
       <section className={`${surfaceClass} p-0`}>
@@ -1078,7 +1116,9 @@ export const CalculatorPage: React.FC = () => {
           onStaticChange={updateStaticField}
           onFileSelect={handleFileSelection}
           onDragStateChange={setDragActive}
-          onOpenQuote={() => setQuoteModalOpen(true)}
+          quoteProfile={quoteProfile}
+          onQuoteProfileChange={updateQuoteProfileField}
+          onOpenQuote={handleOpenQuote}
           onSaveToHistory={handleSaveToHistory}
         />
       ) : (
@@ -1113,6 +1153,7 @@ export const CalculatorPage: React.FC = () => {
 
 interface CalculatorViewProps {
   form: CalculatorFormState;
+  quoteProfile: QuoteProfileState;
   result: CalculatorEstimateResponse | null;
   selectedFilament: Filament | null;
   parsedGcode: CalculatorGcodeParseResponse | null;
@@ -1130,6 +1171,7 @@ interface CalculatorViewProps {
   onCalculate: () => void;
   onChange: <K extends keyof CalculatorFormState>(field: K, value: CalculatorFormState[K]) => void;
   onStaticChange: <K extends CalculatorStaticSettingKey>(field: K, value: CalculatorFormState[K]) => void;
+  onQuoteProfileChange: <K extends keyof QuoteProfileState>(field: K, value: QuoteProfileState[K]) => void;
   onFileSelect: (files: FileList | null) => Promise<void>;
   onDragStateChange: (active: boolean) => void;
   onOpenQuote: () => void;
@@ -1138,6 +1180,7 @@ interface CalculatorViewProps {
 
 const CalculatorView: React.FC<CalculatorViewProps> = ({
   form,
+  quoteProfile,
   result,
   selectedFilament,
   parsedGcode,
@@ -1155,6 +1198,7 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
   onCalculate,
   onChange,
   onStaticChange,
+  onQuoteProfileChange,
   onFileSelect,
   onDragStateChange,
   onOpenQuote,
@@ -1182,6 +1226,12 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
     `${t('profilePage.calc.taxRatePercent')}: ${form.taxRatePercent}%`,
     `${t('profilePage.calc.roundTo')}: ${form.roundToNearest} ₽ · ${roundingModeLabel}`,
   ].join(' · ');
+  const quoteProfileSummary = [
+    quoteProfile.sellerName || tc('quoteProfileSummaryEmpty'),
+    quoteProfile.paymentTerms ? `${tc('quotePaymentTerms')}: ${quoteProfile.paymentTerms}` : null,
+  ]
+    .filter(Boolean)
+    .join(' · ');
 
   return (
     <div className="grid grid-cols-1 gap-5 xl:grid-cols-[minmax(0,1.45fr)_minmax(22rem,0.92fr)]">
@@ -1192,6 +1242,7 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
               <SectionHeading icon={<Settings2 className="h-5 w-5 text-cyan-300" />} title={tc('staticSettingsTitle')} />
               <p className="mt-2 text-sm text-slate-300">{tc('staticSettingsDescription')}</p>
               <p className="mt-3 text-xs leading-5 text-slate-400">{staticSettingsSummary}</p>
+              <p className="mt-2 text-xs leading-5 text-slate-400">{quoteProfileSummary}</p>
             </div>
             <button
               type="button"
@@ -1205,118 +1256,161 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
           </div>
 
           {staticSettingsOpen && (
-            <div className="mt-6 grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
-              <FieldBlock label={t('profilePage.calc.electricityCost')}>
-                <InputWithSuffix
-                  value={form.electricityCostPerKwh}
-                  onChange={(value) => onStaticChange('electricityCostPerKwh', value)}
-                  placeholder="6"
-                  suffix={`₽/${tc('kwhAbbr')}`}
-                  step="0.1"
-                />
-              </FieldBlock>
-              <FieldBlock label={t('profilePage.calc.printerPower')}>
-                <InputWithSuffix
-                  value={form.printerPowerW}
-                  onChange={(value) => onStaticChange('printerPowerW', value)}
-                  placeholder="350"
-                  suffix={tc('wattAbbr')}
-                />
-              </FieldBlock>
-              <FieldBlock label={t('profilePage.calc.printingRate')}>
-                <InputWithSuffix
-                  value={form.printingRatePerHour}
-                  onChange={(value) => onStaticChange('printingRatePerHour', value)}
-                  placeholder="170"
-                  suffix={`₽/${tc('hourAbbr')}`}
-                />
-              </FieldBlock>
-              <FieldBlock label={t('profilePage.calc.modeling')} hint={t('profilePage.calc.rate')}>
-                <InputWithSuffix
-                  value={form.modelingRatePerHour}
-                  onChange={(value) => onStaticChange('modelingRatePerHour', value)}
-                  placeholder="934"
-                  suffix={`₽/${tc('hourAbbr')}`}
-                />
-              </FieldBlock>
-              <FieldBlock label={t('profilePage.calc.postprocessing')} hint={t('profilePage.calc.rate')}>
-                <InputWithSuffix
-                  value={form.postprocessingRatePerHour}
-                  onChange={(value) => onStaticChange('postprocessingRatePerHour', value)}
-                  placeholder="100"
-                  suffix={`₽/${tc('hourAbbr')}`}
-                />
-              </FieldBlock>
-              <FieldBlock label={t('profilePage.calc.amortizationRate')}>
-                <InputWithSuffix
-                  value={form.amortizationRatePerHour}
-                  onChange={(value) => onStaticChange('amortizationRatePerHour', value)}
-                  placeholder="16"
-                  suffix={`₽/${tc('hourAbbr')}`}
-                />
-              </FieldBlock>
-              <FieldBlock label={t('profilePage.calc.overheadPercent')} hint={t('profilePage.calc.overheadHint')}>
-                <InputWithSuffix
-                  value={form.overheadPercent}
-                  onChange={(value) => onStaticChange('overheadPercent', value)}
-                  placeholder="20"
-                  suffix="%"
-                  step="0.1"
-                />
-              </FieldBlock>
-              <FieldBlock label={t('profilePage.calc.markupPercent')} hint={t('profilePage.calc.markupHint')}>
-                <InputWithSuffix
-                  value={form.markupPercent}
-                  onChange={(value) => onStaticChange('markupPercent', value)}
-                  placeholder="30"
-                  suffix="%"
-                  step="0.1"
-                />
-              </FieldBlock>
-              <FieldBlock label={t('profilePage.calc.taxRatePercent')} hint={t('profilePage.calc.taxRateHint')}>
-                <InputWithSuffix
-                  value={form.taxRatePercent}
-                  onChange={(value) => onStaticChange('taxRatePercent', value)}
-                  placeholder="0"
-                  suffix="%"
-                  step="0.1"
-                />
-              </FieldBlock>
-              <FieldBlock label={t('profilePage.calc.fixedCosts')} hint={t('profilePage.calc.fixedCostsHint')}>
-                <InputWithSuffix
-                  value={form.fixedCosts}
-                  onChange={(value) => onStaticChange('fixedCosts', value)}
-                  placeholder="0"
-                  suffix="₽"
-                />
-              </FieldBlock>
-              <FieldBlock label={t('profilePage.calc.minOrderPrice')} hint={t('profilePage.calc.minOrderPriceHint')}>
-                <InputWithSuffix
-                  value={form.minOrderPrice}
-                  onChange={(value) => onStaticChange('minOrderPrice', value)}
-                  placeholder="0"
-                  suffix="₽"
-                />
-              </FieldBlock>
-              <FieldBlock label={t('profilePage.calc.roundTo')}>
-                <InputWithSuffix
-                  value={form.roundToNearest}
-                  onChange={(value) => onStaticChange('roundToNearest', value)}
-                  placeholder="10"
-                  suffix="₽"
-                />
-              </FieldBlock>
-              <FieldBlock label={t('profilePage.calc.roundingMode')}>
-                <select
-                  className={`${inputClass} w-full sm:max-w-[15rem]`}
-                  value={form.roundingMode}
-                  onChange={(event) => onStaticChange('roundingMode', event.target.value as RoundingMode)}
-                >
-                  <option value="up">{t('profilePage.calc.roundingModeUp')}</option>
-                  <option value="nearest">{t('profilePage.calc.roundingModeNearest')}</option>
-                  <option value="down">{t('profilePage.calc.roundingModeDown')}</option>
-                </select>
-              </FieldBlock>
+            <div className="mt-6 space-y-6">
+              <div>
+                <p className="text-sm font-semibold text-white">{tc('staticEconomicsTitle')}</p>
+                <p className="mt-1 text-xs leading-5 text-slate-400">{tc('staticEconomicsDescription')}</p>
+                <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
+                  <FieldBlock label={t('profilePage.calc.electricityCost')}>
+                    <InputWithSuffix
+                      value={form.electricityCostPerKwh}
+                      onChange={(value) => onStaticChange('electricityCostPerKwh', value)}
+                      placeholder="6"
+                      suffix={`₽/${tc('kwhAbbr')}`}
+                      step="0.1"
+                    />
+                  </FieldBlock>
+                  <FieldBlock label={t('profilePage.calc.printerPower')}>
+                    <InputWithSuffix
+                      value={form.printerPowerW}
+                      onChange={(value) => onStaticChange('printerPowerW', value)}
+                      placeholder="350"
+                      suffix={tc('wattAbbr')}
+                    />
+                  </FieldBlock>
+                  <FieldBlock label={t('profilePage.calc.printingRate')}>
+                    <InputWithSuffix
+                      value={form.printingRatePerHour}
+                      onChange={(value) => onStaticChange('printingRatePerHour', value)}
+                      placeholder="170"
+                      suffix={`₽/${tc('hourAbbr')}`}
+                    />
+                  </FieldBlock>
+                  <FieldBlock label={t('profilePage.calc.modeling')} hint={t('profilePage.calc.rate')}>
+                    <InputWithSuffix
+                      value={form.modelingRatePerHour}
+                      onChange={(value) => onStaticChange('modelingRatePerHour', value)}
+                      placeholder="934"
+                      suffix={`₽/${tc('hourAbbr')}`}
+                    />
+                  </FieldBlock>
+                  <FieldBlock label={t('profilePage.calc.postprocessing')} hint={t('profilePage.calc.rate')}>
+                    <InputWithSuffix
+                      value={form.postprocessingRatePerHour}
+                      onChange={(value) => onStaticChange('postprocessingRatePerHour', value)}
+                      placeholder="100"
+                      suffix={`₽/${tc('hourAbbr')}`}
+                    />
+                  </FieldBlock>
+                  <FieldBlock label={t('profilePage.calc.amortizationRate')}>
+                    <InputWithSuffix
+                      value={form.amortizationRatePerHour}
+                      onChange={(value) => onStaticChange('amortizationRatePerHour', value)}
+                      placeholder="16"
+                      suffix={`₽/${tc('hourAbbr')}`}
+                    />
+                  </FieldBlock>
+                  <FieldBlock label={t('profilePage.calc.overheadPercent')} hint={t('profilePage.calc.overheadHint')}>
+                    <InputWithSuffix
+                      value={form.overheadPercent}
+                      onChange={(value) => onStaticChange('overheadPercent', value)}
+                      placeholder="20"
+                      suffix="%"
+                      step="0.1"
+                    />
+                  </FieldBlock>
+                  <FieldBlock label={t('profilePage.calc.markupPercent')} hint={t('profilePage.calc.markupHint')}>
+                    <InputWithSuffix
+                      value={form.markupPercent}
+                      onChange={(value) => onStaticChange('markupPercent', value)}
+                      placeholder="30"
+                      suffix="%"
+                      step="0.1"
+                    />
+                  </FieldBlock>
+                  <FieldBlock label={t('profilePage.calc.taxRatePercent')} hint={t('profilePage.calc.taxRateHint')}>
+                    <InputWithSuffix
+                      value={form.taxRatePercent}
+                      onChange={(value) => onStaticChange('taxRatePercent', value)}
+                      placeholder="0"
+                      suffix="%"
+                      step="0.1"
+                    />
+                  </FieldBlock>
+                  <FieldBlock label={t('profilePage.calc.fixedCosts')} hint={t('profilePage.calc.fixedCostsHint')}>
+                    <InputWithSuffix
+                      value={form.fixedCosts}
+                      onChange={(value) => onStaticChange('fixedCosts', value)}
+                      placeholder="0"
+                      suffix="₽"
+                    />
+                  </FieldBlock>
+                  <FieldBlock label={t('profilePage.calc.minOrderPrice')} hint={t('profilePage.calc.minOrderPriceHint')}>
+                    <InputWithSuffix
+                      value={form.minOrderPrice}
+                      onChange={(value) => onStaticChange('minOrderPrice', value)}
+                      placeholder="0"
+                      suffix="₽"
+                    />
+                  </FieldBlock>
+                  <FieldBlock label={t('profilePage.calc.roundTo')}>
+                    <InputWithSuffix
+                      value={form.roundToNearest}
+                      onChange={(value) => onStaticChange('roundToNearest', value)}
+                      placeholder="10"
+                      suffix="₽"
+                    />
+                  </FieldBlock>
+                  <FieldBlock label={t('profilePage.calc.roundingMode')}>
+                    <select
+                      className={`${inputClass} w-full sm:max-w-[15rem]`}
+                      value={form.roundingMode}
+                      onChange={(event) => onStaticChange('roundingMode', event.target.value as RoundingMode)}
+                    >
+                      <option value="up">{t('profilePage.calc.roundingModeUp')}</option>
+                      <option value="nearest">{t('profilePage.calc.roundingModeNearest')}</option>
+                      <option value="down">{t('profilePage.calc.roundingModeDown')}</option>
+                    </select>
+                  </FieldBlock>
+                </div>
+              </div>
+
+              <div className="border-t border-white/10 pt-6">
+                <p className="text-sm font-semibold text-white">{tc('quoteProfileTitle')}</p>
+                <p className="mt-1 text-xs leading-5 text-slate-400">{tc('quoteProfileDescription')}</p>
+                <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
+                  <FieldBlock label={tc('quoteSellerName')}>
+                    <TextInput
+                      value={quoteProfile.sellerName}
+                      onChange={(value) => onQuoteProfileChange('sellerName', value)}
+                      placeholder={tc('quoteSellerNamePlaceholder')}
+                    />
+                  </FieldBlock>
+                  <FieldBlock label={tc('quoteSellerInn')}>
+                    <TextInput
+                      value={quoteProfile.sellerInn}
+                      onChange={(value) => onQuoteProfileChange('sellerInn', value)}
+                      placeholder="123456789012"
+                    />
+                  </FieldBlock>
+                  <FieldBlock label={tc('quoteSellerPhone')}>
+                    <TextInput
+                      value={quoteProfile.sellerPhone}
+                      onChange={(value) => onQuoteProfileChange('sellerPhone', value)}
+                      placeholder="+7 (999) 000-00-00"
+                    />
+                  </FieldBlock>
+                  <div className="md:col-span-2 xl:col-span-3">
+                    <FieldBlock label={tc('quotePaymentTerms')}>
+                      <TextareaInput
+                        value={quoteProfile.paymentTerms}
+                        onChange={(value) => onQuoteProfileChange('paymentTerms', value)}
+                        placeholder={tc('quotePaymentTermsPlaceholder')}
+                      />
+                    </FieldBlock>
+                  </div>
+                </div>
+              </div>
             </div>
           )}
         </SurfaceCard>
@@ -2023,6 +2117,15 @@ const QuoteModal: React.FC<QuoteModalProps> = ({
                       placeholder="+7 (999) 000-00-00"
                     />
                   </FieldBlock>
+                  <div className="md:col-span-2">
+                    <FieldBlock label={tc('quotePaymentTerms')}>
+                      <TextareaInput
+                        value={quoteParties.paymentTerms}
+                        onChange={(value) => onPartyChange('paymentTerms', value)}
+                        placeholder={tc('quotePaymentTermsPlaceholder')}
+                      />
+                    </FieldBlock>
+                  </div>
                 </div>
               </div>
 
