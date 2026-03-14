@@ -851,6 +851,20 @@ export const calculatorAPI = {
     });
     return response.data;
   },
+
+  listHistory: async (params?: { page?: number; size?: number }) => {
+    const response = await api.get<import('../types/api').CalculatorHistoryListResponse>('/calculator/history', { params });
+    return response.data;
+  },
+
+  saveHistory: async (data: import('../types/api').CalculatorHistoryEntryCreate) => {
+    const response = await api.post<import('../types/api').CalculatorHistoryEntry>('/calculator/history', data);
+    return response.data;
+  },
+
+  deleteHistory: async (entryId: number) => {
+    await api.delete(`/calculator/history/${entryId}`);
+  },
 };
 
 // ==================== Admin API ====================

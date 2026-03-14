@@ -1,7 +1,8 @@
 """Pydantic schemas for Calculator."""
 
+from datetime import datetime
 from enum import Enum
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class PricingMethod(str, Enum):
@@ -203,3 +204,47 @@ class CalculatorGcodeParseResponse(BaseModel):
     wall_loops: int | None = Field(None, ge=0, description="Количество периметров / стенок")
     thumbnail_data_url: str | None = Field(None, description="Data URL превью G-code, если найден")
     materials: list[CalculatorParsedMaterial] = Field(default_factory=list, description="Материалы, извлечённые из G-code")
+
+
+class CalculatorHistoryFilamentSnapshot(BaseModel):
+    """Lightweight filament snapshot stored with a calculator history entry."""
+
+    id: int | None = Field(None, description="ID филамента в каталоге, если был выбран")
+    name: str = Field(..., description="Имя филамента")
+    brand_name: str | None = Field(None, description="Название бренда")
+    material_type: str | None = Field(None, description="Тип материала")
+    color_name: str | None = Field(None, description="Цвет")
+
+
+class CalculatorHistoryEntryCreate(BaseModel):
+    """Persisted Calculator Pro estimate payload."""
+
+    title: str | None = Field(None, max_length=255, description="Пользовательский или вычисленный заголовок расчёта")
+    request_data: CalculatorEstimateRequest
+    result_data: CalculatorEstimateResponse
+    parsed_gcode: CalculatorGcodeParseResponse | None = None
+    filament_snapshot: CalculatorHistoryFilamentSnapshot | None = None
+
+
+class CalculatorHistoryEntryResponse(BaseModel):
+    """Stored Calculator Pro history entry."""
+
+    id: int
+    user_id: int
+    title: str
+    pricing_method: PricingMethod
+    request_data: CalculatorEstimateRequest
+    result_data: CalculatorEstimateResponse
+    parsed_gcode: CalculatorGcodeParseResponse | None = None
+    filament_snapshot: CalculatorHistoryFilamentSnapshot | None = None
+    created_at: datetime
+    updated_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class CalculatorHistoryEntryListResponse(BaseModel):
+    """Paginated list of calculator history entries."""
+
+    items: list[CalculatorHistoryEntryResponse]
+    total: int

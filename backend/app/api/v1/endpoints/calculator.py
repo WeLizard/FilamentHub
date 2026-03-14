@@ -2,10 +2,16 @@
 
 import math
 import logging
+from pathlib import Path
+from typing import Annotated
 
-from fastapi import APIRouter, File, UploadFile, status
+from fastapi import APIRouter, Depends, File, Query, UploadFile, status
+from sqlalchemy import func, select
+from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.dependencies import get_current_active_user
 from app.core.errors import (
+    ERR_CALCULATOR_HISTORY_NOT_FOUND,
     ERR_FILE_TOO_LARGE,
     ERR_GCODE_PARSE_FAILED,
     ERR_INVALID_FILE_EXT,
@@ -17,10 +23,16 @@ from app.core.errors import (
     raise_error,
 )
 from app.core.config import settings
+from app.db.session import get_db
+from app.models.calculator_history_entry import CalculatorHistoryEntry
+from app.models.user import User
 from app.schemas.calculator import (
     CalculatorEstimateRequest,
     CalculatorEstimateResponse,
     CalculatorGcodeParseResponse,
+    CalculatorHistoryEntryCreate,
+    CalculatorHistoryEntryListResponse,
+    CalculatorHistoryEntryResponse,
     PricingMethod,
 )
 from app.services.calculator_gcode_parser import (
@@ -45,6 +57,50 @@ def _convert_time_to_hours(
     if seconds:
         total_hours += seconds / 3600.0
     return total_hours
+
+
+def _strip_history_thumbnail(parsed_gcode: CalculatorGcodeParseResponse | None) -> dict | None:
+    """Remove heavy preview payload before persisting calculator history."""
+    if not parsed_gcode:
+        return None
+
+    payload = parsed_gcode.model_dump(mode="json")
+    payload["thumbnail_data_url"] = None
+    return payload
+
+
+def _build_history_title(data: CalculatorHistoryEntryCreate) -> str:
+    """Generate a stable history title when the client does not provide one."""
+    if data.title and data.title.strip():
+        return data.title.strip()[:255]
+
+    if data.parsed_gcode and data.parsed_gcode.file_name:
+        file_stem = Path(data.parsed_gcode.file_name).name
+        return file_stem[:255]
+
+    if data.filament_snapshot:
+        label_parts = [data.filament_snapshot.brand_name, data.filament_snapshot.name]
+        label = " · ".join(part for part in label_parts if part)
+        if label:
+            return label[:255]
+
+    return "Calculator estimate"
+
+
+def _serialize_history_entry(entry: CalculatorHistoryEntry) -> CalculatorHistoryEntryResponse:
+    """Convert ORM row into typed response payload."""
+    return CalculatorHistoryEntryResponse(
+        id=entry.id,
+        user_id=entry.user_id,
+        title=entry.title,
+        pricing_method=PricingMethod(entry.pricing_method),
+        request_data=CalculatorEstimateRequest.model_validate(entry.request_data),
+        result_data=CalculatorEstimateResponse.model_validate(entry.result_data),
+        parsed_gcode=CalculatorGcodeParseResponse.model_validate(entry.parsed_gcode) if entry.parsed_gcode else None,
+        filament_snapshot=entry.filament_snapshot,
+        created_at=entry.created_at,
+        updated_at=entry.updated_at,
+    )
 
 
 @router.post("/estimate", response_model=CalculatorEstimateResponse)
@@ -350,3 +406,73 @@ async def parse_gcode(
         raise_error(status.HTTP_400_BAD_REQUEST, ERR_GCODE_PARSE_FAILED, {"reason": str(exc)})
 
     return CalculatorGcodeParseResponse(**parsed)
+
+
+@router.get("/history", response_model=CalculatorHistoryEntryListResponse)
+async def list_calculator_history(
+    current_user: Annotated[User, Depends(get_current_active_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+    page: int = Query(1, ge=1),
+    size: int = Query(20, ge=1, le=100),
+) -> CalculatorHistoryEntryListResponse:
+    """List saved Calculator Pro history entries for the current user."""
+    query = select(CalculatorHistoryEntry).where(CalculatorHistoryEntry.user_id == current_user.id)
+    total = (
+        await db.execute(
+            select(func.count()).select_from(CalculatorHistoryEntry).where(CalculatorHistoryEntry.user_id == current_user.id)
+        )
+    ).scalar_one()
+
+    offset = (page - 1) * size
+    result = await db.execute(
+        query.order_by(CalculatorHistoryEntry.created_at.desc()).offset(offset).limit(size)
+    )
+    entries = result.scalars().all()
+
+    return CalculatorHistoryEntryListResponse(
+        items=[_serialize_history_entry(entry) for entry in entries],
+        total=total,
+    )
+
+
+@router.post("/history", response_model=CalculatorHistoryEntryResponse, status_code=status.HTTP_201_CREATED)
+async def save_calculator_history(
+    data: CalculatorHistoryEntryCreate,
+    current_user: Annotated[User, Depends(get_current_active_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> CalculatorHistoryEntryResponse:
+    """Persist a Calculator Pro estimate to user history."""
+    entry = CalculatorHistoryEntry(
+        user_id=current_user.id,
+        title=_build_history_title(data),
+        pricing_method=data.request_data.pricing_method.value,
+        request_data=data.request_data.model_dump(mode="json"),
+        result_data=data.result_data.model_dump(mode="json"),
+        parsed_gcode=_strip_history_thumbnail(data.parsed_gcode),
+        filament_snapshot=data.filament_snapshot.model_dump(mode="json") if data.filament_snapshot else None,
+    )
+    db.add(entry)
+    await db.commit()
+    await db.refresh(entry)
+    return _serialize_history_entry(entry)
+
+
+@router.delete("/history/{entry_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_calculator_history(
+    entry_id: int,
+    current_user: Annotated[User, Depends(get_current_active_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> None:
+    """Delete one Calculator Pro history entry."""
+    result = await db.execute(
+        select(CalculatorHistoryEntry).where(
+            CalculatorHistoryEntry.id == entry_id,
+            CalculatorHistoryEntry.user_id == current_user.id,
+        )
+    )
+    entry = result.scalar_one_or_none()
+    if not entry:
+        raise_error(status.HTTP_404_NOT_FOUND, ERR_CALCULATOR_HISTORY_NOT_FOUND)
+
+    await db.delete(entry)
+    await db.commit()

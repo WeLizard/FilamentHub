@@ -1,19 +1,17 @@
 /**
- * Calculator Pro page wired to the current backend estimate API.
- * G-code parsing and history persistence remain separate future phases.
+ * Calculator Pro page wired to the current backend estimate API,
+ * G-code parsing flow, and persisted calculation history.
  */
 
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import type { TFunction } from 'i18next';
 import { useTranslation } from 'react-i18next';
-import { useMutation, useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   Calculator,
   CheckCircle2,
   Clock,
   DollarSign,
-  Download,
-  FileText,
   Loader2,
   Package,
   Save,
@@ -30,6 +28,9 @@ import type {
   CalculatorEstimateRequest,
   CalculatorEstimateResponse,
   CalculatorGcodeParseResponse,
+  CalculatorHistoryEntry,
+  CalculatorHistoryEntryCreate,
+  CalculatorHistoryFilamentSnapshot,
   CalculatorParsedMaterial,
   Filament,
   PricingMethod,
@@ -266,14 +267,94 @@ const applyParsedGcodeToForm = (
   return nextForm;
 };
 
+const buildHistoryFilamentSnapshot = (filament: Filament | null): CalculatorHistoryFilamentSnapshot | null => {
+  if (!filament) {
+    return null;
+  }
+
+  return {
+    id: filament.id,
+    name: filament.name,
+    brand_name: filament.brand_name,
+    material_type: filament.material_type,
+    color_name: filament.color_name,
+  };
+};
+
+const buildHistoryPayload = (
+  form: CalculatorFormState,
+  result: CalculatorEstimateResponse,
+  parsedGcode: CalculatorGcodeParseResponse | null,
+  selectedFilament: Filament | null,
+): CalculatorHistoryEntryCreate => ({
+  request_data: buildEstimateRequest(form),
+  result_data: result,
+  parsed_gcode: parsedGcode
+    ? {
+        ...parsedGcode,
+        thumbnail_data_url: null,
+      }
+    : null,
+  filament_snapshot: buildHistoryFilamentSnapshot(selectedFilament),
+});
+
+const buildFormFromHistoryEntry = (entry: CalculatorHistoryEntry): CalculatorFormState => {
+  const request = entry.request_data;
+
+  return {
+    ...DEFAULT_FORM_STATE,
+    selectedFilamentId: entry.filament_snapshot?.id ?? '',
+    pricingMethod: request.pricing_method ?? DEFAULT_FORM_STATE.pricingMethod,
+    weightG: request.weight_g ?? DEFAULT_FORM_STATE.weightG,
+    supportsWeightG: request.supports_weight_g ?? DEFAULT_FORM_STATE.supportsWeightG,
+    supportsLossCoefficient: request.supports_loss_coefficient ?? DEFAULT_FORM_STATE.supportsLossCoefficient,
+    spoolPrice: request.spool_price ?? DEFAULT_FORM_STATE.spoolPrice,
+    spoolWeightKg: request.spool_weight_kg ?? DEFAULT_FORM_STATE.spoolWeightKg,
+    deliveryCost: request.delivery_cost ?? DEFAULT_FORM_STATE.deliveryCost,
+    timeHours: request.time_hours ?? DEFAULT_FORM_STATE.timeHours,
+    timeMinutes: request.time_minutes ?? DEFAULT_FORM_STATE.timeMinutes,
+    timeSec: request.time_sec ?? DEFAULT_FORM_STATE.timeSec,
+    pricePerHour: request.price_per_hour ?? DEFAULT_FORM_STATE.pricePerHour,
+    electricityCostPerKwh: request.electricity_cost_per_kwh ?? DEFAULT_FORM_STATE.electricityCostPerKwh,
+    printerPowerW: request.printer_power_w ?? DEFAULT_FORM_STATE.printerPowerW,
+    modelingHours: request.modeling_hours ?? DEFAULT_FORM_STATE.modelingHours,
+    modelingMinutes: request.modeling_minutes ?? DEFAULT_FORM_STATE.modelingMinutes,
+    modelingRatePerHour: request.modeling_rate_per_hour ?? DEFAULT_FORM_STATE.modelingRatePerHour,
+    postprocessingHours: request.postprocessing_hours ?? DEFAULT_FORM_STATE.postprocessingHours,
+    postprocessingMinutes: request.postprocessing_minutes ?? DEFAULT_FORM_STATE.postprocessingMinutes,
+    postprocessingRatePerHour: request.postprocessing_rate_per_hour ?? DEFAULT_FORM_STATE.postprocessingRatePerHour,
+    printingRatePerHour: request.printing_rate_per_hour ?? DEFAULT_FORM_STATE.printingRatePerHour,
+    amortizationRatePerHour: request.amortization_rate_per_hour ?? DEFAULT_FORM_STATE.amortizationRatePerHour,
+    quantity: request.quantity ?? DEFAULT_FORM_STATE.quantity,
+    overheadPercent: request.overhead_percent ?? DEFAULT_FORM_STATE.overheadPercent,
+    markupPercent: request.markup_percent ?? DEFAULT_FORM_STATE.markupPercent,
+    urgencyCoefficient: request.urgency_coefficient ?? DEFAULT_FORM_STATE.urgencyCoefficient,
+    complexityCoefficient: request.complexity_coefficient ?? DEFAULT_FORM_STATE.complexityCoefficient,
+    volumeDiscountCoefficient:
+      request.volume_discount_coefficient ?? DEFAULT_FORM_STATE.volumeDiscountCoefficient,
+    fixedCosts: request.fixed_costs ?? DEFAULT_FORM_STATE.fixedCosts,
+    minOrderPrice: request.min_order_price ?? DEFAULT_FORM_STATE.minOrderPrice,
+    roundToNearest: request.round_to_nearest ?? DEFAULT_FORM_STATE.roundToNearest,
+  };
+};
+
+const formatHistoryDate = (isoDate: string): string =>
+  new Intl.DateTimeFormat(undefined, {
+    dateStyle: 'medium',
+    timeStyle: 'short',
+  }).format(new Date(isoDate));
+
 export const CalculatorPage: React.FC = () => {
   const { t } = useTranslation();
+  const queryClient = useQueryClient();
   const tc = (key: string) => translateCalculator(t, key);
   const [activeTab, setActiveTab] = useState<CalculatorTab>('calculator');
   const [form, setForm] = useState<CalculatorFormState>(DEFAULT_FORM_STATE);
   const [parsedGcode, setParsedGcode] = useState<CalculatorGcodeParseResponse | null>(null);
   const [dragActive, setDragActive] = useState(false);
+  const [historyFeedback, setHistoryFeedback] = useState<{ kind: 'success' | 'error'; message: string } | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const skipNextFilamentDefaultsRef = useRef(false);
 
   const filamentsQuery = useQuery({
     queryKey: ['calculator-pro', 'filaments'],
@@ -293,6 +374,26 @@ export const CalculatorPage: React.FC = () => {
     mutationFn: (file: File) => calculatorAPI.parseGcode(file),
   });
 
+  const historyQuery = useQuery({
+    queryKey: ['calculator-pro', 'history'],
+    queryFn: () => calculatorAPI.listHistory({ page: 1, size: 50 }),
+    staleTime: 30_000,
+  });
+
+  const saveHistoryMutation = useMutation({
+    mutationFn: (payload: CalculatorHistoryEntryCreate) => calculatorAPI.saveHistory(payload),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ['calculator-pro', 'history'] });
+    },
+  });
+
+  const deleteHistoryMutation = useMutation({
+    mutationFn: (entryId: number) => calculatorAPI.deleteHistory(entryId),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ['calculator-pro', 'history'] });
+    },
+  });
+
   const result = calculateMutation.data ?? null;
   const selectedFilament = useMemo(
     () => filamentsQuery.data?.items.find((filament) => filament.id === form.selectedFilamentId) ?? null,
@@ -301,6 +402,11 @@ export const CalculatorPage: React.FC = () => {
 
   useEffect(() => {
     if (!selectedFilament) {
+      return;
+    }
+
+    if (skipNextFilamentDefaultsRef.current) {
+      skipNextFilamentDefaultsRef.current = false;
       return;
     }
 
@@ -347,6 +453,23 @@ export const CalculatorPage: React.FC = () => {
     );
   }, [parseGcodeMutation.error, t]);
 
+  const historyLoadError = useMemo(() => {
+    if (!historyQuery.error) {
+      return null;
+    }
+
+    const errorWithResponse = historyQuery.error as {
+      response?: { data?: { detail?: unknown } };
+      message?: string;
+    };
+
+    return translateApiError(
+      t,
+      errorWithResponse.response?.data?.detail ?? errorWithResponse.message,
+      tc('historyLoadError'),
+    );
+  }, [historyQuery.error, t]);
+
   const currentWorkTimeHours = useMemo(
     () => toHours(form.timeHours, form.timeMinutes, form.timeSec),
     [form.timeHours, form.timeMinutes, form.timeSec],
@@ -376,6 +499,67 @@ export const CalculatorPage: React.FC = () => {
     }
 
     await handleGcodeFile(file);
+  };
+
+  const handleSaveToHistory = async () => {
+    if (!result) {
+      return;
+    }
+
+    setHistoryFeedback(null);
+
+    try {
+      await saveHistoryMutation.mutateAsync(buildHistoryPayload(form, result, parsedGcode, selectedFilament));
+      setHistoryFeedback({ kind: 'success', message: tc('historySaved') });
+      setActiveTab('history');
+    } catch (error) {
+      const errorWithResponse = error as {
+        response?: { data?: { detail?: unknown } };
+        message?: string;
+      };
+      setHistoryFeedback({
+        kind: 'error',
+        message: translateApiError(
+          t,
+          errorWithResponse.response?.data?.detail ?? errorWithResponse.message,
+          tc('historySaveError'),
+        ),
+      });
+    }
+  };
+
+  const handleRestoreHistory = (entry: CalculatorHistoryEntry) => {
+    skipNextFilamentDefaultsRef.current = true;
+    setForm(buildFormFromHistoryEntry(entry));
+    setParsedGcode(entry.parsed_gcode ?? null);
+    setActiveTab('calculator');
+    setHistoryFeedback({ kind: 'success', message: tc('historyRestored') });
+  };
+
+  const handleDeleteHistory = async (entry: CalculatorHistoryEntry) => {
+    if (!window.confirm(tc('historyDeleteConfirm'))) {
+      return;
+    }
+
+    setHistoryFeedback(null);
+
+    try {
+      await deleteHistoryMutation.mutateAsync(entry.id);
+      setHistoryFeedback({ kind: 'success', message: tc('historyDeleted') });
+    } catch (error) {
+      const errorWithResponse = error as {
+        response?: { data?: { detail?: unknown } };
+        message?: string;
+      };
+      setHistoryFeedback({
+        kind: 'error',
+        message: translateApiError(
+          t,
+          errorWithResponse.response?.data?.detail ?? errorWithResponse.message,
+          tc('historyDeleteError'),
+        ),
+      });
+    }
   };
 
   return (
@@ -425,6 +609,18 @@ export const CalculatorPage: React.FC = () => {
               onClick={() => setActiveTab('history')}
             />
           </div>
+
+          {historyFeedback ? (
+            <div
+              className={`mt-5 rounded-[1.25rem] border px-4 py-3 text-sm ${
+                historyFeedback.kind === 'success'
+                  ? 'border-emerald-400/25 bg-emerald-500/10 text-emerald-100'
+                  : 'border-red-400/25 bg-red-500/10 text-red-100'
+              }`}
+            >
+              {historyFeedback.message}
+            </div>
+          ) : null}
         </div>
       </section>
 
@@ -442,14 +638,25 @@ export const CalculatorPage: React.FC = () => {
           parseGcodeError={parseGcodeError}
           isCalculating={calculateMutation.isPending}
           estimateError={estimateError}
+          canSaveHistory={Boolean(result)}
           fileInputRef={fileInputRef}
+          isSavingHistory={saveHistoryMutation.isPending}
           onCalculate={handleCalculate}
           onChange={updateField}
           onFileSelect={handleFileSelection}
           onDragStateChange={setDragActive}
+          onSaveToHistory={handleSaveToHistory}
         />
       ) : (
-        <HistoryView />
+        <HistoryView
+          entries={historyQuery.data?.items ?? []}
+          historyLoadError={historyLoadError}
+          isDeletingHistory={deleteHistoryMutation.isPending}
+          isLoading={historyQuery.isPending}
+          total={historyQuery.data?.total ?? 0}
+          onDeleteEntry={handleDeleteHistory}
+          onRestoreEntry={handleRestoreHistory}
+        />
       )}
     </div>
   );
@@ -468,11 +675,14 @@ interface CalculatorViewProps {
   parseGcodeError: string | null;
   isCalculating: boolean;
   estimateError: string | null;
+  canSaveHistory: boolean;
   fileInputRef: React.RefObject<HTMLInputElement | null>;
+  isSavingHistory: boolean;
   onCalculate: () => void;
   onChange: <K extends keyof CalculatorFormState>(field: K, value: CalculatorFormState[K]) => void;
   onFileSelect: (files: FileList | null) => Promise<void>;
   onDragStateChange: (active: boolean) => void;
+  onSaveToHistory: () => Promise<void>;
 }
 
 const CalculatorView: React.FC<CalculatorViewProps> = ({
@@ -488,11 +698,14 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
   parseGcodeError,
   isCalculating,
   estimateError,
+  canSaveHistory,
   fileInputRef,
+  isSavingHistory,
   onCalculate,
   onChange,
   onFileSelect,
   onDragStateChange,
+  onSaveToHistory,
 }) => {
   const { t } = useTranslation();
   const tc = (key: string) => translateCalculator(t, key);
@@ -1129,14 +1342,15 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
                 </SectionPanel>
               </div>
 
-              <div className="mt-6 space-y-3">
-                <button className={`${ghostButtonClass} w-full opacity-60`} disabled>
-                  <Save className="h-4 w-4" />
-                  {tc('saveToHistory')}
-                </button>
-                <button className={`${ghostButtonClass} w-full opacity-60`} disabled>
-                  <FileText className="h-4 w-4" />
-                  {tc('generateQuote')}
+              <div className="mt-6">
+                <button
+                  type="button"
+                  onClick={() => void onSaveToHistory()}
+                  disabled={!canSaveHistory || isSavingHistory}
+                  className={`${ghostButtonClass} w-full disabled:cursor-not-allowed disabled:opacity-60`}
+                >
+                  {isSavingHistory ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+                  {isSavingHistory ? tc('savingToHistory') : tc('saveToHistory')}
                 </button>
               </div>
             </>
@@ -1159,7 +1373,25 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
   );
 };
 
-const HistoryView: React.FC = () => {
+interface HistoryViewProps {
+  entries: CalculatorHistoryEntry[];
+  historyLoadError: string | null;
+  isDeletingHistory: boolean;
+  isLoading: boolean;
+  total: number;
+  onDeleteEntry: (entry: CalculatorHistoryEntry) => Promise<void>;
+  onRestoreEntry: (entry: CalculatorHistoryEntry) => void;
+}
+
+const HistoryView: React.FC<HistoryViewProps> = ({
+  entries,
+  historyLoadError,
+  isDeletingHistory,
+  isLoading,
+  total,
+  onDeleteEntry,
+  onRestoreEntry,
+}) => {
   const { t } = useTranslation();
   const tc = (key: string) => translateCalculator(t, key);
 
@@ -1167,28 +1399,97 @@ const HistoryView: React.FC = () => {
     <SurfaceCard className="p-6 md:p-7">
       <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
         <SectionHeading icon={<Clock className="h-5 w-5 text-cyan-300" />} title={tc('historyTitle')} compact />
-        <div className="flex flex-col gap-2 sm:flex-row">
-          <button className={`${ghostButtonClass} opacity-60`} disabled>
-            <Download className="h-4 w-4" />
-            {tc('export')}
-          </button>
-          <button className="inline-flex items-center justify-center gap-2 rounded-2xl border border-red-400/25 bg-red-500/10 px-4 py-3 text-sm font-medium text-red-200 opacity-60" disabled>
-            <Trash2 className="h-4 w-4" />
-            {tc('deleteSelected')}
-          </button>
+        <div className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-300">
+          {total} {tc('historyEntriesCount')}
         </div>
       </div>
 
-      <div className="mt-6 rounded-[1.8rem] border border-dashed border-white/12 bg-[radial-gradient(circle_at_top,rgba(34,211,238,0.08),transparent_44%),linear-gradient(180deg,rgba(2,6,23,0.35),rgba(2,6,23,0.62))] px-6 py-16 text-center shadow-[inset_0_1px_0_rgba(255,255,255,0.05)]">
-        <div className="mx-auto flex h-[4.5rem] w-[4.5rem] items-center justify-center rounded-[1.6rem] border border-white/10 bg-white/5">
-          <Clock className="h-9 w-9 text-slate-500" />
+      {historyLoadError ? (
+        <div className="mt-6 rounded-[1.25rem] border border-red-400/25 bg-red-500/10 px-4 py-3 text-sm text-red-100">
+          {historyLoadError}
         </div>
-        <h2 className="mt-6 text-2xl font-semibold text-white">{tc('noHistory')}</h2>
-        <p className="mx-auto mt-3 max-w-xl text-sm leading-6 text-slate-300">{tc('noHistoryDescription')}</p>
-        <button className="mt-8 inline-flex items-center justify-center rounded-[1.3rem] bg-[linear-gradient(135deg,#0891b2,#7c3aed)] px-6 py-3 text-sm font-semibold text-white opacity-60 shadow-[0_18px_35px_-18px_rgba(6,182,212,0.7)]" disabled>
-          {tc('createFirstCalculation')}
-        </button>
-      </div>
+      ) : null}
+
+      {isLoading ? (
+        <div className="mt-6 flex items-center justify-center rounded-[1.8rem] border border-white/10 bg-white/5 px-6 py-16">
+          <div className="inline-flex items-center gap-3 text-sm text-slate-300">
+            <Loader2 className="h-5 w-5 animate-spin text-cyan-300" />
+            {tc('historyLoading')}
+          </div>
+        </div>
+      ) : entries.length === 0 ? (
+        <div className="mt-6 rounded-[1.8rem] border border-dashed border-white/12 bg-[radial-gradient(circle_at_top,rgba(34,211,238,0.08),transparent_44%),linear-gradient(180deg,rgba(2,6,23,0.35),rgba(2,6,23,0.62))] px-6 py-16 text-center shadow-[inset_0_1px_0_rgba(255,255,255,0.05)]">
+          <div className="mx-auto flex h-[4.5rem] w-[4.5rem] items-center justify-center rounded-[1.6rem] border border-white/10 bg-white/5">
+            <Clock className="h-9 w-9 text-slate-500" />
+          </div>
+          <h2 className="mt-6 text-2xl font-semibold text-white">{tc('noHistory')}</h2>
+          <p className="mx-auto mt-3 max-w-xl text-sm leading-6 text-slate-300">{tc('noHistoryDescription')}</p>
+        </div>
+      ) : (
+        <div className="mt-6 space-y-4">
+          {entries.map((entry) => {
+            const totalCost = entry.result_data.cost_final || entry.result_data.cost_total;
+            const filamentLabel =
+              entry.filament_snapshot != null
+                ? [entry.filament_snapshot.brand_name, entry.filament_snapshot.name].filter(Boolean).join(' · ')
+                : null;
+            const gcodeFile = entry.parsed_gcode?.file_name ?? null;
+
+            return (
+              <div
+                key={entry.id}
+                className="rounded-[1.55rem] border border-white/10 bg-white/5 p-5 shadow-[inset_0_1px_0_rgba(255,255,255,0.05)]"
+              >
+                <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                  <div className="space-y-3">
+                    <div>
+                      <p className="text-lg font-semibold text-white">{entry.title}</p>
+                      <p className="mt-1 text-sm text-slate-400">{formatHistoryDate(entry.created_at)}</p>
+                    </div>
+
+                    <div className="flex flex-wrap gap-2">
+                      <HistoryTag label={tc('totalCost')} value={formatCurrency(totalCost)} />
+                      <HistoryTag label={t('profilePage.calc.quantity')} value={String(entry.result_data.quantity)} />
+                      <HistoryTag
+                        label={tc('activeMethodLabel')}
+                        value={t(
+                          entry.pricing_method === 'combined'
+                            ? 'profilePage.calc.combined'
+                            : entry.pricing_method === 'by_time'
+                              ? 'profilePage.calc.byTime'
+                              : 'profilePage.calc.byWeight',
+                        )}
+                      />
+                      {gcodeFile ? <HistoryTag label={tc('parsedFile')} value={gcodeFile} /> : null}
+                      {filamentLabel ? <HistoryTag label={tc('materialLabel')} value={filamentLabel} /> : null}
+                    </div>
+                  </div>
+
+                  <div className="flex flex-col gap-2 sm:flex-row">
+                    <button
+                      type="button"
+                      onClick={() => onRestoreEntry(entry)}
+                      className={ghostButtonClass}
+                    >
+                      <CheckCircle2 className="h-4 w-4" />
+                      {tc('restoreHistoryEntry')}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => void onDeleteEntry(entry)}
+                      disabled={isDeletingHistory}
+                      className="inline-flex items-center justify-center gap-2 rounded-2xl border border-red-400/25 bg-red-500/10 px-4 py-3 text-sm font-medium text-red-200 transition-all hover:bg-red-500/20 disabled:cursor-not-allowed disabled:opacity-60"
+                    >
+                      {isDeletingHistory ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
+                      {tc('deleteHistoryEntry')}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
     </SurfaceCard>
   );
 };
@@ -1308,5 +1609,12 @@ const TabButton: React.FC<{
     {icon}
     <span>{label}</span>
   </button>
+);
+
+const HistoryTag: React.FC<{ label: string; value: string }> = ({ label, value }) => (
+  <div className="rounded-full border border-white/10 bg-black/20 px-3 py-2 text-xs text-slate-300">
+    <span className="text-slate-400">{label}: </span>
+    <span className="font-medium text-white">{value}</span>
+  </div>
 );
 

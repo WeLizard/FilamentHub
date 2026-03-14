@@ -566,6 +566,40 @@ export interface CalculatorGcodeParseResponse {
   materials: CalculatorParsedMaterial[];
 }
 
+export interface CalculatorHistoryFilamentSnapshot {
+  id?: number | null;
+  name: string;
+  brand_name?: string | null;
+  material_type?: string | null;
+  color_name?: string | null;
+}
+
+export interface CalculatorHistoryEntry {
+  id: number;
+  user_id: number;
+  title: string;
+  pricing_method: PricingMethod;
+  request_data: CalculatorEstimateRequest;
+  result_data: CalculatorEstimateResponse;
+  parsed_gcode?: CalculatorGcodeParseResponse | null;
+  filament_snapshot?: CalculatorHistoryFilamentSnapshot | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CalculatorHistoryEntryCreate {
+  title?: string | null;
+  request_data: CalculatorEstimateRequest;
+  result_data: CalculatorEstimateResponse;
+  parsed_gcode?: CalculatorGcodeParseResponse | null;
+  filament_snapshot?: CalculatorHistoryFilamentSnapshot | null;
+}
+
+export interface CalculatorHistoryListResponse {
+  items: CalculatorHistoryEntry[];
+  total: number;
+}
+
 export interface DownloadVersion {
   platform: 'windows' | 'macos' | 'linux';
   architecture: 'x64' | 'arm64';
