@@ -14,6 +14,7 @@ import {
   CheckCircle2,
   Clock,
   FileText,
+  HelpCircle,
   Loader2,
   Printer,
   Save,
@@ -1260,8 +1261,18 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
               <div>
                 <p className="text-sm font-semibold text-white">{tc('staticEconomicsTitle')}</p>
                 <p className="mt-1 text-xs leading-5 text-slate-400">{tc('staticEconomicsDescription')}</p>
+                <div className="mt-3 rounded-[1rem] border border-cyan-400/20 bg-cyan-400/10 px-4 py-3 text-xs leading-5 text-cyan-100">
+                  {tc('staticEconomicsNote')}
+                </div>
                 <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
-                  <FieldBlock label={t('profilePage.calc.electricityCost')}>
+                  <FieldBlock
+                    label={
+                      <TooltipLabel
+                        label={t('profilePage.calc.electricityCost')}
+                        tooltipText={tc('defaultElectricityCostTooltip')}
+                      />
+                    }
+                  >
                     <InputWithSuffix
                       value={form.electricityCostPerKwh}
                       onChange={(value) => onStaticChange('electricityCostPerKwh', value)}
@@ -1270,7 +1281,14 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
                       step="0.1"
                     />
                   </FieldBlock>
-                  <FieldBlock label={t('profilePage.calc.printerPower')}>
+                  <FieldBlock
+                    label={
+                      <TooltipLabel
+                        label={t('profilePage.calc.printerPower')}
+                        tooltipText={tc('defaultPrinterPowerTooltip')}
+                      />
+                    }
+                  >
                     <InputWithSuffix
                       value={form.printerPowerW}
                       onChange={(value) => onStaticChange('printerPowerW', value)}
@@ -1278,7 +1296,14 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
                       suffix={tc('wattAbbr')}
                     />
                   </FieldBlock>
-                  <FieldBlock label={t('profilePage.calc.printingRate')}>
+                  <FieldBlock
+                    label={
+                      <TooltipLabel
+                        label={t('profilePage.calc.printingRate')}
+                        tooltipText={tc('defaultPrintingRateTooltip')}
+                      />
+                    }
+                  >
                     <InputWithSuffix
                       value={form.printingRatePerHour}
                       onChange={(value) => onStaticChange('printingRatePerHour', value)}
@@ -1286,7 +1311,15 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
                       suffix={`₽/${tc('hourAbbr')}`}
                     />
                   </FieldBlock>
-                  <FieldBlock label={t('profilePage.calc.modeling')} hint={t('profilePage.calc.rate')}>
+                  <FieldBlock
+                    label={
+                      <TooltipLabel
+                        label={t('profilePage.calc.modeling')}
+                        tooltipText={tc('defaultModelingRateTooltip')}
+                      />
+                    }
+                    hint={t('profilePage.calc.rate')}
+                  >
                     <InputWithSuffix
                       value={form.modelingRatePerHour}
                       onChange={(value) => onStaticChange('modelingRatePerHour', value)}
@@ -1294,7 +1327,15 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
                       suffix={`₽/${tc('hourAbbr')}`}
                     />
                   </FieldBlock>
-                  <FieldBlock label={t('profilePage.calc.postprocessing')} hint={t('profilePage.calc.rate')}>
+                  <FieldBlock
+                    label={
+                      <TooltipLabel
+                        label={t('profilePage.calc.postprocessing')}
+                        tooltipText={tc('defaultPostprocessingRateTooltip')}
+                      />
+                    }
+                    hint={t('profilePage.calc.rate')}
+                  >
                     <InputWithSuffix
                       value={form.postprocessingRatePerHour}
                       onChange={(value) => onStaticChange('postprocessingRatePerHour', value)}
@@ -1302,7 +1343,14 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
                       suffix={`₽/${tc('hourAbbr')}`}
                     />
                   </FieldBlock>
-                  <FieldBlock label={t('profilePage.calc.amortizationRate')}>
+                  <FieldBlock
+                    label={
+                      <TooltipLabel
+                        label={t('profilePage.calc.amortizationRate')}
+                        tooltipText={tc('defaultAmortizationRateTooltip')}
+                      />
+                    }
+                  >
                     <InputWithSuffix
                       value={form.amortizationRatePerHour}
                       onChange={(value) => onStaticChange('amortizationRatePerHour', value)}
@@ -1310,7 +1358,15 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
                       suffix={`₽/${tc('hourAbbr')}`}
                     />
                   </FieldBlock>
-                  <FieldBlock label={t('profilePage.calc.overheadPercent')} hint={t('profilePage.calc.overheadHint')}>
+                  <FieldBlock
+                    label={
+                      <TooltipLabel
+                        label={t('profilePage.calc.overheadPercent')}
+                        tooltipText={tc('defaultOverheadTooltip')}
+                      />
+                    }
+                    hint={t('profilePage.calc.overheadHint')}
+                  >
                     <InputWithSuffix
                       value={form.overheadPercent}
                       onChange={(value) => onStaticChange('overheadPercent', value)}
@@ -1319,7 +1375,15 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
                       step="0.1"
                     />
                   </FieldBlock>
-                  <FieldBlock label={t('profilePage.calc.markupPercent')} hint={t('profilePage.calc.markupHint')}>
+                  <FieldBlock
+                    label={
+                      <TooltipLabel
+                        label={t('profilePage.calc.markupPercent')}
+                        tooltipText={tc('defaultMarkupTooltip')}
+                      />
+                    }
+                    hint={t('profilePage.calc.markupHint')}
+                  >
                     <InputWithSuffix
                       value={form.markupPercent}
                       onChange={(value) => onStaticChange('markupPercent', value)}
@@ -2290,6 +2354,36 @@ const SurfaceCard: React.FC<{ children: ReactNode; className?: string }> = ({ ch
   </section>
 );
 
+const HelpTooltip: React.FC<{ text: string }> = ({ text }) => (
+  <span className="group/tooltip relative inline-flex shrink-0 align-middle">
+    <button
+      type="button"
+      className="inline-flex h-4 w-4 items-center justify-center rounded-full text-slate-500 transition-colors hover:text-cyan-200 focus:outline-none focus:text-cyan-200"
+      aria-label={text}
+      title={text}
+      onClick={(event) => {
+        event.preventDefault();
+        event.stopPropagation();
+      }}
+    >
+      <HelpCircle className="h-3.5 w-3.5" />
+    </button>
+    <span
+      role="tooltip"
+      className="pointer-events-none absolute left-1/2 top-full z-30 mt-2 hidden w-64 -translate-x-1/2 rounded-lg border border-white/10 bg-slate-950/95 px-3 py-2 text-left text-xs leading-relaxed text-slate-200 shadow-2xl shadow-black/30 group-hover/tooltip:block group-focus-within/tooltip:block"
+    >
+      {text}
+    </span>
+  </span>
+);
+
+const TooltipLabel: React.FC<{ label: string; tooltipText?: string }> = ({ label, tooltipText }) => (
+  <span className="inline-flex items-center gap-1.5">
+    <span>{label}</span>
+    {tooltipText ? <HelpTooltip text={tooltipText} /> : null}
+  </span>
+);
+
 const StepBadge: React.FC<{ step: string }> = ({ step }) => (
   <div className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-cyan-400/20 bg-cyan-400/10 text-xs font-semibold text-cyan-200">
     {step}
@@ -2343,7 +2437,7 @@ const SectionHeading: React.FC<{ icon: ReactNode; title: string; compact?: boole
   </div>
 );
 
-const FieldBlock: React.FC<{ label: string; children: ReactNode; hint?: string | null }> = ({ label, children, hint }) => (
+const FieldBlock: React.FC<{ label: ReactNode; children: ReactNode; hint?: string | null }> = ({ label, children, hint }) => (
   <label className="block">
     <span className="mb-1.5 block text-sm font-medium text-slate-300">{label}</span>
     {children}
