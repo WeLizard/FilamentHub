@@ -25,6 +25,7 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({ user, onUserUpdate }) 
 
   // Состояния для настроек синхронизации
   const [syncSettings, setSyncSettings] = useState({
+    allow_filament_presets_import: user.allow_filament_presets_import ?? true,
     allow_printer_profiles_import: user.allow_printer_profiles_import ?? true,
     allow_printer_profiles_export: user.allow_printer_profiles_export ?? true,
     allow_print_profiles_import: user.allow_print_profiles_import ?? true,
@@ -470,7 +471,38 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({ user, onUserUpdate }) 
           </div>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+          {/* Пресеты филамента */}
+          <div className="bg-white/5 rounded-xl p-4 border border-white/10">
+            <h4 className="text-sm font-semibold text-white mb-3 flex items-center gap-2 min-h-[24px]">
+              <span className="w-2 h-2 bg-blue-500 rounded-full flex-shrink-0"></span>
+              <span className="whitespace-nowrap">{t('settings.filamentPresets')}</span>
+            </h4>
+            <div className="space-y-2">
+              <label className="flex items-center justify-between cursor-pointer group">
+                <span className="text-sm text-gray-300 w-16">{t('settings.import')}</span>
+                <div className="relative">
+                  <input
+                    type="checkbox"
+                    checked={syncSettings.allow_filament_presets_import}
+                    onChange={(e) => handleSyncSettingsChange('allow_filament_presets_import', e.target.checked)}
+                    className="sr-only"
+                  />
+                  <div
+                    className={`w-11 h-6 rounded-full transition-colors duration-200 flex items-center px-0.5 ${
+                      syncSettings.allow_filament_presets_import ? 'bg-purple-600 justify-end' : 'bg-gray-600 justify-start'
+                    }`}
+                  >
+                    <div className="w-5 h-5 bg-white rounded-full shadow-md" />
+                  </div>
+                </div>
+              </label>
+              <p className="text-xs text-gray-500">
+                {t('settings.filamentPresetsImportHint')}
+              </p>
+            </div>
+          </div>
+
           {/* Профили принтеров */}
           <div className="bg-white/5 rounded-xl p-4 border border-white/10">
             <h4 className="text-sm font-semibold text-white mb-3 flex items-center gap-2 min-h-[24px]">

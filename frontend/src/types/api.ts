@@ -262,6 +262,7 @@ export interface RecommendedPreset {
 
 export interface User {
   // Sync settings (разрешения на импорт/экспорт профилей)
+  allow_filament_presets_import?: boolean;
   allow_printer_profiles_import?: boolean;
   allow_printer_profiles_export?: boolean;
   allow_print_profiles_import?: boolean;

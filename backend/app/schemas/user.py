@@ -58,6 +58,7 @@ class UserUpdate(BaseModel):
         return v
     brand_id: int | None = Field(None, gt=0, description="ID бренда, который представляет пользователь")
     # Sync settings
+    allow_filament_presets_import: bool | None = None
     allow_printer_profiles_import: bool | None = None
     allow_printer_profiles_export: bool | None = None
     allow_print_profiles_import: bool | None = None
@@ -67,6 +68,7 @@ class UserUpdate(BaseModel):
 class UserSettingsUpdate(BaseModel):
     """Schema for updating user sync settings."""
 
+    allow_filament_presets_import: bool | None = None
     allow_printer_profiles_import: bool | None = None
     allow_printer_profiles_export: bool | None = None
     allow_print_profiles_import: bool | None = None
@@ -109,6 +111,7 @@ class UserResponse(UserBase):
     brand_name: str | None = None  # Название бренда (для админки)
     badges: list[str] | None = None  # Бейджи пользователя
     # Sync settings
+    allow_filament_presets_import: bool = True
     allow_printer_profiles_import: bool = True
     allow_printer_profiles_export: bool = True
     allow_print_profiles_import: bool = True
