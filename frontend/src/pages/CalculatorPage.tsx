@@ -4,6 +4,7 @@
  */
 
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { createPortal } from 'react-dom';
 import type { TFunction } from 'i18next';
 import { useTranslation } from 'react-i18next';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -11,18 +12,22 @@ import {
   Calculator,
   CheckCircle2,
   Clock,
-  DollarSign,
+  FileText,
   Loader2,
   Package,
+  Printer,
   Save,
   Settings2,
   Trash2,
   TrendingUp,
   Upload,
   Weight,
+  X,
   Zap,
 } from 'lucide-react';
 import { calculatorAPI, filamentsAPI } from '../api/client';
+import { useAuth } from '../contexts/AuthContext';
+import { useHeaderVisible } from '../hooks/useHeaderVisible';
 import { translateApiError } from '../utils/translateApiError';
 import type {
   CalculatorEstimateRequest,
@@ -79,6 +84,15 @@ interface CalculatorFormState {
   roundToNearest: number;
 }
 
+interface QuotePartyFormState {
+  sellerName: string;
+  sellerInn: string;
+  sellerPhone: string;
+  buyerName: string;
+  buyerInn: string;
+  buyerAddress: string;
+}
+
 const DEFAULT_FORM_STATE: CalculatorFormState = {
   selectedFilamentId: '',
   pricingMethod: 'combined',
@@ -113,6 +127,16 @@ const DEFAULT_FORM_STATE: CalculatorFormState = {
   roundToNearest: 10,
 };
 
+const QUOTE_PROFILE_STORAGE_KEY = 'filamenthub_calculator_quote_profile_v1';
+const DEFAULT_QUOTE_PARTY_FORM: QuotePartyFormState = {
+  sellerName: '',
+  sellerInn: '',
+  sellerPhone: '',
+  buyerName: '',
+  buyerInn: '',
+  buyerAddress: '',
+};
+
 const formatCurrency = (value: number | null | undefined): string =>
   value == null || !Number.isFinite(value) ? '—' : `${value.toFixed(2)} ₽`;
 
@@ -138,65 +162,54 @@ const deriveSpoolDefaults = (
 
 const buildEstimateRequest = (form: CalculatorFormState): CalculatorEstimateRequest => {
   const requestData: CalculatorEstimateRequest = {
-    pricing_method: form.pricingMethod,
+    pricing_method: 'combined',
     quantity: form.quantity,
     round_to_nearest: form.roundToNearest || undefined,
-  };
-
-  if (form.pricingMethod === 'by_weight' || form.pricingMethod === 'combined') {
-    requestData.weight_g = form.weightG;
-    requestData.supports_weight_g = form.supportsWeightG || undefined;
-    requestData.supports_loss_coefficient = form.supportsLossCoefficient || undefined;
-    requestData.spool_price = form.spoolPrice;
-    requestData.spool_weight_kg = form.spoolWeightKg;
-    requestData.delivery_cost = form.deliveryCost || undefined;
   }
 
-  if (form.pricingMethod === 'by_time' || form.pricingMethod === 'combined') {
-    requestData.time_hours = form.timeHours;
-    requestData.time_minutes = form.timeMinutes;
-    requestData.time_sec = form.timeSec || undefined;
-  }
-
-  if (form.pricingMethod === 'by_time') {
-    requestData.price_per_hour = form.pricePerHour;
-  }
+  requestData.weight_g = form.weightG;
+  requestData.supports_weight_g = form.supportsWeightG || undefined;
+  requestData.supports_loss_coefficient = form.supportsLossCoefficient || undefined;
+  requestData.spool_price = form.spoolPrice;
+  requestData.spool_weight_kg = form.spoolWeightKg;
+  requestData.delivery_cost = form.deliveryCost || undefined;
+  requestData.time_hours = form.timeHours;
+  requestData.time_minutes = form.timeMinutes;
+  requestData.time_sec = form.timeSec || undefined;
 
   if (form.electricityCostPerKwh && form.printerPowerW) {
     requestData.electricity_cost_per_kwh = form.electricityCostPerKwh;
     requestData.printer_power_w = form.printerPowerW;
   }
 
-  if (form.pricingMethod === 'combined') {
-    if (form.modelingRatePerHour) {
-      requestData.modeling_hours = form.modelingHours;
-      requestData.modeling_minutes = form.modelingMinutes;
-      requestData.modeling_rate_per_hour = form.modelingRatePerHour;
-    }
-
-    if (form.postprocessingRatePerHour) {
-      requestData.postprocessing_hours = form.postprocessingHours;
-      requestData.postprocessing_minutes = form.postprocessingMinutes;
-      requestData.postprocessing_rate_per_hour = form.postprocessingRatePerHour;
-    }
-
-    if (form.printingRatePerHour) {
-      requestData.printing_rate_per_hour = form.printingRatePerHour;
-    }
-
-    if (form.amortizationRatePerHour) {
-      requestData.amortization_rate_per_hour = form.amortizationRatePerHour;
-    }
-
-    requestData.overhead_percent = form.overheadPercent || undefined;
-    requestData.markup_percent = form.markupPercent || undefined;
-    requestData.urgency_coefficient = form.urgencyCoefficient !== 1.0 ? form.urgencyCoefficient : undefined;
-    requestData.complexity_coefficient = form.complexityCoefficient !== 1.0 ? form.complexityCoefficient : undefined;
-    requestData.volume_discount_coefficient =
-      form.volumeDiscountCoefficient !== 1.0 ? form.volumeDiscountCoefficient : undefined;
-    requestData.fixed_costs = form.fixedCosts || undefined;
-    requestData.min_order_price = form.minOrderPrice || undefined;
+  if (form.modelingRatePerHour) {
+    requestData.modeling_hours = form.modelingHours;
+    requestData.modeling_minutes = form.modelingMinutes;
+    requestData.modeling_rate_per_hour = form.modelingRatePerHour;
   }
+
+  if (form.postprocessingRatePerHour) {
+    requestData.postprocessing_hours = form.postprocessingHours;
+    requestData.postprocessing_minutes = form.postprocessingMinutes;
+    requestData.postprocessing_rate_per_hour = form.postprocessingRatePerHour;
+  }
+
+  if (form.printingRatePerHour) {
+    requestData.printing_rate_per_hour = form.printingRatePerHour;
+  }
+
+  if (form.amortizationRatePerHour) {
+    requestData.amortization_rate_per_hour = form.amortizationRatePerHour;
+  }
+
+  requestData.overhead_percent = form.overheadPercent || undefined;
+  requestData.markup_percent = form.markupPercent || undefined;
+  requestData.urgency_coefficient = form.urgencyCoefficient !== 1.0 ? form.urgencyCoefficient : undefined;
+  requestData.complexity_coefficient = form.complexityCoefficient !== 1.0 ? form.complexityCoefficient : undefined;
+  requestData.volume_discount_coefficient =
+    form.volumeDiscountCoefficient !== 1.0 ? form.volumeDiscountCoefficient : undefined;
+  requestData.fixed_costs = form.fixedCosts || undefined;
+  requestData.min_order_price = form.minOrderPrice || undefined;
 
   return requestData;
 };
@@ -218,6 +231,54 @@ const formatHoursShort = (value: number | null | undefined, hourLabel: string, m
   }
 
   return `${wholeHours} ${hourLabel} ${wholeMinutes} ${minLabel}`;
+};
+
+const escapeHtml = (value: string): string =>
+  value
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&#39;');
+
+const loadStoredQuoteProfile = (): Partial<QuotePartyFormState> => {
+  if (typeof window === 'undefined') {
+    return {};
+  }
+
+  try {
+    const raw = window.localStorage.getItem(QUOTE_PROFILE_STORAGE_KEY);
+    if (!raw) {
+      return {};
+    }
+
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== 'object') {
+      return {};
+    }
+
+    return parsed as Partial<QuotePartyFormState>;
+  } catch {
+    return {};
+  }
+};
+
+const saveStoredQuoteProfile = (data: QuotePartyFormState): void => {
+  if (typeof window === 'undefined') {
+    return;
+  }
+
+  window.localStorage.setItem(
+    QUOTE_PROFILE_STORAGE_KEY,
+    JSON.stringify({
+      sellerName: data.sellerName,
+      sellerInn: data.sellerInn,
+      sellerPhone: data.sellerPhone,
+      buyerName: data.buyerName,
+      buyerInn: data.buyerInn,
+      buyerAddress: data.buyerAddress,
+    }),
+  );
 };
 
 const splitSeconds = (totalSeconds: number): { hours: number; minutes: number; seconds: number } => {
@@ -344,8 +405,218 @@ const formatHistoryDate = (isoDate: string): string =>
     timeStyle: 'short',
   }).format(new Date(isoDate));
 
+interface QuoteLineItem {
+  title: string;
+  details: string[];
+  quantity: number;
+  unitPrice: number;
+  totalPrice: number;
+}
+
+interface BuildQuoteHtmlParams {
+  t: TFunction;
+  form: CalculatorFormState;
+  result: CalculatorEstimateResponse;
+  parsedGcode: CalculatorGcodeParseResponse | null;
+  selectedFilament: Filament | null;
+  parties: QuotePartyFormState;
+}
+
+const buildQuoteLineItems = (
+  t: TFunction,
+  form: CalculatorFormState,
+  result: CalculatorEstimateResponse,
+  parsedGcode: CalculatorGcodeParseResponse | null,
+  selectedFilament: Filament | null,
+): QuoteLineItem[] => {
+  const itemTitle = parsedGcode?.file_name || t('calculator.quoteDefaultItemTitle');
+  const details = [
+    selectedFilament ? buildFilamentLabel(selectedFilament) : null,
+    parsedGcode?.slicer_name ? `${t('calculator.quoteSlicer')}: ${[parsedGcode.slicer_name, parsedGcode.slicer_version].filter(Boolean).join(' ')}` : null,
+    form.weightG > 0 ? `${t('calculator.quoteWeight')}: ${form.weightG.toFixed(2)} ${t('calculator.grams')}` : null,
+    toHours(form.timeHours, form.timeMinutes, form.timeSec) > 0
+      ? `${t('calculator.quotePrintTime')}: ${formatHoursShort(
+          toHours(form.timeHours, form.timeMinutes, form.timeSec),
+          t('profilePage.calc.h'),
+          t('profilePage.calc.min'),
+        )}`
+      : null,
+  ].filter(Boolean) as string[];
+
+  const quantity = Math.max(1, result.quantity);
+  const unitPrice = quantity > 0 ? result.cost_total / quantity : result.cost_total;
+
+  return [
+    {
+      title: itemTitle,
+      details,
+      quantity,
+      unitPrice,
+      totalPrice: result.cost_total,
+    },
+  ];
+};
+
+const buildQuoteIncludedItems = (t: TFunction, result: CalculatorEstimateResponse): string[] => {
+  const included: string[] = [];
+
+  if (result.cost_material > 0) {
+    included.push(t('calculator.quoteIncluded.materials'));
+  }
+  if (result.cost_electricity > 0 || result.cost_amortization > 0) {
+    included.push(t('calculator.quoteIncluded.equipment'));
+  }
+  if (result.cost_printing > 0) {
+    included.push(t('calculator.quoteIncluded.printing'));
+  }
+  if (result.cost_modeling > 0) {
+    included.push(t('calculator.quoteIncluded.modeling'));
+  }
+  if (result.cost_postprocessing > 0) {
+    included.push(t('calculator.quoteIncluded.postprocessing'));
+  }
+
+  return included.length > 0 ? included : [t('calculator.quoteIncluded.none')];
+};
+
+const buildQuoteDocumentHtml = ({
+  t,
+  form,
+  result,
+  parsedGcode,
+  selectedFilament,
+  parties,
+}: BuildQuoteHtmlParams): string => {
+  const lineItems = buildQuoteLineItems(t, form, result, parsedGcode, selectedFilament);
+  const includedItems = buildQuoteIncludedItems(t, result);
+  const today = new Intl.DateTimeFormat(undefined, { dateStyle: 'long' }).format(new Date());
+  const documentTitle = `${t('calculator.quoteDocumentTitle')} — ${today}`;
+  const buyerFallback = t('calculator.quoteBuyerFallback');
+
+  const tableRows = lineItems
+    .map(
+      (item, index) => `
+        <tr>
+          <td>${index + 1}</td>
+          <td>
+            <strong>${escapeHtml(item.title)}</strong>
+            ${item.details.length > 0 ? `<div class="muted">${escapeHtml(item.details.join(' · '))}</div>` : ''}
+          </td>
+          <td class="center">${item.quantity}</td>
+          <td class="right">${escapeHtml(formatCurrency(item.unitPrice))}</td>
+          <td class="right">${escapeHtml(formatCurrency(item.totalPrice))}</td>
+        </tr>
+      `,
+    )
+    .join('');
+
+  const includedMarkup = includedItems.map((item) => `<li>${escapeHtml(item)}</li>`).join('');
+
+  const buyerName = parties.buyerName.trim() || buyerFallback;
+  const buyerInn = parties.buyerInn.trim();
+  const buyerAddress = parties.buyerAddress.trim();
+
+  return `<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="utf-8" />
+    <title>${escapeHtml(documentTitle)}</title>
+    <style>
+      body { font-family: "Segoe UI", Arial, sans-serif; margin: 0; background: #eef2ff; color: #0f172a; }
+      .page { max-width: 860px; margin: 0 auto; background: #ffffff; padding: 48px; }
+      .header { display: flex; justify-content: space-between; gap: 24px; margin-bottom: 32px; }
+      .muted { color: #64748b; font-size: 12px; line-height: 1.6; }
+      .box { border: 1px solid #cbd5e1; border-radius: 12px; padding: 16px; background: #f8fafc; }
+      table { width: 100%; border-collapse: collapse; margin: 24px 0; }
+      th, td { border: 1px solid #cbd5e1; padding: 12px; vertical-align: top; }
+      th { background: #e2e8f0; text-align: left; }
+      .right { text-align: right; }
+      .center { text-align: center; }
+      .totals { margin-top: 28px; border: 1px solid #cbd5e1; border-radius: 12px; overflow: hidden; }
+      .totals-row { display: flex; justify-content: space-between; gap: 24px; padding: 12px 16px; border-top: 1px solid #e2e8f0; }
+      .totals-row:first-child { border-top: 0; }
+      .total-strong { font-weight: 700; font-size: 18px; }
+      ul { margin: 10px 0 0; padding-left: 20px; }
+      .footer { margin-top: 48px; display: flex; justify-content: space-between; gap: 24px; }
+      .signature { width: 45%; padding-top: 48px; border-bottom: 1px solid #0f172a; }
+      @media print {
+        body { background: white; }
+        .page { max-width: none; margin: 0; box-shadow: none; padding: 24px; }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="page">
+      <div class="header">
+        <div>
+          <h1 style="margin:0 0 8px;">${escapeHtml(t('calculator.quoteDocumentTitle'))}</h1>
+          <div class="muted">${escapeHtml(t('calculator.quoteDocumentSubtitle'))}</div>
+          <div class="muted" style="margin-top: 12px;">${escapeHtml(today)}</div>
+        </div>
+        <div class="box" style="min-width: 260px;">
+          <div><strong>${escapeHtml(t('calculator.quoteExecutor'))}</strong></div>
+          <div style="margin-top: 8px;">${escapeHtml(parties.sellerName.trim() || '—')}</div>
+          <div class="muted">${escapeHtml(t('calculator.quoteInn'))}: ${escapeHtml(parties.sellerInn.trim() || '—')}</div>
+          <div class="muted">${escapeHtml(t('calculator.quotePhone'))}: ${escapeHtml(parties.sellerPhone.trim() || '—')}</div>
+          <div class="muted" style="margin-top: 8px;">${escapeHtml(t('calculator.quoteTaxStatus'))}</div>
+        </div>
+      </div>
+
+      <div class="box">
+        <div><strong>${escapeHtml(t('calculator.quoteCustomer'))}</strong></div>
+        <div style="margin-top: 8px;">${escapeHtml(buyerName)}</div>
+        ${buyerInn ? `<div class="muted">${escapeHtml(t('calculator.quoteInn'))}: ${escapeHtml(buyerInn)}</div>` : ''}
+        ${buyerAddress ? `<div class="muted">${escapeHtml(t('calculator.quoteAddress'))}: ${escapeHtml(buyerAddress)}</div>` : ''}
+      </div>
+
+      <table>
+        <thead>
+          <tr>
+            <th style="width: 48px;">№</th>
+            <th>${escapeHtml(t('calculator.quoteTable.item'))}</th>
+            <th style="width: 90px;">${escapeHtml(t('calculator.quoteTable.quantity'))}</th>
+            <th style="width: 150px;">${escapeHtml(t('calculator.quoteTable.unitPrice'))}</th>
+            <th style="width: 150px;">${escapeHtml(t('calculator.quoteTable.total'))}</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${tableRows}
+        </tbody>
+      </table>
+
+      <div class="totals">
+        <div class="totals-row"><span>${escapeHtml(t('profilePage.calc.material'))}</span><strong>${escapeHtml(formatCurrency(result.cost_material))}</strong></div>
+        <div class="totals-row"><span>${escapeHtml(t('profilePage.calc.electricityLabel'))}</span><strong>${escapeHtml(formatCurrency(result.cost_electricity))}</strong></div>
+        <div class="totals-row"><span>${escapeHtml(t('profilePage.calc.modeling'))}</span><strong>${escapeHtml(formatCurrency(result.cost_modeling))}</strong></div>
+        <div class="totals-row"><span>${escapeHtml(t('profilePage.calc.printing'))}</span><strong>${escapeHtml(formatCurrency(result.cost_printing))}</strong></div>
+        <div class="totals-row"><span>${escapeHtml(t('profilePage.calc.postprocessing'))}</span><strong>${escapeHtml(formatCurrency(result.cost_postprocessing))}</strong></div>
+        <div class="totals-row"><span>${escapeHtml(t('profilePage.calc.amortization'))}</span><strong>${escapeHtml(formatCurrency(result.cost_amortization))}</strong></div>
+        <div class="totals-row total-strong"><span>${escapeHtml(t('calculator.totalCost'))}</span><strong>${escapeHtml(formatCurrency(result.cost_total))}</strong></div>
+      </div>
+
+      <div style="margin-top: 28px;">
+        <strong>${escapeHtml(t('calculator.quoteIncludedTitle'))}</strong>
+        <ul>${includedMarkup}</ul>
+      </div>
+
+      <div class="footer">
+        <div style="width: 45%;">
+          <div>${escapeHtml(t('calculator.quoteExecutor'))}</div>
+          <div class="signature"></div>
+        </div>
+        <div style="width: 45%; text-align: right;">
+          <div>${escapeHtml(t('calculator.quoteCustomer'))}</div>
+          <div class="signature" style="margin-left: auto;"></div>
+        </div>
+      </div>
+    </div>
+  </body>
+</html>`;
+};
+
 export const CalculatorPage: React.FC = () => {
   const { t } = useTranslation();
+  const { user } = useAuth();
   const queryClient = useQueryClient();
   const tc = (key: string) => translateCalculator(t, key);
   const [activeTab, setActiveTab] = useState<CalculatorTab>('calculator');
@@ -353,6 +624,8 @@ export const CalculatorPage: React.FC = () => {
   const [parsedGcode, setParsedGcode] = useState<CalculatorGcodeParseResponse | null>(null);
   const [dragActive, setDragActive] = useState(false);
   const [historyFeedback, setHistoryFeedback] = useState<{ kind: 'success' | 'error'; message: string } | null>(null);
+  const [quoteModalOpen, setQuoteModalOpen] = useState(false);
+  const [quoteParties, setQuoteParties] = useState<QuotePartyFormState>(DEFAULT_QUOTE_PARTY_FORM);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const skipNextFilamentDefaultsRef = useRef(false);
 
@@ -395,6 +668,7 @@ export const CalculatorPage: React.FC = () => {
   });
 
   const result = calculateMutation.data ?? null;
+  const estimateSource: 'manual' | 'gcode' = parsedGcode ? 'gcode' : 'manual';
   const selectedFilament = useMemo(
     () => filamentsQuery.data?.items.find((filament) => filament.id === form.selectedFilamentId) ?? null,
     [filamentsQuery.data?.items, form.selectedFilamentId],
@@ -418,6 +692,22 @@ export const CalculatorPage: React.FC = () => {
       spoolWeightKg: defaults.spoolWeightKg ?? prev.spoolWeightKg,
     }));
   }, [selectedFilament]);
+
+  useEffect(() => {
+    const stored = loadStoredQuoteProfile();
+    setQuoteParties((prev) => ({
+      ...prev,
+      ...stored,
+      sellerName:
+        typeof stored.sellerName === 'string' && stored.sellerName.trim()
+          ? stored.sellerName
+          : user?.full_name?.trim() || user?.username || prev.sellerName,
+    }));
+  }, [user?.full_name, user?.username]);
+
+  useEffect(() => {
+    saveStoredQuoteProfile(quoteParties);
+  }, [quoteParties]);
 
   const estimateError = useMemo(() => {
     if (!calculateMutation.error) {
@@ -562,6 +852,35 @@ export const CalculatorPage: React.FC = () => {
     }
   };
 
+  const handlePrintQuote = () => {
+    if (!result) {
+      return;
+    }
+
+    const quoteWindow = window.open('', '_blank', 'noopener,noreferrer');
+    if (!quoteWindow) {
+      setHistoryFeedback({ kind: 'error', message: tc('quotePopupBlocked') });
+      return;
+    }
+
+    const quoteHtml = buildQuoteDocumentHtml({
+      t,
+      form,
+      result,
+      parsedGcode,
+      selectedFilament,
+      parties: quoteParties,
+    });
+
+    quoteWindow.document.open();
+    quoteWindow.document.write(quoteHtml);
+    quoteWindow.document.close();
+    quoteWindow.focus();
+    setTimeout(() => {
+      quoteWindow.print();
+    }, 250);
+  };
+
   return (
     <div className="space-y-6">
       <section className={`${surfaceClass} p-0`}>
@@ -641,10 +960,12 @@ export const CalculatorPage: React.FC = () => {
           canSaveHistory={Boolean(result)}
           fileInputRef={fileInputRef}
           isSavingHistory={saveHistoryMutation.isPending}
+          currentSource={estimateSource}
           onCalculate={handleCalculate}
           onChange={updateField}
           onFileSelect={handleFileSelection}
           onDragStateChange={setDragActive}
+          onOpenQuote={() => setQuoteModalOpen(true)}
           onSaveToHistory={handleSaveToHistory}
         />
       ) : (
@@ -658,6 +979,21 @@ export const CalculatorPage: React.FC = () => {
           onRestoreEntry={handleRestoreHistory}
         />
       )}
+
+      <QuoteModal
+        isOpen={quoteModalOpen}
+        source={estimateSource}
+        quoteParties={quoteParties}
+        result={result}
+        onClose={() => setQuoteModalOpen(false)}
+        onPartyChange={(field, value) => {
+          setQuoteParties((prev) => ({
+            ...prev,
+            [field]: value,
+          }));
+        }}
+        onPrint={handlePrintQuote}
+      />
     </div>
   );
 };
@@ -678,10 +1014,12 @@ interface CalculatorViewProps {
   canSaveHistory: boolean;
   fileInputRef: React.RefObject<HTMLInputElement | null>;
   isSavingHistory: boolean;
+  currentSource: 'manual' | 'gcode';
   onCalculate: () => void;
   onChange: <K extends keyof CalculatorFormState>(field: K, value: CalculatorFormState[K]) => void;
   onFileSelect: (files: FileList | null) => Promise<void>;
   onDragStateChange: (active: boolean) => void;
+  onOpenQuote: () => void;
   onSaveToHistory: () => Promise<void>;
 }
 
@@ -701,10 +1039,12 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
   canSaveHistory,
   fileInputRef,
   isSavingHistory,
+  currentSource,
   onCalculate,
   onChange,
   onFileSelect,
   onDragStateChange,
+  onOpenQuote,
   onSaveToHistory,
 }) => {
   const { t } = useTranslation();
@@ -716,6 +1056,7 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
           selectedFilament.spool_weight != null ? `${selectedFilament.spool_weight.toFixed(0)} г` : '—'
         }`
       : null;
+  const sourceLabel = currentSource === 'gcode' ? tc('sourceGcode') : tc('sourceManual');
 
   return (
     <div className="grid grid-cols-1 gap-5 xl:grid-cols-[minmax(0,1.45fr)_minmax(22rem,0.92fr)]">
@@ -723,41 +1064,37 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
         <SurfaceCard className="p-6 md:p-7">
           <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
             <div>
-              <SectionHeading icon={<Calculator className="h-5 w-5 text-cyan-300" />} title={t('profilePage.calc.pricingMethod')} />
-              <p className="mt-3 max-w-xl text-sm leading-6 text-slate-300">{tc('methodHint')}</p>
+              <SectionHeading icon={<FileText className="h-5 w-5 text-cyan-300" />} title={tc('workflowTitle')} />
+              <p className="mt-3 max-w-2xl text-sm leading-6 text-slate-300">{tc('workflowDescription')}</p>
             </div>
             <div className="rounded-[1.3rem] border border-white/10 bg-white/5 px-4 py-3 text-sm text-slate-300">
-              <span className="text-slate-400">{tc('activeMethodLabel')}: </span>
-              <span className="font-semibold text-white">
-                {t(
-                  form.pricingMethod === 'combined'
-                    ? 'profilePage.calc.combined'
-                    : form.pricingMethod === 'by_time'
-                      ? 'profilePage.calc.byTime'
-                      : 'profilePage.calc.byWeight',
-                )}
-              </span>
+              <span className="text-slate-400">{tc('sourceLabel')}: </span>
+              <span className="font-semibold text-white">{sourceLabel}</span>
             </div>
           </div>
-          <div className="mt-5 flex flex-wrap gap-3">
-            {([
-              { value: 'by_weight', label: t('profilePage.calc.byWeight') },
-              { value: 'by_time', label: t('profilePage.calc.byTime') },
-              { value: 'combined', label: t('profilePage.calc.combined') },
-            ] as const).map((method) => (
-              <button
-                key={method.value}
-                type="button"
-                onClick={() => onChange('pricingMethod', method.value)}
-                className={`rounded-2xl px-4 py-3 text-sm font-medium transition-all ${
-                  form.pricingMethod === method.value
-                    ? 'bg-cyan-300 text-slate-950 shadow-[0_18px_35px_-18px_rgba(34,211,238,0.85)]'
-                    : 'border border-white/10 bg-white/5 text-slate-300 hover:bg-white/10 hover:text-white'
-                }`}
-              >
-                {method.label}
-              </button>
-            ))}
+          <div className="mt-5 grid grid-cols-1 gap-3 md:grid-cols-2">
+            <div className="rounded-[1.35rem] border border-white/10 bg-white/5 p-4">
+              <div className="flex items-center gap-3">
+                <div className="flex h-10 w-10 items-center justify-center rounded-[1rem] border border-white/10 bg-white/5">
+                  <Calculator className="h-5 w-5 text-cyan-300" />
+                </div>
+                <div>
+                  <p className="text-sm font-semibold text-white">{tc('sourceManual')}</p>
+                  <p className="mt-1 text-xs leading-5 text-slate-400">{tc('sourceManualDescription')}</p>
+                </div>
+              </div>
+            </div>
+            <div className="rounded-[1.35rem] border border-white/10 bg-white/5 p-4">
+              <div className="flex items-center gap-3">
+                <div className="flex h-10 w-10 items-center justify-center rounded-[1rem] border border-white/10 bg-white/5">
+                  <Upload className="h-5 w-5 text-cyan-300" />
+                </div>
+                <div>
+                  <p className="text-sm font-semibold text-white">{tc('sourceGcode')}</p>
+                  <p className="mt-1 text-xs leading-5 text-slate-400">{tc('sourceGcodeDescription')}</p>
+                </div>
+              </div>
+            </div>
           </div>
         </SurfaceCard>
 
@@ -931,134 +1268,114 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
           </div>
         </SurfaceCard>
 
-        {(form.pricingMethod === 'by_weight' || form.pricingMethod === 'combined') && (
-          <SurfaceCard className="p-6 md:p-7">
-            <SectionHeading icon={<Weight className="h-5 w-5 text-cyan-300" />} title={t('profilePage.calc.materialParams')} />
-            <div className="mt-5 space-y-5">
-              <FieldBlock label={tc('selectMaterial')}>
-                <select
-                  className={inputClass}
-                  value={form.selectedFilamentId}
-                  onChange={(event) => onChange('selectedFilamentId', event.target.value ? Number(event.target.value) : '')}
-                >
-                  <option value="">{tc('chooseFromCatalog')}</option>
-                  {filaments.map((filament) => (
-                    <option key={filament.id} value={filament.id}>
-                      {buildFilamentLabel(filament)}
-                    </option>
-                  ))}
-                </select>
-              </FieldBlock>
+        <SurfaceCard className="p-6 md:p-7">
+          <SectionHeading icon={<Weight className="h-5 w-5 text-cyan-300" />} title={t('profilePage.calc.materialParams')} />
+          <div className="mt-5 space-y-5">
+            <FieldBlock label={tc('selectMaterial')}>
+              <select
+                className={inputClass}
+                value={form.selectedFilamentId}
+                onChange={(event) => onChange('selectedFilamentId', event.target.value ? Number(event.target.value) : '')}
+              >
+                <option value="">{tc('chooseFromCatalog')}</option>
+                {filaments.map((filament) => (
+                  <option key={filament.id} value={filament.id}>
+                    {buildFilamentLabel(filament)}
+                  </option>
+                ))}
+              </select>
+            </FieldBlock>
 
-              {selectedFilament && materialCatalogSummary && (
-                <div className="rounded-[1.35rem] border border-cyan-400/20 bg-cyan-400/10 px-4 py-3 text-sm text-cyan-100">
-                  <span className="font-semibold text-white">{selectedFilament.name}</span>
-                  <span className="mx-2 text-cyan-200/70">·</span>
-                  {materialCatalogSummary}
-                </div>
-              )}
-
-              {filamentsLoadError && (
-                <div className="rounded-[1.25rem] border border-amber-400/20 bg-amber-500/10 px-4 py-3 text-sm text-amber-100">
-                  {filamentsLoadError}
-                </div>
-              )}
-
-              {isFilamentsLoading && (
-                <div className="rounded-[1.25rem] border border-white/10 bg-white/5 px-4 py-3 text-sm text-slate-300">
-                  {tc('loadingMaterials')}
-                </div>
-              )}
-
-              <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-                <FieldBlock label={t('profilePage.calc.partWeight')}>
-                  <InputWithSuffix
-                    value={form.weightG}
-                    onChange={(value) => onChange('weightG', value)}
-                    placeholder="531"
-                    suffix={tc('grams')}
-                  />
-                </FieldBlock>
-                <FieldBlock label={t('profilePage.calc.supportsWeight')} hint={t('profilePage.calc.supportsWeightHint')}>
-                  <InputWithSuffix
-                    value={form.supportsWeightG}
-                    onChange={(value) => onChange('supportsWeightG', value)}
-                    placeholder="0"
-                    suffix={tc('grams')}
-                  />
-                </FieldBlock>
-                <FieldBlock label={t('profilePage.calc.supportsLossCoeff')} hint={t('profilePage.calc.supportsLossHint')}>
-                  <NumberInput
-                    value={form.supportsLossCoefficient}
-                    onChange={(value) => onChange('supportsLossCoefficient', value)}
-                    min="1"
-                    max="2"
-                    step="0.1"
-                    placeholder="1.2"
-                  />
-                </FieldBlock>
-                <FieldBlock label={t('profilePage.calc.spoolPrice')}>
-                  <InputWithSuffix
-                    value={form.spoolPrice}
-                    onChange={(value) => onChange('spoolPrice', value)}
-                    placeholder="1200"
-                    suffix="₽"
-                  />
-                </FieldBlock>
-                <FieldBlock label={t('profilePage.calc.spoolWeight')}>
-                  <InputWithSuffix
-                    value={form.spoolWeightKg}
-                    onChange={(value) => onChange('spoolWeightKg', value)}
-                    placeholder="1"
-                    suffix={tc('kg')}
-                    step="0.1"
-                  />
-                </FieldBlock>
-                <FieldBlock label={t('profilePage.calc.deliveryCost')}>
-                  <InputWithSuffix
-                    value={form.deliveryCost}
-                    onChange={(value) => onChange('deliveryCost', value)}
-                    placeholder="0"
-                    suffix="₽"
-                  />
-                </FieldBlock>
+            {selectedFilament && materialCatalogSummary && (
+              <div className="rounded-[1.35rem] border border-cyan-400/20 bg-cyan-400/10 px-4 py-3 text-sm text-cyan-100">
+                <span className="font-semibold text-white">{selectedFilament.name}</span>
+                <span className="mx-2 text-cyan-200/70">·</span>
+                {materialCatalogSummary}
               </div>
-            </div>
-          </SurfaceCard>
-        )}
+            )}
 
-        {(form.pricingMethod === 'by_time' || form.pricingMethod === 'combined') && (
-          <SurfaceCard className="p-6 md:p-7">
-            <SectionHeading icon={<Clock className="h-5 w-5 text-cyan-300" />} title={t('profilePage.calc.printTime')} />
-            <div className="mt-5 grid grid-cols-1 gap-4 sm:grid-cols-3">
-              <FieldBlock label={t('profilePage.calc.hours')}>
-                <NumberInput value={form.timeHours} onChange={(value) => onChange('timeHours', value)} placeholder="13" />
-              </FieldBlock>
-              <FieldBlock label={t('profilePage.calc.minutes')}>
-                <NumberInput value={form.timeMinutes} onChange={(value) => onChange('timeMinutes', value)} placeholder="40" />
-              </FieldBlock>
-              <FieldBlock label={t('profilePage.calc.seconds')}>
-                <NumberInput value={form.timeSec} onChange={(value) => onChange('timeSec', value)} placeholder="0" />
-              </FieldBlock>
-            </div>
-          </SurfaceCard>
-        )}
+            {filamentsLoadError && (
+              <div className="rounded-[1.25rem] border border-amber-400/20 bg-amber-500/10 px-4 py-3 text-sm text-amber-100">
+                {filamentsLoadError}
+              </div>
+            )}
 
-        {form.pricingMethod === 'by_time' && (
-          <SurfaceCard className="p-6 md:p-7">
-            <SectionHeading icon={<DollarSign className="h-5 w-5 text-cyan-300" />} title={t('profilePage.calc.hourlyRate')} />
-            <div className="mt-5">
-              <FieldBlock label={t('profilePage.calc.pricePerHour')}>
+            {isFilamentsLoading && (
+              <div className="rounded-[1.25rem] border border-white/10 bg-white/5 px-4 py-3 text-sm text-slate-300">
+                {tc('loadingMaterials')}
+              </div>
+            )}
+
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+              <FieldBlock label={t('profilePage.calc.partWeight')}>
                 <InputWithSuffix
-                  value={form.pricePerHour}
-                  onChange={(value) => onChange('pricePerHour', value)}
-                  placeholder="170"
-                  suffix={`₽/${tc('hourAbbr')}`}
+                  value={form.weightG}
+                  onChange={(value) => onChange('weightG', value)}
+                  placeholder="531"
+                  suffix={tc('grams')}
+                />
+              </FieldBlock>
+              <FieldBlock label={t('profilePage.calc.supportsWeight')} hint={t('profilePage.calc.supportsWeightHint')}>
+                <InputWithSuffix
+                  value={form.supportsWeightG}
+                  onChange={(value) => onChange('supportsWeightG', value)}
+                  placeholder="0"
+                  suffix={tc('grams')}
+                />
+              </FieldBlock>
+              <FieldBlock label={t('profilePage.calc.supportsLossCoeff')} hint={t('profilePage.calc.supportsLossHint')}>
+                <NumberInput
+                  value={form.supportsLossCoefficient}
+                  onChange={(value) => onChange('supportsLossCoefficient', value)}
+                  min="1"
+                  max="2"
+                  step="0.1"
+                  placeholder="1.2"
+                />
+              </FieldBlock>
+              <FieldBlock label={t('profilePage.calc.spoolPrice')}>
+                <InputWithSuffix
+                  value={form.spoolPrice}
+                  onChange={(value) => onChange('spoolPrice', value)}
+                  placeholder="1200"
+                  suffix="₽"
+                />
+              </FieldBlock>
+              <FieldBlock label={t('profilePage.calc.spoolWeight')}>
+                <InputWithSuffix
+                  value={form.spoolWeightKg}
+                  onChange={(value) => onChange('spoolWeightKg', value)}
+                  placeholder="1"
+                  suffix={tc('kg')}
+                  step="0.1"
+                />
+              </FieldBlock>
+              <FieldBlock label={t('profilePage.calc.deliveryCost')}>
+                <InputWithSuffix
+                  value={form.deliveryCost}
+                  onChange={(value) => onChange('deliveryCost', value)}
+                  placeholder="0"
+                  suffix="₽"
                 />
               </FieldBlock>
             </div>
-          </SurfaceCard>
-        )}
+          </div>
+        </SurfaceCard>
+
+        <SurfaceCard className="p-6 md:p-7">
+          <SectionHeading icon={<Clock className="h-5 w-5 text-cyan-300" />} title={t('profilePage.calc.printTime')} />
+          <div className="mt-5 grid grid-cols-1 gap-4 sm:grid-cols-3">
+            <FieldBlock label={t('profilePage.calc.hours')}>
+              <NumberInput value={form.timeHours} onChange={(value) => onChange('timeHours', value)} placeholder="13" />
+            </FieldBlock>
+            <FieldBlock label={t('profilePage.calc.minutes')}>
+              <NumberInput value={form.timeMinutes} onChange={(value) => onChange('timeMinutes', value)} placeholder="40" />
+            </FieldBlock>
+            <FieldBlock label={t('profilePage.calc.seconds')}>
+              <NumberInput value={form.timeSec} onChange={(value) => onChange('timeSec', value)} placeholder="0" />
+            </FieldBlock>
+          </div>
+        </SurfaceCard>
 
         <SurfaceCard className="p-6 md:p-7">
           <SectionHeading icon={<Zap className="h-5 w-5 text-cyan-300" />} title={t('profilePage.calc.electricity')} />
@@ -1083,134 +1400,130 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
           </div>
         </SurfaceCard>
 
-        {form.pricingMethod === 'combined' && (
-          <>
-            <SurfaceCard className="p-6 md:p-7">
-              <SectionHeading icon={<Settings2 className="h-5 w-5 text-cyan-300" />} title={t('profilePage.calc.additionalServices')} />
-              <div className="mt-5 space-y-6">
-                <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
-                  <FieldBlock label={t('profilePage.calc.modelingHours')}>
-                    <NumberInput value={form.modelingHours} onChange={(value) => onChange('modelingHours', value)} placeholder="0" />
-                  </FieldBlock>
-                  <FieldBlock label={t('profilePage.calc.modelingMinutes')}>
-                    <NumberInput value={form.modelingMinutes} onChange={(value) => onChange('modelingMinutes', value)} placeholder="0" />
-                  </FieldBlock>
-                  <FieldBlock label={t('profilePage.calc.rate')}>
-                    <InputWithSuffix
-                      value={form.modelingRatePerHour}
-                      onChange={(value) => onChange('modelingRatePerHour', value)}
-                      placeholder="934"
-                      suffix={`₽/${tc('hourAbbr')}`}
-                    />
-                  </FieldBlock>
-                </div>
+        <SurfaceCard className="p-6 md:p-7">
+          <SectionHeading icon={<Settings2 className="h-5 w-5 text-cyan-300" />} title={t('profilePage.calc.additionalServices')} />
+          <div className="mt-5 space-y-6">
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+              <FieldBlock label={t('profilePage.calc.modelingHours')}>
+                <NumberInput value={form.modelingHours} onChange={(value) => onChange('modelingHours', value)} placeholder="0" />
+              </FieldBlock>
+              <FieldBlock label={t('profilePage.calc.modelingMinutes')}>
+                <NumberInput value={form.modelingMinutes} onChange={(value) => onChange('modelingMinutes', value)} placeholder="0" />
+              </FieldBlock>
+              <FieldBlock label={t('profilePage.calc.rate')}>
+                <InputWithSuffix
+                  value={form.modelingRatePerHour}
+                  onChange={(value) => onChange('modelingRatePerHour', value)}
+                  placeholder="934"
+                  suffix={`₽/${tc('hourAbbr')}`}
+                />
+              </FieldBlock>
+            </div>
 
-                <FieldBlock label={t('profilePage.calc.printingRate')}>
-                  <InputWithSuffix
-                    value={form.printingRatePerHour}
-                    onChange={(value) => onChange('printingRatePerHour', value)}
-                    placeholder="170"
-                    suffix={`₽/${tc('hourAbbr')}`}
-                  />
-                </FieldBlock>
+            <FieldBlock label={t('profilePage.calc.printingRate')}>
+              <InputWithSuffix
+                value={form.printingRatePerHour}
+                onChange={(value) => onChange('printingRatePerHour', value)}
+                placeholder="170"
+                suffix={`₽/${tc('hourAbbr')}`}
+              />
+            </FieldBlock>
 
-                <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
-                  <FieldBlock label={t('profilePage.calc.postprocessingHours')}>
-                    <NumberInput
-                      value={form.postprocessingHours}
-                      onChange={(value) => onChange('postprocessingHours', value)}
-                      placeholder="0"
-                    />
-                  </FieldBlock>
-                  <FieldBlock label={t('profilePage.calc.postprocessingMinutes')}>
-                    <NumberInput
-                      value={form.postprocessingMinutes}
-                      onChange={(value) => onChange('postprocessingMinutes', value)}
-                      placeholder="2"
-                    />
-                  </FieldBlock>
-                  <FieldBlock label={t('profilePage.calc.rate')}>
-                    <InputWithSuffix
-                      value={form.postprocessingRatePerHour}
-                      onChange={(value) => onChange('postprocessingRatePerHour', value)}
-                      placeholder="100"
-                      suffix={`₽/${tc('hourAbbr')}`}
-                    />
-                  </FieldBlock>
-                </div>
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+              <FieldBlock label={t('profilePage.calc.postprocessingHours')}>
+                <NumberInput
+                  value={form.postprocessingHours}
+                  onChange={(value) => onChange('postprocessingHours', value)}
+                  placeholder="0"
+                />
+              </FieldBlock>
+              <FieldBlock label={t('profilePage.calc.postprocessingMinutes')}>
+                <NumberInput
+                  value={form.postprocessingMinutes}
+                  onChange={(value) => onChange('postprocessingMinutes', value)}
+                  placeholder="2"
+                />
+              </FieldBlock>
+              <FieldBlock label={t('profilePage.calc.rate')}>
+                <InputWithSuffix
+                  value={form.postprocessingRatePerHour}
+                  onChange={(value) => onChange('postprocessingRatePerHour', value)}
+                  placeholder="100"
+                  suffix={`₽/${tc('hourAbbr')}`}
+                />
+              </FieldBlock>
+            </div>
 
-                <FieldBlock label={t('profilePage.calc.amortizationRate')}>
-                  <InputWithSuffix
-                    value={form.amortizationRatePerHour}
-                    onChange={(value) => onChange('amortizationRatePerHour', value)}
-                    placeholder="16"
-                    suffix={`₽/${tc('hourAbbr')}`}
-                  />
-                </FieldBlock>
-              </div>
-            </SurfaceCard>
+            <FieldBlock label={t('profilePage.calc.amortizationRate')}>
+              <InputWithSuffix
+                value={form.amortizationRatePerHour}
+                onChange={(value) => onChange('amortizationRatePerHour', value)}
+                placeholder="16"
+                suffix={`₽/${tc('hourAbbr')}`}
+              />
+            </FieldBlock>
+          </div>
+        </SurfaceCard>
 
-            <SurfaceCard className="p-6 md:p-7">
-              <SectionHeading icon={<TrendingUp className="h-5 w-5 text-cyan-300" />} title={t('profilePage.calc.overheadAndMarkup')} />
-              <div className="mt-5 grid grid-cols-1 gap-4 md:grid-cols-2">
-                <FieldBlock label={t('profilePage.calc.overheadPercent')} hint={t('profilePage.calc.overheadHint')}>
-                  <InputWithSuffix
-                    value={form.overheadPercent}
-                    onChange={(value) => onChange('overheadPercent', value)}
-                    placeholder="20"
-                    suffix="%"
-                    step="0.1"
-                  />
-                </FieldBlock>
-                <FieldBlock label={t('profilePage.calc.markupPercent')} hint={t('profilePage.calc.markupHint')}>
-                  <InputWithSuffix
-                    value={form.markupPercent}
-                    onChange={(value) => onChange('markupPercent', value)}
-                    placeholder="30"
-                    suffix="%"
-                    step="0.1"
-                  />
-                </FieldBlock>
-              </div>
-            </SurfaceCard>
+        <SurfaceCard className="p-6 md:p-7">
+          <SectionHeading icon={<TrendingUp className="h-5 w-5 text-cyan-300" />} title={t('profilePage.calc.overheadAndMarkup')} />
+          <div className="mt-5 grid grid-cols-1 gap-4 md:grid-cols-2">
+            <FieldBlock label={t('profilePage.calc.overheadPercent')} hint={t('profilePage.calc.overheadHint')}>
+              <InputWithSuffix
+                value={form.overheadPercent}
+                onChange={(value) => onChange('overheadPercent', value)}
+                placeholder="20"
+                suffix="%"
+                step="0.1"
+              />
+            </FieldBlock>
+            <FieldBlock label={t('profilePage.calc.markupPercent')} hint={t('profilePage.calc.markupHint')}>
+              <InputWithSuffix
+                value={form.markupPercent}
+                onChange={(value) => onChange('markupPercent', value)}
+                placeholder="30"
+                suffix="%"
+                step="0.1"
+              />
+            </FieldBlock>
+          </div>
+        </SurfaceCard>
 
-            <SurfaceCard className="p-6 md:p-7">
-              <SectionHeading icon={<Settings2 className="h-5 w-5 text-cyan-300" />} title={t('profilePage.calc.adjustmentCoeffs')} />
-              <div className="mt-5 grid grid-cols-1 gap-4 md:grid-cols-3">
-                <FieldBlock label={t('profilePage.calc.urgency')} hint={t('profilePage.calc.urgencyHint')}>
-                  <NumberInput
-                    value={form.urgencyCoefficient}
-                    onChange={(value) => onChange('urgencyCoefficient', value)}
-                    min="1"
-                    max="2"
-                    step="0.1"
-                    placeholder="1.0"
-                  />
-                </FieldBlock>
-                <FieldBlock label={t('profilePage.calc.complexity')} hint={t('profilePage.calc.complexityHint')}>
-                  <NumberInput
-                    value={form.complexityCoefficient}
-                    onChange={(value) => onChange('complexityCoefficient', value)}
-                    min="1"
-                    max="3"
-                    step="0.1"
-                    placeholder="1.0"
-                  />
-                </FieldBlock>
-                <FieldBlock label={t('profilePage.calc.volumeDiscount')} hint={t('profilePage.calc.volumeDiscountHint')}>
-                  <NumberInput
-                    value={form.volumeDiscountCoefficient}
-                    onChange={(value) => onChange('volumeDiscountCoefficient', value)}
-                    min="0.85"
-                    max="1"
-                    step="0.01"
-                    placeholder="1.0"
-                  />
-                </FieldBlock>
-              </div>
-            </SurfaceCard>
-          </>
-        )}
+        <SurfaceCard className="p-6 md:p-7">
+          <SectionHeading icon={<Settings2 className="h-5 w-5 text-cyan-300" />} title={t('profilePage.calc.adjustmentCoeffs')} />
+          <div className="mt-5 grid grid-cols-1 gap-4 md:grid-cols-3">
+            <FieldBlock label={t('profilePage.calc.urgency')} hint={t('profilePage.calc.urgencyHint')}>
+              <NumberInput
+                value={form.urgencyCoefficient}
+                onChange={(value) => onChange('urgencyCoefficient', value)}
+                min="1"
+                max="2"
+                step="0.1"
+                placeholder="1.0"
+              />
+            </FieldBlock>
+            <FieldBlock label={t('profilePage.calc.complexity')} hint={t('profilePage.calc.complexityHint')}>
+              <NumberInput
+                value={form.complexityCoefficient}
+                onChange={(value) => onChange('complexityCoefficient', value)}
+                min="1"
+                max="3"
+                step="0.1"
+                placeholder="1.0"
+              />
+            </FieldBlock>
+            <FieldBlock label={t('profilePage.calc.volumeDiscount')} hint={t('profilePage.calc.volumeDiscountHint')}>
+              <NumberInput
+                value={form.volumeDiscountCoefficient}
+                onChange={(value) => onChange('volumeDiscountCoefficient', value)}
+                min="0.85"
+                max="1"
+                step="0.01"
+                placeholder="1.0"
+              />
+            </FieldBlock>
+          </div>
+        </SurfaceCard>
 
         <SurfaceCard className="p-6 md:p-7">
           <SectionHeading icon={<Package className="h-5 w-5 text-cyan-300" />} title={tc('batchSection')} />
@@ -1218,34 +1531,30 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
             <FieldBlock label={t('profilePage.calc.quantity')}>
               <NumberInput value={form.quantity} onChange={(value) => onChange('quantity', Math.max(1, value))} min="1" placeholder="4" />
             </FieldBlock>
-            {form.pricingMethod === 'combined' && (
-              <>
-                <FieldBlock label={t('profilePage.calc.fixedCosts')} hint={t('profilePage.calc.fixedCostsHint')}>
-                  <InputWithSuffix
-                    value={form.fixedCosts}
-                    onChange={(value) => onChange('fixedCosts', value)}
-                    placeholder="0"
-                    suffix="₽"
-                  />
-                </FieldBlock>
-                <FieldBlock label={t('profilePage.calc.minOrderPrice')} hint={t('profilePage.calc.minOrderPriceHint')}>
-                  <InputWithSuffix
-                    value={form.minOrderPrice}
-                    onChange={(value) => onChange('minOrderPrice', value)}
-                    placeholder="0"
-                    suffix="₽"
-                  />
-                </FieldBlock>
-                <FieldBlock label={t('profilePage.calc.roundTo')}>
-                  <InputWithSuffix
-                    value={form.roundToNearest}
-                    onChange={(value) => onChange('roundToNearest', value)}
-                    placeholder="10"
-                    suffix="₽"
-                  />
-                </FieldBlock>
-              </>
-            )}
+            <FieldBlock label={t('profilePage.calc.fixedCosts')} hint={t('profilePage.calc.fixedCostsHint')}>
+              <InputWithSuffix
+                value={form.fixedCosts}
+                onChange={(value) => onChange('fixedCosts', value)}
+                placeholder="0"
+                suffix="₽"
+              />
+            </FieldBlock>
+            <FieldBlock label={t('profilePage.calc.minOrderPrice')} hint={t('profilePage.calc.minOrderPriceHint')}>
+              <InputWithSuffix
+                value={form.minOrderPrice}
+                onChange={(value) => onChange('minOrderPrice', value)}
+                placeholder="0"
+                suffix="₽"
+              />
+            </FieldBlock>
+            <FieldBlock label={t('profilePage.calc.roundTo')}>
+              <InputWithSuffix
+                value={form.roundToNearest}
+                onChange={(value) => onChange('roundToNearest', value)}
+                placeholder="10"
+                suffix="₽"
+              />
+            </FieldBlock>
           </div>
         </SurfaceCard>
 
@@ -1304,32 +1613,28 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
                   <MetricRow label={t('profilePage.calc.amortization')} value={formatCurrency(result.cost_amortization)} />
                 </SectionPanel>
 
-                {form.pricingMethod === 'combined' && (
-                  <>
-                    <SectionPanel title={t('profilePage.calc.intermediateCalcs')}>
-                      <MetricRow label={t('profilePage.calc.directCosts')} value={formatCurrency(result.cost_direct)} />
-                      <MetricRow label={t('profilePage.calc.overhead')} value={formatCurrency(result.cost_overhead)} />
-                      <MetricRow label={t('profilePage.calc.costBeforeMarkup')} value={formatCurrency(result.cost_before_markup)} />
-                      <MetricRow label={t('profilePage.calc.markup')} value={formatCurrency(result.cost_markup)} />
-                    </SectionPanel>
+                <SectionPanel title={t('profilePage.calc.intermediateCalcs')}>
+                  <MetricRow label={t('profilePage.calc.directCosts')} value={formatCurrency(result.cost_direct)} />
+                  <MetricRow label={t('profilePage.calc.overhead')} value={formatCurrency(result.cost_overhead)} />
+                  <MetricRow label={t('profilePage.calc.costBeforeMarkup')} value={formatCurrency(result.cost_before_markup)} />
+                  <MetricRow label={t('profilePage.calc.markup')} value={formatCurrency(result.cost_markup)} />
+                </SectionPanel>
 
-                    <SectionPanel title={t('profilePage.calc.financialMetrics')}>
-                      <MetricRow label={t('profilePage.calc.costOfGoods')} value={formatCurrency(result.cost_of_goods_sold)} />
-                      <MetricRow
-                        label={t('profilePage.calc.profitMargin')}
-                        value={
-                          result.profit_margin_percent != null
-                            ? `${formatCurrency(result.profit_margin)} · ${result.profit_margin_percent.toFixed(2)}%`
-                            : formatCurrency(result.profit_margin)
-                        }
-                      />
-                      <MetricRow
-                        label={t('profilePage.calc.totalWorkTime')}
-                        value={formatHoursShort(result.total_time_hours, t('profilePage.calc.h'), t('profilePage.calc.min'))}
-                      />
-                    </SectionPanel>
-                  </>
-                )}
+                <SectionPanel title={t('profilePage.calc.financialMetrics')}>
+                  <MetricRow label={t('profilePage.calc.costOfGoods')} value={formatCurrency(result.cost_of_goods_sold)} />
+                  <MetricRow
+                    label={t('profilePage.calc.profitMargin')}
+                    value={
+                      result.profit_margin_percent != null
+                        ? `${formatCurrency(result.profit_margin)} · ${result.profit_margin_percent.toFixed(2)}%`
+                        : formatCurrency(result.profit_margin)
+                    }
+                  />
+                  <MetricRow
+                    label={t('profilePage.calc.totalWorkTime')}
+                    value={formatHoursShort(result.total_time_hours, t('profilePage.calc.h'), t('profilePage.calc.min'))}
+                  />
+                </SectionPanel>
 
                 <SectionPanel title={t('profilePage.calc.totalSums')}>
                   <MetricRow label={t('profilePage.calc.firstPartPrice')} value={formatCurrency(result.cost_first_part)} strong />
@@ -1342,7 +1647,15 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
                 </SectionPanel>
               </div>
 
-              <div className="mt-6">
+              <div className="mt-6 space-y-3">
+                <button
+                  type="button"
+                  onClick={onOpenQuote}
+                  className={`${ghostButtonClass} w-full`}
+                >
+                  <FileText className="h-4 w-4" />
+                  {tc('openQuoteBuilder')}
+                </button>
                 <button
                   type="button"
                   onClick={() => void onSaveToHistory()}
@@ -1451,14 +1764,8 @@ const HistoryView: React.FC<HistoryViewProps> = ({
                       <HistoryTag label={tc('totalCost')} value={formatCurrency(totalCost)} />
                       <HistoryTag label={t('profilePage.calc.quantity')} value={String(entry.result_data.quantity)} />
                       <HistoryTag
-                        label={tc('activeMethodLabel')}
-                        value={t(
-                          entry.pricing_method === 'combined'
-                            ? 'profilePage.calc.combined'
-                            : entry.pricing_method === 'by_time'
-                              ? 'profilePage.calc.byTime'
-                              : 'profilePage.calc.byWeight',
-                        )}
+                        label={tc('sourceLabel')}
+                        value={entry.parsed_gcode ? tc('sourceGcode') : tc('sourceManual')}
                       />
                       {gcodeFile ? <HistoryTag label={tc('parsedFile')} value={gcodeFile} /> : null}
                       {filamentLabel ? <HistoryTag label={tc('materialLabel')} value={filamentLabel} /> : null}
@@ -1491,6 +1798,199 @@ const HistoryView: React.FC<HistoryViewProps> = ({
         </div>
       )}
     </SurfaceCard>
+  );
+};
+
+interface QuoteModalProps {
+  isOpen: boolean;
+  source: 'manual' | 'gcode';
+  quoteParties: QuotePartyFormState;
+  result: CalculatorEstimateResponse | null;
+  onClose: () => void;
+  onPartyChange: <K extends keyof QuotePartyFormState>(field: K, value: QuotePartyFormState[K]) => void;
+  onPrint: () => void;
+}
+
+const QuoteModal: React.FC<QuoteModalProps> = ({
+  isOpen,
+  source,
+  quoteParties,
+  result,
+  onClose,
+  onPartyChange,
+  onPrint,
+}) => {
+  const { t } = useTranslation();
+  const tc = (key: string) => translateCalculator(t, key);
+  const isHeaderVisible = useHeaderVisible();
+
+  if (!isOpen || !result) {
+    return null;
+  }
+
+  return createPortal(
+    <div
+      className={`fixed inset-0 z-50 overflow-y-auto bg-slate-950/75 backdrop-blur-md ${isHeaderVisible ? 'pt-[88px]' : ''}`}
+      onClick={(event) => {
+        if (event.target === event.currentTarget) {
+          onClose();
+        }
+      }}
+    >
+      <div className="flex min-h-full items-center justify-center p-4 md:p-6">
+        <div
+          className="w-full max-w-4xl overflow-hidden rounded-[2rem] border border-white/10 bg-[linear-gradient(180deg,rgba(15,23,42,0.95),rgba(15,23,42,0.9))] shadow-[0_40px_120px_-60px_rgba(15,23,42,1)]"
+          onClick={(event) => event.stopPropagation()}
+        >
+          <div className="flex items-center justify-between gap-4 border-b border-white/10 px-6 py-5 md:px-7">
+            <div>
+              <div className="inline-flex items-center gap-2 rounded-full border border-cyan-400/20 bg-cyan-400/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-cyan-200">
+                {source === 'gcode' ? tc('sourceGcode') : tc('sourceManual')}
+              </div>
+              <h2 className="mt-3 text-xl font-semibold text-white md:text-2xl">{tc('quoteBuilderTitle')}</h2>
+              <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-300">{tc('quoteBuilderDescription')}</p>
+            </div>
+            <button
+              type="button"
+              onClick={onClose}
+              className="inline-flex h-11 w-11 items-center justify-center rounded-2xl border border-white/10 bg-white/5 text-slate-300 transition-all hover:bg-white/10 hover:text-white"
+            >
+              <X className="h-5 w-5" />
+            </button>
+          </div>
+
+          <div className="grid grid-cols-1 gap-6 px-6 py-6 md:px-7 lg:grid-cols-[minmax(0,1.1fr)_minmax(20rem,0.9fr)]">
+            <div className="space-y-6">
+              <div className="rounded-[1.5rem] border border-white/10 bg-white/5 p-5">
+                <div className="flex items-center gap-3">
+                  <div className="flex h-10 w-10 items-center justify-center rounded-[1rem] border border-white/10 bg-white/5">
+                    <Printer className="h-5 w-5 text-cyan-300" />
+                  </div>
+                  <div>
+                    <p className="text-base font-semibold text-white">{tc('quoteSellerSection')}</p>
+                    <p className="mt-1 text-sm text-slate-400">{tc('quoteSellerDescription')}</p>
+                  </div>
+                </div>
+
+                <div className="mt-5 grid grid-cols-1 gap-4 md:grid-cols-2">
+                  <FieldBlock label={tc('quoteSellerName')}>
+                    <TextInput
+                      value={quoteParties.sellerName}
+                      onChange={(value) => onPartyChange('sellerName', value)}
+                      placeholder={tc('quoteSellerNamePlaceholder')}
+                    />
+                  </FieldBlock>
+                  <FieldBlock label={tc('quoteSellerInn')}>
+                    <TextInput
+                      value={quoteParties.sellerInn}
+                      onChange={(value) => onPartyChange('sellerInn', value)}
+                      placeholder="123456789012"
+                    />
+                  </FieldBlock>
+                  <FieldBlock label={tc('quoteSellerPhone')}>
+                    <TextInput
+                      value={quoteParties.sellerPhone}
+                      onChange={(value) => onPartyChange('sellerPhone', value)}
+                      placeholder="+7 (999) 000-00-00"
+                    />
+                  </FieldBlock>
+                </div>
+              </div>
+
+              <div className="rounded-[1.5rem] border border-white/10 bg-white/5 p-5">
+                <div className="flex items-center gap-3">
+                  <div className="flex h-10 w-10 items-center justify-center rounded-[1rem] border border-white/10 bg-white/5">
+                    <FileText className="h-5 w-5 text-cyan-300" />
+                  </div>
+                  <div>
+                    <p className="text-base font-semibold text-white">{tc('quoteBuyerSection')}</p>
+                    <p className="mt-1 text-sm text-slate-400">{tc('quoteBuyerDescription')}</p>
+                  </div>
+                </div>
+
+                <div className="mt-5 grid grid-cols-1 gap-4 md:grid-cols-2">
+                  <FieldBlock label={tc('quoteBuyerName')}>
+                    <TextInput
+                      value={quoteParties.buyerName}
+                      onChange={(value) => onPartyChange('buyerName', value)}
+                      placeholder={tc('quoteBuyerNamePlaceholder')}
+                    />
+                  </FieldBlock>
+                  <FieldBlock label={tc('quoteBuyerInn')}>
+                    <TextInput
+                      value={quoteParties.buyerInn}
+                      onChange={(value) => onPartyChange('buyerInn', value)}
+                      placeholder="1234567890"
+                    />
+                  </FieldBlock>
+                  <div className="md:col-span-2">
+                    <FieldBlock label={tc('quoteBuyerAddress')}>
+                      <TextareaInput
+                        value={quoteParties.buyerAddress}
+                        onChange={(value) => onPartyChange('buyerAddress', value)}
+                        placeholder={tc('quoteBuyerAddressPlaceholder')}
+                      />
+                    </FieldBlock>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="space-y-5">
+              <div className="rounded-[1.5rem] border border-cyan-400/20 bg-cyan-400/10 p-5">
+                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-cyan-200">{tc('quoteSummaryTitle')}</p>
+                <p className="mt-3 text-3xl font-semibold tracking-tight text-white">{formatCurrency(result.cost_total)}</p>
+                <div className="mt-5 space-y-3 text-sm text-slate-200">
+                  <div className="flex items-center justify-between gap-4">
+                    <span className="text-slate-300">{t('profilePage.calc.quantity')}</span>
+                    <span className="font-medium text-white">{result.quantity}</span>
+                  </div>
+                  <div className="flex items-center justify-between gap-4">
+                    <span className="text-slate-300">{tc('perPart')}</span>
+                    <span className="font-medium text-white">{formatCurrency(result.cost_first_part)}</span>
+                  </div>
+                  <div className="flex items-center justify-between gap-4">
+                    <span className="text-slate-300">{t('profilePage.calc.totalWorkTime')}</span>
+                    <span className="font-medium text-white">
+                      {formatHoursShort(result.total_time_hours ?? result.time_hours, t('profilePage.calc.h'), t('profilePage.calc.min'))}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              <div className="rounded-[1.5rem] border border-white/10 bg-white/5 p-5">
+                <p className="text-base font-semibold text-white">{tc('quotePreviewChecklist')}</p>
+                <ul className="mt-4 space-y-2 text-sm leading-6 text-slate-300">
+                  <li>{tc('quoteChecklistLineItems')}</li>
+                  <li>{tc('quoteChecklistCosts')}</li>
+                  <li>{tc('quoteChecklistParties')}</li>
+                  <li>{tc('quoteChecklistPrint')}</li>
+                </ul>
+              </div>
+
+              <div className="space-y-3">
+                <button
+                  type="button"
+                  onClick={onPrint}
+                  className="inline-flex w-full items-center justify-center gap-2 rounded-[1.4rem] bg-[linear-gradient(135deg,#0891b2,#7c3aed)] px-5 py-4 text-sm font-semibold text-white shadow-[0_18px_35px_-18px_rgba(6,182,212,0.7)] transition-all hover:translate-y-[-1px] hover:shadow-[0_22px_42px_-18px_rgba(124,58,237,0.72)]"
+                >
+                  <FileText className="h-4 w-4" />
+                  {tc('quotePrintAction')}
+                </button>
+                <button
+                  type="button"
+                  onClick={onClose}
+                  className={`${ghostButtonClass} w-full`}
+                >
+                  {tc('quoteClose')}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>,
+    document.body,
   );
 };
 
@@ -1543,6 +2043,33 @@ const NumberInput: React.FC<{
     step={step}
     placeholder={placeholder}
     onChange={(event) => onChange(Number(event.target.value) || 0)}
+  />
+);
+
+const TextInput: React.FC<{
+  value: string;
+  onChange: (value: string) => void;
+  placeholder: string;
+}> = ({ value, onChange, placeholder }) => (
+  <input
+    type="text"
+    className={inputClass}
+    value={value}
+    placeholder={placeholder}
+    onChange={(event) => onChange(event.target.value)}
+  />
+);
+
+const TextareaInput: React.FC<{
+  value: string;
+  onChange: (value: string) => void;
+  placeholder: string;
+}> = ({ value, onChange, placeholder }) => (
+  <textarea
+    className={`${inputClass} min-h-28 resize-y`}
+    value={value}
+    placeholder={placeholder}
+    onChange={(event) => onChange(event.target.value)}
   />
 );
 
