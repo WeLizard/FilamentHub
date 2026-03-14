@@ -473,10 +473,10 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({ user, onUserUpdate }) 
 
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
           {/* Пресеты филамента */}
-          <div className="bg-white/5 rounded-xl p-4 border border-white/10">
-            <h4 className="text-sm font-semibold text-white mb-3 flex items-center gap-2 min-h-[24px]">
+          <div className="min-w-0 bg-white/5 rounded-xl p-4 border border-white/10">
+            <h4 className="text-sm font-semibold text-white mb-3 flex items-start gap-2 min-h-[40px]">
               <span className="w-2 h-2 bg-blue-500 rounded-full flex-shrink-0"></span>
-              <span className="whitespace-nowrap">{t('settings.filamentPresets')}</span>
+              <span className="min-w-0 leading-tight break-words">{t('settings.filamentPresets')}</span>
             </h4>
             <div className="space-y-2">
               <label className="flex items-center justify-between cursor-pointer group">
@@ -501,10 +501,10 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({ user, onUserUpdate }) 
           </div>
 
           {/* Профили принтеров */}
-          <div className="bg-white/5 rounded-xl p-4 border border-white/10">
-            <h4 className="text-sm font-semibold text-white mb-3 flex items-center gap-2 min-h-[24px]">
+          <div className="min-w-0 bg-white/5 rounded-xl p-4 border border-white/10">
+            <h4 className="text-sm font-semibold text-white mb-3 flex items-start gap-2 min-h-[40px]">
               <span className="w-2 h-2 bg-purple-500 rounded-full flex-shrink-0"></span>
-              <span className="whitespace-nowrap">{t('settings.printerProfiles')}</span>
+              <span className="min-w-0 leading-tight break-words">{t('settings.printerProfiles')}</span>
             </h4>
             <div className="space-y-2">
               <label className="flex items-center justify-between cursor-pointer group">
@@ -548,10 +548,10 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({ user, onUserUpdate }) 
           </div>
 
           {/* Профили печати */}
-          <div className="bg-white/5 rounded-xl p-4 border border-white/10">
-            <h4 className="text-sm font-semibold text-white mb-3 flex items-center gap-2 min-h-[24px]">
+          <div className="min-w-0 bg-white/5 rounded-xl p-4 border border-white/10">
+            <h4 className="text-sm font-semibold text-white mb-3 flex items-start gap-2 min-h-[40px]">
               <span className="w-2 h-2 bg-pink-500 rounded-full flex-shrink-0"></span>
-              <span className="whitespace-nowrap">{t('settings.printProfiles')}</span>
+              <span className="min-w-0 leading-tight break-words">{t('settings.printProfiles')}</span>
             </h4>
             <div className="space-y-2">
               <label className="flex items-center justify-between cursor-pointer group">
