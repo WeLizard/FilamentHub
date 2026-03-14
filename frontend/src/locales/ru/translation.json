@@ -1669,7 +1669,7 @@
       "uploadGcode": "Загрузка G-кода",
       "chooseGcode": "Выбрать G-code",
       "uploadingGcode": "Разбираем G-code...",
-      "gcodeDropTitle": "Перетащите сюда файл G-code",
+      "gcodeDropTitle": "Перетащите G-code сюда или нажмите, чтобы выбрать файл",
       "gcodeDropDescription": "Загрузите готовый G-code, чтобы извлечь время печати, вес, превью и автоматически заполнить форму расчёта.",
       "gcodeParsed": "G-code разобран",
       "gcodeParsedDescription": "Calculator Pro извлёк параметры печати и подставил их в форму расчёта.",

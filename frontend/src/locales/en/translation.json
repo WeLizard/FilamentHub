@@ -1664,7 +1664,7 @@
     "uploadGcode": "G-code upload",
     "chooseGcode": "Choose G-code",
     "uploadingGcode": "Parsing G-code...",
-    "gcodeDropTitle": "Drop a G-code file here",
+    "gcodeDropTitle": "Drop a G-code file here or click to choose one",
     "gcodeDropDescription": "Upload a ready G-code file to parse print time, weight, preview, and auto-fill the estimate form.",
     "gcodeParsed": "G-code parsed",
     "gcodeParsedDescription": "Calculator Pro extracted the print metrics and applied them to the estimate form.",

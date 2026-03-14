@@ -1365,7 +1365,7 @@ export const CalculatorPage: React.FC = () => {
 
   return (
     <div className="space-y-6">
-      <section className={`${surfaceClass} p-0`}>
+      <section className="relative overflow-hidden rounded-[2rem] bg-[linear-gradient(180deg,rgba(15,23,42,0.88),rgba(15,23,42,0.72))] shadow-[0_30px_90px_-50px_rgba(15,23,42,0.95)] backdrop-blur-xl ring-1 ring-white/5">
         <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top_left,rgba(34,211,238,0.18),transparent_34%),radial-gradient(circle_at_85%_18%,rgba(251,191,36,0.16),transparent_28%),radial-gradient(circle_at_50%_120%,rgba(16,185,129,0.12),transparent_42%)]" />
         <div className="relative px-6 py-7 md:px-8 md:py-8">
           <div className="flex flex-col gap-6 xl:flex-row xl:items-end xl:justify-between">
@@ -1935,7 +1935,7 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
                       : 'border-cyan-400/30 bg-[radial-gradient(circle_at_top,rgba(34,211,238,0.14),transparent_52%),linear-gradient(180deg,rgba(15,23,42,0.8),rgba(2,6,23,0.85))] hover:border-cyan-300/50'
                   }`}
                 >
-                  <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+                  <div className="flex items-start gap-4">
                     <div className="flex items-start gap-4">
                       <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-[1.1rem] border border-white/10 bg-white/5">
                         {isParsingGcode ? <Loader2 className="h-5 w-5 animate-spin text-cyan-300" /> : <Upload className="h-5 w-5 text-cyan-300" />}
@@ -1946,10 +1946,6 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
                         </p>
                         <p className="mt-2 text-xs uppercase tracking-[0.16em] text-slate-400">{tc('supportedFormats')}</p>
                       </div>
-                    </div>
-                    <div className="inline-flex items-center gap-2 self-start rounded-full border border-cyan-300/20 bg-cyan-400/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-cyan-100">
-                      <Upload className="h-3.5 w-3.5" />
-                      {tc('chooseGcode')}
                     </div>
                   </div>
                 </button>
@@ -2086,19 +2082,36 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
                 step="4"
                 title={tc('workspaceGcodeSummaryTitle')}
               >
-                <div className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1.25fr)_minmax(14rem,0.75fr)]">
+                <div className="space-y-4">
                   <div className="rounded-[1.3rem] border border-white/10 bg-white/5 p-4">
-                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                      <MetricRow label={tc('parsedFile')} value={parsedGcode.file_name} />
-                      <MetricRow label={tc('fileSize')} value={formatFileSize(parsedGcode.file_size_bytes)} />
-                      <MetricRow
-                        label={tc('parsedSlicer')}
-                        value={
-                          [parsedGcode.slicer_name, parsedGcode.slicer_version].filter(Boolean).join(' ') ||
-                          tc('notDetected')
-                        }
-                      />
-                      <MetricRow
+                    <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                      <div className="min-w-0">
+                        <p className="text-sm font-semibold text-white">{parsedGcode.file_name}</p>
+                        <div className="mt-3 flex flex-wrap gap-2">
+                          <StatusPill tone="neutral">
+                            {tc('parsedSlicer')}: {[parsedGcode.slicer_name, parsedGcode.slicer_version].filter(Boolean).join(' ') || tc('notDetected')}
+                          </StatusPill>
+                          <StatusPill tone="neutral">
+                            {tc('fileSize')}: {formatFileSize(parsedGcode.file_size_bytes)}
+                          </StatusPill>
+                        </div>
+                      </div>
+
+                      {parsedGcode.thumbnail_data_url ? (
+                        <div className="w-full max-w-[12rem] overflow-hidden rounded-[1rem] border border-white/10 bg-slate-950/60">
+                          <img
+                            src={parsedGcode.thumbnail_data_url}
+                            alt={tc('parsedPreviewAlt')}
+                            className="block h-auto w-full object-contain"
+                          />
+                        </div>
+                      ) : null}
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
+                    <CompactSummarySection title={tc('parsedGroupPrint')}>
+                      <CompactMetric
                         label={tc('parsedPrintTime')}
                         value={
                           parsedGcode.print_time_seconds != null
@@ -2106,7 +2119,7 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
                             : '—'
                         }
                       />
-                      <MetricRow
+                      <CompactMetric
                         label={tc('parsedWeight')}
                         value={
                           parsedGcode.total_filament_weight_g != null
@@ -2114,7 +2127,7 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
                             : '—'
                         }
                       />
-                      <MetricRow
+                      <CompactMetric
                         label={tc('parsedLength')}
                         value={
                           parsedGcode.total_filament_length_mm != null
@@ -2122,11 +2135,22 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
                             : '—'
                         }
                       />
-                      <MetricRow
+                      <CompactMetric
+                        label={tc('parsedLayers')}
+                        value={parsedGcode.total_layers != null ? String(parsedGcode.total_layers) : '—'}
+                      />
+                      <CompactMetric
+                        label={tc('parsedMaxHeight')}
+                        value={parsedGcode.max_z_height_mm != null ? `${parsedGcode.max_z_height_mm} mm` : '—'}
+                      />
+                    </CompactSummarySection>
+
+                    <CompactSummarySection title={tc('parsedGroupProcess')}>
+                      <CompactMetric
                         label={tc('parsedLayerHeight')}
                         value={parsedGcode.layer_height_mm != null ? `${parsedGcode.layer_height_mm} mm` : '—'}
                       />
-                      <MetricRow
+                      <CompactMetric
                         label={tc('parsedInfill')}
                         value={
                           parsedGcode.sparse_infill_density_percent != null
@@ -2136,17 +2160,12 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
                             : '—'
                         }
                       />
-                      <MetricRow
-                        label={tc('parsedLayers')}
-                        value={parsedGcode.total_layers != null ? String(parsedGcode.total_layers) : '—'}
-                      />
-                      <MetricRow
-                        label={tc('parsedMaxHeight')}
-                        value={parsedGcode.max_z_height_mm != null ? `${parsedGcode.max_z_height_mm} mm` : '—'}
-                      />
-                      <MetricRow label={tc('parsedSupports')} value={parsedSupportsSummary ?? '—'} />
-                      <MetricRow label={tc('parsedAdhesion')} value={parsedAdhesionSummary ?? '—'} />
-                      <MetricRow
+                      <CompactMetric label={tc('parsedSupports')} value={parsedSupportsSummary ?? '—'} />
+                      <CompactMetric label={tc('parsedAdhesion')} value={parsedAdhesionSummary ?? '—'} />
+                    </CompactSummarySection>
+
+                    <CompactSummarySection title={tc('parsedGroupMaterials')}>
+                      <CompactMetric
                         label={tc('parsedActiveMaterials')}
                         value={
                           parsedGcode.active_material_count != null
@@ -2156,11 +2175,11 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
                               : '—'
                         }
                       />
-                      <MetricRow
+                      <CompactMetric
                         label={tc('parsedToolchanges')}
                         value={parsedGcode.toolchange_count != null ? String(parsedGcode.toolchange_count) : '—'}
                       />
-                      <MetricRow
+                      <CompactMetric
                         label={tc('parsedMultiMaterial')}
                         value={
                           parsedGcode.is_multi_material == null
@@ -2170,12 +2189,9 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
                               : tc('parsedNo')
                         }
                       />
-                    </div>
 
-                    {parsedGcode.materials.length > 0 && (
-                      <div className="mt-4">
-                        <p className="text-sm font-semibold text-white">{tc('parsedMaterials')}</p>
-                        <div className="mt-3 flex flex-wrap gap-2">
+                      {parsedGcode.materials.length > 0 ? (
+                        <div className="mt-4 flex flex-wrap gap-2">
                           {parsedGcode.materials.map((material, index) => (
                             <div
                               key={`${material.name ?? material.type ?? 'material'}-${index}`}
@@ -2188,25 +2204,8 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
                             </div>
                           ))}
                         </div>
-                      </div>
-                    )}
-                  </div>
-
-                  <div className="rounded-[1.3rem] border border-white/10 bg-white/5 p-4">
-                    <p className="text-sm font-semibold text-white">{tc('parsedPreview')}</p>
-                    {parsedGcode.thumbnail_data_url ? (
-                      <div className="mt-4 overflow-hidden rounded-[1.15rem] border border-white/10 bg-slate-950/60">
-                        <img
-                          src={parsedGcode.thumbnail_data_url}
-                          alt={tc('parsedPreviewAlt')}
-                          className="block h-auto w-full object-contain"
-                        />
-                      </div>
-                    ) : (
-                      <div className="mt-4 rounded-[1.15rem] border border-dashed border-white/12 bg-slate-950/40 px-4 py-8 text-center text-sm text-slate-400">
-                        {tc('previewUnavailable')}
-                      </div>
-                    )}
+                      ) : null}
+                    </CompactSummarySection>
                   </div>
                 </div>
               </WorkspacePanel>
@@ -2997,9 +2996,23 @@ const InputWithSuffix: React.FC<{
 );
 
 const MetricTile: React.FC<{ label: string; value: string }> = ({ label, value }) => (
-  <div className="rounded-[1.45rem] border border-white/10 bg-white/5 px-4 py-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.06)]">
+  <div className="rounded-[1.45rem] bg-white/[0.04] px-4 py-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.05)] ring-1 ring-white/5">
     <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">{label}</p>
     <p className="mt-2 text-2xl font-semibold tracking-tight text-white">{value}</p>
+  </div>
+);
+
+const CompactSummarySection: React.FC<{ title: string; children: ReactNode }> = ({ title, children }) => (
+  <div className="rounded-[1.3rem] border border-white/10 bg-white/5 p-4">
+    <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">{title}</p>
+    <div className="mt-3 space-y-2">{children}</div>
+  </div>
+);
+
+const CompactMetric: React.FC<{ label: string; value: string }> = ({ label, value }) => (
+  <div className="flex items-start justify-between gap-4 text-sm">
+    <span className="text-slate-400">{label}</span>
+    <span className="text-right font-medium text-white">{value}</span>
   </div>
 );
 
