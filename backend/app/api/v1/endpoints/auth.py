@@ -533,7 +533,7 @@ async def get_my_presets_stats(
     # (потому что они автоматически доступны в /my-presets)
     created_not_in_saved = len(direct_preset_ids - saved_preset_ids)
     
-    synced_presets = synced_from_saved + created_not_in_saved
+    synced_presets = 0 if not current_user.allow_filament_presets_export else synced_from_saved + created_not_in_saved
     
     return {
         "total_presets": total_presets,
@@ -556,6 +556,9 @@ async def get_my_presets(
     Используется для синхронизации пресетов в OrcaSlicer.
     Поддерживает инкрементальную синхронизацию через параметр updated_since.
     """
+    if not current_user.allow_filament_presets_export:
+        return PresetListResponse(items=[], total=0, page=1, size=0, pages=1)
+
     from app.models.user_saved_preset import UserSavedPreset
     
     preset_ids: set[int] = set()

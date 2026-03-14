@@ -26,6 +26,7 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({ user, onUserUpdate }) 
   // Состояния для настроек синхронизации
   const [syncSettings, setSyncSettings] = useState({
     allow_filament_presets_import: user.allow_filament_presets_import ?? true,
+    allow_filament_presets_export: user.allow_filament_presets_export ?? true,
     allow_printer_profiles_import: user.allow_printer_profiles_import ?? true,
     allow_printer_profiles_export: user.allow_printer_profiles_export ?? true,
     allow_print_profiles_import: user.allow_print_profiles_import ?? true,
@@ -491,6 +492,25 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({ user, onUserUpdate }) 
                   <div
                     className={`w-11 h-6 rounded-full transition-colors duration-200 flex items-center px-0.5 ${
                       syncSettings.allow_filament_presets_import ? 'bg-purple-600 justify-end' : 'bg-gray-600 justify-start'
+                    }`}
+                  >
+                    <div className="w-5 h-5 bg-white rounded-full shadow-md" />
+                  </div>
+                </div>
+              </label>
+
+              <label className="flex items-center justify-between cursor-pointer group">
+                <span className="text-sm text-gray-300 w-16">{t('settings.export')}</span>
+                <div className="relative">
+                  <input
+                    type="checkbox"
+                    checked={syncSettings.allow_filament_presets_export}
+                    onChange={(e) => handleSyncSettingsChange('allow_filament_presets_export', e.target.checked)}
+                    className="sr-only"
+                  />
+                  <div
+                    className={`w-11 h-6 rounded-full transition-colors duration-200 flex items-center px-0.5 ${
+                      syncSettings.allow_filament_presets_export ? 'bg-purple-600 justify-end' : 'bg-gray-600 justify-start'
                     }`}
                   >
                     <div className="w-5 h-5 bg-white rounded-full shadow-md" />

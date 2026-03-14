@@ -283,6 +283,7 @@ export const authAPI = {
 
   updateSettings: async (data: {
     allow_filament_presets_import?: boolean;
+    allow_filament_presets_export?: boolean;
     allow_printer_profiles_import?: boolean;
     allow_printer_profiles_export?: boolean;
     allow_print_profiles_import?: boolean;

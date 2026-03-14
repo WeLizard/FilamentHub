@@ -60,7 +60,9 @@ class User(Base):
     allow_print_profiles_import: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     allow_print_profiles_export: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     allow_filament_presets_import: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
-    # allow_filament_presets_import: Разрешение на импорт filament presets из OrcaSlicer
+    allow_filament_presets_export: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    # allow_filament_presets_import: Разрешение на импорт filament presets из OrcaSlicer на сайт
+    # allow_filament_presets_export: Разрешение на экспорт filament presets с сайта в OrcaSlicer
     
     # Deleted preset rule (правило обработки удалённых пресетов)
     deleted_preset_rule: Mapped[str | None] = mapped_column(String(50), nullable=True)
@@ -138,5 +140,4 @@ class User(Base):
 
     def __repr__(self) -> str:
         return f"<User(id={self.id}, email={self.email}, role={self.role.value})>"
-
 
