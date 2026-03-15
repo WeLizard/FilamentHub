@@ -35,6 +35,9 @@ _CURA_SETTING_RE = re.compile(r"^SETTING_3\s+(.*)$", re.IGNORECASE)
 _FLOAT_RE = re.compile(r"-?\d+(?:\.\d+)?")
 _OBJECT_CENTER_RE = re.compile(r"\bCENTER=([-\d.]+),([-\d.]+)", re.IGNORECASE)
 _OBJECT_NAME_RE = re.compile(r"\bNAME=([^\s]+)", re.IGNORECASE)
+_PRINT_START_PARAMETER_RE = re.compile(r"\b(EXTRUDER|BED)=([\d.]+)", re.IGNORECASE)
+_NOZZLE_TEMPERATURE_COMMAND_RE = re.compile(r"^M10(?:4|9)\s+S([\d.]+)", re.IGNORECASE)
+_BED_TEMPERATURE_COMMAND_RE = re.compile(r"^M1(?:4|9)0\s+S([\d.]+)", re.IGNORECASE)
 
 
 def parse_gcode_payload(file_name: str, raw_bytes: bytes) -> dict[str, Any]:
@@ -59,6 +62,11 @@ def parse_gcode_payload(file_name: str, raw_bytes: bytes) -> dict[str, Any]:
         "sparse_infill_density_percent": None,
         "sparse_infill_pattern": None,
         "wall_loops": None,
+        "nozzle_diameter_mm": None,
+        "nozzle_temperature_first_layer_c": None,
+        "nozzle_temperature_other_layers_c": None,
+        "bed_temperature_first_layer_c": None,
+        "bed_temperature_other_layers_c": None,
         "object_count": 0,
         "total_layers": None,
         "max_z_height_mm": None,
@@ -99,6 +107,7 @@ def parse_gcode_payload(file_name: str, raw_bytes: bytes) -> dict[str, Any]:
             _collect_inline_command_metadata(parsed, collector, stripped)
 
         if not stripped.startswith(";"):
+            _collect_temperature_command_metadata(parsed, stripped)
             continue
 
         comment = stripped[1:].strip()
@@ -244,6 +253,10 @@ def _collect_summary_metadata(parsed: dict[str, Any], collector: dict[str, Any],
     if "filament weight" in lower_comment and parsed["total_filament_weight_g"] is None:
         _, value = _split_key_value(comment)
         parsed["total_filament_weight_g"] = _parse_first_float(value)
+        if parsed["total_filament_weight_g"] is None:
+            weight_match = re.search(r"\[([\d.]+)\]", comment)
+            if weight_match:
+                parsed["total_filament_weight_g"] = float(weight_match.group(1))
 
 
 def _collect_key_value_metadata(parsed: dict[str, Any], collector: dict[str, Any], comment: str) -> None:
@@ -275,13 +288,13 @@ def _collect_key_value_metadata(parsed: dict[str, Any], collector: dict[str, Any
             parsed["wall_loops"] = wall_loops
         return
 
-    if normalized_key in {"total_layers_count", "total_layers", "total_layer"} and parsed["total_layers"] is None:
+    if normalized_key in {"total_layers_count", "total_layers", "total_layer", "layer_count", "layercount"} and parsed["total_layers"] is None:
         total_layers = _parse_first_int(value)
         if total_layers is not None:
             parsed["total_layers"] = total_layers
         return
 
-    if normalized_key == "max_z_height" and parsed["max_z_height_mm"] is None:
+    if normalized_key in {"max_z_height", "max_z", "maxz"} and parsed["max_z_height_mm"] is None:
         parsed["max_z_height_mm"] = _parse_first_float(value)
         return
 
@@ -301,6 +314,26 @@ def _collect_key_value_metadata(parsed: dict[str, Any], collector: dict[str, Any
         parsed["raft_layers"] = _parse_first_int(value)
         return
 
+    if normalized_key == "nozzle_diameter" and parsed["nozzle_diameter_mm"] is None:
+        parsed["nozzle_diameter_mm"] = _parse_first_float(value)
+        return
+
+    if normalized_key in {"nozzle_temperature_initial_layer", "first_layer_temperature", "nozzle_initial_c"} and parsed["nozzle_temperature_first_layer_c"] is None:
+        parsed["nozzle_temperature_first_layer_c"] = _parse_first_float(value)
+        return
+
+    if normalized_key in {"nozzle_temperature", "nozzle_main_c"} and parsed["nozzle_temperature_other_layers_c"] is None:
+        parsed["nozzle_temperature_other_layers_c"] = _parse_first_float(value)
+        return
+
+    if normalized_key in {"first_layer_bed_temperature", "cool_plate_temp_initial_layer", "bed_initial_c"} and parsed["bed_temperature_first_layer_c"] is None:
+        parsed["bed_temperature_first_layer_c"] = _parse_first_float(value)
+        return
+
+    if normalized_key in {"bed_temperature", "cool_plate_temp", "bed_main_c"} and parsed["bed_temperature_other_layers_c"] is None:
+        parsed["bed_temperature_other_layers_c"] = _parse_first_float(value)
+        return
+
     if normalized_key == "single_extruder_multi_material" and collector["multi_material_hint"] is None:
         multi_material_value = _parse_first_int(value)
         collector["multi_material_hint"] = multi_material_value == 1 if multi_material_value is not None else None
@@ -318,7 +351,7 @@ def _collect_key_value_metadata(parsed: dict[str, Any], collector: dict[str, Any
         collector["filament_types"] = _parse_string_list(value)
         return
 
-    if normalized_key == "filament_settings_id" and collector["filament_names"] is None:
+    if normalized_key in {"filament_settings_id", "filament_name"} and collector["filament_names"] is None:
         collector["filament_names"] = _parse_string_list(value)
         return
 
@@ -351,7 +384,7 @@ def _apply_cura_settings(parsed: dict[str, Any], settings_blob: str) -> None:
 
 
 def _apply_cura_ini_block(parsed: dict[str, Any], block: str) -> None:
-    for raw_line in block.split("\\n"):
+    for raw_line in re.split(r"(?:\\n|\r?\n)", block):
         line = raw_line.strip()
         if not line or line.startswith("[") and line.endswith("]"):
             continue
@@ -367,6 +400,16 @@ def _apply_cura_ini_block(parsed: dict[str, Any], block: str) -> None:
             parsed["layer_height_mm"] = _parse_first_float(value)
         elif normalized_key in {"initial_layer_height", "first_layer_height"} and parsed["initial_layer_height_mm"] is None:
             parsed["initial_layer_height_mm"] = _parse_first_float(value)
+        elif normalized_key == "machine_nozzle_size" and parsed["nozzle_diameter_mm"] is None:
+            parsed["nozzle_diameter_mm"] = _parse_first_float(value)
+        elif normalized_key == "material_print_temperature_layer_0" and parsed["nozzle_temperature_first_layer_c"] is None:
+            parsed["nozzle_temperature_first_layer_c"] = _parse_first_float(value)
+        elif normalized_key == "material_print_temperature" and parsed["nozzle_temperature_other_layers_c"] is None:
+            parsed["nozzle_temperature_other_layers_c"] = _parse_first_float(value)
+        elif normalized_key == "material_bed_temperature_layer_0" and parsed["bed_temperature_first_layer_c"] is None:
+            parsed["bed_temperature_first_layer_c"] = _parse_first_float(value)
+        elif normalized_key == "material_bed_temperature" and parsed["bed_temperature_other_layers_c"] is None:
+            parsed["bed_temperature_other_layers_c"] = _parse_first_float(value)
 
 
 def _collect_inline_command_metadata(parsed: dict[str, Any], collector: dict[str, Any], line: str) -> None:
@@ -382,6 +425,42 @@ def _collect_inline_command_metadata(parsed: dict[str, Any], collector: dict[str
 
     if parsed["total_layers"] is None and assignments.get("total_layer") is not None:
         parsed["total_layers"] = _parse_first_int(assignments["total_layer"])
+
+
+def _collect_temperature_command_metadata(parsed: dict[str, Any], line: str) -> None:
+    if line.upper().startswith("PRINT_START"):
+        for parameter, raw_value in _PRINT_START_PARAMETER_RE.findall(line):
+            parsed_value = _parse_first_float(raw_value)
+            if parsed_value is None or parsed_value <= 0:
+                continue
+            if parameter.upper() == "EXTRUDER" and parsed["nozzle_temperature_first_layer_c"] is None:
+                parsed["nozzle_temperature_first_layer_c"] = parsed_value
+            elif parameter.upper() == "BED" and parsed["bed_temperature_first_layer_c"] is None:
+                parsed["bed_temperature_first_layer_c"] = parsed_value
+
+    nozzle_match = _NOZZLE_TEMPERATURE_COMMAND_RE.match(line)
+    if nozzle_match:
+        nozzle_temperature = _parse_first_float(nozzle_match.group(1))
+        if nozzle_temperature is not None and nozzle_temperature > 0:
+            if parsed["nozzle_temperature_first_layer_c"] is None:
+                parsed["nozzle_temperature_first_layer_c"] = nozzle_temperature
+            elif (
+                parsed["nozzle_temperature_other_layers_c"] is None
+                and parsed["nozzle_temperature_first_layer_c"] != nozzle_temperature
+            ):
+                parsed["nozzle_temperature_other_layers_c"] = nozzle_temperature
+
+    bed_match = _BED_TEMPERATURE_COMMAND_RE.match(line)
+    if bed_match:
+        bed_temperature = _parse_first_float(bed_match.group(1))
+        if bed_temperature is not None and bed_temperature > 0:
+            if parsed["bed_temperature_first_layer_c"] is None:
+                parsed["bed_temperature_first_layer_c"] = bed_temperature
+            elif (
+                parsed["bed_temperature_other_layers_c"] is None
+                and parsed["bed_temperature_first_layer_c"] != bed_temperature
+            ):
+                parsed["bed_temperature_other_layers_c"] = bed_temperature
 
 
 def _collect_object_metadata(parsed: dict[str, Any], collector: dict[str, Any], line: str) -> None:
@@ -489,6 +568,16 @@ def _finalize_totals(parsed: dict[str, Any]) -> None:
         parsed["layer_height_mm"] = round(float(parsed["layer_height_mm"]), 3)
     if parsed["initial_layer_height_mm"] is not None:
         parsed["initial_layer_height_mm"] = round(float(parsed["initial_layer_height_mm"]), 3)
+    if parsed["nozzle_diameter_mm"] is not None:
+        parsed["nozzle_diameter_mm"] = round(float(parsed["nozzle_diameter_mm"]), 3)
+    if parsed["nozzle_temperature_first_layer_c"] is not None:
+        parsed["nozzle_temperature_first_layer_c"] = round(float(parsed["nozzle_temperature_first_layer_c"]), 2)
+    if parsed["nozzle_temperature_other_layers_c"] is not None:
+        parsed["nozzle_temperature_other_layers_c"] = round(float(parsed["nozzle_temperature_other_layers_c"]), 2)
+    if parsed["bed_temperature_first_layer_c"] is not None:
+        parsed["bed_temperature_first_layer_c"] = round(float(parsed["bed_temperature_first_layer_c"]), 2)
+    if parsed["bed_temperature_other_layers_c"] is not None:
+        parsed["bed_temperature_other_layers_c"] = round(float(parsed["bed_temperature_other_layers_c"]), 2)
     if parsed["sparse_infill_density_percent"] is not None:
         parsed["sparse_infill_density_percent"] = round(float(parsed["sparse_infill_density_percent"]), 2)
     if parsed["max_z_height_mm"] is not None:

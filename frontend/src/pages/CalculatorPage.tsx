@@ -590,6 +590,19 @@ const translateCalculator = (t: TFunction, key: string): string =>
 const buildParsedMaterialLabel = (material: CalculatorParsedMaterial, fallbackLabel: string): string =>
   [material.vendor, material.name, material.type].filter(Boolean).join(' · ') || fallbackLabel;
 
+const formatParsedTemperaturePair = (
+  nozzleTemperature: number | null | undefined,
+  bedTemperature: number | null | undefined,
+): string | null => {
+  if (nozzleTemperature == null && bedTemperature == null) {
+    return null;
+  }
+
+  const nozzleLabel = nozzleTemperature != null ? `${nozzleTemperature}°C` : '—';
+  const bedLabel = bedTemperature != null ? `${bedTemperature}°C` : '—';
+  return `${nozzleLabel} / ${bedLabel}`;
+};
+
 const applyParsedGcodeToForm = (
   current: CalculatorFormState,
   parsed: CalculatorGcodeParseResponse,
@@ -1607,7 +1620,34 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
         .filter(Boolean)
         .join(' · ') || tc('parsedNone')
     : null;
-  const primaryParsedMaterial = parsedGcode?.materials[0] ?? null;
+  const primaryParsedMaterial = pickPrimaryParsedMaterial(parsedGcode);
+  const parsedNozzleSummary =
+    parsedGcode?.nozzle_diameter_mm != null ? `${parsedGcode.nozzle_diameter_mm} mm` : null;
+  const firstLayerTemperatureSummary = formatParsedTemperaturePair(
+    parsedGcode?.nozzle_temperature_first_layer_c,
+    parsedGcode?.bed_temperature_first_layer_c,
+  );
+  const otherLayerTemperatureSummary = formatParsedTemperaturePair(
+    parsedGcode?.nozzle_temperature_other_layers_c,
+    parsedGcode?.bed_temperature_other_layers_c,
+  );
+  const parsedTemperaturesSummary = [
+    firstLayerTemperatureSummary ? `${tc('parsedFirstLayerShort')} ${firstLayerTemperatureSummary}` : null,
+    otherLayerTemperatureSummary && otherLayerTemperatureSummary !== firstLayerTemperatureSummary
+      ? `${tc('parsedOtherLayersShort')} ${otherLayerTemperatureSummary}`
+      : null,
+  ]
+    .filter(Boolean)
+    .join(' · ');
+  const showParsedMaterialsSection = Boolean(
+    parsedGcode
+      && (
+        parsedGcode.materials.length > 1
+        || (parsedGcode.active_material_count != null && parsedGcode.active_material_count > 1)
+        || (parsedGcode.toolchange_count != null && parsedGcode.toolchange_count > 0)
+        || parsedGcode.is_multi_material
+      ),
+  );
 
   return (
     <div className="grid grid-cols-1 gap-5 xl:grid-cols-[minmax(0,1.45fr)_minmax(22rem,0.92fr)]">
@@ -2100,6 +2140,11 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
                               {primaryParsedMaterial.weight_g != null ? ` · ${primaryParsedMaterial.weight_g.toFixed(2)} ${tc('grams')}` : ''}
                             </StatusPill>
                           ) : null}
+                          {parsedNozzleSummary ? (
+                            <StatusPill tone="neutral">
+                              {tc('parsedNozzle')}: {parsedNozzleSummary}
+                            </StatusPill>
+                          ) : null}
                         </div>
                       </div>
 
@@ -2115,7 +2160,7 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
                     </div>
                   </div>
 
-                  <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
+                  <div className={`grid grid-cols-1 gap-4 ${showParsedMaterialsSection ? 'lg:grid-cols-3' : 'lg:grid-cols-2'}`}>
                     <CompactSummarySection title={tc('parsedGroupPrint')}>
                       <CompactMetric
                         label={tc('parsedPrintTime')}
@@ -2156,6 +2201,12 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
                         label={tc('parsedLayerHeight')}
                         value={parsedGcode.layer_height_mm != null ? `${parsedGcode.layer_height_mm} mm` : '—'}
                       />
+                      {parsedTemperaturesSummary ? (
+                        <CompactMetric
+                          label={tc('parsedTemperatures')}
+                          value={parsedTemperaturesSummary}
+                        />
+                      ) : null}
                       <CompactMetric
                         label={tc('parsedInfill')}
                         value={
@@ -2170,48 +2221,50 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
                       <CompactMetric label={tc('parsedAdhesion')} value={parsedAdhesionSummary ?? '—'} />
                     </CompactSummarySection>
 
-                    <CompactSummarySection title={tc('parsedGroupMaterials')}>
-                      <CompactMetric
-                        label={tc('parsedActiveMaterials')}
-                        value={
-                          parsedGcode.active_material_count != null
-                            ? String(parsedGcode.active_material_count)
-                            : parsedGcode.materials.length > 0
-                              ? String(parsedGcode.materials.length)
-                              : '—'
-                        }
-                      />
-                      <CompactMetric
-                        label={tc('parsedToolchanges')}
-                        value={parsedGcode.toolchange_count != null ? String(parsedGcode.toolchange_count) : '—'}
-                      />
-                      <CompactMetric
-                        label={tc('parsedMultiMaterial')}
-                        value={
-                          parsedGcode.is_multi_material == null
-                            ? '—'
-                            : parsedGcode.is_multi_material
-                              ? tc('parsedYes')
-                              : tc('parsedNo')
-                        }
-                      />
+                    {showParsedMaterialsSection ? (
+                      <CompactSummarySection title={tc('parsedGroupMaterials')}>
+                        <CompactMetric
+                          label={tc('parsedActiveMaterials')}
+                          value={
+                            parsedGcode.active_material_count != null
+                              ? String(parsedGcode.active_material_count)
+                              : parsedGcode.materials.length > 0
+                                ? String(parsedGcode.materials.length)
+                                : '—'
+                          }
+                        />
+                        <CompactMetric
+                          label={tc('parsedToolchanges')}
+                          value={parsedGcode.toolchange_count != null ? String(parsedGcode.toolchange_count) : '—'}
+                        />
+                        <CompactMetric
+                          label={tc('parsedMultiMaterial')}
+                          value={
+                            parsedGcode.is_multi_material == null
+                              ? '—'
+                              : parsedGcode.is_multi_material
+                                ? tc('parsedYes')
+                                : tc('parsedNo')
+                          }
+                        />
 
-                      {parsedGcode.materials.length > 1 ? (
-                        <div className="mt-4 flex flex-wrap gap-2">
-                          {parsedGcode.materials.map((material, index) => (
-                            <div
-                              key={`${material.name ?? material.type ?? 'material'}-${index}`}
-                              className="rounded-full border border-cyan-400/20 bg-cyan-400/10 px-3 py-2 text-xs text-cyan-100"
-                            >
-                              <span className="font-semibold text-white">
-                                {buildParsedMaterialLabel(material, tc('unknownMaterial'))}
-                              </span>
-                              {material.weight_g != null ? ` · ${material.weight_g.toFixed(2)} ${tc('grams')}` : ''}
-                            </div>
-                          ))}
-                        </div>
-                      ) : null}
-                    </CompactSummarySection>
+                        {parsedGcode.materials.length > 1 ? (
+                          <div className="mt-4 flex flex-wrap gap-2">
+                            {parsedGcode.materials.map((material, index) => (
+                              <div
+                                key={`${material.name ?? material.type ?? 'material'}-${index}`}
+                                className="rounded-full border border-cyan-400/20 bg-cyan-400/10 px-3 py-2 text-xs text-cyan-100"
+                              >
+                                <span className="font-semibold text-white">
+                                  {buildParsedMaterialLabel(material, tc('unknownMaterial'))}
+                                </span>
+                                {material.weight_g != null ? ` · ${material.weight_g.toFixed(2)} ${tc('grams')}` : ''}
+                              </div>
+                            ))}
+                          </div>
+                        ) : null}
+                      </CompactSummarySection>
+                    ) : null}
                   </div>
                 </div>
               </WorkspacePanel>
@@ -3064,4 +3117,3 @@ const HistoryTag: React.FC<{ label: string; value: string }> = ({ label, value }
     <span className="font-medium text-white">{value}</span>
   </div>
 );
-

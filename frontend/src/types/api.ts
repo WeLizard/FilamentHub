@@ -568,6 +568,11 @@ export interface CalculatorGcodeParseResponse {
   sparse_infill_density_percent?: number | null;
   sparse_infill_pattern?: string | null;
   wall_loops?: number | null;
+  nozzle_diameter_mm?: number | null;
+  nozzle_temperature_first_layer_c?: number | null;
+  nozzle_temperature_other_layers_c?: number | null;
+  bed_temperature_first_layer_c?: number | null;
+  bed_temperature_other_layers_c?: number | null;
   object_count?: number | null;
   total_layers?: number | null;
   max_z_height_mm?: number | null;
