@@ -87,7 +87,6 @@ interface CalculatorFormState {
   printingRatePerHour: number;
   amortizationRatePerHour: number;
   quantity: number;
-  partsPerPrint: number;
   overheadPercent: number;
   markupPercent: number;
   taxRatePercent: number;
@@ -138,7 +137,6 @@ const DEFAULT_FORM_STATE: CalculatorFormState = {
   printingRatePerHour: 170,
   amortizationRatePerHour: 16,
   quantity: 1,
-  partsPerPrint: 1,
   overheadPercent: 20,
   markupPercent: 30,
   taxRatePercent: 0,
@@ -412,9 +410,6 @@ const buildEstimateRequest = (form: CalculatorFormState): CalculatorEstimateRequ
     form.volumeDiscountCoefficient !== 1.0 ? form.volumeDiscountCoefficient : undefined;
   requestData.fixed_costs = form.fixedCosts || undefined;
   requestData.min_order_price = form.minOrderPrice || undefined;
-  if (form.partsPerPrint > 1) {
-    requestData.parts_per_print = form.partsPerPrint;
-  }
 
   return requestData;
 };
@@ -590,7 +585,7 @@ const formatFileSize = (bytes: number): string => {
 };
 
 const translateCalculator = (t: TFunction, key: string): string =>
-  t(`calculator.${key}`, { defaultValue: t(`profilePage.calculator.${key}`) });
+  t(`profilePage.calculator.${key}`);
 
 const buildParsedMaterialLabel = (material: CalculatorParsedMaterial, fallbackLabel: string): string =>
   [material.vendor, material.name, material.type].filter(Boolean).join(' · ') || fallbackLabel;
@@ -676,7 +671,6 @@ const buildFormFromHistoryEntry = (entry: CalculatorHistoryEntry): CalculatorFor
     printingRatePerHour: request.printing_rate_per_hour ?? DEFAULT_FORM_STATE.printingRatePerHour,
     amortizationRatePerHour: request.amortization_rate_per_hour ?? DEFAULT_FORM_STATE.amortizationRatePerHour,
     quantity: request.quantity ?? DEFAULT_FORM_STATE.quantity,
-    partsPerPrint: request.parts_per_print ?? DEFAULT_FORM_STATE.partsPerPrint,
     overheadPercent: request.overhead_percent ?? DEFAULT_FORM_STATE.overheadPercent,
     markupPercent: request.markup_percent ?? DEFAULT_FORM_STATE.markupPercent,
     taxRatePercent: request.tax_rate_percent ?? DEFAULT_FORM_STATE.taxRatePercent,
@@ -1935,7 +1929,7 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
                     onDragStateChange(false);
                     await onFileSelect(event.dataTransfer.files);
                   }}
-                  className={`w-full rounded-[1.5rem] border border-dashed p-6 text-left transition-all ${
+                  className={`w-full cursor-pointer rounded-[1.5rem] border border-dashed p-6 text-left transition-all ${
                     dragActive
                       ? 'border-cyan-300/80 bg-cyan-400/12 shadow-[0_25px_50px_-35px_rgba(34,211,238,0.65)]'
                       : 'border-cyan-400/30 bg-[radial-gradient(circle_at_top,rgba(34,211,238,0.14),transparent_52%),linear-gradient(180deg,rgba(15,23,42,0.8),rgba(2,6,23,0.85))] hover:border-cyan-300/50'
@@ -2070,9 +2064,6 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
                 <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-5">
                   <FieldBlock label={t('profilePage.calc.quantity')}>
                     <NumberInput value={form.quantity} onChange={(value) => onChange('quantity', Math.max(1, value))} min="1" placeholder="1" />
-                  </FieldBlock>
-                  <FieldBlock label={tc('partsPerPrint')} hint={tc('partsPerPrintHint')}>
-                    <NumberInput value={form.partsPerPrint} onChange={(value) => onChange('partsPerPrint', Math.max(1, value))} min="1" placeholder="1" />
                   </FieldBlock>
                   <FieldBlock label={t('profilePage.calc.hours')}>
                     <NumberInput value={form.timeHours} onChange={(value) => onChange('timeHours', value)} placeholder="0" />
