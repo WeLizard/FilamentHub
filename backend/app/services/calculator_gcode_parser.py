@@ -27,12 +27,14 @@ _SLICER_KEYWORDS: dict[str, tuple[str, ...]] = {
     "PrusaSlicer": ("prusaslicer", "prusa slicer", "prusa_slicer"),
     "SuperSlicer": ("superslicer", "super slicer", "super_slicer"),
     "Cura": ("cura", "curaengine", "cura_steamengine", "cura_steam_engine"),
-    "CrealitySlicer": ("crealityslicer", "creality slicer", "creality_slicer"),
+    "CrealitySlicer": ("crealityslicer", "creality slicer", "creality_slicer", "creality print", "creality_print"),
 }
 
 _VERSION_RE = re.compile(r"\b(\d+\.\d+(?:\.\d+)?(?:[-+._a-z0-9]*)?)\b", re.IGNORECASE)
 _CURA_SETTING_RE = re.compile(r"^SETTING_3\s+(.*)$", re.IGNORECASE)
 _FLOAT_RE = re.compile(r"-?\d+(?:\.\d+)?")
+_OBJECT_CENTER_RE = re.compile(r"\bCENTER=([-\d.]+),([-\d.]+)", re.IGNORECASE)
+_OBJECT_NAME_RE = re.compile(r"\bNAME=([^\s]+)", re.IGNORECASE)
 
 
 def parse_gcode_payload(file_name: str, raw_bytes: bytes) -> dict[str, Any]:
@@ -83,12 +85,14 @@ def parse_gcode_payload(file_name: str, raw_bytes: bytes) -> dict[str, Any]:
         "referenced_tools": None,
         "multi_material_hint": None,
         "cura_setting_fragments": [],
+        "object_centers": set(),
+        "object_names": set(),
     }
 
     for line in lines:
         stripped = line.strip()
         if stripped.upper().startswith("EXCLUDE_OBJECT_DEFINE"):
-            parsed["object_count"] += 1
+            _collect_object_metadata(parsed, collector, stripped)
             continue
 
         if stripped:
@@ -380,6 +384,23 @@ def _collect_inline_command_metadata(parsed: dict[str, Any], collector: dict[str
         parsed["total_layers"] = _parse_first_int(assignments["total_layer"])
 
 
+def _collect_object_metadata(parsed: dict[str, Any], collector: dict[str, Any], line: str) -> None:
+    center_match = _OBJECT_CENTER_RE.search(line)
+    if center_match:
+        collector["object_centers"].add((center_match.group(1), center_match.group(2)))
+        parsed["object_count"] = len(collector["object_centers"])
+        return
+
+    name_match = _OBJECT_NAME_RE.search(line)
+    if name_match:
+        collector["object_names"].add(name_match.group(1))
+        if not collector["object_centers"]:
+            parsed["object_count"] = len(collector["object_names"])
+        return
+
+    parsed["object_count"] += 1
+
+
 def _finalize_materials(parsed: dict[str, Any], collector: dict[str, Any]) -> None:
     lengths = [
         len(values)
@@ -427,14 +448,25 @@ def _finalize_materials(parsed: dict[str, Any], collector: dict[str, Any]) -> No
     parsed["materials"] = materials
     parsed["active_material_count"] = len(materials)
 
-    referenced_tools = collector["referenced_tools"] or []
-    if referenced_tools:
-        parsed["active_material_count"] = max(parsed["active_material_count"], len(referenced_tools))
+    referenced_tools = sorted({tool for tool in (collector["referenced_tools"] or []) if tool})
+    referenced_tools_count = len(referenced_tools)
+    if referenced_tools_count > 0:
+        parsed["active_material_count"] = max(parsed["active_material_count"], referenced_tools_count)
+
+    unique_material_signatures = {
+        (
+            (material.get("type") or "").strip().lower(),
+            (material.get("name") or "").strip().lower(),
+            (material.get("vendor") or "").strip().lower(),
+        )
+        for material in materials
+        if any(material.get(field) for field in ("type", "name", "vendor"))
+    }
 
     parsed["is_multi_material"] = bool(
-        collector["multi_material_hint"]
-        or (parsed["active_material_count"] is not None and parsed["active_material_count"] > 1)
-        or (parsed["toolchange_count"] is not None and parsed["toolchange_count"] > 0)
+        (parsed["active_material_count"] is not None and parsed["active_material_count"] > 1)
+        or len(unique_material_signatures) > 1
+        or referenced_tools_count > 1
     )
 
 
