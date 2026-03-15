@@ -397,59 +397,30 @@ async def create_review(
 
     # Определяем пресет для отзыва
     preset_id = review_data.preset_id
-    
-    if preset_id is None:
-        # Если пресет не указан, пытаемся найти официальный пресет
-        official_preset_result = await db.execute(
+
+    if preset_id is not None:
+        # Проверяем существование пресета и соответствие филаменту
+        preset_result = await db.execute(
             select(Preset).where(
+                Preset.id == preset_id,
                 Preset.filament_id == review_data.filament_id,
-                Preset.is_official == True,
                 Preset.active == True,
-            ).order_by(Preset.created_at.desc()).limit(1)
+            )
         )
-        official_preset = official_preset_result.scalar_one_or_none()
-        
-        if official_preset:
-            preset_id = official_preset.id
-        else:
-            # Если нет официального, ищем сохраненные пресеты пользователя
-            saved_presets_result = await db.execute(
-                select(UserSavedPreset).join(Preset).where(
+        preset = preset_result.scalar_one_or_none()
+        if not preset:
+            raise_error(404, ERR_PRESET_NOT_MATCH)
+
+        # Пресет должен быть либо официальным, либо сохраненным пользователем
+        if not preset.is_official:
+            saved_preset_check = await db.execute(
+                select(UserSavedPreset).where(
                     UserSavedPreset.user_id == current_user.id,
-                    Preset.filament_id == review_data.filament_id,
-                    Preset.active == True,
-                ).limit(1)
+                    UserSavedPreset.preset_id == preset_id,
+                )
             )
-            saved_preset = saved_presets_result.scalar_one_or_none()
-            
-            if saved_preset:
-                preset_id = saved_preset.preset_id
-            else:
-                raise_error(400, ERR_ADD_PRESET_FIRST)
-    
-    # Проверяем существование пресета и соответствие филаменту
-    preset_result = await db.execute(
-        select(Preset).where(
-            Preset.id == preset_id,
-            Preset.filament_id == review_data.filament_id,
-            Preset.active == True,
-        )
-    )
-    preset = preset_result.scalar_one_or_none()
-    if not preset:
-        raise_error(404, ERR_PRESET_NOT_MATCH)
-    
-    # Проверяем доступность пресета для пользователя
-    # Пресет должен быть либо официальным, либо сохраненным пользователем
-    if not preset.is_official:
-        saved_preset_check = await db.execute(
-            select(UserSavedPreset).where(
-                UserSavedPreset.user_id == current_user.id,
-                UserSavedPreset.preset_id == preset_id,
-            )
-        )
-        if not saved_preset_check.scalar_one_or_none():
-            raise_error(403, ERR_REVIEW_SAVED_ONLY)
+            if not saved_preset_check.scalar_one_or_none():
+                raise_error(403, ERR_REVIEW_SAVED_ONLY)
     
     # Проверка текстовых полей на плохие слова
     from app.services.preset_moderation import validate_text_field
@@ -464,13 +435,17 @@ async def create_review(
             raise HTTPException(status_code=400, detail=error_msg)
     
     # Проверяем, не оставил ли пользователь уже отзыв для этого пресета
+    duplicate_filters = [
+        FilamentReview.filament_id == review_data.filament_id,
+        FilamentReview.user_id == current_user.id,
+        FilamentReview.active == True,
+    ]
+    if preset_id is not None:
+        duplicate_filters.append(FilamentReview.preset_id == preset_id)
+    else:
+        duplicate_filters.append(FilamentReview.preset_id.is_(None))
     existing_review_result = await db.execute(
-        select(FilamentReview).where(
-            FilamentReview.filament_id == review_data.filament_id,
-            FilamentReview.preset_id == preset_id,
-            FilamentReview.user_id == current_user.id,
-            FilamentReview.active == True,
-        )
+        select(FilamentReview).where(*duplicate_filters)
     )
     existing_review = existing_review_result.scalar_one_or_none()
     if existing_review:
