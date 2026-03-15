@@ -117,14 +117,14 @@ interface MaterialSelectionSnapshot {
 const DEFAULT_FORM_STATE: CalculatorFormState = {
   selectedFilamentId: '',
   pricingMethod: 'combined',
-  weightG: 531,
+  weightG: 0,
   supportsWeightG: 0,
   supportsLossCoefficient: 1.2,
-  spoolPrice: 1200,
+  spoolPrice: 0,
   spoolWeightKg: 1,
   deliveryCost: 0,
-  timeHours: 13,
-  timeMinutes: 40,
+  timeHours: 0,
+  timeMinutes: 0,
   timeSec: 0,
   pricePerHour: 170,
   electricityCostPerKwh: 6,
@@ -133,11 +133,11 @@ const DEFAULT_FORM_STATE: CalculatorFormState = {
   modelingMinutes: 0,
   modelingRatePerHour: 934,
   postprocessingHours: 0,
-  postprocessingMinutes: 2,
+  postprocessingMinutes: 0,
   postprocessingRatePerHour: 100,
   printingRatePerHour: 170,
   amortizationRatePerHour: 16,
-  quantity: 4,
+  quantity: 1,
   partsPerPrint: 1,
   overheadPercent: 20,
   markupPercent: 30,
@@ -410,6 +410,9 @@ const buildEstimateRequest = (form: CalculatorFormState): CalculatorEstimateRequ
     form.volumeDiscountCoefficient !== 1.0 ? form.volumeDiscountCoefficient : undefined;
   requestData.fixed_costs = form.fixedCosts || undefined;
   requestData.min_order_price = form.minOrderPrice || undefined;
+  if (form.partsPerPrint > 1) {
+    requestData.parts_per_print = form.partsPerPrint;
+  }
 
   return requestData;
 };
@@ -2062,15 +2065,18 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
               step="3"
               title={tc('workspaceProductionTitle')}
             >
-                <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
+                <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-5">
                   <FieldBlock label={t('profilePage.calc.quantity')}>
-                    <NumberInput value={form.quantity} onChange={(value) => onChange('quantity', Math.max(1, value))} min="1" placeholder="4" />
+                    <NumberInput value={form.quantity} onChange={(value) => onChange('quantity', Math.max(1, value))} min="1" placeholder="1" />
+                  </FieldBlock>
+                  <FieldBlock label={tc('partsPerPrint')} hint={tc('partsPerPrintHint')}>
+                    <NumberInput value={form.partsPerPrint} onChange={(value) => onChange('partsPerPrint', Math.max(1, value))} min="1" placeholder="1" />
                   </FieldBlock>
                   <FieldBlock label={t('profilePage.calc.hours')}>
-                    <NumberInput value={form.timeHours} onChange={(value) => onChange('timeHours', value)} placeholder="13" />
+                    <NumberInput value={form.timeHours} onChange={(value) => onChange('timeHours', value)} placeholder="0" />
                   </FieldBlock>
                 <FieldBlock label={t('profilePage.calc.minutes')}>
-                  <NumberInput value={form.timeMinutes} onChange={(value) => onChange('timeMinutes', value)} placeholder="40" />
+                  <NumberInput value={form.timeMinutes} onChange={(value) => onChange('timeMinutes', value)} placeholder="0" />
                 </FieldBlock>
                   <FieldBlock label={t('profilePage.calc.seconds')}>
                     <NumberInput value={form.timeSec} onChange={(value) => onChange('timeSec', value)} placeholder="0" />
@@ -2944,7 +2950,7 @@ const NumberInput: React.FC<{
   <input
     type="number"
     className={compactNumericInputClass}
-    value={value}
+    value={value || ''}
     min={min}
     max={max}
     step={step}
@@ -2991,7 +2997,7 @@ const InputWithSuffix: React.FC<{
     <input
       type="number"
       className={`${inputClass} ${numberInputResetClass} w-full pr-24`}
-      value={value}
+      value={value || ''}
       placeholder={placeholder}
       step={step}
       onChange={(event) => onChange(Number(event.target.value) || 0)}
