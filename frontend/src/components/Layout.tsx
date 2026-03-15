@@ -22,6 +22,24 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
   const [isFeedbackModalOpen, setIsFeedbackModalOpen] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const hasOpenedLoginModalRef = useRef(false);
+  const pendingReturnUrlRef = useRef<string | null>(null);
+
+  const sanitizeReturnUrl = (rawValue: string | null): string | null => {
+    if (!rawValue) {
+      return null;
+    }
+
+    try {
+      const decoded = decodeURIComponent(rawValue);
+      if (!decoded.startsWith('/') || decoded.startsWith('//')) {
+        return null;
+      }
+
+      return decoded;
+    } catch {
+      return null;
+    }
+  };
 
   // Закрываем мобильное меню при переходе на другую страницу
   useEffect(() => {
@@ -32,9 +50,11 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
   useEffect(() => {
     const searchParams = new URLSearchParams(location.search);
     const authParam = searchParams.get('auth');
+    const returnUrl = sanitizeReturnUrl(searchParams.get('return_url'));
     
     if (authParam === 'login' && !user && !isAuthModalOpen && !hasOpenedLoginModalRef.current) {
       hasOpenedLoginModalRef.current = true;
+      pendingReturnUrlRef.current = returnUrl;
       setIsAuthModalOpen(true);
       // Убираем параметр из URL после небольшой задержки
       setTimeout(() => {
@@ -47,6 +67,14 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
       hasOpenedLoginModalRef.current = false;
     }
   }, [location.search, user, isAuthModalOpen, navigate, location.pathname]);
+
+  useEffect(() => {
+    if (user && !isAuthModalOpen && pendingReturnUrlRef.current) {
+      const target = pendingReturnUrlRef.current;
+      pendingReturnUrlRef.current = null;
+      navigate(target, { replace: true });
+    }
+  }, [user, isAuthModalOpen, navigate]);
 
   // Проверяем, запущен ли frontend внутри OrcaSlicer
   const isInOrcaSlicer = typeof window !== 'undefined' && (
@@ -319,6 +347,9 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
         onClose={() => {
           setIsAuthModalOpen(false);
           hasOpenedLoginModalRef.current = false; // Сбрасываем флаг при закрытии
+          if (!user) {
+            pendingReturnUrlRef.current = null;
+          }
         }}
         initialMode="login"
       />
@@ -331,4 +362,3 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
     </div>
   );
 };
-
