@@ -17,6 +17,13 @@ from app.services.profile_validator import (
 logger = logging.getLogger(__name__)
 
 
+# OrcaSlicer stores most preset settings as single-item string arrays,
+# but a small set of metadata keys must remain scalar values.
+ORCASLICER_SCALAR_SETTING_KEYS = {
+    "inherits",
+}
+
+
 def preset_to_orcaslicer_info(preset: Preset) -> str:
     """
     Генерировать .info файл для пресета FilamentHub.
@@ -219,8 +226,13 @@ async def preset_to_orcaslicer_json(
             # Пропускаем только если значение None или пустое
             if value is not None:
                 try:
+                    if key in ORCASLICER_SCALAR_SETTING_KEYS:
+                        if isinstance(value, list):
+                            profile[key] = str(value[0]) if value else ""
+                        else:
+                            profile[key] = str(value)
                     # Конвертируем значение в массив строк если это еще не массив
-                    if isinstance(value, list):
+                    elif isinstance(value, list):
                         # Уже массив, проверяем что все элементы - строки
                         profile[key] = [str(v) for v in value]
                     else:
@@ -358,4 +370,3 @@ def generate_profile_info(preset: Preset, filament: Filament) -> str:
     ]
     
     return "\n".join(info_lines)
-
