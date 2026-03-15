@@ -247,10 +247,15 @@ async def preset_to_orcaslicer_json(
                     # Пропускаем проблемный ключ
                     continue
 
-    # Если цвет не был выставлен расширенными настройками, берём его из данных филамента
-    if "default_filament_colour" not in profile:
-        if filament.color_hex:
-            profile["default_filament_colour"] = [filament.color_hex]
+    # Авторитетные поля из БД FilamentHub — ВСЕГДА перезаписывают orcaslicer_settings.
+    # orcaslicer_settings может содержать стейл данные от обратного синка из OrcaSlicer
+    # (например filament_vendor: "Generic" вместо реального производителя).
+    # БД FilamentHub — источник истины для этих полей.
+    profile["filament_type"] = to_array(filament.material_type)
+    if hasattr(filament, 'brand') and filament.brand is not None:
+        profile["filament_vendor"] = to_array(filament.brand.name)
+    if filament.color_hex:
+        profile["default_filament_colour"] = [filament.color_hex]
 
     # Совместимые принтеры (пусто по умолчанию = совместим со всеми)
     # Можно расширить в будущем для специфических принтеров
