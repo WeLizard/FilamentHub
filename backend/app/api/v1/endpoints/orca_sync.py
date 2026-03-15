@@ -2139,7 +2139,10 @@ async def _upsert_filament_preset(
         preset = result.scalars().first()
 
         if preset is None:
-            clean_name = payload.name.replace(' @FilamentHub', '').replace('@FilamentHub', '').strip()
+            clean_name = payload.name
+            for suffix in (' [FilamentHub]', ' @FilamentHub', '[FilamentHub]', '@FilamentHub'):
+                clean_name = clean_name.replace(suffix, '')
+            clean_name = clean_name.strip()
             if clean_name != payload.name:
                 result = await db.execute(
                     select(Preset).where(
@@ -2475,8 +2478,10 @@ async def _upsert_filament_preset(
             logger.debug(f"user_saved_preset record already exists for preset {preset.id}")
 
         if should_update:
-            # Убираем постфикс @FilamentHub из названия для отображения на сайте
-            clean_name = payload.name.replace(' @FilamentHub', '').replace('@FilamentHub', '') if payload.name else preset.name
+            # Убираем постфиксы FilamentHub из названия для отображения на сайте
+            clean_name = payload.name if payload.name else preset.name
+            for suffix in (' [FilamentHub]', ' @FilamentHub', '[FilamentHub]', '@FilamentHub'):
+                clean_name = clean_name.replace(suffix, '')
             preset.name = clean_name
             # Обновляем filament_id только для пресетов с @FilamentHub (не для черновиков)
             # КРИТИЧНО: Для черновиков filament_id остается None до активации пользователем
@@ -2616,7 +2621,11 @@ async def _upsert_filament_preset(
             preset = existing_preset
 
             # Обновляем поля (аналогично выше)
-            preset.name = payload.name
+            # Стрипаем постфиксы FilamentHub из имени
+            update_name = payload.name or preset.name
+            for suffix in (' [FilamentHub]', ' @FilamentHub', '[FilamentHub]', '@FilamentHub'):
+                update_name = update_name.replace(suffix, '')
+            preset.name = update_name
             if payload.description is not None:
                 preset.description = payload.description
             # Извлекаем реальные значения из orcaslicer_settings для fallback
@@ -2705,8 +2714,10 @@ async def _upsert_filament_preset(
         print_speed = payload.print_speed or extracted.get("print_speed") or 50.0
         travel_speed = payload.travel_speed or extracted.get("travel_speed")
 
-        # Убираем постфикс @FilamentHub из названия для отображения на сайте
-        clean_name = payload.name.replace(' @FilamentHub', '').replace('@FilamentHub', '') if payload.name else 'Unnamed Preset'
+        # Убираем постфиксы FilamentHub из названия для отображения на сайте
+        clean_name = payload.name if payload.name else 'Unnamed Preset'
+        for suffix in (' [FilamentHub]', ' @FilamentHub', '[FilamentHub]', '@FilamentHub'):
+            clean_name = clean_name.replace(suffix, '')
 
         # Подготавливаем orcaslicer_settings с метками
         preset_orcaslicer_settings = dict(payload.orcaslicer_settings or {})
