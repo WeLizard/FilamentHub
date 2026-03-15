@@ -2714,7 +2714,7 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                 onChange={(e) => { setFlowRate(Number(e.target.value)); }}
                 min={50}
                 max={150}
-                step="1"
+                step="0.1"
                 className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all"
               />
             </div>
@@ -3094,8 +3094,8 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                       <label className="block text-gray-300 mb-1 text-sm">{t('presetModal.modelFlowRatio')}</label>
                       <input
                         type="number"
-                        value={flowRate !== 100 ? flowRate / 100 : 0.95}
-                        onChange={(e) => { setFlowRate(e.target.value === '' ? 100 : Number(e.target.value) * 100); }}
+                        value={flowRate !== 100 ? parseFloat((flowRate / 100).toFixed(3)) : 0.95}
+                        onChange={(e) => { setFlowRate(e.target.value === '' ? 100 : parseFloat((Number(e.target.value) * 100).toFixed(1))); }}
                         min={0.5}
                         max={1.5}
                         step="0.01"
