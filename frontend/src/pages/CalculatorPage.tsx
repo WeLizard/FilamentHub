@@ -187,8 +187,10 @@ const DEFAULT_QUOTE_PARTY_FORM: QuotePartyFormState = {
   buyerAddress: '',
 };
 
+const CURRENCY_SYMBOL = '₽';
+
 const formatCurrency = (value: number | null | undefined): string =>
-  value == null || !Number.isFinite(value) ? '—' : `${value.toFixed(2)} ₽`;
+  value == null || !Number.isFinite(value) ? '—' : `${value.toFixed(2)} ${CURRENCY_SYMBOL}`;
 
 const formatQuantity = (value: number): string => `${value}`;
 
@@ -1579,7 +1581,7 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
         ].join(' · ')
       : selectedCatalogFilament &&
           (selectedCatalogFilament.price_per_kg != null || selectedCatalogFilament.spool_weight != null)
-        ? `${selectedCatalogFilament.price_per_kg != null ? `${selectedCatalogFilament.price_per_kg.toFixed(0)} ₽/кг` : '—'} · ${
+        ? `${selectedCatalogFilament.price_per_kg != null ? `${selectedCatalogFilament.price_per_kg.toFixed(0)} ${CURRENCY_SYMBOL}/${tc('kg')}` : '—'} · ${
             selectedCatalogFilament.spool_weight != null
               ? `${selectedCatalogFilament.spool_weight.toFixed(0)} ${tc('grams')}`
               : '—'
@@ -1647,7 +1649,7 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
                 <div>
                   <p className="text-sm font-semibold text-white">{tc('staticEconomicsTitle')}</p>
                   <p className="mt-1 text-xs leading-5 text-slate-400">
-                    {`${t('profilePage.calc.printingRate')}: ${form.printingRatePerHour} ₽/${tc('hourAbbr')} · ${t('profilePage.calc.taxRatePercent')}: ${form.taxRatePercent}% · ${t('profilePage.calc.roundTo')}: ${form.roundToNearest} ₽ · ${roundingModeLabel}`}
+                    {`${t('profilePage.calc.printingRate')}: ${form.printingRatePerHour} ${CURRENCY_SYMBOL}/${tc('hourAbbr')} · ${t('profilePage.calc.taxRatePercent')}: ${form.taxRatePercent}% · ${t('profilePage.calc.roundTo')}: ${form.roundToNearest} ${CURRENCY_SYMBOL} · ${roundingModeLabel}`}
                   </p>
                 </div>
               ) : null}
@@ -1666,7 +1668,7 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
                       value={form.electricityCostPerKwh}
                       onChange={(value) => onStaticChange('electricityCostPerKwh', value)}
                       placeholder="6"
-                      suffix={`₽/${tc('kwhAbbr')}`}
+                      suffix={`${CURRENCY_SYMBOL}/${tc('kwhAbbr')}`}
                       step="0.1"
                     />
                   </FieldBlock>
@@ -1697,7 +1699,7 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
                       value={form.printingRatePerHour}
                       onChange={(value) => onStaticChange('printingRatePerHour', value)}
                       placeholder="170"
-                      suffix={`₽/${tc('hourAbbr')}`}
+                      suffix={`${CURRENCY_SYMBOL}/${tc('hourAbbr')}`}
                     />
                   </FieldBlock>
                   <FieldBlock
@@ -1713,7 +1715,7 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
                       value={form.modelingRatePerHour}
                       onChange={(value) => onStaticChange('modelingRatePerHour', value)}
                       placeholder="934"
-                      suffix={`₽/${tc('hourAbbr')}`}
+                      suffix={`${CURRENCY_SYMBOL}/${tc('hourAbbr')}`}
                     />
                   </FieldBlock>
                   <FieldBlock
@@ -1729,7 +1731,7 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
                       value={form.postprocessingRatePerHour}
                       onChange={(value) => onStaticChange('postprocessingRatePerHour', value)}
                       placeholder="100"
-                      suffix={`₽/${tc('hourAbbr')}`}
+                      suffix={`${CURRENCY_SYMBOL}/${tc('hourAbbr')}`}
                     />
                   </FieldBlock>
                   <FieldBlock
@@ -1744,7 +1746,7 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
                       value={form.amortizationRatePerHour}
                       onChange={(value) => onStaticChange('amortizationRatePerHour', value)}
                       placeholder="16"
-                      suffix={`₽/${tc('hourAbbr')}`}
+                      suffix={`${CURRENCY_SYMBOL}/${tc('hourAbbr')}`}
                     />
                   </FieldBlock>
                   <FieldBlock
@@ -1795,7 +1797,7 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
                       value={form.fixedCosts}
                       onChange={(value) => onStaticChange('fixedCosts', value)}
                       placeholder="0"
-                      suffix="₽"
+                      suffix={CURRENCY_SYMBOL}
                     />
                   </FieldBlock>
                   <FieldBlock label={t('profilePage.calc.minOrderPrice')} hint={t('profilePage.calc.minOrderPriceHint')}>
@@ -1803,7 +1805,7 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
                       value={form.minOrderPrice}
                       onChange={(value) => onStaticChange('minOrderPrice', value)}
                       placeholder="0"
-                      suffix="₽"
+                      suffix={CURRENCY_SYMBOL}
                     />
                   </FieldBlock>
                   <FieldBlock label={t('profilePage.calc.roundTo')}>
@@ -1811,7 +1813,7 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
                       value={form.roundToNearest}
                       onChange={(value) => onStaticChange('roundToNearest', value)}
                       placeholder="10"
-                      suffix="₽"
+                      suffix={CURRENCY_SYMBOL}
                     />
                   </FieldBlock>
                   <FieldBlock label={t('profilePage.calc.roundingMode')}>
@@ -2045,7 +2047,7 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
                       value={form.spoolPrice}
                       onChange={(value) => onChange('spoolPrice', value)}
                       placeholder="1200"
-                      suffix="₽"
+                      suffix={CURRENCY_SYMBOL}
                     />
                   </FieldBlock>
                   <FieldBlock label={t('profilePage.calc.spoolWeight')}>
@@ -2269,7 +2271,7 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
                       value={form.deliveryCost}
                       onChange={(value) => onChange('deliveryCost', value)}
                       placeholder="0"
-                      suffix="₽"
+                      suffix={CURRENCY_SYMBOL}
                     />
                   </FieldBlock>
                 </div>
