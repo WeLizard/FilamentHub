@@ -10,11 +10,11 @@ import { translateApiError } from '../utils/translateApiError';
 import { FilamentReview, Preset } from '../types/api';
 import { StarRating } from './StarRating';
 import { useAuth } from '../contexts/AuthContext';
-import { useHeaderVisible } from '../hooks/useHeaderVisible';
+import { ModalOverlay } from './ModalOverlay';
 
 interface CreateReviewModalProps {
   filamentId: number;
-  review?: FilamentReview | null; // Если передан, то редактирование
+  review?: FilamentReview | null;
   onClose: () => void;
   onSuccess?: () => void;
 }
@@ -26,7 +26,6 @@ export const CreateReviewModal: React.FC<CreateReviewModalProps> = ({
   onSuccess,
 }) => {
   const { t } = useTranslation();
-  const isHeaderVisible = useHeaderVisible();
   const { user } = useAuth();
   const queryClient = useQueryClient();
   const isEdit = !!review;
@@ -38,28 +37,24 @@ export const CreateReviewModal: React.FC<CreateReviewModalProps> = ({
   const [selectedPresetId, setSelectedPresetId] = useState<number | null>(review?.preset_id || null);
   const [errors, setErrors] = useState<Record<string, string>>({});
 
-  // Загружаем доступные пресеты для этого филамента
   const { data: availablePresetsData, isLoading: isLoadingPresets, error: presetsError } = useQuery({
     queryKey: ['available-presets-for-review', filamentId],
     queryFn: () => filamentReviewsAPI.getAvailablePresets(filamentId),
     enabled: !isEdit && !!user,
-    retry: false, // Не повторяем запрос при ошибке
+    retry: false,
   });
 
-  // Автоматически выбираем официальный пресет при загрузке (если не редактирование)
   useEffect(() => {
     if (!isEdit && availablePresetsData?.items && availablePresetsData.items.length > 0 && !selectedPresetId) {
       const officialPreset = availablePresetsData.items.find(p => p.is_official);
       if (officialPreset) {
         setSelectedPresetId(officialPreset.id);
       } else if (availablePresetsData.items.length > 0) {
-        // Если нет официального, выбираем первый сохраненный
         setSelectedPresetId(availablePresetsData.items[0].id);
       }
     }
   }, [availablePresetsData, isEdit, selectedPresetId]);
 
-  // Мутация для создания/обновления отзыва
   const createMutation = useMutation({
     mutationFn: (data: {
       filament_id: number;
@@ -75,17 +70,14 @@ export const CreateReviewModal: React.FC<CreateReviewModalProps> = ({
       return filamentReviewsAPI.create(data);
     },
     onSuccess: () => {
-      // Обновляем кэш отзывов и статистики
       queryClient.invalidateQueries({ queryKey: ['filament-reviews', filamentId] });
       queryClient.invalidateQueries({ queryKey: ['filament-rating-stats', filamentId] });
       queryClient.invalidateQueries({ queryKey: ['filament', filamentId] });
-      // Обновляем кэш отзывов пользователя (для профиля)
       if (user?.id) {
         queryClient.invalidateQueries({ queryKey: ['user-reviews', user.id] });
       }
-      // Обновляем все запросы отзывов (на случай если есть другие страницы)
       queryClient.invalidateQueries({ queryKey: ['filament-reviews'] });
-      
+
       if (onSuccess) {
         onSuccess();
       }
@@ -100,7 +92,6 @@ export const CreateReviewModal: React.FC<CreateReviewModalProps> = ({
     e.preventDefault();
     setErrors({});
 
-    // Валидация
     if (rating === 0) {
       setErrors({ rating: t('createReview.selectRating') });
       return;
@@ -118,7 +109,7 @@ export const CreateReviewModal: React.FC<CreateReviewModalProps> = ({
 
   if (!user) {
     return (
-      <div className={`fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 ${isHeaderVisible ? 'pt-[88px]' : ''}`}>
+      <ModalOverlay onClose={onClose}>
         <div className="bg-gray-900 rounded-2xl p-8 border border-white/20 max-w-md w-full mx-4">
           <div className="text-center">
             <AlertCircle className="w-16 h-16 text-yellow-400 mx-auto mb-4" />
@@ -134,12 +125,12 @@ export const CreateReviewModal: React.FC<CreateReviewModalProps> = ({
             </button>
           </div>
         </div>
-      </div>
+      </ModalOverlay>
     );
   }
 
   return (
-    <div className={`fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4 ${isHeaderVisible ? 'pt-[88px]' : ''}`}>
+    <ModalOverlay onClose={onClose}>
       <div className="bg-gray-900 rounded-2xl p-8 border border-white/20 max-w-2xl w-full max-h-[90vh] overflow-y-auto">
         {/* Заголовок */}
         <div className="flex items-center justify-between mb-6">
@@ -155,7 +146,6 @@ export const CreateReviewModal: React.FC<CreateReviewModalProps> = ({
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-6">
-          {/* Выбор пресета (только при создании, не при редактировании) */}
           {!isEdit && (
             <div>
               <label className="block text-white font-semibold mb-3">
@@ -325,9 +315,6 @@ export const CreateReviewModal: React.FC<CreateReviewModalProps> = ({
           </div>
         </form>
       </div>
-    </div>
+    </ModalOverlay>
   );
 };
-
-
-

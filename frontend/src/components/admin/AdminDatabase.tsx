@@ -1,9 +1,8 @@
 /** Компонент для управления базой данных и миграциями */
 
 import { useState, useMemo } from 'react';
-import { createPortal } from 'react-dom';
+import { ModalOverlay } from '../ModalOverlay';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { useHeaderVisible } from '../../hooks/useHeaderVisible';
 import { 
   Database, 
   Download, 
@@ -314,7 +313,6 @@ function WikiSync() {
 
 export function AdminDatabase() {
   const { t } = useTranslation();
-  const isHeaderVisible = useHeaderVisible();
   const queryClient = useQueryClient();
   const [selectedRevision, setSelectedRevision] = useState<string>('head');
   const [exportFormat, setExportFormat] = useState<'custom' | 'plain' | 'tar'>('custom');
@@ -1579,10 +1577,9 @@ export function AdminDatabase() {
       </div>
 
       {/* Модальное окно просмотра таблицы */}
-      {selectedTable && createPortal(
-        <div className={`fixed inset-0 bg-black/50 backdrop-blur-sm z-50 overflow-y-auto ${isHeaderVisible ? 'pt-[88px]' : ''}`}>
-          <div className="min-h-full flex items-center justify-center p-4">
-            <div className="bg-gradient-to-br from-purple-900 to-indigo-900 rounded-2xl max-w-7xl w-full max-h-[90vh] my-8 overflow-hidden flex flex-col border border-white/20">
+      {selectedTable && (
+        <ModalOverlay onClose={() => setSelectedTable(null)}>
+          <div className="bg-gradient-to-br from-purple-900 to-indigo-900 rounded-2xl max-w-7xl w-full max-h-[90vh] overflow-hidden flex flex-col border border-white/20" onClick={(e) => e.stopPropagation()}>
             {/* Header */}
             <div className="flex items-center justify-between p-6 border-b border-white/10">
               <div>
@@ -1756,16 +1753,13 @@ export function AdminDatabase() {
               )}
             </div>
           </div>
-        </div>
-      </div>,
-      document.body
+        </ModalOverlay>
       )}
 
       {/* Модальное окно редактирования строки */}
-      {editingRow && selectedTable && createPortal(
-        <div className={`fixed inset-0 bg-black/50 backdrop-blur-sm z-[60] overflow-y-auto ${isHeaderVisible ? 'pt-[88px]' : ''}`}>
-          <div className="min-h-full flex items-center justify-center p-4">
-            <div className="bg-gradient-to-br from-purple-900 to-indigo-900 rounded-2xl max-w-4xl w-full max-h-[90vh] my-8 overflow-hidden flex flex-col border border-white/20">
+      {editingRow && selectedTable && (
+        <ModalOverlay onClose={() => { setEditingRow(null); setEditError(null); }}>
+          <div className="bg-gradient-to-br from-purple-900 to-indigo-900 rounded-2xl max-w-4xl w-full max-h-[90vh] overflow-hidden flex flex-col border border-white/20" onClick={(e) => e.stopPropagation()}>
               {/* Header */}
               <div className="flex items-center justify-between p-6 border-b border-white/10">
                 <h3 className="text-2xl font-bold text-white flex items-center space-x-2">
@@ -1944,9 +1938,7 @@ export function AdminDatabase() {
                 </div>
               </div>
             </div>
-          </div>
-        </div>,
-        document.body
+        </ModalOverlay>
       )}
     </div>
   );

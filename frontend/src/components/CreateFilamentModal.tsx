@@ -13,7 +13,7 @@ import { Dropdown } from './Dropdown';
 import type { Filament, Brand } from '../types/api';
 import { useAuth } from '../contexts/AuthContext';
 import { useClickOutside } from '../hooks/useClickOutside';
-import { useHeaderVisible } from '../hooks/useHeaderVisible';
+import { ModalOverlay } from './ModalOverlay';
 
 interface CreateFilamentModalProps {
   isOpen: boolean;
@@ -447,16 +447,14 @@ export const CreateFilamentModal: React.FC<CreateFilamentModalProps> = ({
     }
   };
 
-  // Хуки должны вызываться до условного возврата
-  const isHeaderVisible = useHeaderVisible();
   const isLoading = createMutation.isPending || updateMutation.isPending;
 
   if (!isOpen) return null;
 
   return (
-    <div className={`fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm ${isHeaderVisible ? 'pt-[88px]' : ''}`}>
-      <div 
-        className={`bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900 rounded-2xl w-full max-w-5xl overflow-hidden flex flex-col border border-white/20 shadow-2xl ${isHeaderVisible ? 'max-h-[calc(100vh-60px)]' : 'max-h-[calc(100vh-10px)]'}`}
+    <ModalOverlay onClose={onClose}>
+      <div
+        className="bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900 rounded-2xl w-full max-w-5xl max-h-[90vh] overflow-hidden flex flex-col border border-white/20 shadow-2xl"
         onClick={(e) => e.stopPropagation()}
         onMouseDown={(e) => e.stopPropagation()}
       >
@@ -1096,7 +1094,7 @@ export const CreateFilamentModal: React.FC<CreateFilamentModalProps> = ({
           )}
         </div>
       </div>
-    </div>
+    </ModalOverlay>
   );
 };
 

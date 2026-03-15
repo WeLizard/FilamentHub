@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState, type FormEvent, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { X, Save, Loader2, Layers } from 'lucide-react';
+import { ModalOverlay } from './ModalOverlay';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { filamentsAPI, printerProfilesAPI, printProfilesAPI } from '../api/client';
 import {
@@ -1781,8 +1782,8 @@ export const CreatePrintProfileModal: React.FC<CreatePrintProfileModalProps> = (
   );
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4 backdrop-blur-sm">
-      <div className="flex max-h-[90vh] w-full max-w-4xl flex-col overflow-hidden rounded-2xl border border-white/20 bg-gradient-to-br from-gray-900 to-gray-800 shadow-2xl">
+    <ModalOverlay onClose={onClose} className="!bg-black/80">
+      <div className="flex max-h-[90vh] w-full max-w-4xl flex-col overflow-hidden rounded-2xl border border-white/20 bg-gradient-to-br from-gray-900 to-gray-800 shadow-2xl" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between border-b border-white/10 p-6">
           <div className="flex items-center gap-3">
             <Layers className="h-6 w-6 text-purple-400" />
@@ -2147,6 +2148,6 @@ export const CreatePrintProfileModal: React.FC<CreatePrintProfileModalProps> = (
           </div>
         </form>
       </div>
-    </div>
+    </ModalOverlay>
   );
 };

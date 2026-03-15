@@ -1,9 +1,8 @@
 /** Модалка для обработки удалённых пресетов */
 
 import { useState, useEffect } from 'react';
-import { createPortal } from 'react-dom';
 import { X, RotateCcw, Trash2, SkipForward, CheckCircle2 } from 'lucide-react';
-import { useHeaderVisible } from '../hooks/useHeaderVisible';
+import { ModalOverlay } from './ModalOverlay';
 import { orcaslicerDeletedPresetsAPI, notificationsAPI } from '../api/client';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { Notification } from '../types/api';
@@ -31,7 +30,6 @@ export const DeletedPresetsModal: React.FC<DeletedPresetsModalProps> = ({
   notification: initialNotification,
 }) => {
   const { t } = useTranslation();
-  const isHeaderVisible = useHeaderVisible();
   const queryClient = useQueryClient();
   const [selectedPresetIds, setSelectedPresetIds] = useState<Set<number>>(new Set());
   const [action, setAction] = useState<'restore' | 'delete' | 'skip' | null>(null);
@@ -306,22 +304,12 @@ export const DeletedPresetsModal: React.FC<DeletedPresetsModalProps> = ({
     );
   };
 
-  return createPortal(
-    <div
-      className={`fixed inset-0 bg-black/50 backdrop-blur-sm z-50 overflow-y-auto ${
-        isHeaderVisible ? 'pt-[88px]' : ''
-      }`}
-      onClick={(e) => {
-        if (e.target === e.currentTarget && !handleActionMutation.isPending) {
-          handleCloseWithAutoSkip();
-        }
-      }}
-    >
-      <div className="min-h-full flex items-center justify-center p-4">
-        <div
-          className="bg-gradient-to-br from-purple-900 to-indigo-900 rounded-2xl max-w-4xl w-full overflow-hidden flex flex-col border border-white/20 shadow-xl"
-          onClick={(e) => e.stopPropagation()}
-        >
+  return (
+    <ModalOverlay onClose={handleCloseWithAutoSkip} closeOnOverlayClick={!handleActionMutation.isPending}>
+      <div
+        className="bg-gradient-to-br from-purple-900 to-indigo-900 rounded-2xl max-w-4xl w-full overflow-hidden flex flex-col border border-white/20 shadow-xl"
+        onClick={(e) => e.stopPropagation()}
+      >
           {/* Header */}
           <div className="flex items-center justify-between p-6 border-b border-white/10">
             <div className="flex items-center space-x-3">
@@ -504,9 +492,7 @@ export const DeletedPresetsModal: React.FC<DeletedPresetsModalProps> = ({
             </button>
           </div>
         </div>
-      </div>
-    </div>,
-    document.body
+    </ModalOverlay>
   );
 };
 

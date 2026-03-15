@@ -6,7 +6,7 @@ import { X, CheckCircle2, XCircle } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
 import { presetsAPI, filamentsAPI } from '../api/client';
 import type { Preset, Filament } from '../types/api';
-import { useHeaderVisible } from '../hooks/useHeaderVisible';
+import { ModalOverlay } from './ModalOverlay';
 import { FilamentSummaryCard } from './FilamentSummaryCard';
 
 // Вспомогательные компоненты для отображения значений
@@ -71,7 +71,6 @@ export const ViewPresetModal: React.FC<ViewPresetModalProps> = ({
 }) => {
   const { t } = useTranslation();
   const [activeTab, setActiveTab] = useState<'profile' | 'cooling' | 'override' | 'retraction' | 'gcode' | 'extruder_mm' | 'compatibility' | 'notes'>('profile');
-  const isHeaderVisible = useHeaderVisible();
 
   // Загружаем данные филамента
   const { data: editingFilament } = useQuery<Filament>({
@@ -270,8 +269,8 @@ export const ViewPresetModal: React.FC<ViewPresetModalProps> = ({
   if (!isOpen || !preset) return null;
 
   return (
-    <div className={`fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm ${isHeaderVisible ? 'pt-[88px]' : ''}`}>
-      <div className={`bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900 rounded-2xl w-full max-w-5xl overflow-hidden flex flex-col border border-white/20 shadow-2xl pointer-events-auto ${isHeaderVisible ? 'max-h-[calc(100vh-100px)]' : 'max-h-[90vh]'}`}>
+    <ModalOverlay onClose={onClose} className="!bg-black/60">
+      <div className="bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900 rounded-2xl w-full max-w-5xl overflow-hidden flex flex-col border border-white/20 shadow-2xl max-h-[90vh]">
         {/* Header */}
         <div className="flex items-center justify-between p-6 border-b border-white/10">
           <h2 className="text-2xl font-bold text-white">{t('viewPreset.title')}</h2>
@@ -844,7 +843,7 @@ export const ViewPresetModal: React.FC<ViewPresetModalProps> = ({
           </button>
         </div>
       </div>
-    </div>
+    </ModalOverlay>
   );
 };
 

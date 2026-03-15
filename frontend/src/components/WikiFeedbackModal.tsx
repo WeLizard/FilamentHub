@@ -7,7 +7,7 @@ import { useMutation } from '@tanstack/react-query';
 import { feedbackAPI } from '../api/client';
 import { translateApiError } from '../utils/translateApiError';
 import { useAuth } from '../contexts/AuthContext';
-import { useHeaderVisible } from '../hooks/useHeaderVisible';
+import { ModalOverlay } from './ModalOverlay';
 
 interface WikiFeedbackModalProps {
   isOpen: boolean;
@@ -24,8 +24,6 @@ export const WikiFeedbackModal: React.FC<WikiFeedbackModalProps> = ({
 }) => {
   const { t } = useTranslation();
   const { user } = useAuth();
-  const isHeaderVisible = useHeaderVisible();
-
   const [comment, setComment] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
@@ -62,35 +60,26 @@ export const WikiFeedbackModal: React.FC<WikiFeedbackModalProps> = ({
   // Если пользователь не авторизован, показываем сообщение
   if (!user) {
     return (
-      <div
-        className={`fixed inset-0 z-[100] ${isHeaderVisible ? 'pt-[72px] md:pt-[88px]' : ''}`}
-        onClick={onClose}
-      >
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm" />
+      <ModalOverlay onClose={onClose} className="!bg-black/60">
         <div
-          className="fixed inset-0 flex items-center justify-center pointer-events-none p-4"
-          style={{ top: isHeaderVisible ? '72px' : '0' }}
+          className="bg-gradient-to-br from-gray-900 to-gray-800 rounded-2xl shadow-2xl border border-white/20 max-w-md w-full p-6"
+          onClick={(e) => e.stopPropagation()}
         >
-          <div
-            className="bg-gradient-to-br from-gray-900 to-gray-800 rounded-2xl shadow-2xl border border-white/20 max-w-md w-full p-6 pointer-events-auto"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="text-center">
-              <MessageSquare className="w-16 h-16 text-purple-400 mx-auto mb-4" />
-              <h2 className="text-xl font-bold text-white mb-4">{t('wikiFeedback.authRequired')}</h2>
-              <p className="text-gray-400 mb-6">
-                {t('wikiFeedback.authMessage')}
-              </p>
-              <button
-                onClick={onClose}
-                className="px-6 py-3 bg-purple-600 hover:bg-purple-700 text-white rounded-xl transition-colors"
-              >
-                {t('wikiFeedback.close')}
-              </button>
-            </div>
+          <div className="text-center">
+            <MessageSquare className="w-16 h-16 text-purple-400 mx-auto mb-4" />
+            <h2 className="text-xl font-bold text-white mb-4">{t('wikiFeedback.authRequired')}</h2>
+            <p className="text-gray-400 mb-6">
+              {t('wikiFeedback.authMessage')}
+            </p>
+            <button
+              onClick={onClose}
+              className="px-6 py-3 bg-purple-600 hover:bg-purple-700 text-white rounded-xl transition-colors"
+            >
+              {t('wikiFeedback.close')}
+            </button>
           </div>
         </div>
-      </div>
+      </ModalOverlay>
     );
   }
 
@@ -106,29 +95,12 @@ export const WikiFeedbackModal: React.FC<WikiFeedbackModalProps> = ({
     createFeedbackMutation.mutate(comment.trim());
   };
 
-  const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'Escape') {
-      onClose();
-    }
-  };
-
   return (
-    <div
-      className={`fixed inset-0 z-[100] ${isHeaderVisible ? 'pt-[72px] md:pt-[88px]' : ''}`}
-      onClick={onClose}
-      onKeyDown={handleKeyDown}
-    >
-      <div className="fixed inset-0 bg-black/60 backdrop-blur-sm" />
+    <ModalOverlay onClose={onClose} className="!bg-black/60">
       <div
-        className="fixed inset-0 flex items-end md:items-center justify-center pointer-events-none p-0 md:p-4"
-        style={{ top: isHeaderVisible ? '72px' : '0' }}
+        className="bg-gradient-to-br from-gray-900 to-gray-800 rounded-t-2xl md:rounded-2xl shadow-2xl border-t md:border border-white/20 w-full md:max-w-lg max-h-[90vh] overflow-hidden flex flex-col"
+        onClick={(e) => e.stopPropagation()}
       >
-        <div
-          className={`bg-gradient-to-br from-gray-900 to-gray-800 rounded-t-2xl md:rounded-2xl shadow-2xl border-t md:border border-white/20 w-full md:max-w-lg ${
-            isHeaderVisible ? 'max-h-[calc(100vh-80px)] md:max-h-[calc(100vh-100px)]' : 'max-h-[90vh]'
-          } overflow-hidden flex flex-col pointer-events-auto`}
-          onClick={(e) => e.stopPropagation()}
-        >
           {/* Header */}
           <div className="flex items-start justify-between gap-3 md:gap-4 px-4 md:px-6 pt-4 md:pt-6 pb-3 md:pb-4 border-b border-white/10">
             <div>
@@ -227,7 +199,6 @@ export const WikiFeedbackModal: React.FC<WikiFeedbackModalProps> = ({
             </div>
           )}
         </div>
-      </div>
-    </div>
+    </ModalOverlay>
   );
 };

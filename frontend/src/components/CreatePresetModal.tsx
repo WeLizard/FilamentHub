@@ -2,7 +2,6 @@
 
 import { useState, useEffect, FormEvent, useRef, useMemo } from 'react';
 import React from 'react';
-import { createPortal } from 'react-dom';
 import { useTranslation } from 'react-i18next';
 import { X, Save, Loader2, Check, Plus, CheckCircle } from 'lucide-react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -16,7 +15,7 @@ import { CustomSelect } from './CustomSelect';
 import type { FilamentVisualSettings } from '../types/api';
 import { Dropdown } from './Dropdown';
 import { useClickOutside } from '../hooks/useClickOutside';
-import { useHeaderVisible } from '../hooks/useHeaderVisible';
+import { ModalOverlay } from './ModalOverlay';
 import { useDebounce } from '../hooks/useDebounce';
 import { ColorMaterialSection } from './ColorMaterialSection';
 import { HSLColorPicker } from './HSLColorPicker';
@@ -1728,25 +1727,16 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
           ? t('presetModal.hints.selectFilamentToContinue')
           : null
     : null;
-  const isHeaderVisible = useHeaderVisible();
 
   if (!isOpen) return null;
 
-  const modalContent = (
-    <div className="fixed inset-0 z-[100]">
-      {/* Backdrop - покрывает весь экран, включая хэдер */}
+  return (
+    <ModalOverlay onClose={onClose}>
       <div
-        className="fixed inset-0 bg-black/50 backdrop-blur-sm"
-        onClick={onClose}
-      />
-      {/* Modal Container */}
-      <div className={`fixed inset-0 flex items-center justify-center pointer-events-none ${isHeaderVisible ? 'pt-[88px]' : ''}`}>
-        {/* Modal */}
-        <div
-          className={`bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900 rounded-2xl w-full max-w-5xl overflow-hidden flex flex-col border border-white/20 shadow-2xl pointer-events-auto ${isHeaderVisible ? 'max-h-[calc(100vh-100px)]' : 'max-h-[90vh]'}`}
-          onClick={(e) => e.stopPropagation()}
-          onMouseDown={(e) => e.stopPropagation()}
-        >
+        className="bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900 rounded-2xl w-full max-w-5xl overflow-hidden flex flex-col border border-white/20 shadow-2xl max-h-[90vh]"
+        onClick={(e) => e.stopPropagation()}
+        onMouseDown={(e) => e.stopPropagation()}
+      >
         {/* Header */}
         <div className="flex items-center justify-between p-6 border-b border-white/10">
           <h2 className="text-2xl font-bold text-white">
@@ -4630,12 +4620,7 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
           </div>
         </form>
         </div>
-        </div>
       </div>
-    </div>
+    </ModalOverlay>
   );
-
-  if (typeof document === 'undefined') return null;
-
-  return createPortal(modalContent, document.body);
 };

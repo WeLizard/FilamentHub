@@ -6,6 +6,7 @@ import { presetsAPI, presetSlotsAPI } from '../../api/client';
 import type { GateState, UserSpool } from '../../api/client';
 import { toast } from '../Toast';
 import { translateApiError } from '../../utils/translateApiError';
+import { ModalOverlay } from '../ModalOverlay';
 
 interface PresetAssignModalProps {
   isOpen: boolean;
@@ -120,13 +121,8 @@ export function PresetAssignModal({
   const canSave = selectedPresetId !== null || selectedSpoolId !== null;
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-4"
-      onClick={(e) => e.target === e.currentTarget && onClose()}
-    >
-      <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
-
-      <div className="relative z-10 flex w-full max-w-md flex-col rounded-2xl border border-white/10 bg-[#0e0e1b] shadow-2xl">
+    <ModalOverlay onClose={onClose} className="!bg-black/60">
+      <div className="flex w-full max-w-md flex-col rounded-2xl border border-white/10 bg-[#0e0e1b] shadow-2xl" onClick={(e) => e.stopPropagation()}>
         {/* Header */}
         <div className="flex items-center justify-between border-b border-white/10 px-5 py-4">
           <div className="flex items-center gap-3">
@@ -383,6 +379,6 @@ export function PresetAssignModal({
           </div>
         </div>
       </div>
-    </div>
+    </ModalOverlay>
   );
 }

@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { createPortal } from 'react-dom';
+import { ModalOverlay } from '../ModalOverlay';
 import { Users, Shield, CheckCircle, XCircle, Unlink, Link2, Factory, Check, Award } from 'lucide-react';
 import { adminAPI, brandsAPI } from '../../api/client';
 import { translateApiError } from '../../utils/translateApiError';
@@ -327,17 +327,9 @@ export function AdminUsers() {
       )}
 
       {/* Модальное окно для выбора бренда */}
-      {selectedUserIdForBrand && createPortal(
-        <div 
-          className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4"
-          onClick={(e) => {
-            if (e.target === e.currentTarget) {
-              setSelectedUserIdForBrand(null);
-              setSelectedBrandId(null);
-            }
-          }}
-        >
-          <div 
+      {selectedUserIdForBrand && (
+        <ModalOverlay onClose={() => { setSelectedUserIdForBrand(null); setSelectedBrandId(null); }}>
+          <div
             className="bg-gray-800 rounded-xl p-6 max-w-md w-full border border-white/10 shadow-xl"
             onClick={(e) => e.stopPropagation()}
           >
@@ -384,8 +376,7 @@ export function AdminUsers() {
               </button>
             </div>
           </div>
-        </div>,
-        document.body
+        </ModalOverlay>
       )}
 
       {/* Модалки подтверждения */}
@@ -475,17 +466,9 @@ export function AdminUsers() {
       />
 
       {/* Модальное окно для управления бейджами */}
-      {selectedUserIdForBadges && createPortal(
-        <div 
-          className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4"
-          onClick={(e) => {
-            if (e.target === e.currentTarget) {
-              setSelectedUserIdForBadges(null);
-              setSelectedUserBadges([]);
-            }
-          }}
-        >
-          <div 
+      {selectedUserIdForBadges && (
+        <ModalOverlay onClose={() => { setSelectedUserIdForBadges(null); setSelectedUserBadges([]); }}>
+          <div
             className="bg-gray-800 rounded-xl p-6 max-w-md w-full border border-white/10 shadow-xl"
             onClick={(e) => e.stopPropagation()}
           >
@@ -567,8 +550,7 @@ export function AdminUsers() {
               </button>
             </div>
           </div>
-        </div>,
-        document.body
+        </ModalOverlay>
       )}
     </div>
   );

@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
+import { ModalOverlay } from '../ModalOverlay';
 import {
   BookOpen, FolderOpen, Settings, Plus, Edit, Trash2, Download,
   RefreshCw, Upload, Loader2, X, Save, Eye,
@@ -60,8 +61,8 @@ function ArticleModal({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
-      <div className="bg-gray-900 border border-white/20 rounded-2xl w-full max-w-3xl max-h-[90vh] overflow-y-auto p-6">
+    <ModalOverlay onClose={onClose}>
+      <div className="bg-gray-900 border border-white/20 rounded-2xl w-full max-w-3xl max-h-[90vh] overflow-y-auto p-6" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between mb-6">
           <h3 className="text-xl font-bold text-white">
             {isNew ? t('adminWiki.createArticle') : t('adminWiki.editArticle')}
@@ -176,7 +177,7 @@ function ArticleModal({
           </div>
         </form>
       </div>
-    </div>
+    </ModalOverlay>
   );
 }
 
@@ -214,8 +215,8 @@ function CategoryModal({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
-      <div className="bg-gray-900 border border-white/20 rounded-2xl w-full max-w-lg p-6">
+    <ModalOverlay onClose={onClose}>
+      <div className="bg-gray-900 border border-white/20 rounded-2xl w-full max-w-lg p-6" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between mb-6">
           <h3 className="text-xl font-bold text-white">
             {isNew ? t('adminWiki.createCategory') : t('adminWiki.editCategory')}
@@ -299,7 +300,7 @@ function CategoryModal({
           </div>
         </form>
       </div>
-    </div>
+    </ModalOverlay>
   );
 }
 

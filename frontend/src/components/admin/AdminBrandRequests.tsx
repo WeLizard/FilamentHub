@@ -1,18 +1,15 @@
 /** Компонент для управления заявками на верификацию брендов */
 
 import { useState } from 'react';
-import { createPortal } from 'react-dom';
+import { ModalOverlay } from '../ModalOverlay';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { FileText, CheckCircle, XCircle, Eye, Download, Clock, Building2, UserPlus, Trash2 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { adminAPI } from '../../api/client';
 import type { BrandRequest, BrandRequestStatus } from '../../types/api';
 import { ConfirmDeleteModal } from '../ConfirmDeleteModal';
-import { useHeaderVisible } from '../../hooks/useHeaderVisible';
-
 export function AdminBrandRequests() {
   const { t } = useTranslation();
-  const isHeaderVisible = useHeaderVisible();
   const queryClient = useQueryClient();
   const [selectedStatus, setSelectedStatus] = useState<BrandRequestStatus | 'all'>('all');
   const [selectedRequest, setSelectedRequest] = useState<BrandRequest | null>(null);
@@ -220,10 +217,9 @@ export function AdminBrandRequests() {
       </div>
 
       {/* Модальное окно с деталями заявки */}
-      {selectedRequest && createPortal(
-        <div className={`fixed inset-0 bg-black/50 backdrop-blur-sm z-50 overflow-y-auto ${isHeaderVisible ? 'pt-[88px]' : ''}`}>
-          <div className="min-h-full flex items-center justify-center p-4">
-            <div className="bg-gradient-to-br from-purple-900 to-indigo-900 rounded-2xl max-w-3xl w-full max-h-[90vh] my-8 overflow-hidden flex flex-col border border-white/20">
+      {selectedRequest && (
+        <ModalOverlay onClose={() => setSelectedRequest(null)}>
+          <div className="bg-gradient-to-br from-purple-900 to-indigo-900 rounded-2xl max-w-3xl w-full max-h-[90vh] overflow-hidden flex flex-col border border-white/20" onClick={(e) => e.stopPropagation()}>
             {/* Header */}
             <div className="flex items-center justify-between p-6 border-b border-white/10">
               <h3 className="text-2xl font-bold text-white">{t('adminBrandRequests.request_details_title', { id: selectedRequest.id })}</h3>
@@ -508,9 +504,7 @@ export function AdminBrandRequests() {
               </div>
             )}
           </div>
-        </div>
-      </div>,
-      document.body
+        </ModalOverlay>
       )}
 
       {/* Модалка подтверждения удаления */}

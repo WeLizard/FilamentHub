@@ -1,19 +1,17 @@
 /** Компонент для управления обратной связью от пользователей */
 
 import { useState } from 'react';
-import { createPortal } from 'react-dom';
+import { ModalOverlay } from '../ModalOverlay';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { MessageCircle, Eye, Send, CheckCircle, Clock, XCircle, AlertCircle, Bug, Lightbulb, HelpCircle, MessageSquare, Filter, Search, Trash2 } from 'lucide-react';
 import { adminFeedbackAPI } from '../../api/client';
 import type { Feedback, FeedbackType, FeedbackStatus } from '../../types/api';
-import { useHeaderVisible } from '../../hooks/useHeaderVisible';
 import { useTranslation } from 'react-i18next';
 import { toast } from '../Toast';
 import { translateApiError } from '../../utils/translateApiError';
 
 export function AdminFeedback() {
   const { t } = useTranslation();
-  const isHeaderVisible = useHeaderVisible();
   const queryClient = useQueryClient();
   const [selectedStatus, setSelectedStatus] = useState<FeedbackStatus | 'all'>('all');
   const [selectedType, setSelectedType] = useState<FeedbackType | 'all'>('all');
@@ -269,21 +267,10 @@ export function AdminFeedback() {
       )}
 
       {/* Модалка просмотра и ответа */}
-      {selectedFeedback &&
-        createPortal(
-          <div
-            className={`fixed inset-0 z-[200] ${isHeaderVisible ? 'pt-[88px]' : ''}`}
-            onClick={() => {
-              setSelectedFeedback(null);
-              setAdminResponse('');
-            }}
-          >
-            <div className="fixed inset-0 bg-black/60 backdrop-blur-sm" />
-            <div
-              className={`fixed inset-0 flex items-center justify-center pointer-events-none p-4 ${isHeaderVisible ? 'pt-[88px]' : ''}`}
-            >
+      {selectedFeedback && (
+        <ModalOverlay onClose={() => { setSelectedFeedback(null); setAdminResponse(''); }} className="!bg-black/60">
               <div
-                className={`bg-gradient-to-br from-gray-900 to-gray-800 rounded-2xl shadow-2xl border border-white/20 max-w-3xl w-full ${isHeaderVisible ? 'max-h-[calc(100vh-100px)]' : 'max-h-[90vh]'} overflow-hidden flex flex-col pointer-events-auto`}
+                className="bg-gradient-to-br from-gray-900 to-gray-800 rounded-2xl shadow-2xl border border-white/20 max-w-3xl w-full max-h-[90vh] overflow-hidden flex flex-col"
                 onClick={(e) => e.stopPropagation()}
               >
                 {/* Header */}
@@ -413,10 +400,8 @@ export function AdminFeedback() {
                   </div>
                 </div>
               </div>
-            </div>
-          </div>,
-          document.body
-        )}
+        </ModalOverlay>
+      )}
     </div>
   );
 }

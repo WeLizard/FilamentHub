@@ -7,7 +7,7 @@ import { feedbackAPI } from '../api/client';
 import { translateApiError } from '../utils/translateApiError';
 import type { FeedbackType } from '../types/api';
 import { useAuth } from '../contexts/AuthContext';
-import { useHeaderVisible } from '../hooks/useHeaderVisible';
+import { ModalOverlay } from './ModalOverlay';
 
 interface FeedbackModalProps {
   isOpen: boolean;
@@ -27,8 +27,6 @@ interface FeedbackTypeInfo {
 export const FeedbackModal: React.FC<FeedbackModalProps> = ({ isOpen, onClose }) => {
   const { t } = useTranslation();
   const { user } = useAuth();
-  const isHeaderVisible = useHeaderVisible();
-
   const FEEDBACK_TYPES: FeedbackTypeInfo[] = [
     {
       value: 'bug',
@@ -119,27 +117,12 @@ export const FeedbackModal: React.FC<FeedbackModalProps> = ({ isOpen, onClose })
     }
   };
 
-  const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'Escape') {
-      onClose();
-    }
-  };
-
   return (
-    <div
-      className={`fixed inset-0 z-[100] ${isHeaderVisible ? 'pt-[72px] md:pt-[88px]' : ''}`}
-      onClick={onClose}
-      onKeyDown={handleKeyDown}
-    >
-      <div className="fixed inset-0 bg-black/60 backdrop-blur-sm" />
+    <ModalOverlay onClose={onClose} className="!bg-black/60">
       <div
-        className="fixed inset-0 flex items-end md:items-center justify-center pointer-events-none p-0 md:p-4"
-        style={{ top: isHeaderVisible ? '72px' : '0' }}
+        className="bg-gradient-to-br from-gray-900 to-gray-800 rounded-t-2xl md:rounded-2xl shadow-2xl border-t md:border border-white/20 w-full md:max-w-2xl max-h-[90vh] overflow-hidden flex flex-col"
+        onClick={(e) => e.stopPropagation()}
       >
-        <div
-          className={`bg-gradient-to-br from-gray-900 to-gray-800 rounded-t-2xl md:rounded-2xl shadow-2xl border-t md:border border-white/20 w-full md:max-w-2xl ${isHeaderVisible ? 'max-h-[calc(100vh-80px)] md:max-h-[calc(100vh-100px)]' : 'max-h-[90vh]'} overflow-hidden flex flex-col pointer-events-auto`}
-          onClick={(e) => e.stopPropagation()}
-        >
           {/* Header */}
           <div className="flex items-start justify-between gap-3 md:gap-4 px-4 md:px-6 pt-4 md:pt-6 pb-3 md:pb-4 border-b border-white/10">
             <div>
@@ -297,8 +280,7 @@ export const FeedbackModal: React.FC<FeedbackModalProps> = ({ isOpen, onClose })
             </div>
           )}
         </div>
-      </div>
-    </div>
+    </ModalOverlay>
   );
 };
 

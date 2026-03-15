@@ -8,7 +8,7 @@ import { X, AlertTriangle, Trash2, Eye, Shield } from 'lucide-react';
 import { authAPI } from '../api/client';
 import { translateApiError } from '../utils/translateApiError';
 import { useAuth } from '../contexts/AuthContext';
-import { useHeaderVisible } from '../hooks/useHeaderVisible';
+import { ModalOverlay } from './ModalOverlay';
 
 interface DeleteAccountModalProps {
   isOpen: boolean;
@@ -17,7 +17,6 @@ interface DeleteAccountModalProps {
 
 export const DeleteAccountModal: React.FC<DeleteAccountModalProps> = ({ isOpen, onClose }) => {
   const { t } = useTranslation();
-  const isHeaderVisible = useHeaderVisible();
   const { user, logout } = useAuth();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
@@ -87,15 +86,9 @@ export const DeleteAccountModal: React.FC<DeleteAccountModalProps> = ({ isOpen, 
   if (!isOpen) return null;
 
   return (
-    <div className={`fixed inset-0 z-[60] flex items-center justify-center p-4 ${isHeaderVisible ? 'pt-[88px]' : ''}`}>
-      {/* Backdrop */}
-      <div
-        className="absolute inset-0 bg-black/75 backdrop-blur-sm"
-        onClick={onClose}
-      ></div>
-
+    <ModalOverlay onClose={onClose} className="!bg-black/75">
       {/* Modal */}
-      <div className="relative w-full max-w-2xl max-h-[90vh] bg-white/10 backdrop-blur-sm rounded-2xl border border-white/20 shadow-xl z-10 overflow-hidden flex flex-col">
+      <div className="relative w-full max-w-2xl max-h-[90vh] bg-white/10 backdrop-blur-sm rounded-2xl border border-white/20 shadow-xl overflow-hidden flex flex-col" onClick={(e) => e.stopPropagation()}>
         {/* Header */}
         <div className="flex items-center justify-between p-6 border-b border-white/20">
           <div className="flex items-center space-x-3">
@@ -316,6 +309,6 @@ export const DeleteAccountModal: React.FC<DeleteAccountModalProps> = ({ isOpen, 
           </form>
         </div>
       </div>
-    </div>
+    </ModalOverlay>
   );
 };

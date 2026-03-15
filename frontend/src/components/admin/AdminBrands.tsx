@@ -5,6 +5,7 @@ import { useTranslation } from 'react-i18next';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 import { Building2, CheckCircle, XCircle, Shield, Search, ExternalLink, Edit, X, Save, Loader2, Upload } from 'lucide-react';
+import { ModalOverlay } from '../ModalOverlay';
 import { adminAPI } from '../../api/client';
 import { translateApiError } from '../../utils/translateApiError';
 import type { Brand } from '../../types/api';
@@ -317,8 +318,8 @@ export function AdminBrands() {
 
       {/* Модальное окно редактирования бренда */}
       {editingBrand && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
-          <div className="bg-gray-900 rounded-xl border border-white/20 p-6 w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+        <ModalOverlay onClose={() => { setEditingBrand(null); setEditError(null); }}>
+          <div className="bg-gray-900 rounded-xl border border-white/20 p-6 w-full max-w-2xl max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center justify-between mb-6">
               <h3 className="text-2xl font-bold text-white">{t('adminBrands.editTitle')}</h3>
               <button
@@ -492,7 +493,7 @@ export function AdminBrands() {
               </div>
             </form>
           </div>
-        </div>
+        </ModalOverlay>
       )}
     </div>
   );

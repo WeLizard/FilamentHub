@@ -3,7 +3,7 @@
 import { Link } from 'react-router-dom';
 import { X, ExternalLink } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
-import { useHeaderVisible } from '../hooks/useHeaderVisible';
+import { ModalOverlay } from './ModalOverlay';
 
 interface ConsentModalProps {
   isOpen: boolean;
@@ -12,19 +12,12 @@ interface ConsentModalProps {
 
 export const ConsentModal: React.FC<ConsentModalProps> = ({ isOpen, onClose }) => {
   const { t } = useTranslation();
-  const isHeaderVisible = useHeaderVisible();
   if (!isOpen) return null;
 
   return (
-    <div className={`fixed inset-0 z-[60] flex items-center justify-center p-4 ${isHeaderVisible ? 'pt-[88px]' : ''}`}>
-      {/* Backdrop */}
-      <div
-        className="absolute inset-0 bg-black/75 backdrop-blur-sm"
-        onClick={onClose}
-      ></div>
-
+    <ModalOverlay onClose={onClose} className="!bg-black/75">
       {/* Modal */}
-      <div className="relative w-full max-w-4xl max-h-[90vh] bg-white/10 backdrop-blur-sm rounded-2xl border border-white/20 shadow-xl z-10 overflow-hidden flex flex-col">
+      <div className="relative w-full max-w-4xl max-h-[90vh] bg-white/10 backdrop-blur-sm rounded-2xl border border-white/20 shadow-xl overflow-hidden flex flex-col" onClick={(e) => e.stopPropagation()}>
         {/* Header */}
         <div className="flex items-center justify-between p-6 border-b border-white/20">
           <h2 className="text-2xl font-bold text-white">{t('consentModal.title')}</h2>
@@ -295,7 +288,7 @@ export const ConsentModal: React.FC<ConsentModalProps> = ({ isOpen, onClose }) =
           </button>
         </div>
       </div>
-    </div>
+    </ModalOverlay>
   );
 };
 

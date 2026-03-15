@@ -1,14 +1,13 @@
 /** Компонент для управления принтерами в админке */
 
 import { useEffect, useMemo, useState } from 'react';
-import { createPortal } from 'react-dom';
+import { ModalOverlay } from '../ModalOverlay';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { Plus, Edit, Trash2, X, Save } from 'lucide-react';
 import { Printer3DIcon } from '../icons/Printer3DIcon';
 import { adminAPI, printersAPI } from '../../api/client';
 import type { Printer as PrinterType } from '../../types/api';
-import { useHeaderVisible } from '../../hooks/useHeaderVisible';
 import { EditGCodeModal } from '../EditGCodeModal';
 import { CustomSelect } from '../CustomSelect';
 
@@ -22,7 +21,6 @@ const slugify = (value: string): string =>
 
 export function AdminPrinters() {
   const { t } = useTranslation();
-  const isHeaderVisible = useHeaderVisible();
   const queryClient = useQueryClient();
   const [page, setPage] = useState(1);
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
@@ -276,7 +274,6 @@ const PRINTER_GCODE_FIELDS = [
 
 function PrinterModal({ printer, onClose, onSave, isLoading }: PrinterModalProps) {
   const { t } = useTranslation();
-  const isHeaderVisible = useHeaderVisible();
   const [formData, setFormData] = useState({
     name: printer?.name || '',
     manufacturer: printer?.manufacturer || '',
@@ -1963,13 +1960,9 @@ function PrinterModal({ printer, onClose, onSave, isLoading }: PrinterModalProps
       />
     </section>
   );
-  const modalContent = (
-    <div className={`fixed inset-0 z-50 ${isHeaderVisible ? 'pt-[88px]' : ''}`}>
-      <div
-        className="absolute inset-0 bg-black/70 backdrop-blur-sm transition-opacity"
-        onClick={onClose}
-      />
-      <div className="relative z-10 mx-auto mt-10 mb-6 w-full max-w-5xl px-4 md:px-8">
+  return (
+    <ModalOverlay onClose={onClose} className="!bg-black/70 !items-start">
+      <div className="mx-auto mt-10 mb-6 w-full max-w-5xl px-4 md:px-8" onClick={(e) => e.stopPropagation()}>
         <div className="bg-gradient-to-br from-[#1c1140] to-[#23185a] rounded-3xl shadow-[0_20px_60px_-15px_rgba(76,29,149,0.7)] border border-white/15 h-[85vh] overflow-hidden flex flex-col">
           <div className="flex items-center justify-between px-6 md:px-10 py-6 border-b border-white/10">
             <div>
@@ -2044,9 +2037,7 @@ function PrinterModal({ printer, onClose, onSave, isLoading }: PrinterModalProps
           </div>
         </div>
       </div>
-    </div>
+    </ModalOverlay>
   );
-
-  return createPortal(modalContent, document.body);
 }
 

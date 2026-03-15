@@ -8,7 +8,7 @@ import { printerProfilesAPI, printersAPI } from '../api/client';
 import { useAuth } from '../contexts/AuthContext';
 import type { PrinterProfile, Printer } from '../types/api';
 import { EditGCodeModal } from './EditGCodeModal';
-import { useHeaderVisible } from '../hooks/useHeaderVisible';
+import { ModalOverlay } from './ModalOverlay';
 import { CustomSelect } from './CustomSelect';
 import { Dropdown } from './Dropdown';
 import { useDebounce } from '../hooks/useDebounce';
@@ -778,7 +778,6 @@ export const CreatePrinterProfileModal: React.FC<CreatePrinterProfileModalProps>
 }) => {
   const { user } = useAuth();
   const queryClient = useQueryClient();
-  const isHeaderVisible = useHeaderVisible();
   const { t } = useTranslation();
   
   // Поиск принтеров
@@ -3071,17 +3070,9 @@ export const CreatePrinterProfileModal: React.FC<CreatePrinterProfileModalProps>
   if (!isOpen) return null;
 
   return (
-    <div className={`fixed inset-0 z-[100] ${isHeaderVisible ? 'pt-[88px]' : ''}`}>
-      {/* Backdrop - покрывает весь экран, включая хэдер */}
-      <div 
-        className="fixed inset-0 bg-black/50 backdrop-blur-sm"
-        onClick={onClose}
-      />
-      {/* Modal Container */}
-      <div className="fixed inset-0 flex items-center justify-center pointer-events-none p-4" style={{ top: isHeaderVisible ? '88px' : '0' }}>
-        {/* Modal */}
-        <div 
-          className={`bg-gradient-to-br from-gray-900 to-gray-800 rounded-2xl shadow-2xl border border-white/20 max-w-5xl w-full ${isHeaderVisible ? 'max-h-[calc(100vh-100px)]' : 'max-h-[90vh]'} overflow-hidden flex flex-col pointer-events-auto`}
+    <ModalOverlay onClose={onClose}>
+        <div
+          className="bg-gradient-to-br from-gray-900 to-gray-800 rounded-2xl shadow-2xl border border-white/20 max-w-5xl w-full max-h-[90vh] overflow-hidden flex flex-col"
           onClick={(e) => e.stopPropagation()}
           onMouseDown={(e) => e.stopPropagation()}
         >
@@ -3234,7 +3225,6 @@ export const CreatePrinterProfileModal: React.FC<CreatePrinterProfileModalProps>
           </div>
         </form>
         </div>
-      </div>
-    </div>
+    </ModalOverlay>
   );
 };

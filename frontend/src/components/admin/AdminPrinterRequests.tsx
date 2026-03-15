@@ -7,13 +7,12 @@ import { Package, CheckCircle, XCircle, Eye, Clock, Download } from 'lucide-reac
 import { Printer3DIcon } from '../icons/Printer3DIcon';
 import { adminAPI } from '../../api/client';
 import type { PrinterRequest } from '../../types/api';
-import { useHeaderVisible } from '../../hooks/useHeaderVisible';
+import { ModalOverlay } from '../ModalOverlay';
 
 type PrinterRequestStatus = 'pending' | 'approved' | 'rejected';
 
 export function AdminPrinterRequests() {
   const { t } = useTranslation();
-  const isHeaderVisible = useHeaderVisible();
   const queryClient = useQueryClient();
   const [selectedStatus, setSelectedStatus] = useState<PrinterRequestStatus | 'all'>('all');
   const [selectedRequest, setSelectedRequest] = useState<PrinterRequest | null>(null);
@@ -196,8 +195,8 @@ export function AdminPrinterRequests() {
 
       {/* Модальное окно с деталями заявки */}
       {selectedRequest && (
-        <div className={`fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4 z-50 ${isHeaderVisible ? 'pt-[88px]' : ''}`}>
-          <div className="bg-gradient-to-br from-purple-900 to-indigo-900 rounded-2xl max-w-3xl w-full max-h-[90vh] overflow-hidden flex flex-col border border-white/20">
+        <ModalOverlay onClose={() => setSelectedRequest(null)}>
+          <div className="bg-gradient-to-br from-purple-900 to-indigo-900 rounded-2xl max-w-3xl w-full max-h-[90vh] overflow-hidden flex flex-col border border-white/20" onClick={(e) => e.stopPropagation()}>
             {/* Header */}
             <div className="flex items-center justify-between p-6 border-b border-white/10">
               <h3 className="text-2xl font-bold text-white">{t('adminPrinterRequests.requestDetails')} #{selectedRequest.id}</h3>
@@ -399,7 +398,7 @@ export function AdminPrinterRequests() {
             )}
             </div>
           </div>
-        </div>
+        </ModalOverlay>
       )}
     </div>
   );

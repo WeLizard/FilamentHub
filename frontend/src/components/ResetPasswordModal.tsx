@@ -4,7 +4,7 @@ import { useState, FormEvent, useEffect } from 'react';
 import { Lock, X, CheckCircle, AlertCircle, Loader, Eye, EyeOff } from 'lucide-react';
 import { authAPI } from '../api/client';
 import { useNavigate } from 'react-router-dom';
-import { useHeaderVisible } from '../hooks/useHeaderVisible';
+import { ModalOverlay } from './ModalOverlay';
 import { useTranslation } from 'react-i18next';
 import { translateApiError } from '../utils/translateApiError';
 
@@ -20,7 +20,6 @@ export const ResetPasswordModal: React.FC<ResetPasswordModalProps> = ({
   token,
 }) => {
   const { t } = useTranslation();
-  const isHeaderVisible = useHeaderVisible();
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -129,15 +128,9 @@ export const ResetPasswordModal: React.FC<ResetPasswordModalProps> = ({
   };
 
   return (
-    <div className={`fixed inset-0 z-50 flex items-center justify-center p-4 ${isHeaderVisible ? 'pt-[88px]' : ''}`}>
-      {/* Backdrop */}
-      <div
-        className="absolute inset-0 bg-black/60 backdrop-blur-sm"
-        onClick={handleClose}
-      ></div>
-
+    <ModalOverlay onClose={handleClose} closeOnOverlayClick={!isLoading && !isSuccess} className="!bg-black/60">
       {/* Modal */}
-      <div className="relative w-full max-w-md bg-white/10 backdrop-blur-sm rounded-2xl border border-white/20 shadow-xl z-10 overflow-hidden">
+      <div className="relative w-full max-w-md bg-white/10 backdrop-blur-sm rounded-2xl border border-white/20 shadow-xl overflow-hidden" onClick={(e) => e.stopPropagation()}>
         {/* Header */}
         <div className="relative p-8 pb-0">
           <button
@@ -284,7 +277,7 @@ export const ResetPasswordModal: React.FC<ResetPasswordModalProps> = ({
           )}
         </div>
       </div>
-    </div>
+    </ModalOverlay>
   );
 };
 

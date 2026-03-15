@@ -7,7 +7,7 @@ import { X, Save } from 'lucide-react';
 import { Printer3DIcon } from './icons/Printer3DIcon';
 import { printerRequestsAPI } from '../api/printerRequestsAPI';
 import { translateApiError } from '../utils/translateApiError';
-import { useHeaderVisible } from '../hooks/useHeaderVisible';
+import { ModalOverlay } from './ModalOverlay';
 
 interface CreatePrinterRequestModalProps {
   isOpen: boolean;
@@ -16,7 +16,6 @@ interface CreatePrinterRequestModalProps {
 
 export function CreatePrinterRequestModal({ isOpen, onClose }: CreatePrinterRequestModalProps) {
   const { t } = useTranslation();
-  const isHeaderVisible = useHeaderVisible();
   const queryClient = useQueryClient();
   const [formData, setFormData] = useState({
     name: '',
@@ -84,20 +83,12 @@ export function CreatePrinterRequestModal({ isOpen, onClose }: CreatePrinterRequ
   if (!isOpen) return null;
 
   return (
-    <div className={`fixed inset-0 z-[100] ${isHeaderVisible ? 'pt-[88px]' : ''}`}>
-      {/* Backdrop - покрывает весь экран, включая хэдер */}
-      <div 
-        className="fixed inset-0 bg-black/50 backdrop-blur-sm"
-        onClick={onClose}
-      />
-      {/* Modal Container */}
-      <div className="fixed inset-0 flex items-center justify-center pointer-events-none p-4" style={{ top: isHeaderVisible ? '88px' : '0' }}>
-        {/* Modal */}
-        <div 
-          className={`bg-gradient-to-br from-purple-900 to-indigo-900 rounded-2xl shadow-2xl border border-white/20 max-w-2xl w-full ${isHeaderVisible ? 'max-h-[calc(100vh-120px)]' : 'max-h-[85vh]'} overflow-hidden flex flex-col pointer-events-auto`}
-          onClick={(e) => e.stopPropagation()}
-          onMouseDown={(e) => e.stopPropagation()}
-        >
+    <ModalOverlay onClose={onClose}>
+      <div
+        className="bg-gradient-to-br from-purple-900 to-indigo-900 rounded-2xl shadow-2xl border border-white/20 max-w-2xl w-full max-h-[85vh] overflow-hidden flex flex-col"
+        onClick={(e) => e.stopPropagation()}
+        onMouseDown={(e) => e.stopPropagation()}
+      >
         {/* Header */}
         <div className="flex items-center justify-between p-6 border-b border-white/10">
           <div className="flex items-center space-x-3">
@@ -310,8 +301,7 @@ export function CreatePrinterRequestModal({ isOpen, onClose }: CreatePrinterRequ
         </form>
         </div>
       </div>
-      </div>
-    </div>
+    </ModalOverlay>
   );
 }
 

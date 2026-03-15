@@ -7,7 +7,7 @@ import { Recaptcha, getRecaptchaToken } from './Captcha';
 import { TermsModal } from './TermsModal';
 import { ConsentModal } from './ConsentModal';
 import { ForgotPasswordModal } from './ForgotPasswordModal';
-import { useHeaderVisible } from '../hooks/useHeaderVisible';
+import { ModalOverlay } from './ModalOverlay';
 import { useTranslation } from 'react-i18next';
 import { translateApiError } from '../utils/translateApiError';
 
@@ -19,7 +19,6 @@ interface AuthModalProps {
 
 export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMode = 'login' }) => {
   const { t } = useTranslation();
-  const isHeaderVisible = useHeaderVisible();
   const [authMode, setAuthMode] = useState<'login' | 'register'>(initialMode);
   const [authMethod, setAuthMethod] = useState<'email' | 'google'>('email'); // Новое состояние для метода входа
   const [email, setEmail] = useState('');
@@ -164,20 +163,9 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
   };
 
   return (
-    <div className={`fixed inset-0 z-50 flex items-center justify-center p-4 ${isHeaderVisible ? 'pt-[88px]' : ''}`}>
-      {/* Backdrop */}
-      <div
-        className="absolute inset-0 bg-black/60 backdrop-blur-sm"
-        onClick={(e) => {
-          // Закрываем модалку только если не идет загрузка и нет ошибки
-          if (!isLoading && !error) {
-            onClose();
-          }
-        }}
-      ></div>
-
+    <ModalOverlay onClose={onClose} closeOnOverlayClick={!isLoading && !error} className="!bg-black/60">
       {/* Modal */}
-      <div className="relative w-full max-w-md max-h-[90vh] bg-white/10 backdrop-blur-sm rounded-xl sm:rounded-2xl border border-white/20 shadow-xl z-10 overflow-hidden flex flex-col mx-2 sm:mx-0">
+      <div className="relative w-full max-w-md max-h-[90vh] bg-white/10 backdrop-blur-sm rounded-xl sm:rounded-2xl border border-white/20 shadow-xl overflow-hidden flex flex-col mx-2 sm:mx-0" onClick={(e) => e.stopPropagation()}>
         {/* Header */}
         <div className="relative p-4 sm:p-8 pb-0 flex-shrink-0">
           {/* Close Button */}
@@ -549,7 +537,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
           setIsForgotPasswordModalOpen(false);
         }}
       />
-    </div>
+    </ModalOverlay>
   );
 };
 
