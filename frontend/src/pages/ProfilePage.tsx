@@ -1582,12 +1582,12 @@ const SpoolCard: React.FC<SpoolCardProps> = ({ spool, isBusy = false, onEdit, on
             <span className="text-gray-500">{t('profilePage.spoolPrice')}: </span>
             <span className="font-medium">
               {spool.price != null
-                ? `${spool.price.toFixed(0)} ₽`
-                : `${((spool.filament!.price_per_kg! * spool.initial_weight_g) / 1000).toFixed(0)} ₽`}
+                ? `${spool.price.toFixed(0)} ${BASIC_CURRENCY_SYMBOL}`
+                : `${((spool.filament!.price_per_kg! * spool.initial_weight_g) / 1000).toFixed(0)} ${BASIC_CURRENCY_SYMBOL}`}
             </span>
             {spool.price == null && spool.filament?.price_per_kg != null && (
               <span className="text-gray-600 ml-1">
-                ({spool.filament.price_per_kg.toFixed(0)} ₽/кг, рек.)
+                ({spool.filament.price_per_kg.toFixed(0)} {BASIC_CURRENCY_SYMBOL}/кг, рек.)
               </span>
             )}
           </p>
@@ -3524,22 +3524,24 @@ const HistoryItem: React.FC<HistoryItemProps> = ({ item }) => (
   </div>
 );
 
+const BASIC_CURRENCY_SYMBOL = '₽';
+
 // Калькулятор стоимости печати с поддержкой трех методов расчета
 const CalculatorComponent: React.FC = () => {
   const { t } = useTranslation();
   const [pricingMethod, setPricingMethod] = useState<PricingMethod>('combined');
   
   // Параметры материала
-  const [weightG, setWeightG] = useState<number>(531);
+  const [weightG, setWeightG] = useState<number>(0);
   const [supportsWeightG, setSupportsWeightG] = useState<number>(0);
   const [supportsLossCoefficient, setSupportsLossCoefficient] = useState<number>(1.2);
-  const [spoolPrice, setSpoolPrice] = useState<number>(1200);
+  const [spoolPrice, setSpoolPrice] = useState<number>(0);
   const [spoolWeightKg, setSpoolWeightKg] = useState<number>(1);
   const [deliveryCost, setDeliveryCost] = useState<number>(0);
-  
+
   // Параметры времени печати
-  const [timeHours, setTimeHours] = useState<number>(13);
-  const [timeMinutes, setTimeMinutes] = useState<number>(40);
+  const [timeHours, setTimeHours] = useState<number>(0);
+  const [timeMinutes, setTimeMinutes] = useState<number>(0);
   const [timeSec, setTimeSec] = useState<number>(0);
   
   // Почасовая ставка печати (для by_time)
@@ -3555,14 +3557,14 @@ const CalculatorComponent: React.FC = () => {
   const [modelingRatePerHour, setModelingRatePerHour] = useState<number>(934);
   
   const [postprocessingHours, setPostprocessingHours] = useState<number>(0);
-  const [postprocessingMinutes, setPostprocessingMinutes] = useState<number>(2);
+  const [postprocessingMinutes, setPostprocessingMinutes] = useState<number>(0);
   const [postprocessingRatePerHour, setPostprocessingRatePerHour] = useState<number>(100);
   
   const [printingRatePerHour, setPrintingRatePerHour] = useState<number>(170);
   const [amortizationRatePerHour, setAmortizationRatePerHour] = useState<number>(16);
   
   // Количество деталей
-  const [quantity, setQuantity] = useState<number>(4);
+  const [quantity, setQuantity] = useState<number>(1);
   const [partsPerPrint, setPartsPerPrint] = useState<number>(1);
   
   // Накладные расходы и наценка
@@ -4222,22 +4224,22 @@ const CalculatorComponent: React.FC = () => {
               <div className="space-y-3">
                 <div className="flex justify-between items-center py-2 border-b border-white/10">
                   <span className="text-gray-300">{t('profilePage.calc.directCosts')}</span>
-                  <span className="text-white font-semibold">{result.cost_direct.toFixed(2)} ₽</span>
+                  <span className="text-white font-semibold">{result.cost_direct.toFixed(2)} {BASIC_CURRENCY_SYMBOL}</span>
                 </div>
                 {result.cost_overhead > 0 && (
                   <div className="flex justify-between items-center py-2 border-b border-white/10">
                     <span className="text-gray-300">{t('profilePage.calc.overhead')}</span>
-                    <span className="text-white font-semibold">{result.cost_overhead.toFixed(2)} ₽</span>
+                    <span className="text-white font-semibold">{result.cost_overhead.toFixed(2)} {BASIC_CURRENCY_SYMBOL}</span>
                   </div>
                 )}
                 <div className="flex justify-between items-center py-2 border-b border-white/10">
                   <span className="text-gray-300">{t('profilePage.calc.costBeforeMarkup')}</span>
-                  <span className="text-white font-semibold">{result.cost_before_markup.toFixed(2)} ₽</span>
+                  <span className="text-white font-semibold">{result.cost_before_markup.toFixed(2)} {BASIC_CURRENCY_SYMBOL}</span>
                 </div>
                 {result.cost_markup > 0 && (
                   <div className="flex justify-between items-center py-2 border-b border-white/10">
                     <span className="text-gray-300">{t('profilePage.calc.markup')}</span>
-                    <span className="text-white font-semibold">{result.cost_markup.toFixed(2)} ₽</span>
+                    <span className="text-white font-semibold">{result.cost_markup.toFixed(2)} {BASIC_CURRENCY_SYMBOL}</span>
                   </div>
                 )}
                 {(result.applied_urgency_coefficient || result.applied_complexity_coefficient || result.applied_volume_discount) && (
@@ -4281,7 +4283,7 @@ const CalculatorComponent: React.FC = () => {
                       <span className="text-gray-300 text-sm">{t('profilePage.calc.costOfGoods')}</span>
                       <DollarSign className="w-4 h-4 text-gray-400" />
                     </div>
-                    <div className="text-2xl font-bold text-white">{result.cost_of_goods_sold.toFixed(2)} ₽</div>
+                    <div className="text-2xl font-bold text-white">{result.cost_of_goods_sold.toFixed(2)} {BASIC_CURRENCY_SYMBOL}</div>
                     <p className="text-xs text-gray-400 mt-1">{t('profilePage.calc.costOfGoodsHint')}</p>
                   </div>
                 )}
@@ -4292,7 +4294,7 @@ const CalculatorComponent: React.FC = () => {
                       <TrendingUp className="w-4 h-4 text-green-400" />
                     </div>
                     <div className="text-2xl font-bold text-green-400">
-                      {result.profit_margin.toFixed(2)} ₽
+                      {result.profit_margin.toFixed(2)} {BASIC_CURRENCY_SYMBOL}
                       {result.profit_margin_percent !== undefined && result.profit_margin_percent !== null && (
                         <span className="text-lg ml-2">({result.profit_margin_percent.toFixed(1)}%)</span>
                       )}
@@ -4360,7 +4362,7 @@ const CalculatorComponent: React.FC = () => {
       {calculateMutation.isError && (
         <div className="bg-red-500/10 border border-red-500/30 rounded-xl p-4">
           <p className="text-red-300">
-            {t('profilePage.calc.error')}: {calculateMutation.error instanceof Error ? calculateMutation.error.message : t('profilePage.calc.unknownError')}
+            {t('profilePage.calc.error')}: {translateApiError(t, (calculateMutation.error as { response?: { data?: { detail?: unknown } } })?.response?.data?.detail, t('profilePage.calc.unknownError'))}
           </p>
         </div>
       )}
@@ -4380,7 +4382,7 @@ interface ResultCardProps {
 const ResultCard: React.FC<ResultCardProps> = ({ label, value, icon: Icon, color, borderColor, isTotal }) => (
   <div className={`bg-gradient-to-r ${color} p-6 rounded-2xl border ${borderColor} shadow-xl`}>
     <div className="text-3xl font-bold mb-2" style={{ color: isTotal ? '#10b981' : '#ffffff' }}>
-      {value}₽
+      {value}{BASIC_CURRENCY_SYMBOL}
     </div>
     <div className="text-gray-300 flex items-center">
       <Icon className="w-4 h-4 mr-2" />
