@@ -125,10 +125,6 @@ export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ children, requir
               </button>
             </div>
 
-            <p className="text-center text-sm text-gray-400">
-              {t('protectedRoute.return_after_login')}
-              <span className="ml-1 text-gray-200">{location.pathname}</span>
-            </p>
           </div>
         </div>
       </div>
