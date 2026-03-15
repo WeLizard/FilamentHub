@@ -6,6 +6,40 @@ import { Download, CheckCircle, Package, Code, Zap, Globe, Monitor, Smartphone, 
 import { downloadsAPI } from '../api/client';
 import type { DownloadVersion, DownloadVersionsResponse } from '../types/api';
 
+type DownloadScreenshotCardImageProps = {
+  src: string;
+  alt: string;
+  comingSoonLabel: string;
+};
+
+function DownloadScreenshotCardImage({ src, alt, comingSoonLabel }: DownloadScreenshotCardImageProps) {
+  const [loadFailed, setLoadFailed] = useState(false);
+
+  if (loadFailed) {
+    return (
+      <div className="aspect-video bg-gradient-to-br from-gray-800 to-gray-900 rounded-lg flex items-center justify-center border-2 border-dashed border-white/20 mb-4">
+        <div className="text-center">
+          <ImageIcon className="w-12 h-12 text-gray-500 mx-auto mb-2" />
+          <p className="text-sm text-gray-500">{alt}</p>
+          <p className="text-xs text-gray-600 mt-1">{comingSoonLabel}</p>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="aspect-video overflow-hidden rounded-lg border border-white/10 bg-black/20 mb-4">
+      <img
+        src={src}
+        alt={alt}
+        className="h-full w-full object-cover object-top"
+        loading="lazy"
+        onError={() => setLoadFailed(true)}
+      />
+    </div>
+  );
+}
+
 export function DownloadPage() {
   const { t } = useTranslation();
   const [selectedPlatform, setSelectedPlatform] = useState<'windows' | 'macos' | 'linux'>('windows');
@@ -158,13 +192,11 @@ export function DownloadPage() {
 
           {/* Screenshot 2: Catalog in OrcaSlicer */}
           <div className="bg-white/5 rounded-xl p-4 border border-white/10">
-            <div className="aspect-video bg-gradient-to-br from-gray-800 to-gray-900 rounded-lg flex items-center justify-center border-2 border-dashed border-white/20 mb-4">
-              <div className="text-center">
-                <ImageIcon className="w-12 h-12 text-gray-500 mx-auto mb-2" />
-                <p className="text-sm text-gray-500">{t('downloadPage.screenshotCatalogAlt')}</p>
-                <p className="text-xs text-gray-600 mt-1">{t('downloadPage.comingSoon')}</p>
-              </div>
-            </div>
+            <DownloadScreenshotCardImage
+              src="/download-media/catalog-presets.png"
+              alt={t('downloadPage.screenshotCatalogAlt')}
+              comingSoonLabel={t('downloadPage.comingSoon')}
+            />
             <h3 className="text-lg font-semibold text-white mb-2">{t('downloadPage.screenshotCatalogTitle')}</h3>
             <p className="text-gray-300 text-sm">
               {t('downloadPage.screenshotCatalogDesc')}
@@ -173,13 +205,11 @@ export function DownloadPage() {
 
           {/* Screenshot 3: Sync Feature */}
           <div className="bg-white/5 rounded-xl p-4 border border-white/10">
-            <div className="aspect-video bg-gradient-to-br from-gray-800 to-gray-900 rounded-lg flex items-center justify-center border-2 border-dashed border-white/20 mb-4">
-              <div className="text-center">
-                <ImageIcon className="w-12 h-12 text-gray-500 mx-auto mb-2" />
-                <p className="text-sm text-gray-500">{t('downloadPage.screenshotSyncAlt')}</p>
-                <p className="text-xs text-gray-600 mt-1">{t('downloadPage.comingSoon')}</p>
-              </div>
-            </div>
+            <DownloadScreenshotCardImage
+              src="/download-media/presets-sync.png"
+              alt={t('downloadPage.screenshotSyncAlt')}
+              comingSoonLabel={t('downloadPage.comingSoon')}
+            />
             <h3 className="text-lg font-semibold text-white mb-2">{t('downloadPage.screenshotSyncTitle')}</h3>
             <p className="text-gray-300 text-sm">
               {t('downloadPage.screenshotSyncDesc')}
@@ -188,13 +218,11 @@ export function DownloadPage() {
 
           {/* Screenshot 4: Import Preset */}
           <div className="bg-white/5 rounded-xl p-4 border border-white/10">
-            <div className="aspect-video bg-gradient-to-br from-gray-800 to-gray-900 rounded-lg flex items-center justify-center border-2 border-dashed border-white/20 mb-4">
-              <div className="text-center">
-                <ImageIcon className="w-12 h-12 text-gray-500 mx-auto mb-2" />
-                <p className="text-sm text-gray-500">{t('downloadPage.screenshotImportAlt')}</p>
-                <p className="text-xs text-gray-600 mt-1">{t('downloadPage.comingSoon')}</p>
-              </div>
-            </div>
+            <DownloadScreenshotCardImage
+              src="/download-media/import-one-click.png"
+              alt={t('downloadPage.screenshotImportAlt')}
+              comingSoonLabel={t('downloadPage.comingSoon')}
+            />
             <h3 className="text-lg font-semibold text-white mb-2">{t('downloadPage.screenshotImportTitle')}</h3>
             <p className="text-gray-300 text-sm">
               {t('downloadPage.screenshotImportDesc')}
