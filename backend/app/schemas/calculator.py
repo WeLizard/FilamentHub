@@ -140,6 +140,30 @@ class CalculatorEstimateRequest(BaseModel):
         None, ge=0, description="Минимальная цена заказа (если итоговая цена меньше, устанавливается минимум, обычно 300-500 руб)"
     )
     
+    # ========== Потери материала ==========
+    waste_factor_percent: float | None = Field(
+        None, ge=0, le=30, description="Процент потерь материала (пурга, скирт, дефекты) помимо поддержек (обычно 5-15%)"
+    )
+
+    # ========== Износ сопла ==========
+    nozzle_price: float | None = Field(
+        None, ge=0, description="Цена сопла (руб)"
+    )
+    nozzle_life_cm3: float | None = Field(
+        None, gt=0, description="Ресурс сопла в см³ экструдированного материала (латунь ~15000, сталь ~50000)"
+    )
+    material_abrasiveness: float | None = Field(
+        None, ge=0.5, le=5.0, description="Коэффициент абразивности материала (PLA=1.0, PETG=1.2, Carbon=2.5, Glass=3.0)"
+    )
+    filament_density: float | None = Field(
+        None, gt=0, le=10.0, description="Плотность филамента г/см³ (PLA=1.24, PETG=1.27, ABS=1.04, Nylon=1.14)"
+    )
+
+    # ========== Мониторинг (пассивное время оператора) ==========
+    monitoring_factor: float | None = Field(
+        None, ge=0, le=0.5, description="Доля времени печати на мониторинг оператором (0.05-0.15 = 5-15%)"
+    )
+
     # ========== Округление ==========
     round_to_nearest: int | None = Field(
         None, ge=0, description="Округлять итоговую сумму до ближайшего N (например, 10 для округления до десятков)"
@@ -155,11 +179,14 @@ class CalculatorEstimateResponse(BaseModel):
 
     # Компоненты стоимости
     cost_material: float = Field(0, ge=0, description="Стоимость материала")
+    cost_waste: float = Field(0, ge=0, description="Потери материала (пурга, скирт, дефекты)")
     cost_electricity: float = Field(0, ge=0, description="Стоимость электроэнергии")
     cost_modeling: float = Field(0, ge=0, description="Стоимость моделирования")
     cost_printing: float = Field(0, ge=0, description="Стоимость печати (почасовая)")
     cost_postprocessing: float = Field(0, ge=0, description="Стоимость постобработки")
+    cost_monitoring: float = Field(0, ge=0, description="Мониторинг печати (пассивное время оператора)")
     cost_amortization: float = Field(0, ge=0, description="Стоимость амортизации")
+    cost_nozzle_wear: float = Field(0, ge=0, description="Износ сопла (объёмная модель)")
     cost_tax: float = Field(0, ge=0, description="Сумма налога, включенная в итоговую цену")
     
     # Промежуточные расчеты

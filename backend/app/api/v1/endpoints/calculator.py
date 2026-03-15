@@ -259,7 +259,13 @@ async def estimate_cost(
             
             # Формула из документа: (Вес детали × Цена материала) + (Вес поддержек × Цена материала × Коэффициент потерь)
             cost_material = (part_weight * price_per_gram) + (supports_weight * price_per_gram * supports_loss_coef)
-        
+
+        # 1b. Потери материала (пурга, скирт, дефекты — помимо поддержек)
+        cost_waste = 0.0
+        waste_factor_percent = data.waste_factor_percent or 0.0
+        if waste_factor_percent > 0 and cost_material > 0:
+            cost_waste = cost_material * (waste_factor_percent / 100.0)
+
         # 2. Время одного запуска / одной укладки на столе
         time_hours_per_run = _convert_time_to_hours(data.time_hours, data.time_minutes, data.time_sec)
         # Время печати всей партии с учётом количества запусков
@@ -293,20 +299,40 @@ async def estimate_cost(
             # Формула из Excel: (время_на_деталь * количество) * ставка_за_час
             cost_postprocessing = postprocessing_time_total * data.postprocessing_rate_per_hour
         
+        # 6b. Мониторинг (пассивное время оператора — 5-15% от времени печати)
+        cost_monitoring = 0.0
+        monitoring_factor = data.monitoring_factor or 0.0
+        if monitoring_factor > 0 and time_hours_total > 0 and data.printing_rate_per_hour:
+            monitoring_time_hours = time_hours_total * monitoring_factor
+            cost_monitoring = monitoring_time_hours * data.printing_rate_per_hour
+
         # 7. Амортизация (привязана к общему времени печати партии)
         cost_amortization = 0.0
         if data.amortization_rate_per_hour and time_hours_total > 0:
             # Формула из Excel: время_печати_часы_всего * ставка_амортизации_за_час
             cost_amortization = time_hours_total * data.amortization_rate_per_hour
-        
-        # 8. Прямые затраты (материалы + время + труд)
+
+        # 7b. Износ сопла (объёмная модель — по см³ экструзии, не по часам)
+        cost_nozzle_wear = 0.0
+        if data.nozzle_price and data.nozzle_life_cm3 and data.weight_g:
+            # Объём = вес / плотность. Плотность по умолчанию 1.24 г/см³ (PLA)
+            density = data.filament_density or 1.24
+            total_weight_g = data.weight_g * quantity + (data.supports_weight_g or 0.0) * quantity
+            extruded_volume_cm3 = total_weight_g / density
+            abrasiveness = data.material_abrasiveness or 1.0
+            cost_nozzle_wear = data.nozzle_price * (extruded_volume_cm3 / data.nozzle_life_cm3) * abrasiveness
+
+        # 8. Прямые затраты (материалы + время + труд + износ)
         cost_direct = (
             cost_material +
+            cost_waste +
             cost_electricity +
             cost_modeling +
             cost_printing +
             cost_postprocessing +
-            cost_amortization
+            cost_monitoring +
+            cost_amortization +
+            cost_nozzle_wear
         )
         
         # 9. Накладные расходы (процент от прямых затрат)
@@ -355,10 +381,13 @@ async def estimate_cost(
         if quantity > 1:
             cost_without_modeling = (
                 cost_material +
+                cost_waste +
                 cost_electricity +
                 cost_printing +
                 cost_postprocessing +
-                cost_amortization
+                cost_monitoring +
+                cost_amortization +
+                cost_nozzle_wear
             )
             cost_without_modeling_with_overhead = (cost_without_modeling + (cost_without_modeling * overhead_percent / 100.0) + fixed_costs)
             cost_without_modeling_final = (cost_without_modeling_with_overhead * (1 + markup_percent / 100.0)) * urgency_coef * complexity_coef * volume_discount_coef
@@ -371,16 +400,17 @@ async def estimate_cost(
         # 19. Общая стоимость партии
         cost_total = cost_final
         
-        # 20. Расчет общего времени (печать + подготовка + постобработка)
-        # Общее время = время печати всех деталей + время моделирования (1 раз) + время постобработки всех деталей
+        # 20. Расчет общего времени (печать + мониторинг + подготовка + постобработка)
         total_time_hours = time_hours_total
+        if monitoring_factor > 0 and time_hours_total > 0:
+            total_time_hours += time_hours_total * monitoring_factor
         if data.modeling_hours or data.modeling_minutes:
             modeling_time = _convert_time_to_hours(data.modeling_hours, data.modeling_minutes)
-            total_time_hours = total_time_hours + modeling_time  # Моделирование делается один раз
+            total_time_hours += modeling_time  # Моделирование делается один раз
         if data.postprocessing_hours or data.postprocessing_minutes:
             postprocessing_time_per_part = _convert_time_to_hours(data.postprocessing_hours, data.postprocessing_minutes)
             postprocessing_time_total = postprocessing_time_per_part * quantity  # Постобработка каждой детали
-            total_time_hours = total_time_hours + postprocessing_time_total
+            total_time_hours += postprocessing_time_total
         
         # 21. Расчет маржинальности / прибыли
         # Себестоимость = прямые затраты + накладные + фиксированные расходы
@@ -391,11 +421,14 @@ async def estimate_cost(
         
         return CalculatorEstimateResponse(
             cost_material=round(cost_material, 2),
+            cost_waste=round(cost_waste, 2),
             cost_electricity=round(cost_electricity, 2),
             cost_modeling=round(cost_modeling, 2),
             cost_printing=round(cost_printing, 2),
             cost_postprocessing=round(cost_postprocessing, 2),
+            cost_monitoring=round(cost_monitoring, 2),
             cost_amortization=round(cost_amortization, 2),
+            cost_nozzle_wear=round(cost_nozzle_wear, 2),
             cost_tax=round(cost_tax, 2),
             cost_direct=round(cost_direct, 2),
             cost_overhead=round(cost_overhead, 2),
