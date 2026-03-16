@@ -1528,6 +1528,8 @@
     "draft": "Draft",
     "orphaned": "Recovered",
     "orphanedTooltip": "This preset was found on disk but not loaded by OrcaSlicer (broken parent profile). Settings were recovered automatically.",
+    "scanOrphaned": "Find lost presets",
+    "scanOrphanedTitle": "Scan disk for presets that OrcaSlicer failed to load (broken parent profile)",
     "activatePreset": "Activate",
     "activatePresetTitle": "Activate Preset",
     "activatePresetDesc": "Select a filament to link. After activation, the preset will be available in the catalog.",

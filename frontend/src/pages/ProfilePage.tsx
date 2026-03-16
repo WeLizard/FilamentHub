@@ -98,6 +98,7 @@ export const ProfilePage: React.FC = () => {
   const [createPrintProfileContext, setCreatePrintProfileContext] = useState<PrinterProfile | null>(null);
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
   const [presetFilter, setPresetFilter] = useState<'all' | 'own' | 'saved' | 'drafts'>('all');
+  const [isScanning, setIsScanning] = useState(false);
   const profileBadges = useMemo(() => {
     const validBadgeTypes = new Set<BadgeType>(Object.keys(BADGE_CONFIG) as BadgeType[]);
     return (user?.badges ?? []).filter((badge): badge is BadgeType => validBadgeTypes.has(badge as BadgeType));
@@ -820,6 +821,31 @@ export const ProfilePage: React.FC = () => {
             <div className="flex items-center gap-2 md:gap-3">
               {typeof window !== 'undefined' && (window as any).filamenthub?.exportFilamentPresets && (
                 <ExportFromOrcaSlicerButton />
+              )}
+              {typeof window !== 'undefined' && (window as any).filamenthub?.scanOrphanedPresets && (
+                <button
+                  onClick={async () => {
+                    if (isScanning) return;
+                    setIsScanning(true);
+                    try {
+                      await (window as any).filamenthub.scanOrphanedPresets();
+                    } catch (e) {
+                      console.error('Orphaned scan error:', e);
+                    } finally {
+                      setIsScanning(false);
+                    }
+                  }}
+                  disabled={isScanning}
+                  className="px-3 py-2 rounded-lg border text-sm font-medium transition-all bg-white/10 border-white/20 text-white hover:bg-white/20 disabled:opacity-50 disabled:cursor-not-allowed"
+                  title={t('profilePage.scanOrphanedTitle')}
+                >
+                  {isScanning ? (
+                    <Loader2 className="w-4 h-4 inline mr-1.5 animate-spin" />
+                  ) : (
+                    <RotateCcw className="w-4 h-4 inline mr-1.5" />
+                  )}
+                  <span className="hidden sm:inline">{t('profilePage.scanOrphaned')}</span>
+                </button>
               )}
               <button
                 onClick={handleCreatePreset}
