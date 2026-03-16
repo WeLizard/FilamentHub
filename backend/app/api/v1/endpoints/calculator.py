@@ -690,8 +690,18 @@ async def generate_quote_pdf(
     if not filename:
         filename = "quote"
 
+    from urllib.parse import quote
+
+    ascii_fallback = re.sub(r"[^A-Za-z0-9\-_.]", "_", filename)
+    utf8_encoded = quote(filename)
+
     return Response(
         content=pdf_bytes,
         media_type="application/pdf",
-        headers={"Content-Disposition": f'attachment; filename="{filename}.pdf"'},
+        headers={
+            "Content-Disposition": (
+                f"attachment; filename=\"{ascii_fallback}.pdf\"; "
+                f"filename*=UTF-8''{utf8_encoded}.pdf"
+            ),
+        },
     )

@@ -1458,7 +1458,7 @@ export const CalculatorPage: React.FC = () => {
       return;
     }
 
-    const quoteWindow = window.open('', '_blank', 'noopener,noreferrer');
+    const quoteWindow = window.open('', '_blank');
     if (!quoteWindow) {
       setHistoryFeedback({ kind: 'error', message: tc('quotePopupBlocked') });
       return;
