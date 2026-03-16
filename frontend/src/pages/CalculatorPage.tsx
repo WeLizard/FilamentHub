@@ -53,6 +53,7 @@ const ghostButtonClass =
 
 type CalculatorTab = 'calculator' | 'history';
 type QuoteDisclaimerMode = 'not_offer' | 'offer';
+type CurrencyCode = '₽' | '$' | '€';
 
 interface QuoteProfileState {
   sellerName: string;
@@ -61,6 +62,8 @@ interface QuoteProfileState {
   paymentTerms: string;
   validityDays: number;
   disclaimerMode: QuoteDisclaimerMode;
+  currency: CurrencyCode;
+  quoteNumberPrefix: string;
 }
 
 interface CalculatorFormState {
@@ -170,6 +173,8 @@ type CalculatorStaticSettings = Pick<CalculatorFormState, CalculatorStaticSettin
 
 const CALCULATOR_DEFAULTS_STORAGE_KEY = 'filamenthub_calculator_defaults_v1';
 const QUOTE_PROFILE_STORAGE_KEY = 'filamenthub_calculator_quote_profile_v1';
+const CURRENCY_OPTIONS: CurrencyCode[] = ['₽', '$', '€'];
+
 const DEFAULT_QUOTE_PROFILE: QuoteProfileState = {
   sellerName: '',
   sellerInn: '',
@@ -177,6 +182,8 @@ const DEFAULT_QUOTE_PROFILE: QuoteProfileState = {
   paymentTerms: '',
   validityDays: 14,
   disclaimerMode: 'not_offer',
+  currency: '₽',
+  quoteNumberPrefix: 'КП',
 };
 const DEFAULT_QUOTE_PARTY_FORM: QuotePartyFormState = {
   ...DEFAULT_QUOTE_PROFILE,
@@ -185,10 +192,9 @@ const DEFAULT_QUOTE_PARTY_FORM: QuotePartyFormState = {
   buyerAddress: '',
 };
 
-const CURRENCY_SYMBOL = '₽';
-
-const formatCurrency = (value: number | null | undefined): string =>
-  value == null || !Number.isFinite(value) ? '—' : `${value.toFixed(2)} ${CURRENCY_SYMBOL}`;
+const makeCurrencyFormatter = (symbol: CurrencyCode) =>
+  (value: number | null | undefined): string =>
+    value == null || !Number.isFinite(value) ? '—' : `${value.toFixed(2)} ${symbol}`;
 
 const formatQuantity = (value: number): string => `${value}`;
 
@@ -469,6 +475,8 @@ const loadStoredQuoteProfile = (): Partial<QuoteProfileState> => {
       disclaimerMode: parsed.disclaimerMode === 'offer' || parsed.disclaimerMode === 'not_offer'
         ? parsed.disclaimerMode
         : undefined,
+      currency: CURRENCY_OPTIONS.includes(parsed.currency) ? parsed.currency : undefined,
+      quoteNumberPrefix: typeof parsed.quoteNumberPrefix === 'string' ? parsed.quoteNumberPrefix : undefined,
     };
   } catch {
     return {};
@@ -489,6 +497,8 @@ const saveStoredQuoteProfile = (data: QuoteProfileState): void => {
       paymentTerms: data.paymentTerms,
       validityDays: data.validityDays,
       disclaimerMode: data.disclaimerMode,
+      currency: data.currency,
+      quoteNumberPrefix: data.quoteNumberPrefix,
     }),
   );
 };
@@ -719,6 +729,8 @@ interface BuildQuoteHtmlParams {
   parsedGcode: CalculatorGcodeParseResponse | null;
   selectedFilament: MaterialSelectionSnapshot | null;
   parties: QuotePartyFormState;
+  formatCurrency: (value: number | null | undefined) => string;
+  quoteNumber?: string;
 }
 
 const buildQuoteLineItems = (
@@ -788,6 +800,8 @@ const buildQuoteDocumentHtml = ({
   parsedGcode,
   selectedFilament,
   parties,
+  formatCurrency,
+  quoteNumber,
 }: BuildQuoteHtmlParams): string => {
   const lineItems = buildQuoteLineItems(t, form, result, parsedGcode, selectedFilament);
   const includedItems = buildQuoteIncludedItems(t, result);
@@ -856,7 +870,7 @@ const buildQuoteDocumentHtml = ({
     <div class="page">
       <div class="header">
         <div>
-          <h1 style="margin:0 0 8px;">${escapeHtml(t('calculator.quoteDocumentTitle'))}</h1>
+          <h1 style="margin:0 0 8px;">${escapeHtml(t('calculator.quoteDocumentTitle'))}${quoteNumber ? ` ${escapeHtml(quoteNumber)}` : ''}</h1>
           <div class="muted">${escapeHtml(t('calculator.quoteDocumentSubtitle'))}</div>
           <div class="muted" style="margin-top: 12px;">${escapeHtml(today)}</div>
         </div>
@@ -951,6 +965,12 @@ export const CalculatorPage: React.FC = () => {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const skipNextFilamentDefaultsRef = useRef(false);
   const lastAutoMatchedGcodeKeyRef = useRef<string | null>(null);
+  const quoteSequenceRef = useRef(0);
+
+  const formatCurrency = useMemo(
+    () => makeCurrencyFormatter(quoteProfile.currency || '₽'),
+    [quoteProfile.currency],
+  );
 
   const filamentsQuery = useQuery({
     queryKey: ['calculator-pro', 'filaments'],
@@ -1300,6 +1320,12 @@ export const CalculatorPage: React.FC = () => {
       return;
     }
 
+    quoteSequenceRef.current += 1;
+    const prefix = quoteProfile.quoteNumberPrefix || 'КП';
+    const seq = quoteSequenceRef.current;
+    const dateStr = new Date().toISOString().slice(0, 10).replace(/-/g, '');
+    const quoteNumber = `${prefix}-${dateStr}-${String(seq).padStart(2, '0')}`;
+
     const quoteHtml = buildQuoteDocumentHtml({
       t,
       form,
@@ -1307,6 +1333,8 @@ export const CalculatorPage: React.FC = () => {
       parsedGcode,
       selectedFilament: selectedMaterial,
       parties: quoteParties,
+      formatCurrency,
+      quoteNumber,
     });
 
     quoteWindow.document.open();
@@ -1470,6 +1498,7 @@ export const CalculatorPage: React.FC = () => {
           onQuoteProfileChange={updateQuoteProfileField}
           onOpenQuote={handleOpenQuote}
           onSaveToHistory={handleSaveToHistory}
+          formatCurrency={formatCurrency}
         />
       ) : (
         <HistoryView
@@ -1480,6 +1509,7 @@ export const CalculatorPage: React.FC = () => {
           total={historyQuery.data?.total ?? 0}
           onDeleteEntry={handleDeleteHistory}
           onRestoreEntry={handleRestoreHistory}
+          formatCurrency={formatCurrency}
         />
       )}
 
@@ -1496,6 +1526,7 @@ export const CalculatorPage: React.FC = () => {
           }));
         }}
         onPrint={handlePrintQuote}
+        formatCurrency={formatCurrency}
       />
     </div>
   );
@@ -1533,6 +1564,7 @@ interface CalculatorViewProps {
   onDragStateChange: (active: boolean) => void;
   onOpenQuote: () => void;
   onSaveToHistory: () => Promise<void>;
+  formatCurrency: (value: number | null | undefined) => string;
 }
 
 const CalculatorView: React.FC<CalculatorViewProps> = ({
@@ -1567,6 +1599,7 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
   onDragStateChange,
   onOpenQuote,
   onSaveToHistory,
+  formatCurrency,
 }) => {
   const { t } = useTranslation();
   const tc = (key: string) => translateCalculator(t, key);
@@ -1588,7 +1621,7 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
         ].join(' · ')
       : selectedCatalogFilament &&
           (selectedCatalogFilament.price_per_kg != null || selectedCatalogFilament.spool_weight != null)
-        ? `${selectedCatalogFilament.price_per_kg != null ? `${selectedCatalogFilament.price_per_kg.toFixed(0)} ${CURRENCY_SYMBOL}/${tc('kg')}` : '—'} · ${
+        ? `${selectedCatalogFilament.price_per_kg != null ? `${selectedCatalogFilament.price_per_kg.toFixed(0)} ${quoteProfile.currency}/${tc('kg')}` : '—'} · ${
             selectedCatalogFilament.spool_weight != null
               ? `${selectedCatalogFilament.spool_weight.toFixed(0)} ${tc('grams')}`
               : '—'
@@ -1683,7 +1716,7 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
                 <div>
                   <p className="text-sm font-semibold text-white">{tc('staticEconomicsTitle')}</p>
                   <p className="mt-1 text-xs leading-5 text-slate-400">
-                    {`${t('profilePage.calc.printingRate')}: ${form.printingRatePerHour} ${CURRENCY_SYMBOL}/${tc('hourAbbr')} · ${t('profilePage.calc.taxRatePercent')}: ${form.taxRatePercent}% · ${t('profilePage.calc.roundTo')}: ${form.roundToNearest} ${CURRENCY_SYMBOL} · ${roundingModeLabel}`}
+                    {`${t('profilePage.calc.printingRate')}: ${form.printingRatePerHour} ${quoteProfile.currency}/${tc('hourAbbr')} · ${t('profilePage.calc.taxRatePercent')}: ${form.taxRatePercent}% · ${t('profilePage.calc.roundTo')}: ${form.roundToNearest} ${quoteProfile.currency} · ${roundingModeLabel}`}
                   </p>
                 </div>
               ) : null}
@@ -1702,7 +1735,7 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
                       value={form.electricityCostPerKwh}
                       onChange={(value) => onStaticChange('electricityCostPerKwh', value)}
                       placeholder="6"
-                      suffix={`${CURRENCY_SYMBOL}/${tc('kwhAbbr')}`}
+                      suffix={`${quoteProfile.currency}/${tc('kwhAbbr')}`}
                       step="0.1"
                     />
                   </FieldBlock>
@@ -1733,7 +1766,7 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
                       value={form.printingRatePerHour}
                       onChange={(value) => onStaticChange('printingRatePerHour', value)}
                       placeholder="170"
-                      suffix={`${CURRENCY_SYMBOL}/${tc('hourAbbr')}`}
+                      suffix={`${quoteProfile.currency}/${tc('hourAbbr')}`}
                     />
                   </FieldBlock>
                   <FieldBlock
@@ -1749,7 +1782,7 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
                       value={form.modelingRatePerHour}
                       onChange={(value) => onStaticChange('modelingRatePerHour', value)}
                       placeholder="934"
-                      suffix={`${CURRENCY_SYMBOL}/${tc('hourAbbr')}`}
+                      suffix={`${quoteProfile.currency}/${tc('hourAbbr')}`}
                     />
                   </FieldBlock>
                   <FieldBlock
@@ -1765,7 +1798,7 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
                       value={form.postprocessingRatePerHour}
                       onChange={(value) => onStaticChange('postprocessingRatePerHour', value)}
                       placeholder="100"
-                      suffix={`${CURRENCY_SYMBOL}/${tc('hourAbbr')}`}
+                      suffix={`${quoteProfile.currency}/${tc('hourAbbr')}`}
                     />
                   </FieldBlock>
                   <FieldBlock
@@ -1780,7 +1813,7 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
                       value={form.amortizationRatePerHour}
                       onChange={(value) => onStaticChange('amortizationRatePerHour', value)}
                       placeholder="16"
-                      suffix={`${CURRENCY_SYMBOL}/${tc('hourAbbr')}`}
+                      suffix={`${quoteProfile.currency}/${tc('hourAbbr')}`}
                     />
                   </FieldBlock>
                   <FieldBlock
@@ -1831,7 +1864,7 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
                       value={form.fixedCosts}
                       onChange={(value) => onStaticChange('fixedCosts', value)}
                       placeholder="0"
-                      suffix={CURRENCY_SYMBOL}
+                      suffix={quoteProfile.currency}
                     />
                   </FieldBlock>
                   <FieldBlock label={t('profilePage.calc.minOrderPrice')} hint={t('profilePage.calc.minOrderPriceHint')}>
@@ -1839,7 +1872,7 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
                       value={form.minOrderPrice}
                       onChange={(value) => onStaticChange('minOrderPrice', value)}
                       placeholder="0"
-                      suffix={CURRENCY_SYMBOL}
+                      suffix={quoteProfile.currency}
                     />
                   </FieldBlock>
                   <FieldBlock label={t('profilePage.calc.roundTo')}>
@@ -1847,7 +1880,7 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
                       value={form.roundToNearest}
                       onChange={(value) => onStaticChange('roundToNearest', value)}
                       placeholder="10"
-                      suffix={CURRENCY_SYMBOL}
+                      suffix={quoteProfile.currency}
                     />
                   </FieldBlock>
                   <FieldBlock label={t('profilePage.calc.roundingMode')}>
@@ -1912,6 +1945,26 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
                       <option value="not_offer">{tc('quoteDisclaimerNotOffer')}</option>
                       <option value="offer">{tc('quoteDisclaimerOffer')}</option>
                     </select>
+                  </FieldBlock>
+                  <FieldBlock label={tc('quoteCurrency')}>
+                    <select
+                      className={`${inputClass} w-full sm:max-w-[18rem]`}
+                      value={quoteProfile.currency}
+                      onChange={(event) =>
+                        onQuoteProfileChange('currency', event.target.value as CurrencyCode)
+                      }
+                    >
+                      {CURRENCY_OPTIONS.map((c) => (
+                        <option key={c} value={c}>{c}</option>
+                      ))}
+                    </select>
+                  </FieldBlock>
+                  <FieldBlock label={tc('quoteNumberPrefix')} hint={tc('quoteNumberPrefixHint')}>
+                    <TextInput
+                      value={quoteProfile.quoteNumberPrefix}
+                      onChange={(value) => onQuoteProfileChange('quoteNumberPrefix', value)}
+                      placeholder="КП"
+                    />
                   </FieldBlock>
                   <div className="md:col-span-2 xl:col-span-3">
                     <FieldBlock label={tc('quotePaymentTerms')}>
@@ -2081,7 +2134,7 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
                       value={form.spoolPrice}
                       onChange={(value) => onChange('spoolPrice', value)}
                       placeholder="1200"
-                      suffix={CURRENCY_SYMBOL}
+                      suffix={quoteProfile.currency}
                     />
                   </FieldBlock>
                   <FieldBlock label={t('profilePage.calc.spoolWeight')}>
@@ -2315,7 +2368,7 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
                       value={form.deliveryCost}
                       onChange={(value) => onChange('deliveryCost', value)}
                       placeholder="0"
-                      suffix={CURRENCY_SYMBOL}
+                      suffix={quoteProfile.currency}
                     />
                   </FieldBlock>
                 </div>
@@ -2544,6 +2597,7 @@ interface HistoryViewProps {
   total: number;
   onDeleteEntry: (entry: CalculatorHistoryEntry) => Promise<void>;
   onRestoreEntry: (entry: CalculatorHistoryEntry) => void;
+  formatCurrency: (value: number | null | undefined) => string;
 }
 
 const HistoryView: React.FC<HistoryViewProps> = ({
@@ -2554,6 +2608,7 @@ const HistoryView: React.FC<HistoryViewProps> = ({
   total,
   onDeleteEntry,
   onRestoreEntry,
+  formatCurrency,
 }) => {
   const { t } = useTranslation();
   const tc = (key: string) => translateCalculator(t, key);
@@ -2659,6 +2714,7 @@ interface QuoteModalProps {
   onClose: () => void;
   onPartyChange: <K extends keyof QuotePartyFormState>(field: K, value: QuotePartyFormState[K]) => void;
   onPrint: () => void;
+  formatCurrency: (value: number | null | undefined) => string;
 }
 
 const QuoteModal: React.FC<QuoteModalProps> = ({
@@ -2669,6 +2725,7 @@ const QuoteModal: React.FC<QuoteModalProps> = ({
   onClose,
   onPartyChange,
   onPrint,
+  formatCurrency,
 }) => {
   const { t } = useTranslation();
   const tc = (key: string) => translateCalculator(t, key);
