@@ -885,6 +885,20 @@ export const calculatorAPI = {
     const response = await api.post<import('../types/api').SharedQuoteResponse>('/calculator/quote/share', data);
     return response.data;
   },
+
+  downloadQuotePdf: async (data: import('../types/api').SharedQuoteCreate) => {
+    const response = await api.post('/calculator/quote/pdf', data, {
+      responseType: 'blob',
+    });
+    const url = window.URL.createObjectURL(response.data as Blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `${data.title || 'quote'}.pdf`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    window.URL.revokeObjectURL(url);
+  },
 };
 
 // ==================== Admin API ====================

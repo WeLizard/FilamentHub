@@ -24,6 +24,7 @@ dependencies = [
     "slowapi~=0.1.9",
     "qrcode[pil]~=7.4.2",  # Генерация QR-кодов
     "better-profanity~=0.7.0",  # Проверка плохих слов
+    "weasyprint~=63.0",  # HTML-to-PDF for quote generation
 ]
 
 [project.optional-dependencies]

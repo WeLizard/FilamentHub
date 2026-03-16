@@ -6,8 +6,11 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Annotated
 
+import asyncio
+import re
+
 from fastapi import APIRouter, Depends, File, Query, UploadFile, status
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, Response
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -17,6 +20,7 @@ from app.core.errors import (
     ERR_FILE_TOO_LARGE,
     ERR_GCODE_PARSE_FAILED,
     ERR_INVALID_FILE_EXT,
+    ERR_PDF_GENERATION_FAILED,
     ERR_SHARED_QUOTE_EXPIRED,
     ERR_SHARED_QUOTE_NOT_FOUND,
     ERR_WEIGHT_REQUIRED,
@@ -665,3 +669,29 @@ async def get_shared_quote(
         raise_error(status.HTTP_410_GONE, ERR_SHARED_QUOTE_EXPIRED)
 
     return HTMLResponse(content=quote.html_content)
+
+
+@router.post("/quote/pdf")
+async def generate_quote_pdf(
+    data: SharedQuoteCreate,
+    current_user: Annotated[User, Depends(get_current_active_user)],
+) -> Response:
+    """Generate a PDF from quote HTML content and return it for download."""
+    from app.services.pdf_service import generate_pdf_from_html
+
+    try:
+        pdf_bytes = await asyncio.to_thread(generate_pdf_from_html, data.html_content)
+    except Exception:
+        logger.warning("PDF generation failed", exc_info=True)
+        raise_error(status.HTTP_500_INTERNAL_SERVER_ERROR, ERR_PDF_GENERATION_FAILED)
+
+    filename = data.title or "quote"
+    filename = re.sub(r"[^\w\s\-.]", "", filename)[:80]
+    if not filename:
+        filename = "quote"
+
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="{filename}.pdf"'},
+    )

@@ -1105,6 +1105,7 @@ export const CalculatorPage: React.FC = () => {
   const [selectedSpoolId, setSelectedSpoolId] = useState<number | ''>('');
   const [isCloudBusy, setIsCloudBusy] = useState(false);
   const [isSharing, setIsSharing] = useState(false);
+  const [isPdfDownloading, setIsPdfDownloading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const skipNextFilamentDefaultsRef = useRef(false);
   const lastAutoMatchedGcodeKeyRef = useRef<string | null>(null);
@@ -1532,6 +1533,47 @@ export const CalculatorPage: React.FC = () => {
     }
   };
 
+  const handleDownloadPdf = async () => {
+    if (!result || !user) return;
+    setIsPdfDownloading(true);
+    try {
+      quoteSequenceRef.current += 1;
+      const prefix = quoteProfile.quoteNumberPrefix || 'КП';
+      const seq = quoteSequenceRef.current;
+      const dateStr = new Date().toISOString().slice(0, 10).replace(/-/g, '');
+      const quoteNumber = `${prefix}-${dateStr}-${String(seq).padStart(2, '0')}`;
+
+      const quoteHtml = buildQuoteDocumentHtml({
+        t,
+        form,
+        result,
+        parsedGcode,
+        selectedFilament: selectedMaterial,
+        parties: quoteParties,
+        formatCurrency,
+        quoteNumber,
+      });
+
+      await calculatorAPI.downloadQuotePdf({
+        title: quoteNumber,
+        html_content: quoteHtml,
+      });
+      setHistoryFeedback({ kind: 'success', message: tc('quotePdfDownloaded') });
+    } catch (err) {
+      const errorWithResponse = err as { response?: { data?: { detail?: unknown } }; message?: string };
+      setHistoryFeedback({
+        kind: 'error',
+        message: translateApiError(
+          t,
+          errorWithResponse.response?.data?.detail ?? errorWithResponse.message,
+          tc('quotePdfError'),
+        ),
+      });
+    } finally {
+      setIsPdfDownloading(false);
+    }
+  };
+
   const handleOpenQuote = () => {
     setQuoteParties((prev) => ({
       ...prev,
@@ -1824,7 +1866,9 @@ export const CalculatorPage: React.FC = () => {
         }}
         onPrint={handlePrintQuote}
         onShare={handleShareQuote}
+        onDownloadPdf={handleDownloadPdf}
         isSharing={isSharing}
+        isPdfDownloading={isPdfDownloading}
         isLoggedIn={!!user}
         formatCurrency={formatCurrency}
       />
@@ -3259,7 +3303,9 @@ interface QuoteModalProps {
   onPartyChange: <K extends keyof QuotePartyFormState>(field: K, value: QuotePartyFormState[K]) => void;
   onPrint: () => void;
   onShare: () => void;
+  onDownloadPdf: () => void;
   isSharing: boolean;
+  isPdfDownloading: boolean;
   isLoggedIn: boolean;
   formatCurrency: (value: number | null | undefined) => string;
 }
@@ -3273,7 +3319,9 @@ const QuoteModal: React.FC<QuoteModalProps> = ({
   onPartyChange,
   onPrint,
   onShare,
+  onDownloadPdf,
   isSharing,
+  isPdfDownloading,
   isLoggedIn,
   formatCurrency,
 }) => {
@@ -3475,6 +3523,17 @@ const QuoteModal: React.FC<QuoteModalProps> = ({
                   <FileText className="h-4 w-4" />
                   {tc('quotePrintAction')}
                 </button>
+                {isLoggedIn && (
+                  <button
+                    type="button"
+                    onClick={onDownloadPdf}
+                    disabled={isPdfDownloading}
+                    className="inline-flex w-full items-center justify-center gap-2 rounded-[1.4rem] border border-cyan-400/20 bg-cyan-400/10 px-5 py-4 text-sm font-semibold text-cyan-200 transition-all hover:bg-cyan-400/20 hover:text-white disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {isPdfDownloading ? <Loader2 className="h-4 w-4 animate-spin" /> : <CloudDownload className="h-4 w-4" />}
+                    {tc('quoteDownloadPdfAction')}
+                  </button>
+                )}
                 {isLoggedIn && (
                   <button
                     type="button"
