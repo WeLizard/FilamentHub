@@ -91,6 +91,8 @@ interface CalculatorFormState {
   postprocessingRatePerHour: number;
   printingRatePerHour: number;
   amortizationRatePerHour: number;
+  printerPurchasePrice: number;
+  printerUsefulHours: number;
   quantity: number;
   overheadPercent: number;
   markupPercent: number;
@@ -142,6 +144,8 @@ const DEFAULT_FORM_STATE: CalculatorFormState = {
   postprocessingRatePerHour: 100,
   printingRatePerHour: 170,
   amortizationRatePerHour: 16,
+  printerPurchasePrice: 0,
+  printerUsefulHours: 0,
   quantity: 1,
   overheadPercent: 20,
   markupPercent: 30,
@@ -163,6 +167,8 @@ const CALCULATOR_STATIC_FIELDS = [
   'postprocessingRatePerHour',
   'printingRatePerHour',
   'amortizationRatePerHour',
+  'printerPurchasePrice',
+  'printerUsefulHours',
   'overheadPercent',
   'markupPercent',
   'taxRatePercent',
@@ -522,6 +528,8 @@ const extractStaticSettings = (form: CalculatorFormState): CalculatorStaticSetti
   postprocessingRatePerHour: form.postprocessingRatePerHour,
   printingRatePerHour: form.printingRatePerHour,
   amortizationRatePerHour: form.amortizationRatePerHour,
+  printerPurchasePrice: form.printerPurchasePrice,
+  printerUsefulHours: form.printerUsefulHours,
   overheadPercent: form.overheadPercent,
   markupPercent: form.markupPercent,
   taxRatePercent: form.taxRatePercent,
@@ -556,6 +564,8 @@ const loadStoredCalculatorDefaults = (): CalculatorStaticSettings => {
       postprocessingRatePerHour: numberOrFallback(parsed.postprocessingRatePerHour, fallback.postprocessingRatePerHour),
       printingRatePerHour: numberOrFallback(parsed.printingRatePerHour, fallback.printingRatePerHour),
       amortizationRatePerHour: numberOrFallback(parsed.amortizationRatePerHour, fallback.amortizationRatePerHour),
+      printerPurchasePrice: numberOrFallback(parsed.printerPurchasePrice, fallback.printerPurchasePrice),
+      printerUsefulHours: numberOrFallback(parsed.printerUsefulHours, fallback.printerUsefulHours),
       overheadPercent: numberOrFallback(parsed.overheadPercent, fallback.overheadPercent),
       markupPercent: numberOrFallback(parsed.markupPercent, fallback.markupPercent),
       taxRatePercent: numberOrFallback(parsed.taxRatePercent, fallback.taxRatePercent),
@@ -1491,6 +1501,8 @@ export const CalculatorPage: React.FC = () => {
         postprocessingRatePerHour: profile.postprocessing_rate_per_hour,
         printingRatePerHour: profile.printing_rate_per_hour,
         amortizationRatePerHour: profile.amortization_rate_per_hour,
+        printerPurchasePrice: form.printerPurchasePrice,
+        printerUsefulHours: form.printerUsefulHours,
         overheadPercent: profile.overhead_percent,
         markupPercent: profile.markup_percent,
         taxRatePercent: profile.tax_rate_percent,
@@ -1981,12 +1993,43 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
                         tooltipText={tc('defaultAmortizationRateTooltip')}
                       />
                     }
+                    hint={
+                      form.printerPurchasePrice > 0 && form.printerUsefulHours > 0
+                        ? `${tc('autoCalc')}: ${(form.printerPurchasePrice / form.printerUsefulHours).toFixed(2)} ${quoteProfile.currency}/${tc('hourAbbr')}`
+                        : undefined
+                    }
                   >
                     <InputWithSuffix
                       value={form.amortizationRatePerHour}
                       onChange={(value) => onStaticChange('amortizationRatePerHour', value)}
                       placeholder="16"
                       suffix={`${quoteProfile.currency}/${tc('hourAbbr')}`}
+                    />
+                  </FieldBlock>
+                  <FieldBlock label={tc('printerPurchasePrice')} hint={tc('printerPurchasePriceHint')}>
+                    <InputWithSuffix
+                      value={form.printerPurchasePrice}
+                      onChange={(value) => {
+                        onStaticChange('printerPurchasePrice', value);
+                        if (value > 0 && form.printerUsefulHours > 0) {
+                          onStaticChange('amortizationRatePerHour', Math.round((value / form.printerUsefulHours) * 100) / 100);
+                        }
+                      }}
+                      placeholder="0"
+                      suffix={quoteProfile.currency}
+                    />
+                  </FieldBlock>
+                  <FieldBlock label={tc('printerUsefulHours')} hint={tc('printerUsefulHoursHint')}>
+                    <InputWithSuffix
+                      value={form.printerUsefulHours}
+                      onChange={(value) => {
+                        onStaticChange('printerUsefulHours', value);
+                        if (form.printerPurchasePrice > 0 && value > 0) {
+                          onStaticChange('amortizationRatePerHour', Math.round((form.printerPurchasePrice / value) * 100) / 100);
+                        }
+                      }}
+                      placeholder="0"
+                      suffix={tc('hoursAbbr')}
                     />
                   </FieldBlock>
                   <FieldBlock
