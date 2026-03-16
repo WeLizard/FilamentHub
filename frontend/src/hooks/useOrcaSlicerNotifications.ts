@@ -51,6 +51,8 @@ export const useOrcaSlicerNotifications = () => {
           queryClient.invalidateQueries({ queryKey: ['my-presets'] });
           queryClient.invalidateQueries({ queryKey: ['saved-presets'] });
           queryClient.invalidateQueries({ queryKey: ['my-presets-stats'] });
+          queryClient.invalidateQueries({ queryKey: ['presets-stats'] });
+          queryClient.invalidateQueries({ queryKey: ['saved-presets-details'] });
           return;
         }
 
