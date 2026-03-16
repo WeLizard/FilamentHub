@@ -101,7 +101,7 @@ def _generate_orca_tag(printer: Printer | None, vendor: str | None) -> str:
     - @Voron (из printer.manufacturer)
     - @BambuLab (из printer.manufacturer)
     - @Arena (из vendor или printer.vendor)
-    - @FilamentHub (по умолчанию для пользовательских)
+    - @fh (по умолчанию для пользовательских)
     """
     if printer:
         # Приоритет: manufacturer принтера
@@ -124,7 +124,7 @@ def _generate_orca_tag(printer: Printer | None, vendor: str | None) -> str:
         return vendor.strip()
     
     # По умолчанию для пользовательских профилей
-    return "FilamentHub"
+    return "fh"
 
 
 def _format_printer_profile_name_for_orca(
@@ -211,7 +211,7 @@ def _format_print_profile_name_for_orca(
                 tag = parts[1].strip()
         # Если нет в имени, используем vendor
         if not tag:
-            tag = profile.vendor or "FilamentHub"
+            tag = profile.vendor or "fh"
     
     # Определяем layer_height и quality
     layer_height = profile.layer_height_mm
@@ -254,7 +254,7 @@ def _format_print_profile_name_for_orca(
         return profile.name
     
     # Если ничего не подходит, используем текущее имя и добавляем tag
-    if tag and tag != "FilamentHub":
+    if tag and tag != "fh":
         return f"{profile.name} @{tag}"
     
     return profile.name

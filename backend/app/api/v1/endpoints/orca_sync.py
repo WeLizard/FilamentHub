@@ -1960,13 +1960,13 @@ async def _upsert_filament_preset(
         raise ValueError("Invalid payload type for filament preset import")
 
     # Логика определения типа пресета:
-    # 1. [FilamentHub] или @FilamentHub в названии - наши пресеты (активные)
+    # 1. [fh] или @fh в названии - наши пресеты (активные)
     # 2. Остальные - пользовательские пресеты из OrcaSlicer (черновики)
-    # 
+    #
     # Примечание: системные пресеты OrcaSlicer не отправляются (фильтруются в OrcaSlicer по preset.is_system)
 
     preset_name = payload.name or ""
-    is_our_preset = "[FilamentHub]" in preset_name or "@FilamentHub" in preset_name
+    is_our_preset = "[fh]" in preset_name or "@fh" in preset_name
 
     if is_our_preset:
         logger.info(f"Importing our FilamentHub preset '{preset_name}' (will be active)")
@@ -2140,7 +2140,7 @@ async def _upsert_filament_preset(
 
         if preset is None:
             clean_name = payload.name
-            for suffix in (' [FilamentHub]', ' @FilamentHub', '[FilamentHub]', '@FilamentHub'):
+            for suffix in (' [fh]', ' @fh', '[fh]', '@fh', ' @FilamentHub', '@FilamentHub'):
                 clean_name = clean_name.replace(suffix, '')
             clean_name = clean_name.strip()
             if clean_name != payload.name:
@@ -2152,9 +2152,9 @@ async def _upsert_filament_preset(
                 )
                 preset = result.scalars().first()
 
-        # Reverse match: DB name has "[FilamentHub]" suffix, payload.name doesn't
+        # Reverse match: DB name has "[fh]" suffix, payload.name doesn't
         if preset is None:
-            suffixed_name = f"{payload.name} [FilamentHub]"
+            suffixed_name = f"{payload.name} [fh]"
             result = await db.execute(
                 select(Preset).where(
                     Preset.name == suffixed_name,
@@ -2164,7 +2164,7 @@ async def _upsert_filament_preset(
             preset = result.scalars().first()
             if preset:
                 logger.info(
-                    f"Found preset by reverse [FilamentHub] name match: "
+                    f"Found preset by reverse [fh] name match: "
                     f"'{payload.name}' → '{preset.name}' (id={preset.id})"
                 )
 
@@ -2219,7 +2219,7 @@ async def _upsert_filament_preset(
                 material_type = payload.material_type or "PLA"
 
             if is_our_preset:
-                clean_filament_name = payload.filament_name.replace(' [FilamentHub]', '').replace('[FilamentHub]', '').strip()
+                clean_filament_name = payload.filament_name.replace(' [fh]', '').replace('[fh]', '').strip()
 
                 existing_filament = await _find_existing_filament(
                     filament_name=clean_filament_name,
@@ -2248,7 +2248,7 @@ async def _upsert_filament_preset(
     if is_our_preset and not filament:
         if not current_user.brand_id:
             logger.warning(
-                f"[FilamentHub] preset '{payload.name}' has no matching catalog filament "
+                f"[fh] preset '{payload.name}' has no matching catalog filament "
                 f"and user has no brand_id. Storing as draft."
             )
             is_our_preset = False
@@ -2260,7 +2260,7 @@ async def _upsert_filament_preset(
                 material_type = payload.material_type or "PLA"
 
             # Dedup: проверяем нет ли уже такого филамента у бренда
-            clean_name = filament_name.replace(' [FilamentHub]', '').replace('[FilamentHub]', '').strip()
+            clean_name = filament_name.replace(' [fh]', '').replace('[fh]', '').strip()
             result = await db.execute(
                 select(Filament).where(
                     Filament.name == clean_name,
@@ -2397,7 +2397,7 @@ async def _upsert_filament_preset(
                 (payload.extruder_temp is not None and preset.extruder_temp != payload.extruder_temp) or
                 (payload.bed_temp is not None and preset.bed_temp != payload.bed_temp) or
                 (payload.print_speed is not None and preset.print_speed != payload.print_speed) or
-                (payload.name and preset.name != payload.name.replace(' @FilamentHub', '').replace('@FilamentHub', '').strip())
+                (payload.name and preset.name != payload.name.replace(' @fh', '').replace('@fh', '').replace(' @FilamentHub', '').replace('@FilamentHub', '').strip())
             )
             
             if settings_changed or basic_params_changed:
@@ -2480,10 +2480,10 @@ async def _upsert_filament_preset(
         if should_update:
             # Убираем постфиксы FilamentHub из названия для отображения на сайте
             clean_name = payload.name if payload.name else preset.name
-            for suffix in (' [FilamentHub]', ' @FilamentHub', '[FilamentHub]', '@FilamentHub'):
+            for suffix in (' [fh]', ' @fh', '[fh]', '@fh', ' @FilamentHub', '@FilamentHub'):
                 clean_name = clean_name.replace(suffix, '')
             preset.name = clean_name
-            # Обновляем filament_id только для пресетов с @FilamentHub (не для черновиков)
+            # Обновляем filament_id только для наших пресетов (не для черновиков)
             # КРИТИЧНО: Для черновиков filament_id остается None до активации пользователем
             if is_our_preset and filament and preset.filament_id != filament.id:
                 logger.info(
@@ -2554,7 +2554,7 @@ async def _upsert_filament_preset(
                     elif existing_fhub_id and existing_fhub_source == "filamenthub":
                         updated_settings["fhub_id"] = existing_fhub_id
                         updated_settings["fhub_source"] = existing_fhub_source
-                    # Если это пресет с [FilamentHub], но меток еще нет - добавляем их
+                    # Если это наш пресет, но меток еще нет - добавляем их
                     elif is_our_preset and not existing_fhub_id:
                         updated_settings["fhub_id"] = str(preset.id)
                         updated_settings["fhub_source"] = "filamenthub"
@@ -2570,10 +2570,10 @@ async def _upsert_filament_preset(
                 preset.source = payload.source
             if payload.external_id:
                 preset.external_id = payload.external_id
-            # Для пресетов с [FilamentHub] всегда active=True (это наши пресеты из каталога)
+            # Для наших пресетов всегда active=True (это пресеты из каталога)
             if is_our_preset and not preset.active:
                 preset.active = True
-                logger.info(f"Activated preset {preset.id} (found by cleaned name for [FilamentHub] preset)")
+                logger.info(f"Activated preset {preset.id} (found by cleaned name for [fh] preset)")
             # Обновляем updated_at вручную, чтобы отметить, что пресет был изменен
             preset.updated_at = datetime.now(timezone.utc)
             await _apply_orca_import_moderation(preset, filament, db)
@@ -2623,7 +2623,7 @@ async def _upsert_filament_preset(
             # Обновляем поля (аналогично выше)
             # Стрипаем постфиксы FilamentHub из имени
             update_name = payload.name or preset.name
-            for suffix in (' [FilamentHub]', ' @FilamentHub', '[FilamentHub]', '@FilamentHub'):
+            for suffix in (' [fh]', ' @fh', '[fh]', '@fh', ' @FilamentHub', '@FilamentHub'):
                 update_name = update_name.replace(suffix, '')
             preset.name = update_name
             if payload.description is not None:
@@ -2716,7 +2716,7 @@ async def _upsert_filament_preset(
 
         # Убираем постфиксы FilamentHub из названия для отображения на сайте
         clean_name = payload.name if payload.name else 'Unnamed Preset'
-        for suffix in (' [FilamentHub]', ' @FilamentHub', '[FilamentHub]', '@FilamentHub'):
+        for suffix in (' [fh]', ' @fh', '[fh]', '@fh', ' @FilamentHub', '@FilamentHub'):
             clean_name = clean_name.replace(suffix, '')
 
         # Подготавливаем orcaslicer_settings с метками

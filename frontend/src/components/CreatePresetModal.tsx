@@ -110,9 +110,9 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
   const { t } = useTranslation();
 
   // Определяем, является ли пресет черновиком (заготовкой)
-  // Черновик = пресет без привязки к филаменту ИЛИ неактивный пресет без @FilamentHub в имени
+  // Черновик = пресет без привязки к филаменту ИЛИ неактивный пресет без @fh в имени
   const isDraft = Boolean(
-    preset && (!preset.filament_id || (!preset.active && !preset.name?.includes('@FilamentHub')))
+    preset && (!preset.filament_id || (!preset.active && !preset.name?.includes('@fh')))
   );
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');

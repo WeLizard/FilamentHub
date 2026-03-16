@@ -109,7 +109,7 @@ async def preset_to_orcaslicer_json(
     profile = {
         "version": "2.3.0.0",  # Версия профиля OrcaSlicer (совместимость с OrcaSlicer 2.3.x)
         "type": "filament",  # Тип профиля
-        "name": preset.name,  # Имя пресета (будет добавлен постфикс [FilamentHub] в C++)
+        "name": preset.name,  # Имя пресета (будет добавлен постфикс [fh] в C++)
         "from": "system" if preset.is_official else "user",  # Источник пресета
         "instantiation": "true",  # Флаг инстанцирования
         "filament_settings_id": [preset.name],  # ОБЯЗАТЕЛЬНО: OrcaSlicer определяет тип профиля по наличию этого поля

@@ -3304,7 +3304,7 @@ const PresetCard: React.FC<PresetCardProps> = ({ preset, onEdit, onView, onDelet
                   {t('profilePage.fromCatalog')}
                 </span>
               )}
-              {!preset.active && preset.source === 'own' && !preset.name?.includes('@FilamentHub') && (
+              {!preset.active && preset.source === 'own' && !preset.name?.includes('@fh') && (
                 <span className="px-2 py-0.5 bg-orange-600/30 rounded text-orange-300 text-xs font-medium whitespace-nowrap">
                   {t('profilePage.draft')}
                 </span>
