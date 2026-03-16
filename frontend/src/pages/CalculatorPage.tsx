@@ -946,27 +946,25 @@ const buildQuoteDocumentHtml = ({
   const lineItems = buildQuoteLineItems(t, form, result, parsedGcode, selectedFilament);
   const includedItems = buildQuoteIncludedItems(t, result);
   const issuedAt = new Date();
-  const today = new Intl.DateTimeFormat(undefined, { dateStyle: 'long' }).format(issuedAt);
+  const today = new Intl.DateTimeFormat('ru-RU', { dateStyle: 'long' }).format(issuedAt);
   const validityDays = Math.max(1, Math.round(parties.validityDays || DEFAULT_QUOTE_PROFILE.validityDays));
-  const validUntil = new Intl.DateTimeFormat(undefined, { dateStyle: 'long' }).format(addDays(issuedAt, validityDays));
+  const validUntil = new Intl.DateTimeFormat('ru-RU', { dateStyle: 'long' }).format(addDays(issuedAt, validityDays));
   const disclaimerLabel = buildQuoteDisclaimerLabel(t, parties.disclaimerMode || DEFAULT_QUOTE_PROFILE.disclaimerMode);
-  const documentTitle = `${t('profilePage.calculator.quoteDocumentTitle')} — ${today}`;
   const buyerFallback = t('profilePage.calculator.quoteBuyerFallback');
 
   const tableRows = lineItems
     .map(
       (item, index) => `
-        <tr>
-          <td>${index + 1}</td>
-          <td>
-            <strong>${escapeHtml(item.title)}</strong>
-            ${item.details.length > 0 ? `<div class="muted">${escapeHtml(item.details.join(' · '))}</div>` : ''}
-          </td>
-          <td class="center">${item.quantity}</td>
-          <td class="right">${escapeHtml(formatCurrency(item.unitPrice))}</td>
-          <td class="right">${escapeHtml(formatCurrency(item.totalPrice))}</td>
-        </tr>
-      `,
+          <tr>
+            <td class="p-2 border border-gray-400 text-sm text-center">${index + 1}</td>
+            <td class="p-2 border border-gray-400 text-sm">
+              <strong>${escapeHtml(item.title)}</strong>
+              ${item.details.length > 0 ? `<div class="text-xs text-gray-500 mt-1">${escapeHtml(item.details.join(' · '))}</div>` : ''}
+            </td>
+            <td class="p-2 border border-gray-400 text-sm text-center">${item.quantity}</td>
+            <td class="p-2 border border-gray-400 text-sm text-right">${escapeHtml(formatCurrency(item.unitPrice))}</td>
+            <td class="p-2 border border-gray-400 text-sm text-right">${escapeHtml(formatCurrency(item.totalPrice))}</td>
+          </tr>`,
     )
     .join('');
 
@@ -976,33 +974,81 @@ const buildQuoteDocumentHtml = ({
   const buyerInn = parties.buyerInn.trim();
   const buyerAddress = parties.buyerAddress.trim();
   const paymentTerms = parties.paymentTerms.trim();
+  const sellerName = parties.sellerName.trim() || '—';
+
+  const costBreakdownRows = [
+    { label: t('profilePage.calc.material'), value: result.cost_material },
+    { label: t('profilePage.calc.electricityLabel'), value: result.cost_electricity },
+    { label: t('profilePage.calc.modeling'), value: result.cost_modeling },
+    { label: t('profilePage.calc.printing'), value: result.cost_printing },
+    { label: t('profilePage.calc.postprocessing'), value: result.cost_postprocessing },
+    { label: t('profilePage.calc.amortization'), value: result.cost_amortization },
+    ...(result.cost_bed_prep > 0 ? [{ label: t('profilePage.calc.bedPrep'), value: result.cost_bed_prep }] : []),
+    ...(result.cost_tax > 0 ? [{ label: t('profilePage.calc.taxAmount'), value: result.cost_tax }] : []),
+  ].filter((row) => row.value > 0);
+
+  const breakdownRows = costBreakdownRows
+    .map(
+      (row) => `
+          <tr>
+            <td class="p-2 border border-gray-300 text-sm">${escapeHtml(row.label)}</td>
+            <td class="p-2 border border-gray-300 text-sm text-right">${escapeHtml(formatCurrency(row.value))}</td>
+          </tr>`,
+    )
+    .join('');
 
   return `<!doctype html>
 <html lang="ru">
   <head>
     <meta charset="utf-8" />
-    <title>${escapeHtml(documentTitle)}</title>
+    <title>${escapeHtml(t('profilePage.calculator.quoteDocumentTitle'))}${quoteNumber ? ` ${escapeHtml(quoteNumber)}` : ''}</title>
     <style>
-      body { font-family: "Segoe UI", Arial, sans-serif; margin: 0; background: #eef2ff; color: #0f172a; }
-      .page { max-width: 860px; margin: 0 auto; background: #ffffff; padding: 48px; }
-      .header { display: flex; justify-content: space-between; gap: 24px; margin-bottom: 32px; }
-      .muted { color: #64748b; font-size: 12px; line-height: 1.6; }
-      .box { border: 1px solid #cbd5e1; border-radius: 12px; padding: 16px; background: #f8fafc; }
-      table { width: 100%; border-collapse: collapse; margin: 24px 0; }
-      th, td { border: 1px solid #cbd5e1; padding: 12px; vertical-align: top; }
-      th { background: #e2e8f0; text-align: left; }
-      .right { text-align: right; }
-      .center { text-align: center; }
-      .totals { margin-top: 28px; border: 1px solid #cbd5e1; border-radius: 12px; overflow: hidden; }
-      .totals-row { display: flex; justify-content: space-between; gap: 24px; padding: 12px 16px; border-top: 1px solid #e2e8f0; }
-      .totals-row:first-child { border-top: 0; }
-      .total-strong { font-weight: 700; font-size: 18px; }
-      ul { margin: 10px 0 0; padding-left: 20px; }
-      .footer { margin-top: 48px; display: flex; justify-content: space-between; gap: 24px; }
-      .signature { width: 45%; padding-top: 48px; border-bottom: 1px solid #0f172a; }
+      * { margin: 0; padding: 0; box-sizing: border-box; }
+      body { font-family: "Segoe UI", Arial, sans-serif; color: #1f2937; background: #f3f4f6; }
+      .page {
+        width: 210mm; min-height: 297mm;
+        margin: 0 auto; padding: 20mm;
+        background: #fff;
+      }
+      h2 { font-size: 22px; font-weight: 700; margin-bottom: 4px; }
+      .subtitle { font-size: 13px; color: #6b7280; }
+      .date { font-size: 13px; margin-top: 8px; }
+      .header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 28px; }
+      .header-right { text-align: right; font-size: 13px; line-height: 1.7; }
+      .header-right p strong { font-size: 14px; }
+      .header-right .status { font-size: 11px; color: #9ca3af; margin-top: 6px; }
+      .box { border: 1px solid #d1d5db; border-radius: 8px; padding: 14px 16px; background: #f9fafb; margin-bottom: 20px; }
+      .box-title { font-weight: 700; margin-bottom: 8px; font-size: 14px; }
+      .box-line { font-size: 13px; line-height: 1.6; color: #374151; }
+      .box-muted { font-size: 12px; color: #6b7280; }
+      table { width: 100%; border-collapse: collapse; margin-bottom: 24px; }
+      .p-2 { padding: 8px 10px; }
+      .border { border: 1px solid; }
+      .border-gray-400 { border-color: #9ca3af; }
+      .border-gray-300 { border-color: #d1d5db; }
+      .text-sm { font-size: 13px; }
+      .text-xs { font-size: 11px; }
+      .text-right { text-align: right; }
+      .text-center { text-align: center; }
+      .text-gray-500 { color: #6b7280; }
+      .mt-1 { margin-top: 4px; }
+      .bg-gray-200 { background: #e5e7eb; }
+      .font-bold { font-weight: 700; }
+      .included { margin-bottom: 24px; }
+      .included-title { font-weight: 700; margin-bottom: 8px; font-size: 14px; }
+      .included ul { padding-left: 20px; font-size: 13px; color: #4b5563; line-height: 1.8; }
+      .signatures { display: flex; justify-content: space-between; margin-top: 48px; }
+      .sig-block { width: 38%; }
+      .sig-block p { font-size: 13px; margin-bottom: 32px; }
+      .sig-line { border-bottom: 1px solid #1f2937; padding-bottom: 4px; font-size: 13px; }
+      .sig-hint { font-size: 10px; color: #9ca3af; margin-top: 4px; }
+      .footer-note { margin-top: 32px; text-align: center; font-size: 10px; color: #d1d5db; }
+      .breakdown { margin-bottom: 24px; }
+      .breakdown-title { font-weight: 700; margin-bottom: 8px; font-size: 14px; }
+      .total-row td { font-weight: 700; font-size: 15px; background: #f9fafb; }
       @media print {
         body { background: white; }
-        .page { max-width: none; margin: 0; box-shadow: none; padding: 24px; }
+        .page { width: 100%; min-height: auto; margin: 0; padding: 15mm; box-shadow: none; }
       }
     </style>
   </head>
@@ -1010,80 +1056,94 @@ const buildQuoteDocumentHtml = ({
     <div class="page">
       <div class="header">
         <div>
-          <h1 style="margin:0 0 8px;">${escapeHtml(t('profilePage.calculator.quoteDocumentTitle'))}${quoteNumber ? ` ${escapeHtml(quoteNumber)}` : ''}</h1>
-          <div class="muted">${escapeHtml(t('profilePage.calculator.quoteDocumentSubtitle'))}</div>
-          <div class="muted" style="margin-top: 12px;">${escapeHtml(today)}</div>
+          <h2>${escapeHtml(t('profilePage.calculator.quoteDocumentTitle'))}${quoteNumber ? ` ${escapeHtml(quoteNumber)}` : ''}</h2>
+          <p class="subtitle">${escapeHtml(t('profilePage.calculator.quoteDocumentSubtitle'))}</p>
+          <p class="date">${escapeHtml(today)}</p>
         </div>
-        <div class="box" style="min-width: 260px;">
-          <div><strong>${escapeHtml(t('profilePage.calculator.quoteExecutor'))}</strong></div>
-          <div style="margin-top: 8px;">${escapeHtml(parties.sellerName.trim() || '—')}</div>
-          <div class="muted">${escapeHtml(t('profilePage.calculator.quoteInn'))}: ${escapeHtml(parties.sellerInn.trim() || '—')}</div>
-          <div class="muted">${escapeHtml(t('profilePage.calculator.quotePhone'))}: ${escapeHtml(parties.sellerPhone.trim() || '—')}</div>
-          <div class="muted">${escapeHtml(t('profilePage.calculator.quoteValidUntil'))}: ${escapeHtml(validUntil)}</div>
-          <div class="muted" style="margin-top: 8px;">${escapeHtml(t('profilePage.calculator.quoteTaxStatus'))}</div>
+        <div class="header-right">
+          <p><strong>${escapeHtml(t('profilePage.calculator.quoteExecutor'))}:</strong></p>
+          <p>${escapeHtml(sellerName)}</p>
+          <p>${escapeHtml(t('profilePage.calculator.quoteInn'))}: ${escapeHtml(parties.sellerInn.trim() || '—')}</p>
+          <p>${escapeHtml(t('profilePage.calculator.quotePhone'))}: ${escapeHtml(parties.sellerPhone.trim() || '—')}</p>
+          <p class="status">${escapeHtml(t('profilePage.calculator.quoteTaxStatus'))}</p>
         </div>
       </div>
 
       <div class="box">
-        <div><strong>${escapeHtml(t('profilePage.calculator.quoteCustomer'))}</strong></div>
-        <div style="margin-top: 8px;">${escapeHtml(buyerName)}</div>
-        ${buyerInn ? `<div class="muted">${escapeHtml(t('profilePage.calculator.quoteInn'))}: ${escapeHtml(buyerInn)}</div>` : ''}
-        ${buyerAddress ? `<div class="muted">${escapeHtml(t('profilePage.calculator.quoteAddress'))}: ${escapeHtml(buyerAddress)}</div>` : ''}
+        <p class="box-title">${escapeHtml(t('profilePage.calculator.quoteCustomer'))}:</p>
+        <p class="box-line">${escapeHtml(buyerName)}</p>
+        ${buyerInn ? `<p class="box-muted">${escapeHtml(t('profilePage.calculator.quoteInn'))}: ${escapeHtml(buyerInn)}</p>` : ''}
+        ${buyerAddress ? `<p class="box-muted">${escapeHtml(t('profilePage.calculator.quoteAddress'))}: ${escapeHtml(buyerAddress)}</p>` : ''}
       </div>
 
       ${paymentTerms ? `
-      <div class="box" style="margin-top: 16px;">
-        <div><strong>${escapeHtml(t('profilePage.calculator.quotePaymentTerms'))}</strong></div>
-        <div class="muted" style="margin-top: 8px;">${escapeHtml(paymentTerms)}</div>
+      <div class="box">
+        <p class="box-title">${escapeHtml(t('profilePage.calculator.quotePaymentTerms'))}:</p>
+        <p class="box-line">${escapeHtml(paymentTerms)}</p>
       </div>` : ''}
 
-      <div class="box" style="margin-top: 16px;">
-        <div><strong>${escapeHtml(t('profilePage.calculator.quoteLegalStatus'))}</strong></div>
-        <div class="muted" style="margin-top: 8px;">${escapeHtml(disclaimerLabel)}</div>
+      <div class="box" style="margin-bottom: 24px;">
+        <p class="box-line">${escapeHtml(t('profilePage.calculator.quoteValidUntil'))}: <strong>${escapeHtml(validUntil)}</strong></p>
       </div>
 
       <table>
         <thead>
-          <tr>
-            <th style="width: 48px;">№</th>
-            <th>${escapeHtml(t('profilePage.calculator.quoteTable.item'))}</th>
-            <th style="width: 90px;">${escapeHtml(t('profilePage.calculator.quoteTable.quantity'))}</th>
-            <th style="width: 150px;">${escapeHtml(t('profilePage.calculator.quoteTable.unitPrice'))}</th>
-            <th style="width: 150px;">${escapeHtml(t('profilePage.calculator.quoteTable.total'))}</th>
+          <tr class="bg-gray-200">
+            <th class="p-2 border border-gray-400 text-sm" style="width:36px;">№</th>
+            <th class="p-2 border border-gray-400 text-sm">${escapeHtml(t('profilePage.calculator.quoteTable.item'))}</th>
+            <th class="p-2 border border-gray-400 text-sm text-center" style="width:70px;">${escapeHtml(t('profilePage.calculator.quoteTable.quantity'))}</th>
+            <th class="p-2 border border-gray-400 text-sm text-right" style="width:130px;">${escapeHtml(t('profilePage.calculator.quoteTable.unitPrice'))}</th>
+            <th class="p-2 border border-gray-400 text-sm text-right" style="width:130px;">${escapeHtml(t('profilePage.calculator.quoteTable.total'))}</th>
           </tr>
         </thead>
         <tbody>
           ${tableRows}
         </tbody>
+        <tfoot>
+          <tr class="total-row">
+            <td colspan="4" class="p-2 border border-gray-400 text-sm text-right">${escapeHtml(t('profilePage.calculator.totalCost'))}:</td>
+            <td class="p-2 border border-gray-400 text-sm text-right">${escapeHtml(formatCurrency(result.cost_total))}</td>
+          </tr>
+        </tfoot>
       </table>
 
-      <div class="totals">
-        <div class="totals-row"><span>${escapeHtml(t('profilePage.calc.material'))}</span><strong>${escapeHtml(formatCurrency(result.cost_material))}</strong></div>
-        <div class="totals-row"><span>${escapeHtml(t('profilePage.calc.electricityLabel'))}</span><strong>${escapeHtml(formatCurrency(result.cost_electricity))}</strong></div>
-        <div class="totals-row"><span>${escapeHtml(t('profilePage.calc.modeling'))}</span><strong>${escapeHtml(formatCurrency(result.cost_modeling))}</strong></div>
-        <div class="totals-row"><span>${escapeHtml(t('profilePage.calc.printing'))}</span><strong>${escapeHtml(formatCurrency(result.cost_printing))}</strong></div>
-        <div class="totals-row"><span>${escapeHtml(t('profilePage.calc.postprocessing'))}</span><strong>${escapeHtml(formatCurrency(result.cost_postprocessing))}</strong></div>
-        <div class="totals-row"><span>${escapeHtml(t('profilePage.calc.amortization'))}</span><strong>${escapeHtml(formatCurrency(result.cost_amortization))}</strong></div>
-        ${result.cost_bed_prep > 0 ? `<div class="totals-row"><span>${escapeHtml(t('profilePage.calc.bedPrep'))}</span><strong>${escapeHtml(formatCurrency(result.cost_bed_prep))}</strong></div>` : ''}
-        ${result.cost_tax > 0 ? `<div class="totals-row"><span>${escapeHtml(t('profilePage.calc.taxAmount'))}</span><strong>${escapeHtml(formatCurrency(result.cost_tax))}</strong></div>` : ''}
-        <div class="totals-row total-strong"><span>${escapeHtml(t('profilePage.calculator.totalCost'))}</span><strong>${escapeHtml(formatCurrency(result.cost_total))}</strong></div>
-      </div>
+      ${costBreakdownRows.length > 0 ? `
+      <div class="breakdown">
+        <p class="breakdown-title">${escapeHtml(t('profilePage.calc.totalSums'))}:</p>
+        <table>
+          <tbody>
+            ${breakdownRows}
+            <tr class="total-row">
+              <td class="p-2 border border-gray-300 text-sm">${escapeHtml(t('profilePage.calculator.totalCost'))}</td>
+              <td class="p-2 border border-gray-300 text-sm text-right">${escapeHtml(formatCurrency(result.cost_total))}</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>` : ''}
 
-      <div style="margin-top: 28px;">
-        <strong>${escapeHtml(t('profilePage.calculator.quoteIncludedTitle'))}</strong>
+      <div class="included">
+        <p class="included-title">${escapeHtml(t('profilePage.calculator.quoteIncludedTitle'))}:</p>
         <ul>${includedMarkup}</ul>
       </div>
 
-      <div class="footer">
-        <div style="width: 45%;">
-          <div>${escapeHtml(t('profilePage.calculator.quoteExecutor'))}</div>
-          <div class="signature"></div>
+      <div class="box" style="background: transparent; border-color: #e5e7eb;">
+        <p class="box-muted">${escapeHtml(t('profilePage.calculator.quoteLegalStatus'))}: ${escapeHtml(disclaimerLabel)}</p>
+      </div>
+
+      <div class="signatures">
+        <div class="sig-block">
+          <p>${escapeHtml(t('profilePage.calculator.quoteExecutor'))}:</p>
+          <p class="sig-line">${escapeHtml(sellerName)}</p>
+          <p class="sig-hint">(${escapeHtml(t('profilePage.calculator.quoteSignatureHint'))})</p>
         </div>
-        <div style="width: 45%; text-align: right;">
-          <div>${escapeHtml(t('profilePage.calculator.quoteCustomer'))}</div>
-          <div class="signature" style="margin-left: auto;"></div>
+        <div class="sig-block" style="text-align: right;">
+          <p>${escapeHtml(t('profilePage.calculator.quoteCustomer'))}:</p>
+          <p class="sig-line"></p>
+          <p class="sig-hint">(${escapeHtml(t('profilePage.calculator.quoteSignatureHint'))})</p>
         </div>
       </div>
+
+      <p class="footer-note">${escapeHtml(t('profilePage.calculator.quoteFooterNote'))}</p>
     </div>
   </body>
 </html>`;

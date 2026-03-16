@@ -1968,8 +1968,10 @@
     "quotePhone": "Phone",
     "quoteTaxStatus": "Pricing is based on FilamentHub internal costing. Tax is included in the total when a rate is set.",
     "quoteAddress": "Address",
+    "quoteSignatureHint": "Signature / Name",
+    "quoteFooterNote": "This document was generated automatically. It is not an official invoice.",
     "quoteTable": {
-      "item": "Item",
+      "item": "Service / Product",
       "quantity": "Qty",
       "unitPrice": "Unit price",
       "total": "Total"
