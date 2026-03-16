@@ -5,6 +5,7 @@
 from app.models.brand import Brand
 from app.models.brand_request import BrandRequest, BrandRequestStatus, BrandRequestType
 from app.models.calculator_history_entry import CalculatorHistoryEntry
+from app.models.calculator_profile import UserCalculatorProfile
 from app.models.filament import Filament
 from app.models.filament_review import FilamentReview
 from app.models.material_mapping import MaterialMapping, MaterialMappingPriority
@@ -40,6 +41,7 @@ __all__ = [
     "BrandRequestStatus",
     "BrandRequestType",
     "CalculatorHistoryEntry",
+    "UserCalculatorProfile",
     "Feedback",
     "FeedbackType",
     "FeedbackStatus",

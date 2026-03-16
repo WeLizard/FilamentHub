@@ -13,6 +13,8 @@ import {
   ChevronDown,
   CheckCircle2,
   Clock,
+  CloudDownload,
+  CloudUpload,
   FileText,
   HelpCircle,
   Loader2,
@@ -962,6 +964,7 @@ export const CalculatorPage: React.FC = () => {
   const [quoteProfile, setQuoteProfile] = useState<QuoteProfileState>(DEFAULT_QUOTE_PROFILE);
   const [quoteParties, setQuoteParties] = useState<QuotePartyFormState>(DEFAULT_QUOTE_PARTY_FORM);
   const [selectedSpoolId, setSelectedSpoolId] = useState<number | ''>('');
+  const [isCloudBusy, setIsCloudBusy] = useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const skipNextFilamentDefaultsRef = useRef(false);
   const lastAutoMatchedGcodeKeyRef = useRef<string | null>(null);
@@ -1354,6 +1357,105 @@ export const CalculatorPage: React.FC = () => {
     setQuoteModalOpen(true);
   };
 
+  const handleCloudSave = async () => {
+    setIsCloudBusy(true);
+    try {
+      const staticSettings = extractStaticSettings(form);
+      await calculatorAPI.updateProfile({
+        electricity_cost_per_kwh: staticSettings.electricityCostPerKwh,
+        printer_power_w: staticSettings.printerPowerW,
+        modeling_rate_per_hour: staticSettings.modelingRatePerHour,
+        postprocessing_rate_per_hour: staticSettings.postprocessingRatePerHour,
+        printing_rate_per_hour: staticSettings.printingRatePerHour,
+        amortization_rate_per_hour: staticSettings.amortizationRatePerHour,
+        overhead_percent: staticSettings.overheadPercent,
+        markup_percent: staticSettings.markupPercent,
+        tax_rate_percent: staticSettings.taxRatePercent,
+        fixed_costs: staticSettings.fixedCosts,
+        min_order_price: staticSettings.minOrderPrice,
+        round_to_nearest: staticSettings.roundToNearest,
+        rounding_mode: staticSettings.roundingMode,
+        seller_name: quoteProfile.sellerName,
+        seller_inn: quoteProfile.sellerInn,
+        seller_phone: quoteProfile.sellerPhone,
+        payment_terms: quoteProfile.paymentTerms,
+        validity_days: quoteProfile.validityDays,
+        disclaimer_mode: quoteProfile.disclaimerMode,
+        currency: quoteProfile.currency,
+        quote_number_prefix: quoteProfile.quoteNumberPrefix,
+      });
+      setHistoryFeedback({ kind: 'success', message: tc('cloudSaveSuccess') });
+    } catch {
+      setHistoryFeedback({ kind: 'error', message: tc('cloudSaveError') });
+    } finally {
+      setIsCloudBusy(false);
+    }
+  };
+
+  const handleCloudLoad = async () => {
+    setIsCloudBusy(true);
+    try {
+      const profile = await calculatorAPI.getProfile();
+      setForm((prev) => ({
+        ...prev,
+        electricityCostPerKwh: profile.electricity_cost_per_kwh,
+        printerPowerW: profile.printer_power_w,
+        modelingRatePerHour: profile.modeling_rate_per_hour,
+        postprocessingRatePerHour: profile.postprocessing_rate_per_hour,
+        printingRatePerHour: profile.printing_rate_per_hour,
+        amortizationRatePerHour: profile.amortization_rate_per_hour,
+        overheadPercent: profile.overhead_percent,
+        markupPercent: profile.markup_percent,
+        taxRatePercent: profile.tax_rate_percent,
+        fixedCosts: profile.fixed_costs,
+        minOrderPrice: profile.min_order_price,
+        roundToNearest: profile.round_to_nearest,
+        roundingMode: profile.rounding_mode as RoundingMode,
+      }));
+      setQuoteProfile((prev) => ({
+        ...prev,
+        sellerName: profile.seller_name,
+        sellerInn: profile.seller_inn,
+        sellerPhone: profile.seller_phone,
+        paymentTerms: profile.payment_terms,
+        validityDays: profile.validity_days,
+        disclaimerMode: profile.disclaimer_mode as QuoteDisclaimerMode,
+        currency: (CURRENCY_OPTIONS.includes(profile.currency as CurrencyCode) ? profile.currency : '₽') as CurrencyCode,
+        quoteNumberPrefix: profile.quote_number_prefix,
+      }));
+      saveStoredCalculatorDefaults({
+        electricityCostPerKwh: profile.electricity_cost_per_kwh,
+        printerPowerW: profile.printer_power_w,
+        modelingRatePerHour: profile.modeling_rate_per_hour,
+        postprocessingRatePerHour: profile.postprocessing_rate_per_hour,
+        printingRatePerHour: profile.printing_rate_per_hour,
+        amortizationRatePerHour: profile.amortization_rate_per_hour,
+        overheadPercent: profile.overhead_percent,
+        markupPercent: profile.markup_percent,
+        taxRatePercent: profile.tax_rate_percent,
+        fixedCosts: profile.fixed_costs,
+        minOrderPrice: profile.min_order_price,
+        roundToNearest: profile.round_to_nearest,
+        roundingMode: profile.rounding_mode as RoundingMode,
+      });
+      saveStoredQuoteProfile({
+        sellerName: profile.seller_name,
+        sellerInn: profile.seller_inn,
+        sellerPhone: profile.seller_phone,
+        paymentTerms: profile.payment_terms,
+        validityDays: profile.validity_days,
+        disclaimerMode: profile.disclaimer_mode as QuoteDisclaimerMode,
+        currency: (CURRENCY_OPTIONS.includes(profile.currency as CurrencyCode) ? profile.currency : '₽') as CurrencyCode,
+        quoteNumberPrefix: profile.quote_number_prefix,
+      });
+      setHistoryFeedback({ kind: 'success', message: tc('cloudLoadSuccess') });
+    } catch {
+      setHistoryFeedback({ kind: 'error', message: tc('cloudLoadError') });
+    } finally {
+      setIsCloudBusy(false);
+    }
+  };
+
   useEffect(() => {
     const currentParsedKey = parsedGcode ? `${parsedGcode.file_name}:${parsedGcode.file_size_bytes}` : null;
     if (!parsedGcode || !currentParsedKey || lastAutoMatchedGcodeKeyRef.current === currentParsedKey) {
@@ -1498,6 +1600,9 @@ export const CalculatorPage: React.FC = () => {
           onQuoteProfileChange={updateQuoteProfileField}
           onOpenQuote={handleOpenQuote}
           onSaveToHistory={handleSaveToHistory}
+          onCloudSave={handleCloudSave}
+          onCloudLoad={handleCloudLoad}
+          isCloudBusy={isCloudBusy}
           formatCurrency={formatCurrency}
         />
       ) : (
@@ -1564,6 +1669,9 @@ interface CalculatorViewProps {
   onDragStateChange: (active: boolean) => void;
   onOpenQuote: () => void;
   onSaveToHistory: () => Promise<void>;
+  onCloudSave: () => Promise<void>;
+  onCloudLoad: () => Promise<void>;
+  isCloudBusy: boolean;
   formatCurrency: (value: number | null | undefined) => string;
 }
 
@@ -1599,6 +1707,9 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
   onDragStateChange,
   onOpenQuote,
   onSaveToHistory,
+  onCloudSave,
+  onCloudLoad,
+  isCloudBusy,
   formatCurrency,
 }) => {
   const { t } = useTranslation();
@@ -1978,6 +2089,27 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
                 </div>
                 </div>
               ) : null}
+
+              <div className="mt-4 flex flex-wrap gap-2 border-t border-white/10 pt-4">
+                <button
+                  type="button"
+                  onClick={onCloudSave}
+                  disabled={isCloudBusy}
+                  className={ghostButtonClass}
+                >
+                  {isCloudBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <CloudUpload className="h-4 w-4" />}
+                  {tc('cloudSave')}
+                </button>
+                <button
+                  type="button"
+                  onClick={onCloudLoad}
+                  disabled={isCloudBusy}
+                  className={ghostButtonClass}
+                >
+                  {isCloudBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <CloudDownload className="h-4 w-4" />}
+                  {tc('cloudLoad')}
+                </button>
+              </div>
             </div>
           ) : null}
         </SurfaceCard>

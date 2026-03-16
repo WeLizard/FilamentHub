@@ -309,3 +309,68 @@ class CalculatorHistoryEntryListResponse(BaseModel):
 
     items: list[CalculatorHistoryEntryResponse]
     total: int
+
+
+# ── Calculator profile (server-persisted settings) ──────────────────────
+
+
+class CalculatorProfileUpdate(BaseModel):
+    """PUT body — all fields optional, only supplied fields are updated."""
+
+    # Economics
+    electricity_cost_per_kwh: float | None = Field(None, ge=0)
+    printer_power_w: float | None = Field(None, gt=0)
+    modeling_rate_per_hour: float | None = Field(None, ge=0)
+    postprocessing_rate_per_hour: float | None = Field(None, ge=0)
+    printing_rate_per_hour: float | None = Field(None, ge=0)
+    amortization_rate_per_hour: float | None = Field(None, ge=0)
+    overhead_percent: float | None = Field(None, ge=0, le=100)
+    markup_percent: float | None = Field(None, ge=0, le=200)
+    tax_rate_percent: float | None = Field(None, ge=0, le=100)
+    fixed_costs: float | None = Field(None, ge=0)
+    min_order_price: float | None = Field(None, ge=0)
+    round_to_nearest: int | None = Field(None, ge=0)
+    rounding_mode: RoundingMode | None = None
+
+    # Quote
+    seller_name: str | None = Field(None, max_length=255)
+    seller_inn: str | None = Field(None, max_length=32)
+    seller_phone: str | None = Field(None, max_length=64)
+    payment_terms: str | None = Field(None, max_length=512)
+    validity_days: int | None = Field(None, ge=1, le=365)
+    disclaimer_mode: str | None = Field(None, pattern=r"^(offer|not_offer)$")
+    currency: str | None = Field(None, pattern=r"^[₽$€]$")
+    quote_number_prefix: str | None = Field(None, max_length=32)
+
+
+class CalculatorProfileResponse(BaseModel):
+    """GET response — full profile."""
+
+    # Economics
+    electricity_cost_per_kwh: float
+    printer_power_w: float
+    modeling_rate_per_hour: float
+    postprocessing_rate_per_hour: float
+    printing_rate_per_hour: float
+    amortization_rate_per_hour: float
+    overhead_percent: float
+    markup_percent: float
+    tax_rate_percent: float
+    fixed_costs: float
+    min_order_price: float
+    round_to_nearest: int
+    rounding_mode: str
+
+    # Quote
+    seller_name: str
+    seller_inn: str
+    seller_phone: str
+    payment_terms: str
+    validity_days: int
+    disclaimer_mode: str
+    currency: str
+    quote_number_prefix: str
+
+    updated_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)

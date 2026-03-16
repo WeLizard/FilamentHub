@@ -621,6 +621,33 @@ export interface CalculatorHistoryListResponse {
   total: number;
 }
 
+export interface CalculatorProfileResponse {
+  electricity_cost_per_kwh: number;
+  printer_power_w: number;
+  modeling_rate_per_hour: number;
+  postprocessing_rate_per_hour: number;
+  printing_rate_per_hour: number;
+  amortization_rate_per_hour: number;
+  overhead_percent: number;
+  markup_percent: number;
+  tax_rate_percent: number;
+  fixed_costs: number;
+  min_order_price: number;
+  round_to_nearest: number;
+  rounding_mode: string;
+  seller_name: string;
+  seller_inn: string;
+  seller_phone: string;
+  payment_terms: string;
+  validity_days: number;
+  disclaimer_mode: string;
+  currency: string;
+  quote_number_prefix: string;
+  updated_at: string;
+}
+
+export type CalculatorProfileUpdate = Partial<Omit<CalculatorProfileResponse, 'updated_at'>>;
+
 export interface DownloadVersion {
   platform: 'windows' | 'macos' | 'linux';
   architecture: 'x64' | 'arm64';

@@ -25,6 +25,7 @@ from app.core.errors import (
 from app.core.config import settings
 from app.db.session import get_db
 from app.models.calculator_history_entry import CalculatorHistoryEntry
+from app.models.calculator_profile import UserCalculatorProfile
 from app.models.user import User
 from app.schemas.calculator import (
     CalculatorEstimateRequest,
@@ -33,6 +34,8 @@ from app.schemas.calculator import (
     CalculatorHistoryEntryCreate,
     CalculatorHistoryEntryListResponse,
     CalculatorHistoryEntryResponse,
+    CalculatorProfileResponse,
+    CalculatorProfileUpdate,
     PricingMethod,
     RoundingMode,
 )
@@ -552,3 +555,50 @@ async def delete_calculator_history(
 
     await db.delete(entry)
     await db.commit()
+
+
+# ── Calculator profile ──────────────────────────────────────────────────
+
+
+@router.get("/profile", response_model=CalculatorProfileResponse)
+async def get_calculator_profile(
+    current_user: Annotated[User, Depends(get_current_active_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> CalculatorProfileResponse:
+    """Return the current user's calculator profile (create with defaults if missing)."""
+    result = await db.execute(
+        select(UserCalculatorProfile).where(UserCalculatorProfile.user_id == current_user.id)
+    )
+    profile = result.scalar_one_or_none()
+
+    if not profile:
+        profile = UserCalculatorProfile(user_id=current_user.id)
+        db.add(profile)
+        await db.commit()
+        await db.refresh(profile)
+
+    return CalculatorProfileResponse.model_validate(profile)
+
+
+@router.put("/profile", response_model=CalculatorProfileResponse)
+async def update_calculator_profile(
+    data: CalculatorProfileUpdate,
+    current_user: Annotated[User, Depends(get_current_active_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> CalculatorProfileResponse:
+    """Create or update the current user's calculator profile."""
+    result = await db.execute(
+        select(UserCalculatorProfile).where(UserCalculatorProfile.user_id == current_user.id)
+    )
+    profile = result.scalar_one_or_none()
+
+    if not profile:
+        profile = UserCalculatorProfile(user_id=current_user.id)
+        db.add(profile)
+
+    for field_name, value in data.model_dump(exclude_unset=True).items():
+        setattr(profile, field_name, value)
+
+    await db.commit()
+    await db.refresh(profile)
+    return CalculatorProfileResponse.model_validate(profile)
