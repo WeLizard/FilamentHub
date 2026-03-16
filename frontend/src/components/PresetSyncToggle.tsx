@@ -102,6 +102,11 @@ export const PresetSyncToggle: React.FC<PresetSyncToggleProps> = ({
     return null;
   }
   
+  // Не показываем для черновиков — они не скачиваются в OrcaSlicer, toggle бесполезен
+  if (!preset.active || !preset.filament_id) {
+    return null;
+  }
+
   // Показываем компонент, если это пресет пользователя (созданный или сохраненный)
   // Если запись еще не создана, компонент все равно покажется (при создании пресета запись создается автоматически)
   if (!savedPreset && preset.user_id !== user.id) {

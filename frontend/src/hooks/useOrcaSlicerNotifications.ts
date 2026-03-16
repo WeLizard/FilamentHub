@@ -1,6 +1,7 @@
 /** Хук для обработки уведомлений от OrcaSlicer */
 
 import { useEffect } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import { toast } from '../components/Toast';
 
 // Логирование (включается в режиме разработчика)
@@ -21,6 +22,8 @@ const logNotification = (action: string, data: any) => {
 };
 
 export const useOrcaSlicerNotifications = () => {
+  const queryClient = useQueryClient();
+
   useEffect(() => {
     // Проверяем, запущен ли frontend внутри OrcaSlicer
     const isInOrcaSlicer = typeof window !== 'undefined' && (
@@ -40,6 +43,17 @@ export const useOrcaSlicerNotifications = () => {
         // Парсим сообщение (может быть строкой или объектом)
         const data = typeof event.data === 'string' ? JSON.parse(event.data) : event.data;
         
+        // Обрабатываем команду sync_complete — обновляем данные после синхронизации
+        if (data.command === 'sync_complete') {
+          logNotification('SYNC_COMPLETE', { timestamp: Date.now() });
+          queryClient.invalidateQueries({ queryKey: ['presets'] });
+          queryClient.invalidateQueries({ queryKey: ['user-presets'] });
+          queryClient.invalidateQueries({ queryKey: ['my-presets'] });
+          queryClient.invalidateQueries({ queryKey: ['saved-presets'] });
+          queryClient.invalidateQueries({ queryKey: ['my-presets-stats'] });
+          return;
+        }
+
         // Обрабатываем команду show_notification
         if (data.command === 'show_notification') {
           const message = data.message || 'Уведомление';

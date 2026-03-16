@@ -3415,12 +3415,12 @@
     "readingProgress": "Reading progress"
   },
   "exportOrcaSlicer": {
-    "title": "Export filament presets from OrcaSlicer to FilamentHub",
-    "button": "Export from OrcaSlicer",
-    "exporting": "Exporting...",
-    "started": "Export started",
+    "title": "Import filament presets from OrcaSlicer to FilamentHub",
+    "button": "Import from OrcaSlicer",
+    "exporting": "Importing...",
+    "started": "Import started",
     "error": "Error",
-    "exportError": "Error exporting profiles. Check logs for details."
+    "exportError": "Error importing profiles. Check logs for details."
   },
   "exportPrinterProfiles": {
     "title": "Export printer profiles from OrcaSlicer to FilamentHub",

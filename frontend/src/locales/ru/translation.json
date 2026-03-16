@@ -3421,12 +3421,12 @@
     "readingProgress": "Прогресс чтения"
   },
   "exportOrcaSlicer": {
-    "title": "Экспортировать filament presets из OrcaSlicer в FilamentHub",
-    "button": "Экспортировать из OrcaSlicer",
-    "exporting": "Экспорт...",
-    "started": "Экспорт начат",
+    "title": "Импортировать пресеты филаментов из OrcaSlicer в FilamentHub",
+    "button": "Импорт из OrcaSlicer",
+    "exporting": "Импорт...",
+    "started": "Импорт начат",
     "error": "Ошибка",
-    "exportError": "Ошибка при экспорте профилей. Проверьте логи для деталей."
+    "exportError": "Ошибка при импорте профилей. Проверьте логи для деталей."
   },
   "exportPrinterProfiles": {
     "title": "Экспортировать printer profiles из OrcaSlicer в FilamentHub",
