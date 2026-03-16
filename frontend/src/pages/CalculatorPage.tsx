@@ -194,6 +194,36 @@ const CALCULATOR_STATIC_FIELDS = [
 type CalculatorStaticSettingKey = (typeof CALCULATOR_STATIC_FIELDS)[number];
 type CalculatorStaticSettings = Pick<CalculatorFormState, CalculatorStaticSettingKey>;
 
+interface PricingPreset {
+  name: string;
+  urgencyCoefficient: number;
+  complexityCoefficient: number;
+  volumeDiscountCoefficient: number;
+  isBuiltin?: boolean;
+}
+
+const BUILTIN_PRICING_PRESETS: PricingPreset[] = [
+  { name: 'standard', urgencyCoefficient: 1.0, complexityCoefficient: 1.0, volumeDiscountCoefficient: 1.0, isBuiltin: true },
+  { name: 'urgent', urgencyCoefficient: 1.5, complexityCoefficient: 1.0, volumeDiscountCoefficient: 1.0, isBuiltin: true },
+  { name: 'complex', urgencyCoefficient: 1.0, complexityCoefficient: 1.5, volumeDiscountCoefficient: 1.0, isBuiltin: true },
+  { name: 'bulk', urgencyCoefficient: 1.0, complexityCoefficient: 1.0, volumeDiscountCoefficient: 0.9, isBuiltin: true },
+];
+
+const PRICING_PRESETS_STORAGE_KEY = 'filamenthub_pricing_presets_v1';
+
+const loadCustomPricingPresets = (): PricingPreset[] => {
+  try {
+    const raw = window.localStorage.getItem(PRICING_PRESETS_STORAGE_KEY);
+    return raw ? (JSON.parse(raw) as PricingPreset[]) : [];
+  } catch {
+    return [];
+  }
+};
+
+const saveCustomPricingPresets = (presets: PricingPreset[]): void => {
+  window.localStorage.setItem(PRICING_PRESETS_STORAGE_KEY, JSON.stringify(presets));
+};
+
 const CALCULATOR_DEFAULTS_STORAGE_KEY = 'filamenthub_calculator_defaults_v1';
 const QUOTE_PROFILE_STORAGE_KEY = 'filamenthub_calculator_quote_profile_v1';
 const CURRENCY_OPTIONS: CurrencyCode[] = ['₽', '$', '€'];
@@ -1835,6 +1865,8 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
   const [quoteProfileOpen, setQuoteProfileOpen] = useState(false);
   const [advancedSettingsOpen, setAdvancedSettingsOpen] = useState(false);
   const [postprocessChecked, setPostprocessChecked] = useState<Record<string, boolean>>({});
+  const [customPresets, setCustomPresets] = useState<PricingPreset[]>(() => loadCustomPricingPresets());
+  const [presetNameInput, setPresetNameInput] = useState('');
 
   const materialSourceLabel = selectedSpool
     ? tc('materialSourceSpool')
@@ -2777,6 +2809,86 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
 
                 <div>
                   <p className="text-sm font-semibold text-white">{t('profilePage.calc.adjustmentCoeffs')}</p>
+                  <div className="mt-2 mb-3">
+                    <p className="mb-2 text-xs font-medium text-slate-400">{tc('pricingPresetsTitle')}</p>
+                    <div className="flex flex-wrap gap-2">
+                      {[...BUILTIN_PRICING_PRESETS, ...customPresets].map((preset) => {
+                        const isActive =
+                          form.urgencyCoefficient === preset.urgencyCoefficient &&
+                          form.complexityCoefficient === preset.complexityCoefficient &&
+                          form.volumeDiscountCoefficient === preset.volumeDiscountCoefficient;
+                        return (
+                          <button
+                            key={preset.name}
+                            type="button"
+                            className={`rounded-full border px-3 py-1 text-xs transition-colors ${
+                              isActive
+                                ? 'border-cyan-400/40 bg-cyan-400/20 text-cyan-200'
+                                : 'border-white/10 bg-white/5 text-slate-400 hover:border-white/20 hover:text-slate-300'
+                            }`}
+                            onClick={() => {
+                              onChange('urgencyCoefficient', preset.urgencyCoefficient);
+                              onChange('complexityCoefficient', preset.complexityCoefficient);
+                              onChange('volumeDiscountCoefficient', preset.volumeDiscountCoefficient);
+                            }}
+                          >
+                            {preset.isBuiltin ? tc(`preset.${preset.name}`) : preset.name}
+                          </button>
+                        );
+                      })}
+                    </div>
+                    <div className="mt-2 flex items-center gap-2">
+                      <input
+                        type="text"
+                        value={presetNameInput}
+                        onChange={(e) => setPresetNameInput(e.target.value)}
+                        placeholder={tc('presetNamePlaceholder')}
+                        className="h-7 w-36 rounded-lg border border-white/10 bg-white/5 px-2 text-xs text-white placeholder:text-slate-500 focus:border-cyan-400/40 focus:outline-none"
+                      />
+                      <button
+                        type="button"
+                        disabled={!presetNameInput.trim()}
+                        className="rounded-lg border border-white/10 bg-white/5 px-2 py-1 text-xs text-slate-400 transition-colors hover:border-cyan-400/30 hover:text-cyan-300 disabled:opacity-40 disabled:cursor-not-allowed"
+                        onClick={() => {
+                          const name = presetNameInput.trim();
+                          if (!name) return;
+                          const newPreset: PricingPreset = {
+                            name,
+                            urgencyCoefficient: form.urgencyCoefficient,
+                            complexityCoefficient: form.complexityCoefficient,
+                            volumeDiscountCoefficient: form.volumeDiscountCoefficient,
+                          };
+                          const updated = [...customPresets.filter((p) => p.name !== name), newPreset];
+                          setCustomPresets(updated);
+                          saveCustomPricingPresets(updated);
+                          setPresetNameInput('');
+                        }}
+                      >
+                        {tc('presetSave')}
+                      </button>
+                      {customPresets.length > 0 ? (
+                        <button
+                          type="button"
+                          className="rounded-lg border border-white/10 bg-white/5 px-2 py-1 text-xs text-red-400 transition-colors hover:border-red-400/30"
+                          onClick={() => {
+                            const activeName = customPresets.find(
+                              (p) =>
+                                form.urgencyCoefficient === p.urgencyCoefficient &&
+                                form.complexityCoefficient === p.complexityCoefficient &&
+                                form.volumeDiscountCoefficient === p.volumeDiscountCoefficient,
+                            )?.name;
+                            if (activeName) {
+                              const updated = customPresets.filter((p) => p.name !== activeName);
+                              setCustomPresets(updated);
+                              saveCustomPricingPresets(updated);
+                            }
+                          }}
+                        >
+                          {tc('presetDelete')}
+                        </button>
+                      ) : null}
+                    </div>
+                  </div>
                   <div className="mt-4 grid grid-cols-1 gap-4">
                     <FieldBlock label={t('profilePage.calc.urgency')} hint={t('profilePage.calc.urgencyHint')}>
                       <NumberInput
