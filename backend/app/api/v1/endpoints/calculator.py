@@ -2,10 +2,12 @@
 
 import math
 import logging
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, File, Query, UploadFile, status
+from fastapi.responses import HTMLResponse
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -15,6 +17,8 @@ from app.core.errors import (
     ERR_FILE_TOO_LARGE,
     ERR_GCODE_PARSE_FAILED,
     ERR_INVALID_FILE_EXT,
+    ERR_SHARED_QUOTE_EXPIRED,
+    ERR_SHARED_QUOTE_NOT_FOUND,
     ERR_WEIGHT_REQUIRED,
     ERR_SPOOL_PRICE_REQUIRED,
     ERR_TIME_REQUIRED,
@@ -26,6 +30,7 @@ from app.core.config import settings
 from app.db.session import get_db
 from app.models.calculator_history_entry import CalculatorHistoryEntry
 from app.models.calculator_profile import UserCalculatorProfile
+from app.models.shared_quote import SharedQuote
 from app.models.user import User
 from app.schemas.calculator import (
     CalculatorEstimateRequest,
@@ -38,6 +43,8 @@ from app.schemas.calculator import (
     CalculatorProfileUpdate,
     PricingMethod,
     RoundingMode,
+    SharedQuoteCreate,
+    SharedQuoteResponse,
 )
 from app.services.calculator_gcode_parser import (
     SUPPORTED_GCODE_EXTENSIONS,
@@ -610,3 +617,51 @@ async def update_calculator_profile(
     await db.commit()
     await db.refresh(profile)
     return CalculatorProfileResponse.model_validate(profile)
+
+
+# ── Shared quotes (public КП links) ──────────────────────────────────
+
+SHARED_QUOTE_LIFETIME_DAYS = 90
+
+
+@router.post("/quote/share", response_model=SharedQuoteResponse, status_code=status.HTTP_201_CREATED)
+async def create_shared_quote(
+    data: SharedQuoteCreate,
+    current_user: Annotated[User, Depends(get_current_active_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> SharedQuoteResponse:
+    """Create a publicly accessible shared quote link."""
+    expires_at = datetime.now(timezone.utc) + timedelta(days=SHARED_QUOTE_LIFETIME_DAYS)
+
+    quote = SharedQuote(
+        user_id=current_user.id,
+        title=data.title[:255] if data.title else "",
+        html_content=data.html_content,
+        expires_at=expires_at,
+    )
+    db.add(quote)
+    await db.commit()
+    await db.refresh(quote)
+
+    share_url = f"{settings.BASE_URL}/api/v1/calculator/quote/{quote.uuid}"
+    return SharedQuoteResponse(uuid=quote.uuid, share_url=share_url, expires_at=quote.expires_at)
+
+
+@router.get("/quote/{uuid}")
+async def get_shared_quote(
+    uuid: str,
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> HTMLResponse:
+    """Return a shared quote as a standalone HTML page (no auth required)."""
+    result = await db.execute(
+        select(SharedQuote).where(SharedQuote.uuid == uuid)
+    )
+    quote = result.scalar_one_or_none()
+
+    if not quote:
+        raise_error(status.HTTP_404_NOT_FOUND, ERR_SHARED_QUOTE_NOT_FOUND)
+
+    if quote.expires_at and quote.expires_at < datetime.now(timezone.utc):
+        raise_error(status.HTTP_410_GONE, ERR_SHARED_QUOTE_EXPIRED)
+
+    return HTMLResponse(content=quote.html_content)

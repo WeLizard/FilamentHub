@@ -33,6 +33,7 @@ from app.models.wiki_article import WikiArticle, WikiArticleStatus
 from app.models.wiki_feedback import WikiArticleFeedback, WikiFeedbackType
 from app.models.material_property import MaterialProperty
 from app.models.print_problem import PrintProblem, PrintProblemSeverity
+from app.models.shared_quote import SharedQuote
 
 __all__ = [
     # "BadWord",  # Убрано из экспорта, чтобы не падать при отсутствии таблицы
@@ -69,6 +70,7 @@ __all__ = [
     "PrintProfile",
     "PrintProfilePrinter",
     "PrintProfileFilament",
+    "SharedQuote",
     "SyncDevice",
     "SyncHistory",
     "SyncOperation",

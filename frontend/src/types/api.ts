@@ -653,6 +653,17 @@ export interface CalculatorProfileResponse {
 
 export type CalculatorProfileUpdate = Partial<Omit<CalculatorProfileResponse, 'updated_at'>>;
 
+export interface SharedQuoteCreate {
+  title?: string;
+  html_content: string;
+}
+
+export interface SharedQuoteResponse {
+  uuid: string;
+  share_url: string;
+  expires_at: string | null;
+}
+
 export interface DownloadVersion {
   platform: 'windows' | 'macos' | 'linux';
   architecture: 'x64' | 'arm64';

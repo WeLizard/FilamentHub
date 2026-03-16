@@ -880,6 +880,11 @@ export const calculatorAPI = {
     const response = await api.put<CalculatorProfileResponse>('/calculator/profile', data);
     return response.data;
   },
+
+  shareQuote: async (data: import('../types/api').SharedQuoteCreate) => {
+    const response = await api.post<import('../types/api').SharedQuoteResponse>('/calculator/quote/share', data);
+    return response.data;
+  },
 };
 
 // ==================== Admin API ====================

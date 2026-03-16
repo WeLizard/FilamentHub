@@ -350,6 +350,26 @@ class CalculatorProfileUpdate(BaseModel):
     quote_number_prefix: str | None = Field(None, max_length=32)
 
 
+# ── Shared quote (public link) ───────────────────────────────────────
+
+
+class SharedQuoteCreate(BaseModel):
+    """POST body to create a shareable quote link."""
+
+    title: str = Field("", max_length=255)
+    html_content: str = Field(..., min_length=1, max_length=500_000)
+
+
+class SharedQuoteResponse(BaseModel):
+    """Response with share URL."""
+
+    uuid: str
+    share_url: str
+    expires_at: datetime | None = None
+
+    model_config = ConfigDict(from_attributes=True)
+
+
 class CalculatorProfileResponse(BaseModel):
     """GET response — full profile."""
 

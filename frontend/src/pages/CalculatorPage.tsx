@@ -17,6 +17,7 @@ import {
   CloudUpload,
   FileText,
   HelpCircle,
+  Link2,
   Loader2,
   Printer,
   Save,
@@ -1103,6 +1104,7 @@ export const CalculatorPage: React.FC = () => {
   const [quoteParties, setQuoteParties] = useState<QuotePartyFormState>(DEFAULT_QUOTE_PARTY_FORM);
   const [selectedSpoolId, setSelectedSpoolId] = useState<number | ''>('');
   const [isCloudBusy, setIsCloudBusy] = useState(false);
+  const [isSharing, setIsSharing] = useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const skipNextFilamentDefaultsRef = useRef(false);
   const lastAutoMatchedGcodeKeyRef = useRef<string | null>(null);
@@ -1487,6 +1489,49 @@ export const CalculatorPage: React.FC = () => {
     }, 250);
   };
 
+  const handleShareQuote = async () => {
+    if (!result || !user) return;
+    setIsSharing(true);
+    try {
+      quoteSequenceRef.current += 1;
+      const prefix = quoteProfile.quoteNumberPrefix || 'КП';
+      const seq = quoteSequenceRef.current;
+      const dateStr = new Date().toISOString().slice(0, 10).replace(/-/g, '');
+      const quoteNumber = `${prefix}-${dateStr}-${String(seq).padStart(2, '0')}`;
+
+      const quoteHtml = buildQuoteDocumentHtml({
+        t,
+        form,
+        result,
+        parsedGcode,
+        selectedFilament: selectedMaterial,
+        parties: quoteParties,
+        formatCurrency,
+        quoteNumber,
+      });
+
+      const resp = await calculatorAPI.shareQuote({
+        title: quoteNumber,
+        html_content: quoteHtml,
+      });
+
+      await navigator.clipboard.writeText(resp.share_url);
+      setHistoryFeedback({ kind: 'success', message: tc('quoteShareCopied') });
+    } catch (err) {
+      const errorWithResponse = err as { response?: { data?: { detail?: unknown } }; message?: string };
+      setHistoryFeedback({
+        kind: 'error',
+        message: translateApiError(
+          t,
+          errorWithResponse.response?.data?.detail ?? errorWithResponse.message,
+          tc('quoteShareError'),
+        ),
+      });
+    } finally {
+      setIsSharing(false);
+    }
+  };
+
   const handleOpenQuote = () => {
     setQuoteParties((prev) => ({
       ...prev,
@@ -1778,6 +1823,9 @@ export const CalculatorPage: React.FC = () => {
           }));
         }}
         onPrint={handlePrintQuote}
+        onShare={handleShareQuote}
+        isSharing={isSharing}
+        isLoggedIn={!!user}
         formatCurrency={formatCurrency}
       />
     </div>
@@ -3210,6 +3258,9 @@ interface QuoteModalProps {
   onClose: () => void;
   onPartyChange: <K extends keyof QuotePartyFormState>(field: K, value: QuotePartyFormState[K]) => void;
   onPrint: () => void;
+  onShare: () => void;
+  isSharing: boolean;
+  isLoggedIn: boolean;
   formatCurrency: (value: number | null | undefined) => string;
 }
 
@@ -3221,6 +3272,9 @@ const QuoteModal: React.FC<QuoteModalProps> = ({
   onClose,
   onPartyChange,
   onPrint,
+  onShare,
+  isSharing,
+  isLoggedIn,
   formatCurrency,
 }) => {
   const { t } = useTranslation();
@@ -3421,6 +3475,17 @@ const QuoteModal: React.FC<QuoteModalProps> = ({
                   <FileText className="h-4 w-4" />
                   {tc('quotePrintAction')}
                 </button>
+                {isLoggedIn && (
+                  <button
+                    type="button"
+                    onClick={onShare}
+                    disabled={isSharing}
+                    className="inline-flex w-full items-center justify-center gap-2 rounded-[1.4rem] border border-cyan-400/20 bg-cyan-400/10 px-5 py-4 text-sm font-semibold text-cyan-200 transition-all hover:bg-cyan-400/20 hover:text-white disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {isSharing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Link2 className="h-4 w-4" />}
+                    {tc('quoteShareAction')}
+                  </button>
+                )}
                 <button
                   type="button"
                   onClick={onClose}
