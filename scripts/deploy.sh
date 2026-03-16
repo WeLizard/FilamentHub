@@ -65,8 +65,8 @@ if ! git show-ref --verify --quiet refs/remotes/origin/main; then
     BRANCH="master"
 fi
 
-# Получаем изменения
-git fetch origin "$BRANCH" || {
+# Получаем изменения (без submodule — OrcaSlicer не нужен на сервере)
+git fetch --no-recurse-submodules origin "$BRANCH" || {
     echo -e "${RED}❌ Ошибка: не удалось получить изменения из Git${NC}"
     exit 1
 }
