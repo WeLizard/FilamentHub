@@ -83,6 +83,10 @@ interface CalculatorFormState {
   pricePerHour: number;
   electricityCostPerKwh: number;
   printerPowerW: number;
+  powerHotendW: number;
+  powerBedW: number;
+  powerSteppersW: number;
+  powerElectronicsW: number;
   modelingHours: number;
   modelingMinutes: number;
   modelingRatePerHour: number;
@@ -136,6 +140,10 @@ const DEFAULT_FORM_STATE: CalculatorFormState = {
   pricePerHour: 170,
   electricityCostPerKwh: 6,
   printerPowerW: 350,
+  powerHotendW: 0,
+  powerBedW: 0,
+  powerSteppersW: 0,
+  powerElectronicsW: 0,
   modelingHours: 0,
   modelingMinutes: 0,
   modelingRatePerHour: 934,
@@ -163,6 +171,10 @@ const DEFAULT_FORM_STATE: CalculatorFormState = {
 const CALCULATOR_STATIC_FIELDS = [
   'electricityCostPerKwh',
   'printerPowerW',
+  'powerHotendW',
+  'powerBedW',
+  'powerSteppersW',
+  'powerElectronicsW',
   'modelingRatePerHour',
   'postprocessingRatePerHour',
   'printingRatePerHour',
@@ -524,6 +536,10 @@ const addDays = (value: Date, days: number): Date => {
 const extractStaticSettings = (form: CalculatorFormState): CalculatorStaticSettings => ({
   electricityCostPerKwh: form.electricityCostPerKwh,
   printerPowerW: form.printerPowerW,
+  powerHotendW: form.powerHotendW,
+  powerBedW: form.powerBedW,
+  powerSteppersW: form.powerSteppersW,
+  powerElectronicsW: form.powerElectronicsW,
   modelingRatePerHour: form.modelingRatePerHour,
   postprocessingRatePerHour: form.postprocessingRatePerHour,
   printingRatePerHour: form.printingRatePerHour,
@@ -560,6 +576,10 @@ const loadStoredCalculatorDefaults = (): CalculatorStaticSettings => {
     return {
       electricityCostPerKwh: numberOrFallback(parsed.electricityCostPerKwh, fallback.electricityCostPerKwh),
       printerPowerW: numberOrFallback(parsed.printerPowerW, fallback.printerPowerW),
+      powerHotendW: numberOrFallback(parsed.powerHotendW, fallback.powerHotendW),
+      powerBedW: numberOrFallback(parsed.powerBedW, fallback.powerBedW),
+      powerSteppersW: numberOrFallback(parsed.powerSteppersW, fallback.powerSteppersW),
+      powerElectronicsW: numberOrFallback(parsed.powerElectronicsW, fallback.powerElectronicsW),
       modelingRatePerHour: numberOrFallback(parsed.modelingRatePerHour, fallback.modelingRatePerHour),
       postprocessingRatePerHour: numberOrFallback(parsed.postprocessingRatePerHour, fallback.postprocessingRatePerHour),
       printingRatePerHour: numberOrFallback(parsed.printingRatePerHour, fallback.printingRatePerHour),
@@ -1497,6 +1517,10 @@ export const CalculatorPage: React.FC = () => {
       saveStoredCalculatorDefaults({
         electricityCostPerKwh: profile.electricity_cost_per_kwh,
         printerPowerW: profile.printer_power_w,
+        powerHotendW: form.powerHotendW,
+        powerBedW: form.powerBedW,
+        powerSteppersW: form.powerSteppersW,
+        powerElectronicsW: form.powerElectronicsW,
         modelingRatePerHour: profile.modeling_rate_per_hour,
         postprocessingRatePerHour: profile.postprocessing_rate_per_hour,
         printingRatePerHour: profile.printing_rate_per_hour,
@@ -1931,11 +1955,64 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
                         tooltipText={tc('defaultPrinterPowerTooltip')}
                       />
                     }
+                    hint={
+                      form.powerHotendW + form.powerBedW + form.powerSteppersW + form.powerElectronicsW > 0
+                        ? `${tc('autoCalc')}: ${form.powerHotendW + form.powerBedW + form.powerSteppersW + form.powerElectronicsW} ${tc('wattAbbr')}`
+                        : undefined
+                    }
                   >
                     <InputWithSuffix
                       value={form.printerPowerW}
                       onChange={(value) => onStaticChange('printerPowerW', value)}
                       placeholder="350"
+                      suffix={tc('wattAbbr')}
+                    />
+                  </FieldBlock>
+                  <FieldBlock label={tc('powerHotend')} hint={tc('powerHotendHint')}>
+                    <InputWithSuffix
+                      value={form.powerHotendW}
+                      onChange={(value) => {
+                        onStaticChange('powerHotendW', value);
+                        const total = value + form.powerBedW + form.powerSteppersW + form.powerElectronicsW;
+                        if (total > 0) onStaticChange('printerPowerW', total);
+                      }}
+                      placeholder="0"
+                      suffix={tc('wattAbbr')}
+                    />
+                  </FieldBlock>
+                  <FieldBlock label={tc('powerBed')} hint={tc('powerBedHint')}>
+                    <InputWithSuffix
+                      value={form.powerBedW}
+                      onChange={(value) => {
+                        onStaticChange('powerBedW', value);
+                        const total = form.powerHotendW + value + form.powerSteppersW + form.powerElectronicsW;
+                        if (total > 0) onStaticChange('printerPowerW', total);
+                      }}
+                      placeholder="0"
+                      suffix={tc('wattAbbr')}
+                    />
+                  </FieldBlock>
+                  <FieldBlock label={tc('powerSteppers')} hint={tc('powerSteppersHint')}>
+                    <InputWithSuffix
+                      value={form.powerSteppersW}
+                      onChange={(value) => {
+                        onStaticChange('powerSteppersW', value);
+                        const total = form.powerHotendW + form.powerBedW + value + form.powerElectronicsW;
+                        if (total > 0) onStaticChange('printerPowerW', total);
+                      }}
+                      placeholder="0"
+                      suffix={tc('wattAbbr')}
+                    />
+                  </FieldBlock>
+                  <FieldBlock label={tc('powerElectronics')} hint={tc('powerElectronicsHint')}>
+                    <InputWithSuffix
+                      value={form.powerElectronicsW}
+                      onChange={(value) => {
+                        onStaticChange('powerElectronicsW', value);
+                        const total = form.powerHotendW + form.powerBedW + form.powerSteppersW + value;
+                        if (total > 0) onStaticChange('printerPowerW', total);
+                      }}
+                      placeholder="0"
                       suffix={tc('wattAbbr')}
                     />
                   </FieldBlock>
