@@ -33,6 +33,7 @@ class UserCalculatorProfile(Base):
     markup_percent: Mapped[float] = mapped_column(Float, nullable=False, default=30.0)
     tax_rate_percent: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
     fixed_costs: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    bed_prep_cost_per_print: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
     min_order_price: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
     round_to_nearest: Mapped[int] = mapped_column(Integer, nullable=False, default=10)
     rounding_mode: Mapped[str] = mapped_column(String(16), nullable=False, default="up")

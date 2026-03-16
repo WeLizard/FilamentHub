@@ -99,6 +99,7 @@ interface CalculatorFormState {
   complexityCoefficient: number;
   volumeDiscountCoefficient: number;
   fixedCosts: number;
+  bedPrepCostPerPrint: number;
   minOrderPrice: number;
   roundToNearest: number;
   roundingMode: RoundingMode;
@@ -149,6 +150,7 @@ const DEFAULT_FORM_STATE: CalculatorFormState = {
   complexityCoefficient: 1.0,
   volumeDiscountCoefficient: 1.0,
   fixedCosts: 0,
+  bedPrepCostPerPrint: 0,
   minOrderPrice: 0,
   roundToNearest: 10,
   roundingMode: 'up',
@@ -165,6 +167,7 @@ const CALCULATOR_STATIC_FIELDS = [
   'markupPercent',
   'taxRatePercent',
   'fixedCosts',
+  'bedPrepCostPerPrint',
   'minOrderPrice',
   'roundToNearest',
   'roundingMode',
@@ -417,6 +420,7 @@ const buildEstimateRequest = (form: CalculatorFormState): CalculatorEstimateRequ
   requestData.volume_discount_coefficient =
     form.volumeDiscountCoefficient !== 1.0 ? form.volumeDiscountCoefficient : undefined;
   requestData.fixed_costs = form.fixedCosts || undefined;
+  requestData.bed_prep_cost_per_print = form.bedPrepCostPerPrint || undefined;
   requestData.min_order_price = form.minOrderPrice || undefined;
 
   return requestData;
@@ -522,6 +526,7 @@ const extractStaticSettings = (form: CalculatorFormState): CalculatorStaticSetti
   markupPercent: form.markupPercent,
   taxRatePercent: form.taxRatePercent,
   fixedCosts: form.fixedCosts,
+  bedPrepCostPerPrint: form.bedPrepCostPerPrint,
   minOrderPrice: form.minOrderPrice,
   roundToNearest: form.roundToNearest,
   roundingMode: form.roundingMode,
@@ -555,6 +560,7 @@ const loadStoredCalculatorDefaults = (): CalculatorStaticSettings => {
       markupPercent: numberOrFallback(parsed.markupPercent, fallback.markupPercent),
       taxRatePercent: numberOrFallback(parsed.taxRatePercent, fallback.taxRatePercent),
       fixedCosts: numberOrFallback(parsed.fixedCosts, fallback.fixedCosts),
+      bedPrepCostPerPrint: numberOrFallback(parsed.bedPrepCostPerPrint, fallback.bedPrepCostPerPrint),
       minOrderPrice: numberOrFallback(parsed.minOrderPrice, fallback.minOrderPrice),
       roundToNearest: numberOrFallback(parsed.roundToNearest, fallback.roundToNearest),
       roundingMode:
@@ -704,6 +710,7 @@ const buildFormFromHistoryEntry = (entry: CalculatorHistoryEntry): CalculatorFor
     volumeDiscountCoefficient:
       request.volume_discount_coefficient ?? DEFAULT_FORM_STATE.volumeDiscountCoefficient,
     fixedCosts: request.fixed_costs ?? DEFAULT_FORM_STATE.fixedCosts,
+    bedPrepCostPerPrint: request.bed_prep_cost_per_print ?? DEFAULT_FORM_STATE.bedPrepCostPerPrint,
     minOrderPrice: request.min_order_price ?? DEFAULT_FORM_STATE.minOrderPrice,
     roundToNearest: request.round_to_nearest ?? DEFAULT_FORM_STATE.roundToNearest,
     roundingMode: request.rounding_mode ?? DEFAULT_FORM_STATE.roundingMode,
@@ -926,6 +933,7 @@ const buildQuoteDocumentHtml = ({
         <div class="totals-row"><span>${escapeHtml(t('profilePage.calc.printing'))}</span><strong>${escapeHtml(formatCurrency(result.cost_printing))}</strong></div>
         <div class="totals-row"><span>${escapeHtml(t('profilePage.calc.postprocessing'))}</span><strong>${escapeHtml(formatCurrency(result.cost_postprocessing))}</strong></div>
         <div class="totals-row"><span>${escapeHtml(t('profilePage.calc.amortization'))}</span><strong>${escapeHtml(formatCurrency(result.cost_amortization))}</strong></div>
+        ${result.cost_bed_prep > 0 ? `<div class="totals-row"><span>${escapeHtml(t('profilePage.calc.bedPrep'))}</span><strong>${escapeHtml(formatCurrency(result.cost_bed_prep))}</strong></div>` : ''}
         ${result.cost_tax > 0 ? `<div class="totals-row"><span>${escapeHtml(t('profilePage.calc.taxAmount'))}</span><strong>${escapeHtml(formatCurrency(result.cost_tax))}</strong></div>` : ''}
         <div class="totals-row total-strong"><span>${escapeHtml(t('calculator.totalCost'))}</span><strong>${escapeHtml(formatCurrency(result.cost_total))}</strong></div>
       </div>
@@ -1372,6 +1380,7 @@ export const CalculatorPage: React.FC = () => {
         markup_percent: staticSettings.markupPercent,
         tax_rate_percent: staticSettings.taxRatePercent,
         fixed_costs: staticSettings.fixedCosts,
+        bed_prep_cost_per_print: staticSettings.bedPrepCostPerPrint,
         min_order_price: staticSettings.minOrderPrice,
         round_to_nearest: staticSettings.roundToNearest,
         rounding_mode: staticSettings.roundingMode,
@@ -1408,6 +1417,7 @@ export const CalculatorPage: React.FC = () => {
         markupPercent: profile.markup_percent,
         taxRatePercent: profile.tax_rate_percent,
         fixedCosts: profile.fixed_costs,
+        bedPrepCostPerPrint: profile.bed_prep_cost_per_print,
         minOrderPrice: profile.min_order_price,
         roundToNearest: profile.round_to_nearest,
         roundingMode: profile.rounding_mode as RoundingMode,
@@ -1434,6 +1444,7 @@ export const CalculatorPage: React.FC = () => {
         markupPercent: profile.markup_percent,
         taxRatePercent: profile.tax_rate_percent,
         fixedCosts: profile.fixed_costs,
+        bedPrepCostPerPrint: profile.bed_prep_cost_per_print,
         minOrderPrice: profile.min_order_price,
         roundToNearest: profile.round_to_nearest,
         roundingMode: profile.rounding_mode as RoundingMode,
@@ -1974,6 +1985,14 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
                     <InputWithSuffix
                       value={form.fixedCosts}
                       onChange={(value) => onStaticChange('fixedCosts', value)}
+                      placeholder="0"
+                      suffix={quoteProfile.currency}
+                    />
+                  </FieldBlock>
+                  <FieldBlock label={t('profilePage.calc.bedPrepCost')} hint={t('profilePage.calc.bedPrepCostHint')}>
+                    <InputWithSuffix
+                      value={form.bedPrepCostPerPrint}
+                      onChange={(value) => onStaticChange('bedPrepCostPerPrint', value)}
                       placeholder="0"
                       suffix={quoteProfile.currency}
                     />
@@ -2643,6 +2662,9 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
                   <MetricRow label={t('profilePage.calc.printing')} value={formatCurrency(result.cost_printing)} />
                   <MetricRow label={t('profilePage.calc.postprocessing')} value={formatCurrency(result.cost_postprocessing)} />
                   <MetricRow label={t('profilePage.calc.amortization')} value={formatCurrency(result.cost_amortization)} />
+                  {result.cost_bed_prep > 0 ? (
+                    <MetricRow label={t('profilePage.calc.bedPrep')} value={formatCurrency(result.cost_bed_prep)} />
+                  ) : null}
                   {result.cost_tax > 0 ? (
                     <MetricRow label={t('profilePage.calc.taxAmount')} value={formatCurrency(result.cost_tax)} />
                   ) : null}

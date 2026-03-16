@@ -41,6 +41,7 @@ def upgrade() -> None:
         sa.Column("markup_percent", sa.Float(), nullable=False, server_default="30.0"),
         sa.Column("tax_rate_percent", sa.Float(), nullable=False, server_default="0.0"),
         sa.Column("fixed_costs", sa.Float(), nullable=False, server_default="0.0"),
+        sa.Column("bed_prep_cost_per_print", sa.Float(), nullable=False, server_default="0.0"),
         sa.Column("min_order_price", sa.Float(), nullable=False, server_default="0.0"),
         sa.Column("round_to_nearest", sa.Integer(), nullable=False, server_default="10"),
         sa.Column("rounding_mode", sa.String(16), nullable=False, server_default="up"),

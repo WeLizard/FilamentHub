@@ -140,6 +140,11 @@ class CalculatorEstimateRequest(BaseModel):
         None, ge=0, description="Минимальная цена заказа (если итоговая цена меньше, устанавливается минимум, обычно 300-500 руб)"
     )
     
+    # ========== Подготовка стола ==========
+    bed_prep_cost_per_print: float | None = Field(
+        None, ge=0, description="Стоимость подготовки стола за один запуск (клей, спрей, протирка — обычно 10-50 руб)"
+    )
+
     # ========== Потери материала ==========
     waste_factor_percent: float | None = Field(
         None, ge=0, le=30, description="Процент потерь материала (пурга, скирт, дефекты) помимо поддержек (обычно 5-15%)"
@@ -186,6 +191,7 @@ class CalculatorEstimateResponse(BaseModel):
     cost_postprocessing: float = Field(0, ge=0, description="Стоимость постобработки")
     cost_monitoring: float = Field(0, ge=0, description="Мониторинг печати (пассивное время оператора)")
     cost_amortization: float = Field(0, ge=0, description="Стоимость амортизации")
+    cost_bed_prep: float = Field(0, ge=0, description="Стоимость подготовки стола")
     cost_nozzle_wear: float = Field(0, ge=0, description="Износ сопла (объёмная модель)")
     cost_tax: float = Field(0, ge=0, description="Сумма налога, включенная в итоговую цену")
     
@@ -328,6 +334,7 @@ class CalculatorProfileUpdate(BaseModel):
     markup_percent: float | None = Field(None, ge=0, le=200)
     tax_rate_percent: float | None = Field(None, ge=0, le=100)
     fixed_costs: float | None = Field(None, ge=0)
+    bed_prep_cost_per_print: float | None = Field(None, ge=0)
     min_order_price: float | None = Field(None, ge=0)
     round_to_nearest: int | None = Field(None, ge=0)
     rounding_mode: RoundingMode | None = None
@@ -357,6 +364,7 @@ class CalculatorProfileResponse(BaseModel):
     markup_percent: float
     tax_rate_percent: float
     fixed_costs: float
+    bed_prep_cost_per_print: float
     min_order_price: float
     round_to_nearest: int
     rounding_mode: str

@@ -263,7 +263,12 @@ async def estimate_cost(
             # Формула из документа: (Вес детали × Цена материала) + (Вес поддержек × Цена материала × Коэффициент потерь)
             cost_material = (part_weight * price_per_gram) + (supports_weight * price_per_gram * supports_loss_coef)
 
-        # 1b. Потери материала (пурга, скирт, дефекты — помимо поддержек)
+        # 1b. Подготовка стола (клей, спрей, протирка — за каждый запуск)
+        cost_bed_prep = 0.0
+        if data.bed_prep_cost_per_print and data.bed_prep_cost_per_print > 0:
+            cost_bed_prep = data.bed_prep_cost_per_print * print_runs
+
+        # 1c. Потери материала (пурга, скирт, дефекты — помимо поддержек)
         cost_waste = 0.0
         waste_factor_percent = data.waste_factor_percent or 0.0
         if waste_factor_percent > 0 and cost_material > 0:
@@ -328,6 +333,7 @@ async def estimate_cost(
         # 8. Прямые затраты (материалы + время + труд + износ)
         cost_direct = (
             cost_material +
+            cost_bed_prep +
             cost_waste +
             cost_electricity +
             cost_modeling +
@@ -384,6 +390,7 @@ async def estimate_cost(
         if quantity > 1:
             cost_without_modeling = (
                 cost_material +
+                cost_bed_prep +
                 cost_waste +
                 cost_electricity +
                 cost_printing +
@@ -424,6 +431,7 @@ async def estimate_cost(
         
         return CalculatorEstimateResponse(
             cost_material=round(cost_material, 2),
+            cost_bed_prep=round(cost_bed_prep, 2),
             cost_waste=round(cost_waste, 2),
             cost_electricity=round(cost_electricity, 2),
             cost_modeling=round(cost_modeling, 2),

@@ -494,7 +494,10 @@ export interface CalculatorEstimateRequest {
   
   // Фиксированные расходы
   fixed_costs?: number | null;
-  
+
+  // Подготовка стола
+  bed_prep_cost_per_print?: number | null;
+
   // Минимальная цена заказа
   min_order_price?: number | null;
   
@@ -511,6 +514,7 @@ export interface CalculatorEstimateResponse {
   cost_printing: number;
   cost_postprocessing: number;
   cost_amortization: number;
+  cost_bed_prep: number;
   cost_tax: number;
   
   // Промежуточные расчеты
@@ -632,6 +636,7 @@ export interface CalculatorProfileResponse {
   markup_percent: number;
   tax_rate_percent: number;
   fixed_costs: number;
+  bed_prep_cost_per_print: number;
   min_order_price: number;
   round_to_nearest: number;
   rounding_mode: string;
