@@ -976,26 +976,6 @@ const buildQuoteDocumentHtml = ({
   const paymentTerms = parties.paymentTerms.trim();
   const sellerName = parties.sellerName.trim() || '—';
 
-  const costBreakdownRows = [
-    { label: t('profilePage.calc.material'), value: result.cost_material },
-    { label: t('profilePage.calc.electricityLabel'), value: result.cost_electricity },
-    { label: t('profilePage.calc.modeling'), value: result.cost_modeling },
-    { label: t('profilePage.calc.printing'), value: result.cost_printing },
-    { label: t('profilePage.calc.postprocessing'), value: result.cost_postprocessing },
-    { label: t('profilePage.calc.amortization'), value: result.cost_amortization },
-    ...(result.cost_bed_prep > 0 ? [{ label: t('profilePage.calc.bedPrep'), value: result.cost_bed_prep }] : []),
-    ...(result.cost_tax > 0 ? [{ label: t('profilePage.calc.taxAmount'), value: result.cost_tax }] : []),
-  ].filter((row) => row.value > 0);
-
-  const breakdownRows = costBreakdownRows
-    .map(
-      (row) => `
-          <tr>
-            <td class="p-2 border border-gray-300 text-sm">${escapeHtml(row.label)}</td>
-            <td class="p-2 border border-gray-300 text-sm text-right">${escapeHtml(formatCurrency(row.value))}</td>
-          </tr>`,
-    )
-    .join('');
 
   return `<!doctype html>
 <html lang="ru">
@@ -1025,7 +1005,6 @@ const buildQuoteDocumentHtml = ({
       .p-2 { padding: 8px 10px; }
       .border { border: 1px solid; }
       .border-gray-400 { border-color: #9ca3af; }
-      .border-gray-300 { border-color: #d1d5db; }
       .text-sm { font-size: 13px; }
       .text-xs { font-size: 11px; }
       .text-right { text-align: right; }
@@ -1043,8 +1022,6 @@ const buildQuoteDocumentHtml = ({
       .sig-line { border-bottom: 1px solid #1f2937; padding-bottom: 4px; font-size: 13px; }
       .sig-hint { font-size: 10px; color: #9ca3af; margin-top: 4px; }
       .footer-note { margin-top: 32px; text-align: center; font-size: 10px; color: #d1d5db; }
-      .breakdown { margin-bottom: 24px; }
-      .breakdown-title { font-weight: 700; margin-bottom: 8px; font-size: 14px; }
       .total-row td { font-weight: 700; font-size: 15px; background: #f9fafb; }
       @media print {
         body { background: white; }
@@ -1107,19 +1084,6 @@ const buildQuoteDocumentHtml = ({
         </tfoot>
       </table>
 
-      ${costBreakdownRows.length > 0 ? `
-      <div class="breakdown">
-        <p class="breakdown-title">${escapeHtml(t('profilePage.calc.totalSums'))}:</p>
-        <table>
-          <tbody>
-            ${breakdownRows}
-            <tr class="total-row">
-              <td class="p-2 border border-gray-300 text-sm">${escapeHtml(t('profilePage.calculator.totalCost'))}</td>
-              <td class="p-2 border border-gray-300 text-sm text-right">${escapeHtml(formatCurrency(result.cost_total))}</td>
-            </tr>
-          </tbody>
-        </table>
-      </div>` : ''}
 
       <div class="included">
         <p class="included-title">${escapeHtml(t('profilePage.calculator.quoteIncludedTitle'))}:</p>
