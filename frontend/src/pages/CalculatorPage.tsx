@@ -880,13 +880,13 @@ const buildQuoteLineItems = (
   parsedGcode: CalculatorGcodeParseResponse | null,
   selectedFilament: MaterialSelectionSnapshot | null,
 ): QuoteLineItem[] => {
-  const itemTitle = parsedGcode?.file_name || t('calculator.quoteDefaultItemTitle');
+  const itemTitle = parsedGcode?.file_name || t('profilePage.calculator.quoteDefaultItemTitle');
   const details = [
     selectedFilament ? buildFilamentLabel(selectedFilament) : null,
-    parsedGcode?.slicer_name ? `${t('calculator.quoteSlicer')}: ${[parsedGcode.slicer_name, parsedGcode.slicer_version].filter(Boolean).join(' ')}` : null,
-    form.weightG > 0 ? `${t('calculator.quoteWeight')}: ${form.weightG.toFixed(2)} ${t('calculator.grams')}` : null,
+    parsedGcode?.slicer_name ? `${t('profilePage.calculator.quoteSlicer')}: ${[parsedGcode.slicer_name, parsedGcode.slicer_version].filter(Boolean).join(' ')}` : null,
+    form.weightG > 0 ? `${t('profilePage.calculator.quoteWeight')}: ${form.weightG.toFixed(2)} ${t('profilePage.calculator.grams')}` : null,
     toHours(form.timeHours, form.timeMinutes, form.timeSec) > 0
-      ? `${t('calculator.quotePrintTime')}: ${formatHoursShort(
+      ? `${t('profilePage.calculator.quotePrintTime')}: ${formatHoursShort(
           toHours(form.timeHours, form.timeMinutes, form.timeSec),
           t('profilePage.calc.h'),
           t('profilePage.calc.min'),
@@ -912,26 +912,26 @@ const buildQuoteIncludedItems = (t: TFunction, result: CalculatorEstimateRespons
   const included: string[] = [];
 
   if (result.cost_material > 0) {
-    included.push(t('calculator.quoteIncluded.materials'));
+    included.push(t('profilePage.calculator.quoteIncluded.materials'));
   }
   if (result.cost_electricity > 0 || result.cost_amortization > 0) {
-    included.push(t('calculator.quoteIncluded.equipment'));
+    included.push(t('profilePage.calculator.quoteIncluded.equipment'));
   }
   if (result.cost_printing > 0) {
-    included.push(t('calculator.quoteIncluded.printing'));
+    included.push(t('profilePage.calculator.quoteIncluded.printing'));
   }
   if (result.cost_modeling > 0) {
-    included.push(t('calculator.quoteIncluded.modeling'));
+    included.push(t('profilePage.calculator.quoteIncluded.modeling'));
   }
   if (result.cost_postprocessing > 0) {
-    included.push(t('calculator.quoteIncluded.postprocessing'));
+    included.push(t('profilePage.calculator.quoteIncluded.postprocessing'));
   }
 
-  return included.length > 0 ? included : [t('calculator.quoteIncluded.none')];
+  return included.length > 0 ? included : [t('profilePage.calculator.quoteIncluded.none')];
 };
 
 const buildQuoteDisclaimerLabel = (t: TFunction, mode: QuoteDisclaimerMode): string =>
-  mode === 'offer' ? t('calculator.quoteDisclaimerOffer') : t('calculator.quoteDisclaimerNotOffer');
+  mode === 'offer' ? t('profilePage.calculator.quoteDisclaimerOffer') : t('profilePage.calculator.quoteDisclaimerNotOffer');
 
 const buildQuoteDocumentHtml = ({
   t,
@@ -950,8 +950,8 @@ const buildQuoteDocumentHtml = ({
   const validityDays = Math.max(1, Math.round(parties.validityDays || DEFAULT_QUOTE_PROFILE.validityDays));
   const validUntil = new Intl.DateTimeFormat(undefined, { dateStyle: 'long' }).format(addDays(issuedAt, validityDays));
   const disclaimerLabel = buildQuoteDisclaimerLabel(t, parties.disclaimerMode || DEFAULT_QUOTE_PROFILE.disclaimerMode);
-  const documentTitle = `${t('calculator.quoteDocumentTitle')} — ${today}`;
-  const buyerFallback = t('calculator.quoteBuyerFallback');
+  const documentTitle = `${t('profilePage.calculator.quoteDocumentTitle')} — ${today}`;
+  const buyerFallback = t('profilePage.calculator.quoteBuyerFallback');
 
   const tableRows = lineItems
     .map(
@@ -1010,35 +1010,35 @@ const buildQuoteDocumentHtml = ({
     <div class="page">
       <div class="header">
         <div>
-          <h1 style="margin:0 0 8px;">${escapeHtml(t('calculator.quoteDocumentTitle'))}${quoteNumber ? ` ${escapeHtml(quoteNumber)}` : ''}</h1>
-          <div class="muted">${escapeHtml(t('calculator.quoteDocumentSubtitle'))}</div>
+          <h1 style="margin:0 0 8px;">${escapeHtml(t('profilePage.calculator.quoteDocumentTitle'))}${quoteNumber ? ` ${escapeHtml(quoteNumber)}` : ''}</h1>
+          <div class="muted">${escapeHtml(t('profilePage.calculator.quoteDocumentSubtitle'))}</div>
           <div class="muted" style="margin-top: 12px;">${escapeHtml(today)}</div>
         </div>
         <div class="box" style="min-width: 260px;">
-          <div><strong>${escapeHtml(t('calculator.quoteExecutor'))}</strong></div>
+          <div><strong>${escapeHtml(t('profilePage.calculator.quoteExecutor'))}</strong></div>
           <div style="margin-top: 8px;">${escapeHtml(parties.sellerName.trim() || '—')}</div>
-          <div class="muted">${escapeHtml(t('calculator.quoteInn'))}: ${escapeHtml(parties.sellerInn.trim() || '—')}</div>
-          <div class="muted">${escapeHtml(t('calculator.quotePhone'))}: ${escapeHtml(parties.sellerPhone.trim() || '—')}</div>
-          <div class="muted">${escapeHtml(t('calculator.quoteValidUntil'))}: ${escapeHtml(validUntil)}</div>
-          <div class="muted" style="margin-top: 8px;">${escapeHtml(t('calculator.quoteTaxStatus'))}</div>
+          <div class="muted">${escapeHtml(t('profilePage.calculator.quoteInn'))}: ${escapeHtml(parties.sellerInn.trim() || '—')}</div>
+          <div class="muted">${escapeHtml(t('profilePage.calculator.quotePhone'))}: ${escapeHtml(parties.sellerPhone.trim() || '—')}</div>
+          <div class="muted">${escapeHtml(t('profilePage.calculator.quoteValidUntil'))}: ${escapeHtml(validUntil)}</div>
+          <div class="muted" style="margin-top: 8px;">${escapeHtml(t('profilePage.calculator.quoteTaxStatus'))}</div>
         </div>
       </div>
 
       <div class="box">
-        <div><strong>${escapeHtml(t('calculator.quoteCustomer'))}</strong></div>
+        <div><strong>${escapeHtml(t('profilePage.calculator.quoteCustomer'))}</strong></div>
         <div style="margin-top: 8px;">${escapeHtml(buyerName)}</div>
-        ${buyerInn ? `<div class="muted">${escapeHtml(t('calculator.quoteInn'))}: ${escapeHtml(buyerInn)}</div>` : ''}
-        ${buyerAddress ? `<div class="muted">${escapeHtml(t('calculator.quoteAddress'))}: ${escapeHtml(buyerAddress)}</div>` : ''}
+        ${buyerInn ? `<div class="muted">${escapeHtml(t('profilePage.calculator.quoteInn'))}: ${escapeHtml(buyerInn)}</div>` : ''}
+        ${buyerAddress ? `<div class="muted">${escapeHtml(t('profilePage.calculator.quoteAddress'))}: ${escapeHtml(buyerAddress)}</div>` : ''}
       </div>
 
       ${paymentTerms ? `
       <div class="box" style="margin-top: 16px;">
-        <div><strong>${escapeHtml(t('calculator.quotePaymentTerms'))}</strong></div>
+        <div><strong>${escapeHtml(t('profilePage.calculator.quotePaymentTerms'))}</strong></div>
         <div class="muted" style="margin-top: 8px;">${escapeHtml(paymentTerms)}</div>
       </div>` : ''}
 
       <div class="box" style="margin-top: 16px;">
-        <div><strong>${escapeHtml(t('calculator.quoteLegalStatus'))}</strong></div>
+        <div><strong>${escapeHtml(t('profilePage.calculator.quoteLegalStatus'))}</strong></div>
         <div class="muted" style="margin-top: 8px;">${escapeHtml(disclaimerLabel)}</div>
       </div>
 
@@ -1046,10 +1046,10 @@ const buildQuoteDocumentHtml = ({
         <thead>
           <tr>
             <th style="width: 48px;">№</th>
-            <th>${escapeHtml(t('calculator.quoteTable.item'))}</th>
-            <th style="width: 90px;">${escapeHtml(t('calculator.quoteTable.quantity'))}</th>
-            <th style="width: 150px;">${escapeHtml(t('calculator.quoteTable.unitPrice'))}</th>
-            <th style="width: 150px;">${escapeHtml(t('calculator.quoteTable.total'))}</th>
+            <th>${escapeHtml(t('profilePage.calculator.quoteTable.item'))}</th>
+            <th style="width: 90px;">${escapeHtml(t('profilePage.calculator.quoteTable.quantity'))}</th>
+            <th style="width: 150px;">${escapeHtml(t('profilePage.calculator.quoteTable.unitPrice'))}</th>
+            <th style="width: 150px;">${escapeHtml(t('profilePage.calculator.quoteTable.total'))}</th>
           </tr>
         </thead>
         <tbody>
@@ -1066,21 +1066,21 @@ const buildQuoteDocumentHtml = ({
         <div class="totals-row"><span>${escapeHtml(t('profilePage.calc.amortization'))}</span><strong>${escapeHtml(formatCurrency(result.cost_amortization))}</strong></div>
         ${result.cost_bed_prep > 0 ? `<div class="totals-row"><span>${escapeHtml(t('profilePage.calc.bedPrep'))}</span><strong>${escapeHtml(formatCurrency(result.cost_bed_prep))}</strong></div>` : ''}
         ${result.cost_tax > 0 ? `<div class="totals-row"><span>${escapeHtml(t('profilePage.calc.taxAmount'))}</span><strong>${escapeHtml(formatCurrency(result.cost_tax))}</strong></div>` : ''}
-        <div class="totals-row total-strong"><span>${escapeHtml(t('calculator.totalCost'))}</span><strong>${escapeHtml(formatCurrency(result.cost_total))}</strong></div>
+        <div class="totals-row total-strong"><span>${escapeHtml(t('profilePage.calculator.totalCost'))}</span><strong>${escapeHtml(formatCurrency(result.cost_total))}</strong></div>
       </div>
 
       <div style="margin-top: 28px;">
-        <strong>${escapeHtml(t('calculator.quoteIncludedTitle'))}</strong>
+        <strong>${escapeHtml(t('profilePage.calculator.quoteIncludedTitle'))}</strong>
         <ul>${includedMarkup}</ul>
       </div>
 
       <div class="footer">
         <div style="width: 45%;">
-          <div>${escapeHtml(t('calculator.quoteExecutor'))}</div>
+          <div>${escapeHtml(t('profilePage.calculator.quoteExecutor'))}</div>
           <div class="signature"></div>
         </div>
         <div style="width: 45%; text-align: right;">
-          <div>${escapeHtml(t('calculator.quoteCustomer'))}</div>
+          <div>${escapeHtml(t('profilePage.calculator.quoteCustomer'))}</div>
           <div class="signature" style="margin-left: auto;"></div>
         </div>
       </div>
