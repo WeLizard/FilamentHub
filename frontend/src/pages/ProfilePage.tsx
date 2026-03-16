@@ -56,6 +56,7 @@ import api from '../api/client';
 import { translateApiError } from '../utils/translateApiError';
 import { CreatePresetModal } from '../components/CreatePresetModal';
 import { ViewPresetModal } from '../components/ViewPresetModal';
+import { ActivatePresetModal } from '../components/ActivatePresetModal';
 import { CreatePrinterRequestModal } from '../components/CreatePrinterRequestModal';
 import { SettingsTab } from '../components/SettingsTab';
 import { ExportFromOrcaSlicerButton } from '../components/ExportFromOrcaSlicerButton';
@@ -82,6 +83,7 @@ export const ProfilePage: React.FC = () => {
   const [showHelpModal, setShowHelpModal] = useState(false);
   const [isCreatePresetModalOpen, setIsCreatePresetModalOpen] = useState(false);
   const [isViewPresetModalOpen, setIsViewPresetModalOpen] = useState(false);
+  const [activatingPreset, setActivatingPreset] = useState<Preset | null>(null);
   const [isCreatePrinterRequestModalOpen, setIsCreatePrinterRequestModalOpen] = useState(false);
   const [editingPreset, setEditingPreset] = useState<Preset | null>(null);
   const [viewingPreset, setViewingPreset] = useState<Preset | null>(null);
@@ -498,6 +500,10 @@ export const ProfilePage: React.FC = () => {
     setIsViewPresetModalOpen(true);
   };
 
+  const handleActivatePreset = (preset: Preset) => {
+    setActivatingPreset(preset);
+  };
+
 
 
   const handleCreatePreset = () => {
@@ -861,6 +867,7 @@ export const ProfilePage: React.FC = () => {
                 onEdit={handleEditPreset}
                 onView={handleViewPreset}
                 onDelete={handleDeletePreset}
+                onActivate={handleActivatePreset}
               />
             ))}
           </div>
@@ -1193,6 +1200,14 @@ export const ProfilePage: React.FC = () => {
         }}
         preset={viewingPreset}
       />
+
+      {/* Activate Preset Modal */}
+      {activatingPreset && (
+        <ActivatePresetModal
+          preset={activatingPreset}
+          onClose={() => setActivatingPreset(null)}
+        />
+      )}
 
       {/* Create Printer Request Modal */}
       <CreatePrinterRequestModal
@@ -3095,9 +3110,10 @@ interface PresetCardProps {
   onEdit?: (preset: Preset) => void;
   onView?: (preset: Preset) => void;
   onDelete?: (preset: Preset) => void;
+  onActivate?: (preset: Preset) => void;
 }
 
-const PresetCard: React.FC<PresetCardProps> = ({ preset, onEdit, onView, onDelete }) => {
+const PresetCard: React.FC<PresetCardProps> = ({ preset, onEdit, onView, onDelete, onActivate }) => {
   const { t } = useTranslation();
   const navigate = useNavigate();
   const [isDownloading, setIsDownloading] = useState(false);
@@ -3309,6 +3325,16 @@ const PresetCard: React.FC<PresetCardProps> = ({ preset, onEdit, onView, onDelet
                   {t('profilePage.draft')}
                 </span>
               )}
+              {(preset as any).orcaslicer_settings?.orphaned && (
+                <span className="px-2 py-0.5 bg-purple-600/30 rounded text-purple-300 text-xs font-medium whitespace-nowrap" title={t('profilePage.orphanedTooltip')}>
+                  {t('profilePage.orphaned')}
+                </span>
+              )}
+              {(preset as any).orcaslicer_settings?.enrichment && (
+                <span className="px-2 py-0.5 bg-cyan-600/20 rounded text-cyan-400 text-xs whitespace-nowrap">
+                  {t('profilePage.materialDetected', { type: (preset as any).orcaslicer_settings.enrichment.material_type })}
+                </span>
+              )}
               {preset.is_weighted && (
                 <span className="px-2 py-0.5 bg-green-600/30 rounded text-green-300 text-xs font-medium whitespace-nowrap">
                   {t('profilePage.generative')}
@@ -3354,6 +3380,15 @@ const PresetCard: React.FC<PresetCardProps> = ({ preset, onEdit, onView, onDelet
           )}
         </div>
         <div className="flex space-x-2">
+          {!preset.active && preset.source === 'own' && !preset.filament_id && (
+            <button
+              onClick={() => onActivate?.(preset)}
+              className="p-2 bg-green-600/30 hover:bg-green-600/50 rounded-lg text-green-300 transition-all"
+              title={t('profilePage.activatePreset')}
+            >
+              <Zap className="w-4 h-4" />
+            </button>
+          )}
           {preset.source === 'own' ? (
             <button
               onClick={() => onEdit?.(preset)}

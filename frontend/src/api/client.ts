@@ -622,6 +622,11 @@ export const presetsAPI = {
   delete: async (id: number) => {
     await api.delete(`/presets/${id}`);
   },
+
+  activate: async (id: number, filament_id: number) => {
+    const response = await api.post<Preset>(`/presets/${id}/activate`, { filament_id });
+    return response.data;
+  },
 };
 
 // Saved Presets API

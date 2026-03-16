@@ -2735,6 +2735,13 @@ async def _upsert_filament_preset(
                 draft_id = f"draft_{current_user.id}_{name_hash}"
             preset_orcaslicer_settings["fhub_draft_id"] = draft_id
             logger.debug(f"Adding fhub_draft_id={draft_id} to new draft preset")
+
+            # Store orphaned preset metadata if present
+            if payload.orphaned:
+                preset_orcaslicer_settings["orphaned"] = True
+                preset_orcaslicer_settings["orphaned_reason"] = payload.orphaned_reason or "parent_not_found"
+                if payload.original_inherits:
+                    preset_orcaslicer_settings["original_inherits"] = payload.original_inherits
         else:
             # Для наших пресетов добавляем fhub_id и fhub_source
             preset_orcaslicer_settings["fhub_id"] = None  # Будет установлен после flush
@@ -2790,6 +2797,14 @@ async def _upsert_filament_preset(
             preset.orcaslicer_settings["fhub_source"] = "filamenthub"
 
         await _apply_orca_import_moderation(preset, filament, db)
+
+        # Enrich draft presets with material defaults
+        if not is_our_preset:
+            from app.services.preset_enrichment_service import enrich_preset
+            try:
+                enrich_preset(preset)
+            except Exception:
+                logger.exception(f"Failed to enrich preset id={preset.id}")
 
         if filament:
             logger.info(

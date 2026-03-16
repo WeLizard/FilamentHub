@@ -178,6 +178,17 @@ class OrcaFilamentPresetPayload(BaseModel):
         description="Содержимое .info файла OrcaSlicer. Используется для извлечения меток FilamentHub (fhub_id, setting_id)."
     )
 
+    # Orphaned preset flags (set by C++ scanner for presets with broken inherits)
+    orphaned: bool | None = Field(
+        default=None, description="True if preset was found on disk but not loaded by OrcaSlicer (broken inherits)."
+    )
+    orphaned_reason: str | None = Field(
+        default=None, max_length=200, description="Reason the preset is orphaned (e.g. 'parent_not_found')."
+    )
+    original_inherits: str | None = Field(
+        default=None, max_length=200, description="Original inherits value from the broken preset file."
+    )
+
     # Метаданные
     source: str | None = Field(
         default=None, max_length=50, description="Источник пресета (orcaslicer, user, system, etc.)."

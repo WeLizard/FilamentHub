@@ -24,7 +24,9 @@ from app.core.errors import (
     ERR_NO_PERMISSION_EDIT_PRESET,
     ERR_ONLY_BRAND_OFFICIAL,
     ERR_ONLY_OWN_BRAND_OFFICIAL,
+    ERR_PRESET_ALREADY_ACTIVE,
     ERR_PRESET_NOT_FOUND,
+    ERR_PRESET_NOT_OWNER,
     ERR_WEIGHTED_PRESET_NO_DELETE,
     ERR_WEIGHTED_PRESET_READONLY,
     raise_error,
@@ -36,6 +38,7 @@ from app.models.printer import Printer
 from app.models.user import User
 from app.models.filament import Filament
 from app.schemas.preset import (
+    PresetActivateRequest,
     PresetCreate,
     PresetListResponse,
     PresetResponse,
@@ -575,6 +578,52 @@ async def delete_preset(
         await create_or_update_weighted_preset(filament_id, db, min_presets_count=4)
     except Exception as e:
         logger.error(f"Failed to update weighted preset for filament {filament_id}: {e}")
+
+
+@router.post("/{preset_id}/activate", response_model=PresetResponse)
+async def activate_preset(
+    preset_id: int,
+    body: PresetActivateRequest,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    current_user: Annotated[User, Depends(get_current_active_user)],
+) -> PresetResponse:
+    """Activate a draft preset by linking it to a filament."""
+
+    result = await db.execute(select(Preset).where(Preset.id == preset_id))
+    preset = result.scalar_one_or_none()
+
+    if not preset:
+        raise_error(404, ERR_PRESET_NOT_FOUND)
+
+    if preset.user_id != current_user.id and not current_user.is_admin:
+        raise_error(403, ERR_PRESET_NOT_OWNER)
+
+    if preset.active:
+        raise_error(400, ERR_PRESET_ALREADY_ACTIVE)
+
+    # Verify filament exists
+    fil_result = await db.execute(select(Filament).where(Filament.id == body.filament_id))
+    filament = fil_result.scalar_one_or_none()
+    if not filament:
+        raise_error(404, ERR_FILAMENT_NOT_FOUND)
+
+    preset.filament_id = body.filament_id
+    preset.active = True
+
+    # Clean up orphaned metadata
+    if preset.orcaslicer_settings:
+        preset.orcaslicer_settings.pop("orphaned", None)
+        preset.orcaslicer_settings.pop("orphaned_reason", None)
+
+    await db.commit()
+    await db.refresh(preset)
+
+    logger.info(
+        f"Preset '{preset.name}' (id={preset.id}) activated by user {current_user.id}, "
+        f"linked to filament {body.filament_id}"
+    )
+
+    return PresetResponse.model_validate(preset)
 
 
 @router.post("/{preset_id}/increment-usage", response_model=PresetResponse)

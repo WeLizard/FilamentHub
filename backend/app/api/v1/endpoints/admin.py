@@ -2258,3 +2258,16 @@ async def export_wiki_article(
         media_type="text/markdown",
     )
 
+
+@router.post("/presets/enrich-all", response_model=dict)
+async def enrich_all_draft_presets(
+    admin: Annotated[User, Depends(get_current_admin_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> dict:
+    """Batch enrich all unenriched draft presets with material defaults."""
+    from app.services.preset_enrichment_service import enrich_drafts_batch
+
+    stats = await enrich_drafts_batch(db)
+    await db.commit()
+    return stats
+

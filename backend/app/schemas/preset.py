@@ -112,6 +112,12 @@ class PresetUpdate(BaseModel):
         return normalized
 
 
+class PresetActivateRequest(BaseModel):
+    """Schema for activating a draft preset."""
+
+    filament_id: int = Field(..., gt=0, description="ID филамента для привязки")
+
+
 class PresetResponse(PresetBase):
     """Schema for Preset response."""
 

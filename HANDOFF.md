@@ -1,6 +1,55 @@
 # HANDOFF — FilamentHub
 
-> Last updated: 2026-03-10 23:30 by Claude
+> Last updated: 2026-03-16 by Claude
+
+## Что сделано (сессия 2026-03-16 — SYNC-OVERHAUL-1 завершён)
+
+### [SYNC-OVERHAUL-1] — все 8 пунктов закрыты
+
+1. **Авторефреш после синхронизации** — `sync_complete` postMessage → invalidateQueries на фронте
+2. **Hide toggle для черновиков** — скрытие/показ draft пресетов
+3. **Переименование кнопки** — экспорт → импорт
+4. **Постфикс `[FilamentHub]` → `[fh]`** — 7 исходных файлов (backend: `orca_sync.py`, `orcaslicer_machine_exporter.py`, `orcaslicer_exporter.py`; frontend: `ProfilePage.tsx`, `CreatePresetModal.tsx`; C++: `FilamentHubPanel.cpp/.hpp`). Backward-compat: `@FilamentHub` в strip-списках сохранён
+5. **Очистка orphaned preset_mapping** — автоудаление стейловых `preset_mapping_*` в OrcaSlicer.conf при full sync
+6. **Dev mode detailed notifications** — подробные per-preset уведомления (имя + статус) при `developer_mode == "true"` в OrcaSlicer Preferences; в обычном режиме — краткое summary. Реализовано для всех 3 типов (filament, printer, print) в обе стороны (export + import)
+7. **"Download from FilamentHub" кнопка** — определено как ненужная, sync уже двунаправленный
+8. **Счётчик не обновлялся после sync** — добавлены `['presets-stats']` и `['saved-presets-details']` в invalidation list `useOrcaSlicerNotifications.ts`
+
+### Предыдущие фиксы этой серии сессий (2026-03-15/16)
+- Backend: авторитетные поля в exporter (vendor, color, type после orcaslicer_settings)
+- Backend: strip `[FilamentHub]`/`@FilamentHub` из входящих имён (3 места)
+- Frontend: flow rate/ratio decimal precision
+- OrcaSlicer: finish_export_operation early returns, skip `[fh]` пресетов в export
+
+### Защита пресетов — 3 уровня (проверено по коду)
+1. OrcaSlicer UI запрещает `[]` в именах (`SavePresetDialog.cpp:142`)
+2. Сервер проверяет `preset.user_id != current_user.id` на всех 5 уровнях приоритета
+3. Name fallback всегда фильтрует по `user_id == current_user.id`
+
+## Current state
+- Backend задеплоен с фиксами exporter + orca_sync
+- **OrcaSlicer НЕ пересобран** — C++ изменения (postfix `[fh]`, orphaned cleanup, dev notifications) ждут сборки пользователем
+- Локальные конфиги OrcaSlicer переименованы: `[FilamentHub]` → `[fh]` (файлы + OrcaSlicer.conf)
+- Sync работает корректно
+
+## What to do next
+1. **Деплой backend** с новыми изменениями (postfix rename в orca_sync.py + exporter)
+2. **Пересобрать OrcaSlicer** (пользователь соберёт сам)
+3. **[ORCA-ENRICHMENT-1]** P2 — сервис обогащения черновиков
+4. WebView тормоза в OrcaSlicer
+5. `user_id='true'` corruption в AppConfig
+6. Поднять log-level для sync endpoints на бэкенде
+
+## Context for next session
+- Постфикс теперь `[fh]` везде, но в strip-списках оставлен `@FilamentHub` для обратной совместимости
+- Orphaned mapping cleanup срабатывает ТОЛЬКО при force_full_sync (incremental sync возвращает partial list)
+- Dev mode notifications: `wxGetApp().app_config->get("developer_mode") == "true"` — стандартная настройка OrcaSlicer Preferences
+- Пользователь подчеркнул: "это ПРОД, не MVP" — production-quality код
+- Все пользовательские пресеты (включая Creality, orphaned) должны экспортироваться на сервер
+
+— Claude
+
+---
 
 ## Что сделано (сессия 2026-03-10, часть 8)
 
@@ -79,6 +128,218 @@
    - `/who`
    - `/codex <короткий запрос>`
 2. Если понадобится вернуть CLI-resume, включать это осознанно через `TG_PERSISTENT_SESSIONS=1` и проверять по агентам отдельно.
+
+— Codex
+
+---
+
+## Follow-up (сессия 2026-03-15, результаты проверки Orca build e9579d6eb1)
+
+### Что проверено
+- Проверен свежий Orca log после сборки из `submodule/OrcaSlicer`:
+  - [debug_Sun_Mar_15_22_03_05_28720.log.0](C:\Users\Lizard\AppData\Roaming\OrcaSlicer\log\debug_Sun_Mar_15_22_03_05_28720.log.0)
+- Сборка действительно новая:
+  - `Current OrcaSlicer Version 2.3.2-dev-fh build e9579d6eb1`
+- Проверены локальные FilamentHub filament files:
+  - `ABS HTP [FilamentHub].json/.info`
+  - `PETG HTP [FilamentHub].json/.info`
+
+### Что подтвердилось
+- Основной баг с импортом FilamentHub filament presets закрыт:
+  - ошибки `type must be string, but is array` больше нет;
+  - `Failed to import preset 154/159` больше нет;
+  - FilamentHub tab для filament presets снова появился;
+  - локально создаются новые `*[FilamentHub].json` с `fhub_id` и `fhub_source=filamenthub`.
+
+### Что осталось в логах
+- `EXPORT SKIP` / `Export/sync already in progress, skipping printer profiles export` всё ещё воспроизводится.
+- Перед этим в логе виден auth/race-хвост:
+  - `Get current user failed ... Status: 401`
+  - `Failed to get unread notifications count ... Status: 401`
+  - `user_id_str contains non-digit characters: 'true', clearing corrupted data`
+  - затем `Not authenticated, cannot export filament presets`
+- Это уже не importer bug, а отдельная проблема auth/export flow в Orca.
+
+### Где копать дальше
+- Подозрительный участок auth-state:
+  - `FilamentHubPanel.cpp:1925` — `user_id_str contains non-digit characters: 'true'`
+  - `FilamentHubPanel.cpp:4975` — `Not authenticated, cannot export filament presets`
+- Подозрительный участок WebView token monitor:
+  - `FilamentHubPanel.cpp:646-660`
+  - если токен исчезает в localStorage, WebView шлёт `logout` обратно в C++
+- Дубликаты export-вызовов и skip:
+  - `FilamentHubPanel.cpp:4967`
+  - `FilamentHubPanel.cpp:5510`
+
+### Отдельно про warnings `can not find inherit preset ... just skip`
+- Они всё ещё есть, но это уже не FilamentHub import/export bug.
+- Сейчас это выглядит как отдельный legacy/orphaned preset cleanup problem:
+  - loader до сих пор пропускает старые локальные user presets без валидного parent.
+- Фикс `base_id` fallback уже в сборке (`ff737a135c`), но он не может восстановить реально мёртвые старые пресеты.
+
+### Реальный статус
+- FilamentHub filament sync/import: починен.
+- Orca auth/export flow: не починен, остались 401 / `user_id=true` / `EXPORT SKIP`.
+- Legacy local preset warnings: частично ожидаемы, требуют отдельного разбора, если мешают.
+
+— Codex
+
+---
+
+## Follow-up (сессия 2026-03-15, Orca sync / FilamentHub presets)
+
+### Что сломалось
+- На production export filament presets для FilamentHub отдавал `inherits` массивом вместо строки:
+  - было `\"inherits\": [\"Generic ABS @System\"]`
+  - Orca ждёт строку и падала на импорте с ошибкой `type must be string, but is array`
+- Из-за этого новые filament presets не импортировались как FilamentHub-presets, локально не появлялись файлы `*[FilamentHub].json`, а вкладка `FilamentHub` для них не восстанавливалась.
+- После ошибок импорта в Orca дополнительно наблюдался спам `EXPORT SKIP` / `Export already in progress` и warnings `can not find inherit preset ... just skip`.
+
+### Что сделано
+- Backend fix уже в `main`: коммит `37aa1ea` в `backend/app/services/orcaslicer_exporter.py`
+  - `inherits` больше не сериализуется как массив;
+  - legacy-list случай тоже нормализуется обратно в строку.
+- После деплоя backend fix импорт FilamentHub filament presets восстановился:
+  - в Orca снова появились `ABS HTP [FilamentHub]` и `PETG HTP [FilamentHub]`;
+  - локально создаются новые `*[FilamentHub].json` с `fhub_id` и `fhub_source=filamenthub`.
+- В сабмодуле OrcaSlicer добавлен фикс восстановления parent preset по `base_id/setting_id`, если `inherits`-имя устарело:
+  - commit `ff737a135c` `fix preset parent resolution by base_id`
+- В ветку `filamenthub-integration` подтянут `upstream/main`:
+  - commit `e9579d6eb1` `Merge remote-tracking branch 'upstream/main' into filamenthub-integration`
+
+### Что это значит
+- Основной баг с падением импорта FilamentHub filament presets закрыт backend-фиксом `37aa1ea`.
+- Новый Orca build из `submodule/OrcaSlicer` уже включает:
+  - upstream fixes по `m_is_syncing` / export flow;
+  - наш fallback по `base_id` для устаревших parent preset references.
+- После новой сборки Orca ожидается:
+  - меньше или отсутствие `EXPORT SKIP`;
+  - заметно меньше ложных `can not find inherit preset ... just skip`.
+
+### Что ещё не гарантировано
+- Если после новой сборки часть warnings `can not find inherit preset ... just skip` останется, это уже, вероятно, реальные orphaned legacy presets, а не поломка FilamentHub import/export.
+- Main repo pointer на сабмодуль не коммитился в этой сессии; менялся только сам `submodule/OrcaSlicer`.
+
+### Что делать дальше
+1. Собрать OrcaSlicer из текущего `submodule/OrcaSlicer` (`filamenthub-integration`, HEAD `e9579d6eb1`).
+2. Повторно проверить Orca log после запуска новой сборки.
+3. Если warnings останутся, разбирать уже конкретные orphaned local presets по именам/`base_id`.
+
+— Codex
+
+---
+
+## Follow-up (сессия 2026-03-15, Orca sync/export follow-up after FH filament restore)
+
+### Что сделано
+- Подтверждён и исправлен backend root cause filament import-падения:
+  - `backend/app/services/orcaslicer_exporter.py`
+  - коммит `37aa1ea` (`fix filament preset inherits export`)
+  - `inherits` в export JSON снова отдаётся строкой, а не массивом.
+- После выката backend подтверждено, что FilamentHub filament presets снова импортируются в Orca и появляются в секции `FilamentHub`:
+  - `ABS HTP [FilamentHub]`
+  - `PETG HTP [FilamentHub]`
+- Разобран остаточный Orca-side шум:
+  - `EXPORT SKIP`
+  - `can not find inherit preset ... just skip`
+- Установлено, что `EXPORT SKIP` относится не к filament import root cause, а к Orca/WebView export loop:
+  - в исходниках уже есть фикс `72d61d236b` (`fix: resolve 3 FilamentHub sync issues`)
+  - он чистит дублирующиеся WebView token monitor intervals и не даёт `m_is_syncing` залипать после export error/timeout.
+- Для legacy/cloud/user preset warnings внесён чистый Orca fix по восстановлению parent preset через `base_id`, когда старое имя в `inherits` уже протухло:
+  - `submodule/OrcaSlicer/src/libslic3r/Preset.hpp`
+  - `submodule/OrcaSlicer/src/libslic3r/Preset.cpp`
+  - `submodule/OrcaSlicer/src/libslic3r/PresetBundle.cpp`
+  - коммит `ff737a135c` (`fix preset parent resolution by base_id`)
+- Дополнительно в сабмодуль подтянут свежий `upstream/main`:
+  - merge commit `e9579d6eb1`
+
+### Что проверено
+- В свежем Orca-логе после backend-фикса больше нет старой ошибки:
+  - `type must be string, but is array`
+  - `Failed to import preset 154/159`
+- На диске появились новые корректные FilamentHub preset files:
+  - `C:\Users\Lizard\AppData\Roaming\OrcaSlicer\user\2136879404\filament\ABS HTP [FilamentHub].json`
+  - `C:\Users\Lizard\AppData\Roaming\OrcaSlicer\user\2136879404\filament\PETG HTP [FilamentHub].json`
+- В них присутствуют корректные FilamentHub metadata:
+  - `fhub_id`
+  - `fhub_source=filamenthub`
+  - строковый `inherits`
+- Разобрана трасса warnings:
+  - `Slic3r::PresetCollection::load_user_preset ... just skip`
+  - это legacy/user-cloud sync path (`GUI_App::reload_settings()` -> `preset_bundle->load_user_presets(...)`), а не текущий FilamentHub import queue.
+- Подтверждено, что часть warnings — не ложные, а реально старые orphaned presets:
+  - например локальный process preset `0.20mm Standard @Creality Ender3V2 - Копировать` ссылается на старого parent по имени и имеет `base_id`, который уже не матчится к текущим base presets.
+
+### Что не сделано
+- Новую Orca сборку после коммитов `ff737a135c` + `e9579d6eb1` сам не запускал и не проверял: сборку пользователь делает вручную.
+- Main repo pointer на новый Orca submodule commit не коммитился.
+- Не делал миграцию/чистку реально мёртвых legacy local/cloud presets: текущий фикс только корректно восстанавливает parent там, где это возможно по `base_id`.
+
+### Что делать дальше
+1. Собрать Orca из текущего `submodule/OrcaSlicer` (`filamenthub-integration`, HEAD `e9579d6eb1`).
+2. После сборки проверить:
+   - ушёл ли `EXPORT SKIP`;
+   - сократилось ли число `can not find inherit preset ... just skip`.
+3. Если часть inherit warnings останется, это уже отдельный слой данных:
+   - либо старые orphaned local presets;
+   - либо старые cloud/user presets с действительно мёртвым parent.
+4. Не лечить оставшиеся warnings новым loader-костылём; для них нужен отдельный cleanup/migration plan по legacy presets.
+
+— Codex
+
+---
+
+## Follow-up (сессия 2026-03-15, Orca filament export inherits fix)
+
+### Что сделано
+- В `backend/app/services/orcaslicer_exporter.py` исправлен merge `preset.orcaslicer_settings` для filament export: scalar-ключи Orca больше не заворачиваются в массивы.
+- Для текущего инцидента добавлен typed-safe handling для `inherits`, чтобы export JSON снова отдавал строку, а не `["..."]`.
+- Добавлен безопасный legacy-path: если `inherits` в `orcaslicer_settings` когда-либо уже лежит как список, exporter берёт первый элемент и тоже отдаёт строкой.
+- Локально сохранена резервная копия битого файла: `backend/app/services/orcaslicer_exporter.py.broken-20260315.bak` (не в git).
+
+### Что проверено
+- `python -m compileall backend/app/services/orcaslicer_exporter.py` прошёл успешно.
+- Smoke-проверка через локальный вызов `preset_to_orcaslicer_json()` подтвердила:
+  - строковый `inherits` экспортируется как `str`;
+  - legacy-list `inherits` тоже экспортируется как `str`.
+- Подтверждён root cause на продовых пресетах `154` и `159`: до фикса export отдавал `inherits` массивом, а Orca ждёт строку.
+
+### Что не сделано
+- Не правил Orca C++ importer: фикс внесён только на backend export-слое.
+- Не делал deploy на прод.
+- Не трогал более широкий рефакторинг exporter и другие возможные scalar-ключи вне текущего инцидента.
+
+### Что делать дальше
+1. Задеплоить backend с коммитом `37aa1ea`.
+2. На проде повторно проверить экспорт `/api/v1/presets/154/export/orcaslicer.json` и `/api/v1/presets/159/export/orcaslicer.json` — `inherits` должен быть строкой.
+3. После деплоя повторить sync из Orca и убедиться, что filament presets снова импортируются в секцию `FilamentHub`.
+
+— Codex
+
+---
+
+## Follow-up (сессия 2026-03-15, пожелания для Opus -> Codex)
+
+### Что сделано
+- В корне проекта добавлен файл `OPUS_FOR_CODEX.md` с явным протоколом постановки задач для Codex.
+- Зафиксированы:
+  - роль `Opus / Claude` как постановщика и ревьюера;
+  - роль `Codex` как узкого исполнителя по `Task Packet`;
+  - рекомендуемый шаблон `Task Packet`;
+  - что хранить в `knowledge graph`, а что оставлять в `docs/*.md`;
+  - когда лучше подключать `Qwen` и `Gemini`.
+
+### Что проверено
+- Проверен факт отсутствия дублирующего root-файла с таким назначением.
+- Изменения ограничены `OPUS_FOR_CODEX.md` и append-only записью в `HANDOFF.md`.
+
+### Что не сделано
+- Не менял `AGENTS.md`, `TODO_CONSOLIDATED.md` или `knowledge graph`.
+- Не правил существующие Claude/Codex skills и не внедрял автоматизацию поверх нового протокола.
+
+### Что делать дальше
+1. Если Opus будет использовать этот протокол постоянно, можно позже синхронизировать шаблон `Task Packet` со skill `fh-codex-task`.
+2. При первых 2-3 делегированных задачах проверить на практике, хватает ли полей `Priority / Expected output / Stop conditions`.
 
 — Codex
 
