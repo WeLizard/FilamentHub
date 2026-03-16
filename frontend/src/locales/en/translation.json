@@ -1716,6 +1716,7 @@
     "parsedActiveMaterials": "Active materials",
     "parsedToolchanges": "Tool changes",
     "parsedMultiMaterial": "Multi-material",
+    "autoFromGcode": "auto from G-code",
     "parsedBrim": "Brim",
     "parsedRaft": "Raft",
     "parsedYes": "Yes",

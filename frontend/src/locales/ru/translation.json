@@ -1721,6 +1721,7 @@
       "parsedActiveMaterials": "Активных материалов",
       "parsedToolchanges": "Смен инструмента",
       "parsedMultiMaterial": "Мульти-материал",
+      "autoFromGcode": "авто из G-code",
       "parsedBrim": "Brim",
       "parsedRaft": "Raft",
       "parsedYes": "Да",

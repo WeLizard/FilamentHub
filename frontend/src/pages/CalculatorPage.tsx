@@ -621,6 +621,51 @@ const formatParsedTemperaturePair = (
   return `${nozzleLabel} / ${bedLabel}`;
 };
 
+const suggestComplexityCoefficient = (parsed: CalculatorGcodeParseResponse): number => {
+  let coef = 1.0;
+
+  // Multi-material / toolchanges
+  if (parsed.toolchange_count != null && parsed.toolchange_count > 20) {
+    coef += 0.3;
+  } else if (parsed.toolchange_count != null && parsed.toolchange_count > 5) {
+    coef += 0.15;
+  } else if (parsed.is_multi_material) {
+    coef += 0.1;
+  }
+
+  // Supports (tree/organic more complex than normal)
+  if (parsed.support_type && parsed.support_type.toLowerCase() !== 'none') {
+    const st = parsed.support_type.toLowerCase();
+    coef += st.includes('tree') || st.includes('organic') ? 0.15 : 0.1;
+  }
+
+  // Fine layers
+  if (parsed.layer_height_mm != null) {
+    if (parsed.layer_height_mm < 0.1) coef += 0.2;
+    else if (parsed.layer_height_mm < 0.15) coef += 0.1;
+  }
+
+  // High infill density
+  if (parsed.sparse_infill_density_percent != null) {
+    if (parsed.sparse_infill_density_percent > 80) coef += 0.15;
+    else if (parsed.sparse_infill_density_percent > 60) coef += 0.1;
+  }
+
+  // Multiple objects on plate
+  if (parsed.object_count != null) {
+    if (parsed.object_count > 3) coef += 0.1;
+    else if (parsed.object_count > 1) coef += 0.05;
+  }
+
+  // Many wall loops
+  if (parsed.wall_loops != null) {
+    if (parsed.wall_loops > 6) coef += 0.15;
+    else if (parsed.wall_loops > 4) coef += 0.1;
+  }
+
+  return Math.min(2.5, Math.round(coef * 100) / 100);
+};
+
 const applyParsedGcodeToForm = (
   current: CalculatorFormState,
   parsed: CalculatorGcodeParseResponse,
@@ -636,6 +681,12 @@ const applyParsedGcodeToForm = (
     nextForm.timeHours = duration.hours;
     nextForm.timeMinutes = duration.minutes;
     nextForm.timeSec = duration.seconds;
+  }
+
+  // Auto-suggest complexity coefficient from G-code metadata
+  const suggestedComplexity = suggestComplexityCoefficient(parsed);
+  if (suggestedComplexity > 1.0) {
+    nextForm.complexityCoefficient = suggestedComplexity;
   }
 
   return nextForm;
@@ -2565,7 +2616,14 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
                         placeholder="1.0"
                       />
                     </FieldBlock>
-                    <FieldBlock label={t('profilePage.calc.complexity')} hint={t('profilePage.calc.complexityHint')}>
+                    <FieldBlock
+                      label={t('profilePage.calc.complexity')}
+                      hint={
+                        parsedGcode && form.complexityCoefficient > 1.0
+                          ? `${t('profilePage.calc.complexityHint')} · ${tc('autoFromGcode')}`
+                          : t('profilePage.calc.complexityHint')
+                      }
+                    >
                       <NumberInput
                         value={form.complexityCoefficient}
                         onChange={(value) => onChange('complexityCoefficient', value)}
