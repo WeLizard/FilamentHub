@@ -198,6 +198,25 @@ const CALCULATOR_DEFAULTS_STORAGE_KEY = 'filamenthub_calculator_defaults_v1';
 const QUOTE_PROFILE_STORAGE_KEY = 'filamenthub_calculator_quote_profile_v1';
 const CURRENCY_OPTIONS: CurrencyCode[] = ['₽', '$', '€'];
 
+interface PostprocessOperation {
+  id: string;
+  i18nKey: string;
+  defaultMinutes: number;
+}
+
+const POSTPROCESS_OPERATIONS: PostprocessOperation[] = [
+  { id: 'remove_supports', i18nKey: 'postprocess.removeSupports', defaultMinutes: 10 },
+  { id: 'sanding_rough', i18nKey: 'postprocess.sandingRough', defaultMinutes: 15 },
+  { id: 'sanding_fine', i18nKey: 'postprocess.sandingFine', defaultMinutes: 20 },
+  { id: 'priming', i18nKey: 'postprocess.priming', defaultMinutes: 15 },
+  { id: 'painting', i18nKey: 'postprocess.painting', defaultMinutes: 30 },
+  { id: 'gluing', i18nKey: 'postprocess.gluing', defaultMinutes: 10 },
+  { id: 'assembly', i18nKey: 'postprocess.assembly', defaultMinutes: 15 },
+  { id: 'threading', i18nKey: 'postprocess.threading', defaultMinutes: 10 },
+  { id: 'heat_treatment', i18nKey: 'postprocess.heatTreatment', defaultMinutes: 60 },
+  { id: 'acetone_smoothing', i18nKey: 'postprocess.acetoneSmoothing', defaultMinutes: 20 },
+];
+
 const DEFAULT_QUOTE_PROFILE: QuoteProfileState = {
   sellerName: '',
   sellerInn: '',
@@ -1815,6 +1834,7 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
   const [staticSettingsOpen, setStaticSettingsOpen] = useState(false);
   const [quoteProfileOpen, setQuoteProfileOpen] = useState(false);
   const [advancedSettingsOpen, setAdvancedSettingsOpen] = useState(false);
+  const [postprocessChecked, setPostprocessChecked] = useState<Record<string, boolean>>({});
 
   const materialSourceLabel = selectedSpool
     ? tc('materialSourceSpool')
@@ -2720,6 +2740,38 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
                         placeholder="2"
                       />
                     </FieldBlock>
+                  </div>
+                  <div className="mt-3">
+                    <p className="mb-2 text-xs font-medium text-slate-400">{tc('postprocessChecklistTitle')}</p>
+                    <div className="flex flex-wrap gap-2">
+                      {POSTPROCESS_OPERATIONS.map((op) => {
+                        const checked = postprocessChecked[op.id] ?? false;
+                        return (
+                          <button
+                            key={op.id}
+                            type="button"
+                            className={`rounded-full border px-3 py-1 text-xs transition-colors ${
+                              checked
+                                ? 'border-cyan-400/40 bg-cyan-400/20 text-cyan-200'
+                                : 'border-white/10 bg-white/5 text-slate-400 hover:border-white/20 hover:text-slate-300'
+                            }`}
+                            onClick={() => {
+                              const next = !checked;
+                              const updated = { ...postprocessChecked, [op.id]: next };
+                              setPostprocessChecked(updated);
+                              const totalMinutes = POSTPROCESS_OPERATIONS.reduce(
+                                (sum, o) => sum + (updated[o.id] ? o.defaultMinutes : 0),
+                                0,
+                              );
+                              onChange('postprocessingHours', Math.floor(totalMinutes / 60));
+                              onChange('postprocessingMinutes', totalMinutes % 60);
+                            }}
+                          >
+                            {tc(op.i18nKey)} · {op.defaultMinutes} {t('profilePage.calc.min')}
+                          </button>
+                        );
+                      })}
+                    </div>
                   </div>
                 </div>
 
