@@ -45,70 +45,19 @@ async def check_db():
 asyncio.run(check_db())
 EOF
 
-# Run migrations with proper error handling
-echo "📦 Running database migrations..."
-
-# Получаем текущую версию миграции из БД
-echo "   Checking current migration version..."
+# Check migration status (informational only — migrations are applied via admin panel)
+echo "📦 Checking database migration status..."
 CURRENT_OUTPUT=$(alembic current 2>&1)
 CURRENT_VERSION=$(echo "${CURRENT_OUTPUT}" | grep -oP '^\K[0-9a-f]+' || echo "none")
-
-# Получаем целевую версию (head)
 HEAD_OUTPUT=$(alembic heads 2>&1)
 HEAD_VERSION=$(echo "${HEAD_OUTPUT}" | grep -oP '^\K[0-9a-f]+' | head -n 1 || echo "unknown")
 
-# Проверяем, есть ли база данных вообще (для новой установки)
-if [ "${CURRENT_VERSION}" = "none" ]; then
-    echo "   Database is empty, will apply all migrations from scratch"
-    echo "   Target version: ${HEAD_VERSION}"
-    NEEDS_MIGRATION=true
-elif [ "${CURRENT_VERSION}" = "${HEAD_VERSION}" ]; then
-    echo "   Current version: ${CURRENT_VERSION}"
-    echo "   Target version: ${HEAD_VERSION}"
-    echo "   ✅ Database is already up to date!"
-    NEEDS_MIGRATION=false
+if [ "${CURRENT_VERSION}" = "${HEAD_VERSION}" ]; then
+    echo "   ✅ Database is up to date (${CURRENT_VERSION})"
 else
-    echo "   Current version: ${CURRENT_VERSION}"
-    echo "   Target version: ${HEAD_VERSION}"
-    echo "   ⬆️  Pending migrations detected, will upgrade..."
-    NEEDS_MIGRATION=true
+    echo "   ⚠️  Pending migrations: current=${CURRENT_VERSION}, head=${HEAD_VERSION}"
+    echo "   Apply via admin panel: Settings → Database → Migrations"
 fi
-
-# Применяем миграции только если нужно
-if [ "${NEEDS_MIGRATION}" = "true" ]; then
-    echo "   Applying migrations to head..."
-    # Применяем миграции с обработкой множественных heads
-    if alembic upgrade head 2>&1 | tee /tmp/migration.log; then
-        # Получаем новую версию после применения
-        NEW_OUTPUT=$(alembic current 2>&1)
-        NEW_VERSION=$(echo "${NEW_OUTPUT}" | grep -oP '^\K[0-9a-f]+' || echo "unknown")
-        
-        if [ "${NEW_VERSION}" = "unknown" ]; then
-            echo "   ⚠️  Warning: Could not determine migration version after upgrade"
-            echo "   Check /tmp/migration.log for details"
-        elif [ "${NEW_VERSION}" = "${HEAD_VERSION}" ]; then
-            echo "   ✅ Migrations applied successfully!"
-            echo "   New version: ${NEW_VERSION}"
-            if [ "${CURRENT_VERSION}" != "none" ] && [ "${CURRENT_VERSION}" = "${NEW_VERSION}" ]; then
-                echo "   ℹ️  Note: Version unchanged (may have been already applied)"
-            fi
-        else
-            echo "   ⚠️  Warning: Migration version mismatch"
-            echo "   Expected: ${HEAD_VERSION}, Got: ${NEW_VERSION}"
-            echo "   Check /tmp/migration.log for details"
-        fi
-    else
-        MIGRATION_ERROR=$?
-        echo "   ❌ Migration failed with exit code: ${MIGRATION_ERROR}"
-        echo "   Check /tmp/migration.log for details"
-        echo "   Attempting to continue anyway..."
-    fi
-fi
-
-# Admin creation is done manually by user
-echo "ℹ️  Migrations completed. Admin user should be created manually if needed."
-echo "   To create admin, run:"
-echo "   docker-compose exec backend python create_admin_direct.py"
 
 # Start the application
 echo "🎯 Starting FastAPI application..."
