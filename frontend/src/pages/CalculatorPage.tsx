@@ -19,6 +19,7 @@ import {
   HelpCircle,
   Link2,
   Loader2,
+  Plus,
   Printer,
   Save,
   Settings2,
@@ -862,12 +863,17 @@ interface QuoteLineItem {
   totalPrice: number;
 }
 
+interface QuoteItem {
+  id: string;
+  lineItem: QuoteLineItem;
+  includedItems: string[];
+}
+
 interface BuildQuoteHtmlParams {
   t: TFunction;
-  form: CalculatorFormState;
-  result: CalculatorEstimateResponse;
-  parsedGcode: CalculatorGcodeParseResponse | null;
-  selectedFilament: MaterialSelectionSnapshot | null;
+  items: QuoteLineItem[];
+  includedItems: string[];
+  grandTotal: number;
   parties: QuotePartyFormState;
   formatCurrency: (value: number | null | undefined) => string;
   quoteNumber?: string;
@@ -935,16 +941,14 @@ const buildQuoteDisclaimerLabel = (t: TFunction, mode: QuoteDisclaimerMode): str
 
 const buildQuoteDocumentHtml = ({
   t,
-  form,
-  result,
-  parsedGcode,
-  selectedFilament,
+  items,
+  includedItems,
+  grandTotal,
   parties,
   formatCurrency,
   quoteNumber,
 }: BuildQuoteHtmlParams): string => {
-  const lineItems = buildQuoteLineItems(t, form, result, parsedGcode, selectedFilament);
-  const includedItems = buildQuoteIncludedItems(t, result);
+  const lineItems = items;
   const issuedAt = new Date();
   const today = new Intl.DateTimeFormat('ru-RU', { dateStyle: 'long' }).format(issuedAt);
   const validityDays = Math.max(1, Math.round(parties.validityDays || DEFAULT_QUOTE_PROFILE.validityDays));
@@ -1079,7 +1083,7 @@ const buildQuoteDocumentHtml = ({
         <tfoot>
           <tr class="total-row">
             <td colspan="4" class="p-2 border border-gray-400 text-sm text-right">${escapeHtml(t('profilePage.calculator.totalCost'))}:</td>
-            <td class="p-2 border border-gray-400 text-sm text-right">${escapeHtml(formatCurrency(result.cost_total))}</td>
+            <td class="p-2 border border-gray-400 text-sm text-right">${escapeHtml(formatCurrency(grandTotal))}</td>
           </tr>
         </tfoot>
       </table>
@@ -1128,6 +1132,7 @@ export const CalculatorPage: React.FC = () => {
   const [quoteParties, setQuoteParties] = useState<QuotePartyFormState>(DEFAULT_QUOTE_PARTY_FORM);
   const [selectedSpoolId, setSelectedSpoolId] = useState<number | ''>('');
   const [isCloudBusy, setIsCloudBusy] = useState(false);
+  const [quoteItems, setQuoteItems] = useState<QuoteItem[]>([]);
   const [isSharing, setIsSharing] = useState(false);
   const [isPdfDownloading, setIsPdfDownloading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -1478,9 +1483,7 @@ export const CalculatorPage: React.FC = () => {
   };
 
   const handlePrintQuote = () => {
-    if (!result) {
-      return;
-    }
+    if (!result && quoteItems.length === 0) return;
 
     const quoteWindow = window.open('', '_blank');
     if (!quoteWindow) {
@@ -1494,16 +1497,7 @@ export const CalculatorPage: React.FC = () => {
     const dateStr = new Date().toISOString().slice(0, 10).replace(/-/g, '');
     const quoteNumber = `${prefix}-${dateStr}-${String(seq).padStart(2, '0')}`;
 
-    const quoteHtml = buildQuoteDocumentHtml({
-      t,
-      form,
-      result,
-      parsedGcode,
-      selectedFilament: selectedMaterial,
-      parties: quoteParties,
-      formatCurrency,
-      quoteNumber,
-    });
+    const quoteHtml = buildQuoteDocumentHtml(buildQuoteHtmlParams(quoteNumber));
 
     quoteWindow.document.open();
     quoteWindow.document.write(quoteHtml);
@@ -1515,7 +1509,7 @@ export const CalculatorPage: React.FC = () => {
   };
 
   const handleShareQuote = async () => {
-    if (!result || !user) return;
+    if ((!result && quoteItems.length === 0) || !user) return;
     setIsSharing(true);
     try {
       quoteSequenceRef.current += 1;
@@ -1524,16 +1518,7 @@ export const CalculatorPage: React.FC = () => {
       const dateStr = new Date().toISOString().slice(0, 10).replace(/-/g, '');
       const quoteNumber = `${prefix}-${dateStr}-${String(seq).padStart(2, '0')}`;
 
-      const quoteHtml = buildQuoteDocumentHtml({
-        t,
-        form,
-        result,
-        parsedGcode,
-        selectedFilament: selectedMaterial,
-        parties: quoteParties,
-        formatCurrency,
-        quoteNumber,
-      });
+      const quoteHtml = buildQuoteDocumentHtml(buildQuoteHtmlParams(quoteNumber));
 
       const resp = await calculatorAPI.shareQuote({
         title: quoteNumber,
@@ -1558,7 +1543,7 @@ export const CalculatorPage: React.FC = () => {
   };
 
   const handleDownloadPdf = async () => {
-    if (!result || !user) return;
+    if ((!result && quoteItems.length === 0) || !user) return;
     setIsPdfDownloading(true);
     try {
       quoteSequenceRef.current += 1;
@@ -1567,16 +1552,7 @@ export const CalculatorPage: React.FC = () => {
       const dateStr = new Date().toISOString().slice(0, 10).replace(/-/g, '');
       const quoteNumber = `${prefix}-${dateStr}-${String(seq).padStart(2, '0')}`;
 
-      const quoteHtml = buildQuoteDocumentHtml({
-        t,
-        form,
-        result,
-        parsedGcode,
-        selectedFilament: selectedMaterial,
-        parties: quoteParties,
-        formatCurrency,
-        quoteNumber,
-      });
+      const quoteHtml = buildQuoteDocumentHtml(buildQuoteHtmlParams(quoteNumber));
 
       await calculatorAPI.downloadQuotePdf({
         title: quoteNumber,
@@ -1596,6 +1572,45 @@ export const CalculatorPage: React.FC = () => {
     } finally {
       setIsPdfDownloading(false);
     }
+  };
+
+  const handleAddToQuote = () => {
+    if (!result) return;
+    const lineItems = buildQuoteLineItems(t, form, result, parsedGcode, selectedMaterial);
+    const included = buildQuoteIncludedItems(t, result);
+    const newItem: QuoteItem = {
+      id: crypto.randomUUID(),
+      lineItem: lineItems[0],
+      includedItems: included,
+    };
+    setQuoteItems((prev) => [...prev, newItem]);
+    setHistoryFeedback({ kind: 'success', message: tc('addedToQuote') });
+  };
+
+  const handleRemoveFromQuote = (id: string) => {
+    setQuoteItems((prev) => prev.filter((item) => item.id !== id));
+  };
+
+  const buildQuoteHtmlParams = (quoteNumber: string): BuildQuoteHtmlParams => {
+    let items: QuoteLineItem[];
+    let includedItems: string[];
+    let grandTotal: number;
+
+    if (quoteItems.length > 0) {
+      items = quoteItems.map((qi) => qi.lineItem);
+      includedItems = [...new Set(quoteItems.flatMap((qi) => qi.includedItems))];
+      grandTotal = items.reduce((sum, item) => sum + item.totalPrice, 0);
+    } else if (result) {
+      items = buildQuoteLineItems(t, form, result, parsedGcode, selectedMaterial);
+      includedItems = buildQuoteIncludedItems(t, result);
+      grandTotal = result.cost_total;
+    } else {
+      items = [];
+      includedItems = [];
+      grandTotal = 0;
+    }
+
+    return { t, items, includedItems, grandTotal, parties: quoteParties, formatCurrency, quoteNumber };
   };
 
   const handleOpenQuote = () => {
@@ -1857,6 +1872,8 @@ export const CalculatorPage: React.FC = () => {
           quoteProfile={quoteProfile}
           onQuoteProfileChange={updateQuoteProfileField}
           onOpenQuote={handleOpenQuote}
+          onAddToQuote={handleAddToQuote}
+          quoteItemCount={quoteItems.length}
           onSaveToHistory={handleSaveToHistory}
           onCloudSave={handleCloudSave}
           onCloudLoad={handleCloudLoad}
@@ -1881,6 +1898,9 @@ export const CalculatorPage: React.FC = () => {
         source={estimateSource}
         quoteParties={quoteParties}
         result={result}
+        quoteItems={quoteItems}
+        onRemoveFromQuote={handleRemoveFromQuote}
+        onClearQuoteItems={() => setQuoteItems([])}
         onClose={() => setQuoteModalOpen(false)}
         onPartyChange={(field, value) => {
           setQuoteParties((prev) => ({
@@ -1931,6 +1951,8 @@ interface CalculatorViewProps {
   onFileSelect: (files: FileList | null) => Promise<void>;
   onDragStateChange: (active: boolean) => void;
   onOpenQuote: () => void;
+  onAddToQuote: () => void;
+  quoteItemCount: number;
   onSaveToHistory: () => Promise<void>;
   onCloudSave: () => Promise<void>;
   onCloudLoad: () => Promise<void>;
@@ -1969,6 +1991,8 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
   onFileSelect,
   onDragStateChange,
   onOpenQuote,
+  onAddToQuote,
+  quoteItemCount,
   onSaveToHistory,
   onCloudSave,
   onCloudLoad,
@@ -3165,11 +3189,24 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
               <div className="mt-6 space-y-3">
                 <button
                   type="button"
+                  onClick={onAddToQuote}
+                  className="inline-flex w-full items-center justify-center gap-2 rounded-2xl border border-cyan-400/20 bg-cyan-400/10 px-4 py-3 text-sm font-medium text-cyan-200 transition-all hover:bg-cyan-400/20 hover:text-white"
+                >
+                  <Plus className="h-4 w-4" />
+                  {tc('addToQuote')}
+                </button>
+                <button
+                  type="button"
                   onClick={onOpenQuote}
-                  className={`${ghostButtonClass} w-full`}
+                  className={`${ghostButtonClass} w-full relative`}
                 >
                   <FileText className="h-4 w-4" />
                   {tc('openQuoteBuilder')}
+                  {quoteItemCount > 0 && (
+                    <span className="absolute -right-1 -top-1 flex h-5 min-w-5 items-center justify-center rounded-full bg-cyan-500 px-1.5 text-[10px] font-bold text-white">
+                      {quoteItemCount}
+                    </span>
+                  )}
                 </button>
                 <button
                   type="button"
@@ -3323,6 +3360,9 @@ interface QuoteModalProps {
   source: 'manual' | 'gcode';
   quoteParties: QuotePartyFormState;
   result: CalculatorEstimateResponse | null;
+  quoteItems: QuoteItem[];
+  onRemoveFromQuote: (id: string) => void;
+  onClearQuoteItems: () => void;
   onClose: () => void;
   onPartyChange: <K extends keyof QuotePartyFormState>(field: K, value: QuotePartyFormState[K]) => void;
   onPrint: () => void;
@@ -3339,6 +3379,9 @@ const QuoteModal: React.FC<QuoteModalProps> = ({
   source,
   quoteParties,
   result,
+  quoteItems,
+  onRemoveFromQuote,
+  onClearQuoteItems,
   onClose,
   onPartyChange,
   onPrint,
@@ -3353,9 +3396,14 @@ const QuoteModal: React.FC<QuoteModalProps> = ({
   const tc = (key: string) => translateCalculator(t, key);
   const isHeaderVisible = useHeaderVisible();
 
-  if (!isOpen || !result) {
+  if (!isOpen || (!result && quoteItems.length === 0)) {
     return null;
   }
+
+  const hasItems = quoteItems.length > 0;
+  const displayTotal = hasItems
+    ? quoteItems.reduce((sum, qi) => sum + qi.lineItem.totalPrice, 0)
+    : result?.cost_total ?? 0;
 
   return createPortal(
     <div
@@ -3495,22 +3543,26 @@ const QuoteModal: React.FC<QuoteModalProps> = ({
             <div className="space-y-5">
               <div className="rounded-[1.5rem] border border-cyan-400/20 bg-cyan-400/10 p-5">
                 <p className="text-xs font-semibold uppercase tracking-[0.18em] text-cyan-200">{tc('quoteSummaryTitle')}</p>
-                <p className="mt-3 text-3xl font-semibold tracking-tight text-white">{formatCurrency(result.cost_total)}</p>
+                <p className="mt-3 text-3xl font-semibold tracking-tight text-white">{formatCurrency(displayTotal)}</p>
                 <div className="mt-5 space-y-3 text-sm text-slate-200">
-                  <div className="flex items-center justify-between gap-4">
-                    <span className="text-slate-300">{t('profilePage.calc.quantity')}</span>
-                    <span className="font-medium text-white">{result.quantity}</span>
-                  </div>
-                  <div className="flex items-center justify-between gap-4">
-                    <span className="text-slate-300">{tc('perPart')}</span>
-                    <span className="font-medium text-white">{formatCurrency(result.cost_first_part)}</span>
-                  </div>
-                  <div className="flex items-center justify-between gap-4">
-                    <span className="text-slate-300">{t('profilePage.calc.totalWorkTime')}</span>
-                    <span className="font-medium text-white">
-                      {formatHoursShort(result.total_time_hours ?? result.time_hours, t('profilePage.calc.h'), t('profilePage.calc.min'))}
-                    </span>
-                  </div>
+                  {hasItems && (
+                    <div className="flex items-center justify-between gap-4">
+                      <span className="text-slate-300">{tc('quoteItemsCount')}</span>
+                      <span className="font-medium text-white">{quoteItems.length}</span>
+                    </div>
+                  )}
+                  {!hasItems && result && (
+                    <>
+                      <div className="flex items-center justify-between gap-4">
+                        <span className="text-slate-300">{t('profilePage.calc.quantity')}</span>
+                        <span className="font-medium text-white">{result.quantity}</span>
+                      </div>
+                      <div className="flex items-center justify-between gap-4">
+                        <span className="text-slate-300">{tc('perPart')}</span>
+                        <span className="font-medium text-white">{formatCurrency(result.cost_first_part)}</span>
+                      </div>
+                    </>
+                  )}
                   <div className="flex items-center justify-between gap-4">
                     <span className="text-slate-300">{tc('quoteValidUntil')}</span>
                     <span className="font-medium text-white">
@@ -3528,15 +3580,57 @@ const QuoteModal: React.FC<QuoteModalProps> = ({
                 </div>
               </div>
 
-              <div className="rounded-[1.5rem] border border-white/10 bg-white/5 p-5">
-                <p className="text-base font-semibold text-white">{tc('quotePreviewChecklist')}</p>
-                <ul className="mt-4 space-y-2 text-sm leading-6 text-slate-300">
-                  <li>{tc('quoteChecklistLineItems')}</li>
-                  <li>{tc('quoteChecklistCosts')}</li>
-                  <li>{tc('quoteChecklistParties')}</li>
-                  <li>{tc('quoteChecklistPrint')}</li>
-                </ul>
-              </div>
+              {hasItems && (
+                <div className="rounded-[1.5rem] border border-white/10 bg-white/5 p-5">
+                  <div className="flex items-center justify-between">
+                    <p className="text-base font-semibold text-white">{tc('quoteItemsList')}</p>
+                    <button
+                      type="button"
+                      onClick={onClearQuoteItems}
+                      className="text-xs text-slate-400 transition-colors hover:text-red-400"
+                    >
+                      {tc('quoteClearAll')}
+                    </button>
+                  </div>
+                  <ul className="mt-4 space-y-3">
+                    {quoteItems.map((qi, idx) => (
+                      <li key={qi.id} className="flex items-start justify-between gap-3 rounded-xl border border-white/5 bg-white/5 px-4 py-3">
+                        <div className="min-w-0 flex-1">
+                          <p className="text-sm font-medium text-white">
+                            <span className="mr-2 text-slate-400">{idx + 1}.</span>
+                            {qi.lineItem.title}
+                          </p>
+                          {qi.lineItem.details.length > 0 && (
+                            <p className="mt-1 truncate text-xs text-slate-400">{qi.lineItem.details.join(' · ')}</p>
+                          )}
+                          <p className="mt-1 text-xs text-slate-300">
+                            {qi.lineItem.quantity} × {formatCurrency(qi.lineItem.unitPrice)} = {formatCurrency(qi.lineItem.totalPrice)}
+                          </p>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => onRemoveFromQuote(qi.id)}
+                          className="mt-0.5 shrink-0 text-slate-500 transition-colors hover:text-red-400"
+                        >
+                          <X className="h-4 w-4" />
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+
+              {!hasItems && (
+                <div className="rounded-[1.5rem] border border-white/10 bg-white/5 p-5">
+                  <p className="text-base font-semibold text-white">{tc('quotePreviewChecklist')}</p>
+                  <ul className="mt-4 space-y-2 text-sm leading-6 text-slate-300">
+                    <li>{tc('quoteChecklistLineItems')}</li>
+                    <li>{tc('quoteChecklistCosts')}</li>
+                    <li>{tc('quoteChecklistParties')}</li>
+                    <li>{tc('quoteChecklistPrint')}</li>
+                  </ul>
+                </div>
+              )}
 
               <div className="space-y-3">
                 <button
