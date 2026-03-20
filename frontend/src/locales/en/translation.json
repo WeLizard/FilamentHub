@@ -588,6 +588,8 @@
     "uniqueIntegration": "Unique integration!",
     "screenshotsTitle": "How it looks",
     "comingSoon": "(Coming soon)",
+    "openPreview": "Open full size",
+    "closePreview": "Close preview",
     "screenshotTabAlt": "Screenshot: FilamentHub tab in OrcaSlicer",
     "screenshotTabTitle": "FilamentHub Tab",
     "screenshotTabDesc": "A new tab right in the main OrcaSlicer window — materials catalog, settings search, and preset sync without switching between applications.",

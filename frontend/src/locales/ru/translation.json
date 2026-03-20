@@ -593,6 +593,8 @@
     "uniqueIntegration": "Уникальная интеграция!",
     "screenshotsTitle": "Как это выглядит",
     "comingSoon": "(Будет добавлено)",
+    "openPreview": "Открыть крупнее",
+    "closePreview": "Закрыть просмотр",
     "screenshotTabAlt": "Скриншот: Вкладка FilamentHub в OrcaSlicer",
     "screenshotTabTitle": "Вкладка FilamentHub",
     "screenshotTabDesc": "Новая вкладка прямо в главном окне OrcaSlicer — каталог материалов, поиск настроек и синхронизация пресетов без переключения между приложениями.",

@@ -2,17 +2,28 @@
 
 import { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Download, CheckCircle, Package, Code, Zap, Globe, Monitor, Smartphone, Terminal, Image as ImageIcon, Play, Loader2, ExternalLink } from 'lucide-react';
+import { Download, CheckCircle, Package, Code, Zap, Globe, Monitor, Smartphone, Terminal, Image as ImageIcon, Play, Loader2, ExternalLink, X } from 'lucide-react';
 import { downloadsAPI } from '../api/client';
 import type { DownloadVersion, DownloadVersionsResponse } from '../types/api';
+import { ModalOverlay } from '../components/ModalOverlay';
 
 type DownloadScreenshotCardImageProps = {
   src: string;
   alt: string;
   comingSoonLabel: string;
+  openPreviewLabel: string;
+  onOpenPreview: (src: string, alt: string) => void;
+  imageClassName?: string;
 };
 
-function DownloadScreenshotCardImage({ src, alt, comingSoonLabel }: DownloadScreenshotCardImageProps) {
+function DownloadScreenshotCardImage({
+  src,
+  alt,
+  comingSoonLabel,
+  openPreviewLabel,
+  onOpenPreview,
+  imageClassName = 'object-cover object-top',
+}: DownloadScreenshotCardImageProps) {
   const [loadFailed, setLoadFailed] = useState(false);
 
   if (loadFailed) {
@@ -28,15 +39,27 @@ function DownloadScreenshotCardImage({ src, alt, comingSoonLabel }: DownloadScre
   }
 
   return (
-    <div className="aspect-video overflow-hidden rounded-lg border border-white/10 bg-black/20 mb-4">
+    <button
+      type="button"
+      onClick={() => onOpenPreview(src, alt)}
+      className="group relative block aspect-video w-full overflow-hidden rounded-lg border border-white/10 bg-black/20 mb-4 text-left transition duration-300 hover:border-purple-400/40 hover:shadow-[0_16px_45px_rgba(123,97,255,0.18)]"
+      aria-label={`${openPreviewLabel}: ${alt}`}
+    >
       <img
         src={src}
         alt={alt}
-        className="h-full w-full object-cover object-top"
+        className={`h-full w-full transition duration-500 group-hover:scale-[1.02] ${imageClassName}`}
         loading="lazy"
         onError={() => setLoadFailed(true)}
       />
-    </div>
+
+      <div className="pointer-events-none absolute inset-x-0 bottom-0 flex items-center justify-between bg-gradient-to-t from-black/80 via-black/45 to-transparent px-4 py-3 text-xs text-white/85 opacity-0 transition duration-300 group-hover:opacity-100">
+        <span>{openPreviewLabel}</span>
+        <span className="rounded-full border border-white/15 bg-white/10 px-2 py-0.5 text-[11px] text-white/80">
+          Enter
+        </span>
+      </div>
+    </button>
   );
 }
 
@@ -47,6 +70,7 @@ export function DownloadPage() {
   const [downloadsData, setDownloadsData] = useState<DownloadVersionsResponse | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [previewImage, setPreviewImage] = useState<{ src: string; alt: string } | null>(null);
 
   // Загружаем данные с API
   useEffect(() => {
@@ -176,14 +200,14 @@ export function DownloadPage() {
         <div className="grid md:grid-cols-2 gap-6">
           {/* Screenshot 1: FilamentHub Tab */}
           <div className="bg-white/5 rounded-xl p-4 border border-white/10">
-            <div className="aspect-video overflow-hidden rounded-lg border border-white/10 bg-black/20 mb-4">
-              <img
-                src="/download-media/orcaslicer-win-main.png"
-                alt={t('downloadPage.screenshotTabAlt')}
-                className="h-full w-full object-cover"
-                loading="lazy"
-              />
-            </div>
+            <DownloadScreenshotCardImage
+              src="/download-media/orcaslicer-win-main.webp"
+              alt={t('downloadPage.screenshotTabAlt')}
+              comingSoonLabel={t('downloadPage.comingSoon')}
+              openPreviewLabel={t('downloadPage.openPreview')}
+              onOpenPreview={(src, alt) => setPreviewImage({ src, alt })}
+              imageClassName="object-cover"
+            />
             <h3 className="text-lg font-semibold text-white mb-2">{t('downloadPage.screenshotTabTitle')}</h3>
             <p className="text-gray-300 text-sm">
               {t('downloadPage.screenshotTabDesc')}
@@ -193,9 +217,11 @@ export function DownloadPage() {
           {/* Screenshot 2: Catalog in OrcaSlicer */}
           <div className="bg-white/5 rounded-xl p-4 border border-white/10">
             <DownloadScreenshotCardImage
-              src="/download-media/catalog-presets.png"
+              src="/download-media/catalog-presets.webp"
               alt={t('downloadPage.screenshotCatalogAlt')}
               comingSoonLabel={t('downloadPage.comingSoon')}
+              openPreviewLabel={t('downloadPage.openPreview')}
+              onOpenPreview={(src, alt) => setPreviewImage({ src, alt })}
             />
             <h3 className="text-lg font-semibold text-white mb-2">{t('downloadPage.screenshotCatalogTitle')}</h3>
             <p className="text-gray-300 text-sm">
@@ -206,9 +232,11 @@ export function DownloadPage() {
           {/* Screenshot 3: Sync Feature */}
           <div className="bg-white/5 rounded-xl p-4 border border-white/10">
             <DownloadScreenshotCardImage
-              src="/download-media/presets-sync.png"
+              src="/download-media/presets-sync.webp"
               alt={t('downloadPage.screenshotSyncAlt')}
               comingSoonLabel={t('downloadPage.comingSoon')}
+              openPreviewLabel={t('downloadPage.openPreview')}
+              onOpenPreview={(src, alt) => setPreviewImage({ src, alt })}
             />
             <h3 className="text-lg font-semibold text-white mb-2">{t('downloadPage.screenshotSyncTitle')}</h3>
             <p className="text-gray-300 text-sm">
@@ -219,9 +247,11 @@ export function DownloadPage() {
           {/* Screenshot 4: Import Preset */}
           <div className="bg-white/5 rounded-xl p-4 border border-white/10">
             <DownloadScreenshotCardImage
-              src="/download-media/import-one-click.png"
+              src="/download-media/import-one-click.webp"
               alt={t('downloadPage.screenshotImportAlt')}
               comingSoonLabel={t('downloadPage.comingSoon')}
+              openPreviewLabel={t('downloadPage.openPreview')}
+              onOpenPreview={(src, alt) => setPreviewImage({ src, alt })}
             />
             <h3 className="text-lg font-semibold text-white mb-2">{t('downloadPage.screenshotImportTitle')}</h3>
             <p className="text-gray-300 text-sm">
@@ -252,6 +282,39 @@ export function DownloadPage() {
           </div>
         </div>
       </div>
+
+      {previewImage && (
+        <ModalOverlay
+          onClose={() => setPreviewImage(null)}
+          className="bg-slate-950/85 backdrop-blur-md"
+        >
+          <div className="relative w-full max-w-6xl rounded-[28px] border border-white/10 bg-slate-900/92 p-3 shadow-[0_25px_120px_rgba(15,23,42,0.65)] md:p-5">
+            <button
+              type="button"
+              onClick={() => setPreviewImage(null)}
+              className="absolute right-3 top-3 z-10 inline-flex h-10 w-10 items-center justify-center rounded-full border border-white/10 bg-black/50 text-white/80 transition hover:border-white/20 hover:bg-black/70 hover:text-white"
+              aria-label={t('downloadPage.closePreview')}
+            >
+              <X className="h-5 w-5" />
+            </button>
+
+            <div className="overflow-hidden rounded-[22px] border border-white/10 bg-black/40">
+              <img
+                src={previewImage.src}
+                alt={previewImage.alt}
+                className="max-h-[82vh] w-full object-contain"
+              />
+            </div>
+
+            <div className="flex items-center justify-between gap-4 px-2 pt-4">
+              <p className="text-sm text-white/90">{previewImage.alt}</p>
+              <p className="hidden text-xs uppercase tracking-[0.24em] text-white/45 sm:block">
+                Esc
+              </p>
+            </div>
+          </div>
+        </ModalOverlay>
+      )}
 
       {/* Key Benefits */}
       <div className="bg-gradient-to-br from-purple-900/50 to-indigo-900/50 backdrop-blur-sm rounded-2xl p-8 border border-white/20 shadow-xl mb-12">
