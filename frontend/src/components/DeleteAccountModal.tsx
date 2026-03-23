@@ -292,7 +292,7 @@ export const DeleteAccountModal: React.FC<DeleteAccountModalProps> = ({ isOpen, 
               </button>
               <button
                 type="submit"
-                disabled={deleteAccountMutation.isPending || confirmText !== confirmWord || !password}
+                disabled={deleteAccountMutation.isPending || confirmText !== confirmWord || (!!user?.has_password && !password)}
                 className="flex-1 px-6 py-3 bg-gradient-to-r from-red-600 to-red-700 hover:from-red-700 hover:to-red-800 text-white rounded-xl transition-all shadow-lg shadow-red-500/25 hover:shadow-red-500/40 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center"
               >
                 {deleteAccountMutation.isPending ? (

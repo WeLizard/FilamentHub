@@ -306,7 +306,7 @@ export const authAPI = {
   },
 
   updatePassword: async (data: {
-    current_password: string;
+    current_password?: string;
     new_password: string;
   }) => {
     const response = await api.patch<User>('/auth/me/password', data);
