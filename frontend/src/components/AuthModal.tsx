@@ -192,12 +192,9 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
             <X className="w-5 h-5" />
           </button>
 
-          <div className="text-center mb-4 sm:mb-8">
-            <div className="w-12 h-12 sm:w-16 sm:h-16 flex items-center justify-center mx-auto mb-3 sm:mb-4">
-              <img src="/logo.svg" alt="FilamentHub Logo" className="w-12 h-12 sm:w-16 sm:h-16 object-contain" />
-            </div>
-            <h2 className="text-xl sm:text-2xl font-bold text-white mb-1 sm:mb-2">FilamentHub</h2>
-            <p className="text-sm sm:text-base text-gray-300">{t('authModal.title')}</p>
+          <div className="flex items-center gap-3 mb-4 sm:mb-8">
+            <img src="/logo.svg" alt="FilamentHub Logo" className="w-10 h-10 sm:w-12 sm:h-12 object-contain flex-shrink-0" />
+            <h2 className="text-xl sm:text-2xl font-bold text-white">FilamentHub</h2>
           </div>
         </div>
 
