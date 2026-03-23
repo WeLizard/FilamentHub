@@ -305,13 +305,6 @@ export function DownloadPage() {
                 className="max-h-[82vh] w-full object-contain"
               />
             </div>
-
-            <div className="flex items-center justify-between gap-4 px-2 pt-4">
-              <p className="text-sm text-white/90">{previewImage.alt}</p>
-              <p className="hidden text-xs uppercase tracking-[0.24em] text-white/45 sm:block">
-                Esc
-              </p>
-            </div>
           </div>
         </ModalOverlay>
       )}
