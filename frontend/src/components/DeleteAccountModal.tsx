@@ -9,6 +9,7 @@ import { authAPI } from '../api/client';
 import { translateApiError } from '../utils/translateApiError';
 import { useAuth } from '../contexts/AuthContext';
 import { ModalOverlay } from './ModalOverlay';
+import { toast } from './Toast';
 
 interface DeleteAccountModalProps {
   isOpen: boolean;
@@ -25,6 +26,7 @@ export const DeleteAccountModal: React.FC<DeleteAccountModalProps> = ({ isOpen, 
   const [deleteReviews, setDeleteReviews] = useState(false);
   const [deleteBrandIfSole, setDeleteBrandIfSole] = useState(false);
   const [confirmText, setConfirmText] = useState('');
+  const [formError, setFormError] = useState<string | null>(null);
 
   const confirmWord = t('deleteAccount.confirmWord');
 
@@ -43,36 +45,28 @@ export const DeleteAccountModal: React.FC<DeleteAccountModalProps> = ({ isOpen, 
       password_confirm: string;
     }) => authAPI.deleteAccount(data),
     onSuccess: async () => {
-      // Очищаем все кеши
       await queryClient.clear();
-      // Выходим из системы
       logout();
-      // Перенаправляем на главную
       navigate('/');
-      // Закрываем модальное окно
       onClose();
-      alert(t('deleteAccount.successMessage'));
     },
     onError: (error: any) => {
       console.error('Delete account error:', error);
-      alert(translateApiError(t, error.response?.data?.detail, t('deleteAccount.errorMessage')));
+      toast.error(translateApiError(t, error.response?.data?.detail, t('deleteAccount.errorMessage')));
     },
   });
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    setFormError(null);
 
     if (confirmText !== confirmWord) {
-      alert(t('deleteAccount.enterConfirmWord'));
+      setFormError(t('deleteAccount.enterConfirmWord'));
       return;
     }
 
     if (user?.has_password && !password) {
-      alert(t('deleteAccount.enterPassword'));
-      return;
-    }
-
-    if (!confirm(t('deleteAccount.confirmPrompt'))) {
+      setFormError(t('deleteAccount.enterPassword'));
       return;
     }
 
@@ -280,6 +274,14 @@ export const DeleteAccountModal: React.FC<DeleteAccountModalProps> = ({ isOpen, 
                 </div>
               </div>
             </div>
+
+            {/* Ошибка формы */}
+            {formError && (
+              <div className="flex items-center space-x-2 p-3 bg-red-500/20 border border-red-500/40 rounded-xl text-red-300 text-sm">
+                <AlertTriangle className="w-4 h-4 flex-shrink-0" />
+                <span>{formError}</span>
+              </div>
+            )}
 
             {/* Кнопки */}
             <div className="flex space-x-4 pt-4">
