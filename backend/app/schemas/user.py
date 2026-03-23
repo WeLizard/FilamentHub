@@ -80,7 +80,7 @@ class UserSettingsUpdate(BaseModel):
 class UserPasswordUpdate(BaseModel):
     """Schema for updating user password."""
 
-    current_password: str = Field(..., min_length=1, description="Текущий пароль")
+    current_password: str | None = Field(None, min_length=1, description="Текущий пароль (не нужен для OAuth-аккаунтов без пароля)")
     new_password: str = Field(..., min_length=8, max_length=100, description="Новый пароль")
 
     @field_validator('new_password')
@@ -119,11 +119,21 @@ class UserResponse(UserBase):
     allow_printer_profiles_export: bool = True
     allow_print_profiles_import: bool = True
     allow_print_profiles_export: bool = True
+    oauth_provider: str | None = None
+    has_password: bool = False
     created_at: datetime
     updated_at: datetime
     last_login: datetime | None = None
 
     model_config = ConfigDict(from_attributes=True)
+
+    @classmethod
+    def model_validate(cls, obj, **kwargs):  # type: ignore[override]
+        instance = super().model_validate(obj, **kwargs)
+        # Вычисляем has_password из password_hash (не передаём сам hash клиенту)
+        if hasattr(obj, "password_hash"):
+            instance.has_password = bool(obj.password_hash)
+        return instance
 
 
 class UserPublic(UserBase):

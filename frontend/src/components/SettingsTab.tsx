@@ -161,8 +161,8 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({ user, onUserUpdate }) 
     setPasswordError(null);
     setPasswordSuccess(false);
 
-    // Валидация
-    if (passwordForm.current_password.length === 0) {
+    // Валидация текущего пароля — только если он есть у пользователя
+    if (user.has_password && passwordForm.current_password.length === 0) {
       setPasswordError(t('settings.enterCurrentPassword'));
       return;
     }
@@ -187,14 +187,14 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({ user, onUserUpdate }) 
       return;
     }
 
-    if (passwordForm.current_password === passwordForm.new_password) {
+    if (user.has_password && passwordForm.current_password === passwordForm.new_password) {
       setPasswordError(t('settings.passwordMustDiffer'));
       return;
     }
 
     try {
       await updatePasswordMutation.mutateAsync({
-        current_password: passwordForm.current_password,
+        current_password: user.has_password ? passwordForm.current_password : undefined,
         new_password: passwordForm.new_password,
       });
     } catch (error) {
@@ -341,10 +341,13 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({ user, onUserUpdate }) 
             <div className="p-2 bg-pink-500/20 rounded-lg">
               <Lock className="w-5 h-5 text-pink-400" />
             </div>
-            <h3 className="text-lg font-bold text-white">{t('settings.password')}</h3>
+            <h3 className="text-lg font-bold text-white">
+              {user.has_password ? t('settings.password') : t('settings.setPassword')}
+            </h3>
           </div>
 
           <form onSubmit={handlePasswordSubmit} className="space-y-3">
+            {user.has_password && (
             <div>
               <label className="block text-gray-300 mb-1.5 text-xs font-medium">{t('settings.currentPassword')}</label>
               <div className="relative">
@@ -369,6 +372,7 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({ user, onUserUpdate }) 
                 </button>
               </div>
             </div>
+            )}
 
             <div>
               <label className="block text-gray-300 mb-1.5 text-xs font-medium">{t('settings.newPassword')}</label>
@@ -449,7 +453,7 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({ user, onUserUpdate }) 
               ) : (
                 <>
                   <Save className="w-4 h-4" />
-                  <span>{t('settings.changePassword')}</span>
+                  <span>{user.has_password ? t('settings.changePassword') : t('settings.setPassword')}</span>
                 </>
               )}
             </button>

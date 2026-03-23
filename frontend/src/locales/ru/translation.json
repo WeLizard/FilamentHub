@@ -3340,6 +3340,7 @@
     "confirmPassword": "Подтвердите",
     "repeatPasswordPlaceholder": "Повторите пароль",
     "changePassword": "Изменить пароль",
+    "setPassword": "Установить пароль",
     "changing": "Изменение...",
     "success": "Успешно!",
     "saving": "Сохранение...",

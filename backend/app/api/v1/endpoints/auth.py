@@ -811,9 +811,10 @@ async def delete_account(
     """
     from app.services.account_deletion import delete_user_account
     
-    # Проверяем пароль
-    if not verify_password(data.password_confirm, current_user.password_hash):
-        raise_error(status.HTTP_401_UNAUTHORIZED, ERR_WRONG_PASSWORD)
+    # Проверяем пароль (только если у пользователя есть пароль)
+    if current_user.password_hash:
+        if not data.password_confirm or not verify_password(data.password_confirm, current_user.password_hash):
+            raise_error(status.HTTP_401_UNAUTHORIZED, ERR_WRONG_PASSWORD)
     
     # Выполняем удаление аккаунта
     await delete_user_account(
@@ -941,9 +942,13 @@ async def update_user_password(
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> UserResponse:
     """Изменить пароль текущего пользователя."""
-    # Проверяем текущий пароль (для безопасности критичных операций)
-    if not verify_password(data.current_password, current_user.password_hash):
-        raise_error(status.HTTP_401_UNAUTHORIZED, ERR_WRONG_PASSWORD)
+    if current_user.password_hash:
+        # Обычный пользователь — требуем текущий пароль
+        if not data.current_password:
+            raise_error(status.HTTP_401_UNAUTHORIZED, ERR_WRONG_PASSWORD)
+        if not verify_password(data.current_password, current_user.password_hash):
+            raise_error(status.HTTP_401_UNAUTHORIZED, ERR_WRONG_PASSWORD)
+    # OAuth-пользователь без пароля — current_password не нужен, просто устанавливаем
 
     # Хешируем новый пароль
     try:

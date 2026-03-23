@@ -67,7 +67,7 @@ export const DeleteAccountModal: React.FC<DeleteAccountModalProps> = ({ isOpen, 
       return;
     }
 
-    if (!password) {
+    if (user?.has_password && !password) {
       alert(t('deleteAccount.enterPassword'));
       return;
     }
@@ -79,7 +79,7 @@ export const DeleteAccountModal: React.FC<DeleteAccountModalProps> = ({ isOpen, 
     deleteAccountMutation.mutate({
       delete_reviews: deleteReviews,
       delete_brand_if_sole_representative: deleteBrandIfSole,
-      password_confirm: password,
+      password_confirm: user?.has_password ? password : '',
     });
   };
 
@@ -227,7 +227,8 @@ export const DeleteAccountModal: React.FC<DeleteAccountModalProps> = ({ isOpen, 
               </div>
             )}
 
-            {/* Пароль */}
+            {/* Пароль — только для пользователей с паролем */}
+            {user?.has_password && (
             <div>
               <label className="block text-gray-300 mb-2 text-sm font-medium">
                 {t('deleteAccount.confirmPassword')}
@@ -241,6 +242,7 @@ export const DeleteAccountModal: React.FC<DeleteAccountModalProps> = ({ isOpen, 
                 placeholder={t('deleteAccount.passwordPlaceholder')}
               />
             </div>
+            )}
 
             {/* Подтверждение текста */}
             <div>
