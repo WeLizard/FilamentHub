@@ -49,6 +49,8 @@ from app.schemas.user import (
     ForgotPasswordResponse,
     LoginRequest,
     LogoutRequest,
+    OAuthCallbackRequest,
+    OAuthUrlResponse,
     RefreshTokenRequest,
     RefreshTokenResponse,
     RegisterRequest,
@@ -79,6 +81,12 @@ from app.core.errors import (
     ERR_INVALID_REFRESH_TOKEN,
     ERR_INVALID_RESET_TOKEN,
     ERR_INVALID_VERIFICATION_TOKEN,
+    ERR_OAUTH_EMAIL_MISSING,
+    ERR_OAUTH_EMAIL_TAKEN,
+    ERR_OAUTH_FAILED,
+    ERR_OAUTH_INVALID_PROVIDER,
+    ERR_OAUTH_INVALID_STATE,
+    ERR_OAUTH_PROVIDER_NOT_CONFIGURED,
     ERR_PASSWORD_HASH_ERROR,
     ERR_RECAPTCHA_FAILED,
     ERR_RESPONSE_ERROR,
@@ -309,7 +317,7 @@ async def login(
     )
     user = result.scalar_one_or_none()
     
-    if not user or not verify_password(data.password, user.password_hash):
+    if not user or not user.password_hash or not verify_password(data.password, user.password_hash):
         raise_error(status.HTTP_401_UNAUTHORIZED, ERR_WRONG_PASSWORD, headers={"WWW-Authenticate": "Bearer"})
 
     if not user.active:
@@ -1007,12 +1015,161 @@ async def update_user_email(
     
     await db.commit()
     await db.refresh(current_user)
-    
+
     return UserResponse.model_validate(current_user)
 
 
+# ── OAuth endpoints ──────────────────────────────────────────────────
+
+import logging as _logging
+
+from app.services.oauth_service import (
+    exchange_google_code,
+    exchange_yandex_code,
+    generate_oauth_state,
+    generate_username_from_email,
+    get_google_auth_url,
+    get_yandex_auth_url,
+    is_provider_configured,
+)
+
+_oauth_logger = _logging.getLogger(__name__)
+
+_VALID_PROVIDERS = {"google", "yandex"}
 
 
+@router.get("/oauth/{provider}/url", response_model=OAuthUrlResponse)
+async def get_oauth_url(provider: str) -> OAuthUrlResponse:
+    """Get OAuth authorization URL for the specified provider."""
+    if provider not in _VALID_PROVIDERS:
+        raise_error(status.HTTP_400_BAD_REQUEST, ERR_OAUTH_INVALID_PROVIDER, params={"provider": provider})
+
+    if not is_provider_configured(provider):
+        raise_error(status.HTTP_400_BAD_REQUEST, ERR_OAUTH_PROVIDER_NOT_CONFIGURED, params={"provider": provider})
+
+    state = generate_oauth_state()
+
+    if provider == "google":
+        url = get_google_auth_url(state)
+    else:
+        url = get_yandex_auth_url(state)
+
+    if not url:
+        raise_error(status.HTTP_400_BAD_REQUEST, ERR_OAUTH_PROVIDER_NOT_CONFIGURED, params={"provider": provider})
+
+    return OAuthUrlResponse(url=url, state=state)
+
+
+@router.post("/oauth/{provider}/callback", response_model=Token)
+@limiter.limit("10/minute")
+async def oauth_callback(
+    provider: str,
+    data: OAuthCallbackRequest,
+    request: Request,
+    response: Response,
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> Token:
+    """Exchange OAuth authorization code for JWT tokens.
+
+    Flow:
+    1. Exchange code for user info via provider API
+    2. Find existing user by oauth_provider+oauth_provider_id OR by email
+    3. If found by OAuth — login
+    4. If found by email — link OAuth to existing account
+    5. If not found — create new user
+    """
+    if provider not in _VALID_PROVIDERS:
+        raise_error(status.HTTP_400_BAD_REQUEST, ERR_OAUTH_INVALID_PROVIDER, params={"provider": provider})
+
+    if not is_provider_configured(provider):
+        raise_error(status.HTTP_400_BAD_REQUEST, ERR_OAUTH_PROVIDER_NOT_CONFIGURED, params={"provider": provider})
+
+    # Exchange authorization code for user info
+    try:
+        if provider == "google":
+            oauth_info = await exchange_google_code(data.code)
+        else:
+            oauth_info = await exchange_yandex_code(data.code)
+    except ValueError as e:
+        _oauth_logger.warning("OAuth email missing: provider=%s, error=%s", provider, str(e))
+        raise_error(status.HTTP_400_BAD_REQUEST, ERR_OAUTH_EMAIL_MISSING, params={"provider": provider})
+    except Exception as e:
+        _oauth_logger.error("OAuth exchange failed: provider=%s, error=%s", provider, str(e), exc_info=True)
+        raise_error(status.HTTP_401_UNAUTHORIZED, ERR_OAUTH_FAILED, params={"provider": provider})
+
+    # 1. Try to find by OAuth provider + provider_id
+    result = await db.execute(
+        select(User).where(
+            User.oauth_provider == provider,
+            User.oauth_provider_id == oauth_info.provider_id,
+        )
+    )
+    user = result.scalar_one_or_none()
+
+    if user:
+        # Existing OAuth user — just login
+        if not user.active:
+            raise_error(status.HTTP_403_FORBIDDEN, ERR_ACCOUNT_INACTIVE)
+        _oauth_logger.info("OAuth login: provider=%s, user_id=%d", provider, user.id)
+    else:
+        # 2. Try to find by email
+        result = await db.execute(
+            select(User).where(func.lower(User.email) == oauth_info.email.lower())
+        )
+        user = result.scalar_one_or_none()
+
+        if user:
+            # Existing user with same email — link OAuth
+            if user.oauth_provider and user.oauth_provider != provider:
+                # Already linked to a different provider
+                raise_error(
+                    status.HTTP_400_BAD_REQUEST,
+                    ERR_OAUTH_EMAIL_TAKEN,
+                    params={"provider": user.oauth_provider},
+                )
+            user.oauth_provider = provider
+            user.oauth_provider_id = oauth_info.provider_id
+            if oauth_info.email_verified and not user.email_verified:
+                user.email_verified = True
+            _oauth_logger.info("OAuth linked: provider=%s, user_id=%d", provider, user.id)
+        else:
+            # 3. New user — create account
+            username = generate_username_from_email(oauth_info.email)
+            # Ensure username is unique
+            username_result = await db.execute(
+                select(User).where(func.lower(User.username) == username.lower())
+            )
+            if username_result.scalar_one_or_none():
+                username = f"{username}_{secrets.token_hex(2)}"
+
+            user = User(
+                email=oauth_info.email,
+                username=username,
+                password_hash=None,
+                oauth_provider=provider,
+                oauth_provider_id=oauth_info.provider_id,
+                full_name=oauth_info.name,
+                role=UserRole.USER,
+                active=True,
+                email_verified=oauth_info.email_verified,
+            )
+            db.add(user)
+            _oauth_logger.info("OAuth new user: provider=%s, email=%s", provider, oauth_info.email)
+
+    # Update last login
+    user.last_login = datetime.now(timezone.utc)
+    await db.commit()
+    await db.refresh(user)
+
+    # Create JWT tokens
+    token_data = {"sub": user.email, "user_id": user.id, "role": user.role.value}
+    access_token = create_access_token(data=token_data)
+    refresh_token = create_refresh_token(data=token_data)
+
+    if _cookie_auth_enabled():
+        _set_auth_cookies(response, access_token, refresh_token)
+
+    return Token(access_token=access_token, refresh_token=refresh_token)
 
 
 

@@ -12,6 +12,7 @@ interface AuthContextType {
   isMaintenanceMode: boolean;
   maintenanceMessage: string | null;
   login: (email: string, password: string) => Promise<void>;
+  loginWithToken: (accessToken: string, refreshToken?: string | null) => Promise<void>;
   register: (data: { email: string; username: string; password: string; role: string; recaptcha_token?: string }) => Promise<void>;
   logout: () => Promise<void>;
   refreshUser: () => Promise<void>;
@@ -176,6 +177,26 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     }
   };
 
+  const loginWithToken = async (accessToken: string, refreshToken?: string | null) => {
+    try {
+      const persistLocally = shouldPersistTokensLocally();
+      if (persistLocally) {
+        setToken(accessToken);
+      }
+      if (refreshToken && persistLocally) {
+        setRefreshToken(refreshToken);
+      }
+      const userData = await authAPI.me();
+      setUser(userData);
+      if (userData.id && persistLocally) {
+        setUserId(userData.id);
+      }
+    } catch (error: any) {
+      removeToken();
+      throw error;
+    }
+  };
+
   const register = async (data: { email: string; username: string; password: string; role: string; recaptcha_token?: string }) => {
     try {
       // Регистрируем пользователя
@@ -253,6 +274,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     isMaintenanceMode,
     maintenanceMessage,
     login,
+    loginWithToken,
     register,
     logout,
     refreshUser,

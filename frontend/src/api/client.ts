@@ -90,9 +90,10 @@ api.interceptors.response.use(
     
     // Если токен истек или невалидный (401), пытаемся обновить
     // НО: не обрабатываем ошибки авторизации (login/register) - они должны обрабатываться в компонентах
-    const isAuthEndpoint = originalRequest?.url?.includes('/auth/login') || 
+    const isAuthEndpoint = originalRequest?.url?.includes('/auth/login') ||
                             originalRequest?.url?.includes('/auth/register') ||
-                            originalRequest?.url?.includes('/auth/refresh');
+                            originalRequest?.url?.includes('/auth/refresh') ||
+                            originalRequest?.url?.includes('/auth/oauth/');
     
     // Для /auth/me: если токена нет, это нормально (пользователь не авторизован)
     // Не показываем ошибку в консоли и не пытаемся обновить токен
@@ -221,6 +222,16 @@ export const authAPI = {
 
   logout: async (refreshToken?: string | null) => {
     await api.post('/auth/logout', refreshToken ? { refresh_token: refreshToken } : undefined);
+  },
+
+  getOAuthUrl: async (provider: string) => {
+    const response = await api.get<{ url: string; state: string }>(`/auth/oauth/${provider}/url`);
+    return response.data;
+  },
+
+  oauthCallback: async (provider: string, code: string, state: string) => {
+    const response = await api.post<Token>(`/auth/oauth/${provider}/callback`, { code, state });
+    return response.data;
   },
 
   me: async () => {

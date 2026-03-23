@@ -185,6 +185,20 @@ class RegisterRequest(UserCreate):
     recaptcha_token: str | None = Field(None, description="reCAPTCHA v3 token")
 
 
+class OAuthUrlResponse(BaseModel):
+    """Schema for OAuth authorization URL response."""
+
+    url: str
+    state: str
+
+
+class OAuthCallbackRequest(BaseModel):
+    """Schema for OAuth callback request."""
+
+    code: str
+    state: str
+
+
 class APIKeyResponse(BaseModel):
     """Schema for API key response."""
 

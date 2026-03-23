@@ -1,8 +1,9 @@
 /** Модальное окно авторизации */
 
 import { useState, useEffect, FormEvent } from 'react';
-import { Mail, Lock, LogIn, UserPlus, User, Factory, Package, X, Check, Eye, EyeOff, AlertCircle, KeyRound } from 'lucide-react';
+import { Mail, Lock, LogIn, UserPlus, User, X, Check, Eye, EyeOff, AlertCircle, KeyRound, Loader2 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
+import { authAPI } from '../api/client';
 import { Recaptcha, getRecaptchaToken } from './Captcha';
 import { TermsModal } from './TermsModal';
 import { ConsentModal } from './ConsentModal';
@@ -20,7 +21,7 @@ interface AuthModalProps {
 export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMode = 'login' }) => {
   const { t } = useTranslation();
   const [authMode, setAuthMode] = useState<'login' | 'register'>(initialMode);
-  const [authMethod, setAuthMethod] = useState<'email' | 'google'>('email'); // Новое состояние для метода входа
+  const [oauthLoading, setOauthLoading] = useState<'google' | 'yandex' | null>(null);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
@@ -35,6 +36,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
   const [isForgotPasswordModalOpen, setIsForgotPasswordModalOpen] = useState(false);
 
   const { login, register } = useAuth();
+  const isOauthBusy = oauthLoading !== null;
 
   // Проверка сложности пароля
   const getPasswordStrength = (pwd: string): { strength: number; label: string; color: string } => {
@@ -60,7 +62,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
     if (!isOpen) {
       setError(null);
       setIsLoading(false);
-      setAuthMethod('email'); // Сбрасываем метод входа
+      setOauthLoading(null);
     }
   }, [isOpen]);
 
@@ -157,9 +159,17 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
     }
   };
 
-  const handleGoogleLogin = () => {
-    // ЗАГЛУШКА: TODO - Реализовать Google OAuth
-    setError(t('authModal.google_login_soon'));
+  const handleOAuthLogin = async (provider: 'google' | 'yandex') => {
+    setError(null);
+    setOauthLoading(provider);
+    try {
+      const { url } = await authAPI.getOAuthUrl(provider);
+      window.location.href = url;
+    } catch (err: any) {
+      const detail = err?.response?.data?.detail;
+      setError(translateApiError(t, detail, t('authModal.error_login_failed')));
+      setOauthLoading(null);
+    }
   };
 
   return (
@@ -199,7 +209,6 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
           <button
             onClick={() => {
               setAuthMode('login');
-              setAuthMethod('email'); // Сбрасываем метод входа на email
               setError(null);
             }}
             className={`flex-1 py-3 px-4 rounded-l-xl transition-all ${
@@ -213,7 +222,6 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
           <button
             onClick={() => {
               setAuthMode('register');
-              setAuthMethod('email'); // Регистрация всегда через email
               setError(null);
             }}
             className={`flex-1 py-3 px-4 rounded-r-xl transition-all ${
@@ -233,68 +241,6 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
           </div>
         )}
 
-        {/* Переключалка методов входа (только для входа) */}
-        {authMode === 'login' && (
-          <div className="mb-4">
-            <div className="flex bg-white/5 rounded-xl p-1 border border-white/10">
-              <button
-                type="button"
-                onClick={() => setAuthMethod('email')}
-                className={`flex-1 py-2 px-4 rounded-lg transition-all text-sm font-medium ${
-                  authMethod === 'email'
-                    ? 'bg-purple-600 text-white'
-                    : 'text-gray-300 hover:text-white'
-                }`}
-              >
-                {t('authModal.method_email')}
-              </button>
-              <button
-                type="button"
-                onClick={() => setAuthMethod('google')}
-                className={`flex-1 py-2 px-4 rounded-lg transition-all text-sm font-medium ${
-                  authMethod === 'google'
-                    ? 'bg-purple-600 text-white'
-                    : 'text-gray-300 hover:text-white'
-                }`}
-              >
-                {t('authModal.method_google')}
-              </button>
-            </div>
-          </div>
-        )}
-
-        {/* ЗАГЛУШКА: Google Login Button - показываем только если выбран метод Google */}
-        {authMode === 'login' && authMethod === 'google' && (
-          <button
-            type="button"
-            onClick={handleGoogleLogin}
-            disabled={isLoading}
-            className="w-full mb-4 bg-white/10 hover:bg-white/20 text-white py-3 px-6 rounded-xl transition-all border border-white/20 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center space-x-2"
-          >
-            <svg className="w-5 h-5" viewBox="0 0 24 24">
-              <path
-                fill="currentColor"
-                d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
-              />
-              <path
-                fill="currentColor"
-                d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
-              />
-              <path
-                fill="currentColor"
-                d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"
-              />
-              <path
-                fill="currentColor"
-                d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"
-              />
-            </svg>
-            <span>{t('authModal.login_with_google')}</span>
-          </button>
-        )}
-
-        {/* Форма Email - показываем только если выбран метод Email или это регистрация */}
-        {(authMode === 'register' || (authMode === 'login' && authMethod === 'email')) && (
         <form onSubmit={handleSubmit}>
           <div className="space-y-4">
             <div>
@@ -496,7 +442,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
 
             <button
               type="submit"
-              disabled={isLoading || (authMode === 'register' && !agreed)}
+              disabled={isLoading || isOauthBusy || (authMode === 'register' && !agreed)}
               className="w-full mt-4 bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white py-3 px-6 rounded-xl transition-all shadow-lg shadow-purple-500/25 hover:shadow-purple-500/40 disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {isLoading ? (
@@ -517,9 +463,54 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
                 </>
               )}
             </button>
+
+            {/* OAuth buttons */}
+            <div className="mt-4">
+              <div className="relative flex items-center my-3">
+                <div className="flex-1 border-t border-white/10" />
+                <span className="mx-3 text-xs text-gray-500">{t('authModal.or_via')}</span>
+                <div className="flex-1 border-t border-white/10" />
+              </div>
+              <div className="flex gap-2">
+                {/* Google */}
+                <button
+                  type="button"
+                  onClick={() => handleOAuthLogin('google')}
+                  disabled={isLoading || isOauthBusy}
+                  className="flex-1 flex items-center justify-center gap-2 py-2.5 px-4 bg-white/10 hover:bg-white/20 border border-white/20 rounded-xl text-white text-sm transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {oauthLoading === 'google' ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <svg className="w-4 h-4 flex-shrink-0" viewBox="0 0 24 24">
+                      <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" />
+                      <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" />
+                      <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" />
+                      <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" />
+                    </svg>
+                  )}
+                  <span>Google</span>
+                </button>
+                {/* Yandex */}
+                <button
+                  type="button"
+                  onClick={() => handleOAuthLogin('yandex')}
+                  disabled={isLoading || isOauthBusy}
+                  className="flex-1 flex items-center justify-center gap-2 py-2.5 px-4 bg-white/10 hover:bg-white/20 border border-white/20 rounded-xl text-white text-sm transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {oauthLoading === 'yandex' ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <svg className="w-4 h-4 flex-shrink-0" viewBox="0 0 24 24" fill="currentColor">
+                      <path d="M13.65 2H10.4C7.2 2 5 4.1 5 7.4c0 2.7 1.35 4.35 3.75 5.85L5 22h3.3l3.9-9.15h1.45V22H16.5V2h-2.85zm0 8.6H12.2c-2.05-1.15-2.8-2.3-2.8-3.85C9.4 4.9 10.5 4 12.1 4h1.55v6.6z" />
+                    </svg>
+                  )}
+                  <span>{t('authModal.yandex')}</span>
+                </button>
+              </div>
+            </div>
           </div>
         </form>
-        )}
         </div>
       </div>
 

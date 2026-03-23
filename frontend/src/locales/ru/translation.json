@@ -4,6 +4,14 @@
     "defaultMessage": "Произошла непредвиденная ошибка",
     "goHome": "На главную"
   },
+  "oauthCallback": {
+    "signing_in": "Выполняется вход...",
+    "error_title": "Не удалось войти",
+    "error_fallback": "Ошибка входа через {{provider}}",
+    "provider_denied": "{{provider}} отклонил запрос на авторизацию",
+    "missing_params": "Неверный запрос авторизации",
+    "back_home": "На главную"
+  },
   "notFound": {
     "title": "Страница не найдена",
     "subtitle": "Похоже, адрес изменился или страницы больше не существует. Вернитесь в каталог и продолжайте работу.",
@@ -45,13 +53,11 @@
     "error_account_locked": "Аккаунт заблокирован. Обратитесь в поддержку.",
     "error_server_error": "Ошибка сервера. Попробуйте позже или обратитесь в поддержку.",
     "error_no_connection": "Не удалось подключиться к серверу. Проверьте подключение к интернету.",
-    "google_login_soon": "Вход через Google будет доступен в ближайшее время",
+    "or_via": "или через",
+    "yandex": "Яндекс",
     "title": "Войдите в систему для доступа к персональному кабинету",
     "tab_login": "Вход",
     "tab_register": "Регистрация",
-    "method_email": "Эл. почта",
-    "method_google": "Google",
-    "login_with_google": "Войти через Google",
     "loading": "Загрузка...",
     "login_button": "Войти",
     "register_button": "Зарегистрироваться",
@@ -3937,6 +3943,13 @@
     "ERR_INVALID_RESET_TOKEN": "Недействительный токен сброса пароля",
     "ERR_EMAIL_MISMATCH": "Email не совпадает",
     "ERR_ACCOUNT_BLOCKED": "Аккаунт заблокирован",
+
+    "ERR_OAUTH_FAILED": "Ошибка авторизации через {{provider}}",
+    "ERR_OAUTH_INVALID_STATE": "Недействительный параметр state",
+    "ERR_OAUTH_EMAIL_MISSING": "Аккаунт {{provider}} не содержит email",
+    "ERR_OAUTH_PROVIDER_NOT_CONFIGURED": "Провайдер {{provider}} не настроен",
+    "ERR_OAUTH_INVALID_PROVIDER": "Неизвестный провайдер: {{provider}}",
+    "ERR_OAUTH_EMAIL_TAKEN": "Этот email уже привязан к аккаунту через {{provider}}",
 
     "ERR_COULD_NOT_VALIDATE": "Не удалось проверить учётные данные",
     "ERR_USER_INACTIVE": "Пользователь неактивен",

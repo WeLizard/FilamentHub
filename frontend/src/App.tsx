@@ -8,6 +8,7 @@ import { FilamentDetailPage } from './pages/FilamentDetailPage';
 import { TermsPage } from './pages/TermsPage';
 import { ConsentPage } from './pages/ConsentPage';
 import { ResetPasswordPage } from './pages/ResetPasswordPage';
+import { OAuthCallbackPage } from './pages/OAuthCallbackPage';
 import { DownloadPage } from './pages/DownloadPage';
 import { ToastContainer } from './components/Toast';
 import { useOrcaSlicerNotifications } from './hooks/useOrcaSlicerNotifications';
@@ -256,6 +257,7 @@ function AppContent() {
         <Route path="/user-agreement" element={<TermsPage />} />
         <Route path="/personal-data-consent" element={<ConsentPage />} />
         <Route path="/reset-password" element={<ResetPasswordPage />} />
+        <Route path="/oauth/callback/:provider" element={<OAuthCallbackPage />} />
         <Route path="*" element={<NotFoundPage />} />
       </Routes>
     </>

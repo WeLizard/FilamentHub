@@ -83,6 +83,12 @@ class Settings(BaseSettings):
     RECAPTCHA_SECRET_KEY: str = ""  # Пустая строка = пропуск проверки (для разработки)
     RECAPTCHA_SCORE_THRESHOLD: float = 0.3
 
+    # OAuth (empty = disabled)
+    GOOGLE_CLIENT_ID: str = ""
+    GOOGLE_CLIENT_SECRET: str = ""
+    YANDEX_CLIENT_ID: str = ""
+    YANDEX_CLIENT_SECRET: str = ""
+
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",

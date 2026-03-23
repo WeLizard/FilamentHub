@@ -4,6 +4,14 @@
     "defaultMessage": "An unexpected error occurred",
     "goHome": "Go to Home"
   },
+  "oauthCallback": {
+    "signing_in": "Signing in...",
+    "error_title": "Sign in failed",
+    "error_fallback": "Failed to sign in via {{provider}}",
+    "provider_denied": "{{provider}} denied the authorization request",
+    "missing_params": "Invalid authorization request",
+    "back_home": "Go to Home"
+  },
   "notFound": {
     "title": "Page Not Found",
     "subtitle": "The page may have moved or no longer exists. Return to the catalog and continue where you left off.",
@@ -45,13 +53,11 @@
     "error_account_locked": "Account is locked. Please contact support.",
     "error_server_error": "Server error. Please try again later or contact support.",
     "error_no_connection": "Could not connect to the server. Check your internet connection.",
-    "google_login_soon": "Login with Google will be available soon",
+    "or_via": "or via",
+    "yandex": "Yandex",
     "title": "Log in to access your personal account",
     "tab_login": "Login",
     "tab_register": "Register",
-    "method_email": "Email",
-    "method_google": "Google",
-    "login_with_google": "Login with Google",
     "loading": "Loading...",
     "login_button": "Login",
     "register_button": "Register",
@@ -3931,6 +3937,13 @@
     "ERR_INVALID_RESET_TOKEN": "Invalid password reset token",
     "ERR_EMAIL_MISMATCH": "Email does not match",
     "ERR_ACCOUNT_BLOCKED": "Account is blocked",
+
+    "ERR_OAUTH_FAILED": "Authentication via {{provider}} failed",
+    "ERR_OAUTH_INVALID_STATE": "Invalid state parameter",
+    "ERR_OAUTH_EMAIL_MISSING": "{{provider}} account has no email",
+    "ERR_OAUTH_PROVIDER_NOT_CONFIGURED": "Provider {{provider}} is not configured",
+    "ERR_OAUTH_INVALID_PROVIDER": "Unknown provider: {{provider}}",
+    "ERR_OAUTH_EMAIL_TAKEN": "This email is already linked via {{provider}}",
 
     "ERR_COULD_NOT_VALIDATE": "Could not validate credentials",
     "ERR_USER_INACTIVE": "User is inactive",
