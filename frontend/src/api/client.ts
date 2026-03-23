@@ -316,7 +316,12 @@ export const authAPI = {
   updateEmail: async (data: {
     new_email: string;
   }) => {
-    const response = await api.patch<User>('/auth/me/email', data);
+    const response = await api.patch<{ message: string }>('/auth/me/email', data);
+    return response.data;
+  },
+
+  confirmEmailChange: async (token: string) => {
+    const response = await api.post<{ message: string }>(`/auth/confirm-email-change?token=${encodeURIComponent(token)}`);
     return response.data;
   },
 

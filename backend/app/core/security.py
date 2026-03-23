@@ -164,3 +164,27 @@ def decode_password_reset_token(token: str) -> dict[str, Any] | None:
         return payload
     except InvalidTokenError:
         return None
+
+
+def generate_email_change_token(user_id: int, new_email: str) -> str:
+    """Generate a token to confirm email change. Valid for 24 hours."""
+    expire = datetime.now(timezone.utc) + timedelta(hours=24)
+    expire_timestamp = calendar.timegm(expire.utctimetuple())
+    payload = {
+        "user_id": user_id,
+        "new_email": new_email,
+        "type": "email_change",
+        "exp": expire_timestamp,
+    }
+    return jwt.encode(payload, settings.SECRET_KEY, algorithm=ALGORITHM)
+
+
+def decode_email_change_token(token: str) -> dict[str, Any] | None:
+    """Decode an email change confirmation token."""
+    try:
+        payload = jwt.decode(token, settings.SECRET_KEY, algorithms=[ALGORITHM])
+        if payload.get("type") != "email_change":
+            return None
+        return payload
+    except InvalidTokenError:
+        return None

@@ -276,5 +276,20 @@ class ResetPasswordRequest(BaseModel):
 
 class ResetPasswordResponse(BaseModel):
     """Schema for reset password response."""
-    
+
     message: str = Field(default="Пароль успешно изменён", description="Сообщение о результате")
+
+
+class EmailChangeResponse(BaseModel):
+    """Response after requesting email change — email is NOT changed yet."""
+
+    message: str = Field(
+        default="На новый email отправлено письмо с подтверждением.",
+        description="Сообщение о результате",
+    )
+
+
+class ConfirmEmailChangeResponse(BaseModel):
+    """Response after confirming email change."""
+
+    message: str = Field(default="Email успешно изменён", description="Сообщение о результате")

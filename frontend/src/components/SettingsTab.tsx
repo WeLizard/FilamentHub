@@ -107,11 +107,9 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({ user, onUserUpdate }) 
     mutationFn: authAPI.updateEmail,
     onSuccess: () => {
       setEmailSuccess(true);
-      setEmailForm({ new_email: user.email });
       setEmailError(null);
-      refreshUser();
-      queryClient.invalidateQueries({ queryKey: ['user'] });
-      setTimeout(() => setEmailSuccess(false), 3000);
+      // Email не меняется сразу — показываем сообщение "проверьте почту"
+      // Не вызываем refreshUser() — email ещё не изменён
     },
     onError: (error: any) => {
       setEmailError(translateApiError(t, error.response?.data?.detail, t('settings.emailChangeError')));

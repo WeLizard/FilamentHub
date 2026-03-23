@@ -25,9 +25,11 @@ from app.core.security import (
     create_refresh_token,
     decode_access_token,
     decode_refresh_token,
+    decode_email_change_token,
     decode_email_verification_token,
     decode_password_reset_token,
     generate_api_key,
+    generate_email_change_token,
     generate_email_verification_token,
     generate_password_reset_token,
     get_password_hash,
@@ -35,7 +37,7 @@ from app.core.security import (
     verify_password,
 )
 from app.services.email_validator import is_personal_email, normalize_website_url, validate_email_domain
-from app.services.email_service import send_password_reset_email
+from app.services.email_service import send_password_reset_email, send_email_change_email
 from app.db.session import get_db
 from app.models.user import User, UserRole
 from app.models.brand import Brand
@@ -46,6 +48,8 @@ from app.schemas.user import (
     APIKeyResponse,
     AccountDeleteRequest,
     AccountDeletionStats,
+    ConfirmEmailChangeResponse,
+    EmailChangeResponse,
     ForgotPasswordRequest,
     ForgotPasswordResponse,
     LoginRequest,
@@ -987,40 +991,69 @@ async def update_user_username(
     return UserResponse.model_validate(current_user)
 
 
-@router.patch("/me/email", response_model=UserResponse)
+@router.patch("/me/email", response_model=EmailChangeResponse)
+@limiter.limit("5/hour")
 async def update_user_email(
+    request: Request,
     data: UserEmailUpdate,
     current_user: Annotated[User, Depends(get_current_active_user)],
     db: Annotated[AsyncSession, Depends(get_db)],
-) -> UserResponse:
-    """Изменить email текущего пользователя.
-    
-    На новый email будет отправлен код подтверждения.
-    Email будет обновлен только после подтверждения кода.
-    """
-    # Проверяем уникальность нового email
-    result = await db.execute(select(User).where(User.email == data.new_email))
-    existing_user = result.scalar_one_or_none()
-    if existing_user and existing_user.id != current_user.id:
-        raise_error(status.HTTP_400_BAD_REQUEST, ERR_EMAIL_EXISTS)
-
-    # Обновляем email и сбрасываем верификацию (требуется повторная верификация)
-    # Примечание: В будущих версиях планируется добавить подтверждение через код,
-    # но на текущий момент email обновляется сразу с требованием повторной верификации
-    current_user.email = data.new_email
-    current_user.email_verified = False
-    
-    # Генерируем новый токен верификации
+) -> EmailChangeResponse:
+    """Request email change. Sends confirmation link to the new address; email is NOT changed yet."""
     import logging
     logger = logging.getLogger(__name__)
-    verification_token = generate_email_verification_token(current_user.id, current_user.email)
-    logger.info(f"Email verification token generated for user {current_user.email}: {verification_token[:20]}...")
-    # Примечание: Отправка email с токеном верификации будет реализована при добавлении email-сервиса
-    
-    await db.commit()
-    await db.refresh(current_user)
 
-    return UserResponse.model_validate(current_user)
+    if data.new_email == current_user.email:
+        raise_error(status.HTTP_400_BAD_REQUEST, ERR_EMAIL_EXISTS)
+
+    result = await db.execute(select(User).where(User.email == data.new_email))
+    existing_user = result.scalar_one_or_none()
+    if existing_user:
+        raise_error(status.HTTP_400_BAD_REQUEST, ERR_EMAIL_EXISTS)
+
+    token = generate_email_change_token(current_user.id, data.new_email)
+    confirm_url = f"{settings.BASE_URL}/confirm-email-change?token={token}"
+    sent = send_email_change_email(to=data.new_email, confirm_url=confirm_url)
+    if not sent:
+        logger.info(f"Email change confirmation link (email not sent): {confirm_url}")
+
+    return EmailChangeResponse()
+
+
+@router.post("/confirm-email-change", response_model=ConfirmEmailChangeResponse)
+async def confirm_email_change(
+    token: Annotated[str, Query(...)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> ConfirmEmailChangeResponse:
+    """Confirm email change via token from the confirmation email."""
+    import logging
+    logger = logging.getLogger(__name__)
+
+    payload = decode_email_change_token(token)
+    if not payload:
+        raise_error(status.HTTP_400_BAD_REQUEST, ERR_INVALID_RESET_TOKEN)
+
+    user_id: int | None = payload.get("user_id")
+    new_email: str | None = payload.get("new_email")
+    if not user_id or not new_email:
+        raise_error(status.HTTP_400_BAD_REQUEST, ERR_INVALID_RESET_TOKEN)
+
+    result = await db.execute(select(User).where(User.id == user_id))
+    user = result.scalar_one_or_none()
+    if not user or not user.active:
+        raise_error(status.HTTP_404_NOT_FOUND, ERR_USER_NOT_FOUND)
+
+    # Check the new email isn't taken (someone else could have registered during the 24h window)
+    taken = await db.execute(select(User).where(User.email == new_email, User.id != user_id))
+    if taken.scalar_one_or_none():
+        raise_error(status.HTTP_400_BAD_REQUEST, ERR_EMAIL_EXISTS)
+
+    user.email = new_email
+    user.email_verified = True
+    await db.commit()
+    logger.info(f"Email changed for user id={user_id} to {new_email}")
+
+    return ConfirmEmailChangeResponse()
 
 
 # ── OAuth endpoints ──────────────────────────────────────────────────

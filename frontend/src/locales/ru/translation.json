@@ -3000,7 +3000,7 @@
     "close": "Закрыть",
     "editProfile": "Редактировать профиль",
     "descriptionLabel": "Описание компании",
-    "descriptionPlaceholder": "Расскажите о вашей компании...",
+    "descriptionPlaceholder": "Краткое описание бренда...",
     "websiteLabel": "Сайт",
     "logoUrlLabel": "URL логотипа",
     "logoPreview": "Предпросмотр",
@@ -3061,7 +3061,6 @@
     "brandName": "Название бренда",
     "slugHint": "Уникальный идентификатор для URL (только латиница, цифры и дефисы)",
     "descriptionOptional": "Описание (необязательно)",
-    "descriptionPlaceholder": "Краткое описание бренда...",
     "companyEmail": "Email компании",
     "useMyEmail": "Использовать мой email",
     "personalEmailWarning": "⚠️ Вы используете личную почту. Обязательно прикрепите подтверждающие документы.",
@@ -3331,7 +3330,7 @@
     "email": "Эл. почта",
     "newEmailPlaceholder": "Новая эл. почта",
     "emailConfirmationHint": "На новую эл. почту будет отправлен код подтверждения",
-    "emailConfirmationSent": "Код подтверждения отправлен на новую эл. почту",
+    "emailConfirmationSent": "Письмо со ссылкой подтверждения отправлено на новый адрес",
     "password": "Пароль",
     "currentPassword": "Текущий пароль",
     "currentPasswordPlaceholder": "Введите текущий пароль",
@@ -3893,19 +3892,19 @@
     "noCompatiblePrintersAvailable": "Сначала создай или импортируй хотя бы один профиль принтера, чтобы привязать к нему process profile.",
     "unresolvedCompatiblePrinter": "вне базы",
     "removeCompatiblePrinter": "Убрать совместимый принтер",
-      "compatiblePrintersRequired": "Укажи хотя бы один совместимый принтер Orca",
-      "compatibleFilaments": "Совместимые филаменты",
-      "compatibleFilamentsHint": "При необходимости привяжите филаменты из базы. Их значения сохранятся в compatible_filaments и в связях FilamentHub.",
-      "addCompatibleFilament": "Добавить совместимый филамент",
-      "loadingCompatibleFilaments": "Загружаю филаменты...",
-      "compatibleFilamentsEmpty": "Подходящие филаменты не найдены",
-      "compatibleFilamentsLoadError": "Не удалось загрузить филаменты для выбора",
-      "noCompatibleFilamentsAvailable": "Активные филаменты пока не найдены, поэтому связать process profile не с чем.",
-      "unresolvedCompatibleFilament": "вне базы",
-      "removeCompatibleFilament": "Убрать совместимый филамент",
-      "compatiblePrintersCondition": "Дополнительное условие совместимости",
-      "compatiblePrintersConditionHint": "Используй только если обычного списка совместимых принтеров недостаточно.",
-      "duplicateCloneError": "Идентичный клон профиля создавать не нужно",
+    "compatiblePrintersRequired": "Укажи хотя бы один совместимый принтер Orca",
+    "compatibleFilaments": "Совместимые филаменты",
+    "compatibleFilamentsHint": "При необходимости привяжите филаменты из базы. Их значения сохранятся в compatible_filaments и в связях FilamentHub.",
+    "addCompatibleFilament": "Добавить совместимый филамент",
+    "loadingCompatibleFilaments": "Загружаю филаменты...",
+    "compatibleFilamentsEmpty": "Подходящие филаменты не найдены",
+    "compatibleFilamentsLoadError": "Не удалось загрузить филаменты для выбора",
+    "noCompatibleFilamentsAvailable": "Активные филаменты пока не найдены, поэтому связать process profile не с чем.",
+    "unresolvedCompatibleFilament": "вне базы",
+    "removeCompatibleFilament": "Убрать совместимый филамент",
+    "compatiblePrintersCondition": "Дополнительное условие совместимости",
+    "compatiblePrintersConditionHint": "Используй только если обычного списка совместимых принтеров недостаточно.",
+    "duplicateCloneError": "Идентичный клон профиля создавать не нужно",
     "structureSection": "Структура печати",
     "wallLoops": "Количество стенок",
     "topShellLayers": "Верхние слои",
@@ -4019,9 +4018,9 @@
     "jsonInvalid": "JSON с дополнительными Orca overrides должен быть объектом.",
     "jsonFormatError": "Не удалось отформатировать JSON overrides.",
     "booleanOptions": {
-      "inherit": "Как в исходном профиле",
+      "0": "Выключено",
       "1": "Включено",
-      "0": "Выключено"
+      "inherit": "Как в исходном профиле"
     },
     "qualityOptions": {
       "superdraft": "Экстра черновой",
@@ -4114,7 +4113,6 @@
   },
   "apiErrors": {
     "UNKNOWN_ERROR": "Произошла непредвиденная ошибка",
-
     "ERR_USER_NOT_FOUND": "Пользователь не найден",
     "ERR_BRAND_NOT_FOUND": "Бренд не найден",
     "ERR_PRESET_NOT_FOUND": "Пресет не найден",
@@ -4140,7 +4138,6 @@
     "ERR_TABLE_NOT_FOUND": "Таблица не найдена",
     "ERR_FILE_NOT_FOUND_IN_REQUEST": "Файл не найден в заявке",
     "ERR_ARTICLE_NOT_PUBLISHED": "Статья не опубликована",
-
     "ERR_BRAND_SLUG_EXISTS": "Бренд с таким slug уже существует",
     "ERR_PRINTER_SLUG_EXISTS": "Принтер с таким slug уже существует",
     "ERR_EMAIL_EXISTS": "Email уже зарегистрирован",
@@ -4162,12 +4159,10 @@
     "ERR_ALREADY_HELPFUL": "Вы уже отметили это как полезное",
     "ERR_ALREADY_FEEDBACK": "Вы уже оставляли отзыв",
     "ERR_FILAMENT_NO_PRESETS": "У филамента нет пресетов для экспорта",
-
     "ERR_INVALID_CREDENTIALS": "Неверный email или пароль",
     "ERR_INVALID_REFRESH_TOKEN": "Недействительный refresh-токен",
     "ERR_INVALID_VERIFICATION_TOKEN": "Недействительный токен подтверждения",
     "ERR_AUTH_REQUIRED": "Требуется авторизация",
-
     "ERR_ACCOUNT_INACTIVE": "Аккаунт неактивен",
     "ERR_ACCESS_DENIED": "Доступ запрещён",
     "ERR_NO_PERMISSION": "Недостаточно прав",
@@ -4184,9 +4179,7 @@
     "ERR_NO_PERMISSION_DELETE_REVIEW": "Нет прав на удаление отзыва",
     "ERR_WEIGHTED_PRESET_READONLY": "Взвешенный пресет доступен только для чтения",
     "ERR_WEIGHTED_PRESET_NO_DELETE": "Взвешенный пресет нельзя удалить",
-
     "ERR_INTERNAL_ERROR": "Внутренняя ошибка сервера",
-
     "ERR_RECAPTCHA_FAILED": "Проверка reCAPTCHA не пройдена",
     "ERR_GCODE_PARSE_FAILED": "Не удалось разобрать файл G-code",
     "ERR_CALCULATOR_HISTORY_NOT_FOUND": "Запись истории расчёта не найдена",
@@ -4200,23 +4193,19 @@
     "ERR_INVALID_RESET_TOKEN": "Недействительный токен сброса пароля",
     "ERR_EMAIL_MISMATCH": "Email не совпадает",
     "ERR_ACCOUNT_BLOCKED": "Аккаунт заблокирован",
-
     "ERR_OAUTH_FAILED": "Ошибка авторизации через {{provider}}",
     "ERR_OAUTH_INVALID_STATE": "Недействительный параметр state",
     "ERR_OAUTH_EMAIL_MISSING": "Аккаунт {{provider}} не содержит email",
     "ERR_OAUTH_PROVIDER_NOT_CONFIGURED": "Провайдер {{provider}} не настроен",
     "ERR_OAUTH_INVALID_PROVIDER": "Неизвестный провайдер: {{provider}}",
     "ERR_OAUTH_EMAIL_TAKEN": "Этот email уже привязан к аккаунту через {{provider}}",
-
     "ERR_COULD_NOT_VALIDATE": "Не удалось проверить учётные данные",
     "ERR_USER_INACTIVE": "Пользователь неактивен",
     "ERR_NOT_BRAND_USER": "Вы не являетесь представителем бренда",
     "ERR_NOT_ADMIN": "Требуются права администратора",
     "ERR_INVALID_API_KEY": "Недействительный API-ключ",
-
     "ERR_EMAIL_DOMAIN_TYPO": "Возможно, вы имели в виду @{{domain}}?",
     "ERR_DOMAIN_NO_MAIL": "Домен @{{domain}} не принимает почту",
-
     "ERR_BRAND_ID_REQUIRED_JOIN": "Для вступления в бренд укажите brand_id",
     "ERR_BRAND_NAME_SLUG_REQUIRED": "Для создания бренда укажите название и slug",
     "ERR_FILENAME_REQUIRED": "Укажите имя файла",
@@ -4229,24 +4218,20 @@
     "ERR_TABLE_UPDATE_ERROR": "Ошибка обновления таблицы",
     "ERR_USER_IDS_EMPTY": "Список ID пользователей пуст",
     "ERR_NO_ACTIVE_USERS_FOUND": "Активные пользователи не найдены",
-
     "ERR_BRAND_ID_REQUIRED": "Укажите ID бренда",
     "ERR_BRAND_CREATE_NAME_SLUG_REQUIRED": "Для создания бренда укажите название и slug",
     "ERR_DOCUMENTS_REQUIRED": "Необходимо прикрепить документы",
     "ERR_VIEW_OWN_REQUESTS_ONLY": "Можно просматривать только свои заявки",
     "ERR_UPLOAD_OWN_REQUESTS_ONLY": "Можно загружать файлы только к своим заявкам",
     "ERR_DELETE_OWN_FILES_ONLY": "Можно удалять файлы только из своих заявок",
-
     "ERR_WEIGHT_REQUIRED": "Укажите вес",
     "ERR_SPOOL_PRICE_REQUIRED": "Укажите цену катушки",
     "ERR_TIME_REQUIRED": "Укажите время печати",
     "ERR_PRICE_PER_HOUR_REQUIRED": "Укажите стоимость часа работы",
-
     "ERR_ADD_PRESET_FIRST": "Сначала добавьте пресет",
     "ERR_PRESET_NOT_MATCH": "Пресет не относится к данному филаменту",
     "ERR_REVIEW_SAVED_ONLY": "Можно оставить отзыв только на сохранённый пресет",
     "ERR_REVIEW_ALREADY_EXISTS": "Вы уже оставляли отзыв на этот пресет",
-
     "ERR_EXPORT_PRINTER_DISABLED": "Экспорт профилей принтеров отключён",
     "ERR_EXPORT_PRINT_DISABLED": "Экспорт профилей печати отключён",
     "ERR_IMPORT_PRINTER_DISABLED": "Импорт профилей принтеров отключён",
@@ -4255,22 +4240,18 @@
     "ERR_TOO_MANY_PROFILES": "Слишком много профилей: {{count}} из {{max}} допустимых",
     "ERR_NO_NOTIFICATION_DATA": "Нет данных для уведомления",
     "ERR_PRESET_IDS_REQUIRED": "Укажите ID пресетов",
-
     "ERR_EXPORT_PRESET_ERROR": "Ошибка экспорта пресета",
     "ERR_EXPORT_PRINT_PROFILE_ERROR": "Ошибка экспорта профиля печати",
     "ERR_EXPORT_PRINTER_PROFILE_ERROR": "Ошибка экспорта профиля принтера",
     "ERR_ONLY_BRAND_OFFICIAL": "Только представитель бренда может устанавливать официальный статус",
     "ERR_ONLY_OWN_BRAND_OFFICIAL": "Официальные пресеты можно создавать только для своего бренда",
-
     "ERR_FILE_EXT_NOT_ALLOWED": "Расширение файла {{ext}} не разрешено. Допустимые: {{allowed}}",
     "ERR_MAX_FILES_EXCEEDED": "Превышен лимит файлов: максимум {{max}}",
     "ERR_FILE_SIZE_EXCEEDED": "Размер файла {{size_mb}} МБ превышает лимит {{max_mb}} МБ",
     "ERR_INVALID_FILE_PATH": "Недопустимый путь к файлу",
     "ERR_FILE_SAVE_FAILED": "Ошибка сохранения файла",
-
     "ERR_UPLOAD_PENDING_ONLY": "Загружать файлы можно только для заявок со статусом «на рассмотрении»",
     "ERR_DELETE_PENDING_ONLY": "Удалять файлы можно только из заявок со статусом «на рассмотрении»",
-
     "ERR_BAD_WORDS": "Поле «{{field_name}}» содержит запрещённые слова",
     "ERR_REPEATED_CHARS": "Поле «{{field_name}}» содержит повторяющиеся символы",
     "ERR_NO_LETTERS_OR_DIGITS": "Поле «{{field_name}}» должно содержать буквы или цифры",
@@ -4284,7 +4265,6 @@
     "ERR_FILE_TOO_LARGE": "Файл слишком большой. Максимум: {{max_size}}",
     "ERR_UNSUPPORTED_PRICING_METHOD": "Неподдерживаемый метод расчёта: {{method}}",
     "ERR_EXPORT_MISSING_FIELDS": "Пресет не может быть экспортирован: отсутствуют обязательные поля: {{fields}}",
-
     "ERR_EXTRUDER_TEMP_TOO_LOW": "Температура сопла слишком низкая ({{value}}°C). Минимум: {{min}}°C",
     "ERR_EXTRUDER_TEMP_TOO_HIGH": "Температура сопла слишком высокая ({{value}}°C). Максимум: {{max}}°C",
     "ERR_BED_TEMP_TOO_LOW": "Температура стола слишком низкая ({{value}}°C). Минимум: {{min}}°C",
@@ -4371,5 +4351,13 @@
       "cancel": "Отмена",
       "saved": "Настройки устройства сохранены"
     }
+  },
+  "confirmEmailChange": {
+    "loading": "Подтверждаем смену email...",
+    "successTitle": "Email изменён!",
+    "successMessage": "Ваш email успешно обновлён. Используйте его для входа.",
+    "errorTitle": "Ссылка недействительна",
+    "errorFallback": "Ссылка устарела или уже была использована. Запросите смену email заново.",
+    "goHome": "На главную"
   }
 }
