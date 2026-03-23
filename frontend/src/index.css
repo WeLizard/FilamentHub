@@ -162,6 +162,13 @@ input[type="range"].slider-thumb::-moz-range-track {
   }
 }
 
+/* reCAPTCHA badge — уменьшаем масштаб (Google разрешает изменение размера) */
+.grecaptcha-badge {
+  transform: scale(0.75);
+  transform-origin: bottom right;
+  opacity: 0.7;
+}
+
 /* Скрытие скроллбара для горизонтальных списков на мобильных */
 .scrollbar-hide {
   -ms-overflow-style: none;  /* IE and Edge */
