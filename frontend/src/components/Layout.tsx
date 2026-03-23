@@ -341,6 +341,20 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
       {/* Main Content */}
       <main className="relative max-w-7xl mx-auto px-4 sm:px-6 py-4 sm:py-8 z-10">{children}</main>
 
+      {/* Footer - hidden in OrcaSlicer */}
+      {!isInOrcaSlicer && (
+        <footer className="relative z-10 border-t border-white/10 bg-black/20 backdrop-blur-sm mt-8">
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 py-4 flex flex-col sm:flex-row items-center justify-between gap-2 text-xs text-gray-500">
+            <span>{t('layout.footer_copyright', { year: new Date().getFullYear() })}</span>
+            <div className="flex items-center gap-4">
+              <Link to="/user-agreement" className="hover:text-gray-300 transition-colors">{t('layout.footer_terms')}</Link>
+              <Link to="/privacy-policy" className="hover:text-gray-300 transition-colors">{t('layout.footer_privacy')}</Link>
+              <Link to="/personal-data-consent" className="hover:text-gray-300 transition-colors">{t('layout.footer_consent')}</Link>
+            </div>
+          </div>
+        </footer>
+      )}
+
       {/* Auth Modal */}
       <AuthModal
         isOpen={isAuthModalOpen}

@@ -30,7 +30,11 @@
     "nav_profile": "Profile",
     "nav_logout": "Logout",
     "nav_login": "Login",
-    "nav_menu": "Menu"
+    "nav_menu": "Menu",
+    "footer_terms": "Terms of Service",
+    "footer_privacy": "Privacy Policy",
+    "footer_consent": "Data Processing",
+    "footer_copyright": "© {{year}} FilamentHub"
   },
   "authModal": {
     "password_strength_weak": "Weak",
@@ -150,12 +154,12 @@
   "termsPage": {
     "backHome": "Back to Home",
     "title": "Terms of Service",
-    "lastUpdated": "Last updated: 2024",
+    "lastUpdated": "Last updated: March 2026",
     "sections": {
       "subject": {
         "title": "1. Subject of the Agreement",
         "paragraphs": [
-          "1.1. Kuzmin I.I., an individual applying the special tax regime “Tax on Professional Income” (NPD taxpayer) (hereinafter referred to as the Administration), grants the user of the information and telecommunications network Internet (hereinafter referred to as the User) the possibility to use the Service on the terms set out in this user agreement (hereinafter referred to as the Agreement). The Service may be used by legal entities and individuals who have reached the age of 10.",
+          "1.1. Kuzmin I.I., an individual applying the special tax regime “Tax on Professional Income” (NPD taxpayer) (hereinafter referred to as the Administration), grants the user of the information and telecommunications network Internet (hereinafter referred to as the User) the possibility to use the Service on the terms set out in this user agreement (hereinafter referred to as the Agreement). The Service may be used by legal entities and individuals who have reached the age of 14.",
           "1.2. The Administration grants the User the possibility to use the Service free of charge."
         ]
       },
@@ -194,13 +198,13 @@
           "4.6. The User is responsible for the security (resistance to brute-force attacks) of the Authentication Data chosen by the User and for its confidentiality.",
           "4.7. The User is responsible for all actions performed using the User’s Authentication Data. All actions performed after Authorization using the User’s Authentication Data are deemed to have been performed by the User, except when the User, in the manner provided by the Agreement, has previously notified the Administration of the possibility of unauthorized access and/or of any violation (suspected violation) of the confidentiality of the User’s Authentication Data.",
           "4.8. The User is responsible for possible loss or distortion of data, as well as other consequences of any nature that may occur due to the User’s violation of the provisions of the Agreement.",
-          "4.9. The User may obtain access to additional Service functions using the User’s Google account (Third-Party Account) for Authorization. The functionality available via the Third-Party Account may be limited compared to the functionality of the Account."
+          "4.9. The User may obtain access to additional Service functions using the User’s Google or Yandex account (Third-Party Account) for Authorization. The functionality available via the Third-Party Account may be limited compared to the functionality of the Account. Information about data processing when using third-party authorization services is set out in the Privacy Policy."
         ]
       },
       "userData": {
         "title": "5. User Data",
         "paragraphs": [
-          "5.1. By registering an Account, the User gives consent to the Administration for processing, that is, performing the following actions: processing (including collection, systematization, accumulation, storage, clarification (updating, modification), use, depersonalization, blocking, destruction) of the User’s personal data in accordance with this Agreement, and also gives consent to receive informational and advertising messages from the Administration.",
+          "5.1. By registering an Account, the User gives consent to the Administration for processing, that is, performing the following actions: processing (including collection, systematization, accumulation, storage, clarification (updating, modification), use, depersonalization, blocking, destruction) of the User’s personal data in accordance with this Agreement and the Privacy Policy.",
           "5.2. When applying for access to the manufacturer’s cabinet, the User may provide data related to the brand or legal entity represented by the User. Such data is processed in accordance with the Consent to Personal Data Processing and is used exclusively for the purposes of verification and operation of the manufacturer’s cabinet.",
           "Detailed information about consent to the processing of personal data is available on the <consentTextLink>consent to personal data processing</consentTextLink> page (<consentPathLink>/personal-data-consent</consentPathLink>)."
         ]
@@ -259,7 +263,7 @@
           "10.2. The Administration may at any time change the method, type, and amount of advertising placed on the Service.",
           "10.3. The User’s participation in promotions and events advertised on the Service, as well as the User’s purchase of goods, works, or services advertised on the Service, gives rise to rights and obligations exclusively between the User and the person selling the relevant goods, works, or services or conducting the promotion or event.",
           "10.4. Posting advertising Content on the Service by the User (or a promise to make such posting) does not create any obligations for the Administration.",
-          "10.5. By registering an Account, the User gives consent to the Administration to receive informational and advertising messages from the Administration."
+          "10.5. The Administration sends the User exclusively service (transactional) messages related to the operation of the Service (email confirmation, password reset, system notifications). Advertising and marketing mailings are not carried out."
         ]
       },
       "final": {
@@ -279,7 +283,7 @@
   "consentPage": {
     "backHome": "Back to Home",
     "title": "Consent to Personal Data Processing",
-    "lastUpdated": "Last updated: 2024",
+    "lastUpdated": "Last updated: March 2026",
     "intro": "Acting freely, of my own will and in my own interest, and also confirming my legal capacity, the individual gives consent to Kuzmin I.I., an individual applying the special tax regime “Tax on Professional Income” (NPD taxpayer), contact email address: admin@filamenthub.ru (hereinafter referred to as the Operator), to process personal data under the following conditions:",
     "sections": {
       "general": {
@@ -312,7 +316,7 @@
         "items": [
           "Maintaining prompt communication with the User;",
           "Simplifying communication among Users of the Service;",
-          "Informing the User about services and products of the Service that may be of interest to the User;",
+          "Sending service (transactional) notifications to the User (email confirmation, password reset, system notifications);",
           "Ensuring the security of using the Service;",
           "Improving the quality of the services provided;",
           "Statistics and analytics of Service usage."
@@ -363,7 +367,7 @@
       "protection": {
         "title": "6. Protection of Personal Data",
         "paragraphs": [
-          "6.1. The Operator does not transfer Users’ personal data to third parties and does not carry out cross-border transfer of personal data.",
+          "6.1. To ensure the functionality of the Service, the Operator engages the following third-party services to which personal data is transferred to the minimum extent necessary: Google OAuth and Yandex OAuth (authorization), Google reCAPTCHA v3 (bot protection), Resend (delivery of service emails). Detailed information about third-party services and cross-border data transfer is set out in the Privacy Policy.",
           "6.2. The Operator takes necessary legal, organizational, and technical measures to protect personal data from unauthorized or accidental access, destruction, modification, blocking, copying, provision, distribution, and from other unlawful actions in relation to personal data.",
           "6.3. The Operator guarantees the confidentiality of personal data and does not disclose it without the consent of the personal data subject, except as provided by the legislation of the Russian Federation."
         ]
@@ -4352,5 +4356,126 @@
     "errorTitle": "Link is invalid",
     "errorFallback": "The link has expired or already been used. Please request an email change again.",
     "goHome": "Go to home"
+  },
+  "privacyPage": {
+    "backHome": "Back to Home",
+    "title": "Privacy Policy",
+    "lastUpdated": "Last updated: March 2026",
+    "sections": {
+      "general": {
+        "title": "1. General Provisions",
+        "paragraphs": [
+          "1.1. This Privacy Policy (hereinafter referred to as the Policy) defines the procedure for processing and protecting personal data of users of the FilamentHub service (hereinafter referred to as the Service), available at filamenthub.ru.",
+          "1.2. The personal data operator is Kuzmin I.I., an individual applying the special tax regime “Tax on Professional Income” (NPD taxpayer). Contact email address: admin@filamenthub.ru.",
+          "1.3. The Policy is developed in accordance with Federal Law No. 152-FZ dated July 27, 2006 “On Personal Data” and other regulatory legal acts of the Russian Federation.",
+          "1.4. Use of the Service constitutes the User’s consent to this Policy. If the User does not agree with the terms of the Policy, the User must cease using the Service.",
+          "1.5. The Service may be used by individuals who have reached the age of 14 and by legal entities."
+        ]
+      },
+      "dataCollected": {
+        "title": "2. Data We Collect",
+        "intro": "2.1. The following categories of personal data are processed when using the Service:",
+        "categories": [
+          "Email address (required for registration);",
+          "Nickname (username);",
+          "Full name (only if voluntarily provided by the User);",
+          "Profile data provided voluntarily (e.g., the “about me” field);",
+          "Data provided when applying for brand verification (brand name, corporate email, website, social media links, supporting documents);",
+          "Technical data: IP address, user-agent, date and time of requests, service identifiers;",
+          "Printing settings when using the synchronization function: material presets, printer profiles, print profiles, and technical parameters."
+        ],
+        "oauth": "2.2. When authorizing through third-party services (Google, Yandex), we receive your email, name, and user identifier in accordance with the permissions you grant during authorization."
+      },
+      "purposes": {
+        "title": "3. Purposes of Data Processing",
+        "intro": "3.1. Personal data is processed for the following purposes:",
+        "items": [
+          "Registration and authorization of the user on the Service;",
+          "Providing Service functionality (materials catalog, presets, calculator, OrcaSlicer synchronization);",
+          "Verification of brand and manufacturer representatives;",
+          "Sending service notifications (email confirmation, password reset, system notifications);",
+          "Ensuring Service security and protection against abuse;",
+          "Improving Service quality and usage analysis."
+        ],
+        "note": "3.2. The Service does not send advertising or marketing emails. All messages sent are exclusively transactional (service-related) in nature."
+      },
+      "thirdParty": {
+        "title": "4. Third-Party Services",
+        "intro": "4.1. To ensure the operation of the Service, we use the following third-party services to which certain data may be transferred:",
+        "services": [
+          "Google OAuth (Google Ireland Limited / Google LLC, Ireland / USA) — authorization via Google account. A request is made to obtain the user’s email and basic profile. Google Privacy Policy: https://policies.google.com/privacy",
+          "Yandex OAuth (Yandex LLC, Russia) — authorization via Yandex account. A request is made to obtain the user’s email and basic profile. Yandex Privacy Policy: https://yandex.ru/legal/confidential/",
+          "Google reCAPTCHA v3 (Google Ireland Limited / Google LLC, Ireland / USA) — protection against automated requests and bots during registration. Technical data is transmitted for user behavior assessment. Google Privacy Policy: https://policies.google.com/privacy",
+          "Resend (Resend Inc., USA, processing in EU / Ireland) — sending transactional email messages (email confirmation, password reset, system notifications). The recipient’s email address is transmitted. Resend Privacy Policy: https://resend.com/legal/privacy-policy"
+        ],
+        "note": "4.2. These services process data in accordance with their own privacy policies. We do not transfer any data to these services beyond the minimum necessary for the operation of the respective function."
+      },
+      "crossBorder": {
+        "title": "5. Cross-Border Data Transfer",
+        "paragraphs": [
+          "5.1. In connection with the use of third-party services (Section 4), personal data may be transferred to the following jurisdictions: Ireland (EU), USA.",
+          "5.2. Data transfer is carried out exclusively to the extent necessary to provide Service functionality (authorization, bot protection, delivery of service emails).",
+          "5.3. The specified jurisdictions ensure an adequate level of personal data protection in accordance with Roskomnadzor regulations and international agreements.",
+          "5.4. By using the Service, the User confirms consent to cross-border transfer of personal data for the specified purposes."
+        ]
+      },
+      "retention": {
+        "title": "6. Data Retention and Deletion",
+        "paragraphs": [
+          "6.1. Personal data is stored until the User deletes their account.",
+          "6.2. The User may delete their account independently through the personal account interface or by sending a request to admin@filamenthub.ru.",
+          "6.3. Upon account deletion, all personal data is completely deleted within no more than 7 days (for self-deletion) or 30 days (for requests via email), except for data subject to retention in accordance with the legislation of the Russian Federation.",
+          "6.4. Inactive accounts (no login for more than 6 months) may be deleted by the Administration."
+        ]
+      },
+      "security": {
+        "title": "7. Data Security",
+        "paragraphs": [
+          "7.1. The Operator takes necessary legal, organizational, and technical measures to protect personal data from unauthorized access, destruction, modification, blocking, and other unlawful actions.",
+          "7.2. Passwords are stored in hashed form (bcrypt). Database access is restricted. Data transmission is carried out over an encrypted channel (HTTPS/TLS).",
+          "7.3. The Operator guarantees the confidentiality of personal data and does not disclose it without the consent of the data subject, except as provided by the legislation of the Russian Federation."
+        ]
+      },
+      "rights": {
+        "title": "8. User Rights",
+        "intro": "8.1. The User has the right to:",
+        "items": [
+          "Receive information about the processing of their personal data;",
+          "Require clarification, blocking, or deletion of personal data;",
+          "Withdraw consent to personal data processing;",
+          "Delete their account and all associated data;",
+          "Appeal actions of the Operator to Roskomnadzor or in court."
+        ],
+        "note": "8.2. To exercise their rights, the User may contact the Operator at admin@filamenthub.ru."
+      },
+      "cookies": {
+        "title": "9. Cookies",
+        "paragraphs": [
+          "9.1. The Service uses cookies to ensure authorization, save user settings, and for visit analytics.",
+          "9.2. The User may disable cookies in browser settings; however, this may limit Service functionality."
+        ]
+      },
+      "children": {
+        "title": "10. Age Restrictions",
+        "paragraphs": [
+          "10.1. The Service is intended for persons who have reached the age of 14.",
+          "10.2. We do not knowingly collect personal data from persons under the age of 14. If we become aware of such collection, the data will be promptly deleted."
+        ]
+      },
+      "changes": {
+        "title": "11. Changes to the Policy",
+        "paragraphs": [
+          "11.1. The Operator may amend this Policy. The current version is posted at <privacyLink>/privacy-policy</privacyLink>.",
+          "11.2. Continued use of the Service after publication of changes constitutes the User’s consent to the new version of the Policy."
+        ]
+      },
+      "contacts": {
+        "title": "12. Contact Information",
+        "paragraphs": [
+          "12.1. For all matters related to personal data processing, please contact us at: admin@filamenthub.ru.",
+          "12.2. Terms of Service: <termsLink>/user-agreement</termsLink>. Consent to Personal Data Processing: <consentLink>/personal-data-consent</consentLink>."
+        ]
+      }
+    }
   }
 }

@@ -28,6 +28,7 @@ const AdminPanel = lazy(() => import('./pages/AdminPanel').then(m => ({ default:
 const WikiPage = lazy(() => import('./pages/WikiPage').then(m => ({ default: m.WikiPage })));
 const WikiCategoryPage = lazy(() => import('./pages/WikiCategoryPage').then(m => ({ default: m.WikiCategoryPage })));
 const WikiArticlePage = lazy(() => import('./pages/WikiArticlePage').then(m => ({ default: m.WikiArticlePage })));
+const PrivacyPolicyPage = lazy(() => import('./pages/PrivacyPolicyPage').then(m => ({ default: m.PrivacyPolicyPage })));
 
 // Prefetch all lazy chunks after initial page load so navigation feels instant
 if (typeof window !== 'undefined') {
@@ -40,6 +41,7 @@ if (typeof window !== 'undefined') {
       import('./pages/WikiPage');
       import('./pages/WikiCategoryPage');
       import('./pages/WikiArticlePage');
+      import('./pages/PrivacyPolicyPage');
     }, 2000);
   }, { once: true });
 }
@@ -256,6 +258,7 @@ function AppContent() {
           }
         />
         <Route path="/user-agreement" element={<TermsPage />} />
+        <Route path="/privacy-policy" element={<Suspense fallback={<PageLoader />}><PrivacyPolicyPage /></Suspense>} />
         <Route path="/personal-data-consent" element={<ConsentPage />} />
         <Route path="/reset-password" element={<ResetPasswordPage />} />
         <Route path="/confirm-email-change" element={<ConfirmEmailChangePage />} />
