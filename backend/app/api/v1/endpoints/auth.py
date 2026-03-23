@@ -35,6 +35,7 @@ from app.core.security import (
     verify_password,
 )
 from app.services.email_validator import is_personal_email, normalize_website_url, validate_email_domain
+from app.services.email_service import send_password_reset_email
 from app.db.session import get_db
 from app.models.user import User, UserRole
 from app.models.brand import Brand
@@ -846,13 +847,11 @@ async def forgot_password(
     user = result.scalar_one_or_none()
     
     if user and user.active:
-        # Генерируем токен восстановления пароля
         reset_token = generate_password_reset_token(user.id, user.email)
-        
-        # Примечание: Отправка email с токеном восстановления будет реализована при добавлении email-сервиса
-        # Ссылка для восстановления: {FRONTEND_URL}/reset-password?token={reset_token}
-        logger.info(f"Password reset token generated for user {user.email}: {reset_token[:20]}...")
-        logger.info(f"Reset link: {settings.BASE_URL}/reset-password?token={reset_token}")
+        reset_url = f"{settings.BASE_URL}/reset-password?token={reset_token}"
+        sent = send_password_reset_email(to=user.email, reset_url=reset_url)
+        if not sent:
+            logger.info(f"Password reset link (email not sent): {reset_url}")
     
     # Всегда возвращаем успешный ответ для безопасности (чтобы не раскрывать существование email)
     return ForgotPasswordResponse()

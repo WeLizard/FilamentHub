@@ -25,6 +25,7 @@ dependencies = [
     "qrcode[pil]~=7.4.2",  # Генерация QR-кодов
     "better-profanity~=0.7.0",  # Проверка плохих слов
     "weasyprint~=63.0",  # HTML-to-PDF for quote generation
+    "resend~=2.0.0",  # Transactional email via Resend
 ]
 
 [project.optional-dependencies]

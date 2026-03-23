@@ -89,6 +89,11 @@ class Settings(BaseSettings):
     YANDEX_CLIENT_ID: str = ""
     YANDEX_CLIENT_SECRET: str = ""
 
+    # Email (Resend — empty = disabled)
+    RESEND_API_KEY: str = ""
+    EMAIL_FROM: str = "noreply@filamenthub.ru"
+    EMAIL_FROM_NAME: str = "FilamentHub"
+
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",
