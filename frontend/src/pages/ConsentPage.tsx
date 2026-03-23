@@ -1,9 +1,30 @@
 /** Страница с согласием на обработку персональных данных */
 
 import { Link } from 'react-router-dom';
+import { Trans, useTranslation } from 'react-i18next';
 import { ArrowLeft, Shield } from 'lucide-react';
 
 export const ConsentPage = () => {
+  const { t } = useTranslation();
+  const brandVerificationItems = t('consentPage.sections.general.brandVerificationItems', {
+    returnObjects: true,
+  }) as string[];
+  const purposeItems = t('consentPage.sections.purpose.items', {
+    returnObjects: true,
+  }) as string[];
+  const actionItems = t('consentPage.sections.actions.items', {
+    returnObjects: true,
+  }) as string[];
+  const revocationItems = t('consentPage.sections.revocation.items', {
+    returnObjects: true,
+  }) as string[];
+  const cookieItems = t('consentPage.sections.cookies.items', {
+    returnObjects: true,
+  }) as string[];
+  const rightsItems = t('consentPage.sections.rights.items', {
+    returnObjects: true,
+  }) as string[];
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900">
       {/* Animated Background */}
@@ -21,224 +42,148 @@ export const ConsentPage = () => {
             className="inline-flex items-center space-x-2 text-purple-400 hover:text-purple-300 transition-colors mb-4"
           >
             <ArrowLeft className="w-4 h-4" />
-            <span>Вернуться на главную</span>
+            <span>{t('consentPage.backHome')}</span>
           </Link>
           <div className="flex items-center space-x-4 mb-4">
             <div className="w-12 h-12 bg-gradient-to-r from-green-500 to-emerald-500 rounded-xl flex items-center justify-center shadow-lg shadow-green-500/25">
               <Shield className="w-6 h-6 text-white" />
             </div>
-            <h1 className="text-3xl font-bold text-white">Согласие на обработку персональных данных</h1>
+            <h1 className="text-3xl font-bold text-white">{t('consentPage.title')}</h1>
           </div>
-          <p className="text-gray-400 text-sm">Последнее обновление: 2024</p>
+          <p className="text-gray-400 text-sm">{t('consentPage.lastUpdated')}</p>
         </div>
 
         {/* Content */}
         <div className="bg-white/10 backdrop-blur-sm rounded-2xl p-8 border border-white/20 shadow-xl">
           <div className="prose prose-invert max-w-none space-y-6 text-gray-300">
             <section>
-              <p className="mb-4">
-                Действуя свободно, своей волей и в своем интересе, а также подтверждая свою дееспособность, физическое
-                лицо дает свое согласие Кузьмину И.И., физическому лицу, применяющему специальный налоговый режим
-                «Налог на профессиональный доход» (плательщику НПД), контактный адрес электронной почты:
-                admin@filamenthub.ru (далее — Оператор), на обработку своих персональных данных со следующими
-                условиями:
-              </p>
+              <p className="mb-4">{t('consentPage.intro')}</p>
             </section>
 
             <section>
-              <h2 className="text-xl font-bold text-white mb-4">1. Общие положения</h2>
-              <p className="mb-2">
-                1.1. Данное Согласие дается на обработку персональных данных, как без использования средств автоматизации,
-                так и с их использованием.
-              </p>
-              <p className="mb-2">
-                1.2. Согласие дается на обработку следующих моих персональных данных:
-              </p>
+              <h2 className="text-xl font-bold text-white mb-4">{t('consentPage.sections.general.title')}</h2>
+              <p className="mb-2">{t('consentPage.sections.general.paragraphs.0')}</p>
+              <p className="mb-2">{t('consentPage.sections.general.paragraphs.1')}</p>
               <ul className="list-disc list-inside ml-4 mb-4 space-y-1">
-                <li>Адрес электронной почты;</li>
-                <li>Никнейм (имя пользователя);</li>
-                <li>ФИО (только при добровольном указании Пользователем в профиле или при обращении к Оператору);</li>
-                <li>Иные данные профиля, которые Пользователь указывает добровольно (например, поле «о себе»);</li>
+                <li>{t('consentPage.sections.general.personalData.email')}</li>
+                <li>{t('consentPage.sections.general.personalData.nickname')}</li>
+                <li>{t('consentPage.sections.general.personalData.fullName')}</li>
+                <li>{t('consentPage.sections.general.personalData.profileData')}</li>
                 <li>
-                  Данные, предоставляемые при подаче заявки на верификацию как представитель бренда или производителя:
+                  {t('consentPage.sections.general.personalData.brandVerificationIntro')}
                   <ul className="list-disc list-inside ml-6 mt-1 space-y-1">
-                    <li>Наименование бренда / торговой марки;</li>
-                    <li>Корпоративный email;</li>
-                    <li>Официальный сайт;</li>
-                    <li>Ссылки на социальные сети бренда;</li>
-                    <li>Сканы/файлы подтверждающих документов (доверенность, выписка из ЕГРЮЛ/ЕГРИП, письмо на фирменном бланке и т.п.).</li>
+                    {brandVerificationItems.map((item, index) => (
+                      <li key={index}>{item}</li>
+                    ))}
                   </ul>
-                  Указанные данные обрабатываются исключительно в целях верификации полномочий Пользователя и администрирования кабинета производителя. Данные о бренде не относятся к персональным данным Пользователя, но предоставляются им добровольно и с его согласия.
+                  {' '}
+                  {t('consentPage.sections.general.personalData.brandVerificationNote')}
                 </li>
-                <li>Технические данные, обрабатываемые при использовании сервиса: IP-адрес, user-agent, дата и время запросов, служебные технические идентификаторы.</li>
-                <li>Настройки печати, передаваемые при использовании функции синхронизации: пресеты материалов, профили принтеров, профили печати и связанные технические параметры (температуры, скорости, коэффициенты потока и т.п.).</li>
+                <li>{t('consentPage.sections.general.personalData.technicalData')}</li>
+                <li>{t('consentPage.sections.general.personalData.syncSettings')}</li>
               </ul>
             </section>
 
             <section>
-              <h2 className="text-xl font-bold text-white mb-4">2. Цель обработки персональных данных</h2>
+              <h2 className="text-xl font-bold text-white mb-4">{t('consentPage.sections.purpose.title')}</h2>
               <p className="mb-2">
-                2.1. Цель обработки персональных данных: регистрация пользователя на сайте FilamentHub, предоставление
-                услуг, а также верификация Пользователя в качестве официального представителя бренда или производителя материалов для 3D-печати в соответствии с{' '}
-                <Link to="/user-agreement" className="text-purple-400 hover:text-purple-300 underline">
-                  Пользовательским соглашением
-                </Link>{' '}
-                (<Link to="/user-agreement" className="text-purple-400 hover:text-purple-300 underline">
-                  /user-agreement
-                </Link>
-                ), включая:
+                <Trans
+                  i18nKey="consentPage.sections.purpose.paragraph"
+                  components={{
+                    agreementTextLink: (
+                      <Link to="/user-agreement" className="text-purple-400 hover:text-purple-300 underline" />
+                    ),
+                    agreementPathLink: (
+                      <Link to="/user-agreement" className="text-purple-400 hover:text-purple-300 underline" />
+                    ),
+                  }}
+                />
               </p>
               <ul className="list-disc list-inside ml-4 mb-4 space-y-1">
-                <li>Поддержание оперативной связи с Пользователем;</li>
-                <li>Упрощение процесса коммуникации среди Пользователей Сервиса;</li>
-                <li>Информирование Пользователя об услугах и продуктах Сервиса, которые могут представлять для него интерес;</li>
-                <li>Обеспечение безопасности использования Сервиса;</li>
-                <li>Улучшение качества предоставляемых услуг;</li>
-                <li>Статистика и аналитика использования Сервиса.</li>
+                {purposeItems.map((item, index) => (
+                  <li key={index}>{item}</li>
+                ))}
               </ul>
             </section>
 
             <section>
-              <h2 className="text-xl font-bold text-white mb-4">3. Действия с персональными данными</h2>
-              <p className="mb-2">
-                3.1. В ходе обработки с персональными данными будут совершены следующие действия:
-              </p>
+              <h2 className="text-xl font-bold text-white mb-4">{t('consentPage.sections.actions.title')}</h2>
+              <p className="mb-2">{t('consentPage.sections.actions.paragraph')}</p>
               <ul className="list-disc list-inside ml-4 mb-4 space-y-1">
-                <li>Сбор;</li>
-                <li>Систематизация;</li>
-                <li>Хранение;</li>
-                <li>Использование;</li>
-                <li>Извлечение;</li>
-                <li>Блокирование;</li>
-                <li>Уничтожение;</li>
-                <li>Запись;</li>
-                <li>Удаление;</li>
-                <li>Накопление;</li>
-                <li>Обновление;</li>
-                <li>Изменение;</li>
-                <li>Обезличивание;</li>
-                <li>Передача (в пределах указанных в настоящем Согласии целей).</li>
+                {actionItems.map((item, index) => (
+                  <li key={index}>{item}</li>
+                ))}
               </ul>
             </section>
 
             <section>
-              <h2 className="text-xl font-bold text-white mb-4">4. Срок действия согласия</h2>
-              <p className="mb-2">
-                4.1. Персональные данные обрабатываются до удаления пользователем личного кабинета на сайте.
-              </p>
-              <p className="mb-2">
-                4.2. Согласие Пользователя на обработку его персональных данных действует бессрочно до момента отзыва
-                согласия.
-              </p>
-              <p className="mb-2">
-                4.3. В случае отзыва согласия Оператор прекращает обработку персональных данных и уничтожает их в срок,
-                не превышающий 7 дней с даты поступления отзыва (при самостоятельном удалении через интерфейс личного кабинета)
-                или 30 дней при запросе через форму обратной связи или почтовое уведомление, если иное не предусмотрено договором,
-                стороной которого является субъект персональных данных, или иным соглашением между Оператором и субъектом персональных данных.
-              </p>
+              <h2 className="text-xl font-bold text-white mb-4">{t('consentPage.sections.term.title')}</h2>
+              <p className="mb-2">{t('consentPage.sections.term.paragraphs.0')}</p>
+              <p className="mb-2">{t('consentPage.sections.term.paragraphs.1')}</p>
+              <p className="mb-2">{t('consentPage.sections.term.paragraphs.2')}</p>
             </section>
 
             <section>
-              <h2 className="text-xl font-bold text-white mb-4">5. Порядок отзыва согласия</h2>
-              <p className="mb-2">
-                5.1. Согласие может быть отозвано субъектом персональных данных или его представителем путем направления
-                заявления Оператору по адресу электронной почты: admin@filamenthub.ru.
-              </p>
-              <p className="mb-2">
-                5.2. В заявлении об отзыве согласия должна содержаться следующая информация:
-              </p>
+              <h2 className="text-xl font-bold text-white mb-4">{t('consentPage.sections.revocation.title')}</h2>
+              <p className="mb-2">{t('consentPage.sections.revocation.paragraphs.0')}</p>
+              <p className="mb-2">{t('consentPage.sections.revocation.paragraphs.1')}</p>
               <ul className="list-disc list-inside ml-4 mb-4 space-y-1">
-                <li>Адрес электронной почты, на который был зарегистрирован аккаунт;</li>
-                <li>Никнейм (имя пользователя) или ID аккаунта (при наличии);</li>
-                <li>ФИО (если ранее предоставлялись Оператору);</li>
-                <li>Текст заявления об отзыве согласия на обработку персональных данных.</li>
+                {revocationItems.map((item, index) => (
+                  <li key={index}>{item}</li>
+                ))}
               </ul>
-              <p className="mb-2">
-                5.3. После получения заявления об отзыве согласия Оператор прекращает обработку персональных данных и
-                удаляет персональные данные в соответствии с п. 4.3 настоящего Согласия.
-              </p>
+              <p className="mb-2">{t('consentPage.sections.revocation.paragraphs.2')}</p>
             </section>
 
             <section>
-              <h2 className="text-xl font-bold text-white mb-4">6. Защита персональных данных</h2>
-              <p className="mb-2">
-                6.1. Оператор не передает персональные данные Пользователей третьим лицам и не совершает трансграничную
-                передачу персональных данных.
-              </p>
-              <p className="mb-2">
-                6.2. Оператор принимает необходимые правовые, организационные и технические меры для защиты персональных
-                данных от неправомерного или случайного доступа к ним, уничтожения, изменения, блокирования, копирования,
-                предоставления, распространения персональных данных, а также от иных неправомерных действий в отношении
-                персональных данных.
-              </p>
-              <p className="mb-2">
-                6.3. Оператор гарантирует конфиденциальность персональных данных и не разглашает их без согласия
-                субъекта персональных данных, за исключением случаев, предусмотренных законодательством Российской
-                Федерации.
-              </p>
+              <h2 className="text-xl font-bold text-white mb-4">{t('consentPage.sections.protection.title')}</h2>
+              <p className="mb-2">{t('consentPage.sections.protection.paragraphs.0')}</p>
+              <p className="mb-2">{t('consentPage.sections.protection.paragraphs.1')}</p>
+              <p className="mb-2">{t('consentPage.sections.protection.paragraphs.2')}</p>
             </section>
 
             <section>
-              <h2 className="text-xl font-bold text-white mb-4">7. Информирование об использовании Cookie</h2>
-              <p className="mb-2">
-                7.1. Оператор собирает данные, не относящиеся к информации, идентифицирующей личность Пользователя,
-                которые становятся доступными в результате использования клиентом Веб-сайта.
-              </p>
-              <p className="mb-2">
-                7.2. Оператор использует Cookie-файлы для обеспечения работы отдельных функций Веб-сайта, включая:
-              </p>
+              <h2 className="text-xl font-bold text-white mb-4">{t('consentPage.sections.cookies.title')}</h2>
+              <p className="mb-2">{t('consentPage.sections.cookies.paragraphs.0')}</p>
+              <p className="mb-2">{t('consentPage.sections.cookies.paragraphs.1')}</p>
               <ul className="list-disc list-inside ml-4 mb-4 space-y-1">
-                <li>Авторизацию пользователя;</li>
-                <li>Сохранение пользовательских настроек;</li>
-                <li>Аналитику посещений;</li>
-                <li>Улучшение функциональности сайта.</li>
+                {cookieItems.map((item, index) => (
+                  <li key={index}>{item}</li>
+                ))}
               </ul>
-              <p className="mb-2">
-                7.3. Пользователь может отключить использование Cookie-файлов в настройках браузера, однако это может
-                привести к ограничению функциональности сайта.
-              </p>
+              <p className="mb-2">{t('consentPage.sections.cookies.paragraphs.2')}</p>
             </section>
 
             <section>
-              <h2 className="text-xl font-bold text-white mb-4">8. Права субъекта персональных данных</h2>
-              <p className="mb-2">
-                8.1. Субъект персональных данных имеет право:
-              </p>
+              <h2 className="text-xl font-bold text-white mb-4">{t('consentPage.sections.rights.title')}</h2>
+              <p className="mb-2">{t('consentPage.sections.rights.paragraph')}</p>
               <ul className="list-disc list-inside ml-4 mb-4 space-y-1">
-                <li>Получать информацию, касающуюся обработки его персональных данных;</li>
-                <li>Требовать уточнения, блокирования или уничтожения персональных данных, если персональные данные
-                  являются неполными, устаревшими, неточными, незаконно полученными или не являются необходимыми для
-                  заявленной цели обработки;</li>
-                <li>Отозвать согласие на обработку персональных данных;</li>
-                <li>Обжаловать действия или бездействие Оператора в уполномоченный орган по защите прав субъектов
-                  персональных данных или в судебном порядке;</li>
-                <li>На получение информации о сроках хранения персональных данных.</li>
+                {rightsItems.map((item, index) => (
+                  <li key={index}>{item}</li>
+                ))}
               </ul>
             </section>
 
             <section>
-              <h2 className="text-xl font-bold text-white mb-4">9. Контактная информация</h2>
+              <h2 className="text-xl font-bold text-white mb-4">{t('consentPage.sections.contacts.title')}</h2>
+              <p className="mb-2">{t('consentPage.sections.contacts.paragraphs.0')}</p>
               <p className="mb-2">
-                9.1. По всем вопросам, связанным с обработкой персональных данных, субъект персональных данных может
-                обратиться к Оператору по адресу электронной почты: admin@filamenthub.ru.
-              </p>
-              <p className="mb-2">
-                9.2. Пользовательское соглашение доступно на странице{' '}
-                <Link to="/user-agreement" className="text-purple-400 hover:text-purple-300 underline">
-                  Пользовательского соглашения
-                </Link>{' '}
-                (<Link to="/user-agreement" className="text-purple-400 hover:text-purple-300 underline">
-                  /user-agreement
-                </Link>
-                ).
+                <Trans
+                  i18nKey="consentPage.sections.contacts.paragraphs.1"
+                  components={{
+                    agreementTextLink: (
+                      <Link to="/user-agreement" className="text-purple-400 hover:text-purple-300 underline" />
+                    ),
+                    agreementPathLink: (
+                      <Link to="/user-agreement" className="text-purple-400 hover:text-purple-300 underline" />
+                    ),
+                  }}
+                />
               </p>
             </section>
 
             <section className="mt-8 pt-6 border-t border-white/20">
-              <p className="text-sm text-gray-400">
-                Подтверждая регистрацию на сайте FilamentHub, Пользователь подтверждает, что ознакомился с условиями
-                настоящего Согласия на обработку персональных данных и полностью их принимает.
-              </p>
+              <p className="text-sm text-gray-400">{t('consentPage.confirmation')}</p>
             </section>
           </div>
         </div>
@@ -246,4 +191,3 @@ export const ConsentPage = () => {
     </div>
   );
 };
-
