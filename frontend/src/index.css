@@ -7,6 +7,25 @@ body {
     sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  /* Firefox */
+  scrollbar-color: rgba(139, 92, 246, 0.5) rgba(15, 23, 42, 0.5);
+  scrollbar-width: thin;
+}
+
+/* Chrome / Edge / Safari */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: rgba(15, 23, 42, 0.5);
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(139, 92, 246, 0.5);
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(139, 92, 246, 0.8);
 }
 
 /* Кастомный скроллбар в стиле сайта */
