@@ -90,7 +90,7 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900">
+    <div className="app-shell flex flex-col bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900">
       {/* Animated Background */}
       <div className="fixed inset-0 overflow-hidden pointer-events-none">
         <div className="absolute -top-40 -right-40 w-80 h-80 bg-purple-500/10 rounded-full blur-3xl animate-pulse"></div>
@@ -339,14 +339,14 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
       )}
 
       {/* Main Content */}
-      <main className="relative max-w-7xl mx-auto px-4 sm:px-6 py-4 sm:py-8 z-10">{children}</main>
+      <main className="relative z-10 flex-1 w-full max-w-7xl mx-auto px-4 sm:px-6 py-4 sm:py-8">{children}</main>
 
       {/* Footer - hidden in OrcaSlicer */}
       {!isInOrcaSlicer && (
         <footer className="relative z-10 border-t border-white/10 bg-black/20 backdrop-blur-sm mt-8">
-          <div className="max-w-7xl mx-auto px-4 sm:px-6 py-4 flex flex-col sm:flex-row items-center justify-between gap-2 text-xs text-gray-500">
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 py-3 flex flex-col sm:flex-row items-center justify-between gap-1.5 text-[11px] sm:text-xs text-gray-500">
             <span>{t('layout.footer_copyright', { year: new Date().getFullYear() })}</span>
-            <div className="flex items-center gap-4">
+            <div className="flex items-center gap-3 sm:gap-4">
               <Link to="/user-agreement" className="hover:text-gray-300 transition-colors">{t('layout.footer_terms')}</Link>
               <Link to="/privacy-policy" className="hover:text-gray-300 transition-colors">{t('layout.footer_privacy')}</Link>
               <Link to="/personal-data-consent" className="hover:text-gray-300 transition-colors">{t('layout.footer_consent')}</Link>
