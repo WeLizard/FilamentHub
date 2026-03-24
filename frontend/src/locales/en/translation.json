@@ -4111,6 +4111,8 @@
   },
   "apiErrors": {
     "UNKNOWN_ERROR": "An unexpected error occurred",
+    "ERR_NETWORK": "No connection to the server. Check your internet and try again.",
+    "ERR_REQUEST_TIMEOUT": "The server is not responding. Please try again later.",
     "ERR_USER_NOT_FOUND": "User not found",
     "ERR_BRAND_NOT_FOUND": "Brand not found",
     "ERR_PRESET_NOT_FOUND": "Preset not found",

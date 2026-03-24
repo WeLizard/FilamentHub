@@ -75,6 +75,21 @@ const processQueue = (error: any, token: string | null = null) => {
 api.interceptors.response.use(
   (response) => response,
   async (error) => {
+    // Network error — no response received (internet down, server unreachable, DNS failure)
+    if (!error.response) {
+      const isTimeout = error.code === 'ECONNABORTED' || error.code === 'ERR_CANCELED';
+      const code = isTimeout ? 'ERR_REQUEST_TIMEOUT' : 'ERR_NETWORK';
+      // Inject structured error so translateApiError can handle it uniformly
+      error.response = {
+        status: 0,
+        statusText: 'Network Error',
+        headers: {},
+        config: error.config,
+        data: { detail: { code } },
+      };
+      return Promise.reject(error);
+    }
+
     // Проверяем на maintenance mode (503)
     if (error.response?.status === 503 && error.response?.data?.maintenance_mode) {
       // Dispatch custom event для AuthContext

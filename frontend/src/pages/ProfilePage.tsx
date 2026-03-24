@@ -3282,19 +3282,19 @@ const PresetCard: React.FC<PresetCardProps> = ({ preset, onEdit, onView, onDelet
         const status = error.response.status;
         const data = error.response.data;
 
-        if (status === 401) {
+        if (status === 0) {
+          // Network error (injected by interceptor)
+          errorMessage = translateApiError(t, data?.detail, t('profilePage.errors.connectionError'));
+        } else if (status === 401) {
           errorMessage = t('profilePage.errors.authRequired');
         } else if (status === 404) {
           errorMessage = t('profilePage.errors.presetNotFound');
         } else if (status === 500) {
-          const detail = data?.detail || t('profilePage.errors.internalError');
-          errorMessage = `${t('profilePage.errors.serverExportError')}: ${detail}`;
-          console.error('Error 500 details:', detail);
+          errorMessage = `${t('profilePage.errors.serverExportError')}: ${translateApiError(t, data?.detail, t('profilePage.errors.internalError'))}`;
+          console.error('Error 500 details:', data?.detail);
         } else {
-          errorMessage = `${t('profilePage.errors.errorCode', { code: status })}: ${data?.detail || data?.message || t('profilePage.errors.requestError')}`;
+          errorMessage = translateApiError(t, data?.detail, `${t('profilePage.errors.errorCode', { code: status })}: ${data?.message || t('profilePage.errors.requestError')}`);
         }
-      } else if (error.request) {
-        errorMessage = t('profilePage.errors.connectionError');
       } else {
         errorMessage = error.message || t('profilePage.errors.requestError');
       }
