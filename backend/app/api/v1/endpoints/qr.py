@@ -121,6 +121,7 @@ async def handle_qr_scan(
                 preset_added = True
 
     await db.commit()
+    await db.refresh(filament)
 
     return {
         'filament': FilamentResponse.model_validate(filament),

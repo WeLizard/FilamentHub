@@ -397,6 +397,7 @@ async def create_review(
 
     # Определяем пресет для отзыва
     preset_id = review_data.preset_id
+    preset = None  # initialized here to avoid UnboundLocalError when preset_id is None
 
     if preset_id is not None:
         # Проверяем существование пресета и соответствие филаменту

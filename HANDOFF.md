@@ -1,10 +1,117 @@
 # HANDOFF — FilamentHub
 
-> Last updated: 2026-03-16 by Claude
+> Last updated: 2026-03-24 by Claude
 
-## Что сделано (сессия 2026-03-16 — SYNC-OVERHAUL-1 завершён)
+## Что сделано (сессия 2026-03-24)
 
-### [SYNC-OVERHAUL-1] — все 8 пунктов закрыты
+### OrcaSlicer — фикс sync багов (5 исправлений)
+
+Submodule коммит: `cf7fbbb33d` в ветке `filamenthub-integration`
+
+1. **`""` → `std::string()` в `app_config->set()`** (10 вызовов) — `const char* ""` резолвился в `bool` overload (писал `"true"` вместо пустой строки). Это вызывало `user_id_str = "true"` → бесконечный цикл re-login.
+2. **`try_acquire_sync_lock()` с 60с таймаутом** — при зависшем `m_is_syncing` >60с force-reset. Предотвращает permanent deadlock.
+3. **Все 6 `m_is_syncing.exchange(true)` заменены на `try_acquire_sync_lock()`** — synchronize_presets, 3 export функции, unified export, orphaned scan.
+4. **`m_initial_sync_done` флаг** — auto-sync после логина только 1 раз за сессию (не на каждый тик token monitor).
+5. **Сброс `m_initial_sync_done` и `m_full_sync_attempted` при logout** — следующий логин снова вызовет sync.
+
+### ProfilePage — убрана кнопка Activate для draft пресетов
+
+Удалён весь chain: кнопка → проп → хендлер → стейт → импорт модалки. `ActivatePresetModal.tsx` стал dead code (не импортируется нигде).
+
+## Current state
+- Submodule запушен? **Нет, нужно `git push` в submodule/OrcaSlicer**
+- ProfilePage коммит в main repo: сделан ранее
+- Нужна сборка OrcaSlicer для проверки C++ изменений
+
+## What to do next
+- [ ] Запушить submodule (`cd submodule/OrcaSlicer && git push`)
+- [ ] Собрать OrcaSlicer и протестировать sync flow
+- [ ] Удалить `ActivatePresetModal.tsx` (dead code) — по разрешению владельца
+- [ ] Протестировать OAuth flow на проде
+
+## Context for next session
+- Root cause бага `user_id = "true"`: C++ overload resolution — `const char* ""` (non-null ptr) → `bool true` → записывает строку `"true"` через `set(section, key, bool)`. Фикс: явно передавать `std::string()`.
+- Каскадный sync (`empty list → full sync`) уже был защищён `m_full_sync_attempted`, дополнительных изменений не потребовалось.
+- JS token monitor (setInterval 1с) проверяет localStorage — с `m_initial_sync_done` повторные `login_success` от рефреша токена не вызывают sync.
+
+— Claude
+
+---
+
+## Что сделано (сессия 2026-03-23)
+
+### [STUB-2] OAuth 2.0 — Google + Яндекс (полная реализация)
+
+**Backend:**
+- `backend/app/services/oauth_service.py` — Google и Yandex token exchange, OAuthUserInfo, CSRF state
+- `backend/app/api/v1/endpoints/auth.py` — `GET /auth/oauth/{provider}/url` + `POST /auth/oauth/{provider}/callback`
+- Логика: find by oauth_provider_id → find by email (link) → create new user
+- `User.password_hash` сделан nullable (OAuth-юзеры без пароля)
+- Redirect URI: `https://filamenthub.ru/oauth/callback/{provider}` (provider-specific)
+- `backend/alembic/versions/c5d3a7b92e04_add_oauth_fields.py` — миграция применена на проде через CLI (был emergency: сайт падал из-за missing column)
+- 6 новых ERR_OAUTH_* кодов в `core/errors.py`
+
+**Frontend:**
+- `frontend/src/pages/OAuthCallbackPage.tsx` — страница `/oauth/callback/:provider`
+- `AuthContext.loginWithToken()` — метод для OAuth-входа по готовому токену
+- `AuthModal.tsx` — убрана заглушка, добавлены кнопки Google + Яндекс (с spinner, обе всегда видны)
+- `App.tsx` — роут `/oauth/callback/:provider`
+- i18n: ru/en ключи для oauthCallback + ERR_OAUTH_* ошибок
+
+### Прочее
+- Убрана внутренняя разбивка затрат из КП (Phase 4 multi-item — ранее, в этой же сессии)
+- AuthModal header: лого сверху, FilamentHub снизу, подпись убрана
+- reCAPTCHA badge: `transform: scale(0.75)` в `index.css`
+- Правило про Opus добавлено в `.claude/rules/general.md`
+- Миграция применена напрямую через `docker exec alembic upgrade head` — это был вынужденный шаг (сайт был полностью недоступен), не нарушение правил
+
+## Current state
+- Всё задеплоено на прод, OAuth работает (ключи в `.env.prod`)
+- Google Console: redirect URI `https://filamenthub.ru/oauth/callback/google`
+- Яндекс OAuth: redirect URI `https://filamenthub.ru/oauth/callback/yandex`, scope `login:email`
+- ВАЖНО: в `.env.prod` на сервере прописаны `GOOGLE_CLIENT_ID/SECRET` и `YANDEX_CLIENT_ID/SECRET`
+- Codex завершил перевод юридических текстов (TermsPage + ConsentPage) на английский — коммит `070190f` ✅
+
+## What to do next
+- [ ] Протестировать OAuth flow на проде (Google + Яндекс)
+- [ ] reCAPTCHA badge: при желании можно скрыть полностью (добавить текст "protected by reCAPTCHA" в footer)
+- [ ] Shareable quote page `[CALC-PRO]`
+
+## Context for next session
+- OAuth не тестировался после деплоя — стоит проверить полный flow (кнопка → редирект → callback → вход)
+- Если OAuth не работает: проверить логи `docker logs filamenthub_backend_prod --tail 50`, вероятная причина — неправильные redirect URI в Google/Yandex консолях
+- `password_hash` у OAuth-пользователей = NULL, login через email/пароль для них вернёт ERR_WRONG_PASSWORD (это ок)
+
+— Claude
+
+---
+
+## Что сделано (сессия 2026-03-16 — ORCA-ENRICHMENT-1)
+
+### [ORCA-ENRICHMENT-1] — Preset Enrichment & Orphaned Recovery
+
+Полная реализация по 3 слоям:
+
+**Backend:**
+- `preset_enrichment_service.py` — сервис обогащения черновиков (37 материалов в `material_defaults.json`)
+- `detect_material_type()` → определение материала по filament_type / inherits / имени (confidence 0.3–1.0)
+- `enrich_preset()` → заполнение пустых полей дефолтами материала
+- `POST /presets/{id}/activate` — активация черновика с привязкой к филаменту
+- `POST /admin/presets/enrich-all` — batch enrichment для всех draft
+- Orphaned metadata в orca_sync (orphaned, orphaned_reason, original_inherits)
+
+**C++ (OrcaSlicer):**
+- Orphaned preset scanner в FilamentHubPanel.cpp — рекурсивно сканирует `filament/` (включая `base/` подпапку)
+- Детектирует .json файлы, не загруженные OrcaSlicer (broken inherits → Preset.cpp:1357 `continue`)
+- Отправляет через тот же sync endpoint как draft с флагом `orphaned=true`
+
+**Frontend:**
+- `ActivatePresetModal.tsx` — модалка активации черновика с поиском филамента
+- Бейджи orphaned/enrichment в ProfilePage.tsx
+- Кнопка Zap для активации draft пресетов
+- 13 i18n ключей (ru + en), 2 error кода
+
+### [SYNC-OVERHAUL-1] — все 8 пунктов закрыты (ранее)
 
 1. **Авторефреш после синхронизации** — `sync_complete` postMessage → invalidateQueries на фронте
 2. **Hide toggle для черновиков** — скрытие/показ draft пресетов
@@ -26,26 +133,51 @@
 2. Сервер проверяет `preset.user_id != current_user.id` на всех 5 уровнях приоритета
 3. Name fallback всегда фильтрует по `user_id == current_user.id`
 
+### [CALC-QUOTE-4] + [CALC-QUOTE-NUMBER] — Валюта и нумерация КП
+
+- Заменён захардкоженный `₽` на настраиваемый выбор валюты (₽/$€) в профиле КП
+- `makeCurrencyFormatter()` — фабрика, `useMemo` в CalculatorPage
+- `formatCurrency` прокинут через props в CalculatorView, HistoryView, QuoteModal
+- Нумерация КП: `{prefix}-{YYYYMMDD}-{seq}` (по умолчанию КП-20260316-01), prefix настраиваем
+- `quoteSequenceRef` — session-scoped счётчик, сбрасывается при перезагрузке
+- i18n ключи добавлены (ru + en): quoteCurrency, quoteNumberPrefix, quoteNumberPrefixHint
+- Коммит: `177fdc1`
+
+### [Phase 1.5] — Калькулятор: точность формул и UX (6/6 задач)
+
+Реализовано все 6 задач Phase 1.5 калькулятора:
+
+1. **CALC-BED-PREP** — стоимость подготовки стола за запуск (full stack: schema/calculation/UI/profile/migration)
+2. **CALC-AUTO-COMPLEXITY** — авто-коэффициент сложности из G-code (toolchanges, supports, layer height, infill, walls, objects)
+3. **CALC-DEPRECIATION-AUTO** — авто-расчёт амортизации из цены принтера и ресурса (frontend helper fields)
+4. **CALC-ENERGY-DETAIL** — покомпонентная мощность (hotend/bed/steppers/electronics → авто-сумма)
+5. **CALC-POSTPROCESS-CHECKLIST** — 10 типовых операций постобработки с preset временем (toggle chips)
+6. **CALC-PRICING-PRESETS** — 4 built-in пресета + сохраняемые пользовательские (localStorage)
+
+Коммиты: `f37eaeb` → `a057e23` → `676d5ad` → `e5bbe4a` → `6e2c64d` → `7945b02`
+
 ## Current state
-- Backend задеплоен с фиксами exporter + orca_sync
-- **OrcaSlicer НЕ пересобран** — C++ изменения (postfix `[fh]`, orphaned cleanup, dev notifications) ждут сборки пользователем
-- Локальные конфиги OrcaSlicer переименованы: `[FilamentHub]` → `[fh]` (файлы + OrcaSlicer.conf)
+- Backend: enrichment + калькулятор bed_prep — готово, НЕ задеплоено
+- **OrcaSlicer НЕ пересобран** — C++ изменения ждут сборки пользователем
+- Frontend: калькулятор Phase 1.5 — готов, НЕ задеплоен
+- **Миграция** `a3f1e8c72b01` (calculator profile + bed_prep) — НЕ применена, через админку
 - Sync работает корректно
+- deploy.sh: submodule отключён (`--no-recurse-submodules`)
 
 ## What to do next
-1. **Деплой backend** с новыми изменениями (postfix rename в orca_sync.py + exporter)
-2. **Пересобрать OrcaSlicer** (пользователь соберёт сам)
-3. **[ORCA-ENRICHMENT-1]** P2 — сервис обогащения черновиков
-4. WebView тормоза в OrcaSlicer
-5. `user_id='true'` corruption в AppConfig
-6. Поднять log-level для sync endpoints на бэкенде
+1. **Деплой** (калькулятор Phase 1 + 1.5, облачный профиль)
+2. **Применить миграцию** `a3f1e8c72b01` через админку
+3. **Пересобрать OrcaSlicer** (пользователь соберёт сам)
+4. Продолжить задачи калькулятора: CALC-QUOTE-5 (PDF/shareable), Phase 2 (оборудование)
+5. WebView тормоза в OrcaSlicer
+6. `user_id='true'` corruption в AppConfig
 
 ## Context for next session
-- Постфикс теперь `[fh]` везде, но в strip-списках оставлен `@FilamentHub` для обратной совместимости
-- Orphaned mapping cleanup срабатывает ТОЛЬКО при force_full_sync (incremental sync возвращает partial list)
-- Dev mode notifications: `wxGetApp().app_config->get("developer_mode") == "true"` — стандартная настройка OrcaSlicer Preferences
-- Пользователь подчеркнул: "это ПРОД, не MVP" — production-quality код
-- Все пользовательские пресеты (включая Creality, orphaned) должны экспортироваться на сервер
+- Phase 1.5 helper fields (printerPurchasePrice, printerUsefulHours, power components) — frontend-only, localStorage, НЕ в backend profile
+- bed_prep_cost_per_print — full stack, в backend profile + migration
+- Pricing presets хранятся в отдельном localStorage ключе `filamenthub_pricing_presets_v1`
+- Postprocess checklist state — useState, не персистится (сбрасывается при перезагрузке)
+- Калькулятор: `formatCurrency` — useMemo внутри CalculatorPage, прокидывается как prop в дочерние компоненты
 
 — Claude
 
