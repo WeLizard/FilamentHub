@@ -56,7 +56,6 @@ import api from '../api/client';
 import { translateApiError } from '../utils/translateApiError';
 import { CreatePresetModal } from '../components/CreatePresetModal';
 import { ViewPresetModal } from '../components/ViewPresetModal';
-import { ActivatePresetModal } from '../components/ActivatePresetModal';
 import { CreatePrinterRequestModal } from '../components/CreatePrinterRequestModal';
 import { SettingsTab } from '../components/SettingsTab';
 import { ExportFromOrcaSlicerButton } from '../components/ExportFromOrcaSlicerButton';
@@ -83,7 +82,6 @@ export const ProfilePage: React.FC = () => {
   const [showHelpModal, setShowHelpModal] = useState(false);
   const [isCreatePresetModalOpen, setIsCreatePresetModalOpen] = useState(false);
   const [isViewPresetModalOpen, setIsViewPresetModalOpen] = useState(false);
-  const [activatingPreset, setActivatingPreset] = useState<Preset | null>(null);
   const [isCreatePrinterRequestModalOpen, setIsCreatePrinterRequestModalOpen] = useState(false);
   const [editingPreset, setEditingPreset] = useState<Preset | null>(null);
   const [viewingPreset, setViewingPreset] = useState<Preset | null>(null);
@@ -501,12 +499,6 @@ export const ProfilePage: React.FC = () => {
     setIsViewPresetModalOpen(true);
   };
 
-  const handleActivatePreset = (preset: Preset) => {
-    setActivatingPreset(preset);
-  };
-
-
-
   const handleCreatePreset = () => {
     setEditingPreset(null);
     setIsCreatePresetModalOpen(true);
@@ -893,7 +885,6 @@ export const ProfilePage: React.FC = () => {
                 onEdit={handleEditPreset}
                 onView={handleViewPreset}
                 onDelete={handleDeletePreset}
-                onActivate={handleActivatePreset}
               />
             ))}
           </div>
@@ -1228,13 +1219,6 @@ export const ProfilePage: React.FC = () => {
       />
 
       {/* Activate Preset Modal */}
-      {activatingPreset && (
-        <ActivatePresetModal
-          preset={activatingPreset}
-          onClose={() => setActivatingPreset(null)}
-        />
-      )}
-
       {/* Create Printer Request Modal */}
       <CreatePrinterRequestModal
         isOpen={isCreatePrinterRequestModalOpen}
@@ -3136,10 +3120,9 @@ interface PresetCardProps {
   onEdit?: (preset: Preset) => void;
   onView?: (preset: Preset) => void;
   onDelete?: (preset: Preset) => void;
-  onActivate?: (preset: Preset) => void;
 }
 
-const PresetCard: React.FC<PresetCardProps> = ({ preset, onEdit, onView, onDelete, onActivate }) => {
+const PresetCard: React.FC<PresetCardProps> = ({ preset, onEdit, onView, onDelete }) => {
   const { t } = useTranslation();
   const navigate = useNavigate();
   const [isDownloading, setIsDownloading] = useState(false);
@@ -3406,15 +3389,6 @@ const PresetCard: React.FC<PresetCardProps> = ({ preset, onEdit, onView, onDelet
           )}
         </div>
         <div className="flex space-x-2">
-          {!preset.active && preset.source === 'own' && !preset.filament_id && (
-            <button
-              onClick={() => onActivate?.(preset)}
-              className="p-2 bg-green-600/30 hover:bg-green-600/50 rounded-lg text-green-300 transition-all"
-              title={t('profilePage.activatePreset')}
-            >
-              <Zap className="w-4 h-4" />
-            </button>
-          )}
           {preset.source === 'own' ? (
             <button
               onClick={() => onEdit?.(preset)}
