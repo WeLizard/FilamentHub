@@ -78,8 +78,8 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
 
   // Проверяем, запущен ли frontend внутри OrcaSlicer
   const isInOrcaSlicer = typeof window !== 'undefined' && (
-    (window as any).filamenthub?.importProfile ||
-    (window as any).wx?.postMessage
+    window.filamenthub?.importProfile ||
+    window.wx?.postMessage
   );
 
   const isActive = (path: string) => location.pathname === path;

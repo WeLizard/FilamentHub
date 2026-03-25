@@ -26,7 +26,7 @@ export const isOrcaEmbedded = (): boolean => {
   if (typeof window === 'undefined') {
     return false;
   }
-  return Boolean((window as any).filamenthub || (window as any).wx?.postMessage);
+  return Boolean(window.filamenthub || window.wx?.postMessage);
 };
 
 const canUseLocalTokenStorage = (): boolean => {

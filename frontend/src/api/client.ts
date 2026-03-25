@@ -21,8 +21,8 @@ const api = axios.create({
 /** Уведомить C++ (OrcaSlicer) о logout — очистить токен в AppConfig */
 const notifyCppLogout = () => {
   try {
-    if (typeof window !== 'undefined' && (window as any).wx?.postMessage) {
-      (window as any).wx.postMessage(JSON.stringify({ command: 'logout' }));
+    if (typeof window !== 'undefined' && window.wx?.postMessage) {
+      window.wx.postMessage(JSON.stringify({ command: 'logout' }));
     }
   } catch {
     // Не в контексте OrcaSlicer — игнорируем

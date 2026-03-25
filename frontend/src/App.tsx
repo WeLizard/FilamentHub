@@ -119,20 +119,16 @@ function AppContent() {
   
   // Проверяем, запущен ли frontend внутри OrcaSlicer
   const isInOrcaSlicer = typeof window !== 'undefined' && (
-    (window as any).filamenthub?.importProfile ||
-    (window as any).wx?.postMessage
+    window.filamenthub?.importProfile ||
+    window.wx?.postMessage
   );
   
   // Добавляем глобальную функцию для навигации из OrcaSlicer без перезагрузки страницы
   useEffect(() => {
     if (typeof window !== 'undefined') {
-      // Создаём объект filamenthub если его нет
-      if (!(window as any).filamenthub) {
-        (window as any).filamenthub = {};
-      }
-
-      // Добавляем функцию навигации
-      (window as any).filamenthub.navigate = (path: string) => {
+      // Создаём объект filamenthub если его нет, добавляем функцию навигации
+      window.filamenthub = window.filamenthub ?? {};
+      window.filamenthub.navigate = (path: string) => {
         navigate(path);
       };
     }

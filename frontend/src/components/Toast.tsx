@@ -86,7 +86,7 @@ const shownMessages = new Set<string>();
 const isDeveloperMode = () => {
   try {
     return localStorage.getItem('developerMode') === 'true' || 
-           (typeof window !== 'undefined' && (window as any).filamenthub?.developerMode);
+           (typeof window !== 'undefined' && window.filamenthub?.developerMode);
   } catch {
     return false;
   }

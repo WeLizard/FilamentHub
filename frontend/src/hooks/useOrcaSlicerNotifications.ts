@@ -8,13 +8,13 @@ import { toast } from '../components/Toast';
 const isDeveloperMode = () => {
   try {
     return localStorage.getItem('developerMode') === 'true' || 
-           (typeof window !== 'undefined' && (window as any).filamenthub?.developerMode);
+           (typeof window !== 'undefined' && window.filamenthub?.developerMode);
   } catch {
     return false;
   }
 };
 
-const logNotification = (action: string, data: any) => {
+const logNotification = (action: string, data: unknown) => {
   if (isDeveloperMode()) {
     const timestamp = new Date().toISOString().split('T')[1].slice(0, 12);
     console.log(`[OrcaNotification ${timestamp}] ${action}:`, data);
@@ -27,8 +27,8 @@ export const useOrcaSlicerNotifications = () => {
   useEffect(() => {
     // Проверяем, запущен ли frontend внутри OrcaSlicer
     const isInOrcaSlicer = typeof window !== 'undefined' && (
-      (window as any).filamenthub?.importProfile ||
-      (window as any).wx?.postMessage
+      window.filamenthub?.importProfile ||
+      window.wx?.postMessage
     );
 
     if (!isInOrcaSlicer) {
@@ -100,8 +100,8 @@ export const useOrcaSlicerNotifications = () => {
     window.addEventListener('message', handleMessage);
 
     // Также добавляем функцию showNotification в window.filamenthub (если её еще нет)
-    if (typeof window !== 'undefined' && (window as any).filamenthub) {
-      (window as any).filamenthub.showNotification = (message: string, type: string = 'info') => {
+    if (typeof window !== 'undefined' && window.filamenthub) {
+      window.filamenthub.showNotification = (message: string, type: string = 'info') => {
         switch (type) {
           case 'success':
             toast.success(message);

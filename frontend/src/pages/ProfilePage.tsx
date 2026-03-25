@@ -749,16 +749,16 @@ export const ProfilePage: React.FC = () => {
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
             <h3 className="text-lg md:text-2xl font-bold text-white">{t('profilePage.filamentProfiles')}</h3>
             <div className="flex items-center gap-2 md:gap-3">
-              {typeof window !== 'undefined' && (window as any).filamenthub?.exportFilamentPresets && (
+              {typeof window !== 'undefined' && window.filamenthub?.exportFilamentPresets && (
                 <ExportFromOrcaSlicerButton />
               )}
-              {typeof window !== 'undefined' && (window as any).filamenthub?.scanOrphanedPresets && (
+              {typeof window !== 'undefined' && window.filamenthub?.scanOrphanedPresets && (
                 <button
                   onClick={async () => {
                     if (isScanning) return;
                     setIsScanning(true);
                     try {
-                      await (window as any).filamenthub.scanOrphanedPresets();
+                      await window.filamenthub!.scanOrphanedPresets!();
                     } catch (e) {
                       console.error('Orphaned scan error:', e);
                     } finally {
@@ -1841,9 +1841,7 @@ const SpoolForm: React.FC<SpoolFormProps> = ({ mode, spool, onSaved, onCancel })
       return;
     }
 
-    const BarcodeDetectorCtor = (window as any).BarcodeDetector as
-      | (new (options?: { formats?: string[] }) => { detect: (source: any) => Promise<Array<{ rawValue?: string }>> })
-      | undefined;
+    const BarcodeDetectorCtor = window.BarcodeDetector;
 
     if (!BarcodeDetectorCtor) {
       setQrError(t('profilePage.spoolAddModal.scanQrCameraNotSupported'));
@@ -3074,10 +3072,10 @@ const PresetCard: React.FC<PresetCardProps> = ({ preset, onEdit, onView, onDelet
   useEffect(() => {
     // Проверяем наличие window.filamenthub или window.wx
     const inOrca = typeof window !== 'undefined' && (
-      (window as any).filamenthub?.importProfile ||
-      (window as any).wx?.postMessage
+      window.filamenthub?.importProfile ||
+      window.wx?.postMessage
     );
-    setIsInOrcaSlicer(inOrca || false);
+    setIsInOrcaSlicer(Boolean(inOrca));
     
     // Если в OrcaSlicer, подписываемся на ответы от C++
     if (inOrca) {

@@ -19,10 +19,10 @@ export const ExportFromOrcaSlicerButton: React.FC<ExportFromOrcaSlicerButtonProp
   useEffect(() => {
     const checkOrcaSlicer = () => {
       const inOrca = typeof window !== 'undefined' && (
-        (window as any).filamenthub?.exportFilamentPresets ||
-        (window as any).wx?.postMessage
+        window.filamenthub?.exportFilamentPresets ||
+        window.wx?.postMessage
       );
-      setIsInOrcaSlicer(inOrca || false);
+      setIsInOrcaSlicer(Boolean(inOrca));
     };
 
     checkOrcaSlicer();
@@ -44,12 +44,12 @@ export const ExportFromOrcaSlicerButton: React.FC<ExportFromOrcaSlicerButtonProp
 
     try {
       // Проверяем наличие API
-      if (!(window as any).filamenthub?.exportFilamentPresets) {
+      if (!window.filamenthub?.exportFilamentPresets) {
         throw new Error('OrcaSlicer API is not available.');
       }
 
       // Вызываем экспорт через JavaScript API
-      const result = await (window as any).filamenthub.exportFilamentPresets();
+      const result = await window.filamenthub!.exportFilamentPresets!();
       
       setExportStatus('success');
 

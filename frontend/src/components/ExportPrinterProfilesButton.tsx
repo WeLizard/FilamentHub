@@ -22,10 +22,10 @@ export const ExportPrinterProfilesButton: React.FC<ExportPrinterProfilesButtonPr
   useEffect(() => {
     const checkOrcaSlicer = () => {
       const inOrca = typeof window !== 'undefined' && (
-        (window as any).filamenthub?.exportPrinterProfiles ||
-        (window as any).wx?.postMessage
+        window.filamenthub?.exportPrinterProfiles ||
+        window.wx?.postMessage
       );
-      setIsInOrcaSlicer(inOrca || false);
+      setIsInOrcaSlicer(Boolean(inOrca));
     };
 
     checkOrcaSlicer();
@@ -47,12 +47,12 @@ export const ExportPrinterProfilesButton: React.FC<ExportPrinterProfilesButtonPr
 
     try {
       // Проверяем наличие API
-      if (!(window as any).filamenthub?.exportPrinterProfiles) {
+      if (!window.filamenthub?.exportPrinterProfiles) {
         throw new Error('OrcaSlicer API is not available.');
       }
 
       // Вызываем экспорт через JavaScript API
-      const result = await (window as any).filamenthub.exportPrinterProfiles();
+      const result = await window.filamenthub!.exportPrinterProfiles!();
       
       setExportStatus('success');
 
