@@ -3,6 +3,7 @@
 import { Link } from 'react-router-dom';
 import { Trans, useTranslation } from 'react-i18next';
 import { ArrowLeft, Package } from 'lucide-react';
+import { SEOHead } from '../components/SEOHead';
 
 const TERM_ITEM_KEYS = [
   'authorization',
@@ -24,7 +25,14 @@ export const TermsPage = () => {
   }) as string[];
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900">
+    <>
+      <SEOHead
+        title={t('termsPage.title')}
+        url="/user-agreement"
+        type="website"
+        allowAI={false}
+      />
+      <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900">
       {/* Animated Background */}
       <div className="fixed inset-0 overflow-hidden pointer-events-none">
         <div className="absolute -top-40 -right-40 w-80 h-80 bg-purple-500/10 rounded-full blur-3xl animate-pulse"></div>
@@ -195,5 +203,6 @@ export const TermsPage = () => {
         </div>
       </div>
     </div>
+    </>
   );
 };

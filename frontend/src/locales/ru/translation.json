@@ -939,7 +939,8 @@
     "diameter": "Диаметр:",
     "density": "Плотность:",
     "price": "Цена:",
-    "priceSuffix": "₽/кг"
+    "priceSuffix": "₽/кг",
+    "seoDescription": "{{name}} — {{count}} видов пластика для 3D-печати. Пресеты, рейтинги и отзывы на FilamentHub."
   },
   "catalogPage": {
     "seoTitle": "Каталог материалов для 3D-печати",
@@ -973,6 +974,8 @@
     }
   },
   "downloadPage": {
+    "seoTitle": "Скачать OrcaSlicer FilamentHub Edition",
+    "seoDescription": "Скачайте OrcaSlicer с интегрированным каталогом FilamentHub — синхронизация пресетов, поиск настроек и материалов прямо в слайсере.",
     "errorLoadFailed": "Не удалось загрузить информацию о сборках",
     "alertLoading": "Информация о сборках ещё загружается. Пожалуйста, подождите...",
     "alertNotAvailable": "Сборка ещё не доступна. Скоро будет доступна для скачивания!",

@@ -6,6 +6,7 @@ import { Download, CheckCircle, Package, Code, Zap, Globe, Monitor, Smartphone, 
 import { downloadsAPI } from '../api/client';
 import type { DownloadVersionsResponse } from '../types/api';
 import { ModalOverlay } from '../components/ModalOverlay';
+import { SEOHead } from '../components/SEOHead';
 
 type DownloadScreenshotCardImageProps = {
   src: string;
@@ -172,7 +173,14 @@ export function DownloadPage() {
   };
 
   return (
-    <div className="max-w-5xl mx-auto px-4 md:px-6 py-6 md:py-12">
+    <>
+      <SEOHead
+        title={t('downloadPage.seoTitle')}
+        description={t('downloadPage.seoDescription')}
+        url="/download"
+        type="website"
+      />
+      <div className="max-w-5xl mx-auto px-4 md:px-6 py-6 md:py-12">
       {/* Header */}
       <div className="text-center mb-8 md:mb-12">
         <div className="flex flex-col sm:flex-row items-center justify-center gap-3 mb-4">
@@ -784,5 +792,6 @@ export function DownloadPage() {
         </div>
       </div>
     </div>
+    </>
   );
 }

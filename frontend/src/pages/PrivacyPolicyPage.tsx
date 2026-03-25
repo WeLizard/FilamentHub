@@ -3,6 +3,7 @@
 import { Link } from 'react-router-dom';
 import { Trans, useTranslation } from 'react-i18next';
 import { ArrowLeft, Lock } from 'lucide-react';
+import { SEOHead } from '../components/SEOHead';
 
 export const PrivacyPolicyPage = () => {
   const { t } = useTranslation();
@@ -20,7 +21,14 @@ export const PrivacyPolicyPage = () => {
   }) as string[];
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900">
+    <>
+      <SEOHead
+        title={t('privacyPage.title')}
+        url="/privacy-policy"
+        type="website"
+        allowAI={false}
+      />
+      <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900">
       {/* Animated Background */}
       <div className="fixed inset-0 overflow-hidden pointer-events-none">
         <div className="absolute -top-40 -right-40 w-80 h-80 bg-purple-500/10 rounded-full blur-3xl animate-pulse"></div>
@@ -184,5 +192,6 @@ export const PrivacyPolicyPage = () => {
         </div>
       </div>
     </div>
+    </>
   );
 };

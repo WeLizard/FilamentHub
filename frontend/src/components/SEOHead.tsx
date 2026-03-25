@@ -117,6 +117,15 @@ export const SEOHead: React.FC<SEOHeadProps> = ({
       addMeta('robots', 'noindex, nofollow');
     }
 
+    // Canonical URL
+    const existingCanonical = document.querySelector('link[rel="canonical"][data-seo]');
+    if (existingCanonical) existingCanonical.remove();
+    const canonical = document.createElement('link');
+    canonical.setAttribute('rel', 'canonical');
+    canonical.setAttribute('href', fullUrl);
+    canonical.setAttribute('data-seo', 'true');
+    document.head.appendChild(canonical);
+
     // Дополнительные meta теги
     additionalMeta.forEach(({ name, content }) => {
       addMeta(name, content);
@@ -141,6 +150,8 @@ export const SEOHead: React.FC<SEOHeadProps> = ({
     return () => {
       const metaTags = document.querySelectorAll('meta[data-seo]');
       metaTags.forEach((meta) => meta.remove());
+      const canonicalLink = document.querySelector('link[rel="canonical"][data-seo]');
+      if (canonicalLink) canonicalLink.remove();
       const jsonLdScript = document.querySelector('script[type="application/ld+json"][data-seo]');
       if (jsonLdScript) {
         jsonLdScript.remove();

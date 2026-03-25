@@ -16,6 +16,7 @@ import {
 import { brandsAPI, filamentsAPI, filamentReviewsAPI } from '../api/client';
 import { FilamentPreview } from '../components/FilamentPreview';
 import { Dropdown } from '../components/Dropdown';
+import { SEOHead } from '../components/SEOHead';
 
 export const BrandDetailPage: React.FC = () => {
   const { t } = useTranslation();
@@ -110,8 +111,20 @@ export const BrandDetailPage: React.FC = () => {
       ? ratingsWithData.reduce((acc, s) => acc + (s!.avg_rating || 0), 0) / ratingsWithData.length
       : null;
 
+  const seoDescription = brand.description
+    ? brand.description.slice(0, 160)
+    : t('brandDetailPage.seoDescription', { name: brand.name, count: totalFilaments });
+
   return (
-    <div className="space-y-6">
+    <>
+      <SEOHead
+        title={brand.name}
+        description={seoDescription}
+        image={brand.logo_url || undefined}
+        url={`/brands/${id}`}
+        type="website"
+      />
+      <div className="space-y-6">
       {/* Кнопка назад */}
       <button
         onClick={() => navigate(-1)}
@@ -289,6 +302,7 @@ export const BrandDetailPage: React.FC = () => {
         </div>
       )}
     </div>
+    </>
   );
 };
 

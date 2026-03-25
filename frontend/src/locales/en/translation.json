@@ -844,9 +844,12 @@
     "diameter": "Diameter:",
     "density": "Density:",
     "price": "Price:",
-    "priceSuffix": " RUB/kg"
+    "priceSuffix": " RUB/kg",
+    "seoDescription": "{{name}} — {{count}} filament types for 3D printing. Presets, ratings and reviews on FilamentHub."
   },
   "downloadPage": {
+    "seoTitle": "Download OrcaSlicer FilamentHub Edition",
+    "seoDescription": "Download OrcaSlicer with integrated FilamentHub catalog — preset sync, filament search, and material settings right inside the slicer.",
     "errorLoadFailed": "Failed to load build information",
     "alertLoading": "Build information is still loading. Please wait...",
     "alertNotAvailable": "Build is not yet available. It will be available for download soon!",
