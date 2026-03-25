@@ -1,6 +1,7 @@
 /** Страница статьи Wiki - полный текст с Markdown */
 
 import React, { useState, useEffect, useRef, Children } from 'react';
+import type { AxiosError } from 'axios';
 import { useTranslation } from 'react-i18next';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
@@ -153,7 +154,7 @@ export function WikiArticlePage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['wiki-feedback-stats', slug] });
     },
-    onError: (err: any) => {
+    onError: (err: AxiosError<{ detail: unknown }>) => {
       // Если уже отмечено как полезное - не показываем ошибку
       if (err?.response?.status !== 400) {
         console.error('Error adding helpful mark:', err);
@@ -167,7 +168,7 @@ export function WikiArticlePage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['wiki-feedback-stats', slug] });
     },
-    onError: (err: any) => {
+    onError: (err: AxiosError<{ detail: unknown }>) => {
       console.error('Error removing helpful mark:', err);
     },
   });
