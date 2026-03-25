@@ -11,6 +11,7 @@ import { Dropdown } from '../Dropdown';
 import { ConfirmModal } from '../ConfirmModal';
 import { BadgeList, BADGE_CONFIG, type BadgeType } from '../Badge';
 import type { User, Brand } from '../../types/api';
+import type { AxiosError } from 'axios';
 
 export function AdminUsers() {
   const { t } = useTranslation();
@@ -73,11 +74,11 @@ export function AdminUsers() {
       setSelectedUserIdForBrand(null);
       setSelectedBrandId(null);
     },
-    onError: (error: any) => {
+    onError: (error: AxiosError<{ detail: unknown }>) => {
       console.error('Brand linking error:', error);
       // Если операция выполнена (статус 200-299), но есть ошибка в ответе - все равно закрываем модалку
       // и обновляем данные, так как привязка могла произойти
-      if (error?.response?.status >= 200 && error?.response?.status < 300) {
+      if ((error?.response?.status ?? 0) >= 200 && (error?.response?.status ?? 0) < 300) {
         queryClient.invalidateQueries({ queryKey: ['admin-users'] });
         setSelectedUserIdForBrand(null);
         setSelectedBrandId(null);

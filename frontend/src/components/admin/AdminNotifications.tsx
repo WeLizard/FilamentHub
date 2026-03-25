@@ -8,6 +8,7 @@ import { adminNotificationsAPI, adminAPI } from '../../api/client';
 import { translateApiError } from '../../utils/translateApiError';
 import { useQuery } from '@tanstack/react-query';
 import { toast } from '../Toast';
+import type { AxiosError } from 'axios';
 
 type NotificationMode = 'broadcast' | 'specific';
 
@@ -56,7 +57,7 @@ export function AdminNotifications() {
       setMessage('');
       setLink('');
     },
-    onError: (error: any) => {
+    onError: (error: AxiosError<{ detail: unknown }>) => {
       toast.error(translateApiError(t, error?.response?.data?.detail, t('adminNotifications.sendError')), 6000);
     },
   });
@@ -77,7 +78,7 @@ export function AdminNotifications() {
       setSelectedUserIds([]);
       setUserSearch('');
     },
-    onError: (error: any) => {
+    onError: (error: AxiosError<{ detail: unknown }>) => {
       toast.error(translateApiError(t, error?.response?.data?.detail, t('adminNotifications.sendError')), 6000);
     },
   });

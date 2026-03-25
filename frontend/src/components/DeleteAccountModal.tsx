@@ -10,6 +10,7 @@ import { translateApiError } from '../utils/translateApiError';
 import { useAuth } from '../contexts/AuthContext';
 import { ModalOverlay } from './ModalOverlay';
 import { toast } from './Toast';
+import type { AxiosError } from 'axios';
 
 interface DeleteAccountModalProps {
   isOpen: boolean;
@@ -50,7 +51,7 @@ export const DeleteAccountModal: React.FC<DeleteAccountModalProps> = ({ isOpen, 
       navigate('/');
       onClose();
     },
-    onError: (error: any) => {
+    onError: (error: AxiosError<{ detail: unknown }>) => {
       console.error('Delete account error:', error);
       toast.error(translateApiError(t, error.response?.data?.detail, t('deleteAccount.errorMessage')));
     },

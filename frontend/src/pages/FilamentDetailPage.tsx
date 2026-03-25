@@ -33,6 +33,7 @@ import { CreateReviewModal } from '../components/CreateReviewModal';
 import { PresetSyncToggle } from '../components/PresetSyncToggle';
 import { SEOHead } from '../components/SEOHead';
 import { FilamentReview } from '../types/api';
+import type { AxiosError } from 'axios';
 
 export const FilamentDetailPage: React.FC = () => {
   const { t } = useTranslation();
@@ -97,7 +98,7 @@ export const FilamentDetailPage: React.FC = () => {
       queryClient.invalidateQueries({ queryKey: ['saved-presets-details'] });
       queryClient.invalidateQueries({ queryKey: ['user-presets'] });
     },
-    onError: (error: any) => {
+    onError: (error: AxiosError<{ detail: unknown }>) => {
       console.error('Error saving preset:', error);
       // Можно добавить уведомление пользователю
       alert(translateApiError(t, error.response?.data?.detail, t('filamentDetailPage.errorSavingPreset')));

@@ -35,6 +35,7 @@ import {
 import { adminAPI } from '../../api/client';
 import { translateApiError } from '../../utils/translateApiError';
 import { useTranslation } from 'react-i18next';
+import type { AxiosError } from 'axios';
 
 interface MigrationInfo {
   revision: string;
@@ -408,7 +409,7 @@ export function AdminDatabase() {
       queryClient.invalidateQueries({ queryKey: ['admin-migrations'] });
       setImportFile(null);
     },
-    onError: (error: any) => {
+    onError: (error: AxiosError<{ detail: unknown }>) => {
       console.error(t('adminDatabase.import.errorTitle'), error);
     },
   });
@@ -426,7 +427,7 @@ export function AdminDatabase() {
       setEditingRow(null);
       setEditError(null);
     },
-    onError: (error: any) => {
+    onError: (error: AxiosError<{ detail: unknown }>) => {
       setEditError(translateApiError(t, error?.response?.data?.detail, t('adminDatabase.tableViewer.error')));
     },
   });
@@ -443,7 +444,7 @@ export function AdminDatabase() {
       setEditingRow(null);
       setEditError(null);
     },
-    onError: (error: any) => {
+    onError: (error: AxiosError<{ detail: unknown }>) => {
       setEditError(translateApiError(t, error?.response?.data?.detail, t('adminDatabase.tableViewer.error')));
     },
   });

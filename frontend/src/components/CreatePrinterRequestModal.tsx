@@ -8,6 +8,7 @@ import { Printer3DIcon } from './icons/Printer3DIcon';
 import { printerRequestsAPI } from '../api/printerRequestsAPI';
 import { translateApiError } from '../utils/translateApiError';
 import { ModalOverlay } from './ModalOverlay';
+import type { AxiosError } from 'axios';
 
 interface CreatePrinterRequestModalProps {
   isOpen: boolean;
@@ -55,7 +56,7 @@ export function CreatePrinterRequestModal({ isOpen, onClose }: CreatePrinterRequ
       });
       alert(t('printerRequest.successMessage'));
     },
-    onError: (error: any) => {
+    onError: (error: AxiosError<{ detail: unknown }>) => {
       alert(translateApiError(t, error.response?.data?.detail, t('printerRequest.createError')));
     },
   });

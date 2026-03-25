@@ -46,6 +46,7 @@ import { PresetSyncToggle } from '../components/PresetSyncToggle';
 import { Dropdown } from '../components/Dropdown';
 import { FilamentPreview } from '../components/FilamentPreview';
 import type { Filament, Brand, BrandRequest, Preset } from '../types/api';
+import type { AxiosError } from 'axios';
 
 interface BrandProfilePageProps {
   onBack?: () => void; // Callback для возврата в обычный профиль
@@ -131,7 +132,7 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({ onBack }) =>
       queryClient.invalidateQueries({ queryKey: ['filaments', 'material-types'] });
       setDeletingFilamentId(null);
     },
-    onError: (err: any) => {
+    onError: (err: AxiosError<{ detail: unknown }>) => {
       alert(translateApiError(t, err.response?.data?.detail, t('brandProfile.errorDeleteMaterial')));
       setDeletingFilamentId(null);
     },
@@ -146,7 +147,7 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({ onBack }) =>
       setIsEditingProfile(false);
       setProfileError(null);
     },
-    onError: (err: any) => {
+    onError: (err: AxiosError<{ detail: unknown }>) => {
       setProfileError(translateApiError(t, err.response?.data?.detail, t('brandProfile.errorUpdateProfile')));
     },
   });
@@ -1090,7 +1091,7 @@ const BrandSelectionForm: React.FC = () => {
       // Для JOIN заявок не очищаем поля при успехе, так как они не используются
       refetchRequests();
     },
-    onError: (err: any) => {
+    onError: (err: AxiosError<{ detail: unknown }>) => {
       setError(translateApiError(t, err.response?.data?.detail, t('brandProfile.errorSubmitRequest')));
     },
   });
@@ -1102,7 +1103,7 @@ const BrandSelectionForm: React.FC = () => {
       queryClient.invalidateQueries({ queryKey: ['brand-requests'] });
       refetchRequests();
     },
-    onError: (err: any) => {
+    onError: (err: AxiosError<{ detail: unknown }>) => {
       alert(translateApiError(t, err.response?.data?.detail, t('brandProfile.errorCancelRequest')));
     },
   });
@@ -1126,7 +1127,7 @@ const BrandSelectionForm: React.FC = () => {
         // Не перезаписываем их данными из refetch, чтобы избежать дублирования
       }
     },
-    onError: (err: any) => {
+    onError: (err: AxiosError<{ detail: unknown }>) => {
       setError(translateApiError(t, err.response?.data?.detail, t('brandProfile.errorUploadFile')));
     },
   });
@@ -1145,7 +1146,7 @@ const BrandSelectionForm: React.FC = () => {
       // Обновляем список заявок в фоне
       refetchRequests();
     },
-    onError: (err: any) => {
+    onError: (err: AxiosError<{ detail: unknown }>) => {
       alert(translateApiError(t, err.response?.data?.detail, t('brandProfile.errorDeleteFile')));
     },
   });

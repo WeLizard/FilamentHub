@@ -20,6 +20,7 @@ import { Dropdown } from './Dropdown';
 import { translateApiError } from '../utils/translateApiError';
 import { useAuth } from '../contexts/AuthContext';
 import type { Filament, PrintProfile, PrinterProfile } from '../types/api';
+import type { AxiosError } from 'axios';
 
 interface CreatePrintProfileModalProps {
   isOpen: boolean;
@@ -828,7 +829,7 @@ export const CreatePrintProfileModal: React.FC<CreatePrintProfileModalProps> = (
       queryClient.invalidateQueries({ queryKey: ['print-profiles', user?.id] });
       onClose();
     },
-    onError: (error: any) => {
+    onError: (error: AxiosError<{ detail: unknown }>) => {
       console.error('Error saving print profile:', error);
       alert(translateApiError(t, error?.response?.data?.detail, t('createPrintProfile.saveError')));
     },

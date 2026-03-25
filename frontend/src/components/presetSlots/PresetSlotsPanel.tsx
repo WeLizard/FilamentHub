@@ -10,6 +10,7 @@ import { PresetAssignModal } from './PresetAssignModal';
 import { toast } from '../Toast';
 import { translateApiError } from '../../utils/translateApiError';
 import { useAuth } from '../../contexts/AuthContext';
+import type { AxiosError } from 'axios';
 
 function formatLastSeen(
   ts: string | null,
@@ -60,7 +61,7 @@ function DeviceSection({ device, presetsSeedMap, spools, printerProfileName = nu
       toast.success(t('presetSlots.edit.saved'));
       setEditOpen(false);
     },
-    onError: (err: any) => {
+    onError: (err: AxiosError<{ detail: unknown }>) => {
       toast.error(translateApiError(t, err?.response?.data?.detail, t('common.error')));
     },
   });

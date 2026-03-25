@@ -9,6 +9,7 @@ import { ModalOverlay } from '../ModalOverlay';
 import { adminAPI } from '../../api/client';
 import { translateApiError } from '../../utils/translateApiError';
 import type { Brand } from '../../types/api';
+import type { AxiosError } from 'axios';
 
 type FilterType = 'all' | 'verified' | 'unverified';
 
@@ -69,7 +70,7 @@ export function AdminBrands() {
       setEditingBrand(null);
       setEditError(null);
     },
-    onError: (error: any) => {
+    onError: (error: AxiosError<{ detail: unknown }>) => {
       setEditError(translateApiError(t, error?.response?.data?.detail, t('adminBrands.updateError')));
     },
   });

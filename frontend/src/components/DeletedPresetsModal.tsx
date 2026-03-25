@@ -9,6 +9,7 @@ import type { Notification } from '../types/api';
 
 import { useTranslation } from 'react-i18next';
 import { translateApiError } from '../utils/translateApiError';
+import type { AxiosError } from 'axios';
 
 interface DeletedPreset {
   preset_id: number;
@@ -182,7 +183,7 @@ export const DeletedPresetsModal: React.FC<DeletedPresetsModalProps> = ({
                 console.error(t('deletedPresetsModal.error_deleting_notification'), error);        }
       }
     },
-    onError: (error: any) => {
+    onError: (error: AxiosError<{ detail: unknown }>) => {
       const msg = translateApiError(t, error?.response?.data?.detail, t('deletedPresetsModal.error_unknown'));
       console.error(t('deletedPresetsModal.error_handling_action', {message: msg}));
       alert(t('deletedPresetsModal.error_handling_action', {message: msg}));

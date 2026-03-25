@@ -21,6 +21,7 @@ import { ColorMaterialSection } from './ColorMaterialSection';
 import { HSLColorPicker } from './HSLColorPicker';
 
 import { FilamentSummaryCard } from './FilamentSummaryCard';
+import type { AxiosError } from 'axios';
 
 // Список стандартных типов материалов (FDM/FFF)
 const MATERIAL_TYPES = [
@@ -988,7 +989,7 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
   // Мутация для создания бренда
   const createBrandMutation = useMutation({
     mutationFn: (data: { name: string; slug: string; website?: string }) => brandsAPI.create(data),
-    onError: (err: any) => {
+    onError: (err: AxiosError<{ detail: unknown }>) => {
       setError(translateApiError(t, err?.response?.data?.detail, t('presetModal.errors.createBrand')));
       console.error('Failed to create brand:', err);
     },
@@ -1016,17 +1017,17 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
       queryClient.invalidateQueries({ queryKey: ['filaments'] });
       setDuplicateFilamentSuggestion(null);
     },
-    onError: (err: any) => {
+    onError: (err: AxiosError<{ detail: unknown }>) => {
       const detail = err?.response?.data?.detail;
       const isDuplicateFilamentError =
-        (detail && typeof detail === 'object' && detail.code === 'ERR_FILAMENT_ALREADY_EXISTS') ||
+        (detail && typeof detail === 'object' && (detail as Record<string, unknown>).code === 'ERR_FILAMENT_ALREADY_EXISTS') ||
         detail === 'ERR_FILAMENT_ALREADY_EXISTS';
 
       if (isDuplicateFilamentError) {
         let suggestion: DuplicateFilamentSuggestion | null = null;
 
         if (detail && typeof detail === 'object') {
-          const params = detail.params || {};
+          const params = (detail as Record<string, unknown>).params as Record<string, unknown> || {};
           const duplicateId = Number(params.filament_id);
           if (Number.isFinite(duplicateId) && duplicateId > 0) {
             suggestion = {
@@ -1142,7 +1143,7 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
       queryClient.invalidateQueries({ queryKey: ['filaments'] });
       onClose();
     },
-    onError: (err: any) => {
+    onError: (err: AxiosError<{ detail: unknown }>) => {
       setError(translateApiError(t, err?.response?.data?.detail, t('presetModal.errors.createPreset')));
       console.error('Failed to create preset:', err);
     },
@@ -1185,7 +1186,7 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
       }
       onClose();
     },
-    onError: (err: any) => {
+    onError: (err: AxiosError<{ detail: unknown }>) => {
       setError(translateApiError(t, err?.response?.data?.detail, t('presetModal.errors.updatePreset')));
       console.error('Failed to update preset:', err);
     },

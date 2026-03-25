@@ -8,6 +8,7 @@ import { feedbackAPI } from '../api/client';
 import { translateApiError } from '../utils/translateApiError';
 import { useAuth } from '../contexts/AuthContext';
 import { ModalOverlay } from './ModalOverlay';
+import type { AxiosError } from 'axios';
 
 interface WikiFeedbackModalProps {
   isOpen: boolean;
@@ -48,7 +49,7 @@ export const WikiFeedbackModal: React.FC<WikiFeedbackModalProps> = ({
         onClose();
       }, 2000);
     },
-    onError: (err: any) => {
+    onError: (err: AxiosError<{ detail: unknown }>) => {
       console.error('Error creating feedback:', err);
       setError(translateApiError(t, err?.response?.data?.detail, t('wikiFeedback.sendError')));
     },

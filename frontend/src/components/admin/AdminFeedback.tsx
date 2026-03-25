@@ -9,6 +9,7 @@ import type { Feedback, FeedbackType, FeedbackStatus } from '../../types/api';
 import { useTranslation } from 'react-i18next';
 import { toast } from '../Toast';
 import { translateApiError } from '../../utils/translateApiError';
+import type { AxiosError } from 'axios';
 
 export function AdminFeedback() {
   const { t } = useTranslation();
@@ -44,7 +45,7 @@ export function AdminFeedback() {
       setSelectedFeedback(null);
       setAdminResponse('');
     },
-    onError: (error: any) => {
+    onError: (error: AxiosError<{ detail: unknown }>) => {
       toast.error(translateApiError(t, error?.response?.data?.detail, t('adminFeedback.updateError')));
     },
   });
@@ -55,7 +56,7 @@ export function AdminFeedback() {
       queryClient.invalidateQueries({ queryKey: ['admin-feedback'] });
       setSelectedFeedback(null);
     },
-    onError: (error: any) => {
+    onError: (error: AxiosError<{ detail: unknown }>) => {
       toast.error(translateApiError(t, error?.response?.data?.detail, t('adminFeedback.deleteError')));
     },
   });

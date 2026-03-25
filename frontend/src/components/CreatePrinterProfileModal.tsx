@@ -14,6 +14,7 @@ import { Dropdown } from './Dropdown';
 import { useDebounce } from '../hooks/useDebounce';
 import { useTranslation } from 'react-i18next';
 import { translateApiError } from '../utils/translateApiError';
+import type { AxiosError } from 'axios';
 
 interface CreatePrinterProfileModalProps {
   isOpen: boolean;
@@ -1215,7 +1216,7 @@ export const CreatePrinterProfileModal: React.FC<CreatePrinterProfileModalProps>
       queryClient.invalidateQueries({ queryKey: ['printer-profiles', user?.id] });
       onClose();
     },
-    onError: (error: any) => {
+    onError: (error: AxiosError<{ detail: unknown }>) => {
       console.error('Error saving printer profile:', error);
       alert(translateApiError(t, error?.response?.data?.detail, t('printerProfile.saveError')));
     },

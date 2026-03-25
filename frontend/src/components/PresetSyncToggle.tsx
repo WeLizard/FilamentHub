@@ -8,6 +8,7 @@ import { savedPresetsAPI } from '../api/client';
 import { translateApiError } from '../utils/translateApiError';
 import { useAuth } from '../contexts/AuthContext';
 import type { Preset } from '../types/api';
+import type { AxiosError } from 'axios';
 
 interface PresetSyncToggleProps {
   preset: Preset;
@@ -62,7 +63,7 @@ export const PresetSyncToggle: React.FC<PresetSyncToggleProps> = ({
       queryClient.invalidateQueries({ queryKey: ['user-presets'] });
       queryClient.invalidateQueries({ queryKey: ['my-presets'] });
     },
-    onError: (error: any) => {
+    onError: (error: AxiosError<{ detail: unknown }>) => {
       console.error('Sync toggle error:', error);
       alert(`${t('presetSync.toggleError')}: ${translateApiError(t, error?.response?.data?.detail, t('presetSync.unknownError'))}`);
     },

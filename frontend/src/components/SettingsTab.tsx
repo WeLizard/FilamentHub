@@ -9,6 +9,7 @@ import { translateApiError } from '../utils/translateApiError';
 import type { User } from '../types/api';
 import { useAuth } from '../contexts/AuthContext';
 import { DeleteAccountModal } from './DeleteAccountModal';
+import type { AxiosError } from 'axios';
 
 interface SettingsTabProps {
   user: User;
@@ -81,7 +82,7 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({ user, onUserUpdate }) 
       queryClient.invalidateQueries({ queryKey: ['user'] });
       setTimeout(() => setUsernameSuccess(false), 3000);
     },
-    onError: (error: any) => {
+    onError: (error: AxiosError<{ detail: unknown }>) => {
       setUsernameError(translateApiError(t, error.response?.data?.detail, t('settings.usernameChangeError')));
       setUsernameSuccess(false);
     },
@@ -96,7 +97,7 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({ user, onUserUpdate }) 
       setPasswordError(null);
       setTimeout(() => setPasswordSuccess(false), 3000);
     },
-    onError: (error: any) => {
+    onError: (error: AxiosError<{ detail: unknown }>) => {
       setPasswordError(translateApiError(t, error.response?.data?.detail, t('settings.passwordChangeError')));
       setPasswordSuccess(false);
     },
@@ -111,7 +112,7 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({ user, onUserUpdate }) 
       // Email не меняется сразу — показываем сообщение "проверьте почту"
       // Не вызываем refreshUser() — email ещё не изменён
     },
-    onError: (error: any) => {
+    onError: (error: AxiosError<{ detail: unknown }>) => {
       setEmailError(translateApiError(t, error.response?.data?.detail, t('settings.emailChangeError')));
       setEmailSuccess(false);
     },

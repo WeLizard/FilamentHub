@@ -11,6 +11,7 @@ import { FilamentReview, Preset } from '../types/api';
 import { StarRating } from './StarRating';
 import { useAuth } from '../contexts/AuthContext';
 import { ModalOverlay } from './ModalOverlay';
+import type { AxiosError } from 'axios';
 
 interface CreateReviewModalProps {
   filamentId: number;
@@ -83,7 +84,7 @@ export const CreateReviewModal: React.FC<CreateReviewModalProps> = ({
       }
       onClose();
     },
-    onError: (error: any) => {
+    onError: (error: AxiosError<{ detail: unknown }>) => {
       setErrors({ submit: translateApiError(t, error.response?.data?.detail, t('createReview.saveError')) });
     },
   });

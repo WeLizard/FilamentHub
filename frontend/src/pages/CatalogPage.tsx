@@ -24,6 +24,7 @@ import { Dropdown } from '../components/Dropdown';
 import { FilamentPreview } from '../components/FilamentPreview';
 import { SEOHead } from '../components/SEOHead';
 import type { Filament } from '../types/api';
+import type { AxiosError } from 'axios';
 
 export const CatalogPage: React.FC = () => {
   const { t } = useTranslation();
@@ -59,7 +60,7 @@ export const CatalogPage: React.FC = () => {
       queryClient.invalidateQueries({ queryKey: ['saved-presets-details'] });
       queryClient.invalidateQueries({ queryKey: ['user-presets'] });
     },
-    onError: (error: any) => {
+    onError: (error: AxiosError<{ detail: unknown }>) => {
       console.error('Error saving preset:', error);
       alert(translateApiError(t, error.response?.data?.detail, t('catalogPage.errorSavePreset')));
     },

@@ -14,6 +14,7 @@ import type { Filament, Brand } from '../types/api';
 import { useAuth } from '../contexts/AuthContext';
 import { useClickOutside } from '../hooks/useClickOutside';
 import { ModalOverlay } from './ModalOverlay';
+import type { AxiosError } from 'axios';
 
 interface CreateFilamentModalProps {
   isOpen: boolean;
@@ -329,7 +330,7 @@ export const CreateFilamentModal: React.FC<CreateFilamentModalProps> = ({
         setSuccessMessage(null);
       }, 1500);
     },
-    onError: (err: any) => {
+    onError: (err: AxiosError<{ detail: unknown }>) => {
       setError(translateApiError(t, err.response?.data?.detail, t('createFilament.createError')));
     },
   });
@@ -364,7 +365,7 @@ export const CreateFilamentModal: React.FC<CreateFilamentModalProps> = ({
         setSuccessMessage(null);
       }, 1500);
     },
-    onError: (err: any) => {
+    onError: (err: AxiosError<{ detail: unknown }>) => {
       setError(translateApiError(t, err.response?.data?.detail, t('createFilament.updateError')));
     },
   });
