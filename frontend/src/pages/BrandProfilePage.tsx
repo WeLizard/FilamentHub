@@ -1,6 +1,6 @@
 /** Личный кабинет производителя */
 
-import { useState, useEffect } from 'react';
+import { lazy, Suspense, useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
@@ -39,7 +39,9 @@ import { useAuth } from '../contexts/AuthContext';
 import { brandsAPI, filamentsAPI, brandRequestsAPI, presetsAPI, qrAPI } from '../api/client';
 import { translateApiError } from '../utils/translateApiError';
 import { CreateFilamentModal } from '../components/CreateFilamentModal';
-import { CreatePresetModal } from '../components/CreatePresetModal';
+const CreatePresetModal = lazy(() =>
+  import('../components/CreatePresetModal').then(m => ({ default: m.CreatePresetModal }))
+);
 import { PresetSyncToggle } from '../components/PresetSyncToggle';
 import { Dropdown } from '../components/Dropdown';
 import { FilamentPreview } from '../components/FilamentPreview';
@@ -759,12 +761,14 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({ onBack }) =>
       />
 
       {/* Create Preset Modal */}
-      <CreatePresetModal
-        isOpen={isCreatePresetModalOpen}
-        onClose={handleClosePresetModal}
-        preset={editingPreset}
-        brandId={user.brand_id || undefined}
-      />
+      <Suspense fallback={null}>
+        <CreatePresetModal
+          isOpen={isCreatePresetModalOpen}
+          onClose={handleClosePresetModal}
+          preset={editingPreset}
+          brandId={user.brand_id || undefined}
+        />
+      </Suspense>
 
       {/* QR Code Modal */}
       {showQRFilament && showQRFilament.qr_code && (

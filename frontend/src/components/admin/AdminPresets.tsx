@@ -1,12 +1,14 @@
 /** Компонент для модерации пресетов */
 
-import { useState } from 'react';
+import { lazy, Suspense, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Settings, CheckCircle, XCircle, Pencil, Trash2 } from 'lucide-react';
 import { adminAPI, presetsAPI } from '../../api/client';
 import type { Preset } from '../../types/api';
-import { CreatePresetModal } from '../CreatePresetModal';
+const CreatePresetModal = lazy(() =>
+  import('../CreatePresetModal').then(m => ({ default: m.CreatePresetModal }))
+);
 import { translateApiError } from '../../utils/translateApiError';
 
 type ModerationFlag = {
@@ -191,14 +193,16 @@ export function AdminPresets() {
         </div>
       )}
 
-      <CreatePresetModal
-        isOpen={!!editingPreset}
-        onClose={() => {
-          setEditingPreset(null);
-          queryClient.invalidateQueries({ queryKey: ['admin-pending-presets'] });
-        }}
-        preset={editingPreset}
-      />
+      <Suspense fallback={null}>
+        <CreatePresetModal
+          isOpen={!!editingPreset}
+          onClose={() => {
+            setEditingPreset(null);
+            queryClient.invalidateQueries({ queryKey: ['admin-pending-presets'] });
+          }}
+          preset={editingPreset}
+        />
+      </Suspense>
     </div>
   );
 }

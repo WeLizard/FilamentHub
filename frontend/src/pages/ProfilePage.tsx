@@ -1,6 +1,6 @@
 /** Страница профиля пользователя */
 
-import { useState, useMemo, useEffect, useRef, type ReactNode } from 'react';
+import { lazy, Suspense, useState, useMemo, useEffect, useRef, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
@@ -50,13 +50,17 @@ import type { UserSpool, SpoolState, UserPrinterDevice } from '../api/client';
 import { SpoolIcon } from '../components/icons/SpoolIcon';
 import api from '../api/client';
 import { translateApiError } from '../utils/translateApiError';
-import { CreatePresetModal } from '../components/CreatePresetModal';
+const CreatePresetModal = lazy(() =>
+  import('../components/CreatePresetModal').then(m => ({ default: m.CreatePresetModal }))
+);
 import { ViewPresetModal } from '../components/ViewPresetModal';
 import { CreatePrinterRequestModal } from '../components/CreatePrinterRequestModal';
 import { SettingsTab } from '../components/SettingsTab';
 import { ExportFromOrcaSlicerButton } from '../components/ExportFromOrcaSlicerButton';
 import { ExportPrinterProfilesButton } from '../components/ExportPrinterProfilesButton';
-import { CreatePrinterProfileModal } from '../components/CreatePrinterProfileModal';
+const CreatePrinterProfileModal = lazy(() =>
+  import('../components/CreatePrinterProfileModal').then(m => ({ default: m.CreatePrinterProfileModal }))
+);
 import { CreatePrintProfileModal } from '../components/CreatePrintProfileModal';
 import { PresetSyncToggle } from '../components/PresetSyncToggle';
 import { Badge, BADGE_CONFIG, type BadgeType } from '../components/Badge';
@@ -1135,11 +1139,13 @@ export const ProfilePage: React.FC = () => {
       )}
 
       {/* Create/Edit Preset Modal */}
-      <CreatePresetModal
-        isOpen={isCreatePresetModalOpen}
-        onClose={handleClosePresetModal}
-        preset={editingPreset}
-      />
+      <Suspense fallback={null}>
+        <CreatePresetModal
+          isOpen={isCreatePresetModalOpen}
+          onClose={handleClosePresetModal}
+          preset={editingPreset}
+        />
+      </Suspense>
 
       {/* View Preset Modal */}
       <ViewPresetModal
@@ -1159,19 +1165,21 @@ export const ProfilePage: React.FC = () => {
       />
 
       {/* Create/Edit Printer Profile Modal */}
-      <CreatePrinterProfileModal
-        isOpen={isCreatePrinterProfileModalOpen}
-        onClose={() => {
-          setIsCreatePrinterProfileModalOpen(false);
-          setEditingPrinterProfile(null);
-        }}
-        profile={editingPrinterProfile}
-        onRequestPrinter={() => {
-          // Закрываем текущую модалку и открываем модалку создания заявки
-          setIsCreatePrinterProfileModalOpen(false);
-          setIsCreatePrinterRequestModalOpen(true);
-        }}
-      />
+      <Suspense fallback={null}>
+        <CreatePrinterProfileModal
+          isOpen={isCreatePrinterProfileModalOpen}
+          onClose={() => {
+            setIsCreatePrinterProfileModalOpen(false);
+            setEditingPrinterProfile(null);
+          }}
+          profile={editingPrinterProfile}
+          onRequestPrinter={() => {
+            // Закрываем текущую модалку и открываем модалку создания заявки
+            setIsCreatePrinterProfileModalOpen(false);
+            setIsCreatePrinterRequestModalOpen(true);
+          }}
+        />
+      </Suspense>
 
       {/* Create/Edit Print Profile Modal */}
       <CreatePrintProfileModal

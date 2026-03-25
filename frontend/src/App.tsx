@@ -42,6 +42,8 @@ if (typeof window !== 'undefined') {
       import('./pages/WikiCategoryPage');
       import('./pages/WikiArticlePage');
       import('./pages/PrivacyPolicyPage');
+      import('./components/CreatePresetModal');
+      import('./components/CreatePrinterProfileModal');
     }, 2000);
   }, { once: true });
 }
