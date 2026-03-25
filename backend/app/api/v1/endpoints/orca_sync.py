@@ -48,6 +48,9 @@ from app.models.user import User, UserRole
 from app.models.user_saved_preset import UserSavedPreset
 from app.models.user_spool import UserSpool
 from app.schemas.orca_sync import (
+    BatchExportRequest,
+    BatchExportItem,
+    BatchExportResponse,
     DeletedPresetAction,
     DeletedPresetActionResponse,
     DeletedPresetsRequest,
@@ -3390,3 +3393,96 @@ async def spool_preset_mapping(
             mapping[str(sid)] = None
 
     return {"mapping": mapping}
+
+
+# ---------------------------------------------------------------------------
+# Batch export (OrcaSlicer sync performance: N downloads → 1)
+# ---------------------------------------------------------------------------
+
+
+@router.post(
+    "/presets/batch-export",
+    response_model=BatchExportResponse,
+    status_code=status.HTTP_200_OK,
+)
+async def batch_export_presets(
+    request: BatchExportRequest,
+    current_user: Annotated[User, Depends(get_current_active_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> BatchExportResponse:
+    """
+    Batch-export multiple presets as OrcaSlicer JSON + .info in one request.
+
+    Replaces N individual ``download_profile`` + ``download_profile_info``
+    calls with a single POST, eliminating per-preset HTTP overhead during
+    OrcaSlicer sync.
+    """
+    from app.services.orcaslicer_exporter import (
+        preset_to_orcaslicer_info,
+        preset_to_orcaslicer_json,
+    )
+
+    # Load all requested presets in one query (with filament + brand eager-loaded)
+    result = await db.execute(
+        select(Preset)
+        .options(selectinload(Preset.filament).selectinload(Filament.brand))
+        .where(Preset.id.in_(request.preset_ids))
+    )
+    presets_by_id: dict[int, Preset] = {p.id: p for p in result.scalars().all()}
+
+    items: list[BatchExportItem] = []
+
+    for preset_id in request.preset_ids:
+        preset = presets_by_id.get(preset_id)
+
+        # --- Not found ---
+        if preset is None:
+            items.append(BatchExportItem(
+                preset_id=preset_id,
+                status="error",
+                error="Preset not found",
+            ))
+            continue
+
+        # --- Access check: active presets are public; drafts only for owner/admin ---
+        if not preset.active and preset.user_id != current_user.id and current_user.role != UserRole.admin:
+            items.append(BatchExportItem(
+                preset_id=preset_id,
+                status="error",
+                error="Access denied",
+            ))
+            continue
+
+        # --- Filament must be linked ---
+        if not preset.filament:
+            items.append(BatchExportItem(
+                preset_id=preset_id,
+                status="error",
+                error="Filament not linked",
+            ))
+            continue
+
+        # --- Generate OrcaSlicer JSON + .info ---
+        try:
+            config = await preset_to_orcaslicer_json(preset, preset.filament, db)
+            info = preset_to_orcaslicer_info(preset)
+            items.append(BatchExportItem(
+                preset_id=preset_id,
+                config=config,
+                info=info,
+                status="ok",
+            ))
+        except Exception as exc:
+            logger.warning(
+                "Batch export: failed to export preset %d: %s",
+                preset_id,
+                exc,
+                exc_info=True,
+            )
+            items.append(BatchExportItem(
+                preset_id=preset_id,
+                status="error",
+                error="Export failed",
+            ))
+
+    return BatchExportResponse(profiles=items)
