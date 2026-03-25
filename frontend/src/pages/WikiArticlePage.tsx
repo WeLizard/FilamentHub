@@ -140,7 +140,7 @@ export function WikiArticlePage() {
   };
 
   // Загружаем статистику обратной связи
-  const { data: feedbackStats, refetch: refetchStats } = useQuery<WikiFeedbackStats>({
+  const { data: feedbackStats } = useQuery<WikiFeedbackStats>({
     queryKey: ['wiki-feedback-stats', slug],
     queryFn: () => wikiAPI.getFeedbackStats(slug!),
     enabled: !!slug && !!article,

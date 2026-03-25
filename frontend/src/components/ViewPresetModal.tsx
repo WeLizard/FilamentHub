@@ -1,10 +1,10 @@
 /** Модальное окно для просмотра пресета (только чтение) */
 
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { X, CheckCircle2, XCircle } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
-import { presetsAPI, filamentsAPI } from '../api/client';
+import { filamentsAPI } from '../api/client';
 import type { Preset, Filament } from '../types/api';
 import { ModalOverlay } from './ModalOverlay';
 import { FilamentSummaryCard } from './FilamentSummaryCard';
@@ -150,7 +150,7 @@ export const ViewPresetModal: React.FC<ViewPresetModalProps> = ({
   const softeningTemperature = getNumberValue('temperature_vitrification');
   const volumetricSpeed = getNumberValue('filament_max_volumetric_speed');
   const adaptiveVolumetricSpeed = getBoolValue('filament_adaptive_volumetric_speed');
-  const volumetricSpeedCoefficients = getStringValue('volumetric_speed_coefficients');
+
   const adaptivePAModel = getArrayValue('adaptive_pressure_advance_model') || getStringValue('adaptive_pressure_advance_model');
   const filamentShrink = getPercentValue('filament_shrink');
   const filamentShrinkageCompensationZ = getPercentValue('filament_shrinkage_compensation_z');

@@ -11,13 +11,6 @@ interface Placeholder {
   subcategory?: string;
 }
 
-interface Category {
-  id: string;
-  name: string;
-  icon?: string;
-  placeholders: Placeholder[];
-  subcategories?: Record<string, Placeholder[]>;
-}
 
 interface EditGCodeModalProps {
   isOpen: boolean;

@@ -2,7 +2,7 @@
 
 import React, { useState, useRef, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Bell, CheckCircle, XCircle, AlertCircle, Info, Settings, X, MessageCircle, ExternalLink, Trash2 } from 'lucide-react';
+import { Bell, CheckCircle, XCircle, AlertCircle, Info, Settings, X, MessageCircle, Trash2 } from 'lucide-react';
 import { createPortal } from 'react-dom';
 import { useHeaderVisible } from '../hooks/useHeaderVisible';
 import { useNavigate } from 'react-router-dom';

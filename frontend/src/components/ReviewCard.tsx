@@ -2,7 +2,7 @@
 
 import React from 'react';
 import { useTranslation } from 'react-i18next';
-import { Star, CheckCircle, XCircle, Calendar, Edit, Trash2, Settings } from 'lucide-react';
+import { CheckCircle, XCircle, Calendar, Edit, Trash2, Settings } from 'lucide-react';
 import { Printer3DIcon } from './icons/Printer3DIcon';
 import { FilamentReview } from '../types/api';
 import { StarRating } from './StarRating';

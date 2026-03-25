@@ -19,7 +19,7 @@ import { ModalOverlay } from './ModalOverlay';
 import { useDebounce } from '../hooks/useDebounce';
 import { ColorMaterialSection } from './ColorMaterialSection';
 import { HSLColorPicker } from './HSLColorPicker';
-import { FilamentPreview } from './FilamentPreview';
+
 import { FilamentSummaryCard } from './FilamentSummaryCard';
 
 // Список стандартных типов материалов (FDM/FFF)

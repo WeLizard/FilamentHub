@@ -7,18 +7,10 @@ import { useTranslation } from 'react-i18next';
 import {
   Search,
   Package,
-  Star,
-  CheckCircle,
-  MapPin,
-  Settings,
-  Users,
   Thermometer,
   Ruler,
   QrCode,
-  LucideIcon,
   Shield,
-  TrendingUp,
-  Flame,
   ChevronLeft,
   ChevronRight,
   Droplet,
@@ -26,12 +18,12 @@ import {
   Fan,
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
-import { filamentsAPI, brandsAPI, presetsAPI, savedPresetsAPI, filamentReviewsAPI, qrAPI } from '../api/client';
+import { filamentsAPI, brandsAPI, savedPresetsAPI, qrAPI } from '../api/client';
 import { translateApiError } from '../utils/translateApiError';
 import { Dropdown } from '../components/Dropdown';
 import { FilamentPreview } from '../components/FilamentPreview';
 import { SEOHead } from '../components/SEOHead';
-import type { Filament, Preset } from '../types/api';
+import type { Filament } from '../types/api';
 
 export const CatalogPage: React.FC = () => {
   const { t } = useTranslation();
@@ -39,10 +31,10 @@ export const CatalogPage: React.FC = () => {
   const { user } = useAuth();
   const queryClient = useQueryClient();
   const [searchQuery, setSearchQuery] = useState('');
-  const [printerModel, setPrinterModel] = useState('Ender 3 Pro');
+  const [_printerModel, _setPrinterModel] = useState('Ender 3 Pro');
   const [materialTypeFilter, setMaterialTypeFilter] = useState<string | null>(null);
   const [brandFilter, setBrandFilter] = useState<number | null>(null);
-  const [selectedFilament, setSelectedFilament] = useState<number | null>(null);
+  const [selectedFilament, _setSelectedFilament] = useState<number | null>(null);
   const [showQR, setShowQR] = useState<number | null>(null);
   
   // Загружаем список сохранённых пресетов
@@ -114,9 +106,6 @@ export const CatalogPage: React.FC = () => {
   const materialTypes = Array.from(
     new Set(filamentsData?.items.map((f) => f.material_type) || [])
   ).sort();
-
-  // Получаем топ-10 популярных (пока просто первые 10, потом будем сортировать по views_count)
-  const topFilaments = filamentsData?.items.slice(0, 10) || [];
 
   if (isLoadingFilaments) {
     return (
@@ -298,9 +287,6 @@ const MaterialCard: React.FC<MaterialCardProps> = ({
       : [];
   const hasCarousel = presetSummaries.length > 1;
   const currentPreset = presetSummaries[currentPresetIndex] ?? null;
-  const presetsCount = filament.presets_count ?? 0;
-  const officialCount = filament.official_presets_count ?? 0;
-  const communityCount = filament.community_presets_count ?? 0;
   const isPresetSaved = currentPreset ? savedPresetIds.has(currentPreset.id) : false;
 
   useEffect(() => {
@@ -601,18 +587,3 @@ const MaterialCard: React.FC<MaterialCardProps> = ({
   );
 };
 
-interface PresetParamProps {
-  icon: LucideIcon;
-  label: string;
-  value: string;
-  color: string;
-}
-
-const PresetParam: React.FC<PresetParamProps> = ({ icon: Icon, label, value, color }) => (
-  <div className="flex items-center space-x-2">
-    <Icon className={`w-4 h-4 ${color}`} />
-    <span className="text-gray-300">
-      {label}: {value}
-    </span>
-  </div>
-);

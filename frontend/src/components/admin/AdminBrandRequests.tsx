@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { ModalOverlay } from '../ModalOverlay';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { FileText, CheckCircle, XCircle, Eye, Download, Clock, Building2, UserPlus, Trash2 } from 'lucide-react';
+import { FileText, CheckCircle, XCircle, Download, Clock, Building2, UserPlus, Trash2 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { adminAPI } from '../../api/client';
 import type { BrandRequest, BrandRequestStatus } from '../../types/api';

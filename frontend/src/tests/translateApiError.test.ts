@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect } from 'vitest';
 import { translateApiError } from '../utils/translateApiError';
 import type { TFunction } from 'i18next';
 

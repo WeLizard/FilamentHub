@@ -15,7 +15,7 @@ import type { User, Brand } from '../../types/api';
 export function AdminUsers() {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
-  const [page, setPage] = useState(1);
+  const [page, _setPage] = useState(1);
   const [roleFilter, setRoleFilter] = useState<string | undefined>(undefined);
   const [showOnlyWithBrand, setShowOnlyWithBrand] = useState(false);
 

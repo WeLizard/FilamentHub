@@ -23,10 +23,8 @@ import {
   Edit,
   Trash2,
   CheckCircle,
-  Star,
   X,
   Loader2,
-  ArrowLeft,
   Check,
   Paperclip,
   XCircle,
@@ -38,7 +36,7 @@ import {
   Upload,
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
-import { authAPI, brandsAPI, filamentsAPI, brandRequestsAPI, presetsAPI, qrAPI } from '../api/client';
+import { brandsAPI, filamentsAPI, brandRequestsAPI, presetsAPI, qrAPI } from '../api/client';
 import { translateApiError } from '../utils/translateApiError';
 import { CreateFilamentModal } from '../components/CreateFilamentModal';
 import { CreatePresetModal } from '../components/CreatePresetModal';
@@ -1004,7 +1002,7 @@ const BrandSelectionForm: React.FC = () => {
   }, [myRequests, submittedRequest]);
 
   // Загружаем список брендов с поиском (все бренды)
-  const { data: brandsData, isLoading: isLoadingBrands } = useQuery({
+  const { data: brandsData, isLoading: _isLoadingBrands } = useQuery({
     queryKey: ['brands', 'selection', { search: brandSearch }],
     queryFn: () => brandsAPI.list({ active_only: true, page: 1, size: 100, search: brandSearch || undefined }),
   });
@@ -1117,10 +1115,9 @@ const BrandSelectionForm: React.FC = () => {
       // Инвалидируем кэш для обновления списка заявок
       queryClient.invalidateQueries({ queryKey: ['brand-requests'] });
       // Обновляем список заявок в фоне, но не перезаписываем submittedRequest если данные уже актуальны
-      const freshRequests = await refetchRequests();
+      await refetchRequests();
       // Обновляем submittedRequest только если его еще нет или он устарел
       if (submittedRequest && updatedRequest.id === submittedRequest.id) {
-        const freshRequest = freshRequests.data?.find((r) => r.id === updatedRequest.id);
         // Используем данные из updatedRequest (они самые свежие после загрузки)
         // Не перезаписываем их данными из refetch, чтобы избежать дублирования
       }
@@ -2647,7 +2644,6 @@ const FilamentCard: React.FC<FilamentCardProps> = ({ filament, onEdit, onDelete,
 
   const presets = presetsData?.items || [];
   const officialPreset = presets.find((p) => p.is_official);
-  const communityPresets = presets.filter((p) => !p.is_official);
   const totalPresets = presets.length;
 
   if (viewMode === 'list') {

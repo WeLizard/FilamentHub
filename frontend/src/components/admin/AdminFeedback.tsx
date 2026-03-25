@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { ModalOverlay } from '../ModalOverlay';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { MessageCircle, Eye, Send, CheckCircle, Clock, XCircle, AlertCircle, Bug, Lightbulb, HelpCircle, MessageSquare, Filter, Search, Trash2 } from 'lucide-react';
+import { MessageCircle, Eye, Send, XCircle, Bug, Lightbulb, HelpCircle, MessageSquare, Filter, Search, Trash2 } from 'lucide-react';
 import { adminFeedbackAPI } from '../../api/client';
 import type { Feedback, FeedbackType, FeedbackStatus } from '../../types/api';
 import { useTranslation } from 'react-i18next';

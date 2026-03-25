@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Package, CheckCircle, XCircle, Eye, Clock, Download } from 'lucide-react';
+import { Package, CheckCircle, XCircle, Clock, Download } from 'lucide-react';
 import { Printer3DIcon } from '../icons/Printer3DIcon';
 import { adminAPI } from '../../api/client';
 import type { PrinterRequest } from '../../types/api';

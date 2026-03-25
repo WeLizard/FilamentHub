@@ -10,15 +10,12 @@ import {
   ExternalLink,
   Package,
   Star,
-  CheckCircle,
   ArrowLeft,
   Search,
-  Filter,
 } from 'lucide-react';
 import { brandsAPI, filamentsAPI, filamentReviewsAPI } from '../api/client';
 import { FilamentPreview } from '../components/FilamentPreview';
 import { Dropdown } from '../components/Dropdown';
-import type { Filament } from '../types/api';
 
 export const BrandDetailPage: React.FC = () => {
   const { t } = useTranslation();

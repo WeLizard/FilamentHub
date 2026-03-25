@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Download, CheckCircle, Package, Code, Zap, Globe, Monitor, Smartphone, Terminal, Image as ImageIcon, Play, Loader2, ExternalLink, X } from 'lucide-react';
 import { downloadsAPI } from '../api/client';
-import type { DownloadVersion, DownloadVersionsResponse } from '../types/api';
+import type { DownloadVersionsResponse } from '../types/api';
 import { ModalOverlay } from '../components/ModalOverlay';
 
 type DownloadScreenshotCardImageProps = {

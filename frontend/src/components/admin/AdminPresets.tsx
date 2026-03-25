@@ -40,7 +40,7 @@ const parseModerationReason = (value: string | null | undefined): ModerationReas
 export function AdminPresets() {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
-  const [page, setPage] = useState(1);
+  const [page, _setPage] = useState(1);
   const [editingPreset, setEditingPreset] = useState<Preset | null>(null);
 
   // Загрузка пресетов ожидающих модерации

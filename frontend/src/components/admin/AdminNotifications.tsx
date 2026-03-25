@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useMutation } from '@tanstack/react-query';
-import { Send, Users, UserCheck, AlertCircle, CheckCircle, Link as LinkIcon } from 'lucide-react';
+import { Send, Users, UserCheck, AlertCircle, Link as LinkIcon } from 'lucide-react';
 import { adminNotificationsAPI, adminAPI } from '../../api/client';
 import { translateApiError } from '../../utils/translateApiError';
 import { useQuery } from '@tanstack/react-query';

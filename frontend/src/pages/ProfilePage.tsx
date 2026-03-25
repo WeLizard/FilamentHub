@@ -21,14 +21,10 @@ import {
   Edit,
   Wind,
   Fan,
-  Ruler,
   Factory,
-  AlertTriangle,
   Loader2,
-  Upload,
   Eye,
   Clock,
-  Filter,
   RotateCcw,
   Cog,
   Layers,
@@ -87,14 +83,13 @@ export const ProfilePage: React.FC = () => {
   const [viewingPreset, setViewingPreset] = useState<Preset | null>(null);
   const [selectedPrinterProfile, setSelectedPrinterProfile] = useState<PrinterProfile | null>(null);
   const [selectedPrintProfile, setSelectedPrintProfile] = useState<PrintProfile | null>(null);
-  const [expandedPrinterId, setExpandedPrinterId] = useState<number | string | null>(null); // ID или slug принтера, для которого показываем профили
   const [expandedPrinterProfileId, setExpandedPrinterProfileId] = useState<number | null>(null); // ID профиля принтера, для которого показываем профили печати
   const [isCreatePrinterProfileModalOpen, setIsCreatePrinterProfileModalOpen] = useState(false);
   const [isCreatePrintProfileModalOpen, setIsCreatePrintProfileModalOpen] = useState(false);
   const [editingPrinterProfile, setEditingPrinterProfile] = useState<PrinterProfile | null>(null);
   const [editingPrintProfile, setEditingPrintProfile] = useState<PrintProfile | null>(null);
   const [createPrintProfileContext, setCreatePrintProfileContext] = useState<PrinterProfile | null>(null);
-  const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
+  const [_viewMode, _setViewMode] = useState<'grid' | 'list'>('grid');
   const [presetFilter, setPresetFilter] = useState<'all' | 'own' | 'saved' | 'drafts'>('all');
   const [isScanning, setIsScanning] = useState(false);
   const profileBadges = useMemo(() => {
@@ -170,7 +165,7 @@ export const ProfilePage: React.FC = () => {
     enabled: !!user?.id,
   });
 
-  const { data: printProfilesData, isLoading: isLoadingPrintProfiles } = useQuery({
+  const { data: printProfilesData, isLoading: _isLoadingPrintProfiles } = useQuery({
     queryKey: ['print-profiles', user?.id],
     queryFn: () =>
       printProfilesAPI.list({
@@ -221,17 +216,6 @@ export const ProfilePage: React.FC = () => {
     });
     return map;
   }, [myPrintProfiles]);
-
-  // Lookup map для PrinterProfile по slug -> name (для отображения вместо slug)
-  const printerProfileNameBySlug = useMemo(() => {
-    const map = new Map<string, string>();
-    myPrinterProfiles.forEach((profile) => {
-      if (profile.slug && profile.name) {
-        map.set(profile.slug, profile.name);
-      }
-    });
-    return map;
-  }, [myPrinterProfiles]);
 
   // Группируем профили принтера по принтерам (по printer_id)
   const printersWithProfiles = useMemo(() => {
@@ -297,8 +281,7 @@ export const ProfilePage: React.FC = () => {
   const [printProfileQualityFilter, setPrintProfileQualityFilter] = useState<string | null>(null);
   const [printProfileNozzleFilter, setPrintProfileNozzleFilter] = useState<string | null>(null);
   const [printProfilePrinterFilter, setPrintProfilePrinterFilter] = useState<string | null>(null);
-  const [printProfileOnlyOfficial, setPrintProfileOnlyOfficial] = useState<boolean>(false);
-  const [printProfileOnlyActive, setPrintProfileOnlyActive] = useState<boolean>(false);
+
 
   const printProfileQualityOptions = useMemo(() => {
     const order = ['superdraft', 'draft', 'standard', 'optimal', 'fine', 'highdetail'];
@@ -360,44 +343,6 @@ export const ProfilePage: React.FC = () => {
     return Array.from(unique).sort();
   }, [myPrintProfiles]);
 
-  const filteredPrintProfiles = useMemo(() => {
-    return myPrintProfiles.filter(profile => {
-      if (printProfileOnlyOfficial && !profile.is_official) {
-        return false;
-      }
-      if (printProfileOnlyActive && !profile.active) {
-        return false;
-      }
-      if (printProfileQualityFilter && (profile.quality_tier || '').toLowerCase() !== printProfileQualityFilter) {
-        return false;
-      }
-      if (printProfileNozzleFilter && profile.default_nozzle?.trim() !== printProfileNozzleFilter) {
-        return false;
-      }
-      if (printProfilePrinterFilter) {
-        const hasPrinter = profile.printer_links?.some(link => link.printer_slug === printProfilePrinterFilter);
-        if (!hasPrinter) {
-          return false;
-        }
-      }
-      return true;
-    });
-  }, [
-    myPrintProfiles,
-    printProfileOnlyOfficial,
-    printProfileOnlyActive,
-    printProfileQualityFilter,
-    printProfileNozzleFilter,
-    printProfilePrinterFilter,
-  ]);
-
-  const resetPrintProfileFilters = () => {
-    setPrintProfileQualityFilter(null);
-    setPrintProfileNozzleFilter(null);
-    setPrintProfilePrinterFilter(null);
-    setPrintProfileOnlyOfficial(false);
-    setPrintProfileOnlyActive(false);
-  };
 
   useEffect(() => {
     if (printProfileQualityFilter && !printProfileQualityOptions.includes(printProfileQualityFilter)) {
@@ -535,17 +480,6 @@ export const ProfilePage: React.FC = () => {
       .replace(/^-|-$/g, '')
       .toLowerCase();
 
-  const downloadJSONFile = (payload: Record<string, any>, filename: string) => {
-    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = filename;
-    document.body.appendChild(link);
-    link.click();
-    link.remove();
-    setTimeout(() => URL.revokeObjectURL(url), 1000);
-  };
 
   const handleDownloadPrinterProfile = async (profile: PrinterProfile) => {
     try {
@@ -970,7 +904,6 @@ export const ProfilePage: React.FC = () => {
           ) : printersWithProfiles.length > 0 ? (
             <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
               {printersWithProfiles.map((printer) => {
-                const isPrinterExpanded = expandedPrinterId === printer.id;
                 
                 return (
                   <div key={printer.id} className="bg-white/10 backdrop-blur-sm border border-white/15 rounded-2xl p-6 shadow-xl">
@@ -3126,8 +3059,8 @@ const PresetCard: React.FC<PresetCardProps> = ({ preset, onEdit, onView, onDelet
   const { t } = useTranslation();
   const navigate = useNavigate();
   const [isDownloading, setIsDownloading] = useState(false);
-  const [isImporting, setIsImporting] = useState(false);
-  const [isInOrcaSlicer, setIsInOrcaSlicer] = useState(false);
+  const [_isImporting, setIsImporting] = useState(false);
+  const [_isInOrcaSlicer, setIsInOrcaSlicer] = useState(false);
   
   // Проверяем, запущен ли frontend внутри OrcaSlicer
   useEffect(() => {
@@ -3503,43 +3436,6 @@ const PresetCard: React.FC<PresetCardProps> = ({ preset, onEdit, onView, onDelet
   );
 };
 
-interface HistoryItemProps {
-  item: {
-    id: number;
-    material: string;
-    printer: string;
-    date: string;
-    success: boolean;
-    rating: number;
-    notes: string;
-  };
-}
-
-const HistoryItem: React.FC<HistoryItemProps> = ({ item }) => (
-  <div className="flex items-center justify-between p-4 bg-white/5 rounded-xl border border-white/10">
-    <div className="flex-1">
-      <div className="flex items-center space-x-3 mb-2">
-        {item.success ? (
-          <CheckCircle className="w-5 h-5 text-green-400" />
-        ) : (
-          <XCircle className="w-5 h-5 text-red-400" />
-        )}
-        <div>
-          <p className="text-white font-medium">{item.material}</p>
-          <p className="text-gray-400 text-sm">{item.printer}</p>
-        </div>
-      </div>
-      {item.notes && <p className="text-gray-300 text-sm">{item.notes}</p>}
-    </div>
-    <div className="text-right">
-      <div className="flex items-center space-x-1 mb-1">
-        <Star className="w-4 h-4 text-yellow-400 fill-current" />
-        <span className="text-white">{item.rating}</span>
-      </div>
-      <p className="text-gray-400 text-sm">{item.date}</p>
-    </div>
-  </div>
-);
 
 const BASIC_CURRENCY_SYMBOL = '₽';
 
@@ -3624,416 +3520,6 @@ const InfoRow: React.FC<InfoRowProps> = ({ label, value }) => (
     <p className="text-sm text-white mt-1 break-words">{value ?? '—'}</p>
   </div>
 );
-
-interface PrinterProfileCardProps {
-  profile: PrinterProfile;
-  printProfiles?: PrintProfile[];
-  isExpanded?: boolean;
-  onExpand?: () => void;
-  formatDateTime: (value: string) => string;
-  onView: (profile: PrinterProfile) => void;
-  onDownload: (profile: PrinterProfile) => void;
-  onViewPrintProfile?: (profile: PrintProfile) => void;
-  onDownloadPrintProfile?: (profile: PrintProfile) => void;
-  onCreatePrintProfile?: () => void;
-  printProfileNameBySlug?: Map<string, string>;
-}
-
-const PrinterProfileCard: React.FC<PrinterProfileCardProps> = ({
-  profile,
-  printProfiles = [],
-  isExpanded = false,
-  onExpand,
-  formatDateTime,
-  onView,
-  onDownload,
-  onViewPrintProfile,
-  onDownloadPrintProfile,
-  onCreatePrintProfile,
-  printProfileNameBySlug,
-}) => {
-  const { t } = useTranslation();
-  const printProfilesCount = printProfiles.length;
-  
-  return (
-  <div className="bg-white/10 backdrop-blur-sm border border-white/15 rounded-2xl p-6 shadow-xl">
-    <div className="flex items-start justify-between gap-3">
-      <div>
-        <h3 className="text-xl font-semibold text-white">{profile.name}</h3>
-        <p className="text-sm text-gray-400">Slug: {profile.slug}</p>
-        {profile.printer_slug && (
-          <p className="text-xs text-gray-400 mt-1">{t('profilePage.printer')}: {profile.printer_name ?? profile.printer_slug}</p>
-        )}
-      </div>
-      <div className="flex flex-wrap gap-2 justify-end">
-        <StatusBadge label={profile.active ? t('profilePage.badge.active') : t('profilePage.badge.disabled')} variant={profile.active ? 'success' : 'muted'} />
-        {profile.is_official && <StatusBadge label={t('profilePage.badge.official')} variant="accent" />}
-        {printProfilesCount > 0 && (
-          <StatusBadge label={t('profilePage.printProfilesCount', { count: printProfilesCount })} variant="accent" />
-        )}
-      </div>
-    </div>
-    {profile.description && (
-      <p className="mt-3 text-sm text-gray-300 line-clamp-3">{profile.description}</p>
-    )}
-    <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-      <InfoRow label={t('profilePage.printerBinding')} value={profile.printer_id ? `ID ${profile.printer_id}` : t('profilePage.notSpecifiedF')} />
-      <InfoRow label={t('profilePage.updated')} value={formatDateTime(profile.updated_at)} />
-      <InfoRow
-        label={t('profilePage.defaultPrintProfile')}
-        value={profile.default_print_profile_slug
-          ? (printProfileNameBySlug?.get(profile.default_print_profile_slug) || profile.default_print_profile_slug)
-          : t('profilePage.notSetM')}
-      />
-      <InfoRow
-        label={t('profilePage.nozzleDiameters')}
-        value={profile.nozzle_diameters && profile.nozzle_diameters.length > 0 ? profile.nozzle_diameters.join(', ') : t('profilePage.notSpecifiedPl')}
-      />
-      <InfoRow
-        label={t('profilePage.printHeight')}
-        value={
-          typeof profile.printable_height_mm === 'number' ? `${profile.printable_height_mm.toFixed(0)} ${t('profilePage.mm')}` : t('profilePage.notSpecifiedF')}
-      />
-      <InfoRow label={t('profilePage.startGcode')} value={profile.start_gcode ? t('profilePage.set') : '—'} />
-      <InfoRow label={t('profilePage.endGcode')} value={profile.end_gcode ? t('profilePage.set') : '—'} />
-    </div>
-    
-    {/* Профили печати для этого принтера */}
-    {printProfilesCount > 0 && onExpand && (
-      <div className="mt-4 pt-4 border-t border-white/10">
-        <button
-          type="button"
-          onClick={onExpand}
-          className="w-full flex items-center justify-between px-4 py-2 rounded-lg border border-white/20 text-sm text-white/90 hover:bg-white/10 transition-all"
-        >
-          <div className="flex items-center gap-2">
-            <Layers className="w-4 h-4" />
-            <span>{t('profilePage.printProfilesLabel')} ({printProfilesCount})</span>
-          </div>
-          {isExpanded ? (
-            <ChevronUp className="w-4 h-4" />
-          ) : (
-            <ChevronDown className="w-4 h-4" />
-          )}
-        </button>
-        
-        {isExpanded && (
-          <div className="mt-4 space-y-3">
-            {printProfiles.map((printProfile) => (
-              <div
-                key={printProfile.id}
-                className="bg-white/5 rounded-lg p-4 border border-white/10"
-              >
-                <div className="flex items-start justify-between gap-3">
-                  <div className="flex-1">
-                    <h4 className="text-sm font-semibold text-white">{printProfile.name}</h4>
-                    {printProfile.quality_tier && (
-                      <p className="text-xs text-gray-400 mt-1">{t('profilePage.quality')}: {printProfile.quality_tier}</p>
-                    )}
-                    {printProfile.layer_height_mm && (
-                      <p className="text-xs text-gray-400">{t('profilePage.layerHeight')}: {printProfile.layer_height_mm.toFixed(2)} {t('profilePage.mm')}</p>
-                    )}
-                  </div>
-                  <div className="flex items-center gap-2">
-                    {printProfile.is_official && (
-                      <StatusBadge label={t('profilePage.badge.system')} variant="accent" />
-                    )}
-                    <StatusBadge 
-                      label={printProfile.active ? t('profilePage.badge.active') : t('profilePage.badge.disabled')} 
-                      variant={printProfile.active ? 'success' : 'muted'}
-                    />
-                  </div>
-                </div>
-                {printProfile.description && (
-                  <p className="mt-2 text-xs text-gray-300 line-clamp-2">{printProfile.description}</p>
-                )}
-                <div className="mt-3 flex flex-wrap gap-2">
-                  {onViewPrintProfile && (
-                    <button
-                      type="button"
-                      onClick={() => onViewPrintProfile(printProfile)}
-                      className="px-3 py-1.5 rounded-lg border border-white/20 text-xs text-white/90 hover:bg-white/10 transition-all flex items-center gap-1.5"
-                    >
-                      <Eye className="w-3 h-3" />
-                      {t('profilePage.view')}
-                    </button>
-                  )}
-                  {onDownloadPrintProfile && (
-                    <button
-                      type="button"
-                      onClick={() => onDownloadPrintProfile(printProfile)}
-                      className="px-3 py-1.5 rounded-lg border border-white/20 text-xs text-white/90 hover:bg-white/10 transition-all flex items-center gap-1.5"
-                    >
-                      <Download className="w-3 h-3" />
-                      {t('profilePage.download')}
-                    </button>
-                  )}
-                </div>
-              </div>
-            ))}
-            {onCreatePrintProfile && (
-              <button
-                type="button"
-                onClick={onCreatePrintProfile}
-                className="w-full px-4 py-2 rounded-lg border border-dashed border-white/20 text-sm text-gray-400 hover:text-white hover:border-white/40 transition-all flex items-center justify-center gap-2"
-              >
-                <Plus className="w-4 h-4" />
-                {t('profilePage.addPrintProfile')}
-              </button>
-            )}
-          </div>
-        )}
-      </div>
-    )}
-    
-    {printProfilesCount === 0 && onCreatePrintProfile && (
-      <div className="mt-4 pt-4 border-t border-white/10">
-        <button
-          type="button"
-          onClick={onCreatePrintProfile}
-          className="w-full px-4 py-2 rounded-lg border border-dashed border-white/20 text-sm text-gray-400 hover:text-white hover:border-white/40 transition-all flex items-center justify-center gap-2"
-        >
-          <Plus className="w-4 h-4" />
-          Добавить профиль печати
-        </button>
-      </div>
-    )}
-    
-    <div className="mt-4 flex flex-wrap gap-2">
-      <button
-        type="button"
-        onClick={() => onView(profile)}
-        className="px-4 py-2 rounded-lg border border-white/20 text-sm text-white/90 hover:bg-white/10 transition-all flex items-center gap-2"
-      >
-        <Eye className="w-4 h-4" />
-        {t('profilePage.viewJson')}
-      </button>
-      <button
-        type="button"
-        onClick={() => onDownload(profile)}
-        className="px-4 py-2 rounded-lg border border-white/20 text-sm text-white/90 hover:bg-white/10 transition-all flex items-center gap-2"
-      >
-        <Download className="w-4 h-4" />
-        {t('profilePage.downloadJson')}
-      </button>
-    </div>
-  </div>
-  );
-};
-
-interface PrintProfileCardProps {
-  profile: PrintProfile;
-  formatDateTime: (value: string) => string;
-  onView: (profile: PrintProfile) => void;
-  onDownload: (profile: PrintProfile) => void;
-}
-
-const PrintProfileCard: React.FC<PrintProfileCardProps> = ({ profile, formatDateTime, onView, onDownload }) => {
-  const { t } = useTranslation();
-  const printersCount = profile.printer_links?.length ?? 0;
-  const filamentsCount = profile.filament_links?.length ?? 0;
-  const defaultNozzle = profile.default_nozzle ? `${profile.default_nozzle} ${t('profilePage.mm')}` : t('profilePage.notSpecifiedN');
-  const layerHeight =
-    typeof profile.layer_height_mm === 'number' ? `${profile.layer_height_mm.toFixed(2)} ${t('profilePage.mm')}` : t('profilePage.notSpecifiedF');
-
-  return (
-    <div className="bg-white/10 backdrop-blur-sm border border-white/15 rounded-2xl p-6 shadow-xl">
-      <div className="flex items-start justify-between gap-3">
-        <div>
-          <h3 className="text-xl font-semibold text-white">{profile.name}</h3>
-          <p className="text-sm text-gray-400">Slug: {profile.slug}</p>
-        </div>
-        <div className="flex flex-wrap gap-2 justify-end">
-          <StatusBadge label={profile.active ? t('profilePage.badge.active') : t('profilePage.badge.disabled')} variant={profile.active ? 'success' : 'muted'} />
-          {profile.is_official && <StatusBadge label={t('profilePage.badge.official')} variant="accent" />}
-        </div>
-      </div>
-      {profile.description && (
-        <p className="mt-3 text-sm text-gray-300 line-clamp-3">{profile.description}</p>
-      )}
-      <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-        <InfoRow label={t('profilePage.category')} value={profile.category || t('profilePage.notSpecifiedF')} />
-        <InfoRow label={t('profilePage.quality')} value={profile.quality_tier || t('profilePage.notSpecifiedN')} />
-        <InfoRow label={t('profilePage.updated')} value={formatDateTime(profile.updated_at)} />
-        <InfoRow label={t('profilePage.defaultNozzle')} value={defaultNozzle} />
-        <InfoRow label={t('profilePage.layerHeight')} value={layerHeight} />
-        <InfoRow label={t('profilePage.compatiblePrinters')} value={`${printersCount}`} />
-        <InfoRow label={t('profilePage.compatibleFilaments')} value={`${filamentsCount}`} />
-      </div>
-      <div className="mt-4 flex flex-wrap gap-2">
-        <button
-          type="button"
-          onClick={() => onView(profile)}
-          className="px-4 py-2 rounded-lg border border-white/20 text-sm text-white/90 hover:bg-white/10 transition-all flex items-center gap-2"
-        >
-          <Eye className="w-4 h-4" />
-          {t('profilePage.viewJson')}
-        </button>
-        <button
-          type="button"
-          onClick={() => onDownload(profile)}
-          className="px-4 py-2 rounded-lg border border-white/20 text-sm text-white/90 hover:bg-white/10 transition-all flex items-center gap-2"
-        >
-          <Download className="w-4 h-4" />
-          {t('profilePage.downloadJson')}
-        </button>
-      </div>
-    </div>
-  );
-};
-
-interface FilterChipProps {
-  label: string;
-  active: boolean;
-  onClick: () => void;
-}
-
-const FilterChip: React.FC<FilterChipProps> = ({ label, active, onClick }) => (
-  <button
-    type="button"
-    onClick={onClick}
-    className={`px-3 py-1.5 rounded-lg border transition-all text-xs sm:text-sm ${
-      active
-        ? 'border-purple-400 bg-purple-500/20 text-white shadow-[0_0_18px_rgba(168,85,247,0.2)]'
-        : 'border-white/10 bg-white/5 text-gray-300 hover:border-purple-400 hover:text-white'
-    }`}
-  >
-    {label}
-  </button>
-);
-
-const formatQualityLabel = (value: string) => {
-  const map: Record<string, string> = {
-    superdraft: 'Super Draft',
-    draft: 'Draft',
-    standard: 'Standard',
-    optimal: 'Optimal',
-    fine: 'Fine',
-    highdetail: 'High Detail',
-  };
-  return map[value] ?? value;
-};
-
-const formatPrinterLabel = (slug: string) => slug.replace(/-/g, ' ');
-
-interface PrintProfileFiltersProps {
-  qualityOptions: string[];
-  nozzleOptions: string[];
-  printerOptions: string[];
-  qualityFilter: string | null;
-  nozzleFilter: string | null;
-  printerFilter: string | null;
-  onlyOfficial: boolean;
-  onlyActive: boolean;
-  onQualityChange: (value: string) => void;
-  onNozzleChange: (value: string) => void;
-  onPrinterChange: (value: string) => void;
-  onToggleOfficial: () => void;
-  onToggleActive: () => void;
-  onReset: () => void;
-}
-
-const PrintProfileFilters: React.FC<PrintProfileFiltersProps> = ({
-  qualityOptions,
-  nozzleOptions,
-  printerOptions,
-  qualityFilter,
-  nozzleFilter,
-  printerFilter,
-  onlyOfficial,
-  onlyActive,
-  onQualityChange,
-  onNozzleChange,
-  onPrinterChange,
-  onToggleOfficial,
-  onToggleActive,
-  onReset,
-}) => {
-  const { t } = useTranslation();
-  const hasActiveFilters =
-    !!qualityFilter || !!nozzleFilter || !!printerFilter || onlyOfficial || onlyActive;
-
-  return (
-    <div className="bg-white/5 border border-white/10 rounded-2xl p-4 space-y-4">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex items-center gap-2 text-sm font-medium uppercase tracking-wide text-gray-300">
-          <Filter className="w-4 h-4" />
-          {t('profilePage.filters')}
-        </div>
-        <button
-          type="button"
-          onClick={onReset}
-          disabled={!hasActiveFilters}
-          className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-lg border text-xs font-medium transition-all ${
-            hasActiveFilters
-              ? 'border-purple-400 text-purple-200 hover:bg-purple-500/10'
-              : 'border-white/10 text-gray-500 cursor-not-allowed'
-          }`}
-        >
-          <RotateCcw className="w-4 h-4" />
-          {t('profilePage.reset')}
-        </button>
-      </div>
-
-      {qualityOptions.length > 0 && (
-        <div className="space-y-2">
-          <p className="text-xs text-gray-400 uppercase tracking-wide">{t('profilePage.qualityClass')}</p>
-          <div className="flex flex-wrap gap-2">
-            {qualityOptions.map(option => (
-              <FilterChip
-                key={option}
-                label={formatQualityLabel(option)}
-                active={qualityFilter === option}
-                onClick={() => onQualityChange(option)}
-              />
-            ))}
-          </div>
-        </div>
-      )}
-
-      {nozzleOptions.length > 0 && (
-        <div className="space-y-2">
-          <p className="text-xs text-gray-400 uppercase tracking-wide">{t('profilePage.nozzle')}</p>
-          <div className="flex flex-wrap gap-2">
-            {nozzleOptions.map(option => (
-              <FilterChip
-                key={option}
-                label={`${option} ${t('profilePage.mm')}`}
-                active={nozzleFilter === option}
-                onClick={() => onNozzleChange(option)}
-              />
-            ))}
-          </div>
-        </div>
-      )}
-
-      {printerOptions.length > 0 && (
-        <div className="space-y-2">
-          <p className="text-xs text-gray-400 uppercase tracking-wide">{t('profilePage.printer')}</p>
-          <div className="flex flex-wrap gap-2">
-            {printerOptions.map(option => (
-              <FilterChip
-                key={option}
-                label={formatPrinterLabel(option)}
-                active={printerFilter === option}
-                onClick={() => onPrinterChange(option)}
-              />
-            ))}
-          </div>
-        </div>
-      )}
-
-      <div className="flex flex-wrap gap-2">
-        <FilterChip
-          label={t('profilePage.officialOnly')}
-          active={onlyOfficial}
-          onClick={onToggleOfficial}
-        />
-        <FilterChip label={t('profilePage.activeOnly')} active={onlyActive} onClick={onToggleActive} />
-      </div>
-    </div>
-  );
-};
 
 interface PrinterProfileModalProps {
   profile: PrinterProfile;

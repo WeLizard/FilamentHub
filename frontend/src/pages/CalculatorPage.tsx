@@ -25,7 +25,6 @@ import {
   Settings2,
   Trash2,
   Upload,
-  Weight,
   X,
 } from 'lucide-react';
 import { calculatorAPI, filamentsAPI, spoolsAPI, type UserSpool } from '../api/client';

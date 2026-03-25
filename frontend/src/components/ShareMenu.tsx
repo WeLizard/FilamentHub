@@ -2,7 +2,7 @@
 
 import { useState, useRef, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Share2, Copy, Check, MessageCircle, Send } from 'lucide-react';
+import { Share2, Copy, Check, Send } from 'lucide-react';
 
 // Иконки соцсетей (inline SVG для компактности)
 const VKIcon = () => (

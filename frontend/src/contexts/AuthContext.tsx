@@ -200,7 +200,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const register = async (data: { email: string; username: string; password: string; role: string; recaptcha_token?: string }) => {
     try {
       // Регистрируем пользователя
-      const userResponse = await authAPI.register(data);
+      await authAPI.register(data);
       
       // После успешной регистрации автоматически логиним
       try {
