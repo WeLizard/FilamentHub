@@ -1,6 +1,7 @@
 /** API Client для интеграции с бэкендом */
 
 import axios from 'axios';
+import type { InternalAxiosRequestConfig } from 'axios';
 import type { Brand, BrandRequest, BrandRequestStatus, Filament, FilamentVisualSettings, FilamentReview, FilamentRatingStats, Notification, NotificationListResponse, Preset, RecommendedPreset, Printer, PrinterProfile, PrintProfile, PrinterRequest, User, Token, RefreshTokenRequest, RefreshTokenResponse, ListResponse, AccountDeletionStats, UserSavedPreset, CalculatorEstimateRequest, CalculatorEstimateResponse, CalculatorProfileResponse, CalculatorProfileUpdate, Feedback, FeedbackListResponse, FeedbackType, CompatiblePrinter, CompatibleFilament, DownloadVersion, DownloadVersionsResponse, WikiCategory, WikiCategoryListResponse, WikiArticle, WikiArticleListResponse, WikiFeedbackStats, WikiFeedbackCreate, WikiFeedback } from '../types/api';
 import { getCsrfToken, getRefreshToken, isCookieAuthMode, isJwtAuthMode, isOrcaEmbedded, removeToken, setToken, shouldPersistTokensLocally } from '../utils/auth';
 
@@ -48,15 +49,19 @@ api.interceptors.request.use((config) => {
   return config;
 });
 
+interface RetryableAxiosConfig extends InternalAxiosRequestConfig {
+  _retry?: boolean;
+}
+
 // Переменная для предотвращения множественных запросов refresh
 let isRefreshing = false;
-let failedQueue: Array<{ 
-  resolve: (value?: any) => void; 
-  reject: (reason?: any) => void;
-  config: any;
+let failedQueue: Array<{
+  resolve: (value?: unknown) => void;
+  reject: (reason?: unknown) => void;
+  config: RetryableAxiosConfig;
 }> = [];
 
-const processQueue = (error: any, token: string | null = null) => {
+const processQueue = (error: unknown, token: string | null = null) => {
   failedQueue.forEach((prom) => {
     if (error) {
       prom.reject(error);
@@ -101,7 +106,8 @@ api.interceptors.response.use(
       }));
     }
     
-    const originalRequest = error.config;
+    const originalRequest = error.config as RetryableAxiosConfig | undefined;
+    if (!originalRequest) return Promise.reject(error);
     
     // Если токен истек или невалидный (401), пытаемся обновить
     // НО: не обрабатываем ошибки авторизации (login/register) - они должны обрабатываться в компонентах
@@ -193,7 +199,7 @@ api.interceptors.response.use(
         
         // Повторяем оригинальный запрос
         return api(originalRequest);
-      } catch (refreshError: any) {
+      } catch (refreshError: unknown) {
         // Refresh token невалидный, удаляем токены
         removeToken();
         // Уведомляем C++ о logout (refresh failed)
@@ -619,7 +625,7 @@ export const presetsAPI = {
     fan_speed?: number;
     retraction_length?: number;
     retraction_speed?: number;
-    orcaslicer_settings?: any;
+    orcaslicer_settings?: Record<string, unknown> | null;
     rating?: number;
     active?: boolean;
     // УДАЛЕНО: sync_enabled - теперь управляется через user_saved_presets.sync

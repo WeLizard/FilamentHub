@@ -36,6 +36,24 @@ import { adminAPI } from '../../api/client';
 import { translateApiError } from '../../utils/translateApiError';
 import { useTranslation } from 'react-i18next';
 
+interface MigrationInfo {
+  revision: string;
+  down_revision: string | null;
+  branch_labels: string | null;
+  is_head: boolean;
+  is_applied: boolean;
+  applied_at: string | null;
+  description: string | null;
+}
+
+interface TableInfo {
+  table: string;
+  schema: string;
+  row_count: number;
+  size: string;
+  size_bytes: number;
+}
+
 const JSON_COLUMN_TYPES = new Set(['json', 'jsonb']);
 
 function stringifyForAdminCell(value: unknown): string {
@@ -439,7 +457,7 @@ export function AdminDatabase() {
     // Поиск
     if (migrationSearch) {
       const searchLower = migrationSearch.toLowerCase();
-      filtered = filtered.filter((m: any) => 
+      filtered = filtered.filter((m: MigrationInfo) =>
         m.revision.toLowerCase().includes(searchLower) ||
         (m.description || '').toLowerCase().includes(searchLower)
       );
@@ -448,25 +466,25 @@ export function AdminDatabase() {
     // Фильтр по статусу
     if (migrationFilter === 'applied') {
       // Применённые: есть is_applied ИЛИ есть applied_at
-      filtered = filtered.filter((m: any) => m.is_applied || m.applied_at);
+      filtered = filtered.filter((m: MigrationInfo) => m.is_applied || m.applied_at);
     } else if (migrationFilter === 'pending') {
       // Неприменённые: нет is_applied И нет applied_at И не head
-      filtered = filtered.filter((m: any) => !m.is_applied && !m.applied_at && !m.is_head);
+      filtered = filtered.filter((m: MigrationInfo) => !m.is_applied && !m.applied_at && !m.is_head);
     }
     
     // Правильная сортировка: строим порядок от base до head
     // Создаем карту для быстрого доступа
     const migrationMap = new Map<string, any>();
-    filtered.forEach((m: any) => migrationMap.set(m.revision, m));
+    filtered.forEach((m: MigrationInfo) => migrationMap.set(m.revision, m));
     
     // Находим head миграции
-    const headMigrations = filtered.filter((m: any) => m.is_head);
+    const headMigrations = filtered.filter((m: MigrationInfo) => m.is_head);
     
     // Строим порядок от head к base (обратный порядок применения)
-    const ordered: any[] = [];
+    const ordered: MigrationInfo[] = [];
     const visited = new Set<string>();
     
-    function traverse(migration: any) {
+    function traverse(migration: MigrationInfo) {
       if (visited.has(migration.revision)) return;
       visited.add(migration.revision);
       
@@ -483,19 +501,19 @@ export function AdminDatabase() {
     }
     
     // Начинаем с head миграций
-    headMigrations.forEach((head: any) => traverse(head));
+    headMigrations.forEach((head: MigrationInfo) => traverse(head));
     
     // Если нет head миграций, используем все миграции и строим порядок от тех, у кого нет down_revision
     if (ordered.length === 0) {
-      const baseMigrations = filtered.filter((m: any) => !m.down_revision);
-      baseMigrations.forEach((base: any) => {
-        let current: any = base;
-        const chain: any[] = [];
+      const baseMigrations = filtered.filter((m: MigrationInfo) => !m.down_revision);
+      baseMigrations.forEach((base: MigrationInfo) => {
+        let current: MigrationInfo | undefined = base;
+        const chain: MigrationInfo[] = [];
         while (current && !visited.has(current.revision)) {
           visited.add(current.revision);
           chain.push(current);
           // Находим следующую миграцию, которая ссылается на текущую
-          const next = filtered.find((m: any) => m.down_revision === current.revision);
+          const next = filtered.find((m: MigrationInfo) => m.down_revision === current?.revision);
           current = next;
         }
         ordered.push(...chain);
@@ -511,7 +529,7 @@ export function AdminDatabase() {
     ordered.reverse();
     
     // Если есть применённые и неприменённые, сортируем: применённые сначала
-    ordered.sort((a: any, b: any) => {
+    ordered.sort((a: MigrationInfo, b: MigrationInfo) => {
       // Сравниваем по статусу применения (is_applied ИЛИ applied_at)
       const aApplied = a.is_applied || a.applied_at;
       const bApplied = b.is_applied || b.applied_at;
@@ -529,19 +547,19 @@ export function AdminDatabase() {
   const migrationPath = useMemo(() => {
     if (!migrationHistory) return [];
     
-    const path: any[] = [];
+    const path: MigrationInfo[] = [];
     const migrations = migrationHistory.migrations;
     const currentRev = migrationHistory.current_revision;
     
     if (!currentRev) {
       // Нет текущей ревизии - показываем все неприменённые до head
-      const headMigration = migrations.find((m: any) => m.is_head);
+      const headMigration = migrations.find((m: MigrationInfo) => m.is_head);
       if (headMigration) {
-        let m: any = headMigration;
+        let m: MigrationInfo | undefined = headMigration;
         while (m) {
           path.unshift(m);
           if (m.down_revision) {
-            const nextM = migrations.find((mp: any) => mp.revision === m.down_revision);
+            const nextM = migrations.find((mp: MigrationInfo) => mp.revision === m?.down_revision);
             if (!nextM) break;
             m = nextM;
           } else {
@@ -551,24 +569,24 @@ export function AdminDatabase() {
       }
       return path;
     }
-    
+
     // Находим текущую миграцию
-    let current = migrations.find((m: any) => m.revision === currentRev);
+    let current = migrations.find((m: MigrationInfo) => m.revision === currentRev);
     if (!current) return [];
-    
+
     // Находим head
-    const headMigration = migrations.find((m: any) => m.is_head);
+    const headMigration = migrations.find((m: MigrationInfo) => m.is_head);
     if (!headMigration) return [];
-    
+
     // Строим путь от current до head
-    const pathMap = new Map();
-    migrations.forEach((m: any) => {
+    const pathMap = new Map<string, MigrationInfo>();
+    migrations.forEach((m: MigrationInfo) => {
       pathMap.set(m.revision, m);
     });
     
     // Находим путь через down_revision
     const pathSet = new Set();
-    let m = headMigration;
+    let m: MigrationInfo | undefined = headMigration;
     while (m) {
       pathSet.add(m.revision);
       if (m.down_revision) {
@@ -577,14 +595,14 @@ export function AdminDatabase() {
         break;
       }
     }
-    
+
     // Если current в пути, показываем путь от current до head
     if (pathSet.has(currentRev)) {
-      let m = headMigration;
-      while (m && m.revision !== currentRev) {
-        path.unshift(m);
-        if (m.down_revision) {
-          m = pathMap.get(m.down_revision);
+      let m2: MigrationInfo | undefined = headMigration;
+      while (m2 && m2.revision !== currentRev) {
+        path.unshift(m2);
+        if (m2.down_revision) {
+          m2 = pathMap.get(m2.down_revision);
         } else {
           break;
         }
@@ -603,14 +621,14 @@ export function AdminDatabase() {
     // Поиск
     if (tableSearch) {
       const searchLower = tableSearch.toLowerCase();
-      filtered = filtered.filter((table: any) => 
+      filtered = filtered.filter((table: TableInfo) =>
         table.table.toLowerCase().includes(searchLower)
       );
     }
     
     // Сортировка
-    filtered.sort((a: any, b: any) => {
-      let aVal: any, bVal: any;
+    filtered.sort((a: TableInfo, b: TableInfo) => {
+      let aVal: string | number, bVal: string | number;
       
       switch (sortBy) {
         case 'rows':
@@ -627,12 +645,12 @@ export function AdminDatabase() {
       }
       
       if (typeof aVal === 'string') {
-        return sortOrder === 'asc' 
-          ? aVal.localeCompare(bVal)
-          : bVal.localeCompare(aVal);
+        return sortOrder === 'asc'
+          ? aVal.localeCompare(bVal as string)
+          : (bVal as string).localeCompare(aVal);
       }
-      
-      return sortOrder === 'asc' ? aVal - bVal : bVal - aVal;
+
+      return sortOrder === 'asc' ? (aVal as number) - (bVal as number) : (bVal as number) - (aVal as number);
     });
     
     return filtered;
@@ -899,7 +917,7 @@ export function AdminDatabase() {
                           </td>
                         </tr>
                       ) : (
-                        filteredTables.map((table: any) => (
+                        filteredTables.map((table: TableInfo) => (
                           <tr 
                             key={table.table} 
                             onClick={() => handleTableClick(table)}
@@ -1015,7 +1033,7 @@ export function AdminDatabase() {
                   </span>
                 </p>
                 <div className="flex items-center space-x-2 flex-wrap gap-2">
-                  {migrationPath.map((migration: any, index: number) => (
+                  {migrationPath.map((migration: MigrationInfo, index: number) => (
                     <div key={migration.revision} className="flex items-center space-x-2">
                       {index > 0 && <ChevronRight className="w-4 h-4 text-gray-500" />}
                       <div className={`
@@ -1255,7 +1273,7 @@ export function AdminDatabase() {
                         </td>
                       </tr>
                     ) : (
-                      filteredMigrations.map((migration: any) => (
+                      filteredMigrations.map((migration: MigrationInfo) => (
                         <tr 
                           key={migration.revision} 
                           className={`
@@ -1669,7 +1687,7 @@ export function AdminDatabase() {
                             </td>
                           </tr>
                         ) : (
-                          tableData.rows.map((row: any, idx: number) => {
+                          tableData.rows.map((row: Record<string, unknown>, idx: number) => {
                             // Используем реальный primary key из бэкенда
                             const pkCols: string[] = tableData.primary_key_columns?.length
                               ? tableData.primary_key_columns

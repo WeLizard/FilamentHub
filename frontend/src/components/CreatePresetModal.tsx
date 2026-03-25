@@ -1163,7 +1163,7 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
         fan_speed?: number;
         retraction_length?: number;
         retraction_speed?: number;
-        orcaslicer_settings?: Record<string, any> | null;
+        orcaslicer_settings?: Record<string, unknown> | null;
         printer_ids?: number[];
         filament_id?: number | null;
         active?: boolean;

@@ -55,7 +55,7 @@ export interface MaterialDefaults {
     compatible_printers?: string[];
 
     // Другие параметры
-    [key: string]: any;
+    [key: string]: unknown;
   };
 }
 
