@@ -1199,7 +1199,7 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
     let hasSettings = false;
 
     // Вспомогательная функция для добавления параметра
-    const addParam = (key: string, value: any) => {
+    const addParam = (key: string, value: string | number | string[] | null | undefined) => {
       if (value !== '' && value !== null && value !== undefined) {
         settings[key] = Array.isArray(value) ? value : [String(value)];
         hasSettings = true;

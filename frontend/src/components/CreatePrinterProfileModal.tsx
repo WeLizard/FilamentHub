@@ -890,12 +890,12 @@ export const CreatePrinterProfileModal: React.FC<CreatePrinterProfileModalProps>
 
   const metadataInvalid = false;
 
-  const getMetadataValue = (key: string): any => {
+  const getMetadataValue = (key: string): unknown => {
     if (EXTRA_METADATA_ONLY_KEY_SET.has(key)) {
       if (!parsedExtraMetadata || typeof parsedExtraMetadata !== 'object') {
         return undefined;
       }
-      return (parsedExtraMetadata as Record<string, any>)[key];
+      return (parsedExtraMetadata as Record<string, unknown>)[key];
     }
     return machineSettings[key];
   };
@@ -1011,7 +1011,7 @@ export const CreatePrinterProfileModal: React.FC<CreatePrinterProfileModalProps>
     'long_retractions_when_cut',
   ];
 
-  const updateMetadataValue = (key: string, value: any, aliasesToDelete: string[] = []) => {
+  const updateMetadataValue = (key: string, value: unknown, aliasesToDelete: string[] = []) => {
     const isCompatibilityKey = EXTRA_METADATA_ONLY_KEY_SET.has(key);
     const isSpecialArrayField = ARRAY_FIELDS_WITH_EMPTY_VALID.includes(key);
 
@@ -1023,7 +1023,7 @@ export const CreatePrinterProfileModal: React.FC<CreatePrinterProfileModalProps>
 
       const base =
         parsedExtraMetadata && typeof parsedExtraMetadata === 'object'
-          ? { ...(parsedExtraMetadata as Record<string, any>) }
+          ? { ...(parsedExtraMetadata as Record<string, unknown>) }
           : {};
 
       aliasesToDelete.forEach((alias) => {
@@ -1205,7 +1205,7 @@ export const CreatePrinterProfileModal: React.FC<CreatePrinterProfileModalProps>
 
   // Мутация для создания/обновления
   const createMutation = useMutation({
-    mutationFn: (data: any) => {
+    mutationFn: (data: Parameters<typeof printerProfilesAPI.create>[0]) => {
       if (profile) {
         return printerProfilesAPI.update(profile.id, data);
       }
