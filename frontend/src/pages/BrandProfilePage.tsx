@@ -331,16 +331,16 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({ onBack }) =>
 
         {/* Tabs */}
         <div className="flex justify-center space-x-2 mt-4">
-          {[
+          {([
             { id: 'materials', label: t('brandProfile.tabs.materials'), icon: Package },
             { id: 'presets', label: t('brandProfile.tabs.presets'), icon: Settings },
             { id: 'qr', label: t('brandProfile.tabs.qr'), icon: QrCode },
             { id: 'analytics', label: t('brandProfile.tabs.analytics'), icon: BarChart3 },
             { id: 'usage', label: t('brandProfile.tabs.usage'), icon: TrendingUp },
-          ].map((tab) => (
+          ] as const).map((tab) => (
             <button
               key={tab.id}
-              onClick={() => setBrandTab(tab.id as any)}
+              onClick={() => setBrandTab(tab.id)}
               className={`flex items-center space-x-2 px-4 py-2 rounded-lg transition-all ${
                 brandTab === tab.id
                   ? 'bg-purple-600 text-white shadow-lg shadow-purple-500/25'

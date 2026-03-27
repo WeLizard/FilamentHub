@@ -7,6 +7,7 @@ import { Printer3DIcon } from './icons/Printer3DIcon';
 import { FilamentReview } from '../types/api';
 import { StarRating } from './StarRating';
 import { BadgeList } from './Badge';
+import type { BadgeType } from './Badge';
 
 interface ReviewCardProps {
   review: FilamentReview;
@@ -41,7 +42,7 @@ export const ReviewCard: React.FC<ReviewCardProps> = ({
               {review.username || t('reviewCard.anonymousUser')}
             </h3>
             {review.user_badges && review.user_badges.length > 0 && (
-              <BadgeList badges={review.user_badges as any} size="sm" />
+              <BadgeList badges={review.user_badges as BadgeType[]} size="sm" />
             )}
             {isOwn && (
               <span className="px-2 py-1 bg-blue-500/20 text-blue-300 text-xs rounded-full border border-blue-500/30">

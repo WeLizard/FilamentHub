@@ -3,6 +3,7 @@
 import { useTranslation } from 'react-i18next';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
+import type { LucideIcon } from 'lucide-react';
 import {
   BarChart3, Users, Building2, Settings, TrendingUp,
   Package, HardDrive, Printer, BookOpen, Star,
@@ -13,7 +14,7 @@ import { adminAPI } from '../../api/client';
 
 /* ─── Compact stat card (inline, 1-row friendly) ─── */
 function Stat({ icon: Icon, label, value, sub, accent }: {
-  icon: any;
+  icon: LucideIcon;
   label: string;
   value: number | string;
   sub?: string;
@@ -35,7 +36,7 @@ function Stat({ icon: Icon, label, value, sub, accent }: {
 
 /* ─── Section header ─── */
 function Section({ icon: Icon, title, children, cols }: {
-  icon: any;
+  icon: LucideIcon;
   title: string;
   children: React.ReactNode;
   cols?: string;
@@ -54,7 +55,13 @@ function Section({ icon: Icon, title, children, cols }: {
 }
 
 /* ─── Docker container card ─── */
-function DockerCard({ c }: { c: any }) {
+interface DockerContainer {
+  name: string; cpu: string; mem_usage: string; mem_perc: string;
+  net_io: string; block_io: string; pids: string;
+  restart_count: number; status: string;
+}
+
+function DockerCard({ c }: { c: DockerContainer }) {
   const isRunning = c.status === 'running';
   return (
     <div className="bg-white/5 rounded-lg px-3 py-2.5 border border-white/10">

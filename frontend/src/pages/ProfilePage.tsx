@@ -637,20 +637,20 @@ export const ProfilePage: React.FC = () => {
         {/* Tabs - горизонтальный скролл на мобильных */}
         <div className="overflow-x-auto -mx-4 px-4 md:mx-0 md:px-0 scrollbar-hide">
           <div className="flex justify-start md:justify-center gap-1.5 md:gap-2 mt-3 md:mt-4 min-w-max">
-            {[
-              { id: 'dashboard', label: t('profilePage.tabs.dashboard'), shortLabel: t('profilePage.tabs.dashboardShort'), icon: Play },
-              { id: 'presets', label: t('profilePage.tabs.presets'), shortLabel: t('profilePage.tabs.presetsShort'), icon: Settings },
-              { id: 'printer-profiles', label: t('profilePage.tabs.printers'), shortLabel: t('profilePage.tabs.printersShort'), icon: Printer3DIcon },
-              { id: 'spools', label: t('profilePage.tabs.spools'), shortLabel: t('profilePage.tabs.spoolsShort'), icon: Package },
-              { 
-                id: 'calculator-pro', 
-                label: t('profilePage.tabs.calculatorPro'), 
-                shortLabel: t('profilePage.tabs.calculatorProShort'), 
+            {([
+              { id: 'dashboard' as const, label: t('profilePage.tabs.dashboard'), shortLabel: t('profilePage.tabs.dashboardShort'), icon: Play },
+              { id: 'presets' as const, label: t('profilePage.tabs.presets'), shortLabel: t('profilePage.tabs.presetsShort'), icon: Settings },
+              { id: 'printer-profiles' as const, label: t('profilePage.tabs.printers'), shortLabel: t('profilePage.tabs.printersShort'), icon: Printer3DIcon },
+              { id: 'spools' as const, label: t('profilePage.tabs.spools'), shortLabel: t('profilePage.tabs.spoolsShort'), icon: Package },
+              {
+                id: 'calculator-pro' as const,
+                label: t('profilePage.tabs.calculatorPro'),
+                shortLabel: t('profilePage.tabs.calculatorProShort'),
                 icon: Calculator,
                 premium: true,
               },
-              { id: 'settings', label: t('profilePage.tabs.settings'), shortLabel: t('profilePage.tabs.settingsShort'), icon: Cog },
-            ].map((tab) => {
+              { id: 'settings' as const, label: t('profilePage.tabs.settings'), shortLabel: t('profilePage.tabs.settingsShort'), icon: Cog },
+            ]).map((tab) => {
               const isPremiumTab = tab.premium === true;
               const hasCalculatorProAccess = user?.role === 'admin' || user?.is_premium === true;
               const isLocked = isPremiumTab && !hasCalculatorProAccess;
@@ -658,7 +658,7 @@ export const ProfilePage: React.FC = () => {
               return (
                 <button
                   key={tab.id}
-                  onClick={() => !isLocked && setUserTab(tab.id as any)}
+                  onClick={() => !isLocked && setUserTab(tab.id)}
                   disabled={isLocked}
                   className={`flex items-center gap-1.5 md:gap-2 px-2.5 md:px-4 py-1.5 md:py-2 rounded-lg transition-all text-xs md:text-sm whitespace-nowrap ${
                     userTab === tab.id

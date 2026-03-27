@@ -20,6 +20,7 @@ import {
 import { wikiAPI } from '../api/client';
 import type { WikiArticle, WikiFeedbackStats } from '../types/api';
 import ReactMarkdown from 'react-markdown';
+import type { ExtraProps } from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { vscDarkPlus } from 'react-syntax-highlighter/dist/esm/styles/prism';
@@ -104,10 +105,11 @@ export function WikiArticlePage() {
   // Функция для извлечения текста из React children
   const getTextContent = (children: React.ReactNode): string => {
     return React.Children.toArray(children)
-      .map((child: any) => {
+      .map((child) => {
         if (typeof child === 'string') return child;
-        if (child?.props?.children) {
-          return getTextContent(child.props.children);
+        if (React.isValidElement(child)) {
+          const props = child.props as Record<string, unknown>;
+          if (props.children) return getTextContent(props.children as React.ReactNode);
         }
         return '';
       })
@@ -361,7 +363,7 @@ export function WikiArticlePage() {
                 <ReactMarkdown
                   remarkPlugins={[remarkGfm]}
                   components={{
-                    code(props: any) {
+                    code(props: React.ComponentPropsWithoutRef<'code'> & ExtraProps & { inline?: boolean }) {
                       const { node, inline, className, children, ...rest } = props;
                       const match = /language-(\w+)/.exec(className || '');
 
@@ -377,7 +379,7 @@ export function WikiArticlePage() {
                       if (!inline && match) {
                         return (
                           <SyntaxHighlighter
-                            style={vscDarkPlus as any}
+                            style={vscDarkPlus as Record<string, React.CSSProperties>}
                             language={match[1]}
                             PreTag="div"
                           >
@@ -390,7 +392,7 @@ export function WikiArticlePage() {
                       if (!inline) {
                         return (
                           <SyntaxHighlighter
-                            style={vscDarkPlus as any}
+                            style={vscDarkPlus as Record<string, React.CSSProperties>}
                             language="text"
                             PreTag="div"
                           >
@@ -406,8 +408,8 @@ export function WikiArticlePage() {
                         </code>
                       );
                     },
-                    table(props: any) {
-                      const { children, ...rest } = props;
+                    table(props: React.ComponentPropsWithoutRef<'table'> & ExtraProps) {
+                      const { node, children, ...rest } = props;
                       return (
                         <div className="overflow-x-auto my-6 -mx-2 px-2">
                           <table
@@ -425,8 +427,8 @@ export function WikiArticlePage() {
                         </div>
                       );
                     },
-                    img(props: any) {
-                      const { src, alt, ...rest } = props;
+                    img(props: React.ComponentPropsWithoutRef<'img'> & ExtraProps) {
+                      const { node, src, alt, ...rest } = props;
                       return (
                         <img
                           src={src}
@@ -437,8 +439,8 @@ export function WikiArticlePage() {
                         />
                       );
                     },
-                    h1(props: any) {
-                      const { children, ...rest } = props;
+                    h1(props: React.ComponentPropsWithoutRef<'h1'> & ExtraProps) {
+                      const { node, children, ...rest } = props;
                       const text = String(children);
                       const id = generateHeadingId(text);
                       return (
@@ -447,8 +449,8 @@ export function WikiArticlePage() {
                         </h1>
                       );
                     },
-                    h2(props: any) {
-                      const { children, ...rest } = props;
+                    h2(props: React.ComponentPropsWithoutRef<'h2'> & ExtraProps) {
+                      const { node, children, ...rest } = props;
                       const text = String(children);
                       const id = generateHeadingId(text);
                       return (
@@ -457,8 +459,8 @@ export function WikiArticlePage() {
                         </h2>
                       );
                     },
-                    h3(props: any) {
-                      const { children, ...rest } = props;
+                    h3(props: React.ComponentPropsWithoutRef<'h3'> & ExtraProps) {
+                      const { node, children, ...rest } = props;
                       const text = String(children);
                       const id = generateHeadingId(text);
                       return (
@@ -467,14 +469,14 @@ export function WikiArticlePage() {
                         </h3>
                       );
                     },
-                    li(props: any) {
-                      const { children, className, ...rest } = props;
+                    li(props: React.ComponentPropsWithoutRef<'li'> & ExtraProps) {
+                      const { node, children, className, ...rest } = props;
                       const childArray = Children.toArray(children);
 
                       // Проверяем есть ли checkbox среди children
-                      const checkboxChild = childArray.find((child: any) =>
+                      const checkboxChild = childArray.find((child) =>
                         React.isValidElement(child) &&
-                        (child as React.ReactElement<any>).props?.type === 'checkbox'
+                        (child as React.ReactElement<{ type?: string }>).props?.type === 'checkbox'
                       );
 
                       if (checkboxChild) {
@@ -490,9 +492,9 @@ export function WikiArticlePage() {
                         const isChecked = checkboxStates[checkboxKey] ?? false;
 
                         // Получаем остальные children (текст и форматирование)
-                        const otherChildren = childArray.filter((child: any) =>
+                        const otherChildren = childArray.filter((child) =>
                           !(React.isValidElement(child) &&
-                            (child as React.ReactElement<any>).props?.type === 'checkbox')
+                            (child as React.ReactElement<{ type?: string }>).props?.type === 'checkbox')
                         );
 
                         return (

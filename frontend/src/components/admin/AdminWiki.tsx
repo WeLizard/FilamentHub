@@ -14,6 +14,26 @@ import type { WikiArticle, WikiArticleSummary, WikiCategory } from '../../types/
 
 type WikiSection = 'articles' | 'categories' | 'operations';
 
+interface ArticleFormData {
+  id?: number;
+  title: string;
+  slug: string;
+  summary: string;
+  content: string;
+  category_id: number;
+  tags: string[] | null;
+  published: boolean;
+}
+
+interface CategoryFormData {
+  id?: number;
+  name: string;
+  slug: string;
+  description: string;
+  icon: string | null;
+  order: number;
+}
+
 // ============================================================================
 // Article Edit Modal
 // ============================================================================
@@ -29,7 +49,7 @@ function ArticleModal({
   article: Partial<WikiArticle> | null;
   categories: WikiCategory[];
   onClose: () => void;
-  onSave: (data: any) => void;
+  onSave: (data: ArticleFormData) => void;
   isSaving: boolean;
   t: (key: string) => string;
 }) {
@@ -45,7 +65,7 @@ function ArticleModal({
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     const tagsArr = tags.split(',').map(t => t.trim()).filter(Boolean);
-    const data: any = {
+    const data: ArticleFormData = {
       title,
       slug,
       summary,
@@ -194,7 +214,7 @@ function CategoryModal({
 }: {
   category: Partial<WikiCategory> | null;
   onClose: () => void;
-  onSave: (data: any) => void;
+  onSave: (data: CategoryFormData) => void;
   isSaving: boolean;
   t: (key: string) => string;
 }) {
@@ -207,7 +227,7 @@ function CategoryModal({
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    const data: any = { name, slug, description, icon: icon || null, order };
+    const data: CategoryFormData = { name, slug, description, icon: icon || null, order };
     if (category?.id) {
       data.id = category.id;
     }
@@ -346,7 +366,17 @@ export function AdminWiki() {
   const [showCategoryModal, setShowCategoryModal] = useState(false);
 
   // Operation results
-  const [operationResult, setOperationResult] = useState<any>(null);
+  const [operationResult, setOperationResult] = useState<{
+    type: string;
+    success: boolean;
+    message: string;
+    created?: number;
+    updated?: number;
+    skipped?: number;
+    exported?: number;
+    errors?: number;
+    details?: Array<{ file?: string; status?: string; title?: string; reason?: string }>;
+  } | null>(null);
 
   // ==================== Queries ====================
 
@@ -369,7 +399,7 @@ export function AdminWiki() {
   // ==================== Mutations ====================
 
   const createArticleMutation = useMutation({
-    mutationFn: (data: any) => wikiAPI.createArticle(data),
+    mutationFn: (data: ArticleFormData) => wikiAPI.createArticle(data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['admin-wiki-articles'] });
       queryClient.invalidateQueries({ queryKey: ['admin-wiki-categories'] });
@@ -379,7 +409,7 @@ export function AdminWiki() {
   });
 
   const updateArticleMutation = useMutation({
-    mutationFn: ({ id, data }: { id: number; data: any }) => wikiAPI.updateArticle(id, data),
+    mutationFn: ({ id, data }: { id: number; data: ArticleFormData }) => wikiAPI.updateArticle(id, data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['admin-wiki-articles'] });
       queryClient.invalidateQueries({ queryKey: ['admin-wiki-categories'] });
@@ -397,7 +427,7 @@ export function AdminWiki() {
   });
 
   const createCategoryMutation = useMutation({
-    mutationFn: (data: any) => wikiAPI.createCategory(data),
+    mutationFn: (data: CategoryFormData) => wikiAPI.createCategory(data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['admin-wiki-categories'] });
       setShowCategoryModal(false);
@@ -406,7 +436,7 @@ export function AdminWiki() {
   });
 
   const updateCategoryMutation = useMutation({
-    mutationFn: ({ id, data }: { id: number; data: any }) => wikiAPI.updateCategory(id, data),
+    mutationFn: ({ id, data }: { id: number; data: CategoryFormData }) => wikiAPI.updateCategory(id, data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['admin-wiki-categories'] });
       setShowCategoryModal(false);
@@ -445,7 +475,7 @@ export function AdminWiki() {
 
   // ==================== Handlers ====================
 
-  const handleSaveArticle = (data: any) => {
+  const handleSaveArticle = (data: ArticleFormData) => {
     const { id, ...rest } = data;
     if (id) {
       updateArticleMutation.mutate({ id, data: rest });
@@ -462,7 +492,7 @@ export function AdminWiki() {
       setShowArticleModal(true);
     } catch {
       // Fallback to summary data
-      setEditingArticle(article as any);
+      setEditingArticle(article as Partial<WikiArticle>);
       setShowArticleModal(true);
     }
   };
@@ -473,7 +503,7 @@ export function AdminWiki() {
     }
   };
 
-  const handleSaveCategory = (data: any) => {
+  const handleSaveCategory = (data: CategoryFormData) => {
     const { id, ...rest } = data;
     if (id) {
       updateCategoryMutation.mutate({ id, data: rest });
@@ -828,7 +858,7 @@ export function AdminWiki() {
                   <span className="text-green-400">{operationResult.created} {t('adminWiki.created')}</span>
                   <span className="text-blue-400">{operationResult.updated} {t('adminWiki.updated')}</span>
                   <span className="text-gray-400">{operationResult.skipped} {t('adminWiki.skipped')}</span>
-                  {operationResult.errors > 0 && (
+                  {(operationResult.errors ?? 0) > 0 && (
                     <span className="text-red-400">{operationResult.errors} {t('adminWiki.errors')}</span>
                   )}
                 </div>
@@ -837,7 +867,7 @@ export function AdminWiki() {
               {operationResult.type === 'export' && operationResult.success && (
                 <div className="flex flex-wrap gap-4 text-sm">
                   <span className="text-green-400">{operationResult.exported} {t('adminWiki.exported')}</span>
-                  {operationResult.errors > 0 && (
+                  {(operationResult.errors ?? 0) > 0 && (
                     <span className="text-red-400">{operationResult.errors} {t('adminWiki.errors')}</span>
                   )}
                 </div>
@@ -848,7 +878,7 @@ export function AdminWiki() {
                 <div className="mt-4 max-h-48 overflow-y-auto">
                   <table className="w-full text-xs">
                     <tbody>
-                      {operationResult.details.map((d: any, i: number) => (
+                      {operationResult.details.map((d, i) => (
                         <tr key={i} className="border-b border-white/5">
                           <td className="py-1 px-2 text-gray-400">{d.file}</td>
                           <td className="py-1 px-2">

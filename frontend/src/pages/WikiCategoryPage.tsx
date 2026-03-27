@@ -63,7 +63,7 @@ export function WikiCategoryPage() {
 
   const getIconComponent = (iconName: string | null) => {
     if (!iconName) return BookOpen;
-    const IconComponent = (LucideIcons as any)[iconName];
+    const IconComponent = (LucideIcons as unknown as Record<string, LucideIcons.LucideIcon>)[iconName];
     return IconComponent || BookOpen;
   };
 

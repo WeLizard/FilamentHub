@@ -81,7 +81,7 @@ export function WikiPage() {
     if (!iconName) return BookOpen;
     
     // Преобразуем имя иконки в PascalCase если нужно
-    const IconComponent = (LucideIcons as any)[iconName];
+    const IconComponent = (LucideIcons as unknown as Record<string, LucideIcons.LucideIcon>)[iconName];
     return IconComponent || BookOpen;
   };
 
