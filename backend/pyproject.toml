@@ -15,7 +15,7 @@ dependencies = [
     "pydantic~=2.10.0",
     "pydantic-settings~=2.7.0",
     "email-validator~=2.2.0",
-    "PyJWT[crypto]~=2.9.0",
+    "PyJWT[crypto]~=2.12.0",
     "bcrypt~=5.0.0",
     "python-multipart~=0.0.22",
     "redis~=5.2.0",
@@ -26,6 +26,9 @@ dependencies = [
     "better-profanity~=0.7.0",  # Проверка плохих слов
     "weasyprint~=63.0",  # HTML-to-PDF for quote generation
     "resend~=2.0.0",  # Transactional email via Resend
+    "cryptography>=46.0.5",  # CVE-2026-26007
+    "jinja2>=3.1.6",  # CVE-2025-27516
+    "urllib3>=2.6.0",  # CVE-2025-66418, CVE-2026-21441
 ]
 
 [project.optional-dependencies]
@@ -36,7 +39,7 @@ dev = [
     "aiosqlite~=0.20.0",  # For async SQLite tests (in-memory)
     "ruff~=0.8.0",
     "mypy~=1.13.0",
-    "black~=24.10.0",
+    "black~=26.3.0",
 ]
 
 [tool.ruff]
