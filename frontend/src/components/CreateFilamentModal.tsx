@@ -198,8 +198,8 @@ export const CreateFilamentModal: React.FC<CreateFilamentModalProps> = ({
       setColorName(filament.color_name || '');
       setColorHex(filament.color_hex || '#FFFFFF');
       // Инициализация расширенных визуальных эффектов
-      if ((filament as any).visual_settings) {
-        const vs = (filament as any).visual_settings;
+      if (filament.visual_settings) {
+        const vs = filament.visual_settings;
         setVisualColorType(vs.color_type || 'single');
         setVisualColors(vs.colors || [filament.color_hex || '#FFFFFF']);
         setVisualFinish(vs.finish || 'matte');

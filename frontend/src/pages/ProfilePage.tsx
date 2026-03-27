@@ -3273,14 +3273,14 @@ const PresetCard: React.FC<PresetCardProps> = ({ preset, onEdit, onView, onDelet
                   {t('profilePage.draft')}
                 </span>
               )}
-              {(preset as any).orcaslicer_settings?.orphaned && (
+              {preset.orcaslicer_settings?.orphaned && (
                 <span className="px-2 py-0.5 bg-purple-600/30 rounded text-purple-300 text-xs font-medium whitespace-nowrap" title={t('profilePage.orphanedTooltip')}>
                   {t('profilePage.orphaned')}
                 </span>
               )}
-              {(preset as any).orcaslicer_settings?.enrichment && (
+              {preset.orcaslicer_settings?.enrichment && (
                 <span className="px-2 py-0.5 bg-cyan-600/20 rounded text-cyan-400 text-xs whitespace-nowrap">
-                  {t('profilePage.materialDetected', { type: (preset as any).orcaslicer_settings.enrichment.material_type })}
+                  {t('profilePage.materialDetected', { type: (preset.orcaslicer_settings.enrichment as Record<string, unknown>).material_type as string })}
                 </span>
               )}
               {preset.is_weighted && (

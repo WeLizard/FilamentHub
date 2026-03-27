@@ -83,7 +83,7 @@ export const ViewPresetModal: React.FC<ViewPresetModalProps> = ({
   const orcaslicerSettings = preset?.orcaslicer_settings || {};
 
   // Вспомогательная функция для извлечения значений из массивов (как в CreatePresetModal)
-  const getValue = (key: string): any => {
+  const getValue = (key: string): unknown => {
     const val = orcaslicerSettings[key];
     if (Array.isArray(val)) {
       return val[0] || null;

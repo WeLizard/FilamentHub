@@ -2661,7 +2661,7 @@ const FilamentCard: React.FC<FilamentCardProps> = ({ filament, onEdit, onDelete,
               <div style={{ transform: 'scale(0.4)', transformOrigin: 'center center' }}>
                 <FilamentPreview
                   colorHex={filament.color_hex || '#FFFFFF'}
-                  visualSettings={(filament as any).visual_settings}
+                  visualSettings={filament.visual_settings}
                   size="medium"
                 />
               </div>
@@ -2792,7 +2792,7 @@ const FilamentCard: React.FC<FilamentCardProps> = ({ filament, onEdit, onDelete,
       <div className="flex justify-center mb-4 py-3 bg-white/5 rounded-xl border border-white/10">
         <FilamentPreview
           colorHex={filament.color_hex || '#FFFFFF'}
-          visualSettings={(filament as any).visual_settings}
+          visualSettings={filament.visual_settings}
           size="medium"
         />
       </div>

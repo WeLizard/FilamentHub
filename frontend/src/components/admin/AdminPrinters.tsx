@@ -49,7 +49,7 @@ export function AdminPrinters() {
 
   // Обновление принтера
   const updateMutation = useMutation({
-    mutationFn: ({ id, data }: { id: number; data: any }) => adminAPI.updatePrinter(id, data),
+    mutationFn: ({ id, data }: { id: number; data: PrinterFormData }) => adminAPI.updatePrinter(id, data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['admin-printers'] });
       setEditingPrinter(null);
@@ -245,10 +245,33 @@ export function AdminPrinters() {
   );
 }
 
+interface PrinterFormData {
+  name: string;
+  manufacturer: string;
+  model: string;
+  slug: string;
+  model_id?: string;
+  vendor?: string;
+  family?: string;
+  technology?: string;
+  description?: string;
+  build_volume_x?: number;
+  build_volume_y?: number;
+  build_volume_z?: number;
+  nozzle_diameter?: number;
+  nozzle_options?: number[];
+  max_extruder_temp?: number;
+  max_bed_temp?: number;
+  default_materials?: string[];
+  extra_metadata?: Record<string, unknown>;
+  image_url?: string;
+  active?: boolean;
+}
+
 interface PrinterModalProps {
   printer: PrinterType | null;
   onClose: () => void;
-  onSave: (data: any) => void;
+  onSave: (data: PrinterFormData) => void;
   isLoading: boolean;
 }
 
@@ -370,11 +393,11 @@ function PrinterModal({ printer, onClose, onSave, isLoading }: PrinterModalProps
 
   const metadataInvalid = parsedMetadata === null;
 
-  const getMetadataValue = (key: string): any => {
+  const getMetadataValue = (key: string): unknown => {
     if (!parsedMetadata || typeof parsedMetadata !== 'object') {
       return undefined;
     }
-    return (parsedMetadata as Record<string, any>)[key];
+    return (parsedMetadata as Record<string, unknown>)[key];
   };
 
   const getMetadataString = (key: string): string => {
@@ -471,8 +494,8 @@ function PrinterModal({ printer, onClose, onSave, isLoading }: PrinterModalProps
     'enable_long_retraction_when_cut',
   ];
 
-  const updateMetadataValue = (key: string, value: any) => {
-    let base: Record<string, any> = {};
+  const updateMetadataValue = (key: string, value: unknown) => {
+    let base: Record<string, unknown> = {};
     try {
       base = formData.extra_metadata.trim() ? JSON.parse(formData.extra_metadata) : {};
     } catch (error) {
@@ -589,7 +612,7 @@ function PrinterModal({ printer, onClose, onSave, isLoading }: PrinterModalProps
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
 
-    let extraMetadata: Record<string, any> | undefined;
+    let extraMetadata: Record<string, unknown> | undefined;
     if (formData.extra_metadata.trim()) {
       try {
         extraMetadata = JSON.parse(formData.extra_metadata);
