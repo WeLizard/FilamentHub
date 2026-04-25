@@ -10,6 +10,7 @@ import { adminAPI, printersAPI } from '../../api/client';
 import type { Printer as PrinterType } from '../../types/api';
 import { EditGCodeModal } from '../EditGCodeModal';
 import { CustomSelect } from '../CustomSelect';
+import { AdminCatalogSources } from './AdminCatalogSources';
 
 const slugify = (value: string): string =>
   value
@@ -97,6 +98,9 @@ export function AdminPrinters() {
 
   return (
     <div className="space-y-6">
+      {/* Источники данных для каталога принтеров */}
+      <AdminCatalogSources />
+
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>

@@ -3451,6 +3451,24 @@
     "approve": "Одобрить",
     "reject": "Отклонить"
   },
+  "adminCatalogSources": {
+    "title": "Источники каталога принтеров",
+    "description": "Каталог принтеров FilamentHub можно наполнять из разных слайсеров. Сегодня доступен OrcaSlicer; в будущем добавятся PrusaSlicer, Cura и Bambu Studio.",
+    "orca": {
+      "title": "OrcaSlicer",
+      "description": "Импорт принтеров и пресетов из OrcaSlicer (Bambu Lab, Voron, Creality, Prusa, Anycubic и др.). Идемпотентно — повторный запуск обновляет, не дублирует.",
+      "bundleStatus": "Bundle",
+      "bundleReady": "готов ({{size}} MB)",
+      "bundleMissing": "не найден",
+      "bundleMissingHint": "Bundle не приехал с деплоем. Запустите scripts/build_catalog_source_orca.py локально и закоммитьте backend/data/catalog_sources/orca/bundle.zip.",
+      "bundleVendors": "Вендоров в bundle",
+      "systemPrinters": "Системных принтеров в БД",
+      "importButton": "Импортировать каталог",
+      "importing": "Импорт…",
+      "importSuccess": "Импорт завершён",
+      "importError": "Не удалось импортировать каталог"
+    }
+  },
   "myPrinter": {
     "title": "Мой принтер",
     "description": "Выберите принтер из каталога — это поможет показывать рекомендованные пресеты и улучшит подбор материалов",

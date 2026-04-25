@@ -3324,6 +3324,24 @@
     "approve": "Approve",
     "reject": "Reject"
   },
+  "adminCatalogSources": {
+    "title": "Printer catalog data sources",
+    "description": "The FilamentHub printer catalog can be populated from different slicers. OrcaSlicer is available today; PrusaSlicer, Cura and Bambu Studio will follow.",
+    "orca": {
+      "title": "OrcaSlicer",
+      "description": "Import printers and presets from OrcaSlicer (Bambu Lab, Voron, Creality, Prusa, Anycubic, etc.). Idempotent — re-running updates without duplicating.",
+      "bundleStatus": "Bundle",
+      "bundleReady": "ready ({{size}} MB)",
+      "bundleMissing": "not found",
+      "bundleMissingHint": "Bundle was not shipped with deploy. Run scripts/build_catalog_source_orca.py locally and commit backend/data/catalog_sources/orca/bundle.zip.",
+      "bundleVendors": "Vendors in bundle",
+      "systemPrinters": "System printers in DB",
+      "importButton": "Import catalog",
+      "importing": "Importing…",
+      "importSuccess": "Import complete",
+      "importError": "Failed to import catalog"
+    }
+  },
   "myPrinter": {
     "title": "My Printer",
     "description": "Pick a printer from the catalog — this powers recommended presets and improves material matching",

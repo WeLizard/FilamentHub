@@ -941,6 +941,23 @@ export const calculatorAPI = {
 // ==================== Admin API ====================
 
 export const adminAPI = {
+  // Printer catalog: data sources (OrcaSlicer is one source; PrusaSlicer/Cura/Bambu may follow)
+  getCatalogSourceOrcaInfo: async (): Promise<{
+    bundle: { exists: boolean; path: string; size_mb: number | null; vendor_count: number | null };
+    catalog: { printers_total: number; printers_system: number };
+  }> => {
+    const response = await api.get('/admin/catalog/sources/orca/info');
+    return response.data;
+  },
+
+  importCatalogSourceOrca: async (): Promise<{
+    summary: Record<string, number>;
+    catalog: { printers_total: number; printers_system: number };
+  }> => {
+    const response = await api.post('/admin/catalog/sources/orca/import');
+    return response.data;
+  },
+
   // Brand Requests
   listBrandRequests: async (params?: { page?: number; size?: number; status?: BrandRequestStatus }): Promise<ListResponse<BrandRequest>> => {
     const response = await api.get<ListResponse<BrandRequest>>('/admin/brand-requests', { params });

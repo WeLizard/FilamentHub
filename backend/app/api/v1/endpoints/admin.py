@@ -2,6 +2,7 @@
 
 import logging
 from datetime import datetime
+from pathlib import Path
 from typing import Annotated, Any, Optional
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Query, status, UploadFile, File
@@ -2270,4 +2271,106 @@ async def enrich_all_draft_presets(
     stats = await enrich_drafts_batch(db)
     await db.commit()
     return stats
+
+
+# ─── Printer catalog: data sources ────────────────────────────────────────
+#
+# The FilamentHub printer catalog can be populated from multiple external
+# sources (OrcaSlicer profiles today; PrusaSlicer / Cura / Bambu Studio in
+# the future). Each source ships a pre-packed bundle inside the backend
+# container under backend/data/catalog_sources/<source>/bundle.zip and an
+# admin endpoint that unpacks + imports it idempotently.
+
+_CATALOG_SOURCES_DIR = Path(__file__).resolve().parents[3] / "data" / "catalog_sources"
+_ORCA_BUNDLE_PATH = _CATALOG_SOURCES_DIR / "orca" / "bundle.zip"
+
+
+@router.get("/catalog/sources/orca/info", response_model=dict)
+async def get_catalog_source_orca_info(
+    admin: Annotated[User, Depends(get_current_admin_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> dict:
+    """Return state of the OrcaSlicer catalog source bundle and current catalog."""
+    bundle_exists = _ORCA_BUNDLE_PATH.exists()
+    bundle_size_mb: float | None = None
+    bundle_vendor_count: int | None = None
+    if bundle_exists:
+        bundle_size_mb = round(_ORCA_BUNDLE_PATH.stat().st_size / 1024 / 1024, 2)
+        import zipfile as _zip
+        with _zip.ZipFile(_ORCA_BUNDLE_PATH) as zf:
+            # Vendor manifests are top-level *.json (no slash in name)
+            bundle_vendor_count = sum(
+                1 for n in zf.namelist() if n.endswith(".json") and "/" not in n
+            )
+
+    printers_total = await db.scalar(select(func.count(Printer.id)))
+    printers_system = await db.scalar(
+        select(func.count(Printer.id)).where(Printer.source == "system")
+    )
+
+    return {
+        "bundle": {
+            "exists": bundle_exists,
+            "path": str(_ORCA_BUNDLE_PATH),
+            "size_mb": bundle_size_mb,
+            "vendor_count": bundle_vendor_count,
+        },
+        "catalog": {
+            "printers_total": printers_total or 0,
+            "printers_system": printers_system or 0,
+        },
+    }
+
+
+@router.post("/catalog/sources/orca/import", response_model=dict)
+async def import_catalog_source_orca(
+    admin: Annotated[User, Depends(get_current_admin_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> dict:
+    """Import the OrcaSlicer catalog source into the FilamentHub printer catalog.
+
+    Unzips backend/data/catalog_sources/orca/bundle.zip into a temp dir, runs
+    the idempotent OrcaBundleImporter, removes temp. Safe to run repeatedly —
+    existing printers/profiles are upserted, not duplicated.
+    """
+    import shutil
+    import tempfile
+    import zipfile as _zip
+    from app.services.orca_bundle_importer import OrcaBundleImporter
+
+    if not _ORCA_BUNDLE_PATH.exists():
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"code": "ERR_BUNDLE_NOT_FOUND", "params": {"path": str(_ORCA_BUNDLE_PATH)}},
+        )
+
+    tmp_root = Path(tempfile.mkdtemp(prefix="catalog_orca_"))
+    try:
+        with _zip.ZipFile(_ORCA_BUNDLE_PATH) as zf:
+            zf.extractall(tmp_root)
+
+        importer = OrcaBundleImporter(root_path=tmp_root)
+        summary = await importer.import_all(db)
+        await db.commit()
+    except Exception as e:
+        await db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail={"code": "ERR_BUNDLE_IMPORT_FAILED", "params": {"error": str(e)[:500]}},
+        )
+    finally:
+        shutil.rmtree(tmp_root, ignore_errors=True)
+
+    printers_total = await db.scalar(select(func.count(Printer.id)))
+    printers_system = await db.scalar(
+        select(func.count(Printer.id)).where(Printer.source == "system")
+    )
+
+    return {
+        "summary": summary,
+        "catalog": {
+            "printers_total": printers_total or 0,
+            "printers_system": printers_system or 0,
+        },
+    }
 
