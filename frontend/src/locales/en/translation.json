@@ -3324,6 +3324,18 @@
     "approve": "Approve",
     "reject": "Reject"
   },
+  "myPrinter": {
+    "title": "My Printer",
+    "description": "Pick a printer from the catalog — this powers recommended presets and improves material matching",
+    "noneSelected": "No printer selected. Pick one to get personal recommendations.",
+    "notFound": "The selected printer is no longer in the catalog",
+    "choose": "Choose printer",
+    "change": "Change",
+    "clear": "Clear selection",
+    "searchPlaceholder": "Search by manufacturer or model…",
+    "empty": "No printers found. Try a different search.",
+    "updateError": "Could not update selected printer"
+  },
   "settings": {
     "profile": "Profile",
     "username": "Username",

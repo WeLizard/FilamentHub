@@ -9,6 +9,7 @@ import { translateApiError } from '../utils/translateApiError';
 import type { User } from '../types/api';
 import { useAuth } from '../contexts/AuthContext';
 import { DeleteAccountModal } from './DeleteAccountModal';
+import { MyPrinterPicker } from './MyPrinterPicker';
 import type { AxiosError } from 'axios';
 
 interface SettingsTabProps {
@@ -228,6 +229,9 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({ user, onUserUpdate }) 
 
   return (
     <div className="max-w-7xl mx-auto space-y-6">
+      {/* Мой принтер */}
+      <MyPrinterPicker user={user} />
+
       {/* Все настройки в одну строку */}
       <div className="grid grid-cols-1 lg:grid-cols-[2fr_1.5fr_2.5fr] gap-6">
         {/* Профиль (Username и Email) */}

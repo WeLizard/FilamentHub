@@ -93,6 +93,7 @@ from app.core.errors import (
     ERR_OAUTH_INVALID_STATE,
     ERR_OAUTH_PROVIDER_NOT_CONFIGURED,
     ERR_PASSWORD_HASH_ERROR,
+    ERR_PRINTER_NOT_FOUND,
     ERR_RECAPTCHA_FAILED,
     ERR_RESPONSE_ERROR,
     ERR_USER_CREATE_ERROR,
@@ -685,7 +686,16 @@ async def update_current_user(
         brand = result.scalar_one_or_none()
         if not brand:
             raise_error(status.HTTP_404_NOT_FOUND, ERR_BRAND_NOT_FOUND)
-    
+
+    # Если обновляется printer_id, проверяем что принтер существует
+    # (None допустим — это сброс выбранного принтера)
+    if "printer_id" in update_data and update_data["printer_id"] is not None:
+        from app.models.printer import Printer
+        result = await db.execute(select(Printer).where(Printer.id == update_data["printer_id"]))
+        printer = result.scalar_one_or_none()
+        if not printer:
+            raise_error(status.HTTP_404_NOT_FOUND, ERR_PRINTER_NOT_FOUND)
+
     # Применяем обновления
     for key, value in update_data.items():
         if key == "password_hash":

@@ -279,6 +279,7 @@ export interface User {
   email_verified: boolean;
   brand_id: number | null;
   brand_name: string | null; // Название бренда (для админки)
+  printer_id: number | null; // ID выбранного принтера из каталога
   badges: string[] | null; // Бейджи пользователя (founder, beta_tester, contributor, verified, early_adopter, supporter)
   is_premium: boolean; // Premium подписка
   premium_expires_at: string | null; // Дата окончания подписки
