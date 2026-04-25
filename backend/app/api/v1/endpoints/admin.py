@@ -2357,6 +2357,7 @@ async def import_catalog_source_orca(
         await db.commit()
     except Exception as e:
         await db.rollback()
+        logger.exception("Orca catalog import failed")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail={"code": "ERR_BUNDLE_IMPORT_FAILED", "params": {"error": str(e)[:500]}},
