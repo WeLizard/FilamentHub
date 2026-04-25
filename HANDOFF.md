@@ -1,6 +1,222 @@
 # HANDOFF — FilamentHub
 
-> Last updated: 2026-03-24 by Claude
+> Last updated: 2026-04-25 by Claude (Opus)
+
+## Что сделано (сессия 2026-04-25 — Opus)
+
+### Аудит TODO_CONSOLIDATED — обнаружено вранё в HH секции
+
+Ранее TODO утверждал что HH D.1 / E.1 «реализованы в FilamentHubClient, ждут UI». Проверка показала: **в C++ методов не было**. Backend endpoints (`/orcaslicer/preset-slot-sync/heartbeat`, `manual/assignment`, `state`, `hh/snapshot`) готовы, но C++ обвязки в `FilamentHubClient.hpp` отсутствовали. Реальный статус восстановлен в TODO_CONSOLIDATED.
+
+### HH этап E.2 — реализован (требует push submodule + main)
+
+**Submodule изменения (требуют коммита и push):**
+
+1. `submodule/OrcaSlicer/src/slic3r/Utils/FilamentHubClient.hpp`
+   - Добавлена константа `API_HH_SNAPSHOT = "/api/v1/orcaslicer/preset-slot-sync/hh/snapshot"`
+   - Объявлен метод `bool post_hh_snapshot_sync(access_token, payload_json)` — sync вариант (как `resolve_spool_presets_sync`), потому что вызывается из background polling thread где локальный `FilamentHubClient client;` уничтожается до завершения async запроса
+
+2. `submodule/OrcaSlicer/src/slic3r/Utils/FilamentHubClient.cpp`
+   - Реализован `post_hh_snapshot_sync` через `Http::post().perform_sync()`. Best-effort: возвращает `false` при любой ошибке, логирует `warning`
+
+3. `submodule/OrcaSlicer/src/slic3r/Utils/MoonrakerPrinterAgent.cpp`
+   - Подключены `#include "InstanceID.hpp"` и `<boost/date_time/posix_time/posix_time.hpp>`
+   - В `fetch_hh_filament_info()` после успешного парсинга добавлен upload snapshot:
+     - `device_fingerprint = "orca:" + instance_id::ensure(*app_config) + ":" + device_info.dev_id`
+     - `snapshot_ts` — ISO8601 UTC через `boost::posix_time::microsec_clock::universal_time()` + "Z"
+     - Все gates 0..num_gates-1 (включая пустые/unknown) попадают в payload — backend должен иметь полный snapshot слотов
+     - `material` обрезается до 50 символов, `color_hex` до 7 (соответствует backend ограничениям `Field(max_length=...)`)
+     - Если `access_token` пустой — snapshot не отправляется (no-op)
+   - Best-effort: ошибки только логируются как `warning`, sync flow не прерывается
+
+**Билд:** скомпилировано `libslic3r_gui` (target only) — 0 ошибок. Полный `ALL_BUILD` владелец билдит сам (см. правило в `.claude/rules/general.md` пункт 7).
+
+### Грабли, на которые наткнулся
+
+- **`std::function<Http()>`-style async для locally-created client не работает**: `FilamentHubClient client;` создаётся на стеке, локальная переменная уничтожается при возврате из функции → `~FilamentHubClient()` вызывает `cancel_all()` → запрос отменяется. Решение: sync-метод (как `resolve_spool_presets_sync`).
+- **`device_fingerprint` нигде раньше не генерировался в OrcaSlicer**. Использован готовый `Slic3r::instance_id::ensure(config)` — это stable UUID кэшируется в `.orcaslicer_machine_id`. Per-printer уникальность через конкатенацию с `device_info.dev_id`.
+
+### Правило добавлено
+
+`.claude/rules/general.md` пункт 7: **НЕ запускать билд OrcaSlicer** (cmake/MSBuild/ninja в `submodule/OrcaSlicer/`). Владелец билдит сам.
+
+## Current state
+- **Submodule**: 3 файла изменены, **коммита нет**, push нет
+- **Main repo**: TODO_CONSOLIDATED.md и HANDOFF.md обновлены, не закоммичены
+- **Билд**: `libslic3r_gui.lib` собирается чисто, полный билд за владельцем
+- **TODO**: HH E.1 + E.2 закрыты; HH D.1/D.2/D.3 + E.3/E.4 открыты
+
+## What to do next
+- [ ] Владельцу: пересобрать OrcaSlicer полностью (`ALL_BUILD`) и протестировать что snapshot действительно отправляется (логи: `BOOST_LOG_TRIVIAL(debug) << "FilamentHub::post_hh_snapshot_sync: uploaded, status=200"`)
+- [ ] Запросить разрешение на коммит submodule + push
+- [ ] Запросить разрешение на коммит main repo
+- [ ] HH D.1: добавить в FilamentHubClient методы `post_device_heartbeat`, `post_manual_preset_assignment`, `get_preset_slot_state_sync`
+- [ ] HH D.2/D.3: подключить heartbeat при старте + manual assignment при UI assign
+- [ ] HH E.3: UI индикатор свежести HH state
+- [ ] Recommended presets UI: либо по `plan.md` (новый `preset_matcher` + `recommended-for-printer` + UI секция), либо использовать существующий `/presets/recommended/{filament_id}` и добавить UI
+
+## Context for next session
+- HH snapshot теперь шлётся **на каждый polling cycle** (когда HH доступна). Если бэкенд видит спам — добавить дедупликацию (E.4) сравнением hash payload в static var
+- `instance_id::ensure()` потокобезопасен (mutex внутри), кэширует значение
+- Backend endpoint `POST /orcaslicer/preset-slot-sync/hh/snapshot` валидирует:
+  - `gate_count` 1..256
+  - `gates[].gate < gate_count` (иначе ValueError)
+  - `gates[].gate` уникальны
+  - `gates[].status` enum: -1, 0, 1, 2
+
+## Предыдущая сессия (2026-03-28)
+
+### OrcaSlicer C++ — retry logic + refactoring (4 коммита в submodule, запушены)
+
+1. **`5b53faff2e` fix: add JSON key validation and temp file cleanup**
+   - **[CODE-4]** 8 `.contains()` проверок в OnScriptMessage и sync callbacks
+   - **[CODE-3]** temp_file cleanup на всех exception paths в import_profile_internal
+
+2. **`f2fef3aed3` feat: add retry logic with exponential backoff to HTTP client**
+   - `perform_with_retry()` с factory lambda (Http non-copyable), 500ms initial delay × 2, max 3 attempts
+   - 15 async методов переведены на retry, login/delete_preset без retry
+   - **[ORCA-SYNC-TIMEOUT-1]** TIMEOUT_MAX_IMPORT=120с для import-методов (было 30с)
+   - Файл сокращён с 883 до 735 строк
+
+3. **`766e8c96c4` refactor: decompose continue_sync_after_token_validation into 8 focused methods**
+   (детали в предыдущей секции)
+
+4. **`7ff069a39e` refactor: split FilamentHubPanel.cpp into 5 focused files**
+   - **[CODE-0]** 7600 строк → 5 файлов:
+     - `FilamentHubPanel.cpp` (1855) — UI, конструктор, WebView handlers
+     - `FilamentHubSync.cpp` (1470) — sync orchestration, preset queue
+     - `FilamentHubImport.cpp` (1540) — preset/profile import, batch processing
+     - `FilamentHubExport.cpp` (2272) — filament/printer/print export, orphan scan
+     - `FilamentHubUtils.cpp` (711) — auth, mappings, permissions, config
+   - 104 метода, 0 потеряно
+   - CMakeLists.txt обновлён
+
+3 (prior). **`766e8c96c4`** — [CODE-5] 680 строк → 8 методов (max 211 строк)
+   - `handle_presets_list_response/error` — HTTP callback dispatching
+   - `process_successful_presets_list` — 200 OK: parse, empty-check, batch download
+   - `handle_sync_token_expired` — дедупликация 401 retry (было 2 копии)
+   - `detect_deleted_presets` — обнаружение + orphan cleanup
+   - `report_deleted_presets_to_backend` — async reporting
+   - `trigger_silent_profile_export` — auto-export при пустом sync
+
+### Инфраструктура (1 коммит в main, запушен)
+
+4. **`7b22dc7` perf(nginx): increase proxy buffers for API responses**
+   - Фикс медленной загрузки сайта после деплоя (nginx spilling responses to disk)
+
+5. **`d973a8e7c8` fix: resolve build errors from file split (Http non-copyable, orphaned body)**
+   - C2280: Http non-copyable — `std::function<Http()>` невозможен (deleted copy ctor).
+     Заменено на `RequestExecutor = std::function<void(CompleteFn, ErrorFn)>` — лямбда сама создаёт Http,
+     прикрепляет callbacks, вызывает `.perform()` и `store_request()` внутри себя.
+   - C2447: orphaned `json_string_value_or` body в Panel.cpp (баг парсера `= {}` default param) — удалён.
+   - Обновлены: `perform_with_retry` impl + все 15 caller lambdas + header typedef.
+   - **Билд чистый**: 0 ошибок, `orca-slicer.exe` собрался.
+
+6. **`c84692dc84` fix: defer silent auto-export after sync to prevent UI freeze**
+   - Auto-export после sync блокировал UI thread (file I/O + JSON parsing в `CallAfter`)
+   - Кнопки навигации не реагировали до refresh
+   - Отложено на 2 сек через `wxTimer` — UI успевает обработать pending events
+
+7. **`b0a5b49bc2` refactor: deduplicate export response/error handling (CODE-1, CODE-2)**
+   - **[CODE-1]** Три response handler по ~130 строк → один `process_export_response()` (~100 строк)
+   - **[CODE-1]** Три error handler по ~25 строк → один `handle_export_error()` (~20 строк)
+   - **[CODE-2]** `notify_webview()` и `save_app_config_async()` — обёртки над `CallAfter`
+   - Export.cpp: 2272 → 1936 строк (-336, -15%)
+   - CallAfter: 156 → 142 (-14), остальные необходимы для thread-safety
+
+## Current state
+- Main repo: запушен, up to date
+- Submodule: 8 коммитов в filamenthub-integration (6 запушены + 2 новых — нужен push)
+- Frontend tsx phantom `M` — те же 3 файла, не трогать
+- TODO: CODE-0..CODE-5, LOW-3, LOW-4, LOW-7, LOW-10 закрыты; retry logic и ORCA-SYNC-TIMEOUT-1 закрыты
+- **Билд OrcaSlicer**: PASS (Release, 0 errors)
+
+## What to do next
+- [ ] Запушить submodule (2 новых коммита)
+- [ ] Продолжить по TODO_CONSOLIDATED.md
+
+## Context for next session
+- FilamentHubPanel.cpp разбит на 5 файлов: Panel (UI), Sync, Import, Export, Utils
+- Export: response/error handling дедуплицирован в `process_export_response()` / `handle_export_error()`
+- `notify_webview(msg, type)` — thread-safe wrapper для `CallAfter` + `show_notification_in_webview`
+- `save_app_config_async()` — thread-safe wrapper для `CallAfter` + `app_config->save()`
+- Retry через `perform_with_retry()` с `RequestExecutor` (не `std::function<Http()>`)
+- Auto-export после sync отложен на 2с через `wxTimer` (fix UI freeze)
+
+## Предыдущая сессия (2026-03-26)
+
+### OrcaSlicer — fix UI freeze after sync + build tooling
+
+1. **`d5185aece3` fix(sync): non-blocking auto-export after filament sync**
+2. **`1e540805e9` feat(build): version selection menu + safer clean**
+3. **Codex (25.03)**: crash fix `ensure_parent_preset_exists()` → UI thread
+
+— Claude
+
+---
+
+## Что сделано (сессия 2026-03-25, часть 2 — Opus)
+
+### Ревью коммитов Sonnet
+
+- 3 коммита проверены: `865023e` (orca-bridge.d.ts), `e1aa08e` (client/AdminDatabase types), `ee362dd` (onError AxiosError) — **все корректные**
+- Sonnet попытался заменить `catch (err: any)` → `catch (err: AxiosError<...>)` через Python-скрипт — **TS это запрещает** (только `any` или `unknown` в catch). Полностью откачено.
+- WikiArticlePage.tsx: 2 пропущенных `onError` типизированы отдельным коммитом
+
+### Актуализация TODO
+
+- 87 завершённых `[x]` перенесены в `TODO_COMPLETED_ARCHIVE.md`
+- TODO_CONSOLIDATED.md: 315 строк → 148, чисто только открытые задачи
+- Структура: Активные → Product/Features → Технический долг → Долгосрочное → Идеи → Отложено
+- sitemap.xml — проверен, работает (динамический endpoint на backend), ложная тревога убрана
+
+### OrcaSlicer диагностика
+
+- Логи подтвердили `user_id="true"` corruption (3 раза), 401, sync timeout
+- Билд с фиксами от 24 марта лежит в submodule/ но не был распакован (portable на десктопе от 16 марта)
+- Пользователь обновляет сборку
+
+## Current state
+- Main repo: up to date с origin, TSC 0 ошибок
+- Submodule: уже запушен (cf7fbbb33d на origin/filamenthub-integration)
+- Билд OrcaSlicer от 24.03 содержит все фиксы, пользователь распаковывает
+- docs/ обновлён локально (не коммитится)
+
+## What to do next
+- [ ] Проверить OrcaSlicer с новой сборкой (sync, UI responsiveness)
+- [ ] Продолжить TS-1/TS-2: ~25-30 осмысленных замен (интерфейсы AdminWiki, AdminStats, metadata helpers)
+- [ ] `[LEGAL-6]` Роскомнадзор — не код, бумажная работа
+
+## Context for next session
+- `catch (err: any)` в catch блоках — оставить как есть. TS запрещает конкретные типы в catch. Менять на `unknown` нецелесообразно (нужны type guards в каждом блоке).
+- Оставшиеся ~111 `any`: ~35 catch (не трогать), ~15 библиотечные касты (не трогать), ~7 тесты (ок), ~25-30 реальных (интерфейсы)
+- OrcaSlicer portable: `C:\Users\Lizard\Desktop\OrcaSlicer-FilamentHub-2.3.2-dev-fh-win64-portable\`
+- Свежий zip: `submodule/OrcaSlicer/OrcaSlicer-FilamentHub-2.3.2-dev-fh-win64-portable.zip` (24.03)
+
+— Claude
+
+---
+
+## Что сделано (сессия 2026-03-25, часть 1 — Sonnet)
+
+### [PERF-2] Lazy-load CreatePresetModal и CreatePrinterProfileModal ✅
+
+- `ProfilePage.tsx`, `BrandProfilePage.tsx`, `AdminPresets.tsx` — переведены на `React.lazy()` + `<Suspense fallback={null}>`
+- `App.tsx` — добавлен prefetch обоих модалок через 2с после загрузки
+- Создан `frontend/src/types/orca-bridge.d.ts` — типизация `window.filamenthub`, `window.wx`, `window.BarcodeDetector` (убраны 39 `as any` кастов из 4 файлов)
+
+### [TS-1/TS-2] Сокращение `any` в frontend TypeScript ✅ (частично)
+
+- `onError: (err: any)` → `onError: (err: AxiosError<{ detail: unknown }>)` в **21 файле**
+- `api/client.ts`: `RetryableAxiosConfig` интерфейс, `processQueue(error: unknown)`, `orcaslicer_settings?: Record<string, unknown> | null`
+- `data/materialDefaults.ts`: `[key: string]: unknown`
+- `admin/AdminDatabase.tsx`: `MigrationInfo` и `TableInfo` интерфейсы вместо `any[]`
+- TSC: **0 ошибок** после всех правок
+- Осталось ~111 `any` (было ~211)
+
+— Claude
+
+---
 
 ## Что сделано (сессия 2026-03-24)
 
@@ -260,6 +476,135 @@ Submodule коммит: `cf7fbbb33d` в ветке `filamenthub-integration`
    - `/who`
    - `/codex <короткий запрос>`
 2. Если понадобится вернуть CLI-resume, включать это осознанно через `TG_PERSISTENT_SESSIONS=1` и проверять по агентам отдельно.
+
+— Codex
+
+---
+
+## Follow-up (сессия 2026-03-31, README refresh for project overview)
+
+### Что сделано
+- Обновлён корневой `README.md` под реальное позиционирование проекта: платформа для филаментов, пресетов и профилей 3D-печати с прямой интеграцией в OrcaSlicer.
+- Убраны неточные или устаревшие формулировки из старого короткого README; добавлены разделы про продуктовую задачу, ключевые возможности, стек, структуру репозитория, dev quick start и ссылки на документацию.
+- В тексте README отражены реальные интересные части проекта: OrcaSlicer WebView bridge, двусторонняя sync-логика, Spoolman-compatible API, QR-коды, брендовый контур, калькулятор и roadmap-направления.
+
+### Что проверено
+- Сверены реальные пути репозитория (`backend/`, `frontend/`, `submodule/OrcaSlicer/`, `docs/`, `scripts/`).
+- Сверены базовые версии и стек по `frontend/package.json`, `backend/pyproject.toml`, `docker-compose.dev.yml`.
+- Осознанно не добавлялась license-секция в README: в корне репозитория нет отдельного `LICENSE`, поэтому не стал писать недостоверные утверждения.
+
+### Что не сделано
+- Не менял `docs/INDEX.md` и другие `.md` файлы, кроме `README.md`.
+- Не запускал тесты или сборки: задача чисто документационная.
+
+### Что делать дальше
+1. Если README будет готовиться под публичный репозиторий, отдельно решить вопрос лицензии и contribution policy, а уже потом добавлять badges/section про вклад.
+2. При желании следующим шагом можно сделать английскую версию project overview для GitHub/LinkedIn/portfolio.
+
+— Codex
+
+## Follow-up (сессия 2026-03-26, OrcaSlicer sync UI freeze after successful batch import)
+
+### Что сделано
+- Проверен свежий OrcaSlicer лог после пересборки с sync-фиксами:
+  - `C:\Users\Lizard\AppData\Roaming\OrcaSlicer\log\debug_Thu_Mar_26_23_02_40_103308.log.0`
+- Подтверждено, что текущий бинарь уже содержит последний sync-fix:
+  - `Current OrcaSlicer Version 2.3.2-rc2+fh build d6010df6ce`
+- Подтверждено, что filament sync теперь доходит до batch-import и не падает:
+  - `SYNC STEP 9.1 HTTP status: 200`
+  - `BATCH UI thread import callback entered`
+  - `BATCH Before load_current_presets`
+  - `BATCH After load_current_presets`
+  - `BATCH Before auto-export permission check`
+  - `BATCH Auto-export handoff callback entered`
+- Сопоставлен лог с кодом в `submodule/OrcaSlicer/src/slic3r/GUI/FilamentHubPanel.cpp`.
+- Найден наиболее вероятный источник текущего "залипания" UI после успешной синхронизации:
+  - в batch-path после успешного filament sync вызывается скрытый auto-export printer/print profiles;
+  - этот шаг стартует из UI thread в `process_batch_export_response()`;
+  - в handoff callback код снова поднимает `m_is_syncing=true` и вызывает:
+    - `export_printer_profiles_to_filamenthub_internal(...)`
+    - `export_print_profiles_to_filamenthub_internal(...)`
+  - обе функции синхронно обходят `preset_bundle`, читают JSON-файлы и собирают payload прямо на главном потоке.
+- Дополнительно проверен старый queue-path: там такой же скрытый auto-export хвост тоже присутствует.
+- Проверен frontend сайта:
+  - `frontend/src/hooks/useOrcaSlicerNotifications.ts` действительно слушает `sync_complete`, но сам не держит отдельный `isSyncing` и только инвалидирует query cache;
+  - значит визуальный эффект "кнопки залипли до refresh" с высокой вероятностью не из React-state, а из-за того, что WebView/главный поток Orca занят post-sync работой.
+- Проверено, что для printer profile export уже есть отдельная ручная кнопка на странице профиля:
+  - `frontend/src/pages/ProfilePage.tsx`
+  - `frontend/src/components/ExportPrinterProfilesButton.tsx`
+- Проверено, что `ExportPrintProfilesButton.tsx` существует, но на `ProfilePage` сейчас не используется.
+
+### Что проверено
+- Свежий лог обрывается по сути сразу после:
+  - `FilamentHub: [BATCH] Auto-export handoff callback entered`
+  - и дальше уже нет логов начала `export_printer_profiles_to_filamenthub_internal()` / `export_print_profiles_to_filamenthub_internal()`.
+- Это сильный признак не нового crash, а UI-thread stall / долгого синхронного post-sync этапа.
+- В batch-path порядок сейчас такой:
+  1. `send_command_to_webview("sync_complete")`
+  2. `release_sync_ui()`
+  3. `show_notification_in_webview(...)`
+  4. `update_user_info()`
+  5. `update_unread_notifications_count()`
+  6. скрытый auto-export printer/print profiles
+- В queue-path после успешного filament sync тоже идёт скрытый auto-export printer/print profiles.
+
+### Что не сделано
+- Код не менялся.
+- `submodule/OrcaSlicer/src/slic3r/GUI/FilamentHubPanel.cpp` не редактировался.
+- Никакие сборки не запускались.
+- `HANDOFF.md` обновлён только локально, без коммита.
+
+### Что делать дальше
+1. Самый безопасный следующий фикс: убрать скрытый auto-export printer/print profiles из конца filament sync как минимум в двух местах:
+   - batch-path;
+   - queue-path.
+2. Причина: это не основной контракт ручной кнопки "Синхронизация" для filament presets, а тяжёлый второй этап, который сейчас перегружает UI thread и визуально делает WebView "неотзывчивым".
+3. После этого отдельно решить продуктово:
+   - нужен ли вообще auto-export после filament sync;
+   - если нужен, то его надо выносить из UI thread и/или делать отдельным явным действием.
+4. Если сохранять функциональность export без скрытого post-sync, printer profiles уже имеют ручную кнопку во frontend; print profiles отдельно надо либо явно вывести в UI, либо оставить отдельной последующей задачей.
+
+— Codex
+
+---
+
+## Follow-up (сессия 2026-03-26, OrcaSlicer batch sync crash hardening)
+
+### Что сделано
+- В сабмодуле `submodule/OrcaSlicer` внесён точечный crash-safe фикс для batch sync и запушен в `origin/filamenthub-integration` коммитом `db61201c65` (`fix(sync): harden batch callback crash paths`).
+- В `src/slic3r/Utils/FilamentHubClient.cpp` добавлен единый `invoke_callback_safe(...)` и через него защищены callback-boundary для:
+  - `get_current_user`
+  - `batch_download_profiles`
+  - `get_my_presets`
+  - `report_deleted_presets`
+- В `src/slic3r/GUI/FilamentHubPanel.cpp` усилен `process_batch_export_response(...)`:
+  - сохранён уже существующий локальный перенос `ensure_parent_preset_exists(...)` на UI thread;
+  - добавлен внешний `try/catch` вокруг всего UI batch-import этапа;
+  - cleanup sync-state (`m_is_syncing`, `m_active_syncs`, progress/status UI) сделан идемпотентным;
+  - добавлен cleanup temp-файла на exception-path внутри import loop;
+  - добавлены дополнительные warning/error log-маркеры перед критичными фазами (`UI callback entered`, `Before/After load_current_presets`, `Before auto-export permission check`, `Auto-export handoff callback entered`).
+- Для ранних batch-ошибок (bad JSON / missing `profiles`) теперь также скрываются progress/status элементы, а не только сбрасывается lock.
+
+### Что проверено
+- `git diff --check` по двум изменённым файлам в сабмодуле проходит без замечаний.
+- Изменения изолированы двумя файлами:
+  - `src/slic3r/Utils/FilamentHubClient.cpp`
+  - `src/slic3r/GUI/FilamentHubPanel.cpp`
+- Сборки, `build.ps1`, Docker, packaging и любые compile/run шаги **не запускались**.
+
+### Что не сделано
+- Не менялся продуктовый контракт sync: открытие вкладки по-прежнему само по себе не запускает sync.
+- Не трогался backend API и frontend сайта.
+- Не обновлялся указатель сабмодуля в основном репозитории: в root есть параллельные локальные изменения, и смешивать их с submodule pointer update было бы грязно.
+- Не решался более глубокий архитектурный вопрос смешанного flow `filament import -> printer/print auto-export`.
+
+### Что делать дальше
+1. Пользователь пересобирает OrcaSlicer сам и повторяет crash path.
+2. Сразу смотреть новые логи Orca:
+   - интересуют новые маркеры `FilamentHub: [BATCH] ...`
+   - особенно, дошло ли до `Before load_current_presets`, `After load_current_presets` и `Auto-export handoff callback entered`
+3. Если падение исчезло — отдельно решать product/UX вопрос: нужен ли auto-sync при открытии вкладки и нужно ли развязывать filament sync от auto-export printer/print profiles.
+4. Если падение осталось — следующий шаг уже точечно бить по фазе, на которой оборвался новый лог, а не по всей sync-цепочке сразу.
 
 — Codex
 
