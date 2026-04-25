@@ -2281,7 +2281,10 @@ async def enrich_all_draft_presets(
 # container under backend/data/catalog_sources/<source>/bundle.zip and an
 # admin endpoint that unpacks + imports it idempotently.
 
-_CATALOG_SOURCES_DIR = Path(__file__).resolve().parents[3] / "data" / "catalog_sources"
+# From .../backend/app/api/v1/endpoints/admin.py:
+#   parents[3] = backend/app  (WRONG — that's where I was looking before)
+#   parents[4] = backend       (CORRECT — bundle lives under backend/data/...)
+_CATALOG_SOURCES_DIR = Path(__file__).resolve().parents[4] / "data" / "catalog_sources"
 _ORCA_BUNDLE_PATH = _CATALOG_SOURCES_DIR / "orca" / "bundle.zip"
 
 
