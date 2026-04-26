@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 import logging
 import re
@@ -44,12 +45,20 @@ class OrcaBundleImporter:
             configured_path = (project_root / configured_path).resolve()
         self.root_path = configured_path
         self.project_root = project_root
+        self._bundle_id: int | None = None
         self._printer_cache: dict[tuple[str, str], Printer] = {}
         self._printer_profile_cache: dict[tuple[str, str], PrinterProfile] = {}
         self._filament_cache: dict[str, Filament | None] = {}
 
-    async def import_all(self, db: AsyncSession) -> dict[str, Any]:
-        """Import all vendor bundles."""
+    async def import_all(
+        self, db: AsyncSession, *, bundle_id: int | None = None
+    ) -> dict[str, Any]:
+        """Import all vendor bundles.
+
+        bundle_id: when provided, every printer/printer_profile/print_profile
+        created or touched gets `created_from_bundle_id = bundle_id` (RFC §3,4).
+        """
+        self._bundle_id = bundle_id
         if not self.root_path.exists():
             raise FileNotFoundError(f"Orca presets path not found: {self.root_path}")
 
@@ -282,6 +291,7 @@ class OrcaBundleImporter:
             merged_metadata.update(machine_model.metadata)
             printer.extra_metadata = merged_metadata or None
 
+        self._stamp_bundle(printer)
         return printer
 
     async def _upsert_printer_profile(
@@ -376,6 +386,8 @@ class OrcaBundleImporter:
             full_metadata.setdefault("nozzle_diameter", preset.nozzle_diameter)
         profile.extra_metadata = full_metadata or None
 
+        self._stamp_bundle(profile)
+        self._stamp_content_hash(profile, profile.orcaslicer_settings)
         return profile
 
     async def _upsert_common_profile(
@@ -465,6 +477,8 @@ class OrcaBundleImporter:
             full_metadata.setdefault("nozzle_diameter", preset.nozzle_diameter)
         profile.extra_metadata = full_metadata or None
 
+        self._stamp_bundle(profile)
+        self._stamp_content_hash(profile, profile.orcaslicer_settings)
         return profile
 
     async def _upsert_print_profile(
@@ -526,6 +540,8 @@ class OrcaBundleImporter:
             compatible_filaments=profile.compatible_filaments,
         )
 
+        self._stamp_bundle(profile)
+        self._stamp_content_hash(profile, profile.orcaslicer_settings)
         return profile
 
     async def _sync_print_profile_links(
@@ -908,6 +924,25 @@ class OrcaBundleImporter:
         if model_type is dict:
             return json.loads(text)
         return model_type.model_validate_json(text)
+
+    def _stamp_bundle(self, record: Any) -> None:
+        """Attach current bundle_id to a freshly created/updated catalog record."""
+        if self._bundle_id is not None and getattr(record, "created_from_bundle_id", None) is None:
+            record.created_from_bundle_id = self._bundle_id
+
+    def _stamp_content_hash(self, profile: Any, payload: Mapping[str, Any] | None) -> None:
+        """Compute SHA256 of canonical-JSON payload and store on profile.
+
+        Settings are the heart of a profile (machine settings or process
+        settings dict). Two profiles with identical settings — even if their
+        display names differ — produce the same hash and can be deduplicated
+        across vendors / bundles (RFC §3.4).
+        """
+        if not payload:
+            return
+        canonical = json.dumps(payload, sort_keys=True, separators=(",", ":"), default=str)
+        digest = hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+        profile.content_hash = digest
 
 
 def _to_float(value: Any) -> float | None:

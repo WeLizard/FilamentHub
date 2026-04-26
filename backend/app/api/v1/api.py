@@ -9,6 +9,7 @@ from app.api.v1.endpoints import (
     brand_requests,
     brands,
     calculator,
+    catalog_bundles,
     devices,
     downloads,
     spool_compat,
@@ -46,6 +47,7 @@ api_router.include_router(printer_requests.router)
 api_router.include_router(calculator.router)
 api_router.include_router(spool_compat.router, prefix="/spool_compat")
 api_router.include_router(admin.router)
+api_router.include_router(catalog_bundles.router)
 api_router.include_router(saved_presets.router)
 api_router.include_router(filament_reviews.router)
 api_router.include_router(notifications.router)

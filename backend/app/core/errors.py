@@ -220,6 +220,16 @@ ERR_PRESET_NOT_OWNER = "ERR_PRESET_NOT_OWNER"
 ERR_SPOOL_NOT_ACCESSIBLE = "ERR_SPOOL_NOT_ACCESSIBLE"      # params: {spool_id}
 ERR_SNAPSHOT_TOO_FREQUENT = "ERR_SNAPSHOT_TOO_FREQUENT"
 
+# Catalog bundle import (admin-only seed of printer catalog from external slicer bundles)
+ERR_BUNDLE_NOT_FOUND = "ERR_BUNDLE_NOT_FOUND"                      # params: {bundle_id}
+ERR_BUNDLE_DUPLICATE = "ERR_BUNDLE_DUPLICATE"                      # params: {bundle_id, sha256}
+ERR_BUNDLE_SOURCE_UNSUPPORTED = "ERR_BUNDLE_SOURCE_UNSUPPORTED"    # params: {source, allowed}
+ERR_BUNDLE_SOURCE_NOT_IMPLEMENTED = "ERR_BUNDLE_SOURCE_NOT_IMPLEMENTED"  # params: {source}
+ERR_BUNDLE_NOT_VALIDATED = "ERR_BUNDLE_NOT_VALIDATED"              # params: {bundle_id, status}
+ERR_BUNDLE_IMPORT_FAILED = "ERR_BUNDLE_IMPORT_FAILED"              # params: {bundle_id, error}
+ERR_BUNDLE_FILE_TOO_LARGE = "ERR_BUNDLE_FILE_TOO_LARGE"            # params: {size_mb, max_mb}
+ERR_BUNDLE_FILE_REQUIRED = "ERR_BUNDLE_FILE_REQUIRED"
+
 
 def raise_error(
     status_code: int,

@@ -4,6 +4,13 @@
 # from app.models.bad_word import BadWord
 from app.models.brand import Brand
 from app.models.brand_request import BrandRequest, BrandRequestStatus, BrandRequestType
+from app.models.bundle import (
+    Bundle,
+    BundleImport,
+    BundleImportStatus,
+    BundleSource,
+    BundleStatus,
+)
 from app.models.calculator_history_entry import CalculatorHistoryEntry
 from app.models.calculator_profile import UserCalculatorProfile
 from app.models.filament import Filament
@@ -41,6 +48,11 @@ __all__ = [
     "BrandRequest",
     "BrandRequestStatus",
     "BrandRequestType",
+    "Bundle",
+    "BundleImport",
+    "BundleImportStatus",
+    "BundleSource",
+    "BundleStatus",
     "CalculatorHistoryEntry",
     "UserCalculatorProfile",
     "Feedback",

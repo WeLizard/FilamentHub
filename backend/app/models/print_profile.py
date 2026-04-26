@@ -3,7 +3,7 @@
 from datetime import datetime
 from typing import TYPE_CHECKING
 
-from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Integer, JSON, String, Text
+from sqlalchemy import BigInteger, Boolean, DateTime, Float, ForeignKey, Integer, JSON, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.sql import func
 
@@ -44,6 +44,11 @@ class PrintProfile(Base):
     orcaslicer_settings: Mapped[dict] = mapped_column(JSON, default=dict)
     extra_metadata: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    content_hash: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    created_from_bundle_id: Mapped[int | None] = mapped_column(
+        BigInteger, ForeignKey("bundles.id", ondelete="SET NULL"), nullable=True, index=True
+    )
 
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False

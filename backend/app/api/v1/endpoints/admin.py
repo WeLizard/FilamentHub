@@ -2330,16 +2330,17 @@ async def import_catalog_source_orca(
     admin: Annotated[User, Depends(get_current_admin_user)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> dict:
-    """Import the OrcaSlicer catalog source into the FilamentHub printer catalog.
+    """Deprecated alias — wraps BundleService for the system OrcaSlicer bundle.
 
-    Unzips backend/data/catalog_sources/orca/bundle.zip into a temp dir, runs
-    the idempotent OrcaBundleImporter, removes temp. Safe to run repeatedly —
-    existing printers/profiles are upserted, not duplicated.
+    Kept for the existing AdminCatalogSources UI button. New uploads should
+    use POST /api/v1/admin/catalog/bundles. This endpoint reuses an existing
+    Bundle row when the system bundle hasn't changed (same sha256) so repeated
+    clicks don't fail with ERR_BUNDLE_DUPLICATE.
     """
-    import shutil
-    import tempfile
-    import zipfile as _zip
-    from app.services.orca_bundle_importer import OrcaBundleImporter
+    import hashlib
+
+    from app.models.bundle import Bundle, BundleSource
+    from app.services.bundle_service import BundleService, BundleServiceError
 
     if not _ORCA_BUNDLE_PATH.exists():
         raise HTTPException(
@@ -2347,23 +2348,37 @@ async def import_catalog_source_orca(
             detail={"code": "ERR_BUNDLE_NOT_FOUND", "params": {"path": str(_ORCA_BUNDLE_PATH)}},
         )
 
-    tmp_root = Path(tempfile.mkdtemp(prefix="catalog_orca_"))
-    try:
-        with _zip.ZipFile(_ORCA_BUNDLE_PATH) as zf:
-            zf.extractall(tmp_root)
+    file_bytes = _ORCA_BUNDLE_PATH.read_bytes()
+    sha256 = hashlib.sha256(file_bytes).hexdigest()
 
-        importer = OrcaBundleImporter(root_path=tmp_root)
-        summary = await importer.import_all(db)
-        await db.commit()
-    except Exception as e:
-        await db.rollback()
-        logger.exception("Orca catalog import failed")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail={"code": "ERR_BUNDLE_IMPORT_FAILED", "params": {"error": str(e)[:500]}},
+    service = BundleService(db)
+    existing = await db.scalar(select(Bundle).where(Bundle.sha256 == sha256))
+    try:
+        if existing is None:
+            bundle = await service.upload(
+                file_bytes=file_bytes,
+                filename=_ORCA_BUNDLE_PATH.name,
+                source=BundleSource.ORCA,
+                uploaded_by_user_id=admin.id,
+            )
+        else:
+            bundle = existing
+            # Make sure validation_summary is fresh for the preview UI.
+            await service.revalidate(bundle.id)
+
+        audit = await service.import_bundle(
+            bundle_id=bundle.id, triggered_by_user_id=admin.id
         )
-    finally:
-        shutil.rmtree(tmp_root, ignore_errors=True)
+        await db.commit()
+        summary = audit.summary or {}
+    except BundleServiceError as exc:
+        await db.commit()  # persist audit row created before failure
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT
+            if exc.code == "ERR_BUNDLE_NOT_VALIDATED"
+            else status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail={"code": exc.code, "params": exc.params},
+        )
 
     printers_total = await db.scalar(select(func.count(Printer.id)))
     printers_system = await db.scalar(
@@ -2372,6 +2387,7 @@ async def import_catalog_source_orca(
 
     return {
         "summary": summary,
+        "bundle_id": bundle.id,
         "catalog": {
             "printers_total": printers_total or 0,
             "printers_system": printers_system or 0,

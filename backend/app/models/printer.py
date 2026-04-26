@@ -3,7 +3,7 @@
 from datetime import datetime
 from typing import TYPE_CHECKING
 
-from sqlalchemy import Boolean, DateTime, Float, Integer, JSON, String, Text
+from sqlalchemy import BigInteger, Boolean, DateTime, Float, ForeignKey, Integer, JSON, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.sql import func
 
@@ -61,6 +61,10 @@ class Printer(Base):
 
     default_materials: Mapped[list[str] | None] = mapped_column(JSON, nullable=True)
     extra_metadata: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+
+    created_from_bundle_id: Mapped[int | None] = mapped_column(
+        BigInteger, ForeignKey("bundles.id", ondelete="SET NULL"), nullable=True, index=True
+    )
     
     # Status
     active: Mapped[bool] = mapped_column(Boolean, default=True, index=True)
