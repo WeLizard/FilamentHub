@@ -10,6 +10,7 @@ from collections import defaultdict
 from pathlib import Path
 from typing import Any, Dict, Iterable, Mapping
 
+from pydantic import ValidationError
 from sqlalchemy import Select, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -61,7 +62,13 @@ class OrcaBundleImporter:
         }
         vendor_files = sorted(self.root_path.glob("*.json"))
         for vendor_file in vendor_files:
-            bundle = self._load_json(vendor_file, OrcaVendorBundle)
+            try:
+                bundle = self._load_json(vendor_file, OrcaVendorBundle)
+            except ValidationError:
+                # Корень bundle.zip содержит не только vendor-файлы, но и служебные
+                # (blacklist.json и т.п.) без обязательных name/version. Пропускаем.
+                LOG.info("Skipping non-vendor file in bundle root: %s", vendor_file.name)
+                continue
             vendor_dir = self.root_path / vendor_file.stem
             LOG.info("Importing Orca bundle '%s'", vendor_file.name)
             vendor_result = await self._import_vendor(db=db, vendor=bundle, vendor_dir=vendor_dir)
