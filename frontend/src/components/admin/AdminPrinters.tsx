@@ -10,7 +10,6 @@ import { adminAPI, printersAPI } from '../../api/client';
 import type { Printer as PrinterType } from '../../types/api';
 import { EditGCodeModal } from '../EditGCodeModal';
 import { CustomSelect } from '../CustomSelect';
-import { AdminCatalogSources } from './AdminCatalogSources';
 
 const slugify = (value: string): string =>
   value
@@ -98,14 +97,15 @@ export function AdminPrinters() {
 
   return (
     <div className="space-y-6">
-      {/* Источники данных для каталога принтеров */}
-      <AdminCatalogSources />
-
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-2xl font-bold text-white mb-2">{t('adminPrinters.title')}</h2>
-          <p className="text-gray-400">{t('adminPrinters.total')}: {data?.total || 0}</p>
+          <p className="text-gray-400">
+            {t('adminPrinters.total')}: {data?.total || 0}
+            {' '}
+            <span className="text-gray-500">— {t('adminPrinters.catalogHint')}</span>
+          </p>
         </div>
         <button
           onClick={() => setIsCreateModalOpen(true)}

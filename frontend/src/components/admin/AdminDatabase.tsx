@@ -36,6 +36,9 @@ import { adminAPI } from '../../api/client';
 import { translateApiError } from '../../utils/translateApiError';
 import { useTranslation } from 'react-i18next';
 import type { AxiosError } from 'axios';
+import { AdminCatalogSources } from './AdminCatalogSources';
+
+type DbSubTab = 'tables' | 'migrations' | 'integrity' | 'backup' | 'wiki' | 'catalog';
 
 interface MigrationInfo {
   revision: string;
@@ -333,6 +336,7 @@ function WikiSync() {
 export function AdminDatabase() {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
+  const [activeSubTab, setActiveSubTab] = useState<DbSubTab>('tables');
   const [selectedRevision, setSelectedRevision] = useState<string>('head');
   const [exportFormat, setExportFormat] = useState<'custom' | 'plain' | 'tar'>('custom');
   const [includeData, setIncludeData] = useState(true);
@@ -791,6 +795,15 @@ export function AdminDatabase() {
     }
   };
 
+  const subTabs: { id: DbSubTab; labelKey: string }[] = [
+    { id: 'tables', labelKey: 'adminDatabase.tabs.tables' },
+    { id: 'migrations', labelKey: 'adminDatabase.tabs.migrations' },
+    { id: 'integrity', labelKey: 'adminDatabase.tabs.integrity' },
+    { id: 'backup', labelKey: 'adminDatabase.tabs.backup' },
+    { id: 'wiki', labelKey: 'adminDatabase.tabs.wiki' },
+    { id: 'catalog', labelKey: 'adminDatabase.tabs.catalog' },
+  ];
+
   return (
     <div className="space-y-6">
       <div>
@@ -798,17 +811,47 @@ export function AdminDatabase() {
         <p className="text-gray-400">{t('adminDatabase.description')}</p>
       </div>
 
+      {/* Подвкладки */}
+      <div className="flex flex-wrap gap-2 border-b border-white/10 pb-2">
+        {subTabs.map((tab) => (
+          <button
+            key={tab.id}
+            type="button"
+            onClick={() => setActiveSubTab(tab.id)}
+            className={`px-4 py-2 text-sm font-medium rounded-lg transition-colors ${
+              activeSubTab === tab.id
+                ? 'bg-purple-600 text-white'
+                : 'bg-white/5 text-gray-300 hover:bg-white/10 hover:text-white'
+            }`}
+          >
+            {t(tab.labelKey)}
+          </button>
+        ))}
+      </div>
+
       {/* Проверка целостности БД */}
+      <div className={activeSubTab === 'integrity' ? '' : 'hidden'}>
       <div className="bg-white/5 rounded-xl p-6 border border-white/10 mb-6">
         <IntegrityCheck />
       </div>
+      </div>
 
       {/* Синхронизация Wiki */}
+      <div className={activeSubTab === 'wiki' ? '' : 'hidden'}>
       <div className="bg-white/5 rounded-xl p-6 border border-white/10 mb-6">
         <WikiSync />
       </div>
+      </div>
+
+      {/* Catalog Sources (RFC §7.1) */}
+      <div className={activeSubTab === 'catalog' ? '' : 'hidden'}>
+      <div className="bg-white/5 rounded-xl p-6 border border-white/10 mb-6">
+        <AdminCatalogSources />
+      </div>
+      </div>
 
       {/* Статистика БД */}
+      <div className={activeSubTab === 'tables' ? '' : 'hidden'}>
       <div className="bg-white/5 rounded-xl p-6 border border-white/10">
         <div className="flex items-center justify-between mb-4">
           <h3 className="text-xl font-bold text-white flex items-center space-x-2">
@@ -948,8 +991,10 @@ export function AdminDatabase() {
           </div>
         )}
       </div>
+      </div>
 
       {/* Миграции */}
+      <div className={activeSubTab === 'migrations' ? '' : 'hidden'}>
       <div className="bg-white/5 rounded-xl p-6 border border-white/10">
         <div className="flex items-center justify-between mb-4">
           <h3 className="text-xl font-bold text-white flex items-center space-x-2">
@@ -1373,8 +1418,10 @@ export function AdminDatabase() {
           </div>
         )}
       </div>
+      </div>
 
-      {/* Экспорт */}
+      {/* Backup: экспорт + импорт */}
+      <div className={activeSubTab === 'backup' ? 'space-y-6' : 'hidden'}>
       <div className="bg-white/5 rounded-xl p-6 border border-white/10">
         <h3 className="text-xl font-bold text-white mb-4 flex items-center space-x-2">
           <Download className="w-5 h-5" />
@@ -1593,6 +1640,7 @@ export function AdminDatabase() {
             </div>
           )}
         </div>
+      </div>
       </div>
 
       {/* Модальное окно просмотра таблицы */}

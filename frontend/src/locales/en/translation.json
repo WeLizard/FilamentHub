@@ -505,6 +505,14 @@
   "adminDatabase": {
     "title": "Database Management",
     "description": "Migrations, export and import of the database",
+    "tabs": {
+      "tables": "Tables",
+      "migrations": "Migrations",
+      "integrity": "Integrity",
+      "backup": "Backup",
+      "wiki": "Wiki",
+      "catalog": "Catalog Sources"
+    },
     "integrityCheck": {
       "title": "Database Integrity Check",
       "checkButton": "Check",
@@ -2696,6 +2704,7 @@
     "loadError": "Failed to load printers",
     "title": "Printers",
     "total": "Total",
+    "catalogHint": "slicer bundle import — in «Database → Catalog Sources»",
     "addPrinter": "Add printer",
     "searchPlaceholder": "Search by name, manufacturer or model...",
     "noPrinters": "No printers to display",
