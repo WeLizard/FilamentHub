@@ -191,3 +191,6 @@ bot/start.bat
 
 # Telegram bot - keep local only, do not track in git
 /bot/
+
+# acme-dns API credentials for SSL auto-renewal — secrets, never commit
+certbot/acmedns-creds.json
