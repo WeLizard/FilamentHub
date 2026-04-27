@@ -1,4 +1,21 @@
 #!/bin/bash
+# ─────────────────────────────────────────────────────────────────────────
+# ⚠️  EMERGENCY FALLBACK — DO NOT USE FOR ROUTINE RENEWAL
+#
+# Production SSL renewal is fully automated via acme-dns + cron since
+# 2026-04-26. Cron runs /usr/local/bin/renew-cert.sh twice a day; certbot
+# pushes TXT through auth.acme-dns.io API; nginx auto-reloads. No human.
+#
+# Use THIS script ONLY when:
+#   - acme-dns service (auth.acme-dns.io) is down
+#   - you need to issue a cert outside the cron schedule for debugging
+#   - you cannot use DNS-01 challenge for some reason
+#
+# Requires interactive TTY: prompts you to add TXT records by hand into
+# the DNS panel (litehost) and wait for propagation. Slow, error-prone.
+#
+# Recovery / setup details: docs/current/SSL_AUTORENEWAL_RUNBOOK.md
+# ─────────────────────────────────────────────────────────────────────────
 set -Eeuo pipefail
 
 BLUE='\033[0;34m'

@@ -77,19 +77,19 @@ paths:
 FilamentHub/
   backend/
     app/
-      api/v1/endpoints/    # REST endpoints
+      api/v1/endpoints/    # REST endpoints (29 файлов)
       core/                # config, security, utils
-      models/              # SQLAlchemy models (25)
+      models/              # SQLAlchemy models (33)
       schemas/             # Pydantic schemas
-      services/            # Бизнес-логика (25 сервисов)
-    alembic/               # Миграции (46)
+      services/            # Бизнес-логика (34 сервиса)
+    alembic/               # Миграции (61)
     tests/
   frontend/
     src/
       api/client.ts        # API клиент (20 модулей)
-      components/          # React компоненты (57)
+      components/          # React компоненты (68)
       contexts/            # AuthContext
-      pages/               # 13 страниц
+      pages/               # 17 страниц
       utils/               # translateApiError.ts, auth.ts
       locales/             # i18n (ru, en)
   docs/
@@ -149,6 +149,17 @@ docker exec filamenthub_backend_dev python -m pytest tests/ -v
 | **PAL** | Мульти-модельная оркестрация: `clink` (вызов Gemini/Qwen CLI), `chat`, `thinkdeep`, `codereview`, `debug`, `analyze`, `refactor`, `testgen`, `consensus` и др. |
 | **Playwright** | Браузерная автоматизация: навигация, скриншоты, клики, формы |
 | **context7** | Документация библиотек по запросу (resolve + get-library-docs) |
+
+## Переключение на Opus
+
+Для сложных задач, где нужна максимальная точность и глубина рассуждений, переключаться на **Claude Opus** через `/model`:
+
+- Сложные архитектурные решения (выбор паттерна, рефакторинг системы)
+- Нетривиальный дебаг (race conditions, утечки памяти, сложные баги)
+- Задачи с высокой ценой ошибки (миграции данных, изменения security-логики)
+- Когда Sonnet допустил ошибку и нужен свежий взгляд
+
+Gemini/Qwen — **параллельные агенты** для делегирования подзадач, Opus — **основная модель** повышенной мощности для самих сложных случаев.
 
 ## Делегирование задач через PAL clink
 
