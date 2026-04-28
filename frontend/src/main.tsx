@@ -5,6 +5,9 @@ import { BrowserRouter } from 'react-router-dom';
 import './i18n';
 import App from './App';
 import './index.css';
+import { clearLegacyLocalAuthStateIfNeeded } from './utils/auth';
+
+clearLegacyLocalAuthStateIfNeeded();
 
 const queryClient = new QueryClient({
   defaultOptions: {

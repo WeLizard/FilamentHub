@@ -3,7 +3,7 @@
 import axios from 'axios';
 import type { InternalAxiosRequestConfig } from 'axios';
 import type { Brand, BrandRequest, BrandRequestStatus, Filament, FilamentVisualSettings, FilamentReview, FilamentRatingStats, Notification, NotificationListResponse, Preset, RecommendedPreset, Printer, PrinterProfile, PrintProfile, PrinterRequest, User, Token, RefreshTokenRequest, RefreshTokenResponse, ListResponse, AccountDeletionStats, UserSavedPreset, CalculatorEstimateRequest, CalculatorEstimateResponse, CalculatorProfileResponse, CalculatorProfileUpdate, Feedback, FeedbackListResponse, FeedbackType, CompatiblePrinter, CompatibleFilament, DownloadVersion, DownloadVersionsResponse, WikiCategory, WikiCategoryListResponse, WikiArticle, WikiArticleListResponse, WikiFeedbackStats, WikiFeedbackCreate, WikiFeedback } from '../types/api';
-import { getCsrfToken, getRefreshToken, isCookieAuthMode, isJwtAuthMode, isOrcaEmbedded, removeToken, setToken, shouldPersistTokensLocally } from '../utils/auth';
+import { getCsrfToken, getRefreshToken, getToken, isCookieAuthMode, isJwtAuthMode, isOrcaEmbedded, removeToken, setToken, shouldPersistTokensLocally } from '../utils/auth';
 
 const API_BASE_URL = '/api/v1';
 const COOKIE_AUTH_MODE = isCookieAuthMode();
@@ -32,7 +32,7 @@ const notifyCppLogout = () => {
 
 // Добавляем токен в запросы
 api.interceptors.request.use((config) => {
-  const token = localStorage.getItem('access_token');
+  const token = getToken();
   if (token && JWT_AUTH_MODE) {
     config.headers.Authorization = `Bearer ${token}`;
   }
@@ -119,7 +119,7 @@ api.interceptors.response.use(
     // Для /auth/me: если токена нет, это нормально (пользователь не авторизован)
     // Не показываем ошибку в консоли и не пытаемся обновить токен
     const isMeEndpoint = originalRequest?.url?.includes('/auth/me');
-    const hasToken = Boolean(localStorage.getItem('access_token'));
+    const hasToken = Boolean(getToken());
     const cookieSessionAvailable = canUseCookieSession();
     
     if (isMeEndpoint && !hasToken && !cookieSessionAvailable) {
