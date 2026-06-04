@@ -1,203 +1,110 @@
 # FilamentHub
 
-FilamentHub — платформа для управления филаментами, пресетами и профилями 3D-печати с прямой интеграцией в OrcaSlicer.
+**Self-hosted platform for 3D-printing filaments, presets, spool inventory, and brand workflows — with deep OrcaSlicer integration.**
 
-- Сайт: [filamenthub.ru](https://filamenthub.ru)
-- OrcaSlicer fork: [WeLizard/OrcaSlicer](https://github.com/WeLizard/OrcaSlicer)
+[![License: AGPL v3](https://img.shields.io/badge/License-AGPL_v3-blue.svg)](https://www.gnu.org/licenses/agpl-3.0)
+[![Production](https://img.shields.io/badge/status-production-green.svg)](https://filamenthub.ru)
 
-## Что это
+- 🌐 **Live:** [filamenthub.ru](https://filamenthub.ru) — browse the catalog without an account
+- 🐙 **OrcaSlicer fork:** [WeLizard/OrcaSlicer](https://github.com/WeLizard/OrcaSlicer) — two-way preset sync + embedded WebView panel
 
-FilamentHub — это не магазин и не просто каталог материалов. Это платформа, которая связывает:
+---
 
-- производителей филамента, которым нужен нормальный способ публиковать официальные пресеты для своих материалов;
-- пользователей, которые хотят хранить рабочие настройки, управлять катушками и не терять удачные связки `принтер + филамент`;
-- OrcaSlicer, чтобы пресеты и профили были доступны прямо в слайсере, а не в виде случайных JSON-файлов из Discord, форумов и чатов.
+## What it is
 
-По сути FilamentHub объединяет каталог материалов, пользовательский кабинет, брендовый контур, синхронизацию со слайсером и сервисные функции вокруг 3D-печати в одном продукте.
+A platform that connects three sides of the 3D-printing workflow that normally live in separate silos:
 
-## Какую проблему решает
+- **Filament brands** — publish official, verified presets for their materials, with QR codes on packaging that auto-import into a user's profile.
+- **Users** — keep printer / filament / process presets in one place, sync with OrcaSlicer, track physical spools, see ratings and reviews from other users on the same material.
+- **Klipper / Happy Hare / MMU setups** — spools registered on FilamentHub flow into Happy Hare via Moonraker, then back into OrcaSlicer through the existing `MoonrakerPrinterAgent` path.
 
-В обычном workflow 3D-печати настройки и данные о материалах быстро превращаются в хаос:
+End-to-end: scan a QR code on a spool → official preset lands in your profile → spool registers in Happy Hare with weight/color/type → OrcaSlicer syncs HH state. No manual entry.
 
-- пресеты живут в форумах, чатах, GitHub issues и локальных папках;
-- у производителей нет удобного и понятного канала для публикации официальных профилей;
-- пользователи вручную импортируют и экспортируют настройки между сайтом и слайсером;
-- трудно понять, какие параметры действительно работали для конкретной связки `принтер + филамент`;
-- остатки катушек, расход материала и история использования часто ведутся отдельно или не ведутся вообще;
-- при нескольких принтерах и наборах профилей быстро теряется управляемость.
+---
 
-FilamentHub убирает этот разрыв между каталогом материалов, пользовательскими профилями и реальным workflow в OrcaSlicer.
+## Key features
 
-## Что уже умеет платформа
+### Filament & preset catalog
+- Brand → filament line → preset hierarchy with explicit `BundleSource` and moderation pipeline
+- **Star rating (1–5)** per preset with success/fail flag and per-printer-model context
+- **Weighted rating algorithm** (`rating × usage × success_rate`) for ranking community presets
+- **Auto-generated "average" preset** that regenerates when ≥10 community presets accumulate for a material (uses weighted average — law of large numbers + Fermi estimation)
+- **UI-based preset editor** — ~150 OrcaSlicer fields with labels and validation, no raw JSON editing required
+- 350+ system printers + per-vendor profiles, imported from the OrcaSlicer system bundle with content-hash dedup
 
-### Каталог и пользовательский кабинет
+### Spool inventory
+- Per-user physical spool tracking with state, weight remaining, usage history
+- Spoolman-compatible REST API + WebSocket layer — drop-in for existing Klipper ecosystems
 
-- каталог брендов, филаментов и пресетов;
-- пользовательский профиль с разделами для пресетов, принтеров, катушек, настроек и активности;
-- сохранение официальных и пользовательских пресетов в профиль;
-- флаги синхронизации для пользовательских пресетов;
-- брендовый кабинет и процесс верификации компаний;
-- OAuth-авторизация;
-- уведомления и встроенный сбор обратной связи;
-- wiki-раздел и база знаний;
-- калькулятор стоимости печати.
+### Brand workflow
+- Brand reps self-register, verify, and publish official presets for their products
+- QR-code generation on packaging (format: `FH-XXX` or `FH-XXX-XXX`, base36) with auto-link to preset
 
-### Работа с филаментами и катушками
+### OrcaSlicer integration
+- Embedded FilamentHub WebView panel inside the slicer
+- Two-way preset sync (printer / filament / process)
+- HH snapshot upload pipeline
+- Lives in the [WeLizard/OrcaSlicer fork](https://github.com/WeLizard/OrcaSlicer); proposal to become an upstream third-party cloud provider is in progress
 
-- учёт катушек и остатков;
-- история использования материала;
-- привязка пресетов к реальным брендам, линейкам и конкретным материалам;
-- API, совместимый со Spoolman, и WebSocket-слой для совместимых сценариев.
+### Cost calculator (B2B)
+- G-code parser for OrcaSlicer / BambuStudio / PrusaSlicer / SuperSlicer / Cura / CrealitySlicer
+- Quote generator with PDF output for commercial printing services
 
-### Интеграция с OrcaSlicer
+---
 
-- встроенная панель FilamentHub внутри OrcaSlicer;
-- bridge между React frontend и C++-частью OrcaSlicer через WebView;
-- синхронизация профилей филамента;
-- поддержка профилей принтера и профилей печати в общем sync-контуре;
-- импорт и экспорт профилей без ручного перекидывания JSON-файлов;
-- база для multi-printer и MMU / Happy Hare сценариев.
+## Architecture
 
-### Возможности для брендов
+| Layer | Stack |
+|-------|-------|
+| Backend | Python 3.11 · FastAPI · SQLAlchemy 2.0 async · PostgreSQL 15 · Redis 7 · Alembic |
+| Frontend | React 19 · TypeScript · Vite · TailwindCSS 4 · TanStack Query · react-i18next |
+| Slicer | OrcaSlicer fork (C++17, wxWidgets) — see [WeLizard/OrcaSlicer](https://github.com/WeLizard/OrcaSlicer) |
+| Infra | Docker Compose · Nginx · SSL via acme-dns (DNS-01) |
 
-- верификация бренда;
-- публикация официальных пресетов;
-- QR-коды для материалов;
-- QR-сценарий, при котором пользователь может открыть материал и автоматически получить связанный официальный пресет;
-- задел под vendor bundles и более глубокую дистрибуцию профилей.
+Repository layout:
 
-## Как устроен проект
-
-Репозиторий состоит из трёх основных частей:
-
-### 1. Frontend
-
-Web-интерфейс платформы:
-
-- React 19
-- TypeScript
-- Vite
-- Tailwind CSS 4
-- TanStack Query
-- react-i18next
-
-### 2. Backend
-
-API и бизнес-логика платформы:
-
-- Python 3.11
-- FastAPI
-- SQLAlchemy 2.0 async
-- PostgreSQL 15
-- Redis 7
-- Alembic
-
-### 3. OrcaSlicer integration
-
-Интеграция со слайсером и клиентская логика синхронизации:
-
-- C++17
-- wxWidgets
-- CMake
-- OrcaSlicer submodule / fork
-
-### Инфраструктура
-
-- Docker Compose
-- Nginx
-- WebSocket-слой для Spoolman-совместимых сценариев
-
-## Структура репозитория
-
-```text
-filamenthub/
-├── backend/              # FastAPI backend, models, endpoints, services, migrations
-├── frontend/             # React frontend
-├── submodule/OrcaSlicer/ # OrcaSlicer integration / fork
-├── docs/                 # Внутренние проектные материалы и рабочая документация
-├── scripts/              # Локальные утилиты и скрипты запуска
-└── HANDOFF.md            # Текущий рабочий контекст между сессиями
+```
+backend/    FastAPI app — 29 endpoints, 33 models, 61 Alembic migrations
+frontend/   React app — 17 pages, 68 components
+submodule/  OrcaSlicer integration (git submodule)
+docs/       Internal docs and roadmap
+scripts/    Deploy and local utilities
 ```
 
-## Быстрый старт для разработки
+---
 
-### Через Docker
+## Quick start (development)
 
-Рекомендуемый способ для локальной разработки:
-
-1. Создать локальный `.env`:
+Requires Docker Desktop.
 
 ```bash
+git clone --recursive https://github.com/WeLizard/FilamentHub.git
+cd FilamentHub
 cp .env.template .env
-```
-
-Для PowerShell:
-
-```powershell
-Copy-Item .env.template .env
-```
-
-2. Поднять dev-окружение:
-
-```bash
 docker compose -f docker-compose.dev.yml up -d
 ```
 
-3. Проверить сервисы:
+Then:
+- Frontend: http://localhost:3000
+- Backend API: http://localhost:8001
+- Swagger UI: http://localhost:8001/api/v1/docs
 
-- frontend: `http://localhost:3000`
-- backend: `http://localhost:8001`
-- swagger: `http://localhost:8001/api/v1/docs`
+For non-Docker setup and production deployment, see [docs/current/DEPLOY.md](docs/current/DEPLOY.md).
 
-Остановка:
+---
 
-```bash
-docker compose -f docker-compose.dev.yml down
-```
+## Contributing
 
-### Без Docker
+Issues and PRs welcome. The project is in active development; some areas are intentionally scoped down for the first release (see [`docs/current/ROADMAP.md`](docs/current/ROADMAP.md)).
 
-#### Backend
+If you're a **filament brand representative** interested in publishing official presets — open an issue or contact the maintainer.
 
-```bash
-cd backend
-python -m venv .venv
-```
+If you're working on **OrcaSlicer-side integration** (third-party cloud provider, Happy Hare, Moonraker workflows) — see the [OrcaSlicer fork](https://github.com/WeLizard/OrcaSlicer) and the integration discussion linked from there.
 
-Windows PowerShell:
+---
 
-```powershell
-.venv\Scripts\Activate.ps1
-```
+## License
 
-Linux/macOS:
+[GNU Affero General Public License v3.0](LICENSE)
 
-```bash
-source .venv/bin/activate
-```
-
-Установка и запуск:
-
-```bash
-pip install -e .[dev]
-uvicorn app.main:app --reload --host 0.0.0.0 --port 8001
-```
-
-#### Frontend
-
-```bash
-cd frontend
-npm install
-npm run dev
-```
-
-## Текущий фокус развития
-
-Сейчас основные направления развития проекта такие:
-
-- стабилизация и улучшение UX двусторонней синхронизации OrcaSlicer ↔ FilamentHub;
-- развитие экосистемы профилей принтера и профилей печати;
-- Happy Hare / MMU сценарии;
-- рекомендованные пресеты;
-- vendor bundles;
-- эволюция интеграции со слайсером от fork-подхода к более формализованной plugin/API-модели в будущем.
+Self-hosting and modification are permitted under AGPL-3.0 terms. If you run a modified version as a network service, you must make your modifications available to users of that service.

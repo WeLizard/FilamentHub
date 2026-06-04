@@ -148,8 +148,17 @@ AGENTS.md
 CODEX.md
 CODEX_HANDOFF.md
 HANDOFF.md
+QWEN.md
+GEMINI.md
+.agents/
 .rooignore
 .roomodes
+
+# Internal drafts (not for public repo)
+PROPOSAL_*.md
+linkedin_post.txt
+*.bak
+orca-cloud-home.png
 
 # Frontend tests (local development only)
 frontend/src/tests/
