@@ -20,11 +20,18 @@ i18n
   .use(initReactI18next)
   .init({
     resources,
-    fallbackLng: 'ru', // Язык по умолчанию
-    debug: true, // Включить в режиме разработки
+    supportedLngs: ['en', 'ru'],
+    fallbackLng: 'en',
+    nonExplicitSupportedLngs: true,
+    load: 'languageOnly',
+    detection: {
+      order: ['localStorage', 'navigator', 'htmlTag'],
+      caches: ['localStorage'],
+    },
+    debug: false,
 
     interpolation: {
-      escapeValue: false, // React уже защищает от XSS
+      escapeValue: false,
     },
   });
 
