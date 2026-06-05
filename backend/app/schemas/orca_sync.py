@@ -175,7 +175,10 @@ class OrcaFilamentPresetPayload(BaseModel):
     # .info файл содержимое (для идентификации пресета)
     info_content: str | None = Field(
         default=None,
-        description="Содержимое .info файла OrcaSlicer. Используется для извлечения меток FilamentHub (fhub_id, setting_id)."
+        description=(
+            "Содержимое .info файла OrcaSlicer. Используется для извлечения меток FilamentHub: "
+            "bundle_id='filamenthub:<id>' (preferred, OrcaSlicer 2.4+) или legacy fhub_id/fhub_source."
+        )
     )
 
     # Orphaned preset flags (set by C++ scanner for presets with broken inherits)

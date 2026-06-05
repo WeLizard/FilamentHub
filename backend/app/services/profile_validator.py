@@ -65,6 +65,34 @@ VALID_FROM_VALUES = ["system", "user"]
 VERSION_PATTERN = r"^\d+\.\d+\.\d+(\.\d+)?$"
 
 
+def _check_filamenthub_marker(profile: dict[str, Any], result: ValidationResult) -> None:
+    """Verify profile carries a FilamentHub identity marker.
+
+    Accepts either the new `bundle_id` field (Orca 2.4 bundle model — format
+    `"filamenthub:<id>"`) or the legacy `fhub_source`/`fhub_id` pair. Emits a
+    warning only if neither is present; this is non-fatal so third-party
+    profiles still pass validation.
+    """
+    bundle_id = profile.get("bundle_id")
+    if isinstance(bundle_id, str) and bundle_id.startswith("filamenthub:"):
+        return
+
+    fhub_source = profile.get("fhub_source")
+    if fhub_source == "filamenthub":
+        return
+
+    if bundle_id and not (isinstance(bundle_id, str) and bundle_id.startswith("filamenthub:")):
+        result.add_warning(
+            f"bundle_id has unexpected format: {bundle_id!r} (expected 'filamenthub:<id>')"
+        )
+        return
+
+    result.add_warning(
+        "Profile has no FilamentHub identity marker — "
+        "expected either bundle_id='filamenthub:<id>' (preferred) or fhub_source='filamenthub'"
+    )
+
+
 def validate_filament_profile(profile: dict[str, Any]) -> ValidationResult:
     """
     Валидация профиля филамента.
@@ -120,11 +148,8 @@ def validate_filament_profile(profile: dict[str, Any]) -> ValidationResult:
         if not isinstance(profile["inherits"], str) or not profile["inherits"].strip():
             result.add_error("inherits должен быть непустой строкой")
 
-    # 7. Проверяем fhub_source для синхронизации
-    if "fhub_source" not in profile:
-        result.add_warning("Отсутствует fhub_source - профиль не будет определён как FilamentHub")
-    elif profile["fhub_source"] != "filamenthub":
-        result.add_warning(f"fhub_source должен быть 'filamenthub', получено: {profile['fhub_source']}")
+    # 7. FilamentHub identity marker (bundle_id preferred, fhub_source fallback)
+    _check_filamenthub_marker(profile, result)
 
     # 8. Проверяем температуры (если есть)
     temp_fields = ["nozzle_temperature", "hot_plate_temp", "cool_plate_temp"]
@@ -193,9 +218,8 @@ def validate_print_profile(profile: dict[str, Any]) -> ValidationResult:
         elif len(profile["compatible_printers"]) == 0:
             result.add_error("compatible_printers не может быть пустым для профиля печати")
 
-    # 6. Проверяем fhub_source
-    if "fhub_source" not in profile:
-        result.add_warning("Отсутствует fhub_source - профиль не будет определён как FilamentHub")
+    # 6. FilamentHub identity marker (bundle_id preferred, fhub_source fallback)
+    _check_filamenthub_marker(profile, result)
 
     return result
 
@@ -248,9 +272,8 @@ def validate_printer_profile(profile: dict[str, Any]) -> ValidationResult:
             except (ValueError, TypeError):
                 result.add_warning("nozzle_diameter должен содержать числовые значения")
 
-    # 6. Проверяем fhub_source
-    if "fhub_source" not in profile:
-        result.add_warning("Отсутствует fhub_source - профиль не будет определён как FilamentHub")
+    # 6. FilamentHub identity marker (bundle_id preferred, fhub_source fallback)
+    _check_filamenthub_marker(profile, result)
 
     return result
 

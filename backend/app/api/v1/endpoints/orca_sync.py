@@ -1164,16 +1164,18 @@ async def _upsert_printer_profile(
         if payload.orcaslicer_settings:
             # Сохраняем метки FilamentHub при обновлении
             updated_settings = dict(payload.orcaslicer_settings)
-            
-            # Приоритет: метки из payload.orcaslicer_settings (если есть), иначе существующие метки
+
+            # Always ensure bundle_id is present and correct (regenerated from profile.id —
+            # it's the canonical identity and may have been stripped/changed in the payload).
+            updated_settings["bundle_id"] = f"filamenthub:{profile.id}"
+
+            # Legacy markers: preserve from payload if present, else from existing settings.
             if "fhub_id" in updated_settings and "fhub_source" in updated_settings:
-                # Метки пришли из OrcaSlicer - используем их
                 logger.info(f"Using fhub_id and fhub_source from payload.orcaslicer_settings for printer profile {profile.id}")
             elif profile.orcaslicer_settings:
-                # Если метки не пришли, но были раньше - сохраняем существующие
                 existing_fhub_id = profile.orcaslicer_settings.get("fhub_id")
                 existing_fhub_source = profile.orcaslicer_settings.get("fhub_source")
-                
+
                 if existing_fhub_id and existing_fhub_source == "filamenthub":
                     updated_settings["fhub_id"] = existing_fhub_id
                     updated_settings["fhub_source"] = existing_fhub_source
@@ -1256,9 +1258,12 @@ async def _upsert_printer_profile(
     
     # Подготавливаем orcaslicer_settings с метками
     profile_orcaslicer_settings = dict(payload.orcaslicer_settings or {})
-    
-    # Добавляем метки FilamentHub для синхронизации
-    profile_orcaslicer_settings["fhub_id"] = None  # Будет установлен после flush
+
+    # FilamentHub identity markers. New format: bundle_id (Orca 2.4+ Cloud bundle model).
+    # Legacy fhub_id/fhub_source kept for backward compat with older fork builds.
+    # Both get the profile.id after flush (see below).
+    profile_orcaslicer_settings["bundle_id"] = None  # set after flush
+    profile_orcaslicer_settings["fhub_id"] = None  # set after flush
     profile_orcaslicer_settings["fhub_source"] = "filamenthub"
     
     profile = PrinterProfile(
@@ -1286,8 +1291,9 @@ async def _upsert_printer_profile(
     db.add(profile)
     await db.flush()
     
-    # Обновляем fhub_id после получения ID
+    # Обновляем bundle_id и fhub_id после получения ID
     if profile.orcaslicer_settings:
+        profile.orcaslicer_settings["bundle_id"] = f"filamenthub:{profile.id}"
         profile.orcaslicer_settings["fhub_id"] = profile.id
 
     return OrcaSyncResult(
@@ -1484,9 +1490,12 @@ async def _upsert_print_profile(
 
     # Подготавливаем orcaslicer_settings с метками
     profile_orcaslicer_settings = dict(payload.orcaslicer_settings or {})
-    
-    # Добавляем метки FilamentHub для синхронизации
-    profile_orcaslicer_settings["fhub_id"] = None  # Будет установлен после flush
+
+    # FilamentHub identity markers. New format: bundle_id (Orca 2.4+ Cloud bundle model).
+    # Legacy fhub_id/fhub_source kept for backward compat with older fork builds.
+    # Both get the profile.id after flush (see below).
+    profile_orcaslicer_settings["bundle_id"] = None  # set after flush
+    profile_orcaslicer_settings["fhub_id"] = None  # set after flush
     profile_orcaslicer_settings["fhub_source"] = "filamenthub"
     
     profile = PrintProfile(
@@ -1513,8 +1522,9 @@ async def _upsert_print_profile(
     db.add(profile)
     await db.flush()
     
-    # Обновляем fhub_id после получения ID
+    # Обновляем bundle_id и fhub_id после получения ID
     if profile.orcaslicer_settings:
+        profile.orcaslicer_settings["bundle_id"] = f"filamenthub:{profile.id}"
         profile.orcaslicer_settings["fhub_id"] = profile.id
     await _sync_imported_print_profile_links(db=db, profile=profile)
 

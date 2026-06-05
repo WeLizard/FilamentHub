@@ -261,39 +261,25 @@ async def preset_to_orcaslicer_json(
     # Можно расширить в будущем для специфических принтеров
     profile["compatible_printers"] = []
 
-    # Метаданные FilamentHub для синхронизации
-    # Добавляем метки в корень JSON профиля для идентификации "наших" пресетов
-    # Эти метки безопасны и не конфликтуют с BambuLab синхронизацией
-    # ВАЖНО: OrcaSlicer ожидает строки для fhub_id, не числа!
+    # Bundle metadata — совместимость с upstream OrcaSlicer 2.4 (Orca Cloud) bundle model.
+    # Формат `"filamenthub:<id>"` соответствует Orca Cloud convention `"<provider>:<uuid>"`.
+    # В OrcaSlicer это поле читается как `Preset.bundle_id` и `is_from_bundle()` возвращает true.
+    profile["bundle_id"] = f"filamenthub:{preset.id}"
+
+    # Backward compatibility: старые версии нашего форка читают `fhub_id`/`fhub_source`.
+    # Дублируем их в JSON, чтобы старый C++ код продолжал работать после migration to Orca 2.4.
+    # TODO(post-2026-12): удалить после того как все юзеры обновились на форк с bundle_id поддержкой.
     profile["fhub_id"] = str(preset.id)
     profile["fhub_source"] = "filamenthub"
-    
-    # Для черновиков добавляем fhub_draft_id в корень JSON
-    # Это позволяет найти черновик при следующей синхронизации
+
+    # Draft preset: fhub_draft_id для поиска черновика при следующей синхронизации
     if not preset.active and preset.orcaslicer_settings and isinstance(preset.orcaslicer_settings, dict):
         fhub_draft_id = preset.orcaslicer_settings.get("fhub_draft_id")
         if fhub_draft_id:
-            # Убеждаемся, что fhub_draft_id - строка
             profile["fhub_draft_id"] = str(fhub_draft_id)
-    
+
     # ВАЖНО: НЕ обновляем orcaslicer_settings в базе при экспорте!
     # Это вызывает изменение updated_at и бесконечный цикл экспорта.
-    # Метки fhub_id и fhub_source обновляются только при импорте из OrcaSlicer.
-    # При экспорте мы просто читаем существующие метки и добавляем их в JSON.
-
-    # Итоговая структура JSON:
-    # - Обязательные поля: version, name, from, inherits, filament_settings_id
-    # - Уникальные идентификаторы: setting_id, filament_id
-    # - Параметры печати: температуры, вентилятор, ретракт и т.д.
-    # - Расширенные параметры: orcaslicer_settings (если есть)
-    # - Метаданные FilamentHub: fhub_id, fhub_source (для синхронизации)
-    #
-    # При импорте в OrcaSlicer:
-    # 1. Находит родительский пресет через inherits
-    # 2. Копирует весь конфиг родителя
-    # 3. Применяет параметры из этого JSON поверх родительского конфига
-    # 4. Сохраняет как пользовательский пресет
-    # 5. Метаданные fhub_id и fhub_source сохраняются в JSON профиля для обратной синхронизации
 
     # Валидация профиля перед экспортом (мягкая - только логирование)
     validation_result = validate_filament_profile(profile)

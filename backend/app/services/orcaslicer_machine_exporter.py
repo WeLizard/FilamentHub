@@ -400,17 +400,13 @@ async def printer_profile_to_orca_json(
     if "default_print_profile" not in settings and default_print_profile_name:
         settings["default_print_profile"] = default_print_profile_name
 
-    # Метаданные FilamentHub для синхронизации
-    # Добавляем метки в корень JSON профиля для идентификации "наших" профилей
-    # Эти метки безопасны и не конфликтуют с BambuLab синхронизацией
-    # ВАЖНО: OrcaSlicer ожидает строки для fhub_id, не числа!
+    # Bundle metadata — совместимость с upstream OrcaSlicer 2.4 (Orca Cloud) bundle model.
+    settings["bundle_id"] = f"filamenthub:{profile.id}"
+
+    # Backward compatibility: старый C++ форк читает fhub_id/fhub_source.
+    # TODO(post-2026-12): удалить после миграции всех юзеров на форк с bundle_id поддержкой.
     settings["fhub_id"] = str(profile.id)
     settings["fhub_source"] = "filamenthub"
-    
-    # ВАЖНО: НЕ обновляем orcaslicer_settings в базе при экспорте!
-    # Это вызывает изменение updated_at и бесконечный цикл экспорта.
-    # Метки fhub_id и fhub_source обновляются только при импорте из OrcaSlicer.
-    # При экспорте мы просто читаем существующие метки и добавляем их в JSON.
 
     # Валидация профиля перед экспортом (мягкая - только логирование)
     validation_result = validate_printer_profile(settings)
@@ -547,17 +543,13 @@ async def print_profile_to_orca_json(
         if condition:
             settings["compatible_printers_condition"] = condition
 
-    # Метаданные FilamentHub для синхронизации
-    # Добавляем метки в корень JSON профиля для идентификации "наших" профилей
-    # Эти метки безопасны и не конфликтуют с BambuLab синхронизацией
-    # ВАЖНО: OrcaSlicer ожидает строки для fhub_id, не числа!
+    # Bundle metadata — совместимость с upstream OrcaSlicer 2.4 (Orca Cloud) bundle model.
+    settings["bundle_id"] = f"filamenthub:{profile.id}"
+
+    # Backward compatibility: старый C++ форк читает fhub_id/fhub_source.
+    # TODO(post-2026-12): удалить после миграции всех юзеров на форк с bundle_id поддержкой.
     settings["fhub_id"] = str(profile.id)
     settings["fhub_source"] = "filamenthub"
-
-    # ВАЖНО: НЕ обновляем orcaslicer_settings в базе при экспорте!
-    # Это вызывает изменение updated_at и бесконечный цикл экспорта.
-    # Метки fhub_id и fhub_source обновляются только при импорте из OrcaSlicer.
-    # При экспорте мы просто читаем существующие метки и добавляем их в JSON.
 
     # Валидация профиля перед экспортом (мягкая - только логирование)
     validation_result = validate_print_profile(settings)
