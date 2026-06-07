@@ -3706,6 +3706,15 @@
       "confirm": "Restore",
       "confirmBody": "Restore settings to v{{version}}? This creates a new version; nothing is lost.",
       "success": "Version restored"
+    },
+    "label": {
+      "add": "+ Add label",
+      "edit": "Edit",
+      "remove": "Remove",
+      "placeholder": "Label name",
+      "descPlaceholder": "Description (optional)",
+      "save": "Save",
+      "saved": "Label saved"
     }
   },
   "reviewCard": {

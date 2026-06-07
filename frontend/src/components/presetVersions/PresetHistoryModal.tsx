@@ -48,6 +48,9 @@ export const PresetHistoryModal: React.FC<Props> = ({ presetId, canRestore = fal
   const [labeledOnly, setLabeledOnly] = useState(false);
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [confirmRestore, setConfirmRestore] = useState(false);
+  const [editingLabel, setEditingLabel] = useState(false);
+  const [labelValue, setLabelValue] = useState('');
+  const [labelDescValue, setLabelDescValue] = useState('');
 
   const versionsQuery = useQuery({
     queryKey: ['preset-versions', presetId, labeledOnly],
@@ -96,6 +99,25 @@ export const PresetHistoryModal: React.FC<Props> = ({ presetId, canRestore = fal
     },
   });
 
+  const labelMutation = useMutation({
+    mutationFn: ({ versionId, label, description }: { versionId: number; label: string; description: string | null }) =>
+      presetVersionsAPI.setLabel(presetId, versionId, label, description),
+    onSuccess: () => {
+      toast.success(t('presetVersions.label.saved'));
+      queryClient.invalidateQueries({ queryKey: ['preset-versions', presetId] });
+      setEditingLabel(false);
+    },
+    onError: (err: any) => {
+      toast.error(translateApiError(t, err?.response?.data?.detail, t('common.error')));
+    },
+  });
+
+  const startEditLabel = (item: PresetVersionListItem) => {
+    setLabelValue(item.label);
+    setLabelDescValue(item.label_description ?? '');
+    setEditingLabel(true);
+  };
+
   return (
     <ModalOverlay onClose={onClose}>
       <div className="bg-gray-900 rounded-2xl border border-white/20 w-full max-w-4xl max-h-[85vh] flex flex-col overflow-hidden">
@@ -134,7 +156,10 @@ export const PresetHistoryModal: React.FC<Props> = ({ presetId, canRestore = fal
                   return (
                     <li key={v.id}>
                       <button
-                        onClick={() => setSelectedId(v.id)}
+                        onClick={() => {
+                          setSelectedId(v.id);
+                          setEditingLabel(false);
+                        }}
                         className={`w-full text-left px-4 py-3 border-b border-white/5 transition-colors ${
                           isSel ? 'bg-purple-500/10' : 'hover:bg-white/5'
                         }`}
@@ -174,6 +199,86 @@ export const PresetHistoryModal: React.FC<Props> = ({ presetId, canRestore = fal
           <div className="flex-1 overflow-y-auto p-5">
             {selected === null && (
               <div className="text-gray-500 text-sm">{t('presetVersions.diff.selectPrompt')}</div>
+            )}
+
+            {/* Label management for the selected version (owner/admin) */}
+            {selected !== null && canRestore && (
+              <div className="mb-4 pb-4 border-b border-white/10">
+                {editingLabel ? (
+                  <div className="space-y-2">
+                    <input
+                      type="text"
+                      value={labelValue}
+                      onChange={(e) => setLabelValue(e.target.value)}
+                      maxLength={120}
+                      placeholder={t('presetVersions.label.placeholder')}
+                      className="w-full bg-white/5 border border-white/15 rounded-lg px-3 py-1.5 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-purple-500"
+                    />
+                    <textarea
+                      value={labelDescValue}
+                      onChange={(e) => setLabelDescValue(e.target.value)}
+                      maxLength={2000}
+                      rows={2}
+                      placeholder={t('presetVersions.label.descPlaceholder')}
+                      className="w-full bg-white/5 border border-white/15 rounded-lg px-3 py-1.5 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-purple-500 resize-none"
+                    />
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() =>
+                          labelMutation.mutate({
+                            versionId: selected.id,
+                            label: labelValue.trim(),
+                            description: labelDescValue.trim() || null,
+                          })
+                        }
+                        disabled={labelMutation.isPending || !labelValue.trim()}
+                        className="px-3 py-1.5 bg-purple-600 hover:bg-purple-500 text-white text-xs font-medium rounded-lg disabled:opacity-50"
+                      >
+                        {t('presetVersions.label.save')}
+                      </button>
+                      <button
+                        onClick={() => setEditingLabel(false)}
+                        className="px-3 py-1.5 bg-white/10 hover:bg-white/20 text-gray-200 text-xs rounded-lg"
+                      >
+                        {t('common.cancel')}
+                      </button>
+                    </div>
+                  </div>
+                ) : selected.label ? (
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <div className="text-sm text-amber-300 font-medium">🏷 {selected.label}</div>
+                      {selected.label_description && (
+                        <div className="text-xs text-gray-400 mt-0.5">{selected.label_description}</div>
+                      )}
+                    </div>
+                    <div className="flex gap-1 shrink-0">
+                      <button
+                        onClick={() => startEditLabel(selected)}
+                        className="px-2 py-1 text-xs text-gray-300 hover:text-white hover:bg-white/10 rounded"
+                      >
+                        {t('presetVersions.label.edit')}
+                      </button>
+                      <button
+                        onClick={() =>
+                          labelMutation.mutate({ versionId: selected.id, label: '', description: null })
+                        }
+                        disabled={labelMutation.isPending}
+                        className="px-2 py-1 text-xs text-gray-400 hover:text-red-300 hover:bg-white/10 rounded disabled:opacity-50"
+                      >
+                        {t('presetVersions.label.remove')}
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <button
+                    onClick={() => startEditLabel(selected)}
+                    className="text-xs text-gray-400 hover:text-white transition-colors"
+                  >
+                    {t('presetVersions.label.add')}
+                  </button>
+                )}
+              </div>
             )}
 
             {selected !== null && isLatestSelected && (
