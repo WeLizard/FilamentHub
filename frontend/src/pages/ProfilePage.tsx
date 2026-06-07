@@ -55,6 +55,7 @@ const CreatePresetModal = lazy(() =>
 );
 import { ViewPresetModal } from '../components/ViewPresetModal';
 import { ModalOverlay } from '../components/ModalOverlay';
+import { OrcaSettingsView } from '../components/OrcaSettingsView';
 import { CreatePrinterRequestModal } from '../components/CreatePrinterRequestModal';
 import { SettingsTab } from '../components/SettingsTab';
 import { ExportFromOrcaSlicerButton } from '../components/ExportFromOrcaSlicerButton';
@@ -3660,12 +3661,7 @@ const PrinterProfileModal: React.FC<PrinterProfileModalProps> = ({ profile, onCl
               </pre>
             </div>
           )}
-          <div>
-            <h4 className="text-sm font-semibold text-white mb-2">{t('profilePage.orcaSlicerSettings')}</h4>
-            <pre className="bg-black/40 border border-white/10 rounded-xl p-4 text-xs text-gray-200 overflow-auto max-h-72 whitespace-pre">
-              {JSON.stringify(profile.orcaslicer_settings ?? {}, null, 2)}
-            </pre>
-          </div>
+          <OrcaSettingsView settings={profile.orcaslicer_settings} />
         </div>
       </div>
     </div>
@@ -3772,12 +3768,7 @@ const PrintProfileModal: React.FC<PrintProfileModalProps> = ({ profile, onClose,
               </div>
             </div>
           )}
-          <div>
-            <h4 className="text-sm font-semibold text-white mb-2">{t('profilePage.orcaSlicerSettings')}</h4>
-            <pre className="bg-black/40 border border-white/10 rounded-xl p-4 text-xs text-gray-200 overflow-auto max-h-72 whitespace-pre">
-              {JSON.stringify(profile.orcaslicer_settings ?? {}, null, 2)}
-            </pre>
-          </div>
+          <OrcaSettingsView settings={profile.orcaslicer_settings} />
         </div>
       </div>
     </div>

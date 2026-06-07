@@ -4568,5 +4568,18 @@
         ]
       }
     }
+  },
+  "orcaSettings": {
+    "table": "Table",
+    "json": "JSON",
+    "empty": "No settings",
+    "group": {
+      "machine": "Machine",
+      "walls": "Walls & layers",
+      "speed": "Speeds",
+      "retraction": "Retraction",
+      "temperature": "Temperatures",
+      "other": "Other"
+    }
   }
 }
