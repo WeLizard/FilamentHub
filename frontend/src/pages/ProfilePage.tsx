@@ -947,6 +947,9 @@ export const ProfilePage: React.FC = () => {
                             : [];
 
                           const isProfileExpanded = expandedPrinterProfileId === profile.id;
+                          // Полный профиль для редактирования (карточка из printer.profiles
+                          // может быть облегчённой — модалке нужен полный объект).
+                          const fullPrinterProfile = myPrinterProfiles.find((p) => p.id === profile.id);
 
                           return (
                             <div key={profile.id} className="bg-white/5 rounded-xl border border-white/10 p-3">
@@ -963,9 +966,24 @@ export const ProfilePage: React.FC = () => {
                                     </p>
                                   )}
                                 </div>
-                                {printProfilesForPrinterProfile.length > 0 && (
-                                  <StatusBadge label={t('profilePage.printProfilesCount', { count: printProfilesForPrinterProfile.length })} variant="accent" />
-                                )}
+                                <div className="flex items-center gap-2 shrink-0">
+                                  {printProfilesForPrinterProfile.length > 0 && (
+                                    <StatusBadge label={t('profilePage.printProfilesCount', { count: printProfilesForPrinterProfile.length })} variant="accent" />
+                                  )}
+                                  {fullPrinterProfile && (
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        setEditingPrinterProfile(fullPrinterProfile);
+                                        setIsCreatePrinterProfileModalOpen(true);
+                                      }}
+                                      className="p-1.5 bg-white/10 hover:bg-white/20 rounded-lg text-white transition-all"
+                                      title={t('profilePage.edit')}
+                                    >
+                                      <Edit className="w-4 h-4" />
+                                    </button>
+                                  )}
+                                </div>
                               </div>
                               
                               {/* Кнопка раскрытия деталей */}
@@ -1080,6 +1098,19 @@ export const ProfilePage: React.FC = () => {
                                                 <Eye className="w-3 h-3" />
                                                 {t('profilePage.view')}
                                               </button>
+                                              {!printProfile.is_official && (
+                                                <button
+                                                  type="button"
+                                                  onClick={() => {
+                                                    setEditingPrintProfile(printProfile);
+                                                    setIsCreatePrintProfileModalOpen(true);
+                                                  }}
+                                                  className="px-2 py-1 rounded border border-white/20 text-xs text-white/90 hover:bg-white/10 transition-all flex items-center gap-1"
+                                                >
+                                                  <Edit className="w-3 h-3" />
+                                                  {t('profilePage.edit')}
+                                                </button>
+                                              )}
                                               <button
                                                 type="button"
                                                 onClick={() => handleDownloadPrintProfile(printProfile)}
