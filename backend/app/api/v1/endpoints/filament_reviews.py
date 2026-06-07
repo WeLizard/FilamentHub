@@ -3,7 +3,7 @@
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -58,56 +58,42 @@ async def get_available_presets_for_review(
     if not filament:
         raise_error(404, ERR_FILAMENT_NOT_FOUND)
 
-    available_presets = []
-
-    # 1. Официальный пресет
-    official_preset_result = await db.execute(
-        select(Preset).where(
-            Preset.filament_id == filament_id,
-            Preset.is_official == True,
-            Preset.active == True,
-        ).order_by(Preset.created_at.desc()).limit(1)
+    # Пресеты, на которые пользователь может оставить отзыв — те, что он
+    # реально использовал: сохранённые им (UserSavedPreset) ИЛИ созданные им.
+    # Официальный пресет НЕ показывается сам по себе, если не сохранён —
+    # отзыв оставляют только на то, чем печатали.
+    saved_subq = (
+        select(UserSavedPreset.preset_id)
+        .where(UserSavedPreset.user_id == current_user.id)
+        .scalar_subquery()
     )
-    official_preset = official_preset_result.scalar_one_or_none()
-    if official_preset:
-        preset_dict = PresetResponse.model_validate(official_preset).model_dump()
-        preset_dict["is_official"] = True
-        preset_dict["is_saved"] = False  # Проверим ниже
-        available_presets.append(preset_dict)
 
-    # 2. Сохраненные пользователем пресеты этого филамента
-    saved_presets_result = await db.execute(
-        select(UserSavedPreset, Preset)
-        .join(Preset, UserSavedPreset.preset_id == Preset.id)
+    presets_result = await db.execute(
+        select(Preset)
         .where(
-            UserSavedPreset.user_id == current_user.id,
             Preset.filament_id == filament_id,
             Preset.active == True,
+            or_(
+                Preset.id.in_(saved_subq),
+                Preset.user_id == current_user.id,
+            ),
         )
+        .order_by(Preset.is_official.desc(), Preset.created_at.desc())
     )
-    saved_presets_data = saved_presets_result.all()
-    
-    saved_preset_ids = set()
-    for saved_preset_row, preset in saved_presets_data:
-        # Пропускаем официальный пресет, если он уже добавлен
-        if preset.is_official and official_preset and preset.id == official_preset.id:
-            # Обновляем is_saved для официального пресета
-            for p in available_presets:
-                if p["id"] == preset.id:
-                    p["is_saved"] = True
-            continue
-        
+    presets = presets_result.scalars().all()
+
+    # Set of this user's saved preset ids (for the is_saved flag).
+    saved_ids_result = await db.execute(
+        select(UserSavedPreset.preset_id).where(UserSavedPreset.user_id == current_user.id)
+    )
+    saved_ids = set(saved_ids_result.scalars().all())
+
+    available_presets = []
+    for preset in presets:
         preset_dict = PresetResponse.model_validate(preset).model_dump()
         preset_dict["is_official"] = preset.is_official
-        preset_dict["is_saved"] = True
+        preset_dict["is_saved"] = preset.id in saved_ids
         available_presets.append(preset_dict)
-        saved_preset_ids.add(preset.id)
-
-    # Если есть официальный пресет и он сохранен, обновляем is_saved
-    if official_preset and official_preset.id in saved_preset_ids:
-        for p in available_presets:
-            if p["id"] == official_preset.id:
-                p["is_saved"] = True
 
     return {
         "items": available_presets,
