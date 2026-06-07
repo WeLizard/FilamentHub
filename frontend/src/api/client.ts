@@ -688,6 +688,88 @@ export const savedPresetsAPI = {
   },
 };
 
+// Preset Version History API
+export type PresetVersionAuthor = {
+  id: number;
+  username: string | null;
+};
+
+export type PresetVersionListItem = {
+  id: number;
+  version_number: number;
+  label: string;
+  label_description: string | null;
+  change_source: string;
+  restored_from_version_id: number | null;
+  squash_count: number;
+  created_at: string;
+  updated_at: string;
+  created_by: PresetVersionAuthor | null;
+};
+
+export type PresetVersionDetail = PresetVersionListItem & {
+  snapshot_orcaslicer_settings: Record<string, any> | null;
+  snapshot_structured: Record<string, any>;
+};
+
+export type PresetVersionDiffChange = {
+  key: string;
+  label: string;
+  unit: string | null;
+  old: string | null;
+  new: string | null;
+};
+
+export type PresetVersionDiffUnmapped = {
+  key: string;
+  old: string | null;
+  new: string | null;
+};
+
+export type PresetVersionDiff = {
+  from_version: number;
+  to_version: number;
+  changes: PresetVersionDiffChange[];
+  unmapped_changes: PresetVersionDiffUnmapped[];
+};
+
+export const presetVersionsAPI = {
+  list: async (presetId: number, params?: { labeled_only?: boolean; limit?: number; offset?: number }) => {
+    const response = await api.get<{ items: PresetVersionListItem[]; total: number }>(
+      `/presets/${presetId}/versions`,
+      { params },
+    );
+    return response.data;
+  },
+
+  get: async (presetId: number, versionId: number) => {
+    const response = await api.get<PresetVersionDetail>(`/presets/${presetId}/versions/${versionId}`);
+    return response.data;
+  },
+
+  diff: async (presetId: number, aId: number, bId: number) => {
+    const response = await api.get<PresetVersionDiff>(`/presets/${presetId}/versions/${aId}/diff/${bId}`);
+    return response.data;
+  },
+
+  setLabel: async (presetId: number, versionId: number, label: string, label_description: string | null) => {
+    const response = await api.patch<PresetVersionListItem>(
+      `/presets/${presetId}/versions/${versionId}`,
+      { label, label_description },
+    );
+    return response.data;
+  },
+
+  restore: async (presetId: number, versionId: number) => {
+    const response = await api.post<{
+      restored_into_version_id: number;
+      restored_into_version_number: number;
+      restored_from_version_id: number;
+    }>(`/presets/${presetId}/versions/${versionId}/restore`);
+    return response.data;
+  },
+};
+
 // Printer Profiles API
 type CreatePrinterProfilePayload = {
   name: string;

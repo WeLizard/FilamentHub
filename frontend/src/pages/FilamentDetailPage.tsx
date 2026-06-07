@@ -23,6 +23,7 @@ import {
   Fan,
   Flame,
   Hammer,
+  Eye,
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { filamentsAPI, brandsAPI, savedPresetsAPI, filamentReviewsAPI, qrAPI } from '../api/client';
@@ -31,8 +32,10 @@ import { FilamentPreview } from '../components/FilamentPreview';
 import { ReviewCard } from '../components/ReviewCard';
 import { CreateReviewModal } from '../components/CreateReviewModal';
 import { PresetSyncToggle } from '../components/PresetSyncToggle';
+import { ViewPresetModal } from '../components/ViewPresetModal';
 import { SEOHead } from '../components/SEOHead';
 import { FilamentReview } from '../types/api';
+import type { Preset } from '../types/api';
 import type { AxiosError } from 'axios';
 
 export const FilamentDetailPage: React.FC = () => {
@@ -44,6 +47,7 @@ export const FilamentDetailPage: React.FC = () => {
   const queryClient = useQueryClient();
   const [showQR, setShowQR] = useState(false);
   const [activeTab, setActiveTab] = useState<'presets' | 'reviews'>('presets');
+  const [detailPreset, setDetailPreset] = useState<Preset | null>(null);
   const [showCreateReviewModal, setShowCreateReviewModal] = useState(false);
   const [editingReview, setEditingReview] = useState<FilamentReview | null>(null);
   const [reviewsPage, setReviewsPage] = useState(1);
@@ -155,14 +159,28 @@ export const FilamentDetailPage: React.FC = () => {
     );
   }
 
-  // Получаем официальный пресет и пресеты сообщества
-  const officialPreset = presetsData?.items.find((p) => p.is_official);
-  const communityPresets = presetsData?.items.filter((p) => !p.is_official);
+  // Главный пресет для верхней плашки: официальный -> генеративный
+  // (weighted) -> топовый по рейтингу. Так плашка не пустует, если у
+  // филамента есть только community-пресеты, и показывает генеративный
+  // пресет, когда он появится.
+  const primaryPreset =
+    presetsData?.items.find((p) => p.is_official) ??
+    presetsData?.items.find((p) => p.is_weighted) ??
+    (presetsData && presetsData.items.length > 0
+      ? [...presetsData.items].sort((a, b) => (b.rating ?? 0) - (a.rating ?? 0))[0]
+      : undefined);
+  const primaryKind: 'official' | 'weighted' | 'top' = primaryPreset?.is_official
+    ? 'official'
+    : primaryPreset?.is_weighted
+      ? 'weighted'
+      : 'top';
+  // В список ниже попадает всё, кроме главного пресета.
+  const communityPresets = presetsData?.items.filter((p) => p.id !== primaryPreset?.id);
   
   // Проверяем, сохранён ли официальный пресет
-  const isOfficialPresetSaved = officialPreset ? savedPresetIds.has(officialPreset.id) : false;
+  const isOfficialPresetSaved = primaryPreset ? savedPresetIds.has(primaryPreset.id) : false;
   // Проверяем, является ли официальный пресет созданным пользователем
-  const isOfficialPresetOwn = officialPreset && user ? officialPreset.user_id === user.id : false;
+  const isOfficialPresetOwn = primaryPreset && user ? primaryPreset.user_id === user.id : false;
 
   // РЕЙТИНГ ФИЛАМЕНТА: только из отзывов (FilamentReview)
   // Это оценка качества самого материала пользователями
@@ -197,12 +215,12 @@ export const FilamentDetailPage: React.FC = () => {
     return Number.isNaN(parsed) ? null : parsed;
   };
 
-  const officialSofteningTemperature = officialPreset
-    ? getOrcaNumber(officialPreset.orcaslicer_settings, 'temperature_vitrification')
+  const officialSofteningTemperature = primaryPreset
+    ? getOrcaNumber(primaryPreset.orcaslicer_settings, 'temperature_vitrification')
     : null;
-  const officialRequiredNozzleHRC = officialPreset
-    ? getOrcaNumber(officialPreset.orcaslicer_settings, 'required_nozzle_HRC') ??
-      getOrcaNumber(officialPreset.orcaslicer_settings, 'required_nozzle_hrc')
+  const officialRequiredNozzleHRC = primaryPreset
+    ? getOrcaNumber(primaryPreset.orcaslicer_settings, 'required_nozzle_HRC') ??
+      getOrcaNumber(primaryPreset.orcaslicer_settings, 'required_nozzle_hrc')
     : null;
 
   // JSON-LD structured data для филамента
@@ -393,7 +411,7 @@ export const FilamentDetailPage: React.FC = () => {
 
         {/* Кнопки действий */}
         <div className="flex space-x-4">
-          {officialPreset ? (
+          {primaryPreset ? (
             !user ? (
               <button
                 disabled
@@ -420,7 +438,7 @@ export const FilamentDetailPage: React.FC = () => {
               </button>
             ) : (
               <button
-                onClick={() => officialPreset && savePresetMutation.mutate(officialPreset.id)}
+                onClick={() => primaryPreset && savePresetMutation.mutate(primaryPreset.id)}
                 disabled={savePresetMutation.isPending}
                 className="flex-1 bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white py-4 px-8 rounded-xl transition-all shadow-lg shadow-purple-500/25 hover:shadow-purple-500/40 text-lg font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
               >
@@ -533,19 +551,30 @@ export const FilamentDetailPage: React.FC = () => {
               <div className="text-center py-8 text-gray-400">{t('filamentDetailPage.loadingPresets')}</div>
             )}
 
-            {officialPreset && (
-              <div className="bg-gradient-to-r from-purple-500/20 to-pink-500/20 rounded-xl border border-purple-500/30 p-6">
+            {primaryPreset && (
+              <div
+                onClick={() => primaryPreset && setDetailPreset(primaryPreset as unknown as Preset)}
+                className="bg-gradient-to-r from-purple-500/20 to-pink-500/20 rounded-xl border border-purple-500/30 hover:border-purple-400/50 p-6 cursor-pointer transition-all"
+                title={t('filamentDetailPage.viewDetails')}
+              >
                 <div className="flex items-center justify-between mb-4">
                   <div className="flex items-center gap-2">
                     <h3 className="text-xl font-bold text-white flex items-center">
                       <Settings className="w-5 h-5 mr-2" />
-                      {t('filamentDetailPage.officialPreset')}
+                      {t(
+                        primaryKind === 'official'
+                          ? 'filamentDetailPage.officialPreset'
+                          : primaryKind === 'weighted'
+                            ? 'filamentDetailPage.generativePreset'
+                            : 'filamentDetailPage.topPreset',
+                      )}
                     </h3>
+                    <Eye className="w-4 h-4 text-gray-300 shrink-0" />
                   </div>
                   <div className="flex items-center gap-3">
-                    {officialPreset.printers && officialPreset.printers.length > 0 && (
+                    {primaryPreset.printers && primaryPreset.printers.length > 0 && (
                       <div className="flex items-center gap-1.5 flex-wrap">
-                        {officialPreset.printers.map((printer) => (
+                        {primaryPreset.printers.map((printer) => (
                           <span
                             key={printer.id}
                             className="px-2 py-0.5 bg-white/10 rounded-md text-xs text-gray-300 border border-white/20"
@@ -559,16 +588,16 @@ export const FilamentDetailPage: React.FC = () => {
                     <span className="text-purple-300 font-semibold">{t('filamentDetailPage.manufacturer')}</span>
                     {/* Рейтинг и успешность официального пресета */}
                     <div className="flex items-center space-x-2">
-                      {officialPreset.rating !== null && officialPreset.rating !== undefined && (
+                      {primaryPreset.rating !== null && primaryPreset.rating !== undefined && (
                         <div className="flex items-center space-x-1" title={t('filamentDetailPage.presetRatingTitle')}>
                           <Star className="w-4 h-4 text-yellow-400 fill-current" />
-                          <span className="text-white font-semibold">{officialPreset.rating.toFixed(1)}</span>
+                          <span className="text-white font-semibold">{primaryPreset.rating.toFixed(1)}</span>
                         </div>
                       )}
-                      {officialPreset.success_rate !== null && officialPreset.success_rate !== undefined && (
+                      {primaryPreset.success_rate !== null && primaryPreset.success_rate !== undefined && (
                         <div className="flex items-center space-x-1" title={t('filamentDetailPage.presetSuccessTitle')}>
                           <CheckCircle className="w-4 h-4 text-green-400" />
-                          <span className="text-green-400 text-sm font-semibold">{officialPreset.success_rate.toFixed(1)}%</span>
+                          <span className="text-green-400 text-sm font-semibold">{primaryPreset.success_rate.toFixed(1)}%</span>
                         </div>
                       )}
                     </div>
@@ -579,65 +608,65 @@ export const FilamentDetailPage: React.FC = () => {
                     <Thermometer className="w-5 h-5 text-red-400" />
                     <div>
                       <div className="text-gray-400 text-sm">{t('filamentDetailPage.nozzle')}</div>
-                      <div className="text-white font-semibold">{officialPreset.extruder_temp}°C</div>
+                      <div className="text-white font-semibold">{primaryPreset.extruder_temp}°C</div>
                     </div>
                   </div>
                   <div className="flex items-center space-x-2">
                     <Thermometer className="w-5 h-5 text-red-400" />
                     <div>
                       <div className="text-gray-400 text-sm">{t('filamentDetailPage.bed')}</div>
-                      <div className="text-white font-semibold">{officialPreset.bed_temp}°C</div>
+                      <div className="text-white font-semibold">{primaryPreset.bed_temp}°C</div>
                     </div>
                   </div>
                   <div className="flex items-center space-x-2">
                     <Gauge className="w-5 h-5 text-blue-400" />
                     <div>
                       <div className="text-gray-400 text-sm">{t('filamentDetailPage.speed')}</div>
-                      <div className="text-white font-semibold">{officialPreset.print_speed}mm/s</div>
+                      <div className="text-white font-semibold">{primaryPreset.print_speed}mm/s</div>
                     </div>
                   </div>
-                  {officialPreset.travel_speed && (
+                  {primaryPreset.travel_speed && (
                     <div className="flex items-center space-x-2">
                       <Wind className="w-5 h-5 text-cyan-400" />
                       <div>
                         <div className="text-gray-400 text-sm">{t('filamentDetailPage.travel')}</div>
-                        <div className="text-white font-semibold">{officialPreset.travel_speed}mm/s</div>
+                        <div className="text-white font-semibold">{primaryPreset.travel_speed}mm/s</div>
                       </div>
                     </div>
                   )}
-                  {officialPreset.flow_rate && (
+                  {primaryPreset.flow_rate && (
                     <div className="flex items-center space-x-2">
                       <Gauge className="w-5 h-5 text-yellow-400" />
                       <div>
                         <div className="text-gray-400 text-sm">{t('filamentDetailPage.flowRate')}</div>
-                        <div className="text-white font-semibold">{officialPreset.flow_rate}%</div>
+                        <div className="text-white font-semibold">{primaryPreset.flow_rate}%</div>
                       </div>
                     </div>
                   )}
-                  {officialPreset.fan_speed !== null && (
+                  {primaryPreset.fan_speed !== null && (
                     <div className="flex items-center space-x-2">
                       <Fan className="w-5 h-5 text-orange-400" />
                       <div>
                         <div className="text-gray-400 text-sm">{t('filamentDetailPage.fan')}</div>
-                        <div className="text-white font-semibold">{officialPreset.fan_speed}%</div>
+                        <div className="text-white font-semibold">{primaryPreset.fan_speed}%</div>
                       </div>
                     </div>
                   )}
-                  {officialPreset.retraction_length && (
+                  {primaryPreset.retraction_length && (
                     <div className="flex items-center space-x-2">
                       <Wind className="w-5 h-5 text-purple-400" />
                       <div>
                         <div className="text-gray-400 text-sm">{t('filamentDetailPage.retraction')}</div>
-                        <div className="text-white font-semibold">{officialPreset.retraction_length}mm</div>
+                        <div className="text-white font-semibold">{primaryPreset.retraction_length}mm</div>
                       </div>
                     </div>
                   )}
-                  {officialPreset.retraction_speed && (
+                  {primaryPreset.retraction_speed && (
                     <div className="flex items-center space-x-2">
                       <Gauge className="w-5 h-5 text-indigo-400" />
                       <div>
                         <div className="text-gray-400 text-sm">{t('filamentDetailPage.retractionSpeed')}</div>
-                        <div className="text-white font-semibold">{officialPreset.retraction_speed}mm/s</div>
+                        <div className="text-white font-semibold">{primaryPreset.retraction_speed}mm/s</div>
                       </div>
                     </div>
                   )}
@@ -662,50 +691,50 @@ export const FilamentDetailPage: React.FC = () => {
                 </div>
                 
                 {/* Расширенные параметры OrcaSlicer */}
-                {officialPreset.orcaslicer_settings && Object.keys(officialPreset.orcaslicer_settings).length > 0 && (
+                {primaryPreset.orcaslicer_settings && Object.keys(primaryPreset.orcaslicer_settings).length > 0 && (
                   <div className="mt-4 pt-4 border-t border-white/10">
                     <h4 className="text-sm font-medium text-gray-300 mb-3">{t('filamentDetailPage.advancedSettings')}</h4>
                     <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-                      {officialPreset.orcaslicer_settings.nozzle_temperature_range_low?.[0] && officialPreset.orcaslicer_settings.nozzle_temperature_range_high?.[0] && (
+                      {primaryPreset.orcaslicer_settings.nozzle_temperature_range_low?.[0] && primaryPreset.orcaslicer_settings.nozzle_temperature_range_high?.[0] && (
                         <div className="flex items-center space-x-2">
                           <Thermometer className="w-4 h-4 text-orange-400" />
                           <div>
                             <div className="text-gray-400 text-xs">{t('filamentDetailPage.tempRange')}</div>
                             <div className="text-white text-sm font-semibold">
-                              {officialPreset.orcaslicer_settings.nozzle_temperature_range_low[0]}–{officialPreset.orcaslicer_settings.nozzle_temperature_range_high[0]}°C
+                              {primaryPreset.orcaslicer_settings.nozzle_temperature_range_low[0]}–{primaryPreset.orcaslicer_settings.nozzle_temperature_range_high[0]}°C
                             </div>
                           </div>
                         </div>
                       )}
-                      {officialPreset.orcaslicer_settings.filament_max_volumetric_speed?.[0] && (
+                      {primaryPreset.orcaslicer_settings.filament_max_volumetric_speed?.[0] && (
                         <div className="flex items-center space-x-2">
                           <Gauge className="w-4 h-4 text-blue-400" />
                           <div>
                             <div className="text-gray-400 text-xs">{t('filamentDetailPage.volumetricSpeed')}</div>
                             <div className="text-white text-sm font-semibold">
-                              {officialPreset.orcaslicer_settings.filament_max_volumetric_speed[0]}mm³/s
+                              {primaryPreset.orcaslicer_settings.filament_max_volumetric_speed[0]}mm³/s
                             </div>
                           </div>
                         </div>
                       )}
-                      {officialPreset.orcaslicer_settings.fan_min_speed?.[0] && officialPreset.orcaslicer_settings.fan_max_speed?.[0] && (
+                      {primaryPreset.orcaslicer_settings.fan_min_speed?.[0] && primaryPreset.orcaslicer_settings.fan_max_speed?.[0] && (
                         <div className="flex items-center space-x-2">
                           <Fan className="w-4 h-4 text-cyan-400" />
                           <div>
                             <div className="text-gray-400 text-xs">{t('filamentDetailPage.fan')}</div>
                             <div className="text-white text-sm font-semibold">
-                              {officialPreset.orcaslicer_settings.fan_min_speed[0]}–{officialPreset.orcaslicer_settings.fan_max_speed[0]}%
+                              {primaryPreset.orcaslicer_settings.fan_min_speed[0]}–{primaryPreset.orcaslicer_settings.fan_max_speed[0]}%
                             </div>
                           </div>
                         </div>
                       )}
-                      {officialPreset.orcaslicer_settings.chamber_temperature?.[0] && Number(officialPreset.orcaslicer_settings.chamber_temperature[0]) > 0 && (
+                      {primaryPreset.orcaslicer_settings.chamber_temperature?.[0] && Number(primaryPreset.orcaslicer_settings.chamber_temperature[0]) > 0 && (
                         <div className="flex items-center space-x-2">
                           <Thermometer className="w-4 h-4 text-red-400" />
                           <div>
                             <div className="text-gray-400 text-xs">{t('filamentDetailPage.chamber')}</div>
                             <div className="text-white text-sm font-semibold">
-                              {officialPreset.orcaslicer_settings.chamber_temperature[0]}°C
+                              {primaryPreset.orcaslicer_settings.chamber_temperature[0]}°C
                             </div>
                           </div>
                         </div>
@@ -737,7 +766,9 @@ export const FilamentDetailPage: React.FC = () => {
                     return (
                       <div
                         key={preset.id}
-                        className="p-4 bg-white/5 rounded-xl border border-white/10 hover:bg-white/10 transition-all"
+                        onClick={() => setDetailPreset(preset as unknown as Preset)}
+                        className="p-4 bg-white/5 rounded-xl border border-white/10 hover:bg-white/10 hover:border-white/20 transition-all cursor-pointer"
+                        title={t('filamentDetailPage.viewDetails')}
                       >
                         <div className="flex items-center justify-between mb-3">
                           <div className="flex items-center space-x-3 flex-1">
@@ -747,6 +778,7 @@ export const FilamentDetailPage: React.FC = () => {
                             <div className="flex-1">
                               <div className="flex items-center gap-2 mb-1">
                                 <p className="text-white font-semibold text-lg">{preset.name}</p>
+                                <Eye className="w-4 h-4 text-gray-500 shrink-0" />
                               </div>
                               {preset.description && (
                                 <p className="text-gray-400 text-sm">{preset.description}</p>
@@ -769,7 +801,7 @@ export const FilamentDetailPage: React.FC = () => {
                           <div className="text-right ml-4">
                             {/* Переключатель синхронизации - показываем для всех пресетов пользователя (если авторизован) */}
                             {user && (
-                              <div className="mb-2 flex justify-end">
+                              <div className="mb-2 flex justify-end" onClick={(e) => e.stopPropagation()}>
                                 <PresetSyncToggle preset={preset} size="sm" />
                               </div>
                             )}
@@ -1092,6 +1124,12 @@ export const FilamentDetailPage: React.FC = () => {
             }}
           />
         )}
+
+        <ViewPresetModal
+          isOpen={detailPreset !== null}
+          preset={detailPreset}
+          onClose={() => setDetailPreset(null)}
+        />
       </div>
       </div>
     </>

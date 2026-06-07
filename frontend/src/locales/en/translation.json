@@ -1078,7 +1078,10 @@
     "pageOf": "Page {{page}} of {{total}}",
     "next": "Next",
     "noReviews": "No reviews yet",
-    "beFirstReviewer": "Be the first to review this material!"
+    "beFirstReviewer": "Be the first to review this material!",
+    "viewDetails": "View details",
+    "generativePreset": "Generative preset",
+    "topPreset": "Top preset"
   },
   "createFilament": {
     "createTitle": "Create new material",
@@ -3668,7 +3671,42 @@
   },
   "common": {
     "select": "Select...",
-    "cancel": "Cancel"
+    "cancel": "Cancel",
+    "loading": "Loading…",
+    "error": "Something went wrong"
+  },
+  "presetVersions": {
+    "title": "Version history",
+    "openButton": "Version history",
+    "timeline": {
+      "labeledOnly": "Labeled only",
+      "empty": "No versions yet",
+      "current": "Current"
+    },
+    "diff": {
+      "selectPrompt": "Select a version to compare with the current one.",
+      "isCurrent": "This is the current version.",
+      "comparing": "Changes from v{{from}} to v{{to}}",
+      "noChanges": "No differences.",
+      "technicalFields": "Technical fields ({{count}})"
+    },
+    "source": {
+      "web_edit": "Web edit",
+      "orca_sync": "OrcaSlicer",
+      "restore": "Restore",
+      "admin": "Admin",
+      "enrichment": "Auto",
+      "migration": "Initial"
+    },
+    "squash": {
+      "editedNtimes": "edited {{count}}×"
+    },
+    "restore": {
+      "button": "Restore v{{version}}",
+      "confirm": "Restore",
+      "confirmBody": "Restore settings to v{{version}}? This creates a new version; nothing is lost.",
+      "success": "Version restored"
+    }
   },
   "reviewCard": {
     "anonymousUser": "Anonymous user",

@@ -54,6 +54,7 @@ const CreatePresetModal = lazy(() =>
   import('../components/CreatePresetModal').then(m => ({ default: m.CreatePresetModal }))
 );
 import { ViewPresetModal } from '../components/ViewPresetModal';
+import { ModalOverlay } from '../components/ModalOverlay';
 import { CreatePrinterRequestModal } from '../components/CreatePrinterRequestModal';
 import { SettingsTab } from '../components/SettingsTab';
 import { ExportFromOrcaSlicerButton } from '../components/ExportFromOrcaSlicerButton';
@@ -2867,26 +2868,34 @@ const SpoolsTab: React.FC<SpoolsTabProps> = ({
         )}
 
         {editingSpool && (
-          <SpoolForm
-            mode="edit"
-            spool={editingSpool}
-            onSaved={() => {
-              setEditingSpool(null);
-              onRefetch();
-            }}
-            onCancel={() => setEditingSpool(null)}
-          />
+          <ModalOverlay onClose={() => setEditingSpool(null)}>
+            <div className="w-full max-w-2xl">
+              <SpoolForm
+                mode="edit"
+                spool={editingSpool}
+                onSaved={() => {
+                  setEditingSpool(null);
+                  onRefetch();
+                }}
+                onCancel={() => setEditingSpool(null)}
+              />
+            </div>
+          </ModalOverlay>
         )}
 
         {usingSpool && (
-          <UseSpoolForm
-            spool={usingSpool}
-            onSaved={() => {
-              setUsingSpool(null);
-              onRefetch();
-            }}
-            onCancel={() => setUsingSpool(null)}
-          />
+          <ModalOverlay onClose={() => setUsingSpool(null)}>
+            <div className="w-full max-w-xl">
+              <UseSpoolForm
+                spool={usingSpool}
+                onSaved={() => {
+                  setUsingSpool(null);
+                  onRefetch();
+                }}
+                onCancel={() => setUsingSpool(null)}
+              />
+            </div>
+          </ModalOverlay>
         )}
 
         {actionError && (
@@ -3328,7 +3337,8 @@ const PresetCard: React.FC<PresetCardProps> = ({ preset, onEdit, onView, onDelet
           )}
         </div>
         <div className="flex space-x-2">
-          {preset.source === 'own' ? (
+          {/* Edit only for own presets */}
+          {preset.source === 'own' && (
             <button
               onClick={() => onEdit?.(preset)}
               className="p-2 bg-white/10 hover:bg-white/20 rounded-lg text-white transition-all"
@@ -3336,15 +3346,15 @@ const PresetCard: React.FC<PresetCardProps> = ({ preset, onEdit, onView, onDelet
             >
               <Edit className="w-4 h-4" />
             </button>
-          ) : (
-            <button
-              onClick={() => onView?.(preset)}
-              className="p-2 bg-white/10 hover:bg-white/20 rounded-lg text-white transition-all"
-              title={t('profilePage.viewPreset')}
-            >
-              <Eye className="w-4 h-4" />
-            </button>
           )}
+          {/* View (details + version history) for all presets */}
+          <button
+            onClick={() => onView?.(preset)}
+            className="p-2 bg-white/10 hover:bg-white/20 rounded-lg text-white transition-all"
+            title={t('profilePage.viewPreset')}
+          >
+            <Eye className="w-4 h-4" />
+          </button>
           {/* Переключатель синхронизации - показываем для всех пресетов */}
           <PresetSyncToggle preset={preset} size="sm" className="p-2 bg-white/10 hover:bg-white/20 rounded-lg" />
           <button

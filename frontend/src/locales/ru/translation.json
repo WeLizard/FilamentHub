@@ -34,7 +34,7 @@
     "footer_terms": "Пользовательское соглашение",
     "footer_privacy": "Политика конфиденциальности",
     "footer_consent": "Обработка данных",
-    "footer_copyright": "\u00a9 {{year}} FilamentHub"
+    "footer_copyright": "© {{year}} FilamentHub"
   },
   "authModal": {
     "password_strength_weak": "Слабый",
@@ -1204,7 +1204,10 @@
     "pageOf": "Страница {{page}} из {{total}}",
     "next": "Вперёд",
     "noReviews": "Пока нет отзывов",
-    "beFirstReviewer": "Станьте первым, кто оставит отзыв об этом материале!"
+    "beFirstReviewer": "Станьте первым, кто оставит отзыв об этом материале!",
+    "viewDetails": "Подробнее",
+    "generativePreset": "Генеративный пресет",
+    "topPreset": "Топовый пресет"
   },
   "createFilament": {
     "createTitle": "Создать новый материал",
@@ -3795,7 +3798,42 @@
   },
   "common": {
     "select": "Выберите...",
-    "cancel": "Отмена"
+    "cancel": "Отмена",
+    "loading": "Загрузка…",
+    "error": "Что-то пошло не так"
+  },
+  "presetVersions": {
+    "title": "История версий",
+    "openButton": "История версий",
+    "timeline": {
+      "labeledOnly": "Только с метками",
+      "empty": "Версий пока нет",
+      "current": "Текущая"
+    },
+    "diff": {
+      "selectPrompt": "Выберите версию для сравнения с текущей.",
+      "isCurrent": "Это текущая версия.",
+      "comparing": "Изменения с v{{from}} на v{{to}}",
+      "noChanges": "Различий нет.",
+      "technicalFields": "Технические поля ({{count}})"
+    },
+    "source": {
+      "web_edit": "Веб-правка",
+      "orca_sync": "OrcaSlicer",
+      "restore": "Откат",
+      "admin": "Админ",
+      "enrichment": "Авто",
+      "migration": "Начальная"
+    },
+    "squash": {
+      "editedNtimes": "правок: {{count}}"
+    },
+    "restore": {
+      "button": "Откатить к v{{version}}",
+      "confirm": "Откатить",
+      "confirmBody": "Откатить настройки к v{{version}}? Создастся новая версия, ничего не потеряется.",
+      "success": "Версия восстановлена"
+    }
   },
   "reviewCard": {
     "anonymousUser": "Анонимный пользователь",

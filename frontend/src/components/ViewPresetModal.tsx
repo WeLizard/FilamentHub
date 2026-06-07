@@ -2,12 +2,14 @@
 
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { X, CheckCircle2, XCircle } from 'lucide-react';
+import { X, CheckCircle2, XCircle, History } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
 import { filamentsAPI } from '../api/client';
 import type { Preset, Filament } from '../types/api';
 import { ModalOverlay } from './ModalOverlay';
 import { FilamentSummaryCard } from './FilamentSummaryCard';
+import { PresetHistoryModal } from './presetVersions/PresetHistoryModal';
+import { useAuth } from '../contexts/AuthContext';
 
 // Вспомогательные компоненты для отображения значений
 interface ViewFieldProps {
@@ -70,7 +72,11 @@ export const ViewPresetModal: React.FC<ViewPresetModalProps> = ({
   preset,
 }) => {
   const { t } = useTranslation();
+  const { user } = useAuth();
   const [activeTab, setActiveTab] = useState<'profile' | 'cooling' | 'override' | 'retraction' | 'gcode' | 'extruder_mm' | 'compatibility' | 'notes'>('profile');
+  const [showHistory, setShowHistory] = useState(false);
+
+  const canRestore = !!user && !!preset && (user.id === preset.user_id || user.role === 'admin');
 
   // Загружаем данные филамента
   const { data: editingFilament } = useQuery<Filament>({
@@ -834,7 +840,18 @@ export const ViewPresetModal: React.FC<ViewPresetModalProps> = ({
         </div>
 
         {/* Footer */}
-        <div className="flex justify-end p-6 border-t border-white/10">
+        <div className="flex justify-between items-center p-6 border-t border-white/10">
+          {preset?.id ? (
+            <button
+              onClick={() => setShowHistory(true)}
+              className="flex items-center gap-2 px-4 py-3 text-gray-400 hover:text-white transition-colors text-sm"
+            >
+              <History className="w-4 h-4" />
+              {t('presetVersions.openButton')}
+            </button>
+          ) : (
+            <span />
+          )}
           <button
             onClick={onClose}
             className="px-6 py-3 bg-white/10 hover:bg-white/20 text-white rounded-xl transition-all"
@@ -843,6 +860,14 @@ export const ViewPresetModal: React.FC<ViewPresetModalProps> = ({
           </button>
         </div>
       </div>
+
+      {showHistory && preset?.id && (
+        <PresetHistoryModal
+          presetId={preset.id}
+          canRestore={canRestore}
+          onClose={() => setShowHistory(false)}
+        />
+      )}
     </ModalOverlay>
   );
 };
