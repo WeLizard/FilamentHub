@@ -7,7 +7,7 @@ from urllib.parse import quote
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from fastapi.responses import JSONResponse
 import json
-from sqlalchemy import func, or_, select
+from sqlalchemy import func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -304,7 +304,21 @@ async def create_preset(
     
     db.add(preset)
     await db.flush()  # Получаем ID пресета
-    
+
+    # Правило: один официальный пресет на филамент. При создании нового
+    # официального снимаем флаг с прежних официальных этого филамента
+    # (последний назначенный становится официальным).
+    if data.is_official and data.filament_id:
+        await db.execute(
+            update(Preset)
+            .where(
+                Preset.filament_id == data.filament_id,
+                Preset.is_official == True,
+                Preset.id != preset.id,
+            )
+            .values(is_official=False)
+        )
+
     # Автоматически создаём запись в user_saved_presets (самосохранение)
     # Это нужно для единой логики синхронизации - все пресеты в "Профили филамента" хранят sync в user_saved_presets
     from app.models.user_saved_preset import UserSavedPreset
@@ -342,7 +356,14 @@ async def create_preset(
             first_link_obj = first_link.scalar_one_or_none()
             if first_link_obj:
                 first_link_obj.is_primary = True
-    
+
+    # Record initial version (v1) in the timeline.
+    from app.models.preset_version import PresetVersionSource
+    from app.services import preset_version_service
+    await preset_version_service.record_version(
+        db, preset, source=PresetVersionSource.WEB_EDIT, user_id=current_user.id
+    )
+
     await db.commit()
     await db.refresh(preset, ["printer_links"])
     
@@ -502,8 +523,15 @@ async def update_preset(
                 )
                 db.add(preset_printer)
 
+    # Record a version after the edit (no-op if settings unchanged).
+    from app.models.preset_version import PresetVersionSource
+    from app.services import preset_version_service
+    await preset_version_service.record_version(
+        db, preset, source=PresetVersionSource.WEB_EDIT, user_id=current_user.id
+    )
+
     await db.commit()
-    
+
     # Обновляем взвешенный пресет для этого филамента (если достаточно пресетов и есть filament_id)
     if preset.filament_id:
         try:

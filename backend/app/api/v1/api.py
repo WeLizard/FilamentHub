@@ -19,6 +19,7 @@ from app.api.v1.endpoints import (
     orca_preset_slot_sync,
     orca_sync,
     preset_slots,
+    preset_versions,
     presets,
     printer_profiles,
     printer_requests,
@@ -39,6 +40,7 @@ api_router.include_router(devices.router)
 api_router.include_router(brand_requests.router)
 api_router.include_router(filaments.router)
 api_router.include_router(presets.router)
+api_router.include_router(preset_versions.router)
 api_router.include_router(qr.router)
 api_router.include_router(printers.router)
 api_router.include_router(printer_profiles.router)

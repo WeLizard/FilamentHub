@@ -2882,6 +2882,28 @@ async def import_filament_presets(
                     db=db,
                 )
                 logger.debug(f"Filament preset {idx+1} processed: status={result.status}, fhub_id={result.fhub_id}")
+
+                # Record a version for the synced preset (best-effort: never
+                # let version bookkeeping break the sync). Squash logic folds
+                # rapid consecutive orca_sync edits into one timeline entry.
+                if result.status in ("created", "updated") and result.fhub_id:
+                    try:
+                        from app.models.preset_version import PresetVersionSource
+                        from app.services import preset_version_service
+
+                        synced_preset = await db.get(Preset, result.fhub_id)
+                        if synced_preset is not None:
+                            await preset_version_service.record_version(
+                                db,
+                                synced_preset,
+                                source=PresetVersionSource.ORCA_SYNC,
+                                user_id=current_user.id,
+                            )
+                    except Exception:  # noqa: BLE001
+                        logger.warning(
+                            f"Failed to record version for preset {result.fhub_id}",
+                            exc_info=True,
+                        )
             except HTTPException as exc:
                 logger.warning(f"Failed to sync filament preset {idx+1} (name='{item.name}'): {exc.detail}")
                 result = OrcaSyncResult(

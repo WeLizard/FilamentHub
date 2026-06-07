@@ -230,6 +230,10 @@ ERR_BUNDLE_IMPORT_FAILED = "ERR_BUNDLE_IMPORT_FAILED"              # params: {bu
 ERR_BUNDLE_FILE_TOO_LARGE = "ERR_BUNDLE_FILE_TOO_LARGE"            # params: {size_mb, max_mb}
 ERR_BUNDLE_FILE_REQUIRED = "ERR_BUNDLE_FILE_REQUIRED"
 
+# Preset version history
+ERR_PRESET_VERSION_NOT_FOUND = "ERR_PRESET_VERSION_NOT_FOUND"      # params: {version_id}
+ERR_PRESET_VERSION_FORBIDDEN = "ERR_PRESET_VERSION_FORBIDDEN"      # params: {preset_id}
+
 
 def raise_error(
     status_code: int,

@@ -61,6 +61,12 @@ class Settings(BaseSettings):
     DEFAULT_PAGE_SIZE: int = 50
     MAX_PAGE_SIZE: int = 100
 
+    # Preset version history
+    # Within this window, consecutive orca_sync edits by the same user fold
+    # into the latest unlabeled version instead of creating a new one, so the
+    # timeline isn't spammed when a user tweaks settings in the slicer.
+    PRESET_VERSION_SQUASH_WINDOW_MINUTES: int = 10
+
     # File Upload
     MAX_UPLOAD_SIZE_MB: int = 50
     MAX_FILES_PER_REQUEST: int = 10  # Максимум файлов на одну заявку

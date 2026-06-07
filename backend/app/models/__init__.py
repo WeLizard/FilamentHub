@@ -18,6 +18,7 @@ from app.models.filament_review import FilamentReview
 from app.models.material_mapping import MaterialMapping, MaterialMappingPriority
 from app.models.preset import Preset, PresetModerationStatus
 from app.models.preset_printer import PresetPrinter
+from app.models.preset_version import PresetVersion, PresetVersionSource
 from app.models.printer import Printer
 from app.models.printer_request import PrinterRequest, PrinterRequestStatus
 from app.models.printer_profile import PrinterProfile
@@ -70,6 +71,8 @@ __all__ = [
     "PresetGateStateSource",
     "PresetUsageEvent",
     "PresetUsageEventType",
+    "PresetVersion",
+    "PresetVersionSource",
     "RevokedToken",
     "PresetModerationStatus",
     "PresetPrinter",
