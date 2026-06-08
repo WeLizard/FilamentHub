@@ -4,7 +4,8 @@ from datetime import datetime
 from enum import Enum
 from typing import TYPE_CHECKING
 
-from sqlalchemy import DateTime, Enum as SQLEnum, ForeignKey, Integer, JSON, String, Text
+from sqlalchemy import JSON, DateTime, ForeignKey, String, Text
+from sqlalchemy import Enum as SQLEnum
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.sql import func
 
@@ -46,11 +47,11 @@ class Notification(Base):
     )
     title: Mapped[str] = mapped_column(String(200), nullable=False)
     message: Mapped[str] = mapped_column(Text, nullable=False)
-    
+
     # Link to related entity (optional)
     link: Mapped[str | None] = mapped_column(String(500), nullable=True)
     # link: ссылка на связанную сущность (например, /filaments/123 или /presets/456)
-    
+
     # Metadata (используем extra_data вместо metadata, так как metadata зарезервировано в SQLAlchemy)
     extra_data: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     # extra_data: JSON с дополнительными данными (например, preset_id, brand_id, filament_id)

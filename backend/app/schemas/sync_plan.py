@@ -1,9 +1,7 @@
 """Pydantic schemas для SyncPlan API."""
 
-from datetime import datetime
 
 from pydantic import BaseModel, Field
-
 
 # ── Sync Plan ─────────────────────────────────────────────────
 

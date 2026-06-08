@@ -8,10 +8,7 @@ from sqlalchemy import case, desc, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-logger = logging.getLogger(__name__)
-
 from app.core.dependencies import get_current_user
-from app.core.utils import like_pattern
 from app.core.errors import (
     ERR_BRAND_NOT_FOUND,
     ERR_FILAMENT_ALREADY_EXISTS,
@@ -21,6 +18,7 @@ from app.core.errors import (
     ERR_NO_PERMISSION_EDIT_FILAMENT,
     raise_error,
 )
+from app.core.utils import like_pattern
 from app.db.session import get_db
 from app.models.filament import Filament
 from app.models.printer import Printer
@@ -31,6 +29,8 @@ from app.schemas.filament import (
     FilamentResponse,
     FilamentUpdate,
 )
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/filaments", tags=["filaments"])
 
@@ -82,7 +82,7 @@ async def list_filaments(
 ) -> FilamentListResponse:
     """Получить список материалов."""
     from app.models.brand import Brand
-    
+
     # Build query
     query = select(Filament).options(selectinload(Filament.brand))
     if active_only:
@@ -258,33 +258,33 @@ async def get_material_types(
 ) -> list[str]:
     """
     Получить список уникальных типов материалов.
-    
+
     Возвращает типы из material_mappings (начальные типы из миграций) +
     типы из активных филаментов (если есть).
     """
     from app.models.material_mapping import MaterialMapping
-    
+
     # Получаем типы из material_mappings (начальные типы, заполненные миграцией)
     mapping_query = select(MaterialMapping.material_type).distinct()
     if active_only:
         mapping_query = mapping_query.where(MaterialMapping.active == True)
     mapping_query = mapping_query.order_by(MaterialMapping.material_type)
-    
+
     mapping_result = await db.execute(mapping_query)
     mapping_types = {row[0] for row in mapping_result.all() if row[0]}
-    
+
     # Получаем типы из активных филаментов (если есть дополнительные)
     filament_query = select(Filament.material_type).distinct()
     if active_only:
         filament_query = filament_query.where(Filament.active == True)
     filament_query = filament_query.order_by(Filament.material_type)
-    
+
     filament_result = await db.execute(filament_query)
     filament_types = {row[0] for row in filament_result.all() if row[0]}
-    
+
     # Объединяем оба множества (уникальные типы)
     all_material_types = sorted(mapping_types | filament_types)
-    
+
     return all_material_types
 
 
@@ -330,7 +330,7 @@ async def get_filament_presets(
     from app.models.preset import PresetModerationStatus
     from app.models.preset_printer import PresetPrinter
     from app.schemas.printer import PrinterResponse
-    
+
     query = select(Preset).options(
         selectinload(Preset.printer_links).selectinload(PresetPrinter.printer)
     ).where(
@@ -399,17 +399,17 @@ async def create_filament(
     """Создать материал."""
     # Check if brand exists
     from app.models.brand import Brand
-    from app.services.material_mapping_service import (
-        get_material_preset,
-        create_material_mapping,
-    )
     from app.models.material_mapping import MaterialMappingPriority
+    from app.services.material_mapping_service import (
+        create_material_mapping,
+        get_material_preset,
+    )
 
     brand_result = await db.execute(select(Brand).where(Brand.id == data.brand_id))
     brand = brand_result.scalar_one_or_none()
     if not brand:
         raise_error(404, ERR_BRAND_NOT_FOUND)
-    
+
     # Проверка прав доступа:
     # - Админ может создавать для любого бренда
     # - Сотрудник бренда может создавать для своего бренда
@@ -418,18 +418,18 @@ async def create_filament(
     if current_user.role != UserRole.ADMIN and current_user.brand_id != data.brand_id:
         if brand.verified:
             raise_error(403, ERR_NO_PERMISSION_CREATE_FILAMENT)
-    
+
     # Проверка текстовых полей на плохие слова
     from app.services.preset_moderation import validate_text_field
     is_valid, error_msg = await validate_text_field(data.name, db, "filament_name")
     if not is_valid:
         raise HTTPException(status_code=400, detail=error_msg)
-    
+
     if data.description:
         is_valid, error_msg = await validate_text_field(data.description, db, "filament_description")
         if not is_valid:
             raise HTTPException(status_code=400, detail=error_msg)
-    
+
     if data.color_name:
         is_valid, error_msg = await validate_text_field(data.color_name, db, "color_name")
         if not is_valid:
@@ -497,14 +497,14 @@ async def create_filament(
     filament = Filament(**filament_payload, slug=slug)
     db.add(filament)
     await db.flush()  # Получаем ID без коммита
-    
+
     # Если бренд верифицирован - автоматически генерируем QR-код
     if brand.verified:
         from app.services.qr_service import generate_short_code, save_qr_code_image
-        
+
         # Генерируем короткий код
         short_code = generate_short_code(filament.id)
-        
+
         # Проверяем уникальность (на случай коллизий)
         existing = await db.execute(
             select(Filament).where(Filament.qr_code == short_code)
@@ -512,19 +512,19 @@ async def create_filament(
         if existing.scalar_one_or_none():
             # Если коллизия - добавляем суффикс
             short_code = f"{short_code}-{filament.id % 1000}"
-        
+
         filament.qr_code = short_code
-        
+
         # Сохраняем изображения QR-кода на диск (для печати на этикетках)
         # Размеры: 300px (веб), 600px (стандартная печать), 1200px (высокое качество)
         save_qr_code_image(short_code, sizes=[300, 600, 1200])
-    
+
     await db.commit()
     await db.refresh(filament)
 
     # Автоматически создаём маппинг для нового типа материала, если его ещё нет
     material_type_upper = data.material_type.upper().strip()
-    
+
     # Проверяем, есть ли уже маппинг для этого типа
     from app.models.material_mapping import MaterialMapping
     existing_mapping = await db.execute(
@@ -533,7 +533,7 @@ async def create_filament(
             MaterialMapping.active == True,
         )
     )
-    
+
     if not existing_mapping.scalar_one_or_none():
         # Маппинга нет - определяем базовый пресет через сервис
         base_preset = await get_material_preset(
@@ -541,7 +541,7 @@ async def create_filament(
             db,
             log_unknown=True,
         )
-        
+
         # Создаём автоматический маппинг
         try:
             await create_material_mapping(
@@ -576,25 +576,25 @@ async def update_filament(
 
     if not filament:
         raise_error(404, ERR_FILAMENT_NOT_FOUND)
-    
+
     # Проверка прав доступа: только админ или сотрудник бренда может редактировать материалы
     if current_user.role != UserRole.ADMIN and current_user.brand_id != filament.brand_id:
         raise_error(403, ERR_NO_PERMISSION_EDIT_FILAMENT)
-    
+
     # Проверка текстовых полей на плохие слова
     from app.services.preset_moderation import validate_text_field
     update_data = data.model_dump(exclude_unset=True)
-    
+
     if "name" in update_data:
         is_valid, error_msg = await validate_text_field(update_data["name"], db, "filament_name")
         if not is_valid:
             raise HTTPException(status_code=400, detail=error_msg)
-    
+
     if "description" in update_data:
         is_valid, error_msg = await validate_text_field(update_data["description"], db, "filament_description")
         if not is_valid:
             raise HTTPException(status_code=400, detail=error_msg)
-    
+
     if "color_name" in update_data:
         is_valid, error_msg = await validate_text_field(update_data["color_name"], db, "color_name")
         if not is_valid:
@@ -622,7 +622,7 @@ async def delete_filament(
 
     if not filament:
         raise_error(404, ERR_FILAMENT_NOT_FOUND)
-    
+
     # Проверка прав доступа: только админ или сотрудник бренда может удалять материалы
     if current_user.role != UserRole.ADMIN and current_user.brand_id != filament.brand_id:
         raise_error(403, ERR_NO_PERMISSION_DELETE_FILAMENT)
@@ -639,17 +639,17 @@ async def get_compatible_printers(
 ) -> list[dict]:
     """
     Получить список принтеров, совместимых с филаментом.
-    
+
     Использует VIEW filament_printer_compatibility_view для вывода совместимости
     на основе существующих связей через Preset и PrintProfile.
     """
     from sqlalchemy import text
-    
+
     # Проверяем существование филамента
     filament = await db.get(Filament, filament_id)
     if not filament:
         raise_error(404, ERR_FILAMENT_NOT_FOUND)
-    
+
     # Используем VIEW для получения совместимых принтеров
     query = text("""
         SELECT DISTINCT
@@ -664,19 +664,19 @@ async def get_compatible_printers(
         GROUP BY printer_id, printer_slug, printer_name, relation_source
         ORDER BY confidence_score DESC, printer_name
     """)
-    
+
     result = await db.execute(query, {"filament_id": filament_id, "min_confidence": min_confidence})
     rows = result.fetchall()
-    
+
     # Получаем дополнительную информацию о принтерах
     printer_ids = [row[0] for row in rows]
     if not printer_ids:
         return []
-    
+
     printers_query = select(Printer).where(Printer.id.in_(printer_ids))
     printers_result = await db.execute(printers_query)
     printers = {p.id: p for p in printers_result.scalars().all()}
-    
+
     # Формируем ответ
     compatible_printers = []
     for row in rows:
@@ -691,7 +691,7 @@ async def get_compatible_printers(
                 "relation_source": relation_source,
                 "confidence_score": float(confidence_score),
             })
-    
+
     return compatible_printers
 
 

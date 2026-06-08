@@ -2,7 +2,6 @@
 
 import json
 from datetime import datetime
-from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
@@ -22,23 +21,23 @@ class BrandRequestCreate(BaseModel):
 
     request_type: BrandRequestType = Field(..., description="Тип заявки: join или create")
     brand_id: int | None = Field(None, gt=0, description="ID бренда (для JOIN заявок)")
-    
+
     # Для CREATE заявок
     new_brand_name: str | None = Field(None, max_length=100)
     new_brand_slug: str | None = Field(None, max_length=100)
     new_brand_description: str | None = None
     new_brand_website: str | None = Field(None, max_length=255)
-    
+
     message: str | None = Field(None, max_length=1000, description="Дополнительное сообщение")
-    
+
     # Структурированные поля для доказательств
     company_email: str | None = Field(None, max_length=255, description="Email от компании (например: info@company.ru, manager@company.ru)")
     company_website: str | None = Field(None, max_length=500, description="Сайт компании/бренда (для проверки email на сайте)")
     social_media_urls: list[str] | None = Field(None, description="Ссылки на соцсети бренда (Instagram, VK, Facebook и т.д.)")
-    
+
     proof_text: str | None = Field(
-        None, 
-        max_length=2000, 
+        None,
+        max_length=2000,
         description="Описание подтверждающих документов (общее описание, дополнительные детали). Обязательно для CREATE заявок, необязательно для JOIN заявок."
     )
     proof_files: list[dict[str, str]] | None = Field(
@@ -61,12 +60,12 @@ class BrandRequestResponse(BaseModel):
     new_brand_description: str | None = None
     new_brand_website: str | None = None
     message: str | None = None
-    
+
     # Структурированные поля для доказательств
     company_email: str | None = None
     company_website: str | None = None
     social_media_urls: list[str] | None = None
-    
+
     proof_text: str | None = None
     proof_files: list[dict[str, str]] | None = None
     status: BrandRequestStatus

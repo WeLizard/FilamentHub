@@ -1,6 +1,7 @@
 """Application configuration."""
 
 from urllib.parse import quote_plus
+
 from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -77,11 +78,11 @@ class Settings(BaseSettings):
 
     # OrcaSlicer bundles
     ORCA_SYSTEM_PRESETS_PATH: str = "docs/orca_bundles/system_presets"
-    
+
     # Distributions (downloadable files)
     DISTRIBUTIONS_DIR: str = "distributions"
     ORCASLICER_DISTRIBUTIONS_DIR: str = "distributions/orcaslicer"
-    
+
     # QR codes
     QR_CODES_DIR: str = "uploads/qr_codes"  # Изображения QR-кодов для печати
 

@@ -4,14 +4,13 @@ from datetime import datetime
 from enum import Enum
 from typing import TYPE_CHECKING
 
-from sqlalchemy import Boolean, ForeignKey, Integer, String, Text
+from sqlalchemy import ForeignKey, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.sql import func
 
 from app.db.base import Base
 
 if TYPE_CHECKING:
-    from app.models.printer import Printer
     from app.models.user import User
 
 
@@ -26,7 +25,7 @@ class PrinterRequestStatus(str, Enum):
 class PrinterRequest(Base):
     """
     Заявка на добавление нового принтера в базу.
-    
+
     Пользователи могут предложить добавить редкий принтер,
     который отсутствует в базе.
     """
@@ -45,7 +44,7 @@ class PrinterRequest(Base):
     model: Mapped[str] = mapped_column(String(100), nullable=False)
     slug: Mapped[str] = mapped_column(String(200), nullable=False)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
-    
+
     # Optional printer specs
     build_volume_x: Mapped[float | None] = mapped_column(nullable=True)
     build_volume_y: Mapped[float | None] = mapped_column(nullable=True)

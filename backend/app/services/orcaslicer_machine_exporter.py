@@ -10,13 +10,13 @@ from typing import Any, Mapping
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.models.print_profile import PrintProfile
 from app.models.printer import Printer
 from app.models.printer_profile import PrinterProfile
-from app.models.print_profile import PrintProfile
 from app.services.profile_validator import (
-    validate_printer_profile,
-    validate_print_profile,
     log_validation_result,
+    validate_print_profile,
+    validate_printer_profile,
 )
 
 logger = logging.getLogger(__name__)
@@ -96,7 +96,7 @@ def _normalize_printable_area(area: Any) -> list[str] | None:
 def _generate_orca_tag(printer: Printer | None, vendor: str | None) -> str:
     """
     Генерировать тег для OrcaSlicer на основе принтера или vendor.
-    
+
     Примеры:
     - @Voron (из printer.manufacturer)
     - @BambuLab (из printer.manufacturer)
@@ -114,15 +114,15 @@ def _generate_orca_tag(printer: Printer | None, vendor: str | None) -> str:
             elif tag.endswith(" Labs"):
                 tag = tag[:-5]
             return tag
-        
+
         # Если нет manufacturer, используем vendor
         if printer.vendor:
             return printer.vendor.strip()
-    
+
     # Используем vendor из профиля
     if vendor:
         return vendor.strip()
-    
+
     # По умолчанию для пользовательских профилей
     return "fh"
 
@@ -134,12 +134,12 @@ def _format_printer_profile_name_for_orca(
 ) -> str:
     """
     Сформировать имя PrinterProfile в формате OrcaSlicer.
-    
+
     Формат: "{Printer.name} {nozzle} nozzle"
     Примеры:
     - "Voron 2.4 350 0.4 nozzle"
     - "Bambu Lab X1 Carbon 0.4 nozzle"
-    
+
     Если printer не указан или nozzle не указан, использует profile.name как есть.
     """
     # Определяем правильное имя принтера
@@ -161,11 +161,11 @@ def _format_printer_profile_name_for_orca(
         else:
             # Используем printer.name как есть
             printer_name = printer.name
-    
+
     if not printer_name:
         # Если нет принтера или имени, используем текущее имя профиля
         return profile.name
-    
+
     # Получаем диаметр сопла
     nozzle_diameter = nozzle
     if nozzle_diameter is None:
@@ -175,11 +175,11 @@ def _format_printer_profile_name_for_orca(
         # Если нет, берем из printer
         elif printer and printer.nozzle_diameter:
             nozzle_diameter = printer.nozzle_diameter
-    
+
     if nozzle_diameter is None:
         # Если всё равно нет сопла, используем имя принтера без "nozzle"
         return printer_name
-    
+
     # Форматируем: "{Printer.name} {nozzle} nozzle"
     # Преобразуем 0.4 в "0.4", 0.6 в "0.6" и т.д.
     nozzle_str = str(nozzle_diameter).rstrip("0").rstrip(".")
@@ -192,13 +192,13 @@ def _format_print_profile_name_for_orca(
 ) -> str:
     """
     Сформировать имя PrintProfile в формате OrcaSlicer.
-    
+
     Формат: "{layer_height}mm {quality} @{tag}"
     Примеры:
     - "0.20mm Standard @Voron"
     - "0.12mm Fine @BBL X1C"
     - "0.24mm Draft @Arena X1C"
-    
+
     Если tag не указан, пытается извлечь из profile.name или использовать vendor.
     Если layer_height или quality не указаны, использует profile.name как есть.
     """
@@ -212,11 +212,11 @@ def _format_print_profile_name_for_orca(
         # Если нет в имени, используем vendor
         if not tag:
             tag = profile.vendor or "fh"
-    
+
     # Определяем layer_height и quality
     layer_height = profile.layer_height_mm
     quality = profile.quality_tier
-    
+
     # Если есть layer_height и quality, формируем стандартное имя
     if layer_height is not None and quality:
         # Форматируем layer_height: 0.2 -> "0.20mm", 0.12 -> "0.12mm"
@@ -226,7 +226,7 @@ def _format_print_profile_name_for_orca(
             if len(layer_str.split(".")[1]) < 2:
                 layer_str = f"{layer_height:.2f}".rstrip("0").rstrip(".")
         layer_str = f"{layer_str}mm"
-        
+
         # Нормализуем quality tier
         quality_map = {
             "superdraft": "Extra Draft",
@@ -237,9 +237,9 @@ def _format_print_profile_name_for_orca(
             "highdetail": "Extra Fine",
         }
         quality_display = quality_map.get(quality.lower(), quality.capitalize())
-        
+
         return f"{layer_str} {quality_display} @{tag}"
-    
+
     # Если нет layer_height или quality, проверяем текущее имя
     # Если оно уже в формате OrcaSlicer, используем его
     if profile.name and ("mm" in profile.name or "@" in profile.name):
@@ -252,11 +252,11 @@ def _format_print_profile_name_for_orca(
             if len(parts) == 2:
                 return f"{parts[0].rstrip()} @{tag}"
         return profile.name
-    
+
     # Если ничего не подходит, используем текущее имя и добавляем tag
     if tag and tag != "fh":
         return f"{profile.name} @{tag}"
-    
+
     return profile.name
 
 
@@ -267,7 +267,7 @@ async def printer_profile_to_orca_json(
     """Преобразовать `PrinterProfile` в JSON-формат OrcaSlicer (`machine`)."""
     # Начинаем с настроек из профиля
     settings = _merge_settings(profile.orcaslicer_settings)
-    
+
     # УМНАЯ СИСТЕМА: Если orcaslicer_settings пуст или содержит только базовые поля,
     # используем данные из printer.extra_metadata
     # Это позволяет экспортировать принтеры, созданные через админку, в валидный формат OrcaSlicer
@@ -278,7 +278,7 @@ async def printer_profile_to_orca_json(
         "machine_start_gcode", "machine_end_gcode",
     }
     has_important_fields = any(key in settings for key in important_fields)
-    
+
     # Если нет важных полей, пробуем взять из printer.extra_metadata
     if not has_important_fields and profile.printer and profile.printer.extra_metadata:
         printer_metadata = dict(profile.printer.extra_metadata)
@@ -300,9 +300,9 @@ async def printer_profile_to_orca_json(
         nozzle = profile.nozzle_diameters[0]
     elif printer and printer.nozzle_diameter:
         nozzle = printer.nozzle_diameter
-    
+
     orca_name = _format_printer_profile_name_for_orca(profile, printer, nozzle)
-    
+
     # Базовые поля (обязательные для OrcaSlicer)
     settings["type"] = "machine"
     settings["name"] = orca_name
@@ -342,7 +342,7 @@ async def printer_profile_to_orca_json(
                 ]
             if printer.build_volume_z:
                 settings["printable_height"] = str(printer.build_volume_z)
-    
+
     if "printable_height" not in settings and profile.printable_height_mm:
         settings["printable_height"] = str(profile.printable_height_mm)
 
@@ -379,7 +379,7 @@ async def printer_profile_to_orca_json(
     default_print_profile_name = None
     if profile.extra_metadata:
         default_print_profile_name = profile.extra_metadata.get("default_print_profile")
-    
+
     # Если в extra_metadata есть name, используем его
     if not default_print_profile_name and profile.default_print_profile_slug and db:
         # Ищем PrintProfile по slug и берем его name
@@ -391,11 +391,11 @@ async def printer_profile_to_orca_json(
             # Генерируем name в формате OrcaSlicer для PrintProfile
             tag = _generate_orca_tag(printer, profile.vendor)
             default_print_profile_name = _format_print_profile_name_for_orca(print_profile, tag)
-    
+
     # Если всё равно нет, используем slug как есть (fallback)
     if not default_print_profile_name and profile.default_print_profile_slug:
         default_print_profile_name = profile.default_print_profile_slug
-    
+
     # default_print_profile - используем значения из orcaslicer_settings (приоритет), если нет - из преобразованного slug
     if "default_print_profile" not in settings and default_print_profile_name:
         settings["default_print_profile"] = default_print_profile_name
@@ -461,10 +461,10 @@ async def print_profile_to_orca_json(
             printer = result.scalar_one_or_none()
             if printer:
                 tag = _generate_orca_tag(printer, profile.vendor)
-    
+
     if not tag:
         tag = _generate_orca_tag(None, profile.vendor)
-    
+
     # Генерируем имя в формате OrcaSlicer
     orca_name = _format_print_profile_name_for_orca(profile, tag)
 
@@ -516,7 +516,7 @@ async def print_profile_to_orca_json(
             elif link.printer_slug:
                 # Fallback: используем printer_slug как есть (для условий)
                 compatible_printer_names.append(link.printer_slug)
-        
+
         if compatible_printer_names:
             settings["compatible_printers"] = compatible_printer_names
     elif profile.compatible_printers:
@@ -524,7 +524,7 @@ async def print_profile_to_orca_json(
         settings["compatible_printers"] = [
             printer for printer in profile.compatible_printers if printer
         ]
-    
+
     # Совместимые филаменты - оставляем как есть (slug или name)
     if profile.compatible_filaments:
         settings["compatible_filaments"] = [

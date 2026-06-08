@@ -25,8 +25,8 @@ from app.core.errors import (
     ERR_IMPORT_PRINT_DISABLED,
     ERR_IMPORT_PRINTER_DISABLED,
     ERR_INTERNAL_ERROR,
-    ERR_NO_PERMISSION,
     ERR_NO_NOTIFICATION_DATA,
+    ERR_NO_PERMISSION,
     ERR_NOTIFICATION_NOT_FOUND,
     ERR_PRESET_IDS_REQUIRED,
     ERR_PRESET_NOT_FOUND,
@@ -45,11 +45,10 @@ from app.models.print_profile_printer import PrintProfilePrinter
 from app.models.printer import Printer
 from app.models.printer_profile import PrinterProfile
 from app.models.user import User, UserRole
-from app.models.user_saved_preset import UserSavedPreset
 from app.models.user_spool import UserSpool
 from app.schemas.orca_sync import (
-    BatchExportRequest,
     BatchExportItem,
+    BatchExportRequest,
     BatchExportResponse,
     DeletedPresetAction,
     DeletedPresetActionResponse,
@@ -58,10 +57,10 @@ from app.schemas.orca_sync import (
     FilamentPresetSyncRequest,
     FilamentPresetSyncResponse,
     OrcaSyncResult,
-    PrintProfileSyncRequest,
-    PrintProfileSyncResponse,
     PrinterProfileSyncRequest,
     PrinterProfileSyncResponse,
+    PrintProfileSyncRequest,
+    PrintProfileSyncResponse,
 )
 from app.schemas.print_profile import PrintProfileListResponse, PrintProfileResponse
 from app.schemas.printer_profile import PrinterProfileListResponse, PrinterProfileResponse
@@ -419,7 +418,7 @@ async def _sync_imported_print_profile_links(
 def _extract_material_type_from_inherits(inherits: str | None) -> str:
     """
     Извлечь тип материала из inherits (родительский пресет OrcaSlicer).
-    
+
     Примеры:
     - "Generic PLA @System" -> "PLA"
     - "Generic PETG @System" -> "PETG"
@@ -427,9 +426,9 @@ def _extract_material_type_from_inherits(inherits: str | None) -> str:
     """
     if not inherits:
         return "PLA"  # По умолчанию
-    
+
     inherits_upper = inherits.upper()
-    
+
     # Порядок важен - проверяем более специфичные сначала
     if "PETG" in inherits_upper or "PET" in inherits_upper:
         return "PETG"
@@ -447,7 +446,7 @@ def _extract_material_type_from_inherits(inherits: str | None) -> str:
         return "PVA"
     if "PLA" in inherits_upper:
         return "PLA"
-    
+
     # По умолчанию PLA
     return "PLA"
 
@@ -496,20 +495,20 @@ async def _ensure_printer_id(
         combined_metadata.update(profile_metadata)
     if profile_settings:
         combined_metadata.update(profile_settings)
-    
+
     # 1. Поиск по явному printer_id
     if printer_id:
         printer = await db.get(Printer, printer_id)
         if printer:
             return printer.id
-    
+
     # 2. Поиск по printer_slug
     if printer_slug:
         result = await db.execute(select(Printer).where(Printer.slug == printer_slug))
         printer = result.scalar_one_or_none()
         if printer:
             return printer.id
-    
+
     # 3. Поиск по model_id (самый надежный способ сопоставления)
     model_id = combined_metadata.get("model_id") or combined_metadata.get("printer_model_id")
     if model_id:
@@ -517,7 +516,7 @@ async def _ensure_printer_id(
         printer = result.scalar_one_or_none()
         if printer:
             return printer.id
-    
+
     # 4. Извлекаем данные для сопоставления из OrcaSlicer metadata
     vendor_name = ""
     for vendor_candidate in (
@@ -556,7 +555,7 @@ async def _ensure_printer_id(
             elif len(parts) == 1:
                 # Просто имя модели в inherits
                 printer_model = printer_model or _clean_identity_value(inherits)
-    
+
     # Пытаемся определить manufacturer и model из имени профиля
     # Сначала пробуем извлечь чистое название принтера (без диаметра сопла)
     clean_printer_name = _extract_printer_name_from_profile_name(profile_name)
@@ -600,7 +599,7 @@ async def _ensure_printer_id(
     # Извлекаем manufacturer и model из combined_metadata (если OrcaSlicer передал их отдельно)
     manufacturer_from_metadata = _clean_identity_value(combined_metadata.get("manufacturer"))
     model_from_metadata = _clean_identity_value(combined_metadata.get("model"))
-    
+
     # Используем данные из metadata, если есть, иначе из имени
     vendor_name = _normalize_vendor_name(vendor_name)
     manufacturer = manufacturer_from_metadata or vendor_name or manufacturer_from_name or "Custom"
@@ -611,14 +610,14 @@ async def _ensure_printer_id(
         or _clean_identity_value(profile_name)
         or "Unknown"
     )
-    
+
     # Нормализуем для сопоставления
     manufacturer_normalized = _normalize_for_match(_clean_identity_value(manufacturer))
     model_normalized = _normalize_for_match(_clean_identity_value(model))
     vendor_normalized = _normalize_for_match(vendor_name)
     vendor_key = _normalize_vendor_key(vendor_name)
     name_normalized = _normalize_for_match(_clean_identity_value(profile_name))
-    
+
     # 5. Поиск по printer_model из OrcaSlicer (ссылка на базовую модель) - САМЫЙ ПРИОРИТЕТНЫЙ
     if printer_model:
         logger.info(f"  🔍 Шаг 5: Ищем по printer_model='{printer_model}'")
@@ -716,7 +715,7 @@ async def _ensure_printer_id(
             )
         )
         printers = result.scalars().all()
-        
+
         # Фильтруем в памяти для точного сопоставления (SQL не может нормализовать так же точно)
         for printer in printers:
             printer_manufacturer = _normalize_for_match(printer.manufacturer)
@@ -736,7 +735,7 @@ async def _ensure_printer_id(
                 and model_normalized in printer_model_norm
             ):
                 return printer.id
-    
+
     # 8. Поиск по vendor + name (нормализованные)
     if vendor_normalized and name_normalized:
         vendor_terms = _vendor_search_terms(vendor_name)
@@ -750,11 +749,11 @@ async def _ensure_printer_id(
             )
         )
         printers = result.scalars().all()
-        
+
         for printer in printers:
             printer_vendor_key = _normalize_vendor_key(printer.vendor)
             printer_name = _normalize_for_match(printer.name)
-            
+
             if printer_vendor_key == vendor_key and printer_name == name_normalized:
                 return printer.id
 
@@ -803,7 +802,7 @@ async def _ensure_printer_id(
         # Используем очищенное имя профиля (без диаметра сопла) если оно лучше
         clean_profile_name = _clean_identity_value(clean_printer_name) or _clean_identity_value(profile_name)
         printer_display_name = clean_profile_name if clean_profile_name and clean_profile_name != profile_name else None
-        
+
         # Если manufacturer и model определены правильно, используем их для имени
         if manufacturer_normalized and model_normalized:
             # Формируем имя: "Manufacturer Model" или просто "Model" если manufacturer пустой
@@ -897,15 +896,15 @@ def _extract_printer_name_from_profile_name(profile_name: str | None) -> str | N
 def _convert_printable_area_from_orca(printable_area: Any) -> dict[str, float] | None:
     """
     Преобразовать printable_area из формата OrcaSlicer в наш формат.
-    
+
     OrcaSlicer формат: ["0x0", "220x0", "220x220", "0x220"] (массив строк с координатами углов)
     Наш формат: {"x": 220, "y": 220} (ширина и глубина)
-    
+
     Возвращает dict с ключами "x" и "y" или None, если не удалось преобразовать.
     """
     if not printable_area:
         return None
-    
+
     try:
         # Если это уже наш формат (dict с x и y)
         if isinstance(printable_area, dict):
@@ -916,7 +915,7 @@ def _convert_printable_area_from_orca(printable_area: Any) -> dict[str, float] |
                 x = float(printable_area["x_max"]) - float(printable_area["x_min"])
                 y = float(printable_area["y_max"]) - float(printable_area["y_min"])
                 return {"x": x, "y": y}
-        
+
         # Если это массив строк (формат OrcaSlicer)
         if isinstance(printable_area, list) and len(printable_area) >= 2:
             # Парсим первую и третью координаты для определения размеров
@@ -924,7 +923,7 @@ def _convert_printable_area_from_orca(printable_area: Any) -> dict[str, float] |
             # Извлекаем максимальные координаты
             max_x = 0
             max_y = 0
-            
+
             for coord_str in printable_area:
                 if isinstance(coord_str, str) and "x" in coord_str:
                     parts = coord_str.split("x")
@@ -936,35 +935,35 @@ def _convert_printable_area_from_orca(printable_area: Any) -> dict[str, float] |
                             max_y = max(max_y, y_val)
                         except (ValueError, TypeError):
                             continue
-            
+
             if max_x > 0 and max_y > 0:
                 return {"x": max_x, "y": max_y}
     except (ValueError, TypeError, AttributeError):
         pass
-    
+
     return None
 
 
 def _extract_nozzle_diameters_from_settings(settings: dict[str, Any] | None) -> list[float] | None:
     """
     Извлечь диаметры сопла из orcaslicer_settings профиля.
-    
+
     В OrcaSlicer поле nozzle_diameter может быть:
     - Массивом строк: ["0.4"] или ["0.4", "0.6"]
     - Строкой: "0.4"
     - Числом: 0.4
-    
+
     Возвращает список float значений или None, если не найдено.
     """
     if not settings:
         return None
-    
+
     nozzle_diameter = settings.get("nozzle_diameter")
     if nozzle_diameter is None:
         return None
-    
+
     diameters: list[float] = []
-    
+
     try:
         # Массив строк или чисел
         if isinstance(nozzle_diameter, list):
@@ -984,7 +983,7 @@ def _extract_nozzle_diameters_from_settings(settings: dict[str, Any] | None) -> 
             diameters.append(float(nozzle_diameter))
     except (ValueError, TypeError):
         return None
-    
+
     # Фильтруем разумные значения (0.15-1.5 мм)
     valid_diameters = [d for d in diameters if 0.15 <= d <= 1.5]
     return valid_diameters if valid_diameters else None
@@ -1025,12 +1024,12 @@ async def _upsert_printer_profile(
                 )
 
     profile: PrinterProfile | None = None
-    
+
     # Проверяем метки из orcaslicer_settings (приоритетный способ идентификации)
     orcaslicer_settings = payload.orcaslicer_settings or {}
     fhub_id_from_metadata = orcaslicer_settings.get("fhub_id")
     fhub_source = orcaslicer_settings.get("fhub_source")
-    
+
     # Приоритет 1: Ищем по fhub_id из payload (явное указание)
     if payload.fhub_id:
         profile = await db.get(PrinterProfile, payload.fhub_id)
@@ -1044,7 +1043,7 @@ async def _upsert_printer_profile(
                     message=ERR_NO_PERMISSION,
                 )
             logger.info(f"Found printer profile by fhub_id from payload: {payload.fhub_id}")
-    
+
     # Приоритет 2: Ищем по меткам из orcaslicer_settings
     if profile is None:
         if fhub_id_from_metadata and fhub_source == "filamenthub":
@@ -1063,7 +1062,7 @@ async def _upsert_printer_profile(
                     logger.info(f"Found printer profile by fhub_id from metadata: {fhub_id_int}")
             except (ValueError, TypeError):
                 logger.warning(f"Invalid fhub_id in metadata: {fhub_id_from_metadata}")
-    
+
     # Приоритет 3: Ищем по external_id (fallback)
     if profile is None and payload.external_id:
         result = await db.execute(
@@ -1136,7 +1135,7 @@ async def _upsert_printer_profile(
             extracted_diameters = _extract_nozzle_diameters_from_settings(payload.orcaslicer_settings)
             if extracted_diameters:
                 profile.nozzle_diameters = extracted_diameters
-        
+
         # Обновляем printable_area: сначала из payload, потом из orcaslicer_settings
         if payload.printable_area is not None:
             profile.printable_area = payload.printable_area
@@ -1145,7 +1144,7 @@ async def _upsert_printer_profile(
             converted_area = _convert_printable_area_from_orca(payload.orcaslicer_settings.get("printable_area"))
             if converted_area:
                 profile.printable_area = converted_area
-        
+
         # Обновляем printable_height_mm: сначала из payload, потом из orcaslicer_settings
         if payload.printable_height_mm is not None:
             profile.printable_height_mm = payload.printable_height_mm
@@ -1180,7 +1179,7 @@ async def _upsert_printer_profile(
                     updated_settings["fhub_id"] = existing_fhub_id
                     updated_settings["fhub_source"] = existing_fhub_source
                     logger.info(f"Preserving existing fhub_id and fhub_source for printer profile {profile.id}")
-            
+
             profile.orcaslicer_settings = updated_settings
         else:
             profile.orcaslicer_settings = profile.orcaslicer_settings or {}
@@ -1255,7 +1254,7 @@ async def _upsert_printer_profile(
     notes = payload.notes
     if not notes:
         notes = payload.orcaslicer_settings.get("printer_notes") if payload.orcaslicer_settings else None
-    
+
     # Подготавливаем orcaslicer_settings с метками
     profile_orcaslicer_settings = dict(payload.orcaslicer_settings or {})
 
@@ -1265,7 +1264,7 @@ async def _upsert_printer_profile(
     profile_orcaslicer_settings["bundle_id"] = None  # set after flush
     profile_orcaslicer_settings["fhub_id"] = None  # set after flush
     profile_orcaslicer_settings["fhub_source"] = "filamenthub"
-    
+
     profile = PrinterProfile(
         name=payload.name,
         slug=slug,
@@ -1290,7 +1289,7 @@ async def _upsert_printer_profile(
     )
     db.add(profile)
     await db.flush()
-    
+
     # Обновляем bundle_id и fhub_id после получения ID
     if profile.orcaslicer_settings:
         profile.orcaslicer_settings["bundle_id"] = f"filamenthub:{profile.id}"
@@ -1339,12 +1338,12 @@ async def _upsert_print_profile(
                 )
 
     profile: PrintProfile | None = None
-    
+
     # Проверяем метки из orcaslicer_settings (приоритетный способ идентификации)
     orcaslicer_settings = payload.orcaslicer_settings or {}
     fhub_id_from_metadata = orcaslicer_settings.get("fhub_id")
     fhub_source = orcaslicer_settings.get("fhub_source")
-    
+
     # Приоритет 1: Ищем по fhub_id из payload (явное указание)
     if payload.fhub_id:
         profile = await db.get(PrintProfile, payload.fhub_id)
@@ -1358,7 +1357,7 @@ async def _upsert_print_profile(
                     message=ERR_NO_PERMISSION,
                 )
             logger.info(f"Found print profile by fhub_id from payload: {payload.fhub_id}")
-    
+
     # Приоритет 2: Ищем по меткам из orcaslicer_settings
     if profile is None:
         if fhub_id_from_metadata and fhub_source == "filamenthub":
@@ -1377,7 +1376,7 @@ async def _upsert_print_profile(
                     logger.info(f"Found print profile by fhub_id from metadata: {fhub_id_int}")
             except (ValueError, TypeError):
                 logger.warning(f"Invalid fhub_id in metadata: {fhub_id_from_metadata}")
-    
+
     # Приоритет 3: Ищем по external_id (fallback)
     if profile is None and payload.external_id:
         result = await db.execute(
@@ -1445,7 +1444,7 @@ async def _upsert_print_profile(
         if payload.orcaslicer_settings:
             # Сохраняем метки FilamentHub при обновлении
             updated_settings = dict(payload.orcaslicer_settings)
-            
+
             # Приоритет: метки из payload.orcaslicer_settings (если есть), иначе существующие метки
             if "fhub_id" in updated_settings and "fhub_source" in updated_settings:
                 # Метки пришли из OrcaSlicer - используем их
@@ -1454,12 +1453,12 @@ async def _upsert_print_profile(
                 # Если метки не пришли, но были раньше - сохраняем существующие
                 existing_fhub_id = profile.orcaslicer_settings.get("fhub_id")
                 existing_fhub_source = profile.orcaslicer_settings.get("fhub_source")
-                
+
                 if existing_fhub_id and existing_fhub_source == "filamenthub":
                     updated_settings["fhub_id"] = existing_fhub_id
                     updated_settings["fhub_source"] = existing_fhub_source
                     logger.info(f"Preserving existing fhub_id and fhub_source for print profile {profile.id}")
-            
+
             profile.orcaslicer_settings = updated_settings
         else:
             profile.orcaslicer_settings = profile.orcaslicer_settings or {}
@@ -1497,7 +1496,7 @@ async def _upsert_print_profile(
     profile_orcaslicer_settings["bundle_id"] = None  # set after flush
     profile_orcaslicer_settings["fhub_id"] = None  # set after flush
     profile_orcaslicer_settings["fhub_source"] = "filamenthub"
-    
+
     profile = PrintProfile(
         name=payload.name,
         slug=slug,
@@ -1521,7 +1520,7 @@ async def _upsert_print_profile(
     )
     db.add(profile)
     await db.flush()
-    
+
     # Обновляем bundle_id и fhub_id после получения ID
     if profile.orcaslicer_settings:
         profile.orcaslicer_settings["bundle_id"] = f"filamenthub:{profile.id}"
@@ -1553,7 +1552,7 @@ async def list_printer_profiles_for_sync(
     # Проверяем разрешение на экспорт профилей принтера
     if not current_user.allow_printer_profiles_export:
         raise_error(status.HTTP_403_FORBIDDEN, ERR_EXPORT_PRINTER_DISABLED)
-    
+
     query = select(PrinterProfile).options(selectinload(PrinterProfile.printer))
     if include_official:
         query = query.where(
@@ -1601,7 +1600,7 @@ async def list_print_profiles_for_sync(
     # Проверяем разрешение на экспорт профилей печати
     if not current_user.allow_print_profiles_export:
         raise_error(status.HTTP_403_FORBIDDEN, ERR_EXPORT_PRINT_DISABLED)
-    
+
     query = select(PrintProfile)
     if include_official:
         query = query.where(
@@ -1643,7 +1642,7 @@ async def get_preset_info_file(
 ) -> str:
     """
     Получить .info файл для пресета FilamentHub.
-    
+
     Используется OrcaSlicer для записи меток после импорта пресета.
     Возвращает содержимое .info файла в формате plain text.
     """
@@ -1654,11 +1653,11 @@ async def get_preset_info_file(
     # Проверяем права доступа (публичный пресет или свой пресет)
     if not preset.active and preset.user_id != current_user.id:
         raise_error(status.HTTP_403_FORBIDDEN, ERR_ACCESS_DENIED)
-    
+
     # Генерируем .info файл
     from app.services.orcaslicer_exporter import preset_to_orcaslicer_info
     info_content = preset_to_orcaslicer_info(preset)
-    
+
     # Возвращаем как plain text (не JSON)
     from fastapi.responses import PlainTextResponse
     return PlainTextResponse(content=info_content, media_type="text/plain")
@@ -1678,7 +1677,7 @@ async def import_printer_profiles(
     # Проверяем разрешение на импорт профилей принтера
     if not current_user.allow_printer_profiles_import:
         raise_error(status.HTTP_403_FORBIDDEN, ERR_IMPORT_PRINTER_DISABLED)
-    
+
     results: list[OrcaSyncResult] = []
 
     for item in payload.profiles:
@@ -1724,7 +1723,7 @@ async def import_print_profiles(
     # Проверяем разрешение на импорт профилей печати
     if not current_user.allow_print_profiles_import:
         raise_error(status.HTTP_403_FORBIDDEN, ERR_IMPORT_PRINT_DISABLED)
-    
+
     results: list[OrcaSyncResult] = []
 
     for item in payload.profiles:
@@ -1762,31 +1761,31 @@ async def _ensure_user_materials_brand(
 ) -> int:
     """
     Найти или создать служебный бренд "User Materials" для черновиков.
-    
+
     Возвращает ID бренда. Ищет по названию, чтобы не перезаписывать существующие бренды.
     """
     from app.services.slug_service import generate_unique_slug
-    
+
     USER_MATERIALS_NAME = "User Materials"
     USER_MATERIALS_SLUG = "user-materials"
     USER_MATERIALS_DESCRIPTION = (
         "User-imported materials from OrcaSlicer (drafts). "
         "These materials are imported as inactive drafts and can be activated and assigned to your brand via the UI."
     )
-    
+
     # Ищем бренд по названию (безопаснее, чем по ID)
     result = await db.execute(
         select(Brand).where(Brand.name == USER_MATERIALS_NAME)
     )
     brand = result.scalar_one_or_none()
-    
+
     if brand:
         logger.debug(f"Found User Materials brand (id={brand.id}, name='{brand.name}')")
         return brand.id
-    
+
     # Если не найден - создаём новый
     logger.info("User Materials brand not found, creating new one...")
-    
+
     # Генерируем уникальный slug (на случай если slug "user-materials" уже занят)
     unique_slug = await generate_unique_slug(
         db=db,
@@ -1794,7 +1793,7 @@ async def _ensure_user_materials_brand(
         source=USER_MATERIALS_SLUG,
         fallback="user-materials-drafts",
     )
-    
+
     brand = Brand(
         name=USER_MATERIALS_NAME,
         slug=unique_slug,
@@ -1829,18 +1828,18 @@ async def _find_existing_filament(
 ) -> Filament | None:
     """
     Найти существующий филамент в базе по имени и типу материала.
-    
+
     Ищет ВО ВСЕХ брендах, приоритет:
     1. Точное совпадение имени + material_type (активные)
     2. Нормализованное совпадение (без учёта регистра и лишних пробелов)
-    
+
     Возвращает существующий филамент или None, если не найден.
     """
     if not filament_name:
         return None
-    
+
     material_type = material_type or "PLA"
-    
+
     # 1. Точное совпадение имени + material_type (активные филаменты)
     result = await db.execute(
         select(Filament).where(
@@ -1850,18 +1849,18 @@ async def _find_existing_filament(
         ).order_by(Filament.id.asc())  # Берём самый первый (старейший)
     )
     filament = result.scalar_one_or_none()
-    
+
     if filament:
         logger.debug(
             f"Found existing active Filament (id={filament.id}, name='{filament_name}', "
             f"material_type='{material_type}', brand_id={filament.brand_id})"
         )
         return filament
-    
+
     # 2. Нормализованное совпадение (без учёта регистра, убираем лишние пробелы)
     filament_name_normalized = _normalize_for_match(filament_name)
     material_type_normalized = _normalize_for_match(material_type)
-    
+
     # Получаем все активные филаменты и проверяем нормализованные значения
     result = await db.execute(
         select(Filament).where(
@@ -1869,18 +1868,18 @@ async def _find_existing_filament(
         )
     )
     all_filaments = result.scalars().all()
-    
+
     for f in all_filaments:
         f_name_normalized = _normalize_for_match(f.name)
         f_material_normalized = _normalize_for_match(f.material_type or "")
-        
+
         if f_name_normalized == filament_name_normalized and f_material_normalized == material_type_normalized:
             logger.debug(
                 f"Found existing active Filament by normalized match (id={f.id}, name='{f.name}', "
                 f"material_type='{f.material_type}', brand_id={f.brand_id})"
             )
             return f
-    
+
     return None
 
 
@@ -2371,17 +2370,17 @@ async def _upsert_filament_preset(
         # Проверяем конфликты (timestamp-based resolution)
         # Сравниваем версии: обновляем только если версия из OrcaSlicer новее
         should_update = True
-        
+
         # Получаем timestamp из FilamentHub (preset.updated_at)
         preset_db_updated_at = preset.updated_at
-        
+
         # Получаем timestamp из OrcaSlicer (из payload или orcaslicer_settings)
         payload_updated_at = None
-        
+
         # 1. Проверяем updated_at в orcaslicer_settings
         if payload.orcaslicer_settings:
             payload_updated_at = payload.orcaslicer_settings.get("updated_at")
-        
+
         # 2. Если нет updated_at в orcaslicer_settings - сравниваем содержимое пресета
         # OrcaSlicer НЕ отправляет updated_at в JSON (только в .info файле)
         # Сравниваем весь orcaslicer_settings целиком (включая start_gcode, end_gcode и все параметры)
@@ -2393,18 +2392,18 @@ async def _upsert_filament_preset(
                 # Убираем None значения, сортируем ключи
                 cleaned = {k: v for k, v in data.items() if v is not None}
                 return json.dumps(cleaned, sort_keys=True, ensure_ascii=False)
-            
+
             # Сравниваем orcaslicer_settings целиком
             payload_settings_hash = hashlib.md5(
                 normalize_for_hash(payload.orcaslicer_settings).encode('utf-8')
             ).hexdigest()
-            
+
             preset_settings_hash = hashlib.md5(
                 normalize_for_hash(preset.orcaslicer_settings).encode('utf-8')
             ).hexdigest()
-            
+
             settings_changed = payload_settings_hash != preset_settings_hash
-            
+
             # Также проверяем базовые параметры (на случай если они не в orcaslicer_settings)
             basic_params_changed = (
                 (payload.extruder_temp is not None and preset.extruder_temp != payload.extruder_temp) or
@@ -2412,7 +2411,7 @@ async def _upsert_filament_preset(
                 (payload.print_speed is not None and preset.print_speed != payload.print_speed) or
                 (payload.name and preset.name != payload.name.replace(' @fh', '').replace('@fh', '').replace(' @FilamentHub', '').replace('@FilamentHub', '').strip())
             )
-            
+
             if settings_changed or basic_params_changed:
                 should_update = True
                 logger.info(
@@ -2429,7 +2428,7 @@ async def _upsert_filament_preset(
             # Есть updated_at в payload - сравниваем
             try:
                 payload_dt = datetime.fromisoformat(payload_updated_at.replace("Z", "+00:00"))
-                
+
                 # Сравниваем с preset.updated_at
                 if preset_db_updated_at:
                     # Убеждаемся что оба datetime с timezone
@@ -2438,7 +2437,7 @@ async def _upsert_filament_preset(
                         preset_dt = preset_dt.replace(tzinfo=timezone.utc)
                     if payload_dt.tzinfo is None:
                         payload_dt = payload_dt.replace(tzinfo=timezone.utc)
-                    
+
                     if payload_dt > preset_dt:
                         # OrcaSlicer версия новее - обновляем
                         should_update = True
@@ -2460,7 +2459,7 @@ async def _upsert_filament_preset(
                 logger.warning(f"Failed to parse updated_at timestamp '{payload_updated_at}': {e}")
                 # Если не удалось распарсить, не обновляем (для безопасности)
                 should_update = False
-        
+
         # КРИТИЧНО: Убеждаемся, что запись в user_saved_presets существует (даже если пресет не обновляется)
         # Это важно для пресетов, импортированных до добавления логики user_saved_presets
         from app.models.user_saved_preset import UserSavedPreset
@@ -2471,7 +2470,7 @@ async def _upsert_filament_preset(
             )
         )
         existing_saved_preset = saved_preset_check.scalar_one_or_none()
-        
+
         if not existing_saved_preset:
             # Создаём запись в user_saved_presets если её нет
             saved_preset = UserSavedPreset(
@@ -2572,7 +2571,7 @@ async def _upsert_filament_preset(
                         updated_settings["fhub_id"] = str(preset.id)
                         updated_settings["fhub_source"] = "filamenthub"
                         logger.info(f"Added fhub_id and fhub_source to preset {preset.id} (found by cleaned name)")
-                
+
                 preset.orcaslicer_settings = updated_settings
             # Примечание: Preset НЕ имеет поля notes, сохраняем в orcaslicer_settings если нужно
             if payload.notes is not None:
@@ -2692,7 +2691,7 @@ async def _upsert_filament_preset(
                     existing_fhub_draft_id = preset.orcaslicer_settings.get("fhub_draft_id")
                     existing_fhub_id = preset.orcaslicer_settings.get("fhub_id")
                     existing_fhub_source = preset.orcaslicer_settings.get("fhub_source")
-                    
+
                     # Если это черновик - сохраняем fhub_draft_id
                     if existing_fhub_draft_id and not preset.active:
                         updated_settings["fhub_draft_id"] = existing_fhub_draft_id
@@ -2700,7 +2699,7 @@ async def _upsert_filament_preset(
                     elif existing_fhub_id and existing_fhub_source == "filamenthub":
                         updated_settings["fhub_id"] = existing_fhub_id
                         updated_settings["fhub_source"] = existing_fhub_source
-                
+
                 preset.orcaslicer_settings = updated_settings
             if payload.external_id:
                 preset.external_id = payload.external_id
@@ -2734,7 +2733,7 @@ async def _upsert_filament_preset(
 
         # Подготавливаем orcaslicer_settings с метками
         preset_orcaslicer_settings = dict(payload.orcaslicer_settings or {})
-        
+
         # Если это не наш пресет (черновик) - добавляем fhub_draft_id для предотвращения дубликатов
         if not is_our_preset:
             # Генерируем уникальный ID черновика
@@ -2790,7 +2789,7 @@ async def _upsert_filament_preset(
         )
         db.add(preset)
         await db.flush()  # Получаем ID пресета
-        
+
         # КРИТИЧНО: Создаём запись в user_saved_presets (аналогично presets.py:249)
         # Это нужно для единой логики синхронизации - все пресеты в "Профили филамента" хранят sync в user_saved_presets
         from app.models.user_saved_preset import UserSavedPreset
@@ -2800,7 +2799,7 @@ async def _upsert_filament_preset(
             sync=True,  # По умолчанию синхронизация включена (пользователь явно экспортировал пресет)
         )
         db.add(saved_preset)
-        
+
         # Обновляем fhub_id для наших пресетов после получения ID
         if is_our_preset:
             if preset.orcaslicer_settings is None:
@@ -2857,7 +2856,7 @@ async def import_filament_presets(
     """
     try:
         logger.info(f"Import filament presets request: user_id={current_user.id}, profiles_count={len(payload.profiles)}")
-        
+
         # Проверяем разрешение на импорт filament presets
         if not current_user.allow_filament_presets_import:
             raise_error(status.HTTP_403_FORBIDDEN, ERR_IMPORT_FILAMENT_DISABLED)
@@ -2927,7 +2926,7 @@ async def import_filament_presets(
     except HTTPException:
         # Пробрасываем HTTPException как есть
         raise
-    except Exception as exc:  # noqa: BLE001
+    except Exception:  # noqa: BLE001
         # Ловим все остальные исключения и возвращаем 500 с деталями
         logger.exception("Critical error in import_filament_presets endpoint")
         await db.rollback()
@@ -3026,7 +3025,7 @@ async def report_deleted_presets(
         # Обновляем существующее уведомление
         # Объединяем списки пресетов, избегая дубликатов
         existing_preset_ids = {p["preset_id"] for p in existing_notification.extra_data.get("deleted_presets", [])}
-        
+
         # Добавляем только новые пресеты (которых еще нет в существующем уведомлении)
         new_presets = [
             {
@@ -3039,7 +3038,7 @@ async def report_deleted_presets(
             for preset in request.deleted_presets
             if preset.preset_id not in existing_preset_ids
         ]
-        
+
         if new_presets:
             # Обновляем extra_data, добавляя новые пресеты
             all_presets = existing_notification.extra_data.get("deleted_presets", []) + new_presets
@@ -3142,7 +3141,7 @@ async def handle_deleted_preset_action(
         # КРИТИЧНО: sync_enabled меняется ТОЛЬКО пользователем в UI, никогда автоматически!
         # Пользователь сам решит, включать или выключать синхронизацию для этого пресета
         processed_count = len(deleted_presets)
-        
+
         await db.commit()
 
     # Сохраняем правило пользователя, если задано
@@ -3163,11 +3162,11 @@ async def handle_deleted_preset_action(
             if p["preset_id"] not in processed_preset_ids
         ]
         notification.extra_data["deleted_presets"] = remaining_presets
-        
+
         # Обновляем счетчики
         notification.extra_data["created_count"] = sum(1 for p in remaining_presets if p.get("is_created", False))
         notification.extra_data["saved_count"] = sum(1 for p in remaining_presets if p.get("is_saved", False))
-        
+
         # Если все пресеты обработаны, отмечаем уведомление как прочитанное
         if len(remaining_presets) == 0:
             from datetime import datetime, timezone
@@ -3191,7 +3190,7 @@ async def auto_process_deleted_presets(
 ) -> dict:
     """
     Автоматически обработать удалённые уведомления (вызывается при синхронизации).
-    
+
     Для сохранённых пресетов: удалить из "Профили филамента" через 7 дней или при следующей синхронизации.
     Для созданных пресетов: ничего не делать.
     """
@@ -3248,25 +3247,29 @@ async def auto_process_deleted_presets(
 # SyncPlan & Validation endpoints (Phase 1 Refactoring)
 # ══════════════════════════════════════════════════════════════
 
-from app.schemas.sync_plan import (
-    SyncPlanRequest,
-    SyncPlanResponse,
-    SyncCompleteRequest,
-    SyncStatusResponse,
-    DeletedPresetsRequest as SyncDeletedPresetsRequest,
-    DeletedPresetsResponse as SyncDeletedPresetsResponse,
-)
 from app.schemas.preset_validation import (
     ParentPresetValidationRequest,
     ParentPresetValidationResponse,
     PresetBatchValidationRequest,
     PresetBatchValidationResponse,
 )
-from app.services.sync_orchestrator import SyncOrchestrator
+from app.schemas.sync_plan import (
+    DeletedPresetsRequest as SyncDeletedPresetsRequest,
+)
+from app.schemas.sync_plan import (
+    DeletedPresetsResponse as SyncDeletedPresetsResponse,
+)
+from app.schemas.sync_plan import (
+    SyncCompleteRequest,
+    SyncPlanRequest,
+    SyncPlanResponse,
+    SyncStatusResponse,
+)
 from app.services.orcaslicer_validator import (
     validate_parent_preset,
     validate_preset_batch,
 )
+from app.services.sync_orchestrator import SyncOrchestrator
 
 
 @router.post("/orcaslicer/sync-plan", response_model=SyncPlanResponse)

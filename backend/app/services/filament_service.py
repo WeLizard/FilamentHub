@@ -3,8 +3,8 @@
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.filament import Filament
 from app.models.brand import Brand
+from app.models.filament import Filament
 
 
 async def get_filament_by_id(filament_id: int, db: AsyncSession) -> Filament | None:
@@ -26,27 +26,27 @@ async def list_filaments(
 ) -> list[Filament]:
     """Получить список материалов."""
     query = select(Filament)
-    
+
     if active_only:
         query = query.where(Filament.active == True)
-    
+
     if brand_id:
         query = query.where(Filament.brand_id == brand_id)
-    
+
     if material_type:
         query = query.where(Filament.material_type == material_type)
-    
+
     if search:
         query = query.where(
             Filament.name.ilike(f"%{search}%")
             | Filament.color_name.ilike(f"%{search}%")
         )
-    
+
     query = query.order_by(Filament.name.asc())
-    
+
     if limit:
         query = query.limit(limit).offset(offset)
-    
+
     result = await db.execute(query)
     return list(result.scalars().all())
 

@@ -1,9 +1,8 @@
 """Pydantic schemas for User."""
 
+import re
 from datetime import datetime
 from typing import Literal
-
-import re
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
 
@@ -220,7 +219,7 @@ class APIKeyResponse(BaseModel):
 
 class AccountDeleteRequest(BaseModel):
     """Schema for account deletion request with options."""
-    
+
     delete_reviews: bool = Field(
         default=False,
         description="Полностью удалить отзывы (True) или анонимизировать (False)"
@@ -237,7 +236,7 @@ class AccountDeleteRequest(BaseModel):
 
 class AccountDeletionStats(BaseModel):
     """Schema for account deletion statistics."""
-    
+
     presets_count: int = Field(description="Количество созданных пресетов")
     official_presets_count: int = Field(description="Количество официальных пресетов")
     approved_presets_count: int = Field(description="Количество одобренных пресетов")
@@ -251,13 +250,13 @@ class AccountDeletionStats(BaseModel):
 
 class ForgotPasswordRequest(BaseModel):
     """Schema for forgot password request."""
-    
+
     email: EmailStr = Field(..., description="Email пользователя для восстановления пароля")
 
 
 class ForgotPasswordResponse(BaseModel):
     """Schema for forgot password response."""
-    
+
     message: str = Field(
         default="Если указанный email существует в системе, на него будет отправлена инструкция по восстановлению пароля.",
         description="Сообщение о результате запроса"

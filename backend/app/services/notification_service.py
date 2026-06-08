@@ -18,7 +18,7 @@ async def create_notification(
 ) -> Notification:
     """
     Создать уведомление для пользователя.
-    
+
     Args:
         user_id: ID пользователя
         notification_type: Тип уведомления
@@ -27,7 +27,7 @@ async def create_notification(
         db: Database session
         link: Ссылка на связанную сущность (опционально)
         extra_data: Дополнительные данные в формате JSON (опционально)
-    
+
     Returns:
         Созданное уведомление
     """
@@ -40,11 +40,11 @@ async def create_notification(
         extra_data=extra_data,
         read=False,
     )
-    
+
     db.add(notification)
     await db.commit()
     await db.refresh(notification)
-    
+
     return notification
 
 
@@ -56,7 +56,7 @@ async def notify_preset_updated(
 ) -> None:
     """
     Создать уведомления для всех пользователей, у которых сохранен этот пресет.
-    
+
     Args:
         preset_id: ID пресета
         preset_name: Название пресета
@@ -70,7 +70,7 @@ async def notify_preset_updated(
         .distinct()
     )
     user_ids = result.scalars().all()
-    
+
     # Создаем уведомления для каждого пользователя
     for user_id in user_ids:
         await create_notification(
@@ -92,7 +92,7 @@ async def notify_preset_deleted(
 ) -> None:
     """
     Создать уведомления для всех пользователей, у которых сохранен этот пресет.
-    
+
     Args:
         preset_id: ID пресета
         preset_name: Название пресета
@@ -106,7 +106,7 @@ async def notify_preset_deleted(
         .distinct()
     )
     user_ids = result.scalars().all()
-    
+
     # Создаем уведомления для каждого пользователя
     for user_id in user_ids:
         await create_notification(
@@ -128,7 +128,7 @@ async def notify_brand_verified(
 ) -> None:
     """
     Создать уведомление об одобрении верификации бренда.
-    
+
     Args:
         user_id: ID пользователя (владельца бренда)
         brand_name: Название бренда
@@ -154,7 +154,7 @@ async def notify_brand_request_approved(
 ) -> None:
     """
     Создать уведомление об одобрении заявки на бренд.
-    
+
     Args:
         user_id: ID пользователя
         brand_name: Название бренда
@@ -180,7 +180,7 @@ async def notify_brand_request_rejected(
 ) -> None:
     """
     Создать уведомление об отклонении заявки на бренд.
-    
+
     Args:
         user_id: ID пользователя
         brand_name: Название бренда
@@ -208,7 +208,7 @@ async def create_bulk_notifications(
 ) -> int:
     """
     Создать массовые уведомления для списка пользователей.
-    
+
     Args:
         user_ids: Список ID пользователей
         notification_type: Тип уведомления
@@ -217,13 +217,13 @@ async def create_bulk_notifications(
         db: Database session
         link: Ссылка на связанную сущность (опционально)
         extra_data: Дополнительные данные в формате JSON (опционально)
-    
+
     Returns:
         Количество созданных уведомлений
     """
     if not user_ids:
         return 0
-    
+
     notifications = []
     for user_id in user_ids:
         notification = Notification(
@@ -236,10 +236,10 @@ async def create_bulk_notifications(
             read=False,
         )
         notifications.append(notification)
-    
+
     db.add_all(notifications)
     await db.commit()
-    
+
     return len(notifications)
 
 
@@ -254,7 +254,7 @@ async def notify_all_users(
 ) -> int:
     """
     Создать уведомления для всех пользователей (массовая рассылка).
-    
+
     Args:
         notification_type: Тип уведомления
         title: Заголовок уведомления
@@ -263,22 +263,22 @@ async def notify_all_users(
         link: Ссылка на связанную сущность (опционально)
         extra_data: Дополнительные данные в формате JSON (опционально)
         active_only: Отправлять только активным пользователям (по умолчанию True)
-    
+
     Returns:
         Количество созданных уведомлений
     """
     from app.models.user import User
-    
+
     query = select(User.id)
     if active_only:
         query = query.where(User.active == True)
-    
+
     result = await db.execute(query)
     user_ids = result.scalars().all()
-    
+
     if not user_ids:
         return 0
-    
+
     return await create_bulk_notifications(
         user_ids=list(user_ids),
         notification_type=notification_type,

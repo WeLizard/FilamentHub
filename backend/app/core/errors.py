@@ -4,7 +4,6 @@ from typing import NoReturn
 
 from fastapi import HTTPException
 
-
 # 404 — Not found
 ERR_USER_NOT_FOUND = "ERR_USER_NOT_FOUND"
 ERR_BRAND_NOT_FOUND = "ERR_BRAND_NOT_FOUND"

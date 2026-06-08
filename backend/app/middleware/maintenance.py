@@ -1,16 +1,16 @@
 """Middleware for maintenance mode."""
 
+from fastapi import status
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 from starlette.responses import JSONResponse
-from fastapi import status
 
-from app.services.maintenance_service import get_maintenance_mode, get_maintenance_info
+from app.services.maintenance_service import get_maintenance_info, get_maintenance_mode
 
 
 class MaintenanceMiddleware(BaseHTTPMiddleware):
     """Middleware для проверки режима технических работ."""
-    
+
     async def dispatch(self, request: Request, call_next):
         """
         Блокирует все запросы кроме:
@@ -22,7 +22,7 @@ class MaintenanceMiddleware(BaseHTTPMiddleware):
         if get_maintenance_mode():
             # Разрешаем доступ к служебным эндпоинтам
             path = request.url.path
-            
+
             # Разрешенные пути (не блокируются)
             # Админы должны иметь возможность войти и управлять сайтом!
             allowed_paths = [
@@ -31,10 +31,10 @@ class MaintenanceMiddleware(BaseHTTPMiddleware):
                 "/api/v1/auth",         # Вся авторизация (login, me, refresh)
                 "/api/v1/users/me",     # Проверка текущего пользователя
             ]
-            
+
             # Проверяем, является ли путь разрешенным
             is_allowed = any(path.startswith(allowed) for allowed in allowed_paths)
-            
+
             if not is_allowed:
                 # Возвращаем ответ о технических работах
                 maintenance_info = get_maintenance_info()
@@ -46,7 +46,7 @@ class MaintenanceMiddleware(BaseHTTPMiddleware):
                         "maintenance_mode": True,
                     },
                 )
-        
+
         # Продолжаем обработку запроса
         response = await call_next(request)
         return response

@@ -10,10 +10,10 @@ from pydantic import BaseModel, ConfigDict, Field
 
 class FilamentVisualSettings(BaseModel):
     """Schema for extended visual settings (только для сайта, не передается в OrcaSlicer)."""
-    
+
     color_type: Literal["single", "two", "three", "gradient", "transition", "thermochromic"] = Field("single")
     # Тип цвета: одноцветный, двухцветный, трёхцветный, многоцветный градиент, переходной (любой цвет), термохромный (меняет цвет при нагреве)
-    
+
     colors: list[str] = Field(default_factory=lambda: ["#FFFFFF"], max_length=5)
     # Массив HEX цветов (до 5 цветов для градиента/перехода)
     # Для "single": 1 цвет
@@ -21,10 +21,10 @@ class FilamentVisualSettings(BaseModel):
     # Для "three": 3 цвета
     # Для "gradient": до 5 цветов (градиент)
     # Для "transition": до 5 цветов (переходной цвет, может быть любой)
-    
+
     finish: Literal["matte", "glossy"] = Field("matte")
     # Финиш поверхности: матовый или глянцевый
-    
+
     filler: Literal[
         "none", "wood", "carbon", "glitter", "metallic", "luminescent",
         "fibers", "stone", "glass", "pattern1", "pattern2", "pattern3",
@@ -33,7 +33,7 @@ class FilamentVisualSettings(BaseModel):
     ] = Field("none")
     # Наполнитель: нет, дерево, CF, глиттер, металлик, люминофор, волокна,
     # камень, стекло, или паттерны 1-12
-    
+
     transparency: bool = Field(False)
     # Прозрачность: да/нет (True = прозрачный, False = непрозрачный)
 

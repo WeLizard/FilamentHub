@@ -7,7 +7,6 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
-
 SpoolState = Literal["active", "shelf", "archived", "empty"]
 SpoolSource = Literal["manual", "qr", "catalog", "orca_import"]
 

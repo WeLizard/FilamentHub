@@ -1,13 +1,11 @@
 """UserPrinterDevice model — user's physical 3D printer device."""
 
-import enum
 from datetime import datetime
 from typing import TYPE_CHECKING
 
 from sqlalchemy import (
     Boolean,
     DateTime,
-    Enum,
     ForeignKey,
     Integer,
     String,

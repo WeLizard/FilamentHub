@@ -14,10 +14,10 @@ from app.models.preset_gate_state import PresetGateStateSource
 from app.models.user import User
 from app.schemas.preset_slot_sync import (
     GateStateResponse,
-    HHSnapshotRequest,
-    HHSnapshotResponse,
     HeartbeatRequest,
     HeartbeatResponse,
+    HHSnapshotRequest,
+    HHSnapshotResponse,
     ManualAssignmentRequest,
     ManualAssignmentResponse,
     SlotStateResponse,

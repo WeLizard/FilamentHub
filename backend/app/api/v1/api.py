@@ -3,7 +3,6 @@
 from fastapi import APIRouter
 
 from app.api.v1.endpoints import (
-    feedback,
     admin,
     auth,
     brand_requests,
@@ -12,7 +11,7 @@ from app.api.v1.endpoints import (
     catalog_bundles,
     devices,
     downloads,
-    spool_compat,
+    feedback,
     filament_reviews,
     filaments,
     notifications,
@@ -21,12 +20,13 @@ from app.api.v1.endpoints import (
     preset_slots,
     preset_versions,
     presets,
+    print_profiles,
     printer_profiles,
     printer_requests,
     printers,
-    print_profiles,
     qr,
     saved_presets,
+    spool_compat,
     spools,
     wiki,
 )

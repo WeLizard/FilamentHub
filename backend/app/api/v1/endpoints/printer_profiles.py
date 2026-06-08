@@ -252,7 +252,7 @@ async def export_printer_profile_json(
 ) -> Response:
     """
     Экспортировать профиль принтера в формате OrcaSlicer (.json).
-    
+
     Returns:
         JSONResponse: JSON файл профиля принтера OrcaSlicer
     """
@@ -263,17 +263,17 @@ async def export_printer_profile_json(
         .where(PrinterProfile.id == profile_id, PrinterProfile.active == True)
     )
     profile = result.scalar_one_or_none()
-    
+
     if not profile:
         raise_error(404, ERR_PRINTER_PROFILE_NOT_FOUND)
-    
+
     # Экспортируем в JSON
     try:
         profile_json = await export_printer_profile(profile, db)
     except Exception as e:
         logger.error(f"Error exporting printer profile {profile_id}: {str(e)}", exc_info=True)
         raise_error(500, ERR_EXPORT_PRINTER_PROFILE_ERROR)
-    
+
     # Формируем безопасное имя файла
     def to_safe_filename(text: str) -> str:
         """Преобразует текст в безопасное имя файла, сохраняя кириллицу и пробелы."""
@@ -285,9 +285,9 @@ async def export_printer_profile_json(
         while "__" in safe:
             safe = safe.replace("__", "_")
         return safe.strip(" _")
-    
+
     filename = to_safe_filename(profile.name) + ".json"
-    
+
     # Возвращаем JSON файл
     return Response(
         content=profile_json,

@@ -8,8 +8,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.core.dependencies import get_current_admin_user
-from app.core.utils import like_pattern
 from app.core.errors import ERR_PRINTER_NOT_FOUND, ERR_PRINTER_SLUG_EXISTS, raise_error
+from app.core.utils import like_pattern
 from app.db.session import get_db
 from app.models.printer import Printer
 from app.models.user import User
@@ -35,10 +35,10 @@ async def list_printers(
     """Получить список принтеров."""
     # Build query
     query = select(Printer)
-    
+
     if active_only:
         query = query.where(Printer.active == True)
-    
+
     if manufacturer:
         query = query.where(Printer.manufacturer.ilike(like_pattern(manufacturer)))
 
@@ -63,22 +63,22 @@ async def list_printers(
             | Printer.manufacturer.ilike(search_pat)
             | Printer.model.ilike(search_pat)
         )
-    
+
     total_result = await db.execute(count_query)
     total = total_result.scalar() or 0
-    
+
     # Paginate
     offset = (page - 1) * size
     query = query.offset(offset).limit(size).order_by(
         Printer.manufacturer.asc(), Printer.name.asc()
     )
-    
+
     # Execute
     result = await db.execute(query)
     printers = result.scalars().all()
-    
+
     pages = (total + size - 1) // size if total > 0 else 0
-    
+
     return PrinterListResponse(
         items=[PrinterResponse.model_validate(printer) for printer in printers],
         total=total,
@@ -96,10 +96,10 @@ async def get_printer(
     """Получить принтер по ID."""
     result = await db.execute(select(Printer).where(Printer.id == printer_id))
     printer = result.scalar_one_or_none()
-    
+
     if not printer:
         raise_error(404, ERR_PRINTER_NOT_FOUND)
-    
+
     return PrinterResponse.model_validate(printer)
 
 
@@ -113,27 +113,27 @@ async def create_printer(
     # Проверяем уникальность slug
     slug_result = await db.execute(select(Printer).where(Printer.slug == data.slug))
     existing = slug_result.scalar_one_or_none()
-    
+
     if existing:
         raise_error(400, ERR_PRINTER_SLUG_EXISTS)
-    
+
     # Проверка текстовых полей на плохие слова
     from app.services.preset_moderation import validate_text_field
     is_valid, error_msg = await validate_text_field(data.name, db, "printer_name")
     if not is_valid:
         raise HTTPException(status_code=400, detail=error_msg)
-    
+
     if data.description:
         is_valid, error_msg = await validate_text_field(data.description, db, "printer_description")
         if not is_valid:
             raise HTTPException(status_code=400, detail=error_msg)
-    
+
     # Create printer
     printer = Printer(**data.model_dump())
     db.add(printer)
     await db.commit()
     await db.refresh(printer)
-    
+
     return PrinterResponse.model_validate(printer)
 
 
@@ -147,38 +147,38 @@ async def update_printer(
     """Обновить принтер (admin only)."""
     result = await db.execute(select(Printer).where(Printer.id == printer_id))
     printer = result.scalar_one_or_none()
-    
+
     if not printer:
         raise_error(404, ERR_PRINTER_NOT_FOUND)
-    
+
     # Проверяем уникальность slug если он обновляется
     if data.slug and data.slug != printer.slug:
         slug_result = await db.execute(select(Printer).where(Printer.slug == data.slug))
         existing = slug_result.scalar_one_or_none()
         if existing:
             raise_error(400, ERR_PRINTER_SLUG_EXISTS)
-    
+
     # Проверка текстовых полей на плохие слова
     from app.services.preset_moderation import validate_text_field
     update_data = data.model_dump(exclude_unset=True)
-    
+
     if "name" in update_data:
         is_valid, error_msg = await validate_text_field(update_data["name"], db, "printer_name")
         if not is_valid:
             raise HTTPException(status_code=400, detail=error_msg)
-    
+
     if "description" in update_data:
         is_valid, error_msg = await validate_text_field(update_data["description"], db, "printer_description")
         if not is_valid:
             raise HTTPException(status_code=400, detail=error_msg)
-    
+
     # Update fields
     for field, value in update_data.items():
         setattr(printer, field, value)
-    
+
     await db.commit()
     await db.refresh(printer)
-    
+
     return PrinterResponse.model_validate(printer)
 
 
@@ -191,10 +191,10 @@ async def delete_printer(
     """Удалить принтер (admin only)."""
     result = await db.execute(select(Printer).where(Printer.id == printer_id))
     printer = result.scalar_one_or_none()
-    
+
     if not printer:
         raise_error(404, ERR_PRINTER_NOT_FOUND)
-    
+
     await db.delete(printer)
     await db.commit()
 
@@ -207,19 +207,19 @@ async def get_compatible_filaments(
 ) -> list[dict]:
     """
     Получить список филаментов, совместимых с принтером.
-    
+
     Использует VIEW filament_printer_compatibility_view для вывода совместимости
     на основе существующих связей через Preset и PrintProfile.
     """
     from sqlalchemy import text
+
     from app.models.filament import Filament
-    from app.models.brand import Brand
-    
+
     # Проверяем существование принтера
     printer = await db.get(Printer, printer_id)
     if not printer:
         raise_error(404, ERR_PRINTER_NOT_FOUND)
-    
+
     # Используем VIEW для получения совместимых филаментов
     query = text("""
         SELECT DISTINCT
@@ -234,19 +234,19 @@ async def get_compatible_filaments(
         GROUP BY filament_id, filament_slug, filament_name, relation_source
         ORDER BY confidence_score DESC, filament_name
     """)
-    
+
     result = await db.execute(query, {"printer_id": printer_id, "min_confidence": min_confidence})
     rows = result.fetchall()
-    
+
     # Получаем дополнительную информацию о филаментах
     filament_ids = [row[0] for row in rows]
     if not filament_ids:
         return []
-    
+
     filaments_query = select(Filament).options(selectinload(Filament.brand)).where(Filament.id.in_(filament_ids))
     filaments_result = await db.execute(filaments_query)
     filaments = {f.id: f for f in filaments_result.scalars().all()}
-    
+
     # Формируем ответ
     compatible_filaments = []
     for row in rows:
@@ -262,6 +262,6 @@ async def get_compatible_filaments(
                 "relation_source": relation_source,
                 "confidence_score": float(confidence_score),
             })
-    
+
     return compatible_filaments
 

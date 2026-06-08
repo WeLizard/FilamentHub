@@ -4,7 +4,7 @@ from datetime import datetime
 from enum import Enum
 from typing import TYPE_CHECKING
 
-from sqlalchemy import Boolean, ForeignKey, Integer, String, Text
+from sqlalchemy import ForeignKey, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.sql import func
 
@@ -33,7 +33,7 @@ class BrandRequestStatus(str, Enum):
 class BrandRequest(Base):
     """
     Заявка на вступление в бренд или создание нового бренда.
-    
+
     - JOIN: пользователь просит вступить в существующий верифицированный бренд
     - CREATE: пользователь просит создать новый бренд
     """
@@ -62,22 +62,22 @@ class BrandRequest(Base):
 
     # Request message (optional)
     message: Mapped[str | None] = mapped_column(Text, nullable=True)
-    
+
     # Подтверждающие документы для заявки (структурированные поля для подтверждающих документов)
     # Базовое текстовое описание
     proof_text: Mapped[str | None] = mapped_column(Text, nullable=True)
     # proof_text: описание подтверждающих документов (общее описание, дополнительные детали)
-    
+
     # Структурированные поля для подтверждающих документов
     company_email: Mapped[str | None] = mapped_column(String(255), nullable=True)
     # company_email: email от компании (например: info@company.ru, manager@company.ru)
-    
+
     company_website: Mapped[str | None] = mapped_column(String(500), nullable=True)
     # company_website: сайт компании/бренда (для проверки email на сайте)
-    
+
     social_media_urls: Mapped[str | None] = mapped_column(Text, nullable=True)
     # social_media_urls: JSON массив ссылок на соцсети бренда (Instagram, VK, Facebook и т.д.)
-    
+
     # Proof files (для загрузки PDF, изображений и других документов)
     proof_files: Mapped[str | None] = mapped_column(Text, nullable=True)
     # proof_files: JSON массив путей к загруженным файлам (например, ["brand_requests/123/file1.pdf"])

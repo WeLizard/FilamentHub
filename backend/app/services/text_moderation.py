@@ -10,14 +10,14 @@ async def validate_multiple_text_fields(
 ) -> tuple[bool, str | None]:
     """
     Проверить несколько текстовых полей одновременно.
-    
+
     Args:
         db: Сессия БД
         **fields: Словарь {field_name: value} - название поля и его значение
-    
+
     Returns:
         (is_valid, error_message): (True, None) если всё ок, (False, message) если найдены проблемы
-    
+
     Example:
         is_valid, error = await validate_multiple_text_fields(
             db,
@@ -31,6 +31,6 @@ async def validate_multiple_text_fields(
             is_valid, reason = await validate_text_field(field_value, db, field_name)
             if not is_valid:
                 return False, reason
-    
+
     return True, None
 

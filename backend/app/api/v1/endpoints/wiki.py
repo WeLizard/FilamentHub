@@ -1,12 +1,16 @@
 """Wiki API endpoints."""
 
-from typing import Annotated, Optional
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
-from sqlalchemy import func, or_, select, cast, String
-from sqlalchemy.ext.asyncio import AsyncSession
 import hashlib
+from typing import Annotated, Optional
 
-from app.core.dependencies import get_current_user, get_current_admin_user, get_current_active_user_optional
+from fastapi import APIRouter, Depends, Query, Request
+from sqlalchemy import String, cast, func, or_, select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.core.dependencies import (
+    get_current_active_user_optional,
+    get_current_admin_user,
+)
 from app.core.errors import (
     ERR_ALREADY_FEEDBACK,
     ERR_ALREADY_HELPFUL,
@@ -57,13 +61,13 @@ async def list_categories(
 ) -> WikiCategoryListResponse:
     """
     Получить список всех категорий Wiki.
-    
+
     Возвращает категории отсортированные по полю order.
     """
     # Подсчет общего количества
     count_result = await db.execute(select(func.count(WikiCategory.id)))
     total = count_result.scalar_one()
-    
+
     # Получение категорий с подсчетом опубликованных статей
     query = (
         select(
@@ -76,10 +80,10 @@ async def list_categories(
         .offset((page - 1) * page_size)
         .limit(page_size)
     )
-    
+
     result = await db.execute(query)
     rows = result.all()
-    
+
     # Формируем ответ
     categories = []
     for category, articles_count in rows:
@@ -95,7 +99,7 @@ async def list_categories(
             "articles_count": articles_count or 0,
         }
         categories.append(WikiCategoryResponse(**category_dict))
-    
+
     return WikiCategoryListResponse(
         items=categories,
         total=total,
@@ -121,15 +125,15 @@ async def get_category(
         .where(WikiCategory.slug == category_slug)
         .group_by(WikiCategory.id)
     )
-    
+
     result = await db.execute(query)
     row = result.first()
-    
+
     if not row:
         raise_error(404, ERR_CATEGORY_NOT_FOUND)
-    
+
     category, articles_count = row
-    
+
     return WikiCategoryResponse(
         id=category.id,
         name=category.name,
@@ -158,13 +162,13 @@ async def create_category(
     )
     if existing.scalar_one_or_none():
         raise_error(400, ERR_CATEGORY_SLUG_OR_NAME_EXISTS)
-    
+
     # Создание категории
     category = WikiCategory(**data.model_dump())
     db.add(category)
     await db.commit()
     await db.refresh(category)
-    
+
     return WikiCategoryResponse(
         id=category.id,
         name=category.name,
@@ -188,13 +192,13 @@ async def update_category(
     """Обновить категорию (только для администраторов)."""
     result = await db.execute(select(WikiCategory).where(WikiCategory.id == category_id))
     category = result.scalar_one_or_none()
-    
+
     if not category:
         raise_error(404, ERR_CATEGORY_NOT_FOUND)
-    
+
     # Обновление полей
     update_data = data.model_dump(exclude_unset=True)
-    
+
     # Проверка уникальности slug если он изменяется
     if "slug" in update_data and update_data["slug"] != category.slug:
         existing = await db.execute(
@@ -202,7 +206,7 @@ async def update_category(
         )
         if existing.scalar_one_or_none():
             raise_error(400, ERR_CATEGORY_SLUG_EXISTS)
-    
+
     # Проверка уникальности name если он изменяется
     if "name" in update_data and update_data["name"] != category.name:
         existing = await db.execute(
@@ -210,13 +214,13 @@ async def update_category(
         )
         if existing.scalar_one_or_none():
             raise_error(400, ERR_CATEGORY_NAME_EXISTS)
-    
+
     for field, value in update_data.items():
         setattr(category, field, value)
-    
+
     await db.commit()
     await db.refresh(category)
-    
+
     # Получаем количество статей
     count_result = await db.execute(
         select(func.count(WikiArticle.id)).where(
@@ -224,7 +228,7 @@ async def update_category(
         )
     )
     articles_count = count_result.scalar_one()
-    
+
     return WikiCategoryResponse(
         id=category.id,
         name=category.name,
@@ -247,13 +251,13 @@ async def delete_category(
     """Удалить категорию (только для администраторов)."""
     result = await db.execute(select(WikiCategory).where(WikiCategory.id == category_id))
     category = result.scalar_one_or_none()
-    
+
     if not category:
         raise_error(404, ERR_CATEGORY_NOT_FOUND)
-    
+
     await db.delete(category)
     await db.commit()
-    
+
     return {"message": "Category deleted successfully"}
 
 
@@ -272,14 +276,14 @@ async def list_articles(
 ) -> WikiArticleListResponse:
     """
     Получить список статей с фильтрацией и поиском.
-    
+
     - **category_slug**: фильтр по категории
     - **search**: поиск по заголовку, краткому описанию и тегам
     - **published_only**: показывать только опубликованные статьи
     """
     # Базовый запрос
     query = select(WikiArticle)
-    
+
     # Фильтр по категории
     if category_slug:
         category_result = await db.execute(
@@ -289,11 +293,11 @@ async def list_articles(
         if not category_id:
             raise_error(404, ERR_CATEGORY_NOT_FOUND)
         query = query.where(WikiArticle.category_id == category_id)
-    
+
     # Фильтр по публикации
     if published_only:
         query = query.where(WikiArticle.status == WikiArticleStatus.PUBLISHED)
-    
+
     # Поиск
     if search:
         search_pattern = like_pattern(search)
@@ -305,12 +309,12 @@ async def list_articles(
                 cast(WikiArticle.tags, String).ilike(search_pattern),
             )
         )
-    
+
     # Подсчет total
     count_query = select(func.count()).select_from(query.subquery())
     count_result = await db.execute(count_query)
     total = count_result.scalar_one()
-    
+
     # Сортировка и пагинация
     query = (
         query
@@ -318,10 +322,10 @@ async def list_articles(
         .offset((page - 1) * page_size)
         .limit(page_size)
     )
-    
+
     result = await db.execute(query)
     articles = result.scalars().all()
-    
+
     # Конвертируем статьи в Summary, добавляя published поле из status
     items = []
     for article in articles:
@@ -340,7 +344,7 @@ async def list_articles(
             "updated_at": article.updated_at,
         }
         items.append(WikiArticleSummary(**article_dict))
-    
+
     return WikiArticleListResponse(
         items=items,
         total=total,
@@ -381,19 +385,19 @@ async def get_article(
 
     if article.status != WikiArticleStatus.PUBLISHED and not is_admin:
         raise_error(404, ERR_ARTICLE_NOT_PUBLISHED)
-    
+
     # Увеличиваем счетчик просмотров (только для публичных просмотров)
     if article.status == WikiArticleStatus.PUBLISHED:
         article.views += 1
         await db.commit()
         await db.refresh(article)
-    
+
     # Получаем имя категории
     category_result = await db.execute(
         select(WikiCategory.name).where(WikiCategory.id == article.category_id)
     )
     category_name = category_result.scalar_one_or_none()
-    
+
     article_dict = {
         "id": article.id,
         "category_id": article.category_id,
@@ -410,7 +414,7 @@ async def get_article(
         "updated_at": article.updated_at,
         "category_name": category_name,
     }
-    
+
     return WikiArticleResponse(**article_dict)
 
 
@@ -428,14 +432,14 @@ async def create_article(
     category = category_result.scalar_one_or_none()
     if not category:
         raise_error(404, ERR_CATEGORY_NOT_FOUND)
-    
+
     # Проверка уникальности slug
     existing = await db.execute(
         select(WikiArticle).where(WikiArticle.slug == data.slug)
     )
     if existing.scalar_one_or_none():
         raise_error(400, ERR_ARTICLE_SLUG_EXISTS)
-    
+
     # Создание статьи
     article_data = data.model_dump()
     # Конвертируем published bool в status enum
@@ -447,7 +451,7 @@ async def create_article(
     db.add(article)
     await db.commit()
     await db.refresh(article)
-    
+
     return WikiArticleResponse(
         id=article.id,
         category_id=article.category_id,
@@ -476,17 +480,17 @@ async def update_article(
     """Обновить статью (только для администраторов)."""
     result = await db.execute(select(WikiArticle).where(WikiArticle.id == article_id))
     article = result.scalar_one_or_none()
-    
+
     if not article:
         raise_error(404, ERR_ARTICLE_NOT_FOUND)
-    
+
     # Обновление полей
     update_data = data.model_dump(exclude_unset=True)
-    
+
     # Конвертируем published bool в status enum
     if "published" in update_data:
         update_data["status"] = WikiArticleStatus.PUBLISHED if update_data.pop("published") else WikiArticleStatus.DRAFT
-    
+
     # Проверка существования новой категории
     if "category_id" in update_data:
         category_result = await db.execute(
@@ -494,7 +498,7 @@ async def update_article(
         )
         if not category_result.scalar_one_or_none():
             raise_error(404, ERR_CATEGORY_NOT_FOUND)
-    
+
     # Проверка уникальности slug если он изменяется
     if "slug" in update_data and update_data["slug"] != article.slug:
         existing = await db.execute(
@@ -502,23 +506,23 @@ async def update_article(
         )
         if existing.scalar_one_or_none():
             raise_error(400, ERR_ARTICLE_SLUG_EXISTS)
-    
+
     # Обновляем поля
     for field, value in update_data.items():
         setattr(article, field, value)
-    
+
     # Обновляем updated_by_id
     article.updated_by_id = _current_user.id
-    
+
     await db.commit()
     await db.refresh(article)
-    
+
     # Получаем имя категории
     category_result = await db.execute(
         select(WikiCategory.name).where(WikiCategory.id == article.category_id)
     )
     category_name = category_result.scalar_one_or_none()
-    
+
     return WikiArticleResponse(
         id=article.id,
         category_id=article.category_id,
@@ -546,13 +550,13 @@ async def delete_article(
     """Удалить статью (только для администраторов)."""
     result = await db.execute(select(WikiArticle).where(WikiArticle.id == article_id))
     article = result.scalar_one_or_none()
-    
+
     if not article:
         raise_error(404, ERR_ARTICLE_NOT_FOUND)
-    
+
     await db.delete(article)
     await db.commit()
-    
+
     return {"message": "Article deleted successfully"}
 
 
@@ -575,7 +579,7 @@ async def search_articles(
     search_pattern = like_pattern(q)
 
     # tags это JSON поле, поэтому используем cast для поиска
-    from sqlalchemy import cast, String
+    from sqlalchemy import String, cast
     query = select(WikiArticle).where(
         WikiArticle.status == WikiArticleStatus.PUBLISHED,
         or_(

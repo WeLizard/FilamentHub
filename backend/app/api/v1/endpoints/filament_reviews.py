@@ -9,7 +9,6 @@ from sqlalchemy.orm import selectinload
 
 from app.core.dependencies import get_current_user
 from app.core.errors import (
-    ERR_ADD_PRESET_FIRST,
     ERR_FILAMENT_NOT_FOUND,
     ERR_NO_PERMISSION_DELETE_REVIEW,
     ERR_NO_PERMISSION_EDIT_REVIEW,
@@ -44,7 +43,7 @@ async def get_available_presets_for_review(
 ) -> dict:
     """
     Получить список пресетов, на которые можно оставить отзыв для указанного филамента.
-    
+
     Возвращает:
     - Официальный пресет (если есть)
     - Сохраненные пользователем пресеты этого филамента
@@ -145,7 +144,7 @@ async def get_my_reviews(
             preset_result = await db.execute(select(Preset).where(Preset.id == review.preset_id))
             preset = preset_result.scalar_one_or_none()
             preset_name = preset.name if preset else None
-        
+
         items.append(
             FilamentReviewResponse(
                 id=review.id,
@@ -234,7 +233,7 @@ async def list_filament_reviews(
             preset_result = await db.execute(select(Preset).where(Preset.id == review.preset_id))
             preset = preset_result.scalar_one_or_none()
             preset_name = preset.name if preset else None
-        
+
         items.append(
             FilamentReviewResponse(
                 id=review.id,
@@ -300,7 +299,7 @@ async def get_filament_rating_stats(
 
     # Вычисляем взвешенный рейтинг филамента на основе пресетов
     weighted_rating, weighted_success_rate = await calculate_filament_weighted_rating(filament_id, db)
-    
+
     # Если есть взвешенный рейтинг, используем его, иначе простое среднее всех отзывов
     if weighted_rating is not None:
         avg_rating = weighted_rating
@@ -347,7 +346,7 @@ async def get_review(
         preset_result = await db.execute(select(Preset).where(Preset.id == review.preset_id))
         preset = preset_result.scalar_one_or_none()
         preset_name = preset.name if preset else None
-    
+
     return FilamentReviewResponse(
         id=review.id,
         filament_id=review.filament_id,
@@ -408,19 +407,19 @@ async def create_review(
             )
             if not saved_preset_check.scalar_one_or_none():
                 raise_error(403, ERR_REVIEW_SAVED_ONLY)
-    
+
     # Проверка текстовых полей на плохие слова
     from app.services.preset_moderation import validate_text_field
     if review_data.comment:
         is_valid, error_msg = await validate_text_field(review_data.comment, db, "review_comment")
         if not is_valid:
             raise HTTPException(status_code=400, detail=error_msg)
-    
+
     if review_data.printer_model:
         is_valid, error_msg = await validate_text_field(review_data.printer_model, db, "printer_model")
         if not is_valid:
             raise HTTPException(status_code=400, detail=error_msg)
-    
+
     # Проверяем, не оставил ли пользователь уже отзыв для этого пресета
     duplicate_filters = [
         FilamentReview.filament_id == review_data.filament_id,
@@ -460,7 +459,7 @@ async def create_review(
     # Загружаем пользователя и пресет для ответа
     await db.refresh(review, ["user"])
     preset_name = preset.name if preset else None
-    
+
     return FilamentReviewResponse(
         id=review.id,
         filament_id=review.filament_id,
@@ -499,16 +498,16 @@ async def update_review(
     # Проверяем права: только автор или админ
     if review.user_id != current_user.id and current_user.role.value != "admin":
         raise_error(403, ERR_NO_PERMISSION_EDIT_REVIEW)
-    
+
     # Проверка текстовых полей на плохие слова
     from app.services.preset_moderation import validate_text_field
     update_data = review_data.model_dump(exclude_unset=True)
-    
+
     if "comment" in update_data:
         is_valid, error_msg = await validate_text_field(update_data["comment"], db, "review_comment")
         if not is_valid:
             raise HTTPException(status_code=400, detail=error_msg)
-    
+
     if "printer_model" in update_data:
         is_valid, error_msg = await validate_text_field(update_data["printer_model"], db, "printer_model")
         if not is_valid:
@@ -516,14 +515,14 @@ async def update_review(
 
     # Сохраняем старый preset_id для обновления рейтингов
     old_preset_id = review.preset_id
-    
+
     # Обновляем поля
     for key, value in update_data.items():
         setattr(review, key, value)
 
     await db.commit()
     await db.refresh(review)
-    
+
     # Обновляем рейтинги пресета (старого и нового, если изменился)
     if old_preset_id:
         await update_preset_ratings(old_preset_id, db)
@@ -536,7 +535,7 @@ async def update_review(
         preset_result = await db.execute(select(Preset).where(Preset.id == review.preset_id))
         preset = preset_result.scalar_one_or_none()
         preset_name = preset.name if preset else None
-    
+
     return FilamentReviewResponse(
         id=review.id,
         filament_id=review.filament_id,
@@ -575,11 +574,11 @@ async def delete_review(
 
     # Сохраняем preset_id перед деактивацией
     preset_id = review.preset_id
-    
+
     # Деактивируем отзыв вместо физического удаления
     review.active = False
     await db.commit()
-    
+
     # Обновляем рейтинги пресета после деактивации отзыва
     if preset_id:
         await update_preset_ratings(preset_id, db)

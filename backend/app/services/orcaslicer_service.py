@@ -3,8 +3,8 @@
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.user import User
 from app.models.preset import Preset
+from app.models.user import User
 from app.models.user_saved_preset import UserSavedPreset
 
 
@@ -14,11 +14,11 @@ async def get_user_deleted_preset_rule(
 ) -> str:
     """
     Получить правило обработки удалённых пресетов для пользователя.
-    
+
     Args:
         user_id: ID пользователя
         db: Database session
-    
+
     Returns:
         Правило обработки удалённых пресетов ("always_restore", "always_delete", "always_ask", etc.)
         По умолчанию возвращает "always_ask"
@@ -27,10 +27,10 @@ async def get_user_deleted_preset_rule(
         select(User).where(User.id == user_id)
     )
     user = result.scalar_one_or_none()
-    
+
     if not user:
         return "always_ask"  # По умолчанию
-    
+
     return user.deleted_preset_rule or "always_ask"
 
 
@@ -41,12 +41,12 @@ async def save_user_deleted_preset_rule(
 ) -> None:
     """
     Сохранить правило обработки удалённых пресетов для пользователя.
-    
+
     Args:
         user_id: ID пользователя
         rule: Правило обработки ("always_restore", "always_delete", "always_ask", etc.)
         db: Database session
-    
+
     Raises:
         ValueError: Если пользователь не найден
     """
@@ -54,10 +54,10 @@ async def save_user_deleted_preset_rule(
         select(User).where(User.id == user_id)
     )
     user = result.scalar_one_or_none()
-    
+
     if not user:
         raise ValueError(f"User {user_id} not found")
-    
+
     # Валидация правила
     valid_rules = [
         "always_restore",
@@ -68,7 +68,7 @@ async def save_user_deleted_preset_rule(
     ]
     if rule not in valid_rules:
         raise ValueError(f"Invalid rule: {rule}. Valid rules: {valid_rules}")
-    
+
     user.deleted_preset_rule = rule
     await db.commit()
     await db.refresh(user)
@@ -81,7 +81,7 @@ async def remove_saved_preset(
 ) -> None:
     """
     Удалить сохранённый пресет из "Мои пресеты" (убрать из избранного).
-    
+
     Args:
         user_id: ID пользователя
         preset_id: ID пресета
@@ -94,7 +94,7 @@ async def remove_saved_preset(
         )
     )
     saved_preset = result.scalar_one_or_none()
-    
+
     if saved_preset:
         await db.delete(saved_preset)
         await db.commit()
@@ -107,12 +107,12 @@ async def is_preset_created_by_user(
 ) -> bool:
     """
     Проверить, создан ли пресет пользователем.
-    
+
     Args:
         user_id: ID пользователя
         preset_id: ID пресета
         db: Database session
-    
+
     Returns:
         True, если пресет создан пользователем, False иначе
     """
@@ -123,7 +123,7 @@ async def is_preset_created_by_user(
         )
     )
     preset = result.scalar_one_or_none()
-    
+
     return preset is not None
 
 
@@ -134,12 +134,12 @@ async def is_preset_saved_by_user(
 ) -> bool:
     """
     Проверить, сохранён ли пресет пользователем (добавлен в избранное).
-    
+
     Args:
         user_id: ID пользователя
         preset_id: ID пресета
         db: Database session
-    
+
     Returns:
         True, если пресет сохранён пользователем, False иначе
     """
@@ -150,6 +150,6 @@ async def is_preset_saved_by_user(
         )
     )
     saved_preset = result.scalar_one_or_none()
-    
+
     return saved_preset is not None
 

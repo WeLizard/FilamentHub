@@ -12,7 +12,12 @@ from app.core.errors import ERR_ACCESS_DENIED, ERR_FILAMENT_NOT_FOUND, raise_err
 from app.models.filament import Filament
 from app.models.user import User
 from app.models.user_spool import UserSpool, UserSpoolState
-from app.schemas.spool import SpoolCreateRequest, SpoolResponse, SpoolUpdateRequest, SpoolFilamentInfo
+from app.schemas.spool import (
+    SpoolCreateRequest,
+    SpoolFilamentInfo,
+    SpoolResponse,
+    SpoolUpdateRequest,
+)
 
 
 async def _load_filament_info(db: AsyncSession, filament_id: int) -> Filament | None:

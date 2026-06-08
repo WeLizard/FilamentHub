@@ -1,9 +1,9 @@
 """Wiki schemas."""
 
-from datetime import datetime
-from pydantic import BaseModel, Field, field_validator
 import re
+from datetime import datetime
 
+from pydantic import BaseModel, Field, field_validator
 
 # ============================================================================
 # WikiCategory Schemas

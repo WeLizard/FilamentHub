@@ -3,7 +3,7 @@
 from datetime import datetime
 from typing import TYPE_CHECKING
 
-from sqlalchemy import Boolean, Float, ForeignKey, Integer, Text, UniqueConstraint
+from sqlalchemy import Boolean, Float, ForeignKey, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.sql import func
 
@@ -11,8 +11,8 @@ from app.db.base import Base
 
 if TYPE_CHECKING:
     from app.models.filament import Filament
-    from app.models.user import User
     from app.models.preset import Preset
+    from app.models.user import User
 
 
 class FilamentReview(Base):

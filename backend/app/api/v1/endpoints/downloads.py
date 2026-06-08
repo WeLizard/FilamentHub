@@ -7,11 +7,10 @@ from pathlib import Path
 from typing import Literal
 
 from fastapi import APIRouter, Query, Request, status
-
-from app.core.errors import ERR_DOWNLOAD_UNAVAILABLE, raise_error
 from pydantic import BaseModel
 
 from app.core.config import settings
+from app.core.errors import ERR_DOWNLOAD_UNAVAILABLE, raise_error
 
 router = APIRouter(prefix="/downloads", tags=["downloads"])
 
@@ -126,10 +125,10 @@ def _get_file_size(filepath: Path) -> str:
     """Получить размер файла в читаемом формате."""
     if not _file_exists(filepath):
         return "N/A"
-    
+
     size_bytes = filepath.stat().st_size
     size_mb = size_bytes / (1024 * 1024)
-    
+
     if size_mb < 1:
         return f"{size_bytes / 1024:.1f} KB"
     else:
@@ -361,7 +360,7 @@ async def get_orcaslicer_download(
     Автоматически находит файл нужной версии в папке distributions.
     """
     available_versions = _scan_available_versions()
-    latest_version = _get_latest_version()
+    _get_latest_version()
 
     # Ищем файл для запрошенной платформы
     best_match = None

@@ -3,7 +3,7 @@
 from datetime import datetime
 from typing import TYPE_CHECKING
 
-from sqlalchemy import Boolean, Float, ForeignKey, Integer, JSON, String, Text
+from sqlalchemy import JSON, Boolean, Float, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.sql import func
 
@@ -12,6 +12,7 @@ from app.db.base import Base
 if TYPE_CHECKING:
     from app.models.brand import Brand
     from app.models.filament_review import FilamentReview
+    from app.models.preset import Preset
     from app.models.print_profile_filament import PrintProfileFilament
 
 
@@ -41,7 +42,7 @@ class Filament(Base):
     color_name: Mapped[str | None] = mapped_column(String(100), nullable=True)
     color_hex: Mapped[str | None] = mapped_column(String(7), nullable=True)
     # color_hex: #FF0000 (базовый цвет, используется в OrcaSlicer)
-    
+
     # Extended visual settings (JSON) - только для сайта
     visual_settings: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     # visual_settings: {
@@ -73,10 +74,10 @@ class Filament(Base):
     # Statistics
     views_count: Mapped[int] = mapped_column(Integer, default=0)
     # views_count: сколько раз посмотрели страницу филамента
-    
+
     scans_count: Mapped[int] = mapped_column(Integer, default=0)
     # scans_count: сколько раз отсканировали QR-код
-    
+
     # QR Code
     qr_code: Mapped[str | None] = mapped_column(String(50), unique=True, nullable=True, index=True)
     # qr_code: короткий код для QR-кода (например: "FHUB-ABC123")

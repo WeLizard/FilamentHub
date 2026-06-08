@@ -4,7 +4,7 @@ import logging
 from typing import Annotated
 
 from fastapi import Depends, Header, Request, status
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -24,7 +24,6 @@ from app.core.security import decode_access_token, token_fingerprint
 from app.db.session import get_db
 from app.models.revoked_token import RevokedToken
 from app.models.user import User, UserRole
-from app.schemas.user import TokenData
 
 logger = logging.getLogger(__name__)
 
@@ -80,9 +79,9 @@ async def get_current_user(
         _validate_cookie_csrf(request)
 
     token_preview = token[:20] + "..." if len(token) > 20 else token
-    
+
     payload = decode_access_token(token)
-    
+
     if payload is None:
         logger.warning("Failed to decode JWT token (preview: %s) - token is invalid, expired, or malformed", token_preview)
         raise_error(status.HTTP_401_UNAUTHORIZED, ERR_COULD_NOT_VALIDATE, headers={"WWW-Authenticate": "Bearer"})
@@ -95,18 +94,18 @@ async def get_current_user(
     if email is None:
         logger.warning("JWT token payload missing 'sub' field (preview: %s)", token_preview)
         raise_error(status.HTTP_401_UNAUTHORIZED, ERR_COULD_NOT_VALIDATE, headers={"WWW-Authenticate": "Bearer"})
-    
+
     result = await db.execute(select(User).where(User.email == email))
     user = result.scalar_one_or_none()
-    
+
     if user is None:
         logger.warning("User not found for email: %s (from JWT token)", email)
         raise_error(status.HTTP_401_UNAUTHORIZED, ERR_USER_NOT_FOUND, headers={"WWW-Authenticate": "Bearer"})
-    
+
     if not user.active:
         logger.warning("User account is inactive: %s (id: %d)", email, user.id)
         raise_error(status.HTTP_403_FORBIDDEN, ERR_USER_INACTIVE)
-    
+
     return user
 
 
@@ -134,23 +133,23 @@ async def get_current_active_user_optional(
         return None
 
     payload = decode_access_token(token)
-    
+
     if payload is None:
         return None
 
     if await is_token_revoked(token, db):
         return None
-    
+
     email: str | None = payload.get("sub")
     if email is None:
         return None
-    
+
     result = await db.execute(select(User).where(User.email == email))
     user = result.scalar_one_or_none()
-    
+
     if user is None or not user.active:
         return None
-    
+
     return user
 
 

@@ -2,7 +2,6 @@
 
 import json
 import logging
-import os
 from pathlib import Path
 from typing import Optional
 
@@ -44,7 +43,7 @@ def get_maintenance_mode() -> bool:
 def set_maintenance_mode(enabled: bool, message: Optional[str] = None) -> None:
     """
     Установить режим технических работ.
-    
+
     Args:
         enabled: Включить или выключить технические работы
         message: Сообщение для пользователей (опционально)

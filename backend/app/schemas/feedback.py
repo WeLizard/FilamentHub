@@ -1,8 +1,6 @@
 """Feedback schemas."""
 
 from datetime import datetime
-from typing import Any
-
 from enum import Enum
 
 from pydantic import BaseModel, Field, field_validator
@@ -47,12 +45,11 @@ class FeedbackBase(BaseModel):
         v = v.strip() if isinstance(v, str) else v
         if not v or v == '':
             return None
-        
+
         # Простая валидация формата email
         import re
         email_pattern = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
         if not re.match(email_pattern, v):
-            from pydantic import ValidationError
             raise ValueError('Invalid email format')
         return v
 

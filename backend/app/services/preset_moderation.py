@@ -4,15 +4,16 @@ import logging
 import re
 from typing import Any, Optional
 
-logger = logging.getLogger(__name__)
-
 from better_profanity import profanity
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.models.filament import Filament
+
 # BadWord импортируется лениво в _load_bad_words_from_db, чтобы не падать при отсутствии таблицы
 from app.models.preset import Preset, PresetModerationStatus
-from app.models.filament import Filament
+
+logger = logging.getLogger(__name__)
 
 # Инициализируем библиотеку better-profanity
 # По умолчанию она работает с английским языком
@@ -23,7 +24,7 @@ except Exception:
 
 
 # Справочные данные для типов материалов (температуры в градусах Цельсия)
-# Структура: {"min": минимальное значение (жёсткое ограничение), 
+# Структура: {"min": минимальное значение (жёсткое ограничение),
 #            "max": максимальное значение (жёсткое ограничение),
 #            "soft_min": мягкое ограничение (предупреждение),
 #            "soft_max": мягкое ограничение (предупреждение),
@@ -167,39 +168,39 @@ _BAD_WORDS_CACHE: dict[str, list[str]] = {}
 async def _load_bad_words_from_db(db: AsyncSession) -> tuple[list[str], list[str]]:
     """Загрузить списки плохих слов из БД (с кэшированием)."""
     global _BAD_WORDS_CACHE
-    
+
     # Если кэш не пустой, возвращаем из кэша
     if "ru" in _BAD_WORDS_CACHE and "en" in _BAD_WORDS_CACHE:
         return _BAD_WORDS_CACHE["ru"], _BAD_WORDS_CACHE["en"]
-    
+
     # Загружаем из БД с обработкой ошибок (на случай, если таблица еще не создана)
     try:
         # Ленивый импорт модели, чтобы не падать при инициализации модуля
         from app.models.bad_word import BadWord
-        
+
         result = await db.execute(select(BadWord))
         bad_words = result.scalars().all()
-        
+
         bad_words_ru = []
         bad_words_en = []
-        
+
         for word in bad_words:
             if word.language == "ru":
                 bad_words_ru.append(word.word.lower())
             elif word.language == "en":
                 bad_words_en.append(word.word.lower())
-        
+
         # Кэшируем результаты
         _BAD_WORDS_CACHE["ru"] = bad_words_ru
         _BAD_WORDS_CACHE["en"] = bad_words_en
-        
+
         return bad_words_ru, bad_words_en
     except Exception as e:
         # Если таблицы нет или произошла ошибка, возвращаем пустые списки и кэшируем их
         # Это предотвращает повторные попытки запроса к несуществующей таблице
         # Логируем ошибку для отладки, но не падаем
         logger.warning("Failed to load bad words from DB: %s. Using empty lists.", e)
-        
+
         _BAD_WORDS_CACHE["ru"] = []
         _BAD_WORDS_CACHE["en"] = []
         return [], []
@@ -502,38 +503,38 @@ async def moderate_preset(
 ) -> tuple[PresetModerationStatus, Optional[dict[str, Any] | str]]:
     """
     Автоматическая модерация пресета.
-    
+
     Args:
         preset: Пресет для модерации
         filament: Материал пресета
         db: Сессия БД для проверки плохих слов
         is_official: Является ли пресет официальным (от производителя)
         allow_manual_review: Разрешать ли перевод в PENDING по мягким риск-сигналам
-    
+
     Returns:
         (status, reason): Статус модерации и причина (если отклонен)
     """
     # Официальные пресеты всегда одобряются автоматически (доверяем производителям)
     if is_official:
         return PresetModerationStatus.APPROVED, None
-    
+
     # Проверка названия на плохие слова
     if preset.name:
         is_valid_name, name_reason = await check_bad_words(preset.name, db)
         if not is_valid_name:
             return PresetModerationStatus.REJECTED, name_reason
-    
+
     # Проверка описания на плохие слова (если есть)
     if preset.description:
         is_valid_desc, desc_reason = await check_bad_words(preset.description, db)
         if not is_valid_desc:
             return PresetModerationStatus.REJECTED, desc_reason
-    
+
     # Проверка настроек на разумность
     is_valid_settings, settings_reason = validate_preset_settings(preset, filament)
     if not is_valid_settings:
         return PresetModerationStatus.REJECTED, settings_reason
-    
+
     # Мягкие сигналы риска -> отправляем на ручную модерацию (если включено)
     flags = _collect_soft_range_flags(preset, filament)
     duplicate_flag = await _find_duplicate_preset_flag(preset, db)

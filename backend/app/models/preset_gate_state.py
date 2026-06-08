@@ -21,8 +21,8 @@ from app.db.base import Base
 if TYPE_CHECKING:
     from app.models.preset import Preset
     from app.models.user import User
-    from app.models.user_spool import UserSpool
     from app.models.user_printer_device import UserPrinterDevice
+    from app.models.user_spool import UserSpool
 
 
 class PresetGateStateSource(str, enum.Enum):

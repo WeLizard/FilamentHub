@@ -5,15 +5,12 @@ from datetime import datetime
 from pathlib import Path
 from typing import Annotated, Any, Optional
 
-from fastapi import APIRouter, Body, Depends, HTTPException, Query, status, UploadFile, File
+from fastapi import APIRouter, Body, Depends, File, HTTPException, Query, UploadFile, status
 from fastapi.responses import FileResponse
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-logger = logging.getLogger(__name__)
-
 from app.core.dependencies import get_current_admin_user
-from app.core.utils import like_pattern
 from app.core.errors import (
     ERR_ARTICLE_NOT_FOUND,
     ERR_BANNED_WORD_EXISTS,
@@ -30,9 +27,9 @@ from app.core.errors import (
     ERR_FILE_SIZE_EXCEEDED,
     ERR_FILE_TOO_LARGE,
     ERR_FILENAME_REQUIRED,
-    ERR_INVALID_FILE_PATH,
     ERR_INVALID_BADGES,
     ERR_INVALID_FILE_EXT,
+    ERR_INVALID_FILE_PATH,
     ERR_INVALID_FILENAME,
     ERR_NO_ACTIVE_USERS_FOUND,
     ERR_PRESET_NOT_FOUND,
@@ -42,9 +39,9 @@ from app.core.errors import (
     ERR_PRINTER_SLUG_EXISTS,
     ERR_REQUEST_NOT_PENDING,
     ERR_TABLE_DATA_ERROR,
+    ERR_TABLE_DELETE_ERROR,
     ERR_TABLE_NOT_FOUND,
     ERR_TABLE_STRUCTURE_ERROR,
-    ERR_TABLE_DELETE_ERROR,
     ERR_TABLE_UPDATE_ERROR,
     ERR_USER_ALREADY_IN_BRAND,
     ERR_USER_IDS_EMPTY,
@@ -52,30 +49,30 @@ from app.core.errors import (
     ERR_USER_NOT_IN_BRAND,
     raise_error,
 )
+from app.core.utils import like_pattern
 from app.db.session import get_db
-from app.services.file_service import get_upload_root_dir, normalize_brand_logo_upload
-from app.services.maintenance_service import (
-    get_maintenance_info,
-    get_maintenance_mode,
-    set_maintenance_mode,
-)
+
 # BadWord импортируется лениво в функциях, где используется
 from app.models.brand import Brand
 from app.models.brand_request import BrandRequest, BrandRequestStatus
+from app.models.notification import NotificationType
 from app.models.preset import Preset, PresetModerationStatus
 from app.models.printer import Printer
 from app.models.printer_request import PrinterRequest, PrinterRequestStatus
 from app.models.user import User, UserRole
 from app.schemas.bad_word import BadWordCreate, BadWordListResponse, BadWordResponse, BadWordUpdate
 from app.schemas.brand import BrandListResponse, BrandResponse, BrandUpdate
-from app.schemas.brand_request import BrandRequestListResponse, BrandRequestResponse, BrandRequestUpdate
+from app.schemas.brand_request import (
+    BrandRequestListResponse,
+    BrandRequestResponse,
+    BrandRequestUpdate,
+)
 from app.schemas.database import (
     DatabaseDumpDeleteResponse,
     DatabaseDumpInfo,
     DatabaseDumpListResponse,
     DatabaseExportRequest,
     DatabaseExportResponse,
-    DatabaseImportRequest,
     DatabaseImportResponse,
     DatabaseIntegrityResponse,
     DatabaseStatsResponse,
@@ -85,41 +82,70 @@ from app.schemas.database import (
     MigrationStampRequest,
     MigrationStampResponse,
     RecreateTablesResponse,
-    TableStructureResponse,
-    TableDataRequest,
     TableDataResponse,
     TableDataUpdateRequest,
+    TableStructureResponse,
 )
 from app.schemas.preset import PresetResponse
-from app.schemas.printer import PrinterCreate, PrinterListResponse, PrinterResponse, PrinterUpdate
+from app.schemas.printer import PrinterCreate, PrinterResponse, PrinterUpdate
 from app.schemas.printer_request import (
     PrinterRequestListResponse,
     PrinterRequestResponse,
     PrinterRequestUpdate,
 )
 from app.schemas.user import UserResponse
+from app.services.database_service import (
+    apply_migration as apply_migration_service,
+)
+from app.services.database_service import (
+    delete_database_dump as delete_database_dump_service,
+)
+from app.services.database_service import (
+    downgrade_migration as downgrade_migration_service,
+)
+from app.services.database_service import (
+    export_database as export_database_service,
+)
+from app.services.database_service import (
+    get_database_stats as get_database_stats_service,
+)
+from app.services.database_service import (
+    get_migration_history as get_migration_history_service,
+)
+from app.services.database_service import (
+    get_table_data as get_table_data_service,
+)
+from app.services.database_service import (
+    get_table_structure as get_table_structure_service,
+)
+from app.services.database_service import (
+    import_database as import_database_service,
+)
+from app.services.database_service import (
+    list_database_dumps as list_database_dumps_service,
+)
+from app.services.database_service import (
+    recreate_missing_tables as recreate_missing_tables_service,
+)
+from app.services.database_service import (
+    stamp_migration as stamp_migration_service,
+)
+from app.services.database_service import (
+    validate_migration_integrity as validate_migration_integrity_service,
+)
+from app.services.file_service import get_upload_root_dir, normalize_brand_logo_upload
+from app.services.maintenance_service import (
+    get_maintenance_info,
+    set_maintenance_mode,
+)
 from app.services.notification_service import (
     notify_all_users,
     notify_brand_request_approved,
     notify_brand_request_rejected,
     notify_brand_verified,
 )
-from app.models.notification import NotificationType
-from app.services.database_service import (
-    apply_migration as apply_migration_service,
-    delete_database_dump as delete_database_dump_service,
-    downgrade_migration as downgrade_migration_service,
-    export_database as export_database_service,
-    get_database_stats as get_database_stats_service,
-    get_migration_history as get_migration_history_service,
-    get_table_data as get_table_data_service,
-    get_table_structure as get_table_structure_service,
-    import_database as import_database_service,
-    list_database_dumps as list_database_dumps_service,
-    recreate_missing_tables as recreate_missing_tables_service,
-    stamp_migration as stamp_migration_service,
-    validate_migration_integrity as validate_migration_integrity_service,
-)
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 
@@ -138,19 +164,18 @@ async def list_brands_admin(
     search: str | None = Query(None, description="Поиск по названию бренда"),
 ) -> BrandListResponse:
     """Получить список всех брендов (для админа) с фильтрацией и пагинацией."""
-    from sqlalchemy import or_
-    
+
     # Build query
     query = select(Brand)
-    
+
     # Active filter
     if active_only:
         query = query.where(Brand.active == True)
-    
+
     # Verified filter
     if verified is not None:
         query = query.where(Brand.verified == verified)
-    
+
     # Search filter
     if search:
         search_term = like_pattern(search)
@@ -196,21 +221,21 @@ async def verify_brand(
     """Верифицировать бренд (производителя)."""
     result = await db.execute(select(Brand).where(Brand.id == brand_id))
     brand = result.scalar_one_or_none()
-    
+
     if not brand:
         raise_error(status.HTTP_404_NOT_FOUND, ERR_BRAND_NOT_FOUND)
-    
+
     brand.verified = True
     await db.commit()
     await db.refresh(brand)
-    
+
     # Создаем уведомления для всех пользователей, связанных с этим брендом
     try:
         users_result = await db.execute(
             select(User).where(User.brand_id == brand.id)
         )
         users = users_result.scalars().all()
-        
+
         for user in users:
             try:
                 await notify_brand_verified(
@@ -223,7 +248,7 @@ async def verify_brand(
                 logger.error(f"Failed to create notification for user {user.id} (brand {brand.id}): {e}")
     except Exception as e:
         logger.error(f"Failed to create notifications for brand {brand.id} verification: {e}")
-    
+
     return BrandResponse.model_validate(brand)
 
 
@@ -236,14 +261,14 @@ async def unverify_brand(
     """Отозвать верификацию бренда."""
     result = await db.execute(select(Brand).where(Brand.id == brand_id))
     brand = result.scalar_one_or_none()
-    
+
     if not brand:
         raise_error(status.HTTP_404_NOT_FOUND, ERR_BRAND_NOT_FOUND)
-    
+
     brand.verified = False
     await db.commit()
     await db.refresh(brand)
-    
+
     return BrandResponse.model_validate(brand)
 
 
@@ -264,17 +289,17 @@ async def update_brand_admin(
     # Проверка текстовых полей на плохие слова
     from app.services.preset_moderation import validate_text_field
     update_data = data.model_dump(exclude_unset=True)
-    
+
     if "name" in update_data:
         is_valid, error_msg = await validate_text_field(update_data["name"], db, "brand_name")
         if not is_valid:
             raise HTTPException(status_code=400, detail=error_msg)
-    
+
     if "description" in update_data and update_data["description"]:
         is_valid, error_msg = await validate_text_field(update_data["description"], db, "brand_description")
         if not is_valid:
             raise HTTPException(status_code=400, detail=error_msg)
-    
+
     # Проверка уникальности slug, если он изменяется
     if "slug" in update_data and update_data["slug"] != brand.slug:
         existing_brand = await db.execute(
@@ -363,7 +388,7 @@ async def list_pending_presets(
 ) -> list[PresetResponse]:
     """Получить список пресетов, ожидающих модерации."""
     offset = (page - 1) * size
-    
+
     result = await db.execute(
         select(Preset)
         .where(
@@ -376,7 +401,7 @@ async def list_pending_presets(
         .limit(size)
     )
     presets = result.scalars().all()
-    
+
     return [PresetResponse.model_validate(preset) for preset in presets]
 
 
@@ -389,18 +414,18 @@ async def approve_preset(
     """Одобрить пресет."""
     result = await db.execute(select(Preset).where(Preset.id == preset_id))
     preset = result.scalar_one_or_none()
-    
+
     if not preset:
         raise_error(status.HTTP_404_NOT_FOUND, ERR_PRESET_NOT_FOUND)
-    
+
     preset.moderation_status = PresetModerationStatus.APPROVED
     preset.moderated_by = admin.id
     preset.moderated_at = datetime.utcnow()
     preset.moderation_reason = None
-    
+
     await db.commit()
     await db.refresh(preset)
-    
+
     return PresetResponse.model_validate(preset)
 
 
@@ -414,19 +439,19 @@ async def reject_preset(
     """Отклонить пресет с указанием причины."""
     result = await db.execute(select(Preset).where(Preset.id == preset_id))
     preset = result.scalar_one_or_none()
-    
+
     if not preset:
         raise_error(status.HTTP_404_NOT_FOUND, ERR_PRESET_NOT_FOUND)
-    
+
     preset.moderation_status = PresetModerationStatus.REJECTED
     preset.moderated_by = admin.id
     preset.moderated_at = datetime.utcnow()
     preset.moderation_reason = reason
     preset.active = False  # Отклоненные не показываем
-    
+
     await db.commit()
     await db.refresh(preset)
-    
+
     return PresetResponse.model_validate(preset)
 
 
@@ -445,9 +470,9 @@ async def list_users(
 ) -> list[UserResponse]:
     """Получить список пользователей."""
     from sqlalchemy.orm import selectinload
-    
+
     query = select(User).options(selectinload(User.brand))
-    
+
     if active_only:
         query = query.where(User.active == True)
     if role:
@@ -457,13 +482,13 @@ async def list_users(
             query = query.where(User.brand_id.isnot(None))
         else:
             query = query.where(User.brand_id.is_(None))
-    
+
     offset = (page - 1) * size
     result = await db.execute(
         query.order_by(User.created_at.desc()).offset(offset).limit(size)
     )
     users = result.scalars().all()
-    
+
     items = []
     for user in users:
         response = UserResponse.model_validate(user)
@@ -471,7 +496,7 @@ async def list_users(
         if user.brand_id and user.brand:
             response.brand_name = user.brand.name  # type: ignore
         items.append(response)
-    
+
     return items
 
 
@@ -484,14 +509,14 @@ async def activate_user(
     """Активировать пользователя."""
     result = await db.execute(select(User).where(User.id == user_id))
     user = result.scalar_one_or_none()
-    
+
     if not user:
         raise_error(status.HTTP_404_NOT_FOUND, ERR_USER_NOT_FOUND)
-    
+
     user.active = True
     await db.commit()
     await db.refresh(user)
-    
+
     return UserResponse.model_validate(user)
 
 
@@ -504,14 +529,14 @@ async def deactivate_user(
     """Деактивировать пользователя."""
     result = await db.execute(select(User).where(User.id == user_id))
     user = result.scalar_one_or_none()
-    
+
     if not user:
         raise_error(status.HTTP_404_NOT_FOUND, ERR_USER_NOT_FOUND)
-    
+
     user.active = False
     await db.commit()
     await db.refresh(user)
-    
+
     return UserResponse.model_validate(user)
 
 
@@ -524,15 +549,15 @@ async def promote_to_admin(
     """Назначить пользователя администратором."""
     result = await db.execute(select(User).where(User.id == user_id))
     user = result.scalar_one_or_none()
-    
+
     if not user:
         raise_error(status.HTTP_404_NOT_FOUND, ERR_USER_NOT_FOUND)
-    
+
     # Админ может оставаться привязанным к бренду, поэтому brand_id не обнуляем
     user.role = UserRole.ADMIN
     await db.commit()
     await db.refresh(user)
-    
+
     return UserResponse.model_validate(user)
 
 
@@ -545,15 +570,15 @@ async def demote_to_user(
     """Изменить роль пользователя на USER."""
     result = await db.execute(select(User).where(User.id == user_id))
     user = result.scalar_one_or_none()
-    
+
     if not user:
         raise_error(status.HTTP_404_NOT_FOUND, ERR_USER_NOT_FOUND)
-    
+
     # Меняем только роль, привязка к бренду остается без изменений
     user.role = UserRole.USER
     await db.commit()
     await db.refresh(user)
-    
+
     return UserResponse.model_validate(user)
 
 
@@ -567,35 +592,35 @@ async def link_user_to_brand(
     """Привязать пользователя к бренду."""
     result = await db.execute(select(User).where(User.id == user_id))
     user = result.scalar_one_or_none()
-    
+
     if not user:
         raise_error(status.HTTP_404_NOT_FOUND, ERR_USER_NOT_FOUND)
-    
+
     if user.brand_id:
         raise_error(status.HTTP_400_BAD_REQUEST, ERR_USER_ALREADY_IN_BRAND)
-    
+
     # Проверяем существование бренда
     brand_result = await db.execute(select(Brand).where(Brand.id == brand_id))
     brand = brand_result.scalar_one_or_none()
-    
+
     if not brand:
         raise_error(status.HTTP_404_NOT_FOUND, ERR_BRAND_NOT_FOUND)
-    
+
     # Привязываем к бренду (роль не меняем)
     user.brand_id = brand_id
     await db.commit()
-    
+
     # Загружаем пользователя с брендом для корректной сериализации
     from sqlalchemy.orm import selectinload
     result = await db.execute(
         select(User).where(User.id == user_id).options(selectinload(User.brand))
     )
     user = result.scalar_one()
-    
+
     response = UserResponse.model_validate(user)
     if user.brand:
         response.brand_name = user.brand.name  # type: ignore
-    
+
     return response
 
 
@@ -608,13 +633,13 @@ async def unlink_user_from_brand(
     """Отвязать пользователя от бренда."""
     result = await db.execute(select(User).where(User.id == user_id))
     user = result.scalar_one_or_none()
-    
+
     if not user:
         raise_error(status.HTTP_404_NOT_FOUND, ERR_USER_NOT_FOUND)
-    
+
     if not user.brand_id:
         raise_error(status.HTTP_400_BAD_REQUEST, ERR_USER_NOT_IN_BRAND)
-    
+
     # Отвязываем от бренда (роль не меняем)
     user.brand_id = None
     await db.commit()
@@ -640,14 +665,15 @@ async def get_admin_stats(
 ) -> dict:
     """Получить расширенную статистику для админки."""
     from datetime import timedelta
+
     from app.models.filament import Filament
     from app.models.filament_review import FilamentReview
-    from app.models.user_printer_device import UserPrinterDevice
-    from app.models.user_spool import UserSpool
+    from app.models.notification import Notification
+    from app.models.preset_gate_state import PresetGateState
     from app.models.printer_profile import PrinterProfile
     from app.models.sync_device import SyncDevice
-    from app.models.preset_gate_state import PresetGateState
-    from app.models.notification import Notification
+    from app.models.user_printer_device import UserPrinterDevice
+    from app.models.user_spool import UserSpool
     from app.models.wiki_article import WikiArticle
 
     # Use naive UTC datetimes — all timestamp columns are TIMESTAMP WITHOUT TIME ZONE
@@ -783,6 +809,7 @@ ADMIN_SETTINGS_PREFIX = "admin:settings:"
 
 async def _get_redis():
     import redis.asyncio as aioredis
+
     from app.core.config import settings as cfg
     return aioredis.from_url(cfg.REDIS_URL, decode_responses=True)
 
@@ -889,31 +916,31 @@ async def list_brand_requests(
     status: BrandRequestStatus | None = Query(None),
 ) -> BrandRequestListResponse:
     """Получить список всех заявок на верификацию брендов."""
-    
+
     from sqlalchemy.orm import selectinload
-    
+
     query = select(BrandRequest).options(
         selectinload(BrandRequest.user),
         selectinload(BrandRequest.brand)
     )
     if status:
         query = query.where(BrandRequest.status == status)
-    
+
     # Count total
     count_query = select(func.count()).select_from(BrandRequest)
     if status:
         count_query = count_query.where(BrandRequest.status == status)
     total_result = await db.execute(count_query)
     total = total_result.scalar() or 0
-    
+
     # Paginate
     offset = (page - 1) * size
     query = query.offset(offset).limit(size).order_by(BrandRequest.created_at.desc())
-    
+
     # Execute
     result = await db.execute(query)
     requests = result.scalars().all()
-    
+
     items = []
     for req in requests:
         response = BrandRequestResponse.model_validate(req)
@@ -931,7 +958,7 @@ async def list_brand_requests(
             except (json.JSONDecodeError, TypeError):
                 response.social_media_urls = []
         items.append(response)
-    
+
     return BrandRequestListResponse(
         items=items,
         total=total,
@@ -945,9 +972,9 @@ async def get_brand_request(
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> BrandRequestResponse:
     """Получить заявку на верификацию бренда по ID."""
-    
+
     from sqlalchemy.orm import selectinload
-    
+
     result = await db.execute(
         select(BrandRequest)
         .where(BrandRequest.id == id)
@@ -957,10 +984,10 @@ async def get_brand_request(
         )
     )
     request = result.scalar_one_or_none()
-    
+
     if not request:
         raise_error(status.HTTP_404_NOT_FOUND, ERR_BRAND_REQUEST_NOT_FOUND)
-    
+
     response = BrandRequestResponse.model_validate(request)
     # Добавляем email пользователя
     if request.user:
@@ -989,46 +1016,47 @@ async def update_brand_request(
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> BrandRequestResponse:
     """Обновить статус заявки на верификацию бренда (одобрить/отклонить)."""
-    
+
     from sqlalchemy.orm import selectinload
+
     from app.models.brand_request import BrandRequestType
-    
+
     result = await db.execute(
         select(BrandRequest)
         .where(BrandRequest.id == id)
         .options(selectinload(BrandRequest.user), selectinload(BrandRequest.brand))
     )
     request = result.scalar_one_or_none()
-    
+
     if not request:
         raise_error(status.HTTP_404_NOT_FOUND, ERR_BRAND_REQUEST_NOT_FOUND)
-    
+
     if request.status != BrandRequestStatus.PENDING:
         raise_error(status.HTTP_400_BAD_REQUEST, ERR_REQUEST_NOT_PENDING)
-    
+
     # Обновляем статус
     request.status = data.status
     request.processed_by_id = admin.id
     request.processed_at = datetime.utcnow()
-    
+
     if data.rejection_reason:
         request.rejection_reason = data.rejection_reason
-    
+
     # Если одобряем заявку
     if data.status == BrandRequestStatus.APPROVED:
         user = request.user
         if not user:
             raise_error(status.HTTP_404_NOT_FOUND, ERR_USER_NOT_FOUND)
-        
+
         # Просто привязываем к бренду, роль не меняем (админ может быть привязан к бренду, но оставаться админом)
-        
+
         if request.request_type == BrandRequestType.JOIN:
             # Для JOIN: привязываем пользователя к существующему бренду
             if not request.brand_id:
                 raise_error(status.HTTP_400_BAD_REQUEST, ERR_BRAND_ID_REQUIRED_JOIN
                 )
             user.brand_id = request.brand_id
-            
+
         elif request.request_type == BrandRequestType.CREATE:
             # Для CREATE: создаем новый бренд и привязываем пользователя
             if not request.new_brand_name or not request.new_brand_slug:
@@ -1036,14 +1064,14 @@ async def update_brand_request(
                     status_code=status.HTTP_400_BAD_REQUEST,
                     detail={"code": ERR_BRAND_NAME_SLUG_REQUIRED},
                 )
-            
+
             # Проверяем, что бренд еще не создан
             existing_brand = await db.execute(
                 select(Brand).where(Brand.slug == request.new_brand_slug)
             )
             if existing_brand.scalar_one_or_none():
                 raise_error(status.HTTP_400_BAD_REQUEST, ERR_BRAND_SLUG_EXISTS)
-            
+
             # Создаем новый бренд
             new_brand = Brand(
                 name=request.new_brand_name,
@@ -1055,13 +1083,13 @@ async def update_brand_request(
             )
             db.add(new_brand)
             await db.flush()  # Получаем ID бренда
-            
+
             # Привязываем пользователя к новому бренду
             user.brand_id = new_brand.id
-    
+
     await db.commit()
     await db.refresh(request)
-    
+
     # Создаем уведомления для пользователя
     if request.user_id:
         try:
@@ -1079,7 +1107,7 @@ async def update_brand_request(
                         created_brand = brand_result.scalar_one_or_none()
                         if created_brand:
                             brand_id_for_notification = created_brand.id
-                
+
                 brand_name = request.brand.name if request.brand else (request.new_brand_name or "brand")
                 if brand_id_for_notification:
                     await notify_brand_request_approved(
@@ -1098,7 +1126,7 @@ async def update_brand_request(
                 )
         except Exception as e:
             logger.error(f"Failed to create notification for brand request {request.id}: {e}")
-    
+
     response = BrandRequestResponse.model_validate(request)
     # Добавляем email пользователя
     if request.user:
@@ -1123,28 +1151,29 @@ async def delete_brand_request(
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> None:
     """Удалить заявку на верификацию бренда (только для админа). Удаляет также все связанные файлы."""
-    
+
     from sqlalchemy.orm import selectinload
+
     from app.services.file_service import delete_proof_files
-    
+
     result = await db.execute(
         select(BrandRequest)
         .where(BrandRequest.id == id)
         .options(selectinload(BrandRequest.user))
     )
     request = result.scalar_one_or_none()
-    
+
     if not request:
         raise_error(status.HTTP_404_NOT_FOUND, ERR_BRAND_REQUEST_NOT_FOUND)
-    
+
     # Удаляем все файлы связанные с заявкой
     if request.proof_files:
         await delete_proof_files(request.proof_files)
-    
+
     # Удаляем заявку из базы
     await db.delete(request)
     await db.commit()
-    
+
     return None
 
 
@@ -1161,16 +1190,16 @@ async def create_printer_admin(
     # Проверяем уникальность slug
     slug_result = await db.execute(select(Printer).where(Printer.slug == data.slug))
     existing = slug_result.scalar_one_or_none()
-    
+
     if existing:
         raise_error(400, ERR_PRINTER_SLUG_EXISTS)
-    
+
     # Create printer
     printer = Printer(**data.model_dump())
     db.add(printer)
     await db.commit()
     await db.refresh(printer)
-    
+
     return PrinterResponse.model_validate(printer)
 
 
@@ -1184,25 +1213,25 @@ async def update_printer_admin(
     """Обновить принтер (admin only)."""
     result = await db.execute(select(Printer).where(Printer.id == printer_id))
     printer = result.scalar_one_or_none()
-    
+
     if not printer:
         raise_error(404, ERR_PRINTER_NOT_FOUND)
-    
+
     # Проверяем уникальность slug если он обновляется
     if data.slug and data.slug != printer.slug:
         slug_result = await db.execute(select(Printer).where(Printer.slug == data.slug))
         existing = slug_result.scalar_one_or_none()
         if existing:
             raise_error(400, ERR_PRINTER_SLUG_EXISTS)
-    
+
     # Update fields
     update_data = data.model_dump(exclude_unset=True)
     for field, value in update_data.items():
         setattr(printer, field, value)
-    
+
     await db.commit()
     await db.refresh(printer)
-    
+
     return PrinterResponse.model_validate(printer)
 
 
@@ -1215,10 +1244,10 @@ async def delete_printer_admin(
     """Удалить принтер (admin only)."""
     result = await db.execute(select(Printer).where(Printer.id == printer_id))
     printer = result.scalar_one_or_none()
-    
+
     if not printer:
         raise_error(404, ERR_PRINTER_NOT_FOUND)
-    
+
     await db.delete(printer)
     await db.commit()
 
@@ -1236,29 +1265,29 @@ async def list_printer_requests_admin(
 ) -> PrinterRequestListResponse:
     """Получить список запросов на добавление принтеров (для админа) с пагинацией."""
     from sqlalchemy.orm import selectinload
-    
+
     # Build query
     query = select(PrinterRequest).options(selectinload(PrinterRequest.user))
-    
+
     if status:
         query = query.where(PrinterRequest.status == status)
-    
+
     # Count total
     count_query = select(func.count()).select_from(PrinterRequest)
     if status:
         count_query = count_query.where(PrinterRequest.status == status)
-    
+
     total_result = await db.execute(count_query)
     total = total_result.scalar() or 0
-    
+
     # Paginate
     offset = (page - 1) * size
     query = query.offset(offset).limit(size).order_by(PrinterRequest.created_at.desc())
-    
+
     # Execute
     result = await db.execute(query)
     requests = result.scalars().all()
-    
+
     items = []
     for req in requests:
         try:
@@ -1281,7 +1310,7 @@ async def list_printer_requests_admin(
             logger.error(f"Error validating PrinterRequest {req.id}: {e}")
             # Пропускаем проблемную запись или возвращаем базовые данные
             continue
-    
+
     return PrinterRequestListResponse(
         items=items,
         total=total,
@@ -1296,17 +1325,17 @@ async def get_printer_request_admin(
 ) -> PrinterRequestResponse:
     """Получить запрос на добавление принтера по ID (для админа)."""
     from sqlalchemy.orm import selectinload
-    
+
     result = await db.execute(
         select(PrinterRequest)
         .where(PrinterRequest.id == request_id)
         .options(selectinload(PrinterRequest.user))
     )
     printer_request = result.scalar_one_or_none()
-    
+
     if not printer_request:
         raise_error(404, ERR_PRINTER_REQUEST_NOT_FOUND)
-    
+
     response = PrinterRequestResponse.model_validate(printer_request)
     # Добавляем email пользователя
     if printer_request.user:
@@ -1326,26 +1355,26 @@ async def update_printer_request_admin(
 ) -> PrinterRequestResponse:
     """Обновить статус запроса на добавление принтера (approve/reject)."""
     from sqlalchemy.orm import selectinload
-    
+
     result = await db.execute(
         select(PrinterRequest)
         .where(PrinterRequest.id == request_id)
         .options(selectinload(PrinterRequest.user))
     )
     request = result.scalar_one_or_none()
-    
+
     if not request:
         raise_error(404, ERR_PRINTER_REQUEST_NOT_FOUND)
-    
+
     # Если одобряем запрос, создаём принтер
     if data.status == PrinterRequestStatus.APPROVED:
         # Проверяем, что принтер ещё не создан
         printer_result = await db.execute(select(Printer).where(Printer.slug == request.slug))
         existing_printer = printer_result.scalar_one_or_none()
-        
+
         if existing_printer:
             raise_error(400, ERR_PRINTER_SLUG_EXISTS)
-        
+
         # Создаём принтер из данных запроса
         printer = Printer(
             name=request.name,
@@ -1364,17 +1393,17 @@ async def update_printer_request_admin(
         )
         db.add(printer)
         await db.flush()  # Получаем ID принтера
-    
+
     # Обновляем статус запроса
     request.status = data.status
     request.processed_by_id = admin.id
     request.processed_at = datetime.now()
     if data.rejection_reason:
         request.rejection_reason = data.rejection_reason
-    
+
     await db.commit()
     await db.refresh(request)
-    
+
     response = PrinterRequestResponse.model_validate(request)
     # Добавляем email пользователя
     if request.user:
@@ -1475,13 +1504,13 @@ async def export_database(
         include_data=data.include_data,
         tables=data.tables,
     )
-    
+
     download_url = None
     if success and filename:
         # Формируем полный URL для скачивания
         # В продакшене нужно использовать settings.BACKEND_URL или определять из запроса
         download_url = f"/api/v1/admin/database/download/{filename}"
-    
+
     return DatabaseExportResponse(
         success=success,
         message=message,
@@ -1498,13 +1527,14 @@ async def download_database_dump(
 ) -> FileResponse:
     """Скачать файл дампа базы данных."""
     from pathlib import Path
+
     from app.core.config import settings
-    
+
     dump_file = Path(settings.UPLOAD_DIR) / "database_dumps" / filename
-    
+
     if not dump_file.exists():
         raise_error(status.HTTP_404_NOT_FOUND, ERR_DUMP_NOT_FOUND)
-    
+
     return FileResponse(
         path=str(dump_file),
         filename=filename,
@@ -1522,15 +1552,16 @@ async def import_database(
 ) -> DatabaseImportResponse:
     """Импортировать базу данных из файла дампа."""
     from pathlib import Path
+
     from app.core.config import settings
-    
+
     # Валидация файла
     if not file.filename:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail={"code": ERR_FILENAME_REQUIRED},
         )
-    
+
     # Проверяем расширение файла
     valid_extensions = {
         'custom': ['.dump'],
@@ -1540,25 +1571,25 @@ async def import_database(
     file_ext = Path(file.filename).suffix.lower()
     if file_ext not in valid_extensions.get(format, []):
         raise_error(status.HTTP_400_BAD_REQUEST, ERR_INVALID_FILE_EXT, {"ext": file_ext, "expected": ", ".join(valid_extensions.get(format, []))})
-    
+
     # Проверяем размер файла (максимум 1GB)
     MAX_FILE_SIZE = 1024 * 1024 * 1024  # 1GB
     content = await file.read()
     if len(content) > MAX_FILE_SIZE:
         raise_error(status.HTTP_400_BAD_REQUEST, ERR_FILE_TOO_LARGE, {"max_size": "1GB"})
-    
+
     # Сохраняем загруженный файл
     dumps_dir = Path(settings.UPLOAD_DIR) / "database_dumps"
     dumps_dir.mkdir(parents=True, exist_ok=True)
-    
+
     # Используем оригинальное имя файла с timestamp для избежания конфликтов
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     safe_filename = f"{timestamp}_{file.filename}"
     filepath = dumps_dir / safe_filename
-    
+
     with open(filepath, "wb") as f:
         f.write(content)
-    
+
     # Импортируем базу данных
     logger.info(f"Начинаем импорт базы данных: файл={safe_filename}, формат={format}, clean={clean}, create={create}")
     try:
@@ -1577,12 +1608,12 @@ async def import_database(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail={"code": ERR_DB_IMPORT_ERROR},
-        )
-    
+        ) from e
+
     # Удаляем временный файл после импорта
     if filepath.exists():
         filepath.unlink()
-    
+
     return DatabaseImportResponse(
         success=success,
         message=message,
@@ -1610,15 +1641,15 @@ async def delete_database_dump(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail={"code": ERR_INVALID_FILENAME},
         )
-    
+
     success, message = await delete_database_dump_service(filename)
-    
+
     if not success:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=message,
         )
-    
+
     return DatabaseDumpDeleteResponse(success=success, message=message)
 
 
@@ -1637,7 +1668,7 @@ async def get_table_structure(
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail={"code": ERR_TABLE_STRUCTURE_ERROR},
-        )
+        ) from e
 
 
 @router.get("/database/integrity", response_model=DatabaseIntegrityResponse)
@@ -1647,12 +1678,12 @@ async def check_database_integrity(
 ) -> DatabaseIntegrityResponse:
     """Проверить целостность базы данных."""
     is_valid, missing_tables = await validate_migration_integrity_service(db)
-    
+
     if is_valid:
         message = "database_ok"
     else:
         message = f"database_missing_tables: {', '.join(missing_tables)}"
-    
+
     return DatabaseIntegrityResponse(
         is_valid=is_valid,
         missing_tables=missing_tables,
@@ -1667,7 +1698,7 @@ async def recreate_tables(
 ) -> RecreateTablesResponse:
     """Восстановить все недостающие таблицы на основе моделей SQLAlchemy."""
     success, message, created_tables = await recreate_missing_tables_service(db)
-    
+
     return RecreateTablesResponse(
         success=success,
         message=message,
@@ -1702,11 +1733,11 @@ async def get_table_data(
         return TableDataResponse(**table_data)
     except ValueError:
         raise_error(status.HTTP_404_NOT_FOUND, ERR_TABLE_NOT_FOUND)
-    except Exception:
+    except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail={"code": ERR_TABLE_DATA_ERROR},
-        )
+        ) from e
 
 
 @router.patch("/database/tables/{table_name}/data", response_model=dict)
@@ -1718,18 +1749,20 @@ async def update_table_data(
     schema_name: str = Query("public", description="Имя схемы"),
 ) -> dict:
     """Обновить данные в таблице."""
-    from app.services.database_service import update_table_row_service as update_table_row_service_func
-    
+    from app.services.database_service import (
+        update_table_row_service as update_table_row_service_func,
+    )
+
     try:
         primary_key = request.primary_key
         update_data = request.data
-        
+
         if not primary_key:
             raise_error(status.HTTP_400_BAD_REQUEST, ERR_PRIMARY_KEY_REQUIRED)
 
         if not update_data:
             raise_error(status.HTTP_400_BAD_REQUEST, ERR_DATA_REQUIRED)
-        
+
         success, message = await update_table_row_service_func(
             db,
             table_name=table_name,
@@ -1737,13 +1770,13 @@ async def update_table_data(
             primary_key=primary_key,
             update_data=update_data,
         )
-        
+
         if not success:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail=message,
             )
-        
+
         return {"success": True, "message": message}
     except HTTPException:
         raise
@@ -1751,7 +1784,7 @@ async def update_table_data(
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail={"code": ERR_TABLE_UPDATE_ERROR},
-        )
+        ) from e
 
 
 @router.delete("/database/tables/{table_name}/data", response_model=dict)
@@ -1789,7 +1822,7 @@ async def delete_table_data(
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail={"code": ERR_TABLE_DELETE_ERROR},
-        )
+        ) from e
 
 
 # ==================== Bad Words Management ====================
@@ -1807,18 +1840,18 @@ async def list_bad_words(
     """Получить список запрещенных слов."""
     # Ленивый импорт, чтобы не падать при отсутствии таблицы
     from app.models.bad_word import BadWord
-    
+
     query = select(BadWord)
-    
+
     # Language filter
     if language:
         query = query.where(BadWord.language == language)
-    
+
     # Search filter
     if search:
         search_term = like_pattern(search)
         query = query.where(BadWord.word.ilike(search_term))
-    
+
     # Count total
     count_query = select(func.count()).select_from(BadWord)
     if language:
@@ -1826,20 +1859,20 @@ async def list_bad_words(
     if search:
         search_term = like_pattern(search)
         count_query = count_query.where(BadWord.word.ilike(search_term))
-    
+
     total_result = await db.execute(count_query)
     total = total_result.scalar() or 0
-    
+
     # Paginate
     offset = (page - 1) * size
     query = query.offset(offset).limit(size).order_by(BadWord.word)
-    
+
     # Execute
     result = await db.execute(query)
     words = result.scalars().all()
-    
+
     pages = (total + size - 1) // size if total > 0 else 0
-    
+
     return BadWordListResponse(
         items=[BadWordResponse.model_validate(word) for word in words],
         total=total,
@@ -1858,7 +1891,7 @@ async def create_bad_word(
     """Добавить запрещенное слово."""
     # Ленивый импорт, чтобы не падать при отсутствии таблицы
     from app.models.bad_word import BadWord
-    
+
     # Проверяем, существует ли уже такое слово
     result = await db.execute(
         select(BadWord).where(
@@ -1867,19 +1900,19 @@ async def create_bad_word(
         )
     )
     existing = result.scalar_one_or_none()
-    
+
     if existing:
         raise_error(status.HTTP_400_BAD_REQUEST, ERR_BANNED_WORD_EXISTS, {"word": data.word, "language": data.language})
-    
+
     bad_word = BadWord(word=data.word.lower(), language=data.language)
     db.add(bad_word)
     await db.commit()
     await db.refresh(bad_word)
-    
+
     # Сбрасываем кэш в сервисе модерации
     from app.services.preset_moderation import _BAD_WORDS_CACHE
     _BAD_WORDS_CACHE.clear()
-    
+
     return BadWordResponse.model_validate(bad_word)
 
 
@@ -1894,10 +1927,10 @@ async def get_bad_word(
     """Получить информацию о запрещенном слове."""
     result = await db.execute(select(BadWord).where(BadWord.id == word_id))
     word = result.scalar_one_or_none()
-    
+
     if not word:
         raise_error(status.HTTP_404_NOT_FOUND, ERR_BANNED_WORD_NOT_FOUND)
-    
+
     return BadWordResponse.model_validate(word)
 
 
@@ -1911,20 +1944,20 @@ async def update_bad_word(
     """Обновить запрещенное слово."""
     # Ленивый импорт, чтобы не падать при отсутствии таблицы
     from app.models.bad_word import BadWord
-    
+
     result = await db.execute(select(BadWord).where(BadWord.id == word_id))
     word = result.scalar_one_or_none()
-    
+
     if not word:
         raise_error(status.HTTP_404_NOT_FOUND, ERR_BANNED_WORD_NOT_FOUND)
-    
+
     # Проверяем уникальность, если меняем слово или язык
     update_data = data.model_dump(exclude_unset=True)
-    
+
     if "word" in update_data or "language" in update_data:
         new_word = update_data.get("word", word.word).lower()
         new_language = update_data.get("language", word.language)
-        
+
         # Проверяем, не существует ли уже такое слово
         check_result = await db.execute(
             select(BadWord).where(
@@ -1934,24 +1967,24 @@ async def update_bad_word(
             )
         )
         existing = check_result.scalar_one_or_none()
-        
+
         if existing:
             raise_error(status.HTTP_400_BAD_REQUEST, ERR_BANNED_WORD_EXISTS, {"word": new_word, "language": new_language})
-    
+
     # Обновляем поля
     for field, value in update_data.items():
         if field == "word":
             setattr(word, field, value.lower())
         else:
             setattr(word, field, value)
-    
+
     await db.commit()
     await db.refresh(word)
-    
+
     # Сбрасываем кэш в сервисе модерации
     from app.services.preset_moderation import _BAD_WORDS_CACHE
     _BAD_WORDS_CACHE.clear()
-    
+
     return BadWordResponse.model_validate(word)
 
 
@@ -1964,16 +1997,16 @@ async def delete_bad_word(
     """Удалить запрещенное слово."""
     # Ленивый импорт, чтобы не падать при отсутствии таблицы
     from app.models.bad_word import BadWord
-    
+
     result = await db.execute(select(BadWord).where(BadWord.id == word_id))
     word = result.scalar_one_or_none()
-    
+
     if not word:
         raise_error(status.HTTP_404_NOT_FOUND, ERR_BANNED_WORD_NOT_FOUND)
-    
+
     await db.delete(word)
     await db.commit()
-    
+
     # Сбрасываем кэш в сервисе модерации
     from app.services.preset_moderation import _BAD_WORDS_CACHE
     _BAD_WORDS_CACHE.clear()
@@ -1993,7 +2026,7 @@ async def broadcast_notification(
 ) -> dict:
     """
     Массовая рассылка уведомлений всем пользователям (только для админов).
-    
+
     Создает уведомление типа ADMIN_MESSAGE для всех активных пользователей.
     """
     count = await notify_all_users(
@@ -2004,12 +2037,12 @@ async def broadcast_notification(
         link=link,
         active_only=active_only,
     )
-    
+
     logger.info(f"Admin {admin.id} sent broadcast notification to {count} users. Title: {title}")
-    
+
     return {
         "success": True,
-        "message": "notification_sent", "count": count,
+        "message": "notification_sent",
         "count": count,
     }
 
@@ -2025,7 +2058,7 @@ async def send_notification_to_users(
 ) -> dict:
     """
     Отправить уведомление конкретным пользователям (только для админов).
-    
+
     Создает уведомление типа ADMIN_MESSAGE для указанных пользователей.
     """
     if not user_ids:
@@ -2033,21 +2066,21 @@ async def send_notification_to_users(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail={"code": ERR_USER_IDS_EMPTY},
         )
-    
+
     # Проверяем, что пользователи существуют и активны
     existing_users = await db.execute(
         select(User.id).where(User.id.in_(user_ids), User.active == True)
     )
     valid_user_ids = list(existing_users.scalars().all())
-    
+
     if not valid_user_ids:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail={"code": ERR_NO_ACTIVE_USERS_FOUND},
         )
-    
+
     from app.services.notification_service import create_bulk_notifications
-    
+
     count = await create_bulk_notifications(
         user_ids=valid_user_ids,
         notification_type=NotificationType.ADMIN_MESSAGE,
@@ -2056,12 +2089,12 @@ async def send_notification_to_users(
         db=db,
         link=link,
     )
-    
+
     logger.info(f"Admin {admin.id} sent notification to {count} users (IDs: {valid_user_ids}). Title: {title}")
-    
+
     return {
         "success": True,
-        "message": "notification_sent", "count": count,
+        "message": "notification_sent",
         "count": count,
         "sent_to": valid_user_ids,
     }
@@ -2081,7 +2114,7 @@ async def manage_user_badges(
 ) -> dict:
     """
     Управление бейджами пользователя (только для администраторов).
-    
+
     Доступные бейджи:
     - founder: Основатель (первые пользователи)
     - beta_tester: Бета-тестер
@@ -2093,30 +2126,30 @@ async def manage_user_badges(
     # Валидация бейджей
     valid_badges = {"founder", "beta_tester", "contributor", "verified", "early_adopter", "supporter"}
     invalid_badges = [b for b in badges if b not in valid_badges]
-    
+
     if invalid_badges:
         raise_error(status.HTTP_400_BAD_REQUEST, ERR_INVALID_BADGES, {"invalid": ", ".join(invalid_badges), "valid": ", ".join(valid_badges)})
-    
+
     # Получаем пользователя
     result = await db.execute(
         select(User).where(User.id == user_id)
     )
     user = result.scalar_one_or_none()
-    
+
     if not user:
         raise_error(status.HTTP_404_NOT_FOUND, ERR_USER_NOT_FOUND)
-    
+
     # Обновляем бейджи
     old_badges = user.badges or []
     user.badges = badges if badges else None
     await db.commit()
     await db.refresh(user)
-    
+
     logger.info(
         f"Admin {admin.id} updated badges for user {user_id} "
         f"(from {old_badges} to {badges})"
     )
-    
+
     return {
         "success": True,
         "message": "badges_updated",
@@ -2149,18 +2182,18 @@ async def set_maintenance_status(
     """
     Установить режим технических работ.
     Доступно только администраторам.
-    
+
     Когда включен режим технических работ:
     - Все запросы к API (кроме /health и /api/v1/admin/maintenance) возвращают 503
     - Фронтенд должен показывать сообщение о технических работах
     """
     set_maintenance_mode(enabled, message)
-    
+
     logger.info(
         f"Admin {admin.id} {'enabled' if enabled else 'disabled'} maintenance mode"
         + (f" with message: {message}" if message else "")
     )
-    
+
     return {
         "success": True,
         "message": "maintenance_mode_updated",
@@ -2238,8 +2271,9 @@ async def export_wiki_article(
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> FileResponse:
     """Скачать одну Wiki статью как .md файл."""
-    from app.services.wiki_sync_service import export_article_to_markdown
     import tempfile
+
+    from app.services.wiki_sync_service import export_article_to_markdown
 
     filename, content = await export_article_to_markdown(db, article_id)
 
@@ -2378,7 +2412,7 @@ async def import_catalog_source_orca(
             if exc.code == "ERR_BUNDLE_NOT_VALIDATED"
             else status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail={"code": exc.code, "params": exc.params},
-        )
+        ) from exc
 
     printers_total = await db.scalar(select(func.count(Printer.id)))
     printers_system = await db.scalar(

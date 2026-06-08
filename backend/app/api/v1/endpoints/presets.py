@@ -1,20 +1,17 @@
 """Preset endpoints."""
 
+import json
 import logging
 from typing import Annotated, Any
 from urllib.parse import quote
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from fastapi.responses import JSONResponse
-import json
 from sqlalchemy import func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-logger = logging.getLogger(__name__)
-
-from app.core.dependencies import get_current_active_user, get_current_brand_user, get_current_active_user_optional
-from app.core.utils import like_pattern
+from app.core.dependencies import get_current_active_user, get_current_active_user_optional
 from app.core.errors import (
     ERR_EXPORT_MISSING_FIELDS,
     ERR_EXPORT_PRESET_ERROR,
@@ -31,12 +28,13 @@ from app.core.errors import (
     ERR_WEIGHTED_PRESET_READONLY,
     raise_error,
 )
+from app.core.utils import like_pattern
 from app.db.session import get_db
+from app.models.filament import Filament
 from app.models.preset import Preset, PresetModerationStatus
 from app.models.preset_printer import PresetPrinter
 from app.models.printer import Printer
 from app.models.user import User
-from app.models.filament import Filament
 from app.schemas.preset import (
     PresetActivateRequest,
     PresetCreate,
@@ -47,10 +45,12 @@ from app.schemas.preset import (
 )
 from app.schemas.printer import PrinterResponse
 from app.services.notification_service import notify_preset_deleted, notify_preset_updated
+from app.services.orcaslicer_exporter import generate_profile_info, preset_to_orcaslicer_json
 from app.services.preset_moderation import moderate_preset
-from app.services.orcaslicer_exporter import export_preset_to_orcaslicer, generate_profile_info, preset_to_orcaslicer_json
 from app.services.preset_recommender import get_recommended_preset_values
 from app.services.weighted_preset_service import create_or_update_weighted_preset
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/presets", tags=["presets"])
 
@@ -220,7 +220,7 @@ async def get_preset(
                 )
                 if saved_check.scalar_one_or_none():
                     can_access = True
-        
+
         if not can_access:
             raise_error(404, ERR_PRESET_NOT_FOUND)
 
@@ -243,14 +243,14 @@ async def create_preset(
 ) -> PresetResponse:
     """Создать новый пресет."""
     from app.models.filament import Filament
-    
+
     # Проверка существования filament
     filament_result = await db.execute(select(Filament).where(Filament.id == data.filament_id))
     filament = filament_result.scalar_one_or_none()
-    
+
     if not filament:
         raise_error(404, ERR_FILAMENT_NOT_FOUND)
-    
+
     # Проверка прав на создание официального пресета
     if data.is_official:
         # Только пользователи, привязанные к бренду (или админы), могут создавать официальные пресеты
@@ -259,7 +259,7 @@ async def create_preset(
         # Проверяем, что filament принадлежит бренду пользователя (админы могут создавать для любого бренда)
         if current_user.brand_id and filament.brand_id != current_user.brand_id:
             raise_error(403, ERR_ONLY_OWN_BRAND_OFFICIAL)
-    
+
     preset = Preset(
         filament_id=data.filament_id,
         user_id=current_user.id,
@@ -279,7 +279,7 @@ async def create_preset(
         orcaslicer_settings=data.orcaslicer_settings,
         active=True,
     )
-    
+
     # Автоматическая модерация пресета (только для пользовательских пресетов)
     if not data.is_official:
         moderation_status, moderation_reason = await moderate_preset(
@@ -301,7 +301,7 @@ async def create_preset(
         # Официальные пресеты автоматически одобряются
         preset.moderation_status = PresetModerationStatus.APPROVED
         preset.moderation_reason = None
-    
+
     db.add(preset)
     await db.flush()  # Получаем ID пресета
 
@@ -328,7 +328,7 @@ async def create_preset(
         sync=True,  # По умолчанию синхронизация включена
     )
     db.add(saved_preset)
-    
+
     # Создаём связи с принтерами
     if data.printer_ids:
         for printer_id in data.printer_ids:
@@ -337,7 +337,7 @@ async def create_preset(
             printer = printer_result.scalar_one_or_none()
             if not printer:
                 continue  # Пропускаем несуществующие принтеры
-            
+
             # Создаём связь
             preset_printer = PresetPrinter(
                 preset_id=preset.id,
@@ -345,7 +345,7 @@ async def create_preset(
                 is_primary=False,  # Первый принтер будет основным
             )
             db.add(preset_printer)
-        
+
         # Первый принтер делаем основным
         if data.printer_ids:
             first_link = await db.execute(
@@ -366,14 +366,14 @@ async def create_preset(
 
     await db.commit()
     await db.refresh(preset, ["printer_links"])
-    
+
     # Обновляем взвешенный пресет для этого филамента (если достаточно пресетов)
     try:
         await create_or_update_weighted_preset(preset.filament_id, db, min_presets_count=4)
     except Exception as e:
         # Логируем ошибку, но не прерываем создание пресета
         logger.error(f"Failed to update weighted preset for filament {preset.filament_id}: {e}")
-    
+
     # Загружаем принтеры для ответа
     result = await db.execute(
         select(Preset)
@@ -381,7 +381,7 @@ async def create_preset(
         .where(Preset.id == preset.id)
     )
     preset_with_printers = result.scalar_one()
-    
+
     # Преобразуем пресет в ответ с принтерами
     preset_dict = PresetResponse.model_validate(preset_with_printers).model_dump()
     preset_dict["printers"] = [
@@ -404,7 +404,7 @@ async def update_preset(
 
     if not preset:
         raise_error(404, ERR_PRESET_NOT_FOUND)
-    
+
     # Взвешенные пресеты нельзя редактировать (они автоматически обновляются системой)
     if preset.is_weighted:
         raise_error(403, ERR_WEIGHTED_PRESET_READONLY)
@@ -416,11 +416,11 @@ async def update_preset(
     # Обновляем только переданные поля
     update_data = data.model_dump(exclude_unset=True)
     printer_ids = update_data.pop("printer_ids", None)
-    
+
     # Определяем filament_id: из update_data (если передан) или из preset
     # Для черновиков filament_id может быть None, и мы его обновляем через update_data
     target_filament_id = update_data.get("filament_id") or preset.filament_id
-    
+
     # Получаем filament для автомодерации (только если есть filament_id)
     filament = None
     if target_filament_id:
@@ -428,15 +428,15 @@ async def update_preset(
         filament = filament_result.scalar_one_or_none()
         if not filament:
             raise_error(404, ERR_FILAMENT_NOT_FOUND)
-    
+
     # Сохраняем старое состояние для проверки активации черновика.
     # sync больше управляется в user_saved_presets, поэтому здесь
     # учитываем только переход черновика в активный пресет.
     was_draft = not preset.active or not preset.filament_id
-    
+
     for field, value in update_data.items():
         setattr(preset, field, value)
-    
+
     # Логика замены меток при активации черновика:
     # если черновик стал активным и привязан к филаменту.
     if was_draft and preset.active and preset.filament_id:
@@ -445,7 +445,7 @@ async def update_preset(
             preset.orcaslicer_settings = {}
         elif not isinstance(preset.orcaslicer_settings, dict):
             preset.orcaslicer_settings = {}
-        
+
         # Сохраняем derived-метки для предотвращения повторного создания черновиков:
         # При следующей синхронизации OrcaSlicer пришлёт тот же шаблон,
         # и мы должны распознать, что из него уже создан FH-пресет.
@@ -466,7 +466,7 @@ async def update_preset(
             f"saved derived_from_external_id={old_external_id}, derived_from_draft_id={old_draft_id}, "
             f"added fhub_id={preset.id} and fhub_source='filamenthub'"
         )
-    
+
     # Автоматическая модерация при обновлении (только для пользовательских пресетов с filament)
     if not preset.is_official and filament:
         moderation_status, moderation_reason = await moderate_preset(
@@ -495,7 +495,7 @@ async def update_preset(
             # Для ранее отклонённых возвращаем активность.
             if not preset.active:
                 preset.active = True
-    
+
     # Обновляем связи с принтерами, если указаны
     if printer_ids is not None:
         # Удаляем старые связи
@@ -505,7 +505,7 @@ async def update_preset(
         old_links = delete_result.scalars().all()
         for link in old_links:
             await db.delete(link)
-        
+
         # Создаём новые связи
         if printer_ids:
             for i, printer_id in enumerate(printer_ids):
@@ -514,7 +514,7 @@ async def update_preset(
                 printer = printer_result.scalar_one_or_none()
                 if not printer:
                     continue  # Пропускаем несуществующие принтеры
-                
+
                 # Создаём связь
                 preset_printer = PresetPrinter(
                     preset_id=preset.id,
@@ -538,7 +538,7 @@ async def update_preset(
             await create_or_update_weighted_preset(preset.filament_id, db, min_presets_count=4)
         except Exception as e:
             logger.error(f"Failed to update weighted preset for filament {preset.filament_id}: {e}")
-        
+
         # Создаем уведомления для пользователей, у которых сохранен этот пресет
         try:
             await notify_preset_updated(
@@ -549,7 +549,7 @@ async def update_preset(
             )
         except Exception as e:
             logger.error(f"Failed to create notifications for preset {preset.id} update: {e}")
-    
+
     # Загружаем принтеры для ответа
     result = await db.execute(
         select(Preset)
@@ -573,7 +573,7 @@ async def delete_preset(
 
     if not preset:
         raise_error(404, ERR_PRESET_NOT_FOUND)
-    
+
     # Взвешенные пресеты нельзя удалять (они автоматически управляются системой)
     if preset.is_weighted:
         raise_error(403, ERR_WEIGHTED_PRESET_NO_DELETE)
@@ -581,7 +581,7 @@ async def delete_preset(
     # Проверка: пользователь может удалять только свои пресеты (или админ)
     if preset.user_id != current_user.id and current_user.role.value != "admin":
         raise_error(403, ERR_NO_PERMISSION_DELETE_PRESET)
-    
+
     # Сохраняем данные перед удалением для уведомлений и обновления взвешенного пресета
     filament_id = preset.filament_id
     preset_name = preset.name
@@ -589,7 +589,7 @@ async def delete_preset(
 
     await db.delete(preset)
     await db.commit()
-    
+
     # Создаем уведомления для пользователей, у которых сохранен этот пресет
     try:
         await notify_preset_deleted(
@@ -600,7 +600,7 @@ async def delete_preset(
         )
     except Exception as e:
         logger.error(f"Failed to create notifications for preset {preset_id_for_notification} deletion: {e}")
-    
+
     # Обновляем взвешенный пресет для этого филамента (если достаточно пресетов)
     try:
         await create_or_update_weighted_preset(filament_id, db, min_presets_count=4)
@@ -681,7 +681,7 @@ async def export_preset_json(
 ) -> Response:
     """
     Экспортировать профиль в формате OrcaSlicer (.json).
-    
+
     Returns:
         JSONResponse: JSON файл профиля OrcaSlicer
     """
@@ -692,10 +692,10 @@ async def export_preset_json(
         .where(Preset.id == preset_id, Preset.active == True)
     )
     preset = result.scalar_one_or_none()
-    
+
     if not preset:
         raise_error(404, ERR_PRESET_NOT_FOUND)
-    
+
     if not preset.filament:
         raise_error(404, ERR_FILAMENT_NOT_FOUND)
 
@@ -716,11 +716,11 @@ async def export_preset_json(
     except Exception as e:
         logger.error(f"Error exporting preset {preset_id}: {str(e)}", exc_info=True)
         raise_error(500, ERR_EXPORT_PRESET_ERROR)
-    
+
     # Возвращаем JSON файл
     # Формируем безопасное имя файла (только латиница и безопасные символы для HTTP заголовков)
     brand_name = preset.filament.brand.name if preset.filament.brand else "Generic"
-    
+
     # Формируем читабельное имя файла (OrcaSlicer поддерживает кириллицу, пробелы и спецсимволы)
     # Убираем только недопустимые символы для файловой системы: <>:"/\|?*
     def to_safe_filename(text: str) -> str:
@@ -735,7 +735,7 @@ async def export_preset_json(
         while "__" in safe:
             safe = safe.replace("__", "_")
         return safe.strip(" _")  # Убираем пробелы и подчеркивания в начале/конце
-    
+
     # Формируем имя файла: используем имя пресета (OrcaSlicer поддерживает кириллицу, пробелы, спецсимволы)
     # Примеры из OrcaSlicer: "TEST-2 ABS.json", "ABS @FilamentHub2.json", "ABS HTP.json"
     if preset.name:
@@ -747,23 +747,23 @@ async def export_preset_json(
             filename_parts.append(to_safe_filename(brand_name))
         if preset.filament.material_type:
             filename_parts.append(to_safe_filename(preset.filament.material_type))
-        
+
         if filename_parts:
             filename = " ".join(filename_parts) + ".json"
         else:
             filename = "preset.json"
-    
+
     # Ограничиваем длину имени файла
     if len(filename) > 200:
         # Обрезаем до 200 символов, стараясь не резать по середине слова
         filename = filename[:197].rsplit(" ", 1)[0] + ".json"
-    
+
     # Для HTTP заголовка используем RFC 5987 формат для поддержки Unicode
     from urllib.parse import quote
-    
+
     # ASCII версия имени для совместимости
     ascii_filename = filename.encode('ascii', 'replace').decode('ascii').replace('?', '_')
-    
+
     # Используем оба формата: ASCII для совместимости и UTF-8 для правильного отображения
     return JSONResponse(
         content=profile_dict,
@@ -782,12 +782,12 @@ async def export_preset_info(
 ) -> Response:
     """
     Экспортировать .info файл в формате INI для OrcaSlicer.
-    
+
     Returns:
         Response: .info файл профиля OrcaSlicer (INI формат)
     """
     from fastapi.responses import PlainTextResponse
-    
+
     # Получаем preset с filament и brand
     result = await db.execute(
         select(Preset)
@@ -795,10 +795,10 @@ async def export_preset_info(
         .where(Preset.id == preset_id, Preset.active == True)
     )
     preset = result.scalar_one_or_none()
-    
+
     if not preset:
         raise_error(404, ERR_PRESET_NOT_FOUND)
-    
+
     if not preset.filament:
         raise_error(404, ERR_FILAMENT_NOT_FOUND)
 
@@ -813,7 +813,7 @@ async def export_preset_info(
 
     # Генерируем .info файл (INI формат)
     info_content = generate_profile_info(preset, preset.filament)
-    
+
     # Возвращаем .info файл
     brand_name = preset.filament.brand.name if preset.filament.brand else "Generic"
     filename = f"{brand_name}_{preset.filament.material_type}_{preset.name}.info"

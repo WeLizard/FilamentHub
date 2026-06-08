@@ -7,9 +7,8 @@ import hashlib
 import json
 import logging
 import re
-from collections import defaultdict
 from pathlib import Path
-from typing import Any, Dict, Iterable, Mapping
+from typing import Any, Iterable, Mapping
 
 from pydantic import ValidationError
 from sqlalchemy import Select, select
@@ -18,11 +17,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import settings
 from app.models import (
     Filament,
+    Printer,
+    PrinterProfile,
     PrintProfile,
     PrintProfileFilament,
     PrintProfilePrinter,
-    Printer,
-    PrinterProfile,
 )
 from app.schemas.orca_bundle import (
     OrcaMachineModel,
@@ -86,7 +85,7 @@ class OrcaBundleImporter:
             summary["printer_profiles"] += vendor_result["printer_profiles"]
             summary["print_profiles"] += vendor_result["print_profiles"]
             summary["common_profiles"] += vendor_result.get("common_profiles", 0)
-        
+
         # ВАЖНО: Синхронизируем ВСЕ системные принтеры после импорта всех vendor'ов
         # Это гарантирует, что все принтеры получат правильные данные из профилей
         # даже если они были созданы в одном vendor, а профили - в другом
@@ -98,7 +97,7 @@ class OrcaBundleImporter:
         printer_lookup_all = {printer.name: printer for printer in all_printers}
         await self._sync_printer_metadata_from_profiles(db, printer_lookup_all)
         LOG.info("Синхронизация завершена для %d принтеров", len(printer_lookup_all))
-        
+
         return summary
 
     async def _import_vendor(
@@ -415,7 +414,7 @@ class OrcaBundleImporter:
             )
         )
         profile = result.scalars().first()
-        
+
         if profile is None:
             # Профиль не найден - создаем новый
             slug = await generate_unique_slug(
@@ -668,18 +667,18 @@ class OrcaBundleImporter:
     ) -> dict[str, Any]:
         """
         Рекурсивно разрешить наследование профиля.
-        
+
         Объединяет настройки из всех родительских профилей в порядке наследования:
         - fdm_machine_common (базовый)
         - fdm_klipper_common (наследуется от fdm_machine_common)
         - fdm_toolchanger_common (наследуется от fdm_klipper_common)
         - MyKlipper 0.2 nozzle (наследуется от fdm_klipper_common)
-        
+
         Возвращает объединенный словарь настроек.
         """
         if visited is None:
             visited = set()
-        
+
         # Предотвращаем циклические зависимости
         profile_key = f"{profile.vendor}:{profile.name}"
         if profile_key in visited:
@@ -693,7 +692,7 @@ class OrcaBundleImporter:
 
         # Начинаем с настроек текущего профиля
         merged_settings = dict(profile.orcaslicer_settings or {})
-        
+
         # Получаем имя родительского профиля из поля inherits
         parent_name = merged_settings.get("inherits")
         if not parent_name:
@@ -701,12 +700,12 @@ class OrcaBundleImporter:
             # Удаляем служебное поле _inherits_chain, если оно есть
             merged_settings.pop("_inherits_chain", None)
             return merged_settings
-        
+
         # Ищем родительский профиль в базе данных
         # Родительский профиль может быть в том же vendor или в другом
         # Сначала ищем в том же vendor, потом ищем без vendor (общие профили)
         parent_profile: PrinterProfile | None = None
-        
+
         # Поиск 1: В том же vendor
         result = await db.execute(
             select(PrinterProfile)
@@ -717,7 +716,7 @@ class OrcaBundleImporter:
             )
         )
         parent_profile = result.scalar_one_or_none()
-        
+
         # Поиск 2: В любом vendor (общие профили типа fdm_machine_common)
         # Может быть несколько профилей с одним именем в разных vendor'ах
         # Предпочитаем "Custom" vendor, затем по алфавиту
@@ -735,7 +734,7 @@ class OrcaBundleImporter:
                 )
             )
             parent_profile = result.scalars().first()  # Берем первый из отсортированных
-        
+
         if not parent_profile:
             LOG.warning(
                 "Parent profile '%s' not found for profile '%s' (vendor: '%s')",
@@ -744,19 +743,19 @@ class OrcaBundleImporter:
                 profile.vendor,
             )
             return merged_settings
-        
+
         # Рекурсивно разрешаем наследование для родительского профиля
         parent_settings = await self._resolve_inheritance(db, parent_profile, visited)
-        
+
         # Объединяем настройки: родительские настройки внизу, дочерние настройки поверх
         # (дочерние настройки перезаписывают родительские)
         final_settings = {}
         final_settings.update(parent_settings)
         final_settings.update(merged_settings)
-        
+
         # Сохраняем информацию о наследовании для отладки
         final_settings["_inherits_chain"] = parent_settings.get("_inherits_chain", []) + [parent_name]
-        
+
         return final_settings
 
     async def _sync_printer_metadata_from_profiles(
@@ -804,16 +803,16 @@ class OrcaBundleImporter:
 
             # Берем данные из первого профиля и разрешаем наследование
             first_profile = profiles[0]
-            
+
             # Разрешаем наследование: рекурсивно объединяем с родительскими профилями
             # Теперь resolved_settings содержит ВСЕ поля из профиля и всех его родительских профилей
             resolved_settings = await self._resolve_inheritance(db, first_profile)
-            
+
             # УМНАЯ СИСТЕМА: Создаем merged_metadata ИЗ resolved_settings
             # НЕ используем существующий printer.extra_metadata, чтобы не потерять данные из исходников
             # Если поле есть в resolved_settings, это означает, что оно явно задано в исходниках
             # (даже если это пустая строка "" или пустой массив [])
-            # 
+            #
             # Принцип: система должна быть "умной" и заполнять все значения из исходников,
             # независимо от типа данных или значения
             merged_metadata = {}
@@ -1034,7 +1033,7 @@ def _build_machine_settings_dict(preset: OrcaMachinePreset) -> dict[str, Any]:
     # НЕ добавляем значения по умолчанию для полей, которых нет в JSON
     # Это важно для наследования: если поле отсутствует в JSON, оно должно
     # браться из родительского профиля через наследование, а не заменяться значением по умолчанию
-    # 
+    #
     # OrcaSlicer сам обработает отсутствующие поля через механизм наследования
     # Мы сохраняем только те поля, которые явно указаны в JSON профиле
 

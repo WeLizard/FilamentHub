@@ -5,7 +5,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.material_mapping import MaterialMapping
 
-
 # Известные системные пресеты OrcaSlicer
 KNOWN_PARENT_PRESETS = {
     # PLA

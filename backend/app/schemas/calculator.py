@@ -2,6 +2,7 @@
 
 from datetime import datetime
 from enum import Enum
+
 from pydantic import BaseModel, ConfigDict, Field
 
 
@@ -26,7 +27,7 @@ class CalculatorEstimateRequest(BaseModel):
         default=PricingMethod.COMBINED,
         description="Метод расчета стоимости: by_weight, by_time или combined"
     )
-    
+
     # ========== Параметры материала ==========
     weight_g: float | None = Field(
         None, gt=0, description="Вес использованного материала в граммах"
@@ -46,7 +47,7 @@ class CalculatorEstimateRequest(BaseModel):
     delivery_cost: float | None = Field(
         None, ge=0, description="Стоимость доставки материала (руб), по умолчанию 0"
     )
-    
+
     # ========== Параметры времени печати ==========
     time_sec: float | None = Field(
         None, ge=0, description="Время печати в секундах"
@@ -57,12 +58,12 @@ class CalculatorEstimateRequest(BaseModel):
     time_minutes: float | None = Field(
         None, ge=0, description="Время печати в минутах (дополнительно к часам)"
     )
-    
+
     # ========== Почасовая ставка печати (для метода by_time) ==========
     price_per_hour: float | None = Field(
         None, ge=0, description="Цена за час печати (руб/ч) - для метода by_time"
     )
-    
+
     # ========== Электроэнергия ==========
     electricity_cost_per_kwh: float | None = Field(
         None, ge=0, description="Стоимость 1 кВт·ч электроэнергии (руб)"
@@ -70,7 +71,7 @@ class CalculatorEstimateRequest(BaseModel):
     printer_power_w: float | None = Field(
         None, gt=0, description="Мощность принтера в ваттах"
     )
-    
+
     # ========== Дополнительные услуги (почасовая оплата) ==========
     modeling_hours: float | None = Field(
         None, ge=0, description="Время моделирования в часах"
@@ -81,7 +82,7 @@ class CalculatorEstimateRequest(BaseModel):
     modeling_rate_per_hour: float | None = Field(
         None, ge=0, description="Ставка за час моделирования (руб/ч)"
     )
-    
+
     postprocessing_hours: float | None = Field(
         None, ge=0, description="Время постобработки в часах"
     )
@@ -91,15 +92,15 @@ class CalculatorEstimateRequest(BaseModel):
     postprocessing_rate_per_hour: float | None = Field(
         None, ge=0, description="Ставка за час постобработки (руб/ч)"
     )
-    
+
     printing_rate_per_hour: float | None = Field(
         None, ge=0, description="Ставка за час печати (руб/ч) - для combined метода"
     )
-    
+
     amortization_rate_per_hour: float | None = Field(
         None, ge=0, description="Ставка амортизации оборудования за час (руб/ч)"
     )
-    
+
     # ========== Количество деталей ==========
     quantity: int = Field(
         default=1, gt=0, description="Количество деталей для печати"
@@ -107,7 +108,7 @@ class CalculatorEstimateRequest(BaseModel):
     parts_per_print: int | None = Field(
         default=None, ge=1, le=1000, description="Сколько деталей печатается за один запуск / на одном столе"
     )
-    
+
     # ========== Накладные расходы и наценка ==========
     overhead_percent: float | None = Field(
         None, ge=0, le=100, description="Процент накладных расходов (20-30% по умолчанию)"
@@ -118,7 +119,7 @@ class CalculatorEstimateRequest(BaseModel):
     tax_rate_percent: float | None = Field(
         None, ge=0, le=100, description="Налоговая ставка в процентах (например 0, 4, 6)"
     )
-    
+
     # ========== Коэффициенты корректировки ==========
     urgency_coefficient: float | None = Field(
         None, ge=1.0, le=2.0, description="Коэффициент срочности (1.0 = стандарт, 1.2-1.5 = срочно, +20-50%)"
@@ -129,17 +130,17 @@ class CalculatorEstimateRequest(BaseModel):
     volume_discount_coefficient: float | None = Field(
         None, ge=0.85, le=1.0, description="Коэффициент скидки за объем (0.85-1.0, скидка 0-15%)"
     )
-    
+
     # ========== Фиксированные расходы ==========
     fixed_costs: float | None = Field(
         None, ge=0, description="Фиксированные расходы (упаковка, доставка до ПВЗ, обычно 50-100 руб)"
     )
-    
+
     # ========== Минимальная цена заказа ==========
     min_order_price: float | None = Field(
         None, ge=0, description="Минимальная цена заказа (если итоговая цена меньше, устанавливается минимум, обычно 300-500 руб)"
     )
-    
+
     # ========== Подготовка стола ==========
     bed_prep_cost_per_print: float | None = Field(
         None, ge=0, description="Стоимость подготовки стола за один запуск (клей, спрей, протирка — обычно 10-50 руб)"
@@ -194,33 +195,33 @@ class CalculatorEstimateResponse(BaseModel):
     cost_bed_prep: float = Field(0, ge=0, description="Стоимость подготовки стола")
     cost_nozzle_wear: float = Field(0, ge=0, description="Износ сопла (объёмная модель)")
     cost_tax: float = Field(0, ge=0, description="Сумма налога, включенная в итоговую цену")
-    
+
     # Промежуточные расчеты
     cost_direct: float = Field(0, ge=0, description="Прямые затраты (материалы + время + труд)")
     cost_overhead: float = Field(0, ge=0, description="Накладные расходы")
     cost_before_markup: float = Field(0, ge=0, description="Стоимость до наценки")
     cost_markup: float = Field(0, ge=0, description="Наценка")
-    
+
     # Итоговые суммы
     cost_first_part: float = Field(..., ge=0, description="Цена первой детали (включает все затраты)")
     cost_subsequent_parts: float = Field(..., ge=0, description="Цена последующих деталей (без моделирования)")
     cost_total: float = Field(..., ge=0, description="Общая стоимость всей партии")
     cost_final: float = Field(..., ge=0, description="Финальная цена с учетом всех коэффициентов и минимума")
-    
+
     # Статистика
     weight_kg: float | None = Field(None, ge=0, description="Вес материала в килограммах")
     time_hours: float | None = Field(None, ge=0, description="Время печати в часах")
     total_time_hours: float | None = Field(None, ge=0, description="Общее время (печать + подготовка + постобработка) в часах")
     quantity: int = Field(..., gt=0, description="Количество деталей")
-    
+
     # Финансовые показатели (только для combined)
     cost_of_goods_sold: float | None = Field(None, ge=0, description="Себестоимость (прямые затраты + накладные + фиксированные, без налога)")
     profit_margin: float | None = Field(None, description="Маржинальность / прибыль = цена без налога - себестоимость")
     profit_margin_percent: float | None = Field(None, description="Маржинальность в процентах от цены без налога")
-    
+
     # Метод расчета
     pricing_method: PricingMethod = Field(..., description="Использованный метод расчета")
-    
+
     # Примененные коэффициенты
     applied_urgency_coefficient: float | None = Field(None, description="Примененный коэффициент срочности")
     applied_complexity_coefficient: float | None = Field(None, description="Примененный коэффициент сложности")

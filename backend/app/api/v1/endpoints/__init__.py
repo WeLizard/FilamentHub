@@ -7,14 +7,14 @@ from . import (
     brands,
     calculator,
     downloads,
-    spool_compat,
     filaments,
+    orca_sync,
     presets,
     printer_requests,
     printers,
     qr,
     saved_presets,
-    orca_sync,
+    spool_compat,
 )
 
 __all__ = [

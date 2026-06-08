@@ -4,7 +4,8 @@ from datetime import datetime
 from enum import Enum
 from typing import TYPE_CHECKING
 
-from sqlalchemy import Boolean, DateTime, Enum as SQLEnum, ForeignKey, Integer, JSON, String, Text
+from sqlalchemy import JSON, Boolean, DateTime, ForeignKey, Integer, String, Text
+from sqlalchemy import Enum as SQLEnum
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.sql import func
 
@@ -12,6 +13,7 @@ from app.db.base import Base
 
 if TYPE_CHECKING:
     from app.models.brand import Brand
+    from app.models.feedback import Feedback
     from app.models.filament_review import FilamentReview
     from app.models.notification import Notification
     from app.models.preset import Preset
@@ -48,14 +50,14 @@ class User(Base):
         default=UserRole.USER,
         nullable=False,
     )
-    
+
     # API key for OrcaSlicer integration
     api_key: Mapped[str | None] = mapped_column(String(64), unique=True, index=True, nullable=True)
-    
+
     # Profile info
     full_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
     bio: Mapped[str | None] = mapped_column(Text, nullable=True)
-    
+
     # Sync settings (разрешения на импорт/экспорт профилей)
     allow_printer_profiles_import: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     allow_printer_profiles_export: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
@@ -65,40 +67,40 @@ class User(Base):
     allow_filament_presets_export: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     # allow_filament_presets_import: Разрешение на импорт filament presets из OrcaSlicer на сайт
     # allow_filament_presets_export: Разрешение на экспорт filament presets с сайта в OrcaSlicer
-    
+
     # Deleted preset rule (правило обработки удалённых пресетов)
     deleted_preset_rule: Mapped[str | None] = mapped_column(String(50), nullable=True)
-    # deleted_preset_rule: "always_restore", "always_delete", "always_ask", 
+    # deleted_preset_rule: "always_restore", "always_delete", "always_ask",
     # "restore_created_delete_saved", "restore_created_ask_saved"
-    
+
     # Status
     active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     email_verified: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
 
     # Wiki editing permission
     can_edit_wiki: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
-    
+
     # Badges (список строк: ["founder", "beta_tester", "contributor", "verified"])
     badges: Mapped[list[str] | None] = mapped_column(JSON, nullable=True)
-    # badges: 
+    # badges:
     # - "founder" - основатель (первые пользователи)
     # - "beta_tester" - бета-тестер
     # - "contributor" - контрибьютор (помог с разработкой)
     # - "verified" - верифицированный (производитель)
     # - "early_adopter" - ранний последователь
     # - "supporter" - поддержал проект
-    
+
     # Brand relationship (if user is a brand)
     brand_id: Mapped[int | None] = mapped_column(
         Integer, ForeignKey("brands.id"), nullable=True, index=True
     )
-    
+
     # Printer relationship (user's preferred printer, optional)
     printer_id: Mapped[int | None] = mapped_column(
         Integer, ForeignKey("printers.id"), nullable=True, index=True
     )
     # printer_id: выбранный принтер пользователя (для фильтрации релевантных пресетов)
-    
+
     # Timestamps
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)

@@ -2,7 +2,7 @@
 
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi import APIRouter, Depends, Query, Request
 from fastapi.responses import RedirectResponse, StreamingResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -38,7 +38,7 @@ async def redirect_qr_scan(
 ) -> RedirectResponse:
     """
     Редирект на страницу материала по короткому коду QR-кода.
-    
+
     Инкрементирует счетчик сканирований.
     """
     # Получаем материал по короткому коду
@@ -67,7 +67,7 @@ async def handle_qr_scan(
 ) -> dict:
     """
     Регистрирует сканирование QR-кода и автоматически добавляет официальный пресет в профиль пользователя.
-    
+
     Если пользователь авторизован и есть официальный пресет - он автоматически добавляется.
     """
     # Получаем материал по короткому коду
@@ -137,7 +137,7 @@ async def get_qr_preset(
 ) -> dict:
     """
     Возвращает официальный пресет для материала по QR-коду.
-    
+
     Формат: OrcaSlicer JSON профиль.
     """
     # Получаем материал по короткому коду
@@ -180,7 +180,7 @@ async def get_filament_qr_code(
 ) -> StreamingResponse:
     """
     Получить QR-код для материала.
-    
+
     Если QR-код еще не существует - генерируется новый (для верифицированных брендов).
     """
     # Получаем материал
@@ -212,13 +212,13 @@ async def get_filament_qr_code(
 
         filament.qr_code = short_code
         await db.commit()
-        
+
         # Сохраняем изображения QR-кода на диск (если еще не сохранены)
         save_qr_code_image(short_code, sizes=[300, 600, 1200])
 
     # Проверяем, есть ли сохраненное изображение нужного размера
     saved_path = get_qr_code_path(filament.qr_code, size)
-    
+
     if saved_path:
         # Используем сохраненное изображение
         from fastapi.responses import FileResponse
@@ -229,7 +229,7 @@ async def get_filament_qr_code(
                 'Cache-Control': 'public, max-age=31536000',  # Кэшируем на 1 год
             }
         )
-    
+
     # Если сохраненного нет - генерируем на лету (fallback)
     qr_buffer = generate_qr_code_image(filament.qr_code, size=size)
 
@@ -253,7 +253,7 @@ async def download_filament_qr_code(
 ) -> StreamingResponse:
     """
     Скачать QR-код в высоком разрешении для печати.
-    
+
     Размеры: 300x300, 600x600, 1200x1200px.
     """
     # Проверяем права доступа (только владелец бренда)
@@ -282,7 +282,7 @@ async def download_filament_qr_code(
 
     # Проверяем, есть ли сохраненное изображение нужного размера
     saved_path = get_qr_code_path(filament.qr_code, size)
-    
+
     if saved_path:
         # Используем сохраненное изображение
         from fastapi.responses import FileResponse
@@ -294,7 +294,7 @@ async def download_filament_qr_code(
                 'Cache-Control': 'public, max-age=31536000',
             }
         )
-    
+
     # Если сохраненного нет - генерируем на лету (fallback)
     qr_buffer = generate_qr_code_image(filament.qr_code, size=size)
 

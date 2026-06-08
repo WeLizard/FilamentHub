@@ -3,8 +3,8 @@
 from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.preset import Preset, PresetModerationStatus
 from app.models.filament import Filament
+from app.models.preset import Preset, PresetModerationStatus
 
 
 async def get_preset_by_id(preset_id: int, db: AsyncSession) -> Preset | None:
@@ -24,16 +24,16 @@ async def list_presets(
 ) -> list[Preset]:
     """Получить список пресетов."""
     query = select(Preset)
-    
+
     if active_only:
         query = query.where(Preset.active == True)
-    
+
     if filament_id:
         query = query.where(Preset.filament_id == filament_id)
-    
+
     if is_official is not None:
         query = query.where(Preset.is_official == is_official)
-    
+
     if approved_only:
         query = query.where(
             or_(
@@ -41,16 +41,16 @@ async def list_presets(
                 Preset.is_official == True
             )
         )
-    
+
     query = query.order_by(
         Preset.is_official.desc(),
         Preset.rating.desc().nulls_last(),
         Preset.created_at.desc()
     )
-    
+
     if limit:
         query = query.limit(limit).offset(offset)
-    
+
     result = await db.execute(query)
     return list(result.scalars().all())
 

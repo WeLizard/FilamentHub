@@ -1,7 +1,6 @@
 """Email sending service via Resend."""
 
 import logging
-from typing import Any
 
 import resend
 

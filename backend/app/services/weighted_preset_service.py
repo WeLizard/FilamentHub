@@ -3,8 +3,8 @@
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.preset import Preset, PresetModerationStatus
 from app.models.filament import Filament
+from app.models.preset import Preset, PresetModerationStatus
 from app.services.preset_recommender import get_recommended_preset_values
 
 
@@ -15,25 +15,25 @@ async def create_or_update_weighted_preset(
 ) -> Preset | None:
     """
     Создать или обновить динамический взвешенный пресет для филамента.
-    
+
     Взвешенный пресет автоматически пересчитывается на основе всех пресетов
     для этого материала (исключая сам взвешенный пресет).
-    
+
     Args:
         filament_id: ID филамента
         db: Database session
         min_presets_count: Минимальное количество пресетов для создания взвешенного (по умолчанию 4)
-    
+
     Returns:
         Preset или None, если недостаточно пресетов для расчета
     """
     # Проверяем существование филамента
     filament_result = await db.execute(select(Filament).where(Filament.id == filament_id))
     filament = filament_result.scalar_one_or_none()
-    
+
     if not filament:
         raise ValueError(f"Filament {filament_id} not found")
-    
+
     # Получаем все пресеты для филамента (исключая взвешенные)
     query = select(Preset).where(
         Preset.filament_id == filament_id,
@@ -43,7 +43,7 @@ async def create_or_update_weighted_preset(
     )
     result = await db.execute(query)
     presets = result.scalars().all()
-    
+
     # Проверяем минимальное количество пресетов
     if len(presets) < min_presets_count:
         # Если недостаточно пресетов, удаляем существующий взвешенный пресет (если есть)
@@ -58,7 +58,7 @@ async def create_or_update_weighted_preset(
             weighted_preset.active = False
             await db.commit()
         return None
-    
+
     # Вычисляем взвешенные значения (используем существующую функцию)
     try:
         recommended_values = await get_recommended_preset_values(filament_id, db)
@@ -75,7 +75,7 @@ async def create_or_update_weighted_preset(
             weighted_preset.active = False
             await db.commit()
         return None
-    
+
     # Ищем существующий взвешенный пресет
     existing_weighted_result = await db.execute(
         select(Preset).where(
@@ -84,13 +84,13 @@ async def create_or_update_weighted_preset(
         )
     )
     weighted_preset = existing_weighted_result.scalar_one_or_none()
-    
+
     # Формируем название: "{Название материала} Gen"
     preset_name = f"{filament.name} Gen"
-    
+
     # Описание
     preset_description = f"Генеративно вычисляется на основе {recommended_values['presets_count']} пресетов для этого материала"
-    
+
     if weighted_preset:
         # Обновляем существующий взвешенный пресет
         weighted_preset.name = preset_name
@@ -107,7 +107,7 @@ async def create_or_update_weighted_preset(
         weighted_preset.retraction_speed = recommended_values.get('retraction_speed')
         weighted_preset.active = True
         weighted_preset.moderation_status = PresetModerationStatus.APPROVED
-        
+
         await db.commit()
         await db.refresh(weighted_preset)
         return weighted_preset
@@ -136,7 +136,7 @@ async def create_or_update_weighted_preset(
             rating=None,
             success_rate=None,
         )
-        
+
         db.add(weighted_preset)
         await db.commit()
         await db.refresh(weighted_preset)

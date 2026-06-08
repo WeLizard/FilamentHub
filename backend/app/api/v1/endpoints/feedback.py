@@ -3,7 +3,7 @@
 from datetime import datetime, timezone
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
+from fastapi import APIRouter, Depends, Query, Request, status
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -12,10 +12,16 @@ from app.core.dependencies import (
     get_current_active_user_optional,
     get_current_admin_user,
 )
+from app.core.errors import (
+    ERR_AUTH_REQUIRED,
+    ERR_FEEDBACK_NOT_FOUND,
+    ERR_INVALID_FEEDBACK_STATUS,
+    ERR_INVALID_FEEDBACK_TYPE,
+    raise_error,
+)
 from app.db.session import get_db
 from app.models.feedback import Feedback, FeedbackStatus, FeedbackType
-from app.models.user import User, UserRole
-from app.core.errors import ERR_AUTH_REQUIRED, ERR_FEEDBACK_NOT_FOUND, ERR_INVALID_FEEDBACK_TYPE, ERR_INVALID_FEEDBACK_STATUS, raise_error
+from app.models.user import User
 from app.schemas.feedback import (
     FeedbackCreate,
     FeedbackListResponse,
@@ -34,21 +40,21 @@ async def create_feedback(
 ) -> FeedbackResponse:
     """
     Создать обратную связь.
-    
+
     Требуется авторизация. Email не нужен, так как берется из профиля пользователя.
     """
     # Получаем текущего пользователя (для обратной связи требуется авторизация)
     current_user = await get_current_active_user_optional(request, db)
-    
+
     if not current_user:
         raise_error(status.HTTP_401_UNAUTHORIZED, ERR_AUTH_REQUIRED)
-    
+
     # Валидация типа
     try:
         feedback_type = FeedbackType(feedback_data.type)
     except ValueError:
         raise_error(status.HTTP_400_BAD_REQUEST, ERR_INVALID_FEEDBACK_TYPE)
-    
+
     feedback = Feedback(
         user_id=current_user.id,
         type=feedback_type,
@@ -61,11 +67,11 @@ async def create_feedback(
         source_url=feedback_data.source_url,
         source_id=feedback_data.source_id,
     )
-    
+
     db.add(feedback)
     await db.commit()
     await db.refresh(feedback)
-    
+
     return FeedbackResponse.model_validate(feedback)
 
 
@@ -99,18 +105,18 @@ async def list_feedback(
         count_query = count_query.where(Feedback.type == type_filter)
     if source_filter:
         count_query = count_query.where(Feedback.source == source_filter)
-    
+
     total_result = await db.execute(count_query)
     total = total_result.scalar() or 0
-    
+
     # Paginate
     pages = (total + size - 1) // size if total > 0 else 0
     offset = (page - 1) * size
     query = query.order_by(Feedback.created_at.desc()).offset(offset).limit(size)
-    
+
     result = await db.execute(query)
     feedback_list = result.scalars().all()
-    
+
     return FeedbackListResponse(
         items=[FeedbackResponse.model_validate(feedback) for feedback in feedback_list],
         total=total,
@@ -128,10 +134,10 @@ async def get_feedback(
 ) -> FeedbackResponse:
     """Получить обратную связь по ID (только для админов)."""
     feedback = await db.get(Feedback, feedback_id)
-    
+
     if not feedback:
         raise_error(status.HTTP_404_NOT_FOUND, ERR_FEEDBACK_NOT_FOUND)
-    
+
     return FeedbackResponse.model_validate(feedback)
 
 
@@ -144,26 +150,26 @@ async def update_feedback(
 ) -> FeedbackResponse:
     """Обновить обратную связь (ответить, изменить статус) - только для админов."""
     feedback = await db.get(Feedback, feedback_id)
-    
+
     if not feedback:
         raise_error(status.HTTP_404_NOT_FOUND, ERR_FEEDBACK_NOT_FOUND)
-    
+
     if update_data.status:
         try:
             feedback.status = FeedbackStatus(update_data.status)
         except ValueError:
             raise_error(status.HTTP_400_BAD_REQUEST, ERR_INVALID_FEEDBACK_STATUS)
-    
+
     if update_data.admin_response is not None:
         feedback.admin_response = update_data.admin_response
         feedback.responded_by = admin.id
         feedback.admin_response_at = datetime.now(timezone.utc)
-        
+
         # Отправляем уведомление пользователю о том, что админ ответил на его обратную связь
         if feedback.user_id:
-            from app.services.notification_service import create_notification
             from app.models.notification import NotificationType
-            
+            from app.services.notification_service import create_notification
+
             await create_notification(
                 user_id=feedback.user_id,
                 notification_type=NotificationType.ADMIN_MESSAGE,
@@ -173,10 +179,10 @@ async def update_feedback(
                 link=f"/feedback/{feedback.id}",
                 extra_data={"feedback_id": feedback.id, "feedback_type": feedback.type.value},
             )
-    
+
     await db.commit()
     await db.refresh(feedback)
-    
+
     return FeedbackResponse.model_validate(feedback)
 
 
@@ -207,23 +213,23 @@ async def list_my_feedback(
 ) -> FeedbackListResponse:
     """Получить список своей обратной связи."""
     query = select(Feedback).where(Feedback.user_id == current_user.id)
-    
+
     # Count total
     count_query = select(func.count()).select_from(Feedback).where(
         Feedback.user_id == current_user.id
     )
-    
+
     total_result = await db.execute(count_query)
     total = total_result.scalar() or 0
-    
+
     # Paginate
     pages = (total + size - 1) // size if total > 0 else 0
     offset = (page - 1) * size
     query = query.order_by(Feedback.created_at.desc()).offset(offset).limit(size)
-    
+
     result = await db.execute(query)
     feedback_list = result.scalars().all()
-    
+
     return FeedbackListResponse(
         items=[FeedbackResponse.model_validate(feedback) for feedback in feedback_list],
         total=total,

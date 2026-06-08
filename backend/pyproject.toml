@@ -58,7 +58,15 @@ select = [
 ignore = [
     "E501",  # line too long (handled by black)
     "B008",  # do not perform function calls in argument defaults
+    "E712",  # `== True/False`: idiomatic SQLAlchemy column comparisons, not Python bool checks
 ]
+
+[tool.ruff.lint.per-file-ignores]
+# Намеренные поздние импорты: app создаётся до подключения роутеров,
+# схемы/limiter импортируются после объявления router во избежание циклов.
+"app/main.py" = ["E402"]
+"app/api/v1/endpoints/auth.py" = ["E402"]
+"app/api/v1/endpoints/orca_sync.py" = ["E402"]
 
 [tool.black]
 line-length = 100

@@ -171,7 +171,7 @@ class OrcaFilamentPresetPayload(BaseModel):
     orcaslicer_settings: dict[str, Any] = Field(
         default_factory=dict, description="Полный JSON профиль OrcaSlicer со всеми параметрами."
     )
-    
+
     # .info файл содержимое (для идентификации пресета)
     info_content: str | None = Field(
         default=None,

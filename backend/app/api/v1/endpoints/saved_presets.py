@@ -2,12 +2,17 @@
 
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, Query
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.dependencies import get_current_active_user
-from app.core.errors import ERR_PRESET_NOT_FOUND, ERR_PRESET_INACTIVE, ERR_SAVED_PRESET_NOT_FOUND, raise_error
+from app.core.errors import (
+    ERR_PRESET_INACTIVE,
+    ERR_PRESET_NOT_FOUND,
+    ERR_SAVED_PRESET_NOT_FOUND,
+    raise_error,
+)
 from app.db.session import get_db
 from app.models.preset import Preset
 from app.models.user import User

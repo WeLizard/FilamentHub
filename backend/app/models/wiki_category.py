@@ -25,11 +25,11 @@ class WikiCategory(Base):
     name: Mapped[str] = mapped_column(String(100), nullable=False, unique=True, index=True)
     slug: Mapped[str] = mapped_column(String(100), nullable=False, unique=True, index=True)
     # slug: URL-friendly версия имени (например, "materials", "problems")
-    
+
     description: Mapped[str] = mapped_column(Text, nullable=False)
     icon: Mapped[str | None] = mapped_column(String(50), nullable=True)
     # icon: название Lucide иконки (например, "Package", "Wrench", "Settings")
-    
+
     # Display order
     order: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     # order: порядок отображения на главной странице (меньше = выше)

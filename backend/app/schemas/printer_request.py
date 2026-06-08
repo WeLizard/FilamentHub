@@ -16,7 +16,7 @@ class PrinterRequestCreate(BaseModel):
     model: str = Field(..., min_length=1, max_length=100)
     slug: str = Field(..., min_length=1, max_length=200)
     description: str | None = None
-    
+
     # Optional printer specs
     build_volume_x: float | None = Field(None, ge=0)
     build_volume_y: float | None = Field(None, ge=0)
@@ -25,7 +25,7 @@ class PrinterRequestCreate(BaseModel):
     max_extruder_temp: int | None = Field(None, ge=0, le=500)
     max_bed_temp: int | None = Field(None, ge=0, le=200)
     image_url: str | None = Field(None, max_length=500)
-    
+
     message: str | None = Field(None, max_length=1000, description="Дополнительная информация о принтере")
     proof_files: list[str] | None = Field(
         None,

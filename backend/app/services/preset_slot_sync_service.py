@@ -427,10 +427,7 @@ async def handle_hh_snapshot(
             .join(Filament, Preset.filament_id == Filament.id, isouter=True)
             .where(Preset.id.in_(preset_ids_for_check))
         )
-        preset_material_types = {
-            preset_id: material_type
-            for preset_id, material_type in preset_result.all()
-        }
+        preset_material_types = dict(preset_result.all())
 
     for gate_index, state in gate_state_updates:
         if state.preset_id is None or not state.hh_material:

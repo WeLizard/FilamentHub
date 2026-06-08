@@ -2,23 +2,21 @@
 
 import asyncio
 
-from sqlalchemy.ext.asyncio import AsyncSession
-
 from app.db.session import AsyncSessionLocal
-from app.models.brand import Brand
 from app.models.filament import Filament
-from app.models.preset import Preset, PresetModerationStatus
+from app.models.preset import Preset
 
 
 async def init_test_data() -> None:
     """Create test data."""
     import socket
+
     from app.db.session import engine
-    
+
     # Retry logic for Docker network DNS resolution
     max_retries = 30
     retry_delay = 1
-    
+
     # Test database connection before proceeding
     from sqlalchemy import text
     for attempt in range(max_retries):
@@ -34,10 +32,10 @@ async def init_test_data() -> None:
             else:
                 # Last attempt failed, raise the error
                 raise
-    
+
     # Now proceed with database operations
     async with AsyncSessionLocal() as db:
-        from sqlalchemy import select, func
+        from sqlalchemy import func, select
 
         # Check if presets already exist
         preset_count = await db.execute(select(func.count(Preset.id)))

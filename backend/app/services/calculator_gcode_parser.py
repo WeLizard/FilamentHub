@@ -9,7 +9,6 @@ import logging
 import re
 from typing import Any
 
-
 logger = logging.getLogger(__name__)
 
 SUPPORTED_GCODE_EXTENSIONS = (".gcode", ".gcode.gz", ".txt")

@@ -1,19 +1,19 @@
 """Calculator endpoints."""
 
-import math
+import asyncio
 import logging
+import math
+import re
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Annotated
-
-import asyncio
-import re
 
 from fastapi import APIRouter, Depends, File, Query, UploadFile, status
 from fastapi.responses import HTMLResponse, Response
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import settings
 from app.core.dependencies import get_current_active_user
 from app.core.errors import (
     ERR_CALCULATOR_HISTORY_NOT_FOUND,
@@ -21,16 +21,15 @@ from app.core.errors import (
     ERR_GCODE_PARSE_FAILED,
     ERR_INVALID_FILE_EXT,
     ERR_PDF_GENERATION_FAILED,
+    ERR_PRICE_PER_HOUR_REQUIRED,
     ERR_SHARED_QUOTE_EXPIRED,
     ERR_SHARED_QUOTE_NOT_FOUND,
-    ERR_WEIGHT_REQUIRED,
     ERR_SPOOL_PRICE_REQUIRED,
     ERR_TIME_REQUIRED,
-    ERR_PRICE_PER_HOUR_REQUIRED,
     ERR_UNSUPPORTED_PRICING_METHOD,
+    ERR_WEIGHT_REQUIRED,
     raise_error,
 )
-from app.core.config import settings
 from app.db.session import get_db
 from app.models.calculator_history_entry import CalculatorHistoryEntry
 from app.models.calculator_profile import UserCalculatorProfile
@@ -144,7 +143,7 @@ async def estimate_cost(
 ) -> CalculatorEstimateResponse:
     """
     Рассчитать стоимость печати по различным методам.
-    
+
     Поддерживает три метода расчета:
     1. **by_weight** (по граммам): стоимость = (вес_г / 1000) * цена_за_кг
     2. **by_time** (по часам): стоимость = время_часы * цена_за_час
@@ -155,26 +154,26 @@ async def estimate_cost(
        - Печать: (часы + минуты/60) * ставка_за_час
        - Постобработка: (часы + минуты/60) * ставка_за_час
        - Амортизация: время_печати_часы * ставка_за_час
-       
+
        Первая деталь включает все затраты, последующие - без моделирования.
     """
     quantity = data.quantity
     parts_per_print = max(1, min(quantity, data.parts_per_print or 1))
     print_runs = math.ceil(quantity / parts_per_print)
     tax_rate_percent = data.tax_rate_percent or 0.0
-    
+
     # ========== Простые методы (для обратной совместимости) ==========
     if data.pricing_method == PricingMethod.BY_WEIGHT:
         if data.weight_g is None:
             raise_error(400, ERR_WEIGHT_REQUIRED)
         if data.spool_price is None or data.spool_weight_kg is None:
             raise_error(400, ERR_SPOOL_PRICE_REQUIRED)
-        
+
         delivery = data.delivery_cost or 0.0
         weight_kg = (data.weight_g * quantity) / 1000.0
         # Формула из Excel: ((цена_катушки + доставка) / вес_катушки_кг) / 1000 * (вес_г * количество)
         cost_material = ((data.spool_price + delivery) / data.spool_weight_kg) / 1000.0 * (data.weight_g * quantity)
-        
+
         # Электроэнергия (если указана)
         cost_electricity = 0.0
         time_hours = None
@@ -184,11 +183,11 @@ async def estimate_cost(
             if data.electricity_cost_per_kwh and data.printer_power_w and time_hours_total > 0:
                 power_kw = data.printer_power_w / 1000.0
                 cost_electricity = time_hours_total * power_kw * data.electricity_cost_per_kwh
-        
+
         cost_subtotal = cost_material + cost_electricity
         cost_tax = _calculate_tax(cost_subtotal, tax_rate_percent)
         cost_total = cost_subtotal + cost_tax
-    
+
         return CalculatorEstimateResponse(
             cost_material=round(cost_material, 2),
             cost_electricity=round(cost_electricity, 2),
@@ -207,34 +206,34 @@ async def estimate_cost(
             pricing_method=data.pricing_method,
             applied_tax_rate_percent=tax_rate_percent if tax_rate_percent > 0 else None,
         )
-    
+
     elif data.pricing_method == PricingMethod.BY_TIME:
         if data.time_sec is None and data.time_hours is None and data.time_minutes is None:
             raise_error(400, ERR_TIME_REQUIRED)
         if data.price_per_hour is None:
             raise_error(400, ERR_PRICE_PER_HOUR_REQUIRED)
-        
+
         # Время одного запуска / одной укладки на столе
         time_hours_per_run = _convert_time_to_hours(data.time_hours, data.time_minutes, data.time_sec)
         # Общее время печати партии с учётом количества запусков
         time_hours_total = time_hours_per_run * print_runs
-        
+
         cost_printing = time_hours_total * data.price_per_hour
-        
+
         # Электроэнергия (если указана, рассчитывается на общее время печати партии)
         cost_electricity = 0.0
         if data.electricity_cost_per_kwh and data.printer_power_w and time_hours_total > 0:
             power_kw = data.printer_power_w / 1000.0
             cost_electricity = time_hours_total * power_kw * data.electricity_cost_per_kwh
-        
+
         cost_subtotal = cost_printing + cost_electricity
         cost_tax = _calculate_tax(cost_subtotal, tax_rate_percent)
         cost_total = cost_subtotal + cost_tax
-        
+
         weight_kg = None
         if data.weight_g:
             weight_kg = (data.weight_g * quantity) / 1000.0
-        
+
         return CalculatorEstimateResponse(
             cost_material=0.0,
             cost_electricity=round(cost_electricity, 2),
@@ -253,7 +252,7 @@ async def estimate_cost(
             pricing_method=data.pricing_method,
             applied_tax_rate_percent=tax_rate_percent if tax_rate_percent > 0 else None,
         )
-    
+
     # ========== Комбинированный метод (полная формула из Excel + профессиональная формула) ==========
     elif data.pricing_method == PricingMethod.COMBINED:
         # 1. Материал (с учетом поддержек и коэффициента потерь)
@@ -262,15 +261,15 @@ async def estimate_cost(
         if data.weight_g and data.spool_price and data.spool_weight_kg:
             delivery = data.delivery_cost or 0.0
             price_per_gram = ((data.spool_price + delivery) / data.spool_weight_kg) / 1000.0
-            
+
             # Вес детали
             part_weight = data.weight_g * quantity
             weight_kg = part_weight / 1000.0
-            
+
             # Вес поддержек (если указан)
             supports_weight = (data.supports_weight_g or 0.0) * quantity
             supports_loss_coef = data.supports_loss_coefficient or 1.2
-            
+
             # Формула из документа: (Вес детали × Цена материала) + (Вес поддержек × Цена материала × Коэффициент потерь)
             cost_material = (part_weight * price_per_gram) + (supports_weight * price_per_gram * supports_loss_coef)
 
@@ -289,27 +288,27 @@ async def estimate_cost(
         time_hours_per_run = _convert_time_to_hours(data.time_hours, data.time_minutes, data.time_sec)
         # Время печати всей партии с учётом количества запусков
         time_hours_total = time_hours_per_run * print_runs
-        
+
         # 3. Электроэнергия (рассчитывается на общее время печати партии)
         cost_electricity = 0.0
         if data.electricity_cost_per_kwh and data.printer_power_w and time_hours_total > 0:
             power_kw = data.printer_power_w / 1000.0
             # Формула из Excel: мощность_кВт * цена_кВт·ч * время_печати_часы_всего
             cost_electricity = power_kw * data.electricity_cost_per_kwh * time_hours_total
-        
+
         # 4. Моделирование (делается один раз для всей партии, не умножается на quantity)
         cost_modeling = 0.0
         if data.modeling_rate_per_hour:
             modeling_time = _convert_time_to_hours(data.modeling_hours, data.modeling_minutes)
             # Формула из Excel: (часы + минуты/60) * ставка_за_час
             cost_modeling = modeling_time * data.modeling_rate_per_hour
-        
+
         # 5. Печать (почасовая ставка, умножается на общее время печати партии)
         cost_printing = 0.0
         if data.printing_rate_per_hour and time_hours_total > 0:
             # Формула из Excel: время_печати_часы_всего * ставка_за_час
             cost_printing = time_hours_total * data.printing_rate_per_hour
-        
+
         # 6. Постобработка (умножается на количество деталей, так как каждая деталь обрабатывается отдельно)
         cost_postprocessing = 0.0
         if data.postprocessing_rate_per_hour:
@@ -317,7 +316,7 @@ async def estimate_cost(
             postprocessing_time_total = postprocessing_time_per_part * quantity
             # Формула из Excel: (время_на_деталь * количество) * ставка_за_час
             cost_postprocessing = postprocessing_time_total * data.postprocessing_rate_per_hour
-        
+
         # 6b. Мониторинг (пассивное время оператора — 5-15% от времени печати)
         cost_monitoring = 0.0
         monitoring_factor = data.monitoring_factor or 0.0
@@ -354,29 +353,29 @@ async def estimate_cost(
             cost_amortization +
             cost_nozzle_wear
         )
-        
+
         # 9. Накладные расходы (процент от прямых затрат)
         overhead_percent = data.overhead_percent or 20.0  # По умолчанию 20%
         cost_overhead = cost_direct * (overhead_percent / 100.0)
-        
+
         # 10. Фиксированные расходы
         fixed_costs = data.fixed_costs or 0.0
-        
+
         # 11. Стоимость до наценки
         cost_before_markup = cost_direct + cost_overhead + fixed_costs
-        
+
         # 12. Наценка (процент от стоимости до наценки)
         markup_percent = data.markup_percent or 30.0  # По умолчанию 30%
         cost_markup = cost_before_markup * (markup_percent / 100.0)
-        
+
         # 13. Промежуточная цена (до применения коэффициентов)
         intermediate_price = cost_before_markup + cost_markup
-        
+
         # 14. Применение коэффициентов корректировки
         urgency_coef = data.urgency_coefficient or 1.0
         complexity_coef = data.complexity_coefficient or 1.0
         volume_discount_coef = data.volume_discount_coefficient or 1.0
-        
+
         # Применяем коэффициенты
         taxable_subtotal = intermediate_price * urgency_coef * complexity_coef * volume_discount_coef
 
@@ -417,10 +416,10 @@ async def estimate_cost(
         else:
             cost_first_part = cost_final
             cost_subsequent_parts = cost_first_part
-        
+
         # 19. Общая стоимость партии
         cost_total = cost_final
-        
+
         # 20. Расчет общего времени (печать + мониторинг + подготовка + постобработка)
         total_time_hours = time_hours_total
         if monitoring_factor > 0 and time_hours_total > 0:
@@ -432,14 +431,14 @@ async def estimate_cost(
             postprocessing_time_per_part = _convert_time_to_hours(data.postprocessing_hours, data.postprocessing_minutes)
             postprocessing_time_total = postprocessing_time_per_part * quantity  # Постобработка каждой детали
             total_time_hours += postprocessing_time_total
-        
+
         # 21. Расчет маржинальности / прибыли
         # Себестоимость = прямые затраты + накладные + фиксированные расходы
         cost_of_goods_sold = cost_before_markup
         revenue_before_tax = max(cost_final - cost_tax, 0.0)
         profit_margin = revenue_before_tax - cost_of_goods_sold
         profit_margin_percent = (profit_margin / revenue_before_tax * 100.0) if revenue_before_tax > 0 else 0.0
-        
+
         return CalculatorEstimateResponse(
             cost_material=round(cost_material, 2),
             cost_bed_prep=round(cost_bed_prep, 2),
@@ -473,7 +472,7 @@ async def estimate_cost(
             applied_volume_discount=volume_discount_coef if volume_discount_coef != 1.0 else None,
             applied_tax_rate_percent=tax_rate_percent if tax_rate_percent > 0 else None,
         )
-    
+
     else:
         raise_error(400, ERR_UNSUPPORTED_PRICING_METHOD, params={"method": data.pricing_method})
 

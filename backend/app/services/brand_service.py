@@ -33,18 +33,18 @@ async def list_brands(
 ) -> list[Brand]:
     """Получить список брендов."""
     query = select(Brand)
-    
+
     if active_only:
         query = query.where(Brand.active == True)
-    
+
     if verified_only:
         query = query.where(Brand.verified == True)
-    
+
     query = query.order_by(Brand.name.asc())
-    
+
     if limit:
         query = query.limit(limit).offset(offset)
-    
+
     result = await db.execute(query)
     return list(result.scalars().all())
 

@@ -4,7 +4,7 @@ import enum
 from datetime import datetime
 from typing import TYPE_CHECKING
 
-from sqlalchemy import DateTime, Enum, Float, ForeignKey, Integer, JSON, String
+from sqlalchemy import JSON, DateTime, Enum, Float, ForeignKey, Integer, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.sql import func
 
@@ -13,8 +13,8 @@ from app.db.base import Base
 if TYPE_CHECKING:
     from app.models.preset import Preset
     from app.models.user import User
-    from app.models.user_spool import UserSpool
     from app.models.user_printer_device import UserPrinterDevice
+    from app.models.user_spool import UserSpool
 
 
 class PresetUsageEventType(str, enum.Enum):

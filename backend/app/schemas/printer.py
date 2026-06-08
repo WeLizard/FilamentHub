@@ -1,7 +1,6 @@
 """Pydantic schemas for Printer."""
 
 from datetime import datetime
-
 from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -19,20 +18,20 @@ class PrinterBase(BaseModel):
     technology: str | None = Field(None, max_length=30)
     source: str = Field(default="user", max_length=50)
     vendor: str | None = Field(None, max_length=100)
-    
+
     # Build volume (optional)
     build_volume_x: float | None = Field(None, ge=0)
     build_volume_y: float | None = Field(None, ge=0)
     build_volume_z: float | None = Field(None, ge=0)
-    
+
     # Nozzle diameter (для FDM)
     nozzle_diameter: float | None = Field(None, ge=0.1, le=2.0)
     nozzle_options: list[float] | None = None
-    
+
     # Temperature limits
     max_extruder_temp: int | None = Field(None, ge=0, le=500)
     max_bed_temp: int | None = Field(None, ge=0, le=200)
-    
+
     # Description
     description: str | None = None
     image_url: str | None = Field(None, max_length=500)
@@ -58,16 +57,16 @@ class PrinterUpdate(BaseModel):
     technology: str | None = Field(None, max_length=30)
     source: str | None = Field(None, max_length=50)
     vendor: str | None = Field(None, max_length=100)
-    
+
     build_volume_x: float | None = Field(None, ge=0)
     build_volume_y: float | None = Field(None, ge=0)
     build_volume_z: float | None = Field(None, ge=0)
-    
+
     nozzle_diameter: float | None = Field(None, ge=0.1, le=2.0)
     nozzle_options: list[float] | None = None
     max_extruder_temp: int | None = Field(None, ge=0, le=500)
     max_bed_temp: int | None = Field(None, ge=0, le=200)
-    
+
     description: str | None = None
     image_url: str | None = Field(None, max_length=500)
     active: bool | None = None

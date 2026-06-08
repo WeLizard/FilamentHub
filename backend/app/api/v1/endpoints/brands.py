@@ -6,7 +6,6 @@ from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.utils import like_pattern
 from app.core.dependencies import get_current_admin_user, get_current_user
 from app.core.errors import (
     ERR_BRAND_NOT_FOUND,
@@ -17,6 +16,7 @@ from app.core.errors import (
     ERR_NO_PERMISSION,
     raise_error,
 )
+from app.core.utils import like_pattern
 from app.db.session import get_db
 from app.models.brand import Brand
 from app.models.user import User, UserRole
@@ -35,13 +35,12 @@ async def list_brands(
     search: str | None = Query(None, description="Поиск по названию бренда"),
 ) -> BrandListResponse:
     """Получить список производителей."""
-    from sqlalchemy import or_
-    
+
     # Build query
     query = select(Brand)
     if active_only:
         query = query.where(Brand.active == True)
-    
+
     # Search filter
     if search:
         search_term = like_pattern(search)
@@ -90,7 +89,7 @@ async def get_brand(
         raise_error(404, ERR_BRAND_NOT_FOUND)
 
     response = BrandResponse.model_validate(brand)
-    
+
     # Если запрошено количество сотрудников - добавляем его
     if include_employees_count:
         from app.models.user import User
@@ -99,7 +98,7 @@ async def get_brand(
         )
         employees_count = employees_count_result.scalar() or 0
         response.employees_count = employees_count
-    
+
     return response
 
 
@@ -115,12 +114,12 @@ async def create_brand(
     is_valid, error_msg = await validate_text_field(data.name, db, "brand_name")
     if not is_valid:
         raise HTTPException(status_code=400, detail=error_msg)
-    
+
     if data.description:
         is_valid, error_msg = await validate_text_field(data.description, db, "brand_description")
         if not is_valid:
             raise HTTPException(status_code=400, detail=error_msg)
-    
+
     # Check if slug exists
     existing = await db.execute(select(Brand).where(Brand.slug == data.slug))
     if existing.scalar_one_or_none():

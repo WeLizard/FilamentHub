@@ -2,7 +2,7 @@
 
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, Query
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -27,20 +27,20 @@ async def list_notifications(
     """Получить список уведомлений пользователя."""
     # Build query
     query = select(Notification).where(Notification.user_id == current_user.id)
-    
+
     if unread_only:
         query = query.where(Notification.read == False)
-    
+
     # Count total
     count_query = select(func.count()).select_from(Notification).where(
         Notification.user_id == current_user.id
     )
     if unread_only:
         count_query = count_query.where(Notification.read == False)
-    
+
     total_result = await db.execute(count_query)
     total = total_result.scalar() or 0
-    
+
     # Count unread
     unread_count_query = select(func.count()).select_from(Notification).where(
         Notification.user_id == current_user.id,
@@ -48,16 +48,16 @@ async def list_notifications(
     )
     unread_count_result = await db.execute(unread_count_query)
     unread_count = unread_count_result.scalar() or 0
-    
+
     # Paginate
     pages = (total + size - 1) // size if total > 0 else 0
     offset = (page - 1) * size
     query = query.order_by(Notification.created_at.desc()).offset(offset).limit(size)
-    
+
     # Execute
     result = await db.execute(query)
     notifications = result.scalars().all()
-    
+
     return NotificationListResponse(
         items=[NotificationResponse.model_validate(n) for n in notifications],
         total=total,
@@ -81,7 +81,7 @@ async def get_unread_count(
         )
     )
     count = result.scalar() or 0
-    
+
     return {"unread_count": count}
 
 
@@ -99,17 +99,17 @@ async def mark_as_read(
         )
     )
     notification = result.scalar_one_or_none()
-    
+
     if not notification:
         raise_error(404, ERR_NOTIFICATION_NOT_FOUND)
-    
+
     if not notification.read:
         from datetime import datetime, timezone
         notification.read = True
         notification.read_at = datetime.now(timezone.utc)
         await db.commit()
         await db.refresh(notification)
-    
+
     return NotificationResponse.model_validate(notification)
 
 
@@ -120,7 +120,7 @@ async def mark_all_as_read(
 ) -> dict[str, int]:
     """Отметить все уведомления пользователя как прочитанные."""
     from datetime import datetime, timezone
-    
+
     result = await db.execute(
         select(Notification).where(
             Notification.user_id == current_user.id,
@@ -128,15 +128,15 @@ async def mark_all_as_read(
         )
     )
     notifications = result.scalars().all()
-    
+
     count = 0
     for notification in notifications:
         notification.read = True
         notification.read_at = datetime.now(timezone.utc)
         count += 1
-    
+
     await db.commit()
-    
+
     return {"marked_count": count}
 
 

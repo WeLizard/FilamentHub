@@ -1,6 +1,11 @@
 """Services package."""
 
-from app.services.brand_service import get_brand_by_id, get_brand_by_name, get_brand_by_slug, list_brands
+from app.services.brand_service import (
+    get_brand_by_id,
+    get_brand_by_name,
+    get_brand_by_slug,
+    list_brands,
+)
 from app.services.filament_service import (
     check_brand_exists,
     get_filament_by_id,

@@ -2,14 +2,15 @@
 
 from datetime import datetime
 from typing import Annotated
+
 from fastapi import APIRouter, Depends, Response
 from fastapi.responses import PlainTextResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.session import get_db
-from app.models.filament import Filament
 from app.models.brand import Brand
+from app.models.filament import Filament
 from app.models.wiki_article import WikiArticle, WikiArticleStatus
 from app.models.wiki_category import WikiCategory
 
@@ -22,7 +23,7 @@ async def sitemap_xml(
 ) -> Response:
     """
     Генерирует sitemap.xml для поисковых роботов.
-    
+
     Включает:
     - Главную страницу
     - Каталог материалов
@@ -33,7 +34,7 @@ async def sitemap_xml(
     """
     base_url = "https://filamenthub.ru"
     current_date = datetime.now().strftime("%Y-%m-%d")
-    
+
     # Начинаем формировать XML
     xml_lines = [
         '<?xml version="1.0" encoding="UTF-8"?>',
@@ -42,58 +43,58 @@ async def sitemap_xml(
         '         xsi:schemaLocation="http://www.sitemaps.org/schemas/sitemap/0.9',
         '         http://www.sitemaps.org/schemas/sitemap/0.9/sitemap.xsd">',
     ]
-    
+
     # Статические страницы
     static_pages = [
         ("/", "1.0", "daily"),
         ("/wiki", "0.9", "weekly"),
         ("/download", "0.8", "monthly"),
     ]
-    
+
     for path, priority, changefreq in static_pages:
-        xml_lines.append(f'  <url>')
+        xml_lines.append('  <url>')
         xml_lines.append(f'    <loc>{base_url}{path}</loc>')
         xml_lines.append(f'    <lastmod>{current_date}</lastmod>')
         xml_lines.append(f'    <changefreq>{changefreq}</changefreq>')
         xml_lines.append(f'    <priority>{priority}</priority>')
-        xml_lines.append(f'  </url>')
-    
+        xml_lines.append('  </url>')
+
     # Филаменты
     filaments_result = await db.execute(select(Filament.id))
     filaments = filaments_result.scalars().all()
-    
+
     for filament_id in filaments:
-        xml_lines.append(f'  <url>')
+        xml_lines.append('  <url>')
         xml_lines.append(f'    <loc>{base_url}/filaments/{filament_id}</loc>')
         xml_lines.append(f'    <lastmod>{current_date}</lastmod>')
-        xml_lines.append(f'    <changefreq>weekly</changefreq>')
-        xml_lines.append(f'    <priority>0.8</priority>')
-        xml_lines.append(f'  </url>')
-    
+        xml_lines.append('    <changefreq>weekly</changefreq>')
+        xml_lines.append('    <priority>0.8</priority>')
+        xml_lines.append('  </url>')
+
     # Бренды
     brands_result = await db.execute(select(Brand.id))
     brands = brands_result.scalars().all()
-    
+
     for brand_id in brands:
-        xml_lines.append(f'  <url>')
+        xml_lines.append('  <url>')
         xml_lines.append(f'    <loc>{base_url}/brands/{brand_id}</loc>')
         xml_lines.append(f'    <lastmod>{current_date}</lastmod>')
-        xml_lines.append(f'    <changefreq>monthly</changefreq>')
-        xml_lines.append(f'    <priority>0.7</priority>')
-        xml_lines.append(f'  </url>')
-    
+        xml_lines.append('    <changefreq>monthly</changefreq>')
+        xml_lines.append('    <priority>0.7</priority>')
+        xml_lines.append('  </url>')
+
     # Wiki категории
     categories_result = await db.execute(select(WikiCategory.slug))
     categories = categories_result.scalars().all()
-    
+
     for category_slug in categories:
-        xml_lines.append(f'  <url>')
+        xml_lines.append('  <url>')
         xml_lines.append(f'    <loc>{base_url}/wiki/{category_slug}</loc>')
         xml_lines.append(f'    <lastmod>{current_date}</lastmod>')
-        xml_lines.append(f'    <changefreq>weekly</changefreq>')
-        xml_lines.append(f'    <priority>0.8</priority>')
-        xml_lines.append(f'  </url>')
-    
+        xml_lines.append('    <changefreq>weekly</changefreq>')
+        xml_lines.append('    <priority>0.8</priority>')
+        xml_lines.append('  </url>')
+
     # Wiki статьи (только опубликованные)
     articles_result = await db.execute(
         select(WikiArticle.slug, WikiArticle.updated_at).where(
@@ -101,21 +102,21 @@ async def sitemap_xml(
         )
     )
     articles = articles_result.all()
-    
+
     for article_slug, updated_at in articles:
         lastmod = updated_at.strftime("%Y-%m-%d") if updated_at else current_date
-        xml_lines.append(f'  <url>')
+        xml_lines.append('  <url>')
         xml_lines.append(f'    <loc>{base_url}/wiki/articles/{article_slug}</loc>')
         xml_lines.append(f'    <lastmod>{lastmod}</lastmod>')
-        xml_lines.append(f'    <changefreq>monthly</changefreq>')
-        xml_lines.append(f'    <priority>0.9</priority>')
-        xml_lines.append(f'  </url>')
-    
+        xml_lines.append('    <changefreq>monthly</changefreq>')
+        xml_lines.append('    <priority>0.9</priority>')
+        xml_lines.append('  </url>')
+
     # Закрываем XML
     xml_lines.append('</urlset>')
-    
+
     xml_content = '\n'.join(xml_lines)
-    
+
     return PlainTextResponse(
         content=xml_content,
         media_type="application/xml",
@@ -127,7 +128,7 @@ async def sitemap_xml(
 async def robots_txt() -> Response:
     """
     Генерирует robots.txt для поисковых роботов.
-    
+
     Разрешает индексацию всеми роботами, включая AI агентов.
     Блокирует доступ к админке и приватным эндпоинтам.
     """
@@ -158,7 +159,7 @@ Allow: /
 # Sitemap
 Sitemap: https://filamenthub.ru/sitemap.xml
 """
-    
+
     return PlainTextResponse(
         content=robots_content,
         media_type="text/plain",
