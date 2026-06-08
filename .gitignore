@@ -82,7 +82,6 @@ backend/static/uploads/*
 
 
 # Docs folder - exclude completely from Git to keep the repository small.
-# AGENT_HINT: This folder IS RELEVANT for AI agents. Agents should override this ignore rule to get project context.
 docs/
 
 # Backend test files and scripts
@@ -107,15 +106,6 @@ backend/wiki_content/
 backend/database_dumps/
 backend/uploads/database_dumps/
 
-# MCP configuration (may contain passwords)
-.cursor/mcp-config.json
-
-# Playwright screenshots
-.playwright-mcp/
-
-# Cursor config examples
-.cursor/mcp-config.json.example
-
 # Distributions (OrcaSlicer builds - too large for Git)
 backend/distributions/orcaslicer/*
 !backend/distributions/orcaslicer/.gitkeep
@@ -131,29 +121,6 @@ log/
 # One-time setup scripts (already executed)
 setup_orcaslicer_*.ps1
 
-# AI/LLM tools (local configs, rules, context - never commit)
-.cursor/
-.cursorrules
-.claude/
-.claude_settings.json
-.claudeignore
-.continue/
-.aider*
-.codeium/
-.copilot/
-.windsurf/
-.gemini/
-CLAUDE.md
-AGENTS.md
-CODEX.md
-CODEX_HANDOFF.md
-HANDOFF.md
-QWEN.md
-GEMINI.md
-.agents/
-.rooignore
-.roomodes
-
 # Internal drafts (not for public repo)
 PROPOSAL_*.md
 linkedin_post.txt
@@ -164,19 +131,10 @@ orca-cloud-home.png
 frontend/src/tests/
 frontend/tests/
 
-# Local MCP tools and utilities
-tools/
-
 # Brands folder (local data)
 brands/
 
 
-# Auto Claude data directory
-.auto-claude/
-
-# Auto Claude generated files
-.auto-claude-security.json
-.auto-claude-status
 .worktrees/
 .security-key
 logs/security/
