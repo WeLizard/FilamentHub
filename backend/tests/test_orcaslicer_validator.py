@@ -39,8 +39,8 @@ async def test_user(db_session: AsyncSession) -> User:
     user = User(
         email="validator_test@example.com",
         username="validator_user",
-        hashed_password="$2b$12$test",
-        is_active=True,
+        password_hash="$2b$12$test",
+        active=True,
     )
     db_session.add(user)
     await db_session.commit()

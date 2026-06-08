@@ -93,6 +93,61 @@ async def client(db_session: AsyncSession) -> AsyncGenerator[AsyncClient, None]:
     app.dependency_overrides.clear()
 
 
+@pytest_asyncio.fixture(scope="function")
+async def auth_user(db_session: AsyncSession) -> "User":
+    """Create a regular authenticated user for protected-endpoint tests."""
+    from app.models.user import User
+
+    user = User(
+        email="auth_user@test.local",
+        username="authuser",
+        password_hash="$2b$12$test",
+        active=True,
+    )
+    db_session.add(user)
+    await db_session.commit()
+    await db_session.refresh(user)
+    return user
+
+
+@pytest_asyncio.fixture(scope="function")
+async def auth_client(client: AsyncClient, auth_user: "User") -> AsyncClient:
+    """HTTP client pre-authenticated as a regular user (Bearer token)."""
+    from app.core.security import create_access_token
+
+    token = create_access_token({"sub": auth_user.email})
+    client.headers["Authorization"] = f"Bearer {token}"
+    return client
+
+
+@pytest_asyncio.fixture(scope="function")
+async def admin_user(db_session: AsyncSession) -> "User":
+    """Create an admin user for admin-only / privileged endpoint tests."""
+    from app.models.user import User, UserRole
+
+    user = User(
+        email="admin_user@test.local",
+        username="adminuser",
+        password_hash="$2b$12$test",
+        active=True,
+        role=UserRole.ADMIN,
+    )
+    db_session.add(user)
+    await db_session.commit()
+    await db_session.refresh(user)
+    return user
+
+
+@pytest_asyncio.fixture(scope="function")
+async def admin_client(client: AsyncClient, admin_user: "User") -> AsyncClient:
+    """HTTP client pre-authenticated as an admin (Bearer token)."""
+    from app.core.security import create_access_token
+
+    token = create_access_token({"sub": admin_user.email})
+    client.headers["Authorization"] = f"Bearer {token}"
+    return client
+
+
 @pytest.fixture
 def test_client() -> TestClient:
     """

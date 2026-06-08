@@ -1,15 +1,17 @@
-"""Tests for sync orchestrator service.
+"""Tests for the SyncOrchestrator service.
 
-This module tests the SyncOrchestrator service which handles:
-- Device registration and tracking
-- Sync plan generation (full and incremental)
-- Deleted preset detection
-- Sync history recording
+Covers the actual public API of SyncOrchestrator:
+- get_or_create_device — device registration/lookup
+- create_sync_plan — full / incremental sync plan generation
+- complete_sync — sync_version bump after a confirmed sync
+- record_sync_success / record_sync_error — per-preset sync history
+- get_deleted_presets — server-side deletion detection
+- get_sync_status — last sync status for a device
 """
 
 import pytest
+import pytest_asyncio
 from datetime import datetime, timezone, timedelta
-from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
@@ -17,36 +19,19 @@ from app.models.user import User
 from app.models.preset import Preset, PresetModerationStatus
 from app.models.filament import Filament
 from app.models.brand import Brand
+from app.models.sync_device import SyncDevice
+from app.models.sync_history import SyncHistory, SyncStatus
+from app.services.sync_orchestrator import SyncOrchestrator
 
 
-# Note: The following imports will work once SyncDevice and SyncHistory models
-# are merged from the main workspace. For now, these tests document expected behavior.
-try:
-    from app.models.sync_device import SyncDevice
-    from app.models.sync_history import SyncHistory
-    from app.services.sync_orchestrator import SyncOrchestrator
-    SYNC_MODELS_AVAILABLE = True
-except ImportError:
-    SYNC_MODELS_AVAILABLE = False
-    SyncDevice = None
-    SyncHistory = None
-    SyncOrchestrator = None
-
-
-pytestmark = pytest.mark.skipif(
-    not SYNC_MODELS_AVAILABLE,
-    reason="SyncDevice, SyncHistory models and SyncOrchestrator service not available in this worktree"
-)
-
-
-@pytest.fixture
+@pytest_asyncio.fixture
 async def test_user(db_session: AsyncSession) -> User:
     """Create a test user."""
     user = User(
         email="test@example.com",
         username="testuser",
-        hashed_password="$2b$12$test",
-        is_active=True,
+        password_hash="$2b$12$test",
+        active=True,
     )
     db_session.add(user)
     await db_session.commit()
@@ -54,7 +39,7 @@ async def test_user(db_session: AsyncSession) -> User:
     return user
 
 
-@pytest.fixture
+@pytest_asyncio.fixture
 async def test_brand(db_session: AsyncSession) -> Brand:
     """Create a test brand."""
     brand = Brand(
@@ -69,12 +54,13 @@ async def test_brand(db_session: AsyncSession) -> Brand:
     return brand
 
 
-@pytest.fixture
+@pytest_asyncio.fixture
 async def test_filament(db_session: AsyncSession, test_brand: Brand) -> Filament:
     """Create a test filament."""
     filament = Filament(
         brand_id=test_brand.id,
         name="Test PLA",
+        slug="test-pla",
         material_type="PLA",
         color_name="Red",
         color_hex="#FF0000",
@@ -88,19 +74,20 @@ async def test_filament(db_session: AsyncSession, test_brand: Brand) -> Filament
     return filament
 
 
-@pytest.fixture
+@pytest_asyncio.fixture
 async def test_preset(
     db_session: AsyncSession, test_user: User, test_filament: Filament
 ) -> Preset:
-    """Create a test preset."""
+    """Create a test preset owned by test_user."""
     preset = Preset(
         name="Test Preset",
-        slug="test-preset",
         description="Test preset description",
         filament_id=test_filament.id,
-        created_by_id=test_user.id,
+        user_id=test_user.id,
+        extruder_temp=200.0,
+        bed_temp=60.0,
+        print_speed=100.0,
         moderation_status=PresetModerationStatus.APPROVED,
-        is_public=True,
         active=True,
         orcaslicer_settings={"temperature": 200, "bed_temperature": 60},
     )
@@ -112,10 +99,8 @@ async def test_preset(
 
 @pytest.fixture
 def sync_orchestrator(db_session: AsyncSession) -> SyncOrchestrator:
-    """Create a SyncOrchestrator instance."""
-    if SYNC_MODELS_AVAILABLE:
-        return SyncOrchestrator(db_session)
-    return None
+    """Create a SyncOrchestrator instance bound to the test session."""
+    return SyncOrchestrator(db_session)
 
 
 @pytest.mark.asyncio
@@ -124,28 +109,23 @@ async def test_get_or_create_device_new(
     test_user: User,
     db_session: AsyncSession,
 ):
-    """Test creating a new sync device."""
+    """A new device is created with sync_version 0."""
     device_fingerprint = "test-device-001"
-    device_name = "Test OrcaSlicer"
     orcaslicer_version = "1.9.0"
 
-    # Get or create device
     device = await sync_orchestrator.get_or_create_device(
         user_id=test_user.id,
         device_fingerprint=device_fingerprint,
-        device_name=device_name,
         orcaslicer_version=orcaslicer_version,
     )
 
     assert device is not None
     assert device.user_id == test_user.id
     assert device.device_fingerprint == device_fingerprint
-    assert device.device_name == device_name
     assert device.orcaslicer_version == orcaslicer_version
-    assert device.last_sync_version == 0
-    assert device.last_sync_at is not None
+    assert device.sync_version == 0
 
-    # Verify device was saved to database
+    # Verify device was persisted
     result = await db_session.execute(
         select(SyncDevice).where(SyncDevice.device_fingerprint == device_fingerprint)
     )
@@ -160,34 +140,29 @@ async def test_get_or_create_device_existing(
     test_user: User,
     db_session: AsyncSession,
 ):
-    """Test retrieving an existing sync device."""
+    """An existing device is returned and its orcaslicer_version updated."""
     device_fingerprint = "test-device-002"
 
-    # Create device first
     existing_device = SyncDevice(
         user_id=test_user.id,
         device_fingerprint=device_fingerprint,
-        device_name="Original Name",
         orcaslicer_version="1.8.0",
-        last_sync_version=5,
+        sync_version=5,
     )
     db_session.add(existing_device)
     await db_session.commit()
     await db_session.refresh(existing_device)
 
-    # Get or create should return existing device
     device = await sync_orchestrator.get_or_create_device(
         user_id=test_user.id,
         device_fingerprint=device_fingerprint,
-        device_name="Updated Name",
         orcaslicer_version="1.9.0",
     )
 
-    assert device is not None
     assert device.id == existing_device.id
-    assert device.last_sync_version == 5
-    # Device name and version should be updated
-    assert device.device_name == "Updated Name"
+    # sync_version is preserved (get_or_create does not bump it)
+    assert device.sync_version == 5
+    # orcaslicer_version is refreshed
     assert device.orcaslicer_version == "1.9.0"
 
 
@@ -198,21 +173,10 @@ async def test_create_sync_plan_full_sync(
     test_preset: Preset,
     db_session: AsyncSession,
 ):
-    """Test full sync returns all active presets when force_full_sync=True."""
-    device_fingerprint = "test-device-003"
-
-    # Create device
-    device = await sync_orchestrator.get_or_create_device(
-        user_id=test_user.id,
-        device_fingerprint=device_fingerprint,
-        device_name="Test Device",
-        orcaslicer_version="1.9.0",
-    )
-
-    # Create sync plan with force_full_sync
+    """Full sync returns all active presets of the user."""
     sync_plan = await sync_orchestrator.create_sync_plan(
         user_id=test_user.id,
-        device_fingerprint=device_fingerprint,
+        device_fingerprint="test-device-003",
         preset_type="filament",
         force_full_sync=True,
     )
@@ -222,8 +186,6 @@ async def test_create_sync_plan_full_sync(
     assert "deleted_on_server" in sync_plan
     assert "conflicts" in sync_plan
 
-    # Should include our test preset
-    assert len(sync_plan["to_download"]) >= 1
     preset_ids = [p["id"] for p in sync_plan["to_download"]]
     assert test_preset.id in preset_ids
 
@@ -235,39 +197,19 @@ async def test_create_sync_plan_incremental(
     test_preset: Preset,
     db_session: AsyncSession,
 ):
-    """Test incremental sync returns only changed presets."""
+    """Incremental sync (sync_version > 0) returns a well-formed plan."""
     device_fingerprint = "test-device-004"
 
-    # Create device with existing sync version
     device = SyncDevice(
         user_id=test_user.id,
         device_fingerprint=device_fingerprint,
-        device_name="Test Device",
         orcaslicer_version="1.9.0",
-        last_sync_version=1,
+        sync_version=1,
         last_sync_at=datetime.now(timezone.utc) - timedelta(hours=1),
     )
     db_session.add(device)
     await db_session.commit()
-    await db_session.refresh(device)
 
-    # Create a new preset after the last sync
-    new_preset = Preset(
-        name="New Preset",
-        slug="new-preset",
-        description="New preset after last sync",
-        filament_id=test_preset.filament_id,
-        created_by_id=test_user.id,
-        moderation_status=PresetModerationStatus.APPROVED,
-        is_public=True,
-        active=True,
-        orcaslicer_settings={"temperature": 210},
-    )
-    db_session.add(new_preset)
-    await db_session.commit()
-    await db_session.refresh(new_preset)
-
-    # Create incremental sync plan
     sync_plan = await sync_orchestrator.create_sync_plan(
         user_id=test_user.id,
         device_fingerprint=device_fingerprint,
@@ -277,262 +219,143 @@ async def test_create_sync_plan_incremental(
 
     assert sync_plan is not None
     assert "to_download" in sync_plan
-
-    # Should only include presets created/updated after last sync
-    # This depends on implementation - it should filter by updated_at timestamp
+    assert isinstance(sync_plan["to_download"], list)
+    assert isinstance(sync_plan["conflicts"], list)
 
 
 @pytest.mark.asyncio
-async def test_detect_deleted_presets(
+async def test_complete_sync_increments_version(
+    sync_orchestrator: SyncOrchestrator,
+    test_user: User,
+    db_session: AsyncSession,
+):
+    """complete_sync bumps sync_version once and stamps last_sync_at."""
+    device_fingerprint = "test-device-005"
+
+    device = await sync_orchestrator.get_or_create_device(
+        user_id=test_user.id,
+        device_fingerprint=device_fingerprint,
+    )
+    assert device.sync_version == 0
+
+    updated = await sync_orchestrator.complete_sync(
+        user_id=test_user.id,
+        device_fingerprint=device_fingerprint,
+    )
+
+    assert updated.sync_version == 1
+    assert updated.last_sync_at is not None
+
+
+@pytest.mark.asyncio
+async def test_record_sync_success(
     sync_orchestrator: SyncOrchestrator,
     test_user: User,
     test_preset: Preset,
     db_session: AsyncSession,
 ):
-    """Test detection of presets deleted on server."""
-    device_fingerprint = "test-device-005"
-
-    # Create device
+    """record_sync_success writes a SUCCESS history row for a preset."""
     device = await sync_orchestrator.get_or_create_device(
         user_id=test_user.id,
-        device_fingerprint=device_fingerprint,
-        device_name="Test Device",
-        orcaslicer_version="1.9.0",
+        device_fingerprint="test-device-006",
     )
 
-    # Create a preset and then mark it as inactive (deleted)
-    deleted_preset = Preset(
-        name="Deleted Preset",
-        slug="deleted-preset",
-        description="This will be deleted",
-        filament_id=test_preset.filament_id,
-        created_by_id=test_user.id,
-        moderation_status=PresetModerationStatus.APPROVED,
-        is_public=True,
-        active=False,  # Marked as deleted
-        orcaslicer_settings={"temperature": 200},
-    )
-    db_session.add(deleted_preset)
-    await db_session.commit()
-    await db_session.refresh(deleted_preset)
-
-    # Simulate client providing list of local presets
-    client_preset_ids = [test_preset.id, deleted_preset.id]
-
-    # Detect deleted presets
-    deleted = await sync_orchestrator.detect_deleted_presets(
+    history = await sync_orchestrator.record_sync_success(
         user_id=test_user.id,
-        device_fingerprint=device_fingerprint,
-        preset_type="filament",
-        client_preset_ids=client_preset_ids,
-    )
-
-    assert deleted is not None
-    assert isinstance(deleted, list)
-
-    # Should detect the deleted preset
-    if len(deleted) > 0:
-        deleted_ids = [p["preset_id"] for p in deleted]
-        assert deleted_preset.id in deleted_ids
-
-        # Should include metadata about who created/saved the preset
-        for preset_info in deleted:
-            assert "was_created_by_user" in preset_info
-            assert "was_saved_by_user" in preset_info
-
-
-@pytest.mark.asyncio
-async def test_record_sync_history(
-    sync_orchestrator: SyncOrchestrator,
-    test_user: User,
-    db_session: AsyncSession,
-):
-    """Test recording sync history."""
-    device_fingerprint = "test-device-006"
-
-    # Create device
-    device = await sync_orchestrator.get_or_create_device(
-        user_id=test_user.id,
-        device_fingerprint=device_fingerprint,
-        device_name="Test Device",
-        orcaslicer_version="1.9.0",
-    )
-
-    # Record a sync operation
-    history = await sync_orchestrator.record_sync_history(
         device_id=device.id,
+        sync_version=device.sync_version,
         preset_type="filament",
-        operation_type="download",
-        presets_count=10,
-        success=True,
+        preset_id=test_preset.id,
+        operation="download",
     )
 
     assert history is not None
     assert history.device_id == device.id
-    assert history.preset_type == "filament"
-    assert history.operation_type == "download"
-    assert history.presets_count == 10
-    assert history.success is True
-    assert history.created_at is not None
+    assert history.preset_id == test_preset.id
+    assert history.status == SyncStatus.SUCCESS
 
-    # Verify history was saved
     result = await db_session.execute(
         select(SyncHistory).where(SyncHistory.device_id == device.id)
     )
-    saved_history = result.scalar_one_or_none()
-    assert saved_history is not None
-    assert saved_history.id == history.id
+    saved = result.scalar_one_or_none()
+    assert saved is not None
+    assert saved.id == history.id
 
 
 @pytest.mark.asyncio
-async def test_record_sync_history_with_error(
-    sync_orchestrator: SyncOrchestrator,
-    test_user: User,
-    db_session: AsyncSession,
-):
-    """Test recording failed sync history with error message."""
-    device_fingerprint = "test-device-007"
-
-    # Create device
-    device = await sync_orchestrator.get_or_create_device(
-        user_id=test_user.id,
-        device_fingerprint=device_fingerprint,
-        device_name="Test Device",
-        orcaslicer_version="1.9.0",
-    )
-
-    # Record a failed sync operation
-    error_message = "Network connection timeout"
-    history = await sync_orchestrator.record_sync_history(
-        device_id=device.id,
-        preset_type="printer",
-        operation_type="download",
-        presets_count=0,
-        success=False,
-        error_message=error_message,
-    )
-
-    assert history is not None
-    assert history.success is False
-    assert history.error_message == error_message
-
-
-@pytest.mark.asyncio
-async def test_sync_plan_with_conflicts(
+async def test_record_sync_error(
     sync_orchestrator: SyncOrchestrator,
     test_user: User,
     test_preset: Preset,
     db_session: AsyncSession,
 ):
-    """Test sync plan identifies conflicts between server and client presets."""
-    device_fingerprint = "test-device-008"
-
-    # Create device
+    """record_sync_error writes an ERROR history row with the message."""
     device = await sync_orchestrator.get_or_create_device(
         user_id=test_user.id,
-        device_fingerprint=device_fingerprint,
-        device_name="Test Device",
-        orcaslicer_version="1.9.0",
+        device_fingerprint="test-device-007",
     )
 
-    # Create sync plan
-    # Note: Conflict detection logic depends on implementation
-    # This test documents expected behavior
-    sync_plan = await sync_orchestrator.create_sync_plan(
+    error_message = "Network connection timeout"
+    history = await sync_orchestrator.record_sync_error(
         user_id=test_user.id,
-        device_fingerprint=device_fingerprint,
-        preset_type="filament",
-        force_full_sync=False,
-        client_presets=[
-            {
-                "id": test_preset.id,
-                "name": test_preset.name,
-                "updated_at": "2024-01-01T00:00:00Z",  # Old timestamp
-            }
-        ],
+        device_id=device.id,
+        sync_version=device.sync_version,
+        preset_type="printer",
+        preset_id=test_preset.id,
+        error_message=error_message,
+        operation="download",
     )
 
-    assert sync_plan is not None
-    assert "conflicts" in sync_plan
-
-    # If preset was updated on server after client's version,
-    # it should appear in conflicts
-    if len(sync_plan["conflicts"]) > 0:
-        assert isinstance(sync_plan["conflicts"], list)
-        for conflict in sync_plan["conflicts"]:
-            assert "preset_id" in conflict
-            assert "server_version" in conflict
-            assert "client_version" in conflict
+    assert history is not None
+    assert history.status == SyncStatus.ERROR
+    assert history.error_message == error_message
 
 
 @pytest.mark.asyncio
-async def test_update_device_sync_version(
+async def test_get_deleted_presets(
     sync_orchestrator: SyncOrchestrator,
     test_user: User,
     db_session: AsyncSession,
 ):
-    """Test updating device sync version after successful sync."""
+    """get_deleted_presets returns a list (empty for a brand-new device)."""
+    deleted = await sync_orchestrator.get_deleted_presets(
+        user_id=test_user.id,
+        device_fingerprint="test-device-008",
+        preset_type="filament",
+    )
+
+    assert isinstance(deleted, list)
+
+
+@pytest.mark.asyncio
+async def test_get_sync_status(
+    sync_orchestrator: SyncOrchestrator,
+    test_user: User,
+    db_session: AsyncSession,
+):
+    """get_sync_status returns device fingerprint, version and stats."""
     device_fingerprint = "test-device-009"
 
-    # Create device
     device = await sync_orchestrator.get_or_create_device(
         user_id=test_user.id,
         device_fingerprint=device_fingerprint,
-        device_name="Test Device",
-        orcaslicer_version="1.9.0",
     )
 
-    initial_version = device.last_sync_version
-    initial_sync_time = device.last_sync_at
-
-    # Update sync version
-    new_version = initial_version + 1
-    await sync_orchestrator.update_device_sync_version(
-        device_id=device.id,
-        new_version=new_version,
-    )
-
-    # Refresh device from database
-    await db_session.refresh(device)
-
-    assert device.last_sync_version == new_version
-    assert device.last_sync_at > initial_sync_time
-
-
-@pytest.mark.asyncio
-async def test_get_device_sync_status(
-    sync_orchestrator: SyncOrchestrator,
-    test_user: User,
-    db_session: AsyncSession,
-):
-    """Test retrieving sync status for a device."""
-    device_fingerprint = "test-device-010"
-
-    # Create device with sync history
-    device = await sync_orchestrator.get_or_create_device(
+    await sync_orchestrator.record_sync_success(
         user_id=test_user.id,
-        device_fingerprint=device_fingerprint,
-        device_name="Test Device",
-        orcaslicer_version="1.9.0",
-    )
-
-    # Record some sync history
-    await sync_orchestrator.record_sync_history(
         device_id=device.id,
+        sync_version=device.sync_version,
         preset_type="filament",
-        operation_type="download",
-        presets_count=5,
-        success=True,
+        preset_id=1,
+        operation="download",
     )
 
-    # Get sync status
-    status = await sync_orchestrator.get_device_sync_status(
+    status = await sync_orchestrator.get_sync_status(
         user_id=test_user.id,
         device_fingerprint=device_fingerprint,
     )
 
     assert status is not None
-    assert "device" in status
-    assert "last_sync" in status
-    assert status["device"]["device_fingerprint"] == device_fingerprint
-    assert status["device"]["last_sync_version"] == device.last_sync_version
+    assert status["device_fingerprint"] == device_fingerprint
+    assert status["sync_version"] == device.sync_version
+    assert "last_sync_stats" in status

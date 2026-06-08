@@ -20,7 +20,7 @@ async def test_list_brands_empty(client: AsyncClient):
 
 
 @pytest.mark.asyncio
-async def test_create_brand(client: AsyncClient):
+async def test_create_brand(auth_client: AsyncClient):
     """Test creating a brand."""
     brand_data = {
         "name": "Test Brand",
@@ -29,7 +29,7 @@ async def test_create_brand(client: AsyncClient):
         "website": "https://test.com",
         "verified": False,
     }
-    response = await client.post("/api/v1/brands/", json=brand_data)
+    response = await auth_client.post("/api/v1/brands/", json=brand_data)
     assert response.status_code == 201
     data = response.json()
     assert data["name"] == brand_data["name"]

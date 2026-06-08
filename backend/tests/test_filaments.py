@@ -21,7 +21,7 @@ async def test_list_filaments_empty(client: AsyncClient):
 
 
 @pytest.mark.asyncio
-async def test_create_filament(client: AsyncClient, db_session: AsyncSession):
+async def test_create_filament(auth_client: AsyncClient, db_session: AsyncSession):
     """Test creating a filament."""
     # Create brand first
     brand = Brand(
@@ -47,7 +47,7 @@ async def test_create_filament(client: AsyncClient, db_session: AsyncSession):
         "spool_weight": 1000.0,
         "description": "Test filament description",
     }
-    response = await client.post("/api/v1/filaments/", json=filament_data)
+    response = await auth_client.post("/api/v1/filaments/", json=filament_data)
     assert response.status_code == 201
     data = response.json()
     assert data["name"] == filament_data["name"]
@@ -72,6 +72,7 @@ async def test_get_filament(client: AsyncClient, db_session: AsyncSession):
     filament = Filament(
         brand_id=brand.id,
         name="Test Filament 2",
+        slug="test-filament-2",
         material_type="PETG",
         color_name="Blue",
         color_hex="#0000FF",
@@ -118,12 +119,14 @@ async def test_list_filaments_filter_by_brand(
     filament1 = Filament(
         brand_id=brand1.id,
         name="Filament 1",
+        slug="filament-1",
         material_type="PLA",
         active=True,
     )
     filament2 = Filament(
         brand_id=brand2.id,
         name="Filament 2",
+        slug="filament-2",
         material_type="PETG",
         active=True,
     )
@@ -153,12 +156,14 @@ async def test_list_filaments_filter_by_material_type(
     filament1 = Filament(
         brand_id=brand.id,
         name="PLA Filament",
+        slug="pla-filament",
         material_type="PLA",
         active=True,
     )
     filament2 = Filament(
         brand_id=brand.id,
         name="PETG Filament",
+        slug="petg-filament",
         material_type="PETG",
         active=True,
     )
@@ -185,6 +190,7 @@ async def test_get_filament_presets(client: AsyncClient, db_session: AsyncSessio
     filament = Filament(
         brand_id=brand.id,
         name="Test Filament",
+        slug="test-filament",
         material_type="PLA",
         active=True,
     )
@@ -202,7 +208,7 @@ async def test_get_filament_presets(client: AsyncClient, db_session: AsyncSessio
 
 
 @pytest.mark.asyncio
-async def test_update_filament(client: AsyncClient, db_session: AsyncSession):
+async def test_update_filament(admin_client: AsyncClient, db_session: AsyncSession):
     """Test updating a filament."""
     # Create brand and filament
     brand = Brand(name="Test Brand", slug="test-brand", active=True)
@@ -213,6 +219,7 @@ async def test_update_filament(client: AsyncClient, db_session: AsyncSession):
     filament = Filament(
         brand_id=brand.id,
         name="Original Name",
+        slug="original-name",
         material_type="PLA",
         active=True,
     )
@@ -225,7 +232,7 @@ async def test_update_filament(client: AsyncClient, db_session: AsyncSession):
         "name": "Updated Name",
         "description": "Updated description",
     }
-    response = await client.patch(
+    response = await admin_client.patch(
         f"/api/v1/filaments/{filament.id}", json=update_data
     )
     assert response.status_code == 200
