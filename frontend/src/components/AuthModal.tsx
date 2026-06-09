@@ -20,12 +20,9 @@ interface AuthModalProps {
 
 export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMode = 'login' }) => {
   const { t, i18n } = useTranslation();
-  // Закон РФ: нероссийские провайдеры (Google) не предлагаются пользователям из
-  // России. Авторитетный источник — бэкенд (по гео-IP): GET /auth/oauth-providers.
-  // До ответа используем язык интерфейса как мгновенный дефолт без мигания.
-  const [oauthProviders, setOauthProviders] = useState<Record<string, boolean> | null>(null);
-  const isRuUi = (i18n.language || '').toLowerCase().startsWith('ru');
-  const showGoogleOAuth = oauthProviders ? oauthProviders.google === true : !isRuUi;
+  // Закон РФ: для русскоязычного интерфейса не предлагаем авторизацию через
+  // нероссийские сервисы (Google). Кнопка скрывается полностью.
+  const showGoogleOAuth = !(i18n.language || '').toLowerCase().startsWith('ru');
   const [authMode, setAuthMode] = useState<'login' | 'register'>(initialMode);
   const [oauthLoading, setOauthLoading] = useState<'google' | 'yandex' | null>(null);
   const [email, setEmail] = useState('');
@@ -70,23 +67,6 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
       setIsLoading(false);
       setOauthLoading(null);
     }
-  }, [isOpen]);
-
-  // Узнаём у бэкенда, какие OAuth-провайдеры доступны для этого запроса (гео-IP + конфиг)
-  useEffect(() => {
-    if (!isOpen) return;
-    let cancelled = false;
-    authAPI
-      .getOAuthProviders()
-      .then((providers) => {
-        if (!cancelled) setOauthProviders(providers);
-      })
-      .catch(() => {
-        // Сеть/эндпоинт недоступны — остаёмся на языковом дефолте
-      });
-    return () => {
-      cancelled = true;
-    };
   }, [isOpen]);
 
   if (!isOpen) return null;

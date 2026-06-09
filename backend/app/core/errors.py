@@ -69,8 +69,6 @@ ERR_OAUTH_EMAIL_MISSING = "ERR_OAUTH_EMAIL_MISSING"      # params: {provider}
 ERR_OAUTH_PROVIDER_NOT_CONFIGURED = "ERR_OAUTH_PROVIDER_NOT_CONFIGURED"  # params: {provider}
 ERR_OAUTH_INVALID_PROVIDER = "ERR_OAUTH_INVALID_PROVIDER"  # params: {provider}
 ERR_OAUTH_EMAIL_TAKEN = "ERR_OAUTH_EMAIL_TAKEN"          # params: {provider}
-# Provider disabled for the caller's region (e.g. RF law: no non-Russian auth)
-ERR_OAUTH_PROVIDER_UNAVAILABLE = "ERR_OAUTH_PROVIDER_UNAVAILABLE"  # params: {provider}
 
 # 403 — Permissions
 ERR_ACCOUNT_INACTIVE = "ERR_ACCOUNT_INACTIVE"

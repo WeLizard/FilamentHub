@@ -96,18 +96,6 @@ class Settings(BaseSettings):
     YANDEX_CLIENT_ID: str = ""
     YANDEX_CLIENT_SECRET: str = ""
 
-    # Geo-IP OAuth restrictions
-    # RF law: non-Russian auth providers (e.g. Google) must not be offered to
-    # users in Russia. Country is resolved from the request IP via a MaxMind-DB
-    # formatted file (MaxMind GeoLite2 or the no-account db-ip Lite database).
-    GEOIP_DB_PATH: str = "geoip/dbip-country-lite.mmdb"  # relative to backend cwd or absolute
-    OAUTH_GEO_RESTRICTED_COUNTRIES: str = "RU"          # comma-separated ISO 3166-1 alpha-2
-    OAUTH_GEO_RESTRICTED_PROVIDERS: str = "google"      # comma-separated provider ids
-    # When the country can't be determined (DB missing, private/unknown IP):
-    # True  = allow the restricted provider (fail-open; UI language gate still hides it for ru)
-    # False = block it (fail-closed; safer legally, but disables it until the DB is provisioned)
-    OAUTH_GEO_FALLBACK_ALLOW: bool = True
-
     # Email (Resend — empty = disabled)
     RESEND_API_KEY: str = ""
     EMAIL_FROM: str = "noreply@filamenthub.ru"

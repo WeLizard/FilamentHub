@@ -111,9 +111,6 @@ backend/distributions/orcaslicer/*
 !backend/distributions/orcaslicer/.gitkeep
 !backend/distributions/.gitkeep
 
-# GeoIP database (binary, licensed — provisioned on the server, not in git)
-backend/geoip/*.mmdb
-
 # SSL certificates (не коммитить!)
 certbot/
 certbot-conf.tar.gz

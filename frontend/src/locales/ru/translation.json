@@ -4413,7 +4413,6 @@
     "ERR_OAUTH_INVALID_STATE": "Недействительный параметр state",
     "ERR_OAUTH_EMAIL_MISSING": "Аккаунт {{provider}} не содержит email",
     "ERR_OAUTH_PROVIDER_NOT_CONFIGURED": "Провайдер {{provider}} не настроен",
-    "ERR_OAUTH_PROVIDER_UNAVAILABLE": "Провайдер {{provider}} недоступен в вашем регионе",
     "ERR_OAUTH_INVALID_PROVIDER": "Неизвестный провайдер: {{provider}}",
     "ERR_OAUTH_EMAIL_TAKEN": "Этот email уже привязан к аккаунту через {{provider}}",
     "ERR_COULD_NOT_VALIDATE": "Не удалось проверить учётные данные",
