@@ -19,7 +19,10 @@ interface AuthModalProps {
 }
 
 export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMode = 'login' }) => {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
+  // Закон РФ: для русскоязычного интерфейса не предлагаем авторизацию через
+  // нероссийские сервисы (Google). Кнопка скрывается полностью.
+  const showGoogleOAuth = !(i18n.language || '').toLowerCase().startsWith('ru');
   const [authMode, setAuthMode] = useState<'login' | 'register'>(initialMode);
   const [oauthLoading, setOauthLoading] = useState<'google' | 'yandex' | null>(null);
   const [email, setEmail] = useState('');
@@ -469,7 +472,8 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
                 <div className="flex-1 border-t border-white/10" />
               </div>
               <div className="flex gap-2">
-                {/* Google */}
+                {/* Google — скрыт для русскоязычного интерфейса (требование закона РФ) */}
+                {showGoogleOAuth && (
                 <button
                   type="button"
                   onClick={() => handleOAuthLogin('google')}
@@ -488,6 +492,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
                   )}
                   <span>Google</span>
                 </button>
+                )}
                 {/* Yandex */}
                 <button
                   type="button"
