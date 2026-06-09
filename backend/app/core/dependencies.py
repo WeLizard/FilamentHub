@@ -123,14 +123,23 @@ async def get_current_active_user_optional(
     """Get current active user if authenticated, otherwise return None."""
     authorization = request.headers.get("Authorization")
     token: str | None = None
+    using_cookie_auth = False
 
     if authorization and authorization.startswith("Bearer "):
         token = authorization.split(" ")[1]
     elif _cookie_auth_enabled():
         token = request.cookies.get(settings.AUTH_ACCESS_COOKIE_NAME)
+        using_cookie_auth = bool(token)
 
     if not token:
         return None
+
+    # Cookie-authenticated mutating requests must carry a valid CSRF token, same
+    # as in get_current_user. A real anonymous caller has no cookie and returns
+    # above; only a forged cross-site request (cookie present, header missing)
+    # is rejected here.
+    if using_cookie_auth:
+        _validate_cookie_csrf(request)
 
     payload = decode_access_token(token)
 
