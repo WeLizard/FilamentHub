@@ -48,6 +48,7 @@ from app.schemas.user import (
     LoginRequest,
     LogoutRequest,
     OAuthCallbackRequest,
+    OAuthProvidersResponse,
     OAuthUrlResponse,
     RefreshTokenRequest,
     RefreshTokenResponse,
@@ -87,6 +88,7 @@ from app.core.errors import (
     ERR_OAUTH_FAILED,
     ERR_OAUTH_INVALID_PROVIDER,
     ERR_OAUTH_PROVIDER_NOT_CONFIGURED,
+    ERR_OAUTH_PROVIDER_UNAVAILABLE,
     ERR_PASSWORD_HASH_ERROR,
     ERR_PRINTER_NOT_FOUND,
     ERR_RECAPTCHA_FAILED,
@@ -1066,6 +1068,7 @@ async def confirm_email_change(
 
 import logging as _logging
 
+from app.services.geoip_service import is_provider_geo_blocked
 from app.services.oauth_service import (
     exchange_google_code,
     exchange_yandex_code,
@@ -1081,14 +1084,32 @@ _oauth_logger = _logging.getLogger(__name__)
 _VALID_PROVIDERS = {"google", "yandex"}
 
 
+@router.get("/oauth-providers", response_model=OAuthProvidersResponse)
+async def get_oauth_providers(request: Request) -> OAuthProvidersResponse:
+    """List OAuth providers available for this request (configured AND not geo-blocked).
+
+    The frontend uses this to decide which provider buttons to render. Combined
+    with the per-endpoint geo check below, a provider hidden here is also refused
+    if called directly.
+    """
+    providers = {
+        provider: is_provider_configured(provider) and not is_provider_geo_blocked(provider, request)
+        for provider in _VALID_PROVIDERS
+    }
+    return OAuthProvidersResponse(providers=providers)
+
+
 @router.get("/oauth/{provider}/url", response_model=OAuthUrlResponse)
-async def get_oauth_url(provider: str) -> OAuthUrlResponse:
+async def get_oauth_url(provider: str, request: Request) -> OAuthUrlResponse:
     """Get OAuth authorization URL for the specified provider."""
     if provider not in _VALID_PROVIDERS:
         raise_error(status.HTTP_400_BAD_REQUEST, ERR_OAUTH_INVALID_PROVIDER, params={"provider": provider})
 
     if not is_provider_configured(provider):
         raise_error(status.HTTP_400_BAD_REQUEST, ERR_OAUTH_PROVIDER_NOT_CONFIGURED, params={"provider": provider})
+
+    if is_provider_geo_blocked(provider, request):
+        raise_error(status.HTTP_403_FORBIDDEN, ERR_OAUTH_PROVIDER_UNAVAILABLE, params={"provider": provider})
 
     state = generate_oauth_state()
 
@@ -1126,6 +1147,9 @@ async def oauth_callback(
 
     if not is_provider_configured(provider):
         raise_error(status.HTTP_400_BAD_REQUEST, ERR_OAUTH_PROVIDER_NOT_CONFIGURED, params={"provider": provider})
+
+    if is_provider_geo_blocked(provider, request):
+        raise_error(status.HTTP_403_FORBIDDEN, ERR_OAUTH_PROVIDER_UNAVAILABLE, params={"provider": provider})
 
     # Exchange authorization code for user info
     try:

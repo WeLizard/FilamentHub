@@ -23,6 +23,7 @@ dependencies = [
     "python-dotenv~=1.0.0",
     "slowapi~=0.1.9",
     "qrcode[pil]~=7.4.2",  # Генерация QR-кодов
+    "geoip2~=4.8.0",  # Country lookup for geo-restricted OAuth (RF law)
     "better-profanity~=0.7.0",  # Проверка плохих слов
     "weasyprint~=63.0",  # HTML-to-PDF for quote generation
     "resend~=2.0.0",  # Transactional email via Resend

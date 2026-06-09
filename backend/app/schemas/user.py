@@ -210,6 +210,12 @@ class OAuthCallbackRequest(BaseModel):
     state: str
 
 
+class OAuthProvidersResponse(BaseModel):
+    """Which OAuth providers are available for the current request (config + geo)."""
+
+    providers: dict[str, bool]
+
+
 class APIKeyResponse(BaseModel):
     """Schema for API key response."""
 

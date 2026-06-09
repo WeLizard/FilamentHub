@@ -48,6 +48,8 @@ services:
       - uploads_data:/app/uploads
       # Дистрибутивы OrcaSlicer читаем напрямую с хоста
       - ./backend/distributions:/app/distributions
+      # GeoIP база (MaxMind/db-ip .mmdb) — для гео-ограничений OAuth, обновляется без пересборки
+      - ./backend/geoip:/app/geoip:ro
       # Логи можно хранить на хосте (не критично)
       - ./backend/logs:/app/logs
       # Wiki content - чтобы можно было редактировать без пересборки

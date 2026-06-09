@@ -245,6 +245,11 @@ export const authAPI = {
     await api.post('/auth/logout', refreshToken ? { refresh_token: refreshToken } : undefined);
   },
 
+  getOAuthProviders: async (): Promise<Record<string, boolean>> => {
+    const response = await api.get<{ providers: Record<string, boolean> }>('/auth/oauth-providers');
+    return response.data.providers;
+  },
+
   getOAuthUrl: async (provider: string) => {
     const response = await api.get<{ url: string; state: string }>(`/auth/oauth/${provider}/url`);
     return response.data;

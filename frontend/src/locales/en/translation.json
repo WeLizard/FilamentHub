@@ -4286,6 +4286,7 @@
     "ERR_OAUTH_INVALID_STATE": "Invalid state parameter",
     "ERR_OAUTH_EMAIL_MISSING": "{{provider}} account has no email",
     "ERR_OAUTH_PROVIDER_NOT_CONFIGURED": "Provider {{provider}} is not configured",
+    "ERR_OAUTH_PROVIDER_UNAVAILABLE": "Provider {{provider}} is not available in your region",
     "ERR_OAUTH_INVALID_PROVIDER": "Unknown provider: {{provider}}",
     "ERR_OAUTH_EMAIL_TAKEN": "This email is already linked via {{provider}}",
     "ERR_COULD_NOT_VALIDATE": "Could not validate credentials",
