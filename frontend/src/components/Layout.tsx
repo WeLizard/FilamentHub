@@ -217,8 +217,6 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
                   <span>{t('layout.nav_login')}</span>
                 </button>
               )}
-
-              <LanguageSwitcher compact className="ml-1" />
             </nav>
 
             {/* Mobile: Notifications + Hamburger */}
@@ -336,10 +334,12 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
                 </button>
               )}
 
-              <div className="border-t border-white/10 pt-3 mt-2 flex items-center justify-between px-1">
-                <span className="text-sm font-medium text-gray-300">{t('settings.language')}</span>
-                <LanguageSwitcher />
-              </div>
+              {!user && (
+                <div className="border-t border-white/10 pt-3 mt-2 flex items-center justify-between px-1">
+                  <span className="text-sm font-medium text-gray-300">{t('settings.language')}</span>
+                  <LanguageSwitcher />
+                </div>
+              )}
             </div>
           </div>
         )}
@@ -361,6 +361,14 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
             </div>
           </div>
         </footer>
+      )}
+
+      {/* Плавающий переключатель языка — только для гостей на десктопе.
+          Авторизованные меняют язык в Профиле → Настройки; на мобиле — в меню. */}
+      {!isInOrcaSlicer && !user && (
+        <div className="hidden md:flex fixed bottom-4 right-4 z-50 rounded-xl bg-slate-900/95 border border-white/15 shadow-2xl shadow-black/40 p-1 backdrop-blur">
+          <LanguageSwitcher compact className="!bg-transparent !border-0 !p-0" />
+        </div>
       )}
 
       {/* Auth Modal */}
