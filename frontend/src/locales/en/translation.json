@@ -3387,6 +3387,8 @@
     "success": "Success!",
     "saving": "Saving...",
     "save": "Save",
+    "language": "Interface language",
+    "languageDescription": "Defaults to your browser language; your choice here is remembered",
     "syncTitle": "OrcaSlicer Sync",
     "syncDescription": "Manage import and export of filament presets, printer profiles, and print profiles",
     "filamentPresets": "Filament presets",

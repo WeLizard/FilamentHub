@@ -25,8 +25,14 @@ i18n
     nonExplicitSupportedLngs: true,
     load: 'languageOnly',
     detection: {
+      // Read order: an explicit user choice (written to localStorage by
+      // LanguageSwitcher) wins; otherwise fall back to the browser language.
       order: ['localStorage', 'navigator', 'htmlTag'],
-      caches: ['localStorage'],
+      // Do NOT cache auto-detected language — that would lock the first-visit
+      // detection and ignore later browser-language changes. Only an explicit
+      // manual choice is persisted (by LanguageSwitcher), so until then the
+      // system/browser language keeps driving the UI.
+      caches: [],
     },
     debug: false,
 
@@ -34,5 +40,12 @@ i18n
       escapeValue: false,
     },
   });
+
+const syncHtmlLang = (lng: string) => {
+  const base = lng.split('-')[0];
+  document.documentElement.lang = base === 'ru' ? 'ru' : 'en';
+};
+syncHtmlLang(i18n.language || 'en');
+i18n.on('languageChanged', syncHtmlLang);
 
 export default i18n;

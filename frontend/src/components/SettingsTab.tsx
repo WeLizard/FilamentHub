@@ -3,13 +3,14 @@
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { Settings, Lock, Mail, Save, CheckCircle, XCircle, Loader2, User as UserIcon, Eye, EyeOff, AlertTriangle, Trash2 } from 'lucide-react';
+import { Settings, Lock, Mail, Save, CheckCircle, XCircle, Loader2, User as UserIcon, Eye, EyeOff, AlertTriangle, Trash2, Globe } from 'lucide-react';
 import { authAPI } from '../api/client';
 import { translateApiError } from '../utils/translateApiError';
 import type { User } from '../types/api';
 import { useAuth } from '../contexts/AuthContext';
 import { DeleteAccountModal } from './DeleteAccountModal';
 import { MyPrinterPicker } from './MyPrinterPicker';
+import { LanguageSwitcher } from './LanguageSwitcher';
 import type { AxiosError } from 'axios';
 
 interface SettingsTabProps {
@@ -231,6 +232,22 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({ user, onUserUpdate }) 
     <div className="max-w-7xl mx-auto space-y-6">
       {/* Мой принтер */}
       <MyPrinterPicker user={user} />
+
+      {/* Язык интерфейса */}
+      <section className="bg-white/10 backdrop-blur-sm border border-white/20 rounded-2xl p-6 shadow-xl">
+        <div className="flex items-center justify-between gap-4 flex-wrap">
+          <div className="flex items-center gap-3">
+            <div className="p-2 bg-gradient-to-r from-purple-500/20 to-blue-500/20 rounded-lg">
+              <Globe className="w-5 h-5 text-purple-400" />
+            </div>
+            <div>
+              <h3 className="text-lg font-bold text-white">{t('settings.language')}</h3>
+              <p className="text-xs text-gray-400 mt-0.5">{t('settings.languageDescription')}</p>
+            </div>
+          </div>
+          <LanguageSwitcher />
+        </div>
+      </section>
 
       {/* Все настройки в одну строку */}
       <div className="grid grid-cols-1 lg:grid-cols-[2fr_1.5fr_2.5fr] gap-6">
