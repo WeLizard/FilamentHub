@@ -7,6 +7,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { AuthModal } from './AuthModal';
 import { Notifications } from './Notifications';
 import { FeedbackModal } from './FeedbackModal';
+import { LanguageSwitcher } from './LanguageSwitcher';
 import { useTranslation } from 'react-i18next';
 
 interface LayoutProps {
@@ -216,6 +217,8 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
                   <span>{t('layout.nav_login')}</span>
                 </button>
               )}
+
+              <LanguageSwitcher compact className="ml-1" />
             </nav>
 
             {/* Mobile: Notifications + Hamburger */}
@@ -332,6 +335,11 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
                   <span>{t('layout.nav_login')}</span>
                 </button>
               )}
+
+              <div className="border-t border-white/10 pt-3 mt-2 flex items-center justify-between px-1">
+                <span className="text-sm font-medium text-gray-300">{t('settings.language')}</span>
+                <LanguageSwitcher />
+              </div>
             </div>
           </div>
         )}
