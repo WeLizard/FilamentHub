@@ -1623,6 +1623,7 @@
       "noPresetFilaments": "No material-linked presets found in your profile yet.",
       "scanQr": "Scan QR",
       "scanQrHint": "Scan using a QR scanner or paste a code/link like /qr/CODE.",
+      "scanQrOrEnterCode": "or enter the code manually",
       "scanQrPlaceholder": "Example: FHUB-ABC123 or https://filamenthub.ru/qr/FHUB-ABC123",
       "scanQrApply": "Apply QR",
       "scanQrPaste": "Paste from clipboard",

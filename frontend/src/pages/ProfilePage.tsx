@@ -1677,8 +1677,17 @@ const SpoolForm: React.FC<SpoolFormProps> = ({ mode, spool, onSaved, onCancel })
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const cameraStreamRef = useRef<MediaStream | null>(null);
   const cameraFrameRef = useRef<number | null>(null);
-  const cameraDetectorRef = useRef<{ detect: (source: any) => Promise<Array<{ rawValue?: string }>> } | null>(null);
+  const cameraDetectorRef = useRef<((video: HTMLVideoElement) => Promise<string | null>) | null>(null);
   const isCameraScanningRef = useRef(false);
+  // Touch-primary devices (phones/tablets) get camera-first UX; desktop gets
+  // manual code entry as the primary path (webcam scanning is awkward there).
+  const isTouchDevice = useMemo(
+    () =>
+      typeof window !== 'undefined' &&
+      typeof window.matchMedia === 'function' &&
+      window.matchMedia('(pointer: coarse)').matches,
+    [],
+  );
   const [errorText, setErrorText] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [gateStep, setGateStep] = useState(false);
@@ -1865,6 +1874,45 @@ const SpoolForm: React.FC<SpoolFormProps> = ({ mode, spool, onSaved, onCancel })
     }
   };
 
+  // Per-frame QR decoder: native BarcodeDetector when available (Chromium on
+  // Android/desktop), otherwise a lazily-loaded jsQR canvas fallback so scanning
+  // also works on iOS Safari and Firefox (which lack BarcodeDetector).
+  const createQrFrameDecoder = async (): Promise<(video: HTMLVideoElement) => Promise<string | null>> => {
+    const BarcodeDetectorCtor = window.BarcodeDetector;
+    if (BarcodeDetectorCtor) {
+      const detector = new BarcodeDetectorCtor({ formats: ['qr_code'] });
+      return async (video) => {
+        const barcodes = await detector.detect(video);
+        return barcodes.find((item) => item.rawValue)?.rawValue ?? null;
+      };
+    }
+
+    const { default: jsQR } = await import('jsqr');
+    const canvas = document.createElement('canvas');
+    const ctx = canvas.getContext('2d', { willReadFrequently: true });
+    if (!ctx) {
+      throw new Error('qr-decoder-unavailable');
+    }
+    return async (video) => {
+      const vw = video.videoWidth;
+      const vh = video.videoHeight;
+      if (!vw || !vh) {
+        return null;
+      }
+      // Downscale large frames — keeps jsQR fast while staying readable.
+      const maxSide = 640;
+      const scale = Math.min(1, maxSide / Math.max(vw, vh));
+      const w = Math.round(vw * scale);
+      const h = Math.round(vh * scale);
+      canvas.width = w;
+      canvas.height = h;
+      ctx.drawImage(video, 0, 0, w, h);
+      const { data } = ctx.getImageData(0, 0, w, h);
+      const result = jsQR(data, w, h, { inversionAttempts: 'attemptBoth' });
+      return result?.data ?? null;
+    };
+  };
+
   const startCameraScan = async () => {
     setQrError(null);
     setQrSuccess(null);
@@ -1874,17 +1922,12 @@ const SpoolForm: React.FC<SpoolFormProps> = ({ mode, spool, onSaved, onCancel })
       return;
     }
 
-    const BarcodeDetectorCtor = window.BarcodeDetector;
-
-    if (!BarcodeDetectorCtor) {
-      setQrError(t('profilePage.spoolAddModal.scanQrCameraNotSupported'));
-      return;
-    }
-
     setIsCameraBusy(true);
     setIsCameraOpen(true);
 
     try {
+      const decode = await createQrFrameDecoder();
+
       const stream = await navigator.mediaDevices.getUserMedia({
         video: { facingMode: { ideal: 'environment' } },
         audio: false,
@@ -1896,52 +1939,58 @@ const SpoolForm: React.FC<SpoolFormProps> = ({ mode, spool, onSaved, onCancel })
         await videoRef.current.play();
       }
 
-      cameraDetectorRef.current = new BarcodeDetectorCtor({ formats: ['qr_code'] });
+      cameraDetectorRef.current = decode;
       isCameraScanningRef.current = true;
       setIsCameraReady(true);
 
-      const scanFrame = async () => {
+      let lastDecodeAt = 0;
+      const scanFrame = async (now: number) => {
         if (!isCameraScanningRef.current) {
           return;
         }
 
         const video = videoRef.current;
-        const detector = cameraDetectorRef.current;
+        const decoder = cameraDetectorRef.current;
 
-        if (!video || !detector || video.readyState < 2) {
-          cameraFrameRef.current = requestAnimationFrame(() => {
-            void scanFrame();
+        if (!video || !decoder || video.readyState < 2) {
+          cameraFrameRef.current = requestAnimationFrame((ts) => {
+            void scanFrame(ts);
           });
           return;
         }
 
-        try {
-          const barcodes = await detector.detect(video);
-          if (!isCameraScanningRef.current) {
-            return;
+        // Throttle to ~8 decodes/sec — ample for QR, keeps the device cool.
+        if (now - lastDecodeAt >= 120) {
+          lastDecodeAt = now;
+          try {
+            const rawValue = await decoder(video);
+            if (!isCameraScanningRef.current) {
+              return;
+            }
+            if (rawValue) {
+              stopCameraScan();
+              await resolveQrCode(rawValue);
+              return;
+            }
+          } catch {
+            // Игнорируем временные ошибки декодирования и продолжаем цикл.
           }
-          const rawValue = barcodes.find((item) => item.rawValue)?.rawValue;
-          if (rawValue) {
-            stopCameraScan();
-            await resolveQrCode(rawValue);
-            return;
-          }
-        } catch {
-          // Игнорируем временные ошибки декодирования и продолжаем цикл.
         }
 
-        cameraFrameRef.current = requestAnimationFrame(() => {
-          void scanFrame();
+        cameraFrameRef.current = requestAnimationFrame((ts) => {
+          void scanFrame(ts);
         });
       };
 
-      cameraFrameRef.current = requestAnimationFrame(() => {
-        void scanFrame();
+      cameraFrameRef.current = requestAnimationFrame((ts) => {
+        void scanFrame(ts);
       });
     } catch (error: any) {
       stopCameraScan();
       if (error?.name === 'NotAllowedError' || error?.name === 'PermissionDeniedError') {
         setQrError(t('profilePage.spoolAddModal.scanQrCameraPermissionDenied'));
+      } else if (error?.message === 'qr-decoder-unavailable') {
+        setQrError(t('profilePage.spoolAddModal.scanQrCameraNotSupported'));
       } else {
         setQrError(translateApiError(t, error?.response?.data?.detail));
       }
@@ -2151,6 +2200,40 @@ const SpoolForm: React.FC<SpoolFormProps> = ({ mode, spool, onSaved, onCancel })
         {isQrPanelOpen && (
           <div className="mb-3 p-3 bg-white/5 border border-white/10 rounded-lg space-y-2">
             <p className="text-xs text-gray-400">{t('profilePage.spoolAddModal.scanQrHint')}</p>
+
+            {/* Мобила: камера — основной способ */}
+            {isTouchDevice && (
+              <button
+                type="button"
+                onClick={() => {
+                  if (isCameraOpen) {
+                    stopCameraScan();
+                    return;
+                  }
+                  void startCameraScan();
+                }}
+                disabled={isCameraBusy}
+                className="w-full inline-flex items-center justify-center gap-2 px-3 py-2.5 rounded-md bg-purple-600/80 hover:bg-purple-600 text-white text-sm font-medium transition-colors disabled:opacity-60"
+              >
+                {isCameraBusy ? <Loader2 className="w-4 h-4 animate-spin" /> : <Camera className="w-4 h-4" />}
+                <span>{isCameraOpen ? t('profilePage.spoolAddModal.scanQrCameraStop') : t('profilePage.spoolAddModal.scanQrCameraStart')}</span>
+              </button>
+            )}
+
+            {/* Превью камеры */}
+            {isCameraOpen && (
+              <div className="rounded-lg overflow-hidden border border-white/15 bg-black/30">
+                <video ref={videoRef} className="w-full max-h-64 object-cover" playsInline muted autoPlay />
+                <div className="px-3 py-2 text-xs text-gray-300 border-t border-white/10">
+                  <p>{isCameraReady ? t('profilePage.spoolAddModal.scanQrCameraHint') : t('profilePage.spoolAddModal.scanQrCameraStarting')}</p>
+                </div>
+              </div>
+            )}
+
+            {/* Ручной ввод кода — основной на ПК, запасной на мобиле */}
+            {isTouchDevice && (
+              <p className="text-[11px] text-gray-500 pt-1">{t('profilePage.spoolAddModal.scanQrOrEnterCode')}</p>
+            )}
             <input
               type="text"
               value={qrInput}
@@ -2159,7 +2242,7 @@ const SpoolForm: React.FC<SpoolFormProps> = ({ mode, spool, onSaved, onCancel })
               className={inputCls}
               disabled={qrBusy}
             />
-            <div className="flex gap-2">
+            <div className="flex gap-2 flex-wrap">
               <button
                 type="button"
                 onClick={() => resolveQrCode(qrInput)}
@@ -2171,37 +2254,31 @@ const SpoolForm: React.FC<SpoolFormProps> = ({ mode, spool, onSaved, onCancel })
               </button>
               <button
                 type="button"
-                onClick={() => {
-                  if (isCameraOpen) {
-                    stopCameraScan();
-                    return;
-                  }
-                  void startCameraScan();
-                }}
-                disabled={isCameraBusy}
-                className="px-3 py-2 rounded-md border border-white/20 text-gray-300 text-xs hover:bg-white/10 transition-colors disabled:opacity-60 inline-flex items-center gap-1.5"
-              >
-                {isCameraBusy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Camera className="w-3.5 h-3.5" />}
-                <span>{isCameraOpen ? t('profilePage.spoolAddModal.scanQrCameraStop') : t('profilePage.spoolAddModal.scanQrCameraStart')}</span>
-              </button>
-              <button
-                type="button"
                 onClick={handlePasteQrFromClipboard}
                 disabled={qrBusy}
                 className="px-3 py-2 rounded-md border border-white/20 text-gray-300 text-xs hover:bg-white/10 transition-colors disabled:opacity-60"
               >
                 {t('profilePage.spoolAddModal.scanQrPaste')}
               </button>
+              {/* ПК: камера доступна, но второстепенно (вебкой неудобно) */}
+              {!isTouchDevice && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (isCameraOpen) {
+                      stopCameraScan();
+                      return;
+                    }
+                    void startCameraScan();
+                  }}
+                  disabled={isCameraBusy}
+                  className="px-3 py-2 rounded-md border border-white/20 text-gray-400 text-xs hover:bg-white/10 transition-colors disabled:opacity-60 inline-flex items-center gap-1.5"
+                >
+                  {isCameraBusy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Camera className="w-3.5 h-3.5" />}
+                  <span>{isCameraOpen ? t('profilePage.spoolAddModal.scanQrCameraStop') : t('profilePage.spoolAddModal.scanQrCameraStart')}</span>
+                </button>
+              )}
             </div>
-
-            {isCameraOpen && (
-              <div className="mt-2 rounded-lg overflow-hidden border border-white/15 bg-black/30">
-                <video ref={videoRef} className="w-full max-h-64 object-cover" playsInline muted autoPlay />
-                <div className="px-3 py-2 text-xs text-gray-300 border-t border-white/10">
-                  <p>{isCameraReady ? t('profilePage.spoolAddModal.scanQrCameraHint') : t('profilePage.spoolAddModal.scanQrCameraStarting')}</p>
-                </div>
-              </div>
-            )}
           </div>
         )}
 

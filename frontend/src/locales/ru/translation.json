@@ -1749,6 +1749,7 @@
       "noPresetFilaments": "В профиле пока нет пресетов с привязкой к материалу.",
       "scanQr": "Сканировать QR",
       "scanQrHint": "Отсканируйте QR-сканером или вставьте код/ссылку вида /qr/КОД.",
+      "scanQrOrEnterCode": "или введите код вручную",
       "scanQrPlaceholder": "Например: FHUB-ABC123 или https://filamenthub.ru/qr/FHUB-ABC123",
       "scanQrApply": "Применить QR",
       "scanQrPaste": "Вставить из буфера",

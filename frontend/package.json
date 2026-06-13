@@ -29,6 +29,7 @@
     "axios": "^1.13.5",
     "i18next": "^23.11.5",
     "i18next-browser-languagedetector": "^7.2.1",
+    "jsqr": "^1.4.0",
     "lucide-react": "^0.552.0",
     "mermaid": "^11.12.2",
     "react": "^19.2.3",
