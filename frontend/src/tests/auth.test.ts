@@ -18,6 +18,7 @@ describe('auth.ts', () => {
     localStorage.clear();
     vi.unstubAllEnvs();
     Object.defineProperty(window, 'filamenthub', { value: undefined, writable: true, configurable: true });
+    Object.defineProperty(window, 'wx', { value: undefined, writable: true, configurable: true });
   });
 
   describe('mode detection', () => {
@@ -49,8 +50,23 @@ describe('auth.ts', () => {
       expect(auth.isOrcaEmbedded()).toBe(false);
     });
 
-    it('detects window.filamenthub bridge', async () => {
-      (window as any).filamenthub = { postMessage: vi.fn() };
+    it('detects the OrcaSlicer bridge by a native method', async () => {
+      // The real C++ bridge injects native methods like importProfile.
+      (window as any).filamenthub = { importProfile: vi.fn() };
+      const auth = await loadAuth();
+      expect(auth.isOrcaEmbedded()).toBe(true);
+    });
+
+    it('ignores a bare window.filamenthub stub without a native method', async () => {
+      // App.tsx attaches a `navigate` helper to window.filamenthub in every
+      // browser; that stub must NOT be mistaken for the embedded WebView.
+      (window as any).filamenthub = { navigate: vi.fn() };
+      const auth = await loadAuth();
+      expect(auth.isOrcaEmbedded()).toBe(false);
+    });
+
+    it('detects the WeChat-style window.wx bridge', async () => {
+      (window as any).wx = { postMessage: vi.fn() };
       const auth = await loadAuth();
       expect(auth.isOrcaEmbedded()).toBe(true);
     });

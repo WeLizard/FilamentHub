@@ -27,12 +27,17 @@ export const isOrcaEmbedded = (): boolean => {
     return false;
   }
   // NB: window.filamenthub may be a stub the SPA itself creates (App.tsx adds a
-  // `navigate` helper to it), so its mere existence does NOT mean we run inside
-  // the OrcaSlicer WebView. Detect the real C++ bridge by a natively-injected
-  // method — same signal App.tsx uses (isInOrcaSlicer). Otherwise every plain
-  // browser is mistaken for the embedded WebView and falls back to localStorage
-  // token storage, defeating cookie auth on the web.
-  return Boolean(window.filamenthub?.importProfile || window.wx?.postMessage);
+  // `navigate` helper, useOrcaSlicerNotifications adds `showNotification`), so its
+  // mere existence does NOT mean we run inside the OrcaSlicer WebView. Detect the
+  // real C++ bridge by a natively-injected method that the SPA never adds, or by
+  // the wx message channel. Otherwise every plain browser is mistaken for the
+  // embedded WebView and falls back to localStorage token storage, defeating
+  // cookie auth on the web.
+  return Boolean(
+    window.filamenthub?.importProfile ||
+    window.filamenthub?.sendLoginSuccess ||
+    window.wx?.postMessage,
+  );
 };
 
 const canUseLocalTokenStorage = (): boolean => {
