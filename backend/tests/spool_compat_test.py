@@ -6,8 +6,10 @@ import pytest
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.v1.endpoints.spool_compat import _filament_payload, _filament_temps
 from app.models.brand import Brand
 from app.models.filament import Filament
+from app.models.preset import Preset, PresetModerationStatus
 from app.models.user import User
 from app.models.user_spool import UserSpool, UserSpoolState
 
@@ -104,4 +106,65 @@ async def test_spool_compat_v1_list_get_use_spool(client: AsyncClient, db_sessio
     assert use_response.status_code == 200
     used_weight = use_response.json()["used_weight"]
     assert used_weight == pytest.approx(150.0, rel=1e-6)
+
+
+def _approved_preset(**overrides) -> Preset:
+    base = {
+        "name": "test preset",
+        "extruder_temp": 240.0,
+        "bed_temp": 80.0,
+        "print_speed": 50.0,
+        "is_official": True,
+        "active": True,
+        "moderation_status": PresetModerationStatus.APPROVED,
+    }
+    base.update(overrides)
+    return Preset(**base)
+
+
+def test_filament_temps_uses_representative_preset():
+    """Gate map temps must come from the filament's preset, not be None."""
+    filament = Filament(name="PETG X", slug="petg-x", material_type="PETG")
+    filament.presets = [
+        _approved_preset(extruder_temp=245.0, bed_temp=85.0, rating=4.8, usage_count=10),
+        _approved_preset(extruder_temp=230.0, bed_temp=70.0, rating=3.0, usage_count=2),
+    ]
+    assert _filament_temps(filament) == (245.0, 85.0)
+
+
+def test_filament_temps_prefers_official_over_user_preset():
+    filament = Filament(name="PLA Y", slug="pla-y", material_type="PLA")
+    filament.presets = [
+        _approved_preset(is_official=False, extruder_temp=200.0, bed_temp=55.0, rating=5.0),
+        _approved_preset(is_official=True, extruder_temp=215.0, bed_temp=60.0, rating=4.0),
+    ]
+    assert _filament_temps(filament) == (215.0, 60.0)
+
+
+def test_filament_temps_falls_back_to_material_defaults():
+    """No preset → material defaults so Happy Hare never receives None."""
+    filament = Filament(name="PETG Z", slug="petg-z", material_type="PETG")
+    filament.presets = []
+    extruder, bed = _filament_temps(filament)
+    assert extruder == 240.0
+    assert bed == 80.0
+
+
+def test_filament_temps_ignores_unapproved_and_inactive_presets():
+    filament = Filament(name="PLA W", slug="pla-w", material_type="PLA")
+    filament.presets = [
+        _approved_preset(moderation_status=PresetModerationStatus.PENDING, extruder_temp=999.0),
+        _approved_preset(active=False, extruder_temp=999.0),
+    ]
+    # All candidates filtered out → material defaults for PLA.
+    assert _filament_temps(filament) == (215.0, 60.0)
+
+
+def test_filament_payload_never_emits_none_temps():
+    """The Spoolman payload fields HH parses with int() must be numeric."""
+    filament = Filament(name="ABS Q", slug="abs-q", material_type="ABS")
+    filament.presets = []
+    payload = _filament_payload(filament, fallback_id=1)
+    assert payload["settings_extruder_temp"] is not None
+    assert payload["settings_bed_temp"] is not None
 

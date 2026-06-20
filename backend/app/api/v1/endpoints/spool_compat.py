@@ -14,16 +14,18 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import joinedload
+from sqlalchemy.orm import joinedload, selectinload
 
 from app.core.config import settings
 from app.db.session import AsyncSessionLocal, get_db
 from app.models.brand import Brand
 from app.models.filament import Filament
+from app.models.preset import Preset, PresetModerationStatus
 from app.models.preset_gate_state import PresetGateState, PresetGateStateSource
 from app.models.user import User
 from app.models.user_printer_device import UserPrinterDevice
 from app.models.user_spool import UserSpool, UserSpoolState
+from app.services.preset_enrichment_service import _load_material_defaults
 
 from . import spool_compat_fields
 from .spool_compat_ws import spool_ws_manager
@@ -136,6 +138,51 @@ def _filament_diameter(filament: Filament | None) -> float:
     return _DEFAULT_FILAMENT_DIAMETER
 
 
+def _representative_preset(filament: Filament) -> Preset | None:
+    """Pick the preset whose temperatures best represent this filament.
+
+    Prefers official, approved, active presets (ranked by rating/usage), then
+    falls back to any approved active preset. Requires filament.presets to be
+    eagerly loaded by the caller (lazy access is not allowed under async).
+    """
+    presets = [
+        p
+        for p in (filament.presets or [])
+        if p.active and p.moderation_status == PresetModerationStatus.APPROVED
+    ]
+    if not presets:
+        return None
+    officials = [p for p in presets if p.is_official]
+    pool = officials or presets
+    return max(pool, key=lambda p: (p.rating or 0.0, p.usage_count or 0, p.id or 0))
+
+
+def _filament_temps(filament: Filament | None) -> tuple[float | None, float | None]:
+    """Resolve (extruder_temp, bed_temp) for the Spoolman filament payload.
+
+    Happy Hare maps these onto the gate map and runs int(temp) on them, so a
+    None value crashes the whole MMU_GATE_MAP update. We therefore derive real
+    temperatures from the filament's representative preset and, when none
+    exists, fall back to per-material defaults so the value is never None.
+    """
+    if filament is None:
+        return None, None
+
+    preset = _representative_preset(filament)
+    if preset is not None:
+        return float(preset.extruder_temp), float(preset.bed_temp)
+
+    defaults = _load_material_defaults()
+    material = (filament.material_type or "").upper()
+    material_defaults = defaults.get(material) or defaults.get("PLA", {})
+    extruder = material_defaults.get("extruder_temp")
+    bed = material_defaults.get("bed_temp")
+    return (
+        float(extruder) if extruder is not None else None,
+        float(bed) if bed is not None else None,
+    )
+
+
 def _filament_payload(
     filament: Filament | None,
     fallback_id: int,
@@ -143,6 +190,7 @@ def _filament_payload(
 ) -> dict:
     density = _filament_density(filament)
     diameter = _filament_diameter(filament)
+    extruder_temp, bed_temp = _filament_temps(filament)
     brand = filament.brand if filament is not None else None
     # Spoolman filament.weight = net weight of filament in a full spool (grams).
     # Use filament.spool_weight from DB; fallback to spool's initial_weight_g
@@ -173,8 +221,8 @@ def _filament_payload(
         "spool_weight": filament.empty_spool_weight_g if filament is not None else None,
         "article_number": None,
         "comment": None,
-        "settings_extruder_temp": None,
-        "settings_bed_temp": None,
+        "settings_extruder_temp": extruder_temp,
+        "settings_bed_temp": bed_temp,
         "color_hex": _strip_hex(filament.color_hex if filament is not None else None),
         "multi_color_hexes": None,
         "multi_color_direction": None,
@@ -616,7 +664,10 @@ async def _sync_extra_to_gate_state(
 async def _get_user_spool(db: AsyncSession, user_id: int, spool_id: int) -> UserSpool | None:
     result = await db.execute(
         select(UserSpool)
-        .options(joinedload(UserSpool.filament).joinedload(Filament.brand))
+        .options(
+            joinedload(UserSpool.filament).joinedload(Filament.brand),
+            joinedload(UserSpool.filament).selectinload(Filament.presets),
+        )
         .where(UserSpool.id == spool_id, UserSpool.user_id == user_id)
     )
     return result.scalar_one_or_none()
@@ -820,7 +871,10 @@ async def _list_spools_impl(
 ) -> JSONResponse:
     result = await db.execute(
         select(UserSpool)
-        .options(joinedload(UserSpool.filament).joinedload(Filament.brand))
+        .options(
+            joinedload(UserSpool.filament).joinedload(Filament.brand),
+            joinedload(UserSpool.filament).selectinload(Filament.presets),
+        )
         .where(UserSpool.user_id == user.id)
         .order_by(UserSpool.created_at.desc())
     )
@@ -1222,7 +1276,7 @@ async def _list_filaments_impl(
 ) -> JSONResponse:
     stmt = (
         select(Filament)
-        .options(joinedload(Filament.brand))
+        .options(joinedload(Filament.brand), selectinload(Filament.presets))
         .order_by(Filament.name)
     )
     result = await db.execute(stmt)
