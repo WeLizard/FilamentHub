@@ -6,7 +6,11 @@ import pytest
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.v1.endpoints.spool_compat import _filament_payload, _filament_temps
+from app.api.v1.endpoints.spool_compat import (
+    _filament_payload,
+    _filament_temps,
+    _to_spool_payload,
+)
 from app.models.brand import Brand
 from app.models.filament import Filament
 from app.models.preset import Preset, PresetModerationStatus
@@ -167,4 +171,53 @@ def test_filament_payload_never_emits_none_temps():
     payload = _filament_payload(filament, fallback_id=1)
     assert payload["settings_extruder_temp"] is not None
     assert payload["settings_bed_temp"] is not None
+
+
+def _spool_for_payload(filament: Filament) -> UserSpool:
+    return UserSpool(
+        id=2,
+        filament=filament,
+        initial_weight_g=1000.0,
+        used_weight_g=100.0,
+        state=UserSpoolState.active,
+    )
+
+
+def test_spool_payload_uses_gate_bound_preset_temp():
+    """A preset bound to the gate must drive the gate-map temperatures."""
+    filament = Filament(name="PETG G", slug="petg-g", material_type="PETG")
+    filament.presets = []
+    spool = _spool_for_payload(filament)
+    gate_preset = _approved_preset(extruder_temp=250.0, bed_temp=90.0)
+    location_map = {2: "Voron @ MMU Gate:4"}
+    gate_meta_map = {2: ("Voron", 4, "voron", gate_preset)}
+
+    payload = _to_spool_payload(spool, location_map, gate_meta_map)
+    assert payload["filament"]["settings_extruder_temp"] == 250.0
+    assert payload["filament"]["settings_bed_temp"] == 90.0
+
+
+def test_spool_payload_gate_without_preset_uses_material_default():
+    """Gate with a spool but no bound preset → material default, not the
+    filament's representative preset."""
+    filament = Filament(name="PETG H", slug="petg-h", material_type="PETG")
+    filament.presets = [_approved_preset(extruder_temp=999.0, bed_temp=999.0)]
+    spool = _spool_for_payload(filament)
+    location_map = {2: "Voron @ MMU Gate:4"}
+    gate_meta_map = {2: ("Voron", 4, "voron", None)}
+
+    payload = _to_spool_payload(spool, location_map, gate_meta_map)
+    assert payload["filament"]["settings_extruder_temp"] == 240.0
+    assert payload["filament"]["settings_bed_temp"] == 80.0
+
+
+def test_spool_payload_ungated_uses_representative_preset():
+    """A spool not on any gate falls back to the filament's representative preset."""
+    filament = Filament(name="PETG I", slug="petg-i", material_type="PETG")
+    filament.presets = [_approved_preset(extruder_temp=248.0, bed_temp=88.0)]
+    spool = _spool_for_payload(filament)
+
+    payload = _to_spool_payload(spool, {}, {})
+    assert payload["filament"]["settings_extruder_temp"] == 248.0
+    assert payload["filament"]["settings_bed_temp"] == 88.0
 

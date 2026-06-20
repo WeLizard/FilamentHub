@@ -157,21 +157,20 @@ def _representative_preset(filament: Filament) -> Preset | None:
     return max(pool, key=lambda p: (p.rating or 0.0, p.usage_count or 0, p.id or 0))
 
 
-def _filament_temps(filament: Filament | None) -> tuple[float | None, float | None]:
-    """Resolve (extruder_temp, bed_temp) for the Spoolman filament payload.
+def _preset_temps(preset: Preset) -> tuple[float, float]:
+    """Extruder/bed temperatures of a concrete preset."""
+    return float(preset.extruder_temp), float(preset.bed_temp)
+
+
+def _material_default_temps(filament: Filament | None) -> tuple[float | None, float | None]:
+    """Per-material default temperatures, used when no preset is available.
 
     Happy Hare maps these onto the gate map and runs int(temp) on them, so a
-    None value crashes the whole MMU_GATE_MAP update. We therefore derive real
-    temperatures from the filament's representative preset and, when none
-    exists, fall back to per-material defaults so the value is never None.
+    None value crashes the whole MMU_GATE_MAP update; material defaults keep the
+    value numeric for every known material.
     """
     if filament is None:
         return None, None
-
-    preset = _representative_preset(filament)
-    if preset is not None:
-        return float(preset.extruder_temp), float(preset.bed_temp)
-
     defaults = _load_material_defaults()
     material = (filament.material_type or "").upper()
     material_defaults = defaults.get(material) or defaults.get("PLA", {})
@@ -183,14 +182,29 @@ def _filament_temps(filament: Filament | None) -> tuple[float | None, float | No
     )
 
 
+def _filament_temps(filament: Filament | None) -> tuple[float | None, float | None]:
+    """Gate-less temperatures for a filament (e.g. the filament catalog).
+
+    With no gate binding to read a concrete preset from, prefer the filament's
+    representative preset, then fall back to per-material defaults.
+    """
+    if filament is None:
+        return None, None
+    preset = _representative_preset(filament)
+    if preset is not None:
+        return _preset_temps(preset)
+    return _material_default_temps(filament)
+
+
 def _filament_payload(
     filament: Filament | None,
     fallback_id: int,
     initial_weight: float | None = None,
+    temp_override: tuple[float | None, float | None] | None = None,
 ) -> dict:
     density = _filament_density(filament)
     diameter = _filament_diameter(filament)
-    extruder_temp, bed_temp = _filament_temps(filament)
+    extruder_temp, bed_temp = temp_override if temp_override is not None else _filament_temps(filament)
     brand = filament.brand if filament is not None else None
     # Spoolman filament.weight = net weight of filament in a full spool (grams).
     # Use filament.spool_weight from DB; fallback to spool's initial_weight_g
@@ -277,15 +291,19 @@ async def _update_device_gate_count(db: AsyncSession, device: UserPrinterDevice,
 
 async def _build_location_map(
     db: AsyncSession, user_id: int
-) -> tuple[dict[int, str], dict[int, tuple[str, int, str]]]:
+) -> tuple[dict[int, str], dict[int, tuple[str, int, str, Preset | None]]]:
     """Return (location_map, gate_meta_map).
 
     location_map:  spool_id → "DeviceName @ MMU Gate:N"
-    gate_meta_map: spool_id → (device_name, gate_index, printer_hostname)
+    gate_meta_map: spool_id → (device_name, gate_index, printer_hostname, gate_preset)
+
+    gate_preset is the preset bound to that gate from the web/profile UI, or
+    None when the gate has no preset assigned.
     """
     result = await db.execute(
         select(PresetGateState, UserPrinterDevice)
         .join(UserPrinterDevice, UserPrinterDevice.id == PresetGateState.device_id)
+        .options(joinedload(PresetGateState.preset))
         .where(
             PresetGateState.user_id == user_id,
             PresetGateState.spool_id.is_not(None),
@@ -294,21 +312,26 @@ async def _build_location_map(
         .order_by(PresetGateState.updated_at.desc())
     )
     location_map: dict[int, str] = {}
-    gate_meta_map: dict[int, tuple[str, int, str]] = {}
+    gate_meta_map: dict[int, tuple[str, int, str, Preset | None]] = {}
     for gate_state, device in result.all():
         if gate_state.spool_id is None or gate_state.spool_id in location_map:
             continue
         device_name = device.name or device.device_fingerprint
         hostname = device.printer_hostname or ""
         location_map[gate_state.spool_id] = f"{device_name} @ MMU Gate:{gate_state.gate_index}"
-        gate_meta_map[gate_state.spool_id] = (device_name, gate_state.gate_index, hostname)
+        gate_meta_map[gate_state.spool_id] = (
+            device_name,
+            gate_state.gate_index,
+            hostname,
+            gate_state.preset,
+        )
     return location_map, gate_meta_map
 
 
 def _to_spool_payload(
     spool: UserSpool,
     location_map: dict[int, str],
-    gate_meta_map: dict[int, tuple[str, int, str]] | None = None,
+    gate_meta_map: dict[int, tuple[str, int, str, Preset | None]] | None = None,
 ) -> dict:
     filament = spool.filament
     density = _filament_density(filament)
@@ -316,11 +339,20 @@ def _to_spool_payload(
     remaining_weight = max(spool.initial_weight_g - spool.used_weight_g, 0.0)
     location = location_map.get(spool.id)
 
+    # Gate temperatures: a preset bound to the gate (web/profile UI) wins; when
+    # the gate has no preset we fall back to per-material defaults so Happy Hare
+    # never receives None. Left None here for spools that are not on any gate,
+    # in which case _filament_payload derives gate-less defaults.
+    temp_override: tuple[float | None, float | None] | None = None
+
     # Merge extra: start from stored spool.extra, then fill in HH gate fields
     # from our PresetGateState if the stored values are empty/unset.
     extra: dict = dict(spool.extra or {})
     if gate_meta_map and spool.id in gate_meta_map:
-        _device_name, gate_index, printer_hostname = gate_meta_map[spool.id]
+        _device_name, gate_index, printer_hostname, gate_preset = gate_meta_map[spool.id]
+        temp_override = (
+            _preset_temps(gate_preset) if gate_preset is not None else _material_default_temps(filament)
+        )
         # HH reads: json.loads(extra.get('printer_name', '""')) and int(extra.get('mmu_gate_map', -1))
         # So printer_name must be JSON-encoded string ('"voron"'), mmu_gate_map must be string int ('0')
         # IMPORTANT: printer_name must match the Klipper printer hostname, NOT the device display name.
@@ -348,7 +380,7 @@ def _to_spool_payload(
         "registered": _iso(spool.created_at),
         "first_used": _iso(spool.first_used_at),
         "last_used": _iso(spool.last_used_at),
-        "filament": _filament_payload(filament, spool.id, spool.initial_weight_g),
+        "filament": _filament_payload(filament, spool.id, spool.initial_weight_g, temp_override=temp_override),
         "filament_id": spool.filament_id,
         "price": _spool_price(spool, filament),
         "remaining_weight": round(remaining_weight, 3),
