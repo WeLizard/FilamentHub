@@ -87,7 +87,7 @@ ignore_missing_imports = true
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-python_files = "test_*.py"
+python_files = ["test_*.py", "*_test.py"]
 python_functions = "test_*"
 asyncio_mode = "auto"
 addopts = "--cov=app --cov-report=term-missing --cov-report=html"

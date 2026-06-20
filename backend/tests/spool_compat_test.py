@@ -15,15 +15,15 @@ from app.models.brand import Brand
 from app.models.filament import Filament
 from app.models.preset import Preset, PresetModerationStatus
 from app.models.user import User
+from app.models.user_printer_device import UserPrinterDevice
 from app.models.user_spool import UserSpool, UserSpoolState
 
 
-async def _seed_spool_context(db: AsyncSession) -> tuple[User, UserSpool]:
+async def _seed_spool_context(db: AsyncSession) -> tuple[User, UserSpool, UserPrinterDevice]:
     user = User(
         email="spool-compat-test@example.com",
         username="spool_compat_test_user",
         password_hash="not-used-in-this-test",
-        api_key="spool_compat_test_api_key",
         active=True,
     )
     brand = Brand(name="Spool Compat Test Brand", slug="spool-compat-test-brand", verified=True, active=True)
@@ -49,11 +49,20 @@ async def _seed_spool_context(db: AsyncSession) -> tuple[User, UserSpool]:
         lot_nr="LOT-1",
         comment="seed spool",
     )
-    db.add_all([user, brand, filament, spool])
+    # spool_compat authenticates by per-device API key, not by User.api_key.
+    device = UserPrinterDevice(
+        user=user,
+        name="Spool Compat Test Printer",
+        device_fingerprint="spool-compat-test-fp",
+        api_key="spool_compat_test_api_key",
+        supports_hh=True,
+    )
+    db.add_all([user, brand, filament, spool, device])
     await db.commit()
     await db.refresh(user)
     await db.refresh(spool)
-    return user, spool
+    await db.refresh(device)
+    return user, spool, device
 
 
 @pytest.mark.asyncio
@@ -89,9 +98,10 @@ async def test_spool_compat_v1_requires_api_key(client: AsyncClient):
 @pytest.mark.asyncio
 async def test_spool_compat_v1_list_get_use_spool(client: AsyncClient, db_session: AsyncSession):
     """Compatibility spool flow: list -> get -> use."""
-    user, spool = await _seed_spool_context(db_session)
+    _user, spool, device = await _seed_spool_context(db_session)
+    api_key = device.api_key
 
-    list_response = await client.get(f"/api/v1/spool_compat/{user.api_key}/v1/spool")
+    list_response = await client.get(f"/api/v1/spool_compat/{api_key}/v1/spool")
     assert list_response.status_code == 200
     assert list_response.headers.get("x-total-count") == "1"
     list_data = list_response.json()
@@ -99,12 +109,12 @@ async def test_spool_compat_v1_list_get_use_spool(client: AsyncClient, db_sessio
     assert list_data[0]["id"] == spool.id
     assert list_data[0]["filament"]["material"] == "PLA"
 
-    get_response = await client.get(f"/api/v1/spool_compat/{user.api_key}/v1/spool/{spool.id}")
+    get_response = await client.get(f"/api/v1/spool_compat/{api_key}/v1/spool/{spool.id}")
     assert get_response.status_code == 200
     assert get_response.json()["used_weight"] == 100.0
 
     use_response = await client.put(
-        f"/api/v1/spool_compat/{user.api_key}/v1/spool/{spool.id}/use",
+        f"/api/v1/spool_compat/{api_key}/v1/spool/{spool.id}/use",
         json={"use_weight": 50},
     )
     assert use_response.status_code == 200
