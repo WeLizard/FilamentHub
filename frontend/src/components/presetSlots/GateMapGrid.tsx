@@ -161,7 +161,7 @@ export function GateMapGrid({ device, gates, presets, spools, onGateClick }: Gat
             {/* Remaining weight */}
             {spool && (
               <span className="text-[10px] tabular-nums text-gray-300">
-                {spool.remaining_weight_g}g &middot; {spool.remaining_pct}%
+                {spool.remaining_weight_g.toFixed(0)}g &middot; {spool.remaining_pct.toFixed(0)}%
               </span>
             )}
 
