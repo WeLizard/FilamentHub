@@ -42,9 +42,10 @@ export const SEOHead: React.FC<SEOHeadProps> = ({
   additionalMeta = [],
   allowAI = true,
 }) => {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const fullTitle = title ? `${title} | FilamentHub` : t('seo.defaultTitle');
   const fullDescription = description || t('seo.defaultDescription');
+  const ogLocale = i18n.language?.startsWith('ru') ? 'ru_RU' : 'en_US';
   const fullImage = image ? (image.startsWith('http') ? image : `${BASE_URL}${image}`) : `${BASE_URL}${DEFAULT_IMAGE}`;
   const fullUrl = url ? (url.startsWith('http') ? url : `${BASE_URL}${url}`) : BASE_URL;
 
@@ -83,7 +84,7 @@ export const SEOHead: React.FC<SEOHeadProps> = ({
     addMeta('og:url', fullUrl, true);
     addMeta('og:type', type, true);
     addMeta('og:site_name', 'FilamentHub', true);
-    addMeta('og:locale', 'ru_RU', true);
+    addMeta('og:locale', ogLocale, true);
 
     // Для статей
     if (type === 'article') {
@@ -172,6 +173,7 @@ export const SEOHead: React.FC<SEOHeadProps> = ({
     jsonLd,
     additionalMeta,
     allowAI,
+    ogLocale,
   ]);
 
   return null; // Компонент не рендерит ничего
