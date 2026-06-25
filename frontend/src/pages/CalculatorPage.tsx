@@ -3772,9 +3772,9 @@ const SectionHeading: React.FC<{ icon: ReactNode; title: string; compact?: boole
 );
 
 const FieldBlock: React.FC<{ label: ReactNode; children: ReactNode; hint?: string | null }> = ({ label, children, hint }) => (
-  <label className="block">
+  <label className="flex h-full flex-col">
     <span className="mb-1.5 block text-sm font-medium text-slate-300">{label}</span>
-    {children}
+    <div className="mt-auto">{children}</div>
     {hint ? <span className="mt-1.5 block text-xs leading-5 text-slate-400">{hint}</span> : null}
   </label>
 );
@@ -3833,16 +3833,16 @@ const InputWithSuffix: React.FC<{
   suffix: string;
   step?: string;
 }> = ({ value, onChange, placeholder, suffix, step }) => (
-  <div className="relative w-full sm:max-w-[15rem]">
+  <div className="flex w-full items-center gap-2 rounded-2xl border border-white/10 bg-slate-950/60 pr-3 transition-all focus-within:border-transparent focus-within:ring-2 focus-within:ring-cyan-400/60 sm:max-w-[15rem]">
     <input
       type="number"
-      className={`${inputClass} ${numberInputResetClass} w-full pr-24`}
+      className={`${numberInputResetClass} w-full min-w-0 bg-transparent px-4 py-3 text-white placeholder:text-slate-500 focus:outline-none`}
       value={value || ''}
       placeholder={placeholder}
       step={step}
       onChange={(event) => onChange(Number(event.target.value) || 0)}
     />
-    <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 rounded-xl border border-white/[0.08] bg-white/[0.06] px-2.5 py-1 text-xs font-medium text-slate-300">
+    <span className="pointer-events-none shrink-0 rounded-xl border border-white/[0.08] bg-white/[0.06] px-2.5 py-1 text-xs font-medium text-slate-300">
       {suffix}
     </span>
   </div>
