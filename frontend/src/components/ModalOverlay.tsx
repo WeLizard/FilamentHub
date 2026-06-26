@@ -1,6 +1,6 @@
 /** Shared modal overlay — portal, backdrop, centering, scroll lock, Escape */
 
-import { ReactNode, useEffect, useCallback } from 'react';
+import { ReactNode, useEffect, useCallback, useRef } from 'react';
 import { createPortal } from 'react-dom';
 
 let scrollLockCount = 0;
@@ -49,16 +49,29 @@ export const ModalOverlay: React.FC<ModalOverlayProps> = ({
     };
   }, []);
 
+  // Track where the mouse press started. Closing only on a genuine
+  // backdrop click (press AND release on the backdrop) prevents a text
+  // selection that starts inside an input and ends over the backdrop from
+  // wrongly closing the modal — Chromium fires a `click` on the common
+  // ancestor (this backdrop) in that case, Firefox does not.
+  const pressStartedOnOverlay = useRef(false);
+
+  const handleOverlayMouseDown = (e: React.MouseEvent) => {
+    pressStartedOnOverlay.current = e.target === e.currentTarget;
+  };
+
   const handleOverlayClick = (e: React.MouseEvent) => {
-    if (closeOnOverlayClick && e.target === e.currentTarget) {
+    if (closeOnOverlayClick && e.target === e.currentTarget && pressStartedOnOverlay.current) {
       onClose();
     }
+    pressStartedOnOverlay.current = false;
   };
 
   return createPortal(
     <div className={`fixed inset-0 bg-black/50 backdrop-blur-sm z-[9999] overflow-y-auto ${className}`}>
       <div
         className="min-h-full flex items-center justify-center p-4"
+        onMouseDown={handleOverlayMouseDown}
         onClick={handleOverlayClick}
       >
         {children}
