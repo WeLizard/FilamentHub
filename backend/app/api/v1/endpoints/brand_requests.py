@@ -54,6 +54,12 @@ async def create_brand_request(
 ) -> BrandRequestResponse:
     """Создать заявку на вступление в бренд или создание нового бренда."""
 
+    # Imported up-front so it is available for all request types (the common
+    # message/proof_text checks below run regardless of branch). Previously it
+    # was imported only inside the CREATE branch, so a JOIN request with a
+    # message/proof_text raised UnboundLocalError → HTTP 500.
+    from app.services.preset_moderation import validate_text_field
+
     # Валидация в зависимости от типа заявки
     if data.request_type == BrandRequestType.JOIN:
         if not data.brand_id:
@@ -127,7 +133,6 @@ async def create_brand_request(
             raise_error(status.HTTP_400_BAD_REQUEST, ERR_BRAND_REQUEST_PENDING_CREATE)
 
         # Проверка текстовых полей на плохие слова
-        from app.services.preset_moderation import validate_text_field
         if data.new_brand_name:
             is_valid, error_msg = await validate_text_field(data.new_brand_name, db, "brand_name")
             if not is_valid:
