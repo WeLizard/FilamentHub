@@ -392,7 +392,7 @@ const MaterialCard: React.FC<MaterialCardProps> = ({
               </>
             )}
             </div>
-            <h3 className="text-lg sm:text-xl font-bold text-white group-hover:text-purple-300 transition-colors truncate">
+            <h3 className="min-w-0 text-lg sm:text-xl font-bold text-white group-hover:text-purple-300 transition-colors truncate">
               {filament.name}
             </h3>
           </div>
@@ -455,7 +455,7 @@ const MaterialCard: React.FC<MaterialCardProps> = ({
         {filament.color_name && (
           <div className="flex items-center gap-1 sm:gap-2 bg-white/5 border border-white/10 rounded-full px-2 sm:px-3 py-0.5 sm:py-1">
             <Palette className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-amber-300" />
-            <span className="text-white font-semibold text-[10px] sm:text-xs truncate max-w-[80px] sm:max-w-none">{filament.color_name}</span>
+            <span className="text-white font-semibold text-[10px] sm:text-xs truncate max-w-[80px] sm:max-w-[220px]">{filament.color_name}</span>
           </div>
         )}
       </div>
@@ -471,7 +471,7 @@ const MaterialCard: React.FC<MaterialCardProps> = ({
                   {presetBadge.label}
                 </span>
               )}
-              <h4 className="text-sm sm:text-base font-semibold text-white truncate max-w-[150px] sm:max-w-none">{currentPreset.name}</h4>
+              <h4 className="text-sm sm:text-base font-semibold text-white truncate max-w-[150px] sm:max-w-[280px]">{currentPreset.name}</h4>
               <span className="text-gray-400 text-[10px] sm:text-xs hidden sm:inline">· {t('catalogPage.updatedAt')} {formatUpdatedAt(currentPreset.updated_at)}</span>
             </div>
             <div className="flex items-center gap-2 sm:gap-3 text-[10px] sm:text-sm text-gray-300">
