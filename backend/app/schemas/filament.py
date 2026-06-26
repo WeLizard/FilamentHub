@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 class FilamentVisualSettings(BaseModel):
@@ -36,6 +36,15 @@ class FilamentVisualSettings(BaseModel):
 
     transparency: bool = Field(False)
     # Прозрачность: да/нет (True = прозрачный, False = непрозрачный)
+
+    @field_validator("filler", mode="before")
+    @classmethod
+    def _empty_filler_to_none(cls, v: object) -> object:
+        # Если наполнитель не выбран (пустая строка / None), трактуем как "none",
+        # а не отклоняем заявку 422 literal_error.
+        if v is None or (isinstance(v, str) and not v.strip()):
+            return "none"
+        return v
 
 
 class FilamentBase(BaseModel):
