@@ -137,7 +137,7 @@ export const ColorMaterialSection: React.FC<ColorMaterialSectionProps> = ({
                 {/* HSL Color Picker - рендерим через portal вне модального окна */}
                 {isColorPickerOpen && pickerPosition && createPortal(
                   <div
-                    className="fixed z-[200]"
+                    className="fixed z-[10000]"
                     style={{
                       bottom: `${pickerPosition.bottom}px`,
                       left: `${pickerPosition.left}px`,
