@@ -17,7 +17,6 @@ import {
   Download,
   Copy,
   Share2,
-  MapPin,
   Thermometer,
   Gauge,
   Edit,
@@ -118,6 +117,12 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({ onBack }) =>
   });
 
   const brandPresets = presetsData?.items || [];
+
+  const { data: usageData } = useQuery({
+    queryKey: ['brand-usage', user?.brand_id],
+    queryFn: () => brandsAPI.getUsage(user!.brand_id!),
+    enabled: !!user?.brand_id && brandTab === 'usage',
+  });
 
   useEffect(() => {
     setIsBrandLogoVisible(Boolean(brandData?.logo_url));
@@ -698,57 +703,59 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({ onBack }) =>
         <div className="space-y-6">
           <h3 className="text-2xl font-bold text-white">{t('brandProfile.usageAnalytics')}</h3>
 
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            {/* Regional Statistics - ЗАГЛУШКА */}
-            <div className="bg-white/10 backdrop-blur-sm rounded-2xl p-6 border border-white/20 shadow-xl">
-              <h3 className="text-xl font-bold text-white mb-4 flex items-center">
-                <MapPin className="w-5 h-5 mr-2" />
-                {t('brandProfile.regionalStats')} [{t('brandProfile.placeholder')}]
-              </h3>
-              <div className="space-y-3">
-                {[
-                  { region: t('brandProfile.regions.moscow'), usage: 2456, growth: 12 },
-                  { region: t('brandProfile.regions.spb'), usage: 1892, growth: 8 },
-                  { region: t('brandProfile.regions.novosibirsk'), usage: 1234, growth: 15 },
-                ].map((item, index) => (
-                  <div key={index} className="flex items-center justify-between p-3 bg-white/5 rounded-xl">
-                    <div className="flex items-center space-x-3">
-                      <MapPin className="w-5 h-5 text-blue-400" />
-                      <span className="text-white">{item.region}</span>
-                    </div>
-                    <div className="text-right">
-                      <p className="text-white font-semibold">{item.usage}</p>
-                      <p className="text-green-400 text-sm">+{item.growth}%</p>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            <StatCard
+              icon={Package}
+              label={t('brandProfile.spoolsTracked')}
+              value={(usageData?.spools_tracked ?? 0).toString()}
+              color="from-green-500/20 to-emerald-500/20"
+              borderColor="border-green-500/30"
+              iconColor="text-green-400"
+            />
+            <StatCard
+              icon={TrendingUp}
+              label={t('brandProfile.presetUsage')}
+              value={(usageData?.total_preset_usage ?? 0).toString()}
+              color="from-purple-500/20 to-pink-500/20"
+              borderColor="border-purple-500/30"
+              iconColor="text-purple-400"
+            />
+            <StatCard
+              icon={Package}
+              label={t('brandProfile.presetsCount')}
+              value={(usageData?.presets_count ?? 0).toString()}
+              color="from-blue-500/20 to-cyan-500/20"
+              borderColor="border-blue-500/30"
+              iconColor="text-blue-400"
+            />
+          </div>
 
-            {/* Popular Printers - ЗАГЛУШКА */}
-            <div className="bg-white/10 backdrop-blur-sm rounded-2xl p-6 border border-white/20 shadow-xl">
-              <h3 className="text-xl font-bold text-white mb-4">{t('brandProfile.popularPrinters')} [{t('brandProfile.placeholder')}]</h3>
+          <div className="bg-white/10 backdrop-blur-sm rounded-2xl p-6 border border-white/20 shadow-xl">
+            <h3 className="text-xl font-bold text-white mb-4">{t('brandProfile.popularPrinters')}</h3>
+            {usageData && usageData.popular_printers.length > 0 ? (
               <div className="space-y-3">
-                {[
-                  { printer: 'Ender 3 Pro', usage: 1247, percentage: 45 },
-                  { printer: 'Prusa MK3', usage: 892, percentage: 32 },
-                  { printer: 'CR-10', usage: 654, percentage: 23 },
-                ].map((item, index) => (
-                  <div key={index} className="p-3 bg-white/5 rounded-xl">
-                    <div className="flex justify-between mb-2">
-                      <span className="text-white">{item.printer}</span>
-                      <span className="text-gray-400">{item.percentage}%</span>
+                {usageData.popular_printers.map((p) => {
+                  const max = usageData.popular_printers[0].count || 1;
+                  const pct = Math.round((p.count / max) * 100);
+                  return (
+                    <div key={p.printer_id} className="p-3 bg-white/5 rounded-xl">
+                      <div className="flex justify-between mb-2">
+                        <span className="text-white">{p.name}</span>
+                        <span className="text-gray-400">{p.count}</span>
+                      </div>
+                      <div className="w-full bg-white/10 rounded-full h-2">
+                        <div
+                          className="bg-gradient-to-r from-purple-500 to-pink-500 h-2 rounded-full transition-all"
+                          style={{ width: `${pct}%` }}
+                        />
+                      </div>
                     </div>
-                    <div className="w-full bg-white/10 rounded-full h-2">
-                      <div
-                        className="bg-gradient-to-r from-purple-500 to-pink-500 h-2 rounded-full transition-all"
-                        style={{ width: `${item.percentage}%` }}
-                      />
-                    </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
-            </div>
+            ) : (
+              <p className="text-gray-400 text-center py-8">{t('brandProfile.noData')}</p>
+            )}
           </div>
         </div>
       )}

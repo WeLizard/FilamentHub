@@ -55,3 +55,21 @@ class BrandListResponse(BaseModel):
     size: int
     pages: int
 
+
+class PopularPrinterItem(BaseModel):
+    """Принтер и число привязанных к нему пресетов бренда."""
+
+    printer_id: int
+    name: str
+    manufacturer: str | None = None
+    count: int
+
+
+class BrandUsageResponse(BaseModel):
+    """Статистика использования материалов бренда."""
+
+    popular_printers: list[PopularPrinterItem]
+    spools_tracked: int
+    total_preset_usage: int
+    presets_count: int
+

@@ -6,7 +6,11 @@ from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.dependencies import get_current_admin_user, get_current_user
+from app.core.dependencies import (
+    get_current_active_user,
+    get_current_admin_user,
+    get_current_user,
+)
 from app.core.errors import (
     ERR_BRAND_NOT_FOUND,
     ERR_BRAND_SLUG_EXISTS,
@@ -19,8 +23,20 @@ from app.core.errors import (
 from app.core.utils import like_pattern
 from app.db.session import get_db
 from app.models.brand import Brand
+from app.models.filament import Filament
+from app.models.preset import Preset
+from app.models.preset_printer import PresetPrinter
+from app.models.printer import Printer
 from app.models.user import User, UserRole
-from app.schemas.brand import BrandCreate, BrandListResponse, BrandResponse, BrandUpdate
+from app.models.user_spool import UserSpool
+from app.schemas.brand import (
+    BrandCreate,
+    BrandListResponse,
+    BrandResponse,
+    BrandUpdate,
+    BrandUsageResponse,
+    PopularPrinterItem,
+)
 from app.services.file_service import get_upload_root_dir, normalize_brand_logo_upload
 
 router = APIRouter(prefix="/brands", tags=["brands"])
@@ -100,6 +116,72 @@ async def get_brand(
         response.employees_count = employees_count
 
     return response
+
+
+@router.get("/{brand_id}/usage", response_model=BrandUsageResponse)
+async def get_brand_usage(
+    brand_id: int,
+    current_user: Annotated[User, Depends(get_current_active_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> BrandUsageResponse:
+    """Статистика использования материалов бренда для кабинета бренда."""
+    brand = (await db.execute(select(Brand).where(Brand.id == brand_id))).scalar_one_or_none()
+    if not brand:
+        raise_error(404, ERR_BRAND_NOT_FOUND)
+
+    if current_user.role != UserRole.ADMIN and current_user.brand_id != brand_id:
+        raise_error(403, ERR_NO_PERMISSION)
+
+    printers_result = await db.execute(
+        select(
+            Printer.id,
+            Printer.name,
+            Printer.manufacturer,
+            func.count(PresetPrinter.id).label("cnt"),
+        )
+        .select_from(PresetPrinter)
+        .join(Preset, Preset.id == PresetPrinter.preset_id)
+        .join(Filament, Filament.id == Preset.filament_id)
+        .join(Printer, Printer.id == PresetPrinter.printer_id)
+        .where(Filament.brand_id == brand_id, Preset.active == True)
+        .group_by(Printer.id, Printer.name, Printer.manufacturer)
+        .order_by(func.count(PresetPrinter.id).desc())
+        .limit(10)
+    )
+    popular_printers = [
+        PopularPrinterItem(
+            printer_id=row.id, name=row.name, manufacturer=row.manufacturer, count=row.cnt
+        )
+        for row in printers_result.all()
+    ]
+
+    spools_tracked = (
+        await db.execute(
+            select(func.count(UserSpool.id))
+            .select_from(UserSpool)
+            .join(Filament, Filament.id == UserSpool.filament_id)
+            .where(Filament.brand_id == brand_id)
+        )
+    ).scalar() or 0
+
+    usage_row = (
+        await db.execute(
+            select(
+                func.coalesce(func.sum(Preset.usage_count), 0),
+                func.count(Preset.id),
+            )
+            .select_from(Preset)
+            .join(Filament, Filament.id == Preset.filament_id)
+            .where(Filament.brand_id == brand_id)
+        )
+    ).one()
+
+    return BrandUsageResponse(
+        popular_printers=popular_printers,
+        spools_tracked=int(spools_tracked),
+        total_preset_usage=int(usage_row[0] or 0),
+        presets_count=int(usage_row[1] or 0),
+    )
 
 
 @router.post("/", response_model=BrandResponse, status_code=201)

@@ -14,6 +14,20 @@ export interface Brand {
   employees_count?: number | null; // Количество сотрудников (только при запросе)
 }
 
+export interface PopularPrinterItem {
+  printer_id: number;
+  name: string;
+  manufacturer: string | null;
+  count: number;
+}
+
+export interface BrandUsage {
+  popular_printers: PopularPrinterItem[];
+  spools_tracked: number;
+  total_preset_usage: number;
+  presets_count: number;
+}
+
 export interface FilamentVisualSettings {
   color_type?: 'single' | 'two' | 'three' | 'gradient' | 'transition' | 'thermochromic';
   colors?: string[]; // До 5 цветов для градиента/перехода
