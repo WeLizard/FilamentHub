@@ -857,6 +857,23 @@ export const CreateFilamentModal: React.FC<CreateFilamentModalProps> = ({
                               </div>
                             )}
                           </div>
+                          {/* HEX-инпут под значком — дублирует цвет, двусторонняя привязка */}
+                          <input
+                            type="text"
+                            value={currentColor}
+                            onChange={(e) => {
+                              const hex = e.target.value;
+                              const newColors = [...visualColors];
+                              newColors[idx] = hex;
+                              setVisualColors(newColors);
+                              if (idx === 0) {
+                                isInternalColorChangeRef.current = true;
+                                setColorHex(hex);
+                              }
+                            }}
+                            placeholder="#FF0000"
+                            className="w-full px-2 py-1 bg-white/10 border border-white/20 rounded-lg text-white text-xs text-center font-mono placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all"
+                          />
                         </div>
                       );
                     })}
