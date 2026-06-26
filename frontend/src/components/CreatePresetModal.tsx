@@ -9,7 +9,7 @@ import { presetsAPI, filamentsAPI, brandsAPI, printersAPI } from '../api/client'
 import { translateApiError } from '../utils/translateApiError';
 import { useAuth } from '../contexts/AuthContext';
 import type { Preset, Filament, Brand, Printer } from '../types/api';
-import { applyMaterialDefaults } from '../data/materialDefaults';
+import { applyMaterialDefaults, sortMaterialTypes } from '../data/materialDefaults';
 import { EditGCodeModal } from './EditGCodeModal';
 import { CustomSelect } from './CustomSelect';
 import type { FilamentVisualSettings } from '../types/api';
@@ -395,6 +395,9 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
     queryFn: () => filamentsAPI.getMaterialTypes(),
     enabled: isOpen && showFilamentForm, // Загружаем только если создаем новый материал
   });
+
+  // Базовые типы вперёд, подробные варианты — следом (ничего не удаляя)
+  const sortedMaterialTypes = useMemo(() => sortMaterialTypes(materialTypes), [materialTypes]);
 
   // Загружаем принтеры для выбора
   const { data: printersData } = useQuery({
@@ -1964,11 +1967,11 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                         >
                           {(() => {
                             // Фильтруем типы по введенному тексту
-                            const filteredTypes = materialTypes.length > 0 
-                              ? materialTypes.filter(type => 
+                            const filteredTypes = sortedMaterialTypes.length > 0
+                              ? sortedMaterialTypes.filter(type =>
                                   type.toLowerCase().includes(materialType.toLowerCase())
                                 )
-                              : MATERIAL_TYPES.filter(type => 
+                              : MATERIAL_TYPES.filter(type =>
                                   type.toLowerCase().includes(materialType.toLowerCase())
                                 );
                             

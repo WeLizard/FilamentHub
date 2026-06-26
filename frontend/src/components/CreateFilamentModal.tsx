@@ -1,6 +1,6 @@
 /** Модальное окно для создания/редактирования материала */
 
-import { useState, useEffect, FormEvent, useRef } from 'react';
+import { useState, useEffect, FormEvent, useRef, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { X, Save, Loader2, Check, Download, QrCode } from 'lucide-react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -10,6 +10,7 @@ import { ColorMaterialSection } from './ColorMaterialSection';
 import { HSLColorPicker } from './HSLColorPicker';
 import type { FilamentVisualSettings } from '../types/api';
 import { Dropdown } from './Dropdown';
+import { sortMaterialTypes } from '../data/materialDefaults';
 import type { Filament, Brand } from '../types/api';
 import { useAuth } from '../contexts/AuthContext';
 import { useClickOutside } from '../hooks/useClickOutside';
@@ -178,6 +179,9 @@ export const CreateFilamentModal: React.FC<CreateFilamentModalProps> = ({
     queryFn: () => filamentsAPI.getMaterialTypes(),
     enabled: isOpen,
   });
+
+  // Базовые типы вперёд, подробные варианты — следом (ничего не удаляя)
+  const sortedMaterialTypes = useMemo(() => sortMaterialTypes(materialTypes), [materialTypes]);
 
   // Инициализация формы при редактировании
   useEffect(() => {
@@ -608,10 +612,10 @@ export const CreateFilamentModal: React.FC<CreateFilamentModalProps> = ({
                       >
                         {(() => {
                           // Фильтруем типы по введенному тексту
-                          const allTypes = materialTypes.length > 0 
-                            ? materialTypes
+                          const allTypes = sortedMaterialTypes.length > 0
+                            ? sortedMaterialTypes
                             : ['PLA', 'PETG', 'ABS', 'TPU', 'ASA', 'PC', 'PA', 'PVA'];
-                          const filteredTypes = allTypes.filter(type => 
+                          const filteredTypes = allTypes.filter(type =>
                             type.toLowerCase().includes((materialType === 'Other' ? customMaterialType : materialType).toLowerCase())
                           );
                           
@@ -646,8 +650,8 @@ export const CreateFilamentModal: React.FC<CreateFilamentModalProps> = ({
                     label={`${t('createFilament.materialTypeLabel')} *`}
                     value={materialType}
                     options={[
-                      ...(materialTypes.length > 0
-                        ? materialTypes.map((type) => ({ value: type, label: type }))
+                      ...(sortedMaterialTypes.length > 0
+                        ? sortedMaterialTypes.map((type) => ({ value: type, label: type }))
                         : [
                             { value: 'PLA', label: 'PLA' },
                             { value: 'PETG', label: 'PETG' },

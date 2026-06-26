@@ -459,3 +459,19 @@ export function applyMaterialDefaults(
   }
 }
 
+// Порядок базовых типов в выпадающих списках: сначала распространённые
+// «короткие» типы, затем (по алфавиту) подробные варианты (PLA Max, PLA Pro,
+// -CF/-GF и т.д.). Список легко переупорядочить под предпочтения.
+export const BASE_TYPE_PRIORITY = ['PLA', 'PETG', 'ABS', 'ASA', 'TPU', 'PA', 'PC', 'PVA', 'PET', 'HIPS', 'PP'];
+
+export function sortMaterialTypes(types: string[]): string[] {
+  const priorityIndex = (type: string): number => {
+    const i = BASE_TYPE_PRIORITY.indexOf(type.toUpperCase());
+    return i === -1 ? Number.MAX_SAFE_INTEGER : i;
+  };
+  return [...types].sort((a, b) => {
+    const diff = priorityIndex(a) - priorityIndex(b);
+    return diff !== 0 ? diff : a.localeCompare(b);
+  });
+}
+
