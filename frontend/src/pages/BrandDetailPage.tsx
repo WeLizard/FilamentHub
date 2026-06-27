@@ -139,7 +139,10 @@ export const BrandDetailPage: React.FC = () => {
         <div className="flex flex-col md:flex-row items-start md:items-center gap-6">
           {/* Логотип (если есть) */}
           {isBrandLogoVisible && brand.logo_url ? (
-            <div className="inline-flex h-24 shrink-0 overflow-hidden rounded-xl border border-white/10 bg-white/10 shadow-lg shadow-black/10">
+            <div
+              className="inline-flex h-24 shrink-0 overflow-hidden rounded-xl border border-white/10 bg-white/10 p-0.5 shadow-lg shadow-black/10"
+              style={brand.logo_bg ? { backgroundColor: brand.logo_bg } : undefined}
+            >
               <img
                 src={brand.logo_url}
                 alt={brand.name}

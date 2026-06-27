@@ -7,6 +7,7 @@ export interface Brand {
   description: string | null;
   website: string | null;
   logo_url: string | null;
+  logo_bg: string | null; // фон под лого (для прозрачных PNG/SVG)
   verified: boolean;
   active: boolean;
   currency: string;

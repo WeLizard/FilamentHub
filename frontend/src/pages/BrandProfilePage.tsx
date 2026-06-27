@@ -69,6 +69,7 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({ onBack }) =>
   const [profileDescription, setProfileDescription] = useState('');
   const [profileWebsite, setProfileWebsite] = useState('');
   const [profileLogoUrl, setProfileLogoUrl] = useState('');
+  const [profileLogoBg, setProfileLogoBg] = useState('');
   const [profileSocialUrls, setProfileSocialUrls] = useState<string[]>([]);
   const [profileShopLinks, setProfileShopLinks] = useState<{ platform: string; url: string }[]>([]);
   const [profilePriceHidden, setProfilePriceHidden] = useState(false);
@@ -149,7 +150,7 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({ onBack }) =>
 
   // Мутация для обновления профиля бренда
   const updateBrandMutation = useMutation({
-    mutationFn: (data: { description?: string | null; website?: string | null; logo_url?: string | null; social_media_urls?: string[] | null; shop_links?: { platform: string; url: string }[] | null; price_hidden?: boolean }) =>
+    mutationFn: (data: { description?: string | null; website?: string | null; logo_url?: string | null; logo_bg?: string | null; social_media_urls?: string[] | null; shop_links?: { platform: string; url: string }[] | null; price_hidden?: boolean }) =>
       brandsAPI.update(user!.brand_id!, data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['brand', user?.brand_id] });
@@ -166,6 +167,7 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({ onBack }) =>
       setProfileDescription(brandData.description || '');
       setProfileWebsite(brandData.website || '');
       setProfileLogoUrl(brandData.logo_url || '');
+      setProfileLogoBg(brandData.logo_bg || '');
       setProfileSocialUrls(brandData.social_media_urls || []);
       setProfileShopLinks(brandData.shop_links || []);
       setProfilePriceHidden(brandData.price_hidden || false);
@@ -179,6 +181,7 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({ onBack }) =>
       description: profileDescription.trim() || null,
       website: profileWebsite.trim() || null,
       logo_url: profileLogoUrl.trim() || null,
+      logo_bg: profileLogoBg.trim() || null,
       social_media_urls: profileSocialUrls.filter((u) => u.trim()),
       shop_links: profileShopLinks.filter((l) => l.url.trim()),
       price_hidden: profilePriceHidden,
@@ -286,11 +289,12 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({ onBack }) =>
         <div className="flex justify-center mb-4">
           <div className="relative flex flex-col items-center md:inline-flex md:flex-row md:items-center">
             <div
-              className={`mb-3 inline-flex h-16 shrink-0 items-center justify-center overflow-hidden rounded-xl shadow-lg md:mb-0 md:absolute md:right-full md:top-1/2 md:mr-3 md:-translate-y-1/2 ${
+              className={`mb-3 inline-flex h-16 shrink-0 items-center justify-center overflow-hidden rounded-xl shadow-lg p-0.5 md:mb-0 md:absolute md:right-full md:top-1/2 md:mr-3 md:-translate-y-1/2 ${
                 isBrandLogoVisible && brandData.logo_url
                   ? 'border border-white/10 bg-white/10'
                   : 'w-16 bg-gradient-to-r from-green-500 to-emerald-500 shadow-green-500/25'
               }`}
+              style={isBrandLogoVisible && brandData.logo_url && brandData.logo_bg ? { backgroundColor: brandData.logo_bg } : undefined}
             >
               {isBrandLogoVisible && brandData.logo_url ? (
                 <img
@@ -951,6 +955,47 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({ onBack }) =>
                     <span className="text-gray-500 text-xs">{t('brandProfile.logoPreview')}</span>
                   </div>
                 )}
+                <div className="mt-3">
+                  <label className="block text-gray-300 mb-2 text-sm font-medium">{t('brandProfile.logoBgLabel')}</label>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="color"
+                      value={profileLogoBg || '#ffffff'}
+                      onChange={(e) => setProfileLogoBg(e.target.value)}
+                      className="h-10 w-12 shrink-0 rounded-lg border border-white/20 bg-white/10 cursor-pointer"
+                    />
+                    <input
+                      type="text"
+                      value={profileLogoBg}
+                      onChange={(e) => setProfileLogoBg(e.target.value)}
+                      placeholder="#FFFFFF"
+                      className="flex-1 px-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all"
+                    />
+                    {profileLogoBg && (
+                      <button
+                        type="button"
+                        onClick={() => setProfileLogoBg('')}
+                        className="px-3 py-3 bg-white/10 border border-white/20 rounded-xl text-gray-300 hover:text-white hover:bg-white/20 transition-all text-sm whitespace-nowrap"
+                      >
+                        {t('brandProfile.logoBgReset')}
+                      </button>
+                    )}
+                  </div>
+                  {profileLogoUrl && (
+                    <div
+                      className="mt-2 inline-flex h-16 w-16 items-center justify-center overflow-hidden rounded-xl border border-white/10 p-0.5"
+                      style={profileLogoBg ? { backgroundColor: profileLogoBg } : { backgroundColor: 'rgba(255,255,255,0.1)' }}
+                    >
+                      <img
+                        src={profileLogoUrl}
+                        alt="Logo on background"
+                        className="block h-full w-auto object-contain"
+                        onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
+                      />
+                    </div>
+                  )}
+                  <p className="text-gray-500 text-xs mt-1">{t('brandProfile.logoBgHint')}</p>
+                </div>
               </div>
               <div>
                 <label className="block text-gray-300 mb-2 text-sm font-medium">{t('brandProfile.socialMediaLabel')}</label>

@@ -36,6 +36,8 @@ class Brand(Base):
     # Contact
     website: Mapped[str | None] = mapped_column(String(255), nullable=True)
     logo_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    logo_bg: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    # logo_bg: фон под лого (HEX/CSS-цвет), чтобы прозрачные лого не терялись на тёмной теме
 
     # Public profile
     social_media_urls: Mapped[list | None] = mapped_column(JSON, nullable=True)

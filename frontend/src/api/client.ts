@@ -373,7 +373,7 @@ export const brandsAPI = {
     return response.data;
   },
 
-  update: async (id: number, data: { description?: string | null; website?: string | null; logo_url?: string | null; social_media_urls?: string[] | null; shop_links?: { platform: string; url: string }[] | null; price_hidden?: boolean }) => {
+  update: async (id: number, data: { description?: string | null; website?: string | null; logo_url?: string | null; logo_bg?: string | null; social_media_urls?: string[] | null; shop_links?: { platform: string; url: string }[] | null; price_hidden?: boolean }) => {
     const response = await api.patch<Brand>(`/brands/${id}`, data);
     return response.data;
   },

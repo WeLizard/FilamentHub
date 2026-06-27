@@ -13,6 +13,7 @@ class BrandBase(BaseModel):
     description: str | None = None
     website: str | None = None
     logo_url: str | None = None
+    logo_bg: str | None = Field(None, max_length=32)
     verified: bool = False
     currency: str = Field("RUB", max_length=8)
     social_media_urls: list[str] | None = None
@@ -34,6 +35,7 @@ class BrandUpdate(BaseModel):
     description: str | None = None
     website: str | None = None
     logo_url: str | None = None
+    logo_bg: str | None = Field(None, max_length=32)
     verified: bool | None = None
     active: bool | None = None
     currency: str | None = Field(None, max_length=8)
