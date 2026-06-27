@@ -118,6 +118,7 @@ class FilamentResponse(FilamentBase):
     brand_id: int
     brand_name: str | None = Field(None)
     currency: str = Field("RUB")  # валюта бренда (денормализовано)
+    price_hidden: bool = Field(False)  # бренд скрыл цену (денормализовано)
     views_count: int | None = 0
     scans_count: int | None = 0
     qr_code: str | None = Field(None)  # Короткий код для QR-кода (например: "FHUB-ABC123")

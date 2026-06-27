@@ -81,6 +81,7 @@ export interface Filament {
   active: boolean;
   availability: FilamentAvailability;
   currency?: string; // валюта бренда (денормализовано в ответе)
+  price_hidden?: boolean; // бренд скрыл цену (денормализовано)
   created_at: string;
   updated_at: string;
   presets_count?: number | null;

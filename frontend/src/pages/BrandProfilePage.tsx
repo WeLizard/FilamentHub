@@ -70,6 +70,7 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({ onBack }) =>
   const [profileLogoUrl, setProfileLogoUrl] = useState('');
   const [profileSocialUrls, setProfileSocialUrls] = useState<string[]>([]);
   const [profileShopLinks, setProfileShopLinks] = useState<{ platform: string; url: string }[]>([]);
+  const [profilePriceHidden, setProfilePriceHidden] = useState(false);
   const [profileError, setProfileError] = useState<string | null>(null);
   const [isUploadingLogo, setIsUploadingLogo] = useState(false);
   const [isBrandLogoVisible, setIsBrandLogoVisible] = useState(false);
@@ -147,7 +148,7 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({ onBack }) =>
 
   // Мутация для обновления профиля бренда
   const updateBrandMutation = useMutation({
-    mutationFn: (data: { description?: string | null; website?: string | null; logo_url?: string | null; social_media_urls?: string[] | null; shop_links?: { platform: string; url: string }[] | null }) =>
+    mutationFn: (data: { description?: string | null; website?: string | null; logo_url?: string | null; social_media_urls?: string[] | null; shop_links?: { platform: string; url: string }[] | null; price_hidden?: boolean }) =>
       brandsAPI.update(user!.brand_id!, data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['brand', user?.brand_id] });
@@ -166,6 +167,7 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({ onBack }) =>
       setProfileLogoUrl(brandData.logo_url || '');
       setProfileSocialUrls(brandData.social_media_urls || []);
       setProfileShopLinks(brandData.shop_links || []);
+      setProfilePriceHidden(brandData.price_hidden || false);
       setProfileError(null);
       setIsEditingProfile(true);
     }
@@ -178,6 +180,7 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({ onBack }) =>
       logo_url: profileLogoUrl.trim() || null,
       social_media_urls: profileSocialUrls.filter((u) => u.trim()),
       shop_links: profileShopLinks.filter((l) => l.url.trim()),
+      price_hidden: profilePriceHidden,
     });
   };
 
@@ -995,6 +998,15 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({ onBack }) =>
                   <button type="button" onClick={() => setProfileShopLinks([...profileShopLinks, { platform: '', url: '' }])} className="text-sm text-purple-300 hover:text-purple-200">+ {t('brandProfile.addShop')}</button>
                 </div>
               </div>
+              <label className="flex items-center gap-3 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={profilePriceHidden}
+                  onChange={(e) => setProfilePriceHidden(e.target.checked)}
+                  className="w-4 h-4 rounded border-white/20 bg-white/10 text-purple-500 focus:ring-purple-500"
+                />
+                <span className="text-gray-300 text-sm font-medium">{t('brandProfile.priceHiddenLabel')}</span>
+              </label>
             </div>
             <div className="p-6 border-t border-white/10 flex justify-end space-x-3">
               <button

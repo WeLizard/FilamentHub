@@ -979,8 +979,11 @@
     "qrScans": "Сканирований:",
     "units": {
       "mm": "мм",
-      "gcm3": "г/см³"
-    }
+      "gcm3": "г/см³",
+      "kg": "кг",
+      "spool": "катушка"
+    },
+    "priceOnRequest": "Цена по запросу"
   },
   "downloadPage": {
     "seoTitle": "Скачать OrcaSlicer FilamentHub Edition",
@@ -3160,6 +3163,7 @@
     "shopPlatformPlaceholder": "Ozon, Wildberries…",
     "addLink": "Добавить ссылку",
     "addShop": "Добавить магазин",
+    "priceHiddenLabel": "Скрыть цены (показывать «по запросу»)",
     "logoPreview": "Предпросмотр",
     "uploadLogo": "Загрузить",
     "logoUploadError": "Ошибка загрузки логотипа",

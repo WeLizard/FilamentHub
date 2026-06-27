@@ -830,8 +830,11 @@
     "qrScans": "Scans:",
     "units": {
       "mm": "mm",
-      "gcm3": "g/cm³"
-    }
+      "gcm3": "g/cm³",
+      "kg": "kg",
+      "spool": "spool"
+    },
+    "priceOnRequest": "Price on request"
   },
   "brandDetailPage": {
     "loading": "Loading brand information...",
@@ -3033,6 +3036,7 @@
     "shopPlatformPlaceholder": "Ozon, Amazon…",
     "addLink": "Add link",
     "addShop": "Add shop",
+    "priceHiddenLabel": "Hide prices (show 'on request')",
     "logoPreview": "Preview",
     "uploadLogo": "Upload",
     "logoUploadError": "Error uploading logo",
