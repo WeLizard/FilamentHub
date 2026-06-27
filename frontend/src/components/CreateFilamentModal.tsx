@@ -389,6 +389,15 @@ export const CreateFilamentModal: React.FC<CreateFilamentModalProps> = ({
       return;
     }
 
+    // When the brand enters the price per spool, convert to the canonical
+    // price_per_kg at submit time so it does not depend on effect timing.
+    const finalPricePerKg =
+      priceMode === 'per_spool'
+        ? pricePerSpool > 0 && spoolWeight > 0
+          ? (pricePerSpool * 1000) / spoolWeight
+          : 0
+        : pricePerKg;
+
     if (filament) {
       // Обновление существующего материала
       const finalMaterialType = materialType === 'Other' ? customMaterialType.trim() : materialType;
@@ -417,7 +426,7 @@ export const CreateFilamentModal: React.FC<CreateFilamentModalProps> = ({
           visual_settings: visualSettings,
           diameter,
           density,
-          price_per_kg: pricePerKg || undefined,
+          price_per_kg: finalPricePerKg || undefined,
           spool_weight: spoolWeight || undefined,
           empty_spool_weight_g: emptySpoolWeight ?? undefined,
           description: description || undefined,
@@ -451,7 +460,7 @@ export const CreateFilamentModal: React.FC<CreateFilamentModalProps> = ({
         visual_settings: visualSettings,
         diameter,
         density,
-        price_per_kg: pricePerKg || undefined,
+        price_per_kg: finalPricePerKg || undefined,
         spool_weight: spoolWeight || undefined,
         empty_spool_weight_g: emptySpoolWeight ?? undefined,
         description: description || undefined,
