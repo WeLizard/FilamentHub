@@ -14,6 +14,7 @@ import {
   Search,
 } from 'lucide-react';
 import { brandsAPI, filamentsAPI, filamentReviewsAPI } from '../api/client';
+import { currencySymbol } from '../utils/currency';
 import { FilamentPreview } from '../components/FilamentPreview';
 import { Dropdown } from '../components/Dropdown';
 import { SEOHead } from '../components/SEOHead';
@@ -329,7 +330,7 @@ export const BrandDetailPage: React.FC = () => {
                   <div className="flex items-center justify-between text-gray-300">
                     <span>{t('brandDetailPage.price')}</span>
                     <span className="text-green-400 font-semibold">
-                      {Math.round(filament.price_per_kg)}{t('brandDetailPage.priceSuffix')}
+                      {Math.round(filament.price_per_kg)} {currencySymbol(brand.currency)}/{t('catalogPage.units.kg')}
                     </span>
                   </div>
                 )}

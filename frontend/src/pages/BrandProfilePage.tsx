@@ -38,6 +38,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { brandsAPI, filamentsAPI, brandRequestsAPI, presetsAPI, qrAPI } from '../api/client';
 import { translateApiError } from '../utils/translateApiError';
 import { PERSONAL_EMAIL_DOMAINS } from '../data/personalEmailDomains';
+import { currencySymbol } from '../utils/currency';
 import { CreateFilamentModal } from '../components/CreateFilamentModal';
 const CreatePresetModal = lazy(() =>
   import('../components/CreatePresetModal').then(m => ({ default: m.CreatePresetModal }))
@@ -2966,7 +2967,7 @@ const FilamentCard: React.FC<FilamentCardProps> = ({ filament, onEdit, onDelete,
           {filament.price_per_kg ? (
             <div>
               <span className="text-gray-400">{t('brandProfile.price')}: </span>
-              <span className="text-white font-semibold">{Math.round(filament.price_per_kg)}{t('brandProfile.rubPerKg')}</span>
+              <span className="text-white font-semibold">{Math.round(filament.price_per_kg)} {currencySymbol(filament.currency)}/{t('catalogPage.units.kg')}</span>
             </div>
           ) : (
             <span className="text-gray-500 text-xs">{t('brandProfile.priceNotSet')}</span>

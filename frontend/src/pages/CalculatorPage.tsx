@@ -31,7 +31,7 @@ import { calculatorAPI, filamentsAPI, spoolsAPI, type UserSpool } from '../api/c
 import { useAuth } from '../contexts/AuthContext';
 import { useHeaderVisible } from '../hooks/useHeaderVisible';
 import { translateApiError } from '../utils/translateApiError';
-import { currencySymbol, normalizeCurrency, CURRENCY_CODES } from '../utils/currency';
+import { currencySymbol, normalizeCurrency, CURRENCY_CODES, defaultCurrencyForLanguage } from '../utils/currency';
 import type {
   CalculatorEstimateRequest,
   CalculatorEstimateResponse,
@@ -1118,7 +1118,7 @@ const buildQuoteDocumentHtml = ({
 };
 
 export const CalculatorPage: React.FC = () => {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const { user } = useAuth();
   const queryClient = useQueryClient();
   const tc = (key: string) => translateCalculator(t, key);
@@ -1144,6 +1144,11 @@ export const CalculatorPage: React.FC = () => {
     () => makeCurrencyFormatter(quoteProfile.currency || 'RUB'),
     [quoteProfile.currency],
   );
+
+  // Всегда актуальная валюта калькулятора — чтобы эффект автоподстановки не тянул
+  // её в зависимости (иначе смена валюты затирала бы введённую цену).
+  const calcCurrencyRef = useRef(quoteProfile.currency);
+  calcCurrencyRef.current = quoteProfile.currency;
 
   const filamentsQuery = useQuery({
     queryKey: ['calculator-pro', 'filaments'],
@@ -1264,10 +1269,16 @@ export const CalculatorPage: React.FC = () => {
     }
 
     const defaults = deriveCatalogFilamentDefaults(selectedCatalogFilament);
+    const brandCurrency = selectedCatalogFilament.currency
+      ? normalizeCurrency(selectedCatalogFilament.currency)
+      : null;
+    const currencyMatches = !brandCurrency || brandCurrency === calcCurrencyRef.current;
 
     setForm((prev) => ({
       ...prev,
-      spoolPrice: defaults.spoolPrice ?? prev.spoolPrice,
+      // Каталожная цена — в валюте бренда. Подставляем её только если валюта совпадает
+      // с валютой калькулятора, иначе оставляем пользователю ввести свою (без смешивания валют).
+      spoolPrice: currencyMatches ? (defaults.spoolPrice ?? prev.spoolPrice) : prev.spoolPrice,
       spoolWeightKg: defaults.spoolWeightKg ?? prev.spoolWeightKg,
     }));
   }, [selectedCatalogFilament, selectedSpool]);
@@ -1277,6 +1288,8 @@ export const CalculatorPage: React.FC = () => {
     const nextProfile: QuoteProfileState = {
       ...DEFAULT_QUOTE_PROFILE,
       ...stored,
+      // Пока пользователь не выбрал валюту — дефолт по языку UI.
+      currency: normalizeCurrency(stored.currency || defaultCurrencyForLanguage(i18n.language)),
       sellerName:
         typeof stored.sellerName === 'string' && stored.sellerName.trim()
           ? stored.sellerName
@@ -2013,6 +2026,17 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
     : selectedFilament
       ? tc('materialSourceCatalog')
       : tc('materialSourceManual');
+  // Каталожная цена бренда в другой валюте: её не подставили в форму, просим указать свою.
+  const catalogBrandCurrency = !selectedSpool && selectedCatalogFilament?.currency
+    ? normalizeCurrency(selectedCatalogFilament.currency)
+    : null;
+  const catalogPriceMismatch =
+    catalogBrandCurrency && catalogBrandCurrency !== quoteProfile.currency && selectedCatalogFilament
+      ? {
+          brandSymbol: currencySymbol(catalogBrandCurrency),
+          reference: deriveCatalogFilamentDefaults(selectedCatalogFilament).spoolPrice,
+        }
+      : null;
   const materialSummary =
     selectedSpool
       ? [
@@ -2650,6 +2674,17 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
                       placeholder="1200"
                       suffix={currencySymbol(quoteProfile.currency)}
                     />
+                    {catalogPriceMismatch && (
+                      <p className="mt-1 text-[11px] leading-snug text-amber-300/90">
+                        {t('profilePage.calc.priceCurrencyMismatch')}
+                        {catalogPriceMismatch.reference != null && (
+                          <> {t('profilePage.calc.priceCurrencyMismatchRef', {
+                            price: Math.round(catalogPriceMismatch.reference),
+                            symbol: catalogPriceMismatch.brandSymbol,
+                          })}</>
+                        )}
+                      </p>
+                    )}
                   </FieldBlock>
                   <FieldBlock label={t('profilePage.calc.spoolWeight')}>
                     <InputWithSuffix

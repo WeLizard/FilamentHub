@@ -1887,6 +1887,8 @@
       "supportsLossCoeff": "Supports loss coefficient",
       "supportsLossHint": "Usually 1.2-1.3",
       "spoolPrice": "Spool price",
+      "priceCurrencyMismatch": "The catalog price is in the brand's currency, which differs from the calculator currency. Enter your own spool price.",
+      "priceCurrencyMismatchRef": "For reference: ≈ {{price}} {{symbol}} per spool.",
       "spoolWeight": "Spool weight (kg)",
       "deliveryCost": "Delivery",
       "printTime": "Print time",

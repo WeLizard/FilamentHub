@@ -2014,6 +2014,8 @@
       "supportsLossCoeff": "Коэффициент потерь на поддержки",
       "supportsLossHint": "Обычно 1.2-1.3",
       "spoolPrice": "Цена катушки",
+      "priceCurrencyMismatch": "Цена в каталоге — в валюте бренда, она отличается от валюты калькулятора. Укажите свою цену катушки.",
+      "priceCurrencyMismatchRef": "Для справки: ≈ {{price}} {{symbol}} за катушку.",
       "spoolWeight": "Вес катушки (кг)",
       "deliveryCost": "Доставка",
       "printTime": "Время печати",
