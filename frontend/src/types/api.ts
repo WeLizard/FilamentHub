@@ -9,6 +9,10 @@ export interface Brand {
   logo_url: string | null;
   verified: boolean;
   active: boolean;
+  currency: string;
+  social_media_urls: string[] | null;
+  shop_links: { platform: string; url: string }[] | null;
+  price_hidden: boolean;
   created_at: string;
   updated_at: string;
   employees_count?: number | null; // Количество сотрудников (только при запросе)

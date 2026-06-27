@@ -1160,10 +1160,10 @@
     "other": "Other...",
     "noTypesFound": "No types found. Enter a new material type manually.",
     "colors": "Colors",
-    "pricePerKgLabel": "Price per kg (₽)",
-    "pricePerSpoolLabel": "Price per spool (₽)",
-    "rubPerSpool": "₽ per spool",
-    "rubPerKg": "₽ per kg"
+    "pricePerKgLabel": "Price per kg ({{currency}})",
+    "pricePerSpoolLabel": "Price per spool ({{currency}})",
+    "rubPerSpool": "{{currency}} per spool",
+    "rubPerKg": "{{currency}} per kg"
   },
   "presetModal": {
     "errors": {

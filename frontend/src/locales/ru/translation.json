@@ -1286,10 +1286,10 @@
     "other": "Другой...",
     "noTypesFound": "Типы не найдены. Введите новый тип материала вручную.",
     "colors": "Цвета",
-    "pricePerKgLabel": "Цена за кг (₽)",
-    "pricePerSpoolLabel": "Цена за катушку (₽)",
-    "rubPerSpool": "₽ за катушку",
-    "rubPerKg": "₽ за кг"
+    "pricePerKgLabel": "Цена за кг ({{currency}})",
+    "pricePerSpoolLabel": "Цена за катушку ({{currency}})",
+    "rubPerSpool": "{{currency}} за катушку",
+    "rubPerKg": "{{currency}} за кг"
   },
   "presetModal": {
     "errors": {

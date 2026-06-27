@@ -11,6 +11,7 @@ import { HSLColorPicker } from './HSLColorPicker';
 import type { FilamentVisualSettings } from '../types/api';
 import { Dropdown } from './Dropdown';
 import { sortMaterialTypes } from '../data/materialDefaults';
+import { currencySymbol } from '../utils/currency';
 import type { Filament, Brand, FilamentAvailability } from '../types/api';
 import { useAuth } from '../contexts/AuthContext';
 import { useClickOutside } from '../hooks/useClickOutside';
@@ -460,6 +461,10 @@ export const CreateFilamentModal: React.FC<CreateFilamentModalProps> = ({
   };
 
   const isLoading = createMutation.isPending || updateMutation.isPending;
+
+  const priceCurrencySymbol = currencySymbol(
+    filament?.currency ?? brandsData?.items.find((b: Brand) => b.id === brandIdValue)?.currency,
+  );
 
   if (!isOpen) return null;
 
@@ -994,7 +999,7 @@ export const CreateFilamentModal: React.FC<CreateFilamentModalProps> = ({
             <div>
               <div className="flex items-center justify-between mb-2">
                 <label className="block text-gray-300 text-sm font-medium">
-                  {priceMode === 'per_kg' ? t('createFilament.pricePerKgLabel') : t('createFilament.pricePerSpoolLabel')}
+                  {priceMode === 'per_kg' ? t('createFilament.pricePerKgLabel', { currency: priceCurrencySymbol }) : t('createFilament.pricePerSpoolLabel', { currency: priceCurrencySymbol })}
                 </label>
                 {/* Price Mode Toggle */}
                 <div className="flex items-center bg-white/10 rounded-lg p-1 border border-white/20">
@@ -1043,12 +1048,12 @@ export const CreateFilamentModal: React.FC<CreateFilamentModalProps> = ({
               {/* Показываем пересчитанное значение */}
               {priceMode === 'per_kg' && pricePerKg > 0 && spoolWeight > 0 && (
                 <p className="text-xs text-gray-400 mt-1">
-                  ≈ {((pricePerKg * spoolWeight) / 1000).toFixed(2)} {t('createFilament.rubPerSpool')}
+                  ≈ {((pricePerKg * spoolWeight) / 1000).toFixed(2)} {t('createFilament.rubPerSpool', { currency: priceCurrencySymbol })}
                 </p>
               )}
               {priceMode === 'per_spool' && pricePerSpool > 0 && spoolWeight > 0 && (
                 <p className="text-xs text-gray-400 mt-1">
-                  ≈ {((pricePerSpool / spoolWeight) * 1000).toFixed(2)} {t('createFilament.rubPerKg')}
+                  ≈ {((pricePerSpool / spoolWeight) * 1000).toFixed(2)} {t('createFilament.rubPerKg', { currency: priceCurrencySymbol })}
                 </p>
               )}
             </div>
