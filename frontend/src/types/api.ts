@@ -305,12 +305,16 @@ export interface User {
   brand_name: string | null; // Название бренда (для админки)
   printer_id: number | null; // ID выбранного принтера из каталога
   badges: string[] | null; // Бейджи пользователя (founder, beta_tester, contributor, verified, early_adopter, supporter)
-  is_premium: boolean; // Premium подписка
-  premium_expires_at: string | null; // Дата окончания подписки
+  // Premium-подписка: задел под будущую платную подписку на калькулятор.
+  // Сейчас калькулятор бесплатен и доступен всем, бэкенд эти поля пока не отдаёт —
+  // раскомментировать вместе с бэкендом, когда подписка будет включаться.
+  // is_premium: boolean;
+  // premium_expires_at: string | null;
   oauth_provider: string | null; // OAuth provider (google, yandex) или null
   has_password: boolean; // false для OAuth-пользователей без пароля
   created_at: string;
   updated_at: string;
+  last_login: string | null; // Дата последнего входа
 }
 
 export interface AccountDeletionStats {
@@ -346,15 +350,6 @@ export interface ListResponse<T> {
   page: number;
   size: number;
   pages: number;
-}
-
-/** Типы для демокода (дополнительные поля, которые будут вычисляться) */
-export interface FilamentWithBrand extends Filament {
-  brand?: Brand;
-  rating?: number; // Вычисляется из пресетов
-  successRate?: number; // Вычисляется из пресетов
-  officialPreset?: Preset;
-  communityPresets?: Preset[];
 }
 
 export type BrandRequestType = 'join' | 'create';
@@ -421,6 +416,9 @@ export interface Feedback {
   subject: string;
   message: string;
   email: string | null;
+  source: string | null; // wiki_article, preset, catalog, general
+  source_url: string | null; // URL страницы, откуда отправили
+  source_id: number | null; // ID связанного объекта
   status: FeedbackStatus;
   admin_response: string | null;
   admin_response_at: string | null;

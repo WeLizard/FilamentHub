@@ -1253,7 +1253,7 @@ export const ORCA_ADVANCED_FIELD_LABELS: Record<string, { en: string; ru: string
   internal_solid_infill_acceleration: { en: 'Internal solid infill', ru: 'Сплошное заполнение' },
   internal_solid_infill_flow_ratio: { en: 'Internal solid infill flow ratio', ru: 'Сплошное заполнение' },
   internal_solid_infill_line_width: { en: 'Internal solid infill', ru: 'Сплошное заполнение' },
-  ironing_angle_fixed: { en: 'Layer change G-code', ru: 'G-код после смены слоя' },
+  ironing_angle_fixed: { en: 'Fixed ironing angle', ru: 'Фиксированный угол разглаживания' },
   ironing_flow: { en: 'Ironing flow', ru: 'Поток' },
   line_width: { en: 'Default', ru: 'По умолчанию' },
   make_overhang_printable: { en: 'Make overhangs printable', ru: 'Делать нависания пригодными для печати' },
