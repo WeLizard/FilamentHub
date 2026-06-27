@@ -21,3 +21,19 @@ export function currencySymbol(code: string | null | undefined): string {
 export function formatPrice(amount: number, code: string | null | undefined): string {
   return `${Math.round(amount)} ${currencySymbol(code)}`;
 }
+
+const SYMBOL_TO_CODE: Record<string, string> = {
+  '₽': 'RUB',
+  $: 'USD',
+  '€': 'EUR',
+  '£': 'GBP',
+  '₴': 'UAH',
+  '₸': 'KZT',
+  '¥': 'CNY',
+};
+
+// Старые данные хранили символ (₽/$/€); новые — код. Приводим к коду.
+export function normalizeCurrency(value: string | null | undefined): string {
+  if (!value) return 'RUB';
+  return SYMBOL_TO_CODE[value] || value.toUpperCase();
+}

@@ -45,7 +45,7 @@ class UserCalculatorProfile(Base):
     payment_terms: Mapped[str] = mapped_column(String(512), nullable=False, default="")
     validity_days: Mapped[int] = mapped_column(Integer, nullable=False, default=14)
     disclaimer_mode: Mapped[str] = mapped_column(String(16), nullable=False, default="not_offer")
-    currency: Mapped[str] = mapped_column(String(4), nullable=False, default="₽")
+    currency: Mapped[str] = mapped_column(String(4), nullable=False, default="RUB")
     quote_number_prefix: Mapped[str] = mapped_column(String(32), nullable=False, default="КП")
 
     # ── Timestamps ──────────────────────────────────────────────────────

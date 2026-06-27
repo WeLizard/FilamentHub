@@ -347,7 +347,7 @@ class CalculatorProfileUpdate(BaseModel):
     payment_terms: str | None = Field(None, max_length=512)
     validity_days: int | None = Field(None, ge=1, le=365)
     disclaimer_mode: str | None = Field(None, pattern=r"^(offer|not_offer)$")
-    currency: str | None = Field(None, pattern=r"^[₽$€]$")
+    currency: str | None = Field(None, pattern=r"^[A-Z]{3}$")
     quote_number_prefix: str | None = Field(None, max_length=32)
 
 
