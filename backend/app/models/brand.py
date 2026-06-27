@@ -3,7 +3,7 @@
 from datetime import datetime
 from typing import TYPE_CHECKING
 
-from sqlalchemy import Boolean, String, Text
+from sqlalchemy import JSON, Boolean, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.sql import func
 
@@ -36,6 +36,18 @@ class Brand(Base):
     # Contact
     website: Mapped[str | None] = mapped_column(String(255), nullable=True)
     logo_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
+
+    # Public profile
+    social_media_urls: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    shop_links: Mapped[list | None] = mapped_column(JSON, nullable=True)
+
+    # Pricing
+    currency: Mapped[str] = mapped_column(
+        String(8), default="RUB", server_default="RUB", nullable=False
+    )
+    price_hidden: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default="false", nullable=False
+    )
 
     # Verification
     verified: Mapped[bool] = mapped_column(Boolean, default=False, index=True)

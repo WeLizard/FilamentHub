@@ -14,6 +14,10 @@ class BrandBase(BaseModel):
     website: str | None = None
     logo_url: str | None = None
     verified: bool = False
+    currency: str = Field("RUB", max_length=8)
+    social_media_urls: list[str] | None = None
+    shop_links: list[dict[str, str]] | None = None
+    price_hidden: bool = False
 
 
 class BrandCreate(BrandBase):
@@ -32,6 +36,10 @@ class BrandUpdate(BaseModel):
     logo_url: str | None = None
     verified: bool | None = None
     active: bool | None = None
+    currency: str | None = Field(None, max_length=8)
+    social_media_urls: list[str] | None = None
+    shop_links: list[dict[str, str]] | None = None
+    price_hidden: bool | None = None
 
 
 class BrandResponse(BrandBase):
