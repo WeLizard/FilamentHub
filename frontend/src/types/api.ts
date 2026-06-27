@@ -76,6 +76,7 @@ export interface Filament {
   qr_code: string | null; // Короткий код для QR-кода (например: "FHUB-ABC123")
   active: boolean;
   availability: FilamentAvailability;
+  currency?: string; // валюта бренда (денормализовано в ответе)
   created_at: string;
   updated_at: string;
   presets_count?: number | null;

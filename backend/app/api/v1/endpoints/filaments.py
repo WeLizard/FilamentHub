@@ -189,6 +189,7 @@ async def list_filaments(
     for filament in filaments:
         filament_dict = FilamentResponse.model_validate(filament).model_dump()
         filament_dict["brand_name"] = filament.brand.name if filament.brand else None
+        filament_dict["currency"] = filament.brand.currency if filament.brand else "RUB"
 
         stats = preset_stats.get(filament.id)
         if stats:
@@ -304,6 +305,7 @@ async def get_filament(
 
     filament_dict = FilamentResponse.model_validate(filament).model_dump()
     filament_dict["brand_name"] = filament.brand.name if filament.brand else None
+    filament_dict["currency"] = filament.brand.currency if filament.brand else "RUB"
     return filament_dict
 
 

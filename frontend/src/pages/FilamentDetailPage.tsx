@@ -28,6 +28,7 @@ import {
 import { useAuth } from '../contexts/AuthContext';
 import { filamentsAPI, brandsAPI, savedPresetsAPI, filamentReviewsAPI, qrAPI } from '../api/client';
 import { translateApiError } from '../utils/translateApiError';
+import { currencySymbol } from '../utils/currency';
 import { FilamentPreview } from '../components/FilamentPreview';
 import { ReviewCard } from '../components/ReviewCard';
 import { CreateReviewModal } from '../components/CreateReviewModal';
@@ -354,7 +355,7 @@ export const FilamentDetailPage: React.FC = () => {
             )}
             {filament.price_per_kg && (
               <p className="text-2xl md:text-4xl font-bold text-green-400 md:mb-2">
-                {Math.round(filament.price_per_kg)}₽
+                {Math.round(filament.price_per_kg)} {currencySymbol(filament.currency)}
               </p>
             )}
             {filament.spool_weight && (

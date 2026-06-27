@@ -20,6 +20,7 @@ import {
 import { useAuth } from '../contexts/AuthContext';
 import { filamentsAPI, brandsAPI, savedPresetsAPI, qrAPI } from '../api/client';
 import { translateApiError } from '../utils/translateApiError';
+import { currencySymbol } from '../utils/currency';
 import { Dropdown } from '../components/Dropdown';
 import { FilamentPreview } from '../components/FilamentPreview';
 import { SEOHead } from '../components/SEOHead';
@@ -429,7 +430,7 @@ const MaterialCard: React.FC<MaterialCardProps> = ({
           <div className="text-right ml-2 sm:ml-4 flex-shrink-0">
             {filament.price_per_kg && (
               <p className="text-xl sm:text-3xl font-bold text-green-400 mb-0.5 sm:mb-1">
-                {Math.round(filament.price_per_kg)}₽
+                {Math.round(filament.price_per_kg)} {currencySymbol(filament.currency)}
               </p>
             )}
             {filament.spool_weight && (
