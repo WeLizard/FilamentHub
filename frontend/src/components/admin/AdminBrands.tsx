@@ -26,6 +26,7 @@ export function AdminBrands() {
   const [editDescription, setEditDescription] = useState('');
   const [editWebsite, setEditWebsite] = useState('');
   const [editLogoUrl, setEditLogoUrl] = useState('');
+  const [editLogoBg, setEditLogoBg] = useState('');
   const [editError, setEditError] = useState<string | null>(null);
   const [isUploading, setIsUploading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -83,6 +84,7 @@ export function AdminBrands() {
       setEditDescription(editingBrand.description || '');
       setEditWebsite(editingBrand.website || '');
       setEditLogoUrl(editingBrand.logo_url || '');
+      setEditLogoBg(editingBrand.logo_bg || '');
       setEditError(null);
     }
   }, [editingBrand]);
@@ -129,6 +131,7 @@ export function AdminBrands() {
         description: editDescription.trim() || null,
         website: editWebsite.trim() || null,
         logo_url: editLogoUrl.trim() || null,
+        logo_bg: editLogoBg.trim() || null,
       },
     });
   };
@@ -461,6 +464,33 @@ export function AdminBrands() {
                     <span className="text-xs text-gray-400 truncate">{editLogoUrl}</span>
                   </div>
                 )}
+                <div className="mt-3">
+                  <label className="block text-sm text-gray-300 mb-1">{t('brandProfile.logoBgLabel')}</label>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="color"
+                      value={editLogoBg || '#ffffff'}
+                      onChange={(e) => setEditLogoBg(e.target.value)}
+                      className="h-9 w-10 shrink-0 rounded border border-white/20 bg-white/10 cursor-pointer"
+                    />
+                    <input
+                      type="text"
+                      value={editLogoBg}
+                      onChange={(e) => setEditLogoBg(e.target.value)}
+                      placeholder="#FFFFFF"
+                      className="flex-1 px-3 py-2 bg-white/10 border border-white/20 rounded-lg text-white text-sm placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500"
+                    />
+                    {editLogoBg && (
+                      <button
+                        type="button"
+                        onClick={() => setEditLogoBg('')}
+                        className="px-3 py-2 bg-white/10 border border-white/20 rounded-lg text-gray-300 hover:text-white hover:bg-white/20 text-sm whitespace-nowrap"
+                      >
+                        {t('brandProfile.logoBgReset')}
+                      </button>
+                    )}
+                  </div>
+                </div>
               </div>
 
               <div className="flex items-center justify-end space-x-3 pt-4">

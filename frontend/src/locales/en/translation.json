@@ -3770,8 +3770,7 @@
     "cost": "Cost",
     "kg": "kg",
     "spoolWeight": "Spool weight",
-    "g": "g",
-    "currencyPerKg": "$/kg"
+    "g": "g"
   },
   "shareMenu": {
     "share": "Share",

@@ -3897,8 +3897,7 @@
     "cost": "Цена",
     "kg": "кг",
     "spoolWeight": "Вес катушки",
-    "g": "г",
-    "currencyPerKg": "₽/кг"
+    "g": "г"
   },
   "shareMenu": {
     "share": "Поделиться",

@@ -1087,6 +1087,7 @@ export const adminAPI = {
     description?: string | null;
     website?: string | null;
     logo_url?: string | null;
+    logo_bg?: string | null;
     verified?: boolean;
     active?: boolean;
   }): Promise<Brand> => {
