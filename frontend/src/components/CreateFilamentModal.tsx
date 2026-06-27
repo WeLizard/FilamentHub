@@ -4,7 +4,7 @@ import { useState, useEffect, FormEvent, useRef, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { X, Save, Loader2, Check, Download, QrCode } from 'lucide-react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { filamentsAPI, brandsAPI, qrAPI } from '../api/client';
+import { filamentsAPI, brandsAPI, qrAPI, filamentLinesAPI } from '../api/client';
 import { translateApiError } from '../utils/translateApiError';
 import { ColorMaterialSection } from './ColorMaterialSection';
 import { HSLColorPicker } from './HSLColorPicker';
@@ -96,6 +96,8 @@ export const CreateFilamentModal: React.FC<CreateFilamentModalProps> = ({
   const [visualFinish, setVisualFinish] = useState<'matte' | 'glossy'>('matte');
   const [visualFiller, setVisualFiller] = useState<string>('none');
   const [customFiller, setCustomFiller] = useState('');
+  const [lineId, setLineId] = useState<number | ''>('');
+  const [newLineName, setNewLineName] = useState('');
   const [visualTransparency, setVisualTransparency] = useState(false);
   const [showAdvancedVisual, setShowAdvancedVisual] = useState(false); // Collapsible секция
   const [openColorPickers, setOpenColorPickers] = useState<boolean[]>([]);
@@ -189,6 +191,22 @@ export const CreateFilamentModal: React.FC<CreateFilamentModalProps> = ({
   const isBrandVerified = Boolean(
     brandsData?.items.find((b: Brand) => b.id === brandIdValue)?.verified,
   );
+
+  // Линейки бренда (для группировки вариантов-цвета).
+  const { data: linesData } = useQuery({
+    queryKey: ['filament-lines', brandIdValue],
+    queryFn: () => filamentLinesAPI.list(brandIdValue!),
+    enabled: isOpen && !!brandIdValue,
+  });
+
+  const createLineMutation = useMutation({
+    mutationFn: (name: string) => filamentLinesAPI.create(brandIdValue!, name),
+    onSuccess: (line) => {
+      queryClient.invalidateQueries({ queryKey: ['filament-lines', brandIdValue] });
+      setLineId(line.id);
+      setNewLineName('');
+    },
+  });
   // Реальное значение наполнителя: для «Другое» — введённый текст, иначе само значение.
   const effectiveFiller = visualFiller === 'custom' ? (customFiller.trim() || 'none') : visualFiller;
 
@@ -260,6 +278,7 @@ export const CreateFilamentModal: React.FC<CreateFilamentModalProps> = ({
       setPriceMode(filament.price_display_unit === 'per_spool' ? 'per_spool' : 'per_kg');
       setDescription(filament.description || '');
       setAvailability(filament.availability || 'available');
+      setLineId(filament.line_id ?? '');
     } else {
       // Сброс формы при создании нового
       // Если пользователь является сотрудником бренда, автоматически устанавливаем его brand_id
@@ -290,6 +309,8 @@ export const CreateFilamentModal: React.FC<CreateFilamentModalProps> = ({
       setPriceMode('per_kg');
       setDescription('');
       setAvailability('available');
+      setLineId('');
+      setNewLineName('');
     }
     setError(null);
     setSuccessMessage(null);
@@ -347,6 +368,7 @@ export const CreateFilamentModal: React.FC<CreateFilamentModalProps> = ({
       description?: string;
       availability?: FilamentAvailability;
       price_display_unit?: 'per_kg' | 'per_spool';
+      line_id?: number | null;
     }) => filamentsAPI.create(data),
     onSuccess: (data: Filament) => {
       queryClient.invalidateQueries({ queryKey: ['filaments'] });
@@ -392,6 +414,7 @@ export const CreateFilamentModal: React.FC<CreateFilamentModalProps> = ({
         active?: boolean;
         availability?: FilamentAvailability;
         price_display_unit?: 'per_kg' | 'per_spool';
+        line_id?: number | null;
       }>
     }) => filamentsAPI.update(id, data),
     onSuccess: () => {
@@ -463,6 +486,7 @@ export const CreateFilamentModal: React.FC<CreateFilamentModalProps> = ({
           description: description || undefined,
           availability,
           price_display_unit: priceMode,
+          line_id: lineId === '' ? null : lineId,
         },
       });
     } else {
@@ -498,6 +522,7 @@ export const CreateFilamentModal: React.FC<CreateFilamentModalProps> = ({
         description: description || undefined,
         availability,
         price_display_unit: priceMode,
+        line_id: lineId === '' ? null : lineId,
       });
     }
   };
@@ -762,6 +787,40 @@ export const CreateFilamentModal: React.FC<CreateFilamentModalProps> = ({
               </div>
             )}
           </div>
+
+          {/* Линейка (группировка вариантов-цвета) */}
+          {brandIdValue && (
+            <div>
+              <label className="block text-gray-300 mb-2 text-sm font-medium">{t('createFilament.lineLabel')}</label>
+              <Dropdown
+                value={lineId === '' ? '' : String(lineId)}
+                onChange={(val) => setLineId(val === '' ? '' : Number(val))}
+                options={[
+                  { value: '', label: t('createFilament.lineNone') },
+                  ...((linesData ?? []).map((l) => ({ value: String(l.id), label: l.name }))),
+                ]}
+                placeholder={t('createFilament.lineNone')}
+              />
+              <div className="mt-2 flex gap-2">
+                <input
+                  type="text"
+                  value={newLineName}
+                  onChange={(e) => setNewLineName(e.target.value)}
+                  placeholder={t('createFilament.lineNewPlaceholder')}
+                  maxLength={200}
+                  className="flex-1 px-4 py-2 bg-white/10 border border-white/20 rounded-xl text-white text-sm placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all"
+                />
+                <button
+                  type="button"
+                  disabled={!newLineName.trim() || createLineMutation.isPending}
+                  onClick={() => createLineMutation.mutate(newLineName.trim())}
+                  className="px-4 py-2 bg-white/10 border border-white/20 rounded-xl text-gray-300 hover:text-white hover:bg-white/20 transition-all text-sm whitespace-nowrap disabled:opacity-50"
+                >
+                  {t('createFilament.lineCreate')}
+                </button>
+              </div>
+            </div>
+          )}
 
           {/* Color Section - в одну линию как в CreatePresetModal */}
           <ColorMaterialSection

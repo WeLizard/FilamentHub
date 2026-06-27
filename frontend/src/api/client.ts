@@ -2,7 +2,7 @@
 
 import axios from 'axios';
 import type { InternalAxiosRequestConfig } from 'axios';
-import type { Brand, BrandUsage, BrandRequest, BrandRequestStatus, Filament, FilamentAvailability, FilamentVisualSettings, FilamentReview, FilamentRatingStats, Notification, NotificationListResponse, Preset, RecommendedPreset, Printer, PrinterProfile, PrintProfile, PrinterRequest, User, Token, RefreshTokenRequest, RefreshTokenResponse, ListResponse, AccountDeletionStats, UserSavedPreset, CalculatorEstimateRequest, CalculatorEstimateResponse, CalculatorProfileResponse, CalculatorProfileUpdate, Feedback, FeedbackListResponse, FeedbackType, CompatiblePrinter, CompatibleFilament, DownloadVersion, DownloadVersionsResponse, WikiCategory, WikiCategoryListResponse, WikiArticle, WikiArticleListResponse, WikiFeedbackStats, WikiFeedbackCreate, WikiFeedback } from '../types/api';
+import type { Brand, BrandUsage, BrandRequest, BrandRequestStatus, Filament, FilamentLine, FilamentAvailability, FilamentVisualSettings, FilamentReview, FilamentRatingStats, Notification, NotificationListResponse, Preset, RecommendedPreset, Printer, PrinterProfile, PrintProfile, PrinterRequest, User, Token, RefreshTokenRequest, RefreshTokenResponse, ListResponse, AccountDeletionStats, UserSavedPreset, CalculatorEstimateRequest, CalculatorEstimateResponse, CalculatorProfileResponse, CalculatorProfileUpdate, Feedback, FeedbackListResponse, FeedbackType, CompatiblePrinter, CompatibleFilament, DownloadVersion, DownloadVersionsResponse, WikiCategory, WikiCategoryListResponse, WikiArticle, WikiArticleListResponse, WikiFeedbackStats, WikiFeedbackCreate, WikiFeedback } from '../types/api';
 import { getCsrfToken, getRefreshToken, getToken, isCookieAuthMode, isJwtAuthMode, isOrcaEmbedded, removeToken, setToken, shouldPersistTokensLocally } from '../utils/auth';
 
 const API_BASE_URL = '/api/v1';
@@ -436,6 +436,7 @@ export const filamentsAPI = {
     description?: string;
     availability?: FilamentAvailability;
     price_display_unit?: 'per_kg' | 'per_spool';
+    line_id?: number | null;
   }) => {
     const response = await api.post<Filament>('/filaments/', data);
     return response.data;
@@ -456,6 +457,7 @@ export const filamentsAPI = {
     active?: boolean;
     availability?: FilamentAvailability;
     price_display_unit?: 'per_kg' | 'per_spool';
+    line_id?: number | null;
   }>) => {
     const response = await api.patch<Filament>(`/filaments/${id}`, data);
     return response.data;
@@ -482,6 +484,25 @@ export const filamentsAPI = {
   getRatingStats: async (id: number) => {
     const response = await api.get<FilamentRatingStats>(`/filament-reviews/filament/${id}/stats`);
     return response.data;
+  },
+};
+
+// Filament Lines API (группировка вариантов-цвета бренда)
+export const filamentLinesAPI = {
+  list: async (brandId: number): Promise<FilamentLine[]> => {
+    const response = await api.get<FilamentLine[]>('/filament-lines', { params: { brand_id: brandId } });
+    return response.data;
+  },
+  create: async (brandId: number, name: string): Promise<FilamentLine> => {
+    const response = await api.post<FilamentLine>('/filament-lines', { name }, { params: { brand_id: brandId } });
+    return response.data;
+  },
+  update: async (id: number, name: string): Promise<FilamentLine> => {
+    const response = await api.patch<FilamentLine>(`/filament-lines/${id}`, { name });
+    return response.data;
+  },
+  remove: async (id: number): Promise<void> => {
+    await api.delete(`/filament-lines/${id}`);
   },
 };
 

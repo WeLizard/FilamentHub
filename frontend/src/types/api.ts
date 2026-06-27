@@ -95,6 +95,14 @@ export interface Filament {
   preset_summaries?: FilamentPresetSummary[];
 }
 
+export interface FilamentLine {
+  id: number;
+  brand_id: number;
+  name: string;
+  filaments_count: number;
+  created_at: string;
+}
+
 export interface Printer {
   id: number;
   name: string;
