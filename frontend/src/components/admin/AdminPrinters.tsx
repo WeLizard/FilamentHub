@@ -6,6 +6,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { Plus, Edit, Trash2, X, Save } from 'lucide-react';
 import { Printer3DIcon } from '../icons/Printer3DIcon';
+import RetractIcon from '../icons/RetractIcon';
 import { adminAPI, printersAPI } from '../../api/client';
 import type { Printer as PrinterType } from '../../types/api';
 import { EditGCodeModal } from '../EditGCodeModal';
@@ -1512,7 +1513,10 @@ function PrinterModal({ printer, onClose, onSave, isLoading }: PrinterModalProps
       </section>
 
       <section className="space-y-4 bg-white/5 border border-white/10 rounded-2xl p-6 shadow-inner shadow-indigo-900/30">
-        <h4 className="text-sm font-semibold text-white uppercase tracking-wide">{t('adminPrinters.retraction.title')}</h4>
+        <h4 className="flex items-center gap-2 text-sm font-semibold text-white uppercase tracking-wide">
+          <RetractIcon className="w-4 h-4 text-indigo-300" />
+          {t('adminPrinters.retraction.title')}
+        </h4>
         {metadataInvalid ? (
           <p className="text-xs text-red-200">
             {t('adminPrinters.retraction.jsonError')}
