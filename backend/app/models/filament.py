@@ -12,6 +12,7 @@ from app.db.base import Base
 
 if TYPE_CHECKING:
     from app.models.brand import Brand
+    from app.models.filament_line import FilamentLine
     from app.models.filament_review import FilamentReview
     from app.models.preset import Preset
     from app.models.print_profile_filament import PrintProfileFilament
@@ -40,6 +41,10 @@ class Filament(Base):
 
     # Brand relationship
     brand_id: Mapped[int] = mapped_column(ForeignKey("brands.id"), index=True)
+    line_id: Mapped[int | None] = mapped_column(
+        ForeignKey("filament_lines.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    # line_id: линейка (группирует варианты-цвета). NULL = филамент вне линейки.
 
     # Basic info
     name: Mapped[str] = mapped_column(String(200), index=True)
@@ -120,6 +125,7 @@ class Filament(Base):
 
     # Relationships
     brand: Mapped["Brand"] = relationship("Brand", back_populates="filaments")
+    line: Mapped["FilamentLine | None"] = relationship("FilamentLine", back_populates="filaments")
     presets: Mapped[list["Preset"]] = relationship(
         "Preset", back_populates="filament", cascade="all, delete-orphan"
     )

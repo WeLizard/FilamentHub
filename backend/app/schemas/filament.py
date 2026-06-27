@@ -70,6 +70,7 @@ class FilamentBase(BaseModel):
     description: str | None = None
     availability: Literal["available", "out_of_stock", "discontinued", "coming_soon"] = Field("available")
     price_display_unit: Literal["per_kg", "per_spool"] = Field("per_kg")
+    line_id: int | None = Field(None, gt=0)  # линейка (группировка вариантов-цвета)
 
 
 class FilamentCreate(FilamentBase):
@@ -95,6 +96,7 @@ class FilamentUpdate(BaseModel):
     active: bool | None = None
     availability: Literal["available", "out_of_stock", "discontinued", "coming_soon"] | None = None
     price_display_unit: Literal["per_kg", "per_spool"] | None = None
+    line_id: int | None = Field(None, gt=0)  # null — снять с линейки
 
 
 class FilamentPresetSummary(BaseModel):
@@ -124,6 +126,7 @@ class FilamentResponse(FilamentBase):
     id: int
     brand_id: int
     brand_name: str | None = Field(None)
+    line_name: str | None = Field(None)  # имя линейки (денормализовано)
     currency: str = Field("RUB")  # валюта бренда (денормализовано)
     price_hidden: bool = Field(False)  # бренд скрыл цену (денормализовано)
     views_count: int | None = 0
@@ -149,6 +152,30 @@ class FilamentListResponse(BaseModel):
     page: int
     size: int
     pages: int
+
+
+class FilamentLineCreate(BaseModel):
+    """Schema for creating a filament line."""
+
+    name: str = Field(..., min_length=1, max_length=200)
+
+
+class FilamentLineUpdate(BaseModel):
+    """Schema for updating a filament line."""
+
+    name: str = Field(..., min_length=1, max_length=200)
+
+
+class FilamentLineResponse(BaseModel):
+    """Schema for a filament line."""
+
+    id: int
+    brand_id: int
+    name: str
+    filaments_count: int = 0
+    created_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
 
 
 class CompatiblePrinter(BaseModel):

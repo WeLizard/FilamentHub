@@ -15,6 +15,7 @@ from app.models.calculator_history_entry import CalculatorHistoryEntry
 from app.models.calculator_profile import UserCalculatorProfile
 from app.models.feedback import Feedback, FeedbackStatus, FeedbackType
 from app.models.filament import Filament
+from app.models.filament_line import FilamentLine
 from app.models.filament_review import FilamentReview
 from app.models.material_mapping import MaterialMapping, MaterialMappingPriority
 from app.models.material_property import MaterialProperty
@@ -60,6 +61,7 @@ __all__ = [
     "FeedbackType",
     "FeedbackStatus",
     "Filament",
+    "FilamentLine",
     "FilamentReview",
     "MaterialMapping",
     "MaterialMappingPriority",
