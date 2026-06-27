@@ -102,6 +102,27 @@ export const BrandDetailPage: React.FC = () => {
     return true;
   });
 
+  // Группируем по линейке (НЕ сливаем): филаменты с line_name идут под заголовком
+  // линейки, остальные — отдельной группой без заголовка.
+  const lineGroups = (() => {
+    const byLine = new Map<string, { lineName: string; filaments: typeof filteredFilaments }>();
+    const ungrouped: typeof filteredFilaments = [];
+    for (const f of filteredFilaments) {
+      if (f.line_name && f.line_id) {
+        const key = String(f.line_id);
+        const g = byLine.get(key);
+        if (g) g.filaments.push(f);
+        else byLine.set(key, { lineName: f.line_name, filaments: [f] });
+      } else {
+        ungrouped.push(f);
+      }
+    }
+    const groups: { key: string; lineName: string | null; filaments: typeof filteredFilaments }[] =
+      Array.from(byLine.entries()).map(([key, v]) => ({ key, lineName: v.lineName, filaments: v.filaments }));
+    if (ungrouped.length) groups.push({ key: 'ungrouped', lineName: null, filaments: ungrouped });
+    return groups;
+  })();
+
   // Вычисляем статистику
   const totalFilaments = filaments.length;
   const ratingsWithData = (ratingsData || []).filter(
@@ -283,8 +304,14 @@ export const BrandDetailPage: React.FC = () => {
           <p className="text-gray-400 text-xl">{t('brandDetailPage.noFilamentsFound')}</p>
         </div>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {filteredFilaments.map((filament) => (
+        <div className="space-y-8">
+          {lineGroups.map((group) => (
+            <div key={group.key}>
+              {group.lineName && (
+                <h2 className="text-lg font-semibold text-white mb-3">{group.lineName}</h2>
+              )}
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                {group.filaments.map((filament) => (
             <div
               key={filament.id}
               onClick={() => navigate(`/filaments/${filament.id}`)}
@@ -334,6 +361,9 @@ export const BrandDetailPage: React.FC = () => {
                     </span>
                   </div>
                 )}
+              </div>
+            </div>
+                ))}
               </div>
             </div>
           ))}
