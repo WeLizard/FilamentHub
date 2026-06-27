@@ -102,12 +102,12 @@ async def test_create_official_preset(client: AsyncClient, db_session: AsyncSess
     """Test creating an official preset (should be auto-approved)."""
     headers, email = await _register_and_login(client, "preset-official")
 
-    # Create brand and filament
-    brand = Brand(name="Test Brand", slug="test-brand", active=True)
+    # Create verified brand and filament (official presets require a verified brand)
+    brand = Brand(name="Test Brand", slug="test-brand", active=True, verified=True)
     db_session.add(brand)
     await db_session.commit()
     await db_session.refresh(brand)
-    
+
     filament = Filament(
         brand_id=brand.id,
         name="Test Filament",
@@ -140,6 +140,45 @@ async def test_create_official_preset(client: AsyncClient, db_session: AsyncSess
     assert data["is_official"] is True
     # Official presets should be auto-approved
     assert data["moderation_status"] == "approved"
+
+
+@pytest.mark.asyncio
+async def test_create_official_preset_requires_verified_brand(client: AsyncClient, db_session: AsyncSession):
+    """An official preset must be rejected when the brand is not verified."""
+    headers, email = await _register_and_login(client, "preset-official-unverified")
+
+    brand = Brand(name="Unverified Brand", slug="unverified-brand", active=True, verified=False)
+    db_session.add(brand)
+    await db_session.commit()
+    await db_session.refresh(brand)
+
+    filament = Filament(
+        brand_id=brand.id,
+        name="Test Filament",
+        slug="test-filament-official-unverified",
+        material_type="PLA",
+        active=True,
+    )
+    db_session.add(filament)
+    await db_session.commit()
+    await db_session.refresh(filament)
+
+    user_result = await db_session.execute(select(User).where(User.email == email))
+    user = user_result.scalar_one()
+    user.brand_id = brand.id
+    await db_session.commit()
+
+    preset_data = {
+        "filament_id": filament.id,
+        "name": "Official Preset",
+        "is_official": True,
+        "extruder_temp": 200.0,
+        "bed_temp": 60.0,
+        "print_speed": 50.0,
+    }
+    response = await client.post("/api/v1/presets/", json=preset_data, headers=headers)
+    assert response.status_code == 403
+    assert response.json()["detail"]["code"] == "ERR_OFFICIAL_VERIFIED_ONLY"
 
 
 @pytest.mark.asyncio

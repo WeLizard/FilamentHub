@@ -4359,6 +4359,7 @@
     "ERR_EXPORT_PRINTER_PROFILE_ERROR": "Printer profile export error",
     "ERR_ONLY_BRAND_OFFICIAL": "Only a brand representative can set the official status",
     "ERR_ONLY_OWN_BRAND_OFFICIAL": "Official presets can only be created for your own brand",
+    "ERR_OFFICIAL_VERIFIED_ONLY": "Official status is available only to verified brands",
     "ERR_FILE_EXT_NOT_ALLOWED": "File extension {{ext}} is not allowed. Allowed: {{allowed}}",
     "ERR_MAX_FILES_EXCEEDED": "File limit exceeded: maximum {{max}}",
     "ERR_FILE_SIZE_EXCEEDED": "File size {{size_mb}} MB exceeds the {{max_mb}} MB limit",

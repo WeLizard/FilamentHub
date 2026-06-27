@@ -19,6 +19,7 @@ from app.core.errors import (
     ERR_FILAMENT_NOT_FOUND,
     ERR_NO_PERMISSION_DELETE_PRESET,
     ERR_NO_PERMISSION_EDIT_PRESET,
+    ERR_OFFICIAL_VERIFIED_ONLY,
     ERR_ONLY_BRAND_OFFICIAL,
     ERR_ONLY_OWN_BRAND_OFFICIAL,
     ERR_PRESET_ALREADY_ACTIVE,
@@ -259,6 +260,15 @@ async def create_preset(
         # Проверяем, что filament принадлежит бренду пользователя (админы могут создавать для любого бренда)
         if current_user.brand_id and filament.brand_id != current_user.brand_id:
             raise_error(403, ERR_ONLY_OWN_BRAND_OFFICIAL)
+        # Официальный пресет — только для верифицированного бренда (админ — исключение)
+        if current_user.role.value != "admin":
+            from app.models.brand import Brand
+            brand_result = await db.execute(
+                select(Brand).where(Brand.id == filament.brand_id)
+            )
+            brand = brand_result.scalar_one_or_none()
+            if not brand or not brand.verified:
+                raise_error(403, ERR_OFFICIAL_VERIFIED_ONLY)
 
     preset = Preset(
         filament_id=data.filament_id,
@@ -428,6 +438,19 @@ async def update_preset(
         filament = filament_result.scalar_one_or_none()
         if not filament:
             raise_error(404, ERR_FILAMENT_NOT_FOUND)
+
+    # Поднять официальный статус можно только представителю верифицированного бренда
+    # (тот же гейт, что и при создании); админ — исключение.
+    if update_data.get("is_official") and current_user.role.value != "admin":
+        if not current_user.brand_id:
+            raise_error(403, ERR_ONLY_BRAND_OFFICIAL)
+        if not filament or filament.brand_id != current_user.brand_id:
+            raise_error(403, ERR_ONLY_OWN_BRAND_OFFICIAL)
+        from app.models.brand import Brand
+        brand_result = await db.execute(select(Brand).where(Brand.id == filament.brand_id))
+        brand = brand_result.scalar_one_or_none()
+        if not brand or not brand.verified:
+            raise_error(403, ERR_OFFICIAL_VERIFIED_ONLY)
 
     # Сохраняем старое состояние для проверки активации черновика.
     # sync больше управляется в user_saved_presets, поэтому здесь

@@ -4486,6 +4486,7 @@
     "ERR_EXPORT_PRINTER_PROFILE_ERROR": "Ошибка экспорта профиля принтера",
     "ERR_ONLY_BRAND_OFFICIAL": "Только представитель бренда может устанавливать официальный статус",
     "ERR_ONLY_OWN_BRAND_OFFICIAL": "Официальные пресеты можно создавать только для своего бренда",
+    "ERR_OFFICIAL_VERIFIED_ONLY": "Официальный статус доступен только верифицированным брендам",
     "ERR_FILE_EXT_NOT_ALLOWED": "Расширение файла {{ext}} не разрешено. Допустимые: {{allowed}}",
     "ERR_MAX_FILES_EXCEEDED": "Превышен лимит файлов: максимум {{max}}",
     "ERR_FILE_SIZE_EXCEEDED": "Размер файла {{size_mb}} МБ превышает лимит {{max_mb}} МБ",

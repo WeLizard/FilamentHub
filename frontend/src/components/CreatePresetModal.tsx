@@ -311,9 +311,16 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
   const brandDropdownRef = useRef<HTMLDivElement>(null);
   const materialTypeDropdownRef = useRef<HTMLDivElement>(null);
   const queryClient = useQueryClient();
-  
-  // Определяем, может ли пользователь создавать официальные пресеты
-  const canCreateOfficial = user?.role === 'brand'; // TODO: добавить проверку verified бренда
+
+  // Бренд пользователя — нужен, чтобы официальный статус разрешать только верифицированному бренду
+  const { data: ownBrandData } = useQuery({
+    queryKey: ['brand', user?.brand_id],
+    queryFn: () => brandsAPI.get(user!.brand_id!),
+    enabled: isOpen && !!user?.brand_id,
+  });
+
+  // Официальный пресет может создавать только представитель верифицированного бренда
+  const canCreateOfficial = user?.role === 'brand' && ownBrandData?.verified === true;
   const shouldLoadFilamentsForSelection = Boolean(
     isOpen && (!preset || isDraft) && !filamentId && !showFilamentForm
   );
