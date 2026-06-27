@@ -242,7 +242,7 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
   const [selectedFilamentId, setSelectedFilamentId] = useState<number | null>(filamentId || null);
   
   // Новые поля для создания нового филамента
-  const [materialType, setMaterialType] = useState('PLA');
+  const [materialType, setMaterialType] = useState('');
   const [customMaterialType, setCustomMaterialType] = useState(''); // Пользовательский тип материала
   const [useCustomMaterial, setUseCustomMaterial] = useState(false); // Использовать ли пользовательский материал
   const [brandSearch, setBrandSearch] = useState('');
@@ -837,7 +837,7 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
       setSelectedPrinterIds([]);
       // Сброс полей создания нового материала
       setShowFilamentForm(false);
-      setMaterialType('PLA');
+      setMaterialType('');
       setCustomMaterialType('');
       setUseCustomMaterial(false);
       setBrandSearch('');
@@ -1952,7 +1952,7 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                             onClick={() => {
                               setUseCustomMaterial(false);
                               setCustomMaterialType('');
-                              setMaterialType('PLA');
+                              setMaterialType('');
                             }}
                             className="px-4 py-3 bg-white/10 hover:bg-white/20 border border-white/20 rounded-xl text-gray-300 hover:text-white transition-all text-sm flex-shrink-0"
                           >

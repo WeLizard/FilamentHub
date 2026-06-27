@@ -75,7 +75,7 @@ export const CreateFilamentModal: React.FC<CreateFilamentModalProps> = ({
   const { t } = useTranslation();
   const [brandIdValue, setBrandIdValue] = useState<number | null>(brandId || null);
   const [name, setName] = useState('');
-  const [materialType, setMaterialType] = useState('PLA');
+  const [materialType, setMaterialType] = useState('');
   const [customMaterialType, setCustomMaterialType] = useState('');
   const [showMaterialTypeDropdown, setShowMaterialTypeDropdown] = useState(false);
   const materialTypeDropdownRef = useRef<HTMLDivElement>(null);
@@ -240,7 +240,7 @@ export const CreateFilamentModal: React.FC<CreateFilamentModalProps> = ({
       // Устанавливаем только если значение изменилось, чтобы избежать бесконечного цикла
       setBrandIdValue((prev) => prev !== newBrandId ? newBrandId : prev);
       setName('');
-      setMaterialType('PLA');
+      setMaterialType('');
       setCustomMaterialType('');
       setColorName('');
       setColorHex('#FFFFFF');
