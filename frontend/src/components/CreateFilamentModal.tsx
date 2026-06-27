@@ -622,10 +622,13 @@ export const CreateFilamentModal: React.FC<CreateFilamentModalProps> = ({
                           const allTypes = sortedMaterialTypes.length > 0
                             ? sortedMaterialTypes
                             : ['PLA', 'PETG', 'ABS', 'TPU', 'ASA', 'PC', 'PA', 'PVA'];
-                          const filteredTypes = allTypes.filter(type =>
-                            type.toLowerCase().includes((materialType === 'Other' ? customMaterialType : materialType).toLowerCase())
-                          );
-                          
+                          const query = (materialType === 'Other' ? customMaterialType : materialType).toLowerCase();
+                          // Если значение точно совпадает с типом — показываем весь список (выбор, а не поиск)
+                          const isExact = allTypes.some((type) => type.toLowerCase() === query);
+                          const filteredTypes = isExact
+                            ? allTypes
+                            : allTypes.filter((type) => type.toLowerCase().includes(query));
+
                           return filteredTypes.length > 0 ? (
                             filteredTypes.map((type) => (
                               <button

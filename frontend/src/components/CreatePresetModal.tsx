@@ -1966,15 +1966,14 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                           onClick={(e) => e.stopPropagation()}
                         >
                           {(() => {
-                            // Фильтруем типы по введенному тексту
-                            const filteredTypes = sortedMaterialTypes.length > 0
-                              ? sortedMaterialTypes.filter(type =>
-                                  type.toLowerCase().includes(materialType.toLowerCase())
-                                )
-                              : MATERIAL_TYPES.filter(type =>
-                                  type.toLowerCase().includes(materialType.toLowerCase())
-                                );
-                            
+                            const baseTypes = sortedMaterialTypes.length > 0 ? sortedMaterialTypes : MATERIAL_TYPES;
+                            const query = materialType.toLowerCase();
+                            // Если значение точно совпадает с типом — показываем весь список (выбор, а не поиск)
+                            const isExact = baseTypes.some((type) => type.toLowerCase() === query);
+                            const filteredTypes = isExact
+                              ? baseTypes
+                              : baseTypes.filter((type) => type.toLowerCase().includes(query));
+
                             return filteredTypes.length > 0 ? (
                               filteredTypes.map((type) => (
                                 <button
