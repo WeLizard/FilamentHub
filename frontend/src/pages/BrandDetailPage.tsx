@@ -198,6 +198,40 @@ export const BrandDetailPage: React.FC = () => {
                   <span>{t('brandDetailPage.website')}</span>
                 </a>
               )}
+              {brand.shop_links?.map((shop, i) =>
+                shop.url ? (
+                  <a
+                    key={`shop-${i}`}
+                    href={shop.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex items-center space-x-2 px-4 py-2 bg-white/10 hover:bg-white/20 text-white rounded-lg transition-all"
+                  >
+                    <ExternalLink className="w-4 h-4" />
+                    <span>{shop.platform || t('brandDetailPage.shop')}</span>
+                  </a>
+                ) : null,
+              )}
+              {brand.social_media_urls?.map((url, i) => {
+                let host = url;
+                try {
+                  host = new URL(url).hostname.replace(/^www\./, '');
+                } catch {
+                  host = url;
+                }
+                return (
+                  <a
+                    key={`social-${i}`}
+                    href={url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex items-center space-x-2 px-3 py-2 bg-white/10 hover:bg-white/20 text-white rounded-lg transition-all"
+                  >
+                    <ExternalLink className="w-4 h-4" />
+                    <span className="max-w-[160px] truncate">{host}</span>
+                  </a>
+                );
+              })}
             </div>
           </div>
         </div>

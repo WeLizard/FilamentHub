@@ -68,6 +68,8 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({ onBack }) =>
   const [profileDescription, setProfileDescription] = useState('');
   const [profileWebsite, setProfileWebsite] = useState('');
   const [profileLogoUrl, setProfileLogoUrl] = useState('');
+  const [profileSocialUrls, setProfileSocialUrls] = useState<string[]>([]);
+  const [profileShopLinks, setProfileShopLinks] = useState<{ platform: string; url: string }[]>([]);
   const [profileError, setProfileError] = useState<string | null>(null);
   const [isUploadingLogo, setIsUploadingLogo] = useState(false);
   const [isBrandLogoVisible, setIsBrandLogoVisible] = useState(false);
@@ -145,7 +147,7 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({ onBack }) =>
 
   // Мутация для обновления профиля бренда
   const updateBrandMutation = useMutation({
-    mutationFn: (data: { description?: string | null; website?: string | null; logo_url?: string | null }) =>
+    mutationFn: (data: { description?: string | null; website?: string | null; logo_url?: string | null; social_media_urls?: string[] | null; shop_links?: { platform: string; url: string }[] | null }) =>
       brandsAPI.update(user!.brand_id!, data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['brand', user?.brand_id] });
@@ -162,6 +164,8 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({ onBack }) =>
       setProfileDescription(brandData.description || '');
       setProfileWebsite(brandData.website || '');
       setProfileLogoUrl(brandData.logo_url || '');
+      setProfileSocialUrls(brandData.social_media_urls || []);
+      setProfileShopLinks(brandData.shop_links || []);
       setProfileError(null);
       setIsEditingProfile(true);
     }
@@ -172,6 +176,8 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({ onBack }) =>
       description: profileDescription.trim() || null,
       website: profileWebsite.trim() || null,
       logo_url: profileLogoUrl.trim() || null,
+      social_media_urls: profileSocialUrls.filter((u) => u.trim()),
+      shop_links: profileShopLinks.filter((l) => l.url.trim()),
     });
   };
 
@@ -941,6 +947,53 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({ onBack }) =>
                     <span className="text-gray-500 text-xs">{t('brandProfile.logoPreview')}</span>
                   </div>
                 )}
+              </div>
+              <div>
+                <label className="block text-gray-300 mb-2 text-sm font-medium">{t('brandProfile.socialMediaLabel')}</label>
+                <div className="space-y-2">
+                  {profileSocialUrls.map((url, i) => (
+                    <div key={i} className="flex gap-2">
+                      <input
+                        type="url"
+                        value={url}
+                        onChange={(e) => setProfileSocialUrls(profileSocialUrls.map((u, j) => (j === i ? e.target.value : u)))}
+                        placeholder="https://..."
+                        className="flex-1 px-4 py-2.5 bg-white/10 border border-white/20 rounded-xl text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500"
+                      />
+                      <button type="button" onClick={() => setProfileSocialUrls(profileSocialUrls.filter((_, j) => j !== i))} className="px-3 bg-white/10 hover:bg-red-500/20 rounded-xl text-gray-300 transition-all">
+                        <X className="w-4 h-4" />
+                      </button>
+                    </div>
+                  ))}
+                  <button type="button" onClick={() => setProfileSocialUrls([...profileSocialUrls, ''])} className="text-sm text-purple-300 hover:text-purple-200">+ {t('brandProfile.addLink')}</button>
+                </div>
+              </div>
+              <div>
+                <label className="block text-gray-300 mb-2 text-sm font-medium">{t('brandProfile.shopLinksLabel')}</label>
+                <div className="space-y-2">
+                  {profileShopLinks.map((link, i) => (
+                    <div key={i} className="flex gap-2">
+                      <input
+                        type="text"
+                        value={link.platform}
+                        onChange={(e) => setProfileShopLinks(profileShopLinks.map((l, j) => (j === i ? { ...l, platform: e.target.value } : l)))}
+                        placeholder={t('brandProfile.shopPlatformPlaceholder')}
+                        className="w-28 px-3 py-2.5 bg-white/10 border border-white/20 rounded-xl text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500"
+                      />
+                      <input
+                        type="url"
+                        value={link.url}
+                        onChange={(e) => setProfileShopLinks(profileShopLinks.map((l, j) => (j === i ? { ...l, url: e.target.value } : l)))}
+                        placeholder="https://..."
+                        className="flex-1 px-4 py-2.5 bg-white/10 border border-white/20 rounded-xl text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500"
+                      />
+                      <button type="button" onClick={() => setProfileShopLinks(profileShopLinks.filter((_, j) => j !== i))} className="px-3 bg-white/10 hover:bg-red-500/20 rounded-xl text-gray-300 transition-all">
+                        <X className="w-4 h-4" />
+                      </button>
+                    </div>
+                  ))}
+                  <button type="button" onClick={() => setProfileShopLinks([...profileShopLinks, { platform: '', url: '' }])} className="text-sm text-purple-300 hover:text-purple-200">+ {t('brandProfile.addShop')}</button>
+                </div>
               </div>
             </div>
             <div className="p-6 border-t border-white/10 flex justify-end space-x-3">

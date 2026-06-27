@@ -369,11 +369,18 @@ async def update_brand_request(
                 user.brand_id = request.brand_id
         elif request.request_type == BrandRequestType.CREATE:
             # Создаем бренд и привязываем пользователя
+            social_media = None
+            if request.social_media_urls:
+                try:
+                    social_media = json.loads(request.social_media_urls)
+                except (json.JSONDecodeError, TypeError):
+                    social_media = None
             new_brand = Brand(
                 name=request.new_brand_name,
                 slug=request.new_brand_slug,
                 description=request.new_brand_description,
                 website=request.new_brand_website,
+                social_media_urls=social_media,
                 verified=True,  # Автоматически верифицируем после одобрения админом
                 active=True,
             )
