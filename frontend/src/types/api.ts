@@ -74,6 +74,7 @@ export interface Filament {
   price_per_kg: number | null;
   spool_weight: number | null;
   empty_spool_weight_g: number | null;
+  price_display_unit?: 'per_kg' | 'per_spool'; // в каком виде бренд назначил цену (основной показ)
   description: string | null;
   views_count: number | null;
   scans_count: number | null;

@@ -230,7 +230,7 @@ export const CreateFilamentModal: React.FC<CreateFilamentModalProps> = ({
       setEmptySpoolWeight(filament.empty_spool_weight_g ?? null);
       // Вычисляем цену за катушку из цены за кг
       setPricePerSpool(initialPricePerKg > 0 && initialSpoolWeight > 0 ? (initialPricePerKg * initialSpoolWeight) / 1000 : 0);
-      setPriceMode('per_kg'); // По умолчанию показываем за кг
+      setPriceMode(filament.price_display_unit === 'per_spool' ? 'per_spool' : 'per_kg');
       setDescription(filament.description || '');
       setAvailability(filament.availability || 'available');
     } else {
@@ -318,6 +318,7 @@ export const CreateFilamentModal: React.FC<CreateFilamentModalProps> = ({
       empty_spool_weight_g?: number;
       description?: string;
       availability?: FilamentAvailability;
+      price_display_unit?: 'per_kg' | 'per_spool';
     }) => filamentsAPI.create(data),
     onSuccess: (data: Filament) => {
       queryClient.invalidateQueries({ queryKey: ['filaments'] });
@@ -362,6 +363,7 @@ export const CreateFilamentModal: React.FC<CreateFilamentModalProps> = ({
         description?: string;
         active?: boolean;
         availability?: FilamentAvailability;
+        price_display_unit?: 'per_kg' | 'per_spool';
       }>
     }) => filamentsAPI.update(id, data),
     onSuccess: () => {
@@ -389,9 +391,10 @@ export const CreateFilamentModal: React.FC<CreateFilamentModalProps> = ({
       return;
     }
 
-    // When the brand enters the price per spool, convert to the canonical
-    // price_per_kg at submit time so it does not depend on effect timing.
-    const finalPricePerKg =
+    // price_per_kg is stored canonically; when the brand priced per spool we
+    // derive it here. price_display_unit keeps the brand's chosen unit so the
+    // card shows that price as primary and the other unit as a hint.
+    const priceKg =
       priceMode === 'per_spool'
         ? pricePerSpool > 0 && spoolWeight > 0
           ? (pricePerSpool * 1000) / spoolWeight
@@ -426,11 +429,12 @@ export const CreateFilamentModal: React.FC<CreateFilamentModalProps> = ({
           visual_settings: visualSettings,
           diameter,
           density,
-          price_per_kg: finalPricePerKg || undefined,
+          price_per_kg: priceKg || undefined,
           spool_weight: spoolWeight || undefined,
           empty_spool_weight_g: emptySpoolWeight ?? undefined,
           description: description || undefined,
           availability,
+          price_display_unit: priceMode,
         },
       });
     } else {
@@ -460,11 +464,12 @@ export const CreateFilamentModal: React.FC<CreateFilamentModalProps> = ({
         visual_settings: visualSettings,
         diameter,
         density,
-        price_per_kg: finalPricePerKg || undefined,
+        price_per_kg: priceKg || undefined,
         spool_weight: spoolWeight || undefined,
         empty_spool_weight_g: emptySpoolWeight ?? undefined,
         description: description || undefined,
         availability,
+        price_display_unit: priceMode,
       });
     }
   };

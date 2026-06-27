@@ -435,6 +435,7 @@ export const filamentsAPI = {
     empty_spool_weight_g?: number;
     description?: string;
     availability?: FilamentAvailability;
+    price_display_unit?: 'per_kg' | 'per_spool';
   }) => {
     const response = await api.post<Filament>('/filaments/', data);
     return response.data;
@@ -454,6 +455,7 @@ export const filamentsAPI = {
     description?: string;
     active?: boolean;
     availability?: FilamentAvailability;
+    price_display_unit?: 'per_kg' | 'per_spool';
   }>) => {
     const response = await api.patch<Filament>(`/filaments/${id}`, data);
     return response.data;

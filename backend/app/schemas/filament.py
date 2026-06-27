@@ -64,6 +64,7 @@ class FilamentBase(BaseModel):
     empty_spool_weight_g: float | None = Field(None, ge=0)
     description: str | None = None
     availability: Literal["available", "out_of_stock", "discontinued", "coming_soon"] = Field("available")
+    price_display_unit: Literal["per_kg", "per_spool"] = Field("per_kg")
 
 
 class FilamentCreate(FilamentBase):
@@ -88,6 +89,7 @@ class FilamentUpdate(BaseModel):
     description: str | None = None
     active: bool | None = None
     availability: Literal["available", "out_of_stock", "discontinued", "coming_soon"] | None = None
+    price_display_unit: Literal["per_kg", "per_spool"] | None = None
 
 
 class FilamentPresetSummary(BaseModel):

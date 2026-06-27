@@ -77,6 +77,12 @@ class Filament(Base):
     # spool_weight: вес нетто филамента в граммах (обычно 1000г)
     empty_spool_weight_g: Mapped[float | None] = mapped_column(Float, nullable=True)
     # empty_spool_weight_g: вес пустой катушки (тара) в граммах, для взвешивания
+    price_display_unit: Mapped[str] = mapped_column(
+        String(10), default="per_kg", server_default="per_kg", nullable=False
+    )
+    # price_display_unit: в каком виде бренд назначил цену и хочет её показывать —
+    # "per_kg" или "per_spool". price_per_kg всегда канонический; вторая единица
+    # выводится как доп-инфо.
 
     # Description
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
