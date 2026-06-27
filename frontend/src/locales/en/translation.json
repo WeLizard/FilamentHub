@@ -4237,6 +4237,8 @@
     "ERR_BRAND_NOT_FOUND": "Brand not found",
     "ERR_PRESET_NOT_FOUND": "Preset not found",
     "ERR_FILAMENT_NOT_FOUND": "Filament not found",
+    "ERR_FILAMENT_LINE_NOT_FOUND": "Filament line not found",
+    "ERR_FILAMENT_LINE_INVALID": "The line does not belong to this brand",
     "ERR_FILAMENT_ALREADY_EXISTS": "This filament already exists. Select the existing one.",
     "ERR_PRINTER_NOT_FOUND": "Printer not found",
     "ERR_REQUEST_NOT_FOUND": "Request not found",

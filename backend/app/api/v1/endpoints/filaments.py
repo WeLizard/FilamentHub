@@ -13,6 +13,7 @@ from app.core.errors import (
     ERR_BRAND_NOT_FOUND,
     ERR_CUSTOM_FILLER_VERIFIED_ONLY,
     ERR_FILAMENT_ALREADY_EXISTS,
+    ERR_FILAMENT_LINE_INVALID,
     ERR_FILAMENT_NOT_FOUND,
     ERR_NO_PERMISSION_CREATE_FILAMENT,
     ERR_NO_PERMISSION_DELETE_FILAMENT,
@@ -23,6 +24,7 @@ from app.core.utils import like_pattern
 from app.db.session import get_db
 from app.models.brand import Brand
 from app.models.filament import Filament, FilamentAvailability
+from app.models.filament_line import FilamentLine
 from app.models.printer import Printer
 from app.models.user import User, UserRole
 from app.schemas.filament import (
@@ -106,7 +108,7 @@ async def list_filaments(
 ) -> FilamentListResponse:
     """Получить список материалов."""
     # Build query
-    query = select(Filament).options(selectinload(Filament.brand))
+    query = select(Filament).options(selectinload(Filament.brand), selectinload(Filament.line))
     if active_only:
         query = query.where(Filament.active == True)
     if brand_id:
@@ -211,6 +213,7 @@ async def list_filaments(
     for filament in filaments:
         filament_dict = FilamentResponse.model_validate(filament).model_dump()
         filament_dict["brand_name"] = filament.brand.name if filament.brand else None
+        filament_dict["line_name"] = filament.line.name if filament.line else None
         filament_dict["currency"] = filament.brand.currency if filament.brand else "RUB"
         filament_dict["price_hidden"] = filament.brand.price_hidden if filament.brand else False
 
@@ -319,7 +322,7 @@ async def get_filament(
 ) -> FilamentResponse:
     """Получить материал по ID."""
     result = await db.execute(
-        select(Filament).options(selectinload(Filament.brand)).where(Filament.id == filament_id)
+        select(Filament).options(selectinload(Filament.brand), selectinload(Filament.line)).where(Filament.id == filament_id)
     )
     filament = result.scalar_one_or_none()
 
@@ -328,6 +331,7 @@ async def get_filament(
 
     filament_dict = FilamentResponse.model_validate(filament).model_dump()
     filament_dict["brand_name"] = filament.brand.name if filament.brand else None
+    filament_dict["line_name"] = filament.line.name if filament.line else None
     filament_dict["currency"] = filament.brand.currency if filament.brand else "RUB"
     filament_dict["price_hidden"] = filament.brand.price_hidden if filament.brand else False
     return filament_dict
@@ -461,6 +465,11 @@ async def create_filament(
             raise HTTPException(status_code=400, detail=error_msg)
 
     await _validate_custom_filler(data.visual_settings, brand, current_user, db)
+
+    if data.line_id is not None:
+        line = await db.scalar(select(FilamentLine).where(FilamentLine.id == data.line_id))
+        if line is None or line.brand_id != data.brand_id:
+            raise_error(400, ERR_FILAMENT_LINE_INVALID)
 
     normalized_name = data.name.strip()
     normalized_material_type = data.material_type.strip()
@@ -636,6 +645,11 @@ async def update_filament(
         await _validate_custom_filler(
             data.visual_settings, brand_result.scalar_one_or_none(), current_user, db
         )
+
+    if update_data.get("line_id") is not None:
+        line = await db.scalar(select(FilamentLine).where(FilamentLine.id == update_data["line_id"]))
+        if line is None or line.brand_id != filament.brand_id:
+            raise_error(400, ERR_FILAMENT_LINE_INVALID)
 
     # Update fields
     for field, value in update_data.items():

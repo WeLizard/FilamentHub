@@ -103,6 +103,42 @@ async def test_create_filament_custom_filler_allowed_for_verified(
 
 
 @pytest.mark.asyncio
+async def test_filament_line_create_and_assign(
+    admin_client: AsyncClient, db_session: AsyncSession
+):
+    """A line can be created, a filament assigned to it, and grouping data returned."""
+    brand = Brand(name="Line Brand", slug="line-brand", active=True)
+    db_session.add(brand)
+    await db_session.commit()
+    await db_session.refresh(brand)
+
+    line_resp = await admin_client.post(
+        f"/api/v1/filament-lines?brand_id={brand.id}", json={"name": "Pro Series"}
+    )
+    assert line_resp.status_code == 201
+    line_id = line_resp.json()["id"]
+
+    fil_resp = await admin_client.post(
+        "/api/v1/filaments/",
+        json={
+            "brand_id": brand.id,
+            "name": "Pro Red",
+            "material_type": "PLA",
+            "line_id": line_id,
+        },
+    )
+    assert fil_resp.status_code == 201
+    assert fil_resp.json()["line_id"] == line_id
+
+    lines = await admin_client.get(f"/api/v1/filament-lines?brand_id={brand.id}")
+    assert lines.status_code == 200
+    assert lines.json()[0]["filaments_count"] == 1
+
+    fil_list = await admin_client.get(f"/api/v1/filaments/?brand_id={brand.id}")
+    assert any(item["line_name"] == "Pro Series" for item in fil_list.json()["items"])
+
+
+@pytest.mark.asyncio
 async def test_create_filament_with_availability(
     admin_client: AsyncClient, db_session: AsyncSession
 ):

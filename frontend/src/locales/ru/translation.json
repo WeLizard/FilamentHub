@@ -4364,6 +4364,8 @@
     "ERR_BRAND_NOT_FOUND": "Бренд не найден",
     "ERR_PRESET_NOT_FOUND": "Пресет не найден",
     "ERR_FILAMENT_NOT_FOUND": "Филамент не найден",
+    "ERR_FILAMENT_LINE_NOT_FOUND": "Линейка не найдена",
+    "ERR_FILAMENT_LINE_INVALID": "Линейка не принадлежит этому бренду",
     "ERR_FILAMENT_ALREADY_EXISTS": "Такой материал уже существует. Выберите существующий.",
     "ERR_PRINTER_NOT_FOUND": "Принтер не найден",
     "ERR_REQUEST_NOT_FOUND": "Заявка не найдена",
