@@ -57,6 +57,52 @@ async def test_create_filament(auth_client: AsyncClient, db_session: AsyncSessio
 
 
 @pytest.mark.asyncio
+async def test_create_filament_custom_filler_rejected_for_unverified(
+    auth_client: AsyncClient, db_session: AsyncSession
+):
+    """A custom filler is rejected when the brand is not verified."""
+    brand = Brand(name="Unverified Filler", slug="unverified-filler", verified=False, active=True)
+    db_session.add(brand)
+    await db_session.commit()
+    await db_session.refresh(brand)
+
+    response = await auth_client.post(
+        "/api/v1/filaments/",
+        json={
+            "brand_id": brand.id,
+            "name": "Custom Filler Filament",
+            "material_type": "PLA",
+            "visual_settings": {"filler": "ceramic"},
+        },
+    )
+    assert response.status_code == 403
+    assert response.json()["detail"]["code"] == "ERR_CUSTOM_FILLER_VERIFIED_ONLY"
+
+
+@pytest.mark.asyncio
+async def test_create_filament_custom_filler_allowed_for_verified(
+    admin_client: AsyncClient, db_session: AsyncSession
+):
+    """A verified brand (or admin) can set a custom filler."""
+    brand = Brand(name="Verified Filler", slug="verified-filler", verified=True, active=True)
+    db_session.add(brand)
+    await db_session.commit()
+    await db_session.refresh(brand)
+
+    response = await admin_client.post(
+        "/api/v1/filaments/",
+        json={
+            "brand_id": brand.id,
+            "name": "Custom Filler Filament",
+            "material_type": "PLA",
+            "visual_settings": {"filler": "ceramic"},
+        },
+    )
+    assert response.status_code == 201
+    assert response.json()["visual_settings"]["filler"] == "ceramic"
+
+
+@pytest.mark.asyncio
 async def test_create_filament_with_availability(
     admin_client: AsyncClient, db_session: AsyncSession
 ):

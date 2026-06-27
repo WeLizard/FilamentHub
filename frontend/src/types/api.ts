@@ -37,7 +37,7 @@ export interface FilamentVisualSettings {
   color_type?: 'single' | 'two' | 'three' | 'gradient' | 'transition' | 'thermochromic';
   colors?: string[]; // До 5 цветов для градиента/перехода
   finish?: 'matte' | 'glossy';
-  filler?: 'none' | 'wood' | 'carbon' | 'glitter' | 'metallic' | 'luminescent' | 'fibers' | 'stone' | 'glass' | 'pattern1' | 'pattern2' | 'pattern3' | 'pattern4' | 'pattern5' | 'pattern6' | 'pattern7' | 'pattern8' | 'pattern9' | 'pattern10' | 'pattern11' | 'pattern12';
+  filler?: string; // известный набор (none/wood/carbon/...) или кастомное значение (только верифиц. бренд)
   transparency?: boolean; // Прозрачный/непрозрачный (да/нет)
 }
 

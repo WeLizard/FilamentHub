@@ -66,6 +66,15 @@ const MATERIAL_DENSITY: Record<string, number> = {
   PCL: 1.15, SBS: 1.01,
 };
 
+// Известные наполнители (совпадает с backend KNOWN_FILLERS). Значение вне набора —
+// кастомный наполнитель, доступный только верифицированному бренду.
+const KNOWN_FILLERS = new Set([
+  'none', 'wood', 'carbon', 'glitter', 'metallic', 'luminescent',
+  'fibers', 'stone', 'glass', 'pattern1', 'pattern2', 'pattern3',
+  'pattern4', 'pattern5', 'pattern6', 'pattern7', 'pattern8',
+  'pattern9', 'pattern10', 'pattern11', 'pattern12',
+]);
+
 export const CreateFilamentModal: React.FC<CreateFilamentModalProps> = ({
   isOpen,
   onClose,
@@ -85,7 +94,8 @@ export const CreateFilamentModal: React.FC<CreateFilamentModalProps> = ({
   const [visualColorType, setVisualColorType] = useState<'single' | 'two' | 'three' | 'gradient' | 'transition' | 'thermochromic'>('single');
   const [visualColors, setVisualColors] = useState<string[]>(['#FFFFFF']);
   const [visualFinish, setVisualFinish] = useState<'matte' | 'glossy'>('matte');
-  const [visualFiller, setVisualFiller] = useState<'none' | 'wood' | 'carbon' | 'glitter' | 'metallic' | 'luminescent' | 'fibers' | 'stone' | 'glass' | 'pattern1' | 'pattern2' | 'pattern3' | 'pattern4' | 'pattern5' | 'pattern6' | 'pattern7' | 'pattern8' | 'pattern9' | 'pattern10' | 'pattern11' | 'pattern12'>('none');
+  const [visualFiller, setVisualFiller] = useState<string>('none');
+  const [customFiller, setCustomFiller] = useState('');
   const [visualTransparency, setVisualTransparency] = useState(false);
   const [showAdvancedVisual, setShowAdvancedVisual] = useState(false); // Collapsible секция
   const [openColorPickers, setOpenColorPickers] = useState<boolean[]>([]);
@@ -175,6 +185,13 @@ export const CreateFilamentModal: React.FC<CreateFilamentModalProps> = ({
     enabled: isOpen,
   });
 
+  // Свой наполнитель «Другое» доступен только верифицированному бренду.
+  const isBrandVerified = Boolean(
+    brandsData?.items.find((b: Brand) => b.id === brandIdValue)?.verified,
+  );
+  // Реальное значение наполнителя: для «Другое» — введённый текст, иначе само значение.
+  const effectiveFiller = visualFiller === 'custom' ? (customFiller.trim() || 'none') : visualFiller;
+
   // Загружаем уникальные типы материалов из БД
   const { data: materialTypes = [] } = useQuery({
     queryKey: ['filaments', 'material-types'],
@@ -209,7 +226,16 @@ export const CreateFilamentModal: React.FC<CreateFilamentModalProps> = ({
         setVisualColorType(vs.color_type || 'single');
         setVisualColors(vs.colors || [filament.color_hex || '#FFFFFF']);
         setVisualFinish(vs.finish || 'matte');
-        setVisualFiller(vs.filler || 'none');
+        {
+          const f = vs.filler || 'none';
+          if (KNOWN_FILLERS.has(f)) {
+            setVisualFiller(f);
+            setCustomFiller('');
+          } else {
+            setVisualFiller('custom');
+            setCustomFiller(f);
+          }
+        }
         setVisualTransparency(vs.transparency ?? false);
         setShowAdvancedVisual(true);
       } else {
@@ -217,6 +243,7 @@ export const CreateFilamentModal: React.FC<CreateFilamentModalProps> = ({
         setVisualColors([filament.color_hex || '#FFFFFF']);
         setVisualFinish('matte');
         setVisualFiller('none');
+        setCustomFiller('');
       setVisualTransparency(false);
       setShowAdvancedVisual(false);
       }
@@ -249,6 +276,7 @@ export const CreateFilamentModal: React.FC<CreateFilamentModalProps> = ({
       setVisualColors(['#FFFFFF']);
       setVisualFinish('matte');
       setVisualFiller('none');
+      setCustomFiller('');
       setVisualTransparency(false);
       setShowAdvancedVisual(false);
       setOpenColorPickers([]);
@@ -409,12 +437,12 @@ export const CreateFilamentModal: React.FC<CreateFilamentModalProps> = ({
         return;
       }
       // Формируем visual_settings если есть расширенные эффекты
-      const visualSettings: FilamentVisualSettings | undefined = showAdvancedVisual || visualFiller !== 'none' || visualColorType !== 'single' || visualFinish !== 'matte' || visualTransparency
+      const visualSettings: FilamentVisualSettings | undefined = showAdvancedVisual || effectiveFiller !== 'none' || visualColorType !== 'single' || visualFinish !== 'matte' || visualTransparency
         ? {
             color_type: visualColorType,
             colors: visualColors,
             finish: visualFinish,
-            filler: visualFiller,
+            filler: effectiveFiller,
             transparency: visualTransparency,
           }
         : undefined;
@@ -445,12 +473,12 @@ export const CreateFilamentModal: React.FC<CreateFilamentModalProps> = ({
         return;
       }
       // Формируем visual_settings если есть расширенные эффекты
-      const visualSettings: FilamentVisualSettings | undefined = showAdvancedVisual || visualFiller !== 'none' || visualColorType !== 'single' || visualFinish !== 'matte' || visualTransparency
+      const visualSettings: FilamentVisualSettings | undefined = showAdvancedVisual || effectiveFiller !== 'none' || visualColorType !== 'single' || visualFinish !== 'matte' || visualTransparency
         ? {
             color_type: visualColorType,
             colors: visualColors,
             finish: visualFinish,
-            filler: visualFiller,
+            filler: effectiveFiller,
             transparency: visualTransparency,
           }
         : undefined;
@@ -743,12 +771,12 @@ export const CreateFilamentModal: React.FC<CreateFilamentModalProps> = ({
             colorHex={colorHex}
             onColorHexChange={setColorHex}
             visualSettings={
-              showAdvancedVisual || visualFiller !== 'none' || visualColorType !== 'single' || visualFinish !== 'matte' || visualTransparency
+              showAdvancedVisual || effectiveFiller !== 'none' || visualColorType !== 'single' || visualFinish !== 'matte' || visualTransparency
                 ? {
                     color_type: visualColorType,
                     colors: visualColors,
                     finish: visualFinish,
-                    filler: visualFiller,
+                    filler: effectiveFiller,
                     transparency: visualTransparency,
                   }
                 : undefined
@@ -935,7 +963,7 @@ export const CreateFilamentModal: React.FC<CreateFilamentModalProps> = ({
                   <label className="block text-gray-300 mb-2 text-sm font-medium">{t('createFilament.fillerLabel')}</label>
                   <Dropdown
                     value={visualFiller}
-                    onChange={(val) => setVisualFiller(val as typeof visualFiller)}
+                    onChange={(val) => setVisualFiller(String(val))}
                     options={[
                       { value: 'none', label: t('createFilament.filler.none') },
                       { value: 'wood', label: t('createFilament.filler.wood') },
@@ -959,9 +987,20 @@ export const CreateFilamentModal: React.FC<CreateFilamentModalProps> = ({
                       // { value: 'pattern10', label: 'Паттерн 10' },
                       // { value: 'pattern11', label: 'Паттерн 11' },
                       // { value: 'pattern12', label: 'Паттерн 12' },
+                      ...(isBrandVerified ? [{ value: 'custom', label: t('createFilament.filler.custom') }] : []),
                     ]}
                     placeholder={t('createFilament.selectFiller')}
                   />
+                  {visualFiller === 'custom' && (
+                    <input
+                      type="text"
+                      value={customFiller}
+                      onChange={(e) => setCustomFiller(e.target.value)}
+                      maxLength={40}
+                      placeholder={t('createFilament.filler.customPlaceholder')}
+                      className="mt-2 w-full px-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all"
+                    />
+                  )}
                 </div>
 
                 {/* Прозрачность */}

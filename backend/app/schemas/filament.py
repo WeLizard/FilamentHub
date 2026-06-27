@@ -7,6 +7,15 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+# Известные наполнители. Кастомное значение вне этого набора разрешено только
+# верифицированному бренду (проверяет эндпоинт филаментов).
+KNOWN_FILLERS = frozenset({
+    "none", "wood", "carbon", "glitter", "metallic", "luminescent",
+    "fibers", "stone", "glass", "pattern1", "pattern2", "pattern3",
+    "pattern4", "pattern5", "pattern6", "pattern7", "pattern8",
+    "pattern9", "pattern10", "pattern11", "pattern12",
+})
+
 
 class FilamentVisualSettings(BaseModel):
     """Schema for extended visual settings (только для сайта, не передается в OrcaSlicer)."""
@@ -25,25 +34,21 @@ class FilamentVisualSettings(BaseModel):
     finish: Literal["matte", "glossy"] = Field("matte")
     # Финиш поверхности: матовый или глянцевый
 
-    filler: Literal[
-        "none", "wood", "carbon", "glitter", "metallic", "luminescent",
-        "fibers", "stone", "glass", "pattern1", "pattern2", "pattern3",
-        "pattern4", "pattern5", "pattern6", "pattern7", "pattern8",
-        "pattern9", "pattern10", "pattern11", "pattern12"
-    ] = Field("none")
-    # Наполнитель: нет, дерево, CF, глиттер, металлик, люминофор, волокна,
-    # камень, стекло, или паттерны 1-12
+    filler: str = Field("none", max_length=40)
+    # Наполнитель: одно из KNOWN_FILLERS или кастомное значение (только для
+    # верифицированного бренда — это проверяет эндпоинт; неверифиц. → только известные)
 
     transparency: bool = Field(False)
     # Прозрачность: да/нет (True = прозрачный, False = непрозрачный)
 
     @field_validator("filler", mode="before")
     @classmethod
-    def _empty_filler_to_none(cls, v: object) -> object:
-        # Если наполнитель не выбран (пустая строка / None), трактуем как "none",
-        # а не отклоняем заявку 422 literal_error.
+    def _normalize_filler(cls, v: object) -> object:
+        # Пустой наполнитель трактуем как "none" (а не 422).
         if v is None or (isinstance(v, str) and not v.strip()):
             return "none"
+        if isinstance(v, str):
+            return v.strip()
         return v
 
 

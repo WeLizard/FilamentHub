@@ -11,6 +11,7 @@ from sqlalchemy.orm import selectinload
 from app.core.dependencies import get_current_user
 from app.core.errors import (
     ERR_BRAND_NOT_FOUND,
+    ERR_CUSTOM_FILLER_VERIFIED_ONLY,
     ERR_FILAMENT_ALREADY_EXISTS,
     ERR_FILAMENT_NOT_FOUND,
     ERR_NO_PERMISSION_CREATE_FILAMENT,
@@ -20,10 +21,12 @@ from app.core.errors import (
 )
 from app.core.utils import like_pattern
 from app.db.session import get_db
+from app.models.brand import Brand
 from app.models.filament import Filament, FilamentAvailability
 from app.models.printer import Printer
 from app.models.user import User, UserRole
 from app.schemas.filament import (
+    KNOWN_FILLERS,
     FilamentCreate,
     FilamentListResponse,
     FilamentResponse,
@@ -47,6 +50,27 @@ def _normalize_hex(value: str | None) -> str | None:
         return None
     normalized = value.strip().lower()
     return normalized or None
+
+
+async def _validate_custom_filler(
+    visual_settings: object,
+    brand: Brand | None,
+    current_user: User,
+    db: AsyncSession,
+) -> None:
+    """Кастомный наполнитель (вне KNOWN_FILLERS) разрешён только верифицированному
+    бренду и проходит текстовую модерацию; неверифицированный — только известные."""
+    if not visual_settings:
+        return
+    filler = getattr(visual_settings, "filler", None) or "none"
+    if filler in KNOWN_FILLERS:
+        return
+    if current_user.role != UserRole.ADMIN and not (brand and brand.verified):
+        raise_error(403, ERR_CUSTOM_FILLER_VERIFIED_ONLY)
+    from app.services.preset_moderation import validate_text_field
+    is_valid, error_msg = await validate_text_field(filler, db, "filler")
+    if not is_valid:
+        raise HTTPException(status_code=400, detail=error_msg)
 
 
 def _same_filament_color(
@@ -81,8 +105,6 @@ async def list_filaments(
     search: str | None = Query(None, description="Поиск по названию материала"),
 ) -> FilamentListResponse:
     """Получить список материалов."""
-    from app.models.brand import Brand
-
     # Build query
     query = select(Filament).options(selectinload(Filament.brand))
     if active_only:
@@ -402,7 +424,6 @@ async def create_filament(
 ) -> FilamentResponse:
     """Создать материал."""
     # Check if brand exists
-    from app.models.brand import Brand
     from app.models.material_mapping import MaterialMappingPriority
     from app.services.material_mapping_service import (
         create_material_mapping,
@@ -438,6 +459,8 @@ async def create_filament(
         is_valid, error_msg = await validate_text_field(data.color_name, db, "color_name")
         if not is_valid:
             raise HTTPException(status_code=400, detail=error_msg)
+
+    await _validate_custom_filler(data.visual_settings, brand, current_user, db)
 
     normalized_name = data.name.strip()
     normalized_material_type = data.material_type.strip()
@@ -607,6 +630,12 @@ async def update_filament(
 
     if update_data.get("availability") is not None:
         update_data["availability"] = FilamentAvailability(update_data["availability"])
+
+    if data.visual_settings is not None:
+        brand_result = await db.execute(select(Brand).where(Brand.id == filament.brand_id))
+        await _validate_custom_filler(
+            data.visual_settings, brand_result.scalar_one_or_none(), current_user, db
+        )
 
     # Update fields
     for field, value in update_data.items():
