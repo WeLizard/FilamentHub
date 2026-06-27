@@ -400,6 +400,11 @@ const MaterialCard: React.FC<MaterialCardProps> = ({
             <span className="px-2 py-0.5 sm:py-1 bg-purple-500/20 text-purple-300 text-xs rounded-full border border-purple-500/30">
                 {filament.material_type}
               </span>
+              {filament.availability && filament.availability !== 'available' && (
+                <span className="px-2 py-0.5 sm:py-1 bg-amber-500/20 text-amber-300 text-xs rounded-full border border-amber-500/30">
+                  {t(`createFilament.availability.${filament.availability}`)}
+                </span>
+              )}
               {(filament.color_hex || filament.visual_settings) && (
               <span className="inline-flex items-center justify-center w-16 sm:w-24">
                 <div style={{ transform: 'scale(0.35)', transformOrigin: 'center center' }} className="sm:hidden">

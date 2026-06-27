@@ -54,6 +54,8 @@ export interface FilamentPresetSummary {
   preset_type: 'official' | 'weighted' | 'community';
 }
 
+export type FilamentAvailability = 'available' | 'out_of_stock' | 'discontinued' | 'coming_soon';
+
 export interface Filament {
   id: number;
   brand_id: number;
@@ -73,6 +75,7 @@ export interface Filament {
   scans_count: number | null;
   qr_code: string | null; // Короткий код для QR-кода (например: "FHUB-ABC123")
   active: boolean;
+  availability: FilamentAvailability;
   created_at: string;
   updated_at: string;
   presets_count?: number | null;

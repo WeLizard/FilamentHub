@@ -1,9 +1,10 @@
 """Filament (материал) model."""
 
+import enum
 from datetime import datetime
 from typing import TYPE_CHECKING
 
-from sqlalchemy import JSON, Boolean, Float, ForeignKey, Integer, String, Text
+from sqlalchemy import JSON, Boolean, Enum, Float, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.sql import func
 
@@ -14,6 +15,15 @@ if TYPE_CHECKING:
     from app.models.filament_review import FilamentReview
     from app.models.preset import Preset
     from app.models.print_profile_filament import PrintProfileFilament
+
+
+class FilamentAvailability(str, enum.Enum):
+    """Доступность филамента для покупки у бренда."""
+
+    available = "available"
+    out_of_stock = "out_of_stock"
+    discontinued = "discontinued"
+    coming_soon = "coming_soon"
 
 
 class Filament(Base):
@@ -85,6 +95,14 @@ class Filament(Base):
 
     # Status
     active: Mapped[bool] = mapped_column(Boolean, default=True, index=True)
+    # active управляет видимостью; availability — статус продажи у бренда
+    availability: Mapped[FilamentAvailability] = mapped_column(
+        Enum(FilamentAvailability, name="filament_availability", native_enum=False),
+        default=FilamentAvailability.available,
+        server_default=FilamentAvailability.available.value,
+        nullable=False,
+        index=True,
+    )
 
     # Timestamps
     created_at: Mapped[datetime] = mapped_column(

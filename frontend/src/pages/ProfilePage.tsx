@@ -1758,6 +1758,7 @@ const SpoolForm: React.FC<SpoolFormProps> = ({ mode, spool, onSaved, onCancel })
         scans_count: null,
         qr_code: null,
         active: true,
+        availability: 'available',
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
       });

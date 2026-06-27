@@ -53,6 +53,37 @@ async def test_create_filament(auth_client: AsyncClient, db_session: AsyncSessio
     assert data["name"] == filament_data["name"]
     assert data["material_type"] == filament_data["material_type"]
     assert data["id"] is not None
+    assert data["availability"] == "available"
+
+
+@pytest.mark.asyncio
+async def test_create_filament_with_availability(
+    admin_client: AsyncClient, db_session: AsyncSession
+):
+    """A brand-set availability status is stored and returned."""
+    brand = Brand(name="Avail Brand", slug="avail-brand")
+    db_session.add(brand)
+    await db_session.commit()
+    await db_session.refresh(brand)
+
+    response = await admin_client.post(
+        "/api/v1/filaments/",
+        json={
+            "brand_id": brand.id,
+            "name": "Discontinued PLA",
+            "material_type": "PLA",
+            "availability": "discontinued",
+        },
+    )
+    assert response.status_code == 201
+    filament_id = response.json()["id"]
+    assert response.json()["availability"] == "discontinued"
+
+    patch = await admin_client.patch(
+        f"/api/v1/filaments/{filament_id}", json={"availability": "out_of_stock"}
+    )
+    assert patch.status_code == 200
+    assert patch.json()["availability"] == "out_of_stock"
 
 
 @pytest.mark.asyncio

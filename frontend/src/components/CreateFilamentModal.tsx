@@ -11,7 +11,7 @@ import { HSLColorPicker } from './HSLColorPicker';
 import type { FilamentVisualSettings } from '../types/api';
 import { Dropdown } from './Dropdown';
 import { sortMaterialTypes } from '../data/materialDefaults';
-import type { Filament, Brand } from '../types/api';
+import type { Filament, Brand, FilamentAvailability } from '../types/api';
 import { useAuth } from '../contexts/AuthContext';
 import { useClickOutside } from '../hooks/useClickOutside';
 import { ModalOverlay } from './ModalOverlay';
@@ -96,6 +96,7 @@ export const CreateFilamentModal: React.FC<CreateFilamentModalProps> = ({
   const [spoolWeight, setSpoolWeight] = useState(1000);
   const [emptySpoolWeight, setEmptySpoolWeight] = useState<number | null>(null);
   const [description, setDescription] = useState('');
+  const [availability, setAvailability] = useState<FilamentAvailability>('available');
   const [error, setError] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [createdFilament, setCreatedFilament] = useState<Filament | null>(null); // Для отображения QR-кода после создания
@@ -230,6 +231,7 @@ export const CreateFilamentModal: React.FC<CreateFilamentModalProps> = ({
       setPricePerSpool(initialPricePerKg > 0 && initialSpoolWeight > 0 ? (initialPricePerKg * initialSpoolWeight) / 1000 : 0);
       setPriceMode('per_kg'); // По умолчанию показываем за кг
       setDescription(filament.description || '');
+      setAvailability(filament.availability || 'available');
     } else {
       // Сброс формы при создании нового
       // Если пользователь является сотрудником бренда, автоматически устанавливаем его brand_id
@@ -258,6 +260,7 @@ export const CreateFilamentModal: React.FC<CreateFilamentModalProps> = ({
       setEmptySpoolWeight(null);
       setPriceMode('per_kg');
       setDescription('');
+      setAvailability('available');
     }
     setError(null);
     setSuccessMessage(null);
@@ -313,6 +316,7 @@ export const CreateFilamentModal: React.FC<CreateFilamentModalProps> = ({
       spool_weight?: number;
       empty_spool_weight_g?: number;
       description?: string;
+      availability?: FilamentAvailability;
     }) => filamentsAPI.create(data),
     onSuccess: (data: Filament) => {
       queryClient.invalidateQueries({ queryKey: ['filaments'] });
@@ -356,6 +360,7 @@ export const CreateFilamentModal: React.FC<CreateFilamentModalProps> = ({
         empty_spool_weight_g?: number;
         description?: string;
         active?: boolean;
+        availability?: FilamentAvailability;
       }>
     }) => filamentsAPI.update(id, data),
     onSuccess: () => {
@@ -415,6 +420,7 @@ export const CreateFilamentModal: React.FC<CreateFilamentModalProps> = ({
           spool_weight: spoolWeight || undefined,
           empty_spool_weight_g: emptySpoolWeight ?? undefined,
           description: description || undefined,
+          availability,
         },
       });
     } else {
@@ -448,6 +454,7 @@ export const CreateFilamentModal: React.FC<CreateFilamentModalProps> = ({
         spool_weight: spoolWeight || undefined,
         empty_spool_weight_g: emptySpoolWeight ?? undefined,
         description: description || undefined,
+        availability,
       });
     }
   };
@@ -1083,6 +1090,18 @@ export const CreateFilamentModal: React.FC<CreateFilamentModalProps> = ({
               placeholder={t('createFilament.descriptionPlaceholder')}
             />
           </div>
+
+          <Dropdown
+            label={t('createFilament.availabilityLabel')}
+            value={availability}
+            options={[
+              { value: 'available', label: t('createFilament.availability.available') },
+              { value: 'out_of_stock', label: t('createFilament.availability.out_of_stock') },
+              { value: 'discontinued', label: t('createFilament.availability.discontinued') },
+              { value: 'coming_soon', label: t('createFilament.availability.coming_soon') },
+            ]}
+            onChange={(val) => setAvailability(val as FilamentAvailability)}
+          />
 
           {/* Actions */}
           <div className="flex justify-end space-x-3 pt-4 border-t border-white/10">

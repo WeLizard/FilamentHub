@@ -63,6 +63,7 @@ class FilamentBase(BaseModel):
     spool_weight: float | None = Field(None, gt=0)
     empty_spool_weight_g: float | None = Field(None, ge=0)
     description: str | None = None
+    availability: Literal["available", "out_of_stock", "discontinued", "coming_soon"] = Field("available")
 
 
 class FilamentCreate(FilamentBase):
@@ -86,6 +87,7 @@ class FilamentUpdate(BaseModel):
     empty_spool_weight_g: float | None = Field(None, ge=0)
     description: str | None = None
     active: bool | None = None
+    availability: Literal["available", "out_of_stock", "discontinued", "coming_soon"] | None = None
 
 
 class FilamentPresetSummary(BaseModel):

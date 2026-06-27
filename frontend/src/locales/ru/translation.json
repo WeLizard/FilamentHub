@@ -1267,6 +1267,13 @@
     "emptySpoolWeightPlaceholder": "необязательно",
     "descriptionLabel": "Описание",
     "descriptionPlaceholder": "Описание материала...",
+    "availabilityLabel": "Доступность",
+    "availability": {
+      "available": "В продаже",
+      "out_of_stock": "Нет в наличии",
+      "discontinued": "Снято с производства",
+      "coming_soon": "Скоро"
+    },
     "createSuccess": "Материал успешно создан!",
     "createError": "Ошибка при создании материала",
     "updateSuccess": "Материал успешно обновлён!",

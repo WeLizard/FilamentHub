@@ -20,7 +20,7 @@ from app.core.errors import (
 )
 from app.core.utils import like_pattern
 from app.db.session import get_db
-from app.models.filament import Filament
+from app.models.filament import Filament, FilamentAvailability
 from app.models.printer import Printer
 from app.models.user import User, UserRole
 from app.schemas.filament import (
@@ -494,6 +494,7 @@ async def create_filament(
     filament_payload["material_type"] = normalized_material_type
     filament_payload["color_name"] = normalized_color_name
     filament_payload["color_hex"] = normalized_color_hex
+    filament_payload["availability"] = FilamentAvailability(filament_payload["availability"])
     filament = Filament(**filament_payload, slug=slug)
     db.add(filament)
     await db.flush()  # Получаем ID без коммита
@@ -599,6 +600,9 @@ async def update_filament(
         is_valid, error_msg = await validate_text_field(update_data["color_name"], db, "color_name")
         if not is_valid:
             raise HTTPException(status_code=400, detail=error_msg)
+
+    if update_data.get("availability") is not None:
+        update_data["availability"] = FilamentAvailability(update_data["availability"])
 
     # Update fields
     for field, value in update_data.items():
