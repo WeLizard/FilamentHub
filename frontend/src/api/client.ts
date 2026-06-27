@@ -1887,6 +1887,7 @@ export interface SpoolFilamentInfo {
   color_hex: string | null;
   brand_name: string | null;
   price_per_kg: number | null;
+  currency: string | null; // валюта бренда (для price_per_kg)
 }
 
 export interface UserSpool {

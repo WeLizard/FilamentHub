@@ -1250,10 +1250,20 @@ export const CalculatorPage: React.FC = () => {
       }
 
       const defaults = deriveUserSpoolDefaults(selectedSpool);
+      // Если у катушки нет своей цены, deriveUserSpoolDefaults берёт цену бренда
+      // (в валюте бренда). Не подставляем её, если она не совпадает с валютой
+      // калькулятора — пользователь укажет свою (как и для каталога).
+      const usesBrandFallback =
+        selectedSpool.price == null && selectedSpool.filament?.price_per_kg != null;
+      const spoolBrandCurrency = selectedSpool.filament?.currency
+        ? normalizeCurrency(selectedSpool.filament.currency)
+        : null;
+      const fallbackCurrencyOk =
+        !usesBrandFallback || !spoolBrandCurrency || spoolBrandCurrency === calcCurrencyRef.current;
 
       setForm((prev) => ({
         ...prev,
-        spoolPrice: defaults.spoolPrice ?? prev.spoolPrice,
+        spoolPrice: fallbackCurrencyOk ? (defaults.spoolPrice ?? prev.spoolPrice) : prev.spoolPrice,
         spoolWeightKg: defaults.spoolWeightKg ?? prev.spoolWeightKg,
       }));
       return;
