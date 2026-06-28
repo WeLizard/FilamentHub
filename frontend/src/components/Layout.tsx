@@ -2,8 +2,11 @@
 
 import { ReactNode, useState, useEffect, useRef } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
-import { Package, User, LogOut, Shield, MessageCircle, Download, Menu, X, BookOpen } from 'lucide-react';
+import { Package, User, LogOut, Shield, MessageCircle, Download, Menu, X, BookOpen, ScanLine } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
+import { QrScannerModal } from './QrScannerModal';
+import { qrAPI } from '../api/client';
+import { extractQrShortCode } from '../utils/qrScanner';
 import { AuthModal } from './AuthModal';
 import { Notifications } from './Notifications';
 import { FeedbackModal } from './FeedbackModal';
@@ -22,6 +25,28 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
   const [isFeedbackModalOpen, setIsFeedbackModalOpen] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const [isScannerOpen, setIsScannerOpen] = useState(false);
+  const [isScanResolving, setIsScanResolving] = useState(false);
+
+  const handleScanDetected = async (rawCode: string) => {
+    const code = extractQrShortCode(rawCode);
+    if (!code) {
+      setIsScannerOpen(false);
+      return;
+    }
+    setIsScanResolving(true);
+    try {
+      const res = await qrAPI.scan(code);
+      setIsScannerOpen(false);
+      if (res?.filament) {
+        navigate(`/filaments/${res.filament.id}`);
+      }
+    } catch {
+      setIsScannerOpen(false);
+    } finally {
+      setIsScanResolving(false);
+    }
+  };
   const hasOpenedLoginModalRef = useRef(false);
   const pendingReturnUrlRef = useRef<string | null>(null);
 
@@ -134,6 +159,16 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
 
             {/* Desktop Navigation */}
             <nav className="hidden md:flex items-center space-x-2 relative z-[100]">
+              {user && (
+                <button
+                  onClick={() => setIsScannerOpen(true)}
+                  className="p-2 text-gray-300 hover:text-white hover:bg-white/10 rounded-lg transition-all"
+                  aria-label={t('qrScanner.open')}
+                  title={t('qrScanner.open')}
+                >
+                  <ScanLine className="w-5 h-5" />
+                </button>
+              )}
               {user && <Notifications />}
 
               <Link
@@ -221,6 +256,16 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
 
             {/* Mobile: Notifications + Hamburger */}
             <div className="flex md:hidden items-center space-x-2">
+              {user && (
+                <button
+                  onClick={() => setIsScannerOpen(true)}
+                  className="p-2 text-gray-300 hover:text-white hover:bg-white/10 rounded-lg transition-all"
+                  aria-label={t('qrScanner.open')}
+                  title={t('qrScanner.open')}
+                >
+                  <ScanLine className="w-5 h-5" />
+                </button>
+              )}
               {user && <Notifications />}
               <button
                 onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
@@ -388,6 +433,13 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
       <FeedbackModal
         isOpen={isFeedbackModalOpen}
         onClose={() => setIsFeedbackModalOpen(false)}
+      />
+
+      <QrScannerModal
+        isOpen={isScannerOpen}
+        onClose={() => setIsScannerOpen(false)}
+        onDetected={handleScanDetected}
+        busy={isScanResolving}
       />
     </div>
   );

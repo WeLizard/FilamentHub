@@ -18,6 +18,13 @@
     "goHome": "Go to Catalog",
     "goBack": "Go Back"
   },
+  "qrScanner": {
+    "open": "Scan QR",
+    "title": "Scan QR",
+    "hint": "Point the camera at a spool QR code",
+    "resolving": "Opening the material…",
+    "close": "Close"
+  },
   "layout": {
     "tagline": "Intelligent materials catalog",
     "feedback_tooltip": "Feedback for beta testers",
