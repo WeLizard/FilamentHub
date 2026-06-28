@@ -178,6 +178,25 @@ class FilamentLineResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
+class FilamentImportRowResult(BaseModel):
+    """Результат обработки одной строки CSV-импорта."""
+
+    row: int  # номер строки в файле (1-based, без заголовка)
+    status: Literal["created", "skipped", "error"]
+    name: str | None = None
+    filament_id: int | None = None
+    message: str | None = None  # код ошибки / причина пропуска
+
+
+class FilamentImportResult(BaseModel):
+    """Сводка импорта материалов из CSV."""
+
+    created: int = 0
+    skipped: int = 0
+    errors: int = 0
+    rows: list[FilamentImportRowResult] = Field(default_factory=list)
+
+
 class CompatiblePrinter(BaseModel):
     """Schema for compatible printer."""
 

@@ -139,6 +139,36 @@ async def test_filament_line_create_and_assign(
 
 
 @pytest.mark.asyncio
+async def test_filament_import_csv(admin_client: AsyncClient, db_session: AsyncSession):
+    """CSV import creates filaments, auto-creates a shared line, reports errors and dedups."""
+    brand = Brand(name="Import Brand", slug="import-brand", active=True)
+    db_session.add(brand)
+    await db_session.commit()
+    await db_session.refresh(brand)
+
+    csv_content = (
+        "name,material_type,color_name,color_hex,price_per_kg,spool_weight,line,availability\n"
+        "Imp Red,PLA,Red,#FF0000,1500,1000,Imp Line,available\n"
+        "Imp Blue,PETG,Blue,#0000FF,1800,1000,Imp Line,available\n"
+        ",PLA,Bad,,,,,\n"
+    )
+    files = {"file": ("import.csv", csv_content.encode("utf-8"), "text/csv")}
+    resp = await admin_client.post(f"/api/v1/filament-import?brand_id={brand.id}", files=files)
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["created"] == 2
+    assert data["errors"] == 1
+
+    lines = await admin_client.get(f"/api/v1/filament-lines?brand_id={brand.id}")
+    assert len(lines.json()) == 1
+    assert lines.json()[0]["filaments_count"] == 2
+
+    again = await admin_client.post(f"/api/v1/filament-import?brand_id={brand.id}", files=files)
+    assert again.json()["skipped"] == 2
+    assert again.json()["created"] == 0
+
+
+@pytest.mark.asyncio
 async def test_create_filament_with_availability(
     admin_client: AsyncClient, db_session: AsyncSession
 ):

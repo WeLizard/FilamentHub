@@ -12,6 +12,7 @@ from app.api.v1.endpoints import (
     devices,
     downloads,
     feedback,
+    filament_import,
     filament_lines,
     filament_reviews,
     filaments,
@@ -41,6 +42,7 @@ api_router.include_router(devices.router)
 api_router.include_router(brand_requests.router)
 api_router.include_router(filaments.router)
 api_router.include_router(filament_lines.router)
+api_router.include_router(filament_import.router)
 api_router.include_router(presets.router)
 api_router.include_router(preset_versions.router)
 api_router.include_router(qr.router)
