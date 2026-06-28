@@ -39,6 +39,9 @@ import { brandsAPI, filamentsAPI, brandRequestsAPI, presetsAPI, qrAPI } from '..
 import { translateApiError } from '../utils/translateApiError';
 import { PERSONAL_EMAIL_DOMAINS } from '../data/personalEmailDomains';
 import { currencySymbol } from '../utils/currency';
+import { filamentImportAPI } from '../api/client';
+import { ModalOverlay } from '../components/ModalOverlay';
+import type { FilamentImportResult } from '../types/api';
 import { CreateFilamentModal } from '../components/CreateFilamentModal';
 const CreatePresetModal = lazy(() =>
   import('../components/CreatePresetModal').then(m => ({ default: m.CreatePresetModal }))
@@ -76,6 +79,8 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({ onBack }) =>
   const [profilePriceHidden, setProfilePriceHidden] = useState(false);
   const [profileError, setProfileError] = useState<string | null>(null);
   const [isUploadingLogo, setIsUploadingLogo] = useState(false);
+  const [isImporting, setIsImporting] = useState(false);
+  const [importResult, setImportResult] = useState<FilamentImportResult | null>(null);
   const [isBrandLogoVisible, setIsBrandLogoVisible] = useState(false);
 
   // Загружаем данные бренда
@@ -202,6 +207,24 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({ onBack }) =>
       setProfileError(translateApiError(t, detail, t('brandProfile.logoUploadError')));
     } finally {
       setIsUploadingLogo(false);
+      e.target.value = '';
+    }
+  };
+
+  const handleImportCsv = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !brandData?.id) return;
+    setIsImporting(true);
+    try {
+      const res = await filamentImportAPI.importCsv(brandData.id, file);
+      setImportResult(res);
+      queryClient.invalidateQueries({ queryKey: ['brand-filaments'] });
+      queryClient.invalidateQueries({ queryKey: ['filament-lines', brandData.id] });
+    } catch (err: unknown) {
+      const detail = (err as { response?: { data?: { detail?: unknown } } })?.response?.data?.detail;
+      setProfileError(translateApiError(t, detail, t('brandProfile.importError')));
+    } finally {
+      setIsImporting(false);
       e.target.value = '';
     }
   };
@@ -405,6 +428,19 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({ onBack }) =>
                   <List className="w-4 h-4" />
                 </button>
               </div>
+            <a
+              href={filamentImportAPI.templateUrl}
+              download
+              className="px-4 py-2 rounded-xl border border-white/20 bg-white/10 text-gray-300 hover:text-white hover:bg-white/20 transition-all flex items-center space-x-2"
+            >
+              <Download className="w-4 h-4" />
+              <span>{t('brandProfile.importTemplate')}</span>
+            </a>
+            <label className="px-4 py-2 rounded-xl border border-white/20 bg-white/10 text-gray-300 hover:text-white hover:bg-white/20 transition-all cursor-pointer flex items-center space-x-2">
+              {isImporting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />}
+              <span>{t('brandProfile.importCsv')}</span>
+              <input type="file" accept=".csv,text/csv" onChange={handleImportCsv} className="hidden" disabled={isImporting} />
+            </label>
             <button
               onClick={handleCreateFilament}
               disabled={isLoadingFilaments}
@@ -782,6 +818,35 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({ onBack }) =>
         filament={editingFilament}
         brandId={user.brand_id || undefined}
       />
+
+      {/* Результат CSV-импорта */}
+      {importResult && (
+        <ModalOverlay onClose={() => setImportResult(null)}>
+          <div className="bg-gray-900 rounded-2xl p-6 border border-white/20 max-w-lg w-full max-h-[80vh] overflow-y-auto">
+            <h3 className="text-lg font-bold text-white mb-4">{t('brandProfile.importResultTitle')}</h3>
+            <div className="flex gap-4 mb-4 text-sm">
+              <span className="text-green-400">{t('brandProfile.importCreated')}: {importResult.created}</span>
+              <span className="text-gray-400">{t('brandProfile.importSkipped')}: {importResult.skipped}</span>
+              <span className="text-red-400">{t('brandProfile.importErrors')}: {importResult.errors}</span>
+            </div>
+            {importResult.rows.filter((r) => r.status !== 'created').length > 0 && (
+              <div className="space-y-1 mb-4 text-xs">
+                {importResult.rows.filter((r) => r.status !== 'created').map((r) => (
+                  <div key={r.row} className={r.status === 'error' ? 'text-red-300' : 'text-gray-400'}>
+                    {t('brandProfile.importRow')} {r.row}: {r.name || '—'} — {r.message ? translateApiError(t, { code: r.message }, r.message) : r.status}
+                  </div>
+                ))}
+              </div>
+            )}
+            <button
+              onClick={() => setImportResult(null)}
+              className="w-full px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-xl transition-all"
+            >
+              {t('brandProfile.importClose')}
+            </button>
+          </div>
+        </ModalOverlay>
+      )}
 
       {/* Create Preset Modal */}
       <Suspense fallback={null}>

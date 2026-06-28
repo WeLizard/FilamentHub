@@ -103,6 +103,21 @@ export interface FilamentLine {
   created_at: string;
 }
 
+export interface FilamentImportRowResult {
+  row: number;
+  status: 'created' | 'skipped' | 'error';
+  name: string | null;
+  filament_id: number | null;
+  message: string | null;
+}
+
+export interface FilamentImportResult {
+  created: number;
+  skipped: number;
+  errors: number;
+  rows: FilamentImportRowResult[];
+}
+
 export interface Printer {
   id: number;
   name: string;
