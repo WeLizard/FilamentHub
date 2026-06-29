@@ -39,7 +39,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { brandsAPI, filamentsAPI, brandRequestsAPI, presetsAPI, qrAPI } from '../api/client';
 import { translateApiError } from '../utils/translateApiError';
 import { PERSONAL_EMAIL_DOMAINS } from '../data/personalEmailDomains';
-import { currencySymbol } from '../utils/currency';
+import { currencySymbol, CURRENCY_CODES } from '../utils/currency';
 import { filamentImportAPI, filamentLinesAPI } from '../api/client';
 import { ModalOverlay } from '../components/ModalOverlay';
 import { HSLColorPicker } from '../components/HSLColorPicker';
@@ -83,6 +83,7 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({ onBack }) =>
   const [profileSocialUrls, setProfileSocialUrls] = useState<string[]>([]);
   const [profileShopLinks, setProfileShopLinks] = useState<{ platform: string; url: string }[]>([]);
   const [profilePriceHidden, setProfilePriceHidden] = useState(false);
+  const [profileCurrency, setProfileCurrency] = useState('RUB');
   const [profileError, setProfileError] = useState<string | null>(null);
   const [isUploadingLogo, setIsUploadingLogo] = useState(false);
   const [isImporting, setIsImporting] = useState(false);
@@ -196,7 +197,7 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({ onBack }) =>
 
   // Мутация для обновления профиля бренда
   const updateBrandMutation = useMutation({
-    mutationFn: (data: { description?: string | null; website?: string | null; logo_url?: string | null; logo_bg?: string | null; social_media_urls?: string[] | null; shop_links?: { platform: string; url: string }[] | null; price_hidden?: boolean }) =>
+    mutationFn: (data: { description?: string | null; website?: string | null; logo_url?: string | null; logo_bg?: string | null; social_media_urls?: string[] | null; shop_links?: { platform: string; url: string }[] | null; price_hidden?: boolean; currency?: string }) =>
       brandsAPI.update(user!.brand_id!, data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['brand', user?.brand_id] });
@@ -217,6 +218,7 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({ onBack }) =>
       setProfileSocialUrls(brandData.social_media_urls || []);
       setProfileShopLinks(brandData.shop_links || []);
       setProfilePriceHidden(brandData.price_hidden || false);
+      setProfileCurrency(brandData.currency || 'RUB');
       setProfileError(null);
       setIsEditingProfile(true);
     }
@@ -231,6 +233,7 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({ onBack }) =>
       social_media_urls: profileSocialUrls.filter((u) => u.trim()),
       shop_links: profileShopLinks.filter((l) => l.url.trim()),
       price_hidden: profilePriceHidden,
+      currency: profileCurrency,
     });
   };
 
@@ -1088,6 +1091,7 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({ onBack }) =>
               )}
               <div className="grid md:grid-cols-2 gap-5">
               <div className="space-y-4">
+              <p className="text-xs font-semibold uppercase tracking-wide text-purple-300/80 mb-1">{t('brandProfile.sectionAbout')}</p>
               <div>
                 <label className="block text-gray-300 mb-2 text-sm font-medium">{t('brandProfile.descriptionLabel')}</label>
                 <textarea
@@ -1108,8 +1112,22 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({ onBack }) =>
                   placeholder="https://example.com"
                 />
               </div>
+              <div>
+                <label className="block text-gray-300 mb-2 text-sm font-medium">{t('brandProfile.currencyLabel')}</label>
+                <select
+                  value={profileCurrency}
+                  onChange={(e) => setProfileCurrency(e.target.value)}
+                  className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white focus:outline-none focus:ring-2 focus:ring-purple-500"
+                >
+                  {CURRENCY_CODES.map((code) => (
+                    <option key={code} value={code} className="bg-gray-900">{code} · {currencySymbol(code)}</option>
+                  ))}
+                </select>
+                <p className="text-gray-500 text-xs mt-1">{t('brandProfile.currencyHint')}</p>
+              </div>
               </div>
               <div>
+                <p className="text-xs font-semibold uppercase tracking-wide text-purple-300/80 mb-2">{t('brandProfile.sectionLogo')}</p>
                 <label className="block text-gray-300 mb-2 text-sm font-medium">{t('brandProfile.logoUrlLabel')}</label>
                 <div className="flex gap-2">
                   <input
@@ -1210,7 +1228,7 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({ onBack }) =>
                   {profileShopLinks.map((link, i) => (
                     <div key={i} className="flex items-center gap-2">
                       <span className="shrink-0 w-9 h-9 flex items-center justify-center rounded-lg bg-white/5 border border-white/10 text-gray-300">
-                        <SocialIcon url={link.url} className="w-4 h-4" />
+                        <SocialIcon url={link.url} className="w-4 h-4" kind="shop" />
                       </span>
                       <input
                         type="text"

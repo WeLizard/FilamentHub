@@ -1,5 +1,5 @@
 import type { SVGProps } from 'react';
-import { Globe, Instagram, Youtube, Facebook, Linkedin, Github } from 'lucide-react';
+import { Globe, Instagram, Youtube, Facebook, Linkedin, Github, ShoppingBag } from 'lucide-react';
 
 // Брендовые SVG, которых нет в lucide (берём по образцу ShareMenu).
 const TelegramGlyph = (p: SVGProps<SVGSVGElement>) => (
@@ -20,15 +20,24 @@ const XGlyph = (p: SVGProps<SVGSVGElement>) => (
   </svg>
 );
 
-/** Иконка соцсети/магазина по URL; для неизвестного хоста — глобус. */
-export function SocialIcon({ url, className = 'w-4 h-4' }: { url: string; className?: string }) {
+/** Иконка соцсети/магазина по URL. Для `kind="shop"` неизвестный хост → корзина, иначе глобус. */
+export function SocialIcon({
+  url,
+  className = 'w-4 h-4',
+  kind = 'social',
+}: {
+  url: string;
+  className?: string;
+  kind?: 'social' | 'shop';
+}) {
   let host = '';
   try {
     host = new URL(url.startsWith('http') ? url : `https://${url}`).hostname.toLowerCase().replace(/^www\./, '');
   } catch {
     host = '';
   }
-  if (!host) return <Globe className={className} />;
+  const fallback = kind === 'shop' ? <ShoppingBag className={className} /> : <Globe className={className} />;
+  if (!host) return fallback;
   const h = (s: string) => host.includes(s);
   if (h('t.me') || h('telegram')) return <TelegramGlyph className={className} />;
   if (h('vk.com') || h('vk.ru') || host === 'vk.cc') return <VkGlyph className={className} />;
@@ -38,5 +47,9 @@ export function SocialIcon({ url, className = 'w-4 h-4' }: { url: string; classN
   if (h('twitter') || host === 'x.com') return <XGlyph className={className} />;
   if (h('linkedin')) return <Linkedin className={className} />;
   if (h('github')) return <Github className={className} />;
-  return <Globe className={className} />;
+  // Маркетплейсы — пока единым «магазинным» глифом.
+  if (h('ozon') || h('wildberries') || h('wb.ru') || h('aliexpress') || h('amazon') || h('etsy')) {
+    return <ShoppingBag className={className} />;
+  }
+  return fallback;
 }
