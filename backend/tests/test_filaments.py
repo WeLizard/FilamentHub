@@ -169,6 +169,50 @@ async def test_filament_import_csv(admin_client: AsyncClient, db_session: AsyncS
 
 
 @pytest.mark.asyncio
+async def test_filament_line_palette(admin_client: AsyncClient, db_session: AsyncSession):
+    """Palette endpoint creates one filament per color, auto-naming '<Line> <Color>' and deduping."""
+    brand = Brand(name="Palette Brand", slug="palette-brand", active=True)
+    db_session.add(brand)
+    await db_session.commit()
+    await db_session.refresh(brand)
+
+    line_resp = await admin_client.post(
+        f"/api/v1/filament-lines?brand_id={brand.id}", json={"name": "PLA Basic"}
+    )
+    line_id = line_resp.json()["id"]
+
+    payload = {
+        "material_type": "PLA",
+        "diameter": 1.75,
+        "price_per_kg": 1500,
+        "variants": [
+            {"color_name": "Red", "color_hex": "#FF0000"},
+            {"color_name": "Blue", "color_hex": "#0000FF"},
+            {"color_name": "Green", "color_hex": "#00FF00", "name": "Custom Green"},
+        ],
+    }
+    resp = await admin_client.post(f"/api/v1/filament-lines/{line_id}/variants", json=payload)
+    assert resp.status_code == 200
+    assert resp.json()["created"] == 3
+
+    fil_list = await admin_client.get(f"/api/v1/filaments/?brand_id={brand.id}")
+    names = {item["name"] for item in fil_list.json()["items"]}
+    assert "PLA Basic Red" in names
+    assert "PLA Basic Blue" in names
+    assert "Custom Green" in names
+
+    lines = await admin_client.get(f"/api/v1/filament-lines?brand_id={brand.id}")
+    assert lines.json()[0]["filaments_count"] == 3
+
+    again = await admin_client.post(
+        f"/api/v1/filament-lines/{line_id}/variants",
+        json={"material_type": "PLA", "variants": [{"color_name": "Red", "color_hex": "#FF0000"}]},
+    )
+    assert again.json()["skipped"] == 1
+    assert again.json()["created"] == 0
+
+
+@pytest.mark.asyncio
 async def test_create_filament_with_availability(
     admin_client: AsyncClient, db_session: AsyncSession
 ):

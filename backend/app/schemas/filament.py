@@ -197,6 +197,30 @@ class FilamentImportResult(BaseModel):
     rows: list[FilamentImportRowResult] = Field(default_factory=list)
 
 
+class FilamentPaletteVariant(BaseModel):
+    """Один цвет-вариант в палитре."""
+
+    color_name: str = Field(..., min_length=1, max_length=100)
+    color_hex: str | None = Field(None, pattern=r"^#[0-9A-Fa-f]{6}$")
+    name: str | None = Field(None, min_length=1, max_length=200)  # переопределение авто-имени
+
+
+class FilamentPaletteCreate(BaseModel):
+    """Создание набора цветов в линейке: общие параметры + список цветов."""
+
+    material_type: str = Field(..., max_length=50)
+    visual_settings: FilamentVisualSettings | None = Field(None)
+    diameter: float = Field(1.75, ge=1.0, le=3.5)
+    density: float | None = Field(None, gt=0)
+    price_per_kg: float | None = Field(None, ge=0)
+    spool_weight: float | None = Field(None, gt=0)
+    empty_spool_weight_g: float | None = Field(None, ge=0)
+    description: str | None = None
+    availability: Literal["available", "out_of_stock", "discontinued", "coming_soon"] = Field("available")
+    price_display_unit: Literal["per_kg", "per_spool"] = Field("per_kg")
+    variants: list[FilamentPaletteVariant] = Field(..., min_length=1, max_length=100)
+
+
 class CompatiblePrinter(BaseModel):
     """Schema for compatible printer."""
 
