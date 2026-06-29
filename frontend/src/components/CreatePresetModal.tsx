@@ -264,6 +264,7 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
   const [canEditDensity, setCanEditDensity] = useState(false); // Можно ли редактировать плотность (только для неизвестных типов)
   const [filamentPricePerKg, setFilamentPricePerKg] = useState<number | ''>('');
   const [filamentSpoolWeight, setFilamentSpoolWeight] = useState<number | ''>('');
+  const [filamentPriceUnit, setFilamentPriceUnit] = useState<'per_kg' | 'per_spool'>('per_kg');
   const [filamentDescription, setFilamentDescription] = useState('');
   const [showFilamentForm, setShowFilamentForm] = useState(false); // true = создать новый, false = выбрать существующий
   const [filamentSearch, setFilamentSearch] = useState(''); // Поиск существующего филамента
@@ -1018,6 +1019,7 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
       density?: number;
       price_per_kg?: number;
       spool_weight?: number;
+      price_display_unit?: 'per_kg' | 'per_spool';
       description?: string;
     }) => filamentsAPI.create(data),
     onSuccess: () => {
@@ -1536,8 +1538,13 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
           visual_settings: visualSettings,
           diameter: Number(filamentDiameter),
           density: finalDensity,
-          price_per_kg: canCreateOfficial && filamentPricePerKg !== '' ? Number(filamentPricePerKg) : undefined,
+          price_per_kg: canCreateOfficial && filamentPricePerKg !== ''
+            ? (filamentPriceUnit === 'per_spool' && Number(filamentSpoolWeight) > 0
+                ? (Number(filamentPricePerKg) * 1000) / Number(filamentSpoolWeight)
+                : Number(filamentPricePerKg))
+            : undefined,
           spool_weight: canCreateOfficial && filamentSpoolWeight !== '' ? Number(filamentSpoolWeight) : undefined,
+          price_display_unit: canCreateOfficial ? filamentPriceUnit : undefined,
           description: filamentDescription.trim() || undefined,
         });
         // Валидация обязательных полей пресета
@@ -2512,7 +2519,13 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                   {canCreateOfficial && (
                     <div className="grid grid-cols-2 gap-4">
                       <div>
-                        <label className="block text-gray-300 mb-2 text-sm font-medium">{t('presetModal.pricePerKg')}</label>
+                        <div className="flex items-center justify-between mb-2 gap-2">
+                          <label className="text-gray-300 text-sm font-medium">{t(filamentPriceUnit === 'per_spool' ? 'presetModal.pricePerSpool' : 'presetModal.pricePerKg')}</label>
+                          <div className="flex rounded-lg overflow-hidden border border-white/20 text-[11px] shrink-0">
+                            <button type="button" onClick={() => setFilamentPriceUnit('per_kg')} className={`px-2 py-0.5 transition-all ${filamentPriceUnit === 'per_kg' ? 'bg-purple-600 text-white' : 'text-gray-400 hover:text-white'}`}>{t('presetModal.perKgShort')}</button>
+                            <button type="button" onClick={() => setFilamentPriceUnit('per_spool')} className={`px-2 py-0.5 transition-all ${filamentPriceUnit === 'per_spool' ? 'bg-purple-600 text-white' : 'text-gray-400 hover:text-white'}`}>{t('presetModal.perSpoolShort')}</button>
+                          </div>
+                        </div>
                         <input
                           type="number"
                           value={filamentPricePerKg}
