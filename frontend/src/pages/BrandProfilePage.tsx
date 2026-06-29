@@ -33,6 +33,7 @@ import {
   Grid3x3,
   List,
   Upload,
+  Info,
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { brandsAPI, filamentsAPI, brandRequestsAPI, presetsAPI, qrAPI } from '../api/client';
@@ -77,6 +78,7 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({ onBack }) =>
   const [profileLogoUrl, setProfileLogoUrl] = useState('');
   const [profileLogoBg, setProfileLogoBg] = useState('');
   const [logoBgPickerOpen, setLogoBgPickerOpen] = useState(false);
+  const [showCsvHelp, setShowCsvHelp] = useState(false);
   const [profileSocialUrls, setProfileSocialUrls] = useState<string[]>([]);
   const [profileShopLinks, setProfileShopLinks] = useState<{ platform: string; url: string }[]>([]);
   const [profilePriceHidden, setProfilePriceHidden] = useState(false);
@@ -460,6 +462,14 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({ onBack }) =>
               <Download className="w-4 h-4" />
               <span>{t('brandProfile.importTemplate')}</span>
             </a>
+            <button
+              type="button"
+              onClick={() => setShowCsvHelp((v) => !v)}
+              className={`px-3 py-2 rounded-xl border border-white/20 transition-all flex items-center ${showCsvHelp ? 'bg-purple-600/30 text-white' : 'bg-white/10 text-gray-300 hover:text-white hover:bg-white/20'}`}
+              title={t('brandProfile.csvHelpToggle')}
+            >
+              <Info className="w-4 h-4" />
+            </button>
             <label className="px-4 py-2 rounded-xl border border-white/20 bg-white/10 text-gray-300 hover:text-white hover:bg-white/20 transition-all cursor-pointer flex items-center space-x-2">
               {isImporting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />}
               <span>{t('brandProfile.importCsv')}</span>
@@ -475,6 +485,26 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({ onBack }) =>
             </button>
             </div>
           </div>
+
+          {showCsvHelp && (
+            <div className="mb-4 p-4 rounded-xl border border-white/10 bg-white/5 text-sm text-gray-300">
+              <p className="font-medium text-white mb-2">{t('brandProfile.csvHelpTitle')}</p>
+              <ul className="space-y-1">
+                <li><code className="text-purple-300">name</code> — {t('brandProfile.csvColName')}</li>
+                <li><code className="text-purple-300">material_type</code> — {t('brandProfile.csvColMaterial')}</li>
+                <li><code className="text-purple-300">color_name</code> — {t('brandProfile.csvColColorName')}</li>
+                <li><code className="text-purple-300">color_hex</code> — {t('brandProfile.csvColColorHex')}</li>
+                <li><code className="text-purple-300">price_per_kg</code> — {t('brandProfile.csvColPrice')}</li>
+                <li><code className="text-purple-300">spool_weight</code> — {t('brandProfile.csvColSpool')}</li>
+                <li><code className="text-purple-300">line</code> — {t('brandProfile.csvColLine')}</li>
+                <li>
+                  <code className="text-purple-300">availability</code> — {t('brandProfile.csvColAvailability')}{' '}
+                  <code className="text-gray-200">available</code>, <code className="text-gray-200">discontinued</code>, <code className="text-gray-200">coming_soon</code>
+                </li>
+              </ul>
+              <p className="text-gray-500 text-xs mt-2">{t('brandProfile.csvHelpNote')}</p>
+            </div>
+          )}
 
           {/* Loading State */}
           {isLoadingFilaments && (
