@@ -1,8 +1,25 @@
-import React, { useMemo, useId } from 'react';
+import React, { useMemo, useId, useState, useEffect } from 'react';
 import { Thermometer } from 'lucide-react';
 import type { FilamentVisualSettings } from '../types/api';
 
 type SizeKey = 'small' | 'medium' | 'large';
+
+// Серые seamless-текстуры наполнителей (перекрашиваются на рендере через blend).
+// Кого нет в карте — рисуется процедурно (фоллбек). На onError картинки — тоже фоллбек.
+const FILLER_TEXTURES: Record<string, string> = {
+  carbon: '/textures/carbon.webp',
+  wood: '/textures/wood.webp',
+  glitter: '/textures/glitter.webp',
+  metallic: '/textures/metallic.webp',
+  stone: '/textures/stone.webp',
+};
+const FILLER_BLEND: Record<string, 'multiply' | 'screen'> = {
+  carbon: 'multiply',
+  wood: 'multiply',
+  metallic: 'multiply',
+  stone: 'multiply',
+  glitter: 'screen',
+};
 
 const SIZE_CONFIG: Record<SizeKey, { height: number; bodyLength: number; strokeWidth: number }> = {
   small: { height: 40, bodyLength: 90, strokeWidth: 2 },
@@ -551,6 +568,30 @@ export const FilamentPreview: React.FC<FilamentPreviewProps> = ({
   const centerX = bodyEnd;
   const centerY = radius;
 
+  // webp-текстура наполнителя (если есть) поверх цвета через blend; иначе/при ошибке — процедурно.
+  const textureUrl = FILLER_TEXTURES[filler];
+  const [textureFailed, setTextureFailed] = useState(false);
+  useEffect(() => {
+    setTextureFailed(false);
+  }, [textureUrl]);
+  const useTexture = !!textureUrl && !textureFailed;
+  const textureBlend = FILLER_BLEND[filler] ?? 'multiply';
+  const texTile = height;
+  const texPatternId = `${svgId}-tex`;
+  const textureDef = useTexture ? (
+    <pattern id={texPatternId} width={texTile} height={texTile} patternUnits="userSpaceOnUse">
+      <image
+        href={textureUrl}
+        x={0}
+        y={0}
+        width={texTile}
+        height={texTile}
+        preserveAspectRatio="xMidYMid slice"
+        onError={() => setTextureFailed(true)}
+      />
+    </pattern>
+  ) : null;
+
   const { defs: colorDefs, bodyFill, endFill, extraEndSegments } = useMemo(
     () =>
       createColorDefinitions(
@@ -700,7 +741,7 @@ export const FilamentPreview: React.FC<FilamentPreviewProps> = ({
         viewBox={`0 0 ${svgWidth} ${svgHeight}`}
         style={{ overflow: 'visible' }}
       >
-        <defs>{defs}</defs>
+        <defs>{defs}{textureDef}</defs>
         <g transform={`translate(${canvasPadding}, ${canvasPadding})`}>
         {isTransparent && (
           <>
@@ -724,7 +765,10 @@ export const FilamentPreview: React.FC<FilamentPreviewProps> = ({
           )}
           <g filter={glowFilterId ? `url(#${glowFilterId})` : undefined}>
             <path d={bodyPath} fill={bodyFill} fillOpacity={bodyFillOpacity} />
-            {bodyPatternFill && patternOpacity > 0 && (
+            {useTexture && (
+              <path d={bodyPath} fill={`url(#${texPatternId})`} style={{ mixBlendMode: textureBlend }} opacity={0.85} />
+            )}
+            {!useTexture && bodyPatternFill && patternOpacity > 0 && (
               <path d={bodyPath} fill={bodyPatternFill} fillOpacity={patternOpacity} />
             )}
             {highlightDefs.bodyHighlightId && (
@@ -755,7 +799,17 @@ export const FilamentPreview: React.FC<FilamentPreviewProps> = ({
                 fill={segment.color}
               />
             ))}
-            {endPatternFill && patternOpacity > 0 && (
+            {useTexture && (
+              <circle
+                cx={bodyEnd}
+                cy={radius}
+                r={radius}
+                fill={`url(#${texPatternId})`}
+                style={{ mixBlendMode: textureBlend }}
+                opacity={0.85}
+              />
+            )}
+            {!useTexture && endPatternFill && patternOpacity > 0 && (
               <circle
                 cx={bodyEnd}
                 cy={radius}
