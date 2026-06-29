@@ -56,7 +56,9 @@ async def download_template() -> Response:
     writer = csv.writer(buffer)
     writer.writerow(CSV_COLUMNS)
     writer.writerow(["PLA Basic Red", "PLA", "Red", "#FF0000", "1500", "1000", "PLA Basic", "available"])
-    content = "﻿" + buffer.getvalue()  # BOM, чтобы Excel распознал UTF-8
+    # BOM — чтобы Excel распознал UTF-8; "sep=," — чтобы Excel (в т.ч. RU-локаль,
+    # где разделитель по умолчанию ";") разбил файл на колонки по запятой.
+    content = "﻿" + "sep=,\r\n" + buffer.getvalue()
     return Response(
         content=content,
         media_type="text/csv",
@@ -80,7 +82,18 @@ async def import_filaments(
 
     raw = await file.read()
     text = raw.decode("utf-8-sig", errors="replace")
-    reader = csv.DictReader(io.StringIO(text))
+    # Excel (особенно RU-локаль) сохраняет CSV с разделителем ";". Поддерживаем оба
+    # разделителя и строку-подсказку "sep=," (её Excel пишет/читает, в данные не берём).
+    lines = text.splitlines()
+    delimiter = ","
+    if lines and lines[0].strip().lower().startswith("sep="):
+        sep_char = lines[0].strip()[4:5]
+        if sep_char in (",", ";", "\t"):
+            delimiter = sep_char
+        text = "\n".join(lines[1:])
+    elif lines and ";" in lines[0] and "," not in lines[0]:
+        delimiter = ";"
+    reader = csv.DictReader(io.StringIO(text), delimiter=delimiter)
 
     result = FilamentImportResult()
     # Кэш линеек бренда по нижнему регистру имени, чтобы не плодить дубликаты.
