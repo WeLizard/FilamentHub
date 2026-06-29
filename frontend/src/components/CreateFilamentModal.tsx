@@ -7,6 +7,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { filamentsAPI, brandsAPI, qrAPI, filamentLinesAPI } from '../api/client';
 import { translateApiError } from '../utils/translateApiError';
 import { ColorMaterialSection } from './ColorMaterialSection';
+import { FilamentPaletteForm } from './FilamentPaletteForm';
 import { HSLColorPicker } from './HSLColorPicker';
 import type { FilamentVisualSettings } from '../types/api';
 import { Dropdown } from './Dropdown';
@@ -83,6 +84,7 @@ export const CreateFilamentModal: React.FC<CreateFilamentModalProps> = ({
 }) => {
   const { t } = useTranslation();
   const [brandIdValue, setBrandIdValue] = useState<number | null>(brandId || null);
+  const [formMode, setFormMode] = useState<'single' | 'palette'>('single');
   const [name, setName] = useState('');
   const [materialType, setMaterialType] = useState('');
   const [customMaterialType, setCustomMaterialType] = useState('');
@@ -635,6 +637,28 @@ export const CreateFilamentModal: React.FC<CreateFilamentModalProps> = ({
               </div>
             </div>
           ) : (
+            <>
+              {!filament && brandIdValue && (
+                <div className="flex gap-2 mb-5">
+                  <button
+                    type="button"
+                    onClick={() => setFormMode('single')}
+                    className={`flex-1 px-4 py-2 rounded-xl text-sm font-medium transition-all ${formMode === 'single' ? 'bg-purple-600 text-white' : 'bg-white/10 text-gray-300 hover:bg-white/20'}`}
+                  >
+                    {t('createFilament.modeSingle')}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setFormMode('palette')}
+                    className={`flex-1 px-4 py-2 rounded-xl text-sm font-medium transition-all ${formMode === 'palette' ? 'bg-purple-600 text-white' : 'bg-white/10 text-gray-300 hover:bg-white/20'}`}
+                  >
+                    {t('createFilament.modePalette')}
+                  </button>
+                </div>
+              )}
+              {formMode === 'palette' && !filament && brandIdValue ? (
+                <FilamentPaletteForm brandId={brandIdValue} onClose={onClose} />
+              ) : (
             // Form
             <form onSubmit={handleSubmit} className="space-y-6">
           {/* Name and Material Type in one row */}
@@ -1252,6 +1276,8 @@ export const CreateFilamentModal: React.FC<CreateFilamentModalProps> = ({
             </button>
           </div>
         </form>
+              )}
+            </>
           )}
         </div>
       </div>

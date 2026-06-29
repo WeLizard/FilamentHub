@@ -118,6 +118,26 @@ export interface FilamentImportResult {
   rows: FilamentImportRowResult[];
 }
 
+export interface FilamentPaletteVariant {
+  color_name: string;
+  color_hex?: string | null;
+  name?: string | null; // переопределение авто-имени «<Линейка> <Цвет>»
+}
+
+export interface FilamentPalettePayload {
+  material_type: string;
+  visual_settings?: FilamentVisualSettings | null;
+  diameter?: number;
+  density?: number | null;
+  price_per_kg?: number | null;
+  spool_weight?: number | null;
+  empty_spool_weight_g?: number | null;
+  description?: string | null;
+  availability?: FilamentAvailability;
+  price_display_unit?: 'per_kg' | 'per_spool';
+  variants: FilamentPaletteVariant[];
+}
+
 export interface Printer {
   id: number;
   name: string;
