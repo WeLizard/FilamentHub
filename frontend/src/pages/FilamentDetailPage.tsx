@@ -289,6 +289,11 @@ export const FilamentDetailPage: React.FC = () => {
               <span className="px-2 py-0.5 md:px-3 md:py-1 bg-purple-500/20 text-purple-300 text-xs md:text-base rounded-full border border-purple-500/30">
                 {filament.material_type}
               </span>
+              {filament.availability && filament.availability !== 'available' && (
+                <span className="px-2 py-0.5 md:px-3 md:py-1 bg-amber-500/20 text-amber-300 text-xs md:text-base rounded-full border border-amber-500/30">
+                  {t(`createFilament.availability.${filament.availability}`)}
+                </span>
+              )}
             </div>
 
             {/* Статистика материала */}

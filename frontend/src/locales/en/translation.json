@@ -1161,7 +1161,7 @@
     "descriptionPlaceholder": "Material description...",
     "availabilityLabel": "Availability",
     "availability": {
-      "available": "Available",
+      "available": "Current",
       "out_of_stock": "Out of stock",
       "discontinued": "Discontinued",
       "coming_soon": "Coming soon"

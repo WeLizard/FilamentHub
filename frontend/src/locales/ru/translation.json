@@ -1287,9 +1287,9 @@
     "descriptionPlaceholder": "Описание материала...",
     "availabilityLabel": "Доступность",
     "availability": {
-      "available": "В продаже",
+      "available": "Актуальный",
       "out_of_stock": "Нет в наличии",
-      "discontinued": "Снято с производства",
+      "discontinued": "Снят с производства",
       "coming_soon": "Скоро"
     },
     "createSuccess": "Материал успешно создан!",

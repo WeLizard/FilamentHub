@@ -1216,7 +1216,6 @@ export const CreateFilamentModal: React.FC<CreateFilamentModalProps> = ({
             value={availability}
             options={[
               { value: 'available', label: t('createFilament.availability.available') },
-              { value: 'out_of_stock', label: t('createFilament.availability.out_of_stock') },
               { value: 'discontinued', label: t('createFilament.availability.discontinued') },
               { value: 'coming_soon', label: t('createFilament.availability.coming_soon') },
             ]}
