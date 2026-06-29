@@ -136,15 +136,18 @@ export const CatalogPage: React.FC = () => {
         allowAI={true}
       />
       <div className="space-y-6">
-        {/* Hero Section */}
-        <div className="text-center mb-6 sm:mb-8">
-        <h2 className="text-2xl sm:text-3xl md:text-4xl font-bold text-white mb-3 sm:mb-4 px-2">
-          {t('catalogPage.heroTitle')}
-        </h2>
-        <p className="text-base sm:text-lg md:text-xl text-gray-300 max-w-3xl mx-auto px-2">
-          {t('catalogPage.heroSubtitle')}
-        </p>
-      </div>
+        {/* Hero Section — показываем только гостю; залогиненному сразу каталог.
+            Подзаголовок скрыт на мобиле, отступы компактнее (не съедать экран). */}
+        {!user && (
+          <div className="text-center mb-4 sm:mb-6">
+            <h2 className="text-xl sm:text-3xl md:text-4xl font-bold text-white mb-2 sm:mb-3 px-2">
+              {t('catalogPage.heroTitle')}
+            </h2>
+            <p className="hidden sm:block text-base sm:text-lg md:text-xl text-gray-300 max-w-3xl mx-auto px-2">
+              {t('catalogPage.heroSubtitle')}
+            </p>
+          </div>
+        )}
 
       {/* [ЗАГЛУШКА: Top 10 Popular - временно отключен] */}
       {/* {!searchQuery && !materialTypeFilter && !brandFilter && topFilaments.length > 0 && (

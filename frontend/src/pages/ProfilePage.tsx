@@ -605,32 +605,24 @@ export const ProfilePage: React.FC = () => {
         </div>
       </div>
       
-      {/* Header */}
-      <div className="text-center mb-4 md:mb-8">
-        <div className="flex flex-col md:flex-row items-center justify-center gap-3 md:gap-4 mb-3 md:mb-4">
-          <div className="order-1 md:order-2 relative flex items-center justify-center">
-            {profileBadges.length > 0 && (
-              <div className="hidden md:block absolute right-full top-1/2 mr-4 w-max max-w-[min(44rem,calc(100vw-14rem))] -translate-y-1/2">
-                <div className="flex items-center gap-2 overflow-x-auto whitespace-nowrap scrollbar-hide">
-                  {profileBadges.map(renderExpandableProfileBadge)}
-                </div>
-              </div>
-            )}
-            <div className="w-12 h-12 md:w-16 md:h-16 bg-gradient-to-r from-purple-500 to-pink-500 rounded-lg md:rounded-xl flex items-center justify-center shadow-lg shadow-purple-500/25">
-              <User className="w-6 h-6 md:w-8 md:h-8 text-white" />
-            </div>
+      {/* Header — компактная строка: аватар + имя·роль + ачивки (без крупного «Мой профиль») */}
+      <div className="mb-4 md:mb-6">
+        <div className="flex items-center gap-3 mb-3 md:mb-4">
+          <div className="w-11 h-11 md:w-14 md:h-14 shrink-0 bg-gradient-to-r from-purple-500 to-pink-500 rounded-xl flex items-center justify-center shadow-lg shadow-purple-500/25">
+            <User className="w-6 h-6 md:w-7 md:h-7 text-white" />
           </div>
-          <div className="order-3 text-left">
-            <h2 className="text-xl md:text-3xl font-bold text-white mb-0.5 md:mb-1">{t('profilePage.myProfile')}</h2>
-            <div className="flex flex-wrap items-center gap-1">
-              <p className="text-gray-300 text-xs md:text-base">
-                {user.full_name || user.username}<span className="hidden md:inline"> • {t('profilePage.printer3d')}</span>
-              </p>
-            </div>
+          <div className="min-w-0">
+            <p className="text-base md:text-xl font-bold text-white truncate">{user.full_name || user.username}</p>
+            <p className="text-xs md:text-sm text-gray-400">{t('profilePage.printer3d')}</p>
           </div>
+          {profileBadges.length > 0 && (
+            <div className="hidden sm:flex items-center gap-2 overflow-x-auto whitespace-nowrap scrollbar-hide ml-auto max-w-[55%]">
+              {profileBadges.map(renderExpandableProfileBadge)}
+            </div>
+          )}
         </div>
         {profileBadges.length > 0 && (
-          <div className="md:hidden mx-auto mt-3 w-full max-w-sm">
+          <div className="sm:hidden mb-3 w-full">
             <div className="flex items-center gap-2 overflow-x-auto whitespace-nowrap scrollbar-hide">
               {profileBadges.map(renderExpandableProfileBadge)}
             </div>
