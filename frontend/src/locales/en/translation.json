@@ -23,6 +23,7 @@
     "title": "Scan QR",
     "hint": "Point the camera at a spool QR code",
     "resolving": "Opening the material…",
+    "notOurQr": "This isn't a FilamentHub spool QR. Point at the code on the spool.",
     "close": "Close"
   },
   "layout": {

@@ -7,7 +7,8 @@ import { createQrFrameDecoder } from '../utils/qrScanner';
 interface QrScannerModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onDetected: (rawCode: string) => void;
+  /** Вернуть true, если код принят (родитель закроет модалку); false — продолжаем сканировать. */
+  onDetected: (rawCode: string) => Promise<boolean> | boolean;
   busy?: boolean;
 }
 
@@ -18,8 +19,12 @@ export function QrScannerModal({ isOpen, onClose, onDetected, busy = false }: Qr
   const streamRef = useRef<MediaStream | null>(null);
   const frameRef = useRef<number | null>(null);
   const scanningRef = useRef(false);
+  // onDetected держим в ref, чтобы пересоздание колбэка в родителе не перезапускало камеру.
+  const onDetectedRef = useRef(onDetected);
+  onDetectedRef.current = onDetected;
   const [isReady, setIsReady] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
 
   useEffect(() => {
     if (!isOpen) {
@@ -45,6 +50,7 @@ export function QrScannerModal({ isOpen, onClose, onDetected, busy = false }: Qr
 
     const start = async () => {
       setError(null);
+      setNotice(null);
       setIsReady(false);
       if (!navigator.mediaDevices?.getUserMedia) {
         setError(t('profilePage.spoolAddModal.scanQrCameraNotSupported'));
@@ -70,7 +76,7 @@ export function QrScannerModal({ isOpen, onClose, onDetected, busy = false }: Qr
 
         let lastDecodeAt = 0;
         const scanFrame = async (now: number) => {
-          if (!scanningRef.current) {
+          if (cancelled || !scanningRef.current) {
             return;
           }
           const video = videoRef.current;
@@ -82,12 +88,29 @@ export function QrScannerModal({ isOpen, onClose, onDetected, busy = false }: Qr
             lastDecodeAt = now;
             try {
               const rawValue = await decode(video);
-              if (!scanningRef.current) {
+              if (cancelled || !scanningRef.current) {
                 return;
               }
               if (rawValue) {
                 scanningRef.current = false;
-                onDetected(rawValue);
+                let handled = false;
+                try {
+                  handled = await onDetectedRef.current(rawValue);
+                } catch {
+                  handled = false;
+                }
+                if (handled || cancelled) {
+                  return; // родитель закроет модалку
+                }
+                // Чужой / не найденный QR — подсказка и продолжаем сканировать.
+                setNotice(t('qrScanner.notOurQr'));
+                setTimeout(() => {
+                  if (cancelled) return;
+                  setNotice(null);
+                  scanningRef.current = true;
+                  lastDecodeAt = 0;
+                  frameRef.current = requestAnimationFrame((ts) => void scanFrame(ts));
+                }, 1600);
                 return;
               }
             } catch {
@@ -110,11 +133,21 @@ export function QrScannerModal({ isOpen, onClose, onDetected, busy = false }: Qr
       cancelled = true;
       stop();
     };
-  }, [isOpen, onDetected, t]);
+  }, [isOpen, t]);
 
   if (!isOpen) {
     return null;
   }
+
+  const statusText = error
+    ? error
+    : notice
+      ? notice
+      : busy
+        ? t('qrScanner.resolving')
+        : isReady
+          ? t('qrScanner.hint')
+          : t('profilePage.spoolAddModal.scanQrCameraStarting');
 
   return (
     <ModalOverlay onClose={onClose}>
@@ -127,17 +160,9 @@ export function QrScannerModal({ isOpen, onClose, onDetected, busy = false }: Qr
         </div>
         <div className="rounded-xl overflow-hidden border border-white/15 bg-black/40">
           <video ref={videoRef} className="w-full max-h-80 object-cover" playsInline muted autoPlay />
-          <div className="px-3 py-2 text-xs text-gray-300 border-t border-white/10 flex items-center gap-2">
-            {(busy || !isReady) && !error && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
-            <span>
-              {error
-                ? error
-                : busy
-                  ? t('qrScanner.resolving')
-                  : isReady
-                    ? t('qrScanner.hint')
-                    : t('profilePage.spoolAddModal.scanQrCameraStarting')}
-            </span>
+          <div className={`px-3 py-2 text-xs border-t border-white/10 flex items-center gap-2 ${notice ? 'text-amber-300' : 'text-gray-300'}`}>
+            {(busy || !isReady) && !error && !notice && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+            <span>{statusText}</span>
           </div>
         </div>
       </div>

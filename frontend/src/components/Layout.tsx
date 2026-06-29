@@ -6,7 +6,7 @@ import { Package, User, LogOut, Shield, MessageCircle, Download, Menu, X, BookOp
 import { useAuth } from '../contexts/AuthContext';
 import { QrScannerModal } from './QrScannerModal';
 import { qrAPI } from '../api/client';
-import { extractQrShortCode } from '../utils/qrScanner';
+import { ownQrShortCode } from '../utils/qrScanner';
 import { AuthModal } from './AuthModal';
 import { Notifications } from './Notifications';
 import { FeedbackModal } from './FeedbackModal';
@@ -28,21 +28,22 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
   const [isScannerOpen, setIsScannerOpen] = useState(false);
   const [isScanResolving, setIsScanResolving] = useState(false);
 
-  const handleScanDetected = async (rawCode: string) => {
-    const code = extractQrShortCode(rawCode);
+  const handleScanDetected = async (rawCode: string): Promise<boolean> => {
+    const code = ownQrShortCode(rawCode);
     if (!code) {
-      setIsScannerOpen(false);
-      return;
+      return false; // не наш QR — сканер продолжит и покажет подсказку
     }
     setIsScanResolving(true);
     try {
       const res = await qrAPI.scan(code);
-      setIsScannerOpen(false);
       if (res?.filament) {
+        setIsScannerOpen(false);
         navigate(`/filaments/${res.filament.id}`);
+        return true;
       }
+      return false;
     } catch {
-      setIsScannerOpen(false);
+      return false; // не найден — продолжаем сканировать
     } finally {
       setIsScanResolving(false);
     }

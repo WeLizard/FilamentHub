@@ -25,6 +25,35 @@ export function extractQrShortCode(rawValue: string): string | null {
 }
 
 /**
+ * Возвращает наш short-code, только если QR действительно наш:
+ * — URL на filamenthub.ru с сегментом `/qr/<code>` (или `/f/<code>`);
+ * — либо «голый» код целиком (бэкенд валидирует его при scan).
+ * Для чужих QR (например, ссылка на Ozon) возвращает null — чтобы не дёргать API
+ * и показать пользователю подсказку.
+ */
+export function ownQrShortCode(rawValue: string): string | null {
+  const v = rawValue.trim();
+  if (!v) return null;
+
+  if (v.startsWith('http://') || v.startsWith('https://')) {
+    try {
+      const url = new URL(v);
+      const host = url.hostname.toLowerCase();
+      const ours = host === 'filamenthub.ru' || host.endsWith('.filamenthub.ru') || host === 'localhost';
+      if (!ours) return null;
+      const segments = url.pathname.split('/').filter(Boolean);
+      const idx = segments.findIndex((s) => s.toLowerCase() === 'qr' || s.toLowerCase() === 'f');
+      if (idx !== -1 && segments[idx + 1]) return segments[idx + 1];
+      return null;
+    } catch {
+      return null;
+    }
+  }
+
+  return /^[A-Za-z0-9_-]{4,100}$/.test(v) ? v : null;
+}
+
+/**
  * Покадровый декодер QR: нативный BarcodeDetector (Chromium на Android/desktop),
  * иначе ленивый jsQR-фолбэк на canvas (iOS Safari и Firefox — без BarcodeDetector).
  */
