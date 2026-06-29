@@ -1105,6 +1105,7 @@
     "nameLabel": "Material name",
     "namePlaceholder": "e.g. PLA Red",
     "lineLabel": "Product line (optional)",
+    "lineHint": "Groups the colours of one product on the brand page (e.g. \"PLA Basic\" in different colours). \"No line\" = a standalone material. Each colour keeps its own settings.",
     "lineNone": "No line",
     "lineNewPlaceholder": "New line",
     "lineCreate": "Create",

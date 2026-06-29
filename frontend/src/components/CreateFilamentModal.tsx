@@ -791,7 +791,8 @@ export const CreateFilamentModal: React.FC<CreateFilamentModalProps> = ({
           {/* Линейка (группировка вариантов-цвета) */}
           {brandIdValue && (
             <div>
-              <label className="block text-gray-300 mb-2 text-sm font-medium">{t('createFilament.lineLabel')}</label>
+              <label className="block text-gray-300 mb-1 text-sm font-medium">{t('createFilament.lineLabel')}</label>
+              <p className="text-gray-500 text-xs mb-2">{t('createFilament.lineHint')}</p>
               <Dropdown
                 value={lineId === '' ? '' : String(lineId)}
                 onChange={(val) => setLineId(val === '' ? '' : Number(val))}

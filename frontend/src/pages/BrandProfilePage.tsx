@@ -106,6 +106,27 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({ onBack }) =>
 
   const filaments = filamentsData?.items || [];
 
+  // Группировка материалов по линейке (как на публичной странице бренда):
+  // материалы с line_name — под заголовком линейки, остальные — отдельной группой.
+  const materialLineGroups = (() => {
+    const byLine = new Map<string, { lineName: string; items: typeof filaments }>();
+    const ungrouped: typeof filaments = [];
+    for (const f of filaments) {
+      if (f.line_name && f.line_id) {
+        const key = String(f.line_id);
+        const g = byLine.get(key);
+        if (g) g.items.push(f);
+        else byLine.set(key, { lineName: f.line_name, items: [f] });
+      } else {
+        ungrouped.push(f);
+      }
+    }
+    const groups: { key: string; lineName: string | null; items: typeof filaments }[] =
+      Array.from(byLine.entries()).map(([key, v]) => ({ key, lineName: v.lineName, items: v.items }));
+    if (ungrouped.length) groups.push({ key: 'ungrouped', lineName: null, items: ungrouped });
+    return groups;
+  })();
+
   // Загружаем официальные пресеты производителя (для его материалов)
   const { 
     data: presetsData, 
@@ -477,33 +498,42 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({ onBack }) =>
           {!isLoadingFilaments && !filamentsError && (
             <>
               {filaments.length > 0 ? (
-                materialsViewMode === 'grid' ? (
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                  {filaments.map((filament) => (
-                    <FilamentCard
-                      key={filament.id}
-                      filament={filament}
-                      onEdit={handleEditFilament}
-                      onDelete={handleDeleteFilament}
-                      onShowQR={(filament) => setShowQRFilament(filament)}
-                        viewMode="grid"
-                    />
+                <div className="space-y-6">
+                  {materialLineGroups.map((group) => (
+                    <div key={group.key}>
+                      {group.lineName && (
+                        <h3 className="text-base font-semibold text-white mb-3">{group.lineName}</h3>
+                      )}
+                      {materialsViewMode === 'grid' ? (
+                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                          {group.items.map((filament) => (
+                            <FilamentCard
+                              key={filament.id}
+                              filament={filament}
+                              onEdit={handleEditFilament}
+                              onDelete={handleDeleteFilament}
+                              onShowQR={(filament) => setShowQRFilament(filament)}
+                              viewMode="grid"
+                            />
+                          ))}
+                        </div>
+                      ) : (
+                        <div className="space-y-3">
+                          {group.items.map((filament) => (
+                            <FilamentCard
+                              key={filament.id}
+                              filament={filament}
+                              onEdit={handleEditFilament}
+                              onDelete={handleDeleteFilament}
+                              onShowQR={(filament) => setShowQRFilament(filament)}
+                              viewMode="list"
+                            />
+                          ))}
+                        </div>
+                      )}
+                    </div>
                   ))}
                 </div>
-                ) : (
-                  <div className="space-y-3">
-                    {filaments.map((filament) => (
-                      <FilamentCard
-                        key={filament.id}
-                        filament={filament}
-                        onEdit={handleEditFilament}
-                        onDelete={handleDeleteFilament}
-                        onShowQR={(filament) => setShowQRFilament(filament)}
-                        viewMode="list"
-                      />
-                    ))}
-                  </div>
-                )
               ) : (
                 <div className="text-center py-12">
                   <Package className="w-16 h-16 text-gray-400 mx-auto mb-4" />
