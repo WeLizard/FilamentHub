@@ -4,7 +4,18 @@ import secrets
 from datetime import datetime, timezone
 from typing import Annotated
 
-from fastapi import APIRouter, Body, Depends, HTTPException, Query, Request, Response, status
+from fastapi import (
+    APIRouter,
+    Body,
+    Depends,
+    File,
+    HTTPException,
+    Query,
+    Request,
+    Response,
+    UploadFile,
+    status,
+)
 from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -447,6 +458,59 @@ async def get_current_user_info(
     current_user: Annotated[User, Depends(get_current_active_user)],
 ) -> UserResponse:
     """Получить информацию о текущем пользователе."""
+    return UserResponse.model_validate(current_user)
+
+
+@router.post("/me/avatar", response_model=UserResponse)
+async def upload_avatar(
+    db: Annotated[AsyncSession, Depends(get_db)],
+    current_user: Annotated[User, Depends(get_current_active_user)],
+    file: UploadFile = File(...),
+) -> UserResponse:
+    """Загрузить аватар текущего пользователя."""
+    import uuid
+    from pathlib import Path
+
+    from app.core.errors import (
+        ERR_FILE_EXT_NOT_ALLOWED,
+        ERR_FILE_SIZE_EXCEEDED,
+        ERR_INVALID_FILE_PATH,
+    )
+    from app.services.file_service import get_upload_root_dir, normalize_brand_logo_upload
+
+    allowed_ext = {".png", ".jpg", ".jpeg", ".webp"}
+    file_ext = Path(file.filename or "").suffix.lower()
+    if file_ext not in allowed_ext:
+        raise_error(
+            400,
+            ERR_FILE_EXT_NOT_ALLOWED,
+            {"ext": file_ext, "allowed": ", ".join(sorted(allowed_ext))},
+        )
+
+    content = await file.read()
+    max_size = 2 * 1024 * 1024
+    if len(content) > max_size:
+        raise_error(
+            400,
+            ERR_FILE_SIZE_EXCEEDED,
+            {"size_mb": f"{len(content) / (1024 * 1024):.2f}", "max_mb": "2"},
+        )
+    content, stored_ext = normalize_brand_logo_upload(content, file_ext)
+
+    base_upload_dir = get_upload_root_dir()
+    avatar_dir = base_upload_dir / "avatars"
+    avatar_dir.mkdir(parents=True, exist_ok=True)
+    file_name = f"{current_user.id}_{uuid.uuid4().hex[:8]}{stored_ext}"
+    file_path = (avatar_dir / file_name).resolve()
+    if not str(file_path).startswith(str(avatar_dir.resolve())):
+        raise_error(400, ERR_INVALID_FILE_PATH)
+
+    with open(file_path, "wb") as f:
+        f.write(content)
+
+    current_user.avatar_url = f"/uploads/avatars/{file_name}"
+    await db.commit()
+    await db.refresh(current_user)
     return UserResponse.model_validate(current_user)
 
 

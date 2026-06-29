@@ -77,6 +77,21 @@ export const ProfilePage: React.FC = () => {
   const queryClient = useQueryClient();
   const { t } = useTranslation();
   const isHeaderVisible = useHeaderVisible();
+  const [isUploadingAvatar, setIsUploadingAvatar] = useState(false);
+  const handleAvatarUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+    setIsUploadingAvatar(true);
+    try {
+      await authAPI.uploadAvatar(file);
+      await refreshUser();
+    } catch {
+      // ошибка загрузки — оставляем прежний аватар
+    } finally {
+      setIsUploadingAvatar(false);
+    }
+  };
   const [showBrandCabinet, setShowBrandCabinet] = useState(false); // Показывать ли кабинет производителя
   const [userTab, setUserTab] = useState<'dashboard' | 'presets' | 'spools' | 'calculator-pro' | 'settings' | 'printer-profiles'>(
     'dashboard'
@@ -608,9 +623,19 @@ export const ProfilePage: React.FC = () => {
       {/* Header — компактная строка: аватар + имя·роль + ачивки (без крупного «Мой профиль») */}
       <div className="mb-4 md:mb-6">
         <div className="flex items-center gap-3 mb-3 md:mb-4">
-          <div className="w-11 h-11 md:w-14 md:h-14 shrink-0 bg-gradient-to-r from-purple-500 to-pink-500 rounded-xl flex items-center justify-center shadow-lg shadow-purple-500/25">
-            <User className="w-6 h-6 md:w-7 md:h-7 text-white" />
-          </div>
+          <label className="group/avatar relative w-11 h-11 md:w-14 md:h-14 shrink-0 rounded-xl overflow-hidden cursor-pointer shadow-lg shadow-purple-500/25" title={t('profilePage.avatarUpload')}>
+            {user.avatar_url ? (
+              <img src={user.avatar_url} alt={user.full_name || user.username} className="w-full h-full object-cover" />
+            ) : (
+              <span className="w-full h-full flex items-center justify-center bg-gradient-to-r from-purple-500 to-pink-500">
+                <User className="w-6 h-6 md:w-7 md:h-7 text-white" />
+              </span>
+            )}
+            <span className="absolute inset-0 flex items-center justify-center bg-black/45 opacity-0 group-hover/avatar:opacity-100 transition-opacity">
+              {isUploadingAvatar ? <Loader2 className="w-4 h-4 text-white animate-spin" /> : <Camera className="w-4 h-4 text-white" />}
+            </span>
+            <input type="file" accept=".png,.jpg,.jpeg,.webp" onChange={handleAvatarUpload} className="hidden" disabled={isUploadingAvatar} />
+          </label>
           <div className="min-w-0">
             <p className="text-base md:text-xl font-bold text-white truncate">{user.full_name || user.username}</p>
             <p className="text-xs md:text-sm text-gray-400">{t('profilePage.printer3d')}</p>

@@ -325,6 +325,7 @@ export interface User {
   role: string;
   full_name: string | null;
   bio: string | null;
+  avatar_url: string | null; // загруженный аватар пользователя
   active: boolean;
   email_verified: boolean;
   brand_id: number | null;

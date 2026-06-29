@@ -109,6 +109,7 @@ class UserResponse(UserBase):
     api_key: str | None = None
     active: bool
     email_verified: bool
+    avatar_url: str | None = None  # Загруженный аватар пользователя
     brand_id: int | None = None
     brand_name: str | None = None  # Название бренда (для админки)
     printer_id: int | None = None  # ID выбранного принтера из каталога

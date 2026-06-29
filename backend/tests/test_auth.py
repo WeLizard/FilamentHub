@@ -304,3 +304,33 @@ async def test_legacy_refresh_body_still_works_in_dual_mode(client: AsyncClient,
     )
     assert refresh_response.status_code == 200
     assert "access_token" in refresh_response.json()
+
+
+@pytest.mark.asyncio
+async def test_upload_avatar(client: AsyncClient):
+    """Uploading an avatar stores the file and returns avatar_url."""
+    user_data = {
+        "email": "avatar@example.com",
+        "username": "avataruser",
+        "password": "password123",
+        "role": "user",
+    }
+    await client.post("/api/v1/auth/register", json=user_data)
+    login = await client.post(
+        "/api/v1/auth/login",
+        json={"email": user_data["email"], "password": user_data["password"]},
+    )
+    token = login.json()["access_token"]
+
+    png = (
+        b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01\x00\x00\x00\x01"
+        b"\x08\x06\x00\x00\x00\x1f\x15\xc4\x89\x00\x00\x00\nIDATx\x9cc\x00\x01"
+        b"\x00\x00\x05\x00\x01\r\n-\xb4\x00\x00\x00\x00IEND\xaeB`\x82"
+    )
+    resp = await client.post(
+        "/api/v1/auth/me/avatar",
+        files={"file": ("a.png", png, "image/png")},
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert resp.status_code == 200
+    assert (resp.json().get("avatar_url") or "").startswith("/uploads/avatars/")
