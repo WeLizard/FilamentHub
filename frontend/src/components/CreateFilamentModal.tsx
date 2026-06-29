@@ -89,10 +89,10 @@ export const CreateFilamentModal: React.FC<CreateFilamentModalProps> = ({
   const [showMaterialTypeDropdown, setShowMaterialTypeDropdown] = useState(false);
   const materialTypeDropdownRef = useRef<HTMLDivElement>(null);
   const [colorName, setColorName] = useState('');
-  const [colorHex, setColorHex] = useState('#FFFFFF');
+  const [colorHex, setColorHex] = useState('#808080');
   // Расширенные характеристики цвета
   const [visualColorType, setVisualColorType] = useState<'single' | 'two' | 'three' | 'gradient' | 'transition' | 'thermochromic'>('single');
-  const [visualColors, setVisualColors] = useState<string[]>(['#FFFFFF']);
+  const [visualColors, setVisualColors] = useState<string[]>(['#808080']);
   const [visualFinish, setVisualFinish] = useState<'matte' | 'glossy'>('matte');
   const [visualFiller, setVisualFiller] = useState<string>('none');
   const [customFiller, setCustomFiller] = useState('');
@@ -289,10 +289,10 @@ export const CreateFilamentModal: React.FC<CreateFilamentModalProps> = ({
       setMaterialType('');
       setCustomMaterialType('');
       setColorName('');
-      setColorHex('#FFFFFF');
+      setColorHex('#808080');
       // Сброс расширенных визуальных эффектов
       setVisualColorType('single');
-      setVisualColors(['#FFFFFF']);
+      setVisualColors(['#808080']);
       setVisualFinish('matte');
       setVisualFiller('none');
       setCustomFiller('');

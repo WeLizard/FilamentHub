@@ -508,14 +508,7 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({ onBack }) =>
                 <div className="text-center py-12">
                   <Package className="w-16 h-16 text-gray-400 mx-auto mb-4" />
                   <p className="text-gray-400 text-xl mb-2">{t('brandProfile.noMaterials')}</p>
-                  <p className="text-gray-500 text-sm mb-6">{t('brandProfile.createFirstMaterial')}</p>
-                  <button
-                    onClick={handleCreateFilament}
-                    className="bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700 text-white px-6 py-3 rounded-xl transition-all shadow-lg shadow-green-500/25 hover:shadow-green-500/40 flex items-center space-x-2 mx-auto"
-                  >
-                    <Plus className="w-4 h-4" />
-                    <span>{t('brandProfile.createFirstMaterialBtn')}</span>
-                  </button>
+                  <p className="text-gray-500 text-sm">{t('brandProfile.createFirstMaterial')}</p>
                 </div>
               )}
             </>
