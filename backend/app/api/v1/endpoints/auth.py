@@ -476,7 +476,7 @@ async def upload_avatar(
         ERR_FILE_SIZE_EXCEEDED,
         ERR_INVALID_FILE_PATH,
     )
-    from app.services.file_service import get_upload_root_dir, normalize_brand_logo_upload
+    from app.services.file_service import get_upload_root_dir, normalize_avatar_upload
 
     allowed_ext = {".png", ".jpg", ".jpeg", ".webp"}
     file_ext = Path(file.filename or "").suffix.lower()
@@ -495,7 +495,7 @@ async def upload_avatar(
             ERR_FILE_SIZE_EXCEEDED,
             {"size_mb": f"{len(content) / (1024 * 1024):.2f}", "max_mb": "2"},
         )
-    content, stored_ext = normalize_brand_logo_upload(content, file_ext)
+    content, stored_ext = normalize_avatar_upload(content, file_ext)
 
     base_upload_dir = get_upload_root_dir()
     avatar_dir = base_upload_dir / "avatars"

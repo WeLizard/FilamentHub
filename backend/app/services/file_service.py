@@ -106,6 +106,30 @@ def normalize_brand_logo_upload(content: bytes, file_ext: str) -> tuple[bytes, s
         return content, file_ext
 
 
+def normalize_avatar_upload(content: bytes, file_ext: str, size: int = 256) -> tuple[bytes, str]:
+    """Center-crop to a square, resize and convert a user avatar to WebP.
+
+    Keeps avatars small and fast to load. Falls back to the original on failure.
+    """
+    try:
+        with Image.open(BytesIO(content)) as image:
+            image.load()
+            converted = image.convert("RGB")
+            width, height = converted.size
+            side = min(width, height)
+            left = (width - side) // 2
+            top = (height - side) // 2
+            square = converted.crop((left, top, left + side, top + side))
+            resized = square.resize((size, size), Image.LANCZOS)
+
+            output = BytesIO()
+            resized.save(output, "WEBP", quality=82, method=6)
+            return output.getvalue(), ".webp"
+    except (UnidentifiedImageError, OSError, ValueError) as exc:
+        logger.warning("Failed to normalize avatar, keeping original: %s", exc)
+        return content, file_ext
+
+
 def get_allowed_extensions() -> list[str]:
     """Получить список разрешенных расширений файлов."""
     return settings.ALLOWED_PROOF_FILE_EXTENSIONS
