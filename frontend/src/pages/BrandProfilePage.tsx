@@ -41,6 +41,8 @@ import { PERSONAL_EMAIL_DOMAINS } from '../data/personalEmailDomains';
 import { currencySymbol } from '../utils/currency';
 import { filamentImportAPI } from '../api/client';
 import { ModalOverlay } from '../components/ModalOverlay';
+import { HSLColorPicker } from '../components/HSLColorPicker';
+import { SocialIcon } from '../components/socialIcons';
 import type { FilamentImportResult } from '../types/api';
 import { CreateFilamentModal } from '../components/CreateFilamentModal';
 const CreatePresetModal = lazy(() =>
@@ -74,6 +76,7 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({ onBack }) =>
   const [profileWebsite, setProfileWebsite] = useState('');
   const [profileLogoUrl, setProfileLogoUrl] = useState('');
   const [profileLogoBg, setProfileLogoBg] = useState('');
+  const [logoBgPickerOpen, setLogoBgPickerOpen] = useState(false);
   const [profileSocialUrls, setProfileSocialUrls] = useState<string[]>([]);
   const [profileShopLinks, setProfileShopLinks] = useState<{ platform: string; url: string }[]>([]);
   const [profilePriceHidden, setProfilePriceHidden] = useState(false);
@@ -951,9 +954,9 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({ onBack }) =>
 
       {/* Edit Profile Modal */}
       {isEditingProfile && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
-          <div className="bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900 rounded-2xl w-full max-w-lg overflow-hidden border border-white/20 shadow-2xl">
-            <div className="flex items-center justify-between p-6 border-b border-white/10">
+        <ModalOverlay onClose={() => setIsEditingProfile(false)}>
+          <div className="bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900 rounded-2xl w-full max-w-2xl max-h-[90vh] flex flex-col overflow-hidden border border-white/20 shadow-2xl">
+            <div className="flex items-center justify-between p-6 border-b border-white/10 shrink-0">
               <div className="flex items-center space-x-3">
                 <Edit className="w-6 h-6 text-purple-400" />
                 <h2 className="text-2xl font-bold text-white">{t('brandProfile.editProfile')}</h2>
@@ -962,7 +965,7 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({ onBack }) =>
                 <X className="w-6 h-6" />
               </button>
             </div>
-            <div className="p-6 space-y-4">
+            <div className="p-6 space-y-4 flex-1 overflow-y-auto">
               {profileError && (
                 <div className="p-3 bg-red-500/20 border border-red-500/30 rounded-lg text-red-300 text-sm">
                   {profileError}
@@ -1023,25 +1026,19 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({ onBack }) =>
                 )}
                 <div className="mt-3">
                   <label className="block text-gray-300 mb-2 text-sm font-medium">{t('brandProfile.logoBgLabel')}</label>
-                  <div className="flex items-center gap-2">
-                    <input
-                      type="color"
-                      value={profileLogoBg || '#ffffff'}
-                      onChange={(e) => setProfileLogoBg(e.target.value)}
-                      className="h-10 w-12 shrink-0 rounded-lg border border-white/20 bg-white/10 cursor-pointer"
+                  <div className="flex items-center gap-3">
+                    <HSLColorPicker
+                      color={profileLogoBg || '#ffffff'}
+                      onChange={(hex) => setProfileLogoBg(hex)}
+                      isOpen={logoBgPickerOpen}
+                      onToggle={setLogoBgPickerOpen}
                     />
-                    <input
-                      type="text"
-                      value={profileLogoBg}
-                      onChange={(e) => setProfileLogoBg(e.target.value)}
-                      placeholder="#FFFFFF"
-                      className="flex-1 px-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all"
-                    />
+                    <span className="text-sm font-mono text-gray-400">{profileLogoBg || t('brandProfile.logoBgDefault')}</span>
                     {profileLogoBg && (
                       <button
                         type="button"
                         onClick={() => setProfileLogoBg('')}
-                        className="px-3 py-3 bg-white/10 border border-white/20 rounded-xl text-gray-300 hover:text-white hover:bg-white/20 transition-all text-sm whitespace-nowrap"
+                        className="ml-auto px-3 py-2 bg-white/10 border border-white/20 rounded-xl text-gray-300 hover:text-white hover:bg-white/20 transition-all text-sm whitespace-nowrap"
                       >
                         {t('brandProfile.logoBgReset')}
                       </button>
@@ -1067,7 +1064,10 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({ onBack }) =>
                 <label className="block text-gray-300 mb-2 text-sm font-medium">{t('brandProfile.socialMediaLabel')}</label>
                 <div className="space-y-2">
                   {profileSocialUrls.map((url, i) => (
-                    <div key={i} className="flex gap-2">
+                    <div key={i} className="flex items-center gap-2">
+                      <span className="shrink-0 w-9 h-9 flex items-center justify-center rounded-lg bg-white/5 border border-white/10 text-gray-300">
+                        <SocialIcon url={url} className="w-4 h-4" />
+                      </span>
                       <input
                         type="url"
                         value={url}
@@ -1087,7 +1087,10 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({ onBack }) =>
                 <label className="block text-gray-300 mb-2 text-sm font-medium">{t('brandProfile.shopLinksLabel')}</label>
                 <div className="space-y-2">
                   {profileShopLinks.map((link, i) => (
-                    <div key={i} className="flex gap-2">
+                    <div key={i} className="flex items-center gap-2">
+                      <span className="shrink-0 w-9 h-9 flex items-center justify-center rounded-lg bg-white/5 border border-white/10 text-gray-300">
+                        <SocialIcon url={link.url} className="w-4 h-4" />
+                      </span>
                       <input
                         type="text"
                         value={link.platform}
@@ -1120,7 +1123,7 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({ onBack }) =>
                 <span className="text-gray-300 text-sm font-medium">{t('brandProfile.priceHiddenLabel')}</span>
               </label>
             </div>
-            <div className="p-6 border-t border-white/10 flex justify-end space-x-3">
+            <div className="p-6 border-t border-white/10 flex justify-end space-x-3 shrink-0">
               <button
                 onClick={() => setIsEditingProfile(false)}
                 className="px-6 py-2.5 text-gray-300 hover:text-white hover:bg-white/10 rounded-xl transition-all"
@@ -1141,7 +1144,7 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({ onBack }) =>
               </button>
             </div>
           </div>
-        </div>
+        </ModalOverlay>
       )}
     </div>
   );

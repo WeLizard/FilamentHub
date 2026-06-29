@@ -3065,6 +3065,7 @@
     "logoPreview": "Preview",
     "logoBgLabel": "Logo background",
     "logoBgReset": "Reset",
+    "logoBgDefault": "Default",
     "logoBgHint": "Set a background if your logo is transparent (PNG/SVG) and gets lost on the dark theme. Empty = default background.",
     "uploadLogo": "Upload",
     "logoUploadError": "Error uploading logo",
