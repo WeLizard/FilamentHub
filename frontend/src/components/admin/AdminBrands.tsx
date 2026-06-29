@@ -4,11 +4,11 @@ import { useState, useEffect, useRef, FormEvent } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
-import { Building2, CheckCircle, XCircle, Shield, Search, ExternalLink, Edit, X, Save, Loader2, Upload } from 'lucide-react';
+import { Building2, CheckCircle, XCircle, Shield, Search, ExternalLink, Edit, X, Save, Loader2, Upload, Send, Copy } from 'lucide-react';
 import { ModalOverlay } from '../ModalOverlay';
-import { adminAPI } from '../../api/client';
+import { adminAPI, brandInvitesAPI } from '../../api/client';
 import { translateApiError } from '../../utils/translateApiError';
-import type { Brand } from '../../types/api';
+import type { Brand, BrandInviteAdmin } from '../../types/api';
 import type { AxiosError } from 'axios';
 
 type FilterType = 'all' | 'verified' | 'unverified';
@@ -30,6 +30,40 @@ export function AdminBrands() {
   const [editError, setEditError] = useState<string | null>(null);
   const [isUploading, setIsUploading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Приглашение бренда
+  const [showInviteModal, setShowInviteModal] = useState(false);
+  const [inviteEmail, setInviteEmail] = useState('');
+  const [inviteBrandName, setInviteBrandName] = useState('');
+  const [inviteResult, setInviteResult] = useState<BrandInviteAdmin | null>(null);
+  const [inviteError, setInviteError] = useState<string | null>(null);
+  const [inviteSubmitting, setInviteSubmitting] = useState(false);
+
+  const submitInvite = async (e: FormEvent) => {
+    e.preventDefault();
+    setInviteError(null);
+    setInviteSubmitting(true);
+    try {
+      const res = await brandInvitesAPI.adminCreate({
+        email: inviteEmail.trim(),
+        brand_name: inviteBrandName.trim() || null,
+      });
+      setInviteResult(res);
+    } catch (err) {
+      const detail = (err as AxiosError<{ detail?: unknown }>)?.response?.data?.detail;
+      setInviteError(translateApiError(t, detail, t('adminBrands.inviteError')));
+    } finally {
+      setInviteSubmitting(false);
+    }
+  };
+
+  const closeInvite = () => {
+    setShowInviteModal(false);
+    setInviteEmail('');
+    setInviteBrandName('');
+    setInviteResult(null);
+    setInviteError(null);
+  };
 
   // Определяем параметр verified для API
   const verifiedParam = filter === 'all' ? null : filter === 'verified' ? true : false;
@@ -166,6 +200,13 @@ export function AdminBrands() {
           <h2 className="text-2xl font-bold text-white mb-2">{t('adminBrands.title')}</h2>
           <p className="text-gray-400">{t('adminBrands.total')}: {total}</p>
         </div>
+        <button
+          type="button"
+          onClick={() => { setShowInviteModal(true); setInviteResult(null); setInviteError(null); }}
+          className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white rounded-xl transition-all text-sm whitespace-nowrap"
+        >
+          <Send className="w-4 h-4" /> {t('adminBrands.inviteButton')}
+        </button>
       </div>
 
       {/* Фильтры и поиск */}
@@ -523,6 +564,85 @@ export function AdminBrands() {
                 </button>
               </div>
             </form>
+          </div>
+        </ModalOverlay>
+      )}
+
+      {showInviteModal && (
+        <ModalOverlay onClose={closeInvite}>
+          <div className="bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900 rounded-2xl w-full max-w-md border border-white/20 shadow-2xl overflow-hidden">
+            <div className="flex items-center justify-between p-6 border-b border-white/10">
+              <div className="flex items-center gap-2">
+                <Send className="w-5 h-5 text-purple-400" />
+                <h3 className="text-xl font-bold text-white">{t('adminBrands.inviteTitle')}</h3>
+              </div>
+              <button onClick={closeInvite} className="text-gray-400 hover:text-white transition-colors">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            {inviteResult ? (
+              <div className="p-6 space-y-4">
+                <p className="text-green-300 text-sm">{t('adminBrands.inviteSent', { email: inviteResult.email })}</p>
+                <div className="flex items-center gap-2">
+                  <input
+                    readOnly
+                    value={inviteResult.invite_url || ''}
+                    className="flex-1 px-3 py-2 bg-white/5 border border-white/20 rounded-lg text-gray-300 text-sm"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => inviteResult.invite_url && navigator.clipboard.writeText(inviteResult.invite_url)}
+                    className="p-2 bg-white/10 hover:bg-white/20 rounded-lg text-gray-300 transition-all"
+                    title={t('adminBrands.inviteCopy')}
+                  >
+                    <Copy className="w-4 h-4" />
+                  </button>
+                </div>
+                <div className="flex justify-end">
+                  <button type="button" onClick={closeInvite} className="px-5 py-2.5 bg-purple-600 hover:bg-purple-700 text-white rounded-xl transition-all">
+                    {t('adminBrands.inviteClose')}
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <form onSubmit={submitInvite} className="p-6 space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-300 mb-2">{t('adminBrands.inviteEmail')}</label>
+                  <input
+                    type="email"
+                    required
+                    value={inviteEmail}
+                    onChange={(e) => setInviteEmail(e.target.value)}
+                    placeholder="info@brand.com"
+                    className="w-full px-4 py-2 bg-white/5 border border-white/20 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-300 mb-2">{t('adminBrands.inviteBrandName')}</label>
+                  <input
+                    type="text"
+                    value={inviteBrandName}
+                    onChange={(e) => setInviteBrandName(e.target.value)}
+                    placeholder={t('adminBrands.inviteBrandNamePlaceholder')}
+                    className="w-full px-4 py-2 bg-white/5 border border-white/20 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500"
+                  />
+                </div>
+                {inviteError && <p className="text-red-400 text-sm">{inviteError}</p>}
+                <div className="flex justify-end gap-3">
+                  <button type="button" onClick={closeInvite} className="px-5 py-2.5 bg-white/10 hover:bg-white/20 text-white rounded-xl transition-all">
+                    {t('adminBrands.inviteCancel')}
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={inviteSubmitting || !inviteEmail.trim()}
+                    className="px-5 py-2.5 bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white rounded-xl transition-all disabled:opacity-50 flex items-center gap-2"
+                  >
+                    {inviteSubmitting && <Loader2 className="w-4 h-4 animate-spin" />}
+                    {t('adminBrands.inviteSubmit')}
+                  </button>
+                </div>
+              </form>
+            )}
           </div>
         </ModalOverlay>
       )}

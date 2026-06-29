@@ -10,6 +10,7 @@ import { ConsentPage } from './pages/ConsentPage';
 import { ResetPasswordPage } from './pages/ResetPasswordPage';
 import { OAuthCallbackPage } from './pages/OAuthCallbackPage';
 import { ConfirmEmailChangePage } from './pages/ConfirmEmailChangePage';
+import { BrandInvitePage } from './pages/BrandInvitePage';
 import { DownloadPage } from './pages/DownloadPage';
 import { ToastContainer } from './components/Toast';
 import { useOrcaSlicerNotifications } from './hooks/useOrcaSlicerNotifications';
@@ -260,6 +261,7 @@ function AppContent() {
         <Route path="/personal-data-consent" element={<ConsentPage />} />
         <Route path="/reset-password" element={<ResetPasswordPage />} />
         <Route path="/confirm-email-change" element={<ConfirmEmailChangePage />} />
+        <Route path="/brand-invite/:token" element={<BrandInvitePage />} />
         <Route path="/oauth/callback/:provider" element={<OAuthCallbackPage />} />
         <Route path="*" element={<NotFoundPage />} />
       </Routes>

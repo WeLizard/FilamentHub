@@ -138,6 +138,30 @@ export interface FilamentPalettePayload {
   variants: FilamentPaletteVariant[];
 }
 
+export interface BrandInvitePublic {
+  valid: boolean;
+  brand_name: string | null;
+  email: string | null;
+  reason: string | null;
+}
+
+export interface BrandInviteAdmin {
+  id: number;
+  token: string;
+  email: string;
+  brand_name: string | null;
+  pre_verified: boolean;
+  expires_at: string;
+  accepted_at: string | null;
+  created_at: string;
+  invite_url: string | null;
+}
+
+export interface BrandInviteAcceptResult {
+  brand_id: number;
+  brand_name: string;
+}
+
 export interface Printer {
   id: number;
   name: string;

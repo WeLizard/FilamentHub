@@ -2,7 +2,7 @@
 
 import axios from 'axios';
 import type { InternalAxiosRequestConfig } from 'axios';
-import type { Brand, BrandUsage, BrandRequest, BrandRequestStatus, Filament, FilamentLine, FilamentImportResult, FilamentPalettePayload, FilamentAvailability, FilamentVisualSettings, FilamentReview, FilamentRatingStats, Notification, NotificationListResponse, Preset, RecommendedPreset, Printer, PrinterProfile, PrintProfile, PrinterRequest, User, Token, RefreshTokenRequest, RefreshTokenResponse, ListResponse, AccountDeletionStats, UserSavedPreset, CalculatorEstimateRequest, CalculatorEstimateResponse, CalculatorProfileResponse, CalculatorProfileUpdate, Feedback, FeedbackListResponse, FeedbackType, CompatiblePrinter, CompatibleFilament, DownloadVersion, DownloadVersionsResponse, WikiCategory, WikiCategoryListResponse, WikiArticle, WikiArticleListResponse, WikiFeedbackStats, WikiFeedbackCreate, WikiFeedback } from '../types/api';
+import type { Brand, BrandUsage, BrandRequest, BrandRequestStatus, Filament, FilamentLine, FilamentImportResult, FilamentPalettePayload, BrandInvitePublic, BrandInviteAdmin, BrandInviteAcceptResult, FilamentAvailability, FilamentVisualSettings, FilamentReview, FilamentRatingStats, Notification, NotificationListResponse, Preset, RecommendedPreset, Printer, PrinterProfile, PrintProfile, PrinterRequest, User, Token, RefreshTokenRequest, RefreshTokenResponse, ListResponse, AccountDeletionStats, UserSavedPreset, CalculatorEstimateRequest, CalculatorEstimateResponse, CalculatorProfileResponse, CalculatorProfileUpdate, Feedback, FeedbackListResponse, FeedbackType, CompatiblePrinter, CompatibleFilament, DownloadVersion, DownloadVersionsResponse, WikiCategory, WikiCategoryListResponse, WikiArticle, WikiArticleListResponse, WikiFeedbackStats, WikiFeedbackCreate, WikiFeedback } from '../types/api';
 import { getCsrfToken, getRefreshToken, getToken, isCookieAuthMode, isJwtAuthMode, isOrcaEmbedded, removeToken, setToken, shouldPersistTokensLocally } from '../utils/auth';
 
 const API_BASE_URL = '/api/v1';
@@ -516,6 +516,29 @@ export const filamentLinesAPI = {
   createVariants: async (lineId: number, payload: FilamentPalettePayload): Promise<FilamentImportResult> => {
     const response = await api.post<FilamentImportResult>(`/filament-lines/${lineId}/variants`, payload);
     return response.data;
+  },
+};
+
+// Brand invitations API (admin issues, brands accept)
+export const brandInvitesAPI = {
+  getByToken: async (token: string): Promise<BrandInvitePublic> => {
+    const response = await api.get<BrandInvitePublic>(`/brand-invites/${token}`);
+    return response.data;
+  },
+  accept: async (token: string, brandName: string): Promise<BrandInviteAcceptResult> => {
+    const response = await api.post<BrandInviteAcceptResult>(`/brand-invites/${token}/accept`, { brand_name: brandName });
+    return response.data;
+  },
+  adminCreate: async (payload: { email: string; brand_name?: string | null; expires_days?: number }): Promise<BrandInviteAdmin> => {
+    const response = await api.post<BrandInviteAdmin>('/admin/brand-invites', payload);
+    return response.data;
+  },
+  adminList: async (): Promise<BrandInviteAdmin[]> => {
+    const response = await api.get<BrandInviteAdmin[]>('/admin/brand-invites');
+    return response.data;
+  },
+  adminDelete: async (id: number): Promise<void> => {
+    await api.delete(`/admin/brand-invites/${id}`);
   },
 };
 
