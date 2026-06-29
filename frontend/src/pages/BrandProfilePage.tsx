@@ -51,7 +51,7 @@ const CreatePresetModal = lazy(() =>
 import { PresetSyncToggle } from '../components/PresetSyncToggle';
 import { Dropdown } from '../components/Dropdown';
 import { FilamentPreview } from '../components/FilamentPreview';
-import type { Filament, Brand, BrandRequest, Preset } from '../types/api';
+import type { Filament, FilamentAvailability, Brand, BrandRequest, Preset } from '../types/api';
 import type { AxiosError } from 'axios';
 
 interface BrandProfilePageProps {
@@ -2827,6 +2827,27 @@ const FilamentCard: React.FC<FilamentCardProps> = ({ filament, onEdit, onDelete,
   const officialPreset = presets.find((p) => p.is_official);
   const totalPresets = presets.length;
 
+  // Быстрая смена статуса наличия прямо из списка кабинета.
+  const cardQueryClient = useQueryClient();
+  const availabilityMutation = useMutation({
+    mutationFn: (availability: FilamentAvailability) => filamentsAPI.update(filament.id, { availability }),
+    onSuccess: () => cardQueryClient.invalidateQueries({ queryKey: ['brand-filaments'] }),
+  });
+  const statusSelect = (
+    <select
+      value={filament.availability || 'available'}
+      onClick={(e) => e.stopPropagation()}
+      onChange={(e) => availabilityMutation.mutate(e.target.value as FilamentAvailability)}
+      disabled={availabilityMutation.isPending}
+      className="bg-white/10 border border-white/20 rounded-full px-2 py-0.5 text-xs text-gray-200 focus:outline-none focus:ring-1 focus:ring-purple-500 cursor-pointer disabled:opacity-50"
+      title={t('createFilament.availabilityLabel')}
+    >
+      <option value="available" className="bg-gray-900">{t('createFilament.availability.available')}</option>
+      <option value="discontinued" className="bg-gray-900">{t('createFilament.availability.discontinued')}</option>
+      <option value="coming_soon" className="bg-gray-900">{t('createFilament.availability.coming_soon')}</option>
+    </select>
+  );
+
   if (viewMode === 'list') {
     return (
       <div className="p-2 bg-white/5 rounded-lg border border-white/10 hover:bg-white/10 transition-all group">
@@ -2878,6 +2899,7 @@ const FilamentCard: React.FC<FilamentCardProps> = ({ filament, onEdit, onDelete,
             
             {/* Badges */}
             <div className="flex items-center gap-1.5 flex-shrink-0">
+              {statusSelect}
               <span className="px-2 py-0.5 bg-purple-500/20 text-purple-300 text-xs rounded-full">
                 {filament.material_type}
               </span>
@@ -2976,6 +2998,7 @@ const FilamentCard: React.FC<FilamentCardProps> = ({ filament, onEdit, onDelete,
       {/* Material Type and Status */}
       <div className="flex items-center justify-between mb-4">
         <div className="flex items-center space-x-2">
+          {statusSelect}
           <span className="px-3 py-1 bg-purple-500/20 text-purple-300 text-xs font-medium rounded-full">
             {filament.material_type}
           </span>
