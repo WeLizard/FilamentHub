@@ -40,7 +40,7 @@ import { brandsAPI, filamentsAPI, brandRequestsAPI, presetsAPI, qrAPI } from '..
 import { translateApiError } from '../utils/translateApiError';
 import { PERSONAL_EMAIL_DOMAINS } from '../data/personalEmailDomains';
 import { currencySymbol } from '../utils/currency';
-import { filamentImportAPI } from '../api/client';
+import { filamentImportAPI, filamentLinesAPI } from '../api/client';
 import { ModalOverlay } from '../components/ModalOverlay';
 import { HSLColorPicker } from '../components/HSLColorPicker';
 import { SocialIcon } from '../components/socialIcons';
@@ -71,6 +71,7 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({ onBack }) =>
   const [editingFilament, setEditingFilament] = useState<Filament | null>(null);
   const [editingPreset, setEditingPreset] = useState<Preset | null>(null);
   const [deletingFilamentId, setDeletingFilamentId] = useState<number | null>(null);
+  const [deletingLine, setDeletingLine] = useState<{ id: number; name: string } | null>(null);
   const [showQRFilament, setShowQRFilament] = useState<Filament | null>(null);
   const [isEditingProfile, setIsEditingProfile] = useState(false);
   const [profileDescription, setProfileDescription] = useState('');
@@ -177,6 +178,19 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({ onBack }) =>
     onError: (err: AxiosError<{ detail: unknown }>) => {
       alert(translateApiError(t, err.response?.data?.detail, t('brandProfile.errorDeleteMaterial')));
       setDeletingFilamentId(null);
+    },
+  });
+
+  const deleteLineMutation = useMutation({
+    mutationFn: (id: number) => filamentLinesAPI.remove(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['brand-filaments'] });
+      if (brandData?.id) queryClient.invalidateQueries({ queryKey: ['filament-lines', brandData.id] });
+      setDeletingLine(null);
+    },
+    onError: (err: AxiosError<{ detail: unknown }>) => {
+      setProfileError(translateApiError(t, err.response?.data?.detail, t('brandProfile.errorDeleteLine')));
+      setDeletingLine(null);
     },
   });
 
@@ -336,7 +350,7 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({ onBack }) =>
     <div className="space-y-6">
       {/* Header */}
       <div className="mb-6">
-        <div className="flex justify-center md:justify-start mb-4">
+        <div className="flex justify-center md:justify-end mb-4">
           <div className="relative flex flex-col items-center md:inline-flex md:flex-row md:items-center">
             <div
               className={`mb-3 inline-flex h-16 shrink-0 items-center justify-center overflow-hidden rounded-xl shadow-lg p-0.5 md:mb-0 md:absolute md:right-full md:top-1/2 md:mr-3 md:-translate-y-1/2 ${
@@ -357,8 +371,8 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({ onBack }) =>
                 <Factory className="w-8 h-8 text-white" />
               )}
             </div>
-            <div className="text-center md:text-left">
-              <div className="flex items-center justify-center space-x-2 md:justify-start">
+            <div className="text-center md:text-right">
+              <div className="flex items-center justify-center space-x-2 md:justify-end">
                 <h2 className="text-3xl font-bold text-white">{brandData.name}</h2>
                 <button
                   onClick={handleEditProfile}
@@ -368,7 +382,7 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({ onBack }) =>
                   <Edit className="w-4 h-4" />
                 </button>
               </div>
-              <div className="mt-1 flex items-center justify-center space-x-2 text-gray-300 md:justify-start">
+              <div className="mt-1 flex items-center justify-center space-x-2 text-gray-300 md:justify-end">
                 {brandData.verified && <Shield className="w-4 h-4 text-green-400" />}
                 <span>{brandData.verified ? t('brandProfile.verifiedManufacturer') : t('brandProfile.manufacturer')}</span>
               </div>
@@ -532,7 +546,17 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({ onBack }) =>
                   {materialLineGroups.map((group) => (
                     <div key={group.key}>
                       {group.lineName && (
-                        <h3 className="text-base font-semibold text-white mb-3">{group.lineName}</h3>
+                        <div className="flex items-center gap-2 mb-3">
+                          <h3 className="text-base font-semibold text-white">{group.lineName}</h3>
+                          <button
+                            type="button"
+                            onClick={() => setDeletingLine({ id: Number(group.key), name: group.lineName! })}
+                            title={t('brandProfile.deleteLine')}
+                            className="p-1 text-gray-500 hover:text-red-400 transition-colors"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
                       )}
                       {materialsViewMode === 'grid' ? (
                         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
@@ -620,6 +644,44 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({ onBack }) =>
                         <Trash2 className="w-4 h-4" />
                         <span>{t('brandProfile.delete')}</span>
                       </>
+                    )}
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {deletingLine && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
+              <div className="bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900 rounded-2xl p-6 w-full max-w-md border border-white/20 shadow-2xl">
+                <div className="flex items-center space-x-3 mb-4">
+                  <div className="w-12 h-12 bg-red-500/20 rounded-full flex items-center justify-center">
+                    <Trash2 className="w-6 h-6 text-red-400" />
+                  </div>
+                  <h3 className="text-xl font-bold text-white">{t('brandProfile.deleteLine')}</h3>
+                </div>
+                <p className="text-gray-300 mb-6">
+                  {t('brandProfile.confirmDeleteLine', { name: deletingLine.name })}
+                  <br />
+                  <span className="text-gray-400 text-sm mt-2 block">{t('brandProfile.deleteLineNote')}</span>
+                </p>
+                <div className="flex justify-end space-x-3">
+                  <button
+                    onClick={() => setDeletingLine(null)}
+                    disabled={deleteLineMutation.isPending}
+                    className="px-4 py-2 bg-white/10 hover:bg-white/20 text-white rounded-xl transition-all disabled:opacity-50"
+                  >
+                    {t('brandProfile.cancel')}
+                  </button>
+                  <button
+                    onClick={() => deleteLineMutation.mutate(deletingLine.id)}
+                    disabled={deleteLineMutation.isPending}
+                    className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-xl transition-all disabled:opacity-50 flex items-center space-x-2"
+                  >
+                    {deleteLineMutation.isPending ? (
+                      <><Loader2 className="w-4 h-4 animate-spin" /><span>{t('brandProfile.deleting')}</span></>
+                    ) : (
+                      <><Trash2 className="w-4 h-4" /><span>{t('brandProfile.delete')}</span></>
                     )}
                   </button>
                 </div>
