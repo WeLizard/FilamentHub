@@ -266,6 +266,8 @@ export function FilamentPaletteForm({ brandId, onClose }: FilamentPaletteFormPro
                 onChange={(hex) => updateEntry(i, { color_hex: hex })}
                 isOpen={openPicker === i}
                 onToggle={(open) => setOpenPicker(open ? i : null)}
+                showTrigger
+                triggerClassName="w-14 h-14 rounded-xl border border-white/20 cursor-pointer shadow-inner"
               />
               <input
                 type="text"

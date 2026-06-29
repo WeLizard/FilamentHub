@@ -1150,6 +1150,8 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({ onBack }) =>
                       onChange={(hex) => setProfileLogoBg(hex)}
                       isOpen={logoBgPickerOpen}
                       onToggle={setLogoBgPickerOpen}
+                      showTrigger
+                      triggerClassName="w-12 h-12 rounded-lg border border-white/20 cursor-pointer shadow-inner"
                     />
                     <span className="text-sm font-mono text-gray-400">{profileLogoBg || t('brandProfile.logoBgDefault')}</span>
                     {profileLogoBg && (

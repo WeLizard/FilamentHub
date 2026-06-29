@@ -11,6 +11,10 @@ interface HSLColorPickerProps {
   isOpen?: boolean;
   /** Callback при изменении видимости */
   onToggle?: (isOpen: boolean) => void;
+  /** Рисовать встроенный свотч-триггер (если внешнего триггера нет) */
+  showTrigger?: boolean;
+  /** Класс встроенного свотча */
+  triggerClassName?: string;
 }
 
 // Конвертация HEX в HSL
@@ -94,6 +98,8 @@ export const HSLColorPicker: React.FC<HSLColorPickerProps> = ({
   onChange,
   isOpen: controlledIsOpen,
   onToggle,
+  showTrigger = false,
+  triggerClassName,
 }) => {
   const [h, setH] = useState(0);
   const [s, setS] = useState(80);
@@ -283,7 +289,16 @@ export const HSLColorPicker: React.FC<HSLColorPickerProps> = ({
         </div>
       </div>
 
-      {/* Swatch не нужен - используем FilamentPreview как триггер */}
+      {/* Встроенный свотч-триггер (для мест без внешнего триггера) */}
+      {showTrigger && (
+        <button
+          type="button"
+          onClick={() => (onToggle ? onToggle(!isOpen) : setInternalIsOpen(!isOpen))}
+          aria-label="Выбрать цвет"
+          className={triggerClassName ?? 'w-10 h-10 rounded-lg border border-white/20 cursor-pointer shadow-inner'}
+          style={{ backgroundColor: color }}
+        />
+      )}
     </div>
   );
 };
