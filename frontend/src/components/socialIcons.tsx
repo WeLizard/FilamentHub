@@ -20,6 +20,28 @@ const XGlyph = (p: SVGProps<SVGSVGElement>) => (
   </svg>
 );
 
+// Маркетплейсы — узнаваемые брендовые бейджи (буква на фирменном цвете).
+const OzonGlyph = (p: SVGProps<SVGSVGElement>) => (
+  <svg viewBox="0 0 24 24" {...p}>
+    <rect width="24" height="24" rx="5" fill="#005BFF" />
+    <text x="12" y="17" textAnchor="middle" fontSize="14" fontWeight="700" fill="#fff" fontFamily="Arial, sans-serif">O</text>
+  </svg>
+);
+
+const WbGlyph = (p: SVGProps<SVGSVGElement>) => (
+  <svg viewBox="0 0 24 24" {...p}>
+    <rect width="24" height="24" rx="5" fill="#CB11AB" />
+    <text x="12" y="16" textAnchor="middle" fontSize="10" fontWeight="700" fill="#fff" fontFamily="Arial, sans-serif">WB</text>
+  </svg>
+);
+
+const AliGlyph = (p: SVGProps<SVGSVGElement>) => (
+  <svg viewBox="0 0 24 24" {...p}>
+    <rect width="24" height="24" rx="5" fill="#E62E04" />
+    <text x="12" y="17" textAnchor="middle" fontSize="14" fontWeight="700" fill="#fff" fontFamily="Arial, sans-serif">A</text>
+  </svg>
+);
+
 /** Иконка соцсети/магазина по URL. Для `kind="shop"` неизвестный хост → корзина, иначе глобус. */
 export function SocialIcon({
   url,
@@ -47,9 +69,10 @@ export function SocialIcon({
   if (h('twitter') || host === 'x.com') return <XGlyph className={className} />;
   if (h('linkedin')) return <Linkedin className={className} />;
   if (h('github')) return <Github className={className} />;
-  // Маркетплейсы — пока единым «магазинным» глифом.
-  if (h('ozon') || h('wildberries') || h('wb.ru') || h('aliexpress') || h('amazon') || h('etsy')) {
-    return <ShoppingBag className={className} />;
-  }
+  // Маркетплейсы.
+  if (h('ozon')) return <OzonGlyph className={className} />;
+  if (h('wildberries') || h('wb.ru')) return <WbGlyph className={className} />;
+  if (h('aliexpress')) return <AliGlyph className={className} />;
+  if (h('amazon') || h('etsy')) return <ShoppingBag className={className} />;
   return fallback;
 }
