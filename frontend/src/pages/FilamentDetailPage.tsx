@@ -29,7 +29,6 @@ import { useAuth } from '../contexts/AuthContext';
 import { filamentsAPI, brandsAPI, savedPresetsAPI, filamentReviewsAPI, qrAPI } from '../api/client';
 import { translateApiError } from '../utils/translateApiError';
 import { currencySymbol } from '../utils/currency';
-import { FilamentPreview } from '../components/FilamentPreview';
 import { ReviewCard } from '../components/ReviewCard';
 import { CreateReviewModal } from '../components/CreateReviewModal';
 import { PresetSyncToggle } from '../components/PresetSyncToggle';
@@ -409,23 +408,20 @@ export const FilamentDetailPage: React.FC = () => {
             </div>
           )}
           {(filament.color_hex || filament.color_name) && (
-            <div className="flex items-center gap-2 md:gap-3 text-gray-300">
-              <div className="flex-shrink-0 hidden md:block" style={{ transform: 'scale(0.4)', transformOrigin: 'left center', marginRight: '-80px' }}>
-                <FilamentPreview colorHex={filament.color_hex || '#FFFFFF'} visualSettings={filament.visual_settings} size="medium" />
-              </div>
+            <div className="flex items-center gap-2 md:gap-3 text-gray-300 min-w-0">
               <div
-                className="w-6 h-6 md:hidden rounded-full border-2 border-white/20"
+                className="w-6 h-6 md:w-8 md:h-8 shrink-0 rounded-full border-2 border-white/20"
                 style={{ backgroundColor: filament.color_hex || '#FFFFFF' }}
               />
-              <div>
+              <div className="min-w-0">
                 <div className="text-[10px] md:text-sm">{t('filamentDetailPage.color')}</div>
-                <div className="text-base md:text-xl font-bold text-white">{filament.color_name || '—'}</div>
+                <div className="text-base md:text-xl font-bold text-white truncate" title={filament.color_name || ''}>{filament.color_name || '—'}</div>
               </div>
             </div>
           )}
-          <div className="flex items-center gap-2 md:gap-3 text-gray-300">
-            <QrCode className="w-4 h-4 md:w-5 md:h-5 text-green-400" />
-            <div>
+          <div className="flex items-center gap-2 md:gap-3 text-gray-300 min-w-0">
+            <QrCode className="w-4 h-4 md:w-5 md:h-5 shrink-0 text-green-400" />
+            <div className="min-w-0">
               <div className="text-[10px] md:text-sm">{t('filamentDetailPage.scans')}</div>
               <div className="text-base md:text-xl font-bold text-white">{filament.scans_count || 0}</div>
             </div>
