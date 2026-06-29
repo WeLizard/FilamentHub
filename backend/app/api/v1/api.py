@@ -5,6 +5,7 @@ from fastapi import APIRouter
 from app.api.v1.endpoints import (
     admin,
     auth,
+    brand_invites,
     brand_requests,
     brands,
     calculator,
@@ -38,6 +39,8 @@ api_router = APIRouter()
 # Include all endpoint routers
 api_router.include_router(auth.router)
 api_router.include_router(brands.router)
+api_router.include_router(brand_invites.router)
+api_router.include_router(brand_invites.admin_router)
 api_router.include_router(devices.router)
 api_router.include_router(brand_requests.router)
 api_router.include_router(filaments.router)

@@ -3,6 +3,7 @@
 # BadWord импортируется лениво, чтобы не падать при отсутствии таблицы
 # from app.models.bad_word import BadWord
 from app.models.brand import Brand
+from app.models.brand_invite import BrandInvite
 from app.models.brand_request import BrandRequest, BrandRequestStatus, BrandRequestType
 from app.models.bundle import (
     Bundle,
@@ -47,6 +48,7 @@ from app.models.wiki_feedback import WikiArticleFeedback, WikiFeedbackType
 __all__ = [
     # "BadWord",  # Убрано из экспорта, чтобы не падать при отсутствии таблицы
     "Brand",
+    "BrandInvite",
     "BrandRequest",
     "BrandRequestStatus",
     "BrandRequestType",
