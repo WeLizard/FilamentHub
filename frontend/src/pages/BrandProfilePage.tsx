@@ -110,8 +110,14 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({ onBack }) =>
 
   const filaments = filamentsData?.items || [];
 
-  // Группировка материалов по линейке (как на публичной странице бренда):
-  // материалы с line_name — под заголовком линейки, остальные — отдельной группой.
+  // Линейки бренда (в т.ч. пустые) — чтобы их можно было удалить даже без материалов.
+  const { data: brandLines = [] } = useQuery({
+    queryKey: ['filament-lines', user?.brand_id],
+    queryFn: () => filamentLinesAPI.list(user!.brand_id!),
+    enabled: !!user?.brand_id,
+  });
+
+  // Группировка материалов по линейке; пустые линейки тоже показываем (для удаления).
   const materialLineGroups = (() => {
     const byLine = new Map<string, { lineName: string; items: typeof filaments }>();
     const ungrouped: typeof filaments = [];
@@ -124,6 +130,10 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({ onBack }) =>
       } else {
         ungrouped.push(f);
       }
+    }
+    for (const line of brandLines) {
+      const key = String(line.id);
+      if (!byLine.has(key)) byLine.set(key, { lineName: line.name, items: [] });
     }
     const groups: { key: string; lineName: string | null; items: typeof filaments }[] =
       Array.from(byLine.entries()).map(([key, v]) => ({ key, lineName: v.lineName, items: v.items }));
@@ -544,7 +554,7 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({ onBack }) =>
           {/* Materials Grid/List */}
           {!isLoadingFilaments && !filamentsError && (
             <>
-              {filaments.length > 0 ? (
+              {filaments.length > 0 || brandLines.length > 0 ? (
                 <div className="space-y-6">
                   {materialLineGroups.map((group) => (
                     <div key={group.key}>
