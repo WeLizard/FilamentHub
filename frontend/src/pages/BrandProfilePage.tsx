@@ -333,8 +333,8 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({ onBack }) =>
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="text-center mb-8">
-        <div className="flex justify-center mb-4">
+      <div className="mb-6">
+        <div className="flex justify-center md:justify-start mb-4">
           <div className="relative flex flex-col items-center md:inline-flex md:flex-row md:items-center">
             <div
               className={`mb-3 inline-flex h-16 shrink-0 items-center justify-center overflow-hidden rounded-xl shadow-lg p-0.5 md:mb-0 md:absolute md:right-full md:top-1/2 md:mr-3 md:-translate-y-1/2 ${
@@ -978,7 +978,7 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({ onBack }) =>
       {/* Edit Profile Modal */}
       {isEditingProfile && (
         <ModalOverlay onClose={() => setIsEditingProfile(false)}>
-          <div className="bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900 rounded-2xl w-full max-w-2xl max-h-[90vh] flex flex-col overflow-hidden border border-white/20 shadow-2xl">
+          <div className="bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900 rounded-2xl w-full max-w-4xl max-h-[90vh] flex flex-col overflow-hidden border border-white/20 shadow-2xl">
             <div className="flex items-center justify-between p-6 border-b border-white/10 shrink-0">
               <div className="flex items-center space-x-3">
                 <Edit className="w-6 h-6 text-purple-400" />
@@ -994,6 +994,8 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({ onBack }) =>
                   {profileError}
                 </div>
               )}
+              <div className="grid md:grid-cols-2 gap-5">
+              <div className="space-y-4">
               <div>
                 <label className="block text-gray-300 mb-2 text-sm font-medium">{t('brandProfile.descriptionLabel')}</label>
                 <textarea
@@ -1013,6 +1015,7 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({ onBack }) =>
                   className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all"
                   placeholder="https://example.com"
                 />
+              </div>
               </div>
               <div>
                 <label className="block text-gray-300 mb-2 text-sm font-medium">{t('brandProfile.logoUrlLabel')}</label>
@@ -1082,6 +1085,7 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({ onBack }) =>
                   )}
                   <p className="text-gray-500 text-xs mt-1">{t('brandProfile.logoBgHint')}</p>
                 </div>
+              </div>
               </div>
               <div>
                 <label className="block text-gray-300 mb-2 text-sm font-medium">{t('brandProfile.socialMediaLabel')}</label>

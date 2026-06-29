@@ -641,7 +641,7 @@ export const ProfilePage: React.FC = () => {
             <p className="text-xs md:text-sm text-gray-400">{t('profilePage.printer3d')}</p>
           </div>
           {profileBadges.length > 0 && (
-            <div className="hidden sm:flex items-center gap-2 overflow-x-auto whitespace-nowrap scrollbar-hide ml-auto max-w-[55%]">
+            <div className="hidden sm:flex items-center gap-2 overflow-x-auto whitespace-nowrap scrollbar-hide min-w-0">
               {profileBadges.map(renderExpandableProfileBadge)}
             </div>
           )}
