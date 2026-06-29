@@ -249,6 +249,11 @@ def send_brand_invite_email(
             </td>
           </tr>
           <tr>
+            <td style="padding:0;">
+              <img src="{site_url}/email/hero.jpg" alt="FilamentHub" width="560" style="display:block;width:100%;height:auto;border:0;" />
+            </td>
+          </tr>
+          <tr>
             <td style="padding:32px;">
               <p style="margin:0 0 16px;color:#f1f5f9;font-size:16px;line-height:1.6;">Здравствуйте!</p>
               <p style="margin:0 0 16px;color:#94a3b8;line-height:1.6;">
@@ -263,6 +268,22 @@ def send_brand_invite_email(
                 <li>каталог материалов с импортом из таблицы и QR-кодами для катушек;</li>
                 <li>профили печати, которые синхронизируются с OrcaSlicer.</li>
               </ul>
+              <table width="100%" cellpadding="0" cellspacing="0" style="margin:0 0 20px;">
+                <tr>
+                  <td width="33%" style="padding:0 4px;text-align:center;vertical-align:top;">
+                    <img src="{site_url}/email/catalog.jpg" alt="Каталог" width="170" style="display:block;width:100%;height:auto;border-radius:8px;border:1px solid rgba(255,255,255,0.1);" />
+                    <p style="margin:6px 0 0;color:#64748b;font-size:11px;">Каталог материалов</p>
+                  </td>
+                  <td width="33%" style="padding:0 4px;text-align:center;vertical-align:top;">
+                    <img src="{site_url}/email/import.jpg" alt="Импорт" width="170" style="display:block;width:100%;height:auto;border-radius:8px;border:1px solid rgba(255,255,255,0.1);" />
+                    <p style="margin:6px 0 0;color:#64748b;font-size:11px;">Импорт таблицей</p>
+                  </td>
+                  <td width="33%" style="padding:0 4px;text-align:center;vertical-align:top;">
+                    <img src="{site_url}/email/scan.jpg" alt="QR" width="170" style="display:block;width:100%;height:auto;border-radius:8px;border:1px solid rgba(255,255,255,0.1);" />
+                    <p style="margin:6px 0 0;color:#64748b;font-size:11px;">QR на катушках</p>
+                  </td>
+                </tr>
+              </table>
               <p style="margin:0 0 24px;color:#94a3b8;line-height:1.6;">
                 Это приглашение уже подтверждает бренд — загружать документы не нужно.
               </p>
