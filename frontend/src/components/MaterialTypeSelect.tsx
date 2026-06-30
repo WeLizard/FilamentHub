@@ -10,13 +10,15 @@ const FALLBACK_TYPES = ['PLA', 'PETG', 'ABS', 'TPU', 'ASA', 'PC', 'PA', 'PVA'];
 interface MaterialTypeSelectProps {
   value: string;
   onChange: (value: string) => void;
+  /** Срабатывает только при явном выборе пункта из списка (не при ручном вводе). */
+  onSelect?: (value: string) => void;
   options: string[];
   label?: string;
   placeholder?: string;
   required?: boolean;
 }
 
-export function MaterialTypeSelect({ value, onChange, options, label, placeholder, required }: MaterialTypeSelectProps) {
+export function MaterialTypeSelect({ value, onChange, onSelect, options, label, placeholder, required }: MaterialTypeSelectProps) {
   const { t } = useTranslation();
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
@@ -62,6 +64,7 @@ export function MaterialTypeSelect({ value, onChange, options, label, placeholde
                 type="button"
                 onClick={() => {
                   onChange(type);
+                  onSelect?.(type);
                   setOpen(false);
                 }}
                 className="w-full px-4 py-3 text-left hover:bg-white/10 transition-all text-white border-b border-white/5 last:border-b-0"

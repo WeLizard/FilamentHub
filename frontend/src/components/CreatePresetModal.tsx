@@ -11,6 +11,7 @@ import { useAuth } from '../contexts/AuthContext';
 import type { Preset, Filament, Brand, Printer } from '../types/api';
 import { applyMaterialDefaults, sortMaterialTypes } from '../data/materialDefaults';
 import { densityForMaterial, STANDARD_DIAMETERS } from '../utils/materialDensity';
+import { MaterialTypeSelect } from './MaterialTypeSelect';
 import { EditGCodeModal } from './EditGCodeModal';
 import { CustomSelect } from './CustomSelect';
 import type { FilamentVisualSettings } from '../types/api';
@@ -244,8 +245,6 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
   
   // Новые поля для создания нового филамента
   const [materialType, setMaterialType] = useState('');
-  const [customMaterialType, setCustomMaterialType] = useState(''); // Пользовательский тип материала
-  const [useCustomMaterial, setUseCustomMaterial] = useState(false); // Использовать ли пользовательский материал
   const [brandSearch, setBrandSearch] = useState('');
   const [selectedBrandId, setSelectedBrandId] = useState<number | null>(null);
   const [filamentName, setFilamentName] = useState('');
@@ -272,7 +271,6 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
   const [showFilamentDropdown, setShowFilamentDropdown] = useState(false); // Показывать выпадающий список
   const [selectedFilament, setSelectedFilament] = useState<Filament | null>(null); // Выбранный филамент для отображения
   const [showBrandDropdown, setShowBrandDropdown] = useState(false); // Показывать выпадающий список брендов
-  const [showMaterialTypeDropdown, setShowMaterialTypeDropdown] = useState(false); // Показывать выпадающий список типов
   const [selectedPrinterIds, setSelectedPrinterIds] = useState<number[]>([]); // Выбранные принтеры
   const [printersCache, setPrintersCache] = useState<Record<number, Printer>>({});
   const [printerSearch, setPrinterSearch] = useState('');
@@ -288,7 +286,6 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
   
   const filamentDropdownRef = useRef<HTMLDivElement>(null);
   const brandDropdownRef = useRef<HTMLDivElement>(null);
-  const materialTypeDropdownRef = useRef<HTMLDivElement>(null);
   const queryClient = useQueryClient();
 
   // Бренд пользователя — нужен, чтобы официальный статус разрешать только верифицированному бренду
@@ -420,11 +417,6 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
     ref: brandDropdownRef,
     isOpen: showBrandDropdown,
     onClose: () => setShowBrandDropdown(false),
-  });
-  useClickOutside({
-    ref: materialTypeDropdownRef,
-    isOpen: showMaterialTypeDropdown,
-    onClose: () => setShowMaterialTypeDropdown(false),
   });
 
   // Инициализация формы при редактировании
@@ -824,8 +816,6 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
       // Сброс полей создания нового материала
       setShowFilamentForm(false);
       setMaterialType('');
-      setCustomMaterialType('');
-      setUseCustomMaterial(false);
       setBrandSearch('');
       // Если передан brandId - автоматически выбираем его при создании нового материала
       setSelectedBrandId(brandId || null);
@@ -1035,7 +1025,7 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
         // берём первое совпадение из подсказок бренда.
         if (!suggestion && uniqueSimilarFilaments.length) {
           const normalizedFilamentName = filamentName.trim().toLowerCase();
-          const currentMaterialType = (useCustomMaterial ? customMaterialType : materialType).trim().toLowerCase();
+          const currentMaterialType = materialType.trim().toLowerCase();
 
           const matched = uniqueSimilarFilaments.find((candidate) => {
             const candidateName = candidate.name?.trim().toLowerCase() || '';
@@ -1480,7 +1470,7 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
       }
 
       // Проверяем тип материала
-      const finalMaterialType = useCustomMaterial ? customMaterialType.trim() : materialType;
+      const finalMaterialType = materialType;
       if (!finalMaterialType) {
         setError(t('presetModal.errors.selectMaterialType'));
         return;
@@ -1698,7 +1688,7 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
     updateMutation.isPending ||
     createFilamentMutation.isPending ||
     createBrandMutation.isPending;
-  const normalizedMaterialType = useCustomMaterial ? customMaterialType.trim() : materialType.trim();
+  const normalizedMaterialType = materialType.trim();
   const hasBrandSelection = brandId
     ? true
     : showBrandForm
@@ -1900,169 +1890,60 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                   {/* Тип материала и Производитель в одной строке */}
                   <div className="flex items-start gap-4">
                     {/* Тип материала */}
-                    <div className="relative flex-1" ref={materialTypeDropdownRef}>
-                      <label className="block text-gray-300 mb-2 text-sm font-medium">{t('presetModal.materialType')} *</label>
-                    <div className="relative">
-                      <div className="flex gap-2">
-                        <input
-                          type="text"
-                          value={useCustomMaterial ? customMaterialType : materialType}
-                          onChange={(e) => {
-                            if (useCustomMaterial) {
-                              setCustomMaterialType(e.target.value);
-                            } else {
-                              const value = e.target.value;
-                              setMaterialType(value);
-                              // Показываем выпадающий список если начали вводить
-                              if (value.length > 0) {
-                                setShowMaterialTypeDropdown(true);
-                              }
-                              // Проверяем плотность для введенного типа
-                              const density = densityForMaterial(value) ?? null;
-                              if (density) {
-                                setFilamentDensity(density);
-                                setCanEditDensity(false);
-                              } else {
-                                setCanEditDensity(true);
-                                if (!filamentDensity) {
-                                  setFilamentDensity(1.24);
-                                }
-                              }
+                    <div className="flex-1">
+                      <MaterialTypeSelect
+                        label={`${t('presetModal.materialType')} *`}
+                        value={materialType}
+                        options={sortedMaterialTypes.length > 0 ? sortedMaterialTypes : MATERIAL_TYPES}
+                        placeholder={t('presetModal.selectMaterialTypePlaceholder')}
+                        onChange={(value) => {
+                          setMaterialType(value);
+                          // Плотность по типу материала. Замок ролевой: производитель правит, обычный юзер — нет.
+                          const density = densityForMaterial(value) ?? null;
+                          if (density) {
+                            setFilamentDensity(density);
+                            setCanEditDensity(canCreateOfficial);
+                          } else {
+                            setCanEditDensity(true);
+                            if (!filamentDensity) {
+                              setFilamentDensity(1.24);
                             }
-                          }}
-                          onFocus={() => {
-                            if (!useCustomMaterial) {
-                              setShowMaterialTypeDropdown(true);
-                            }
-                          }}
-                          placeholder={useCustomMaterial ? t('presetModal.enterMaterialTypePlaceholder') : t('presetModal.selectMaterialTypePlaceholder')}
-                          className="flex-1 px-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white placeholder-gray-400 placeholder:text-center focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all"
-                        />
-                        {useCustomMaterial && (
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setUseCustomMaterial(false);
-                              setCustomMaterialType('');
-                              setMaterialType('');
-                            }}
-                            className="px-4 py-3 bg-white/10 hover:bg-white/20 border border-white/20 rounded-xl text-gray-300 hover:text-white transition-all text-sm flex-shrink-0"
-                          >
-                            {t('presetModal.cancel')}
-                          </button>
-                        )}
-                      </div>
-                      {showMaterialTypeDropdown && !useCustomMaterial && (
-                        <div 
-                          className="absolute z-10 w-full mt-1 max-h-60 overflow-y-auto bg-white/5 backdrop-blur-sm rounded-xl border border-white/10 shadow-xl"
-                          onClick={(e) => e.stopPropagation()}
-                        >
-                          {(() => {
-                            const baseTypes = sortedMaterialTypes.length > 0 ? sortedMaterialTypes : MATERIAL_TYPES;
-                            const query = materialType.toLowerCase();
-                            // Если значение точно совпадает с типом — показываем весь список (выбор, а не поиск)
-                            const isExact = baseTypes.some((type) => type.toLowerCase() === query);
-                            const filteredTypes = isExact
-                              ? baseTypes
-                              : baseTypes.filter((type) => type.toLowerCase().includes(query));
-
-                            return filteredTypes.length > 0 ? (
-                              filteredTypes.map((type) => (
-                                <button
-                                  key={type}
-                                  type="button"
-                                  onClick={() => {
-                                    setMaterialType(type);
-                                    setShowMaterialTypeDropdown(false);
-                                    
-                                    // Автоматически определяем плотность по типу материала
-                                    const density = densityForMaterial(type) ?? null;
-                                    if (density) {
-                                      setFilamentDensity(density);
-                                      setCanEditDensity(false); // Тип известный - плотность определяется автоматически
-                                    } else {
-                                      // Тип неизвестный - можно редактировать плотность вручную
-                                      setCanEditDensity(true);
-                                      if (!filamentDensity) {
-                                        setFilamentDensity(1.24); // Дефолтное значение если пусто
-                                      }
-                                    }
-                                    
-                                    // Применяем стандартные значения для выбранного типа материала
-                                    applyMaterialDefaults(type, {
-                                      setExtruderTemp,
-                                      setBedTemp,
-                                      setPrintSpeed,
-                                      setTravelSpeed,
-                                      setFlowRate,
-                                      setFanSpeed,
-                                      setRetractionLength,
-                                      setRetractionSpeed,
-                                      setTempRangeLow,
-                                      setTempRangeHigh,
-                                      setNozzleTempInitialLayer,
-                                      setBedTempInitialLayer,
-                                      setIdleTemperature,
-                                      setChamberTemp,
-                                      setEnableChamberControl,
-                                      setVolumetricSpeed,
-                                      setAdaptiveVolumetricSpeed,
-                                      setFilamentShrink,
-                                      setFilamentShrinkageCompensationZ,
-                                      setFilamentIsSupport,
-                                      setFilamentSoluble,
-                                      setFanMinSpeed,
-                                      setFanMaxSpeed,
-                                      setOverhangFanSpeed,
-                                      setCloseFanFirstXLayers,
-                                      setPressureAdvance,
-                                      setEnablePressureAdvance,
-                                      setAdaptivePressureAdvance,
-                                    });
-                                  }}
-                                  className="w-full px-4 py-3 text-left hover:bg-white/10 transition-all text-white border-b border-white/5 last:border-b-0"
-                                >
-                                  {type}
-                                </button>
-                              ))
-                            ) : (
-                              <div className="px-4 py-3 text-gray-400 text-sm">
-                                {t('presetModal.typesNotFound')}
-                              </div>
-                            );
-                          })()}
-                          <div className="border-t border-white/10 mt-1">
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setUseCustomMaterial(true);
-                                setShowMaterialTypeDropdown(false);
-                                setCustomMaterialType('');
-                                setCanEditDensity(true); // Кастомный тип - можно редактировать плотность
-                                if (!filamentDensity) {
-                                  setFilamentDensity(1.24); // Дефолтное значение
-                                }
-                              }}
-                              className="w-full px-4 py-3 text-left hover:bg-white/10 transition-all text-purple-300 font-medium"
-                            >
-                              + {t('presetModal.otherMaterial')}
-                            </button>
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                    {/* Подсказка - всегда занимает одинаковое место */}
-                    <div className="min-h-[20px] mt-1">
-                      {useCustomMaterial ? (
-                        <p className="text-xs text-gray-500">
-                          {t('presetModal.customMaterialTypeHint')}
-                        </p>
-                      ) : (
-                        <p className="text-xs text-gray-500 invisible pointer-events-none" aria-hidden="true">
-                          {t('presetModal.customMaterialTypeHint')}
-                        </p>
-                      )}
-                    </div>
+                          }
+                        }}
+                        onSelect={(value) => {
+                          // Стандартные параметры пресета — только при явном выборе типа из списка.
+                          applyMaterialDefaults(value, {
+                            setExtruderTemp,
+                            setBedTemp,
+                            setPrintSpeed,
+                            setTravelSpeed,
+                            setFlowRate,
+                            setFanSpeed,
+                            setRetractionLength,
+                            setRetractionSpeed,
+                            setTempRangeLow,
+                            setTempRangeHigh,
+                            setNozzleTempInitialLayer,
+                            setBedTempInitialLayer,
+                            setIdleTemperature,
+                            setChamberTemp,
+                            setEnableChamberControl,
+                            setVolumetricSpeed,
+                            setAdaptiveVolumetricSpeed,
+                            setFilamentShrink,
+                            setFilamentShrinkageCompensationZ,
+                            setFilamentIsSupport,
+                            setFilamentSoluble,
+                            setFanMinSpeed,
+                            setFanMaxSpeed,
+                            setOverhangFanSpeed,
+                            setCloseFanFirstXLayers,
+                            setPressureAdvance,
+                            setEnablePressureAdvance,
+                            setAdaptivePressureAdvance,
+                          });
+                        }}
+                      />
                     </div>
                     
                     {/* Поиск производителя */}
@@ -2487,7 +2368,7 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                       />
                       {!canEditDensity && filamentDensity && (
                         <p className="mt-1 text-xs text-gray-500">
-                          {t('presetModal.densityFor')} {useCustomMaterial ? customMaterialType : materialType}: {filamentDensity} g/cm³
+                          {t('presetModal.densityFor')} {materialType}: {filamentDensity} g/cm³
                         </p>
                       )}
                     </div>
