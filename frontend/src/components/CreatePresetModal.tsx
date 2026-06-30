@@ -10,6 +10,7 @@ import { translateApiError } from '../utils/translateApiError';
 import { useAuth } from '../contexts/AuthContext';
 import type { Preset, Filament, Brand, Printer } from '../types/api';
 import { applyMaterialDefaults, sortMaterialTypes } from '../data/materialDefaults';
+import { densityForMaterial, STANDARD_DIAMETERS } from '../utils/materialDensity';
 import { EditGCodeModal } from './EditGCodeModal';
 import { CustomSelect } from './CustomSelect';
 import type { FilamentVisualSettings } from '../types/api';
@@ -277,31 +278,8 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
   const [printerSearch, setPrinterSearch] = useState('');
   const debouncedPrinterSearch = useDebounce(printerSearch, 250);
   
-  // Маппинг плотности по типам материалов (г/см³)
-  const MATERIAL_DENSITY_MAP: Record<string, number> = {
-    'PLA': 1.24,
-    'ABS': 1.04,
-    'PETG': 1.27,
-    'TPU': 1.20,
-    'ASA': 1.05,
-    'PC': 1.20,
-    'PA': 1.14,
-    'PVA': 1.23,
-    'HIPS': 1.04,
-    'PP': 0.90,
-    'PEEK': 1.32,
-    'PEI': 1.27,
-    'PLA+': 1.24,
-    'PETG+': 1.27,
-    'PLA-CF': 1.30,
-    'PA-CF': 1.18,
-    'ABS-CF': 1.10,
-    'PETG-CF': 1.32,
-    'ASA-CF': 1.10,
-  };
-  
-  // Опции диаметра
-  const DIAMETER_OPTIONS = ['1.75', '2.85', '3.00'];
+  // Опции диаметра (из общего источника).
+  const DIAMETER_OPTIONS = STANDARD_DIAMETERS.map((d) => d.toFixed(2));
   
   // Для создания нового бренда
   const [showBrandForm, setShowBrandForm] = useState(false); // true = создать новый бренд
@@ -1510,7 +1488,7 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
 
       // Определяем плотность: если тип известный - берем из мапа, иначе из поля ввода
       let finalDensity: number | undefined = undefined;
-      const knownDensity = MATERIAL_DENSITY_MAP[finalMaterialType.toUpperCase()] || MATERIAL_DENSITY_MAP[finalMaterialType];
+      const knownDensity = densityForMaterial(finalMaterialType);
       if (knownDensity) {
         finalDensity = knownDensity;
       } else if (filamentDensity !== '') {
@@ -1940,7 +1918,7 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                                 setShowMaterialTypeDropdown(true);
                               }
                               // Проверяем плотность для введенного типа
-                              const density = MATERIAL_DENSITY_MAP[value.toUpperCase()] || MATERIAL_DENSITY_MAP[value] || null;
+                              const density = densityForMaterial(value) ?? null;
                               if (density) {
                                 setFilamentDensity(density);
                                 setCanEditDensity(false);
@@ -1998,7 +1976,7 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                                     setShowMaterialTypeDropdown(false);
                                     
                                     // Автоматически определяем плотность по типу материала
-                                    const density = MATERIAL_DENSITY_MAP[type.toUpperCase()] || MATERIAL_DENSITY_MAP[type] || null;
+                                    const density = densityForMaterial(type) ?? null;
                                     if (density) {
                                       setFilamentDensity(density);
                                       setCanEditDensity(false); // Тип известный - плотность определяется автоматически
