@@ -40,15 +40,17 @@ def _invite_url(token: str) -> str:
 
 
 def _now() -> datetime:
-    return datetime.now(timezone.utc)
+    # Наивный UTC: колонки brand_invites — TIMESTAMP WITHOUT TIME ZONE (Postgres
+    # отвергает aware-datetime в наивной колонке).
+    return datetime.now(timezone.utc).replace(tzinfo=None)
 
 
 def _is_active(invite: BrandInvite) -> bool:
     if invite.accepted_at is not None:
         return False
     expires = invite.expires_at
-    if expires.tzinfo is None:
-        expires = expires.replace(tzinfo=timezone.utc)
+    if expires.tzinfo is not None:
+        expires = expires.replace(tzinfo=None)
     return expires > _now()
 
 
