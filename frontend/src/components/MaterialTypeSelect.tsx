@@ -3,6 +3,7 @@
 
 import { useState, useRef, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
+import { sortMaterialTypes } from '../data/materialDefaults';
 
 const FALLBACK_TYPES = ['PLA', 'PETG', 'ABS', 'TPU', 'ASA', 'PC', 'PA', 'PVA'];
 
@@ -28,7 +29,8 @@ export function MaterialTypeSelect({ value, onChange, options, label, placeholde
     return () => document.removeEventListener('mousedown', handler);
   }, []);
 
-  const allTypes = options.length > 0 ? options : FALLBACK_TYPES;
+  // Популярные материалы — вперёд (как было в исходном селекторе), затем по алфавиту.
+  const allTypes = sortMaterialTypes(options.length > 0 ? options : FALLBACK_TYPES);
   const query = value.toLowerCase();
   const isExact = allTypes.some((type) => type.toLowerCase() === query);
   const filtered = isExact ? allTypes : allTypes.filter((type) => type.toLowerCase().includes(query));
