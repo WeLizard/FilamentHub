@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{{ subject }}</title>
+</head>
+<body style="margin:0;padding:0;background:#0f172a;font-family:system-ui,sans-serif;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="background:#0f172a;padding:40px 0;">
+    <tr>
+      <td align="center">
+        <table width="560" cellpadding="0" cellspacing="0" style="background:#1e293b;border-radius:16px;border:1px solid rgba(255,255,255,0.1);overflow:hidden;">
+          <tr>
+            <td style="padding:32px;text-align:center;background:linear-gradient(135deg,#7c3aed,#db2777);">
+              <h1 style="margin:0;color:#fff;font-size:24px;font-weight:700;">FilamentHub</h1>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:32px;">
+              {% if approved %}
+                {% set status_text = "одобрена" %}
+                {% set color = "#22c55e" %}
+                {% set message = "Поздравляем! Ваша заявка на представительство бренда была одобрена администрацией." %}
+              {% else %}
+                {% set status_text = "отклонена" %}
+                {% set color = "#ef4444" %}
+                {% set message = "К сожалению, ваша заявка на представительство бренда была отклонена." %}
+              {% endif %}
+              <div style="display:inline-block;padding:6px 14px;background:{{ color }}22;border:1px solid {{ color }}66;border-radius:20px;color:{{ color }};font-size:13px;font-weight:600;margin-bottom:16px;">
+                Заявка {{ status_text }}
+              </div>
+              <h2 style="margin:0 0 8px;color:#f1f5f9;font-size:20px;">Бренд «{{ brand_name }}»</h2>
+              <p style="margin:0 0 0;color:#94a3b8;line-height:1.6;">{{ message }}</p>
+              {% if reason %}
+              <p style="margin:16px 0 0;color:#94a3b8;font-size:14px;">Причина: {{ reason }}</p>
+              {% endif %}
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:20px 32px;border-top:1px solid rgba(255,255,255,0.08);text-align:center;">
+              <p style="margin:0;color:#475569;font-size:12px;">
+                © FilamentHub · <a href="https://filamenthub.ru" style="color:#7c3aed;text-decoration:none;">filamenthub.ru</a>
+              </p>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>
