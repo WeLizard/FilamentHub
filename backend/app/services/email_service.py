@@ -90,6 +90,6 @@ def send_brand_invite_email(*, to: str, brand_name: str | None, invite_url: str,
         brand_display=brand_name or "ваш бренд",
         invite_url=invite_url,
         site_url=site_url,
-        contact_email=settings.EMAIL_FROM,
+        contact_email=settings.EMAIL_CONTACT,
     )
     return send_email(to=to, subject=subject, html=html)

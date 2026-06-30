@@ -100,6 +100,7 @@ class Settings(BaseSettings):
     RESEND_API_KEY: str = ""
     EMAIL_FROM: str = "noreply@filamenthub.ru"
     EMAIL_FROM_NAME: str = "FilamentHub"
+    EMAIL_CONTACT: str = "support@filamenthub.ru"  # реальный ящик для ответов (не noreply)
 
     model_config = SettingsConfigDict(
         env_file=".env",
