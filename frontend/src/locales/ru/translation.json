@@ -1329,6 +1329,7 @@
     "diameterLabel": "Диаметр (mm)",
     "selectDiameter": "Выберите диаметр",
     "densityLabel": "Плотность (g/cm³)",
+    "densityLockedHint": "Определена по типу материала",
     "pricePerKg": "За кг",
     "pricePerSpool": "За катушку",
     "spoolWeightLabel": "Вес катушки (g)",

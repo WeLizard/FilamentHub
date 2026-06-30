@@ -19,6 +19,7 @@ import type { Filament, Brand, FilamentAvailability } from '../types/api';
 import { useAuth } from '../contexts/AuthContext';
 import { MaterialTypeSelect } from './MaterialTypeSelect';
 import { AvailabilitySelect } from './AvailabilitySelect';
+import { DensityField } from './DensityField';
 import { ModalOverlay } from './ModalOverlay';
 import type { AxiosError } from 'axios';
 
@@ -1014,19 +1015,7 @@ export const CreateFilamentModal: React.FC<CreateFilamentModalProps> = ({
               onChange={(val) => setDiameter(Number(val))}
               placeholder={t('createFilament.selectDiameter')}
             />
-            <div>
-              <label className="block text-gray-300 mb-2 text-sm font-medium">{t('createFilament.densityLabel')}</label>
-              <input
-                type="number"
-                value={density}
-                onChange={(e) => setDensity(Number(e.target.value))}
-                min={0.1}
-                max={25}
-                step="0.01"
-                className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all"
-                placeholder="1.24"
-              />
-            </div>
+            <DensityField value={density} onChange={setDensity} />
           </div>
 
           {/* Price and Weight */}

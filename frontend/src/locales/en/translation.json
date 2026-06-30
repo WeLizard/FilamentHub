@@ -1203,6 +1203,7 @@
     "diameterLabel": "Diameter (mm)",
     "selectDiameter": "Select diameter",
     "densityLabel": "Density (g/cm³)",
+    "densityLockedHint": "Set from the material type",
     "pricePerKg": "Per kg",
     "pricePerSpool": "Per spool",
     "spoolWeightLabel": "Spool weight (g)",
