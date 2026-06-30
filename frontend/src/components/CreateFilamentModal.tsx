@@ -10,6 +10,7 @@ import { MATERIAL_DENSITY } from '../utils/materialDensity';
 import { ColorMaterialSection } from './ColorMaterialSection';
 import { FilamentPaletteForm } from './FilamentPaletteForm';
 import { HSLColorPicker } from './HSLColorPicker';
+import { PriceUnitField } from './PriceUnitField';
 import type { FilamentVisualSettings } from '../types/api';
 import { Dropdown } from './Dropdown';
 import { sortMaterialTypes } from '../data/materialDefaults';
@@ -1092,83 +1093,17 @@ export const CreateFilamentModal: React.FC<CreateFilamentModalProps> = ({
           </div>
 
           {/* Price and Weight */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
-              <div className="flex items-center justify-between mb-2">
-                <label className="block text-gray-300 text-sm font-medium">
-                  {priceMode === 'per_kg' ? t('createFilament.pricePerKgLabel', { currency: priceCurrencySymbol }) : t('createFilament.pricePerSpoolLabel', { currency: priceCurrencySymbol })}
-                </label>
-                {/* Price Mode Toggle */}
-                <div className="flex items-center bg-white/10 rounded-lg p-1 border border-white/20">
-                  <button
-                    type="button"
-                    onClick={() => setPriceMode('per_kg')}
-                    className={`px-2 py-1 text-xs rounded transition-all ${
-                      priceMode === 'per_kg'
-                        ? 'bg-purple-600 text-white'
-                        : 'text-gray-400 hover:text-white'
-                    }`}
-                    title={t('createFilament.pricePerKg')}
-                  >
-                    {t('createFilament.pricePerKg')}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setPriceMode('per_spool')}
-                    className={`px-2 py-1 text-xs rounded transition-all ${
-                      priceMode === 'per_spool'
-                        ? 'bg-purple-600 text-white'
-                        : 'text-gray-400 hover:text-white'
-                    }`}
-                    title={t('createFilament.pricePerSpool')}
-                  >
-                    {t('createFilament.pricePerSpool')}
-                  </button>
-                </div>
-              </div>
-              <input
-                type="number"
-                value={priceMode === 'per_kg' ? (pricePerKg || '') : (pricePerSpool || '')}
-                onChange={(e) => {
-                  const value = e.target.value === '' ? 0 : Number(e.target.value);
-                  if (priceMode === 'per_kg') {
-                    setPricePerKg(value);
-                  } else {
-                    setPricePerSpool(value);
-                  }
-                }}
-                min={0}
-                step="0.01"
-                className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all"
-                placeholder={priceMode === 'per_kg' ? "800" : "800"}
-              />
-              {/* Показываем пересчитанное значение */}
-              {priceMode === 'per_kg' && pricePerKg > 0 && spoolWeight > 0 && (
-                <p className="text-xs text-gray-400 mt-1">
-                  ≈ {((pricePerKg * spoolWeight) / 1000).toFixed(2)} {t('createFilament.rubPerSpool', { currency: priceCurrencySymbol })}
-                </p>
-              )}
-              {priceMode === 'per_spool' && pricePerSpool > 0 && spoolWeight > 0 && (
-                <p className="text-xs text-gray-400 mt-1">
-                  ≈ {((pricePerSpool / spoolWeight) * 1000).toFixed(2)} {t('createFilament.rubPerKg', { currency: priceCurrencySymbol })}
-                </p>
-              )}
-            </div>
-            <div className="flex flex-col">
-              <div className="h-[34px] mb-2 flex items-end">
-                <label className="block text-gray-300 text-sm font-medium">{t('createFilament.spoolWeightLabel')}</label>
-              </div>
-              <input
-                type="number"
-                value={spoolWeight || ''}
-                onChange={(e) => setSpoolWeight(e.target.value === '' ? 0 : Number(e.target.value))}
-                min={0}
-                step="1"
-                className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all"
-                placeholder="1000"
-              />
-            </div>
-          </div>
+          <PriceUnitField
+            priceMode={priceMode}
+            onPriceModeChange={setPriceMode}
+            pricePerKg={pricePerKg}
+            onPricePerKgChange={setPricePerKg}
+            pricePerSpool={pricePerSpool}
+            onPricePerSpoolChange={setPricePerSpool}
+            spoolWeight={spoolWeight}
+            onSpoolWeightChange={setSpoolWeight}
+            currencySymbol={priceCurrencySymbol}
+          />
 
           {/* Empty spool weight (tare) */}
           <div>
@@ -1201,7 +1136,7 @@ export const CreateFilamentModal: React.FC<CreateFilamentModalProps> = ({
             value={availability}
             options={[
               { value: 'available', label: t('createFilament.availability.available') },
-              { value: 'discontinued', label: t('createFilament.availability.discontinued') },
+              ...(filament ? [{ value: 'discontinued', label: t('createFilament.availability.discontinued') }] : []),
               { value: 'coming_soon', label: t('createFilament.availability.coming_soon') },
             ]}
             onChange={(val) => setAvailability(val as FilamentAvailability)}

@@ -1,10 +1,13 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { Plus, X, Loader2, CheckCircle } from 'lucide-react';
 import { filamentLinesAPI, filamentsAPI } from '../api/client';
 import { densityForMaterial, STANDARD_DIAMETERS } from '../utils/materialDensity';
+import { currencySymbol } from '../utils/currency';
 import { HSLColorPicker } from './HSLColorPicker';
+import { Dropdown } from './Dropdown';
+import { PriceUnitField } from './PriceUnitField';
 import { translateApiError } from '../utils/translateApiError';
 import type { FilamentAvailability, FilamentImportResult, FilamentPalettePayload } from '../types/api';
 
@@ -39,9 +42,11 @@ export function FilamentPaletteForm({ brandId, onClose }: FilamentPaletteFormPro
   const [lineId, setLineId] = useState<number | ''>('');
   const [newLineName, setNewLineName] = useState('');
   const [materialType, setMaterialType] = useState('');
-  const [diameter, setDiameter] = useState('1.75');
-  const [pricePerKg, setPricePerKg] = useState('');
-  const [spoolWeight, setSpoolWeight] = useState('');
+  const [diameter, setDiameter] = useState(1.75);
+  const [priceMode, setPriceMode] = useState<'per_kg' | 'per_spool'>('per_kg');
+  const [pricePerKg, setPricePerKg] = useState(0);
+  const [pricePerSpool, setPricePerSpool] = useState(0);
+  const [spoolWeight, setSpoolWeight] = useState(1000);
   const [availability, setAvailability] = useState<FilamentAvailability>('available');
   const [entries, setEntries] = useState<PaletteEntry[]>([emptyEntry(), emptyEntry(), emptyEntry()]);
   const [openPicker, setOpenPicker] = useState<number | null>(null);
@@ -49,6 +54,18 @@ export function FilamentPaletteForm({ brandId, onClose }: FilamentPaletteFormPro
   const [error, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [result, setResult] = useState<FilamentImportResult | null>(null);
+
+  // Синхронизация цены за кг ↔ за катушку (как в основной форме).
+  useEffect(() => {
+    if (priceMode === 'per_kg' && spoolWeight > 0 && pricePerKg > 0) {
+      setPricePerSpool((pricePerKg * spoolWeight) / 1000);
+    }
+  }, [priceMode, pricePerKg, spoolWeight]);
+  useEffect(() => {
+    if (priceMode === 'per_spool' && spoolWeight > 0 && pricePerSpool > 0) {
+      setPricePerKg((pricePerSpool / spoolWeight) * 1000);
+    }
+  }, [priceMode, pricePerSpool, spoolWeight]);
 
   const lineName = lineId !== '' ? (lines.find((l) => l.id === lineId)?.name ?? '') : newLineName.trim();
   const filledEntries = entries.filter((e) => e.color_name.trim());
@@ -97,10 +114,11 @@ export function FilamentPaletteForm({ brandId, onClose }: FilamentPaletteFormPro
 
       const payload: FilamentPalettePayload = {
         material_type: materialType.trim(),
-        diameter: parseFloat(diameter) || 1.75,
+        diameter,
         density: densityForMaterial(materialType) ?? null,
-        price_per_kg: pricePerKg ? parseFloat(pricePerKg) : null,
-        spool_weight: spoolWeight ? parseFloat(spoolWeight) : null,
+        price_per_kg: pricePerKg || null,
+        spool_weight: spoolWeight || null,
+        price_display_unit: priceMode,
         availability,
         variants: filledEntries.map((e) => ({
           color_name: e.color_name.trim(),
@@ -190,54 +208,42 @@ export function FilamentPaletteForm({ brandId, onClose }: FilamentPaletteFormPro
       {/* Общие параметры */}
       <div>
         <h4 className="text-sm font-medium text-gray-300 mb-2">{t('palette.sharedTitle')}</h4>
-        <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-          <input
-            list="palette-material-types"
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+          <Dropdown
+            label={t('createFilament.materialTypeLabel')}
             value={materialType}
-            onChange={(e) => setMaterialType(e.target.value)}
+            options={materialTypes.map((m) => ({ value: m, label: m }))}
+            onChange={(val) => setMaterialType(String(val))}
             placeholder={t('palette.materialPlaceholder')}
-            maxLength={50}
-            className={inputClass}
           />
-          <datalist id="palette-material-types">
-            {materialTypes.map((m) => (
-              <option key={m} value={m} />
-            ))}
-          </datalist>
-          <select
+          <Dropdown
+            label={t('palette.diameter')}
             value={diameter}
-            onChange={(e) => setDiameter(e.target.value)}
-            className={inputClass}
-          >
-            {STANDARD_DIAMETERS.map((d) => (
-              <option key={d} value={String(d)} className="bg-gray-900">{d} {t('palette.mm')}</option>
-            ))}
-          </select>
-          <input
-            type="number"
-            step="1"
-            value={pricePerKg}
-            onChange={(e) => setPricePerKg(e.target.value)}
-            placeholder={t('palette.pricePerKg')}
-            className={inputClass}
+            options={STANDARD_DIAMETERS.map((d) => ({ value: d, label: `${d} ${t('palette.mm')}` }))}
+            onChange={(val) => setDiameter(Number(val))}
           />
-          <input
-            type="number"
-            step="1"
-            value={spoolWeight}
-            onChange={(e) => setSpoolWeight(e.target.value)}
-            placeholder={t('palette.spoolWeight')}
-            className={inputClass}
-          />
-          <select
+          <Dropdown
+            label={t('createFilament.availabilityLabel')}
             value={availability}
-            onChange={(e) => setAvailability(e.target.value as FilamentAvailability)}
-            className={inputClass}
-          >
-            <option value="available" className="bg-gray-900">{t('createFilament.availability.available')}</option>
-            <option value="discontinued" className="bg-gray-900">{t('createFilament.availability.discontinued')}</option>
-            <option value="coming_soon" className="bg-gray-900">{t('createFilament.availability.coming_soon')}</option>
-          </select>
+            options={[
+              { value: 'available', label: t('createFilament.availability.available') },
+              { value: 'coming_soon', label: t('createFilament.availability.coming_soon') },
+            ]}
+            onChange={(val) => setAvailability(val as FilamentAvailability)}
+          />
+        </div>
+        <div className="mt-3">
+          <PriceUnitField
+            priceMode={priceMode}
+            onPriceModeChange={setPriceMode}
+            pricePerKg={pricePerKg}
+            onPricePerKgChange={setPricePerKg}
+            pricePerSpool={pricePerSpool}
+            onPricePerSpoolChange={setPricePerSpool}
+            spoolWeight={spoolWeight}
+            onSpoolWeightChange={setSpoolWeight}
+            currencySymbol={currencySymbol('RUB')}
+          />
         </div>
       </div>
 
