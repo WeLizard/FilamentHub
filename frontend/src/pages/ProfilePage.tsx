@@ -571,14 +571,16 @@ export const ProfilePage: React.FC = () => {
               className="flex items-center space-x-2 px-6 py-2 rounded-lg transition-all text-gray-300 hover:text-white"
             >
               <User className="w-4 h-4" />
-              <span>{t('profilePage.userProfile')}</span>
+              <span className="hidden sm:inline">{t('profilePage.user')}</span>
+              <span className="sm:hidden">{t('profilePage.profile')}</span>
             </button>
             <button
               onClick={() => setShowBrandCabinet(true)}
               className="flex items-center space-x-2 px-6 py-2 rounded-lg transition-all bg-green-600 text-white shadow-lg shadow-green-500/25"
             >
               <Factory className="w-4 h-4" />
-              <span>{t('profilePage.companyProfile')}</span>
+              <span className="hidden sm:inline">{t('profilePage.company')}</span>
+              <span className="sm:hidden">{t('profilePage.brand')}</span>
             </button>
           </div>
         </div>

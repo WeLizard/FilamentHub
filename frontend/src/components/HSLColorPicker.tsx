@@ -15,6 +15,8 @@ interface HSLColorPickerProps {
   showTrigger?: boolean;
   /** Класс встроенного свотча */
   triggerClassName?: string;
+  /** Вертикальное смещение флайаута (Tailwind-класс), по умолчанию mb-2 */
+  flyoutOffset?: string;
 }
 
 // Конвертация HEX в HSL
@@ -100,6 +102,7 @@ export const HSLColorPicker: React.FC<HSLColorPickerProps> = ({
   onToggle,
   showTrigger = false,
   triggerClassName,
+  flyoutOffset = 'mb-2',
 }) => {
   const [h, setH] = useState(0);
   const [s, setS] = useState(80);
@@ -229,7 +232,7 @@ export const HSLColorPicker: React.FC<HSLColorPickerProps> = ({
       {/* Flyout */}
       <div
         ref={flyoutRef}
-        className={`hsl-color-picker-flyout absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-60 bg-gray-900 border border-white/20 rounded-xl shadow-2xl z-[100] transition-all duration-300 ${
+        className={`hsl-color-picker-flyout absolute bottom-full left-1/2 -translate-x-1/2 ${flyoutOffset} w-60 bg-gray-900 border border-white/20 rounded-xl shadow-2xl z-[100] transition-all duration-300 ${
           isOpen
             ? 'opacity-100 translate-y-0 scale-100'
             : 'opacity-0 translate-y-2 scale-95 pointer-events-none'
