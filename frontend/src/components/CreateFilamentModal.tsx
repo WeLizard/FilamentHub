@@ -18,6 +18,7 @@ import { currencySymbol } from '../utils/currency';
 import type { Filament, Brand, FilamentAvailability } from '../types/api';
 import { useAuth } from '../contexts/AuthContext';
 import { MaterialTypeSelect } from './MaterialTypeSelect';
+import { AvailabilitySelect } from './AvailabilitySelect';
 import { ModalOverlay } from './ModalOverlay';
 import type { AxiosError } from 'axios';
 
@@ -1067,15 +1068,10 @@ export const CreateFilamentModal: React.FC<CreateFilamentModalProps> = ({
             />
           </div>
 
-          <Dropdown
-            label={t('createFilament.availabilityLabel')}
+          <AvailabilitySelect
             value={availability}
-            options={[
-              { value: 'available', label: t('createFilament.availability.available') },
-              ...(filament ? [{ value: 'discontinued', label: t('createFilament.availability.discontinued') }] : []),
-              { value: 'coming_soon', label: t('createFilament.availability.coming_soon') },
-            ]}
-            onChange={(val) => setAvailability(val as FilamentAvailability)}
+            onChange={setAvailability}
+            includeDiscontinued={!!filament}
           />
 
           {/* Actions */}

@@ -8,6 +8,7 @@ import { currencySymbol } from '../utils/currency';
 import { HSLColorPicker } from './HSLColorPicker';
 import { Dropdown } from './Dropdown';
 import { MaterialTypeSelect } from './MaterialTypeSelect';
+import { AvailabilitySelect } from './AvailabilitySelect';
 import { PriceUnitField } from './PriceUnitField';
 import { translateApiError } from '../utils/translateApiError';
 import type { FilamentAvailability, FilamentImportResult, FilamentPalettePayload } from '../types/api';
@@ -243,15 +244,7 @@ export function FilamentPaletteForm({ brandId, onClose }: FilamentPaletteFormPro
               placeholder="1.24"
             />
           </div>
-          <Dropdown
-            label={t('createFilament.availabilityLabel')}
-            value={availability}
-            options={[
-              { value: 'available', label: t('createFilament.availability.available') },
-              { value: 'coming_soon', label: t('createFilament.availability.coming_soon') },
-            ]}
-            onChange={(val) => setAvailability(val as FilamentAvailability)}
-          />
+          <AvailabilitySelect value={availability} onChange={setAvailability} />
         </div>
         <div className="mt-3">
           <PriceUnitField
