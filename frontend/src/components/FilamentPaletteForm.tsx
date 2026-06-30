@@ -7,6 +7,7 @@ import { densityForMaterial, STANDARD_DIAMETERS } from '../utils/materialDensity
 import { currencySymbol } from '../utils/currency';
 import { HSLColorPicker } from './HSLColorPicker';
 import { Dropdown } from './Dropdown';
+import { MaterialTypeSelect } from './MaterialTypeSelect';
 import { PriceUnitField } from './PriceUnitField';
 import { translateApiError } from '../utils/translateApiError';
 import type { FilamentAvailability, FilamentImportResult, FilamentPalettePayload } from '../types/api';
@@ -43,6 +44,7 @@ export function FilamentPaletteForm({ brandId, onClose }: FilamentPaletteFormPro
   const [newLineName, setNewLineName] = useState('');
   const [materialType, setMaterialType] = useState('');
   const [diameter, setDiameter] = useState(1.75);
+  const [density, setDensity] = useState(1.24);
   const [priceMode, setPriceMode] = useState<'per_kg' | 'per_spool'>('per_kg');
   const [pricePerKg, setPricePerKg] = useState(0);
   const [pricePerSpool, setPricePerSpool] = useState(0);
@@ -54,6 +56,12 @@ export function FilamentPaletteForm({ brandId, onClose }: FilamentPaletteFormPro
   const [error, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [result, setResult] = useState<FilamentImportResult | null>(null);
+
+  // Авто-плотность по материалу (как в основной форме).
+  useEffect(() => {
+    const d = densityForMaterial(materialType);
+    if (d) setDensity(d);
+  }, [materialType]);
 
   // Синхронизация цены за кг ↔ за катушку (как в основной форме).
   useEffect(() => {
@@ -115,7 +123,7 @@ export function FilamentPaletteForm({ brandId, onClose }: FilamentPaletteFormPro
       const payload: FilamentPalettePayload = {
         material_type: materialType.trim(),
         diameter,
-        density: densityForMaterial(materialType) ?? null,
+        density: density || null,
         price_per_kg: pricePerKg || null,
         spool_weight: spoolWeight || null,
         price_display_unit: priceMode,
@@ -208,12 +216,12 @@ export function FilamentPaletteForm({ brandId, onClose }: FilamentPaletteFormPro
       {/* Общие параметры */}
       <div>
         <h4 className="text-sm font-medium text-gray-300 mb-2">{t('palette.sharedTitle')}</h4>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-          <Dropdown
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
+          <MaterialTypeSelect
             label={t('createFilament.materialTypeLabel')}
             value={materialType}
-            options={materialTypes.map((m) => ({ value: m, label: m }))}
-            onChange={(val) => setMaterialType(String(val))}
+            onChange={setMaterialType}
+            options={materialTypes}
             placeholder={t('palette.materialPlaceholder')}
           />
           <Dropdown
@@ -222,6 +230,19 @@ export function FilamentPaletteForm({ brandId, onClose }: FilamentPaletteFormPro
             options={STANDARD_DIAMETERS.map((d) => ({ value: d, label: `${d} ${t('palette.mm')}` }))}
             onChange={(val) => setDiameter(Number(val))}
           />
+          <div>
+            <label className="block text-gray-300 mb-2 text-sm font-medium">{t('createFilament.densityLabel')}</label>
+            <input
+              type="number"
+              value={density}
+              onChange={(e) => setDensity(Number(e.target.value))}
+              min={0.1}
+              max={25}
+              step="0.01"
+              className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all"
+              placeholder="1.24"
+            />
+          </div>
           <Dropdown
             label={t('createFilament.availabilityLabel')}
             value={availability}

@@ -17,7 +17,7 @@ import { sortMaterialTypes } from '../data/materialDefaults';
 import { currencySymbol } from '../utils/currency';
 import type { Filament, Brand, FilamentAvailability } from '../types/api';
 import { useAuth } from '../contexts/AuthContext';
-import { useClickOutside } from '../hooks/useClickOutside';
+import { MaterialTypeSelect } from './MaterialTypeSelect';
 import { ModalOverlay } from './ModalOverlay';
 import type { AxiosError } from 'axios';
 
@@ -49,8 +49,6 @@ export const CreateFilamentModal: React.FC<CreateFilamentModalProps> = ({
   const [name, setName] = useState('');
   const [materialType, setMaterialType] = useState('');
   const [customMaterialType, setCustomMaterialType] = useState('');
-  const [showMaterialTypeDropdown, setShowMaterialTypeDropdown] = useState(false);
-  const materialTypeDropdownRef = useRef<HTMLDivElement>(null);
   const [colorName, setColorName] = useState('');
   const [colorHex, setColorHex] = useState('#808080');
   // Расширенные характеристики цвета
@@ -80,12 +78,6 @@ export const CreateFilamentModal: React.FC<CreateFilamentModalProps> = ({
   const queryClient = useQueryClient();
   const { user } = useAuth();
 
-  // Закрываем выпадающий список типов материалов при клике вне его
-  useClickOutside({
-    ref: materialTypeDropdownRef,
-    isOpen: showMaterialTypeDropdown,
-    onClose: () => setShowMaterialTypeDropdown(false),
-  });
   
   // Ref для отслеживания внутренних изменений цвета (из расширенных настроек)
   const isInternalColorChangeRef = useRef(false);
@@ -262,7 +254,6 @@ export const CreateFilamentModal: React.FC<CreateFilamentModalProps> = ({
       setVisualTransparency(false);
       setShowAdvancedVisual(false);
       setOpenColorPickers([]);
-      setShowMaterialTypeDropdown(false);
       setDiameter(1.75);
       setDensity(1.24);
       setPricePerKg(0);
@@ -638,79 +629,24 @@ export const CreateFilamentModal: React.FC<CreateFilamentModalProps> = ({
             <div className="flex-1">
               {/* Если brandId передан - используем input с выпадающим списком (как в CreatePresetModal) */}
               {brandId ? (
-                <div className="relative" ref={materialTypeDropdownRef}>
-                  <label className="block text-gray-300 mb-2 text-sm font-medium">{t('createFilament.materialTypeLabel')} *</label>
-                  <div className="relative">
-                    <input
-                      type="text"
-                      value={materialType === 'Other' ? customMaterialType : materialType}
-                      onChange={(e) => {
-                        const value = e.target.value;
-                        setMaterialType(value);
-                        // Показываем выпадающий список если начали вводить
-                        if (value.length > 0) {
-                          setShowMaterialTypeDropdown(true);
-                        }
-                        // Если значение не из списка - используем как кастомный тип
-                        const allTypes = materialTypes.length > 0
-                          ? materialTypes
-                          : ['PLA', 'PETG', 'ABS', 'TPU', 'ASA', 'PC', 'PA', 'PVA'];
-                        if (!allTypes.includes(value)) {
-                          setMaterialType('Other');
-                          setCustomMaterialType(value);
-                        } else {
-                          setCustomMaterialType('');
-                        }
-                      }}
-                      onFocus={() => {
-                        setShowMaterialTypeDropdown(true);
-                      }}
-                      placeholder={t('createFilament.selectOrEnterMaterial')}
-                      required
-                      className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all"
-                    />
-                    {showMaterialTypeDropdown && (
-                      <div 
-                        className="absolute z-10 w-full mt-1 max-h-60 overflow-y-auto bg-white/5 backdrop-blur-sm rounded-xl border border-white/10 shadow-xl"
-                        onClick={(e) => e.stopPropagation()}
-                      >
-                        {(() => {
-                          // Фильтруем типы по введенному тексту
-                          const allTypes = sortedMaterialTypes.length > 0
-                            ? sortedMaterialTypes
-                            : ['PLA', 'PETG', 'ABS', 'TPU', 'ASA', 'PC', 'PA', 'PVA'];
-                          const query = (materialType === 'Other' ? customMaterialType : materialType).toLowerCase();
-                          // Если значение точно совпадает с типом — показываем весь список (выбор, а не поиск)
-                          const isExact = allTypes.some((type) => type.toLowerCase() === query);
-                          const filteredTypes = isExact
-                            ? allTypes
-                            : allTypes.filter((type) => type.toLowerCase().includes(query));
-
-                          return filteredTypes.length > 0 ? (
-                            filteredTypes.map((type) => (
-                              <button
-                                key={type}
-                                type="button"
-                                onClick={() => {
-                                  setMaterialType(type);
-                                  setCustomMaterialType('');
-                                  setShowMaterialTypeDropdown(false);
-                                }}
-                                className="w-full px-4 py-3 text-left hover:bg-white/10 transition-all text-white border-b border-white/5 last:border-b-0"
-                              >
-                                {type}
-                              </button>
-                            ))
-                          ) : (
-                            <div className="px-4 py-3 text-gray-400 text-sm">
-                              {t('createFilament.noTypesFound')}
-                            </div>
-                          );
-                        })()}
-                      </div>
-                    )}
-                  </div>
-                </div>
+                <MaterialTypeSelect
+                  label={`${t('createFilament.materialTypeLabel')} *`}
+                  value={materialType === 'Other' ? customMaterialType : materialType}
+                  onChange={(v) => {
+                    const allTypes = sortedMaterialTypes.length > 0
+                      ? sortedMaterialTypes
+                      : ['PLA', 'PETG', 'ABS', 'TPU', 'ASA', 'PC', 'PA', 'PVA'];
+                    if (allTypes.includes(v)) {
+                      setMaterialType(v);
+                      setCustomMaterialType('');
+                    } else {
+                      setMaterialType('Other');
+                      setCustomMaterialType(v);
+                    }
+                  }}
+                  options={sortedMaterialTypes}
+                  required
+                />
               ) : (
                 <>
                   <Dropdown
