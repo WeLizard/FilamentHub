@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { Plus, X, Loader2, CheckCircle } from 'lucide-react';
-import { filamentLinesAPI } from '../api/client';
+import { filamentLinesAPI, filamentsAPI } from '../api/client';
 import { HSLColorPicker } from './HSLColorPicker';
 import { translateApiError } from '../utils/translateApiError';
 import type { FilamentAvailability, FilamentImportResult, FilamentPalettePayload } from '../types/api';
@@ -28,6 +28,11 @@ export function FilamentPaletteForm({ brandId, onClose }: FilamentPaletteFormPro
   const { data: lines = [] } = useQuery({
     queryKey: ['brand-lines', brandId],
     queryFn: () => filamentLinesAPI.list(brandId),
+  });
+
+  const { data: materialTypes = [] } = useQuery({
+    queryKey: ['filaments', 'material-types'],
+    queryFn: () => filamentsAPI.getMaterialTypes(),
   });
 
   const [lineId, setLineId] = useState<number | ''>('');
@@ -186,14 +191,16 @@ export function FilamentPaletteForm({ brandId, onClose }: FilamentPaletteFormPro
       <div>
         <h4 className="text-sm font-medium text-gray-300 mb-2">{t('palette.sharedTitle')}</h4>
         <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-          <input
-            type="text"
+          <select
             value={materialType}
             onChange={(e) => setMaterialType(e.target.value)}
-            placeholder={t('palette.materialPlaceholder')}
-            maxLength={50}
             className={inputClass}
-          />
+          >
+            <option value="" className="bg-gray-900">{t('palette.materialPlaceholder')}</option>
+            {materialTypes.map((m) => (
+              <option key={m} value={m} className="bg-gray-900">{m}</option>
+            ))}
+          </select>
           <input
             type="number"
             step="0.05"
@@ -250,7 +257,7 @@ export function FilamentPaletteForm({ brandId, onClose }: FilamentPaletteFormPro
             <Plus className="w-4 h-4" /> {t('palette.addColor')}
           </button>
         </div>
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
+        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
           {entries.map((entry, i) => (
             <div key={i} className="relative bg-white/5 border border-white/10 rounded-xl p-3 flex flex-col items-center gap-2">
               <button
