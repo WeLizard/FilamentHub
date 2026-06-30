@@ -3,6 +3,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { Plus, X, Loader2, CheckCircle } from 'lucide-react';
 import { filamentLinesAPI, filamentsAPI } from '../api/client';
+import { densityForMaterial, STANDARD_DIAMETERS } from '../utils/materialDensity';
 import { HSLColorPicker } from './HSLColorPicker';
 import { translateApiError } from '../utils/translateApiError';
 import type { FilamentAvailability, FilamentImportResult, FilamentPalettePayload } from '../types/api';
@@ -39,7 +40,6 @@ export function FilamentPaletteForm({ brandId, onClose }: FilamentPaletteFormPro
   const [newLineName, setNewLineName] = useState('');
   const [materialType, setMaterialType] = useState('');
   const [diameter, setDiameter] = useState('1.75');
-  const [density, setDensity] = useState('');
   const [pricePerKg, setPricePerKg] = useState('');
   const [spoolWeight, setSpoolWeight] = useState('');
   const [availability, setAvailability] = useState<FilamentAvailability>('available');
@@ -98,7 +98,7 @@ export function FilamentPaletteForm({ brandId, onClose }: FilamentPaletteFormPro
       const payload: FilamentPalettePayload = {
         material_type: materialType.trim(),
         diameter: parseFloat(diameter) || 1.75,
-        density: density ? parseFloat(density) : null,
+        density: densityForMaterial(materialType) ?? null,
         price_per_kg: pricePerKg ? parseFloat(pricePerKg) : null,
         spool_weight: spoolWeight ? parseFloat(spoolWeight) : null,
         availability,
@@ -191,32 +191,28 @@ export function FilamentPaletteForm({ brandId, onClose }: FilamentPaletteFormPro
       <div>
         <h4 className="text-sm font-medium text-gray-300 mb-2">{t('palette.sharedTitle')}</h4>
         <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-          <select
+          <input
+            list="palette-material-types"
             value={materialType}
             onChange={(e) => setMaterialType(e.target.value)}
+            placeholder={t('palette.materialPlaceholder')}
+            maxLength={50}
             className={inputClass}
-          >
-            <option value="" className="bg-gray-900">{t('palette.materialPlaceholder')}</option>
+          />
+          <datalist id="palette-material-types">
             {materialTypes.map((m) => (
-              <option key={m} value={m} className="bg-gray-900">{m}</option>
+              <option key={m} value={m} />
             ))}
-          </select>
-          <input
-            type="number"
-            step="0.05"
+          </datalist>
+          <select
             value={diameter}
             onChange={(e) => setDiameter(e.target.value)}
-            placeholder={t('palette.diameter')}
             className={inputClass}
-          />
-          <input
-            type="number"
-            step="0.01"
-            value={density}
-            onChange={(e) => setDensity(e.target.value)}
-            placeholder={t('palette.density')}
-            className={inputClass}
-          />
+          >
+            {STANDARD_DIAMETERS.map((d) => (
+              <option key={d} value={String(d)} className="bg-gray-900">{d} {t('palette.mm')}</option>
+            ))}
+          </select>
           <input
             type="number"
             step="1"

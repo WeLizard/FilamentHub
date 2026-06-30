@@ -1122,6 +1122,7 @@
     "sharedTitle": "Shared parameters (for all colors)",
     "materialPlaceholder": "Material (e.g. PLA)",
     "diameter": "Diameter, mm",
+    "mm": "mm",
     "density": "Density",
     "pricePerKg": "Price per kg",
     "spoolWeight": "Spool weight, g",

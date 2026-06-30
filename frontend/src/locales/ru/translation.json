@@ -1248,6 +1248,7 @@
     "sharedTitle": "Общие параметры (для всех цветов)",
     "materialPlaceholder": "Материал (напр. PLA)",
     "diameter": "Диаметр, мм",
+    "mm": "мм",
     "density": "Плотность",
     "pricePerKg": "Цена за кг",
     "spoolWeight": "Вес катушки, г",
