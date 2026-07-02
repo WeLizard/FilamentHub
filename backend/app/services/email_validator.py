@@ -188,6 +188,7 @@ async def check_domain_has_mx_or_a(domain: str) -> bool:
     """
     import asyncio
 
+    import dns.exception
     import dns.resolver
 
     def _resolve() -> bool:
@@ -199,9 +200,7 @@ async def check_domain_has_mx_or_a(domain: str) -> bool:
             answers = resolver.resolve(domain, "MX")
             if answers:
                 return True
-        except (dns.resolver.NoAnswer, dns.resolver.NXDOMAIN, dns.resolver.NoNameservers):
-            pass
-        except Exception:
+        except (dns.resolver.NoAnswer, dns.resolver.NXDOMAIN, dns.resolver.NoNameservers, dns.exception.Timeout):
             pass
 
         # Fallback to A record (some domains accept mail without MX)
@@ -209,9 +208,7 @@ async def check_domain_has_mx_or_a(domain: str) -> bool:
             answers = resolver.resolve(domain, "A")
             if answers:
                 return True
-        except (dns.resolver.NoAnswer, dns.resolver.NXDOMAIN, dns.resolver.NoNameservers):
-            pass
-        except Exception:
+        except (dns.resolver.NoAnswer, dns.resolver.NXDOMAIN, dns.resolver.NoNameservers, dns.exception.Timeout):
             pass
 
         return False

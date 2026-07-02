@@ -1,6 +1,7 @@
 """Wiki API endpoints."""
 
 import hashlib
+import logging
 from typing import Annotated, Optional
 
 from fastapi import APIRouter, Depends, Query, Request
@@ -45,6 +46,8 @@ from app.schemas.wiki import (
     WikiFeedbackResponse,
     WikiFeedbackStats,
 )
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/wiki", tags=["wiki"])
 
@@ -381,7 +384,8 @@ async def get_article(
         if user and user.role == UserRole.ADMIN:
             is_admin = True
     except Exception:
-        pass
+        # Invalid/expired token on a public article — treat as anonymous, but record for diagnosis
+        logger.debug("Optional user resolution failed on wiki view", exc_info=True)
 
     if article.status != WikiArticleStatus.PUBLISHED and not is_admin:
         raise_error(404, ERR_ARTICLE_NOT_PUBLISHED)
