@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import base64
 import gzip
+import io
 import json
 import logging
 import re
@@ -146,12 +147,25 @@ def is_supported_gcode_filename(file_name: str | None) -> bool:
     return any(lower_name.endswith(extension) for extension in SUPPORTED_GCODE_EXTENSIONS)
 
 
+MAX_DECOMPRESSED_GCODE_BYTES = 200 * 1024 * 1024
+
+
+def _gunzip_capped(raw_bytes: bytes, limit: int) -> bytes:
+    out = bytearray()
+    with gzip.GzipFile(fileobj=io.BytesIO(raw_bytes)) as gz:
+        while chunk := gz.read(1024 * 1024):
+            out.extend(chunk)
+            if len(out) > limit:
+                raise ValueError("gzip_too_large")
+    return bytes(out)
+
+
 def _decode_gcode_bytes(file_name: str, raw_bytes: bytes) -> str:
     lower_name = file_name.lower()
     payload = raw_bytes
     if lower_name.endswith(".gz"):
         try:
-            payload = gzip.decompress(raw_bytes)
+            payload = _gunzip_capped(raw_bytes, MAX_DECOMPRESSED_GCODE_BYTES)
         except (OSError, EOFError, gzip.BadGzipFile) as exc:
             raise ValueError("invalid_gzip") from exc
 
