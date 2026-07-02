@@ -8,6 +8,7 @@ from fastapi.staticfiles import StaticFiles
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
+from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from app.core.config import settings
 from app.core.limiter import limiter
@@ -52,7 +53,24 @@ app.add_middleware(
 # Static files for uploaded files
 upload_dir = get_upload_root_dir()
 ensure_upload_dir_compatibility()
-app.mount("/uploads", StaticFiles(directory=str(upload_dir)), name="uploads")
+
+
+class PublicStaticFiles(StaticFiles):
+    """Uploads mount minus verification proof documents.
+
+    Proof files are served only via the authed endpoints
+    /brand-requests/{id}/proof/{file} and /printer-requests/{id}/proof/{file}.
+    """
+
+    _protected_prefixes = ("brand_requests/", "printer_requests/")
+
+    async def get_response(self, path: str, scope):
+        if path.replace("\\", "/").lstrip("/").startswith(self._protected_prefixes):
+            raise StarletteHTTPException(status_code=404)
+        return await super().get_response(path, scope)
+
+
+app.mount("/uploads", PublicStaticFiles(directory=str(upload_dir)), name="uploads")
 
 # Static files for distributions (OrcaSlicer builds)
 distributions_dir = Path(__file__).parent.parent / settings.DISTRIBUTIONS_DIR

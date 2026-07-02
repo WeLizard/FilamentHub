@@ -5,6 +5,7 @@ from datetime import datetime
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
+from fastapi.responses import FileResponse
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -38,6 +39,7 @@ from app.schemas.brand_request import (
 from app.services.email_validator import is_email_requiring_documents, normalize_website_url
 from app.services.file_service import (
     delete_proof_files,
+    get_upload_root_dir,
     parse_proof_files,
     save_proof_file,
     serialize_proof_files,
@@ -427,6 +429,33 @@ async def get_brand_request(
         except (json.JSONDecodeError, TypeError):
             response.social_media_urls = []
     return response
+
+
+@router.get("/{request_id}/proof/{file_name}")
+async def download_proof_file(
+    request_id: int,
+    file_name: str,
+    current_user: Annotated[User, Depends(get_current_active_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> FileResponse:
+    """Отдать proof-файл заявки (только владелец заявки или админ)."""
+    result = await db.execute(
+        select(BrandRequest).where(BrandRequest.id == request_id)
+    )
+    request = result.scalar_one_or_none()
+
+    if not request:
+        raise_error(status.HTTP_404_NOT_FOUND, ERR_REQUEST_NOT_FOUND)
+
+    if request.user_id != current_user.id and current_user.role != UserRole.ADMIN:
+        raise_error(status.HTTP_403_FORBIDDEN, ERR_VIEW_OWN_REQUESTS_ONLY)
+
+    base_dir = (get_upload_root_dir() / "brand_requests" / str(request_id)).resolve()
+    file_path = (base_dir / file_name).resolve()
+    if file_path.parent != base_dir or not file_path.is_file():
+        raise_error(status.HTTP_404_NOT_FOUND, ERR_FILE_NOT_FOUND_IN_REQUEST)
+
+    return FileResponse(file_path, filename=file_name)
 
 
 @router.post("/{request_id}/upload", response_model=BrandRequestResponse)

@@ -3,6 +3,7 @@
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
+from fastapi.responses import FileResponse
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -14,11 +15,12 @@ from app.core.errors import (
     ERR_PRINTER_REQUEST_PENDING,
     ERR_PRINTER_SLUG_EXISTS,
     ERR_UPLOAD_PENDING_ONLY,
+    ERR_VIEW_OWN_REQUESTS_ONLY,
     raise_error,
 )
 from app.db.session import get_db
 from app.models.printer_request import PrinterRequest, PrinterRequestStatus
-from app.models.user import User
+from app.models.user import User, UserRole
 from app.schemas.printer_request import (
     PrinterRequestCreate,
     PrinterRequestListResponse,
@@ -26,6 +28,7 @@ from app.schemas.printer_request import (
 )
 from app.services.file_service import (
     delete_proof_file,
+    get_upload_root_dir,
     parse_proof_files,
     save_proof_file,
     serialize_proof_files,
@@ -95,6 +98,33 @@ async def create_printer_request(
     if printer_request.proof_files:
         response.proof_files = parse_proof_files(printer_request.proof_files)
     return response
+
+
+@router.get("/{request_id}/proof/{file_name}")
+async def download_proof_file(
+    request_id: int,
+    file_name: str,
+    user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> FileResponse:
+    """Отдать proof-файл заявки (только владелец заявки или админ)."""
+    result = await db.execute(
+        select(PrinterRequest).where(PrinterRequest.id == request_id)
+    )
+    request = result.scalar_one_or_none()
+
+    if not request:
+        raise_error(404, ERR_PRINTER_REQUEST_NOT_FOUND)
+
+    if request.user_id != user.id and user.role != UserRole.ADMIN:
+        raise_error(403, ERR_VIEW_OWN_REQUESTS_ONLY)
+
+    base_dir = (get_upload_root_dir() / "printer_requests" / str(request_id)).resolve()
+    file_path = (base_dir / file_name).resolve()
+    if file_path.parent != base_dir or not file_path.is_file():
+        raise_error(404, ERR_FILE_NOT_FOUND_IN_REQUEST)
+
+    return FileResponse(file_path, filename=file_name)
 
 
 @router.post("/{request_id}/upload", response_model=PrinterRequestResponse)

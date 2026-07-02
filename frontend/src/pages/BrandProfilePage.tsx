@@ -36,7 +36,7 @@ import {
   Info,
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
-import { brandsAPI, filamentsAPI, brandRequestsAPI, presetsAPI, qrAPI } from '../api/client';
+import { brandsAPI, filamentsAPI, brandRequestsAPI, presetsAPI, proofFilesAPI, qrAPI } from '../api/client';
 import { translateApiError } from '../utils/translateApiError';
 import { PERSONAL_EMAIL_DOMAINS } from '../data/personalEmailDomains';
 import { currencySymbol, CURRENCY_CODES } from '../utils/currency';
@@ -1890,26 +1890,20 @@ const BrandSelectionForm: React.FC = () => {
                         fileName = `${t('brandProfile.file')} ${index + 1}`;
                       }
                       
-                      // Формируем URL для доступа к файлу (auth через query token)
-                      // filePath уже в формате "brand_requests/5/file.jpg"
-                      const accessToken = localStorage.getItem('access_token');
-                      const fileUrl = `/api/v1/uploads/${filePath}${accessToken ? `?token=${accessToken}` : ''}`;
-                      
                       return (
                         <div
                           key={index}
                           className="bg-white/5 rounded-lg p-3 border border-white/10"
                         >
                           <div className="flex items-center justify-between">
-                            <a
-                              href={fileUrl}
-                              target="_blank"
-                              rel="noopener noreferrer"
+                            <button
+                              type="button"
+                              onClick={() => void proofFilesAPI.download(filePath, fileName)}
                               className="flex items-center space-x-2 text-green-400 hover:text-green-300 flex-1 min-w-0"
                             >
                               <FileText className="w-4 h-4 flex-shrink-0" />
                               <span className="truncate" title={fileName}>{fileName}</span>
-                            </a>
+                            </button>
                             <button
                               onClick={() => {
                                 if (confirm(t('brandProfile.confirmDeleteFile'))) {

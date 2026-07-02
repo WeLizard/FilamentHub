@@ -3,9 +3,10 @@
 import { useState } from 'react';
 import { ModalOverlay } from '../ModalOverlay';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { FileText, CheckCircle, XCircle, Download, Clock, Building2, UserPlus, Trash2 } from 'lucide-react';
+import { FileText, CheckCircle, XCircle, Clock, Building2, UserPlus, Trash2 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { adminAPI } from '../../api/client';
+import { ProofFileCard } from '../ProofFileCard';
 import type { BrandRequest, BrandRequestStatus } from '../../types/api';
 import { ConfirmDeleteModal } from '../ConfirmDeleteModal';
 export function AdminBrandRequests() {
@@ -390,70 +391,13 @@ export function AdminBrandRequests() {
                         fileName = fileInfo.name || fileInfo.path.split('/').pop() || t('adminBrandRequests.file_placeholder', { index: idx + 1 });
                       }
                       
-                      const accessToken = localStorage.getItem('access_token');
-                      const fileUrl = `/api/v1/uploads/${filePath}${accessToken ? `?token=${accessToken}` : ''}`;
-                      const fileExt = fileName.split('.').pop()?.toLowerCase() || '';
-                      const isImage = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg'].includes(fileExt);
-                      
                       return (
-                        <div key={idx} className="bg-white/5 rounded-lg p-3 border border-white/10">
-                          {isImage ? (
-                            <div className="space-y-2">
-                              <a
-                                href={fileUrl}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="block cursor-pointer"
-                                onClick={(e) => {
-                                  e.preventDefault();
-                                  window.open(fileUrl, '_blank');
-                                }}
-                              >
-                                <img
-                                  src={fileUrl}
-                                  alt={fileName}
-                                  className="max-w-full h-auto max-h-64 rounded-lg border border-white/20 hover:border-purple-400/50 transition-colors"
-                                  onError={(e) => {
-                                    const target = e.target as HTMLImageElement;
-                                    target.style.display = 'none';
-                                    const fallback = document.createElement('div');
-                                    fallback.className = 'flex items-center justify-center h-32 bg-white/5 rounded-lg border border-white/20';
-                                    const span = document.createElement('span');
-                                    span.className = 'text-gray-400 text-sm';
-                                    span.textContent = t('adminBrandRequests.image_not_loaded');
-                                    fallback.appendChild(span);
-                                    target.parentElement?.appendChild(fallback);
-                                  }}
-                                />
-                              </a>
-                              <div className="flex items-center justify-between">
-                                <span className="text-gray-300 text-sm truncate flex-1 mr-2" title={fileName}>
-                                  {fileName}
-                                </span>
-                                <a
-                                  href={fileUrl}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                  className="flex items-center space-x-2 text-purple-400 hover:text-purple-300 text-sm flex-shrink-0"
-                                  download
-                                >
-                                  <Download className="w-4 h-4" />
-                                  <span className="hidden sm:inline">{t('adminBrandRequests.download_file_link')}</span>
-                                </a>
-                              </div>
-                            </div>
-                          ) : (
-                            <a
-                              href={fileUrl}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="flex items-center space-x-2 text-purple-400 hover:text-purple-300"
-                            >
-                              <Download className="w-4 h-4" />
-                              <span>{fileName}</span>
-                            </a>
-                          )}
-                        </div>
+                        <ProofFileCard
+                          key={idx}
+                          filePath={filePath}
+                          fileName={fileName}
+                          imageErrorText={t('adminBrandRequests.image_not_loaded')}
+                        />
                       );
                     })}
                   </div>

@@ -145,23 +145,6 @@ describe('auth.ts', () => {
     });
   });
 
-  describe('buildAuthenticatedUploadUrl', () => {
-    it('appends token when authenticated', async () => {
-      mockEnv({ VITE_AUTH_WEB_MODE: 'jwt' });
-      const auth = await loadAuth();
-      auth.setToken('tok');
-      const url = auth.buildAuthenticatedUploadUrl('/avatars/pic.png');
-      expect(url).toBe('/api/v1/uploads/avatars/pic.png?token=tok');
-    });
-
-    it('returns plain url when no token', async () => {
-      mockEnv({ VITE_AUTH_WEB_MODE: 'cookie' });
-      const auth = await loadAuth();
-      const url = auth.buildAuthenticatedUploadUrl('avatars/pic.png');
-      expect(url).toBe('/api/v1/uploads/avatars/pic.png');
-    });
-  });
-
   describe('clearLegacyLocalAuthStateIfNeeded', () => {
     it('clears localStorage in cookie mode (non-orca)', async () => {
       mockEnv({ VITE_AUTH_WEB_MODE: 'cookie' });

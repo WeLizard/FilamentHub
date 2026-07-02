@@ -133,12 +133,3 @@ export const clearLegacyLocalAuthStateIfNeeded = (): void => {
     removeToken();
   }
 };
-
-export const buildAuthenticatedUploadUrl = (filePath: string): string => {
-  const normalizedPath = filePath.replace(/^\/+/, '');
-  const token = getToken();
-  if (token) {
-    return `/api/v1/uploads/${normalizedPath}?token=${encodeURIComponent(token)}`;
-  }
-  return `/api/v1/uploads/${normalizedPath}`;
-};

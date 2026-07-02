@@ -1039,6 +1039,33 @@ export const brandRequestsAPI = {
   },
 };
 
+/** Verification proof files (brand/printer requests) — served via authed endpoints, not public /uploads */
+export const proofFilesAPI = {
+  // filePath format: "brand_requests/{id}/{file}" or "printer_requests/{id}/{file}"
+  getObjectUrl: async (filePath: string): Promise<string> => {
+    const match = filePath.replace(/^\/+/, '').match(/^(brand_requests|printer_requests)\/(\d+)\/([^/]+)$/);
+    if (!match) {
+      throw new Error(`Invalid proof file path: ${filePath}`);
+    }
+    const resource = match[1] === 'brand_requests' ? 'brand-requests' : 'printer-requests';
+    const response = await api.get<Blob>(`/${resource}/${match[2]}/proof/${encodeURIComponent(match[3])}`, {
+      responseType: 'blob',
+    });
+    return URL.createObjectURL(response.data);
+  },
+
+  download: async (filePath: string, fileName: string): Promise<void> => {
+    const url = await proofFilesAPI.getObjectUrl(filePath);
+    const link = document.createElement('a');
+    link.href = url;
+    link.setAttribute('download', fileName);
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    window.URL.revokeObjectURL(url);
+  },
+};
+
 export const calculatorAPI = {
   estimate: async (data: CalculatorEstimateRequest) => {
     const response = await api.post<CalculatorEstimateResponse>('/calculator/estimate', data);

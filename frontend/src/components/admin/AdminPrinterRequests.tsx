@@ -3,11 +3,12 @@
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Package, CheckCircle, XCircle, Clock, Download } from 'lucide-react';
+import { Package, CheckCircle, XCircle, Clock } from 'lucide-react';
 import { Printer3DIcon } from '../icons/Printer3DIcon';
 import { adminAPI } from '../../api/client';
 import type { PrinterRequest } from '../../types/api';
 import { ModalOverlay } from '../ModalOverlay';
+import { ProofFileCard } from '../ProofFileCard';
 
 type PrinterRequestStatus = 'pending' | 'approved' | 'rejected';
 
@@ -288,54 +289,14 @@ export function AdminPrinterRequests() {
                   <p className="text-gray-400 text-sm mb-2">{t('adminPrinterRequests.attachedFiles')}</p>
                   <div className="space-y-3">
                     {selectedRequest.proof_files.map((file: string, idx: number) => {
-                      const accessToken = localStorage.getItem('access_token');
-                      const fileUrl = `/api/v1/uploads/${file}${accessToken ? `?token=${accessToken}` : ''}`;
                       const fileName = file.split('/').pop() || `${t('adminPrinterRequests.file')} ${idx + 1}`;
-                      const fileExt = fileName.split('.').pop()?.toLowerCase() || '';
-                      const isImage = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg'].includes(fileExt);
-                      
                       return (
-                        <div key={idx} className="bg-white/5 rounded-lg p-3 border border-white/10">
-                          {isImage ? (
-                            <div className="space-y-2">
-                              <img
-                                src={fileUrl}
-                                alt={fileName}
-                                className="max-w-full h-auto max-h-64 rounded-lg border border-white/20"
-                                onError={(e) => {
-                                  const target = e.target as HTMLImageElement;
-                                  target.style.display = 'none';
-                                  const fallback = document.createElement('div');
-                                  fallback.className = 'flex items-center justify-center h-32 bg-white/5 rounded-lg border border-white/20';
-                                  const span = document.createElement('span');
-                                  span.className = 'text-gray-400 text-sm';
-                                  span.textContent = t('adminPrinterRequests.imageNotLoaded');
-                                  fallback.appendChild(span);
-                                  target.parentElement?.appendChild(fallback);
-                                }}
-                              />
-                              <a
-                                href={fileUrl}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="flex items-center space-x-2 text-purple-400 hover:text-purple-300 text-sm"
-                              >
-                                <Download className="w-4 h-4" />
-                                <span>{fileName}</span>
-                              </a>
-                            </div>
-                          ) : (
-                            <a
-                              href={fileUrl}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="flex items-center space-x-2 text-purple-400 hover:text-purple-300"
-                            >
-                              <Download className="w-4 h-4" />
-                              <span>{fileName}</span>
-                            </a>
-                          )}
-                        </div>
+                        <ProofFileCard
+                          key={idx}
+                          filePath={file}
+                          fileName={fileName}
+                          imageErrorText={t('adminPrinterRequests.imageNotLoaded')}
+                        />
                       );
                     })}
                   </div>
