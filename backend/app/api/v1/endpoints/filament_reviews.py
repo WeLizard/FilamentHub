@@ -112,7 +112,11 @@ async def get_my_reviews(
     # Строим запрос
     query = (
         select(FilamentReview)
-        .options(selectinload(FilamentReview.user), selectinload(FilamentReview.filament))
+        .options(
+            selectinload(FilamentReview.user),
+            selectinload(FilamentReview.filament),
+            selectinload(FilamentReview.preset),
+        )
         .where(FilamentReview.user_id == current_user.id)
     )
 
@@ -138,12 +142,7 @@ async def get_my_reviews(
     # Преобразуем в ответы
     items = []
     for review in reviews:
-        # Загружаем пресет если есть
-        preset_name = None
-        if review.preset_id:
-            preset_result = await db.execute(select(Preset).where(Preset.id == review.preset_id))
-            preset = preset_result.scalar_one_or_none()
-            preset_name = preset.name if preset else None
+        preset_name = review.preset.name if review.preset else None
 
         items.append(
             FilamentReviewResponse(
@@ -197,7 +196,10 @@ async def list_filament_reviews(
     # Строим запрос
     query = (
         select(FilamentReview)
-        .options(selectinload(FilamentReview.user))
+        .options(
+            selectinload(FilamentReview.user),
+            selectinload(FilamentReview.preset),
+        )
         .where(FilamentReview.filament_id == filament_id)
     )
 
@@ -227,12 +229,7 @@ async def list_filament_reviews(
     # Преобразуем в ответы
     items = []
     for review in reviews:
-        # Загружаем пресет если есть
-        preset_name = None
-        if review.preset_id:
-            preset_result = await db.execute(select(Preset).where(Preset.id == review.preset_id))
-            preset = preset_result.scalar_one_or_none()
-            preset_name = preset.name if preset else None
+        preset_name = review.preset.name if review.preset else None
 
         items.append(
             FilamentReviewResponse(
