@@ -626,6 +626,12 @@ async def update_calculator_profile(
 
 SHARED_QUOTE_LIFETIME_DAYS = 90
 
+# Client-supplied HTML served on our own origin: forbid scripts to prevent stored XSS.
+_SHARED_QUOTE_CSP = (
+    "default-src 'none'; style-src 'unsafe-inline'; img-src data: https: http:; "
+    "font-src data:; base-uri 'none'; form-action 'none'"
+)
+
 
 @router.post("/quote/share", response_model=SharedQuoteResponse, status_code=status.HTTP_201_CREATED)
 async def create_shared_quote(
@@ -667,7 +673,13 @@ async def get_shared_quote(
     if quote.expires_at and quote.expires_at < datetime.now(timezone.utc):
         raise_error(status.HTTP_410_GONE, ERR_SHARED_QUOTE_EXPIRED)
 
-    return HTMLResponse(content=quote.html_content)
+    return HTMLResponse(
+        content=quote.html_content,
+        headers={
+            "Content-Security-Policy": _SHARED_QUOTE_CSP,
+            "X-Content-Type-Options": "nosniff",
+        },
+    )
 
 
 @router.post("/quote/pdf")
