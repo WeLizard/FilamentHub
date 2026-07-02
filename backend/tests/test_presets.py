@@ -508,3 +508,53 @@ async def test_update_preset(client: AsyncClient, db_session: AsyncSession):
     assert data["name"] == update_data["name"]
     assert data["extruder_temp"] == update_data["extruder_temp"]
 
+
+
+@pytest.mark.asyncio
+async def test_increment_usage_requires_auth(client: AsyncClient, db_session: AsyncSession):
+    """usage_count feeds recommendations/spool matching - anonymous increments must be rejected."""
+    headers, email = await _register_and_login(client, "preset-usage")
+
+    brand = Brand(name="Usage Brand", slug="usage-brand", active=True)
+    db_session.add(brand)
+    await db_session.flush()
+
+    filament = Filament(
+        brand_id=brand.id,
+        name="Usage PLA",
+        slug="usage-pla",
+        material_type="PLA",
+        active=True,
+    )
+    db_session.add(filament)
+    await db_session.flush()
+
+    user = (
+        await db_session.execute(select(User).where(User.email == email))
+    ).scalar_one()
+
+    preset = Preset(
+        filament_id=filament.id,
+        user_id=user.id,
+        name="Usage Preset",
+        is_official=False,
+        extruder_temp=200.0,
+        bed_temp=60.0,
+        print_speed=50.0,
+        moderation_status=PresetModerationStatus.APPROVED,
+        active=True,
+    )
+    db_session.add(preset)
+    await db_session.commit()
+    await db_session.refresh(preset)
+
+    anon = await client.post(f"/api/v1/presets/{preset.id}/increment-usage")
+    assert anon.status_code == 401
+    await db_session.refresh(preset)
+    assert preset.usage_count == 0
+
+    authed = await client.post(
+        f"/api/v1/presets/{preset.id}/increment-usage", headers=headers
+    )
+    assert authed.status_code == 200
+    assert authed.json()["usage_count"] == 1

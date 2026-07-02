@@ -681,6 +681,7 @@ async def activate_preset(
 async def increment_usage(
     preset_id: int,
     db: Annotated[AsyncSession, Depends(get_db)],
+    current_user: Annotated[User, Depends(get_current_active_user)],
 ) -> PresetResponse:
     """Увеличить счётчик использования пресета."""
     result = await db.execute(select(Preset).where(Preset.id == preset_id))
@@ -692,6 +693,8 @@ async def increment_usage(
     preset.usage_count += 1
     await db.commit()
     await db.refresh(preset)
+
+    logger.info(f"Preset {preset.id} usage incremented by user {current_user.id}")
 
     return PresetResponse.model_validate(preset)
 
