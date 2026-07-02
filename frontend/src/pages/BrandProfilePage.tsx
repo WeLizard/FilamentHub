@@ -357,7 +357,6 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({ onBack }) =>
 
   // Вычисляем статистику
   const totalScans = filaments.reduce((sum, f) => sum + (f.scans_count || 0), 0);
-  const totalViews = filaments.reduce((sum, f) => sum + (f.views_count || 0), 0);
 
   return (
     <div className="space-y-6">
@@ -853,14 +852,6 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({ onBack }) =>
               color="from-purple-500/20 to-pink-500/20"
               borderColor="border-purple-500/30"
               iconColor="text-purple-400"
-            />
-            <StatCard
-              icon={TrendingUp}
-              label={t('brandProfile.viewsCount')}
-              value={totalViews.toString()}
-              color="from-yellow-500/20 to-orange-500/20"
-              borderColor="border-yellow-500/30"
-              iconColor="text-yellow-400"
             />
           </div>
 
@@ -3182,13 +3173,6 @@ const FilamentCard: React.FC<FilamentCardProps> = ({ filament, onEdit, onDelete,
         </div>
         <div className="text-center p-2 bg-white/5 rounded-lg">
           <div className="flex items-center justify-center space-x-1 text-gray-400 mb-1">
-            <Eye className="w-3 h-3" />
-          </div>
-          <div className="text-white font-semibold">{filament.views_count || 0}</div>
-          <div className="text-gray-400">{t('brandProfile.views')}</div>
-        </div>
-        <div className="text-center p-2 bg-white/5 rounded-lg">
-          <div className="flex items-center justify-center space-x-1 text-gray-400 mb-1">
             <QrCode className="w-3 h-3" />
           </div>
           <div className="text-white font-semibold">{filament.scans_count || 0}</div>
@@ -3302,7 +3286,6 @@ const MaterialStatCard: React.FC<MaterialStatCardProps> = ({ filament }) => {
       </div>
       <div className="text-right">
         <p className="text-white font-semibold">{filament.scans_count || 0} {t('brandProfile.scans')}</p>
-        <p className="text-green-400 text-sm">{filament.views_count || 0} {t('brandProfile.views')}</p>
       </div>
     </div>
   );

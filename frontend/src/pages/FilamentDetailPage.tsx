@@ -321,16 +321,11 @@ export const FilamentDetailPage: React.FC = () => {
                 <TrendingUp className="w-3.5 h-3.5 md:w-5 md:h-5 mr-1 md:mr-2 text-blue-400" />
                 <span className="font-bold text-white">{presetsData?.total || 0} <span className="hidden md:inline">{t('filamentDetailPage.presets')}</span></span>
               </span>
-              {/* Просмотры */}
-              <span className="flex items-center text-gray-300" title={t('filamentDetailPage.viewsCountTitle')}>
-                <Package className="w-3.5 h-3.5 md:w-5 md:h-5 mr-1 md:mr-2 text-purple-400" />
-                <span className="font-bold text-white">{filament.views_count || 0} <span className="hidden md:inline">{t('filamentDetailPage.views')}</span></span>
-              </span>
               {/* Количество отзывов */}
               {ratingStats && ratingStats.total_reviews > 0 && (
                 <span className="hidden md:flex items-center text-gray-300" title={t('filamentDetailPage.reviewsCountTitle')}>
                   <MessageCircle className="w-5 h-5 mr-2 text-purple-400" />
-                  <span className="font-bold text-white">{ratingStats.total_reviews} {t('filamentDetailPage.reviews')}</span>
+                  <span className="font-bold text-white">{t('filamentDetailPage.reviewsWithCount', { count: ratingStats.total_reviews })}</span>
                 </span>
               )}
             </div>
