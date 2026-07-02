@@ -56,6 +56,9 @@ const CreatePresetModal = lazy(() =>
 );
 import { ViewPresetModal } from '../components/ViewPresetModal';
 import { ModalOverlay } from '../components/ModalOverlay';
+import { ConfirmModal } from '../components/ConfirmModal';
+import { ConfirmDeleteModal } from '../components/ConfirmDeleteModal';
+import { toast } from '../components/Toast';
 import { OrcaSettingsView } from '../components/OrcaSettingsView';
 import { CreatePrinterRequestModal } from '../components/CreatePrinterRequestModal';
 import { SettingsTab } from '../components/SettingsTab';
@@ -103,6 +106,7 @@ export const ProfilePage: React.FC = () => {
   const [isCreatePrinterRequestModalOpen, setIsCreatePrinterRequestModalOpen] = useState(false);
   const [editingPreset, setEditingPreset] = useState<Preset | null>(null);
   const [viewingPreset, setViewingPreset] = useState<Preset | null>(null);
+  const [deletingPreset, setDeletingPreset] = useState<Preset | null>(null);
   const [selectedPrinterProfile, setSelectedPrinterProfile] = useState<PrinterProfile | null>(null);
   const [selectedPrintProfile, setSelectedPrintProfile] = useState<PrintProfile | null>(null);
   const [expandedPrinterProfileId, setExpandedPrinterProfileId] = useState<number | null>(null); // ID профиля принтера, для которого показываем профили печати
@@ -439,21 +443,22 @@ export const ProfilePage: React.FC = () => {
       queryClient.invalidateQueries({ queryKey: ['user-presets'] });
     },
     onError: (error: any) => {
-      console.error('Failed to delete saved preset:', error);
-      alert(translateApiError(t, error.response?.data?.detail, t('profilePage.unsaveError')));
+      toast.error(translateApiError(t, error.response?.data?.detail, t('profilePage.unsaveError')));
     },
   });
 
   const handleDeletePreset = (preset: Preset) => {
-    if (preset.source === 'saved') {
-      if (confirm(t('profilePage.confirmUnsave'))) {
-        unsavePresetMutation.mutate(preset.id);
-      }
+    setDeletingPreset(preset);
+  };
+
+  const confirmDeletePreset = () => {
+    if (!deletingPreset) return;
+    if (deletingPreset.source === 'saved') {
+      unsavePresetMutation.mutate(deletingPreset.id);
     } else {
-      if (confirm(t('profilePage.confirmDelete'))) {
-        deletePresetMutation.mutate(preset.id);
-      }
+      deletePresetMutation.mutate(deletingPreset.id);
     }
+    setDeletingPreset(null);
   };
 
   const handleEditPreset = (preset: Preset) => {
@@ -523,8 +528,7 @@ export const ProfilePage: React.FC = () => {
       link.remove();
       setTimeout(() => URL.revokeObjectURL(url), 1000);
     } catch (error: any) {
-      console.error('Error downloading printer profile:', error);
-      alert(`${t('profilePage.downloadPrinterProfileError')}: ${translateApiError(t, error?.response?.data?.detail, t('profilePage.unknownError'))}`);
+      toast.error(`${t('profilePage.downloadPrinterProfileError')}: ${translateApiError(t, error?.response?.data?.detail, t('profilePage.unknownError'))}`);
     }
   };
 
@@ -548,8 +552,7 @@ export const ProfilePage: React.FC = () => {
       link.remove();
       setTimeout(() => URL.revokeObjectURL(url), 1000);
     } catch (error: any) {
-      console.error('Error downloading print profile:', error);
-      alert(`${t('profilePage.downloadPrintProfileError')}: ${translateApiError(t, error?.response?.data?.detail, t('profilePage.unknownError'))}`);
+      toast.error(`${t('profilePage.downloadPrintProfileError')}: ${translateApiError(t, error?.response?.data?.detail, t('profilePage.unknownError'))}`);
     }
   };
 
@@ -1418,6 +1421,14 @@ export const ProfilePage: React.FC = () => {
           formatDateTime={formatDateTime}
         />
       )}
+
+      <ConfirmDeleteModal
+        isOpen={deletingPreset !== null}
+        onClose={() => setDeletingPreset(null)}
+        onConfirm={confirmDeletePreset}
+        message={deletingPreset?.source === 'saved' ? t('profilePage.confirmUnsave') : t('profilePage.confirmDelete')}
+        isLoading={unsavePresetMutation.isPending || deletePresetMutation.isPending}
+      />
     </div>
   );
 };
@@ -2547,6 +2558,9 @@ const SpoolsTab: React.FC<SpoolsTabProps> = ({
   const [copiedDeviceId, setCopiedDeviceId] = useState<number | null>(null);
   const [editingHostname, setEditingHostname] = useState<Record<number, string>>({});
   const [savingHostname, setSavingHostname] = useState<number | null>(null);
+  const [regeneratingDeviceId, setRegeneratingDeviceId] = useState<number | null>(null);
+  const [deletingDeviceId, setDeletingDeviceId] = useState<number | null>(null);
+  const [deletingSpoolId, setDeletingSpoolId] = useState<number | null>(null);
 
   const { data: devices = [], refetch: refetchDevices } = useQuery({
     queryKey: ['devices'],
@@ -2609,8 +2623,12 @@ const SpoolsTab: React.FC<SpoolsTabProps> = ({
     }
   };
 
-  const handleRegenerateKey = async (deviceId: number) => {
-    if (!window.confirm(t('profilePage.deviceSetup.regenerateConfirm'))) return;
+  const handleRegenerateKey = (deviceId: number) => {
+    setRegeneratingDeviceId(deviceId);
+  };
+
+  const performRegenerateKey = async (deviceId: number) => {
+    setRegeneratingDeviceId(null);
     setSetupError(null);
     try {
       const result = await devicesAPI.regenerateKey(deviceId);
@@ -2641,8 +2659,12 @@ const SpoolsTab: React.FC<SpoolsTabProps> = ({
     }
   };
 
-  const handleDeleteDevice = async (deviceId: number) => {
-    if (!window.confirm(t('profilePage.deviceSetup.deleteConfirm'))) return;
+  const handleDeleteDevice = (deviceId: number) => {
+    setDeletingDeviceId(deviceId);
+  };
+
+  const performDeleteDevice = async (deviceId: number) => {
+    setDeletingDeviceId(null);
     setSetupError(null);
     try {
       await devicesAPI.remove(deviceId);
@@ -2658,10 +2680,12 @@ const SpoolsTab: React.FC<SpoolsTabProps> = ({
     }
   };
 
-  const handleDelete = async (id: number) => {
-    if (!window.confirm(t('profilePage.spoolActions.deleteConfirm'))) {
-      return;
-    }
+  const handleDelete = (id: number) => {
+    setDeletingSpoolId(id);
+  };
+
+  const performDeleteSpool = async (id: number) => {
+    setDeletingSpoolId(null);
     setActionError(null);
     setBusySpoolId(id);
     try {
@@ -3064,6 +3088,34 @@ const SpoolsTab: React.FC<SpoolsTabProps> = ({
           </div>
         )}
       </div>
+
+      <ConfirmModal
+        isOpen={regeneratingDeviceId !== null}
+        onClose={() => setRegeneratingDeviceId(null)}
+        onConfirm={() => {
+          if (regeneratingDeviceId !== null) void performRegenerateKey(regeneratingDeviceId);
+        }}
+        message={t('profilePage.deviceSetup.regenerateConfirm')}
+        variant="warning"
+      />
+
+      <ConfirmDeleteModal
+        isOpen={deletingDeviceId !== null}
+        onClose={() => setDeletingDeviceId(null)}
+        onConfirm={() => {
+          if (deletingDeviceId !== null) void performDeleteDevice(deletingDeviceId);
+        }}
+        message={t('profilePage.deviceSetup.deleteConfirm')}
+      />
+
+      <ConfirmDeleteModal
+        isOpen={deletingSpoolId !== null}
+        onClose={() => setDeletingSpoolId(null)}
+        onConfirm={() => {
+          if (deletingSpoolId !== null) void performDeleteSpool(deletingSpoolId);
+        }}
+        message={t('profilePage.spoolActions.deleteConfirm')}
+      />
     </div>
   );
 };
@@ -3163,8 +3215,7 @@ const PresetCard: React.FC<PresetCardProps> = ({ preset, onEdit, onView, onDelet
             if (data.status === 'success') {
               // Профиль успешно импортирован
             } else if (data.status === 'error') {
-              // Показываем ошибку
-              alert(`${t('profilePage.importError')}: ${data.message || t('profilePage.unknownError')}`);
+              toast.error(`${t('profilePage.importError')}: ${data.message || t('profilePage.unknownError')}`);
             }
           }
         } catch (e) {
@@ -3314,7 +3365,7 @@ const PresetCard: React.FC<PresetCardProps> = ({ preset, onEdit, onView, onDelet
         errorMessage = error.message || t('profilePage.errors.requestError');
       }
 
-      alert(`${t('profilePage.downloadPresetError')}: ${errorMessage}`);
+      toast.error(`${t('profilePage.downloadPresetError')}: ${errorMessage}`);
     } finally {
       setIsDownloading(false);
     }

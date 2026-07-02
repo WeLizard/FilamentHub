@@ -9,6 +9,7 @@ import { adminAPI } from '../../api/client';
 import type { PrinterRequest } from '../../types/api';
 import { ModalOverlay } from '../ModalOverlay';
 import { ProofFileCard } from '../ProofFileCard';
+import { ConfirmModal } from '../ConfirmModal';
 import { toast } from '../Toast';
 import { translateApiError } from '../../utils/translateApiError';
 
@@ -21,6 +22,7 @@ export function AdminPrinterRequests() {
   const [selectedRequest, setSelectedRequest] = useState<PrinterRequest | null>(null);
   const [page, setPage] = useState(1);
   const [rejectionReason, setRejectionReason] = useState('');
+  const [showApproveConfirm, setShowApproveConfirm] = useState(false);
 
   // Загрузка заявок
   const { data, isLoading, error, isError } = useQuery({
@@ -343,11 +345,7 @@ export function AdminPrinterRequests() {
 
                 <div className="flex items-center justify-end space-x-3">
                   <button
-                    onClick={() => {
-                      if (confirm(t('adminPrinterRequests.confirmApprove'))) {
-                        approveMutation.mutate(selectedRequest.id);
-                      }
-                    }}
+                    onClick={() => setShowApproveConfirm(true)}
                     disabled={approveMutation.isPending}
                     className="flex items-center space-x-2 px-6 py-3 bg-green-600 hover:bg-green-700 text-white rounded-xl transition-all disabled:opacity-50"
                   >
@@ -369,6 +367,18 @@ export function AdminPrinterRequests() {
           </div>
         </ModalOverlay>
       )}
+
+      <ConfirmModal
+        isOpen={showApproveConfirm}
+        onClose={() => setShowApproveConfirm(false)}
+        onConfirm={() => {
+          if (selectedRequest) approveMutation.mutate(selectedRequest.id);
+          setShowApproveConfirm(false);
+        }}
+        message={t('adminPrinterRequests.confirmApprove')}
+        variant="success"
+        isLoading={approveMutation.isPending}
+      />
     </div>
   );
 }

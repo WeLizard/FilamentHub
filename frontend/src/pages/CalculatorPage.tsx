@@ -28,6 +28,7 @@ import {
   X,
 } from 'lucide-react';
 import { calculatorAPI, filamentsAPI, spoolsAPI, type UserSpool } from '../api/client';
+import { ConfirmDeleteModal } from '../components/ConfirmDeleteModal';
 import { useAuth } from '../contexts/AuthContext';
 import { useHeaderVisible } from '../hooks/useHeaderVisible';
 import { translateApiError } from '../utils/translateApiError';
@@ -1127,6 +1128,7 @@ export const CalculatorPage: React.FC = () => {
   const [parsedGcode, setParsedGcode] = useState<CalculatorGcodeParseResponse | null>(null);
   const [dragActive, setDragActive] = useState(false);
   const [historyFeedback, setHistoryFeedback] = useState<{ kind: 'success' | 'error'; message: string } | null>(null);
+  const [deletingHistoryEntry, setDeletingHistoryEntry] = useState<CalculatorHistoryEntry | null>(null);
   const [quoteModalOpen, setQuoteModalOpen] = useState(false);
   const [quoteProfile, setQuoteProfile] = useState<QuoteProfileState>(DEFAULT_QUOTE_PROFILE);
   const [quoteParties, setQuoteParties] = useState<QuotePartyFormState>(DEFAULT_QUOTE_PARTY_FORM);
@@ -1479,11 +1481,12 @@ export const CalculatorPage: React.FC = () => {
     setHistoryFeedback({ kind: 'success', message: tc('historyRestored') });
   };
 
-  const handleDeleteHistory = async (entry: CalculatorHistoryEntry) => {
-    if (!window.confirm(tc('historyDeleteConfirm'))) {
-      return;
-    }
+  const handleDeleteHistory = (entry: CalculatorHistoryEntry) => {
+    setDeletingHistoryEntry(entry);
+  };
 
+  const performDeleteHistory = async (entry: CalculatorHistoryEntry) => {
+    setDeletingHistoryEntry(null);
     setHistoryFeedback(null);
 
     try {
@@ -1938,6 +1941,16 @@ export const CalculatorPage: React.FC = () => {
         isPdfDownloading={isPdfDownloading}
         isLoggedIn={!!user}
         formatCurrency={formatCurrency}
+      />
+
+      <ConfirmDeleteModal
+        isOpen={deletingHistoryEntry !== null}
+        onClose={() => setDeletingHistoryEntry(null)}
+        onConfirm={() => {
+          if (deletingHistoryEntry) void performDeleteHistory(deletingHistoryEntry);
+        }}
+        message={tc('historyDeleteConfirm')}
+        isLoading={deleteHistoryMutation.isPending}
       />
     </div>
   );
@@ -3289,7 +3302,7 @@ interface HistoryViewProps {
   isDeletingHistory: boolean;
   isLoading: boolean;
   total: number;
-  onDeleteEntry: (entry: CalculatorHistoryEntry) => Promise<void>;
+  onDeleteEntry: (entry: CalculatorHistoryEntry) => void;
   onRestoreEntry: (entry: CalculatorHistoryEntry) => void;
   formatCurrency: (value: number | null | undefined) => string;
 }

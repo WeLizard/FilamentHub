@@ -8,6 +8,7 @@ import { adminFeedbackAPI } from '../../api/client';
 import type { Feedback, FeedbackType, FeedbackStatus } from '../../types/api';
 import { useTranslation } from 'react-i18next';
 import { toast } from '../Toast';
+import { ConfirmDeleteModal } from '../ConfirmDeleteModal';
 import { translateApiError } from '../../utils/translateApiError';
 import type { AxiosError } from 'axios';
 
@@ -20,6 +21,7 @@ export function AdminFeedback() {
   const [page, setPage] = useState(1);
   const [adminResponse, setAdminResponse] = useState('');
   const [responseStatus, setResponseStatus] = useState<FeedbackStatus>('resolved');
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
 
   // Загрузка обратной связи
@@ -63,7 +65,7 @@ export function AdminFeedback() {
 
   const handleResponse = (id: number) => {
     if (!adminResponse.trim()) {
-      alert(t('adminFeedback.alert_enter_response'));
+      toast.error(t('adminFeedback.alert_enter_response'));
       return;
     }
     updateMutation.mutate({ id, status: responseStatus, response: adminResponse });
@@ -361,10 +363,7 @@ export function AdminFeedback() {
                 {/* Footer */}
                 <div className="flex items-center justify-between px-6 py-4 border-t border-white/10">
                   <button
-                    onClick={() => {
-                      if (!confirm(t('adminFeedback.confirmDelete'))) return;
-                      deleteMutation.mutate(selectedFeedback.id);
-                    }}
+                    onClick={() => setShowDeleteConfirm(true)}
                     disabled={deleteMutation.isPending}
                     className="px-4 py-2 rounded-lg bg-red-600 hover:bg-red-700 text-white text-sm font-medium transition-all disabled:opacity-50 flex items-center gap-2"
                   >
@@ -403,6 +402,17 @@ export function AdminFeedback() {
               </div>
         </ModalOverlay>
       )}
+
+      <ConfirmDeleteModal
+        isOpen={showDeleteConfirm}
+        onClose={() => setShowDeleteConfirm(false)}
+        onConfirm={() => {
+          if (selectedFeedback) deleteMutation.mutate(selectedFeedback.id);
+          setShowDeleteConfirm(false);
+        }}
+        message={t('adminFeedback.confirmDelete')}
+        isLoading={deleteMutation.isPending}
+      />
     </div>
   );
 }

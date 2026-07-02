@@ -31,6 +31,8 @@ import { translateApiError } from '../utils/translateApiError';
 import { currencySymbol } from '../utils/currency';
 import { ReviewCard } from '../components/ReviewCard';
 import { CreateReviewModal } from '../components/CreateReviewModal';
+import { ConfirmDeleteModal } from '../components/ConfirmDeleteModal';
+import { toast } from '../components/Toast';
 import { PresetSyncToggle } from '../components/PresetSyncToggle';
 import { ViewPresetModal } from '../components/ViewPresetModal';
 import { SEOHead } from '../components/SEOHead';
@@ -51,6 +53,7 @@ export const FilamentDetailPage: React.FC = () => {
   const [showCreateReviewModal, setShowCreateReviewModal] = useState(false);
   const [editingReview, setEditingReview] = useState<FilamentReview | null>(null);
   const [reviewsPage, setReviewsPage] = useState(1);
+  const [deletingReviewId, setDeletingReviewId] = useState<number | null>(null);
   
   // Определяем откуда пришли (из каталога или профиля)
   const cameFrom = location.state?.from || 'catalog';
@@ -103,9 +106,7 @@ export const FilamentDetailPage: React.FC = () => {
       queryClient.invalidateQueries({ queryKey: ['user-presets'] });
     },
     onError: (error: AxiosError<{ detail: unknown }>) => {
-      console.error('Error saving preset:', error);
-      // Можно добавить уведомление пользователю
-      alert(translateApiError(t, error.response?.data?.detail, t('filamentDetailPage.errorSavingPreset')));
+      toast.error(translateApiError(t, error.response?.data?.detail, t('filamentDetailPage.errorSavingPreset')));
     },
   });
 
@@ -138,9 +139,7 @@ export const FilamentDetailPage: React.FC = () => {
   };
 
   const handleDeleteReview = (reviewId: number) => {
-    if (confirm(t('filamentDetailPage.confirmDeleteReview'))) {
-      deleteReviewMutation.mutate(reviewId);
-    }
+    setDeletingReviewId(reviewId);
   };
 
   if (isLoadingFilament) {
@@ -1148,6 +1147,17 @@ export const FilamentDetailPage: React.FC = () => {
           isOpen={detailPreset !== null}
           preset={detailPreset}
           onClose={() => setDetailPreset(null)}
+        />
+
+        <ConfirmDeleteModal
+          isOpen={deletingReviewId !== null}
+          onClose={() => setDeletingReviewId(null)}
+          onConfirm={() => {
+            if (deletingReviewId !== null) deleteReviewMutation.mutate(deletingReviewId);
+            setDeletingReviewId(null);
+          }}
+          message={t('filamentDetailPage.confirmDeleteReview')}
+          isLoading={deleteReviewMutation.isPending}
         />
       </div>
       </div>

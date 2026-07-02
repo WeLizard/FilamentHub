@@ -12,6 +12,7 @@ import {
 import { wikiAPI, adminAPI } from '../../api/client';
 import type { WikiArticle, WikiArticleSummary, WikiCategory } from '../../types/api';
 import { toast } from '../Toast';
+import { ConfirmDeleteModal } from '../ConfirmDeleteModal';
 import { translateApiError } from '../../utils/translateApiError';
 
 type WikiSection = 'articles' | 'categories' | 'operations';
@@ -363,9 +364,12 @@ export function AdminWiki() {
   const [editingArticle, setEditingArticle] = useState<Partial<WikiArticle> | null>(null);
   const [showArticleModal, setShowArticleModal] = useState(false);
 
+  const [deletingArticleId, setDeletingArticleId] = useState<number | null>(null);
+
   // Category state
   const [editingCategory, setEditingCategory] = useState<Partial<WikiCategory> | null>(null);
   const [showCategoryModal, setShowCategoryModal] = useState(false);
+  const [deletingCategoryId, setDeletingCategoryId] = useState<number | null>(null);
 
   // Operation results
   const [operationResult, setOperationResult] = useState<{
@@ -510,9 +514,7 @@ export function AdminWiki() {
   };
 
   const handleDeleteArticle = (id: number) => {
-    if (confirm(t('adminWiki.confirmDelete'))) {
-      deleteArticleMutation.mutate(id);
-    }
+    setDeletingArticleId(id);
   };
 
   const handleSaveCategory = (data: CategoryFormData) => {
@@ -525,9 +527,7 @@ export function AdminWiki() {
   };
 
   const handleDeleteCategory = (id: number) => {
-    if (confirm(t('adminWiki.confirmDeleteCategory'))) {
-      deleteCategoryMutation.mutate(id);
-    }
+    setDeletingCategoryId(id);
   };
 
   const handleDownloadArticle = async (id: number) => {
@@ -936,6 +936,28 @@ export function AdminWiki() {
           t={t}
         />
       )}
+
+      <ConfirmDeleteModal
+        isOpen={deletingArticleId !== null}
+        onClose={() => setDeletingArticleId(null)}
+        onConfirm={() => {
+          if (deletingArticleId !== null) deleteArticleMutation.mutate(deletingArticleId);
+          setDeletingArticleId(null);
+        }}
+        message={t('adminWiki.confirmDelete')}
+        isLoading={deleteArticleMutation.isPending}
+      />
+
+      <ConfirmDeleteModal
+        isOpen={deletingCategoryId !== null}
+        onClose={() => setDeletingCategoryId(null)}
+        onConfirm={() => {
+          if (deletingCategoryId !== null) deleteCategoryMutation.mutate(deletingCategoryId);
+          setDeletingCategoryId(null);
+        }}
+        message={t('adminWiki.confirmDeleteCategory')}
+        isLoading={deleteCategoryMutation.isPending}
+      />
     </div>
   );
 }
