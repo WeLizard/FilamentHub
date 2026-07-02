@@ -34,6 +34,7 @@ import {
 } from 'lucide-react';
 import { adminAPI } from '../../api/client';
 import { translateApiError } from '../../utils/translateApiError';
+import { downloadBlob } from '../../utils/download';
 import { useTranslation } from 'react-i18next';
 import type { AxiosError } from 'axios';
 import { AdminCatalogSources } from './AdminCatalogSources';
@@ -1497,16 +1498,9 @@ export function AdminDatabase() {
                       throw new Error(t('adminDatabase.export.downloadError', { message: `${response.status} ${errorText}` }));
                     }
                     
-                    // Создаём blob URL и скачиваем файл
+                    // Скачиваем файл
                     const blob = await response.blob();
-                    const url = window.URL.createObjectURL(blob);
-                    const a = document.createElement('a');
-                    a.href = url;
-                    a.download = exportMutation.data.filename!;
-                    document.body.appendChild(a);
-                    a.click();
-                    window.URL.revokeObjectURL(url);
-                    document.body.removeChild(a);
+                    downloadBlob(blob, exportMutation.data.filename!);
                   } catch (error: any) {
                     const errorMessage = error.message || t('adminDatabase.errorUnknown');
                     alert(t('adminDatabase.export.downloadError', { message: errorMessage }));

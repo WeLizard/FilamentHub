@@ -4,6 +4,7 @@ import axios from 'axios';
 import type { InternalAxiosRequestConfig } from 'axios';
 import type { Brand, BrandUsage, BrandRequest, BrandRequestStatus, Filament, FilamentLine, FilamentImportResult, FilamentPalettePayload, BrandInvitePublic, BrandInviteAdmin, BrandInviteAcceptResult, FilamentAvailability, FilamentVisualSettings, FilamentReview, FilamentRatingStats, Notification, NotificationListResponse, Preset, RecommendedPreset, Printer, PrinterProfile, PrintProfile, PrinterRequest, User, Token, RefreshTokenRequest, RefreshTokenResponse, ListResponse, AccountDeletionStats, UserSavedPreset, CalculatorEstimateRequest, CalculatorEstimateResponse, CalculatorProfileResponse, CalculatorProfileUpdate, Feedback, FeedbackListResponse, FeedbackType, CompatiblePrinter, CompatibleFilament, DownloadVersion, DownloadVersionsResponse, WikiCategory, WikiCategoryListResponse, WikiArticle, WikiArticleListResponse, WikiFeedbackStats, WikiFeedbackCreate, WikiFeedback } from '../types/api';
 import { getCsrfToken, getRefreshToken, getToken, isCookieAuthMode, isJwtAuthMode, isOrcaEmbedded, removeToken, setToken, shouldPersistTokensLocally } from '../utils/auth';
+import { downloadBlob } from '../utils/download';
 
 const API_BASE_URL = '/api/v1';
 const COOKIE_AUTH_MODE = isCookieAuthMode();
@@ -635,15 +636,7 @@ export const qrAPI = {
       responseType: 'blob',
     });
     
-    // Создаем временную ссылку для скачивания
-    const url = window.URL.createObjectURL(new Blob([response.data]));
-    const link = document.createElement('a');
-    link.href = url;
-    link.setAttribute('download', `qr-code-${filamentId}-${size}x${size}.png`);
-    document.body.appendChild(link);
-    link.click();
-    link.remove();
-    window.URL.revokeObjectURL(url);
+    downloadBlob(response.data, `qr-code-${filamentId}-${size}x${size}.png`);
   },
 
   // Регистрация сканирования QR-кода
@@ -1043,6 +1036,10 @@ export const brandRequestsAPI = {
 export const proofFilesAPI = {
   // filePath format: "brand_requests/{id}/{file}" or "printer_requests/{id}/{file}"
   getObjectUrl: async (filePath: string): Promise<string> => {
+    return URL.createObjectURL(await proofFilesAPI._fetchProof(filePath));
+  },
+
+  _fetchProof: async (filePath: string): Promise<Blob> => {
     const match = filePath.replace(/^\/+/, '').match(/^(brand_requests|printer_requests)\/(\d+)\/([^/]+)$/);
     if (!match) {
       throw new Error(`Invalid proof file path: ${filePath}`);
@@ -1051,18 +1048,11 @@ export const proofFilesAPI = {
     const response = await api.get<Blob>(`/${resource}/${match[2]}/proof/${encodeURIComponent(match[3])}`, {
       responseType: 'blob',
     });
-    return URL.createObjectURL(response.data);
+    return response.data;
   },
 
   download: async (filePath: string, fileName: string): Promise<void> => {
-    const url = await proofFilesAPI.getObjectUrl(filePath);
-    const link = document.createElement('a');
-    link.href = url;
-    link.setAttribute('download', fileName);
-    document.body.appendChild(link);
-    link.click();
-    link.remove();
-    window.URL.revokeObjectURL(url);
+    downloadBlob(await proofFilesAPI._fetchProof(filePath), fileName);
   },
 };
 
@@ -1116,14 +1106,7 @@ export const calculatorAPI = {
     const response = await api.post('/calculator/quote/pdf', data, {
       responseType: 'blob',
     });
-    const url = window.URL.createObjectURL(response.data as Blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = `${data.title || 'quote'}.pdf`;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    window.URL.revokeObjectURL(url);
+    downloadBlob(response.data as Blob, `${data.title || 'quote'}.pdf`);
   },
 };
 
@@ -1655,18 +1638,11 @@ export const adminAPI = {
     const response = await api.get(`/admin/wiki/export/${id}`, {
       responseType: 'blob',
     });
-    const url = window.URL.createObjectURL(new Blob([response.data]));
-    const link = document.createElement('a');
-    link.href = url;
     const contentDisposition = response.headers['content-disposition'];
     const filename = contentDisposition
       ? contentDisposition.split('filename=')[1]?.replace(/"/g, '')
       : `article-${id}.md`;
-    link.setAttribute('download', filename);
-    document.body.appendChild(link);
-    link.click();
-    link.remove();
-    window.URL.revokeObjectURL(url);
+    downloadBlob(response.data, filename);
   },
 };
 

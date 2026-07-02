@@ -51,6 +51,7 @@ import type { UserSpool, SpoolState, UserPrinterDevice } from '../api/client';
 import { SpoolIcon } from '../components/icons/SpoolIcon';
 import api from '../api/client';
 import { translateApiError } from '../utils/translateApiError';
+import { downloadBlob } from '../utils/download';
 const CreatePresetModal = lazy(() =>
   import('../components/CreatePresetModal').then(m => ({ default: m.CreatePresetModal }))
 );
@@ -515,18 +516,8 @@ export const ProfilePage: React.FC = () => {
       });
       
       const blob = new Blob([response.data], { type: 'application/json' });
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      
       const base = safeFileName(profile.slug || profile.name || `printer-profile-${profile.id}`);
-      const filename = `${base || 'printer-profile'}.orca_printer.json`;
-      
-      link.href = url;
-      link.download = filename;
-      document.body.appendChild(link);
-      link.click();
-      link.remove();
-      setTimeout(() => URL.revokeObjectURL(url), 1000);
+      downloadBlob(blob, `${base || 'printer-profile'}.orca_printer.json`);
     } catch (error: any) {
       toast.error(`${t('profilePage.downloadPrinterProfileError')}: ${translateApiError(t, error?.response?.data?.detail, t('profilePage.unknownError'))}`);
     }
@@ -539,18 +530,8 @@ export const ProfilePage: React.FC = () => {
       });
       
       const blob = new Blob([response.data], { type: 'application/json' });
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      
       const base = safeFileName(profile.slug || profile.name || `print-profile-${profile.id}`);
-      const filename = `${base || 'print-profile'}.orca_process.json`;
-      
-      link.href = url;
-      link.download = filename;
-      document.body.appendChild(link);
-      link.click();
-      link.remove();
-      setTimeout(() => URL.revokeObjectURL(url), 1000);
+      downloadBlob(blob, `${base || 'print-profile'}.orca_process.json`);
     } catch (error: any) {
       toast.error(`${t('profilePage.downloadPrintProfileError')}: ${translateApiError(t, error?.response?.data?.detail, t('profilePage.unknownError'))}`);
     }
@@ -3314,32 +3295,7 @@ const PresetCard: React.FC<PresetCardProps> = ({ preset, onEdit, onView, onDelet
         type: 'application/json;charset=utf-8' // Явно указываем кодировку для кириллицы
       });
       
-      // Создаем blob URL для скачивания (не data URL, чтобы не открывался в браузере)
-      const url = URL.createObjectURL(blob);
-      
-      // Создаем ссылку для скачивания
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = filename;
-      link.style.display = 'none';
-      
-      // Добавляем в DOM (обязательно для некоторых браузеров)
-      document.body.appendChild(link);
-      
-      // Инициируем скачивание
-      // Используем setTimeout для гарантии, что элемент добавлен в DOM
-      setTimeout(() => {
-        link.click();
-        
-        // Очищаем после задержки (чтобы скачивание успело начаться)
-        setTimeout(() => {
-          if (document.body.contains(link)) {
-            document.body.removeChild(link);
-          }
-          URL.revokeObjectURL(url);
-          setIsDownloading(false);
-        }, 300);
-      }, 0);
+      downloadBlob(blob, filename);
     } catch (error: any) {
       console.error('Error downloading preset:', error);
 
