@@ -97,6 +97,7 @@ from app.core.errors import (
     ERR_OAUTH_EMAIL_TAKEN,
     ERR_OAUTH_FAILED,
     ERR_OAUTH_INVALID_PROVIDER,
+    ERR_OAUTH_INVALID_STATE,
     ERR_OAUTH_PROVIDER_NOT_CONFIGURED,
     ERR_PASSWORD_HASH_ERROR,
     ERR_PRINTER_NOT_FOUND,
@@ -1140,9 +1141,15 @@ _oauth_logger = _logging.getLogger(__name__)
 
 _VALID_PROVIDERS = {"google", "yandex"}
 
+# CSRF protection for the OAuth flow: the state issued in get_oauth_url is also
+# stored in an HttpOnly cookie, so the callback only succeeds in the browser
+# that initiated the flow.
+_OAUTH_STATE_COOKIE = "fh_oauth_state"
+_OAUTH_STATE_MAX_AGE = 600  # seconds
+
 
 @router.get("/oauth/{provider}/url", response_model=OAuthUrlResponse)
-async def get_oauth_url(provider: str) -> OAuthUrlResponse:
+async def get_oauth_url(provider: str, response: Response) -> OAuthUrlResponse:
     """Get OAuth authorization URL for the specified provider."""
     if provider not in _VALID_PROVIDERS:
         raise_error(status.HTTP_400_BAD_REQUEST, ERR_OAUTH_INVALID_PROVIDER, params={"provider": provider})
@@ -1159,6 +1166,14 @@ async def get_oauth_url(provider: str) -> OAuthUrlResponse:
 
     if not url:
         raise_error(status.HTTP_400_BAD_REQUEST, ERR_OAUTH_PROVIDER_NOT_CONFIGURED, params={"provider": provider})
+
+    response.set_cookie(
+        key=_OAUTH_STATE_COOKIE,
+        value=state,
+        httponly=True,
+        max_age=_OAUTH_STATE_MAX_AGE,
+        **_cookie_common_kwargs(),
+    )
 
     return OAuthUrlResponse(url=url, state=state)
 
@@ -1186,6 +1201,13 @@ async def oauth_callback(
 
     if not is_provider_configured(provider):
         raise_error(status.HTTP_400_BAD_REQUEST, ERR_OAUTH_PROVIDER_NOT_CONFIGURED, params={"provider": provider})
+
+    # CSRF check: state must match the one issued to this browser in get_oauth_url
+    expected_state = request.cookies.get(_OAUTH_STATE_COOKIE)
+    if not expected_state or not secrets.compare_digest(expected_state, data.state):
+        _oauth_logger.warning("OAuth state mismatch: provider=%s", provider)
+        raise_error(status.HTTP_401_UNAUTHORIZED, ERR_OAUTH_INVALID_STATE)
+    response.delete_cookie(_OAUTH_STATE_COOKIE, **_cookie_common_kwargs())
 
     # Exchange authorization code for user info
     try:

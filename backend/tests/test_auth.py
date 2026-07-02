@@ -334,3 +334,57 @@ async def test_upload_avatar(client: AsyncClient):
     )
     assert resp.status_code == 200
     assert (resp.json().get("avatar_url") or "").startswith("/uploads/avatars/")
+
+
+@pytest.mark.asyncio
+async def test_oauth_callback_validates_state(client: AsyncClient, monkeypatch):
+    """OAuth callback must accept only the state issued to this browser (CSRF)."""
+    from app.api.v1.endpoints import auth as auth_module
+    from app.services.oauth_service import OAuthUserInfo
+
+    monkeypatch.setattr(auth_module, "is_provider_configured", lambda provider: True)
+    monkeypatch.setattr(
+        auth_module,
+        "get_google_auth_url",
+        lambda state: f"https://accounts.google.com/o/oauth2/auth?state={state}",
+    )
+
+    async def fake_exchange(code: str) -> OAuthUserInfo:
+        return OAuthUserInfo(
+            provider="google",
+            provider_id="g-123",
+            email="oauth-state@example.com",
+            name="OAuth User",
+            email_verified=True,
+        )
+
+    monkeypatch.setattr(auth_module, "exchange_google_code", fake_exchange)
+
+    # No state cookie at all -> rejected
+    no_cookie = await client.post(
+        "/api/v1/auth/oauth/google/callback",
+        json={"code": "any-code", "state": "forged-state"},
+    )
+    assert no_cookie.status_code == 401
+    assert no_cookie.json()["detail"]["code"] == "ERR_OAUTH_INVALID_STATE"
+
+    # Issue a real state (server sets the HttpOnly cookie on this client)
+    url_resp = await client.get("/api/v1/auth/oauth/google/url")
+    assert url_resp.status_code == 200
+    issued_state = url_resp.json()["state"]
+
+    # Cookie present but state forged -> rejected
+    mismatch = await client.post(
+        "/api/v1/auth/oauth/google/callback",
+        json={"code": "any-code", "state": "forged-state"},
+    )
+    assert mismatch.status_code == 401
+    assert mismatch.json()["detail"]["code"] == "ERR_OAUTH_INVALID_STATE"
+
+    # Matching state -> flow proceeds, user is created and logged in
+    ok = await client.post(
+        "/api/v1/auth/oauth/google/callback",
+        json={"code": "any-code", "state": issued_state},
+    )
+    assert ok.status_code == 200
+    assert ok.json()["access_token"]
