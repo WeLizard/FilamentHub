@@ -500,7 +500,7 @@ async def parse_gcode(
         parsed = parse_gcode_payload(file_name=file.filename or "gcode", raw_bytes=raw_bytes)
     except ValueError as exc:
         logger.warning("Calculator G-code parse failed for %s: %s", file.filename, exc)
-        raise_error(status.HTTP_400_BAD_REQUEST, ERR_GCODE_PARSE_FAILED, {"reason": str(exc)})
+        raise_error(status.HTTP_400_BAD_REQUEST, ERR_GCODE_PARSE_FAILED)
 
     return CalculatorGcodeParseResponse(**parsed)
 

@@ -187,10 +187,11 @@ class BundleService:
             audit = await self._record_failure(
                 audit_id=audit.id, bundle_id=bundle.id, error=str(exc)[:2000]
             )
+            # Exception text stays in logs and the audit record, not in the HTTP detail
             raise BundleServiceError(
                 "ERR_BUNDLE_IMPORT_FAILED",
                 "Bundle import failed",
-                {"bundle_id": bundle.id, "error": str(exc)[:500]},
+                {"bundle_id": bundle.id},
             ) from exc
         finally:
             shutil.rmtree(tmp_root, ignore_errors=True)
