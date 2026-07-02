@@ -989,6 +989,13 @@ def _extract_nozzle_diameters_from_settings(settings: dict[str, Any] | None) -> 
     return valid_diameters if valid_diameters else None
 
 
+def _can_edit_profile(profile: PrinterProfile | PrintProfile, user: User) -> bool:
+    """Whether the user may modify the profile in place; otherwise sync forks a personal copy."""
+    if user.role == UserRole.ADMIN:
+        return True
+    return profile.owner_user_id == user.id and not profile.is_official
+
+
 async def _upsert_printer_profile(
     *,
     payload,
@@ -1034,15 +1041,15 @@ async def _upsert_printer_profile(
     if payload.fhub_id:
         profile = await db.get(PrinterProfile, payload.fhub_id)
         if profile:
-            # Проверяем права доступа
-            if profile.owner_user_id not in (None, current_user.id) and current_user.role != UserRole.ADMIN:
-                return OrcaSyncResult(
-                    external_id=payload.external_id,
-                    fhub_id=payload.fhub_id,
-                    status="error",
-                    message=ERR_NO_PERMISSION,
+            if not _can_edit_profile(profile, current_user):
+                # Fork-on-edit: official/foreign profile — keep resolving among own profiles,
+                # otherwise a personal copy is created below
+                logger.info(
+                    f"Printer profile {profile.id} is not editable by user {current_user.id}, forking"
                 )
-            logger.info(f"Found printer profile by fhub_id from payload: {payload.fhub_id}")
+                profile = None
+            else:
+                logger.info(f"Found printer profile by fhub_id from payload: {payload.fhub_id}")
 
     # Приоритет 2: Ищем по меткам из orcaslicer_settings
     if profile is None:
@@ -1051,26 +1058,25 @@ async def _upsert_printer_profile(
                 fhub_id_int = int(fhub_id_from_metadata)
                 profile = await db.get(PrinterProfile, fhub_id_int)
                 if profile:
-                    # Проверяем права доступа
-                    if profile.owner_user_id not in (None, current_user.id) and current_user.role != UserRole.ADMIN:
-                        return OrcaSyncResult(
-                            external_id=payload.external_id,
-                            fhub_id=fhub_id_int,
-                            status="error",
-                            message=ERR_NO_PERMISSION,
+                    if not _can_edit_profile(profile, current_user):
+                        logger.info(
+                            f"Printer profile {profile.id} is not editable by user {current_user.id}, forking"
                         )
-                    logger.info(f"Found printer profile by fhub_id from metadata: {fhub_id_int}")
+                        profile = None
+                    else:
+                        logger.info(f"Found printer profile by fhub_id from metadata: {fhub_id_int}")
             except (ValueError, TypeError):
                 logger.warning(f"Invalid fhub_id in metadata: {fhub_id_from_metadata}")
 
     # Приоритет 3: Ищем по external_id (fallback)
     if profile is None and payload.external_id:
-        result = await db.execute(
-            select(PrinterProfile).where(
-                PrinterProfile.external_id == payload.external_id,
-                PrinterProfile.owner_user_id == current_user.id,
-            )
+        query = select(PrinterProfile).where(
+            PrinterProfile.external_id == payload.external_id,
+            PrinterProfile.owner_user_id == current_user.id,
         )
+        if current_user.role != UserRole.ADMIN:
+            query = query.where(PrinterProfile.is_official.is_(False))
+        result = await db.execute(query)
         profile = result.scalars().first()
         if profile:
             logger.info(
@@ -1079,12 +1085,13 @@ async def _upsert_printer_profile(
 
     # Приоритет 4: Ищем по slug (fallback)
     if profile is None and payload.slug:
-        result = await db.execute(
-            select(PrinterProfile).where(
-                PrinterProfile.slug == payload.slug,
-                PrinterProfile.owner_user_id == current_user.id,
-            )
+        query = select(PrinterProfile).where(
+            PrinterProfile.slug == payload.slug,
+            PrinterProfile.owner_user_id == current_user.id,
         )
+        if current_user.role != UserRole.ADMIN:
+            query = query.where(PrinterProfile.is_official.is_(False))
+        result = await db.execute(query)
         profile = result.scalars().first()
 
     printer_id = await _ensure_printer_id(
@@ -1097,15 +1104,11 @@ async def _upsert_printer_profile(
         profile_vendor=payload.vendor,
     )
 
-    if profile:
-        if profile.owner_user_id not in (None, current_user.id) and current_user.role != UserRole.ADMIN:
-            return OrcaSyncResult(
-                external_id=payload.external_id,
-                fhub_id=profile.id,
-                status="skipped",
-                message=ERR_NO_PERMISSION,
-            )
+    if profile is not None and not _can_edit_profile(profile, current_user):
+        # Defensive: resolution above only yields editable profiles
+        profile = None
 
+    if profile:
         if payload.slug and payload.slug != profile.slug:
             profile.slug = await generate_unique_slug(
                 db=db,
@@ -1118,7 +1121,6 @@ async def _upsert_printer_profile(
         profile.name = payload.name
         profile.description = payload.description
         profile.printer_id = printer_id
-        profile.owner_user_id = profile.owner_user_id or current_user.id
         profile.active = payload.active if payload.active is not None else profile.active
         profile.source = payload.source or profile.source
         profile.vendor = payload.vendor or profile.vendor
@@ -1198,7 +1200,6 @@ async def _upsert_printer_profile(
             profile.notes = payload.notes
         elif payload.orcaslicer_settings and "printer_notes" in payload.orcaslicer_settings:
             profile.notes = payload.orcaslicer_settings.get("printer_notes")
-        profile.is_official = profile.is_official if current_user.role != UserRole.ADMIN else profile.is_official
 
         return OrcaSyncResult(
             external_id=payload.external_id,
@@ -1291,9 +1292,13 @@ async def _upsert_printer_profile(
     await db.flush()
 
     # Обновляем bundle_id и fhub_id после получения ID
+    # (reassign the dict: plain JSON columns don't track in-place mutation)
     if profile.orcaslicer_settings:
-        profile.orcaslicer_settings["bundle_id"] = f"filamenthub:{profile.id}"
-        profile.orcaslicer_settings["fhub_id"] = profile.id
+        profile.orcaslicer_settings = {
+            **profile.orcaslicer_settings,
+            "bundle_id": f"filamenthub:{profile.id}",
+            "fhub_id": profile.id,
+        }
 
     return OrcaSyncResult(
         external_id=payload.external_id,
@@ -1348,15 +1353,15 @@ async def _upsert_print_profile(
     if payload.fhub_id:
         profile = await db.get(PrintProfile, payload.fhub_id)
         if profile:
-            # Проверяем права доступа
-            if profile.owner_user_id not in (None, current_user.id) and current_user.role != UserRole.ADMIN:
-                return OrcaSyncResult(
-                    external_id=payload.external_id,
-                    fhub_id=payload.fhub_id,
-                    status="error",
-                    message=ERR_NO_PERMISSION,
+            if not _can_edit_profile(profile, current_user):
+                # Fork-on-edit: official/foreign profile — keep resolving among own profiles,
+                # otherwise a personal copy is created below
+                logger.info(
+                    f"Print profile {profile.id} is not editable by user {current_user.id}, forking"
                 )
-            logger.info(f"Found print profile by fhub_id from payload: {payload.fhub_id}")
+                profile = None
+            else:
+                logger.info(f"Found print profile by fhub_id from payload: {payload.fhub_id}")
 
     # Приоритет 2: Ищем по меткам из orcaslicer_settings
     if profile is None:
@@ -1365,26 +1370,25 @@ async def _upsert_print_profile(
                 fhub_id_int = int(fhub_id_from_metadata)
                 profile = await db.get(PrintProfile, fhub_id_int)
                 if profile:
-                    # Проверяем права доступа
-                    if profile.owner_user_id not in (None, current_user.id) and current_user.role != UserRole.ADMIN:
-                        return OrcaSyncResult(
-                            external_id=payload.external_id,
-                            fhub_id=fhub_id_int,
-                            status="error",
-                            message=ERR_NO_PERMISSION,
+                    if not _can_edit_profile(profile, current_user):
+                        logger.info(
+                            f"Print profile {profile.id} is not editable by user {current_user.id}, forking"
                         )
-                    logger.info(f"Found print profile by fhub_id from metadata: {fhub_id_int}")
+                        profile = None
+                    else:
+                        logger.info(f"Found print profile by fhub_id from metadata: {fhub_id_int}")
             except (ValueError, TypeError):
                 logger.warning(f"Invalid fhub_id in metadata: {fhub_id_from_metadata}")
 
     # Приоритет 3: Ищем по external_id (fallback)
     if profile is None and payload.external_id:
-        result = await db.execute(
-            select(PrintProfile).where(
-                PrintProfile.external_id == payload.external_id,
-                PrintProfile.owner_user_id == current_user.id,
-            )
+        query = select(PrintProfile).where(
+            PrintProfile.external_id == payload.external_id,
+            PrintProfile.owner_user_id == current_user.id,
         )
+        if current_user.role != UserRole.ADMIN:
+            query = query.where(PrintProfile.is_official.is_(False))
+        result = await db.execute(query)
         profile = result.scalars().first()
         if profile:
             logger.info(
@@ -1393,12 +1397,13 @@ async def _upsert_print_profile(
 
     # Приоритет 4: Ищем по slug (fallback)
     if profile is None and payload.slug:
-        result = await db.execute(
-            select(PrintProfile).where(
-                PrintProfile.slug == payload.slug,
-                PrintProfile.owner_user_id == current_user.id,
-            )
+        query = select(PrintProfile).where(
+            PrintProfile.slug == payload.slug,
+            PrintProfile.owner_user_id == current_user.id,
         )
+        if current_user.role != UserRole.ADMIN:
+            query = query.where(PrintProfile.is_official.is_(False))
+        result = await db.execute(query)
         profile = result.scalars().first()
 
     compatible_printers = (
@@ -1408,15 +1413,11 @@ async def _upsert_print_profile(
         [str(item) for item in payload.compatible_filaments] if payload.compatible_filaments else None
     )
 
-    if profile:
-        if profile.owner_user_id not in (None, current_user.id) and current_user.role != UserRole.ADMIN:
-            return OrcaSyncResult(
-                external_id=payload.external_id,
-                fhub_id=profile.id,
-                status="skipped",
-                message=ERR_NO_PERMISSION,
-            )
+    if profile is not None and not _can_edit_profile(profile, current_user):
+        # Defensive: resolution above only yields editable profiles
+        profile = None
 
+    if profile:
         if payload.slug and payload.slug != profile.slug:
             profile.slug = await generate_unique_slug(
                 db=db,
@@ -1429,7 +1430,6 @@ async def _upsert_print_profile(
         profile.name = payload.name
         profile.description = payload.description
         profile.category = payload.category
-        profile.owner_user_id = profile.owner_user_id or current_user.id
         profile.active = payload.active if payload.active is not None else profile.active
         profile.source = payload.source or profile.source
         profile.vendor = payload.vendor or profile.vendor
@@ -1469,7 +1469,6 @@ async def _upsert_print_profile(
             extra["compatible_printers_condition"] = payload.compatible_printers_condition
             profile.extra_metadata = extra
         profile.notes = payload.notes
-        profile.is_official = profile.is_official if current_user.role != UserRole.ADMIN else profile.is_official
         await _sync_imported_print_profile_links(db=db, profile=profile)
 
         return OrcaSyncResult(
@@ -1522,9 +1521,13 @@ async def _upsert_print_profile(
     await db.flush()
 
     # Обновляем bundle_id и fhub_id после получения ID
+    # (reassign the dict: plain JSON columns don't track in-place mutation)
     if profile.orcaslicer_settings:
-        profile.orcaslicer_settings["bundle_id"] = f"filamenthub:{profile.id}"
-        profile.orcaslicer_settings["fhub_id"] = profile.id
+        profile.orcaslicer_settings = {
+            **profile.orcaslicer_settings,
+            "bundle_id": f"filamenthub:{profile.id}",
+            "fhub_id": profile.id,
+        }
     await _sync_imported_print_profile_links(db=db, profile=profile)
 
     return OrcaSyncResult(
