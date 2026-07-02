@@ -35,14 +35,27 @@ services:
     networks:
       - filamenthub_network
 
+  # Ограниченный доступ к Docker API для admin-stats: наружу отдаются только
+  # GET-эндпоинты /containers (list/inspect/stats); POST/exec/create запрещены.
+  # Прямое монтирование docker.sock в backend убрано — компрометация backend
+  # больше не даёт контроль над хостом.
+  docker-socket-proxy:
+    image: tecnativa/docker-socket-proxy:0.3
+    container_name: filamenthub_docker_proxy_prod
+    environment:
+      CONTAINERS: 1
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    restart: unless-stopped
+    networks:
+      - filamenthub_network
+
   backend:
     build:
       context: ./backend
       dockerfile: Dockerfile.prod
     container_name: filamenthub_backend_prod
     command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 4 --log-level warning --no-access-log
-    group_add:
-      - "110"  # host docker GID — for read-only docker.sock access
     volumes:
       # Персистентные данные
       - uploads_data:/app/uploads
@@ -52,8 +65,6 @@ services:
       - ./backend/logs:/app/logs
       # Wiki content - чтобы можно было редактировать без пересборки
       - ./backend/wiki_content:/app/wiki_content
-      # Docker socket for admin stats (read-only)
-      - /var/run/docker.sock:/var/run/docker.sock:ro
     # Backend НЕ пробрасываем наружу - доступ только через nginx (frontend)
     # ports:
     #   - "${BACKEND_PORT:-8000}:8000"
@@ -62,6 +73,8 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+      docker-socket-proxy:
+        condition: service_started
     environment:
       # Формируем DATABASE_URL с правильным экранированием пароля
       # Используем отдельные переменные для избежания проблем с @ в пароле
@@ -72,6 +85,8 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
       POSTGRES_DB: ${POSTGRES_DB:-filamenthub}
       REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379/0
+      # docker CLI (admin-stats) ходит через socket-proxy, не в сокет хоста
+      DOCKER_HOST: tcp://docker-socket-proxy:2375
     env_file:
       - .env
     restart: unless-stopped
