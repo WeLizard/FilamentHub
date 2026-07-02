@@ -3,8 +3,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Bell, CheckCircle, XCircle, AlertCircle, Info, Settings, X, MessageCircle, Trash2 } from 'lucide-react';
-import { createPortal } from 'react-dom';
-import { useHeaderVisible } from '../hooks/useHeaderVisible';
+import { ModalOverlay } from './ModalOverlay';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
@@ -21,7 +20,6 @@ export const Notifications: React.FC<NotificationsProps> = ({ floating = false }
   const { user } = useAuth();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
-  const isHeaderVisible = useHeaderVisible();
   const [isOpen, setIsOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
   const [selectedNotification, setSelectedNotification] = useState<Notification | null>(null);
@@ -392,20 +390,10 @@ export const Notifications: React.FC<NotificationsProps> = ({ floating = false }
         )}
 
         {/* Modal for viewing notification */}
-        {viewNotification && viewNotificationText && createPortal(
-          <div
-            className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[100] overflow-y-auto"
-            onClick={() => setViewNotification(null)}
-            onKeyDown={(e) => {
-              if (e.key === 'Escape') {
-                setViewNotification(null);
-              }
-            }}
-          >
-            <div className="min-h-full flex items-center justify-center p-4">
+        {viewNotification && viewNotificationText && (
+          <ModalOverlay onClose={() => setViewNotification(null)}>
               <div
                 className="bg-gradient-to-br from-purple-900 to-indigo-900 rounded-2xl max-w-2xl w-full overflow-hidden flex flex-col border border-white/20 shadow-2xl max-h-[85vh]"
-                onClick={(e) => e.stopPropagation()}
               >
                 {/* Header */}
                 <div className="flex items-start justify-between p-6 border-b border-white/10">
@@ -478,9 +466,7 @@ export const Notifications: React.FC<NotificationsProps> = ({ floating = false }
                   )}
                 </div>
               </div>
-            </div>
-          </div>,
-          document.body
+          </ModalOverlay>
         )}
       </div>
     );
@@ -657,20 +643,10 @@ export const Notifications: React.FC<NotificationsProps> = ({ floating = false }
       )}
 
       {/* Modal for viewing notification */}
-      {viewNotification && viewNotificationText && createPortal(
-        <div
-          className={`fixed inset-0 bg-black/60 backdrop-blur-sm z-[100] overflow-y-auto ${isHeaderVisible ? 'pt-[72px] md:pt-[88px]' : ''}`}
-          onClick={() => setViewNotification(null)}
-          onKeyDown={(e) => {
-            if (e.key === 'Escape') {
-              setViewNotification(null);
-            }
-          }}
-        >
-          <div className="min-h-full flex items-end md:items-center justify-center p-0 md:p-4">
+      {viewNotification && viewNotificationText && (
+        <ModalOverlay onClose={() => setViewNotification(null)}>
             <div
               className="bg-gradient-to-br from-purple-900 to-indigo-900 rounded-t-2xl md:rounded-2xl w-full md:max-w-2xl overflow-hidden flex flex-col border-t md:border border-white/20 shadow-2xl max-h-[85vh]"
-              onClick={(e) => e.stopPropagation()}
             >
               {/* Header */}
               <div className="flex items-start justify-between p-4 md:p-6 border-b border-white/10">
@@ -759,9 +735,7 @@ export const Notifications: React.FC<NotificationsProps> = ({ floating = false }
                 </button>
               </div>
             </div>
-            </div>
-        </div>,
-        document.body
+        </ModalOverlay>
       )}
     </div>
   );
