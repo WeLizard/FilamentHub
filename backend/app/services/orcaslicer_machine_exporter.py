@@ -484,35 +484,42 @@ async def print_profile_to_orca_json(
 
     # Совместимые принтеры - преобразуем из slug в name PrinterProfile
     if db and profile.printer_links:
+        # Батч-загрузка принтеров и их профилей вместо запроса на каждый link (N+1)
+        printer_ids = [link.printer_id for link in profile.printer_links if link.printer_id]
+        printers_by_id: dict[int, Printer] = {}
+        profile_by_printer_id: dict[int, PrinterProfile] = {}
+        if printer_ids:
+            printers_result = await db.execute(
+                select(Printer).where(Printer.id.in_(printer_ids))
+            )
+            printers_by_id = {p.id: p for p in printers_result.scalars().all()}
+
+            pp_result = await db.execute(
+                select(PrinterProfile)
+                .where(PrinterProfile.printer_id.in_(printer_ids))
+                .where(PrinterProfile.active == True)
+                .order_by(PrinterProfile.id.asc())
+            )
+            # Первый активный профиль на принтер (запрос упорядочен по id)
+            for pp in pp_result.scalars().all():
+                profile_by_printer_id.setdefault(pp.printer_id, pp)
+
         compatible_printer_names = []
         for link in profile.printer_links:
             if link.printer_id:
-                # Ищем Printer по ID
-                result = await db.execute(
-                    select(Printer).where(Printer.id == link.printer_id)
-                )
-                printer = result.scalar_one_or_none()
-                if printer:
-                    # Ищем PrinterProfile для этого принтера (берем первый активный)
-                    pp_result = await db.execute(
-                        select(PrinterProfile)
-                        .where(PrinterProfile.printer_id == printer.id)
-                        .where(PrinterProfile.active == True)
-                        .order_by(PrinterProfile.id.asc())
-                        .limit(1)
+                printer = printers_by_id.get(link.printer_id)
+                printer_profile = profile_by_printer_id.get(link.printer_id)
+                if printer and printer_profile:
+                    # Генерируем name в формате OrcaSlicer
+                    nozzle = None
+                    if printer_profile.nozzle_diameters and len(printer_profile.nozzle_diameters) > 0:
+                        nozzle = printer_profile.nozzle_diameters[0]
+                    elif printer.nozzle_diameter:
+                        nozzle = printer.nozzle_diameter
+                    printer_profile_name = _format_printer_profile_name_for_orca(
+                        printer_profile, printer, nozzle
                     )
-                    printer_profile = pp_result.scalar_one_or_none()
-                    if printer_profile:
-                        # Генерируем name в формате OrcaSlicer
-                        nozzle = None
-                        if printer_profile.nozzle_diameters and len(printer_profile.nozzle_diameters) > 0:
-                            nozzle = printer_profile.nozzle_diameters[0]
-                        elif printer.nozzle_diameter:
-                            nozzle = printer.nozzle_diameter
-                        printer_profile_name = _format_printer_profile_name_for_orca(
-                            printer_profile, printer, nozzle
-                        )
-                        compatible_printer_names.append(printer_profile_name)
+                    compatible_printer_names.append(printer_profile_name)
             elif link.printer_slug:
                 # Fallback: используем printer_slug как есть (для условий)
                 compatible_printer_names.append(link.printer_slug)
