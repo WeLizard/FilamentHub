@@ -104,6 +104,9 @@ class UserUsernameUpdate(BaseModel):
 class UserResponse(UserBase):
     """Schema for User response."""
 
+    # Output schema: don't re-validate stored emails (legacy/seed rows may use
+    # reserved TLDs like .local). Input validation stays strict via UserCreate.
+    email: str
     id: int
     role: UserRole
     api_key: str | None = None
@@ -141,6 +144,7 @@ class UserResponse(UserBase):
 class UserPublic(UserBase):
     """Schema for public User info (без sensitive данных)."""
 
+    email: str  # output schema — see UserResponse.email
     id: int
     username: str
     full_name: str | None = None
