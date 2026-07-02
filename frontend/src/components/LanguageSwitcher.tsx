@@ -1,4 +1,4 @@
-/** Interface language switcher (ru/en).
+/** Interface language switcher (ru/en/zh).
  *
  * A manual choice here is persisted explicitly to localStorage (i18next's
  * lookup key), so it wins over auto-detection on subsequent visits. Until the
@@ -14,6 +14,7 @@ const LANG_STORAGE_KEY = 'i18nextLng';
 const LANGUAGES: { code: string; label: string; short: string }[] = [
   { code: 'ru', label: 'Русский', short: 'RU' },
   { code: 'en', label: 'English', short: 'EN' },
+  { code: 'zh', label: '中文', short: '中' },
 ];
 
 interface LanguageSwitcherProps {

@@ -5,6 +5,7 @@ import LanguageDetector from 'i18next-browser-languagedetector';
 // Import translations
 import translationEN from './locales/en/translation.json';
 import translationRU from './locales/ru/translation.json';
+import translationZH from './locales/zh/translation.json';
 
 const resources = {
   en: {
@@ -13,6 +14,9 @@ const resources = {
   ru: {
     translation: translationRU,
   },
+  zh: {
+    translation: translationZH,
+  },
 };
 
 i18n
@@ -20,7 +24,7 @@ i18n
   .use(initReactI18next)
   .init({
     resources,
-    supportedLngs: ['en', 'ru'],
+    supportedLngs: ['en', 'ru', 'zh'],
     fallbackLng: 'en',
     nonExplicitSupportedLngs: true,
     load: 'languageOnly',
@@ -43,7 +47,7 @@ i18n
 
 const syncHtmlLang = (lng: string) => {
   const base = lng.split('-')[0];
-  document.documentElement.lang = base === 'ru' ? 'ru' : 'en';
+  document.documentElement.lang = base === 'ru' || base === 'zh' ? base : 'en';
 };
 syncHtmlLang(i18n.language || 'en');
 i18n.on('languageChanged', syncHtmlLang);
