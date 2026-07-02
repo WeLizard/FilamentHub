@@ -351,9 +351,7 @@ export const FilamentDetailPage: React.FC = () => {
                 </span>
               </a>
             )}
-            {filament.price_hidden ? (
-              <p className="text-lg md:text-2xl font-semibold text-gray-300 md:mb-2">{t('catalogPage.priceOnRequest')}</p>
-            ) : filament.price_per_kg ? (
+            {filament.price_hidden ? null : filament.price_per_kg ? (
               <>
                 <p className="text-xl md:text-2xl font-semibold text-gray-200 md:mb-2">
                   {Math.round(filament.price_per_kg)} {currencySymbol(filament.currency)}<span className="text-base md:text-lg font-normal text-gray-400">/{t('catalogPage.units.kg')}</span>

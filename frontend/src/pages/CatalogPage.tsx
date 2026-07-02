@@ -384,11 +384,7 @@ const MaterialCard: React.FC<MaterialCardProps> = ({
               )}
             </div>
         </div>
-        {filament.price_hidden ? (
-          <div className="text-right ml-2 sm:ml-4 flex-shrink-0">
-            <p className="text-sm sm:text-base font-semibold text-gray-300">{t('catalogPage.priceOnRequest')}</p>
-          </div>
-        ) : (filament.price_per_kg || filament.spool_weight) ? (
+        {filament.price_hidden ? null : (filament.price_per_kg || filament.spool_weight) ? (
           <div className="text-right ml-2 sm:ml-4 flex-shrink-0">
             {filament.price_per_kg ? (
               <>
