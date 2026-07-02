@@ -13,6 +13,7 @@ import { wikiAPI, adminAPI } from '../../api/client';
 import type { WikiArticle, WikiArticleSummary, WikiCategory } from '../../types/api';
 import { toast } from '../Toast';
 import { ConfirmDeleteModal } from '../ConfirmDeleteModal';
+import { Dropdown } from '../Dropdown';
 import { translateApiError } from '../../utils/translateApiError';
 
 type WikiSection = 'articles' | 'categories' | 'operations';
@@ -123,17 +124,11 @@ function ArticleModal({
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
               <label className="block text-sm text-gray-400 mb-1">{t('adminWiki.fieldCategory')}</label>
-              <select
+              <Dropdown
                 value={categoryId}
-                onChange={(e) => setCategoryId(Number(e.target.value))}
-                className="w-full bg-white/10 border border-white/20 rounded-lg px-3 py-2 text-white focus:outline-none focus:ring-2 focus:ring-purple-500"
-              >
-                {categories.map((cat) => (
-                  <option key={cat.id} value={cat.id} className="bg-gray-900">
-                    {cat.name}
-                  </option>
-                ))}
-              </select>
+                options={categories.map((cat) => ({ value: cat.id, label: cat.name }))}
+                onChange={(v) => setCategoryId(Number(v))}
+              />
             </div>
             <div>
               <label className="block text-sm text-gray-400 mb-1">{t('adminWiki.fieldTags')}</label>
@@ -586,28 +581,26 @@ export function AdminWiki() {
         <div>
           {/* Filters & Actions */}
           <div className="flex flex-wrap items-center gap-3 mb-4">
-            <select
+            <Dropdown
+              className="min-w-[12rem]"
               value={categoryFilter}
-              onChange={(e) => { setCategoryFilter(e.target.value); setArticlePage(1); }}
-              className="bg-white/10 border border-white/20 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:ring-2 focus:ring-purple-500"
-            >
-              <option value="" className="bg-gray-900">{t('adminWiki.allCategories')}</option>
-              {categories.map((cat) => (
-                <option key={cat.slug} value={cat.slug} className="bg-gray-900">
-                  {cat.icon} {cat.name}
-                </option>
-              ))}
-            </select>
+              options={[
+                { value: '', label: t('adminWiki.allCategories') },
+                ...categories.map((cat) => ({ value: cat.slug, label: `${cat.icon} ${cat.name}` })),
+              ]}
+              onChange={(v) => { setCategoryFilter(String(v)); setArticlePage(1); }}
+            />
 
-            <select
+            <Dropdown
+              className="min-w-[12rem]"
               value={statusFilter}
-              onChange={(e) => { setStatusFilter(e.target.value); setArticlePage(1); }}
-              className="bg-white/10 border border-white/20 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:ring-2 focus:ring-purple-500"
-            >
-              <option value="" className="bg-gray-900">{t('adminWiki.allStatuses')}</option>
-              <option value="published" className="bg-gray-900">{t('adminWiki.statusPublished')}</option>
-              <option value="draft" className="bg-gray-900">{t('adminWiki.statusDraft')}</option>
-            </select>
+              options={[
+                { value: '', label: t('adminWiki.allStatuses') },
+                { value: 'published', label: t('adminWiki.statusPublished') },
+                { value: 'draft', label: t('adminWiki.statusDraft') },
+              ]}
+              onChange={(v) => { setStatusFilter(String(v)); setArticlePage(1); }}
+            />
 
             <div className="ml-auto">
               <button
