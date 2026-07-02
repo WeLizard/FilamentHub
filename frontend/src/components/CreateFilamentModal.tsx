@@ -17,7 +17,7 @@ import { sortMaterialTypes } from '../data/materialDefaults';
 import { currencySymbol } from '../utils/currency';
 import type { Filament, Brand, FilamentAvailability } from '../types/api';
 import { useAuth } from '../contexts/AuthContext';
-import { MaterialTypeSelect } from './MaterialTypeSelect';
+import { MaterialTypeSelect, FALLBACK_TYPES } from './MaterialTypeSelect';
 import { AvailabilitySelect } from './AvailabilitySelect';
 import { DensityField } from './DensityField';
 import { ModalOverlay } from './ModalOverlay';
@@ -629,67 +629,22 @@ export const CreateFilamentModal: React.FC<CreateFilamentModalProps> = ({
               />
             </div>
             <div className="flex-1">
-              {/* Если brandId передан - используем input с выпадающим списком (как в CreatePresetModal) */}
-              {brandId ? (
-                <MaterialTypeSelect
-                  label={`${t('createFilament.materialTypeLabel')} *`}
-                  value={materialType === 'Other' ? customMaterialType : materialType}
-                  onChange={(v) => {
-                    const allTypes = sortedMaterialTypes.length > 0
-                      ? sortedMaterialTypes
-                      : ['PLA', 'PETG', 'ABS', 'TPU', 'ASA', 'PC', 'PA', 'PVA'];
-                    if (allTypes.includes(v)) {
-                      setMaterialType(v);
-                      setCustomMaterialType('');
-                    } else {
-                      setMaterialType('Other');
-                      setCustomMaterialType(v);
-                    }
-                  }}
-                  options={sortedMaterialTypes}
-                  required
-                />
-              ) : (
-                <>
-                  <Dropdown
-                    label={`${t('createFilament.materialTypeLabel')} *`}
-                    value={materialType}
-                    options={[
-                      ...(sortedMaterialTypes.length > 0
-                        ? sortedMaterialTypes.map((type) => ({ value: type, label: type }))
-                        : [
-                            { value: 'PLA', label: 'PLA' },
-                            { value: 'PETG', label: 'PETG' },
-                            { value: 'ABS', label: 'ABS' },
-                            { value: 'TPU', label: 'TPU' },
-                            { value: 'ASA', label: 'ASA' },
-                            { value: 'PC', label: 'PC' },
-                            { value: 'PA', label: 'PA (Nylon)' },
-                            { value: 'PVA', label: 'PVA' },
-                          ]),
-                      { value: 'Other', label: t('createFilament.other') },
-                    ]}
-                    onChange={(val) => {
-                      const value = String(val);
-                      setMaterialType(value);
-                      if (value !== 'Other') {
-                        setCustomMaterialType('');
-                      }
-                    }}
-                    placeholder={t('createFilament.selectMaterial')}
-                  />
-                  {materialType === 'Other' && (
-                    <input
-                      type="text"
-                      value={customMaterialType}
-                      onChange={(e) => setCustomMaterialType(e.target.value)}
-                      placeholder={t('createFilament.enterMaterialType')}
-                      required={materialType === 'Other'}
-                      className="mt-2 w-full px-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all"
-                    />
-                  )}
-                </>
-              )}
+              <MaterialTypeSelect
+                label={`${t('createFilament.materialTypeLabel')} *`}
+                value={materialType === 'Other' ? customMaterialType : materialType}
+                onChange={(v) => {
+                  const allTypes = sortedMaterialTypes.length > 0 ? sortedMaterialTypes : FALLBACK_TYPES;
+                  if (allTypes.includes(v)) {
+                    setMaterialType(v);
+                    setCustomMaterialType('');
+                  } else {
+                    setMaterialType('Other');
+                    setCustomMaterialType(v);
+                  }
+                }}
+                options={sortedMaterialTypes}
+                required
+              />
             </div>
             {/* Brand Selection (только при создании без brandId и если пользователь не сотрудник бренда) */}
             {!filament && !brandId && !user?.brand_id && (

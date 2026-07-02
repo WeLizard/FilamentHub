@@ -5,7 +5,7 @@ import { useState, useRef, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { sortMaterialTypes } from '../data/materialDefaults';
 
-const FALLBACK_TYPES = ['PLA', 'PETG', 'ABS', 'TPU', 'ASA', 'PC', 'PA', 'PVA'];
+export const FALLBACK_TYPES = ['PLA', 'PETG', 'ABS', 'TPU', 'ASA', 'PC', 'PA', 'PVA'];
 
 interface MaterialTypeSelectProps {
   value: string;
