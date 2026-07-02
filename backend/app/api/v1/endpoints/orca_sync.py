@@ -3480,7 +3480,7 @@ async def batch_export_presets(
             continue
 
         # --- Access check: active presets are public; drafts only for owner/admin ---
-        if not preset.active and preset.user_id != current_user.id and current_user.role != UserRole.admin:
+        if not preset.active and preset.user_id != current_user.id and current_user.role != UserRole.ADMIN:
             items.append(BatchExportItem(
                 preset_id=preset_id,
                 status="error",
