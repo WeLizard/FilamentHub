@@ -391,31 +391,18 @@ const MaterialCard: React.FC<MaterialCardProps> = ({
         ) : (filament.price_per_kg || filament.spool_weight) ? (
           <div className="text-right ml-2 sm:ml-4 flex-shrink-0">
             {filament.price_per_kg ? (
-              filament.price_display_unit === 'per_spool' && filament.spool_weight ? (
-                <>
-                  <p className="text-base sm:text-lg font-semibold text-gray-200 mb-0.5">
-                    {Math.round((filament.price_per_kg * filament.spool_weight) / 1000)} {currencySymbol(filament.currency)}<span className="text-xs font-normal text-gray-400">/{t('catalogPage.units.spool')}</span>
+              <>
+                <p className="text-base sm:text-lg font-semibold text-gray-200 mb-0.5">
+                  {Math.round(filament.price_per_kg)} {currencySymbol(filament.currency)}<span className="text-xs font-normal text-gray-400">/{t('catalogPage.units.kg')}</span>
+                </p>
+                {filament.spool_weight && filament.spool_weight !== 1000 ? (
+                  <p className="text-[10px] sm:text-xs text-gray-500">
+                    {t('catalogPage.units.spool')} {Math.round(filament.spool_weight)} {t('catalogPage.units.g')}
                   </p>
-                  {filament.spool_weight !== 1000 ? (
-                    <p className="text-[10px] sm:text-xs text-gray-500">
-                      ≈ {Math.round(filament.price_per_kg)} {currencySymbol(filament.currency)}/{t('catalogPage.units.kg')}
-                    </p>
-                  ) : null}
-                </>
-              ) : (
-                <>
-                  <p className="text-base sm:text-lg font-semibold text-gray-200 mb-0.5">
-                    {Math.round(filament.price_per_kg)} {currencySymbol(filament.currency)}<span className="text-xs font-normal text-gray-400">/{t('catalogPage.units.kg')}</span>
-                  </p>
-                  {filament.spool_weight && filament.spool_weight !== 1000 ? (
-                    <p className="text-[10px] sm:text-xs text-gray-500">
-                      ≈ {Math.round((filament.price_per_kg * filament.spool_weight) / 1000)} {currencySymbol(filament.currency)}/{t('catalogPage.units.spool')}
-                    </p>
-                  ) : null}
-                </>
-              )
+                ) : null}
+              </>
             ) : (
-              <p className="text-xs sm:text-sm text-gray-400">{Math.round(filament.spool_weight!)}g</p>
+              <p className="text-xs sm:text-sm text-gray-400">{Math.round(filament.spool_weight!)} {t('catalogPage.units.g')}</p>
             )}
           </div>
         ) : null}

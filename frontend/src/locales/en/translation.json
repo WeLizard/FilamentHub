@@ -840,7 +840,8 @@
       "mm": "mm",
       "gcm3": "g/cm³",
       "kg": "kg",
-      "spool": "spool"
+      "spool": "spool",
+      "g": "g"
     },
     "priceOnRequest": "Price on request"
   },

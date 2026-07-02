@@ -840,7 +840,8 @@
       "mm": "mm",
       "gcm3": "g/cm³",
       "kg": "kg",
-      "spool": "线轴"
+      "spool": "线轴",
+      "g": "克"
     },
     "priceOnRequest": "联系获取报价"
   },
