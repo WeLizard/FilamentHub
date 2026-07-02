@@ -1530,6 +1530,9 @@ async def download_database_dump(
 
     from app.core.config import settings
 
+    if '/' in filename or '\\' in filename or '..' in filename:
+        raise_error(status.HTTP_400_BAD_REQUEST, ERR_INVALID_FILENAME)
+
     dump_file = Path(settings.UPLOAD_DIR) / "database_dumps" / filename
 
     if not dump_file.exists():
