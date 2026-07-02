@@ -3120,12 +3120,7 @@ const FilamentCard: React.FC<FilamentCardProps> = ({ filament, onEdit, onDelete,
             </span>
           )}
         </div>
-        {filament.active !== false ? (
-          <span className="px-2 py-1 bg-green-500/20 text-green-300 text-xs rounded-full flex items-center space-x-1">
-            <CheckCircle className="w-3 h-3" />
-            <span>{t('brandProfile.active')}</span>
-          </span>
-        ) : (
+        {filament.active === false && (
           <span className="px-2 py-1 bg-gray-500/20 text-gray-400 text-xs rounded-full">
             {t('brandProfile.inactive')}
           </span>
