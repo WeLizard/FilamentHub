@@ -351,19 +351,21 @@ export const FilamentDetailPage: React.FC = () => {
                 </span>
               </a>
             )}
-            {filament.price_hidden ? null : filament.price_per_kg ? (
+            {filament.price_hidden ? null : filament.price_per_kg && filament.spool_weight && filament.spool_weight !== 1000 ? (
               <>
-                <p className="text-xl md:text-2xl font-semibold text-gray-200 md:mb-2">
-                  {Math.round(filament.price_per_kg)} {currencySymbol(filament.currency)}<span className="text-base md:text-lg font-normal text-gray-400">/{t('catalogPage.units.kg')}</span>
+                <p className="text-sm md:text-base font-medium text-gray-300">
+                  {Math.round((filament.price_per_kg * filament.spool_weight) / 1000)} {currencySymbol(filament.currency)}<span className="text-gray-400">/{Math.round(filament.spool_weight)} {t('catalogPage.units.g')}</span>
                 </p>
-                {filament.spool_weight && filament.spool_weight !== 1000 ? (
-                  <p className="text-gray-500 text-xs md:text-sm">
-                    {t('catalogPage.units.spool')} {Math.round(filament.spool_weight)} {t('catalogPage.units.g')}
-                  </p>
-                ) : null}
+                <p className="text-gray-500 text-xs">
+                  ≈ {Math.round(filament.price_per_kg)} {currencySymbol(filament.currency)}/{t('catalogPage.units.kg')}
+                </p>
               </>
+            ) : filament.price_per_kg ? (
+              <p className="text-sm md:text-base font-medium text-gray-300">
+                {Math.round(filament.price_per_kg)} {currencySymbol(filament.currency)}<span className="text-gray-400">/{t('catalogPage.units.kg')}</span>
+              </p>
             ) : filament.spool_weight ? (
-              <p className="text-gray-400 text-sm md:text-lg">{Math.round(filament.spool_weight)} {t('catalogPage.units.g')}</p>
+              <p className="text-gray-400 text-sm">{Math.round(filament.spool_weight)} {t('catalogPage.units.g')}</p>
             ) : null}
           </div>
         </div>
