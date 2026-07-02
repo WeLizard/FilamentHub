@@ -3280,7 +3280,7 @@ const MaterialStatCard: React.FC<MaterialStatCardProps> = ({ filament }) => {
         </div>
       </div>
       <div className="text-right">
-        <p className="text-white font-semibold">{filament.scans_count || 0} {t('brandProfile.scans')}</p>
+        <p className="text-white font-semibold">{filament.scans_count || 0} {t('brandProfile.scansWord', { count: filament.scans_count || 0 })}</p>
       </div>
     </div>
   );

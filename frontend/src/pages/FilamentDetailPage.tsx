@@ -319,7 +319,7 @@ export const FilamentDetailPage: React.FC = () => {
               {/* Количество пресетов */}
               <span className="flex items-center text-gray-300" title={t('filamentDetailPage.presetsCountTitle')}>
                 <TrendingUp className="w-3.5 h-3.5 md:w-5 md:h-5 mr-1 md:mr-2 text-blue-400" />
-                <span className="font-bold text-white">{presetsData?.total || 0} <span className="hidden md:inline">{t('filamentDetailPage.presets')}</span></span>
+                <span className="font-bold text-white">{presetsData?.total || 0} <span className="hidden md:inline">{t('filamentDetailPage.presetsWord', { count: presetsData?.total || 0 })}</span></span>
               </span>
               {/* Количество отзывов */}
               {ratingStats && ratingStats.total_reviews > 0 && (
