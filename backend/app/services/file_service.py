@@ -13,6 +13,7 @@ from PIL import Image, UnidentifiedImageError
 
 from app.core.config import settings
 from app.core.errors import (
+    ERR_FILE_CONTENT_MISMATCH,
     ERR_FILE_EXT_NOT_ALLOWED,
     ERR_FILE_SAVE_FAILED,
     ERR_FILE_SIZE_EXCEEDED,
@@ -145,6 +146,27 @@ def validate_file(file: UploadFile) -> None:
         raise_error(status.HTTP_400_BAD_REQUEST, ERR_FILE_EXT_NOT_ALLOWED, {"ext": file_ext, "allowed": ", ".join(get_allowed_extensions())})
 
 
+# Magic-byte signatures per allowed extension. A missing key means the extension
+# has no reliable container signature and is accepted on extension alone.
+_FILE_SIGNATURES: dict[str, tuple[bytes, ...]] = {
+    ".pdf": (b"%PDF-",),
+    ".png": (b"\x89PNG\r\n\x1a\n",),
+    ".jpg": (b"\xff\xd8\xff",),
+    ".jpeg": (b"\xff\xd8\xff",),
+    ".docx": (b"PK\x03\x04", b"PK\x05\x06", b"PK\x07\x08"),  # ZIP container
+    ".doc": (b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1",),  # OLE2 compound file
+}
+
+
+def validate_file_signature(file_ext: str, content: bytes) -> None:
+    """Проверить, что содержимое файла соответствует расширению (magic bytes)."""
+    signatures = _FILE_SIGNATURES.get(file_ext.lower())
+    if not signatures:
+        return
+    if not any(content.startswith(sig) for sig in signatures):
+        raise_error(status.HTTP_400_BAD_REQUEST, ERR_FILE_CONTENT_MISMATCH, {"ext": file_ext})
+
+
 async def save_proof_file(
     file: UploadFile,
     request_id: int,
@@ -181,6 +203,9 @@ async def save_proof_file(
     # Проверяем размер файла
     if file_size_mb > settings.MAX_UPLOAD_SIZE_MB:
         raise_error(status.HTTP_400_BAD_REQUEST, ERR_FILE_SIZE_EXCEEDED, {"size_mb": f"{file_size_mb:.2f}", "max_mb": str(settings.MAX_UPLOAD_SIZE_MB)})
+
+    # Проверяем сигнатуру: расширение должно соответствовать реальному содержимому
+    validate_file_signature(Path(original_filename).suffix.lower(), file_content)
 
     # Определяем директорию в зависимости от типа заявки
     if request_type == "printer":

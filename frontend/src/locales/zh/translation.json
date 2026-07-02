@@ -4481,6 +4481,7 @@
     "ERR_OFFICIAL_VERIFIED_ONLY": "官方状态仅对已认证品牌可用",
     "ERR_CUSTOM_FILLER_VERIFIED_ONLY": "自定义填充物仅对已认证品牌可用",
     "ERR_FILE_EXT_NOT_ALLOWED": "不允许文件扩展名 {{ext}}。允许的：{{allowed}}",
+    "ERR_FILE_CONTENT_MISMATCH": "文件内容与其 {{ext}} 扩展名不匹配",
     "ERR_MAX_FILES_EXCEEDED": "文件限制已超出：最多 {{max}} 个",
     "ERR_FILE_SIZE_EXCEEDED": "文件大小 {{size_mb}} MB 超过 {{max_mb}} MB 的限制",
     "ERR_INVALID_FILE_PATH": "无效的文件路径",

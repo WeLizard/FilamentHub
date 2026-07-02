@@ -146,3 +146,26 @@ async def test_brand_request_proof_files_are_gated(client: AsyncClient, db_sessi
         assert traversal.status_code == 404
     finally:
         proof_file.unlink(missing_ok=True)
+
+
+def test_validate_file_signature_rejects_content_ext_mismatch():
+    """Uploads must match their extension by magic bytes, not just the name."""
+    from fastapi import HTTPException
+
+    from app.services.file_service import validate_file_signature
+
+    # Correct signatures pass
+    validate_file_signature(".png", b"\x89PNG\r\n\x1a\n....")
+    validate_file_signature(".pdf", b"%PDF-1.7\n....")
+    validate_file_signature(".jpg", b"\xff\xd8\xff\xe0....")
+    validate_file_signature(".docx", b"PK\x03\x04....")
+
+    # Executable renamed to .png is rejected
+    with pytest.raises(HTTPException) as exc:
+        validate_file_signature(".png", b"MZ\x90\x00 this is a PE binary")
+    assert exc.value.detail["code"] == "ERR_FILE_CONTENT_MISMATCH"
+
+    # HTML smuggled as .pdf is rejected
+    with pytest.raises(HTTPException) as exc:
+        validate_file_signature(".pdf", b"<html><script>alert(1)</script>")
+    assert exc.value.detail["code"] == "ERR_FILE_CONTENT_MISMATCH"

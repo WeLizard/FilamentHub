@@ -4609,6 +4609,7 @@
     "ERR_OFFICIAL_VERIFIED_ONLY": "Официальный статус доступен только верифицированным брендам",
     "ERR_CUSTOM_FILLER_VERIFIED_ONLY": "Свой наполнитель доступен только верифицированным брендам",
     "ERR_FILE_EXT_NOT_ALLOWED": "Расширение файла {{ext}} не разрешено. Допустимые: {{allowed}}",
+    "ERR_FILE_CONTENT_MISMATCH": "Содержимое файла не соответствует расширению {{ext}}",
     "ERR_MAX_FILES_EXCEEDED": "Превышен лимит файлов: максимум {{max}}",
     "ERR_FILE_SIZE_EXCEEDED": "Размер файла {{size_mb}} МБ превышает лимит {{max_mb}} МБ",
     "ERR_INVALID_FILE_PATH": "Недопустимый путь к файлу",
