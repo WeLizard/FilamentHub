@@ -9,6 +9,8 @@ import { adminAPI } from '../../api/client';
 import type { PrinterRequest } from '../../types/api';
 import { ModalOverlay } from '../ModalOverlay';
 import { ProofFileCard } from '../ProofFileCard';
+import { toast } from '../Toast';
+import { translateApiError } from '../../utils/translateApiError';
 
 type PrinterRequestStatus = 'pending' | 'approved' | 'rejected';
 
@@ -39,6 +41,9 @@ export function AdminPrinterRequests() {
       queryClient.invalidateQueries({ queryKey: ['admin-printer-requests'] });
       setSelectedRequest(null);
     },
+    onError: (error: any) => {
+      toast.error(translateApiError(t, error?.response?.data?.detail, t('adminPrinterRequests.approveError')));
+    },
   });
 
   // Отклонение заявки
@@ -50,11 +55,14 @@ export function AdminPrinterRequests() {
       setSelectedRequest(null);
       setRejectionReason('');
     },
+    onError: (error: any) => {
+      toast.error(translateApiError(t, error?.response?.data?.detail, t('adminPrinterRequests.rejectError')));
+    },
   });
 
   const handleReject = (id: number) => {
     if (!rejectionReason.trim()) {
-      alert(t('adminPrinterRequests.specifyRejectionReason'));
+      toast.error(t('adminPrinterRequests.specifyRejectionReason'));
       return;
     }
     rejectMutation.mutate({ id, reason: rejectionReason });

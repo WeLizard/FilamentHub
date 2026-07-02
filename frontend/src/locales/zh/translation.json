@@ -3425,6 +3425,8 @@
     "loadError": "加载请求出错",
     "noRequests": "没有请求要显示",
     "specifyRejectionReason": "请指定拒绝原因",
+    "approveError": "批准请求失败",
+    "rejectError": "拒绝请求失败",
     "statusPending": "待处理",
     "statusApproved": "已批准",
     "statusRejected": "已拒绝",

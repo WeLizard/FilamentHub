@@ -11,6 +11,8 @@ import {
 } from 'lucide-react';
 import { wikiAPI, adminAPI } from '../../api/client';
 import type { WikiArticle, WikiArticleSummary, WikiCategory } from '../../types/api';
+import { toast } from '../Toast';
+import { translateApiError } from '../../utils/translateApiError';
 
 type WikiSection = 'articles' | 'categories' | 'operations';
 
@@ -398,6 +400,10 @@ export function AdminWiki() {
 
   // ==================== Mutations ====================
 
+  const showMutationError = (error: any) => {
+    toast.error(translateApiError(t, error?.response?.data?.detail, t('adminWiki.operationError')));
+  };
+
   const createArticleMutation = useMutation({
     mutationFn: (data: ArticleFormData) => wikiAPI.createArticle(data),
     onSuccess: () => {
@@ -406,6 +412,7 @@ export function AdminWiki() {
       setShowArticleModal(false);
       setEditingArticle(null);
     },
+    onError: showMutationError,
   });
 
   const updateArticleMutation = useMutation({
@@ -416,6 +423,7 @@ export function AdminWiki() {
       setShowArticleModal(false);
       setEditingArticle(null);
     },
+    onError: showMutationError,
   });
 
   const deleteArticleMutation = useMutation({
@@ -424,6 +432,7 @@ export function AdminWiki() {
       queryClient.invalidateQueries({ queryKey: ['admin-wiki-articles'] });
       queryClient.invalidateQueries({ queryKey: ['admin-wiki-categories'] });
     },
+    onError: showMutationError,
   });
 
   const createCategoryMutation = useMutation({
@@ -433,6 +442,7 @@ export function AdminWiki() {
       setShowCategoryModal(false);
       setEditingCategory(null);
     },
+    onError: showMutationError,
   });
 
   const updateCategoryMutation = useMutation({
@@ -442,6 +452,7 @@ export function AdminWiki() {
       setShowCategoryModal(false);
       setEditingCategory(null);
     },
+    onError: showMutationError,
   });
 
   const deleteCategoryMutation = useMutation({
@@ -449,6 +460,7 @@ export function AdminWiki() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['admin-wiki-categories'] });
     },
+    onError: showMutationError,
   });
 
   const syncMutation = useMutation({

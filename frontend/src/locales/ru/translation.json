@@ -3553,6 +3553,8 @@
     "loadError": "Ошибка загрузки заявок",
     "noRequests": "Нет заявок для отображения",
     "specifyRejectionReason": "Укажите причину отклонения",
+    "approveError": "Не удалось одобрить заявку",
+    "rejectError": "Не удалось отклонить заявку",
     "statusPending": "Ожидает",
     "statusApproved": "Одобрена",
     "statusRejected": "Отклонена",

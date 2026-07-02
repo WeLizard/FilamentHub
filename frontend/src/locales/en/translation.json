@@ -3426,6 +3426,8 @@
     "loadError": "Error loading requests",
     "noRequests": "No requests to display",
     "specifyRejectionReason": "Please specify rejection reason",
+    "approveError": "Failed to approve request",
+    "rejectError": "Failed to reject request",
     "statusPending": "Pending",
     "statusApproved": "Approved",
     "statusRejected": "Rejected",
