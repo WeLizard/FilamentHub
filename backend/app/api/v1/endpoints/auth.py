@@ -706,16 +706,12 @@ async def update_current_user(
     # Обновляем поля пользователя
     update_data = data.model_dump(exclude_unset=True)
 
+    # email changes only via the verified flow (/me/email + /confirm-email-change)
+    update_data.pop("email", None)
+
     # Если обновляется пароль, хешируем его
     if "password" in update_data and update_data["password"]:
         update_data["password_hash"] = get_password_hash(update_data.pop("password"))
-
-    # Если обновляется email или username, проверяем уникальность
-    if "email" in update_data and update_data["email"]:
-        result = await db.execute(select(User).where(User.email == update_data["email"]))
-        existing_user = result.scalar_one_or_none()
-        if existing_user and existing_user.id != current_user.id:
-            raise_error(status.HTTP_400_BAD_REQUEST, ERR_EMAIL_EXISTS)
 
     if "username" in update_data and update_data["username"]:
         result = await db.execute(select(User).where(User.username == update_data["username"]))

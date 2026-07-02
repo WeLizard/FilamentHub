@@ -271,7 +271,7 @@ export const authAPI = {
     };
   },
 
-  updateProfile: async (data: Partial<{ email: string; username: string; full_name: string | null; bio: string | null; password: string; brand_id: number | null; printer_id: number | null }>) => {
+  updateProfile: async (data: Partial<{ username: string; full_name: string | null; bio: string | null; password: string; brand_id: number | null; printer_id: number | null }>) => {
     const response = await api.patch<User>('/auth/me', data);
     return response.data;
   },
