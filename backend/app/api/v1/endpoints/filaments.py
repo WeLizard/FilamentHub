@@ -20,7 +20,7 @@ from app.core.errors import (
     ERR_NO_PERMISSION_EDIT_FILAMENT,
     raise_error,
 )
-from app.core.utils import like_pattern
+from app.core.utils import escape_like, like_pattern
 from app.db.session import get_db
 from app.models.brand import Brand
 from app.models.filament import Filament, FilamentAvailability
@@ -566,7 +566,7 @@ async def create_filament(
     from app.models.material_mapping import MaterialMapping
     existing_mapping = await db.execute(
         select(MaterialMapping).where(
-            MaterialMapping.material_type.ilike(material_type_upper),
+            MaterialMapping.material_type.ilike(escape_like(material_type_upper)),
             MaterialMapping.active == True,
         )
     )

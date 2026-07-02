@@ -6,6 +6,7 @@ import re
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.utils import escape_like
 from app.models.material_mapping import MaterialMapping, MaterialMappingPriority
 
 logger = logging.getLogger(__name__)
@@ -175,7 +176,7 @@ async def get_material_preset(
 
     # 1. Проверяем MaterialMapping из БД (сортировка по приоритету)
     query = select(MaterialMapping).where(
-        MaterialMapping.material_type.ilike(material_type_upper),
+        MaterialMapping.material_type.ilike(escape_like(material_type_upper)),
         MaterialMapping.active == True,
     ).order_by(
         # Приоритет: brand > manual > automatic

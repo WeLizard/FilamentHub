@@ -3,6 +3,7 @@
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.utils import like_pattern
 from app.models.brand import Brand
 from app.models.filament import Filament
 
@@ -38,8 +39,8 @@ async def list_filaments(
 
     if search:
         query = query.where(
-            Filament.name.ilike(f"%{search}%")
-            | Filament.color_name.ilike(f"%{search}%")
+            Filament.name.ilike(like_pattern(search))
+            | Filament.color_name.ilike(like_pattern(search))
         )
 
     query = query.order_by(Filament.name.asc())

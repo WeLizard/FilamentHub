@@ -3,6 +3,7 @@
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.utils import like_pattern
 from app.models.material_mapping import MaterialMapping
 
 # Известные системные пресеты OrcaSlicer
@@ -151,7 +152,7 @@ async def validate_parent_preset(
     # Проверяем material_mapping для определения fallback
     result = await db.execute(
         select(MaterialMapping).where(
-            MaterialMapping.material_type.ilike(f"%{material_type}%")
+            MaterialMapping.material_type.ilike(like_pattern(material_type))
         )
     )
     mapping = result.scalars().first()
