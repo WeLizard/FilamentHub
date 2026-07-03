@@ -376,11 +376,15 @@ export interface User {
   brand_name: string | null; // Название бренда (для админки)
   printer_id: number | null; // ID выбранного принтера из каталога
   badges: string[] | null; // Бейджи пользователя (founder, beta_tester, contributor, verified, early_adopter, supporter)
-  // Calculator Pro access (admin-granted). pro_expires_at null = бессрочно, дата = триал.
-  // has_calculator_access — эффективный доступ (админ / глобальная акция / валидный грант).
-  pro_access?: boolean;
-  pro_expires_at?: string | null;
+  // Calculator Pro entitlement. has_calculator_access — эффективный доступ (сейчас у всех, reverse trial).
   has_calculator_access?: boolean;
+  subscription?: {
+    status: string; // trialing | active | past_due | canceled | expired
+    trial_ends_at: string | null;
+    current_period_end: string | null;
+    cancel_at_period_end: boolean;
+    is_comp: boolean;
+  } | null;
   oauth_provider: string | null; // OAuth provider (google, yandex) или null
   has_password: boolean; // false для OAuth-пользователей без пароля
   created_at: string;

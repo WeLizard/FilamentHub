@@ -740,6 +740,7 @@
       "notifications": "通知",
       "stats": "统计",
       "database": "数据库",
+      "subscriptions": "订阅",
       "maintenance": "维护",
       "wiki": "知识库"
     },
@@ -754,6 +755,7 @@
       "notifications": "通知",
       "stats": "统计",
       "database": "数据库",
+      "subscriptions": "订阅",
       "maintenance": "维护",
       "wiki": "知识库"
     },
@@ -2321,6 +2323,7 @@
     "quoteClose": "关闭",
     "quotePopupBlocked": "浏览器阻止了打印窗口。允许FilamentHub的弹窗。",
     "quoteDefaultItemTitle": "3D打印服务",
+    "trialBanner": "试用 — 剩余 {{days}} 天",
     "proLockedTitle": "计算器为 Pro 功能",
     "proLockedDescription": "专业的成本与报价计算器需要 Pro 访问权限。",
     "proLockedHint": "由管理员授予访问权限。如需联系我们开通。",
@@ -3608,13 +3611,30 @@
       "supporter": "项目支持者。在财务上或以其他方式支持 FilamentHub 开发的用户。"
     }
   },
+  "adminSubscriptions": {
+    "title": "订阅"
+  },
+  "subscription": {
+    "title": "订阅",
+    "admin": "管理员 — 完全访问",
+    "pro": "Pro",
+    "trial": "试用",
+    "ended": "访问已结束",
+    "daysLeft": "剩余 {{days}} 天",
+    "proBenefit": "Pro — 专业的成本与报价计算器。",
+    "upgrade": "开通 Pro",
+    "soon": "即将推出"
+  },
   "adminMaintenance": {
-    "calcPromoTitle": "计算器 — 全员优惠",
-    "calcPromoHint": "启用后，计算器对所有用户免费（绕过 Pro 访问）。",
-    "calcPromoOn": "优惠已开启 — 计算器对所有人免费",
-    "calcPromoOff": "优惠已关闭 — 计算器仅限 Pro",
-    "calcPromoEnableBtn": "开启优惠",
-    "calcPromoDisableBtn": "关闭优惠",
+    "calcTitle": "计算器访问",
+    "calcPaidOn": "付费",
+    "calcPaidOff": "全员开放",
+    "calcEnable": "设为付费",
+    "calcDisable": "全员开放",
+    "calcTrial": "试用（天）",
+    "calcSave": "保存",
+    "calcCounts": "{{trialing}} 试用中 · {{active}} 付费",
+    "calcAdminNote": "管理员始终拥有访问权限",
     "title": "维护模式",
     "loadingStatus": "加载状态中...",
     "loadError": "无法加载维护状态",

@@ -129,10 +129,11 @@ class UserResponse(UserBase):
     created_at: datetime
     updated_at: datetime
     last_login: datetime | None = None
-    # Calculator Pro access (admin-granted grant + effective flag)
-    pro_access: bool = False
-    pro_expires_at: datetime | None = None
+    # Calculator Pro entitlement (effective flag + subscription summary).
+    # Named to avoid colliding with the ORM `subscription` relationship (from_attributes);
+    # serialized to the client as `subscription`.
     has_calculator_access: bool = False
+    subscription_info: dict | None = Field(default=None, serialization_alias="subscription")
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -142,10 +143,11 @@ class UserResponse(UserBase):
         # Вычисляем has_password из password_hash (не передаём сам hash клиенту)
         if hasattr(obj, "password_hash"):
             instance.has_password = bool(obj.password_hash)
-        # Effective calculator (Pro) access: admin / global promo / valid per-user grant.
-        if hasattr(obj, "pro_access") and hasattr(obj, "role"):
-            from app.services.calculator_promo_service import user_has_calculator_access
-            instance.has_calculator_access = user_has_calculator_access(obj)
+        # Effective calculator (Pro) access + subscription summary (see subscription_service).
+        if hasattr(obj, "role"):
+            from app.services.subscription_service import pro_active, subscription_summary
+            instance.has_calculator_access = pro_active(obj)
+            instance.subscription_info = subscription_summary(obj)
         return instance
 
 

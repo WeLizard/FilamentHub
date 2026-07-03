@@ -93,20 +93,30 @@ _ACCESS_REQUEST = {
 
 @pytest.mark.asyncio
 async def test_calculator_estimate_anonymous_401(client: AsyncClient):
-    """Calculator is Pro-only: anonymous request → 401."""
-    from app.services.calculator_promo_service import set_calculator_promo
-
-    set_calculator_promo(False)
+    """Calculator requires auth: anonymous request → 401."""
     response = await client.post("/api/v1/calculator/estimate", json=_ACCESS_REQUEST)
     assert response.status_code == 401
 
 
 @pytest.mark.asyncio
-async def test_calculator_estimate_forbidden_without_access(auth_client: AsyncClient):
-    """Calculator is Pro-only: authenticated user without Pro access → 403."""
-    from app.services.calculator_promo_service import set_calculator_promo
+async def test_calculator_estimate_forbidden_when_paywall_enforced(auth_client: AsyncClient, db_session):
+    """Paywall enforced + no valid subscription → 403."""
+    from app.services.subscription_service import set_paywall_enforced
 
-    set_calculator_promo(False)
+    await set_paywall_enforced(db_session, True)
+    try:
+        response = await auth_client.post("/api/v1/calculator/estimate", json=_ACCESS_REQUEST)
+        assert response.status_code == 403
+    finally:
+        await set_paywall_enforced(db_session, False)
+
+
+@pytest.mark.asyncio
+async def test_calculator_estimate_open_when_paywall_off(auth_client: AsyncClient, db_session):
+    """Reverse trial: with the paywall off (default launch state) any authenticated user has access."""
+    from app.services.subscription_service import set_paywall_enforced
+
+    await set_paywall_enforced(db_session, False)
     response = await auth_client.post("/api/v1/calculator/estimate", json=_ACCESS_REQUEST)
-    assert response.status_code == 403
+    assert response.status_code == 200
 

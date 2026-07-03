@@ -2,6 +2,7 @@
 
 # BadWord импортируется лениво, чтобы не падать при отсутствии таблицы
 # from app.models.bad_word import BadWord
+from app.models.app_setting import AppSetting
 from app.models.brand import Brand
 from app.models.brand_invite import BrandInvite
 from app.models.brand_request import BrandRequest, BrandRequestStatus, BrandRequestType
@@ -35,6 +36,7 @@ from app.models.printer_profile import PrinterProfile
 from app.models.printer_request import PrinterRequest, PrinterRequestStatus
 from app.models.revoked_token import RevokedToken
 from app.models.shared_quote import SharedQuote
+from app.models.subscription import Subscription, SubscriptionStatus
 from app.models.sync_device import SyncDevice
 from app.models.sync_history import SyncHistory, SyncOperation, SyncPresetType, SyncStatus
 from app.models.user import User, UserRole
@@ -57,6 +59,7 @@ __all__ = [
     "BundleImportStatus",
     "BundleSource",
     "BundleStatus",
+    "AppSetting",
     "CalculatorHistoryEntry",
     "UserCalculatorProfile",
     "Feedback",
@@ -90,6 +93,8 @@ __all__ = [
     "PrintProfilePrinter",
     "PrintProfileFilament",
     "SharedQuote",
+    "Subscription",
+    "SubscriptionStatus",
     "SyncDevice",
     "SyncHistory",
     "SyncOperation",

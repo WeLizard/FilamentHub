@@ -864,6 +864,7 @@
       "notifications": "Уведомления",
       "stats": "Статистика",
       "database": "База данных",
+      "subscriptions": "Подписки",
       "maintenance": "Технические работы",
       "wiki": "Wiki"
     },
@@ -878,6 +879,7 @@
       "notifications": "Уведомления",
       "stats": "Стат.",
       "database": "БД",
+      "subscriptions": "Подписки",
       "maintenance": "Тех.работы",
       "wiki": "Вики"
     },
@@ -2453,6 +2455,7 @@
       "quoteClose": "Закрыть",
       "quotePopupBlocked": "Браузер заблокировал окно печати. Разрешите pop-up для FilamentHub.",
       "quoteDefaultItemTitle": "Услуга 3D-печати",
+      "trialBanner": "Пробный период — осталось {{days}} дн.",
       "proLockedTitle": "Калькулятор — Pro-функция",
       "proLockedDescription": "Профессиональный калькулятор себестоимости и коммерческих предложений доступен по Pro-доступу.",
       "proLockedHint": "Доступ выдаёт администратор. Напишите нам, если хотите подключить.",
@@ -3744,13 +3747,30 @@
       "supporter": "Поддержал проект. Пользователь, который финансово или иным способом поддержал развитие FilamentHub."
     }
   },
+  "adminSubscriptions": {
+    "title": "Подписки"
+  },
+  "subscription": {
+    "title": "Подписка",
+    "admin": "Администратор — полный доступ",
+    "pro": "Pro",
+    "trial": "Пробный доступ",
+    "ended": "Доступ закончился",
+    "daysLeft": "осталось {{days}} дн.",
+    "proBenefit": "Pro — профессиональный калькулятор себестоимости и коммерческих предложений.",
+    "upgrade": "Оформить Pro",
+    "soon": "скоро"
+  },
   "adminMaintenance": {
-    "calcPromoTitle": "Калькулятор — акция для всех",
-    "calcPromoHint": "Когда включено, калькулятор бесплатно доступен всем пользователям (в обход Pro-доступа).",
-    "calcPromoOn": "Акция включена — калькулятор бесплатен для всех",
-    "calcPromoOff": "Акция выключена — калькулятор только для Pro",
-    "calcPromoEnableBtn": "Включить акцию",
-    "calcPromoDisableBtn": "Выключить акцию",
+    "calcTitle": "Доступ к калькулятору",
+    "calcPaidOn": "Платный доступ",
+    "calcPaidOff": "Открыт всем",
+    "calcEnable": "Сделать платным",
+    "calcDisable": "Открыть всем",
+    "calcTrial": "Триал, дней",
+    "calcSave": "Сохранить",
+    "calcCounts": "{{trialing}} на триале · {{active}} платных",
+    "calcAdminNote": "Админы всегда с доступом",
     "title": "Технические работы",
     "loadingStatus": "Загрузка статуса...",
     "loadError": "Не удалось загрузить статус технических работ",

@@ -740,6 +740,7 @@
       "notifications": "Notifications",
       "stats": "Statistics",
       "database": "Database",
+      "subscriptions": "Subscriptions",
       "maintenance": "Maintenance",
       "wiki": "Wiki"
     },
@@ -754,6 +755,7 @@
       "notifications": "Notifications",
       "stats": "Stats",
       "database": "DB",
+      "subscriptions": "Subs",
       "maintenance": "Maint.",
       "wiki": "Wiki"
     },
@@ -2324,6 +2326,7 @@
     "quoteClose": "Close",
     "quotePopupBlocked": "The browser blocked the print window. Allow pop-ups for FilamentHub.",
     "quoteDefaultItemTitle": "3D printing service",
+    "trialBanner": "Trial — {{days}} days left",
     "proLockedTitle": "Calculator is a Pro feature",
     "proLockedDescription": "The professional cost & quote calculator is available with Pro access.",
     "proLockedHint": "Access is granted by an administrator. Contact us to enable it.",
@@ -3613,13 +3616,30 @@
       "supporter": "Project supporter. User who financially or otherwise supported the development of FilamentHub."
     }
   },
+  "adminSubscriptions": {
+    "title": "Subscriptions"
+  },
+  "subscription": {
+    "title": "Subscription",
+    "admin": "Administrator — full access",
+    "pro": "Pro",
+    "trial": "Trial",
+    "ended": "Access ended",
+    "daysLeft": "{{days}} days left",
+    "proBenefit": "Pro — the professional cost & quote calculator.",
+    "upgrade": "Get Pro",
+    "soon": "soon"
+  },
   "adminMaintenance": {
-    "calcPromoTitle": "Calculator — promo for everyone",
-    "calcPromoHint": "When enabled, the calculator is free for all users (bypasses Pro access).",
-    "calcPromoOn": "Promo on — calculator is free for everyone",
-    "calcPromoOff": "Promo off — calculator is Pro-only",
-    "calcPromoEnableBtn": "Enable promo",
-    "calcPromoDisableBtn": "Disable promo",
+    "calcTitle": "Calculator access",
+    "calcPaidOn": "Paid",
+    "calcPaidOff": "Open to all",
+    "calcEnable": "Make paid",
+    "calcDisable": "Open to all",
+    "calcTrial": "Trial, days",
+    "calcSave": "Save",
+    "calcCounts": "{{trialing}} on trial · {{active}} paid",
+    "calcAdminNote": "Admins always have access",
     "title": "Maintenance Mode",
     "loadingStatus": "Loading status...",
     "loadError": "Failed to load maintenance status",

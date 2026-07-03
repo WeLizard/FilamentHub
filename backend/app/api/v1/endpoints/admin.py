@@ -59,6 +59,7 @@ from app.models.notification import NotificationType
 from app.models.preset import Preset, PresetModerationStatus
 from app.models.printer import Printer
 from app.models.printer_request import PrinterRequest, PrinterRequestStatus
+from app.models.subscription import Subscription, SubscriptionStatus
 from app.models.user import User, UserRole
 from app.schemas.bad_word import BadWordCreate, BadWordListResponse, BadWordResponse, BadWordUpdate
 from app.schemas.brand import BrandListResponse, BrandResponse, BrandUpdate
@@ -94,10 +95,6 @@ from app.schemas.printer_request import (
     PrinterRequestUpdate,
 )
 from app.schemas.user import UserResponse
-from app.services.calculator_promo_service import (
-    get_calculator_promo,
-    set_calculator_promo,
-)
 from app.services.database_service import (
     apply_migration as apply_migration_service,
 )
@@ -147,6 +144,13 @@ from app.services.notification_service import (
     notify_brand_request_approved,
     notify_brand_request_rejected,
     notify_brand_verified,
+)
+from app.services.subscription_service import (
+    get_or_create_subscription,
+    paywall_enforced,
+    set_paywall_enforced,
+    set_trial_days,
+    trial_days,
 )
 
 logger = logging.getLogger(__name__)
@@ -475,7 +479,7 @@ async def list_users(
     """Получить список пользователей."""
     from sqlalchemy.orm import selectinload
 
-    query = select(User).options(selectinload(User.brand))
+    query = select(User).options(selectinload(User.brand), selectinload(User.subscription))
 
     if active_only:
         query = query.where(User.active == True)
@@ -2209,7 +2213,7 @@ async def set_maintenance_status(
 
 
 # ============================================================================
-# Calculator Pro access
+# Calculator Pro / subscriptions
 # ============================================================================
 
 @router.patch("/users/{user_id}/pro-access", response_model=UserResponse)
@@ -2217,41 +2221,68 @@ async def set_user_pro_access(
     user_id: int,
     admin: Annotated[User, Depends(get_current_admin_user)],
     db: Annotated[AsyncSession, Depends(get_db)],
-    pro_access: bool = Body(..., embed=True, description="Выдать/отозвать Pro-доступ к калькулятору"),
-    pro_expires_at: datetime | None = Body(None, embed=True, description="Дата истечения (триал). null = бессрочно"),
+    grant: bool = Body(..., embed=True, description="Выдать (true) / отозвать (false) комплиментарный Pro"),
 ) -> UserResponse:
-    """Выдать/отозвать пользователю Pro-доступ к калькулятору (опц. дата истечения — триал)."""
-    result = await db.execute(select(User).where(User.id == user_id))
+    """Выдать/отозвать комплиментарный (ручной, без оплаты) Pro-доступ к калькулятору."""
+    from sqlalchemy.orm import selectinload
+
+    result = await db.execute(
+        select(User).options(selectinload(User.subscription)).where(User.id == user_id)
+    )
     user = result.scalar_one_or_none()
     if not user:
         raise_error(status.HTTP_404_NOT_FOUND, ERR_USER_NOT_FOUND)
 
-    user.pro_access = pro_access
-    user.pro_expires_at = pro_expires_at if pro_access else None
+    sub = await get_or_create_subscription(db, user)
+    if grant:
+        sub.status = SubscriptionStatus.ACTIVE
+        sub.is_comp = True
+        sub.current_period_end = None  # complimentary — never expires
+    else:
+        sub.status = SubscriptionStatus.TRIALING
+        sub.is_comp = False
+        sub.current_period_end = None
     await db.commit()
-    await db.refresh(user)
+    await db.refresh(user, attribute_names=["subscription"])
 
-    logger.info(f"Admin {admin.id} set pro_access={pro_access} (expires={pro_expires_at}) for user {user_id}")
+    logger.info(f"Admin {admin.id} {'granted' if grant else 'revoked'} comp Pro for user {user_id}")
     return UserResponse.model_validate(user)
 
 
-@router.get("/calculator-promo", response_model=dict)
-async def get_calculator_promo_status(
-    admin: User = Depends(get_current_admin_user),
+@router.get("/calculator-settings", response_model=dict)
+async def get_calculator_settings(
+    admin: Annotated[User, Depends(get_current_admin_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
 ) -> dict:
-    """Статус глобальной акции «калькулятор бесплатно для всех»."""
-    return {"enabled": get_calculator_promo()}
+    """Настройки калькулятора: платный доступ, длина триала (дней; null = бессрочно) + счётчики подписок."""
+    trialing = await db.scalar(
+        select(func.count(Subscription.id)).where(Subscription.status == SubscriptionStatus.TRIALING)
+    )
+    active = await db.scalar(
+        select(func.count(Subscription.id)).where(Subscription.status == SubscriptionStatus.ACTIVE)
+    )
+    return {
+        "paywall_enforced": paywall_enforced(),
+        "trial_days": trial_days(),
+        "counts": {"trialing": trialing or 0, "active": active or 0},
+    }
 
 
-@router.post("/calculator-promo", response_model=dict)
-async def set_calculator_promo_status(
-    enabled: bool = Body(..., embed=True, description="Калькулятор бесплатно для всех"),
-    admin: User = Depends(get_current_admin_user),
+@router.post("/calculator-settings", response_model=dict)
+async def update_calculator_settings(
+    admin: Annotated[User, Depends(get_current_admin_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+    paywall_enforced_value: bool = Body(..., alias="paywall_enforced", embed=True),
+    trial_days_value: int | None = Body(None, alias="trial_days", embed=True),
 ) -> dict:
-    """Включить/выключить глобальную акцию (калькулятор бесплатно всем)."""
-    set_calculator_promo(enabled)
-    logger.info(f"Admin {admin.id} {'enabled' if enabled else 'disabled'} calculator free-for-all promo")
-    return {"enabled": get_calculator_promo()}
+    """Изменить глобальные настройки калькулятора (рубильник пейволла + длина триала)."""
+    await set_paywall_enforced(db, paywall_enforced_value)
+    await set_trial_days(db, trial_days_value)
+    logger.info(
+        f"Admin {admin.id} set calculator settings: paywall_enforced={paywall_enforced_value}, "
+        f"trial_days={trial_days_value}"
+    )
+    return {"paywall_enforced": paywall_enforced(), "trial_days": trial_days()}
 
 
 # ==================== Wiki Sync ====================

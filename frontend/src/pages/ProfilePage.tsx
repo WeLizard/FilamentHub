@@ -63,6 +63,7 @@ import { toast } from '../components/Toast';
 import { OrcaSettingsView } from '../components/OrcaSettingsView';
 import { CreatePrinterRequestModal } from '../components/CreatePrinterRequestModal';
 import { SettingsTab } from '../components/SettingsTab';
+import { SubscriptionCard } from '../components/SubscriptionCard';
 import { ExportFromOrcaSlicerButton } from '../components/ExportFromOrcaSlicerButton';
 import { ExportPrinterProfilesButton } from '../components/ExportPrinterProfilesButton';
 const CreatePrinterProfileModal = lazy(() =>
@@ -660,7 +661,7 @@ export const ProfilePage: React.FC = () => {
               { id: 'settings' as const, label: t('profilePage.tabs.settings'), shortLabel: t('profilePage.tabs.settingsShort'), icon: Cog },
             ]).map((tab) => {
               const isPremiumTab = tab.premium === true;
-              const hasCalculatorProAccess = true;
+              const hasCalculatorProAccess = user?.has_calculator_access ?? false;
               const isLocked = isPremiumTab && !hasCalculatorProAccess;
               
               return (
@@ -699,6 +700,7 @@ export const ProfilePage: React.FC = () => {
       {/* Dashboard Tab */}
       {userTab === 'dashboard' && (
         <div className="space-y-4 md:space-y-6">
+          {user && <SubscriptionCard user={user} />}
           {/* Stats Cards */}
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-6">
             <StatCard
@@ -861,24 +863,7 @@ export const ProfilePage: React.FC = () => {
       {/* Print Calculator Tab */}
       {userTab === 'calculator-pro' && (
         <div className="max-w-7xl mx-auto">
-          {true ? (
-            <CalculatorPage />
-          ) : (
-            <div className="flex flex-col items-center justify-center py-20">
-              <div className="p-6 bg-purple-600/20 rounded-full mb-6">
-                <Lock className="w-16 h-16 text-purple-400" />
-              </div>
-              <h2 className="text-3xl font-bold text-white mb-4">
-                {t('profilePage.premiumRequired')}
-              </h2>
-              <p className="text-gray-400 mb-8 text-center max-w-md">
-                {t('profilePage.premiumCalculatorDesc')}
-              </p>
-              <button className="px-8 py-4 bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-500 hover:to-pink-500 text-white font-bold rounded-xl shadow-lg shadow-purple-500/25 transition-all">
-                {t('profilePage.getPremium')}
-              </button>
-            </div>
-          )}
+          <CalculatorPage />
         </div>
       )}
 

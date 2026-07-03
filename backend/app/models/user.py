@@ -19,6 +19,7 @@ if TYPE_CHECKING:
     from app.models.preset import Preset
     from app.models.print_profile import PrintProfile
     from app.models.printer_profile import PrinterProfile
+    from app.models.subscription import Subscription
     from app.models.sync_device import SyncDevice
     from app.models.user_printer_device import UserPrinterDevice
     from app.models.user_saved_preset import UserSavedPreset
@@ -81,10 +82,6 @@ class User(Base):
     # Wiki editing permission
     can_edit_wiki: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
 
-    # Calculator Pro access (admin-granted). pro_expires_at NULL = permanent, set = trial/promo until that time.
-    pro_access: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
-    pro_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-
     # Badges (список строк: ["founder", "beta_tester", "contributor", "verified"])
     badges: Mapped[list[str] | None] = mapped_column(JSON, nullable=True)
     # badges:
@@ -145,6 +142,9 @@ class User(Base):
     )
     spools: Mapped[list["UserSpool"]] = relationship(
         "UserSpool", back_populates="user", cascade="all, delete-orphan"
+    )
+    subscription: Mapped["Subscription | None"] = relationship(
+        "Subscription", back_populates="user", uselist=False, cascade="all, delete-orphan"
     )
 
     def __repr__(self) -> str:

@@ -31,6 +31,21 @@ app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 app.add_middleware(SlowAPIMiddleware)
 
+
+@app.on_event("startup")
+async def _warm_app_settings_cache() -> None:
+    """Load global settings (paywall_enforced, trial_days) so sync serialization has current values."""
+    import logging as _logging
+
+    from app.db.session import AsyncSessionLocal
+    from app.services.subscription_service import refresh_settings_cache
+
+    try:
+        async with AsyncSessionLocal() as db:
+            await refresh_settings_cache(db)
+    except Exception:
+        _logging.getLogger(__name__).warning("Failed to warm app-settings cache", exc_info=True)
+
 # Maintenance mode middleware (должен быть перед CORS для блокировки запросов)
 app.add_middleware(MaintenanceMiddleware)
 

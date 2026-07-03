@@ -1333,23 +1333,26 @@ export const adminAPI = {
     return response.data;
   },
 
-  // Calculator Pro access
-  setUserProAccess: async (userId: number, proAccess: boolean, proExpiresAt?: string | null): Promise<User> => {
-    const response = await api.patch<User>(`/admin/users/${userId}/pro-access`, {
-      pro_access: proAccess,
-      pro_expires_at: proExpiresAt ?? null,
-    });
+  // Calculator Pro / subscriptions
+  setUserProAccess: async (userId: number, grant: boolean): Promise<User> => {
+    const response = await api.patch<User>(`/admin/users/${userId}/pro-access`, { grant });
     return response.data;
   },
 
-  getCalculatorPromo: async (): Promise<boolean> => {
-    const response = await api.get<{ enabled: boolean }>('/admin/calculator-promo');
-    return Boolean(response.data.enabled);
+  getCalculatorSettings: async (): Promise<{ paywall_enforced: boolean; trial_days: number | null }> => {
+    const response = await api.get<{ paywall_enforced: boolean; trial_days: number | null }>('/admin/calculator-settings');
+    return response.data;
   },
 
-  setCalculatorPromo: async (enabled: boolean): Promise<boolean> => {
-    const response = await api.post<{ enabled: boolean }>('/admin/calculator-promo', { enabled });
-    return Boolean(response.data.enabled);
+  updateCalculatorSettings: async (
+    paywallEnforced: boolean,
+    trialDays: number | null,
+  ): Promise<{ paywall_enforced: boolean; trial_days: number | null }> => {
+    const response = await api.post<{ paywall_enforced: boolean; trial_days: number | null }>(
+      '/admin/calculator-settings',
+      { paywall_enforced: paywallEnforced, trial_days: trialDays },
+    );
+    return response.data;
   },
 
   // Notifications

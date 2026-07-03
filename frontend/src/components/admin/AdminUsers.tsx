@@ -48,10 +48,10 @@ export function AdminUsers() {
     },
   });
 
-  // Pro-доступ к калькулятору (выдать/отозвать, бессрочно)
+  // Комплиментарный Pro-доступ к калькулятору (выдать/отозвать)
   const proAccessMutation = useMutation({
-    mutationFn: ({ userId, proAccess }: { userId: number; proAccess: boolean }) =>
-      adminAPI.setUserProAccess(userId, proAccess),
+    mutationFn: ({ userId, grant }: { userId: number; grant: boolean }) =>
+      adminAPI.setUserProAccess(userId, grant),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['admin-users'] });
     },
@@ -304,15 +304,15 @@ export function AdminUsers() {
                   </button>
                   {user.role !== 'admin' && (
                     <button
-                      onClick={() => proAccessMutation.mutate({ userId: user.id, proAccess: !user.pro_access })}
+                      onClick={() => proAccessMutation.mutate({ userId: user.id, grant: !user.subscription?.is_comp })}
                       disabled={proAccessMutation.isPending}
                       className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg transition-all disabled:opacity-50 text-sm ${
-                        user.pro_access ? 'bg-cyan-600 hover:bg-cyan-700 text-white' : 'bg-white/10 hover:bg-white/20 text-gray-200'
+                        user.subscription?.is_comp ? 'bg-cyan-600 hover:bg-cyan-700 text-white' : 'bg-white/10 hover:bg-white/20 text-gray-200'
                       }`}
                       title={t('adminUsers.proAccessTitle')}
                     >
                       <Calculator className="w-4 h-4" />
-                      <span>{user.pro_access ? t('adminUsers.proOn') : t('adminUsers.proOff')}</span>
+                      <span>{user.subscription?.is_comp ? t('adminUsers.proOn') : t('adminUsers.proOff')}</span>
                     </button>
                   )}
                   {!user.brand_id ? (

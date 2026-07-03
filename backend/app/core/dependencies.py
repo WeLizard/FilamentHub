@@ -7,6 +7,7 @@ from fastapi import Depends, Header, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.core.config import settings
 from app.core.errors import (
@@ -96,7 +97,9 @@ async def get_current_user(
         logger.warning("JWT token payload missing 'sub' field (preview: %s)", token_preview)
         raise_error(status.HTTP_401_UNAUTHORIZED, ERR_COULD_NOT_VALIDATE, headers={"WWW-Authenticate": "Bearer"})
 
-    result = await db.execute(select(User).where(User.email == email))
+    result = await db.execute(
+        select(User).options(selectinload(User.subscription)).where(User.email == email)
+    )
     user = result.scalar_one_or_none()
 
     if user is None:
@@ -185,10 +188,10 @@ async def get_current_admin_user(
 async def require_calculator_access(
     current_user: Annotated[User, Depends(get_current_active_user)],
 ) -> User:
-    """Require effective calculator (Pro) access: admin, global promo, or a valid per-user grant."""
-    from app.services.calculator_promo_service import user_has_calculator_access
+    """Require effective calculator (Pro) access — see subscription_service.pro_active."""
+    from app.services.subscription_service import pro_active
 
-    if not user_has_calculator_access(current_user):
+    if not pro_active(current_user):
         raise_error(status.HTTP_403_FORBIDDEN, ERR_CALCULATOR_ACCESS_REQUIRED)
     return current_user
 

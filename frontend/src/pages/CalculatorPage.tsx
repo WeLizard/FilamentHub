@@ -1820,8 +1820,19 @@ export const CalculatorPage: React.FC = () => {
     );
   }
 
+  const trialEndsAt = user?.subscription?.status === 'trialing' ? user?.subscription?.trial_ends_at ?? null : null;
+  const trialDaysLeft = trialEndsAt
+    ? Math.max(0, Math.ceil((new Date(trialEndsAt).getTime() - Date.now()) / 86_400_000))
+    : null;
+
   return (
     <div className="space-y-6">
+      {trialDaysLeft !== null && (
+        <div className="flex items-center gap-2 rounded-2xl border border-cyan-400/20 bg-cyan-500/10 px-5 py-3 text-sm text-cyan-200">
+          <Clock className="h-4 w-4 shrink-0" />
+          <span>{t('profilePage.calculator.trialBanner', { days: trialDaysLeft })}</span>
+        </div>
+      )}
       <section className="relative overflow-hidden rounded-[2rem] bg-[linear-gradient(180deg,rgba(15,23,42,0.88),rgba(15,23,42,0.72))] shadow-[0_30px_90px_-50px_rgba(15,23,42,0.95)] backdrop-blur-xl ring-1 ring-white/5">
         <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top_left,rgba(34,211,238,0.18),transparent_34%),radial-gradient(circle_at_85%_18%,rgba(251,191,36,0.16),transparent_28%),radial-gradient(circle_at_50%_120%,rgba(16,185,129,0.12),transparent_42%)]" />
         <div className="relative px-6 py-7 md:px-8 md:py-8">

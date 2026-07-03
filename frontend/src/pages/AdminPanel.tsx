@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import { Shield, FileText, Building2, Users, BarChart3, CheckCircle, Home, Package, User, LogOut, Database, MessageCircle, Send, Settings, BookOpen } from 'lucide-react';
+import { Shield, FileText, Building2, Users, BarChart3, CheckCircle, Home, Package, User, LogOut, Database, MessageCircle, Send, Settings, BookOpen, Sparkles } from 'lucide-react';
 import { Printer3DIcon } from '../components/icons/Printer3DIcon';
 import { useAuth } from '../contexts/AuthContext';
 import { AdminBrandRequests } from '../components/admin/AdminBrandRequests';
@@ -18,8 +18,9 @@ import { AdminFeedback } from '../components/admin/AdminFeedback';
 import { AdminNotifications } from '../components/admin/AdminNotifications';
 import { AdminMaintenance } from '../components/admin/AdminMaintenance';
 import { AdminWiki } from '../components/admin/AdminWiki';
+import { AdminSubscriptions } from '../components/admin/AdminSubscriptions';
 
-type AdminTab = 'requests' | 'brands' | 'presets' | 'users' | 'stats' | 'printers' | 'printer-requests' | 'feedback' | 'notifications' | 'database' | 'maintenance' | 'wiki';
+type AdminTab = 'requests' | 'brands' | 'presets' | 'users' | 'stats' | 'printers' | 'printer-requests' | 'feedback' | 'notifications' | 'database' | 'maintenance' | 'wiki' | 'subscriptions';
 
 export function AdminPanel() {
   const { t } = useTranslation();
@@ -56,6 +57,7 @@ export function AdminPanel() {
     { id: 'wiki' as AdminTab, label: t('adminPanel.tabs.wiki'), shortLabel: t('adminPanel.shortTabs.wiki'), icon: BookOpen, count: null },
     { id: 'stats' as AdminTab, label: t('adminPanel.tabs.stats'), shortLabel: t('adminPanel.shortTabs.stats'), icon: BarChart3, count: null },
     { id: 'database' as AdminTab, label: t('adminPanel.tabs.database'), shortLabel: t('adminPanel.shortTabs.database'), icon: Database, count: null },
+    { id: 'subscriptions' as AdminTab, label: t('adminPanel.tabs.subscriptions'), shortLabel: t('adminPanel.shortTabs.subscriptions'), icon: Sparkles, count: null },
     { id: 'maintenance' as AdminTab, label: t('adminPanel.tabs.maintenance'), shortLabel: t('adminPanel.shortTabs.maintenance'), icon: Settings, count: null },
   ];
 
@@ -142,6 +144,7 @@ export function AdminPanel() {
           {activeTab === 'wiki' && <AdminWiki />}
           {activeTab === 'stats' && <AdminStats />}
           {activeTab === 'database' && <AdminDatabase />}
+          {activeTab === 'subscriptions' && <AdminSubscriptions />}
           {activeTab === 'maintenance' && <AdminMaintenance />}
         </div>
       </div>
