@@ -3225,7 +3225,7 @@ const QRCodeCard: React.FC<QRCodeCardProps> = ({ filament }) => {
         {filament.qr_code && (
           <div className="w-12 h-12 bg-white rounded p-1">
             <img
-              src={qrAPI.getQRCodeURL(filament.id, 48)}
+              src={qrAPI.getQRCodeURL(filament.id, 128)}
               alt={`QR Code ${shortCode}`}
               className="w-full h-full"
             />
