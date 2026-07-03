@@ -851,7 +851,7 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({ onBack }) =>
                 {filaments
                   .filter(f => f.qr_code)
                   .map((filament) => (
-                    <QRCodeCard key={filament.id} filament={filament} />
+                    <QRCodeCard key={filament.id} filament={filament} onOpen={setShowQRFilament} />
                   ))}
               </div>
             ) : (
@@ -3252,9 +3252,10 @@ const FilamentCard: React.FC<FilamentCardProps> = ({ filament, onEdit, onDelete,
 
 interface QRCodeCardProps {
   filament: Filament;
+  onOpen: (filament: Filament) => void;
 }
 
-const QRCodeCard: React.FC<QRCodeCardProps> = ({ filament }) => {
+const QRCodeCard: React.FC<QRCodeCardProps> = ({ filament, onOpen }) => {
   const { t } = useTranslation();
   // Используем реальный QR-код из филамента
   const shortCode = filament.qr_code || null;
@@ -3270,10 +3271,15 @@ const QRCodeCard: React.FC<QRCodeCardProps> = ({ filament }) => {
 
   return (
     <div className="flex items-center justify-between p-4 bg-white/5 rounded-xl hover:bg-white/10 transition-all">
-      <div className="flex items-center space-x-4">
+      <button
+        type="button"
+        onClick={() => onOpen(filament)}
+        className="flex flex-1 items-center space-x-4 text-left min-w-0"
+        title={t('brandProfile.materialQRCode')}
+      >
         {/* QR Code Preview */}
         {filament.qr_code && (
-          <div className="w-12 h-12 bg-white rounded p-1">
+          <div className="w-12 h-12 bg-white rounded p-1 shrink-0">
             <img
               src={qrAPI.getQRCodeURL(filament.id, 128)}
               alt={`QR Code ${shortCode}`}
@@ -3281,11 +3287,11 @@ const QRCodeCard: React.FC<QRCodeCardProps> = ({ filament }) => {
             />
           </div>
         )}
-        <div>
-          <p className="text-white font-medium">{filament.name}</p>
-          <p className="text-gray-400 text-sm font-mono">{shortCode}</p>
+        <div className="min-w-0">
+          <p className="text-white font-medium truncate">{filament.name}</p>
+          <p className="text-gray-400 text-sm font-mono truncate">{shortCode}</p>
         </div>
-      </div>
+      </button>
       <div className="flex items-center space-x-4">
         <div className="text-right">
           <p className="text-white font-semibold">{filament.scans_count || 0}</p>
