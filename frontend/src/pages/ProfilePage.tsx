@@ -548,8 +548,8 @@ export const ProfilePage: React.FC = () => {
     return (
       <div>
         {/* Переключатель профилей */}
-        <div className="flex justify-center mb-4 min-[1140px]:mb-0 relative z-10">
-          <div className="flex bg-white/10 rounded-lg p-1 border border-white/20">
+        <div className="flex justify-center mb-4 min-[1140px]:mb-0 relative z-10 pointer-events-none">
+          <div className="flex bg-white/10 rounded-lg p-1 border border-white/20 pointer-events-auto">
             <button
               onClick={() => setShowBrandCabinet(false)}
               className="flex items-center space-x-2 px-6 py-2 rounded-lg transition-all text-gray-300 hover:text-white"
