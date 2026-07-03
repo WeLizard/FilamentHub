@@ -548,7 +548,7 @@ export const ProfilePage: React.FC = () => {
     return (
       <div>
         {/* Переключатель профилей */}
-        <div className="flex justify-center mb-4 md:mb-0 relative z-10">
+        <div className="flex justify-center mb-4 min-[1140px]:mb-0 relative z-10">
           <div className="flex bg-white/10 rounded-lg p-1 border border-white/20">
             <button
               onClick={() => setShowBrandCabinet(false)}
@@ -569,7 +569,7 @@ export const ProfilePage: React.FC = () => {
           </div>
         </div>
         
-        <div className={user.brand_id ? 'md:-mt-14' : 'md:mt-12'}>
+        <div className={user.brand_id ? 'min-[1140px]:-mt-14' : 'md:mt-12'}>
           <BrandProfilePage onBack={() => setShowBrandCabinet(false)} />
         </div>
       </div>
@@ -609,7 +609,7 @@ export const ProfilePage: React.FC = () => {
       </div>
       
       {/* Header — компактная строка: аватар + имя·роль + ачивки (без крупного «Мой профиль») */}
-      <div className="mb-4 md:mb-6 md:!-mt-16">
+      <div className="mb-4 md:mb-6 min-[1140px]:!-mt-16">
         <div className="flex items-center gap-3 mb-3 md:mb-4">
           <label className="group/avatar relative w-11 h-11 md:w-14 md:h-14 shrink-0 rounded-xl overflow-hidden cursor-pointer shadow-lg shadow-purple-500/25" title={t('profilePage.avatarUpload')}>
             {user.avatar_url ? (
