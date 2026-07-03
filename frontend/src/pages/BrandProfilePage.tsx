@@ -2065,7 +2065,7 @@ const BrandSelectionForm: React.FC = () => {
 
   if (isCreatingNew) {
     return (
-      <div className="max-w-2xl mx-auto">
+      <div className="max-w-4xl mx-auto">
         <div className="bg-white/10 backdrop-blur-sm rounded-2xl p-8 border border-white/20 shadow-xl">
           <div className="flex items-center justify-between mb-6">
             <h2 className="text-2xl font-bold text-white flex items-center">
@@ -2101,6 +2101,7 @@ const BrandSelectionForm: React.FC = () => {
           </div>
 
           <form onSubmit={handleCreateBrandRequest} className="space-y-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
               <label className="block text-gray-300 mb-2 text-sm font-medium">
                 {t('brandProfile.brandName')} *
@@ -2139,6 +2140,7 @@ const BrandSelectionForm: React.FC = () => {
               <p className="mt-1 text-xs text-gray-400">
                 {t('brandProfile.slugHint')}
               </p>
+            </div>
             </div>
 
             <div>
