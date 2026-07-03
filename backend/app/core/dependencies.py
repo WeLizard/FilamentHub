@@ -12,6 +12,7 @@ from app.core.config import settings
 from app.core.errors import (
     ERR_ACCESS_DENIED,
     ERR_AUTH_REQUIRED,
+    ERR_CALCULATOR_ACCESS_REQUIRED,
     ERR_COULD_NOT_VALIDATE,
     ERR_INVALID_API_KEY,
     ERR_NOT_ADMIN,
@@ -178,6 +179,17 @@ async def get_current_admin_user(
     """Get current user with admin role."""
     if current_user.role != UserRole.ADMIN:
         raise_error(status.HTTP_403_FORBIDDEN, ERR_NOT_ADMIN)
+    return current_user
+
+
+async def require_calculator_access(
+    current_user: Annotated[User, Depends(get_current_active_user)],
+) -> User:
+    """Require effective calculator (Pro) access: admin, global promo, or a valid per-user grant."""
+    from app.services.calculator_promo_service import user_has_calculator_access
+
+    if not user_has_calculator_access(current_user):
+        raise_error(status.HTTP_403_FORBIDDEN, ERR_CALCULATOR_ACCESS_REQUIRED)
     return current_user
 
 

@@ -2321,6 +2321,9 @@
     "quoteClose": "关闭",
     "quotePopupBlocked": "浏览器阻止了打印窗口。允许FilamentHub的弹窗。",
     "quoteDefaultItemTitle": "3D打印服务",
+    "proLockedTitle": "计算器为 Pro 功能",
+    "proLockedDescription": "专业的成本与报价计算器需要 Pro 访问权限。",
+    "proLockedHint": "由管理员授予访问权限。如需联系我们开通。",
     "quoteSlicer": "切片机",
     "quoteWeight": "重量",
     "quotePrintTime": "打印时间",
@@ -3550,6 +3553,9 @@
     "deleteAccountButton": "删除账户"
   },
   "adminUsers": {
+    "proAccessTitle": "计算器 Pro 访问（授予/撤销）",
+    "proOn": "Pro ✓",
+    "proOff": "Pro",
     "title": "用户管理",
     "total": "总计",
     "loading": "加载用户中...",
@@ -3603,6 +3609,12 @@
     }
   },
   "adminMaintenance": {
+    "calcPromoTitle": "计算器 — 全员优惠",
+    "calcPromoHint": "启用后，计算器对所有用户免费（绕过 Pro 访问）。",
+    "calcPromoOn": "优惠已开启 — 计算器对所有人免费",
+    "calcPromoOff": "优惠已关闭 — 计算器仅限 Pro",
+    "calcPromoEnableBtn": "开启优惠",
+    "calcPromoDisableBtn": "关闭优惠",
     "title": "维护模式",
     "loadingStatus": "加载状态中...",
     "loadError": "无法加载维护状态",
@@ -4444,6 +4456,7 @@
     "ERR_USER_INACTIVE": "用户未激活",
     "ERR_NOT_BRAND_USER": "您不是品牌代表",
     "ERR_NOT_ADMIN": "需要管理员权限",
+    "ERR_CALCULATOR_ACCESS_REQUIRED": "计算器需要 Pro 访问权限",
     "ERR_INVALID_API_KEY": "无效的 API 密钥",
     "ERR_EMAIL_DOMAIN_TYPO": "您的意思是 @{{domain}} 吗？",
     "ERR_DOMAIN_NO_MAIL": "域名 @{{domain}} 无法接收邮件",

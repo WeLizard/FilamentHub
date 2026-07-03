@@ -5,7 +5,7 @@ from httpx import AsyncClient
 
 
 @pytest.mark.asyncio
-async def test_calculator_estimate_basic(client: AsyncClient):
+async def test_calculator_estimate_basic(admin_client: AsyncClient):
     """Test basic cost estimation by weight without electricity."""
     request_data = {
         "pricing_method": "by_weight",
@@ -13,7 +13,7 @@ async def test_calculator_estimate_basic(client: AsyncClient):
         "spool_price": 800.0,
         "spool_weight_kg": 1.0,
     }
-    response = await client.post(
+    response = await admin_client.post(
         "/api/v1/calculator/estimate", json=request_data
     )
     assert response.status_code == 200
@@ -29,7 +29,7 @@ async def test_calculator_estimate_basic(client: AsyncClient):
 
 
 @pytest.mark.asyncio
-async def test_calculator_estimate_with_electricity(client: AsyncClient):
+async def test_calculator_estimate_with_electricity(admin_client: AsyncClient):
     """Test cost estimation with electricity cost."""
     request_data = {
         "pricing_method": "by_weight",
@@ -40,7 +40,7 @@ async def test_calculator_estimate_with_electricity(client: AsyncClient):
         "printer_power_w": 200.0,
         "electricity_cost_per_kwh": 5.5,
     }
-    response = await client.post(
+    response = await admin_client.post(
         "/api/v1/calculator/estimate", json=request_data
     )
     assert response.status_code == 200
@@ -56,29 +56,57 @@ async def test_calculator_estimate_with_electricity(client: AsyncClient):
 
 
 @pytest.mark.asyncio
-async def test_calculator_estimate_validation(client: AsyncClient):
+async def test_calculator_estimate_validation(admin_client: AsyncClient):
     """Test calculator input validation."""
     # Test with negative weight
     request_data = {
         "weight_g": -100.0,
         "price_per_kg": 800.0,
     }
-    response = await client.post(
+    response = await admin_client.post(
         "/api/v1/calculator/estimate", json=request_data
     )
     assert response.status_code == 422  # Validation error
 
 
 @pytest.mark.asyncio
-async def test_calculator_estimate_missing_required(client: AsyncClient):
+async def test_calculator_estimate_missing_required(admin_client: AsyncClient):
     """Test by_weight estimation fails (400) when weight is missing."""
     request_data = {
         "pricing_method": "by_weight",
         "spool_price": 800.0,
         "spool_weight_kg": 1.0,
     }
-    response = await client.post(
+    response = await admin_client.post(
         "/api/v1/calculator/estimate", json=request_data
     )
     assert response.status_code == 400  # Runtime validation: weight required
+
+
+_ACCESS_REQUEST = {
+    "pricing_method": "by_weight",
+    "weight_g": 100.0,
+    "spool_price": 800.0,
+    "spool_weight_kg": 1.0,
+}
+
+
+@pytest.mark.asyncio
+async def test_calculator_estimate_anonymous_401(client: AsyncClient):
+    """Calculator is Pro-only: anonymous request → 401."""
+    from app.services.calculator_promo_service import set_calculator_promo
+
+    set_calculator_promo(False)
+    response = await client.post("/api/v1/calculator/estimate", json=_ACCESS_REQUEST)
+    assert response.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_calculator_estimate_forbidden_without_access(auth_client: AsyncClient):
+    """Calculator is Pro-only: authenticated user without Pro access → 403."""
+    from app.services.calculator_promo_service import set_calculator_promo
+
+    set_calculator_promo(False)
+    response = await auth_client.post("/api/v1/calculator/estimate", json=_ACCESS_REQUEST)
+    assert response.status_code == 403
 

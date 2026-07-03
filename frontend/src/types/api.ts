@@ -376,11 +376,11 @@ export interface User {
   brand_name: string | null; // Название бренда (для админки)
   printer_id: number | null; // ID выбранного принтера из каталога
   badges: string[] | null; // Бейджи пользователя (founder, beta_tester, contributor, verified, early_adopter, supporter)
-  // Premium-подписка: задел под будущую платную подписку на калькулятор.
-  // Сейчас калькулятор бесплатен и доступен всем, бэкенд эти поля пока не отдаёт —
-  // раскомментировать вместе с бэкендом, когда подписка будет включаться.
-  // is_premium: boolean;
-  // premium_expires_at: string | null;
+  // Calculator Pro access (admin-granted). pro_expires_at null = бессрочно, дата = триал.
+  // has_calculator_access — эффективный доступ (админ / глобальная акция / валидный грант).
+  pro_access?: boolean;
+  pro_expires_at?: string | null;
+  has_calculator_access?: boolean;
   oauth_provider: string | null; // OAuth provider (google, yandex) или null
   has_password: boolean; // false для OAuth-пользователей без пароля
   created_at: string;

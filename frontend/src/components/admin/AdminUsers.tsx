@@ -4,7 +4,7 @@ import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { ModalOverlay } from '../ModalOverlay';
-import { Users, Shield, CheckCircle, XCircle, Unlink, Link2, Factory, Check, Award } from 'lucide-react';
+import { Users, Shield, CheckCircle, XCircle, Unlink, Link2, Factory, Check, Award, Calculator } from 'lucide-react';
 import { adminAPI, brandsAPI } from '../../api/client';
 import { translateApiError } from '../../utils/translateApiError';
 import { Dropdown } from '../Dropdown';
@@ -43,6 +43,15 @@ export function AdminUsers() {
   // Деактивация пользователя
   const deactivateMutation = useMutation({
     mutationFn: (userId: number) => adminAPI.deactivateUser(userId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['admin-users'] });
+    },
+  });
+
+  // Pro-доступ к калькулятору (выдать/отозвать, бессрочно)
+  const proAccessMutation = useMutation({
+    mutationFn: ({ userId, proAccess }: { userId: number; proAccess: boolean }) =>
+      adminAPI.setUserProAccess(userId, proAccess),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['admin-users'] });
     },
@@ -293,6 +302,19 @@ export function AdminUsers() {
                     <Award className="w-4 h-4" />
                     <span>{t('adminUsers.badges')}</span>
                   </button>
+                  {user.role !== 'admin' && (
+                    <button
+                      onClick={() => proAccessMutation.mutate({ userId: user.id, proAccess: !user.pro_access })}
+                      disabled={proAccessMutation.isPending}
+                      className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg transition-all disabled:opacity-50 text-sm ${
+                        user.pro_access ? 'bg-cyan-600 hover:bg-cyan-700 text-white' : 'bg-white/10 hover:bg-white/20 text-gray-200'
+                      }`}
+                      title={t('adminUsers.proAccessTitle')}
+                    >
+                      <Calculator className="w-4 h-4" />
+                      <span>{user.pro_access ? t('adminUsers.proOn') : t('adminUsers.proOff')}</span>
+                    </button>
+                  )}
                   {!user.brand_id ? (
                     <button
                       onClick={() => {

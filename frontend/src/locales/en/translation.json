@@ -2324,6 +2324,9 @@
     "quoteClose": "Close",
     "quotePopupBlocked": "The browser blocked the print window. Allow pop-ups for FilamentHub.",
     "quoteDefaultItemTitle": "3D printing service",
+    "proLockedTitle": "Calculator is a Pro feature",
+    "proLockedDescription": "The professional cost & quote calculator is available with Pro access.",
+    "proLockedHint": "Access is granted by an administrator. Contact us to enable it.",
     "quoteSlicer": "Slicer",
     "quoteWeight": "Weight",
     "quotePrintTime": "Print time",
@@ -3555,6 +3558,9 @@
     "deleteAccountButton": "Delete Account"
   },
   "adminUsers": {
+    "proAccessTitle": "Calculator Pro access (grant/revoke)",
+    "proOn": "Pro ✓",
+    "proOff": "Pro",
     "title": "User Management",
     "total": "Total",
     "loading": "Loading users...",
@@ -3608,6 +3614,12 @@
     }
   },
   "adminMaintenance": {
+    "calcPromoTitle": "Calculator — promo for everyone",
+    "calcPromoHint": "When enabled, the calculator is free for all users (bypasses Pro access).",
+    "calcPromoOn": "Promo on — calculator is free for everyone",
+    "calcPromoOff": "Promo off — calculator is Pro-only",
+    "calcPromoEnableBtn": "Enable promo",
+    "calcPromoDisableBtn": "Disable promo",
     "title": "Maintenance Mode",
     "loadingStatus": "Loading status...",
     "loadError": "Failed to load maintenance status",
@@ -4449,6 +4461,7 @@
     "ERR_USER_INACTIVE": "User is inactive",
     "ERR_NOT_BRAND_USER": "You are not a brand representative",
     "ERR_NOT_ADMIN": "Administrator privileges required",
+    "ERR_CALCULATOR_ACCESS_REQUIRED": "The calculator requires Pro access",
     "ERR_INVALID_API_KEY": "Invalid API key",
     "ERR_EMAIL_DOMAIN_TYPO": "Did you mean @{{domain}}?",
     "ERR_DOMAIN_NO_MAIL": "Domain @{{domain}} cannot receive mail",

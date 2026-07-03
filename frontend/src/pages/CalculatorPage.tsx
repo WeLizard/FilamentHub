@@ -1804,6 +1804,22 @@ export const CalculatorPage: React.FC = () => {
     }
   }, [availableSpools, filamentsQuery.data?.items, parsedGcode]);
 
+  // Калькулятор — Pro-функция. Базовому юзеру без доступа показываем заглушку вместо инструмента.
+  if (!user?.has_calculator_access) {
+    return (
+      <div className="mx-auto max-w-2xl">
+        <div className={`${surfaceClass} p-8 text-center md:p-12`}>
+          <div className="mx-auto mb-5 flex h-16 w-16 items-center justify-center rounded-2xl bg-cyan-500/15 text-cyan-300">
+            <Calculator className="h-8 w-8" />
+          </div>
+          <h1 className="mb-3 text-2xl font-bold text-white">{tc('proLockedTitle')}</h1>
+          <p className="mb-6 text-slate-300">{tc('proLockedDescription')}</p>
+          <p className="text-sm text-slate-400">{tc('proLockedHint')}</p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-6">
       <section className="relative overflow-hidden rounded-[2rem] bg-[linear-gradient(180deg,rgba(15,23,42,0.88),rgba(15,23,42,0.72))] shadow-[0_30px_90px_-50px_rgba(15,23,42,0.95)] backdrop-blur-xl ring-1 ring-white/5">

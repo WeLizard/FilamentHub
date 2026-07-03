@@ -94,6 +94,10 @@ from app.schemas.printer_request import (
     PrinterRequestUpdate,
 )
 from app.schemas.user import UserResponse
+from app.services.calculator_promo_service import (
+    get_calculator_promo,
+    set_calculator_promo,
+)
 from app.services.database_service import (
     apply_migration as apply_migration_service,
 )
@@ -2202,6 +2206,52 @@ async def set_maintenance_status(
         "message": "maintenance_mode_updated",
         "maintenance_mode": get_maintenance_info(),
     }
+
+
+# ============================================================================
+# Calculator Pro access
+# ============================================================================
+
+@router.patch("/users/{user_id}/pro-access", response_model=UserResponse)
+async def set_user_pro_access(
+    user_id: int,
+    admin: Annotated[User, Depends(get_current_admin_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+    pro_access: bool = Body(..., embed=True, description="Выдать/отозвать Pro-доступ к калькулятору"),
+    pro_expires_at: datetime | None = Body(None, embed=True, description="Дата истечения (триал). null = бессрочно"),
+) -> UserResponse:
+    """Выдать/отозвать пользователю Pro-доступ к калькулятору (опц. дата истечения — триал)."""
+    result = await db.execute(select(User).where(User.id == user_id))
+    user = result.scalar_one_or_none()
+    if not user:
+        raise_error(status.HTTP_404_NOT_FOUND, ERR_USER_NOT_FOUND)
+
+    user.pro_access = pro_access
+    user.pro_expires_at = pro_expires_at if pro_access else None
+    await db.commit()
+    await db.refresh(user)
+
+    logger.info(f"Admin {admin.id} set pro_access={pro_access} (expires={pro_expires_at}) for user {user_id}")
+    return UserResponse.model_validate(user)
+
+
+@router.get("/calculator-promo", response_model=dict)
+async def get_calculator_promo_status(
+    admin: User = Depends(get_current_admin_user),
+) -> dict:
+    """Статус глобальной акции «калькулятор бесплатно для всех»."""
+    return {"enabled": get_calculator_promo()}
+
+
+@router.post("/calculator-promo", response_model=dict)
+async def set_calculator_promo_status(
+    enabled: bool = Body(..., embed=True, description="Калькулятор бесплатно для всех"),
+    admin: User = Depends(get_current_admin_user),
+) -> dict:
+    """Включить/выключить глобальную акцию (калькулятор бесплатно всем)."""
+    set_calculator_promo(enabled)
+    logger.info(f"Admin {admin.id} {'enabled' if enabled else 'disabled'} calculator free-for-all promo")
+    return {"enabled": get_calculator_promo()}
 
 
 # ==================== Wiki Sync ====================

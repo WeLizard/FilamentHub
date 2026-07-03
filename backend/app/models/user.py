@@ -81,6 +81,10 @@ class User(Base):
     # Wiki editing permission
     can_edit_wiki: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
 
+    # Calculator Pro access (admin-granted). pro_expires_at NULL = permanent, set = trial/promo until that time.
+    pro_access: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    pro_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
     # Badges (список строк: ["founder", "beta_tester", "contributor", "verified"])
     badges: Mapped[list[str] | None] = mapped_column(JSON, nullable=True)
     # badges:

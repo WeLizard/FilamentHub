@@ -2453,6 +2453,9 @@
       "quoteClose": "Закрыть",
       "quotePopupBlocked": "Браузер заблокировал окно печати. Разрешите pop-up для FilamentHub.",
       "quoteDefaultItemTitle": "Услуга 3D-печати",
+      "proLockedTitle": "Калькулятор — Pro-функция",
+      "proLockedDescription": "Профессиональный калькулятор себестоимости и коммерческих предложений доступен по Pro-доступу.",
+      "proLockedHint": "Доступ выдаёт администратор. Напишите нам, если хотите подключить.",
       "quoteSlicer": "Слайсер",
       "quoteWeight": "Вес",
       "quotePrintTime": "Время печати",
@@ -3686,6 +3689,9 @@
     "deleteAccountButton": "Удалить аккаунт"
   },
   "adminUsers": {
+    "proAccessTitle": "Pro-доступ к калькулятору (выдать/отозвать)",
+    "proOn": "Pro ✓",
+    "proOff": "Pro",
     "title": "Управление пользователями",
     "total": "Всего",
     "loading": "Загрузка пользователей...",
@@ -3739,6 +3745,12 @@
     }
   },
   "adminMaintenance": {
+    "calcPromoTitle": "Калькулятор — акция для всех",
+    "calcPromoHint": "Когда включено, калькулятор бесплатно доступен всем пользователям (в обход Pro-доступа).",
+    "calcPromoOn": "Акция включена — калькулятор бесплатен для всех",
+    "calcPromoOff": "Акция выключена — калькулятор только для Pro",
+    "calcPromoEnableBtn": "Включить акцию",
+    "calcPromoDisableBtn": "Выключить акцию",
     "title": "Технические работы",
     "loadingStatus": "Загрузка статуса...",
     "loadError": "Не удалось загрузить статус технических работ",
@@ -4580,6 +4592,7 @@
     "ERR_USER_INACTIVE": "Пользователь неактивен",
     "ERR_NOT_BRAND_USER": "Вы не являетесь представителем бренда",
     "ERR_NOT_ADMIN": "Требуются права администратора",
+    "ERR_CALCULATOR_ACCESS_REQUIRED": "Калькулятор доступен по Pro-доступу",
     "ERR_INVALID_API_KEY": "Недействительный API-ключ",
     "ERR_EMAIL_DOMAIN_TYPO": "Возможно, вы имели в виду @{{domain}}?",
     "ERR_DOMAIN_NO_MAIL": "Домен @{{domain}} не принимает почту",

@@ -18,11 +18,36 @@ export function AdminMaintenance() {
   const [isUpdating, setIsUpdating] = useState(false);
   const [message, setMessage] = useState('');
   const [error, setError] = useState<string | null>(null);
+  const [promoEnabled, setPromoEnabled] = useState(false);
+  const [promoUpdating, setPromoUpdating] = useState(false);
 
   // Загружаем текущий статус
   useEffect(() => {
     loadMaintenanceStatus();
+    loadPromo();
   }, []);
+
+  const loadPromo = async () => {
+    try {
+      const response = await api.get('/admin/calculator-promo');
+      setPromoEnabled(Boolean(response.data.enabled));
+    } catch (err) {
+      console.error('Failed to load calculator promo:', err);
+    }
+  };
+
+  const handleTogglePromo = async () => {
+    try {
+      setPromoUpdating(true);
+      setError(null);
+      const response = await api.post('/admin/calculator-promo', { enabled: !promoEnabled });
+      setPromoEnabled(Boolean(response.data.enabled));
+    } catch (err: any) {
+      setError(translateApiError(t, err.response?.data?.detail, t('adminMaintenance.updateError')));
+    } finally {
+      setPromoUpdating(false);
+    }
+  };
 
   const loadMaintenanceStatus = async () => {
     try {
@@ -210,6 +235,27 @@ export function AdminMaintenance() {
           <li>{t('adminMaintenance.info3')}</li>
           <li>{t('adminMaintenance.info4')}</li>
         </ul>
+      </div>
+
+      {/* Калькулятор — глобальная акция (бесплатно всем) */}
+      <div className="bg-white/5 rounded-xl p-6 border border-white/10">
+        <h3 className="text-lg font-semibold text-white mb-2">{t('adminMaintenance.calcPromoTitle')}</h3>
+        <p className="text-sm text-gray-400 mb-4">{t('adminMaintenance.calcPromoHint')}</p>
+        <div className="flex items-center justify-between">
+          <span className={`text-sm font-medium ${promoEnabled ? 'text-green-300' : 'text-gray-300'}`}>
+            {promoEnabled ? t('adminMaintenance.calcPromoOn') : t('adminMaintenance.calcPromoOff')}
+          </span>
+          <button
+            onClick={handleTogglePromo}
+            disabled={promoUpdating}
+            className={`flex items-center gap-2 px-5 py-2.5 rounded-lg font-semibold transition-all disabled:opacity-50 ${
+              promoEnabled ? 'bg-gray-600 hover:bg-gray-700 text-white' : 'bg-green-600 hover:bg-green-700 text-white'
+            }`}
+          >
+            {promoUpdating ? <Loader2 className="w-5 h-5 animate-spin" /> : null}
+            <span>{promoEnabled ? t('adminMaintenance.calcPromoDisableBtn') : t('adminMaintenance.calcPromoEnableBtn')}</span>
+          </button>
+        </div>
       </div>
     </div>
   );

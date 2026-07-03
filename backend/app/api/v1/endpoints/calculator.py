@@ -14,7 +14,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
-from app.core.dependencies import get_current_active_user
+from app.core.dependencies import require_calculator_access
 from app.core.errors import (
     ERR_CALCULATOR_HISTORY_NOT_FOUND,
     ERR_FILE_TOO_LARGE,
@@ -139,6 +139,7 @@ def _serialize_history_entry(entry: CalculatorHistoryEntry) -> CalculatorHistory
 
 @router.post("/estimate", response_model=CalculatorEstimateResponse)
 async def estimate_cost(
+    _: Annotated[User, Depends(require_calculator_access)],
     data: CalculatorEstimateRequest,
 ) -> CalculatorEstimateResponse:
     """
@@ -479,6 +480,7 @@ async def estimate_cost(
 
 @router.post("/parse-gcode", response_model=CalculatorGcodeParseResponse)
 async def parse_gcode(
+    _: Annotated[User, Depends(require_calculator_access)],
     file: UploadFile = File(...),
 ) -> CalculatorGcodeParseResponse:
     """Parse uploaded G-code metadata for Calculator Pro auto-fill."""
@@ -507,7 +509,7 @@ async def parse_gcode(
 
 @router.get("/history", response_model=CalculatorHistoryEntryListResponse)
 async def list_calculator_history(
-    current_user: Annotated[User, Depends(get_current_active_user)],
+    current_user: Annotated[User, Depends(require_calculator_access)],
     db: Annotated[AsyncSession, Depends(get_db)],
     page: int = Query(1, ge=1),
     size: int = Query(20, ge=1, le=100),
@@ -535,7 +537,7 @@ async def list_calculator_history(
 @router.post("/history", response_model=CalculatorHistoryEntryResponse, status_code=status.HTTP_201_CREATED)
 async def save_calculator_history(
     data: CalculatorHistoryEntryCreate,
-    current_user: Annotated[User, Depends(get_current_active_user)],
+    current_user: Annotated[User, Depends(require_calculator_access)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> CalculatorHistoryEntryResponse:
     """Persist a Calculator Pro estimate to user history."""
@@ -557,7 +559,7 @@ async def save_calculator_history(
 @router.delete("/history/{entry_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_calculator_history(
     entry_id: int,
-    current_user: Annotated[User, Depends(get_current_active_user)],
+    current_user: Annotated[User, Depends(require_calculator_access)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> None:
     """Delete one Calculator Pro history entry."""
@@ -580,7 +582,7 @@ async def delete_calculator_history(
 
 @router.get("/profile", response_model=CalculatorProfileResponse)
 async def get_calculator_profile(
-    current_user: Annotated[User, Depends(get_current_active_user)],
+    current_user: Annotated[User, Depends(require_calculator_access)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> CalculatorProfileResponse:
     """Return the current user's calculator profile (create with defaults if missing)."""
@@ -601,7 +603,7 @@ async def get_calculator_profile(
 @router.put("/profile", response_model=CalculatorProfileResponse)
 async def update_calculator_profile(
     data: CalculatorProfileUpdate,
-    current_user: Annotated[User, Depends(get_current_active_user)],
+    current_user: Annotated[User, Depends(require_calculator_access)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> CalculatorProfileResponse:
     """Create or update the current user's calculator profile."""
@@ -636,7 +638,7 @@ _SHARED_QUOTE_CSP = (
 @router.post("/quote/share", response_model=SharedQuoteResponse, status_code=status.HTTP_201_CREATED)
 async def create_shared_quote(
     data: SharedQuoteCreate,
-    current_user: Annotated[User, Depends(get_current_active_user)],
+    current_user: Annotated[User, Depends(require_calculator_access)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> SharedQuoteResponse:
     """Create a publicly accessible shared quote link."""
@@ -685,7 +687,7 @@ async def get_shared_quote(
 @router.post("/quote/pdf")
 async def generate_quote_pdf(
     data: SharedQuoteCreate,
-    current_user: Annotated[User, Depends(get_current_active_user)],
+    current_user: Annotated[User, Depends(require_calculator_access)],
 ) -> Response:
     """Generate a PDF from quote HTML content and return it for download."""
     from app.services.pdf_service import generate_pdf_from_html

@@ -1333,6 +1333,25 @@ export const adminAPI = {
     return response.data;
   },
 
+  // Calculator Pro access
+  setUserProAccess: async (userId: number, proAccess: boolean, proExpiresAt?: string | null): Promise<User> => {
+    const response = await api.patch<User>(`/admin/users/${userId}/pro-access`, {
+      pro_access: proAccess,
+      pro_expires_at: proExpiresAt ?? null,
+    });
+    return response.data;
+  },
+
+  getCalculatorPromo: async (): Promise<boolean> => {
+    const response = await api.get<{ enabled: boolean }>('/admin/calculator-promo');
+    return Boolean(response.data.enabled);
+  },
+
+  setCalculatorPromo: async (enabled: boolean): Promise<boolean> => {
+    const response = await api.post<{ enabled: boolean }>('/admin/calculator-promo', { enabled });
+    return Boolean(response.data.enabled);
+  },
+
   // Notifications
   sendNotification: async (data: {
     user_ids: number[];
