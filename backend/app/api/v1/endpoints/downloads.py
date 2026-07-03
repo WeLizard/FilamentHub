@@ -5,6 +5,7 @@ import re
 from functools import lru_cache
 from pathlib import Path
 from typing import Literal
+from urllib.parse import urlparse
 
 from fastapi import APIRouter, Query, Request, status
 from pydantic import BaseModel
@@ -323,22 +324,30 @@ def _compare_versions(v1: str, v2: str) -> int:
     return 0
 
 
-def _get_download_url_from_file(request: Request, filepath: Path) -> str:
-    """Получить URL для скачивания по пути к файлу."""
-    forwarded_host = request.headers.get("X-Forwarded-Host")
-    forwarded_proto = request.headers.get("X-Forwarded-Proto", "https")
+@lru_cache(maxsize=1)
+def _allowed_download_hosts() -> frozenset[str]:
+    """Доверенные хосты для download-URL — из CORS_ORIGINS и BASE_URL (hostname без порта)."""
+    hosts: set[str] = set()
+    for origin in settings.CORS_ORIGINS:
+        parsed = urlparse(origin)
+        if parsed.hostname:
+            hosts.add(parsed.hostname.lower())
+    base_host = urlparse(settings.BASE_URL).hostname
+    if base_host:
+        hosts.add(base_host.lower())
+    return frozenset(hosts)
 
-    if forwarded_host:
-        if "filamenthub.ru" in forwarded_host:
-            base_url = f"https://{forwarded_host}".rstrip("/")
-        else:
-            base_url = f"{forwarded_proto}://{forwarded_host}".rstrip("/")
-    elif request.headers.get("Host"):
-        host = request.headers.get("Host")
-        if "filamenthub.ru" in host:
-            base_url = f"https://{host}".rstrip("/")
-        else:
-            base_url = f"{forwarded_proto}://{host}".rstrip("/")
+
+def _get_download_url_from_file(request: Request, filepath: Path) -> str:
+    """Получить URL для скачивания. Хост берём из клиентских заголовков только если он в allowlist
+    (CORS_ORIGINS + BASE_URL) — иначе фолбэк на BASE_URL. Защита от Host-header injection."""
+    forwarded_proto = request.headers.get("X-Forwarded-Proto", "https")
+    candidate = request.headers.get("X-Forwarded-Host") or request.headers.get("Host") or ""
+    hostname = candidate.split(":", 1)[0].strip().lower()
+
+    if hostname and hostname in _allowed_download_hosts():
+        proto = "https" if "filamenthub.ru" in hostname else forwarded_proto
+        base_url = f"{proto}://{candidate}".rstrip("/")
     else:
         base_url = settings.BASE_URL.rstrip("/")
         if base_url.startswith("http://") and "filamenthub.ru" in base_url:
