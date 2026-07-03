@@ -609,7 +609,7 @@ export const ProfilePage: React.FC = () => {
       </div>
       
       {/* Header — компактная строка: аватар + имя·роль + ачивки (без крупного «Мой профиль») */}
-      <div className="mb-4 md:mb-6">
+      <div className="mb-4 md:mb-6 md:!-mt-16">
         <div className="flex items-center gap-3 mb-3 md:mb-4">
           <label className="group/avatar relative w-11 h-11 md:w-14 md:h-14 shrink-0 rounded-xl overflow-hidden cursor-pointer shadow-lg shadow-purple-500/25" title={t('profilePage.avatarUpload')}>
             {user.avatar_url ? (
