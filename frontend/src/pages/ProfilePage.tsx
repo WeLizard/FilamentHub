@@ -569,7 +569,7 @@ export const ProfilePage: React.FC = () => {
           </div>
         </div>
         
-        <div className="md:-mt-14">
+        <div className={user.brand_id ? 'md:-mt-14' : 'md:mt-12'}>
           <BrandProfilePage onBack={() => setShowBrandCabinet(false)} />
         </div>
       </div>
