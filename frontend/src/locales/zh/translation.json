@@ -3123,6 +3123,8 @@
     "placeholder": "PLACEHOLDER",
     "popularPrinters": "热门打印机",
     "materialQRCode": "材料二维码",
+    "addColors": "添加颜色",
+    "addColorsTitle": "向调色板添加颜色：{{name}}",
     "code": "代码",
     "codeCopied": "代码已复制到剪贴板",
     "copyCode": "复制代码",

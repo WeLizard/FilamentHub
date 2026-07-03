@@ -3256,6 +3256,8 @@
     "placeholder": "ЗАГЛУШКА",
     "popularPrinters": "Популярные принтеры",
     "materialQRCode": "QR-код материала",
+    "addColors": "Добавить цвета",
+    "addColorsTitle": "Добавить цвета в палитру: {{name}}",
     "code": "Код",
     "codeCopied": "Код скопирован в буфер обмена",
     "copyCode": "Копировать код",

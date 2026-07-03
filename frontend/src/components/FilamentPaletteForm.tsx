@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { Plus, X, Loader2, CheckCircle } from 'lucide-react';
@@ -12,7 +12,7 @@ import { AvailabilitySelect } from './AvailabilitySelect';
 import { DensityField } from './DensityField';
 import { PriceUnitField } from './PriceUnitField';
 import { translateApiError } from '../utils/translateApiError';
-import type { FilamentAvailability, FilamentImportResult, FilamentPalettePayload } from '../types/api';
+import type { Filament, FilamentAvailability, FilamentImportResult, FilamentPalettePayload } from '../types/api';
 
 interface PaletteEntry {
   color_name: string;
@@ -23,12 +23,14 @@ interface PaletteEntry {
 interface FilamentPaletteFormProps {
   brandId: number;
   onClose: () => void;
+  /** Режим «добавить цвета к готовому материалу»: параметры и линейка берутся из него. */
+  sourceFilament?: Filament;
 }
 
 const emptyEntry = (): PaletteEntry => ({ color_name: '', color_hex: '#808080', name: '' });
 
 /** Создание набора цветов-вариантов в одной линейке (палитра). */
-export function FilamentPaletteForm({ brandId, onClose }: FilamentPaletteFormProps) {
+export function FilamentPaletteForm({ brandId, onClose, sourceFilament }: FilamentPaletteFormProps) {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
 
@@ -42,16 +44,16 @@ export function FilamentPaletteForm({ brandId, onClose }: FilamentPaletteFormPro
     queryFn: () => filamentsAPI.getMaterialTypes(),
   });
 
-  const [lineId, setLineId] = useState<number | ''>('');
-  const [newLineName, setNewLineName] = useState('');
-  const [materialType, setMaterialType] = useState('');
-  const [diameter, setDiameter] = useState(1.75);
-  const [density, setDensity] = useState(1.24);
-  const [priceMode, setPriceMode] = useState<'per_kg' | 'per_spool'>('per_kg');
-  const [pricePerKg, setPricePerKg] = useState(0);
+  const [lineId, setLineId] = useState<number | ''>(sourceFilament?.line_id ?? '');
+  const [newLineName, setNewLineName] = useState(sourceFilament && !sourceFilament.line_id ? sourceFilament.name : '');
+  const [materialType, setMaterialType] = useState(sourceFilament?.material_type ?? '');
+  const [diameter, setDiameter] = useState(sourceFilament?.diameter ?? 1.75);
+  const [density, setDensity] = useState(sourceFilament?.density ?? 1.24);
+  const [priceMode, setPriceMode] = useState<'per_kg' | 'per_spool'>(sourceFilament?.price_display_unit === 'per_spool' ? 'per_spool' : 'per_kg');
+  const [pricePerKg, setPricePerKg] = useState(sourceFilament?.price_per_kg ?? 0);
   const [pricePerSpool, setPricePerSpool] = useState(0);
-  const [spoolWeight, setSpoolWeight] = useState(1000);
-  const [availability, setAvailability] = useState<FilamentAvailability>('available');
+  const [spoolWeight, setSpoolWeight] = useState(sourceFilament?.spool_weight ?? 1000);
+  const [availability, setAvailability] = useState<FilamentAvailability>(sourceFilament?.availability ?? 'available');
   const [entries, setEntries] = useState<PaletteEntry[]>([emptyEntry(), emptyEntry(), emptyEntry()]);
   const [openPicker, setOpenPicker] = useState<number | null>(null);
   const [pasteText, setPasteText] = useState('');
@@ -59,8 +61,14 @@ export function FilamentPaletteForm({ brandId, onClose }: FilamentPaletteFormPro
   const [submitting, setSubmitting] = useState(false);
   const [result, setResult] = useState<FilamentImportResult | null>(null);
 
-  // Авто-плотность по материалу (как в основной форме).
+  // Авто-плотность по материалу (как в основной форме). В режиме sourceFilament
+  // не перезатираем плотность исходного материала на первом рендере.
+  const skipInitialDensityRef = useRef(!!sourceFilament);
   useEffect(() => {
+    if (skipInitialDensityRef.current) {
+      skipInitialDensityRef.current = false;
+      return;
+    }
     const d = densityForMaterial(materialType);
     if (d) setDensity(d);
   }, [materialType]);
@@ -120,6 +128,11 @@ export function FilamentPaletteForm({ brandId, onClose }: FilamentPaletteFormPro
         const created = await filamentLinesAPI.create(brandId, newLineName.trim());
         targetLineId = created.id;
         queryClient.invalidateQueries({ queryKey: ['brand-lines', brandId] });
+      }
+
+      // Одиночный исходный материал переносим в линейку палитры, чтобы он стал её частью.
+      if (sourceFilament && !sourceFilament.line_id) {
+        await filamentsAPI.update(sourceFilament.id, { line_id: targetLineId });
       }
 
       const payload: FilamentPalettePayload = {
@@ -191,28 +204,43 @@ export function FilamentPaletteForm({ brandId, onClose }: FilamentPaletteFormPro
       <div>
         <label className="block text-gray-300 mb-1 text-sm font-medium">{t('palette.lineLabel')}</label>
         <p className="text-gray-500 text-xs mb-2">{t('palette.lineHint')}</p>
-        <div className="flex flex-col sm:flex-row gap-2">
-          <select
-            value={lineId === '' ? '' : String(lineId)}
-            onChange={(e) => setLineId(e.target.value === '' ? '' : Number(e.target.value))}
-            className={inputClass + ' sm:flex-1'}
-          >
-            <option value="" className="bg-gray-900">{t('palette.lineNew')}</option>
-            {lines.map((l) => (
-              <option key={l.id} value={l.id} className="bg-gray-900">{l.name}</option>
-            ))}
-          </select>
-          {lineId === '' && (
-            <input
-              type="text"
-              value={newLineName}
-              onChange={(e) => setNewLineName(e.target.value)}
-              placeholder={t('palette.lineNewPlaceholder')}
-              maxLength={200}
+        {sourceFilament?.line_id ? (
+          <div className={inputClass + ' text-gray-200'}>
+            {lines.find((l) => l.id === lineId)?.name ?? '—'}
+          </div>
+        ) : sourceFilament ? (
+          <input
+            type="text"
+            value={newLineName}
+            onChange={(e) => setNewLineName(e.target.value)}
+            placeholder={t('palette.lineNewPlaceholder')}
+            maxLength={200}
+            className={inputClass}
+          />
+        ) : (
+          <div className="flex flex-col sm:flex-row gap-2">
+            <select
+              value={lineId === '' ? '' : String(lineId)}
+              onChange={(e) => setLineId(e.target.value === '' ? '' : Number(e.target.value))}
               className={inputClass + ' sm:flex-1'}
-            />
-          )}
-        </div>
+            >
+              <option value="" className="bg-gray-900">{t('palette.lineNew')}</option>
+              {lines.map((l) => (
+                <option key={l.id} value={l.id} className="bg-gray-900">{l.name}</option>
+              ))}
+            </select>
+            {lineId === '' && (
+              <input
+                type="text"
+                value={newLineName}
+                onChange={(e) => setNewLineName(e.target.value)}
+                placeholder={t('palette.lineNewPlaceholder')}
+                maxLength={200}
+                className={inputClass + ' sm:flex-1'}
+              />
+            )}
+          </div>
+        )}
       </div>
 
       {/* Общие параметры */}

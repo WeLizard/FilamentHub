@@ -3126,6 +3126,8 @@
     "placeholder": "PLACEHOLDER",
     "popularPrinters": "Popular printers",
     "materialQRCode": "Material QR code",
+    "addColors": "Add colors",
+    "addColorsTitle": "Add colors to palette: {{name}}",
     "code": "Code",
     "codeCopied": "Code copied to clipboard",
     "copyCode": "Copy code",

@@ -7,6 +7,7 @@ import { useNavigate } from 'react-router-dom';
 import {
   Factory,
   Package,
+  Palette,
   QrCode,
   BarChart3,
   TrendingUp,
@@ -46,6 +47,7 @@ import { HSLColorPicker } from '../components/HSLColorPicker';
 import { SocialIcon } from '../components/socialIcons';
 import type { FilamentImportResult } from '../types/api';
 import { CreateFilamentModal } from '../components/CreateFilamentModal';
+import { FilamentPaletteForm } from '../components/FilamentPaletteForm';
 const CreatePresetModal = lazy(() =>
   import('../components/CreatePresetModal').then(m => ({ default: m.CreatePresetModal }))
 );
@@ -74,6 +76,7 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({ onBack }) =>
   const [deletingLine, setDeletingLine] = useState<{ id: number; name: string } | null>(null);
   const [showQRFilament, setShowQRFilament] = useState<Filament | null>(null);
   const [presetFilterFilament, setPresetFilterFilament] = useState<Filament | null>(null);
+  const [addColorsFilament, setAddColorsFilament] = useState<Filament | null>(null);
   const [isEditingProfile, setIsEditingProfile] = useState(false);
   const [profileDescription, setProfileDescription] = useState('');
   const [profileWebsite, setProfileWebsite] = useState('');
@@ -325,6 +328,10 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({ onBack }) =>
   const handleShowMaterialPresets = (filament: Filament) => {
     setPresetFilterFilament(filament);
     setBrandTab('presets');
+  };
+
+  const handleAddColors = (filament: Filament) => {
+    setAddColorsFilament(filament);
   };
 
   const handleEditPreset = (preset: Preset) => {
@@ -591,6 +598,7 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({ onBack }) =>
                               onDelete={handleDeleteFilament}
                               onShowQR={(filament) => setShowQRFilament(filament)}
                               onShowPresets={handleShowMaterialPresets}
+                              onAddColors={handleAddColors}
                               viewMode="grid"
                             />
                           ))}
@@ -605,6 +613,7 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({ onBack }) =>
                               onDelete={handleDeleteFilament}
                               onShowQR={(filament) => setShowQRFilament(filament)}
                               onShowPresets={handleShowMaterialPresets}
+                              onAddColors={handleAddColors}
                               viewMode="list"
                             />
                           ))}
@@ -1110,6 +1119,33 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({ onBack }) =>
               >
                 {t('brandProfile.close')}
               </button>
+            </div>
+          </div>
+        </ModalOverlay>
+      )}
+
+      {/* Add Colors (palette) Modal */}
+      {addColorsFilament && user.brand_id && (
+        <ModalOverlay onClose={() => setAddColorsFilament(null)}>
+          <div className="bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900 rounded-2xl w-full max-w-4xl max-h-[90vh] flex flex-col overflow-hidden border border-white/20 shadow-2xl">
+            <div className="flex items-center justify-between p-6 border-b border-white/10 shrink-0">
+              <div className="flex items-center space-x-3">
+                <Palette className="w-6 h-6 text-pink-400" />
+                <h2 className="text-2xl font-bold text-white">{t('brandProfile.addColorsTitle', { name: addColorsFilament.name })}</h2>
+              </div>
+              <button
+                onClick={() => setAddColorsFilament(null)}
+                className="p-2 hover:bg-white/10 rounded-lg text-white transition-all"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="p-6 overflow-y-auto">
+              <FilamentPaletteForm
+                brandId={user.brand_id}
+                sourceFilament={addColorsFilament}
+                onClose={() => setAddColorsFilament(null)}
+              />
             </div>
           </div>
         </ModalOverlay>
@@ -2969,10 +3005,11 @@ interface FilamentCardProps {
   onDelete: (filament: Filament) => void;
   onShowQR: (filament: Filament) => void;
   onShowPresets: (filament: Filament) => void;
+  onAddColors: (filament: Filament) => void;
   viewMode?: 'grid' | 'list';
 }
 
-const FilamentCard: React.FC<FilamentCardProps> = ({ filament, onEdit, onDelete, onShowQR, onShowPresets, viewMode = 'grid' }) => {
+const FilamentCard: React.FC<FilamentCardProps> = ({ filament, onEdit, onDelete, onShowQR, onShowPresets, onAddColors, viewMode = 'grid' }) => {
   const { t } = useTranslation();
   // Загружаем пресеты для материала
   const { data: presetsData } = useQuery({
@@ -3085,6 +3122,13 @@ const FilamentCard: React.FC<FilamentCardProps> = ({ filament, onEdit, onDelete,
               </button>
             )}
             <button
+              onClick={() => onAddColors(filament)}
+              className="p-1.5 bg-white/10 hover:bg-pink-500/20 rounded-md text-white transition-all"
+              title={t('brandProfile.addColors')}
+            >
+              <Palette className="w-3.5 h-3.5" />
+            </button>
+            <button
               onClick={() => onEdit(filament)}
               className="p-1.5 bg-white/10 hover:bg-purple-500/20 rounded-md text-white transition-all"
               title={t('brandProfile.edit')}
@@ -3126,6 +3170,13 @@ const FilamentCard: React.FC<FilamentCardProps> = ({ filament, onEdit, onDelete,
               <QrCode className="w-4 h-4" />
             </button>
           )}
+          <button
+            onClick={() => onAddColors(filament)}
+            className="p-2 bg-white/10 hover:bg-pink-500/20 rounded-lg text-white transition-all"
+            title={t('brandProfile.addColors')}
+          >
+            <Palette className="w-4 h-4" />
+          </button>
           <button
             onClick={() => onEdit(filament)}
             className="p-2 bg-white/10 hover:bg-purple-500/20 rounded-lg text-white transition-all"
