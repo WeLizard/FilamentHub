@@ -546,9 +546,9 @@ export const ProfilePage: React.FC = () => {
   // Если выбран профиль компании, показываем BrandProfilePage
   if (showBrandCabinet) {
     return (
-      <div className="space-y-6">
+      <div>
         {/* Переключатель профилей */}
-        <div className="flex justify-center mb-6">
+        <div className="flex justify-center mb-4 md:mb-0 relative z-10">
           <div className="flex bg-white/10 rounded-lg p-1 border border-white/20">
             <button
               onClick={() => setShowBrandCabinet(false)}
@@ -569,7 +569,9 @@ export const ProfilePage: React.FC = () => {
           </div>
         </div>
         
-        <BrandProfilePage onBack={() => setShowBrandCabinet(false)} />
+        <div className="md:-mt-14">
+          <BrandProfilePage onBack={() => setShowBrandCabinet(false)} />
+        </div>
       </div>
     );
   }
