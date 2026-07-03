@@ -19,6 +19,14 @@ import { Dropdown } from '../components/Dropdown';
 import { SEOHead } from '../components/SEOHead';
 import { SocialIcon } from '../components/socialIcons';
 
+const hostOf = (url: string): string => {
+  try {
+    return new URL(url).hostname.replace(/^www\./, '');
+  } catch {
+    return url;
+  }
+};
+
 export const BrandDetailPage: React.FC = () => {
   const { t } = useTranslation();
   const { id } = useParams<{ id: string }>();
@@ -218,9 +226,10 @@ export const BrandDetailPage: React.FC = () => {
                   target="_blank"
                   rel="noopener noreferrer"
                   title={t('brandDetailPage.website')}
-                  className="w-10 h-10 flex items-center justify-center bg-white/10 hover:bg-white/20 text-white rounded-lg transition-all"
+                  className="flex items-center gap-2 h-10 px-3 bg-white/10 hover:bg-white/20 text-white rounded-lg transition-all"
                 >
-                  <SocialIcon url={brand.website} className="w-5 h-5" />
+                  <SocialIcon url={brand.website} className="w-5 h-5 flex-shrink-0" />
+                  <span className="text-sm truncate max-w-[200px]">{hostOf(brand.website)}</span>
                 </a>
               )}
               {brand.shop_links?.map((shop, i) =>
@@ -237,26 +246,18 @@ export const BrandDetailPage: React.FC = () => {
                   </a>
                 ) : null,
               )}
-              {brand.social_media_urls?.map((url, i) => {
-                let host = url;
-                try {
-                  host = new URL(url).hostname.replace(/^www\./, '');
-                } catch {
-                  host = url;
-                }
-                return (
-                  <a
-                    key={`social-${i}`}
-                    href={url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    title={host}
-                    className="w-10 h-10 flex items-center justify-center bg-white/10 hover:bg-white/20 text-white rounded-lg transition-all"
-                  >
-                    <SocialIcon url={url} className="w-5 h-5" />
-                  </a>
-                );
-              })}
+              {brand.social_media_urls?.map((url, i) => (
+                <a
+                  key={`social-${i}`}
+                  href={url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  title={hostOf(url)}
+                  className="w-10 h-10 flex items-center justify-center bg-white/10 hover:bg-white/20 text-white rounded-lg transition-all"
+                >
+                  <SocialIcon url={url} className="w-5 h-5" />
+                </a>
+              ))}
             </div>
           </div>
         </div>
