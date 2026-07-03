@@ -7,7 +7,6 @@ import { useQuery } from '@tanstack/react-query';
 import {
   Building2,
   Shield,
-  ExternalLink,
   Package,
   Star,
   ArrowLeft,
@@ -18,6 +17,7 @@ import { currencySymbol } from '../utils/currency';
 import { FilamentPreview } from '../components/FilamentPreview';
 import { Dropdown } from '../components/Dropdown';
 import { SEOHead } from '../components/SEOHead';
+import { SocialIcon } from '../components/socialIcons';
 
 export const BrandDetailPage: React.FC = () => {
   const { t } = useTranslation();
@@ -210,17 +210,17 @@ export const BrandDetailPage: React.FC = () => {
               )}
             </div>
 
-            {/* Ссылки */}
-            <div className="flex flex-wrap items-center gap-4">
+            {/* Ссылки — иконки соцсетей/маркетплейсов */}
+            <div className="flex flex-wrap items-center gap-2">
               {brand.website && (
                 <a
                   href={brand.website}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="flex items-center space-x-2 px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg transition-all"
+                  title={t('brandDetailPage.website')}
+                  className="w-10 h-10 flex items-center justify-center bg-white/10 hover:bg-white/20 text-white rounded-lg transition-all"
                 >
-                  <ExternalLink className="w-4 h-4" />
-                  <span>{t('brandDetailPage.website')}</span>
+                  <SocialIcon url={brand.website} className="w-5 h-5" />
                 </a>
               )}
               {brand.shop_links?.map((shop, i) =>
@@ -230,10 +230,10 @@ export const BrandDetailPage: React.FC = () => {
                     href={shop.url}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="flex items-center space-x-2 px-4 py-2 bg-white/10 hover:bg-white/20 text-white rounded-lg transition-all"
+                    title={shop.platform || t('brandDetailPage.shop')}
+                    className="w-10 h-10 flex items-center justify-center bg-white/10 hover:bg-white/20 text-white rounded-lg transition-all"
                   >
-                    <ExternalLink className="w-4 h-4" />
-                    <span>{shop.platform || t('brandDetailPage.shop')}</span>
+                    <SocialIcon url={shop.url} kind="shop" className="w-5 h-5" />
                   </a>
                 ) : null,
               )}
@@ -250,10 +250,10 @@ export const BrandDetailPage: React.FC = () => {
                     href={url}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="flex items-center space-x-2 px-3 py-2 bg-white/10 hover:bg-white/20 text-white rounded-lg transition-all"
+                    title={host}
+                    className="w-10 h-10 flex items-center justify-center bg-white/10 hover:bg-white/20 text-white rounded-lg transition-all"
                   >
-                    <ExternalLink className="w-4 h-4" />
-                    <span className="max-w-[160px] truncate">{host}</span>
+                    <SocialIcon url={url} className="w-5 h-5" />
                   </a>
                 );
               })}
