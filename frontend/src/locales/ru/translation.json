@@ -3228,6 +3228,8 @@
     "deleting": "Удаление...",
     "delete": "Удалить",
     "officialPresets": "Официальные пресеты",
+    "presetsForMaterial": "Пресеты материала: {{name}}",
+    "showAllPresets": "Показать все",
     "createMaterialFirst": "Сначала создайте материал",
     "newPreset": "Новый пресет",
     "noPresets": "У вас пока нет официальных пресетов",

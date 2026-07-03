@@ -3095,6 +3095,8 @@
     "deleting": "正在删除...",
     "delete": "删除",
     "officialPresets": "官方预设",
+    "presetsForMaterial": "材料的预设：{{name}}",
+    "showAllPresets": "显示全部",
     "createMaterialFirst": "请先创建材料",
     "newPreset": "新建预设",
     "noPresets": "您还没有任何官方预设",

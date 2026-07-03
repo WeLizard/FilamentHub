@@ -73,6 +73,7 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({ onBack }) =>
   const [deletingFilamentId, setDeletingFilamentId] = useState<number | null>(null);
   const [deletingLine, setDeletingLine] = useState<{ id: number; name: string } | null>(null);
   const [showQRFilament, setShowQRFilament] = useState<Filament | null>(null);
+  const [presetFilterFilament, setPresetFilterFilament] = useState<Filament | null>(null);
   const [isEditingProfile, setIsEditingProfile] = useState(false);
   const [profileDescription, setProfileDescription] = useState('');
   const [profileWebsite, setProfileWebsite] = useState('');
@@ -166,6 +167,11 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({ onBack }) =>
   });
 
   const brandPresets = presetsData?.items || [];
+  const displayedPresets = presetFilterFilament
+    ? brandPresets.filter((p) => p.filament_id === presetFilterFilament.id)
+    : brandPresets;
+  const filamentNameById = (id: number | null | undefined) =>
+    filaments.find((f) => f.id === id)?.name ?? null;
 
   const { data: usageData } = useQuery({
     queryKey: ['brand-usage', user?.brand_id],
@@ -314,6 +320,11 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({ onBack }) =>
   const handleCreatePreset = () => {
     setEditingPreset(null);
     setIsCreatePresetModalOpen(true);
+  };
+
+  const handleShowMaterialPresets = (filament: Filament) => {
+    setPresetFilterFilament(filament);
+    setBrandTab('presets');
   };
 
   const handleEditPreset = (preset: Preset) => {
@@ -579,6 +590,7 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({ onBack }) =>
                               onEdit={handleEditFilament}
                               onDelete={handleDeleteFilament}
                               onShowQR={(filament) => setShowQRFilament(filament)}
+                              onShowPresets={handleShowMaterialPresets}
                               viewMode="grid"
                             />
                           ))}
@@ -592,6 +604,7 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({ onBack }) =>
                               onEdit={handleEditFilament}
                               onDelete={handleDeleteFilament}
                               onShowQR={(filament) => setShowQRFilament(filament)}
+                              onShowPresets={handleShowMaterialPresets}
                               viewMode="list"
                             />
                           ))}
@@ -719,13 +732,29 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({ onBack }) =>
             </button>
           </div>
 
+          {presetFilterFilament && (
+            <div className="flex items-center justify-between gap-3 px-4 py-2 bg-purple-500/15 border border-purple-500/30 rounded-xl">
+              <span className="text-sm text-purple-200">
+                {t('brandProfile.presetsForMaterial', { name: presetFilterFilament.name })}
+              </span>
+              <button
+                type="button"
+                onClick={() => setPresetFilterFilament(null)}
+                className="text-xs text-purple-300 hover:text-white flex items-center gap-1"
+              >
+                <X className="w-3.5 h-3.5" />
+                {t('brandProfile.showAllPresets')}
+              </button>
+            </div>
+          )}
+
           {isLoadingPresets ? (
             <div className="flex items-center justify-center py-12">
               <Loader2 className="w-8 h-8 animate-spin text-gray-400" />
             </div>
-          ) : brandPresets.length > 0 ? (
+          ) : displayedPresets.length > 0 ? (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              {brandPresets.map((preset) => (
+              {displayedPresets.map((preset) => (
                 <div
                   key={preset.id}
                   className="bg-white/10 backdrop-blur-sm rounded-xl p-4 border border-white/20 hover:bg-white/15 transition-all cursor-pointer"
@@ -736,6 +765,20 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({ onBack }) =>
                       <h4 className="text-lg font-bold text-white mb-1">{preset.name}</h4>
                       {preset.description && (
                         <p className="text-gray-400 text-sm line-clamp-2">{preset.description}</p>
+                      )}
+                      {filamentNameById(preset.filament_id) && (
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            const f = filaments.find((x) => x.id === preset.filament_id);
+                            if (f) handleShowMaterialPresets(f);
+                          }}
+                          className="mt-1 inline-flex items-center gap-1 text-xs text-purple-300 hover:text-white"
+                        >
+                          <Package className="w-3 h-3" />
+                          {filamentNameById(preset.filament_id)}
+                        </button>
                       )}
                     </div>
                     {preset.is_official && (
@@ -976,13 +1019,14 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({ onBack }) =>
           isOpen={isCreatePresetModalOpen}
           onClose={handleClosePresetModal}
           preset={editingPreset}
+          filamentId={!editingPreset ? presetFilterFilament?.id : undefined}
           brandId={user.brand_id || undefined}
         />
       </Suspense>
 
       {/* QR Code Modal */}
       {showQRFilament && showQRFilament.qr_code && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
+        <ModalOverlay onClose={() => setShowQRFilament(null)}>
           <div className="bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900 rounded-2xl w-full max-w-lg overflow-hidden flex flex-col border border-white/20 shadow-2xl">
             {/* Header */}
             <div className="flex items-center justify-between p-6 border-b border-white/10">
@@ -1068,7 +1112,7 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({ onBack }) =>
               </button>
             </div>
           </div>
-        </div>
+        </ModalOverlay>
       )}
 
       {/* Edit Profile Modal */}
@@ -2924,10 +2968,11 @@ interface FilamentCardProps {
   onEdit: (filament: Filament) => void;
   onDelete: (filament: Filament) => void;
   onShowQR: (filament: Filament) => void;
+  onShowPresets: (filament: Filament) => void;
   viewMode?: 'grid' | 'list';
 }
 
-const FilamentCard: React.FC<FilamentCardProps> = ({ filament, onEdit, onDelete, onShowQR, viewMode = 'grid' }) => {
+const FilamentCard: React.FC<FilamentCardProps> = ({ filament, onEdit, onDelete, onShowQR, onShowPresets, viewMode = 'grid' }) => {
   const { t } = useTranslation();
   // Загружаем пресеты для материала
   const { data: presetsData } = useQuery({
@@ -3159,13 +3204,18 @@ const FilamentCard: React.FC<FilamentCardProps> = ({ filament, onEdit, onDelete,
 
       {/* Statistics */}
       <div className="grid grid-cols-3 gap-2 mb-4 text-xs">
-        <div className="text-center p-2 bg-white/5 rounded-lg">
+        <button
+          type="button"
+          onClick={(e) => { e.stopPropagation(); onShowPresets(filament); }}
+          className="text-center p-2 bg-white/5 hover:bg-white/10 rounded-lg transition-all"
+          title={t('brandProfile.presetsCount')}
+        >
           <div className="flex items-center justify-center space-x-1 text-gray-400 mb-1">
             <Settings className="w-3 h-3" />
           </div>
           <div className="text-white font-semibold">{totalPresets}</div>
           <div className="text-gray-400">{t('brandProfile.presetsCount')}</div>
-        </div>
+        </button>
         <div className="text-center p-2 bg-white/5 rounded-lg">
           <div className="flex items-center justify-center space-x-1 text-gray-400 mb-1">
             <QrCode className="w-3 h-3" />

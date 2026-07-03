@@ -301,11 +301,12 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
     isOpen && (!preset || isDraft) && !filamentId && !showFilamentForm
   );
 
-  // Загружаем филамент для редактирования
+  // Загружаем филамент для редактирования или для предвыбранного filamentId (создание из карточки материала)
+  const preselectFilamentId = preset?.filament_id ?? filamentId;
   const { data: editingFilament } = useQuery({
-    queryKey: ['filament', preset?.filament_id],
-    queryFn: () => filamentsAPI.get(preset!.filament_id!),
-    enabled: isOpen && !!preset?.filament_id, // Загружаем только при редактировании
+    queryKey: ['filament', preselectFilamentId],
+    queryFn: () => filamentsAPI.get(preselectFilamentId!),
+    enabled: isOpen && !!preselectFilamentId,
   });
 
   // Загружаем материалы для выбора (если не передан filamentId И не создаем новый)
@@ -839,13 +840,13 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
     setDuplicateFilamentSuggestion(null);
   }, [preset, filamentId, brandId, isOpen]);
 
-  // Когда загрузился филамент при редактировании, обновляем filamentSearch и selectedFilament
+  // Когда загрузился филамент (редактирование или предвыбор filamentId) — показываем его имя
   useEffect(() => {
-    if (editingFilament && preset) {
+    if (editingFilament && (preset || filamentId)) {
       setFilamentSearch(editingFilament.color_name ? `${editingFilament.name} (${editingFilament.color_name})` : editingFilament.name);
       setSelectedFilament(editingFilament);
     }
-  }, [editingFilament, preset]);
+  }, [editingFilament, preset, filamentId]);
 
   // Флаг для отслеживания изменений из расширенных настроек (чтобы избежать циклов)
   const isInternalColorChangeRef = useRef(false);

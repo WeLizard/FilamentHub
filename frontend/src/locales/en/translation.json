@@ -3098,6 +3098,8 @@
     "deleting": "Deleting...",
     "delete": "Delete",
     "officialPresets": "Official presets",
+    "presetsForMaterial": "Presets for material: {{name}}",
+    "showAllPresets": "Show all",
     "createMaterialFirst": "Create a material first",
     "newPreset": "New preset",
     "noPresets": "You don't have any official presets yet",
