@@ -654,7 +654,7 @@ async def create_shared_quote(
     await db.commit()
     await db.refresh(quote)
 
-    share_url = f"{settings.BASE_URL}/api/v1/calculator/quote/{quote.uuid}"
+    share_url = f"{settings.BASE_URL}/quote/{quote.uuid}"
     return SharedQuoteResponse(uuid=quote.uuid, share_url=share_url, expires_at=quote.expires_at)
 
 

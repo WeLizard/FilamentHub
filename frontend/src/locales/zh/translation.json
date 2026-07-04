@@ -11,6 +11,16 @@
       "compatible_specs": "参数兼容"
     }
   },
+  "sharedQuotePage": {
+    "title": "报价单",
+    "ctaTitle": "创建您自己的报价单",
+    "ctaText": "一分钟内估算打印成本并分享报价",
+    "ctaButton": "打开计算器",
+    "expiredTitle": "链接已过期",
+    "expiredText": "该报价单已不可用。请让发送者创建新的报价单。",
+    "notFoundTitle": "未找到报价单",
+    "notFoundText": "链接无效或报价单已被删除。"
+  },
   "errorBoundary": {
     "title": "出现了错误",
     "defaultMessage": "发生了意外错误",

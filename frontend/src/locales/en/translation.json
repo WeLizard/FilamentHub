@@ -11,6 +11,16 @@
       "compatible_specs": "Spec-compatible"
     }
   },
+  "sharedQuotePage": {
+    "title": "Quote",
+    "ctaTitle": "Create your own quote",
+    "ctaText": "Estimate print cost and share a quote in a minute",
+    "ctaButton": "Open calculator",
+    "expiredTitle": "Link expired",
+    "expiredText": "This quote is no longer available. Ask the sender to create a new one.",
+    "notFoundTitle": "Quote not found",
+    "notFoundText": "The link is invalid or the quote was removed."
+  },
   "errorBoundary": {
     "title": "Something went wrong",
     "defaultMessage": "An unexpected error occurred",

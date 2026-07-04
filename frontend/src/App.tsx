@@ -30,6 +30,7 @@ const WikiPage = lazy(() => import('./pages/WikiPage').then(m => ({ default: m.W
 const WikiCategoryPage = lazy(() => import('./pages/WikiCategoryPage').then(m => ({ default: m.WikiCategoryPage })));
 const WikiArticlePage = lazy(() => import('./pages/WikiArticlePage').then(m => ({ default: m.WikiArticlePage })));
 const PrivacyPolicyPage = lazy(() => import('./pages/PrivacyPolicyPage').then(m => ({ default: m.PrivacyPolicyPage })));
+const SharedQuotePage = lazy(() => import('./pages/SharedQuotePage').then(m => ({ default: m.SharedQuotePage })));
 
 // Prefetch all lazy chunks after initial page load so navigation feels instant
 if (typeof window !== 'undefined') {
@@ -263,6 +264,16 @@ function AppContent() {
         <Route path="/confirm-email-change" element={<ConfirmEmailChangePage />} />
         <Route path="/brand-invite/:token" element={<BrandInvitePage />} />
         <Route path="/oauth/callback/:provider" element={<OAuthCallbackPage />} />
+        <Route
+          path="/quote/:uuid"
+          element={
+            <Layout>
+              <Suspense fallback={<PageLoader />}>
+                <SharedQuotePage />
+              </Suspense>
+            </Layout>
+          }
+        />
         <Route path="*" element={<NotFoundPage />} />
       </Routes>
     </>
