@@ -263,18 +263,6 @@ export function FilamentPaletteForm({ brandId, onClose, sourceFilament }: Filame
             onChange={(val) => setDiameter(Number(val))}
           />
           <DensityField value={density} onChange={setDensity} />
-          <div>
-            <label className="block text-gray-300 mb-2 text-sm font-medium">{t('createFilament.emptySpoolWeightLabel')}</label>
-            <input
-              type="number"
-              value={emptySpoolWeight ?? ''}
-              onChange={(e) => setEmptySpoolWeight(e.target.value === '' ? null : Number(e.target.value))}
-              min={0}
-              step="1"
-              className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all"
-              placeholder={t('createFilament.emptySpoolWeightPlaceholder')}
-            />
-          </div>
           <AvailabilitySelect value={availability} onChange={setAvailability} />
         </div>
         <div className="mt-3">
@@ -287,6 +275,8 @@ export function FilamentPaletteForm({ brandId, onClose, sourceFilament }: Filame
             onPricePerSpoolChange={setPricePerSpool}
             spoolWeight={spoolWeight}
             onSpoolWeightChange={setSpoolWeight}
+            emptySpoolWeight={emptySpoolWeight}
+            onEmptySpoolWeightChange={setEmptySpoolWeight}
             currencySymbol={currencySymbol('RUB')}
           />
         </div>

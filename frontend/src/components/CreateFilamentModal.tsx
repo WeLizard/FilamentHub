@@ -959,8 +959,8 @@ export const CreateFilamentModal: React.FC<CreateFilamentModalProps> = ({
             </div>
           )}
 
-          {/* Diameter, density, empty spool weight — compact three-column row */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          {/* Diameter and Density */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <Dropdown
               label={`${t('createFilament.diameterLabel')} *`}
               value={diameter}
@@ -973,18 +973,6 @@ export const CreateFilamentModal: React.FC<CreateFilamentModalProps> = ({
               placeholder={t('createFilament.selectDiameter')}
             />
             <DensityField value={density} onChange={setDensity} />
-            <div>
-              <label className="block text-gray-300 mb-2 text-sm font-medium">{t('createFilament.emptySpoolWeightLabel')}</label>
-              <input
-                type="number"
-                value={emptySpoolWeight ?? ''}
-                onChange={(e) => setEmptySpoolWeight(e.target.value === '' ? null : Number(e.target.value))}
-                min={0}
-                step="1"
-                className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all"
-                placeholder={t('createFilament.emptySpoolWeightPlaceholder')}
-              />
-            </div>
           </div>
 
           {/* Price and Weight */}
@@ -997,6 +985,8 @@ export const CreateFilamentModal: React.FC<CreateFilamentModalProps> = ({
             onPricePerSpoolChange={setPricePerSpool}
             spoolWeight={spoolWeight}
             onSpoolWeightChange={setSpoolWeight}
+            emptySpoolWeight={emptySpoolWeight}
+            onEmptySpoolWeightChange={setEmptySpoolWeight}
             currencySymbol={priceCurrencySymbol}
           />
 
