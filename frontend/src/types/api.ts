@@ -338,6 +338,25 @@ export interface Preset {
   is_saved?: boolean; // Для UI: сохранен ли пресет пользователем (из available-presets эндпоинта)
 }
 
+export type PresetMatchReason =
+  | 'exact_match'
+  | 'same_model'
+  | 'same_family'
+  | 'same_manufacturer'
+  | 'compatible_specs';
+
+export interface RecommendedPresetItem {
+  preset: Preset;
+  match_score: number; // базовый уровень совпадения + бонусы (0..1.2)
+  match_reason: PresetMatchReason;
+}
+
+export interface RecommendedForPrinterResponse {
+  printer_id: number;
+  printer_name: string;
+  items: RecommendedPresetItem[];
+}
+
 export interface RecommendedPreset {
   filament_id: number;
   extruder_temp: number;

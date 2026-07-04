@@ -1,4 +1,16 @@
 {
+  "recommendedForPrinter": {
+    "title": "Рекомендовано для {{printer}}",
+    "ctaTitle": "Выберите принтер",
+    "ctaText": "Персональные рекомендации пресетов под вашу модель",
+    "badge": {
+      "exact_match": "Тестировано на вашем принтере",
+      "same_model": "Тот же принтер",
+      "same_family": "Похожий принтер",
+      "same_manufacturer": "Тот же бренд",
+      "compatible_specs": "Совместимо по характеристикам"
+    }
+  },
   "errorBoundary": {
     "title": "Что-то пошло не так",
     "defaultMessage": "Произошла непредвиденная ошибка",

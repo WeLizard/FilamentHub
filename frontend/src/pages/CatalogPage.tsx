@@ -23,6 +23,7 @@ import { translateApiError } from '../utils/translateApiError';
 import { currencySymbol } from '../utils/currency';
 import { Dropdown } from '../components/Dropdown';
 import { FilamentPreview } from '../components/FilamentPreview';
+import { RecommendedForPrinterSection } from '../components/RecommendedForPrinterSection';
 import { SEOHead } from '../components/SEOHead';
 import type { Filament } from '../types/api';
 import type { AxiosError } from 'axios';
@@ -187,6 +188,12 @@ export const CatalogPage: React.FC = () => {
           </div>
         </div>
       </div>
+
+      {/* Рекомендации под принтер пользователя (над основным гридом) */}
+      <RecommendedForPrinterSection
+        savedPresetIds={savedPresetIds}
+        onSavePreset={(presetId) => savePresetMutation.mutate(presetId)}
+      />
 
       {/* Material Grid */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">

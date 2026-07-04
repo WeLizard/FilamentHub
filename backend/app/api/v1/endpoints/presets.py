@@ -25,6 +25,7 @@ from app.core.errors import (
     ERR_PRESET_ALREADY_ACTIVE,
     ERR_PRESET_NOT_FOUND,
     ERR_PRESET_NOT_OWNER,
+    ERR_PRINTER_NOT_FOUND,
     ERR_WEIGHTED_PRESET_NO_DELETE,
     ERR_WEIGHTED_PRESET_READONLY,
     raise_error,
@@ -42,11 +43,14 @@ from app.schemas.preset import (
     PresetListResponse,
     PresetResponse,
     PresetUpdate,
+    RecommendedForPrinterResponse,
+    RecommendedPresetItem,
     RecommendedPresetResponse,
 )
 from app.schemas.printer import PrinterResponse
 from app.services.notification_service import notify_preset_deleted, notify_preset_updated
 from app.services.orcaslicer_exporter import generate_profile_info, preset_to_orcaslicer_json
+from app.services.preset_matcher import get_recommended_presets
 from app.services.preset_moderation import moderate_preset
 from app.services.preset_recommender import get_recommended_preset_values
 from app.services.weighted_preset_service import create_or_update_weighted_preset
@@ -183,6 +187,48 @@ async def list_presets(
         page=page,
         size=size,
         pages=pages,
+    )
+
+
+@router.get("/recommended-for-printer", response_model=RecommendedForPrinterResponse)
+async def recommended_for_printer(
+    db: Annotated[AsyncSession, Depends(get_db)],
+    printer_id: int = Query(..., gt=0),
+    filament_id: int | None = Query(None, gt=0),
+    limit: int = Query(20, ge=1, le=100),
+) -> RecommendedForPrinterResponse:
+    """Топ пресетов под конкретный принтер (публичный каталог).
+
+    Скоринг детерминированный: пресет матчится против привязанных к нему принтеров,
+    берётся лучший уровень (точный принтер / та же модель / семейство / бренд / близкие
+    характеристики) плюс бонусы за официальность/рейтинг.
+    """
+    printer = await db.get(Printer, printer_id)
+    if printer is None:
+        raise_error(404, ERR_PRINTER_NOT_FOUND)
+
+    scored = await get_recommended_presets(db, printer, filament_id, limit)
+
+    items: list[RecommendedPresetItem] = []
+    for entry in scored:
+        preset_dict = PresetResponse.model_validate(entry.preset).model_dump()
+        preset_dict["printers"] = [
+            PrinterResponse.model_validate(link.printer).model_dump()
+            for link in entry.preset.printer_links
+            if link.printer is not None
+        ]
+        items.append(
+            RecommendedPresetItem(
+                preset=PresetResponse(**preset_dict),
+                match_score=round(entry.match_score, 3),
+                match_reason=entry.match_reason,
+            )
+        )
+
+    return RecommendedForPrinterResponse(
+        printer_id=printer.id,
+        printer_name=printer.name,
+        items=items,
     )
 
 

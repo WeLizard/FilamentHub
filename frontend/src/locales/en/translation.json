@@ -1,4 +1,16 @@
 {
+  "recommendedForPrinter": {
+    "title": "Recommended for {{printer}}",
+    "ctaTitle": "Select your printer",
+    "ctaText": "Personalized preset recommendations for your model",
+    "badge": {
+      "exact_match": "Tested on your printer",
+      "same_model": "Same printer",
+      "same_family": "Similar printer",
+      "same_manufacturer": "Same brand",
+      "compatible_specs": "Spec-compatible"
+    }
+  },
   "errorBoundary": {
     "title": "Something went wrong",
     "defaultMessage": "An unexpected error occurred",

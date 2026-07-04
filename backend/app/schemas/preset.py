@@ -176,3 +176,22 @@ class RecommendedPresetResponse(BaseModel):
 
     model_config = ConfigDict(from_attributes=True)
 
+
+class RecommendedPresetItem(BaseModel):
+    """A preset ranked by how well it matches a printer."""
+
+    preset: PresetResponse
+    match_score: float = Field(..., ge=0.0, le=1.2, description="Base tier score plus ranking bonuses")
+    match_reason: str = Field(
+        ...,
+        description="exact_match | same_model | same_family | same_manufacturer | compatible_specs",
+    )
+
+
+class RecommendedForPrinterResponse(BaseModel):
+    """Top presets recommended for a specific printer."""
+
+    printer_id: int
+    printer_name: str
+    items: list[RecommendedPresetItem]
+
