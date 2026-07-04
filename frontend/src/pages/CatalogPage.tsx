@@ -190,7 +190,7 @@ export const CatalogPage: React.FC = () => {
             {user && !user.printer_id && (
               <button
                 type="button"
-                onClick={() => navigate('/profile')}
+                onClick={() => navigate('/profile', { state: { tab: 'settings' } })}
                 title={t('recommendedForPrinter.ctaText')}
                 className="flex items-center justify-center gap-2 px-3 sm:px-4 py-3 rounded-xl bg-white/10 border border-white/20 text-sm text-gray-200 hover:bg-white/15 hover:text-white transition-all"
               >

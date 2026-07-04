@@ -3,7 +3,7 @@
 import { lazy, Suspense, useState, useMemo, useEffect, useRef, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import {
   User,
   Package,
@@ -63,7 +63,6 @@ import { toast } from '../components/Toast';
 import { OrcaSettingsView } from '../components/OrcaSettingsView';
 import { CreatePrinterRequestModal } from '../components/CreatePrinterRequestModal';
 import { SettingsTab } from '../components/SettingsTab';
-import { SubscriptionCard } from '../components/SubscriptionCard';
 import { ExportFromOrcaSlicerButton } from '../components/ExportFromOrcaSlicerButton';
 import { ExportPrinterProfilesButton } from '../components/ExportPrinterProfilesButton';
 const CreatePrinterProfileModal = lazy(() =>
@@ -98,9 +97,15 @@ export const ProfilePage: React.FC = () => {
     }
   };
   const [showBrandCabinet, setShowBrandCabinet] = useState(false); // Показывать ли кабинет производителя
-  const [userTab, setUserTab] = useState<'dashboard' | 'presets' | 'spools' | 'calculator-pro' | 'settings' | 'printer-profiles'>(
-    'dashboard'
-  );
+  const location = useLocation();
+  const [userTab, setUserTab] = useState<'dashboard' | 'presets' | 'spools' | 'calculator-pro' | 'settings' | 'printer-profiles'>(() => {
+    // Deep-link на конкретную вкладку: navigate('/profile', { state: { tab } })
+    const requested = (location.state as { tab?: string } | null)?.tab;
+    const valid = ['dashboard', 'presets', 'spools', 'calculator-pro', 'settings', 'printer-profiles'];
+    return valid.includes(requested ?? '')
+      ? (requested as 'dashboard' | 'presets' | 'spools' | 'calculator-pro' | 'settings' | 'printer-profiles')
+      : 'dashboard';
+  });
   const [isAddSpoolOpen, setIsAddSpoolOpen] = useState(false);
   const [showHelpModal, setShowHelpModal] = useState(false);
   const [isCreatePresetModalOpen, setIsCreatePresetModalOpen] = useState(false);
@@ -700,7 +705,6 @@ export const ProfilePage: React.FC = () => {
       {/* Dashboard Tab */}
       {userTab === 'dashboard' && (
         <div className="space-y-4 md:space-y-6">
-          {user && <SubscriptionCard user={user} />}
           {/* Stats Cards */}
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-6">
             <StatCard
@@ -3160,7 +3164,7 @@ const PresetCard: React.FC<PresetCardProps> = ({ preset, onEdit, onView, onDelet
   const [isDownloading, setIsDownloading] = useState(false);
   const [_isImporting, setIsImporting] = useState(false);
   const [_isInOrcaSlicer, setIsInOrcaSlicer] = useState(false);
-  
+
   // Проверяем, запущен ли frontend внутри OrcaSlicer
   useEffect(() => {
     // Проверяем наличие window.filamenthub или window.wx
@@ -3169,7 +3173,7 @@ const PresetCard: React.FC<PresetCardProps> = ({ preset, onEdit, onView, onDelet
       window.wx?.postMessage
     );
     setIsInOrcaSlicer(Boolean(inOrca));
-    
+
     // Если в OrcaSlicer, подписываемся на ответы от C++
     if (inOrca) {
       const handleMessage = (event: MessageEvent) => {
@@ -3187,16 +3191,16 @@ const PresetCard: React.FC<PresetCardProps> = ({ preset, onEdit, onView, onDelet
           // Игнорируем сообщения, которые не являются ответами от OrcaSlicer
         }
       };
-      
+
       window.addEventListener('message', handleMessage);
-      
+
       // Cleanup при размонтировании
       return () => {
         window.removeEventListener('message', handleMessage);
       };
     }
   }, []); // Пустой массив зависимостей = выполняется только при монтировании
-  
+
   // Загружаем филамент для отображения информации
   const { data: filament } = useQuery({
     queryKey: ['filament', preset.filament_id],
