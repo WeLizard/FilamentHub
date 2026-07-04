@@ -888,7 +888,7 @@ export const CreatePrinterProfileModal: React.FC<CreatePrinterProfileModalProps>
     }
   }, [extraMetadata]);
 
-  const metadataInvalid = false;
+  const metadataInvalid = extraMetadata.trim() !== '' && parsedExtraMetadata === null;
 
   const getMetadataValue = (key: string): unknown => {
     if (EXTRA_METADATA_ONLY_KEY_SET.has(key)) {
