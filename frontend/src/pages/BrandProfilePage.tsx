@@ -426,9 +426,6 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({ onBack, init
                 {brandData.verified && <Shield className="w-4 h-4 text-green-400" />}
                 <span>{brandData.verified ? t('brandProfile.verifiedManufacturer') : t('brandProfile.manufacturer')}</span>
               </div>
-              {brandData.description && (
-                <p className="mt-1 max-w-md text-sm text-gray-400 md:mx-0">{brandData.description}</p>
-              )}
               {brandData.website && (
                 <a
                   href={brandData.website.startsWith('http') ? brandData.website : `https://${brandData.website}`}
@@ -451,6 +448,12 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({ onBack, init
             </div>
           </div>
         </div>
+
+        {brandData.description && (
+          <p className="mt-2 text-sm text-gray-400 text-center md:text-right md:ml-auto md:max-w-md">
+            {brandData.description}
+          </p>
+        )}
 
         {/* Tabs */}
         <div className="flex justify-center space-x-2 mt-4">
