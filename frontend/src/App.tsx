@@ -14,7 +14,7 @@ import { BrandInvitePage } from './pages/BrandInvitePage';
 import { DownloadPage } from './pages/DownloadPage';
 import { ToastContainer } from './components/Toast';
 import { useOrcaSlicerNotifications } from './hooks/useOrcaSlicerNotifications';
-import { lazy, Suspense, useEffect } from 'react';
+import { lazy, Suspense, useEffect, type ReactNode } from 'react';
 import { Notifications } from './components/Notifications';
 import { useAuth } from './contexts/AuthContext';
 import { MaintenancePage } from './components/MaintenancePage';
@@ -48,6 +48,18 @@ if (typeof window !== 'undefined') {
       import('./components/CreatePrinterProfileModal');
     }, 2000);
   }, { once: true });
+}
+
+/** Безхромный контейнер для встраивания каталога в <iframe> плагина OrcaSlicer.
+ *  Даёт тот же фон, что и Layout, но без хедера/футера/модалок. */
+function EmbedShell({ children }: { children: ReactNode }) {
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900">
+      <div className="relative z-10 w-full max-w-7xl mx-auto px-4 sm:px-6 py-4 sm:py-8">
+        {children}
+      </div>
+    </div>
+  );
 }
 
 function PageLoader() {
@@ -257,6 +269,9 @@ function AppContent() {
             </Layout>
           }
         />
+        {/* Встроенный каталог для плагина OrcaSlicer (iframe, без хедера/футера) */}
+        <Route path="/embed" element={<EmbedShell><CatalogPage /></EmbedShell>} />
+        <Route path="/embed/catalog" element={<EmbedShell><CatalogPage /></EmbedShell>} />
         <Route path="/user-agreement" element={<TermsPage />} />
         <Route path="/privacy-policy" element={<Suspense fallback={<PageLoader />}><PrivacyPolicyPage /></Suspense>} />
         <Route path="/personal-data-consent" element={<ConsentPage />} />

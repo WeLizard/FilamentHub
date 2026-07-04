@@ -17,11 +17,13 @@ import {
   Palette,
   Fan,
   Printer,
+  Download,
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { filamentsAPI, brandsAPI, savedPresetsAPI, qrAPI } from '../api/client';
 import { translateApiError } from '../utils/translateApiError';
 import { currencySymbol } from '../utils/currency';
+import { isPluginEmbed, importPresetToPlugin } from '../utils/pluginBridge';
 import { Dropdown } from '../components/Dropdown';
 import { FilamentPreview } from '../components/FilamentPreview';
 import { RecommendedForPrinterSection } from '../components/RecommendedForPrinterSection';
@@ -531,6 +533,19 @@ const MaterialCard: React.FC<MaterialCardProps> = ({
                     <ChevronRight className="w-3 h-3 sm:w-4 sm:h-4" />
                   </button>
                 </div>
+              )}
+              {isPluginEmbed() && (
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    importPresetToPlugin(currentPreset.id);
+                  }}
+                  title={t('catalogPage.importToOrcaTitle')}
+                  className="px-3 sm:px-4 py-1.5 sm:py-2 rounded-lg border border-purple-400/40 bg-purple-500/20 text-xs sm:text-sm text-purple-100 hover:bg-purple-500/30 transition-colors"
+                >
+                  <Download className="w-3.5 h-3.5 inline sm:mr-1" />
+                  <span className="hidden sm:inline">{t('catalogPage.importToOrca')}</span>
+                </button>
               )}
               <button
                 onClick={handleSavePreset}

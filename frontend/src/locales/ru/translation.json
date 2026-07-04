@@ -1006,6 +1006,8 @@
     "badgeCommunity": "Сообщество",
     "addedToProfile": "Добавлено",
     "addToProfile": "В профиль",
+    "importToOrca": "Импорт в OrcaSlicer",
+    "importToOrcaTitle": "Импортировать пресет в OrcaSlicer",
     "qrCode": "QR-код:",
     "qrScanHint": "Сканируйте для быстрого импорта настроек",
     "qrScans": "Сканирований:",

@@ -857,6 +857,8 @@
     "badgeCommunity": "社区",
     "addedToProfile": "已添加",
     "addToProfile": "到配置文件",
+    "importToOrca": "导入到 OrcaSlicer",
+    "importToOrcaTitle": "将此预设导入 OrcaSlicer",
     "qrCode": "二维码：",
     "qrScanHint": "扫描以快速导入设置",
     "qrScans": "扫描数：",

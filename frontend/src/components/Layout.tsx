@@ -11,6 +11,7 @@ import { AuthModal } from './AuthModal';
 import { Notifications } from './Notifications';
 import { FeedbackModal } from './FeedbackModal';
 import { LanguageSwitcher } from './LanguageSwitcher';
+import { isPluginEmbed } from '../utils/pluginBridge';
 import { useTranslation } from 'react-i18next';
 
 interface LayoutProps {
@@ -109,6 +110,10 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
     window.wx?.postMessage
   );
 
+  // Скрываем хедер/футер и в форковой WebView, и во встроенном режиме плагина
+  // (iframe), чтобы навигация внутри iframe не показывала хром сайта.
+  const hideChrome = isInOrcaSlicer || isPluginEmbed();
+
   const isActive = (path: string) => location.pathname === path;
 
   const handleLogout = () => {
@@ -124,8 +129,8 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
         <div className="absolute -bottom-40 -left-40 w-80 h-80 bg-blue-500/10 rounded-full blur-3xl animate-pulse delay-1000"></div>
       </div>
 
-      {/* Header - скрываем если открыто через OrcaSlicer */}
-      {!isInOrcaSlicer && (
+      {/* Header - скрываем если открыто через OrcaSlicer или в iframe плагина */}
+      {!hideChrome && (
       <header className="relative bg-black/20 backdrop-blur-sm border-b border-white/10 z-50">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 py-3 sm:py-4">
           <div className="flex items-center justify-between">
@@ -395,8 +400,8 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
       {/* Main Content */}
       <main className="relative z-10 flex-1 w-full max-w-7xl mx-auto px-4 sm:px-6 py-4 sm:py-8">{children}</main>
 
-      {/* Footer - hidden in OrcaSlicer */}
-      {!isInOrcaSlicer && (
+      {/* Footer - hidden in OrcaSlicer / plugin iframe */}
+      {!hideChrome && (
         <footer className="relative z-10 border-t border-white/10 bg-black/20 backdrop-blur-sm mt-8">
           <div className="max-w-7xl mx-auto px-4 sm:px-6 py-3 flex flex-col sm:flex-row items-center justify-between gap-1.5 text-[11px] sm:text-xs text-gray-500">
             <span>{t('layout.footer_copyright', { year: new Date().getFullYear() })}</span>
@@ -411,7 +416,7 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
 
       {/* Плавающий переключатель языка — только для гостей на десктопе.
           Авторизованные меняют язык в Профиле → Настройки; на мобиле — в меню. */}
-      {!isInOrcaSlicer && !user && (
+      {!hideChrome && !user && (
         <div className="hidden md:flex fixed bottom-4 right-4 z-50 rounded-xl bg-slate-900/95 border border-white/15 shadow-2xl shadow-black/40 p-1 backdrop-blur">
           <LanguageSwitcher compact className="!bg-transparent !border-0 !p-0" />
         </div>

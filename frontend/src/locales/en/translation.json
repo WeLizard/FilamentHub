@@ -857,6 +857,8 @@
     "badgeCommunity": "Community",
     "addedToProfile": "Added",
     "addToProfile": "To profile",
+    "importToOrca": "Import into OrcaSlicer",
+    "importToOrcaTitle": "Import this preset into OrcaSlicer",
     "qrCode": "QR code:",
     "qrScanHint": "Scan for quick settings import",
     "qrScans": "Scans:",
