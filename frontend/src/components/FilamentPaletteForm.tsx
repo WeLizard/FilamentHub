@@ -53,6 +53,7 @@ export function FilamentPaletteForm({ brandId, onClose, sourceFilament }: Filame
   const [pricePerKg, setPricePerKg] = useState(sourceFilament?.price_per_kg ?? 0);
   const [pricePerSpool, setPricePerSpool] = useState(0);
   const [spoolWeight, setSpoolWeight] = useState(sourceFilament?.spool_weight ?? 1000);
+  const [emptySpoolWeight, setEmptySpoolWeight] = useState<number | null>(sourceFilament?.empty_spool_weight_g ?? null);
   const [availability, setAvailability] = useState<FilamentAvailability>(sourceFilament?.availability ?? 'available');
   const [entries, setEntries] = useState<PaletteEntry[]>([emptyEntry(), emptyEntry(), emptyEntry()]);
   const [openPicker, setOpenPicker] = useState<number | null>(null);
@@ -141,6 +142,7 @@ export function FilamentPaletteForm({ brandId, onClose, sourceFilament }: Filame
         density: density || null,
         price_per_kg: pricePerKg || null,
         spool_weight: spoolWeight || null,
+        empty_spool_weight_g: emptySpoolWeight,
         price_display_unit: priceMode,
         availability,
         variants: filledEntries.map((e) => ({
@@ -261,6 +263,18 @@ export function FilamentPaletteForm({ brandId, onClose, sourceFilament }: Filame
             onChange={(val) => setDiameter(Number(val))}
           />
           <DensityField value={density} onChange={setDensity} />
+          <div>
+            <label className="block text-gray-300 mb-2 text-sm font-medium">{t('createFilament.emptySpoolWeightLabel')}</label>
+            <input
+              type="number"
+              value={emptySpoolWeight ?? ''}
+              onChange={(e) => setEmptySpoolWeight(e.target.value === '' ? null : Number(e.target.value))}
+              min={0}
+              step="1"
+              className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all"
+              placeholder={t('createFilament.emptySpoolWeightPlaceholder')}
+            />
+          </div>
           <AvailabilitySelect value={availability} onChange={setAvailability} />
         </div>
         <div className="mt-3">
