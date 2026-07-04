@@ -1828,8 +1828,8 @@ export const CalculatorPage: React.FC = () => {
   return (
     <div className="space-y-6">
       {trialDaysLeft !== null && (
-        <div className="flex items-center gap-2 rounded-2xl border border-cyan-400/20 bg-cyan-500/10 px-5 py-3 text-sm text-cyan-200">
-          <Clock className="h-4 w-4 shrink-0" />
+        <div className="inline-flex w-fit items-center gap-1.5 rounded-full border border-cyan-400/20 bg-cyan-500/10 px-3 py-1 text-xs text-cyan-200">
+          <Clock className="h-3.5 w-3.5 shrink-0" />
           <span>{t('profilePage.calculator.trialBanner', { days: trialDaysLeft })}</span>
         </div>
       )}

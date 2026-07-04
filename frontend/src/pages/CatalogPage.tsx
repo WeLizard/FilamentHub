@@ -16,6 +16,7 @@ import {
   Droplet,
   Palette,
   Fan,
+  Printer,
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { filamentsAPI, brandsAPI, savedPresetsAPI, qrAPI } from '../api/client';
@@ -165,8 +166,9 @@ export const CatalogPage: React.FC = () => {
             />
           </div>
 
-          {/* Filters - stack on mobile, row on desktop */}
-          <div className="grid grid-cols-2 lg:grid-cols-2 gap-2 sm:gap-4">
+          {/* Filters - stack on mobile, row on desktop.
+              Третьей кнопкой — компактный CTA выбора принтера (только залогиненным без printer_id). */}
+          <div className={`grid gap-2 sm:gap-4 ${user && !user.printer_id ? 'grid-cols-2 sm:grid-cols-3' : 'grid-cols-2'}`}>
             <Dropdown
               value={materialTypeFilter || ''}
               onChange={(val) => setMaterialTypeFilter(val === '' ? null : (val as string))}
@@ -185,6 +187,17 @@ export const CatalogPage: React.FC = () => {
               ]}
               placeholder={t('catalogPage.allBrands')}
             />
+            {user && !user.printer_id && (
+              <button
+                type="button"
+                onClick={() => navigate('/profile')}
+                title={t('recommendedForPrinter.ctaText')}
+                className="flex items-center justify-center gap-2 px-3 sm:px-4 py-3 rounded-xl bg-white/10 border border-white/20 text-sm text-gray-200 hover:bg-white/15 hover:text-white transition-all"
+              >
+                <Printer className="w-4 h-4 text-purple-300 flex-shrink-0" />
+                <span className="truncate">{t('recommendedForPrinter.ctaTitle')}</span>
+              </button>
+            )}
           </div>
         </div>
       </div>

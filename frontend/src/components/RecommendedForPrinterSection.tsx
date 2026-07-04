@@ -3,7 +3,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import { Sparkles, Thermometer, Printer as PrinterIcon, ChevronRight } from 'lucide-react';
+import { Sparkles, Thermometer } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { presetsAPI } from '../api/client';
 import type { PresetMatchReason } from '../types/api';
@@ -37,28 +37,9 @@ export const RecommendedForPrinterSection: React.FC<RecommendedForPrinterSection
     enabled: !!printerId,
   });
 
-  // Гостю секция не показывается.
-  if (!user) return null;
-
-  // Есть аккаунт, но принтер не выбран — предлагаем выбрать.
-  if (!printerId) {
-    return (
-      <button
-        type="button"
-        onClick={() => navigate('/profile')}
-        className="w-full flex items-center gap-3 sm:gap-4 bg-white/10 hover:bg-white/15 border border-white/20 rounded-xl sm:rounded-2xl p-4 sm:p-5 text-left transition-all"
-      >
-        <PrinterIcon className="w-6 h-6 sm:w-7 sm:h-7 text-purple-300 flex-shrink-0" />
-        <div className="flex-1 min-w-0">
-          <p className="text-white font-semibold text-sm sm:text-base">{t('recommendedForPrinter.ctaTitle')}</p>
-          <p className="text-gray-400 text-xs sm:text-sm">{t('recommendedForPrinter.ctaText')}</p>
-        </div>
-        <ChevronRight className="w-5 h-5 text-gray-400 flex-shrink-0" />
-      </button>
-    );
-  }
-
-  // Принтер выбран, но подходящих пресетов нет — секцию не показываем.
+  // Секция показывается только залогиненному пользователю с выбранным принтером
+  // и непустыми рекомендациями. CTA «выберите принтер» живёт в ряду фильтров каталога.
+  if (!user || !printerId) return null;
   if (isLoading || !data || data.items.length === 0) return null;
 
   return (
