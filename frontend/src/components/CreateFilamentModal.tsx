@@ -671,16 +671,18 @@ export const CreateFilamentModal: React.FC<CreateFilamentModalProps> = ({
             <div>
               <label className="block text-gray-300 mb-1 text-sm font-medium">{t('createFilament.lineLabel')}</label>
               <p className="text-gray-500 text-xs mb-2">{t('createFilament.lineHint')}</p>
-              <Dropdown
-                value={lineId === '' ? '' : String(lineId)}
-                onChange={(val) => setLineId(val === '' ? '' : Number(val))}
-                options={[
-                  { value: '', label: t('createFilament.lineNone') },
-                  ...((linesData ?? []).map((l) => ({ value: String(l.id), label: l.name }))),
-                ]}
-                placeholder={t('createFilament.lineNone')}
-              />
-              <div className="mt-2 flex gap-2">
+              <div className="flex gap-2">
+                <div className="flex-1">
+                  <Dropdown
+                    value={lineId === '' ? '' : String(lineId)}
+                    onChange={(val) => setLineId(val === '' ? '' : Number(val))}
+                    options={[
+                      { value: '', label: t('createFilament.lineNone') },
+                      ...((linesData ?? []).map((l) => ({ value: String(l.id), label: l.name }))),
+                    ]}
+                    placeholder={t('createFilament.lineNone')}
+                  />
+                </div>
                 <input
                   type="text"
                   value={newLineName}
