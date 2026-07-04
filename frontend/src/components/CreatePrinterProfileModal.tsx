@@ -1,6 +1,6 @@
 /** Модальное окно для создания printer profile */
 
-import { useState, useEffect, FormEvent, useMemo } from 'react';
+import { useState, useEffect, FormEvent, useMemo, useRef, useCallback } from 'react';
 import { X, Save, Loader2, Pencil, ChevronRight, HelpCircle } from 'lucide-react';
 import { Printer3DIcon } from './icons/Printer3DIcon';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -860,6 +860,31 @@ export const CreatePrinterProfileModal: React.FC<CreatePrinterProfileModalProps>
     }
   }, [isOpen, profile, baseProfile]);
 
+  // ── TODO-12.2: префилл нового профиля из выбранной каталожной модели ──
+  // Спеки (вендор, область печати, высота, сопла) берём из каталожного принтера.
+  // Только для СОЗДАНИЯ; edit/clone заполняются из самого профиля и не трогаются.
+  const applyPrinterModelDefaults = useCallback((printerModel: Printer) => {
+    const vendorValue = printerModel.vendor || printerModel.manufacturer;
+    if (vendorValue) setVendor(vendorValue);
+    if (printerModel.build_volume_x != null) setPrintableAreaX(String(printerModel.build_volume_x));
+    if (printerModel.build_volume_y != null) setPrintableAreaY(String(printerModel.build_volume_y));
+    if (printerModel.build_volume_z != null) setPrintableHeightMm(String(printerModel.build_volume_z));
+    const nozzles = printerModel.nozzle_options && printerModel.nozzle_options.length > 0
+      ? printerModel.nozzle_options
+      : printerModel.nozzle_diameter != null
+        ? [printerModel.nozzle_diameter]
+        : [];
+    if (nozzles.length > 0) setNozzleDiameters(nozzles.map((n) => String(n)));
+  }, []);
+
+  // Каталожная модель, выбранная пользователем в профиле (User.printer_id) — для предвыбора.
+  const { data: userSelectedPrinter } = useQuery({
+    queryKey: ['printer', user?.printer_id],
+    queryFn: () => printersAPI.get(user!.printer_id as number),
+    enabled: isOpen && !profile && !baseProfile && !!user?.printer_id,
+  });
+  const prefilledFromUserPrinterRef = useRef(false);
+
   // Генерируем slug из name при изменении
   useEffect(() => {
     if (!profile && !baseProfile && name) {
@@ -1180,6 +1205,7 @@ export const CreatePrinterProfileModal: React.FC<CreatePrinterProfileModalProps>
         setExtraMetadata(Object.keys(extraMetadataSource).length ? JSON.stringify(extraMetadataSource, null, 2) : '');
       } else {
         // Создание нового
+        prefilledFromUserPrinterRef.current = false;
         setName('');
         setSlug('');
         setDescription('');
@@ -1202,6 +1228,17 @@ export const CreatePrinterProfileModal: React.FC<CreatePrinterProfileModalProps>
       setShowGcodeModals({});
     }
   }, [isOpen, profile, baseProfile]);
+
+  // Один раз на открытие create: предвыбрать принтер пользователя и подставить его спеки.
+  // Идёт ПОСЛЕ populate-эффекта, чтобы не быть затёртым сбросом printerId в ветке создания.
+  useEffect(() => {
+    if (!isOpen || profile || baseProfile) return;
+    if (prefilledFromUserPrinterRef.current || !userSelectedPrinter) return;
+    prefilledFromUserPrinterRef.current = true;
+    setPrintersCache((prev) => ({ ...prev, [userSelectedPrinter.id]: userSelectedPrinter }));
+    setPrinterId(userSelectedPrinter.id);
+    applyPrinterModelDefaults(userSelectedPrinter);
+  }, [isOpen, profile, baseProfile, userSelectedPrinter, applyPrinterModelDefaults]);
 
   // Мутация для создания/обновления
   const createMutation = useMutation({
@@ -1555,6 +1592,10 @@ export const CreatePrinterProfileModal: React.FC<CreatePrinterProfileModalProps>
                   }
                   // Устанавливаем ID синхронно
                   setPrinterId(val);
+                  // TODO-12.2: при создании подставляем спеки выбранной модели каталога
+                  if (selectedPrinter && !profile && !baseProfile) {
+                    applyPrinterModelDefaults(selectedPrinter);
+                  }
                   // Очищаем поиск с небольшой задержкой, чтобы дать время кэшу обновиться
                   // и чтобы выбранный принтер успел попасть в options перед очисткой
                   setTimeout(() => {
