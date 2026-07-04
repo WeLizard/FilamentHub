@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next';
 import { Loader, XCircle, Upload, Layers, QrCode, RefreshCw } from 'lucide-react';
 import { brandInvitesAPI } from '../api/client';
 import { useAuth } from '../contexts/AuthContext';
+import { AuthModal } from '../components/AuthModal';
 import { translateApiError } from '../utils/translateApiError';
 import type { BrandInvitePublic } from '../types/api';
 
@@ -18,6 +19,7 @@ export function BrandInvitePage() {
   const [brandName, setBrandName] = useState('');
   const [accepting, setAccepting] = useState(false);
   const [error, setError] = useState('');
+  const [authOpen, setAuthOpen] = useState(false);
 
   useEffect(() => {
     let active = true;
@@ -45,7 +47,7 @@ export function BrandInvitePage() {
     try {
       await brandInvitesAPI.accept(token, brandName.trim());
       await refreshUser();
-      navigate('/profile');
+      navigate('/profile', { state: { brandCabinet: true, editBrand: true } });
     } catch (err) {
       const detail = (err as { response?: { data?: { detail?: unknown } } })?.response?.data?.detail;
       setError(translateApiError(t, detail, t('brandInvite.errorGeneric')));
@@ -124,17 +126,19 @@ export function BrandInvitePage() {
             ) : (
               <div className="text-center">
                 <p className="text-gray-300 mb-4">{t('brandInvite.loginPrompt')}</p>
-                <Link
-                  to="/"
+                <button
+                  type="button"
+                  onClick={() => setAuthOpen(true)}
                   className="inline-block px-6 py-3 bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white rounded-xl transition-all"
                 >
                   {t('brandInvite.loginCta')}
-                </Link>
+                </button>
               </div>
             )}
           </div>
         )}
       </div>
+      <AuthModal isOpen={authOpen} onClose={() => setAuthOpen(false)} initialMode="register" />
     </div>
   );
 }

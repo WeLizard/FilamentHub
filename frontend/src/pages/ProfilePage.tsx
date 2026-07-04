@@ -96,8 +96,10 @@ export const ProfilePage: React.FC = () => {
       setIsUploadingAvatar(false);
     }
   };
-  const [showBrandCabinet, setShowBrandCabinet] = useState(false); // Показывать ли кабинет производителя
   const location = useLocation();
+  const [showBrandCabinet, setShowBrandCabinet] = useState<boolean>(
+    () => Boolean((location.state as { brandCabinet?: boolean } | null)?.brandCabinet),
+  ); // Показывать ли кабинет производителя
   const [userTab, setUserTab] = useState<'dashboard' | 'presets' | 'spools' | 'calculator-pro' | 'settings' | 'printer-profiles'>(() => {
     // Deep-link на конкретную вкладку: navigate('/profile', { state: { tab } })
     const requested = (location.state as { tab?: string } | null)?.tab;
@@ -576,7 +578,7 @@ export const ProfilePage: React.FC = () => {
         </div>
         
         <div className={user.brand_id ? 'min-[1140px]:-mt-14' : 'md:mt-12'}>
-          <BrandProfilePage onBack={() => setShowBrandCabinet(false)} />
+          <BrandProfilePage onBack={() => setShowBrandCabinet(false)} initialEditing={Boolean((location.state as { editBrand?: boolean } | null)?.editBrand)} />
         </div>
       </div>
     );

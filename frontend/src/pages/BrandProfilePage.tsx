@@ -1,6 +1,6 @@
 /** Личный кабинет производителя */
 
-import { lazy, Suspense, useState, useEffect } from 'react';
+import { lazy, Suspense, useState, useEffect, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
@@ -59,9 +59,10 @@ import type { AxiosError } from 'axios';
 
 interface BrandProfilePageProps {
   onBack?: () => void; // Callback для возврата в обычный профиль
+  initialEditing?: boolean; // Открыть редактирование карточки сразу (после принятия инвайта)
 }
 
-export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({ onBack }) => {
+export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({ onBack, initialEditing }) => {
   const { t } = useTranslation();
   const { user } = useAuth();
   const navigate = useNavigate();
@@ -242,6 +243,15 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({ onBack }) =>
       setIsEditingProfile(true);
     }
   };
+
+  // После принятия инвайта — открыть редактирование карточки, как только загрузятся данные бренда
+  const autoEditOpened = useRef(false);
+  useEffect(() => {
+    if (initialEditing && brandData && !autoEditOpened.current) {
+      autoEditOpened.current = true;
+      handleEditProfile();
+    }
+  }, [initialEditing, brandData]);
 
   const handleSaveProfile = () => {
     updateBrandMutation.mutate({
