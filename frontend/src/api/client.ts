@@ -1299,6 +1299,13 @@ export const adminAPI = {
     return response.data;
   },
 
+  enrichDraftPresets: async (): Promise<{ total: number; enriched: number; skipped: number; errors: number }> => {
+    const response = await api.post<{ total: number; enriched: number; skipped: number; errors: number }>(
+      '/admin/presets/enrich-all',
+    );
+    return response.data;
+  },
+
   // Users
   listUsers: async (params?: { page?: number; size?: number; role?: string; active_only?: boolean; with_brand?: boolean }): Promise<User[]> => {
     const response = await api.get<User[]>('/admin/users', { params });

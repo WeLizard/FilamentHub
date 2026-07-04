@@ -3873,6 +3873,11 @@
     "logoUrlPlaceholder": "URL или загрузите файл"
   },
   "adminPresets": {
+    "enrichButton": "Обогатить черновики",
+    "enrichButtonPending": "Обогащаю…",
+    "enrichHint": "Заполнить пустые параметры черновиков-пресетов дефолтами по типу материала",
+    "enrichResult": "Обогащено: {{enriched}} из {{total}} (пропущено {{skipped}}, ошибок {{errors}})",
+    "enrichError": "Не удалось обогатить черновики",
     "title": "Модерация пресетов",
     "pending": "Ожидающие модерации",
     "loading": "Загрузка пресетов...",

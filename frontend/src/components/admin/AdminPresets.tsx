@@ -3,8 +3,9 @@
 import { lazy, Suspense, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Settings, CheckCircle, XCircle, Pencil, Trash2 } from 'lucide-react';
+import { Settings, CheckCircle, XCircle, Pencil, Trash2, Sparkles, Loader2 } from 'lucide-react';
 import { adminAPI, presetsAPI } from '../../api/client';
+import { toast } from '../Toast';
 import type { Preset } from '../../types/api';
 const CreatePresetModal = lazy(() =>
   import('../CreatePresetModal').then(m => ({ default: m.CreatePresetModal }))
@@ -68,6 +69,26 @@ export function AdminPresets() {
     },
   });
 
+  // Обогащение черновиков-пресетов дефолтами по материалу (batch)
+  const enrichMutation = useMutation({
+    mutationFn: () => adminAPI.enrichDraftPresets(),
+    onSuccess: (stats) => {
+      toast.success(
+        t('adminPresets.enrichResult', {
+          enriched: stats.enriched,
+          total: stats.total,
+          skipped: stats.skipped,
+          errors: stats.errors,
+        }),
+      );
+      queryClient.invalidateQueries({ queryKey: ['admin-pending-presets'] });
+    },
+    onError: (error) => {
+      const detail = (error as { response?: { data?: { detail?: unknown } } })?.response?.data?.detail;
+      toast.error(translateApiError(t, detail, t('adminPresets.enrichError')));
+    },
+  });
+
   // Удаление пресета (жесткое удаление для явно мусорных/некорректных пресетов)
   const deleteMutation = useMutation({
     mutationFn: (presetId: number) => presetsAPI.delete(presetId),
@@ -84,9 +105,24 @@ export function AdminPresets() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h2 className="text-2xl font-bold text-white mb-2">{t('adminPresets.title')}</h2>
-        <p className="text-gray-400">{t('adminPresets.pending')}: {presets.length}</p>
+      <div className="flex items-start justify-between gap-4 flex-wrap">
+        <div>
+          <h2 className="text-2xl font-bold text-white mb-2">{t('adminPresets.title')}</h2>
+          <p className="text-gray-400">{t('adminPresets.pending')}: {presets.length}</p>
+        </div>
+        <button
+          onClick={() => enrichMutation.mutate()}
+          disabled={enrichMutation.isPending}
+          title={t('adminPresets.enrichHint')}
+          className="inline-flex items-center gap-2 px-4 py-2 rounded-lg border border-white/20 text-sm text-white hover:bg-white/10 transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
+        >
+          {enrichMutation.isPending ? (
+            <Loader2 className="w-4 h-4 animate-spin" />
+          ) : (
+            <Sparkles className="w-4 h-4 text-purple-300" />
+          )}
+          {enrichMutation.isPending ? t('adminPresets.enrichButtonPending') : t('adminPresets.enrichButton')}
+        </button>
       </div>
 
       {presets.length === 0 ? (

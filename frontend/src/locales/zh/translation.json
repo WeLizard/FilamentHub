@@ -3737,6 +3737,11 @@
     "logoUrlPlaceholder": "URL 或上传文件"
   },
   "adminPresets": {
+    "enrichButton": "补全草稿",
+    "enrichButtonPending": "补全中…",
+    "enrichHint": "用材料类型默认值填充草稿预设的空参数",
+    "enrichResult": "已补全 {{enriched}} / {{total}}（跳过 {{skipped}}，错误 {{errors}}）",
+    "enrichError": "补全草稿失败",
     "title": "预设审核",
     "pending": "等待审核",
     "loading": "加载预设中...",

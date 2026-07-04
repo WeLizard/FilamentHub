@@ -3742,6 +3742,11 @@
     "logoUrlPlaceholder": "URL or upload a file"
   },
   "adminPresets": {
+    "enrichButton": "Enrich drafts",
+    "enrichButtonPending": "Enriching…",
+    "enrichHint": "Fill empty draft-preset parameters with material-type defaults",
+    "enrichResult": "Enriched {{enriched}} of {{total}} (skipped {{skipped}}, errors {{errors}})",
+    "enrichError": "Failed to enrich drafts",
     "title": "Preset Moderation",
     "pending": "Pending moderation",
     "loading": "Loading presets...",
