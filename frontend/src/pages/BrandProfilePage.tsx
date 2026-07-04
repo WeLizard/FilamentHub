@@ -1219,6 +1219,18 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({ onBack, init
                 </select>
                 <p className="text-gray-500 text-xs mt-1">{t('brandProfile.currencyHint')}</p>
               </div>
+              <div>
+                <label className="flex items-center gap-3 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={profilePriceHidden}
+                    onChange={(e) => setProfilePriceHidden(e.target.checked)}
+                    className="w-4 h-4 rounded border-white/20 bg-white/10 text-purple-500 focus:ring-purple-500"
+                  />
+                  <span className="text-gray-300 text-sm font-medium">{t('brandProfile.priceHiddenLabel')}</span>
+                </label>
+                <p className="text-gray-500 text-xs mt-1">{t('brandProfile.priceHiddenHint')}</p>
+              </div>
               </div>
               <div>
                 <p className="text-xs font-semibold uppercase tracking-wide text-purple-300/80 mb-2">{t('brandProfile.sectionLogo')}</p>
@@ -1243,17 +1255,6 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({ onBack, init
                     />
                   </label>
                 </div>
-                {profileLogoUrl && (
-                  <div className="mt-2 flex items-center space-x-3">
-                    <img
-                      src={profileLogoUrl}
-                      alt="Logo preview"
-                      className="w-12 h-12 rounded-lg object-contain bg-white/5"
-                      onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
-                    />
-                    <span className="text-gray-500 text-xs">{t('brandProfile.logoPreview')}</span>
-                  </div>
-                )}
                 <div className="mt-3">
                   <label className="block text-gray-300 mb-2 text-sm font-medium">{t('brandProfile.logoBgLabel')}</label>
                   <div className="flex items-center gap-3">
@@ -1347,15 +1348,6 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({ onBack, init
                   <button type="button" onClick={() => setProfileShopLinks([...profileShopLinks, { platform: '', url: '' }])} className="text-sm text-purple-300 hover:text-purple-200">+ {t('brandProfile.addShop')}</button>
                 </div>
               </div>
-              <label className="flex items-center gap-3 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={profilePriceHidden}
-                  onChange={(e) => setProfilePriceHidden(e.target.checked)}
-                  className="w-4 h-4 rounded border-white/20 bg-white/10 text-purple-500 focus:ring-purple-500"
-                />
-                <span className="text-gray-300 text-sm font-medium">{t('brandProfile.priceHiddenLabel')}</span>
-              </label>
             </div>
             <div className="p-6 border-t border-white/10 flex justify-end space-x-3 shrink-0">
               <button

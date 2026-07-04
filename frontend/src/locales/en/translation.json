@@ -3175,6 +3175,7 @@
     "addLink": "Add link",
     "addShop": "Add shop",
     "priceHiddenLabel": "Hide prices completely",
+    "priceHiddenHint": "Prices use the brand currency shown above. Enable to hide them from the public catalog.",
     "logoPreview": "Preview",
     "logoBgLabel": "Logo background",
     "logoBgReset": "Reset",
