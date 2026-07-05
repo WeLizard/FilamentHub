@@ -7,7 +7,7 @@
 # name = "FilamentHub"
 # description = "Browse the FilamentHub brand/material catalog and import community-rated filament presets."
 # author = "FilamentHub"
-# version = "0.5.1"
+# version = "0.6.0"
 #
 # # Proposed forward-looking key (see README gap / PR #14530 feedback). The current
 # # host reads only name/description/author/version/dependencies and ignores unknown
@@ -124,6 +124,25 @@ def clear_auth():
 def safe_filename(name):
     cleaned = "".join("_" if ch in '<>:"/\\|?*' else ch for ch in (name or "preset")).strip(" _")
     return cleaned or "preset"
+
+
+# Universal base filament preset present in every OrcaSlicer install.
+FALLBACK_PARENT = "fdm_filament_common"
+
+
+def ensure_parent_exists(profile, known_presets):
+    """Make the imported preset's parent resolvable, mirroring the fork's import.
+
+    A preset inherits a system preset by name. If that parent is not installed
+    (the user has a different printer/vendor), the preset loads as incompatible
+    and never shows in the dropdown. Fall back to the universal base so the
+    preset always loads; its own overrides are preserved.
+    """
+    inherits = profile.get("inherits")
+    if isinstance(inherits, list):
+        inherits = inherits[0] if inherits else ""
+    if not inherits or inherits not in known_presets:
+        profile["inherits"] = FALLBACK_PARENT
 
 
 # --------------------------------------------------------------------------- #
@@ -312,6 +331,18 @@ class FilamentHubCatalog(orca.script.ScriptPluginCapabilityBase):
     def on_close(self):
         self.win = None
 
+    def _known_filament_preset_names(self):
+        # Names of every filament preset OrcaSlicer currently has (system + user).
+        # Read on the UI thread; used to validate an imported preset's parent.
+        names = set()
+        try:
+            filaments = orca.host.preset_bundle().filaments
+            for i in range(filaments.size()):
+                names.add(filaments.preset(i).name)
+        except Exception:
+            pass
+        return names
+
     # on_message runs on the UI thread — offload network + disk work to a worker.
     def on_message(self, msg):
         msg = msg or {}
@@ -321,7 +352,8 @@ class FilamentHubCatalog(orca.script.ScriptPluginCapabilityBase):
         if msg_type == "import-preset":
             preset_id = msg.get("presetId")
             token = msg.get("token") or ""
-            threading.Thread(target=self._do_import, args=(preset_id, token), daemon=True).start()
+            known = self._known_filament_preset_names()  # host read on the UI thread
+            threading.Thread(target=self._do_import, args=(preset_id, token, known), daemon=True).start()
         elif msg_type == "auth-token":
             # Login / token refresh in the catalog — persist for session restore.
             access = msg.get("accessToken") or ""
@@ -330,7 +362,7 @@ class FilamentHubCatalog(orca.script.ScriptPluginCapabilityBase):
         elif msg_type == "auth-logout":
             clear_auth()
 
-    def _do_import(self, preset_id, token):
+    def _do_import(self, preset_id, token, known_presets):
         try:
             preset_id = int(preset_id)
         except (TypeError, ValueError):
@@ -353,6 +385,7 @@ class FilamentHubCatalog(orca.script.ScriptPluginCapabilityBase):
                 return
 
             profile = json.loads(body.decode("utf-8"))
+            ensure_parent_exists(profile, known_presets)
             name = profile.get("name") or ("FilamentHub preset %d" % preset_id)
             os.makedirs(USER_FILAMENT_DIR, exist_ok=True)
             base = os.path.join(USER_FILAMENT_DIR, safe_filename(name))
