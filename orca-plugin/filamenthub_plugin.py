@@ -7,7 +7,7 @@
 # name = "FilamentHub"
 # description = "Browse the FilamentHub brand/material catalog and import community-rated filament presets."
 # author = "FilamentHub"
-# version = "0.2.0"
+# version = "0.3.0"
 #
 # # Proposed forward-looking key (see README gap / PR #14530 feedback). The current
 # # host reads only name/description/author/version/dependencies and ignores unknown
@@ -23,6 +23,11 @@ preset, posts a message up to this shell via window.parent.postMessage. The shel
 relays it through the injected window.orca bridge to Python on_message below, which
 downloads the authenticated OrcaSlicer export and writes it into the user preset
 folder, then shows a native "restart required" dialog.
+
+The shell also renders an Orca-themed toolbar (host --orca-* CSS variables, same
+role as the native Catalog/Profile/Wiki buttons of the C++ fork panel) and drives
+the catalog by posting {type:'navigate', path} down into the iframe — the SPA
+listens and switches routes without reloading.
 
   iframe (React) --window.parent.postMessage({source:'filamenthub-plugin',...})-->
       shell window --orca.postMessage(...)--> Python on_message
@@ -98,31 +103,76 @@ def http_get(path, token=None):
 
 
 # --------------------------------------------------------------------------- #
-# The shell page — a full-window iframe plus a relay that forwards the catalog's
-# postMessage up through window.orca to Python. Self-contained; the iframe carries
-# our own site styling, so no host theme is needed here.
+# The shell page — an Orca-themed toolbar (host CSS variables, like the fork's
+# native FilamentHubPanel buttons) above a full-window iframe, plus two relays:
+# catalog -> Python (import) and toolbar -> catalog (SPA navigation, no reload).
 # --------------------------------------------------------------------------- #
 PAGE = r"""<!DOCTYPE html>
 <html>
 <head><meta charset="utf-8">
 <style>
-  html, body { margin:0; height:100%; background:var(--orca-bg,#1e1e2e); }
-  iframe { border:0; width:100%; height:100vh; display:block; }
+  html, body { margin:0; height:100%; }
+  body {
+    display:flex; flex-direction:column;
+    background:var(--orca-bg,#1e1e2e);
+    font-family:var(--orca-font,sans-serif);
+  }
+  #bar {
+    flex:0 0 auto; display:flex; align-items:center;
+    padding:4px 10px; gap:2px;
+    background:var(--orca-bg,#1e1e2e);
+    border-bottom:1px solid var(--orca-border,#3c3c4c);
+  }
+  #brand { margin-right:auto; color:var(--orca-fg,#e0e0e0); font-size:13px; font-weight:600; }
+  #bar button {
+    appearance:none; background:transparent; cursor:pointer;
+    border:1px solid transparent; border-radius:0;
+    color:var(--orca-fg,#e0e0e0); font:inherit; font-size:12px; padding:4px 14px;
+  }
+  #bar button:hover { border-color:var(--orca-border,#3c3c4c); }
+  #bar button.active {
+    color:var(--orca-accent,#8b7cf8);
+    border-color:var(--orca-accent,#8b7cf8);
+  }
+  iframe { flex:1 1 auto; border:0; width:100%; display:block; }
 </style></head>
 <body>
+  <div id="bar">
+    <span id="brand">FilamentHub</span>
+    <button data-path="/" class="active">Catalog</button>
+    <button data-path="/profile">Profile</button>
+    <button data-path="/wiki">Wiki</button>
+  </div>
   <iframe id="fh" src="__EMBED_URL__" allow="clipboard-write"></iframe>
 <script>
 'use strict';
+var SITE_ORIGIN = '__SITE_ORIGIN__';
+var frame = document.getElementById('fh');
+
 // Relay catalog -> plugin. Only our namespaced messages are forwarded.
 window.addEventListener('message', function (event) {
   var data = event.data;
   if (!data || data.source !== 'filamenthub-plugin') return;
   try { orca.postMessage(data); } catch (e) { /* bridge not ready */ }
 });
+
+// Toolbar -> catalog: SPA navigation inside the iframe (no page reload).
+var buttons = Array.prototype.slice.call(document.querySelectorAll('#bar button'));
+buttons.forEach(function (btn) {
+  btn.addEventListener('click', function () {
+    buttons.forEach(function (b) { b.classList.remove('active'); });
+    btn.classList.add('active');
+    try {
+      frame.contentWindow.postMessage(
+        { source: 'filamenthub-plugin', type: 'navigate', path: btn.getAttribute('data-path') },
+        SITE_ORIGIN);
+    } catch (e) { /* iframe not ready */ }
+  });
+});
 </script>
 </body>
 </html>
-""".replace("__EMBED_URL__", EMBED_URL)
+""".replace("__EMBED_URL__", EMBED_URL).replace("__SITE_ORIGIN__", SITE_URL)
 
 
 # --------------------------------------------------------------------------- #

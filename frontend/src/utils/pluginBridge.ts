@@ -63,6 +63,26 @@ function postToPlugin(message: PluginMessage): void {
 }
 
 /**
+ * Подписка на команды навигации от шелла плагина: кнопки Catalog/Profile/Wiki
+ * над iframe шлют postMessage вниз, SPA переходит по роуту без перезагрузки.
+ * Возвращает функцию отписки.
+ */
+export function subscribeToPluginNavigation(onNavigate: (path: string) => void): () => void {
+  const handler = (event: MessageEvent) => {
+    const data = event.data as Partial<PluginMessage> | undefined;
+    if (!data || data.source !== PLUGIN_MESSAGE_SOURCE || data.type !== 'navigate') {
+      return;
+    }
+    const path = (data as { path?: unknown }).path;
+    if (typeof path === 'string' && path.startsWith('/')) {
+      onNavigate(path);
+    }
+  };
+  window.addEventListener('message', handler);
+  return () => window.removeEventListener('message', handler);
+}
+
+/**
  * Импортировать пресет в OrcaSlicer через плагин: шелл → Python → data_dir.
  * Токен нужен, чтобы Python скачал авторизованный экспорт
  * (GET /presets/{id}/export/orcaslicer.json). В iframe пользователь входит на

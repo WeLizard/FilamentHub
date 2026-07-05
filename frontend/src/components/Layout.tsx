@@ -12,6 +12,7 @@ import { Notifications } from './Notifications';
 import { FeedbackModal } from './FeedbackModal';
 import { LanguageSwitcher } from './LanguageSwitcher';
 import { isPluginEmbed } from '../utils/pluginBridge';
+import { EmbedDebugOverlay } from './EmbedDebugOverlay';
 import { useTranslation } from 'react-i18next';
 
 interface LayoutProps {
@@ -447,6 +448,9 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
         onDetected={handleScanDetected}
         busy={isScanResolving}
       />
+
+      {/* Экранное логирование ошибок в iframe плагина (DevTools там недоступен) */}
+      {isPluginEmbed() && <EmbedDebugOverlay />}
     </div>
   );
 };

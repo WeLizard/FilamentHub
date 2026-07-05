@@ -48,6 +48,18 @@ Python on_message  ──GET /api/v1/presets/{id}/export/orcaslicer.json (Bearer
   dialog, which keeps us clear of the existing `useOrcaSlicerNotifications`
   message listener.
 
+**shell → iframe** (toolbar navigation, v0.3.0): the shell renders an
+Orca-themed toolbar (host `--orca-*` CSS variables — same role as the native
+Catalog/Profile/Wiki buttons of the C++ fork panel) and posts
+
+```js
+{ source: 'filamenthub-plugin', type: 'navigate', path: '/' | '/profile' | '/wiki' }
+```
+
+into the iframe (targetOrigin = our site). The SPA subscribes via
+`subscribeToPluginNavigation()` in `utils/pluginBridge.ts` and switches routes
+without reloading.
+
 ### Frontend embed route (in this repo)
 
 - `App.tsx` — routes `/embed` and `/embed/catalog` render `<CatalogPage />` in a
