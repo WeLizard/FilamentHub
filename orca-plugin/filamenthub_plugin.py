@@ -7,7 +7,7 @@
 # name = "FilamentHub"
 # description = "Browse the FilamentHub brand/material catalog and import community-rated filament presets."
 # author = "FilamentHub"
-# version = "0.5.0"
+# version = "0.5.1"
 #
 # # Proposed forward-looking key (see README gap / PR #14530 feedback). The current
 # # host reads only name/description/author/version/dependencies and ignores unknown
@@ -84,6 +84,10 @@ def resolve_data_dir():
 DATA_DIR = resolve_data_dir()
 # OrcaSlicer user filament preset folder: {data_dir}/user/default/filament/
 USER_FILAMENT_DIR = os.path.join(DATA_DIR, "user", "default", "filament")
+# Tab icon shipped inside the plugin directory (travels with the plugin, nothing
+# baked into the app). Passed to create_panel; absent -> host uses its default.
+PLUGIN_DIR = os.path.dirname(os.path.abspath(__file__))
+ICON_PATH = os.path.join(PLUGIN_DIR, "filamenthub.svg")
 # Session tokens live next to the plugin (inside data_dir, the allowed write
 # root) so signing in survives window/OrcaSlicer restarts — the iframe's own
 # storage is partitioned and dies with the window. Same role as the fork's
@@ -275,6 +279,7 @@ class FilamentHubCatalog(orca.script.ScriptPluginCapabilityBase):
                 html=html,
                 on_message=self.on_message,
                 on_close=self.on_close,
+                icon=ICON_PATH if os.path.exists(ICON_PATH) else "",
             )
         else:
             self.win = orca.host.ui.create_window(
