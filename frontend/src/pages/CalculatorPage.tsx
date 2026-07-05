@@ -33,6 +33,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { useHeaderVisible } from '../hooks/useHeaderVisible';
 import { translateApiError } from '../utils/translateApiError';
 import { currencySymbol, normalizeCurrency, CURRENCY_CODES, defaultCurrencyForLanguage } from '../utils/currency';
+import { safeStorage } from '../utils/storage';
 import type {
   CalculatorEstimateRequest,
   CalculatorEstimateResponse,
@@ -216,7 +217,7 @@ const PRICING_PRESETS_STORAGE_KEY = 'filamenthub_pricing_presets_v1';
 
 const loadCustomPricingPresets = (): PricingPreset[] => {
   try {
-    const raw = window.localStorage.getItem(PRICING_PRESETS_STORAGE_KEY);
+    const raw = safeStorage.get(PRICING_PRESETS_STORAGE_KEY);
     return raw ? (JSON.parse(raw) as PricingPreset[]) : [];
   } catch {
     return [];
@@ -224,7 +225,7 @@ const loadCustomPricingPresets = (): PricingPreset[] => {
 };
 
 const saveCustomPricingPresets = (presets: PricingPreset[]): void => {
-  window.localStorage.setItem(PRICING_PRESETS_STORAGE_KEY, JSON.stringify(presets));
+  safeStorage.set(PRICING_PRESETS_STORAGE_KEY, JSON.stringify(presets));
 };
 
 const CALCULATOR_DEFAULTS_STORAGE_KEY = 'filamenthub_calculator_defaults_v1';
@@ -529,7 +530,7 @@ const loadStoredQuoteProfile = (): Partial<QuoteProfileState> => {
   }
 
   try {
-    const raw = window.localStorage.getItem(QUOTE_PROFILE_STORAGE_KEY);
+    const raw = safeStorage.get(QUOTE_PROFILE_STORAGE_KEY);
     if (!raw) {
       return {};
     }
@@ -564,7 +565,7 @@ const saveStoredQuoteProfile = (data: QuoteProfileState): void => {
     return;
   }
 
-  window.localStorage.setItem(
+  safeStorage.set(
     QUOTE_PROFILE_STORAGE_KEY,
     JSON.stringify({
       sellerName: data.sellerName,
@@ -616,7 +617,7 @@ const loadStoredCalculatorDefaults = (): CalculatorStaticSettings => {
   }
 
   try {
-    const raw = window.localStorage.getItem(CALCULATOR_DEFAULTS_STORAGE_KEY);
+    const raw = safeStorage.get(CALCULATOR_DEFAULTS_STORAGE_KEY);
     if (!raw) {
       return fallback;
     }
@@ -660,7 +661,7 @@ const saveStoredCalculatorDefaults = (data: CalculatorStaticSettings): void => {
     return;
   }
 
-  window.localStorage.setItem(CALCULATOR_DEFAULTS_STORAGE_KEY, JSON.stringify(data));
+  safeStorage.set(CALCULATOR_DEFAULTS_STORAGE_KEY, JSON.stringify(data));
 };
 
 const splitSeconds = (totalSeconds: number): { hours: number; minutes: number; seconds: number } => {

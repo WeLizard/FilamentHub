@@ -18,6 +18,7 @@ import {
   Check,
 } from 'lucide-react';
 import { wikiAPI } from '../api/client';
+import { safeStorage } from '../utils/storage';
 import type { WikiArticle, WikiFeedbackStats } from '../types/api';
 import ReactMarkdown from 'react-markdown';
 import type { ExtraProps } from 'react-markdown';
@@ -75,10 +76,11 @@ export function WikiArticlePage() {
   const [showFeedbackModal, setShowFeedbackModal] = useState(false);
   const [checkboxStates, setCheckboxStates] = useState<Record<string, boolean>>({});
 
-  // Загружаем состояние чекбоксов из localStorage
+  // Загружаем состояние чекбоксов из localStorage (safeStorage — в iframe
+  // плагина OrcaSlicer прямой доступ кидает SecurityError и валит страницу)
   useEffect(() => {
     if (slug) {
-      const saved = localStorage.getItem(`wiki-checkboxes-${slug}`);
+      const saved = safeStorage.get(`wiki-checkboxes-${slug}`);
       if (saved) {
         try {
           setCheckboxStates(JSON.parse(saved));
@@ -96,7 +98,7 @@ export function WikiArticlePage() {
     setCheckboxStates(prev => {
       const newState = { ...prev, [key]: !prev[key] };
       if (slug) {
-        localStorage.setItem(`wiki-checkboxes-${slug}`, JSON.stringify(newState));
+        safeStorage.set(`wiki-checkboxes-${slug}`, JSON.stringify(newState));
       }
       return newState;
     });
