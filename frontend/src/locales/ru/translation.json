@@ -64,7 +64,8 @@
     "footer_terms": "Пользовательское соглашение",
     "footer_privacy": "Политика конфиденциальности",
     "footer_consent": "Обработка данных",
-    "footer_copyright": "© {{year}} FilamentHub"
+    "footer_copyright": "© {{year}} FilamentHub",
+    "pluginPresetsStats": "Пресеты: {{total}} (синхр.: {{synced}})"
   },
   "authModal": {
     "password_strength_weak": "Слабый",

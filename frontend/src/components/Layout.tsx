@@ -1,17 +1,18 @@
 /** Базовый Layout с Header и навигацией */
 
 import { ReactNode, useState, useEffect, useRef } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { Package, User, LogOut, Shield, MessageCircle, Download, Menu, X, BookOpen, ScanLine } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { QrScannerModal } from './QrScannerModal';
-import { qrAPI } from '../api/client';
+import { authAPI, qrAPI } from '../api/client';
 import { ownQrShortCode } from '../utils/qrScanner';
 import { AuthModal } from './AuthModal';
 import { Notifications } from './Notifications';
 import { FeedbackModal } from './FeedbackModal';
 import { LanguageSwitcher } from './LanguageSwitcher';
-import { isPluginEmbed } from '../utils/pluginBridge';
+import { isPluginEmbed, reportAuthStateToPlugin } from '../utils/pluginBridge';
 import { EmbedDebugOverlay } from './EmbedDebugOverlay';
 import { useTranslation } from 'react-i18next';
 
@@ -113,7 +114,29 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
 
   // Скрываем хедер/футер и в форковой WebView, и во встроенном режиме плагина
   // (iframe), чтобы навигация внутри iframe не показывала хром сайта.
-  const hideChrome = isInOrcaSlicer || isPluginEmbed();
+  const pluginEmbed = isPluginEmbed();
+  const hideChrome = isInOrcaSlicer || pluginEmbed;
+
+  // Статус сессии для тулбара шелла плагина: имя + счётчик пресетов
+  // (тот же /auth/me/presets-stats, что использовала форковая панель)
+  const { data: pluginPresetStats } = useQuery({
+    queryKey: ['presets-stats', user?.id],
+    queryFn: () => authAPI.getPresetsStats(),
+    enabled: pluginEmbed && !!user,
+  });
+  useEffect(() => {
+    if (!pluginEmbed) {
+      return;
+    }
+    if (!user) {
+      reportAuthStateToPlugin(null);
+      return;
+    }
+    const stats = pluginPresetStats
+      ? ` · ${t('layout.pluginPresetsStats', { total: pluginPresetStats.total_presets, synced: pluginPresetStats.synced_presets })}`
+      : '';
+    reportAuthStateToPlugin(`${user.username}${stats}`);
+  }, [pluginEmbed, user, pluginPresetStats, t]);
 
   const isActive = (path: string) => location.pathname === path;
 

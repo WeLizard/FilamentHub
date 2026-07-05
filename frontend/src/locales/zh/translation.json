@@ -64,7 +64,8 @@
     "footer_terms": "服务条款",
     "footer_privacy": "隐私政策",
     "footer_consent": "数据处理",
-    "footer_copyright": "© {{year}} FilamentHub"
+    "footer_copyright": "© {{year}} FilamentHub",
+    "pluginPresetsStats": "预设：{{total}}（已同步 {{synced}}）"
   },
   "authModal": {
     "password_strength_weak": "弱",

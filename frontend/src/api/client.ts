@@ -4,6 +4,7 @@ import axios from 'axios';
 import type { InternalAxiosRequestConfig } from 'axios';
 import type { Brand, BrandUsage, BrandRequest, BrandRequestStatus, Filament, FilamentLine, FilamentImportResult, FilamentPalettePayload, BrandInvitePublic, BrandInviteAdmin, BrandInviteAcceptResult, FilamentAvailability, FilamentVisualSettings, FilamentReview, FilamentRatingStats, Notification, NotificationListResponse, Preset, RecommendedPreset, RecommendedForPrinterResponse, Printer, PrinterProfile, PrintProfile, PrinterRequest, User, Token, RefreshTokenRequest, RefreshTokenResponse, ListResponse, AccountDeletionStats, UserSavedPreset, CalculatorEstimateRequest, CalculatorEstimateResponse, CalculatorProfileResponse, CalculatorProfileUpdate, Feedback, FeedbackListResponse, FeedbackType, CompatiblePrinter, CompatibleFilament, DownloadVersion, DownloadVersionsResponse, WikiCategory, WikiCategoryListResponse, WikiArticle, WikiArticleListResponse, WikiFeedbackStats, WikiFeedbackCreate, WikiFeedback } from '../types/api';
 import { getCsrfToken, getRefreshToken, getToken, isCookieAuthMode, isJwtAuthMode, isOrcaEmbedded, removeToken, setToken, shouldPersistTokensLocally } from '../utils/auth';
+import { reportAuthTokensToPlugin } from '../utils/pluginBridge';
 import { downloadBlob } from '../utils/download';
 
 const API_BASE_URL = '/api/v1';
@@ -190,6 +191,8 @@ api.interceptors.response.use(
           setToken(access_token);
           // Обновляем заголовок оригинального запроса
           originalRequest.headers.Authorization = `Bearer ${access_token}`;
+          // В iframe плагина — обновляем токен и в хранилище плагина
+          reportAuthTokensToPlugin(access_token, getRefreshToken());
         } else if (originalRequest.headers?.Authorization) {
           delete originalRequest.headers.Authorization;
         }

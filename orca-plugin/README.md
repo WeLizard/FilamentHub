@@ -53,12 +53,32 @@ Orca-themed toolbar (host `--orca-*` CSS variables — same role as the native
 Catalog/Profile/Wiki buttons of the C++ fork panel) and posts
 
 ```js
-{ source: 'filamenthub-plugin', type: 'navigate', path: '/' | '/profile' | '/wiki' }
+{ source: 'filamenthub-plugin', type: 'navigate', path: '/' | '/profile' | '/calculator' | '/wiki' }
 ```
 
 into the iframe (targetOrigin = our site). The SPA subscribes via
 `subscribeToPluginNavigation()` in `utils/pluginBridge.ts` and switches routes
 without reloading.
+
+**Session persistence + toolbar status (v0.4.0)** — the iframe's storage is
+partitioned (dies with the window), so the plugin plays the fork's AppConfig
+role:
+
+```js
+// iframe → shell → Python: persist on login / token refresh, clear on logout
+{ source, type: 'auth-token', accessToken, refreshToken }
+{ source, type: 'auth-logout' }
+// iframe → shell: toolbar label ("<username> · Presets: N (M synced)", null = guest)
+{ source, type: 'auth-state', label }
+// iframe → shell → back: session restore handshake on window (re)open
+{ source, type: 'embed-ready' }            // SPA announces it listens
+{ source, type: 'auth-restore', accessToken, refreshToken }   // shell replies
+```
+
+Python stores tokens in `.auth.json` next to the plugin (inside `data_dir`,
+the allowed write root) and bakes them into the shell page on `execute()`.
+The label comes ready-made (i18n happens in the SPA) from the same
+`/auth/me/presets-stats` endpoint the fork's panel used.
 
 ### Frontend embed route (in this repo)
 

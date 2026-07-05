@@ -118,6 +118,66 @@ export function subscribeToPluginNavigation(onNavigate: (path: string) => void):
 }
 
 /**
+ * Статус сессии для тулбара шелла: имя пользователя + счётчик пресетов
+ * (аналог лейблов форковой панели). null — гость, шелл вернёт бренд-надпись.
+ */
+export function reportAuthStateToPlugin(label: string | null): void {
+  if (!isPluginEmbed()) {
+    return;
+  }
+  postToPlugin({ source: PLUGIN_MESSAGE_SOURCE, type: 'auth-state', label });
+}
+
+/**
+ * Передать токены Python-плагину на хранение (файл в data_dir, как AppConfig
+ * у форка): storage в iframe партиционирован, без этого перезапуск окна
+ * плагина/Orca выбивает из авторизации.
+ */
+export function reportAuthTokensToPlugin(accessToken: string, refreshToken: string | null): void {
+  if (!isPluginEmbed()) {
+    return;
+  }
+  postToPlugin({
+    source: PLUGIN_MESSAGE_SOURCE,
+    type: 'auth-token',
+    accessToken,
+    refreshToken: refreshToken ?? '',
+  });
+}
+
+/** Выход: плагин удаляет сохранённые токены. */
+export function reportLogoutToPlugin(): void {
+  if (!isPluginEmbed()) {
+    return;
+  }
+  postToPlugin({ source: PLUGIN_MESSAGE_SOURCE, type: 'auth-logout' });
+}
+
+/**
+ * Восстановление сессии при открытии окна плагина: подписываемся на
+ * auth-restore и сигналим шеллу готовность (embed-ready) — в ответ он пришлёт
+ * сохранённые токены, если они есть. Возвращает функцию отписки.
+ */
+export function subscribeToPluginAuthRestore(
+  onRestore: (accessToken: string, refreshToken: string | null) => void,
+): () => void {
+  const handler = (event: MessageEvent) => {
+    const data = event.data as Partial<PluginMessage> | undefined;
+    if (!data || data.source !== PLUGIN_MESSAGE_SOURCE || data.type !== 'auth-restore') {
+      return;
+    }
+    const access = (data as { accessToken?: unknown }).accessToken;
+    const refresh = (data as { refreshToken?: unknown }).refreshToken;
+    if (typeof access === 'string' && access) {
+      onRestore(access, typeof refresh === 'string' && refresh ? refresh : null);
+    }
+  };
+  window.addEventListener('message', handler);
+  postToPlugin({ source: PLUGIN_MESSAGE_SOURCE, type: 'embed-ready' });
+  return () => window.removeEventListener('message', handler);
+}
+
+/**
  * Импортировать пресет в OrcaSlicer через плагин: шелл → Python → data_dir.
  * Токен нужен, чтобы Python скачал авторизованный экспорт
  * (GET /presets/{id}/export/orcaslicer.json). В iframe пользователь входит на

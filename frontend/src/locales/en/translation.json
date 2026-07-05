@@ -64,7 +64,8 @@
     "footer_terms": "Terms of Service",
     "footer_privacy": "Privacy Policy",
     "footer_consent": "Data Processing",
-    "footer_copyright": "© {{year}} FilamentHub"
+    "footer_copyright": "© {{year}} FilamentHub",
+    "pluginPresetsStats": "Presets: {{total}} ({{synced}} synced)"
   },
   "authModal": {
     "password_strength_weak": "Weak",

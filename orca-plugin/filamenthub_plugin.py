@@ -7,7 +7,7 @@
 # name = "FilamentHub"
 # description = "Browse the FilamentHub brand/material catalog and import community-rated filament presets."
 # author = "FilamentHub"
-# version = "0.3.0"
+# version = "0.4.0"
 #
 # # Proposed forward-looking key (see README gap / PR #14530 feedback). The current
 # # host reads only name/description/author/version/dependencies and ignores unknown
@@ -27,7 +27,11 @@ folder, then shows a native "restart required" dialog.
 The shell also renders an Orca-themed toolbar (host --orca-* CSS variables, same
 role as the native Catalog/Profile/Wiki buttons of the C++ fork panel) and drives
 the catalog by posting {type:'navigate', path} down into the iframe — the SPA
-listens and switches routes without reloading.
+listens and switches routes without reloading. The catalog reports the signed-in
+user (auth-state) for the toolbar label, and hands tokens over (auth-token) so
+Python persists them in .auth.json next to the plugin — the shell restores the
+session (embed-ready -> auth-restore) when the window reopens, because the
+iframe's own storage is partitioned and dies with the window.
 
   iframe (React) --window.parent.postMessage({source:'filamenthub-plugin',...})-->
       shell window --orca.postMessage(...)--> Python on_message
@@ -80,6 +84,37 @@ def resolve_data_dir():
 DATA_DIR = resolve_data_dir()
 # OrcaSlicer user filament preset folder: {data_dir}/user/default/filament/
 USER_FILAMENT_DIR = os.path.join(DATA_DIR, "user", "default", "filament")
+# Session tokens live next to the plugin (inside data_dir, the allowed write
+# root) so signing in survives window/OrcaSlicer restarts — the iframe's own
+# storage is partitioned and dies with the window. Same role as the fork's
+# AppConfig token storage.
+AUTH_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".auth.json")
+
+
+def load_saved_auth():
+    try:
+        with open(AUTH_FILE, "r", encoding="utf-8") as fh:
+            data = json.load(fh)
+        if isinstance(data, dict) and data.get("accessToken"):
+            return {"accessToken": data["accessToken"], "refreshToken": data.get("refreshToken", "")}
+    except (OSError, ValueError):
+        pass
+    return None
+
+
+def save_auth(access_token, refresh_token):
+    try:
+        with open(AUTH_FILE, "w", encoding="utf-8") as fh:
+            json.dump({"accessToken": access_token, "refreshToken": refresh_token or ""}, fh)
+    except OSError:
+        pass
+
+
+def clear_auth():
+    try:
+        os.remove(AUTH_FILE)
+    except OSError:
+        pass
 
 
 def safe_filename(name):
@@ -141,18 +176,36 @@ PAGE = r"""<!DOCTYPE html>
     <span id="brand">FilamentHub</span>
     <button data-path="/" class="active">Catalog</button>
     <button data-path="/profile">Profile</button>
+    <button data-path="/calculator">Calculator</button>
     <button data-path="/wiki">Wiki</button>
   </div>
   <iframe id="fh" src="__EMBED_URL__" allow="clipboard-write"></iframe>
 <script>
 'use strict';
 var SITE_ORIGIN = '__SITE_ORIGIN__';
+var RESTORE_AUTH = __RESTORE_AUTH__;
 var frame = document.getElementById('fh');
 
-// Relay catalog -> plugin. Only our namespaced messages are forwarded.
+// Catalog -> shell. auth-state updates the toolbar label, embed-ready answers
+// with saved tokens (session restore); everything else relays to Python.
 window.addEventListener('message', function (event) {
   var data = event.data;
   if (!data || data.source !== 'filamenthub-plugin') return;
+  if (data.type === 'auth-state') {
+    document.getElementById('brand').textContent = data.label || 'FilamentHub';
+    return;
+  }
+  if (data.type === 'embed-ready') {
+    if (RESTORE_AUTH && RESTORE_AUTH.accessToken) {
+      try {
+        frame.contentWindow.postMessage(
+          { source: 'filamenthub-plugin', type: 'auth-restore',
+            accessToken: RESTORE_AUTH.accessToken, refreshToken: RESTORE_AUTH.refreshToken || '' },
+          SITE_ORIGIN);
+      } catch (e) { /* iframe not ready */ }
+    }
+    return;
+  }
   try { orca.postMessage(data); } catch (e) { /* bridge not ready */ }
 });
 
@@ -188,9 +241,12 @@ class FilamentHubCatalog(orca.script.ScriptPluginCapabilityBase):
         # A second Run lands on the same instance: close any stale window first.
         if self.win is not None and self.win.is_open():
             self.win.close()
+        # Saved session tokens (if any) are baked into the shell page; it hands
+        # them to the catalog when the SPA reports embed-ready.
+        html = PAGE.replace("__RESTORE_AUTH__", json.dumps(load_saved_auth()))
         self.win = orca.host.ui.create_window(
             title="FilamentHub",
-            html=PAGE,
+            html=html,
             width=1080,
             height=760,
             on_message=self.on_message,
@@ -206,10 +262,18 @@ class FilamentHubCatalog(orca.script.ScriptPluginCapabilityBase):
         msg = msg or {}
         if msg.get("source") != "filamenthub-plugin":
             return
-        if msg.get("type") == "import-preset":
+        msg_type = msg.get("type")
+        if msg_type == "import-preset":
             preset_id = msg.get("presetId")
             token = msg.get("token") or ""
             threading.Thread(target=self._do_import, args=(preset_id, token), daemon=True).start()
+        elif msg_type == "auth-token":
+            # Login / token refresh in the catalog — persist for session restore.
+            access = msg.get("accessToken") or ""
+            if access:
+                save_auth(access, msg.get("refreshToken") or "")
+        elif msg_type == "auth-logout":
+            clear_auth()
 
     def _do_import(self, preset_id, token):
         try:

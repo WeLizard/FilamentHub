@@ -3,6 +3,7 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { authAPI } from '../api/client';
 import { getRefreshToken, getToken, isCookieAuthMode, isOrcaEmbedded, removeToken, setRefreshToken, setToken, setUserId, shouldPersistTokensLocally } from '../utils/auth';
+import { isPluginEmbed, reportAuthTokensToPlugin, reportLogoutToPlugin, subscribeToPluginAuthRestore } from '../utils/pluginBridge';
 import type { User } from '../types/api';
 
 interface AuthContextType {
@@ -144,6 +145,20 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     return () => window.removeEventListener('storage', handleStorageChange);
   }, [user]);
 
+  // В iframe плагина OrcaSlicer: просим у шелла сохранённые токены (embed-ready
+  // → auth-restore) — восстанавливаем сессию после перезапуска окна/Orca
+  useEffect(() => {
+    if (!isPluginEmbed()) {
+      return;
+    }
+    return subscribeToPluginAuthRestore((accessToken, refreshToken) => {
+      loginWithToken(accessToken, refreshToken).catch(() => {
+        // Сохранённые токены истекли и не обновились — остаёмся гостем
+      });
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const login = async (email: string, password: string) => {
     try {
       const tokenData = await authAPI.login({ email, password });
@@ -170,6 +185,9 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       if (isOrcaEmbedded() && window.filamenthub?.sendLoginSuccess) {
         window.filamenthub.sendLoginSuccess(tokenData.access_token, userData.id, tokenData.refresh_token ?? '');
       }
+      // В iframe плагина — отдаём токены Python-плагину на хранение,
+      // чтобы сессия переживала перезапуск окна/OrcaSlicer
+      reportAuthTokensToPlugin(tokenData.access_token, tokenData.refresh_token ?? null);
     } catch (error: any) {
       // Удаляем токен если логин не удался
       removeToken();
@@ -191,6 +209,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       if (userData.id && persistLocally) {
         setUserId(userData.id);
       }
+      reportAuthTokensToPlugin(accessToken, refreshToken ?? null);
     } catch (error: any) {
       removeToken();
       throw error;
@@ -239,6 +258,8 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     } catch {
       // Не в контексте OrcaSlicer — игнорируем
     }
+    // В iframe плагина — плагин удаляет сохранённые токены
+    reportLogoutToPlugin();
   };
 
   const refreshUser = async () => {
