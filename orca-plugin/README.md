@@ -53,7 +53,7 @@ Orca-themed toolbar (host `--orca-*` CSS variables — same role as the native
 Catalog/Profile/Wiki buttons of the C++ fork panel) and posts
 
 ```js
-{ source: 'filamenthub-plugin', type: 'navigate', path: '/' | '/profile' | '/calculator' | '/wiki' }
+{ source: 'filamenthub-plugin', type: 'navigate', path: '/' | '/profile' | '/wiki' }
 ```
 
 into the iframe (targetOrigin = our site). The SPA subscribes via

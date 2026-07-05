@@ -176,7 +176,6 @@ PAGE = r"""<!DOCTYPE html>
     <span id="brand">FilamentHub</span>
     <button data-path="/" class="active">Catalog</button>
     <button data-path="/profile">Profile</button>
-    <button data-path="/calculator">Calculator</button>
     <button data-path="/wiki">Wiki</button>
   </div>
   <iframe id="fh" src="__EMBED_URL__" allow="clipboard-write"></iframe>
