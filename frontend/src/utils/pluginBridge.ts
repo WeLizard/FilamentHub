@@ -154,6 +154,17 @@ export function reportLogoutToPlugin(): void {
 }
 
 /**
+ * Профиль пользователя изменился (пресет добавлен/удалён): плагин запускает
+ * автосинхронизацию, чтобы изменение попало в слайсер без ручного Sync.
+ */
+export function notifyProfileChanged(): void {
+  if (!isPluginEmbed()) {
+    return;
+  }
+  postToPlugin({ source: PLUGIN_MESSAGE_SOURCE, type: 'profile-changed' });
+}
+
+/**
  * Подписка на команду выхода от тулбара шелла (кнопка рядом с ником): шелл шлёт
  * do-logout вниз в iframe, SPA вызывает свой logout. Возвращает функцию отписки.
  */

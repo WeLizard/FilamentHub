@@ -51,6 +51,7 @@ import type { UserSpool, SpoolState, UserPrinterDevice } from '../api/client';
 import { SpoolIcon } from '../components/icons/SpoolIcon';
 import api from '../api/client';
 import { translateApiError } from '../utils/translateApiError';
+import { notifyProfileChanged } from '../utils/pluginBridge';
 import { downloadBlob } from '../utils/download';
 const CreatePresetModal = lazy(() =>
   import('../components/CreatePresetModal').then(m => ({ default: m.CreatePresetModal }))
@@ -440,6 +441,8 @@ export const ProfilePage: React.FC = () => {
       queryClient.invalidateQueries({ queryKey: ['user-presets'] });
       queryClient.invalidateQueries({ queryKey: ['presets'] });
       queryClient.invalidateQueries({ queryKey: ['filament-presets'] });
+      queryClient.invalidateQueries({ queryKey: ['presets-stats'] });
+      notifyProfileChanged();
     },
   });
 
@@ -450,6 +453,8 @@ export const ProfilePage: React.FC = () => {
       queryClient.invalidateQueries({ queryKey: ['saved-presets'] });
       queryClient.invalidateQueries({ queryKey: ['saved-presets-details'] });
       queryClient.invalidateQueries({ queryKey: ['user-presets'] });
+      queryClient.invalidateQueries({ queryKey: ['presets-stats'] });
+      notifyProfileChanged();
     },
     onError: (error: any) => {
       toast.error(translateApiError(t, error.response?.data?.detail, t('profilePage.unsaveError')));

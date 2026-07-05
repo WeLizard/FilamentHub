@@ -23,7 +23,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { filamentsAPI, brandsAPI, savedPresetsAPI, qrAPI } from '../api/client';
 import { translateApiError } from '../utils/translateApiError';
 import { currencySymbol } from '../utils/currency';
-import { isPluginEmbed, importPresetToPlugin } from '../utils/pluginBridge';
+import { isPluginEmbed, importPresetToPlugin, notifyProfileChanged } from '../utils/pluginBridge';
 import { Dropdown } from '../components/Dropdown';
 import { FilamentPreview } from '../components/FilamentPreview';
 import { RecommendedForPrinterSection } from '../components/RecommendedForPrinterSection';
@@ -64,6 +64,9 @@ export const CatalogPage: React.FC = () => {
       queryClient.invalidateQueries({ queryKey: ['saved-presets'] });
       queryClient.invalidateQueries({ queryKey: ['saved-presets-details'] });
       queryClient.invalidateQueries({ queryKey: ['user-presets'] });
+      // Refresh the plugin toolbar count and auto-sync the new preset into the slicer.
+      queryClient.invalidateQueries({ queryKey: ['presets-stats'] });
+      notifyProfileChanged();
     },
     onError: (error: AxiosError<{ detail: unknown }>) => {
       console.error('Error saving preset:', error);
