@@ -6,8 +6,10 @@ import './i18n';
 import App from './App';
 import './index.css';
 import { clearLegacyLocalAuthStateIfNeeded } from './utils/auth';
+import { stripOrcaHostTheme } from './utils/pluginBridge';
 
 clearLegacyLocalAuthStateIfNeeded();
+stripOrcaHostTheme();
 
 const queryClient = new QueryClient({
   defaultOptions: {

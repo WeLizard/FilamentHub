@@ -63,6 +63,41 @@ function postToPlugin(message: PluginMessage): void {
 }
 
 /**
+ * Убрать тему хоста OrcaSlicer из нашего документа в embed-режиме.
+ *
+ * PluginWebDialog инжектит <style id="orca-host-theme"> через AddUserScript,
+ * а WebView2 исполняет user-скрипты во всех фреймах, включая наш iframe.
+ * Эти правила (h1-h6/button/input и т.д.) — вне CSS-слоёв, поэтому бьют любые
+ * Tailwind-утилиты (v4 = нативные cascade layers) и перекрашивают сайт.
+ * Тема предназначена для страниц плагинов, не для полноценного SPA — удаляем.
+ */
+export function stripOrcaHostTheme(): void {
+  if (typeof document === 'undefined' || !isPluginEmbed()) {
+    return;
+  }
+  const removeIfPresent = () => {
+    const style = document.getElementById('orca-host-theme');
+    if (style) {
+      style.remove();
+      return true;
+    }
+    return false;
+  };
+  if (removeIfPresent()) {
+    return;
+  }
+  // Инжект идёт при document-start и может опередить или отстать от бандла —
+  // страхуемся наблюдателем и снимаем его, как только стиль удалён.
+  const observer = new MutationObserver(() => {
+    if (removeIfPresent()) {
+      observer.disconnect();
+    }
+  });
+  observer.observe(document.documentElement, { childList: true, subtree: true });
+  window.setTimeout(() => observer.disconnect(), 10000);
+}
+
+/**
  * Подписка на команды навигации от шелла плагина: кнопки Catalog/Profile/Wiki
  * над iframe шлют postMessage вниз, SPA переходит по роуту без перезагрузки.
  * Возвращает функцию отписки.
