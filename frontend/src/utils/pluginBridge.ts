@@ -154,6 +154,22 @@ export function reportLogoutToPlugin(): void {
 }
 
 /**
+ * Подписка на команду выхода от тулбара шелла (кнопка рядом с ником): шелл шлёт
+ * do-logout вниз в iframe, SPA вызывает свой logout. Возвращает функцию отписки.
+ */
+export function subscribeToPluginLogout(onLogout: () => void): () => void {
+  const handler = (event: MessageEvent) => {
+    const data = event.data as Partial<PluginMessage> | undefined;
+    if (!data || data.source !== PLUGIN_MESSAGE_SOURCE || data.type !== 'do-logout') {
+      return;
+    }
+    onLogout();
+  };
+  window.addEventListener('message', handler);
+  return () => window.removeEventListener('message', handler);
+}
+
+/**
  * Восстановление сессии при открытии окна плагина: подписываемся на
  * auth-restore и сигналим шеллу готовность (embed-ready) — в ответ он пришлёт
  * сохранённые токены, если они есть. Возвращает функцию отписки.

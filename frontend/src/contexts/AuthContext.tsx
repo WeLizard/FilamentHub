@@ -3,7 +3,7 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { authAPI } from '../api/client';
 import { getRefreshToken, getToken, isCookieAuthMode, isOrcaEmbedded, removeToken, setRefreshToken, setToken, setUserId, shouldPersistTokensLocally } from '../utils/auth';
-import { isPluginEmbed, reportAuthTokensToPlugin, reportLogoutToPlugin, subscribeToPluginAuthRestore } from '../utils/pluginBridge';
+import { isPluginEmbed, reportAuthTokensToPlugin, reportLogoutToPlugin, subscribeToPluginAuthRestore, subscribeToPluginLogout } from '../utils/pluginBridge';
 import type { User } from '../types/api';
 
 interface AuthContextType {
@@ -155,6 +155,17 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       loginWithToken(accessToken, refreshToken).catch(() => {
         // Сохранённые токены истекли и не обновились — остаёмся гостем
       });
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Выход по кнопке в тулбаре шелла плагина (рядом с ником)
+  useEffect(() => {
+    if (!isPluginEmbed()) {
+      return;
+    }
+    return subscribeToPluginLogout(() => {
+      logout();
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);

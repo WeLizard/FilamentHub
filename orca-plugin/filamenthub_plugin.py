@@ -7,7 +7,7 @@
 # name = "FilamentHub"
 # description = "Browse the FilamentHub brand/material catalog and import community-rated filament presets."
 # author = "FilamentHub"
-# version = "0.4.1"
+# version = "0.5.0"
 #
 # # Proposed forward-looking key (see README gap / PR #14530 feedback). The current
 # # host reads only name/description/author/version/dependencies and ignores unknown
@@ -158,7 +158,12 @@ PAGE = r"""<!DOCTYPE html>
     background:var(--orca-bg,#1e1e2e);
     border-bottom:1px solid var(--orca-border,#3c3c4c);
   }
-  #brand { margin-right:auto; color:var(--orca-fg,#e0e0e0); font-size:13px; font-weight:600; }
+  #left { margin-right:auto; display:flex; align-items:center; gap:8px; }
+  #brand { color:var(--orca-fg,#e0e0e0); font-size:13px; font-weight:600; }
+  #logout {
+    display:none; padding:2px 8px; font-size:11px;
+    color:var(--orca-muted,#a0a0a0); border-color:var(--orca-border,#3c3c4c);
+  }
   #bar button {
     appearance:none; background:transparent; cursor:pointer;
     border:1px solid transparent; border-radius:0;
@@ -173,7 +178,10 @@ PAGE = r"""<!DOCTYPE html>
 </style></head>
 <body>
   <div id="bar">
-    <span id="brand">FilamentHub</span>
+    <span id="left">
+      <span id="brand">FilamentHub</span>
+      <button id="logout" title="Sign out">Sign out</button>
+    </span>
     <button data-path="/" class="active">Catalog</button>
     <button data-path="/profile">Profile</button>
     <button data-path="/wiki">Wiki</button>
@@ -191,7 +199,9 @@ window.addEventListener('message', function (event) {
   var data = event.data;
   if (!data || data.source !== 'filamenthub-plugin') return;
   if (data.type === 'auth-state') {
+    // label present = signed in: show the username + a sign-out button.
     document.getElementById('brand').textContent = data.label || 'FilamentHub';
+    document.getElementById('logout').style.display = data.label ? 'inline-block' : 'none';
     return;
   }
   if (data.type === 'embed-ready') {
@@ -209,7 +219,7 @@ window.addEventListener('message', function (event) {
 });
 
 // Toolbar -> catalog: SPA navigation inside the iframe (no page reload).
-var buttons = Array.prototype.slice.call(document.querySelectorAll('#bar button'));
+var buttons = Array.prototype.slice.call(document.querySelectorAll('#bar button[data-path]'));
 buttons.forEach(function (btn) {
   btn.addEventListener('click', function () {
     buttons.forEach(function (b) { b.classList.remove('active'); });
@@ -220,6 +230,15 @@ buttons.forEach(function (btn) {
         SITE_ORIGIN);
     } catch (e) { /* iframe not ready */ }
   });
+});
+
+// Sign out: tell the catalog to log out; it clears the session and reports back
+// (auth-state with no label), which hides this button again.
+document.getElementById('logout').addEventListener('click', function () {
+  try {
+    frame.contentWindow.postMessage(
+      { source: 'filamenthub-plugin', type: 'do-logout' }, SITE_ORIGIN);
+  } catch (e) { /* iframe not ready */ }
 });
 </script>
 </body>
@@ -236,17 +255,20 @@ class FilamentHubCatalog(orca.script.ScriptPluginCapabilityBase):
     def get_name(self):
         return "FilamentHub Catalog"
 
-    def execute(self):
-        # A second Run lands on the same instance: close any stale window first.
+    def _supports_panel(self):
+        # Docked main-window tab where the host offers it (our create_panel
+        # prototype / future upstream API); floating window on stock builds.
+        return getattr(orca.host.ui, "create_panel", None)
+
+    def _open(self):
+        # Idempotent: if the surface is already open, keep it (a docked tab must
+        # not spawn duplicates on repeated Run / on_load).
         if self.win is not None and self.win.is_open():
-            self.win.close()
+            return False
         # Saved session tokens (if any) are baked into the shell page; it hands
         # them to the catalog when the SPA reports embed-ready.
         html = PAGE.replace("__RESTORE_AUTH__", json.dumps(load_saved_auth()))
-        # Prefer a docked main-window tab where the host offers it (our
-        # create_panel prototype / future upstream API); fall back to the
-        # floating window on stock PR #14530 builds.
-        create_panel = getattr(orca.host.ui, "create_panel", None)
+        create_panel = self._supports_panel()
         if create_panel is not None:
             self.win = create_panel(
                 title="FilamentHub",
@@ -254,15 +276,32 @@ class FilamentHubCatalog(orca.script.ScriptPluginCapabilityBase):
                 on_message=self.on_message,
                 on_close=self.on_close,
             )
-            return orca.ExecutionResult.success("FilamentHub catalog docked.")
-        self.win = orca.host.ui.create_window(
-            title="FilamentHub",
-            html=html,
-            width=1080,
-            height=760,
-            on_message=self.on_message,
-            on_close=self.on_close,
-        )
+        else:
+            self.win = orca.host.ui.create_window(
+                title="FilamentHub",
+                html=html,
+                width=1080,
+                height=760,
+                on_message=self.on_message,
+                on_close=self.on_close,
+            )
+        return True
+
+    def on_load(self):
+        # Auto-mount the docked tab when the plugin is enabled (incl. at startup),
+        # so it behaves like a native tab. Only for the docked surface — we do not
+        # pop a floating window unprompted on stock builds.
+        if self._supports_panel() is not None:
+            try:
+                self._open()
+            except Exception:
+                pass  # main window not ready yet; the user can still Run it
+
+    def execute(self):
+        created = self._open()
+        if self._supports_panel() is not None:
+            return orca.ExecutionResult.success(
+                "FilamentHub catalog docked." if created else "FilamentHub catalog is already open.")
         return orca.ExecutionResult.success("FilamentHub catalog opened.")
 
     def on_close(self):
