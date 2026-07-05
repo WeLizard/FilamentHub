@@ -14,7 +14,7 @@ import { BrandInvitePage } from './pages/BrandInvitePage';
 import { DownloadPage } from './pages/DownloadPage';
 import { ToastContainer } from './components/Toast';
 import { useOrcaSlicerNotifications } from './hooks/useOrcaSlicerNotifications';
-import { lazy, Suspense, useEffect, type ReactNode } from 'react';
+import { lazy, Suspense, useEffect, useState, type ReactNode } from 'react';
 import { Notifications } from './components/Notifications';
 import { useAuth } from './contexts/AuthContext';
 import { MaintenancePage } from './components/MaintenancePage';
@@ -50,6 +50,48 @@ if (typeof window !== 'undefined') {
   }, { once: true });
 }
 
+/** Диагностический оверлей для embed-режима: DevTools в WebView плагина
+ *  недоступен, поэтому window.onerror / unhandledrejection выводим на экран. */
+function EmbedDebugOverlay() {
+  const [entries, setEntries] = useState<string[]>([]);
+
+  useEffect(() => {
+    const push = (line: string) => setEntries((prev) => [...prev.slice(-19), line]);
+    const describe = (reason: unknown): string => {
+      if (reason instanceof Error) {
+        return `${reason.name}: ${reason.message}`;
+      }
+      try {
+        return JSON.stringify(reason);
+      } catch {
+        return String(reason);
+      }
+    };
+    const onError = (event: ErrorEvent) => {
+      push(`error: ${event.message} @ ${event.filename}:${event.lineno}:${event.colno}`);
+    };
+    const onRejection = (event: PromiseRejectionEvent) => {
+      push(`unhandledrejection: ${describe(event.reason)}`);
+    };
+    window.addEventListener('error', onError);
+    window.addEventListener('unhandledrejection', onRejection);
+    return () => {
+      window.removeEventListener('error', onError);
+      window.removeEventListener('unhandledrejection', onRejection);
+    };
+  }, []);
+
+  if (entries.length === 0) return null;
+
+  return (
+    <div className="fixed bottom-0 inset-x-0 z-[9999] max-h-40 overflow-y-auto bg-black/85 border-t border-red-500/40 p-2">
+      {entries.map((line, i) => (
+        <div key={i} className="text-red-300 text-xs font-mono break-all">{line}</div>
+      ))}
+    </div>
+  );
+}
+
 /** Безхромный контейнер для встраивания каталога в <iframe> плагина OrcaSlicer.
  *  Даёт тот же фон, что и Layout, но без хедера/футера/модалок. */
 function EmbedShell({ children }: { children: ReactNode }) {
@@ -58,6 +100,7 @@ function EmbedShell({ children }: { children: ReactNode }) {
       <div className="relative z-10 w-full max-w-7xl mx-auto px-4 sm:px-6 py-4 sm:py-8">
         {children}
       </div>
+      <EmbedDebugOverlay />
     </div>
   );
 }

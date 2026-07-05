@@ -122,9 +122,28 @@ export const CatalogPage: React.FC = () => {
   }
 
   if (filamentsError) {
+    // В embed-режиме (WebView плагина, DevTools нет) показываем техдетали ошибки.
+    const axiosError = filamentsError as AxiosError<{ detail?: unknown }>;
+    let responseDetail = '';
+    try {
+      responseDetail = JSON.stringify(axiosError.response?.data ?? null);
+    } catch {
+      responseDetail = String(axiosError.response?.data);
+    }
     return (
-      <div className="flex items-center justify-center min-h-[400px]">
+      <div className="flex flex-col items-center justify-center min-h-[400px] gap-4 px-4">
         <div className="text-red-400 text-xl">{t('catalogPage.error')}</div>
+        {isPluginEmbed() && (
+          <pre className="max-w-full overflow-x-auto whitespace-pre-wrap break-all text-xs font-mono text-red-300 bg-black/40 border border-red-500/40 rounded-lg p-3">
+            {[
+              `message: ${axiosError.message}`,
+              `code: ${axiosError.code ?? '-'}`,
+              `status: ${axiosError.response?.status ?? '-'}`,
+              `url: ${axiosError.config?.baseURL ?? ''}${axiosError.config?.url ?? '-'}`,
+              `response: ${responseDetail}`,
+            ].join('\n')}
+          </pre>
+        )}
       </div>
     );
   }
