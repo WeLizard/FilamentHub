@@ -7,7 +7,7 @@
 # name = "FilamentHub"
 # description = "Browse the FilamentHub brand/material catalog and import community-rated filament presets."
 # author = "FilamentHub"
-# version = "0.4.0"
+# version = "0.4.1"
 #
 # # Proposed forward-looking key (see README gap / PR #14530 feedback). The current
 # # host reads only name/description/author/version/dependencies and ignores unknown
@@ -243,6 +243,18 @@ class FilamentHubCatalog(orca.script.ScriptPluginCapabilityBase):
         # Saved session tokens (if any) are baked into the shell page; it hands
         # them to the catalog when the SPA reports embed-ready.
         html = PAGE.replace("__RESTORE_AUTH__", json.dumps(load_saved_auth()))
+        # Prefer a docked main-window tab where the host offers it (our
+        # create_panel prototype / future upstream API); fall back to the
+        # floating window on stock PR #14530 builds.
+        create_panel = getattr(orca.host.ui, "create_panel", None)
+        if create_panel is not None:
+            self.win = create_panel(
+                title="FilamentHub",
+                html=html,
+                on_message=self.on_message,
+                on_close=self.on_close,
+            )
+            return orca.ExecutionResult.success("FilamentHub catalog docked.")
         self.win = orca.host.ui.create_window(
             title="FilamentHub",
             html=html,
