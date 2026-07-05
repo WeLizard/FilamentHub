@@ -12,6 +12,8 @@
  * because the WebView cannot rely on browser cookie handling.
  */
 
+import { safeStorage } from './storage';
+
 const AUTH_WEB_MODE = (import.meta.env.VITE_AUTH_WEB_MODE || 'jwt').toLowerCase();
 
 export const isCookieAuthMode = (): boolean => {
@@ -51,56 +53,59 @@ export const shouldPersistTokensLocally = (): boolean => {
   return canUseLocalTokenStorage();
 };
 
+// Доступ к токенам — только через safeStorage: в iframe плагина OrcaSlicer
+// (top=file://) прямое обращение к localStorage кидает SecurityError, и без
+// fallback падал бы каждый API-запрос ещё в интерсепторе (client.ts).
 export const getToken = (): string | null => {
   if (!canUseLocalTokenStorage()) {
     return null;
   }
-  return localStorage.getItem('access_token');
+  return safeStorage.get('access_token');
 };
 
 export const getRefreshToken = (): string | null => {
   if (!canUseLocalTokenStorage()) {
     return null;
   }
-  return localStorage.getItem('refresh_token');
+  return safeStorage.get('refresh_token');
 };
 
 export const setToken = (token: string): void => {
   if (!canUseLocalTokenStorage()) {
     return;
   }
-  localStorage.setItem('access_token', token);
+  safeStorage.set('access_token', token);
 };
 
 export const setUserId = (userId: number): void => {
   if (!canUseLocalTokenStorage()) {
     return;
   }
-  localStorage.setItem('user_id', userId.toString());
+  safeStorage.set('user_id', userId.toString());
 };
 
 export const getUserId = (): number | null => {
   if (!canUseLocalTokenStorage()) {
     return null;
   }
-  const userId = localStorage.getItem('user_id');
+  const userId = safeStorage.get('user_id');
   return userId ? parseInt(userId, 10) : null;
 };
 
 export const removeUserId = (): void => {
-  localStorage.removeItem('user_id');
+  safeStorage.remove('user_id');
 };
 
 export const setRefreshToken = (token: string): void => {
   if (!canUseLocalTokenStorage()) {
     return;
   }
-  localStorage.setItem('refresh_token', token);
+  safeStorage.set('refresh_token', token);
 };
 
 export const removeToken = (): void => {
-  localStorage.removeItem('access_token');
-  localStorage.removeItem('refresh_token');
+  safeStorage.remove('access_token');
+  safeStorage.remove('refresh_token');
   removeUserId();
 };
 

@@ -15,6 +15,12 @@ export const PLUGIN_MESSAGE_SOURCE = 'filamenthub-plugin';
 
 const EMBED_FLAG = 'fh_plugin_embed';
 
+// В iframe плагина sessionStorage недоступен (SecurityError в партиционированном
+// контексте), поэтому липкость режима держит модульный флаг: SPA-навигация
+// страницу не перезагружает, и он живёт всю iframe-сессию. sessionStorage
+// остаётся страховкой на жёсткую перезагрузку в обычном браузере.
+let embedSessionFlag = false;
+
 /**
  * Запущен ли каталог во встроенном (плагинном) режиме. Определяем по маршруту
  * /embed и запоминаем на сессию, чтобы режим сохранялся при переходах внутри
@@ -24,14 +30,22 @@ export function isPluginEmbed(): boolean {
   if (typeof window === 'undefined') {
     return false;
   }
-  try {
-    if (window.location.pathname.startsWith('/embed')) {
+  if (window.location.pathname.startsWith('/embed')) {
+    embedSessionFlag = true;
+    try {
       sessionStorage.setItem(EMBED_FLAG, '1');
-      return true;
+    } catch {
+      // Хранилище недоступно (iframe плагина) — хватит модульного флага.
     }
+    return true;
+  }
+  if (embedSessionFlag) {
+    return true;
+  }
+  try {
     return sessionStorage.getItem(EMBED_FLAG) === '1';
   } catch {
-    return window.location.pathname.startsWith('/embed');
+    return false;
   }
 }
 
