@@ -161,3 +161,8 @@ bot/start.bat
 
 # acme-dns API credentials for SSL auto-renewal — secrets, never commit
 certbot/acmedns-creds.json
+
+# Внутренние черновики (письма, заметки, «наша с тобой» документация) — НИКОГДА в репо
+*_DRAFT.md
+*_draft.md
+PR_*_COMMENT*.md
