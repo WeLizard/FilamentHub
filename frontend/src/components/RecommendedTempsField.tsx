@@ -35,39 +35,43 @@ export const RecommendedTempsField: React.FC<{
         {t('createFilament.recommendedTempsLabel')}
       </label>
       <p className="text-gray-400 text-xs mb-2">{t('createFilament.recommendedTempsHint')}</p>
-      <div className="grid grid-cols-2 gap-3">
-        <input
-          type="number"
-          min={0}
-          value={value.nozzleMin ?? ''}
-          onChange={(e) => onChange({ ...value, nozzleMin: parseNum(e.target.value) })}
-          placeholder={t('createFilament.nozzleTempMin')}
-          className={inputClass}
-        />
-        <input
-          type="number"
-          min={0}
-          value={value.nozzleMax ?? ''}
-          onChange={(e) => onChange({ ...value, nozzleMax: parseNum(e.target.value) })}
-          placeholder={t('createFilament.nozzleTempMax')}
-          className={inputClass}
-        />
-        <input
-          type="number"
-          min={0}
-          value={value.bedMin ?? ''}
-          onChange={(e) => onChange({ ...value, bedMin: parseNum(e.target.value) })}
-          placeholder={t('createFilament.bedTempMin')}
-          className={inputClass}
-        />
-        <input
-          type="number"
-          min={0}
-          value={value.bedMax ?? ''}
-          onChange={(e) => onChange({ ...value, bedMax: parseNum(e.target.value) })}
-          placeholder={t('createFilament.bedTempMax')}
-          className={inputClass}
-        />
+      <div className="flex gap-6">
+        <div className="flex flex-1 flex-col gap-2">
+          <input
+            type="number"
+            min={0}
+            value={value.nozzleMin ?? ''}
+            onChange={(e) => onChange({ ...value, nozzleMin: parseNum(e.target.value) })}
+            placeholder={t('createFilament.nozzleTempMin')}
+            className={inputClass}
+          />
+          <input
+            type="number"
+            min={0}
+            value={value.nozzleMax ?? ''}
+            onChange={(e) => onChange({ ...value, nozzleMax: parseNum(e.target.value) })}
+            placeholder={t('createFilament.nozzleTempMax')}
+            className={inputClass}
+          />
+        </div>
+        <div className="flex flex-1 flex-col gap-2">
+          <input
+            type="number"
+            min={0}
+            value={value.bedMin ?? ''}
+            onChange={(e) => onChange({ ...value, bedMin: parseNum(e.target.value) })}
+            placeholder={t('createFilament.bedTempMin')}
+            className={inputClass}
+          />
+          <input
+            type="number"
+            min={0}
+            value={value.bedMax ?? ''}
+            onChange={(e) => onChange({ ...value, bedMax: parseNum(e.target.value) })}
+            placeholder={t('createFilament.bedTempMax')}
+            className={inputClass}
+          />
+        </div>
       </div>
     </div>
   );

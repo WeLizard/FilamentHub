@@ -11,6 +11,7 @@ import { MaterialTypeSelect } from './MaterialTypeSelect';
 import { AvailabilitySelect } from './AvailabilitySelect';
 import { DensityField } from './DensityField';
 import { PriceUnitField } from './PriceUnitField';
+import { RecommendedTempsField, RecommendedTemps } from './RecommendedTempsField';
 import { translateApiError } from '../utils/translateApiError';
 import type { Filament, FilamentAvailability, FilamentImportResult, FilamentPalettePayload } from '../types/api';
 
@@ -54,6 +55,12 @@ export function FilamentPaletteForm({ brandId, onClose, sourceFilament }: Filame
   const [pricePerSpool, setPricePerSpool] = useState(0);
   const [spoolWeight, setSpoolWeight] = useState(sourceFilament?.spool_weight ?? 1000);
   const [emptySpoolWeight, setEmptySpoolWeight] = useState<number | null>(sourceFilament?.empty_spool_weight_g ?? null);
+  const [recTemps, setRecTemps] = useState<RecommendedTemps>({
+    nozzleMin: sourceFilament?.recommended_nozzle_temp_min ?? null,
+    nozzleMax: sourceFilament?.recommended_nozzle_temp_max ?? null,
+    bedMin: sourceFilament?.recommended_bed_temp_min ?? null,
+    bedMax: sourceFilament?.recommended_bed_temp_max ?? null,
+  });
   const [availability, setAvailability] = useState<FilamentAvailability>(sourceFilament?.availability ?? 'available');
   const [entries, setEntries] = useState<PaletteEntry[]>([emptyEntry(), emptyEntry(), emptyEntry()]);
   const [openPicker, setOpenPicker] = useState<number | null>(null);
@@ -143,6 +150,10 @@ export function FilamentPaletteForm({ brandId, onClose, sourceFilament }: Filame
         price_per_kg: pricePerKg || null,
         spool_weight: spoolWeight || null,
         empty_spool_weight_g: emptySpoolWeight,
+        recommended_nozzle_temp_min: recTemps.nozzleMin,
+        recommended_nozzle_temp_max: recTemps.nozzleMax,
+        recommended_bed_temp_min: recTemps.bedMin,
+        recommended_bed_temp_max: recTemps.bedMax,
         price_display_unit: priceMode,
         availability,
         variants: filledEntries.map((e) => ({
@@ -279,6 +290,9 @@ export function FilamentPaletteForm({ brandId, onClose, sourceFilament }: Filame
             onEmptySpoolWeightChange={setEmptySpoolWeight}
             currencySymbol={currencySymbol('RUB')}
           />
+        </div>
+        <div className="mt-3">
+          <RecommendedTempsField value={recTemps} onChange={setRecTemps} />
         </div>
       </div>
 
