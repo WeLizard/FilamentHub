@@ -71,8 +71,6 @@ async def init_test_data() -> None:
                 "fan_speed": 100,
                 "retraction_length": 5.0,
                 "retraction_speed": 45.0,
-                "rating": 4.8,
-                "usage_count": 245,
                 "moderation_status": "approved",
             },
             # PLA Blue (filament 1)
@@ -90,8 +88,6 @@ async def init_test_data() -> None:
                 "fan_speed": 100,
                 "retraction_length": 5.0,
                 "retraction_speed": 45.0,
-                "rating": 4.8,
-                "usage_count": 189,
                 "moderation_status": "approved",
             },
             # PETG Black (filament 2)
@@ -109,8 +105,6 @@ async def init_test_data() -> None:
                 "fan_speed": 50,
                 "retraction_length": 6.0,
                 "retraction_speed": 40.0,
-                "rating": 4.9,
-                "usage_count": 312,
                 "moderation_status": "approved",
             },
             # PLA+ White (filament 3)
@@ -128,8 +122,6 @@ async def init_test_data() -> None:
                 "fan_speed": 100,
                 "retraction_length": 5.0,
                 "retraction_speed": 45.0,
-                "rating": 4.8,
-                "usage_count": 198,
                 "moderation_status": "approved",
             },
             # TPU 95A (filament 4)
@@ -147,8 +139,6 @@ async def init_test_data() -> None:
                 "fan_speed": 0,
                 "retraction_length": 3.0,
                 "retraction_speed": 30.0,
-                "rating": 4.7,
-                "usage_count": 156,
                 "moderation_status": "approved",
             },
             # PolyTerra PLA (filament 5)
@@ -166,8 +156,6 @@ async def init_test_data() -> None:
                 "fan_speed": 100,
                 "retraction_length": 5.0,
                 "retraction_speed": 45.0,
-                "rating": 4.8,
-                "usage_count": 234,
                 "moderation_status": "approved",
             },
         ]
@@ -189,8 +177,6 @@ async def init_test_data() -> None:
                 "fan_speed": 100,
                 "retraction_length": 5.0,
                 "retraction_speed": 45.0,
-                "rating": 4.8,
-                "usage_count": 124,
                 "moderation_status": "approved",
             },
             {
@@ -207,8 +193,6 @@ async def init_test_data() -> None:
                 "fan_speed": 100,
                 "retraction_length": 5.0,
                 "retraction_speed": 45.0,
-                "rating": 4.5,
-                "usage_count": 87,
                 "moderation_status": "approved",
             },
             # For PETG Black
@@ -226,8 +210,6 @@ async def init_test_data() -> None:
                 "fan_speed": 50,
                 "retraction_length": 6.0,
                 "retraction_speed": 40.0,
-                "rating": 4.9,
-                "usage_count": 156,
                 "moderation_status": "approved",
             },
         ]

@@ -118,10 +118,14 @@ async def handle_qr_scan(
                     preset_id=official_preset.id,
                 )
                 db.add(saved_preset)
+                official_preset.usage_count += 1
                 preset_added = True
 
     await db.commit()
     await db.refresh(filament)
+    # reload after commit: usage_count write expires attrs, model_validate would lazy-load
+    if official_preset is not None:
+        await db.refresh(official_preset)
 
     return {
         'filament': FilamentResponse.model_validate(filament),

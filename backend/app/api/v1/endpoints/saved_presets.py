@@ -80,6 +80,7 @@ async def save_preset(
         sync=True,  # По умолчанию синхронизация включена
     )
     db.add(saved_preset)
+    preset.usage_count += 1
     await db.commit()
     await db.refresh(saved_preset)
 
