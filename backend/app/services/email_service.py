@@ -83,11 +83,16 @@ def send_brand_status_email(*, to: str, brand_name: str, approved: bool, reason:
 
 def send_brand_invite_email(*, to: str, brand_name: str | None, invite_url: str, site_url: str) -> bool:
     """Send a pre-verified brand invitation to a manufacturer's corporate email."""
-    subject = "Приглашение бренду на FilamentHub"
+    brand_display = brand_name or "ваш бренд"
+    subject = (
+        f"Приглашение официально представить {brand_name} в FilamentHub"
+        if brand_name
+        else "Приглашение официально представить бренд в FilamentHub"
+    )
     html = _render(
         "brand_invite.html",
         subject=subject,
-        brand_display=brand_name or "ваш бренд",
+        brand_display=brand_display,
         invite_url=invite_url,
         site_url=site_url,
         contact_email=settings.EMAIL_CONTACT,
