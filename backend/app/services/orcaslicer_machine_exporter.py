@@ -142,6 +142,19 @@ def _format_printer_profile_name_for_orca(
 
     Если printer не указан или nozzle не указан, использует profile.name как есть.
     """
+    # Имя PrinterProfile само по себе — это имя машина-пресета в OrcaSlicer
+    # (напр. "Bambu Lab X1 Carbon 0.4 nozzle" для системных/импортированных).
+    # Оно каноничное и должно использоваться напрямую, чтобы compatible_printers
+    # матчился по точному имени. Реконструируем только для служебных заглушек.
+    profile_name = (profile.name or "").strip()
+    is_placeholder = (
+        not profile_name
+        or profile_name.startswith("Принтер ")
+        or profile_name.startswith("Printer ")
+    )
+    if not is_placeholder:
+        return profile_name
+
     # Определяем правильное имя принтера
     printer_name = None
     if printer:
