@@ -75,6 +75,11 @@ export interface Filament {
   price_per_kg: number | null;
   spool_weight: number | null;
   empty_spool_weight_g: number | null;
+  // Рекомендованные вендором диапазоны печати (спека материала), не значения профиля
+  recommended_nozzle_temp_min: number | null;
+  recommended_nozzle_temp_max: number | null;
+  recommended_bed_temp_min: number | null;
+  recommended_bed_temp_max: number | null;
   price_display_unit?: 'per_kg' | 'per_spool'; // в каком виде бренд назначил цену (основной показ)
   line_id?: number | null; // линейка (группировка вариантов-цвета)
   line_name?: string | null; // имя линейки (денормализовано)
@@ -132,6 +137,10 @@ export interface FilamentPalettePayload {
   price_per_kg?: number | null;
   spool_weight?: number | null;
   empty_spool_weight_g?: number | null;
+  recommended_nozzle_temp_min?: number | null;
+  recommended_nozzle_temp_max?: number | null;
+  recommended_bed_temp_min?: number | null;
+  recommended_bed_temp_max?: number | null;
   description?: string | null;
   availability?: FilamentAvailability;
   price_display_unit?: 'per_kg' | 'per_spool';
@@ -670,12 +679,26 @@ export interface CalculatorEstimateResponse {
 }
 
 export interface CalculatorParsedMaterial {
+  tool_index?: number | null;
   type?: string | null;
   name?: string | null;
+  settings_id?: string | null;
   vendor?: string | null;
   color?: string | null;
-  weight_g?: number | null;
-  length_mm?: number | null;
+    weight_g?: number | null;
+    length_mm?: number | null;
+    volume_cm3?: number | null;
+    density_g_cm3?: number | null;
+    diameter_mm?: number | null;
+    slicer_filament_id?: string | null;
+    slicer_usage_cost?: number | null;
+    slicer_profile_price_per_kg?: number | null;
+    flow_ratio?: number | null;
+    max_volumetric_speed_mm3_s?: number | null;
+    prime_volume_mm3?: number | null;
+  is_support_material?: boolean | null;
+  used_for_model?: boolean | null;
+  used_for_support?: boolean | null;
 }
 
 export interface CalculatorGcodeParseResponse {
@@ -684,13 +707,22 @@ export interface CalculatorGcodeParseResponse {
   slicer_name?: string | null;
   slicer_version?: string | null;
   print_time_seconds?: number | null;
-  total_filament_weight_g?: number | null;
-  total_filament_length_mm?: number | null;
+    total_filament_weight_g?: number | null;
+    total_filament_length_mm?: number | null;
+    total_filament_volume_cm3?: number | null;
   layer_height_mm?: number | null;
   initial_layer_height_mm?: number | null;
   sparse_infill_density_percent?: number | null;
-  sparse_infill_pattern?: string | null;
-  wall_loops?: number | null;
+    sparse_infill_pattern?: string | null;
+    wall_loops?: number | null;
+    outer_wall_line_width_mm?: number | null;
+    inner_wall_line_width_mm?: number | null;
+    outer_wall_speed_mm_s?: number | null;
+    inner_wall_speed_mm_s?: number | null;
+    sparse_infill_speed_mm_s?: number | null;
+    support_speed_mm_s?: number | null;
+    initial_layer_speed_mm_s?: number | null;
+    prime_volume_mm3?: number | null;
   nozzle_diameter_mm?: number | null;
   nozzle_temperature_first_layer_c?: number | null;
   nozzle_temperature_other_layers_c?: number | null;
@@ -701,12 +733,19 @@ export interface CalculatorGcodeParseResponse {
   max_z_height_mm?: number | null;
   support_type?: string | null;
   support_threshold_angle_deg?: number | null;
+  support_used?: boolean | null;
+  support_filament_config_index?: number | null;
+  support_interface_filament_config_index?: number | null;
+  support_roles_detected?: string[];
   brim_width_mm?: number | null;
   raft_layers?: number | null;
   active_material_count?: number | null;
   is_multi_material?: boolean | null;
   toolchange_count?: number | null;
   thumbnail_data_url?: string | null;
+  container_format?: 'plain_gcode' | 'gcode_3mf' | string;
+  plate_index?: number | null;
+  available_plate_indices?: number[];
   materials: CalculatorParsedMaterial[];
 }
 
