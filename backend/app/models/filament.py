@@ -75,6 +75,14 @@ class Filament(Base):
     density: Mapped[float | None] = mapped_column(Float, nullable=True)
     # density: г/см³ (для расчета веса)
 
+    # Рекомендованные производителем диапазоны печати (спека материала).
+    # Это ДИАПАЗОН-рекомендация вендора, НЕ конкретные значения профиля — Preset
+    # подтягивает их как дефолт при создании. Пусто у community-материалов без спеки.
+    recommended_nozzle_temp_min: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    recommended_nozzle_temp_max: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    recommended_bed_temp_min: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    recommended_bed_temp_max: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
     # Pricing (для калькулятора)
     price_per_kg: Mapped[float | None] = mapped_column(Float, nullable=True)
     # price_per_kg: рекомендованная цена за кг (вендор заполняет)
