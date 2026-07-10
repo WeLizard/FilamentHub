@@ -23,6 +23,7 @@ import {
   Printer,
   Save,
   Settings2,
+  Sparkles,
   Trash2,
   Upload,
   X,
@@ -33,6 +34,11 @@ import { useAuth } from '../contexts/AuthContext';
 import { useHeaderVisible } from '../hooks/useHeaderVisible';
 import { translateApiError } from '../utils/translateApiError';
 import { currencySymbol, normalizeCurrency, CURRENCY_CODES, defaultCurrencyForLanguage } from '../utils/currency';
+import {
+  findBestMaterialMatch,
+  pickPrimaryParsedMaterial,
+  type MaterialMatchConfidence,
+} from '../utils/calculatorMaterialMatcher';
 import { safeStorage } from '../utils/storage';
 import type {
   CalculatorEstimateRequest,
@@ -127,6 +133,20 @@ interface MaterialSelectionSnapshot {
   brand_name: string | null;
   material_type: string | null;
   color_name: string | null;
+}
+
+interface AutoMaterialMatchNotice {
+  confidence: MaterialMatchConfidence;
+  source: 'catalog' | 'spool';
+}
+
+interface AutoMaterialMatchCandidate {
+  filamentId: number;
+  name: string | null;
+  vendor: string | null;
+  materialType: string | null;
+  color: string | null;
+  spoolIds: number[];
 }
 
 const DEFAULT_FORM_STATE: CalculatorFormState = {
@@ -313,131 +333,6 @@ const buildSpoolLabel = (spool: UserSpool): string => {
   }
 
   return `${buildFilamentLabel(spool.filament)} · ${Math.round(spool.remaining_weight_g)} g`;
-};
-
-const normalizeMaterialText = (value: string | null | undefined): string =>
-  (value ?? '')
-    .toLowerCase()
-    .replace(/[\[\](){}"'`@.,;:/\\|+-]+/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim();
-
-const MATERIAL_NOISE_TOKENS = new Set([
-  'generic',
-  'system',
-  'copy',
-  'copied',
-  'копировать',
-  'копия',
-  'filamenthub',
-]);
-
-const materialTokens = (value: string | null | undefined): string[] =>
-  normalizeMaterialText(value)
-    .split(' ')
-    .map((token) => token.trim())
-    .filter((token) => token.length > 1 && !MATERIAL_NOISE_TOKENS.has(token));
-
-const countSharedTokens = (left: string[], right: string[]): number => {
-  if (left.length === 0 || right.length === 0) {
-    return 0;
-  }
-
-  const rightSet = new Set(right);
-  return left.reduce((count, token) => count + (rightSet.has(token) ? 1 : 0), 0);
-};
-
-const scoreMaterialCandidate = (
-  parsed: CalculatorParsedMaterial,
-  candidate: {
-    name: string | null | undefined;
-    vendor: string | null | undefined;
-    materialType: string | null | undefined;
-    color: string | null | undefined;
-  },
-): number => {
-  let score = 0;
-
-  const parsedType = normalizeMaterialText(parsed.type);
-  const candidateType = normalizeMaterialText(candidate.materialType);
-  const parsedVendor = normalizeMaterialText(parsed.vendor);
-  const candidateVendor = normalizeMaterialText(candidate.vendor);
-  const parsedName = normalizeMaterialText(parsed.name);
-  const candidateName = normalizeMaterialText(candidate.name);
-  const parsedColor = normalizeMaterialText(parsed.color);
-  const candidateColor = normalizeMaterialText(candidate.color);
-
-  if (parsedType && candidateType) {
-    if (parsedType === candidateType) {
-      score += 6;
-    } else {
-      const sharedTypeTokens = countSharedTokens(materialTokens(parsed.type), materialTokens(candidate.materialType));
-      score += Math.min(sharedTypeTokens * 2, 4);
-    }
-  }
-
-  if (parsedVendor && candidateVendor) {
-    if (parsedVendor === candidateVendor) {
-      score += 4;
-    } else {
-      const sharedVendorTokens = countSharedTokens(materialTokens(parsed.vendor), materialTokens(candidate.vendor));
-      score += Math.min(sharedVendorTokens * 2, 3);
-    }
-  }
-
-  if (parsedName && candidateName) {
-    if (parsedName === candidateName) {
-      score += 8;
-    } else if (parsedName.includes(candidateName) || candidateName.includes(parsedName)) {
-      score += 6;
-    } else {
-      const sharedNameTokens = countSharedTokens(materialTokens(parsed.name), materialTokens(candidate.name));
-      score += Math.min(sharedNameTokens * 2, 6);
-    }
-  }
-
-  if (parsedColor && candidateColor && parsedColor === candidateColor) {
-    score += 1;
-  }
-
-  return score;
-};
-
-const pickPrimaryParsedMaterial = (parsed: CalculatorGcodeParseResponse | null): CalculatorParsedMaterial | null => {
-  if (!parsed) {
-    return null;
-  }
-
-  if (parsed.active_material_count != null && parsed.active_material_count > 1) {
-    return null;
-  }
-
-  const weightedMaterial =
-    parsed.materials.find((material) => (material.weight_g ?? 0) > 0 || (material.length_mm ?? 0) > 0) ??
-    parsed.materials[0];
-
-  return weightedMaterial ?? null;
-};
-
-const findBestMatch = <T,>(
-  items: T[],
-  getScore: (item: T) => number,
-): T | null => {
-  const ranked = items
-    .map((item) => ({ item, score: getScore(item) }))
-    .filter((entry) => entry.score >= 8)
-    .sort((left, right) => right.score - left.score);
-
-  if (ranked.length === 0) {
-    return null;
-  }
-
-  const [best, second] = ranked;
-  if (second && best.score - second.score < 2) {
-    return null;
-  }
-
-  return best.item;
 };
 
 const buildEstimateRequest = (form: CalculatorFormState): CalculatorEstimateRequest => {
@@ -1121,9 +1016,11 @@ const buildQuoteDocumentHtml = ({
 
 export const CalculatorPage: React.FC = () => {
   const { t, i18n } = useTranslation();
-  const { user } = useAuth();
+  const { user, refreshUser } = useAuth();
   const queryClient = useQueryClient();
   const tc = (key: string) => translateCalculator(t, key);
+  const hasCalculatorAccess = user?.has_calculator_access ?? false;
+  const canStartTrial = !hasCalculatorAccess && user?.subscription == null;
   const [activeTab, setActiveTab] = useState<CalculatorTab>('calculator');
   const [form, setForm] = useState<CalculatorFormState>(DEFAULT_FORM_STATE);
   const [parsedGcode, setParsedGcode] = useState<CalculatorGcodeParseResponse | null>(null);
@@ -1134,6 +1031,7 @@ export const CalculatorPage: React.FC = () => {
   const [quoteProfile, setQuoteProfile] = useState<QuoteProfileState>(DEFAULT_QUOTE_PROFILE);
   const [quoteParties, setQuoteParties] = useState<QuotePartyFormState>(DEFAULT_QUOTE_PARTY_FORM);
   const [selectedSpoolId, setSelectedSpoolId] = useState<number | ''>('');
+  const [autoMaterialMatch, setAutoMaterialMatch] = useState<AutoMaterialMatchNotice | null>(null);
   const [isCloudBusy, setIsCloudBusy] = useState(false);
   const [quoteItems, setQuoteItems] = useState<QuoteItem[]>([]);
   const [isSharing, setIsSharing] = useState(false);
@@ -1161,12 +1059,21 @@ export const CalculatorPage: React.FC = () => {
         size: 100,
       }),
     staleTime: 60_000,
+    enabled: hasCalculatorAccess,
   });
 
   const spoolsQuery = useQuery({
     queryKey: ['calculator-pro', 'spools'],
     queryFn: spoolsAPI.list,
     staleTime: 30_000,
+    enabled: hasCalculatorAccess,
+  });
+
+  const startTrialMutation = useMutation({
+    mutationFn: calculatorAPI.startTrial,
+    onSuccess: async () => {
+      await refreshUser();
+    },
   });
 
   const calculateMutation = useMutation({
@@ -1181,6 +1088,7 @@ export const CalculatorPage: React.FC = () => {
     queryKey: ['calculator-pro', 'history'],
     queryFn: () => calculatorAPI.listHistory({ page: 1, size: 50 }),
     staleTime: 30_000,
+    enabled: hasCalculatorAccess,
   });
 
   const saveHistoryMutation = useMutation({
@@ -1383,6 +1291,7 @@ export const CalculatorPage: React.FC = () => {
   };
 
   const handleSelectSpool = (spoolId: number | '') => {
+    setAutoMaterialMatch(null);
     setSelectedSpoolId(spoolId);
 
     if (!spoolId) {
@@ -1397,6 +1306,7 @@ export const CalculatorPage: React.FC = () => {
   };
 
   const handleSelectCatalogFilament = (filamentId: number | '') => {
+    setAutoMaterialMatch(null);
     setSelectedSpoolId('');
     setForm((prev) => ({
       ...prev,
@@ -1758,55 +1668,88 @@ export const CalculatorPage: React.FC = () => {
 
   useEffect(() => {
     const currentParsedKey = parsedGcode ? `${parsedGcode.file_name}:${parsedGcode.file_size_bytes}` : null;
-    if (!parsedGcode || !currentParsedKey || lastAutoMatchedGcodeKeyRef.current === currentParsedKey) {
+    if (
+      !parsedGcode ||
+      !currentParsedKey ||
+      lastAutoMatchedGcodeKeyRef.current === currentParsedKey ||
+      filamentsQuery.isPending ||
+      spoolsQuery.isPending
+    ) {
       return;
     }
 
     const primaryMaterial = pickPrimaryParsedMaterial(parsedGcode);
     lastAutoMatchedGcodeKeyRef.current = currentParsedKey;
+    setAutoMaterialMatch(null);
 
     if (!primaryMaterial) {
       return;
     }
 
-    const matchedSpool = findBestMatch(availableSpools, (spool) =>
-      scoreMaterialCandidate(primaryMaterial, {
-        name: spool.filament?.name,
-        vendor: spool.filament?.brand_name,
-        materialType: spool.filament?.material_type,
-        color: spool.filament?.color_name,
-      }),
-    );
-
-    if (matchedSpool) {
-      setSelectedSpoolId(matchedSpool.id);
-      setForm((prev) => ({
-        ...prev,
-        selectedFilamentId: matchedSpool.filament_id ?? prev.selectedFilamentId,
-      }));
-      return;
-    }
-
-    const matchedFilament = findBestMatch(filamentsQuery.data?.items ?? [], (filament) =>
-      scoreMaterialCandidate(primaryMaterial, {
+    const candidatesByFilamentId = new Map<number, AutoMaterialMatchCandidate>();
+    for (const filament of filamentsQuery.data?.items ?? []) {
+      candidatesByFilamentId.set(filament.id, {
+        filamentId: filament.id,
         name: filament.name,
         vendor: filament.brand_name,
         materialType: filament.material_type,
         color: filament.color_name,
-      }),
+        spoolIds: [],
+      });
+    }
+
+    for (const spool of availableSpools) {
+      if (!spool.filament_id || !spool.filament) continue;
+      const candidate = candidatesByFilamentId.get(spool.filament_id) ?? {
+        filamentId: spool.filament_id,
+        name: spool.filament.name,
+        vendor: spool.filament.brand_name,
+        materialType: spool.filament.material_type,
+        color: spool.filament.color_name,
+        spoolIds: [],
+      };
+      candidate.spoolIds.push(spool.id);
+      candidatesByFilamentId.set(candidate.filamentId, candidate);
+    }
+
+    const match = findBestMaterialMatch(
+      Array.from(candidatesByFilamentId.values()),
+      primaryMaterial,
+      (candidate) => candidate,
     );
 
-    if (matchedFilament) {
-      setSelectedSpoolId('');
+    if (match) {
+      const isVisibleCatalogCandidate = (filamentsQuery.data?.items ?? []).some(
+        (filament) => filament.id === match.item.filamentId,
+      );
+      const exactSpoolId =
+        match.item.spoolIds.length === 1 || !isVisibleCatalogCandidate
+          ? match.item.spoolIds[0] ?? ''
+          : '';
+      setSelectedSpoolId(exactSpoolId);
       setForm((prev) => ({
         ...prev,
-        selectedFilamentId: matchedFilament.id,
+        selectedFilamentId: match.item.filamentId,
       }));
+      setAutoMaterialMatch({
+        confidence: match.confidence,
+        source: exactSpoolId ? 'spool' : 'catalog',
+      });
     }
-  }, [availableSpools, filamentsQuery.data?.items, parsedGcode]);
+  }, [
+    availableSpools,
+    filamentsQuery.data?.items,
+    filamentsQuery.isPending,
+    parsedGcode,
+    spoolsQuery.isPending,
+  ]);
 
-  // Калькулятор — Pro-функция. Базовому юзеру без доступа показываем заглушку вместо инструмента.
-  if (!user?.has_calculator_access) {
+  // Калькулятор — Pro-функция. Триал запускается только явным действием пользователя.
+  if (!hasCalculatorAccess) {
+    const trialError = startTrialMutation.error as {
+      response?: { data?: { detail?: unknown } };
+    } | null;
+
     return (
       <div className="mx-auto max-w-2xl">
         <div className={`${surfaceClass} p-8 text-center md:p-12`}>
@@ -1815,7 +1758,35 @@ export const CalculatorPage: React.FC = () => {
           </div>
           <h1 className="mb-3 text-2xl font-bold text-white">{tc('proLockedTitle')}</h1>
           <p className="mb-6 text-slate-300">{tc('proLockedDescription')}</p>
-          <p className="text-sm text-slate-400">{tc('proLockedHint')}</p>
+          {canStartTrial ? (
+            <div className="space-y-4">
+              <p className="text-sm text-slate-400">{tc('trialActivationHint')}</p>
+              <button
+                type="button"
+                onClick={() => startTrialMutation.mutate()}
+                disabled={startTrialMutation.isPending}
+                className="inline-flex items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-cyan-500 to-blue-600 px-6 py-3 font-semibold text-white shadow-lg shadow-cyan-500/20 transition hover:from-cyan-400 hover:to-blue-500 disabled:cursor-wait disabled:opacity-60"
+              >
+                {startTrialMutation.isPending ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Sparkles className="h-4 w-4" />
+                )}
+                {startTrialMutation.isPending ? tc('trialActivating') : tc('trialActivateAction')}
+              </button>
+              {startTrialMutation.isError && (
+                <p className="text-sm text-red-300">
+                  {translateApiError(
+                    t,
+                    trialError?.response?.data?.detail,
+                    tc('trialActivationError'),
+                  )}
+                </p>
+              )}
+            </div>
+          ) : (
+            <p className="text-sm text-slate-400">{tc('proLockedHint')}</p>
+          )}
         </div>
       </div>
     );
@@ -1901,6 +1872,7 @@ export const CalculatorPage: React.FC = () => {
           selectedFilament={selectedMaterial}
           selectedCatalogFilament={selectedCatalogFilament}
           selectedSpool={selectedSpool}
+          autoMaterialMatch={autoMaterialMatch}
           parsedGcode={parsedGcode}
           dragActive={dragActive}
           filaments={filamentsQuery.data?.items ?? []}
@@ -1991,6 +1963,7 @@ interface CalculatorViewProps {
   selectedFilament: MaterialSelectionSnapshot | null;
   selectedCatalogFilament: Filament | null;
   selectedSpool: UserSpool | null;
+  autoMaterialMatch: AutoMaterialMatchNotice | null;
   parsedGcode: CalculatorGcodeParseResponse | null;
   dragActive: boolean;
   filaments: Filament[];
@@ -2031,6 +2004,7 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
   selectedFilament,
   selectedCatalogFilament,
   selectedSpool,
+  autoMaterialMatch,
   parsedGcode,
   dragActive,
   filaments,
@@ -2077,6 +2051,13 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
     : selectedFilament
       ? tc('materialSourceCatalog')
       : tc('materialSourceManual');
+  const materialMatchConfidenceLabel = autoMaterialMatch
+    ? {
+        high: tc('materialMatchConfidenceHigh'),
+        medium: tc('materialMatchConfidenceMedium'),
+        low: tc('materialMatchConfidenceLow'),
+      }[autoMaterialMatch.confidence]
+    : null;
   // Каталожная цена бренда в другой валюте: её не подставили в форму, просим указать свою.
   const catalogBrandCurrency = !selectedSpool && selectedCatalogFilament?.currency
     ? normalizeCurrency(selectedCatalogFilament.currency)
@@ -2674,6 +2655,23 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
                     ))}
                   </select>
                 </FieldBlock>
+
+                {autoMaterialMatch && materialMatchConfidenceLabel && (
+                  <div className="rounded-[1.25rem] border border-emerald-400/25 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-100">
+                    <div className="flex items-center gap-2 font-semibold text-white">
+                      <CheckCircle2 className="h-4 w-4 text-emerald-300" />
+                      <span>{tc('materialAutoMatched')}</span>
+                      <span className="rounded-full bg-emerald-400/15 px-2 py-0.5 text-xs text-emerald-200">
+                        {materialMatchConfidenceLabel}
+                      </span>
+                    </div>
+                    <p className="mt-1 text-xs leading-5 text-emerald-100/75">
+                      {autoMaterialMatch.source === 'spool'
+                        ? tc('materialAutoMatchedSpoolHint')
+                        : tc('materialAutoMatchedCatalogHint')}
+                    </p>
+                  </div>
+                )}
 
                 <StatusPill tone={selectedSpool ? 'success' : 'neutral'}>{materialSourceLabel}</StatusPill>
 

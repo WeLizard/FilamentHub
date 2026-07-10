@@ -395,7 +395,7 @@ export interface User {
   brand_name: string | null; // Название бренда (для админки)
   printer_id: number | null; // ID выбранного принтера из каталога
   badges: string[] | null; // Бейджи пользователя (founder, beta_tester, contributor, verified, early_adopter, supporter)
-  // Calculator Pro entitlement. has_calculator_access — эффективный доступ (сейчас у всех, reverse trial).
+  // Calculator Pro entitlement. New users activate a one-time trial explicitly.
   has_calculator_access?: boolean;
   subscription?: {
     status: string; // trialing | active | past_due | canceled | expired

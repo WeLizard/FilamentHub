@@ -280,9 +280,8 @@ async def register(
         db.add(user)
         await db.commit()
         await db.refresh(user)
-        # Reverse trial: every new user starts on a (currently unlimited) trial subscription.
-        from app.services.subscription_service import get_or_create_subscription
-        await get_or_create_subscription(db, user)
+        # Trial is opt-in: the user starts it explicitly via POST /calculator/start-trial,
+        # so it never counts down silently before they know it exists.
         logger.info(f"User registered successfully: {user.email} (id={user.id})")
 
         # Генерируем токен для верификации email
@@ -1289,10 +1288,6 @@ async def oauth_callback(
     await db.commit()
     await db.refresh(user)
 
-    # Reverse trial: ensure the (OAuth) user has a subscription. Idempotent.
-    from app.services.subscription_service import get_or_create_subscription
-    await get_or_create_subscription(db, user)
-
     # Create JWT tokens
     token_data = {"sub": user.email, "user_id": user.id, "role": user.role.value}
     access_token = create_access_token(data=token_data)
@@ -1302,6 +1297,5 @@ async def oauth_callback(
         _set_auth_cookies(response, access_token, refresh_token)
 
     return Token(access_token=access_token, refresh_token=refresh_token)
-
 
 

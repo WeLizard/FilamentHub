@@ -1067,6 +1067,11 @@ export const proofFilesAPI = {
 };
 
 export const calculatorAPI = {
+  startTrial: async (): Promise<User> => {
+    const response = await api.post<User>('/calculator/start-trial');
+    return response.data;
+  },
+
   estimate: async (data: CalculatorEstimateRequest) => {
     const response = await api.post<CalculatorEstimateResponse>('/calculator/estimate', data);
     return response.data;

@@ -1,16 +1,8 @@
 """Subscription / Pro entitlement logic.
 
-Single decision point for "does this user have Pro (calculator) access".
-
-Design (reverse trial, payment-ready):
-- Every user has a ``Subscription`` row (auto-created as ``trialing``).
-- A global kill-switch ``paywall_enforced`` (app_settings) gates enforcement.
-  While it is False (current launch state) everyone has access — the reverse
-  trial is effectively unlimited. Flip it on later to start enforcing.
-- ``trial_days`` (app_settings) sets trial length for newly created subscriptions
-  (None = no expiry / permanent trial).
-- Payments are not wired yet; a future webhook just sets ``status=active`` +
-  ``current_period_end`` on the subscription and everything else keeps working.
+New users start without a subscription and activate their one-time trial
+explicitly. Existing subscriptions remain valid, including grandfathered
+trials created before the opt-in flow.
 
 Global settings are cached in-process so synchronous serialization
 (``UserResponse.model_validate``) can read them without an async DB call. The
@@ -21,6 +13,7 @@ import logging
 from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.inspection import inspect as sa_inspect
 
@@ -32,17 +25,33 @@ logger = logging.getLogger(__name__)
 
 SETTING_PAYWALL_ENFORCED = "paywall_enforced"
 SETTING_TRIAL_DAYS = "trial_days"
+DEFAULT_PAYWALL_ENFORCED = True
+DEFAULT_TRIAL_DAYS = 14
 
 # In-process cache of global settings (see module docstring).
-_settings_cache: dict[str, object] = {"paywall_enforced": False, "trial_days": None}
+_settings_cache: dict[str, object] = {
+    "paywall_enforced": DEFAULT_PAYWALL_ENFORCED,
+    "trial_days": DEFAULT_TRIAL_DAYS,
+}
+
+
+class TrialAlreadyUsedError(Exception):
+    """Raised when a user tries to restart a consumed trial."""
+
+
+def _as_utc(value: datetime) -> datetime:
+    """Normalize DB datetimes for SQLite tests and PostgreSQL runtime."""
+    if value.tzinfo is None:
+        return value.replace(tzinfo=timezone.utc)
+    return value.astimezone(timezone.utc)
 
 
 # --------------------------------------------------------------------------- #
 # Global settings (app_settings table + in-process cache)
 # --------------------------------------------------------------------------- #
-async def _read_setting(db: AsyncSession, key: str) -> str | None:
+async def _read_setting(db: AsyncSession, key: str) -> tuple[bool, str | None]:
     row = (await db.execute(select(AppSetting).where(AppSetting.key == key))).scalar_one_or_none()
-    return row.value if row else None
+    return (row is not None, row.value if row else None)
 
 
 async def _write_setting(db: AsyncSession, key: str, value: str | None) -> None:
@@ -56,10 +65,17 @@ async def _write_setting(db: AsyncSession, key: str, value: str | None) -> None:
 
 async def refresh_settings_cache(db: AsyncSession) -> None:
     """Load global settings from the DB into the in-process cache."""
-    enforced = await _read_setting(db, SETTING_PAYWALL_ENFORCED)
-    trial = await _read_setting(db, SETTING_TRIAL_DAYS)
-    _settings_cache["paywall_enforced"] = (enforced == "true")
-    _settings_cache["trial_days"] = int(trial) if (trial not in (None, "")) else None
+    enforced_exists, enforced = await _read_setting(db, SETTING_PAYWALL_ENFORCED)
+    trial_exists, trial = await _read_setting(db, SETTING_TRIAL_DAYS)
+    _settings_cache["paywall_enforced"] = (
+        enforced == "true" if enforced_exists else DEFAULT_PAYWALL_ENFORCED
+    )
+    _settings_cache["trial_days"] = (
+        int(trial)
+        if trial_exists and trial not in (None, "")
+        else None if trial_exists
+        else DEFAULT_TRIAL_DAYS
+    )
 
 
 def paywall_enforced() -> bool:
@@ -94,7 +110,11 @@ def _trial_end_for_new() -> datetime | None:
 
 
 async def get_or_create_subscription(db: AsyncSession, user: User) -> Subscription:
-    """Return the user's subscription, creating a trialing one if missing."""
+    """Return a subscription row for administrative entitlement changes.
+
+    User-facing trial activation must use :func:`start_trial`; this helper is
+    retained for admin grants and legacy callers.
+    """
     sub = (
         await db.execute(select(Subscription).where(Subscription.user_id == user.id))
     ).scalar_one_or_none()
@@ -110,6 +130,53 @@ async def get_or_create_subscription(db: AsyncSession, user: User) -> Subscripti
     return sub
 
 
+async def start_trial(db: AsyncSession, user: User) -> Subscription:
+    """Start a user's one-time trial, or return the already active entitlement.
+
+    Repeated clicks are idempotent and never extend the trial. A consumed trial
+    cannot be restarted without an explicit administrative grant.
+    """
+    sub = (
+        await db.execute(
+            select(Subscription)
+            .where(Subscription.user_id == user.id)
+            .with_for_update()
+        )
+    ).scalar_one_or_none()
+
+    if sub is None:
+        sub = Subscription(
+            user_id=user.id,
+            status=SubscriptionStatus.TRIALING,
+            trial_ends_at=_trial_end_for_new(),
+        )
+        db.add(sub)
+        try:
+            await db.commit()
+            await db.refresh(sub)
+            return sub
+        except IntegrityError:
+            # Two activation requests may race before either sees a row. The
+            # unique user_id constraint makes the winner authoritative.
+            await db.rollback()
+            sub = (
+                await db.execute(
+                    select(Subscription).where(Subscription.user_id == user.id)
+                )
+            ).scalar_one()
+
+    now = datetime.now(timezone.utc)
+    if sub.is_comp or sub.status == SubscriptionStatus.ACTIVE:
+        return sub
+    if sub.status == SubscriptionStatus.TRIALING:
+        if sub.trial_ends_at is None or _as_utc(sub.trial_ends_at) > now:
+            return sub
+        sub.status = SubscriptionStatus.EXPIRED
+        await db.commit()
+
+    raise TrialAlreadyUsedError
+
+
 def _loaded_subscription(user: User) -> Subscription | None:
     """Return user.subscription only if already loaded (never triggers async lazy load)."""
     if "subscription" in sa_inspect(user).unloaded:
@@ -120,7 +187,7 @@ def _loaded_subscription(user: User) -> Subscription | None:
 def pro_active(user: User) -> bool:
     """Effective Pro (calculator) access. Uses cached global settings + loaded subscription.
 
-    admin → always; paywall not enforced → everyone (reverse trial); otherwise a valid
+    admin → always; explicitly open paywall → everyone; otherwise a valid
     subscription (active / trialing-not-expired / complimentary).
     """
     if user.role == UserRole.ADMIN:
@@ -131,10 +198,12 @@ def pro_active(user: User) -> bool:
     if sub is None:
         return False
     now = datetime.now(timezone.utc)
+    if sub.is_comp:
+        return True
     if sub.status == SubscriptionStatus.ACTIVE:
-        return sub.current_period_end is None or sub.current_period_end > now
+        return sub.current_period_end is None or _as_utc(sub.current_period_end) > now
     if sub.status == SubscriptionStatus.TRIALING:
-        return sub.trial_ends_at is None or sub.trial_ends_at > now
+        return sub.trial_ends_at is None or _as_utc(sub.trial_ends_at) > now
     return False
 
 

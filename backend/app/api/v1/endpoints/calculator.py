@@ -14,9 +14,10 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
-from app.core.dependencies import require_calculator_access
+from app.core.dependencies import get_current_active_user, require_calculator_access
 from app.core.errors import (
     ERR_CALCULATOR_HISTORY_NOT_FOUND,
+    ERR_CALCULATOR_TRIAL_ALREADY_USED,
     ERR_FILE_TOO_LARGE,
     ERR_GCODE_PARSE_FAILED,
     ERR_INVALID_FILE_EXT,
@@ -49,14 +50,40 @@ from app.schemas.calculator import (
     SharedQuoteCreate,
     SharedQuoteResponse,
 )
+from app.schemas.user import UserResponse
 from app.services.calculator_gcode_parser import (
     SUPPORTED_GCODE_EXTENSIONS,
     is_supported_gcode_filename,
     parse_gcode_payload,
 )
+from app.services.subscription_service import (
+    TrialAlreadyUsedError,
+    paywall_enforced,
+    start_trial,
+)
 
 router = APIRouter(prefix="/calculator", tags=["calculator"])
 logger = logging.getLogger(__name__)
+
+
+@router.post("/start-trial", response_model=UserResponse)
+async def start_calculator_trial(
+    current_user: Annotated[User, Depends(get_current_active_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> UserResponse:
+    """Activate the current user's one-time Calculator Pro trial."""
+    if not paywall_enforced():
+        # Do not consume a one-time trial while an administrator has explicitly
+        # opened Calculator Pro to everyone.
+        return UserResponse.model_validate(current_user)
+
+    try:
+        await start_trial(db, current_user)
+    except TrialAlreadyUsedError:
+        raise_error(status.HTTP_409_CONFLICT, ERR_CALCULATOR_TRIAL_ALREADY_USED)
+
+    await db.refresh(current_user, attribute_names=["subscription"])
+    return UserResponse.model_validate(current_user)
 
 
 def _convert_time_to_hours(

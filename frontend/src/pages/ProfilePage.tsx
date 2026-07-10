@@ -679,13 +679,12 @@ export const ProfilePage: React.FC = () => {
               return (
                 <button
                   key={tab.id}
-                  onClick={() => !isLocked && setUserTab(tab.id)}
-                  disabled={isLocked}
+                  onClick={() => setUserTab(tab.id)}
                   className={`flex items-center gap-1.5 md:gap-2 px-2.5 md:px-4 py-1.5 md:py-2 rounded-lg transition-all text-xs md:text-sm whitespace-nowrap ${
                     userTab === tab.id
                       ? 'bg-purple-600 text-white shadow-lg shadow-purple-500/25'
                       : isLocked
-                      ? 'text-gray-500 cursor-not-allowed'
+                      ? 'text-gray-400 hover:text-white hover:bg-white/10 active:bg-white/15'
                       : 'text-gray-300 hover:text-white hover:bg-white/10 active:bg-white/15'
                   } ${isLocked ? 'opacity-60' : ''}`}
                   title={isLocked ? t('profilePage.premiumRequired') : undefined}

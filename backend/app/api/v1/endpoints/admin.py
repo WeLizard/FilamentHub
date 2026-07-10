@@ -2239,7 +2239,9 @@ async def set_user_pro_access(
         sub.is_comp = True
         sub.current_period_end = None  # complimentary — never expires
     else:
-        sub.status = SubscriptionStatus.TRIALING
+        # Revoking a complimentary grant must revoke access, not silently start
+        # or restore an unlimited trial.
+        sub.status = SubscriptionStatus.EXPIRED
         sub.is_comp = False
         sub.current_period_end = None
     await db.commit()
