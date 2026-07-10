@@ -35,7 +35,7 @@ import { useHeaderVisible } from '../hooks/useHeaderVisible';
 import { translateApiError } from '../utils/translateApiError';
 import { currencySymbol, normalizeCurrency, CURRENCY_CODES, defaultCurrencyForLanguage } from '../utils/currency';
 import {
-  findBestMaterialMatch,
+  findPrioritizedMaterialMatch,
   pickPrimaryParsedMaterial,
   type MaterialMatchConfidence,
 } from '../utils/calculatorMaterialMatcher';
@@ -138,7 +138,10 @@ interface MaterialSelectionSnapshot {
 interface AutoMaterialMatchNotice {
   confidence: MaterialMatchConfidence;
   source: 'catalog' | 'spool';
+  requiresSpoolChoice?: boolean;
 }
+
+type MaterialPriceSource = 'manual' | 'spool' | 'filamenthub' | 'slicer' | 'unset';
 
 interface AutoMaterialMatchCandidate {
   filamentId: number;
@@ -1032,12 +1035,15 @@ export const CalculatorPage: React.FC = () => {
   const [quoteParties, setQuoteParties] = useState<QuotePartyFormState>(DEFAULT_QUOTE_PARTY_FORM);
   const [selectedSpoolId, setSelectedSpoolId] = useState<number | ''>('');
   const [autoMaterialMatch, setAutoMaterialMatch] = useState<AutoMaterialMatchNotice | null>(null);
+  const [materialPriceSource, setMaterialPriceSource] = useState<MaterialPriceSource>('manual');
   const [isCloudBusy, setIsCloudBusy] = useState(false);
   const [quoteItems, setQuoteItems] = useState<QuoteItem[]>([]);
   const [isSharing, setIsSharing] = useState(false);
   const [isPdfDownloading, setIsPdfDownloading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const gcodeSourceFileRef = useRef<File | null>(null);
   const skipNextFilamentDefaultsRef = useRef(false);
+  const priceManuallyEditedRef = useRef(false);
   const lastAutoMatchedGcodeKeyRef = useRef<string | null>(null);
   const quoteSequenceRef = useRef(0);
 
@@ -1081,7 +1087,8 @@ export const CalculatorPage: React.FC = () => {
   });
 
   const parseGcodeMutation = useMutation({
-    mutationFn: (file: File) => calculatorAPI.parseGcode(file),
+    mutationFn: ({ file, plateIndex }: { file: File; plateIndex?: number }) =>
+      calculatorAPI.parseGcode(file, plateIndex),
   });
 
   const historyQuery = useQuery({
@@ -1159,6 +1166,9 @@ export const CalculatorPage: React.FC = () => {
         skipNextFilamentDefaultsRef.current = false;
         return;
       }
+      if (priceManuallyEditedRef.current) {
+        return;
+      }
 
       const defaults = deriveUserSpoolDefaults(selectedSpool);
       // Если у катушки нет своей цены, deriveUserSpoolDefaults берёт цену бренда
@@ -1177,6 +1187,11 @@ export const CalculatorPage: React.FC = () => {
         spoolPrice: fallbackCurrencyOk ? (defaults.spoolPrice ?? prev.spoolPrice) : prev.spoolPrice,
         spoolWeightKg: defaults.spoolWeightKg ?? prev.spoolWeightKg,
       }));
+      if (fallbackCurrencyOk && defaults.spoolPrice != null) {
+        setMaterialPriceSource(selectedSpool.price != null ? 'spool' : 'filamenthub');
+      } else {
+        setMaterialPriceSource('unset');
+      }
       return;
     }
 
@@ -1186,6 +1201,9 @@ export const CalculatorPage: React.FC = () => {
 
     if (skipNextFilamentDefaultsRef.current) {
       skipNextFilamentDefaultsRef.current = false;
+      return;
+    }
+    if (priceManuallyEditedRef.current) {
       return;
     }
 
@@ -1202,6 +1220,7 @@ export const CalculatorPage: React.FC = () => {
       spoolPrice: currencyMatches ? (defaults.spoolPrice ?? prev.spoolPrice) : prev.spoolPrice,
       spoolWeightKg: defaults.spoolWeightKg ?? prev.spoolWeightKg,
     }));
+    setMaterialPriceSource(currencyMatches && defaults.spoolPrice != null ? 'filamenthub' : 'unset');
   }, [selectedCatalogFilament, selectedSpool]);
 
   useEffect(() => {
@@ -1287,11 +1306,17 @@ export const CalculatorPage: React.FC = () => {
   const summaryTime = result?.total_time_hours ?? result?.time_hours ?? currentWorkTimeHours;
 
   const updateField = <K extends keyof CalculatorFormState>(field: K, value: CalculatorFormState[K]) => {
+    if (field === 'spoolPrice') {
+      priceManuallyEditedRef.current = true;
+      setMaterialPriceSource('manual');
+    }
     setForm((prev) => ({ ...prev, [field]: value }));
   };
 
   const handleSelectSpool = (spoolId: number | '') => {
     setAutoMaterialMatch(null);
+    skipNextFilamentDefaultsRef.current = false;
+    priceManuallyEditedRef.current = false;
     setSelectedSpoolId(spoolId);
 
     if (!spoolId) {
@@ -1307,6 +1332,8 @@ export const CalculatorPage: React.FC = () => {
 
   const handleSelectCatalogFilament = (filamentId: number | '') => {
     setAutoMaterialMatch(null);
+    skipNextFilamentDefaultsRef.current = false;
+    priceManuallyEditedRef.current = false;
     setSelectedSpoolId('');
     setForm((prev) => ({
       ...prev,
@@ -1337,11 +1364,28 @@ export const CalculatorPage: React.FC = () => {
     calculateMutation.mutate(buildEstimateRequest(form));
   };
 
-  const handleGcodeFile = async (file: File) => {
-    const parsed = await parseGcodeMutation.mutateAsync(file);
+  const handleGcodeFile = async (file: File, plateIndex?: number) => {
+    const parsed = await parseGcodeMutation.mutateAsync({ file, plateIndex });
+    gcodeSourceFileRef.current = file;
+    priceManuallyEditedRef.current = false;
     lastAutoMatchedGcodeKeyRef.current = null;
+    setSelectedSpoolId('');
+    setAutoMaterialMatch(null);
+    setMaterialPriceSource('unset');
     setParsedGcode(parsed);
-    setForm((prev) => applyParsedGcodeToForm(prev, parsed));
+    setForm((prev) => ({
+      ...applyParsedGcodeToForm(prev, parsed),
+      selectedFilamentId: '',
+      spoolPrice: 0,
+    }));
+  };
+
+  const handlePlateSelect = async (plateIndex: number) => {
+    const file = gcodeSourceFileRef.current;
+    if (!file || parsedGcode?.plate_index === plateIndex) {
+      return;
+    }
+    await handleGcodeFile(file, plateIndex);
   };
 
   const handleFileSelection = async (files: FileList | null) => {
@@ -1383,10 +1427,13 @@ export const CalculatorPage: React.FC = () => {
   const handleRestoreHistory = (entry: CalculatorHistoryEntry) => {
     skipNextFilamentDefaultsRef.current = true;
     setSelectedSpoolId('');
+    gcodeSourceFileRef.current = null;
     lastAutoMatchedGcodeKeyRef.current = entry.parsed_gcode
-      ? `${entry.parsed_gcode.file_name}:${entry.parsed_gcode.file_size_bytes}`
+      ? `${entry.parsed_gcode.file_name}:${entry.parsed_gcode.file_size_bytes}:${entry.parsed_gcode.plate_index ?? 0}`
       : null;
     setForm(buildFormFromHistoryEntry(entry));
+    priceManuallyEditedRef.current = true;
+    setMaterialPriceSource('manual');
     setParsedGcode(entry.parsed_gcode ?? null);
     setActiveTab('calculator');
     setHistoryFeedback({ kind: 'success', message: tc('historyRestored') });
@@ -1667,7 +1714,9 @@ export const CalculatorPage: React.FC = () => {
   };
 
   useEffect(() => {
-    const currentParsedKey = parsedGcode ? `${parsedGcode.file_name}:${parsedGcode.file_size_bytes}` : null;
+    const currentParsedKey = parsedGcode
+      ? `${parsedGcode.file_name}:${parsedGcode.file_size_bytes}:${parsedGcode.plate_index ?? 0}`
+      : null;
     if (
       !parsedGcode ||
       !currentParsedKey ||
@@ -1686,21 +1735,10 @@ export const CalculatorPage: React.FC = () => {
       return;
     }
 
-    const candidatesByFilamentId = new Map<number, AutoMaterialMatchCandidate>();
-    for (const filament of filamentsQuery.data?.items ?? []) {
-      candidatesByFilamentId.set(filament.id, {
-        filamentId: filament.id,
-        name: filament.name,
-        vendor: filament.brand_name,
-        materialType: filament.material_type,
-        color: filament.color_name,
-        spoolIds: [],
-      });
-    }
-
+    const spoolCandidatesByFilamentId = new Map<number, AutoMaterialMatchCandidate>();
     for (const spool of availableSpools) {
       if (!spool.filament_id || !spool.filament) continue;
-      const candidate = candidatesByFilamentId.get(spool.filament_id) ?? {
+      const candidate = spoolCandidatesByFilamentId.get(spool.filament_id) ?? {
         filamentId: spool.filament_id,
         name: spool.filament.name,
         vendor: spool.filament.brand_name,
@@ -1709,32 +1747,65 @@ export const CalculatorPage: React.FC = () => {
         spoolIds: [],
       };
       candidate.spoolIds.push(spool.id);
-      candidatesByFilamentId.set(candidate.filamentId, candidate);
+      spoolCandidatesByFilamentId.set(candidate.filamentId, candidate);
     }
 
-    const match = findBestMaterialMatch(
-      Array.from(candidatesByFilamentId.values()),
+    const prioritizedMatch = findPrioritizedMaterialMatch(
       primaryMaterial,
+      Array.from(spoolCandidatesByFilamentId.values()),
+      filamentsQuery.data?.items ?? [],
       (candidate) => candidate,
+      (filament) => ({
+        name: filament.name,
+        vendor: filament.brand_name,
+        materialType: filament.material_type,
+        color: filament.color_name,
+      }),
     );
 
-    if (match) {
-      const isVisibleCatalogCandidate = (filamentsQuery.data?.items ?? []).some(
-        (filament) => filament.id === match.item.filamentId,
-      );
-      const exactSpoolId =
-        match.item.spoolIds.length === 1 || !isVisibleCatalogCandidate
-          ? match.item.spoolIds[0] ?? ''
-          : '';
+    if (prioritizedMatch?.source === 'user') {
+      const spoolMatch = prioritizedMatch.match;
+      priceManuallyEditedRef.current = false;
+      const exactSpoolId = spoolMatch.item.spoolIds.length === 1 ? spoolMatch.item.spoolIds[0] : '';
+      if (!exactSpoolId) {
+        // The material identity is clear, but choosing an arbitrary physical
+        // spool would silently pick the wrong purchase price or remaining stock.
+        skipNextFilamentDefaultsRef.current = true;
+        setMaterialPriceSource('unset');
+      }
       setSelectedSpoolId(exactSpoolId);
       setForm((prev) => ({
         ...prev,
-        selectedFilamentId: match.item.filamentId,
+        selectedFilamentId: spoolMatch.item.filamentId,
+        ...(!exactSpoolId ? { spoolPrice: 0 } : {}),
       }));
       setAutoMaterialMatch({
-        confidence: match.confidence,
-        source: exactSpoolId ? 'spool' : 'catalog',
+        confidence: spoolMatch.confidence,
+        source: 'spool',
+        requiresSpoolChoice: !exactSpoolId,
       });
+      return;
+    }
+
+    if (prioritizedMatch?.source === 'catalog') {
+      const catalogMatch = prioritizedMatch.match;
+      priceManuallyEditedRef.current = false;
+      setSelectedSpoolId('');
+      setForm((prev) => ({ ...prev, selectedFilamentId: catalogMatch.item.id }));
+      setAutoMaterialMatch({ confidence: catalogMatch.confidence, source: 'catalog' });
+      return;
+    }
+
+    if ((primaryMaterial.slicer_profile_price_per_kg ?? 0) > 0) {
+      priceManuallyEditedRef.current = false;
+      setSelectedSpoolId('');
+      setForm((prev) => ({
+        ...prev,
+        selectedFilamentId: '',
+        spoolPrice: primaryMaterial.slicer_profile_price_per_kg ?? prev.spoolPrice,
+        spoolWeightKg: 1,
+      }));
+      setMaterialPriceSource('slicer');
     }
   }, [
     availableSpools,
@@ -1873,6 +1944,7 @@ export const CalculatorPage: React.FC = () => {
           selectedCatalogFilament={selectedCatalogFilament}
           selectedSpool={selectedSpool}
           autoMaterialMatch={autoMaterialMatch}
+          materialPriceSource={materialPriceSource}
           parsedGcode={parsedGcode}
           dragActive={dragActive}
           filaments={filamentsQuery.data?.items ?? []}
@@ -1894,6 +1966,8 @@ export const CalculatorPage: React.FC = () => {
           onSpoolSelect={handleSelectSpool}
           onCatalogFilamentSelect={handleSelectCatalogFilament}
           onFileSelect={handleFileSelection}
+          onPlateSelect={handlePlateSelect}
+          canSelectPlate={gcodeSourceFileRef.current !== null}
           onDragStateChange={setDragActive}
           quoteProfile={quoteProfile}
           onQuoteProfileChange={updateQuoteProfileField}
@@ -1964,6 +2038,7 @@ interface CalculatorViewProps {
   selectedCatalogFilament: Filament | null;
   selectedSpool: UserSpool | null;
   autoMaterialMatch: AutoMaterialMatchNotice | null;
+  materialPriceSource: MaterialPriceSource;
   parsedGcode: CalculatorGcodeParseResponse | null;
   dragActive: boolean;
   filaments: Filament[];
@@ -1986,6 +2061,8 @@ interface CalculatorViewProps {
   onCatalogFilamentSelect: (filamentId: number | '') => void;
   onQuoteProfileChange: <K extends keyof QuoteProfileState>(field: K, value: QuoteProfileState[K]) => void;
   onFileSelect: (files: FileList | null) => Promise<void>;
+  onPlateSelect: (plateIndex: number) => Promise<void>;
+  canSelectPlate: boolean;
   onDragStateChange: (active: boolean) => void;
   onOpenQuote: () => void;
   onAddToQuote: () => void;
@@ -2005,6 +2082,7 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
   selectedCatalogFilament,
   selectedSpool,
   autoMaterialMatch,
+  materialPriceSource,
   parsedGcode,
   dragActive,
   filaments,
@@ -2027,6 +2105,8 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
   onCatalogFilamentSelect,
   onQuoteProfileChange,
   onFileSelect,
+  onPlateSelect,
+  canSelectPlate,
   onDragStateChange,
   onOpenQuote,
   onAddToQuote,
@@ -2046,11 +2126,13 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
   const [customPresets, setCustomPresets] = useState<PricingPreset[]>(() => loadCustomPricingPresets());
   const [presetNameInput, setPresetNameInput] = useState('');
 
-  const materialSourceLabel = selectedSpool
-    ? tc('materialSourceSpool')
-    : selectedFilament
-      ? tc('materialSourceCatalog')
-      : tc('materialSourceManual');
+  const materialSourceLabel = {
+    spool: tc('materialSourceSpool'),
+    filamenthub: tc('materialSourceCatalog'),
+    slicer: tc('materialSourceSlicer'),
+    manual: tc('materialSourceManual'),
+    unset: tc('materialSourceUnset'),
+  }[materialPriceSource];
   const materialMatchConfidenceLabel = autoMaterialMatch
     ? {
         high: tc('materialMatchConfidenceHigh'),
@@ -2092,6 +2174,11 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
         : t('profilePage.calc.roundingModeUp');
   const parsedSupportsSummary = parsedGcode
     ? [
+        parsedGcode.support_used == null
+          ? null
+          : parsedGcode.support_used
+            ? tc('parsedYes')
+            : tc('parsedNo'),
         parsedGcode.support_type,
         parsedGcode.support_threshold_angle_deg != null ? `${parsedGcode.support_threshold_angle_deg}°` : null,
       ]
@@ -2557,13 +2644,15 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
 
           <div className="mt-5 space-y-5">
             <input
+              id="calculator-gcode-upload"
               ref={fileInputRef}
               type="file"
-              accept=".gcode,.txt,.gz"
-              className="hidden"
+              accept=".gcode,.gcode.3mf,.txt,.gz"
+              className="sr-only"
               onChange={async (event) => {
-                await onFileSelect(event.target.files);
-                event.currentTarget.value = '';
+                const input = event.currentTarget;
+                await onFileSelect(input.files);
+                input.value = '';
               }}
             />
 
@@ -2572,9 +2661,16 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
                 step="1"
                 title={tc('workspaceSourceTitle')}
               >
-                <button
-                  type="button"
-                  onClick={() => fileInputRef.current?.click()}
+                <label
+                  htmlFor="calculator-gcode-upload"
+                  role="button"
+                  tabIndex={0}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter' || event.key === ' ') {
+                      event.preventDefault();
+                      fileInputRef.current?.click();
+                    }
+                  }}
                   onDragEnter={(event) => {
                     event.preventDefault();
                     onDragStateChange(true);
@@ -2592,26 +2688,24 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
                     onDragStateChange(false);
                     await onFileSelect(event.dataTransfer.files);
                   }}
-                  className={`w-full cursor-pointer rounded-[1.5rem] border border-dashed p-6 text-left transition-all ${
+                  className={`block w-full cursor-pointer rounded-[1.5rem] border border-dashed p-6 text-left transition-all ${
                     dragActive
                       ? 'border-cyan-300/80 bg-cyan-400/12 shadow-[0_25px_50px_-35px_rgba(34,211,238,0.65)]'
                       : 'border-cyan-400/30 bg-[radial-gradient(circle_at_top,rgba(34,211,238,0.14),transparent_52%),linear-gradient(180deg,rgba(15,23,42,0.8),rgba(2,6,23,0.85))] hover:border-cyan-300/50'
                   }`}
                 >
                   <div className="flex items-start gap-4">
-                    <div className="flex items-start gap-4">
-                      <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-[1.1rem] border border-white/10 bg-white/5">
-                        {isParsingGcode ? <Loader2 className="h-5 w-5 animate-spin text-cyan-300" /> : <Upload className="h-5 w-5 text-cyan-300" />}
-                      </div>
-                      <div>
-                        <p className="text-base font-semibold text-white">
-                          {isParsingGcode ? tc('uploadingGcode') : tc('gcodeDropTitle')}
-                        </p>
-                        <p className="mt-2 text-xs uppercase tracking-[0.16em] text-slate-400">{tc('supportedFormats')}</p>
-                      </div>
+                    <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-[1.1rem] border border-white/10 bg-white/5">
+                      {isParsingGcode ? <Loader2 className="h-5 w-5 animate-spin text-cyan-300" /> : <Upload className="h-5 w-5 text-cyan-300" />}
+                    </div>
+                    <div>
+                      <p className="text-base font-semibold text-white">
+                        {isParsingGcode ? tc('uploadingGcode') : tc('gcodeDropTitle')}
+                      </p>
+                      <p className="mt-2 text-xs uppercase tracking-[0.16em] text-slate-400">{tc('supportedFormats')}</p>
                     </div>
                   </div>
-                </button>
+                </label>
 
                 {parseGcodeError && (
                   <div className="rounded-[1.25rem] border border-red-400/25 bg-red-500/10 px-4 py-3 text-sm text-red-100">
@@ -2667,13 +2761,15 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
                     </div>
                     <p className="mt-1 text-xs leading-5 text-emerald-100/75">
                       {autoMaterialMatch.source === 'spool'
-                        ? tc('materialAutoMatchedSpoolHint')
+                        ? autoMaterialMatch.requiresSpoolChoice
+                          ? tc('materialAutoMatchedSpoolChoiceHint')
+                          : tc('materialAutoMatchedSpoolHint')
                         : tc('materialAutoMatchedCatalogHint')}
                     </p>
                   </div>
                 )}
 
-                <StatusPill tone={selectedSpool ? 'success' : 'neutral'}>{materialSourceLabel}</StatusPill>
+                <StatusPill tone={materialPriceSource === 'spool' ? 'success' : 'neutral'}>{materialSourceLabel}</StatusPill>
 
                 {selectedFilament && materialSummary && (
                   <div className="rounded-[1.25rem] border border-cyan-400/20 bg-cyan-400/10 px-4 py-3 text-sm text-cyan-100">
@@ -2778,6 +2874,23 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
                     <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
                       <div className="min-w-0">
                         <p className="text-sm font-semibold text-white">{parsedGcode.file_name}</p>
+                        {(parsedGcode.available_plate_indices?.length ?? 0) > 1 ? (
+                          <label className="mt-3 flex max-w-xs items-center gap-3 text-xs text-slate-300">
+                            <span className="shrink-0">{tc('parsedPlate')}</span>
+                            <select
+                              className={`${inputClass} py-2 text-sm`}
+                              value={parsedGcode.plate_index ?? parsedGcode.available_plate_indices?.[0] ?? ''}
+                              disabled={!canSelectPlate || isParsingGcode}
+                              onChange={(event) => void onPlateSelect(Number(event.target.value))}
+                            >
+                              {parsedGcode.available_plate_indices?.map((plateIndex) => (
+                                <option key={plateIndex} value={plateIndex}>
+                                  {tc('parsedPlateOption').replace('{{index}}', String(plateIndex))}
+                                </option>
+                              ))}
+                            </select>
+                          </label>
+                        ) : null}
                         <div className="mt-3 flex flex-wrap gap-2">
                           <StatusPill tone="neutral">
                             {tc('parsedSlicer')}: {[parsedGcode.slicer_name, parsedGcode.slicer_version].filter(Boolean).join(' ') || tc('notDetected')}
@@ -2834,6 +2947,14 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
                         value={
                           parsedGcode.total_filament_length_mm != null
                             ? `${(parsedGcode.total_filament_length_mm / 1000).toFixed(2)} m`
+                            : '—'
+                        }
+                      />
+                      <CompactMetric
+                        label={tc('parsedVolume')}
+                        value={
+                          parsedGcode.total_filament_volume_cm3 != null
+                            ? `${parsedGcode.total_filament_volume_cm3.toFixed(2)} cm³`
                             : '—'
                         }
                       />
