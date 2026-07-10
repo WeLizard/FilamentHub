@@ -253,12 +253,18 @@ def validate_printer_profile(profile: dict[str, Any]) -> ValidationResult:
         if profile["from"] not in VALID_FROM_VALUES:
             result.add_error(f"from должен быть 'system' или 'user', получено: {profile['from']}")
 
-    # 4. Проверяем printer_settings_id (должен быть массивом)
+    # 4. Проверяем printer_settings_id (в Orca machine JSON — строка ConfigOptionString;
+    #    legacy может быть массивом)
     if "printer_settings_id" in profile:
-        if not isinstance(profile["printer_settings_id"], list):
-            result.add_error("printer_settings_id должен быть массивом")
-        elif len(profile["printer_settings_id"]) == 0:
-            result.add_error("printer_settings_id не может быть пустым массивом")
+        printer_settings_id = profile["printer_settings_id"]
+        if isinstance(printer_settings_id, str):
+            if not printer_settings_id.strip():
+                result.add_error("printer_settings_id не может быть пустой строкой")
+        elif isinstance(printer_settings_id, list):
+            if len(printer_settings_id) == 0 or not any(str(item).strip() for item in printer_settings_id):
+                result.add_error("printer_settings_id не может быть пустым массивом")
+        else:
+            result.add_error("printer_settings_id должен быть строкой или массивом")
 
     # 5. Проверяем nozzle_diameter (должен быть массивом чисел)
     if "nozzle_diameter" in profile:

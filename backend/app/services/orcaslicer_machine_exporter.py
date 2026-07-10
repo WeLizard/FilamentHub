@@ -93,6 +93,13 @@ def _normalize_printable_area(area: Any) -> list[str] | None:
     return None
 
 
+# OrcaSlicer rejects a single-JSON preset that has no version and detects the
+# preset type by the presence of *_settings_id (PresetBundle.cpp load_from_json:
+# `if (!version) return false` + `config.has("printer_settings_id")`). Mirror the
+# value used by the filament exporter for consistency.
+ORCA_PROFILE_VERSION = "2.3.0.0"
+
+
 def _generate_orca_tag(printer: Printer | None, vendor: str | None) -> str:
     """
     Генерировать тег для OrcaSlicer на основе принтера или vendor.
@@ -319,6 +326,10 @@ async def printer_profile_to_orca_json(
     # Базовые поля (обязательные для OrcaSlicer)
     settings["type"] = "machine"
     settings["name"] = orca_name
+    # OrcaSlicer определяет тип пресета по наличию printer_settings_id и требует
+    # version, иначе одиночный JSON не загружается (PresetBundle.cpp).
+    settings["printer_settings_id"] = orca_name
+    settings.setdefault("version", ORCA_PROFILE_VERSION)
     settings["from"] = "system" if profile.is_official else profile.source or "user"
     # OrcaSlicer ожидает строку "true"/"false"
     settings["instantiation"] = str(settings.get("instantiation", "true")).lower()
@@ -483,6 +494,10 @@ async def print_profile_to_orca_json(
 
     settings["type"] = "process"
     settings["name"] = orca_name
+    # Тип определяется наличием print_settings_id; version обязателен для загрузки
+    # одиночного JSON (PresetBundle.cpp).
+    settings["print_settings_id"] = orca_name
+    settings.setdefault("version", ORCA_PROFILE_VERSION)
     settings["from"] = "system" if profile.is_official else profile.source or "user"
     settings["instantiation"] = (
         settings.get("instantiation", "true")
