@@ -117,4 +117,57 @@ describe('buildQuoteLineItems', () => {
     expect(items[0].unitPrice).toBe(0.5);
     expect(items[0].totalPrice).toBe(100);
   });
+
+  it('keeps a mixed plate as one set until the user explicitly splits groups', () => {
+    const job = parsed('mixed.gcode', 300, 7200, {
+      object_count: 3,
+      object_groups: [
+        { name: 'Body', count: 1, extrusion_share: 0.7 },
+        { name: 'Clip', count: 2, extrusion_share: 0.3 },
+      ],
+    });
+    const jobs = [{ key: 'mixed', parsed: job }];
+    const setItems = buildQuoteLineItems(
+      t,
+      { quantity: 1 } as never,
+      estimate({ quantity: 2 }),
+      job,
+      null,
+      jobs,
+      [],
+      [{ jobKey: 'mixed', repeats: 2, quoteMode: 'set', printTimeSeconds: 7200 }],
+    );
+
+    expect(setItems).toHaveLength(1);
+    expect(setItems[0].title).toBe('mixed');
+    expect(setItems[0].quantity).toBe(2);
+  });
+
+  it('splits a mixed plate by measured extrusion shares when requested', () => {
+    const job = parsed('mixed.gcode', 300, 7200, {
+      object_count: 3,
+      object_groups: [
+        { name: 'Body', count: 1, extrusion_share: 0.7 },
+        { name: 'Clip', count: 2, extrusion_share: 0.3 },
+      ],
+    });
+    const items = buildQuoteLineItems(
+      t,
+      { quantity: 1 } as never,
+      estimate({ quantity: 6 }),
+      job,
+      null,
+      [{ key: 'mixed', parsed: job }],
+      [],
+      [{ jobKey: 'mixed', repeats: 2, quoteMode: 'groups', printTimeSeconds: 7200 }],
+    );
+
+    expect(items.map((item) => [item.title, item.quantity])).toEqual([
+      ['Body', 2],
+      ['Clip', 4],
+    ]);
+    expect(items[0].totalPrice).toBe(70);
+    expect(items[1].totalPrice).toBe(30);
+    expect(items.reduce((sum, item) => sum + item.totalPrice, 0)).toBe(100);
+  });
 });

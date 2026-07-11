@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest';
 
-import { buildCalculatorBatchSummary } from './calculatorBatch';
+import {
+  buildCalculatorBatchSummary,
+  buildConfiguredCalculatorBatchSummary,
+  calculatorOutputQuantityPerRun,
+  canSplitCalculatorObjectGroups,
+} from './calculatorBatch';
 
 describe('buildCalculatorBatchSummary', () => {
   it('keeps a single G-code focused on one job and its actual object count', () => {
@@ -34,5 +39,48 @@ describe('buildCalculatorBatchSummary', () => {
     expect(summary.outputObjectCount).toBe(416);
     expect(summary.partyPrintTimeSeconds).toBe(19_200);
     expect(summary.partyWeightG).toBe(300);
+  });
+
+  it('keeps independent repeats and commercial output for each plate', () => {
+    const summary = buildConfiguredCalculatorBatchSummary([
+      {
+        repeats: 2,
+        outputQuantityPerRun: 200,
+        objectCount: 200,
+        printTimeSeconds: 3600,
+        weightG: 100,
+      },
+      {
+        repeats: 3,
+        outputQuantityPerRun: 1,
+        objectCount: 4,
+        printTimeSeconds: 1800,
+        weightG: 50,
+      },
+    ]);
+
+    expect(summary).toEqual({
+      jobCount: 2,
+      printRunCount: 5,
+      physicalObjectCount: 412,
+      quoteQuantity: 403,
+      partyPrintTimeSeconds: 12_600,
+      partyWeightG: 350,
+    });
+  });
+
+  it('allows group splitting only with evidence for every group', () => {
+    const complete = [
+      { count: 2, extrusion_share: 0.4 },
+      { count: 1, extrusion_share: 0.6 },
+    ];
+
+    expect(canSplitCalculatorObjectGroups(complete)).toBe(true);
+    expect(calculatorOutputQuantityPerRun(complete, 'groups')).toBe(3);
+    expect(calculatorOutputQuantityPerRun(complete, 'set')).toBe(1);
+    expect(canSplitCalculatorObjectGroups([
+      { count: 2, extrusion_share: null },
+      { count: 1, extrusion_share: 0.6 },
+    ])).toBe(false);
   });
 });

@@ -122,9 +122,46 @@ def _calculate_tax(value: float, tax_rate_percent: float | None) -> float:
     return value * (tax_rate_percent / 100.0)
 
 
+def _resolve_print_execution(
+    data: CalculatorEstimateRequest,
+) -> tuple[int, int, float, float, dict[str, int]]:
+    """Resolve commercial output and machine execution without conflating objects with beds."""
+    if data.print_jobs:
+        repeats_by_job = {job.job_key: job.repeats for job in data.print_jobs}
+        quantity = sum(job.output_quantity_per_run * job.repeats for job in data.print_jobs)
+        print_runs = sum(job.repeats for job in data.print_jobs)
+        time_hours_total = sum(
+            job.print_time_seconds * job.repeats for job in data.print_jobs
+        ) / 3600.0
+        average_time_per_run = time_hours_total / print_runs
+        return quantity, print_runs, average_time_per_run, time_hours_total, repeats_by_job
+
+    quantity = data.quantity
+    parts_per_print = max(1, min(quantity, data.parts_per_print or 1))
+    print_runs = math.ceil(quantity / parts_per_print)
+    time_hours_per_run = _convert_time_to_hours(
+        data.time_hours,
+        data.time_minutes,
+        data.time_sec,
+    )
+    return quantity, print_runs, time_hours_per_run, time_hours_per_run * print_runs, {}
+
+
+def _material_line_multiplier(
+    job_key: str | None,
+    quantity: int,
+    repeats_by_job: dict[str, int],
+) -> int:
+    """Use the owning plate repeat count when structured print jobs are present."""
+    if repeats_by_job:
+        return repeats_by_job[job_key or ""]
+    return quantity
+
+
 def _calculate_material_lines(
     data: CalculatorEstimateRequest,
     quantity: int,
+    repeats_by_job: dict[str, int],
 ) -> tuple[float, float, list[CalculatorMaterialLineCost]]:
     """Calculate material cost with per-tool provenance when lines are supplied."""
     total_cost = 0.0
@@ -133,7 +170,11 @@ def _calculate_material_lines(
 
     for line in data.material_lines:
         price_per_gram = ((line.spool_price + line.delivery_cost) / line.spool_weight_kg) / 1000.0
-        line_weight_g = line.weight_g * quantity
+        line_weight_g = line.weight_g * _material_line_multiplier(
+            line.job_key,
+            quantity,
+            repeats_by_job,
+        )
         line_cost = line_weight_g * price_per_gram
         total_cost += line_cost
         total_weight_g += line_weight_g
@@ -251,9 +292,9 @@ async def estimate_cost(
 
        Первая деталь включает все затраты, последующие - без моделирования.
     """
-    quantity = data.quantity
-    parts_per_print = max(1, min(quantity, data.parts_per_print or 1))
-    print_runs = math.ceil(quantity / parts_per_print)
+    quantity, print_runs, time_hours_per_run, time_hours_total, repeats_by_job = (
+        _resolve_print_execution(data)
+    )
     tax_rate_percent = data.tax_rate_percent or 0.0
 
     # ========== Простые методы (для обратной совместимости) ==========
@@ -261,7 +302,7 @@ async def estimate_cost(
         material_line_costs: list[CalculatorMaterialLineCost] = []
         if data.material_lines:
             cost_material, total_material_weight_g, material_line_costs = _calculate_material_lines(
-                data, quantity
+                data, quantity, repeats_by_job
             )
             weight_kg = total_material_weight_g / 1000.0
         else:
@@ -277,10 +318,8 @@ async def estimate_cost(
 
         # Электроэнергия (если указана)
         cost_electricity = 0.0
-        time_hours = None
-        if data.time_sec or data.time_hours or data.time_minutes:
-            time_hours = _convert_time_to_hours(data.time_hours, data.time_minutes, data.time_sec)
-            time_hours_total = time_hours * print_runs
+        time_hours = time_hours_per_run if time_hours_total > 0 else None
+        if time_hours_total > 0:
             if data.electricity_cost_per_kwh and data.printer_power_w and time_hours_total > 0:
                 power_kw = data.printer_power_w / 1000.0
                 cost_electricity = time_hours_total * power_kw * data.electricity_cost_per_kwh
@@ -305,20 +344,16 @@ async def estimate_cost(
             weight_kg=round(weight_kg, 3),
             time_hours=round(time_hours, 2) if time_hours else None,
             quantity=quantity,
+            print_runs=print_runs,
             pricing_method=data.pricing_method,
             applied_tax_rate_percent=tax_rate_percent if tax_rate_percent > 0 else None,
         )
 
     elif data.pricing_method == PricingMethod.BY_TIME:
-        if data.time_sec is None and data.time_hours is None and data.time_minutes is None:
+        if not data.print_jobs and data.time_sec is None and data.time_hours is None and data.time_minutes is None:
             raise_error(400, ERR_TIME_REQUIRED)
         if data.price_per_hour is None:
             raise_error(400, ERR_PRICE_PER_HOUR_REQUIRED)
-
-        # Время одного запуска / одной укладки на столе
-        time_hours_per_run = _convert_time_to_hours(data.time_hours, data.time_minutes, data.time_sec)
-        # Общее время печати партии с учётом количества запусков
-        time_hours_total = time_hours_per_run * print_runs
 
         cost_printing = time_hours_total * data.price_per_hour
 
@@ -351,6 +386,7 @@ async def estimate_cost(
             weight_kg=round(weight_kg, 3) if weight_kg else None,
             time_hours=round(time_hours_per_run, 2) if time_hours_per_run > 0 else None,  # Время одного запуска / стола
             quantity=quantity,
+            print_runs=print_runs,
             pricing_method=data.pricing_method,
             applied_tax_rate_percent=tax_rate_percent if tax_rate_percent > 0 else None,
         )
@@ -363,7 +399,7 @@ async def estimate_cost(
         material_line_costs: list[CalculatorMaterialLineCost] = []
         if data.material_lines:
             cost_material, total_material_weight_g, material_line_costs = _calculate_material_lines(
-                data, quantity
+                data, quantity, repeats_by_job
             )
             weight_kg = total_material_weight_g / 1000.0
         elif data.weight_g and data.spool_price and data.spool_weight_kg:
@@ -391,11 +427,6 @@ async def estimate_cost(
         waste_factor_percent = data.waste_factor_percent or 0.0
         if waste_factor_percent > 0 and cost_material > 0:
             cost_waste = cost_material * (waste_factor_percent / 100.0)
-
-        # 2. Время одного запуска / одной укладки на столе
-        time_hours_per_run = _convert_time_to_hours(data.time_hours, data.time_minutes, data.time_sec)
-        # Время печати всей партии с учётом количества запусков
-        time_hours_total = time_hours_per_run * print_runs
 
         # 3. Электроэнергия (рассчитывается на общее время печати партии)
         cost_electricity = 0.0
@@ -443,7 +474,11 @@ async def estimate_cost(
         if data.nozzle_price and data.nozzle_life_cm3:
             if data.material_lines:
                 wear_equivalent_volume_cm3 = sum(
-                    (line.weight_g * quantity / (line.density_g_cm3 or 1.24))
+                    (
+                        line.weight_g
+                        * _material_line_multiplier(line.job_key, quantity, repeats_by_job)
+                        / (line.density_g_cm3 or 1.24)
+                    )
                     * (line.abrasiveness or 1.0)
                     for line in data.material_lines
                 )
@@ -582,6 +617,7 @@ async def estimate_cost(
             time_hours=round(time_hours_per_run, 2) if time_hours_per_run > 0 else None,  # Время одного запуска / стола
             total_time_hours=round(total_time_hours, 2) if total_time_hours and total_time_hours > 0 else None,
             quantity=quantity,
+            print_runs=print_runs,
             cost_of_goods_sold=round(cost_of_goods_sold, 2) if data.pricing_method == PricingMethod.COMBINED else None,
             profit_margin=round(profit_margin, 2) if data.pricing_method == PricingMethod.COMBINED else None,
             profit_margin_percent=round(profit_margin_percent, 2) if data.pricing_method == PricingMethod.COMBINED and profit_margin_percent else None,

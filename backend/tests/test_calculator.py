@@ -126,6 +126,101 @@ async def test_calculator_estimate_uses_independent_multi_material_lines(
 
 
 @pytest.mark.asyncio
+async def test_calculator_estimate_multiplies_each_print_job_independently(
+    admin_client: AsyncClient,
+):
+    """Different plates keep their own repeat count, time, material, and bed preparation."""
+    request_data = {
+        "pricing_method": "combined",
+        "quantity": 1,
+        "printing_rate_per_hour": 100,
+        "bed_prep_cost_per_print": 10,
+        "overhead_percent": 0,
+        "markup_percent": 0,
+        "print_jobs": [
+            {
+                "job_key": "plate-a",
+                "repeats": 2,
+                "output_quantity_per_run": 200,
+                "print_time_seconds": 3600,
+            },
+            {
+                "job_key": "plate-b",
+                "repeats": 3,
+                "output_quantity_per_run": 1,
+                "print_time_seconds": 1800,
+            },
+        ],
+        "material_lines": [
+            {
+                "line_id": "plate-a:t0",
+                "job_key": "plate-a",
+                "tool_index": 0,
+                "weight_g": 100,
+                "spool_price": 1000,
+                "spool_weight_kg": 1,
+                "price_source": "manual",
+            },
+            {
+                "line_id": "plate-b:t0",
+                "job_key": "plate-b",
+                "tool_index": 0,
+                "weight_g": 50,
+                "spool_price": 2000,
+                "spool_weight_kg": 1,
+                "price_source": "manual",
+            },
+        ],
+    }
+
+    response = await admin_client.post("/api/v1/calculator/estimate", json=request_data)
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["quantity"] == 403
+    assert data["print_runs"] == 5
+    assert data["weight_kg"] == 0.35
+    assert data["time_hours"] == 0.7
+    assert data["total_time_hours"] == 3.5
+    assert data["cost_material"] == 500.0
+    assert data["cost_bed_prep"] == 50.0
+    assert data["cost_printing"] == 350.0
+    assert [line["weight_g"] for line in data["material_line_costs"]] == [200.0, 150.0]
+
+
+@pytest.mark.asyncio
+async def test_calculator_estimate_rejects_material_line_for_unknown_print_job(
+    admin_client: AsyncClient,
+):
+    response = await admin_client.post(
+        "/api/v1/calculator/estimate",
+        json={
+            "pricing_method": "by_weight",
+            "print_jobs": [
+                {
+                    "job_key": "plate-a",
+                    "repeats": 1,
+                    "output_quantity_per_run": 1,
+                    "print_time_seconds": 60,
+                }
+            ],
+            "material_lines": [
+                {
+                    "line_id": "plate-b:t0",
+                    "job_key": "plate-b",
+                    "weight_g": 10,
+                    "spool_price": 1000,
+                    "spool_weight_kg": 1,
+                    "price_source": "manual",
+                }
+            ],
+        },
+    )
+
+    assert response.status_code == 422
+
+
+@pytest.mark.asyncio
 async def test_calculator_history_preserves_all_batch_jobs(admin_client: AsyncClient):
     """A batch history round-trip keeps every uploaded file/plate and material line."""
     estimate_request = {

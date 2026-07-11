@@ -602,6 +602,14 @@ export interface CalculatorMaterialLineCost {
   filament_id?: number | null;
 }
 
+export interface CalculatorPrintJobRequest {
+  job_key: string;
+  repeats: number;
+  output_quantity_per_run: number;
+  print_time_seconds: number;
+  quote_mode: 'set' | 'groups';
+}
+
 export interface CalculatorEstimateRequest {
   pricing_method?: PricingMethod;
   
@@ -613,6 +621,7 @@ export interface CalculatorEstimateRequest {
   spool_weight_kg?: number | null;
   delivery_cost?: number | null;
   material_lines?: CalculatorMaterialLineRequest[];
+  print_jobs?: CalculatorPrintJobRequest[];
   
   // Параметры времени печати
   time_sec?: number | null;
@@ -698,6 +707,7 @@ export interface CalculatorEstimateResponse {
   time_hours: number | null;
   total_time_hours?: number | null;
   quantity: number;
+  print_runs?: number | null;
   
   // Финансовые показатели (только для combined)
   cost_of_goods_sold?: number | null;
@@ -743,6 +753,7 @@ export interface CalculatorParsedObjectGroup {
   name: string;
   count: number;
   extrusion_share?: number | null;
+  material_weights_g?: Record<string, number>;
 }
 
 export interface CalculatorGcodeParseResponse {

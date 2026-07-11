@@ -949,7 +949,7 @@ def _finalize_objects(parsed: dict[str, Any], collector: dict[str, Any]) -> None
 
     parsed["object_count"] = len(collector["object_names"])
     parsed["object_groups"] = [
-        {"name": name, "count": count, "extrusion_share": None}
+        {"name": name, "count": count, "extrusion_share": None, "material_weights_g": {}}
         for name, count in sorted(grouped.items(), key=lambda item: item[0].casefold())
     ]
 
@@ -1166,6 +1166,7 @@ def _apply_extrusion_role_usage(parsed: dict[str, Any], lines: list[str]) -> Non
     total_infill_weight = 0.0
     total_support_weight = 0.0
     object_group_weights: dict[str, float] = {}
+    object_group_material_weights: dict[str, dict[int, float]] = {}
     resolved_any = False
 
     for material in materials:
@@ -1195,9 +1196,15 @@ def _apply_extrusion_role_usage(parsed: dict[str, Any], lines: list[str]) -> Non
         total_support_weight += support_weight
         for raw_object_name, object_extrusion in extrusion_by_tool_object.get(role_tool, {}).items():
             group_name = _normalize_object_group_name(raw_object_name)
+            object_weight = object_extrusion * grams_per_extrusion_mm
             object_group_weights[group_name] = (
                 object_group_weights.get(group_name, 0.0)
-                + object_extrusion * grams_per_extrusion_mm
+                + object_weight
+            )
+            material_tool_index = int(tool_index if tool_index is not None else role_tool)
+            group_materials = object_group_material_weights.setdefault(group_name, {})
+            group_materials[material_tool_index] = (
+                group_materials.get(material_tool_index, 0.0) + object_weight
             )
         resolved_any = True
 
@@ -1211,6 +1218,12 @@ def _apply_extrusion_role_usage(parsed: dict[str, Any], lines: list[str]) -> Non
                 object_group_weights.get(group["name"], 0.0) / total_object_weight,
                 6,
             )
+            group["material_weights_g"] = {
+                tool_index: round(weight_g, 3)
+                for tool_index, weight_g in sorted(
+                    object_group_material_weights.get(group["name"], {}).items()
+                )
+            }
 
 
 def _finalize_totals(parsed: dict[str, Any]) -> None:

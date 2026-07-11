@@ -4,7 +4,7 @@ from datetime import datetime
 from enum import Enum
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 class PricingMethod(str, Enum):
@@ -54,6 +54,16 @@ class CalculatorMaterialLineCost(BaseModel):
     filament_id: int | None = None
 
 
+class CalculatorPrintJobRequest(BaseModel):
+    """Execution and commercial quantity of one uploaded G-code plate."""
+
+    job_key: str = Field(..., min_length=1, max_length=160)
+    repeats: int = Field(1, ge=1, le=1000)
+    output_quantity_per_run: int = Field(1, ge=1, le=100_000)
+    print_time_seconds: float = Field(..., ge=0, le=31_536_000)
+    quote_mode: Literal["set", "groups"] = "set"
+
+
 class CalculatorEstimateRequest(BaseModel):
     """Schema for calculator estimate request."""
 
@@ -85,6 +95,11 @@ class CalculatorEstimateRequest(BaseModel):
         default_factory=list,
         max_length=128,
         description="Построчная стоимость материалов для multi-job/multi-material расчёта",
+    )
+    print_jobs: list[CalculatorPrintJobRequest] = Field(
+        default_factory=list,
+        max_length=20,
+        description="Столы G-code с собственным числом запусков и товарным выходом",
     )
 
     # ========== Параметры времени печати ==========
@@ -218,6 +233,20 @@ class CalculatorEstimateRequest(BaseModel):
         description="Стратегия округления итоговой суммы: up, down или nearest"
     )
 
+    @model_validator(mode="after")
+    def validate_print_jobs(self) -> "CalculatorEstimateRequest":
+        """Keep job multipliers unambiguous and material lines attached to a known plate."""
+        if not self.print_jobs:
+            return self
+
+        job_keys = [job.job_key for job in self.print_jobs]
+        if len(job_keys) != len(set(job_keys)):
+            raise ValueError("print_jobs must contain unique job_key values")
+        known_jobs = set(job_keys)
+        if any(line.job_key not in known_jobs for line in self.material_lines):
+            raise ValueError("every material line must reference a known print job")
+        return self
+
 
 class CalculatorEstimateResponse(BaseModel):
     """Schema for calculator estimate response."""
@@ -253,6 +282,7 @@ class CalculatorEstimateResponse(BaseModel):
     time_hours: float | None = Field(None, ge=0, description="Время печати в часах")
     total_time_hours: float | None = Field(None, ge=0, description="Общее время (печать + подготовка + постобработка) в часах")
     quantity: int = Field(..., gt=0, description="Количество деталей")
+    print_runs: int | None = Field(None, gt=0, description="Количество запусков печати")
 
     # Финансовые показатели (только для combined)
     cost_of_goods_sold: float | None = Field(None, ge=0, description="Себестоимость (прямые затраты + накладные + фиксированные, без налога)")
@@ -326,6 +356,10 @@ class CalculatorParsedObjectGroup(BaseModel):
         ge=0,
         le=1,
         description="Доля экструзии именованных объектов, используемая для распределения задания",
+    )
+    material_weights_g: dict[int, float] = Field(
+        default_factory=dict,
+        description="Вес каждого Tn внутри именованных объектов; общие skirt/purge/support не распределяются",
     )
 
 

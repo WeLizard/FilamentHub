@@ -42,7 +42,12 @@ import {
   type MaterialMatchConfidence,
 } from '../utils/calculatorMaterialMatcher';
 import { allocateRoundedTotal, quoteTitleFromFileName } from '../utils/calculatorQuote';
-import { buildCalculatorBatchSummary } from '../utils/calculatorBatch';
+import {
+  buildConfiguredCalculatorBatchSummary,
+  calculatorOutputQuantityPerRun,
+  canSplitCalculatorObjectGroups,
+  type CalculatorQuoteMode,
+} from '../utils/calculatorBatch';
 import { safeStorage } from '../utils/storage';
 import type {
   CalculatorEstimateRequest,
@@ -53,6 +58,7 @@ import type {
   CalculatorHistoryFilamentSnapshot,
   CalculatorMaterialLineRequest,
   CalculatorParsedMaterial,
+  CalculatorPrintJobRequest,
   Filament,
   PricingMethod,
   RoundingMode,
@@ -161,6 +167,20 @@ interface ParsedJobState {
   key: string;
   parsed: CalculatorGcodeParseResponse;
 }
+
+export interface CalculatorJobConfig {
+  jobKey: string;
+  repeats: number;
+  quoteMode: CalculatorQuoteMode;
+  printTimeSeconds: number;
+}
+
+const createDefaultJobConfig = (job: ParsedJobState): CalculatorJobConfig => ({
+  jobKey: job.key,
+  repeats: 1,
+  quoteMode: (job.parsed.object_groups?.length ?? 0) === 1 ? 'groups' : 'set',
+  printTimeSeconds: Math.max(0, job.parsed.print_time_seconds ?? 0),
+});
 
 interface CalculatorMaterialLineState extends CalculatorMaterialLineRequest {
   selectionValue: string;
@@ -360,6 +380,8 @@ const buildSpoolLabel = (spool: UserSpool): string => {
 const buildEstimateRequest = (
   form: CalculatorFormState,
   materialLines: CalculatorMaterialLineState[] = [],
+  parsedJobs: ParsedJobState[] = [],
+  jobConfigs: CalculatorJobConfig[] = [],
 ): CalculatorEstimateRequest => {
   const requestData: CalculatorEstimateRequest = {
     pricing_method: 'combined',
@@ -390,6 +412,29 @@ const buildEstimateRequest = (
       density_g_cm3: line.density_g_cm3,
       abrasiveness: line.abrasiveness,
     }));
+  }
+  if (parsedJobs.length > 0) {
+    const configsByJob = new Map(jobConfigs.map((config) => [config.jobKey, config]));
+    requestData.print_jobs = parsedJobs.map<CalculatorPrintJobRequest>((job) => {
+      const config = configsByJob.get(job.key) ?? createDefaultJobConfig(job);
+      const groups = job.parsed.object_groups ?? [];
+      const quoteMode = config.quoteMode === 'groups'
+        && groups.length > 1
+        && !canSplitCalculatorObjectGroups(groups)
+        ? 'set'
+        : config.quoteMode;
+      return {
+        job_key: job.key,
+        repeats: Math.max(1, Math.floor(config.repeats)),
+        output_quantity_per_run: calculatorOutputQuantityPerRun(groups, quoteMode),
+        print_time_seconds: Math.max(0, config.printTimeSeconds),
+        quote_mode: quoteMode,
+      };
+    });
+    requestData.quantity = requestData.print_jobs.reduce(
+      (sum, job) => sum + job.output_quantity_per_run * job.repeats,
+      0,
+    );
   }
   requestData.time_hours = form.timeHours;
   requestData.time_minutes = form.timeMinutes;
@@ -789,8 +834,9 @@ const buildHistoryPayload = (
   selectedFilament: MaterialSelectionSnapshot | null,
   materialLines: CalculatorMaterialLineState[] = [],
   parsedJobs: ParsedJobState[] = [],
+  jobConfigs: CalculatorJobConfig[] = [],
 ): CalculatorHistoryEntryCreate => ({
-  request_data: buildEstimateRequest(form, materialLines),
+  request_data: buildEstimateRequest(form, materialLines, parsedJobs, jobConfigs),
   result_data: result,
   parsed_gcode: parsedGcode
     ? {
@@ -889,6 +935,7 @@ export const buildQuoteLineItems = (
   selectedFilament: MaterialSelectionSnapshot | null,
   parsedJobs: ParsedJobState[] = [],
   materialLines: CalculatorMaterialLineState[] = [],
+  jobConfigs: CalculatorJobConfig[] = [],
 ): QuoteLineItem[] => {
   const quantity = Math.max(1, result.quantity);
   const fallbackTitle = t('profilePage.calculator.quoteDefaultItemTitle');
@@ -922,14 +969,19 @@ export const buildQuoteLineItems = (
     }];
   }
 
-  const totalPrintSeconds = jobs.reduce(
-    (sum, job) => sum + (job.parsed.print_time_seconds ?? 0),
-    0,
-  );
-  const totalWeightG = jobs.reduce(
-    (sum, job) => sum + (job.parsed.total_filament_weight_g ?? 0),
-    0,
-  );
+  const configsByJob = new Map(jobConfigs.map((config) => [config.jobKey, config]));
+  const getConfig = (job: ParsedJobState): CalculatorJobConfig => configsByJob.get(job.key) ?? {
+    ...createDefaultJobConfig(job),
+    repeats: quantity,
+  };
+  const totalPrintSeconds = jobs.reduce((sum, job) => {
+    const config = getConfig(job);
+    return sum + config.printTimeSeconds * config.repeats;
+  }, 0);
+  const totalWeightG = jobs.reduce((sum, job) => {
+    const config = getConfig(job);
+    return sum + (job.parsed.total_filament_weight_g ?? 0) * config.repeats;
+  }, 0);
   const timeDrivenCost =
     result.cost_electricity
     + result.cost_printing
@@ -945,13 +997,16 @@ export const buildQuoteLineItems = (
     );
   }
 
-  const drafts = jobs.map((job, index) => {
+  const drafts = jobs.flatMap((job, index) => {
     const parsed = job.parsed;
-    const homogeneousObjectGroup = parsed.object_groups?.length === 1
-      ? parsed.object_groups[0]
-      : null;
-    const objectInstances = Math.max(1, homogeneousObjectGroup?.count ?? 1);
-    const lineQuantity = quantity * objectInstances;
+    const config = getConfig(job);
+    const groups = parsed.object_groups ?? [];
+    const homogeneousObjectGroup = groups.length === 1 ? groups[0] : null;
+    const canSplitMixedGroups = canSplitCalculatorObjectGroups(groups);
+    const splitByGroups = Boolean(
+      homogeneousObjectGroup
+      || (config.quoteMode === 'groups' && canSplitMixedGroups),
+    );
     const materialNames = Array.from(new Set(
       parsed.materials
         .filter((material) => (material.weight_g ?? 0) > 0 || parsed.materials.length === 1)
@@ -973,16 +1028,16 @@ export const buildQuoteLineItems = (
       )));
     }
 
-    const jobWeightG = parsed.total_filament_weight_g ?? 0;
-    const jobPrintSeconds = parsed.print_time_seconds ?? 0;
-    const details = [
+    const jobWeightG = (parsed.total_filament_weight_g ?? 0) * config.repeats;
+    const jobPrintSeconds = config.printTimeSeconds * config.repeats;
+    const commonDetails = [
       materialNames.length > 0 ? materialNames.join(' / ') : null,
       jobWeightG > 0
-        ? `${t('profilePage.calculator.quoteWeight')}: ${(jobWeightG * quantity).toFixed(2)} ${t('profilePage.calculator.grams')}`
+        ? `${t('profilePage.calculator.quoteWeight')}: ${jobWeightG.toFixed(2)} ${t('profilePage.calculator.grams')}`
         : null,
       jobPrintSeconds > 0
         ? `${t('profilePage.calculator.quotePrintTime')}: ${formatHoursShort(
-            (jobPrintSeconds * quantity) / 3600,
+            jobPrintSeconds / 3600,
             t('profilePage.calc.h'),
             t('profilePage.calc.min'),
           )}`
@@ -1000,7 +1055,54 @@ export const buildQuoteLineItems = (
       ? homogeneousObjectGroup.name
       : `${quoteTitleFromFileName(parsed.file_name, `${fallbackTitle} ${index + 1}`)}${plateSuffix}`;
 
-    return { title: defaultTitle, details, quantity: lineQuantity, score };
+    if (!splitByGroups) {
+      return [{
+        title: defaultTitle,
+        details: commonDetails,
+        quantity: config.repeats,
+        score,
+      }];
+    }
+
+    const rawShares = groups.map((group) => (
+      groups.length === 1 ? 1 : Math.max(0, group.extrusion_share ?? 0)
+    ));
+    const shareTotal = rawShares.reduce((sum, share) => sum + share, 0) || 1;
+    return groups.map((group, groupIndex) => {
+      const share = rawShares[groupIndex] / shareTotal;
+      const groupWeightG = jobWeightG * share;
+      const groupMaterialNames = Object.keys(group.material_weights_g ?? {})
+        .map(Number)
+        .map((toolIndex) => {
+          const parsedMaterial = parsed.materials.find((material) => material.tool_index === toolIndex);
+          if (!parsedMaterial) return null;
+          const materialName = parsedMaterial.type || parsedMaterial.name || parsedMaterial.settings_id;
+          if (!materialName) return null;
+          const vendor = parsedMaterial.vendor && parsedMaterial.vendor.toLocaleLowerCase() !== 'generic'
+            ? parsedMaterial.vendor
+            : null;
+          return [vendor, materialName].filter(Boolean).join(' ');
+        })
+        .filter((value): value is string => Boolean(value));
+      const details = groups.length === 1
+        ? commonDetails
+        : [
+            groupMaterialNames.length > 0
+              ? Array.from(new Set(groupMaterialNames)).join(' / ')
+              : materialNames.length > 0
+                ? materialNames.join(' / ')
+                : null,
+            groupWeightG > 0
+              ? `${t('profilePage.calculator.quoteWeight')}: ${groupWeightG.toFixed(2)} ${t('profilePage.calculator.grams')}`
+              : null,
+          ].filter(Boolean) as string[];
+      return {
+        title: group.name || defaultTitle,
+        details,
+        quantity: Math.max(1, group.count) * config.repeats,
+        score: score * share,
+      };
+    });
   });
 
   const allocatedTotals = allocateRoundedTotal(
@@ -1231,6 +1333,7 @@ export const CalculatorPage: React.FC = () => {
   const [form, setForm] = useState<CalculatorFormState>(DEFAULT_FORM_STATE);
   const [parsedGcode, setParsedGcode] = useState<CalculatorGcodeParseResponse | null>(null);
   const [parsedJobs, setParsedJobs] = useState<ParsedJobState[]>([]);
+  const [jobConfigs, setJobConfigs] = useState<CalculatorJobConfig[]>([]);
   const [materialLines, setMaterialLines] = useState<CalculatorMaterialLineState[]>([]);
   const [batchParseWarning, setBatchParseWarning] = useState<string | null>(null);
   const [materialLinesError, setMaterialLinesError] = useState<string | null>(null);
@@ -1541,15 +1644,37 @@ export const CalculatorPage: React.FC = () => {
     : parsedGcode
       ? [{ key: 'single-job', parsed: parsedGcode }]
       : [];
-  const headerBatchSummary = buildCalculatorBatchSummary(
-    headerJobs.map((job) => ({ objectCount: job.parsed.object_count })),
-    form.quantity,
+  const headerConfigsByJob = new Map(jobConfigs.map((config) => [config.jobKey, config]));
+  const headerBatchSummary = buildConfiguredCalculatorBatchSummary(
+    headerJobs.map((job) => {
+      const config = headerConfigsByJob.get(job.key) ?? {
+        ...createDefaultJobConfig(job),
+        repeats: form.quantity,
+      };
+      const groups = job.parsed.object_groups ?? [];
+      const quoteMode = config.quoteMode === 'groups'
+        && groups.length > 1
+        && !canSplitCalculatorObjectGroups(groups)
+        ? 'set'
+        : config.quoteMode;
+      return {
+        repeats: config.repeats,
+        outputQuantityPerRun: calculatorOutputQuantityPerRun(groups, quoteMode),
+        objectCount: job.parsed.object_count,
+        printTimeSeconds: config.printTimeSeconds,
+        weightG: job.parsed.total_filament_weight_g,
+      };
+    }),
   );
 
   const summaryTotal = result ? result.cost_final || result.cost_total : null;
-  const summaryTime = result?.total_time_hours ?? result?.time_hours ?? currentWorkTimeHours * Math.max(1, form.quantity);
+  const summaryTime = result?.total_time_hours
+    ?? result?.time_hours
+    ?? (headerBatchSummary.jobCount > 0
+      ? headerBatchSummary.partyPrintTimeSeconds / 3600
+      : currentWorkTimeHours * Math.max(1, form.quantity));
   const summaryQuantity = headerBatchSummary.jobCount > 0
-    ? headerBatchSummary.outputObjectCount
+    ? headerBatchSummary.quoteQuantity
     : form.quantity;
 
   const updateField = <K extends keyof CalculatorFormState>(field: K, value: CalculatorFormState[K]) => {
@@ -1699,7 +1824,7 @@ export const CalculatorPage: React.FC = () => {
       return;
     }
     setMaterialLinesError(null);
-    calculateMutation.mutate(buildEstimateRequest(form, materialLines));
+    calculateMutation.mutate(buildEstimateRequest(form, materialLines, parsedJobs, jobConfigs));
   };
 
   const handleGcodeFiles = async (files: File[]) => {
@@ -1713,6 +1838,7 @@ export const CalculatorPage: React.FC = () => {
     setMaterialPriceSource('unset');
     setMaterialLinesError(null);
     setParsedJobs(batch.jobs);
+    setJobConfigs(batch.jobs.map(createDefaultJobConfig));
     setParsedGcode(firstJob?.parsed ?? null);
     setBatchParseWarning(
       batch.failedFiles.length > 0 || batch.skippedCount > 0
@@ -1733,6 +1859,22 @@ export const CalculatorPage: React.FC = () => {
     if (job) setParsedGcode(job.parsed);
   };
 
+  const handleJobConfigChange = (
+    jobKey: string,
+    patch: Partial<Omit<CalculatorJobConfig, 'jobKey'>>,
+  ) => {
+    setJobConfigs((current) => current.map((config) => (
+      config.jobKey === jobKey
+        ? {
+            ...config,
+            ...patch,
+            repeats: Math.max(1, Math.floor(patch.repeats ?? config.repeats)),
+            printTimeSeconds: Math.max(0, patch.printTimeSeconds ?? config.printTimeSeconds),
+          }
+        : config
+    )));
+  };
+
   const handleFileSelection = async (files: FileList | null) => {
     const selectedFiles = Array.from(files ?? []);
     if (selectedFiles.length === 0) {
@@ -1751,7 +1893,15 @@ export const CalculatorPage: React.FC = () => {
 
     try {
       await saveHistoryMutation.mutateAsync(
-        buildHistoryPayload(form, result, parsedGcode, selectedMaterial, materialLines, parsedJobs),
+        buildHistoryPayload(
+          form,
+          result,
+          parsedGcode,
+          selectedMaterial,
+          materialLines,
+          parsedJobs,
+          jobConfigs,
+        ),
       );
       setHistoryFeedback({ kind: 'success', message: tc('historySaved') });
       setActiveTab('history');
@@ -1789,6 +1939,24 @@ export const CalculatorPage: React.FC = () => {
     lastBuiltMaterialJobsKeyRef.current = restoredJobs.map((job) => job.key).join('|') || null;
     setParsedGcode(restoredJobs[0]?.parsed ?? entry.parsed_gcode ?? null);
     setParsedJobs(restoredJobs);
+    const restoredPrintJobs = new Map(
+      (entry.request_data.print_jobs ?? []).map((job) => [job.job_key, job]),
+    );
+    const legacyRepeats = Math.max(1, Math.floor(entry.request_data.quantity ?? 1));
+    setJobConfigs(restoredJobs.map((job) => {
+      const saved = restoredPrintJobs.get(job.key);
+      return saved
+        ? {
+            jobKey: job.key,
+            repeats: saved.repeats,
+            quoteMode: saved.quote_mode ?? createDefaultJobConfig(job).quoteMode,
+            printTimeSeconds: saved.print_time_seconds,
+          }
+        : {
+            ...createDefaultJobConfig(job),
+            repeats: legacyRepeats,
+          };
+    }));
     setMaterialLines(
       (entry.request_data.material_lines ?? []).map((line) => ({
         ...line,
@@ -1942,6 +2110,7 @@ export const CalculatorPage: React.FC = () => {
       selectedMaterial,
       parsedJobs,
       materialLines,
+      jobConfigs,
     );
     const included = buildQuoteIncludedItems(t, result);
     const newItems = lineItems.map((lineItem) => ({
@@ -1983,6 +2152,7 @@ export const CalculatorPage: React.FC = () => {
         selectedMaterial,
         parsedJobs,
         materialLines,
+        jobConfigs,
       );
       includedItems = buildQuoteIncludedItems(t, result);
       grandTotal = result.cost_final || result.cost_total;
@@ -2010,6 +2180,7 @@ export const CalculatorPage: React.FC = () => {
         selectedMaterial,
         parsedJobs,
         materialLines,
+        jobConfigs,
       ).map((lineItem) => ({
         id: crypto.randomUUID(),
         lineItem,
@@ -2495,6 +2666,7 @@ export const CalculatorPage: React.FC = () => {
           materialPriceSource={materialPriceSource}
           parsedGcode={parsedGcode}
           parsedJobs={parsedJobs}
+          jobConfigs={jobConfigs}
           materialLines={materialLines}
           batchParseWarning={batchParseWarning}
           materialLinesError={materialLinesError}
@@ -2519,6 +2691,7 @@ export const CalculatorPage: React.FC = () => {
           onCatalogFilamentSelect={handleSelectCatalogFilament}
           onFileSelect={handleFileSelection}
           onJobSelect={handleJobSelect}
+          onJobConfigChange={handleJobConfigChange}
           onMaterialLineSelection={handleMaterialLineSelection}
           onMaterialLinePriceChange={handleMaterialLinePriceChange}
           onMaterialLineSpoolWeightChange={handleMaterialLineSpoolWeightChange}
@@ -2596,6 +2769,7 @@ interface CalculatorViewProps {
   materialPriceSource: MaterialPriceSource;
   parsedGcode: CalculatorGcodeParseResponse | null;
   parsedJobs: ParsedJobState[];
+  jobConfigs: CalculatorJobConfig[];
   materialLines: CalculatorMaterialLineState[];
   batchParseWarning: string | null;
   materialLinesError: string | null;
@@ -2621,6 +2795,10 @@ interface CalculatorViewProps {
   onQuoteProfileChange: <K extends keyof QuoteProfileState>(field: K, value: QuoteProfileState[K]) => void;
   onFileSelect: (files: FileList | null) => Promise<void>;
   onJobSelect: (jobKey: string) => void;
+  onJobConfigChange: (
+    jobKey: string,
+    patch: Partial<Omit<CalculatorJobConfig, 'jobKey'>>,
+  ) => void;
   onMaterialLineSelection: (lineId: string, selectionValue: string) => void;
   onMaterialLinePriceChange: (lineId: string, value: number) => void;
   onMaterialLineSpoolWeightChange: (lineId: string, value: number) => void;
@@ -2646,6 +2824,7 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
   materialPriceSource,
   parsedGcode,
   parsedJobs,
+  jobConfigs,
   materialLines,
   batchParseWarning,
   materialLinesError,
@@ -2671,6 +2850,7 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
   onQuoteProfileChange,
   onFileSelect,
   onJobSelect,
+  onJobConfigChange,
   onMaterialLineSelection,
   onMaterialLinePriceChange,
   onMaterialLineSpoolWeightChange,
@@ -2822,18 +3002,35 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
       : [];
   const hasParsedJobs = displayJobs.length > 0;
   const isBatchMode = displayJobs.length > 1;
-  const hasMixedObjectGroups = displayJobs.some((job) => (job.parsed.object_groups?.length ?? 0) > 1);
-  const batchSummary = buildCalculatorBatchSummary(
-    displayJobs.map((job) => ({
-      printTimeSeconds: job.parsed.print_time_seconds,
-      weightG: job.parsed.total_filament_weight_g,
-      objectCount: job.parsed.object_count,
-    })),
-    form.quantity,
+  const jobConfigsByKey = new Map(jobConfigs.map((config) => [config.jobKey, config]));
+  const getJobConfig = (job: ParsedJobState): CalculatorJobConfig => jobConfigsByKey.get(job.key)
+    ?? createDefaultJobConfig(job);
+  const batchSummary = buildConfiguredCalculatorBatchSummary(
+    displayJobs.map((job) => {
+      const config = getJobConfig(job);
+      const groups = job.parsed.object_groups ?? [];
+      const quoteMode = config.quoteMode === 'groups'
+        && groups.length > 1
+        && !canSplitCalculatorObjectGroups(groups)
+        ? 'set'
+        : config.quoteMode;
+      return {
+        repeats: config.repeats,
+        outputQuantityPerRun: calculatorOutputQuantityPerRun(groups, quoteMode),
+        printTimeSeconds: config.printTimeSeconds,
+        weightG: job.parsed.total_filament_weight_g,
+        objectCount: job.parsed.object_count,
+      };
+    }),
   );
-  const adjustedPartyPrintTimeSeconds = toHours(form.timeHours, form.timeMinutes, form.timeSec)
-    * 3600
-    * batchSummary.repeatCount;
+  const objectGroupCount = displayJobs.reduce(
+    (sum, job) => sum + Math.max(1, job.parsed.object_groups?.length ?? 0),
+    0,
+  );
+  const jobTitleByKey = new Map(displayJobs.map((job, index) => [
+    job.key,
+    quoteTitleFromFileName(job.parsed.file_name, `${tc('jobFallbackTitle')} ${index + 1}`),
+  ]));
   const formatBatchWeight = (weightG: number) =>
     weightG >= 1000 ? `${(weightG / 1000).toFixed(2)} ${tc('kg')}` : `${weightG.toFixed(2)} ${tc('grams')}`;
   const renderMaterialLine = (line: CalculatorMaterialLineState) => (
@@ -3423,8 +3620,8 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
 
               {hasParsedJobs ? (
                 <div className="overflow-hidden rounded-[1.55rem] border border-cyan-400/20 bg-[radial-gradient(circle_at_top_left,rgba(34,211,238,0.14),transparent_42%),linear-gradient(145deg,rgba(15,23,42,0.96),rgba(2,6,23,0.92))] shadow-[0_28px_70px_-45px_rgba(34,211,238,0.55)]">
-                  <div className="grid gap-5 p-5 md:p-6 lg:grid-cols-[minmax(0,1fr)_12rem] lg:items-start">
-                    <div>
+                  <div className="p-5 md:p-6">
+                    <div className="flex flex-wrap items-center justify-between gap-3">
                       <div className="flex flex-wrap items-center gap-2">
                         <StatusPill tone="success">
                           {isBatchMode
@@ -3432,54 +3629,37 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
                             : tc('singleJobTitle')}
                         </StatusPill>
                         <span className="text-xs text-slate-400">
-                          {isBatchMode
-                            ? tc('batchSetFormula')
-                                .replace('{{jobs}}', String(batchSummary.jobCount))
-                                .replace('{{objects}}', String(batchSummary.objectCountPerSet))
-                            : quoteTitleFromFileName(displayJobs[0].parsed.file_name, tc('jobFallbackTitle'))}
+                          {tc('batchStructure')
+                            .replace('{{groups}}', String(objectGroupCount))
+                            .replace('{{objects}}', String(batchSummary.physicalObjectCount))}
                         </span>
                       </div>
-                      <div className="mt-5 grid grid-cols-2 gap-3">
-                        <BatchMetric
-                          icon={<Boxes className="h-4 w-4" />}
-                          label={hasMixedObjectGroups ? tc('partyObjects') : tc('partyOutput')}
-                          value={String(batchSummary.outputObjectCount)}
-                          accent
-                        />
-                        <BatchMetric
-                          icon={<Clock className="h-4 w-4" />}
-                          label={tc('partyTime')}
-                          value={formatHoursShort(adjustedPartyPrintTimeSeconds / 3600, t('profilePage.calc.h'), t('profilePage.calc.min'))}
-                          accent
-                        />
-                        <BatchMetric
-                          icon={<Printer className="h-4 w-4" />}
-                          label={tc('partyRuns')}
-                          value={String(batchSummary.printRunCount)}
-                        />
-                        <BatchMetric
-                          icon={<Layers3 className="h-4 w-4" />}
-                          label={tc('partyMaterial')}
-                          value={formatBatchWeight(batchSummary.partyWeightG)}
-                        />
-                      </div>
+                      <span className="text-xs text-slate-500">{tc('perPlateControlHint')}</span>
                     </div>
-
-                    <label className="rounded-[1.25rem] border border-white/10 bg-black/25 p-4">
-                      <span className="text-xs font-semibold uppercase tracking-[0.15em] text-slate-400">
-                        {isBatchMode ? tc('batchRepeats') : tc('singleRepeats')}
-                      </span>
-                      <input
-                        type="number"
-                        min="1"
-                        className={`${inputClass} ${numberInputResetClass} mt-3 text-2xl font-semibold`}
-                        value={form.quantity || ''}
-                        onChange={(event) => onChange('quantity', Math.max(1, Number(event.target.value) || 1))}
+                    <div className="mt-5 grid grid-cols-2 gap-3">
+                      <BatchMetric
+                        icon={<Boxes className="h-4 w-4" />}
+                        label={tc('quoteQuantity')}
+                        value={String(batchSummary.quoteQuantity)}
+                        accent
                       />
-                      <span className="mt-2 block text-xs leading-5 text-slate-400">
-                        {isBatchMode ? tc('batchRepeatsHint') : tc('singleRepeatsHint')}
-                      </span>
-                    </label>
+                      <BatchMetric
+                        icon={<Clock className="h-4 w-4" />}
+                        label={tc('partyTime')}
+                        value={formatHoursShort(batchSummary.partyPrintTimeSeconds / 3600, t('profilePage.calc.h'), t('profilePage.calc.min'))}
+                        accent
+                      />
+                      <BatchMetric
+                        icon={<Printer className="h-4 w-4" />}
+                        label={tc('partyRuns')}
+                        value={String(batchSummary.printRunCount)}
+                      />
+                      <BatchMetric
+                        icon={<Layers3 className="h-4 w-4" />}
+                        label={tc('partyMaterial')}
+                        value={formatBatchWeight(batchSummary.partyWeightG)}
+                      />
+                    </div>
                   </div>
                 </div>
               ) : null}
@@ -3489,11 +3669,20 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
                 title={hasParsedJobs ? tc('orderCompositionTitle') : tc('workspaceMaterialTitle')}
               >
                 {hasParsedJobs ? (
-                  <div className={`grid grid-cols-1 gap-4 ${isBatchMode ? 'xl:grid-cols-2' : ''}`}>
+                  <div className={`grid grid-cols-1 gap-4 ${isBatchMode ? '2xl:grid-cols-2' : ''}`}>
                     {displayJobs.map((job, jobIndex) => {
                       const jobLines = materialLines.filter((line) => line.job_key === job.key);
                       const objectCount = Math.max(1, job.parsed.object_count ?? 1);
                       const objectGroups = job.parsed.object_groups ?? [];
+                      const config = getJobConfig(job);
+                      const canSplitGroups = canSplitCalculatorObjectGroups(objectGroups);
+                      const quoteMode = config.quoteMode === 'groups'
+                        && objectGroups.length > 1
+                        && !canSplitGroups
+                        ? 'set'
+                        : config.quoteMode;
+                      const outputPerRun = calculatorOutputQuantityPerRun(objectGroups, quoteMode);
+                      const timeParts = splitSeconds(config.printTimeSeconds);
                       return (
                         <article
                           key={job.key}
@@ -3503,55 +3692,203 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
                               : 'border-white/10'
                           }`}
                         >
-                          <button
-                            type="button"
-                            onClick={() => onJobSelect(job.key)}
-                            className="flex w-full items-start gap-3 p-4 text-left transition-colors hover:bg-white/[0.035]"
-                          >
-                            {isBatchMode ? (
-                              <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl border border-white/10 bg-white/[0.05] text-xs font-semibold text-slate-300">
-                                {jobIndex + 1}
+                          <div className="flex flex-col gap-4 p-4 sm:flex-row sm:items-start sm:justify-between">
+                            <button
+                              type="button"
+                              onClick={() => onJobSelect(job.key)}
+                              className="flex min-w-0 items-start gap-3 text-left"
+                            >
+                              {isBatchMode ? (
+                                <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl border border-white/10 bg-white/[0.05] text-xs font-semibold text-slate-300">
+                                  {jobIndex + 1}
+                                </span>
+                              ) : null}
+                              <span className="min-w-0">
+                                <span className="block truncate text-sm font-semibold text-white">
+                                  {quoteTitleFromFileName(job.parsed.file_name, tc('jobFallbackTitle'))}
+                                </span>
+                                <span className="mt-1.5 flex flex-wrap gap-x-3 gap-y-1 text-xs text-slate-400">
+                                  <span>{formatHoursShort(config.printTimeSeconds / 3600, t('profilePage.calc.h'), t('profilePage.calc.min'))}</span>
+                                  <span>{formatBatchWeight(job.parsed.total_filament_weight_g ?? 0)}</span>
+                                  <span>{tc('jobObjectCount').replace('{{count}}', String(objectCount))}</span>
+                                  {job.parsed.plate_index != null ? (
+                                    <span>{tc('parsedPlateOption').replace('{{index}}', String(job.parsed.plate_index))}</span>
+                                  ) : null}
+                                </span>
                               </span>
-                            ) : null}
-                            <span className="min-w-0 flex-1">
-                              <span className="block truncate text-sm font-semibold text-white">
-                                {quoteTitleFromFileName(job.parsed.file_name, tc('jobFallbackTitle'))}
+                            </button>
+
+                            <label className="flex shrink-0 items-center justify-between gap-3 rounded-xl border border-white/[0.08] bg-white/[0.04] px-3 py-2 sm:w-[10.5rem]">
+                              <span>
+                                <span className="block text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-500">{tc('plateRepeats')}</span>
+                                <span className="mt-0.5 block text-[11px] text-slate-400">{tc('plateRepeatsShort')}</span>
                               </span>
-                              <span className="mt-1.5 flex flex-wrap gap-x-3 gap-y-1 text-xs text-slate-400">
-                                <span>{formatHoursShort((job.parsed.print_time_seconds ?? 0) / 3600, t('profilePage.calc.h'), t('profilePage.calc.min'))}</span>
-                                <span>{formatBatchWeight(job.parsed.total_filament_weight_g ?? 0)}</span>
-                                {objectCount > 1 ? <span>{tc('jobObjectCount').replace('{{count}}', String(objectCount))}</span> : null}
-                                {job.parsed.plate_index != null ? (
-                                  <span>{tc('parsedPlateOption').replace('{{index}}', String(job.parsed.plate_index))}</span>
-                                ) : null}
-                              </span>
-                            </span>
-                            {job.parsed.thumbnail_data_url ? (
-                              <img
-                                src={job.parsed.thumbnail_data_url}
-                                alt={tc('parsedPreviewAlt')}
-                                className="h-14 w-14 shrink-0 rounded-xl border border-white/10 bg-slate-950/60 object-contain"
+                              <input
+                                type="number"
+                                min="1"
+                                max="1000"
+                                className={`${numberInputResetClass} w-14 rounded-lg border border-white/10 bg-slate-950/70 px-2 py-1.5 text-center text-base font-semibold text-white focus:outline-none focus:ring-2 focus:ring-cyan-400/50`}
+                                value={config.repeats}
+                                onChange={(event) => onJobConfigChange(job.key, {
+                                  repeats: Math.max(1, Number(event.target.value) || 1),
+                                })}
                               />
-                            ) : null}
-                          </button>
+                            </label>
+                          </div>
+
+                          <div className="grid grid-cols-3 border-t border-white/[0.07] bg-white/[0.02]">
+                            <JobFact label={tc('plateRunsTotal')} value={String(config.repeats)} />
+                            <JobFact label={tc('plateObjectsTotal')} value={String(objectCount * config.repeats)} />
+                            <JobFact label={tc('plateQuoteQuantity')} value={String(outputPerRun * config.repeats)} />
+                          </div>
 
                           {objectCount > 1 ? (
-                            <div className="border-t border-white/[0.07] px-4 py-3">
-                              <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-500">{tc('jobObjects')}</p>
-                              <div className="mt-2 flex flex-wrap gap-2">
-                                {objectGroups.length > 0 ? objectGroups.map((group, groupIndex) => (
-                                  <span
-                                    key={`${job.key}-${group.name}-${groupIndex}`}
-                                    className="rounded-full border border-white/[0.08] bg-white/[0.04] px-2.5 py-1 text-xs text-slate-300"
-                                  >
-                                    {group.name || tc('jobObjectFallback')} × {group.count}
-                                  </span>
-                                )) : (
-                                  <span className="text-xs text-slate-400">{tc('jobObjectCount').replace('{{count}}', String(objectCount))}</span>
-                                )}
+                            <div className="border-t border-white/[0.07] p-4">
+                              <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                                <div>
+                                  <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-500">{tc('jobObjects')}</p>
+                                  <p className="mt-1 text-xs leading-5 text-slate-400">{tc('jobObjectsHint')}</p>
+                                </div>
+                                {objectGroups.length > 1 ? (
+                                  <div className="inline-flex rounded-xl border border-white/[0.08] bg-black/20 p-1">
+                                    <button
+                                      type="button"
+                                      aria-pressed={quoteMode === 'set'}
+                                      onClick={() => onJobConfigChange(job.key, { quoteMode: 'set' })}
+                                      className={`rounded-lg px-3 py-1.5 text-xs font-medium transition-colors ${quoteMode === 'set' ? 'bg-white/10 text-white' : 'text-slate-400 hover:text-white'}`}
+                                    >
+                                      {tc('quoteAsSet')}
+                                    </button>
+                                    <button
+                                      type="button"
+                                      aria-pressed={quoteMode === 'groups'}
+                                      disabled={!canSplitGroups}
+                                      onClick={() => onJobConfigChange(job.key, { quoteMode: 'groups' })}
+                                      className={`rounded-lg px-3 py-1.5 text-xs font-medium transition-colors ${quoteMode === 'groups' ? 'bg-cyan-400/15 text-cyan-100' : 'text-slate-400 hover:text-white'} disabled:cursor-not-allowed disabled:opacity-35`}
+                                    >
+                                      {tc('quoteByGroups')}
+                                    </button>
+                                  </div>
+                                ) : null}
                               </div>
+
+                              {objectGroups.length > 0 ? (
+                                <div className="mt-3 space-y-2">
+                                  {objectGroups.map((group, groupIndex) => {
+                                    const groupWeightG = (job.parsed.total_filament_weight_g ?? 0)
+                                      * Math.max(0, group.extrusion_share ?? 0);
+                                    const groupMaterialUsages = Object.entries(group.material_weights_g ?? {})
+                                      .filter(([, weightG]) => weightG > 0)
+                                      .map(([toolIndex, weightG]) => {
+                                        const numericToolIndex = Number(toolIndex);
+                                        const matchingLine = jobLines.find((line) => line.tool_index === numericToolIndex);
+                                        const parsedMaterial = job.parsed.materials.find(
+                                          (material) => material.tool_index === numericToolIndex,
+                                        );
+                                        return {
+                                          toolIndex: numericToolIndex,
+                                          label: matchingLine?.label
+                                            || (parsedMaterial
+                                              ? buildParsedMaterialLabel(parsedMaterial, `T${numericToolIndex}`)
+                                              : `T${numericToolIndex}`),
+                                          weightG,
+                                        };
+                                      });
+                                    return (
+                                      <div
+                                        key={`${job.key}-${group.name}-${groupIndex}`}
+                                        className="grid gap-3 rounded-xl border border-white/[0.07] bg-white/[0.035] px-3 py-2.5 sm:grid-cols-[minmax(0,1fr)_auto_auto] sm:items-center"
+                                      >
+                                        <div className="min-w-0">
+                                          <p className="truncate text-sm font-medium text-slate-100">{group.name || tc('jobObjectFallback')}</p>
+                                          {groupMaterialUsages.length > 0 ? (
+                                            <div className="mt-1 flex flex-wrap gap-1.5">
+                                              {groupMaterialUsages.map((usage) => (
+                                                <span
+                                                  key={`${job.key}-${group.name}-t${usage.toolIndex}`}
+                                                  className="rounded-md border border-cyan-400/15 bg-cyan-400/[0.06] px-1.5 py-0.5 text-[10px] text-cyan-100/85"
+                                                >
+                                                  {usage.label} · {usage.weightG.toFixed(2)} {tc('grams')}
+                                                </span>
+                                              ))}
+                                            </div>
+                                          ) : groupWeightG > 0 ? (
+                                            <p className="mt-0.5 text-[11px] text-slate-500">
+                                              {tc('groupModelMaterialEstimate').replace('{{weight}}', groupWeightG.toFixed(2))}
+                                            </p>
+                                          ) : null}
+                                        </div>
+                                        <span className="text-xs text-slate-400">
+                                          {tc('groupPerPlate').replace('{{count}}', String(group.count))}
+                                        </span>
+                                        <span className="rounded-lg border border-white/[0.08] bg-black/20 px-2.5 py-1 text-xs font-semibold text-white">
+                                          {tc('groupPartyTotal').replace('{{count}}', String(group.count * config.repeats))}
+                                        </span>
+                                      </div>
+                                    );
+                                  })}
+                                </div>
+                              ) : (
+                                <p className="mt-3 text-xs leading-5 text-amber-200/80">
+                                  {tc('objectGroupsUnavailable').replace('{{count}}', String(objectCount))}
+                                </p>
+                              )}
+
+                              {objectGroups.length > 1 && !canSplitGroups ? (
+                                <p className="mt-3 text-xs leading-5 text-amber-200/80">{tc('groupSplitUnavailable')}</p>
+                              ) : objectGroups.length > 1 ? (
+                                <p className="mt-3 text-xs leading-5 text-slate-500">
+                                  {quoteMode === 'groups' ? tc('groupSplitActiveHint') : tc('groupSetActiveHint')}
+                                </p>
+                              ) : null}
                             </div>
                           ) : null}
+
+                          <details className="group/time border-t border-white/[0.07]">
+                            <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-4 py-3 marker:hidden">
+                              <span className="text-xs text-slate-400">
+                                {tc('plateTime')}: <strong className="font-medium text-slate-200">{formatHoursShort(config.printTimeSeconds / 3600, t('profilePage.calc.h'), t('profilePage.calc.min'))}</strong>
+                              </span>
+                              <span className="inline-flex items-center gap-1.5 text-xs font-medium text-cyan-200">
+                                {tc('adjustPlateTime')}
+                                <ChevronDown className="h-3.5 w-3.5 transition-transform group-open/time:rotate-180" />
+                              </span>
+                            </summary>
+                            <div className="grid grid-cols-3 gap-3 border-t border-white/[0.06] px-4 py-4">
+                              <FieldBlock label={t('profilePage.calc.hours')}>
+                                <NumberInput
+                                  value={timeParts.hours}
+                                  onChange={(value) => onJobConfigChange(job.key, {
+                                    printTimeSeconds: value * 3600 + timeParts.minutes * 60 + timeParts.seconds,
+                                  })}
+                                  min="0"
+                                  placeholder="0"
+                                />
+                              </FieldBlock>
+                              <FieldBlock label={t('profilePage.calc.minutes')}>
+                                <NumberInput
+                                  value={timeParts.minutes}
+                                  onChange={(value) => onJobConfigChange(job.key, {
+                                    printTimeSeconds: timeParts.hours * 3600 + Math.min(59, value) * 60 + timeParts.seconds,
+                                  })}
+                                  min="0"
+                                  max="59"
+                                  placeholder="0"
+                                />
+                              </FieldBlock>
+                              <FieldBlock label={t('profilePage.calc.seconds')}>
+                                <NumberInput
+                                  value={timeParts.seconds}
+                                  onChange={(value) => onJobConfigChange(job.key, {
+                                    printTimeSeconds: timeParts.hours * 3600 + timeParts.minutes * 60 + Math.min(59, value),
+                                  })}
+                                  min="0"
+                                  max="59"
+                                  placeholder="0"
+                                />
+                              </FieldBlock>
+                            </div>
+                          </details>
 
                           <div className="border-t border-white/[0.07] p-4">
                             <p className="mb-3 text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-500">{tc('jobMaterials')}</p>
@@ -3734,19 +4071,15 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
               </WorkspacePanel>
             </div>
 
-            <WorkspacePanel
-              step="3"
-              title={hasParsedJobs ? tc('timeOverrideTitle') : tc('workspaceProductionTitle')}
-            >
-                {hasParsedJobs ? (
-                  <p className="text-sm leading-6 text-slate-400">{tc('timeOverrideHint')}</p>
-                ) : null}
-                <div className={`grid grid-cols-1 gap-4 md:grid-cols-2 ${hasParsedJobs ? 'xl:grid-cols-3' : 'xl:grid-cols-4'}`}>
-                  {!hasParsedJobs ? (
+            {!hasParsedJobs ? (
+              <WorkspacePanel
+                step="3"
+                title={tc('workspaceProductionTitle')}
+              >
+                <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
                   <FieldBlock label={t('profilePage.calc.quantity')}>
                     <NumberInput value={form.quantity} onChange={(value) => onChange('quantity', Math.max(1, value))} min="1" placeholder="1" />
                   </FieldBlock>
-                  ) : null}
                   <FieldBlock label={t('profilePage.calc.hours')}>
                     <NumberInput value={form.timeHours} onChange={(value) => onChange('timeHours', value)} placeholder="0" />
                   </FieldBlock>
@@ -3758,6 +4091,7 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
                   </FieldBlock>
                 </div>
               </WorkspacePanel>
+            ) : null}
 
             {parsedGcode && (
               <details className="group rounded-[1.35rem] border border-white/[0.08] bg-black/15">
@@ -4241,7 +4575,15 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
                 <p className="text-xs uppercase tracking-[0.18em] text-slate-300">{tc('customerPriceTitle')}</p>
                 <p className="mt-3 text-4xl font-bold tracking-tight text-white">{formatCurrency(result.cost_final || result.cost_total)}</p>
                 <p className="mt-2 text-sm text-slate-300">
-                  {tc('perPart')}: <span className="text-white">{formatCurrency(result.cost_first_part)}</span>
+                  {hasParsedJobs ? (
+                    <>
+                      {tc('resultQuoteQuantity')}: <span className="text-white">{result.quantity}</span>
+                      <span className="mx-2 text-slate-500">·</span>
+                      {tc('partyRuns')}: <span className="text-white">{result.print_runs ?? batchSummary.printRunCount}</span>
+                    </>
+                  ) : (
+                    <>{tc('perPart')}: <span className="text-white">{formatCurrency(result.cost_first_part)}</span></>
+                  )}
                 </p>
               </div>
 
@@ -4273,6 +4615,9 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
                         {result.material_line_costs.map((line) => (
                           <div key={line.line_id} className="flex items-start justify-between gap-3 text-xs">
                             <span className="min-w-0 text-slate-400">
+                              {line.job_key && jobTitleByKey.has(line.job_key) ? (
+                                <span className="mr-1.5 text-slate-500">{jobTitleByKey.get(line.job_key)} ·</span>
+                              ) : null}
                               <span className="text-slate-200">{line.label || (line.tool_index != null ? `T${line.tool_index}` : tc('unknownMaterial'))}</span>
                               <span className="ml-1.5 whitespace-nowrap">{line.weight_g.toFixed(2)} {tc('grams')}</span>
                             </span>
@@ -4319,8 +4664,17 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
                 </SectionPanel>
 
                 <SectionPanel title={tc('resultsBatchTitle')}>
-                  <MetricRow label={t('profilePage.calc.firstPartPrice')} value={formatCurrency(result.cost_first_part)} strong />
-                  <MetricRow label={t('profilePage.calc.subsequentPrice')} value={formatCurrency(result.cost_subsequent_parts)} />
+                  {hasParsedJobs ? (
+                    <>
+                      <MetricRow label={tc('resultQuoteQuantity')} value={String(result.quantity)} strong />
+                      <MetricRow label={tc('partyRuns')} value={String(result.print_runs ?? batchSummary.printRunCount)} />
+                    </>
+                  ) : (
+                    <>
+                      <MetricRow label={t('profilePage.calc.firstPartPrice')} value={formatCurrency(result.cost_first_part)} strong />
+                      <MetricRow label={t('profilePage.calc.subsequentPrice')} value={formatCurrency(result.cost_subsequent_parts)} />
+                    </>
+                  )}
                   <MetricRow
                     label={result.quantity > 1 ? t('profilePage.calc.totalCost') : t('profilePage.calc.total')}
                     value={formatCurrency(result.cost_total)}
@@ -5025,6 +5379,13 @@ const BatchMetric: React.FC<{
       <span>{label}</span>
     </div>
     <p className={`mt-2 font-semibold tracking-tight text-white ${accent ? 'text-xl md:text-2xl' : 'text-lg'}`}>{value}</p>
+  </div>
+);
+
+const JobFact: React.FC<{ label: string; value: string }> = ({ label, value }) => (
+  <div className="border-r border-white/[0.07] px-3 py-2.5 last:border-r-0">
+    <p className="text-[9px] font-semibold uppercase tracking-[0.13em] text-slate-500">{label}</p>
+    <p className="mt-1 text-sm font-semibold text-slate-100">{value}</p>
   </div>
 );
 
