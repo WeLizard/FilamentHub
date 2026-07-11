@@ -155,6 +155,25 @@ def _is_dummy_value(field: str, value) -> bool:
     return False
 
 
+# Max volumetric speed below this (mm³/s) is a placeholder, not a real material
+# limit — even slow flexibles run well above it. Such values (e.g. 1) leak in from
+# imported profiles; enrichment replaces them with the material default.
+_MIN_REALISTIC_VOLUMETRIC = 2.0
+
+
+def _current_volumetric_speed(settings: dict) -> float | None:
+    """Read filament_max_volumetric_speed (Orca stores it as a one-element string list)."""
+    raw = settings.get("filament_max_volumetric_speed")
+    if isinstance(raw, list):
+        raw = raw[0] if raw else None
+    if raw is None or raw == "":
+        return None
+    try:
+        return float(raw)
+    except (TypeError, ValueError):
+        return None
+
+
 def enrich_preset(preset: Preset) -> dict:
     """Enrich a draft preset with material defaults.
 
@@ -206,6 +225,17 @@ def enrich_preset(preset: Preset) -> dict:
     # Store enrichment metadata in orcaslicer_settings
     if preset.orcaslicer_settings is None:
         preset.orcaslicer_settings = {}
+
+    # Max volumetric speed lives in the settings blob, not a model column. Fill it
+    # when missing or when a placeholder (< _MIN_REALISTIC_VOLUMETRIC) leaked in.
+    vol_default = material_defaults.get("filament_max_volumetric_speed")
+    if vol_default is not None:
+        current_vol = _current_volumetric_speed(preset.orcaslicer_settings)
+        if current_vol is None or current_vol < _MIN_REALISTIC_VOLUMETRIC:
+            preset.orcaslicer_settings["filament_max_volumetric_speed"] = [f"{vol_default:g}"]
+            result["filled_fields"].append("filament_max_volumetric_speed")
+        else:
+            result["skipped_fields"].append("filament_max_volumetric_speed")
 
     preset.orcaslicer_settings["enrichment"] = {
         "material_type": material_type,
