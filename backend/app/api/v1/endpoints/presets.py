@@ -719,28 +719,6 @@ async def activate_preset(
     return PresetResponse.model_validate(preset)
 
 
-@router.post("/{preset_id}/increment-usage", response_model=PresetResponse)
-async def increment_usage(
-    preset_id: int,
-    db: Annotated[AsyncSession, Depends(get_db)],
-    current_user: Annotated[User, Depends(get_current_active_user)],
-) -> PresetResponse:
-    """Увеличить счётчик использования пресета."""
-    result = await db.execute(select(Preset).where(Preset.id == preset_id))
-    preset = result.scalar_one_or_none()
-
-    if not preset:
-        raise_error(404, ERR_PRESET_NOT_FOUND)
-
-    preset.usage_count += 1
-    await db.commit()
-    await db.refresh(preset)
-
-    logger.info(f"Preset {preset.id} usage incremented by user {current_user.id}")
-
-    return PresetResponse.model_validate(preset)
-
-
 @router.get("/{preset_id}/export/orcaslicer.json")
 async def export_preset_json(
     preset_id: int,

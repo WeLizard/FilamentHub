@@ -501,9 +501,9 @@ async def test_update_preset(client: AsyncClient, db_session: AsyncSession):
 
 
 @pytest.mark.asyncio
-async def test_increment_usage_requires_auth(client: AsyncClient, db_session: AsyncSession):
-    """usage_count feeds recommendations/spool matching - anonymous increments must be rejected."""
-    headers, email = await _register_and_login(client, "preset-usage")
+async def test_saving_preset_increments_usage_once(client: AsyncClient, db_session: AsyncSession):
+    """usage_count is a real adoption signal: saving a preset counts it once, re-saving does not."""
+    headers, _ = await _register_and_login(client, "preset-usage")
 
     brand = Brand(name="Usage Brand", slug="usage-brand", active=True)
     db_session.add(brand)
@@ -519,15 +519,10 @@ async def test_increment_usage_requires_auth(client: AsyncClient, db_session: As
     db_session.add(filament)
     await db_session.flush()
 
-    user = (
-        await db_session.execute(select(User).where(User.email == email))
-    ).scalar_one()
-
     preset = Preset(
         filament_id=filament.id,
-        user_id=user.id,
         name="Usage Preset",
-        is_official=False,
+        is_official=True,
         extruder_temp=200.0,
         bed_temp=60.0,
         moderation_status=PresetModerationStatus.APPROVED,
@@ -537,13 +532,17 @@ async def test_increment_usage_requires_auth(client: AsyncClient, db_session: As
     await db_session.commit()
     await db_session.refresh(preset)
 
-    anon = await client.post(f"/api/v1/presets/{preset.id}/increment-usage")
-    assert anon.status_code == 401
-    await db_session.refresh(preset)
-    assert preset.usage_count == 0
-
-    authed = await client.post(
-        f"/api/v1/presets/{preset.id}/increment-usage", headers=headers
+    first = await client.post(
+        "/api/v1/saved-presets/", json={"preset_id": preset.id}, headers=headers
     )
-    assert authed.status_code == 200
-    assert authed.json()["usage_count"] == 1
+    assert first.status_code == 201
+    await db_session.refresh(preset)
+    assert preset.usage_count == 1
+
+    # Re-saving the same preset must not double-count (dedup on existing record).
+    again = await client.post(
+        "/api/v1/saved-presets/", json={"preset_id": preset.id}, headers=headers
+    )
+    assert again.status_code in (200, 201)
+    await db_session.refresh(preset)
+    assert preset.usage_count == 1
