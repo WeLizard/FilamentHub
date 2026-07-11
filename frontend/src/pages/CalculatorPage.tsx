@@ -3067,12 +3067,22 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
     const selectedFilamentForLine = line.selectionValue.startsWith('filament:')
       ? filaments.find((filament) => filament.id === Number(line.selectionValue.slice('filament:'.length)))
       : null;
-    const materialName = selectedSpoolForLine?.filament?.material_type
-      || selectedFilamentForLine?.material_type
+    const selectedMaterialForLine = selectedSpoolForLine?.filament || selectedFilamentForLine;
+    const materialName = selectedMaterialForLine?.name
       || parsedMaterial?.type
       || parsedMaterial?.name
       || line.label
       || (line.tool_index != null ? `T${line.tool_index}` : tc('unknownMaterial'));
+    const selectedMaterialColor = normalizeFilamentColor(
+      selectedMaterialForLine?.color_hex || parsedMaterial?.color,
+    );
+    const selectedMaterialDetails = selectedMaterialForLine
+      ? [
+          selectedMaterialForLine.brand_name,
+          selectedMaterialForLine.material_type,
+          selectedMaterialForLine.color_name || selectedMaterialColor,
+        ].filter(Boolean).join(' · ')
+      : null;
     const technicalLabel = line.label && line.label !== materialName ? line.label : null;
     const materialPickerOpen = materialPickerLineIds.has(line.line_id);
 
@@ -3084,15 +3094,32 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
     >
       <div className="mb-3 flex min-w-0 items-start justify-between gap-3">
         <div className="min-w-0">
-          <div className="flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-0.5">
-            <p className="truncate text-sm font-semibold text-white">{materialName}</p>
+          <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5">
+            {selectedMaterialColor ? (
+              <span
+                data-testid="calculator-selected-material-color"
+                title={selectedMaterialForLine?.color_name || selectedMaterialColor}
+                className="h-3.5 w-3.5 shrink-0 rounded-full border border-white/30 shadow-[0_0_0_3px_rgba(255,255,255,0.04)]"
+                style={{ backgroundColor: selectedMaterialColor }}
+              />
+            ) : null}
+            <p data-testid="calculator-selected-material" className="truncate text-sm font-semibold text-white">
+              {materialName}
+            </p>
             <p className="shrink-0 text-xs font-medium tabular-nums text-cyan-100">
               {line.weight_g.toFixed(2)} {tc('grams')}
             </p>
           </div>
-          {line.tool_index != null ? (
-            <p className="mt-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-500">T{line.tool_index}</p>
-          ) : null}
+          <div className="mt-1 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5 text-[10px]">
+            {line.tool_index != null ? (
+              <span className="shrink-0 font-semibold uppercase tracking-[0.14em] text-slate-500">T{line.tool_index}</span>
+            ) : null}
+            {selectedMaterialDetails ? (
+              <span className="min-w-0 truncate text-slate-400" title={selectedMaterialDetails}>
+                {selectedMaterialDetails}
+              </span>
+            ) : null}
+          </div>
         </div>
         <span className={`shrink-0 text-right text-[10px] font-medium leading-4 ${line.priceResolved ? 'text-emerald-300/75' : 'text-amber-300/80'}`}>
           {line.priceResolved ? tc(`materialLineSource.${line.price_source}`) : tc('materialLineNeedsPrice')}
