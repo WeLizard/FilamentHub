@@ -46,10 +46,16 @@ _SNAPSHOT_FIELDS = (
 )
 
 
-def _canonical_hash(orcaslicer_settings: dict | None) -> str:
-    """sha256 of a canonical JSON encoding (stable key order, no whitespace)."""
+def _canonical_hash(structured: dict, orcaslicer_settings: dict | None) -> str:
+    """sha256 of a canonical JSON encoding of the effective preset payload.
+
+    Covers BOTH the structured print fields and the orcaslicer_settings blob so
+    a change to any restorable field (e.g. extruder_temp) is detected. Hashing
+    only the settings blob missed structured-field edits — dedup treated them as
+    no-ops and no version was recorded.
+    """
     payload = json.dumps(
-        orcaslicer_settings or {},
+        {"structured": structured, "settings": orcaslicer_settings or {}},
         sort_keys=True,
         separators=(",", ":"),
         ensure_ascii=False,
@@ -101,7 +107,8 @@ async def record_version(
     """
     await _lock_preset(db, preset.id)
 
-    new_hash = _canonical_hash(preset.orcaslicer_settings)
+    structured = _snapshot_structured(preset)
+    new_hash = _canonical_hash(structured, preset.orcaslicer_settings)
     latest = await get_latest_version(db, preset.id)
 
     # 1. Dedup — nothing actually changed.
@@ -124,7 +131,7 @@ async def record_version(
             latest.snapshot_orcaslicer_settings = (
                 dict(preset.orcaslicer_settings) if preset.orcaslicer_settings else None
             )
-            latest.snapshot_structured = _snapshot_structured(preset)
+            latest.snapshot_structured = structured
             latest.content_hash = new_hash
             latest.squash_count += 1
             await db.flush()
@@ -138,7 +145,7 @@ async def record_version(
         snapshot_orcaslicer_settings=(
             dict(preset.orcaslicer_settings) if preset.orcaslicer_settings else None
         ),
-        snapshot_structured=_snapshot_structured(preset),
+        snapshot_structured=structured,
         content_hash=new_hash,
         change_source=source,
         restored_from_version_id=restored_from_version_id,

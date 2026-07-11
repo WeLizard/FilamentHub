@@ -75,6 +75,22 @@ async def test_changed_settings_create_new_version(db_session: AsyncSession):
 
 
 @pytest.mark.asyncio
+async def test_structured_field_change_creates_new_version(db_session: AsyncSession):
+    # A change to a structured field (extruder_temp) with the settings blob
+    # unchanged must still be versioned — the hash covers the effective payload,
+    # not just orcaslicer_settings. Previously this was deduped and lost.
+    user, preset = await _seed(db_session)
+    await svc.record_version(db_session, preset, PresetVersionSource.WEB_EDIT, user.id)
+    await db_session.commit()
+
+    preset.extruder_temp = 225  # structured only; orcaslicer_settings untouched
+    v2 = await svc.record_version(db_session, preset, PresetVersionSource.WEB_EDIT, user.id)
+    await db_session.commit()
+    assert v2 is not None
+    assert v2.version_number == 2
+
+
+@pytest.mark.asyncio
 async def test_orca_sync_squashes_within_window(db_session: AsyncSession):
     user, preset = await _seed(db_session)
     v1 = await svc.record_version(db_session, preset, PresetVersionSource.ORCA_SYNC, user.id)
