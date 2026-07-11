@@ -620,22 +620,6 @@ export const FilamentDetailPage: React.FC = () => {
                       <div className="text-white font-semibold">{primaryPreset.bed_temp}°C</div>
                     </div>
                   </div>
-                  <div className="flex items-center space-x-2">
-                    <Gauge className="w-5 h-5 text-blue-400" />
-                    <div>
-                      <div className="text-gray-400 text-sm">{t('filamentDetailPage.speed')}</div>
-                      <div className="text-white font-semibold">{primaryPreset.print_speed}mm/s</div>
-                    </div>
-                  </div>
-                  {primaryPreset.travel_speed && (
-                    <div className="flex items-center space-x-2">
-                      <Wind className="w-5 h-5 text-cyan-400" />
-                      <div>
-                        <div className="text-gray-400 text-sm">{t('filamentDetailPage.travel')}</div>
-                        <div className="text-white font-semibold">{primaryPreset.travel_speed}mm/s</div>
-                      </div>
-                    </div>
-                  )}
                   {primaryPreset.flow_rate && (
                     <div className="flex items-center space-x-2">
                       <Gauge className="w-5 h-5 text-yellow-400" />
@@ -844,22 +828,6 @@ export const FilamentDetailPage: React.FC = () => {
                             <div className="text-white text-sm font-semibold">{preset.bed_temp}°C</div>
                           </div>
                         </div>
-                        <div className="flex items-center space-x-2">
-                          <Gauge className="w-4 h-4 text-blue-400" />
-                          <div>
-                            <div className="text-gray-400 text-xs">{t('filamentDetailPage.speed')}</div>
-                            <div className="text-white text-sm font-semibold">{preset.print_speed}mm/s</div>
-                          </div>
-                        </div>
-                        {preset.travel_speed && (
-                          <div className="flex items-center space-x-2">
-                            <Wind className="w-4 h-4 text-cyan-400" />
-                            <div>
-                              <div className="text-gray-400 text-xs">{t('filamentDetailPage.travel')}</div>
-                              <div className="text-white text-sm font-semibold">{preset.travel_speed}mm/s</div>
-                            </div>
-                          </div>
-                        )}
                         {preset.flow_rate && (
                           <div className="flex items-center space-x-2">
                             <Gauge className="w-4 h-4 text-yellow-400" />

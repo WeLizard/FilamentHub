@@ -98,9 +98,12 @@ async def create_or_update_weighted_preset(
         weighted_preset.extruder_temp = recommended_values['extruder_temp']
         weighted_preset.bed_temp = recommended_values['bed_temp']
         weighted_preset.print_speed = recommended_values['print_speed']
-        weighted_preset.travel_speed = recommended_values.get('travel_speed')
-        weighted_preset.layer_height = recommended_values.get('layer_height')
-        weighted_preset.first_layer_height = recommended_values.get('first_layer_height')
+        # Process-scope поля (Orca s_Preset_print_options) не свойство филамента — не усредняем
+        # их как рекомендацию филамента (см. project_weighted_formula_rework). print_speed пока
+        # остаётся, т.к. колонка NOT NULL; вынос — в отложенной nullable-переработке.
+        weighted_preset.travel_speed = None
+        weighted_preset.layer_height = None
+        weighted_preset.first_layer_height = None
         weighted_preset.flow_rate = recommended_values.get('flow_rate')
         weighted_preset.fan_speed = recommended_values.get('fan_speed')
         weighted_preset.retraction_length = recommended_values.get('retraction_length')
@@ -121,9 +124,10 @@ async def create_or_update_weighted_preset(
             extruder_temp=recommended_values['extruder_temp'],
             bed_temp=recommended_values['bed_temp'],
             print_speed=recommended_values['print_speed'],
-            travel_speed=recommended_values.get('travel_speed'),
-            layer_height=recommended_values.get('layer_height'),
-            first_layer_height=recommended_values.get('first_layer_height'),
+            # Process-scope поля не приписываем филаменту (см. блок обновления выше)
+            travel_speed=None,
+            layer_height=None,
+            first_layer_height=None,
             flow_rate=recommended_values.get('flow_rate'),
             fan_speed=recommended_values.get('fan_speed'),
             retraction_length=recommended_values.get('retraction_length'),

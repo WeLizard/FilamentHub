@@ -139,10 +139,8 @@ export const ViewPresetModal: React.FC<ViewPresetModalProps> = ({
   // Основные настройки
   const extruderTemp = preset?.extruder_temp || 0;
   const bedTemp = preset?.bed_temp || 0;
-  const printSpeed = preset?.print_speed || 0;
-  const travelSpeed = preset?.travel_speed || 0;
-  // Примечание: layer_height и first_layer_height - это параметры профилей печати (Print Profile),
-  // а не профилей филамента (Preset), поэтому не отображаются здесь
+  // Примечание: print_speed, travel_speed, layer_height, first_layer_height — параметры профиля
+  // печати (Print Profile / process scope), а не свойства филамента (Preset), поэтому не показываются.
   const flowRate = preset?.flow_rate || 0;
   const fanSpeed = preset?.fan_speed || 0;
   const retractionLength = preset?.retraction_length || 0;
@@ -317,8 +315,6 @@ export const ViewPresetModal: React.FC<ViewPresetModalProps> = ({
               <div className="grid grid-cols-5 gap-x-3 gap-y-2.5">
                 <ViewField label={t('viewPreset.nozzle')} value={extruderTemp} unit="°C" />
                 <ViewField label={t('viewPreset.bed')} value={bedTemp} unit="°C" />
-                <ViewField label={t('viewPreset.print')} value={printSpeed} unit="mm/s" />
-                <ViewField label={t('viewPreset.travel')} value={travelSpeed} unit="mm/s" />
                 <ViewField label={t('viewPreset.fan')} value={fanSpeed} unit="%" />
 
                 <ViewField label={t('viewPreset.flow')} value={flowRate} unit="%" />

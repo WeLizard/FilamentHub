@@ -24,6 +24,30 @@ ORCASLICER_SCALAR_SETTING_KEYS = {
 }
 
 
+# Process-scope keys (OrcaSlicer `s_Preset_print_options`) belong to a print/process profile,
+# not to a filament — a material must not carry them. Our frontend never emits these as filament
+# settings, but a reverse-synced `orcaslicer_settings` blob could, so we drop them from the
+# filament export. This is our layer's guard; Orca's own `remove_invalid_keys` is the final
+# backstop on import. Curated to unambiguous process keys (not exhaustive by design).
+PROCESS_SCOPE_KEYS = frozenset({
+    "layer_height", "first_layer_height", "initial_layer_print_height",
+    "print_speed", "travel_speed", "travel_speed_z", "initial_layer_speed",
+    "initial_layer_infill_speed", "inner_wall_speed", "outer_wall_speed",
+    "sparse_infill_speed", "internal_solid_infill_speed", "top_surface_speed",
+    "gap_infill_speed", "bridge_speed", "internal_bridge_speed", "support_speed",
+    "support_interface_speed", "small_perimeter_speed",
+    "sparse_infill_density", "sparse_infill_pattern", "wall_loops", "wall_generator",
+    "top_shell_layers", "top_shell_thickness", "bottom_shell_layers", "bottom_shell_thickness",
+    "seam_position", "ironing_type", "ironing_speed",
+    "enable_support", "support_type", "raft_layers", "brim_type", "brim_width",
+    "line_width", "initial_layer_line_width", "inner_wall_line_width", "outer_wall_line_width",
+    "sparse_infill_line_width", "internal_solid_infill_line_width", "top_surface_line_width",
+    "support_line_width", "default_acceleration", "outer_wall_acceleration",
+    "initial_layer_acceleration", "travel_acceleration", "post_process", "resolution",
+    "skirt_loops", "skirt_distance",
+})
+
+
 def preset_to_orcaslicer_info(preset: Preset) -> str:
     """
     Генерировать .info файл для пресета FilamentHub.
@@ -223,6 +247,10 @@ async def preset_to_orcaslicer_json(
     # Полезно для специальных настроек, которых нет в базовых полях FilamentHub
     if preset.orcaslicer_settings and isinstance(preset.orcaslicer_settings, dict) and len(preset.orcaslicer_settings) > 0:
         for key, value in preset.orcaslicer_settings.items():
+            # Process-scope ключи не место в filament-профиле — отбрасываем (см. PROCESS_SCOPE_KEYS)
+            if key in PROCESS_SCOPE_KEYS:
+                logger.debug(f"Dropping process-scope key '{key}' from filament export of preset {preset.id}")
+                continue
             # Пропускаем только если значение None или пустое
             if value is not None:
                 try:
