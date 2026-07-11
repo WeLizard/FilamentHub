@@ -17,7 +17,6 @@ import {
   Trash2,
   Thermometer,
   Gauge,
-  MoveHorizontal,
   Edit,
   Wind,
   Fan,
@@ -3460,16 +3459,6 @@ const PresetCard: React.FC<PresetCardProps> = ({ preset, onEdit, onView, onDelet
           <Thermometer className="w-4 h-4 text-red-400 shrink-0 mt-0.5" />
           <span className="text-gray-300 leading-tight break-words">{t('profilePage.preset.bed')}: {preset.bed_temp}°C</span>
         </div>
-        <div className="flex items-start space-x-2 min-w-0">
-          <Gauge className="w-4 h-4 text-blue-400 shrink-0 mt-0.5" />
-          <span className="text-gray-300 leading-tight break-words">{t('profilePage.preset.speed')}: {preset.print_speed}mm/s</span>
-        </div>
-        {preset.travel_speed && (
-          <div className="flex items-start space-x-2 min-w-0">
-            <MoveHorizontal className="w-4 h-4 text-cyan-400 shrink-0 mt-0.5" />
-            <span className="text-gray-300 leading-tight break-words">{t('profilePage.preset.travel')}: {preset.travel_speed}mm/s</span>
-          </div>
-        )}
         {preset.flow_rate && (
           <div className="flex items-start space-x-2 min-w-0">
             <Gauge className="w-4 h-4 text-yellow-400 shrink-0 mt-0.5" />

@@ -816,10 +816,6 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({ onBack, init
                       <Thermometer className="w-4 h-4 text-red-400" />
                       <span className="text-gray-300">{t('brandProfile.bed')}: {preset.bed_temp}°C</span>
                     </div>
-                    <div className="flex items-center space-x-1">
-                      <Gauge className="w-4 h-4 text-blue-400" />
-                      <span className="text-gray-300">{t('brandProfile.speed')}: {preset.print_speed}mm/s</span>
-                    </div>
                     {preset.fan_speed !== null && (
                       <div className="flex items-center space-x-1">
                         <Fan className="w-4 h-4 text-green-400" />
@@ -3245,10 +3241,6 @@ const FilamentCard: React.FC<FilamentCardProps> = ({ filament, onEdit, onDelete,
             <div className="flex items-center space-x-1">
               <Gauge className="w-3 h-3 text-blue-400" />
               <span className="text-gray-300">{t('brandProfile.bed')}: {officialPreset.bed_temp}°C</span>
-            </div>
-            <div className="flex items-center space-x-1">
-              <Gauge className="w-3 h-3 text-green-400" />
-              <span className="text-gray-300">{t('brandProfile.speed')}: {officialPreset.print_speed}mm/s</span>
             </div>
             {officialPreset.fan_speed !== undefined && (
               <div className="flex items-center space-x-1">
