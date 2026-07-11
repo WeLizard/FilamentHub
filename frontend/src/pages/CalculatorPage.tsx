@@ -10,6 +10,7 @@ import { useTranslation } from 'react-i18next';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   Calculator,
+  BriefcaseBusiness,
   Boxes,
   ChevronDown,
   CheckCircle2,
@@ -30,7 +31,7 @@ import {
   Upload,
   X,
 } from 'lucide-react';
-import { calculatorAPI, filamentsAPI, spoolsAPI, type UserSpool } from '../api/client';
+import { calculatorAPI, crmAPI, filamentsAPI, spoolsAPI, type UserSpool } from '../api/client';
 import { ConfirmDeleteModal } from '../components/ConfirmDeleteModal';
 import { useAuth } from '../contexts/AuthContext';
 import { useHeaderVisible } from '../hooks/useHeaderVisible';
@@ -49,6 +50,7 @@ import {
   type CalculatorQuoteMode,
 } from '../utils/calculatorBatch';
 import { safeStorage } from '../utils/storage';
+import { normalizeFilamentColor, resolveMaterialDisplayColors } from '../utils/calculatorMaterialColors';
 import type {
   CalculatorEstimateRequest,
   CalculatorEstimateResponse,
@@ -59,6 +61,7 @@ import type {
   CalculatorMaterialLineRequest,
   CalculatorParsedMaterial,
   CalculatorPrintJobRequest,
+  CrmCustomer,
   Filament,
   PricingMethod,
   RoundingMode,
@@ -333,13 +336,6 @@ const DEFAULT_QUOTE_PARTY_FORM: QuotePartyFormState = {
 const makeCurrencyFormatter = (code: CurrencyCode) =>
   (value: number | null | undefined): string =>
     value == null || !Number.isFinite(value) ? '—' : `${value.toFixed(2)} ${currencySymbol(code)}`;
-
-const normalizeFilamentColor = (value: string | null | undefined): string | null => {
-  if (!value) return null;
-  const normalized = value.trim().startsWith('#') ? value.trim() : `#${value.trim()}`;
-  if (/^#[0-9a-f]{8}$/i.test(normalized)) return normalized.slice(0, 7);
-  return /^#[0-9a-f]{6}$/i.test(normalized) ? normalized : null;
-};
 
 const filamentColorAlpha = (color: string, alpha: string): string => `${color}${alpha}`;
 
@@ -1362,6 +1358,7 @@ export const CalculatorPage: React.FC = () => {
   const [materialPriceSource, setMaterialPriceSource] = useState<MaterialPriceSource>('manual');
   const [isCloudBusy, setIsCloudBusy] = useState(false);
   const [quoteItems, setQuoteItems] = useState<QuoteItem[]>([]);
+  const [quoteCustomerSelection, setQuoteCustomerSelection] = useState('new');
   const [isSharing, setIsSharing] = useState(false);
   const [isPdfDownloading, setIsPdfDownloading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -1397,6 +1394,13 @@ export const CalculatorPage: React.FC = () => {
     queryFn: spoolsAPI.list,
     staleTime: 30_000,
     enabled: hasCalculatorAccess,
+  });
+
+  const quoteCustomersQuery = useQuery({
+    queryKey: ['crm', 'customers', 'calculator'],
+    queryFn: () => crmAPI.listCustomers({ size: 100 }),
+    staleTime: 30_000,
+    enabled: hasCalculatorAccess && quoteModalOpen,
   });
 
   const startTrialMutation = useMutation({
@@ -1461,6 +1465,19 @@ export const CalculatorPage: React.FC = () => {
     mutationFn: (entryId: number) => calculatorAPI.deleteHistory(entryId),
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ['calculator-pro', 'history'] });
+    },
+  });
+
+  const saveQuoteToWorkspaceMutation = useMutation({
+    mutationFn: crmAPI.createQuote,
+    onSuccess: async (quote) => {
+      if (quote.customer_id) {
+        setQuoteCustomerSelection(`customer:${quote.customer_id}`);
+      }
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['crm'] }),
+        queryClient.invalidateQueries({ queryKey: ['calculator-pro', 'history'] }),
+      ]);
     },
   });
 
@@ -2145,6 +2162,96 @@ export const CalculatorPage: React.FC = () => {
     return { t, items, includedItems, grandTotal, parties: quoteParties, formatCurrency, quoteNumber };
   };
 
+  const handleQuoteCustomerSelection = (selection: string) => {
+    setQuoteCustomerSelection(selection);
+    if (!selection.startsWith('customer:')) return;
+    const customerId = Number(selection.slice('customer:'.length));
+    const customer = quoteCustomersQuery.data?.items.find((item) => item.id === customerId);
+    if (!customer) return;
+    setQuoteParties((prev) => ({
+      ...prev,
+      buyerName: customer.name,
+      buyerInn: customer.inn ?? '',
+      buyerAddress: customer.address ?? '',
+    }));
+  };
+
+  const handleSaveQuoteToWorkspace = async () => {
+    if ((!result && quoteItems.length === 0) || !user) return;
+    const quoteParams = buildQuoteHtmlParams('{{CRM_QUOTE_NUMBER}}');
+    if (quoteParams.items.length === 0) return;
+
+    const selectedCustomerId = quoteCustomerSelection.startsWith('customer:')
+      ? Number(quoteCustomerSelection.slice('customer:'.length))
+      : null;
+    const shouldCreateCustomer = quoteCustomerSelection === 'new' && Boolean(quoteParties.buyerName.trim());
+    const calculationSnapshot = result
+      ? buildHistoryPayload(
+          form,
+          result,
+          parsedGcode,
+          selectedMaterial,
+          materialLines,
+          parsedJobs,
+          jobConfigs,
+        )
+      : null;
+
+    try {
+      await saveQuoteToWorkspaceMutation.mutateAsync({
+        title: quoteParams.items[0]?.title || tc('quoteDefaultItemTitle'),
+        currency: quoteProfile.currency,
+        valid_until: addDays(
+          new Date(),
+          Math.max(1, Math.round(quoteParties.validityDays || DEFAULT_QUOTE_PROFILE.validityDays)),
+        ).toISOString().slice(0, 10),
+        customer_id: selectedCustomerId,
+        new_customer: shouldCreateCustomer
+          ? {
+              name: quoteParties.buyerName.trim(),
+              inn: quoteParties.buyerInn.trim() || null,
+              address: quoteParties.buyerAddress.trim() || null,
+            }
+          : null,
+        seller_snapshot: {
+          name: quoteParties.sellerName,
+          inn: quoteParties.sellerInn,
+          phone: quoteParties.sellerPhone,
+        },
+        customer_snapshot: {
+          name: quoteParties.buyerName,
+          inn: quoteParties.buyerInn,
+          address: quoteParties.buyerAddress,
+        },
+        calculation_snapshot: calculationSnapshot ? { ...calculationSnapshot } : null,
+        payment_terms: quoteParties.paymentTerms,
+        disclaimer_mode: quoteParties.disclaimerMode,
+        tax_total: 0,
+        html_content: buildQuoteDocumentHtml(quoteParams),
+        lines: quoteParams.items.map((item, index) => ({
+          title: item.title,
+          details: item.details,
+          quantity: item.quantity,
+          unit: 'pcs',
+          unit_price: item.unitPrice,
+          source_data: { position: index + 1, source: estimateSource },
+        })),
+      });
+      setHistoryFeedback({ kind: 'success', message: tc('quoteSavedToWorkspace') });
+      setQuoteModalOpen(false);
+    } catch (error) {
+      const errorWithResponse = error as { response?: { data?: { detail?: unknown } }; message?: string };
+      setHistoryFeedback({
+        kind: 'error',
+        message: translateApiError(
+          t,
+          errorWithResponse.response?.data?.detail ?? errorWithResponse.message,
+          tc('quoteSaveWorkspaceError'),
+        ),
+      });
+    }
+  };
+
   const handleOpenQuote = () => {
     setQuoteParties((prev) => ({
       ...prev,
@@ -2706,6 +2813,9 @@ export const CalculatorPage: React.FC = () => {
         quoteParties={quoteParties}
         result={result}
         quoteItems={quoteItems}
+        customers={quoteCustomersQuery.data?.items ?? []}
+        customersLoading={quoteCustomersQuery.isPending}
+        customerSelection={quoteCustomerSelection}
         onRemoveFromQuote={handleRemoveFromQuote}
         onRenameQuoteItem={handleRenameQuoteItem}
         onClearQuoteItems={() => setQuoteItems([])}
@@ -2716,11 +2826,14 @@ export const CalculatorPage: React.FC = () => {
             [field]: value,
           }));
         }}
+        onCustomerSelection={handleQuoteCustomerSelection}
+        onSaveToWorkspace={() => void handleSaveQuoteToWorkspace()}
         onPrint={handlePrintQuote}
         onShare={handleShareQuote}
         onDownloadPdf={handleDownloadPdf}
         isSharing={isSharing}
         isPdfDownloading={isPdfDownloading}
+        isSavingToWorkspace={saveQuoteToWorkspaceMutation.isPending}
         isLoggedIn={!!user}
         formatCurrency={formatCurrency}
       />
@@ -3073,9 +3186,11 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
       || parsedMaterial?.name
       || line.label
       || (line.tool_index != null ? `T${line.tool_index}` : tc('unknownMaterial'));
-    const selectedMaterialColor = normalizeFilamentColor(
-      selectedMaterialForLine?.color_hex || parsedMaterial?.color,
+    const materialColors = resolveMaterialDisplayColors(
+      parsedMaterial?.color,
+      selectedMaterialForLine?.color_hex,
     );
+    const selectedMaterialColor = materialColors.primary;
     const selectedMaterialDetails = selectedMaterialForLine
       ? [
           selectedMaterialForLine.brand_name,
@@ -3096,12 +3211,24 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
         <div className="min-w-0">
           <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5">
             {selectedMaterialColor ? (
-              <span
-                data-testid="calculator-selected-material-color"
-                title={selectedMaterialForLine?.color_name || selectedMaterialColor}
-                className="h-3.5 w-3.5 shrink-0 rounded-full border border-white/30 shadow-[0_0_0_3px_rgba(255,255,255,0.04)]"
-                style={{ backgroundColor: selectedMaterialColor }}
-              />
+              <span className="relative mr-0.5 inline-flex h-4 w-4 shrink-0" title={
+                materialColors.differs
+                  ? `${tc('colorFromGcode')}: ${selectedMaterialColor} · ${tc('colorAssigned')}: ${selectedMaterialForLine?.color_name || materialColors.assigned}`
+                  : selectedMaterialForLine?.color_name || selectedMaterialColor
+              }>
+                <span
+                  data-testid="calculator-selected-material-color"
+                  className="h-4 w-4 rounded-full border border-white/35 shadow-[0_0_0_3px_rgba(255,255,255,0.04)]"
+                  style={{ backgroundColor: selectedMaterialColor }}
+                />
+                {materialColors.assigned ? (
+                  <span
+                    data-testid="calculator-assigned-material-color"
+                    className="absolute -bottom-1 -right-1 h-2.5 w-2.5 rounded-full border border-slate-950 ring-1 ring-white/35"
+                    style={{ backgroundColor: materialColors.assigned }}
+                  />
+                ) : null}
+              </span>
             ) : null}
             <p data-testid="calculator-selected-material" className="truncate text-sm font-semibold text-white">
               {materialName}
@@ -3736,7 +3863,7 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
                       </div>
                       <span className="text-xs text-slate-500">{tc('perPlateControlHint')}</span>
                     </div>
-                    <div className="mt-5 grid grid-cols-2 gap-3">
+                    <div className="mt-5 grid grid-cols-2 gap-3 md:grid-cols-4">
                       <BatchMetric
                         icon={<Boxes className="h-4 w-4" />}
                         label={tc('quoteQuantity')}
@@ -3897,10 +4024,9 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
                                         const usageFilament = matchingLine?.selectionValue.startsWith('filament:')
                                           ? filaments.find((filament) => filament.id === Number(matchingLine.selectionValue.slice('filament:'.length)))
                                           : null;
-                                        const color = normalizeFilamentColor(
-                                          usageSpool?.filament?.color_hex
-                                            || usageFilament?.color_hex
-                                            || parsedMaterial?.color,
+                                        const displayColors = resolveMaterialDisplayColors(
+                                          parsedMaterial?.color,
+                                          usageSpool?.filament?.color_hex || usageFilament?.color_hex,
                                         );
                                         return {
                                           toolIndex: numericToolIndex,
@@ -3909,7 +4035,8 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
                                               ? buildParsedMaterialLabel(parsedMaterial, `T${numericToolIndex}`)
                                               : `T${numericToolIndex}`),
                                           compactLabel,
-                                          color,
+                                          color: displayColors.primary,
+                                          assignedColor: displayColors.assigned,
                                           weightG,
                                         };
                                       });
@@ -3934,10 +4061,18 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
                                                    } : undefined}
                                                  >
                                                    {usage.color ? (
-                                                     <span
-                                                       className="h-2 w-2 shrink-0 rounded-full border border-white/25"
-                                                       style={{ backgroundColor: usage.color }}
-                                                     />
+                                                     <span className="relative inline-flex h-2.5 w-2.5 shrink-0">
+                                                       <span
+                                                         className="h-2.5 w-2.5 rounded-full border border-white/30"
+                                                         style={{ backgroundColor: usage.color }}
+                                                       />
+                                                       {usage.assignedColor ? (
+                                                         <span
+                                                           className="absolute -bottom-0.5 -right-0.5 h-1.5 w-1.5 rounded-full border border-slate-900"
+                                                           style={{ backgroundColor: usage.assignedColor }}
+                                                         />
+                                                       ) : null}
+                                                     </span>
                                                    ) : null}
                                                    {usage.compactLabel} · {usage.weightG.toFixed(2)} {tc('grams')}
                                                  </span>
@@ -4409,17 +4544,31 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
 
                         {parsedGcode.materials.length > 1 ? (
                           <div className="mt-4 flex flex-wrap gap-2">
-                            {parsedGcode.materials.map((material, index) => (
+                            {parsedGcode.materials.map((material, index) => {
+                              const materialColor = normalizeFilamentColor(material.color);
+                              return (
                               <div
                                 key={`${material.name ?? material.type ?? 'material'}-${index}`}
-                                className="rounded-full border border-cyan-400/20 bg-cyan-400/10 px-3 py-2 text-xs text-cyan-100"
+                                className="inline-flex items-center gap-2 rounded-full border border-cyan-400/20 bg-cyan-400/10 px-3 py-2 text-xs text-cyan-100"
+                                style={materialColor ? {
+                                  borderColor: filamentColorAlpha(materialColor, '66'),
+                                  backgroundColor: filamentColorAlpha(materialColor, '1f'),
+                                } : undefined}
                               >
+                                {materialColor ? (
+                                  <span
+                                    className="h-3 w-3 shrink-0 rounded-full border border-white/30"
+                                    style={{ backgroundColor: materialColor }}
+                                    title={`${tc('colorFromGcode')}: ${materialColor}`}
+                                  />
+                                ) : null}
                                 <span className="font-semibold text-white">
                                   {buildParsedMaterialLabel(material, tc('unknownMaterial'))}
                                 </span>
                                 {material.weight_g != null ? ` · ${material.weight_g.toFixed(2)} ${tc('grams')}` : ''}
                               </div>
-                            ))}
+                              );
+                            })}
                           </div>
                         ) : null}
                       </CompactSummarySection>
@@ -4991,16 +5140,22 @@ interface QuoteModalProps {
   quoteParties: QuotePartyFormState;
   result: CalculatorEstimateResponse | null;
   quoteItems: QuoteItem[];
+  customers: CrmCustomer[];
+  customersLoading: boolean;
+  customerSelection: string;
   onRemoveFromQuote: (id: string) => void;
   onRenameQuoteItem: (id: string, title: string) => void;
   onClearQuoteItems: () => void;
   onClose: () => void;
   onPartyChange: <K extends keyof QuotePartyFormState>(field: K, value: QuotePartyFormState[K]) => void;
+  onCustomerSelection: (selection: string) => void;
+  onSaveToWorkspace: () => void;
   onPrint: () => void;
   onShare: () => void;
   onDownloadPdf: () => void;
   isSharing: boolean;
   isPdfDownloading: boolean;
+  isSavingToWorkspace: boolean;
   isLoggedIn: boolean;
   formatCurrency: (value: number | null | undefined) => string;
 }
@@ -5011,16 +5166,22 @@ const QuoteModal: React.FC<QuoteModalProps> = ({
   quoteParties,
   result,
   quoteItems,
+  customers,
+  customersLoading,
+  customerSelection,
   onRemoveFromQuote,
   onRenameQuoteItem,
   onClearQuoteItems,
   onClose,
   onPartyChange,
+  onCustomerSelection,
+  onSaveToWorkspace,
   onPrint,
   onShare,
   onDownloadPdf,
   isSharing,
   isPdfDownloading,
+  isSavingToWorkspace,
   isLoggedIn,
   formatCurrency,
 }) => {
@@ -5081,7 +5242,26 @@ const QuoteModal: React.FC<QuoteModalProps> = ({
                   </div>
                 </div>
 
-                <div className="mt-5 grid grid-cols-1 gap-4 md:grid-cols-2">
+                <div className="mt-5">
+                  <FieldBlock label={tc('quoteCustomerSelect')} hint={tc('quoteCustomerSelectHint')}>
+                    <select
+                      className={inputClass}
+                      value={customerSelection}
+                      disabled={customersLoading}
+                      onChange={(event) => onCustomerSelection(event.target.value)}
+                    >
+                      <option value="new">{tc('quoteCustomerNew')}</option>
+                      <option value="none">{tc('quoteCustomerNone')}</option>
+                      {customers.map((customer) => (
+                        <option key={customer.id} value={`customer:${customer.id}`}>
+                          {customer.name}{customer.inn ? ` · ${customer.inn}` : ''}
+                        </option>
+                      ))}
+                    </select>
+                  </FieldBlock>
+                </div>
+
+                <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2">
                   <FieldBlock label={tc('quoteSellerName')}>
                     <TextInput
                       value={quoteParties.sellerName}
@@ -5271,6 +5451,15 @@ const QuoteModal: React.FC<QuoteModalProps> = ({
               )}
 
               <div className="space-y-3">
+                <button
+                  type="button"
+                  onClick={onSaveToWorkspace}
+                  disabled={isSavingToWorkspace}
+                  className="inline-flex w-full items-center justify-center gap-2 rounded-[1.4rem] bg-[linear-gradient(135deg,#f59e0b,#0891b2)] px-5 py-4 text-sm font-semibold text-white shadow-[0_18px_35px_-18px_rgba(245,158,11,0.62)] transition-all hover:translate-y-[-1px] disabled:cursor-wait disabled:opacity-55"
+                >
+                  {isSavingToWorkspace ? <Loader2 className="h-4 w-4 animate-spin" /> : <BriefcaseBusiness className="h-4 w-4" />}
+                  {tc('quoteSaveWorkspaceAction')}
+                </button>
                 <button
                   type="button"
                   onClick={onPrint}

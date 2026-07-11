@@ -25,6 +25,7 @@ import { useTranslation } from 'react-i18next';
 // Lazy-loaded pages (code splitting)
 const ProfilePage = lazy(() => import('./pages/ProfilePage').then(m => ({ default: m.ProfilePage })));
 const CalculatorPage = lazy(() => import('./pages/CalculatorPage').then(m => ({ default: m.CalculatorPage })));
+const CrmWorkspacePage = lazy(() => import('./pages/CrmWorkspacePage').then(m => ({ default: m.CrmWorkspacePage })));
 const BrandDetailPage = lazy(() => import('./pages/BrandDetailPage').then(m => ({ default: m.BrandDetailPage })));
 const AdminPanel = lazy(() => import('./pages/AdminPanel').then(m => ({ default: m.AdminPanel })));
 const WikiPage = lazy(() => import('./pages/WikiPage').then(m => ({ default: m.WikiPage })));
@@ -39,6 +40,7 @@ if (typeof window !== 'undefined') {
     setTimeout(() => {
       import('./pages/ProfilePage');
       import('./pages/CalculatorPage');
+      import('./pages/CrmWorkspacePage');
       import('./pages/BrandDetailPage');
       import('./pages/AdminPanel');
       import('./pages/WikiPage');
@@ -213,6 +215,18 @@ function AppContent() {
               <Layout>
                 <Suspense fallback={<PageLoader />}>
                   <CalculatorPage />
+                </Suspense>
+              </Layout>
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/workspace"
+          element={
+            <ProtectedRoute>
+              <Layout>
+                <Suspense fallback={<PageLoader />}>
+                  <CrmWorkspacePage />
                 </Suspense>
               </Layout>
             </ProtectedRoute>

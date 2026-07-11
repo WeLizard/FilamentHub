@@ -1118,6 +1118,73 @@ export const calculatorAPI = {
   },
 };
 
+export const crmAPI = {
+  getSummary: async () => {
+    const response = await api.get<import('../types/api').CrmWorkspaceSummary>('/crm/summary');
+    return response.data;
+  },
+
+  listCustomers: async (params?: { search?: string; include_archived?: boolean; page?: number; size?: number }) => {
+    const response = await api.get<{ items: import('../types/api').CrmCustomer[]; total: number }>('/crm/customers', { params });
+    return response.data;
+  },
+
+  createCustomer: async (data: import('../types/api').CrmCustomerCreate) => {
+    const response = await api.post<import('../types/api').CrmCustomer>('/crm/customers', data);
+    return response.data;
+  },
+
+  updateCustomer: async (customerId: number, data: import('../types/api').CrmCustomerUpdate) => {
+    const response = await api.patch<import('../types/api').CrmCustomer>(`/crm/customers/${customerId}`, data);
+    return response.data;
+  },
+
+  listQuotes: async (params?: { status?: import('../types/api').CrmQuoteStatus; search?: string; page?: number; size?: number }) => {
+    const response = await api.get<{ items: import('../types/api').CrmQuote[]; total: number }>('/crm/quotes', { params });
+    return response.data;
+  },
+
+  getQuote: async (quoteId: number) => {
+    const response = await api.get<import('../types/api').CrmQuoteDetail>(`/crm/quotes/${quoteId}`);
+    return response.data;
+  },
+
+  createQuote: async (data: import('../types/api').CrmQuoteCreate) => {
+    const response = await api.post<import('../types/api').CrmQuoteDetail>('/crm/quotes', data);
+    return response.data;
+  },
+
+  updateQuote: async (quoteId: number, data: { title?: string; customer_id?: number | null; valid_until?: string | null }) => {
+    const response = await api.patch<import('../types/api').CrmQuoteDetail>(`/crm/quotes/${quoteId}`, data);
+    return response.data;
+  },
+
+  createQuoteVersion: async (quoteId: number, data: import('../types/api').CrmQuoteVersionPayload) => {
+    const response = await api.post<import('../types/api').CrmQuoteDetail>(`/crm/quotes/${quoteId}/versions`, data);
+    return response.data;
+  },
+
+  updateQuoteStatus: async (quoteId: number, status: import('../types/api').CrmQuoteStatus) => {
+    const response = await api.post<import('../types/api').CrmQuoteDetail>(`/crm/quotes/${quoteId}/status`, { status });
+    return response.data;
+  },
+
+  shareQuote: async (quoteId: number) => {
+    const response = await api.post<import('../types/api').SharedQuoteResponse>(`/crm/quotes/${quoteId}/share`);
+    return response.data;
+  },
+
+  listOrders: async (params?: { status?: import('../types/api').CrmOrderStatus; search?: string; page?: number; size?: number }) => {
+    const response = await api.get<{ items: import('../types/api').CrmOrder[]; total: number }>('/crm/orders', { params });
+    return response.data;
+  },
+
+  updateOrder: async (orderId: number, data: { status?: import('../types/api').CrmOrderStatus; due_date?: string | null; note?: string | null }) => {
+    const response = await api.patch<import('../types/api').CrmOrder>(`/crm/orders/${orderId}`, data);
+    return response.data;
+  },
+};
+
 // ==================== Admin API ====================
 
 export const adminAPI = {

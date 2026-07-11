@@ -880,6 +880,151 @@ export interface SharedQuoteResponse {
   expires_at: string | null;
 }
 
+export type CrmQuoteStatus = 'draft' | 'sent' | 'accepted' | 'rejected' | 'expired';
+export type CrmOrderStatus = 'new' | 'planned' | 'in_production' | 'ready' | 'completed' | 'cancelled';
+export type CrmQuoteEventType = 'created' | 'version_created' | 'status_changed' | 'customer_changed' | 'shared';
+
+export interface CrmCustomer {
+  id: number;
+  name: string;
+  contact_name: string | null;
+  email: string | null;
+  phone: string | null;
+  inn: string | null;
+  address: string | null;
+  note: string | null;
+  archived: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CrmCustomerCreate {
+  name: string;
+  contact_name?: string | null;
+  email?: string | null;
+  phone?: string | null;
+  inn?: string | null;
+  address?: string | null;
+  note?: string | null;
+}
+
+export type CrmCustomerUpdate = Partial<CrmCustomerCreate> & { archived?: boolean };
+
+export interface CrmQuoteLineCreate {
+  title: string;
+  details: string[];
+  quantity: number;
+  unit?: string;
+  unit_price: number;
+  source_data?: Record<string, unknown> | null;
+}
+
+export interface CrmQuoteLine extends Required<Omit<CrmQuoteLineCreate, 'source_data'>> {
+  id: number;
+  position: number;
+  total_price: number;
+  source_data: Record<string, unknown> | null;
+}
+
+export interface CrmQuoteVersionPayload {
+  source_history_id?: number | null;
+  seller_snapshot: Record<string, unknown>;
+  customer_snapshot: Record<string, unknown>;
+  calculation_snapshot?: Record<string, unknown> | null;
+  payment_terms?: string | null;
+  disclaimer_mode: 'offer' | 'not_offer';
+  tax_total?: number;
+  html_content?: string | null;
+  lines: CrmQuoteLineCreate[];
+}
+
+export interface CrmQuoteCreate extends CrmQuoteVersionPayload {
+  customer_id?: number | null;
+  new_customer?: CrmCustomerCreate | null;
+  number?: string | null;
+  title: string;
+  currency: string;
+  valid_until?: string | null;
+}
+
+export interface CrmQuoteVersion {
+  id: number;
+  version_number: number;
+  source_history_id: number | null;
+  shared_quote_id: number | null;
+  seller_snapshot: Record<string, unknown>;
+  customer_snapshot: Record<string, unknown>;
+  calculation_snapshot: Record<string, unknown> | null;
+  payment_terms: string | null;
+  disclaimer_mode: string;
+  subtotal: number;
+  tax_total: number;
+  grand_total: number;
+  html_content: string | null;
+  lines: CrmQuoteLine[];
+  created_at: string;
+}
+
+export interface CrmQuoteEvent {
+  id: number;
+  event_type: CrmQuoteEventType;
+  from_status: string | null;
+  to_status: string | null;
+  details: Record<string, unknown> | null;
+  created_at: string;
+}
+
+export interface CrmOrder {
+  id: number;
+  quote_id: number;
+  customer_id: number | null;
+  number: string;
+  title: string;
+  status: CrmOrderStatus;
+  currency: string;
+  total: number;
+  due_date: string | null;
+  note: string | null;
+  completed_at: string | null;
+  created_at: string;
+  updated_at: string;
+  customer: CrmCustomer | null;
+}
+
+export interface CrmQuote {
+  id: number;
+  customer_id: number | null;
+  number: string;
+  title: string;
+  status: CrmQuoteStatus;
+  currency: string;
+  valid_until: string | null;
+  sent_at: string | null;
+  accepted_at: string | null;
+  rejected_at: string | null;
+  created_at: string;
+  updated_at: string;
+  customer: CrmCustomer | null;
+  current_version: CrmQuoteVersion;
+  order: CrmOrder | null;
+}
+
+export interface CrmQuoteDetail extends CrmQuote {
+  versions: CrmQuoteVersion[];
+  events: CrmQuoteEvent[];
+}
+
+export interface CrmWorkspaceSummary {
+  customers_total: number;
+  quotes_draft: number;
+  quotes_sent: number;
+  quotes_accepted: number;
+  orders_active: number;
+  orders_completed: number;
+  amount_awaiting_decision: Record<string, number>;
+  accepted_amount: Record<string, number>;
+}
+
 export interface DownloadVersion {
   platform: 'windows' | 'macos' | 'linux';
   architecture: 'x64' | 'arm64';

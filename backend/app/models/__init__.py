@@ -15,6 +15,17 @@ from app.models.bundle import (
 )
 from app.models.calculator_history_entry import CalculatorHistoryEntry
 from app.models.calculator_profile import UserCalculatorProfile
+from app.models.crm import (
+    CrmCustomer,
+    CrmOrder,
+    CrmOrderStatus,
+    CrmQuote,
+    CrmQuoteEvent,
+    CrmQuoteEventType,
+    CrmQuoteLine,
+    CrmQuoteStatus,
+    CrmQuoteVersion,
+)
 from app.models.feedback import Feedback, FeedbackStatus, FeedbackType
 from app.models.filament import Filament
 from app.models.filament_line import FilamentLine
@@ -62,6 +73,15 @@ __all__ = [
     "AppSetting",
     "CalculatorHistoryEntry",
     "UserCalculatorProfile",
+    "CrmCustomer",
+    "CrmOrder",
+    "CrmOrderStatus",
+    "CrmQuote",
+    "CrmQuoteEvent",
+    "CrmQuoteEventType",
+    "CrmQuoteLine",
+    "CrmQuoteStatus",
+    "CrmQuoteVersion",
     "Feedback",
     "FeedbackType",
     "FeedbackStatus",
