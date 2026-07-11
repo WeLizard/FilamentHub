@@ -4,7 +4,7 @@ from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.filament import Filament
-from app.models.preset import Preset, PresetModerationStatus
+from app.models.preset import PUBLIC_PRESET_STATUSES, Preset, PresetModerationStatus
 
 
 async def get_preset_by_id(preset_id: int, db: AsyncSession) -> Preset | None:
@@ -37,7 +37,7 @@ async def list_presets(
     if approved_only:
         query = query.where(
             or_(
-                Preset.moderation_status == PresetModerationStatus.APPROVED,
+                Preset.moderation_status.in_(PUBLIC_PRESET_STATUSES),
                 Preset.is_official == True
             )
         )

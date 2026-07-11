@@ -22,7 +22,7 @@ from app.core.errors import (
     raise_error,
 )
 from app.db.session import get_db
-from app.models.preset import Preset, PresetModerationStatus
+from app.models.preset import PUBLIC_PRESET_STATUSES, Preset
 from app.models.preset_version import PresetVersion
 from app.models.user import User
 from app.schemas.preset_version import (
@@ -42,7 +42,7 @@ router = APIRouter(prefix="/presets", tags=["preset-versions"])
 
 def _is_preset_public(preset: Preset) -> bool:
     """A preset is publicly viewable if official or approved."""
-    return bool(preset.is_official) or preset.moderation_status == PresetModerationStatus.APPROVED
+    return bool(preset.is_official) or preset.moderation_status in PUBLIC_PRESET_STATUSES
 
 
 async def _load_preset_for_view(

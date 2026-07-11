@@ -10,7 +10,7 @@ from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.filament import Filament
-from app.models.preset import Preset, PresetModerationStatus
+from app.models.preset import PUBLIC_PRESET_STATUSES, Preset
 
 
 def calculate_preset_weight(preset: Preset) -> float:
@@ -88,7 +88,7 @@ async def get_recommended_preset_values(
         Preset.active == True,
         Preset.is_weighted == False,  # Исключаем взвешенные пресеты
         or_(
-            Preset.moderation_status == PresetModerationStatus.APPROVED,
+            Preset.moderation_status.in_(PUBLIC_PRESET_STATUSES),
             Preset.is_official == True
         )
     )

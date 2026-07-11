@@ -33,7 +33,7 @@ from app.core.errors import (
 from app.core.utils import like_pattern
 from app.db.session import get_db
 from app.models.filament import Filament
-from app.models.preset import Preset, PresetModerationStatus
+from app.models.preset import PUBLIC_PRESET_STATUSES, Preset, PresetModerationStatus
 from app.models.preset_printer import PresetPrinter
 from app.models.printer import Printer
 from app.models.user import User
@@ -95,7 +95,7 @@ async def list_presets(
             # Always enforce moderation filter for batch fetch (no auth context)
             query = query.where(
                 or_(
-                    Preset.moderation_status == PresetModerationStatus.APPROVED,
+                    Preset.moderation_status.in_(PUBLIC_PRESET_STATUSES),
                     Preset.is_official == True,
                 )
             )
@@ -130,7 +130,7 @@ async def list_presets(
         # Показываем только одобренные пресеты (официальные автоматически одобрены)
         query = query.where(
             or_(
-                Preset.moderation_status == PresetModerationStatus.APPROVED,
+                Preset.moderation_status.in_(PUBLIC_PRESET_STATUSES),
                 Preset.is_official == True  # Официальные всегда видимы
             )
         )
@@ -152,7 +152,7 @@ async def list_presets(
     else:
         count_query = count_query.where(
             or_(
-                Preset.moderation_status == PresetModerationStatus.APPROVED,
+                Preset.moderation_status.in_(PUBLIC_PRESET_STATUSES),
                 Preset.is_official == True
             )
         )

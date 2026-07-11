@@ -160,7 +160,7 @@ async def list_filaments(
     preset_summary_map: dict[int, dict[str, object]] = {}
 
     if filament_ids:
-        from app.models.preset import Preset, PresetModerationStatus
+        from app.models.preset import PUBLIC_PRESET_STATUSES, Preset, PresetModerationStatus
 
         stats_query = (
             select(
@@ -189,7 +189,7 @@ async def list_filaments(
             .where(
                 Preset.filament_id.in_(filament_ids),
                 Preset.active.is_(True),
-                Preset.moderation_status == PresetModerationStatus.APPROVED,
+                Preset.moderation_status.in_(PUBLIC_PRESET_STATUSES),
             )
             .order_by(
                 Preset.filament_id,
@@ -357,7 +357,7 @@ async def get_filament_presets(
         raise_error(404, ERR_FILAMENT_NOT_FOUND)
 
     # Build query - показываем только активные пресеты (все пресеты автоматически одобрены)
-    from app.models.preset import PresetModerationStatus
+    from app.models.preset import PUBLIC_PRESET_STATUSES
     from app.models.preset_printer import PresetPrinter
     from app.schemas.printer import PrinterResponse
 
@@ -366,7 +366,7 @@ async def get_filament_presets(
     ).where(
         Preset.filament_id == filament_id,
         Preset.active == True,
-        Preset.moderation_status == PresetModerationStatus.APPROVED  # Все пресеты автоматически APPROVED
+        Preset.moderation_status.in_(PUBLIC_PRESET_STATUSES)  # виден = публичные статусы
     )
     if is_official is not None:
         query = query.where(Preset.is_official == is_official)
@@ -375,7 +375,7 @@ async def get_filament_presets(
     count_query = select(func.count()).select_from(Preset).where(
         Preset.filament_id == filament_id,
         Preset.active == True,
-        Preset.moderation_status == PresetModerationStatus.APPROVED
+        Preset.moderation_status.in_(PUBLIC_PRESET_STATUSES)
     )
     if is_official is not None:
         count_query = count_query.where(Preset.is_official == is_official)

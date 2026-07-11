@@ -38,7 +38,7 @@ from app.db.session import get_db
 from app.models.brand import Brand
 from app.models.filament import Filament
 from app.models.notification import Notification, NotificationType
-from app.models.preset import Preset, PresetModerationStatus
+from app.models.preset import PUBLIC_PRESET_STATUSES, Preset, PresetModerationStatus
 from app.models.print_profile import PrintProfile
 from app.models.print_profile_filament import PrintProfileFilament
 from app.models.print_profile_printer import PrintProfilePrinter
@@ -3410,7 +3410,7 @@ async def spool_preset_mapping(
             .where(
                 Preset.filament_id.in_(filament_ids),
                 Preset.active == True,
-                Preset.moderation_status == PresetModerationStatus.APPROVED,
+                Preset.moderation_status.in_(PUBLIC_PRESET_STATUSES),
             )
             .order_by(Preset.is_official.desc(), Preset.usage_count.desc())
         )

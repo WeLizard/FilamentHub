@@ -20,7 +20,7 @@ from app.core.config import settings
 from app.db.session import AsyncSessionLocal, get_db
 from app.models.brand import Brand
 from app.models.filament import Filament
-from app.models.preset import Preset, PresetModerationStatus
+from app.models.preset import PUBLIC_PRESET_STATUSES, Preset
 from app.models.preset_gate_state import PresetGateState, PresetGateStateSource
 from app.models.user import User
 from app.models.user_printer_device import UserPrinterDevice
@@ -148,7 +148,7 @@ def _representative_preset(filament: Filament) -> Preset | None:
     presets = [
         p
         for p in (filament.presets or [])
-        if p.active and p.moderation_status == PresetModerationStatus.APPROVED
+        if p.active and p.moderation_status in PUBLIC_PRESET_STATUSES
     ]
     if not presets:
         return None

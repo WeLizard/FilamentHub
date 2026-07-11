@@ -26,6 +26,13 @@ class PresetModerationStatus(str, Enum):
     REJECTED = "rejected"  # Отклонен
 
 
+# Statuses under which a preset is publicly visible (catalog, matching, recommend,
+# spool-compat, version view). Centralized so weighted-preset safety (Ф8) can add a
+# non-approved generated status in ONE place and keep those presets visible everywhere.
+# NOT for admin/moderation-count or assignment sites — those stay specific to APPROVED.
+PUBLIC_PRESET_STATUSES = (PresetModerationStatus.APPROVED,)
+
+
 class Preset(Base):
     """
     Пресет настроек печати для материала.

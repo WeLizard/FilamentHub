@@ -13,7 +13,7 @@ from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.models.preset import Preset, PresetModerationStatus
+from app.models.preset import PUBLIC_PRESET_STATUSES, Preset
 from app.models.preset_printer import PresetPrinter
 from app.models.printer import Printer
 
@@ -127,7 +127,7 @@ async def get_recommended_presets(
         .where(Preset.active == True)  # noqa: E712 (SQLAlchemy boolean column)
         .where(
             or_(
-                Preset.moderation_status == PresetModerationStatus.APPROVED,
+                Preset.moderation_status.in_(PUBLIC_PRESET_STATUSES),
                 Preset.is_official == True,  # noqa: E712
             )
         )
