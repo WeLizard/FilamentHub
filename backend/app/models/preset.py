@@ -24,13 +24,17 @@ class PresetModerationStatus(str, Enum):
     PENDING = "pending"  # Ожидает модерации
     APPROVED = "approved"  # Одобрен
     REJECTED = "rejected"  # Отклонен
+    AUTO_GENERATED = "auto_generated"  # Сгенерирован системой (weighted): виден, но не прошёл модерацию
 
 
 # Statuses under which a preset is publicly visible (catalog, matching, recommend,
-# spool-compat, version view). Centralized so weighted-preset safety (Ф8) can add a
-# non-approved generated status in ONE place and keep those presets visible everywhere.
+# spool-compat, version view). Centralized so weighted-preset safety (Ф8) keeps generated
+# presets visible everywhere without auto-stamping them as human-APPROVED.
 # NOT for admin/moderation-count or assignment sites — those stay specific to APPROVED.
-PUBLIC_PRESET_STATUSES = (PresetModerationStatus.APPROVED,)
+PUBLIC_PRESET_STATUSES = (
+    PresetModerationStatus.APPROVED,
+    PresetModerationStatus.AUTO_GENERATED,
+)
 
 
 class Preset(Base):

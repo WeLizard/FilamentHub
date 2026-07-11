@@ -4,7 +4,7 @@ from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.filament import Filament
-from app.models.preset import PUBLIC_PRESET_STATUSES, Preset, PresetModerationStatus
+from app.models.preset import PUBLIC_PRESET_STATUSES, Preset
 
 
 async def get_preset_by_id(preset_id: int, db: AsyncSession) -> Preset | None:
@@ -68,7 +68,7 @@ async def count_presets_for_filament(filament_id: int, db: AsyncSession) -> int:
         Preset.filament_id == filament_id,
         Preset.active == True,
         or_(
-            Preset.moderation_status == PresetModerationStatus.APPROVED,
+            Preset.moderation_status.in_(PUBLIC_PRESET_STATUSES),
             Preset.is_official == True
         )
     )

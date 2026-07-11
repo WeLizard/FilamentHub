@@ -109,7 +109,9 @@ async def create_or_update_weighted_preset(
         weighted_preset.retraction_length = recommended_values.get('retraction_length')
         weighted_preset.retraction_speed = recommended_values.get('retraction_speed')
         weighted_preset.active = True
-        weighted_preset.moderation_status = PresetModerationStatus.APPROVED
+        # Генеративный пресет не проходит ручную модерацию — не выдаём его за APPROVED,
+        # но он остаётся видимым (PUBLIC_PRESET_STATUSES включает AUTO_GENERATED).
+        weighted_preset.moderation_status = PresetModerationStatus.AUTO_GENERATED
 
         await db.commit()
         await db.refresh(weighted_preset)
@@ -135,7 +137,7 @@ async def create_or_update_weighted_preset(
             is_official=False,
             is_weighted=True,  # Маркер взвешенного пресета
             active=True,
-            moderation_status=PresetModerationStatus.APPROVED,
+            moderation_status=PresetModerationStatus.AUTO_GENERATED,  # не авто-APPROVED (см. update-ветку)
             usage_count=0,
             rating=None,
             success_rate=None,
