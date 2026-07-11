@@ -2810,6 +2810,20 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                       </label>
                     </div>
 
+                    {/* Группа адгезивности (свойство материала, как в Orca) */}
+                    <div>
+                      <label className="block text-gray-300 mb-1 text-sm">{t('presetModal.adhesivenessCategory')}</label>
+                      <input
+                        type="number"
+                        value={filamentAdhesivenessCategory}
+                        onChange={(e) => { setFilamentAdhesivenessCategory(e.target.value === '' ? '' : Number(e.target.value)); }}
+                        min={0}
+                        step="1"
+                        placeholder="0"
+                        className="w-full px-3 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-gray-500 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all"
+                      />
+                    </div>
+
                     {/* Filament ramming length - это параметр мультитула, будет в вкладке "Дополнительно" */}
                     {/* Но в OrcaSlicer он показывается в "Профиль прутка", оставляем здесь */}
                     <div>
