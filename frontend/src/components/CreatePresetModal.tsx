@@ -18,6 +18,8 @@ import type { FilamentVisualSettings } from '../types/api';
 import { Dropdown } from './Dropdown';
 import { useClickOutside } from '../hooks/useClickOutside';
 import { ModalOverlay } from './ModalOverlay';
+import { RecommendedTempsField, EMPTY_RECOMMENDED_TEMPS } from './RecommendedTempsField';
+import type { RecommendedTemps } from './RecommendedTempsField';
 import { useDebounce } from '../hooks/useDebounce';
 import { ColorMaterialSection } from './ColorMaterialSection';
 import { HSLColorPicker } from './HSLColorPicker';
@@ -265,6 +267,7 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
   const [filamentPricePerKg, setFilamentPricePerKg] = useState<number | ''>('');
   const [filamentSpoolWeight, setFilamentSpoolWeight] = useState<number | ''>('');
   const [filamentPriceUnit, setFilamentPriceUnit] = useState<'per_kg' | 'per_spool'>('per_kg');
+  const [filamentRecTemps, setFilamentRecTemps] = useState<RecommendedTemps>(EMPTY_RECOMMENDED_TEMPS);
   const [filamentDescription, setFilamentDescription] = useState('');
   const [showFilamentForm, setShowFilamentForm] = useState(false); // true = создать новый, false = выбрать существующий
   const [filamentSearch, setFilamentSearch] = useState(''); // Поиск существующего филамента
@@ -823,6 +826,7 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
       setFilamentName('');
       setFilamentColorName('');
       setFilamentColorHex('#FF0000');
+      setFilamentRecTemps(EMPTY_RECOMMENDED_TEMPS);
       // Сброс расширенных визуальных эффектов
       setFilamentVisualColorType('single');
       setFilamentVisualColors(['#FF0000']);
@@ -1033,6 +1037,10 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
       density?: number;
       price_per_kg?: number;
       spool_weight?: number;
+      recommended_nozzle_temp_min?: number;
+      recommended_nozzle_temp_max?: number;
+      recommended_bed_temp_min?: number;
+      recommended_bed_temp_max?: number;
       price_display_unit?: 'per_kg' | 'per_spool';
       description?: string;
     }) => filamentsAPI.create(data),
@@ -1558,6 +1566,10 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                 : Number(filamentPricePerKg))
             : undefined,
           spool_weight: canCreateOfficial && filamentSpoolWeight !== '' ? Number(filamentSpoolWeight) : undefined,
+          recommended_nozzle_temp_min: filamentRecTemps.nozzleMin ?? undefined,
+          recommended_nozzle_temp_max: filamentRecTemps.nozzleMax ?? undefined,
+          recommended_bed_temp_min: filamentRecTemps.bedMin ?? undefined,
+          recommended_bed_temp_max: filamentRecTemps.bedMax ?? undefined,
           price_display_unit: canCreateOfficial ? filamentPriceUnit : undefined,
           description: filamentDescription.trim() || undefined,
         });
@@ -2455,6 +2467,9 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                       </div>
                     </div>
                   )}
+
+                  {/* Рекомендованный вендором диапазон температур (спека материала) */}
+                  <RecommendedTempsField value={filamentRecTemps} onChange={setFilamentRecTemps} />
 
                   {/* Описание филамента */}
                   <div>
