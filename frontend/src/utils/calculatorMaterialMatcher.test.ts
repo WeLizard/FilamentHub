@@ -50,6 +50,34 @@ describe('calculator material matcher', () => {
     expect(match).toBeNull();
   });
 
+  it('uses the slicer HEX color to disambiguate otherwise identical materials', () => {
+    const match = findBestMaterialMatch(
+      [
+        { id: 1, name: 'PETG', vendor: 'Acme', materialType: 'PETG', color: '#111827' },
+        { id: 2, name: 'PETG', vendor: 'Acme', materialType: 'PETG', color: '#CF17D9' },
+      ],
+      { name: 'Generic PETG @System', vendor: 'Generic', type: 'PETG', color: '#CF17D9' },
+      (item) => item,
+    );
+
+    expect(match?.item.id).toBe(2);
+    expect(match?.score).toBeGreaterThanOrEqual(13);
+  });
+
+  it('recognizes a close RGB shade without treating distant colors as equivalent', () => {
+    const closeScore = scoreMaterialCandidate(
+      { type: 'PLA', color: '#FF5A36' },
+      { name: 'Orange PLA', vendor: null, materialType: 'PLA', color: '#F95F3B' },
+    );
+    const distantScore = scoreMaterialCandidate(
+      { type: 'PLA', color: '#FF5A36' },
+      { name: 'Blue PLA', vendor: null, materialType: 'PLA', color: '#2563EB' },
+    );
+
+    expect(closeScore).toBe(9);
+    expect(distantScore).toBe(6);
+  });
+
   it('prefers a qualified user material over a stronger catalog candidate', () => {
     const match = findPrioritizedMaterialMatch(
       { name: 'PLA Basic', vendor: 'Acme', type: 'PLA' },

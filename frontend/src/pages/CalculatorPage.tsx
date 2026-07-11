@@ -2295,7 +2295,7 @@ export const CalculatorPage: React.FC = () => {
         name: spool.filament.name,
         vendor: spool.filament.brand_name,
         materialType: spool.filament.material_type,
-        color: spool.filament.color_name,
+        color: spool.filament.color_hex || spool.filament.color_name,
         spoolIds: [],
       };
       candidate.spoolIds.push(spool.id);
@@ -2330,7 +2330,7 @@ export const CalculatorPage: React.FC = () => {
             name: filament.name,
             vendor: filament.brand_name,
             materialType: filament.material_type,
-            color: filament.color_name,
+            color: filament.color_hex || filament.color_name,
           }),
         );
         const baseLine: CalculatorMaterialLineState = {
@@ -2442,7 +2442,7 @@ export const CalculatorPage: React.FC = () => {
         name: spool.filament.name,
         vendor: spool.filament.brand_name,
         materialType: spool.filament.material_type,
-        color: spool.filament.color_name,
+        color: spool.filament.color_hex || spool.filament.color_name,
         spoolIds: [],
       };
       candidate.spoolIds.push(spool.id);
@@ -2458,7 +2458,7 @@ export const CalculatorPage: React.FC = () => {
         name: filament.name,
         vendor: filament.brand_name,
         materialType: filament.material_type,
-        color: filament.color_name,
+        color: filament.color_hex || filament.color_name,
       }),
     );
 

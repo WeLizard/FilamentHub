@@ -2087,8 +2087,8 @@
   },
   "calculator": {
     "proBadge": "高级版",
-    "title": "3D 打印订单与报价",
-    "subtitle": "上传 G-code，核对材料和机器时间，计算订单价格并准备客户报价。",
+    "title": "计算 3D 打印订单价格",
+    "subtitle": "上传 G-code——FilamentHub 将提取打印时间和材料用量，帮助定价并准备客户报价。",
     "workspaceSavedEstimates": "已保存估算",
     "workspaceQuoteDraft": "报价草稿项目",
     "workspaceCurrentJobs": "进行中的任务",

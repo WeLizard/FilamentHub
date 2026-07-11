@@ -54,6 +54,45 @@ const countSharedTokens = (left: string[], right: string[]): number => {
   return left.reduce((count, token) => count + (rightSet.has(token) ? 1 : 0), 0);
 };
 
+const parseHexColor = (value: string | null | undefined): [number, number, number] | null => {
+  const compact = (value ?? '').trim().replace(/^#/, '');
+  const rgb = compact.length === 8 ? compact.slice(0, 6) : compact;
+  if (!/^[0-9a-f]{6}$/i.test(rgb)) {
+    return null;
+  }
+
+  return [
+    Number.parseInt(rgb.slice(0, 2), 16),
+    Number.parseInt(rgb.slice(2, 4), 16),
+    Number.parseInt(rgb.slice(4, 6), 16),
+  ];
+};
+
+const scoreMaterialColor = (
+  parsedColorValue: string | null | undefined,
+  candidateColorValue: string | null | undefined,
+): number => {
+  const parsedRgb = parseHexColor(parsedColorValue);
+  const candidateRgb = parseHexColor(candidateColorValue);
+
+  if (parsedRgb && candidateRgb) {
+    const distance = Math.sqrt(
+      parsedRgb.reduce(
+        (sum, component, index) => sum + (component - candidateRgb[index]) ** 2,
+        0,
+      ),
+    );
+    if (distance <= 4) return 5;
+    if (distance <= 35) return 3;
+    if (distance <= 80) return 1;
+    return 0;
+  }
+
+  const parsedColor = normalizeMaterialText(parsedColorValue);
+  const candidateColor = normalizeMaterialText(candidateColorValue);
+  return parsedColor && candidateColor && parsedColor === candidateColor ? 3 : 0;
+};
+
 export const scoreMaterialCandidate = (
   parsed: CalculatorParsedMaterial,
   candidate: MaterialCandidateFields,
@@ -66,8 +105,6 @@ export const scoreMaterialCandidate = (
   const candidateVendor = normalizeMaterialText(candidate.vendor);
   const parsedName = normalizeMaterialText(parsed.name);
   const candidateName = normalizeMaterialText(candidate.name);
-  const parsedColor = normalizeMaterialText(parsed.color);
-  const candidateColor = normalizeMaterialText(candidate.color);
 
   if (parsedType && candidateType) {
     if (parsedType === candidateType) {
@@ -98,9 +135,7 @@ export const scoreMaterialCandidate = (
     }
   }
 
-  if (parsedColor && candidateColor && parsedColor === candidateColor) {
-    score += 1;
-  }
+  score += scoreMaterialColor(parsed.color, candidate.color);
 
   return score;
 };

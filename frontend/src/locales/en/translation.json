@@ -2090,8 +2090,8 @@
   },
   "calculator": {
     "proBadge": "Premium",
-    "title": "3D printing jobs and quotes",
-    "subtitle": "Upload G-code, review materials and machine time, price the job, and prepare a client proposal.",
+    "title": "Price a 3D printing job",
+    "subtitle": "Upload G-code — FilamentHub will extract machine time and material usage, help set the price, and prepare a client quote.",
     "workspaceSavedEstimates": "Saved estimates",
     "workspaceQuoteDraft": "Draft line items",
     "workspaceCurrentJobs": "Jobs in progress",
