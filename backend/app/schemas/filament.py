@@ -117,10 +117,8 @@ class FilamentPresetSummary(BaseModel):
     is_weighted: bool = False
     extruder_temp: float | None = None
     bed_temp: float | None = None
-    print_speed: float | None = None
     fan_speed: float | None = None
     flow_rate: float | None = None
-    layer_height: float | None = None
     rating: float | None = None
     success_rate: float | None = None
     updated_at: datetime | None = None

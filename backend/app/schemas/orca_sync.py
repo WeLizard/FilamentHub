@@ -153,15 +153,9 @@ class OrcaFilamentPresetPayload(BaseModel):
         description="Родительский пресет из OrcaSlicer (например, 'Generic PLA @System'). Используется для определения material_type.",
     )
 
-    # Базовые параметры печати
+    # Базовые параметры печати (material scope; process-скорости/высоты слоёв на пресете нет)
     extruder_temp: float | None = Field(default=None, description="Температура экструдера (°C).")
     bed_temp: float | None = Field(default=None, description="Температура стола (°C).")
-    print_speed: float | None = Field(default=None, description="Скорость печати (мм/с).")
-    travel_speed: float | None = Field(default=None, description="Скорость перемещения (мм/с).")
-
-    # Advanced settings (optional)
-    layer_height: float | None = Field(default=None, description="Высота слоя (мм).")
-    first_layer_height: float | None = Field(default=None, description="Высота первого слоя (мм).")
     flow_rate: float | None = Field(default=None, description="Поток материала (%).")
     fan_speed: int | None = Field(default=None, ge=0, le=100, description="Скорость вентилятора (0-100%).")
     retraction_length: float | None = Field(default=None, description="Длина ретракции (мм).")
