@@ -186,9 +186,17 @@ async def get_material_preset(
     result = await db.execute(query)
     mapping = result.scalar_one_or_none()
 
+    if mapping and mapping.orcaslicer_preset and mapping.orcaslicer_preset.strip():
+        preset = mapping.orcaslicer_preset.strip()
+        logger.debug(f"MaterialMapping found: {material_type} -> {preset} (priority: {mapping.priority.value})")
+        return preset
     if mapping:
-        logger.debug(f"MaterialMapping found: {material_type} -> {mapping.orcaslicer_preset} (priority: {mapping.priority.value})")
-        return mapping.orcaslicer_preset
+        # Пустой orcaslicer_preset дал бы неразрешимый inherits в экспорте — игнорируем маппинг
+        # и падаем в системный generic ниже (для не-плагинного/ручного импорта бэкенд — последняя защита).
+        logger.warning(
+            f"MaterialMapping for '{material_type}' has empty orcaslicer_preset — "
+            "ignoring and falling back to base mapping"
+        )
 
     # 2. Проверяем базовый маппинг
     if material_type_upper in BASE_MATERIAL_MAP:
