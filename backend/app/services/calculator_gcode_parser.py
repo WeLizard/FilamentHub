@@ -42,6 +42,9 @@ _CURA_SETTING_RE = re.compile(r"^SETTING_3\s+(.*)$", re.IGNORECASE)
 _FLOAT_RE = re.compile(r"-?\d+(?:\.\d+)?")
 _OBJECT_CENTER_RE = re.compile(r"\bCENTER=([-\d.]+),([-\d.]+)", re.IGNORECASE)
 _OBJECT_NAME_RE = re.compile(r"\bNAME=([^\s]+)", re.IGNORECASE)
+_EXCLUDE_OBJECT_START_RE = re.compile(r"^EXCLUDE_OBJECT_START\b.*?\bNAME=([^\s]+)", re.IGNORECASE)
+_EXCLUDE_OBJECT_END_RE = re.compile(r"^EXCLUDE_OBJECT_END\b", re.IGNORECASE)
+_OBJECT_INSTANCE_SUFFIX_RE = re.compile(r"(?:_id_\d+)?(?:_copy_\d+)?$", re.IGNORECASE)
 _PRINT_START_PARAMETER_RE = re.compile(r"\b(EXTRUDER|BED)=([\d.]+)", re.IGNORECASE)
 _NOZZLE_TEMPERATURE_COMMAND_RE = re.compile(r"^M10(?:4|9)\s+S([\d.]+)", re.IGNORECASE)
 _BED_TEMPERATURE_COMMAND_RE = re.compile(r"^M1(?:4|9)0\s+S([\d.]+)", re.IGNORECASE)
@@ -116,6 +119,7 @@ def _parse_plain_gcode_payload(file_name: str, raw_bytes: bytes) -> dict[str, An
         "bed_temperature_first_layer_c": None,
         "bed_temperature_other_layers_c": None,
         "object_count": 0,
+        "object_groups": [],
         "total_layers": None,
         "max_z_height_mm": None,
         "support_type": None,
@@ -213,6 +217,7 @@ def _parse_plain_gcode_payload(file_name: str, raw_bytes: bytes) -> dict[str, An
     if collector["support_roles"]:
         parsed["support_used"] = True
 
+    _finalize_objects(parsed, collector)
     _finalize_materials(parsed, collector)
     _apply_extrusion_role_usage(parsed, lines)
     _finalize_totals(parsed)
@@ -903,20 +908,50 @@ def _collect_temperature_command_metadata(parsed: dict[str, Any], line: str) -> 
 
 
 def _collect_object_metadata(parsed: dict[str, Any], collector: dict[str, Any], line: str) -> None:
-    center_match = _OBJECT_CENTER_RE.search(line)
-    if center_match:
-        collector["object_centers"].add((center_match.group(1), center_match.group(2)))
-        parsed["object_count"] = len(collector["object_centers"])
-        return
-
     name_match = _OBJECT_NAME_RE.search(line)
     if name_match:
         collector["object_names"].add(name_match.group(1))
-        if not collector["object_centers"]:
-            parsed["object_count"] = len(collector["object_names"])
+
+    center_match = _OBJECT_CENTER_RE.search(line)
+    if center_match:
+        collector["object_centers"].add((center_match.group(1), center_match.group(2)))
+
+    if collector["object_names"]:
+        # Different objects can intentionally share a center, so NAME is the
+        # stable instance identity and must win over de-duplicated coordinates.
+        parsed["object_count"] = len(collector["object_names"])
+    elif collector["object_centers"]:
+        parsed["object_count"] = len(collector["object_centers"])
+    else:
+        parsed["object_count"] += 1
+
+
+def _normalize_object_group_name(raw_name: str) -> str:
+    without_instance = _OBJECT_INSTANCE_SUFFIX_RE.sub("", raw_name).strip("_ ")
+    without_extension = re.sub(
+        r"\.(?:stl|step|stp|obj|3mf)$",
+        "",
+        without_instance,
+        flags=re.IGNORECASE,
+    )
+    normalized = re.sub(r"_+", " ", without_extension).strip()
+    return (normalized or raw_name)[:255]
+
+
+def _finalize_objects(parsed: dict[str, Any], collector: dict[str, Any]) -> None:
+    if not collector["object_names"]:
         return
 
-    parsed["object_count"] += 1
+    grouped: dict[str, int] = {}
+    for raw_name in collector["object_names"]:
+        group_name = _normalize_object_group_name(raw_name)
+        grouped[group_name] = grouped.get(group_name, 0) + 1
+
+    parsed["object_count"] = len(collector["object_names"])
+    parsed["object_groups"] = [
+        {"name": name, "count": count, "extrusion_share": None}
+        for name, count in sorted(grouped.items(), key=lambda item: item[0].casefold())
+    ]
 
 
 def _finalize_materials(parsed: dict[str, Any], collector: dict[str, Any]) -> None:
@@ -1046,9 +1081,11 @@ def _apply_extrusion_role_usage(parsed: dict[str, Any], lines: list[str]) -> Non
     relative_extrusion = False
     current_tool = 0
     current_role = "unclassified"
+    current_object: str | None = None
     last_absolute_e: dict[int, float] = {}
     retraction_debt: dict[int, float] = {}
     extrusion_by_tool_role: dict[int, dict[str, float]] = {}
+    extrusion_by_tool_object: dict[int, dict[str, float]] = {}
 
     for raw_line in lines:
         stripped = raw_line.strip()
@@ -1069,6 +1106,14 @@ def _apply_extrusion_role_usage(parsed: dict[str, Any], lines: list[str]) -> Non
             continue
         if upper_command == "M83":
             relative_extrusion = True
+            continue
+
+        object_start_match = _EXCLUDE_OBJECT_START_RE.match(command)
+        if object_start_match:
+            current_object = object_start_match.group(1)
+            continue
+        if _EXCLUDE_OBJECT_END_RE.match(command):
+            current_object = None
             continue
 
         tool_match = _TOOL_CHANGE_RE.match(command)
@@ -1108,6 +1153,9 @@ def _apply_extrusion_role_usage(parsed: dict[str, Any], lines: list[str]) -> Non
 
         tool_roles = extrusion_by_tool_role.setdefault(current_tool, {})
         tool_roles[current_role] = tool_roles.get(current_role, 0.0) + consumed
+        if current_object is not None:
+            tool_objects = extrusion_by_tool_object.setdefault(current_tool, {})
+            tool_objects[current_object] = tool_objects.get(current_object, 0.0) + consumed
 
     if not extrusion_by_tool_role or not parsed["materials"]:
         return
@@ -1117,6 +1165,7 @@ def _apply_extrusion_role_usage(parsed: dict[str, Any], lines: list[str]) -> Non
     single_material_fallback = len(materials) == 1 and len(role_tools) == 1
     total_infill_weight = 0.0
     total_support_weight = 0.0
+    object_group_weights: dict[str, float] = {}
     resolved_any = False
 
     for material in materials:
@@ -1144,11 +1193,24 @@ def _apply_extrusion_role_usage(parsed: dict[str, Any], lines: list[str]) -> Non
         material["support_weight_g"] = round(support_weight, 3)
         total_infill_weight += infill_weight
         total_support_weight += support_weight
+        for raw_object_name, object_extrusion in extrusion_by_tool_object.get(role_tool, {}).items():
+            group_name = _normalize_object_group_name(raw_object_name)
+            object_group_weights[group_name] = (
+                object_group_weights.get(group_name, 0.0)
+                + object_extrusion * grams_per_extrusion_mm
+            )
         resolved_any = True
 
     if resolved_any:
         parsed["infill_filament_weight_g"] = round(total_infill_weight, 3)
         parsed["support_filament_weight_g"] = round(total_support_weight, 3)
+    total_object_weight = sum(object_group_weights.values())
+    if total_object_weight > 0:
+        for group in parsed.get("object_groups", []):
+            group["extrusion_share"] = round(
+                object_group_weights.get(group["name"], 0.0) / total_object_weight,
+                6,
+            )
 
 
 def _finalize_totals(parsed: dict[str, Any]) -> None:

@@ -2467,6 +2467,8 @@
       "addedToQuote": "Позиция добавлена в КП",
       "quoteItemsCount": "Позиций в КП",
       "quoteItemsList": "Позиции КП",
+      "quoteItemName": "Название изделия",
+      "quoteItemNamePlaceholder": "Например: Изделие 1",
       "quoteClearAll": "Очистить всё",
       "openQuoteBuilder": "Открыть коммерческое предложение",
       "quoteBuilderTitle": "Коммерческое предложение",

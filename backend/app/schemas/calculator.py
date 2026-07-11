@@ -316,6 +316,19 @@ class CalculatorParsedMaterial(BaseModel):
     )
 
 
+class CalculatorParsedObjectGroup(BaseModel):
+    """Instances of one model name found in EXCLUDE_OBJECT metadata."""
+
+    name: str = Field(..., min_length=1, max_length=255)
+    count: int = Field(..., ge=1)
+    extrusion_share: float | None = Field(
+        None,
+        ge=0,
+        le=1,
+        description="Доля экструзии именованных объектов, используемая для распределения задания",
+    )
+
+
 class CalculatorGcodeParseResponse(BaseModel):
     """Schema for parsed G-code metadata used by Calculator Pro."""
 
@@ -361,6 +374,10 @@ class CalculatorGcodeParseResponse(BaseModel):
     bed_temperature_first_layer_c: float | None = Field(None, ge=0, description="Температура стола первого слоя")
     bed_temperature_other_layers_c: float | None = Field(None, ge=0, description="Температура стола остальных слоёв")
     object_count: int | None = Field(None, ge=0, description="Количество объектов в задании")
+    object_groups: list[CalculatorParsedObjectGroup] = Field(
+        default_factory=list,
+        description="Группы экземпляров по имени из EXCLUDE_OBJECT_DEFINE",
+    )
     total_layers: int | None = Field(None, ge=0, description="Общее количество слоёв")
     max_z_height_mm: float | None = Field(None, ge=0, description="Максимальная высота модели по Z")
     support_type: str | None = Field(None, description="Тип поддержек")

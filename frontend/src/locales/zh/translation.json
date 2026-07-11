@@ -2335,6 +2335,8 @@
     "addedToQuote": "项目已添加到报价",
     "quoteItemsCount": "报价中的项目",
     "quoteItemsList": "报价项目",
+    "quoteItemName": "产品名称",
+    "quoteItemNamePlaceholder": "例如：产品 1",
     "quoteClearAll": "清空所有",
     "openQuoteBuilder": "打开商业报价",
     "quoteBuilderTitle": "商业报价",

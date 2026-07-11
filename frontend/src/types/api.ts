@@ -739,6 +739,12 @@ export interface CalculatorParsedMaterial {
   support_weight_g?: number | null;
 }
 
+export interface CalculatorParsedObjectGroup {
+  name: string;
+  count: number;
+  extrusion_share?: number | null;
+}
+
 export interface CalculatorGcodeParseResponse {
   file_name: string;
   file_size_bytes: number;
@@ -770,6 +776,7 @@ export interface CalculatorGcodeParseResponse {
   bed_temperature_first_layer_c?: number | null;
   bed_temperature_other_layers_c?: number | null;
   object_count?: number | null;
+  object_groups?: CalculatorParsedObjectGroup[];
   total_layers?: number | null;
   max_z_height_mm?: number | null;
   support_type?: string | null;

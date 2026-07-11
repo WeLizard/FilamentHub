@@ -39,6 +39,7 @@ import {
   pickPrimaryParsedMaterial,
   type MaterialMatchConfidence,
 } from '../utils/calculatorMaterialMatcher';
+import { allocateRoundedTotal, quoteTitleFromFileName } from '../utils/calculatorQuote';
 import { safeStorage } from '../utils/storage';
 import type {
   CalculatorEstimateRequest,
@@ -877,39 +878,140 @@ interface BuildQuoteHtmlParams {
   quoteNumber?: string;
 }
 
-const buildQuoteLineItems = (
+export const buildQuoteLineItems = (
   t: TFunction,
   form: CalculatorFormState,
   result: CalculatorEstimateResponse,
   parsedGcode: CalculatorGcodeParseResponse | null,
   selectedFilament: MaterialSelectionSnapshot | null,
+  parsedJobs: ParsedJobState[] = [],
+  materialLines: CalculatorMaterialLineState[] = [],
 ): QuoteLineItem[] => {
-  const itemTitle = parsedGcode?.file_name || t('profilePage.calculator.quoteDefaultItemTitle');
-  const details = [
-    selectedFilament ? buildFilamentLabel(selectedFilament) : null,
-    parsedGcode?.slicer_name ? `${t('profilePage.calculator.quoteSlicer')}: ${[parsedGcode.slicer_name, parsedGcode.slicer_version].filter(Boolean).join(' ')}` : null,
-    form.weightG > 0 ? `${t('profilePage.calculator.quoteWeight')}: ${form.weightG.toFixed(2)} ${t('profilePage.calculator.grams')}` : null,
-    toHours(form.timeHours, form.timeMinutes, form.timeSec) > 0
-      ? `${t('profilePage.calculator.quotePrintTime')}: ${formatHoursShort(
-          toHours(form.timeHours, form.timeMinutes, form.timeSec),
-          t('profilePage.calc.h'),
-          t('profilePage.calc.min'),
-        )}`
-      : null,
-  ].filter(Boolean) as string[];
-
   const quantity = Math.max(1, result.quantity);
-  const unitPrice = quantity > 0 ? result.cost_total / quantity : result.cost_total;
+  const fallbackTitle = t('profilePage.calculator.quoteDefaultItemTitle');
+  const jobs = parsedJobs.length > 0
+    ? parsedJobs
+    : parsedGcode
+      ? [{ key: 'single-job', parsed: parsedGcode }]
+      : [];
 
-  return [
-    {
-      title: itemTitle,
+  if (jobs.length === 0) {
+    const details = [
+      selectedFilament ? buildFilamentLabel(selectedFilament) : null,
+      form.weightG > 0
+        ? `${t('profilePage.calculator.quoteWeight')}: ${form.weightG.toFixed(2)} ${t('profilePage.calculator.grams')}`
+        : null,
+      toHours(form.timeHours, form.timeMinutes, form.timeSec) > 0
+        ? `${t('profilePage.calculator.quotePrintTime')}: ${formatHoursShort(
+            toHours(form.timeHours, form.timeMinutes, form.timeSec),
+            t('profilePage.calc.h'),
+            t('profilePage.calc.min'),
+          )}`
+        : null,
+    ].filter(Boolean) as string[];
+    const totalPrice = result.cost_final || result.cost_total;
+    return [{
+      title: quoteTitleFromFileName(parsedGcode?.file_name ?? '', fallbackTitle),
       details,
       quantity,
-      unitPrice,
-      totalPrice: result.cost_total,
-    },
-  ];
+      unitPrice: totalPrice / quantity,
+      totalPrice,
+    }];
+  }
+
+  const totalPrintSeconds = jobs.reduce(
+    (sum, job) => sum + (job.parsed.print_time_seconds ?? 0),
+    0,
+  );
+  const totalWeightG = jobs.reduce(
+    (sum, job) => sum + (job.parsed.total_filament_weight_g ?? 0),
+    0,
+  );
+  const timeDrivenCost =
+    result.cost_electricity
+    + result.cost_printing
+    + result.cost_amortization
+    + (result.cost_monitoring ?? 0);
+  const weightDrivenCost = (result.cost_waste ?? 0) + (result.cost_nozzle_wear ?? 0);
+  const materialCostsByJob = new Map<string, number>();
+  for (const lineCost of result.material_line_costs ?? []) {
+    if (!lineCost.job_key) continue;
+    materialCostsByJob.set(
+      lineCost.job_key,
+      (materialCostsByJob.get(lineCost.job_key) ?? 0) + lineCost.cost,
+    );
+  }
+
+  const drafts = jobs.map((job, index) => {
+    const parsed = job.parsed;
+    const homogeneousObjectGroup = parsed.object_groups?.length === 1
+      ? parsed.object_groups[0]
+      : null;
+    const objectInstances = Math.max(1, homogeneousObjectGroup?.count ?? 1);
+    const lineQuantity = quantity * objectInstances;
+    const materialNames = Array.from(new Set(
+      parsed.materials
+        .filter((material) => (material.weight_g ?? 0) > 0 || parsed.materials.length === 1)
+        .map((material) => {
+          const materialName = material.type || material.name || material.settings_id;
+          if (!materialName) return null;
+          const vendor = material.vendor && material.vendor.toLocaleLowerCase() !== 'generic'
+            ? material.vendor
+            : null;
+          return [vendor, materialName].filter(Boolean).join(' ');
+        })
+        .filter((value): value is string => Boolean(value)),
+    ));
+    if (materialNames.length === 0) {
+      materialNames.push(...Array.from(new Set(
+        materialLines
+          .filter((line) => line.job_key === job.key && Boolean(line.label))
+          .map((line) => line.label!),
+      )));
+    }
+
+    const jobWeightG = parsed.total_filament_weight_g ?? 0;
+    const jobPrintSeconds = parsed.print_time_seconds ?? 0;
+    const details = [
+      materialNames.length > 0 ? materialNames.join(' / ') : null,
+      jobWeightG > 0
+        ? `${t('profilePage.calculator.quoteWeight')}: ${(jobWeightG * quantity).toFixed(2)} ${t('profilePage.calculator.grams')}`
+        : null,
+      jobPrintSeconds > 0
+        ? `${t('profilePage.calculator.quotePrintTime')}: ${formatHoursShort(
+            (jobPrintSeconds * quantity) / 3600,
+            t('profilePage.calc.h'),
+            t('profilePage.calc.min'),
+          )}`
+        : null,
+    ].filter(Boolean) as string[];
+    const materialCost = materialCostsByJob.get(job.key)
+      ?? (jobs.length === 1 ? result.cost_material : 0);
+    const score = materialCost
+      + (totalPrintSeconds > 0 ? timeDrivenCost * (jobPrintSeconds / totalPrintSeconds) : 0)
+      + (totalWeightG > 0 ? weightDrivenCost * (jobWeightG / totalWeightG) : 0);
+    const plateSuffix = parsed.plate_index != null
+      ? ` · ${t('profilePage.calculator.parsedPlateOption', { index: parsed.plate_index })}`
+      : '';
+    const defaultTitle = homogeneousObjectGroup && homogeneousObjectGroup.count > 1
+      ? homogeneousObjectGroup.name
+      : `${quoteTitleFromFileName(parsed.file_name, `${fallbackTitle} ${index + 1}`)}${plateSuffix}`;
+
+    return { title: defaultTitle, details, quantity: lineQuantity, score };
+  });
+
+  const allocatedTotals = allocateRoundedTotal(
+    result.cost_final || result.cost_total,
+    drafts.map((draft) => draft.score),
+  );
+
+  return drafts.map((draft, index) => ({
+    title: draft.title,
+    details: draft.details,
+    quantity: draft.quantity,
+    unitPrice: allocatedTotals[index] / draft.quantity,
+    totalPrice: allocatedTotals[index],
+  }));
 };
 
 const buildQuoteIncludedItems = (t: TFunction, result: CalculatorEstimateResponse): string[] => {
@@ -1817,19 +1919,35 @@ export const CalculatorPage: React.FC = () => {
 
   const handleAddToQuote = () => {
     if (!result) return;
-    const lineItems = buildQuoteLineItems(t, form, result, parsedGcode, selectedMaterial);
+    const lineItems = buildQuoteLineItems(
+      t,
+      form,
+      result,
+      parsedGcode,
+      selectedMaterial,
+      parsedJobs,
+      materialLines,
+    );
     const included = buildQuoteIncludedItems(t, result);
-    const newItem: QuoteItem = {
+    const newItems = lineItems.map((lineItem) => ({
       id: crypto.randomUUID(),
-      lineItem: lineItems[0],
+      lineItem,
       includedItems: included,
-    };
-    setQuoteItems((prev) => [...prev, newItem]);
+    }));
+    setQuoteItems((prev) => [...prev, ...newItems]);
     setHistoryFeedback({ kind: 'success', message: tc('addedToQuote') });
   };
 
   const handleRemoveFromQuote = (id: string) => {
     setQuoteItems((prev) => prev.filter((item) => item.id !== id));
+  };
+
+  const handleRenameQuoteItem = (id: string, title: string) => {
+    setQuoteItems((prev) => prev.map((item) => (
+      item.id === id
+        ? { ...item, lineItem: { ...item.lineItem, title } }
+        : item
+    )));
   };
 
   const buildQuoteHtmlParams = (quoteNumber: string): BuildQuoteHtmlParams => {
@@ -1842,9 +1960,17 @@ export const CalculatorPage: React.FC = () => {
       includedItems = [...new Set(quoteItems.flatMap((qi) => qi.includedItems))];
       grandTotal = items.reduce((sum, item) => sum + item.totalPrice, 0);
     } else if (result) {
-      items = buildQuoteLineItems(t, form, result, parsedGcode, selectedMaterial);
+      items = buildQuoteLineItems(
+        t,
+        form,
+        result,
+        parsedGcode,
+        selectedMaterial,
+        parsedJobs,
+        materialLines,
+      );
       includedItems = buildQuoteIncludedItems(t, result);
-      grandTotal = result.cost_total;
+      grandTotal = result.cost_final || result.cost_total;
     } else {
       items = [];
       includedItems = [];
@@ -1859,6 +1985,22 @@ export const CalculatorPage: React.FC = () => {
       ...prev,
       ...quoteProfile,
     }));
+    if (quoteItems.length === 0 && result) {
+      const included = buildQuoteIncludedItems(t, result);
+      setQuoteItems(buildQuoteLineItems(
+        t,
+        form,
+        result,
+        parsedGcode,
+        selectedMaterial,
+        parsedJobs,
+        materialLines,
+      ).map((lineItem) => ({
+        id: crypto.randomUUID(),
+        lineItem,
+        includedItems: included,
+      })));
+    }
     setQuoteModalOpen(true);
   };
 
@@ -2397,6 +2539,7 @@ export const CalculatorPage: React.FC = () => {
         result={result}
         quoteItems={quoteItems}
         onRemoveFromQuote={handleRemoveFromQuote}
+        onRenameQuoteItem={handleRenameQuoteItem}
         onClearQuoteItems={() => setQuoteItems([])}
         onClose={() => setQuoteModalOpen(false)}
         onPartyChange={(field, value) => {
@@ -3553,6 +3696,12 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
                         label={tc('parsedLayers')}
                         value={parsedGcode.total_layers != null ? String(parsedGcode.total_layers) : '—'}
                       />
+                      {parsedGcode.object_count != null ? (
+                        <CompactMetric
+                          label={tc('parsedObjectCount')}
+                          value={String(parsedGcode.object_count)}
+                        />
+                      ) : null}
                       <CompactMetric
                         label={tc('parsedMaxHeight')}
                         value={parsedGcode.max_z_height_mm != null ? `${parsedGcode.max_z_height_mm} mm` : '—'}
@@ -4176,6 +4325,7 @@ interface QuoteModalProps {
   result: CalculatorEstimateResponse | null;
   quoteItems: QuoteItem[];
   onRemoveFromQuote: (id: string) => void;
+  onRenameQuoteItem: (id: string, title: string) => void;
   onClearQuoteItems: () => void;
   onClose: () => void;
   onPartyChange: <K extends keyof QuotePartyFormState>(field: K, value: QuotePartyFormState[K]) => void;
@@ -4195,6 +4345,7 @@ const QuoteModal: React.FC<QuoteModalProps> = ({
   result,
   quoteItems,
   onRemoveFromQuote,
+  onRenameQuoteItem,
   onClearQuoteItems,
   onClose,
   onPartyChange,
@@ -4410,10 +4561,16 @@ const QuoteModal: React.FC<QuoteModalProps> = ({
                     {quoteItems.map((qi, idx) => (
                       <li key={qi.id} className="flex items-start justify-between gap-3 rounded-xl border border-white/5 bg-white/5 px-4 py-3">
                         <div className="min-w-0 flex-1">
-                          <p className="text-sm font-medium text-white">
-                            <span className="mr-2 text-slate-400">{idx + 1}.</span>
-                            {qi.lineItem.title}
-                          </p>
+                          <label className="flex items-center gap-2 text-xs text-slate-400">
+                            <span className="shrink-0">{idx + 1}.</span>
+                            <span className="sr-only">{tc('quoteItemName')}</span>
+                            <input
+                              value={qi.lineItem.title}
+                              onChange={(event) => onRenameQuoteItem(qi.id, event.target.value)}
+                              className="min-w-0 flex-1 rounded-xl border border-white/10 bg-slate-950/50 px-3 py-2 text-sm font-medium text-white outline-none transition focus:border-cyan-400/50 focus:ring-2 focus:ring-cyan-400/20"
+                              placeholder={tc('quoteItemNamePlaceholder')}
+                            />
+                          </label>
                           {qi.lineItem.details.length > 0 && (
                             <p className="mt-1 truncate text-xs text-slate-400">{qi.lineItem.details.join(' · ')}</p>
                           )}

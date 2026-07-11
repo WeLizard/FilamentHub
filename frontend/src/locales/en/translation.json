@@ -2338,6 +2338,8 @@
     "addedToQuote": "Item added to quote",
     "quoteItemsCount": "Items in quote",
     "quoteItemsList": "Quote items",
+    "quoteItemName": "Item name",
+    "quoteItemNamePlaceholder": "For example: Item 1",
     "quoteClearAll": "Clear all",
     "openQuoteBuilder": "Open commercial offer",
     "quoteBuilderTitle": "Commercial offer",
