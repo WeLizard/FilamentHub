@@ -201,6 +201,11 @@ async def preset_to_orcaslicer_json(
         profile["eng_plate_temp_initial_layer"] = to_array(bed_temp)
         profile["textured_plate_temp"] = to_array(bed_temp)
         profile["textured_plate_temp_initial_layer"] = to_array(bed_temp)
+        # Новые типы пластин Orca (supertack PEI, текстурированная холодная)
+        profile["supertack_plate_temp"] = to_array(bed_temp)
+        profile["supertack_plate_temp_initial_layer"] = to_array(bed_temp)
+        profile["textured_cool_plate_temp"] = to_array(bed_temp)
+        profile["textured_cool_plate_temp_initial_layer"] = to_array(bed_temp)
 
     # Вентилятор
     if preset.fan_speed is not None:

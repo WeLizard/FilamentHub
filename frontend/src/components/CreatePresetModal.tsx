@@ -1256,6 +1256,9 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
     addParam('cool_plate_temp_initial_layer', bedInitialTemp);
     addParam('eng_plate_temp_initial_layer', bedInitialTemp);
     addParam('textured_plate_temp_initial_layer', bedInitialTemp);
+    // Новые типы пластин Orca (supertack PEI, текстурированная холодная)
+    addParam('supertack_plate_temp_initial_layer', bedInitialTemp);
+    addParam('textured_cool_plate_temp_initial_layer', bedInitialTemp);
     addParam('idle_temperature', idleTemperature); // Температура ожидания
     addParam('temperature_vitrification', softeningTemperature); // Температура витрификации (размягчения)
     addParam('chamber_temperature', chamberTemp);
