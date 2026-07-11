@@ -88,8 +88,17 @@ async def create_or_update_weighted_preset(
     # Формируем название: "{Название материала} Gen"
     preset_name = f"{filament.name} Gen"
 
-    # Описание
-    preset_description = f"Генеративно вычисляется на основе {recommended_values['presets_count']} пресетов для этого материала"
+    # Описание с меткой уверенности по размеру выборки (мудрость толпы растёт с объёмом)
+    _confidence_ru = {
+        "low": "предварительная оценка",
+        "medium": "средняя уверенность",
+        "high": "высокая уверенность",
+    }
+    confidence_label = _confidence_ru.get(recommended_values.get("confidence", "low"), "предварительная оценка")
+    preset_description = (
+        f"Генеративно на основе {recommended_values['presets_count']} пресетов "
+        f"для этого материала · {confidence_label}"
+    )
 
     if weighted_preset:
         # Обновляем существующий взвешенный пресет

@@ -1,9 +1,9 @@
 """
-Preset recommender service (weighted average algorithm).
+Preset recommender service («мудрость толпы» через взвешенную медиану).
 
 Применяет:
-- Закон больших чисел: взвешенное среднее стремится к истинному значению при увеличении выборки
-- Метод Ферми: оценка недостающих данных через порядки величин и приближения
+- Взвешенную медиану: робастную к выбросам/опечаткам оценку центра по выборке пресетов
+- Метку уверенности: качество оценки растёт с размером выборки (малая выборка — предварительно)
 """
 
 from sqlalchemy import or_, select
@@ -37,21 +37,40 @@ def calculate_preset_weight(preset: Preset) -> float:
     return base_weight * usage_factor * official_bonus
 
 
-def weighted_average_optional(values_and_weights: list[tuple[float, float]]) -> float | None:
+def weighted_median(values_and_weights: list[tuple[float | None, float]]) -> float | None:
+    """Взвешенная медиана — робастный оценщик «мудрости толпы».
+
+    В отличие от взвешенного среднего, пара выбросов/опечаток (например кто-то
+    вписал 260 °C для PLA) не тянет результат: берём значение, на котором
+    накопленный вес впервые достигает половины суммарного. None — если нет
+    пригодных значений.
     """
-    Вычислить weighted average для опциональных параметров.
+    pairs = sorted(
+        ((v, w) for v, w in values_and_weights if v is not None and w > 0),
+        key=lambda vw: vw[0],
+    )
+    if not pairs:
+        return None
+    half = sum(w for _, w in pairs) / 2
+    cumulative = 0.0
+    for value, weight in pairs:
+        cumulative += weight
+        if cumulative >= half:
+            return value
+    return pairs[-1][0]
 
-    Возвращает None если нет значений.
+
+def confidence_from_sample_size(n: int) -> str:
+    """Уверенность оценки по размеру выборки (мудрость толпы включается на объёме).
+
+    Малая выборка — «предварительно»; большая — «уверенно». Не выдаём грубую
+    оценку по 4 пресетам за истину.
     """
-    filtered = [(v, w) for v, w in values_and_weights if v is not None]
-    if not filtered:
-        return None
-
-    total_weight = sum(w for _, w in filtered)
-    if total_weight == 0:
-        return None
-
-    return sum(v * w for v, w in filtered) / total_weight
+    if n >= 20:
+        return "high"
+    if n >= 8:
+        return "medium"
+    return "low"
 
 
 async def get_recommended_preset_values(
@@ -61,18 +80,16 @@ async def get_recommended_preset_values(
     """
     Получить рекомендованные значения настроек для материала.
 
-    Применяет закон больших чисел через weighted average:
-    - Чем больше пресетов, тем точнее результат
-    - Взвешенное среднее стремится к истинному значению при n → ∞
-
-    Применяет метод Ферми для оценки недостающих данных:
-    - Оценка через порядки величин
-    - Минимальный порог 4 пресета для статистической значимости
+    «Мудрость толпы» через взвешенную медиану (робастную к выбросам/опечаткам):
+    - веса пресетов = usage_count × success_rate (доверие к источнику);
+    - все значения — свойства этой катушки, поэтому cohort задан filament_id;
+    - уверенность оценки растёт с размером выборки (см. confidence).
 
     Returns:
         dict с ключами: extruder_temp, bed_temp, print_speed, travel_speed,
         layer_height, first_layer_height, flow_rate, fan_speed,
-        retraction_length, retraction_speed, avg_rating, presets_count
+        retraction_length, retraction_speed, avg_rating, presets_count,
+        confidence ("low" | "medium" | "high" по размеру выборки)
     """
     # Проверяем существование материала
     filament_result = await db.execute(select(Filament).where(Filament.id == filament_id))
@@ -111,38 +128,25 @@ async def get_recommended_preset_values(
     if total_weight == 0:
         raise ValueError("Unable to calculate recommendation (zero total weight)")
 
-    # Вычисляем weighted average для обязательных параметров
-    extruder_temp = sum(p.extruder_temp * w for p, w in zip(presets, weights, strict=False)) / total_weight
-    bed_temp = sum(p.bed_temp * w for p, w in zip(presets, weights, strict=False)) / total_weight
-    print_speed = sum(p.print_speed * w for p, w in zip(presets, weights, strict=False)) / total_weight
+    # Взвешенная медиана по всем параметрам — робастность к выбросам/опечаткам.
+    # Все значения — свойства этой катушки (material scope после Ф5), поэтому cohort
+    # уже задан filament_id; принтер их не разводит на «разные распределения».
+    def _median(getter) -> float | None:
+        return weighted_median([(getter(p), w) for p, w in zip(presets, weights, strict=False)])
 
-    # Вычисляем weighted average для опциональных параметров
-    travel_speed = weighted_average_optional(
-        [(p.travel_speed, w) if p.travel_speed is not None else (None, w) for p, w in zip(presets, weights, strict=False)]
-    )
-    layer_height = weighted_average_optional(
-        [(p.layer_height, w) if p.layer_height is not None else (None, w) for p, w in zip(presets, weights, strict=False)]
-    )
-    first_layer_height = weighted_average_optional(
-        [(p.first_layer_height, w) if p.first_layer_height is not None else (None, w) for p, w in zip(presets, weights, strict=False)]
-    )
-    flow_rate = weighted_average_optional(
-        [(p.flow_rate, w) if p.flow_rate is not None else (None, w) for p, w in zip(presets, weights, strict=False)]
-    )
+    extruder_temp = _median(lambda p: p.extruder_temp)
+    bed_temp = _median(lambda p: p.bed_temp)
+    print_speed = _median(lambda p: p.print_speed)
+    travel_speed = _median(lambda p: p.travel_speed)
+    layer_height = _median(lambda p: p.layer_height)
+    first_layer_height = _median(lambda p: p.first_layer_height)
+    flow_rate = _median(lambda p: p.flow_rate)
 
-    # fan_speed - целое число
-    fan_speed_values = [(p.fan_speed, w) for p, w in zip(presets, weights, strict=False) if p.fan_speed is not None]
-    fan_speed = None
-    if fan_speed_values:
-        fan_speed_avg = sum(v * w for v, w in fan_speed_values) / sum(w for _, w in fan_speed_values)
-        fan_speed = round(fan_speed_avg)
+    fan_median = _median(lambda p: p.fan_speed)
+    fan_speed = round(fan_median) if fan_median is not None else None
 
-    retraction_length = weighted_average_optional(
-        [(p.retraction_length, w) if p.retraction_length is not None else (None, w) for p, w in zip(presets, weights, strict=False)]
-    )
-    retraction_speed = weighted_average_optional(
-        [(p.retraction_speed, w) if p.retraction_speed is not None else (None, w) for p, w in zip(presets, weights, strict=False)]
-    )
+    retraction_length = _median(lambda p: p.retraction_length)
+    retraction_speed = _median(lambda p: p.retraction_speed)
 
     # Вычисляем средний рейтинг
     ratings = [p.rating for p in presets if p.rating is not None]
@@ -161,5 +165,6 @@ async def get_recommended_preset_values(
         "retraction_speed": round(retraction_speed, 1) if retraction_speed is not None else None,
         "avg_rating": round(avg_rating, 2) if avg_rating else None,
         "presets_count": len(presets),
+        "confidence": confidence_from_sample_size(len(presets)),
     }
 
