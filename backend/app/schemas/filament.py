@@ -72,6 +72,7 @@ class FilamentBase(BaseModel):
     recommended_nozzle_temp_max: int | None = Field(None, ge=0, le=600)
     recommended_bed_temp_min: int | None = Field(None, ge=0, le=300)
     recommended_bed_temp_max: int | None = Field(None, ge=0, le=300)
+    required_nozzle_hrc: int | None = Field(None, ge=0, le=500)
     description: str | None = None
     availability: Literal["available", "out_of_stock", "discontinued", "coming_soon"] = Field("available")
     price_display_unit: Literal["per_kg", "per_spool"] = Field("per_kg")
@@ -101,6 +102,7 @@ class FilamentUpdate(BaseModel):
     recommended_nozzle_temp_max: int | None = Field(None, ge=0, le=600)
     recommended_bed_temp_min: int | None = Field(None, ge=0, le=300)
     recommended_bed_temp_max: int | None = Field(None, ge=0, le=300)
+    required_nozzle_hrc: int | None = Field(None, ge=0, le=500)
     description: str | None = None
     active: bool | None = None
     availability: Literal["available", "out_of_stock", "discontinued", "coming_soon"] | None = None
@@ -226,6 +228,7 @@ class FilamentPaletteCreate(BaseModel):
     recommended_nozzle_temp_max: int | None = Field(None, ge=0, le=600)
     recommended_bed_temp_min: int | None = Field(None, ge=0, le=300)
     recommended_bed_temp_max: int | None = Field(None, ge=0, le=300)
+    required_nozzle_hrc: int | None = Field(None, ge=0, le=500)
     description: str | None = None
     availability: Literal["available", "out_of_stock", "discontinued", "coming_soon"] = Field("available")
     price_display_unit: Literal["per_kg", "per_spool"] = Field("per_kg")

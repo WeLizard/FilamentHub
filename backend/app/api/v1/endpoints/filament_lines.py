@@ -195,6 +195,7 @@ async def create_line_variants(
             recommended_nozzle_temp_max=data.recommended_nozzle_temp_max,
             recommended_bed_temp_min=data.recommended_bed_temp_min,
             recommended_bed_temp_max=data.recommended_bed_temp_max,
+            required_nozzle_hrc=data.required_nozzle_hrc,
             description=data.description,
             availability=availability,
             price_display_unit=data.price_display_unit,

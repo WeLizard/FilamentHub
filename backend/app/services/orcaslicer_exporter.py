@@ -218,6 +218,10 @@ async def preset_to_orcaslicer_json(
     if filament.density is not None:
         profile["filament_density"] = to_array(round(filament.density, 2))
 
+    # Требуемая твёрдость сопла (свойство материала: абразивные требуют закалённого сопла)
+    if filament.required_nozzle_hrc is not None:
+        profile["required_nozzle_HRC"] = to_array(int(filament.required_nozzle_hrc))
+
     # Диаметр филамента
     if filament.diameter is not None:
         profile["filament_diameter"] = to_array(filament.diameter)

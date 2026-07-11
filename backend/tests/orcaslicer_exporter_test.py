@@ -65,3 +65,12 @@ async def test_filament_scope_keys_survive():
     assert profile.get("pressure_advance") == ["0.02"]
     assert profile.get("filament_soluble") == ["0"]
     assert profile.get("type") == "filament"
+
+
+@pytest.mark.asyncio
+async def test_required_nozzle_hrc_exported_from_material():
+    # Nozzle hardness is a material property — exported on the profile from the filament.
+    fil = _filament()
+    fil.required_nozzle_hrc = 50
+    profile = await preset_to_orcaslicer_json(_preset({}), fil, db=None)
+    assert profile.get("required_nozzle_HRC") == ["50"]

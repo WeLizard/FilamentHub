@@ -83,6 +83,10 @@ class Filament(Base):
     recommended_bed_temp_min: Mapped[int | None] = mapped_column(Integer, nullable=True)
     recommended_bed_temp_max: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
+    # Требуемая твёрдость сопла (HRC) — свойство материала: абразивные (карбон/стекло)
+    # требуют закалённого сопла. Экспортируется в профиль как required_nozzle_HRC.
+    required_nozzle_hrc: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
     # Pricing (для калькулятора)
     price_per_kg: Mapped[float | None] = mapped_column(Float, nullable=True)
     # price_per_kg: рекомендованная цена за кг (вендор заполняет)
