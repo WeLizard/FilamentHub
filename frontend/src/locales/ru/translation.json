@@ -1553,7 +1553,6 @@
     "printTemp": "Температура печати",
     "nozzle": "Сопло",
     "firstLayer": "Первый слой",
-    "subsequentLayers": "Последующие слои",
     "bed": "Стол",
     "adaptiveVolumetricSpeed": "Адаптивная объёмная скорость",
     "filamentRammingLength": "Длина набивки филамента",

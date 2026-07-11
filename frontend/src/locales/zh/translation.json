@@ -1421,7 +1421,6 @@
     "printTemp": "打印温度",
     "nozzle": "喷嘴",
     "firstLayer": "首层",
-    "subsequentLayers": "后续层",
     "bed": "热床",
     "adaptiveVolumetricSpeed": "自适应体积速度",
     "filamentRammingLength": "耗材撞击长度",

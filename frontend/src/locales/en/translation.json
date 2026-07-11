@@ -1424,7 +1424,6 @@
     "printTemp": "Print temperature",
     "nozzle": "Nozzle",
     "firstLayer": "First layer",
-    "subsequentLayers": "Subsequent layers",
     "bed": "Bed",
     "adaptiveVolumetricSpeed": "Adaptive volumetric speed",
     "filamentRammingLength": "Filament ramming length",

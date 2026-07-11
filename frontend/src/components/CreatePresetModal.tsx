@@ -3228,22 +3228,6 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                             <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400 pointer-events-none">°C</span>
                           </div>
                         </div>
-                        <div>
-                          <label className="block text-gray-400 mb-1 text-xs">{t('presetModal.subsequentLayers')}</label>
-                          <div className="relative">
-                            <input
-                              type="number"
-                              value={extruderTemp}
-                              onChange={(e) => { setExtruderTemp(Number(e.target.value)); }}
-                              min={150}
-                              max={300}
-                              step="1"
-                              placeholder="250"
-                              className={`w-full pl-3 pr-10 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-gray-500 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all `}
-                            />
-                            <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400 pointer-events-none">°C</span>
-                          </div>
-                        </div>
                       </div>
                     </div>
 
@@ -3260,22 +3244,6 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                             onChange={(e) => {
                               setBedTempInitialLayer(e.target.value === '' ? '' : Number(e.target.value));
                             }}
-                            min={0}
-                            max={120}
-                            step="1"
-                            placeholder="90"
-                            className={`w-full pl-3 pr-10 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-gray-500 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all `}
-                          />
-                            <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400 pointer-events-none">°C</span>
-                          </div>
-                        </div>
-                        <div>
-                          <label className="block text-gray-400 mb-1 text-xs">{t('presetModal.subsequentLayers')}</label>
-                          <div className="relative">
-                          <input
-                            type="number"
-                            value={bedTemp}
-                            onChange={(e) => { setBedTemp(Number(e.target.value)); }}
                             min={0}
                             max={120}
                             step="1"
