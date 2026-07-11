@@ -10,6 +10,8 @@ import { translateApiError } from '../utils/translateApiError';
 import { useAuth } from '../contexts/AuthContext';
 import type { Preset, Filament, Brand, Printer } from '../types/api';
 import { applyMaterialDefaults, sortMaterialTypes } from '../data/materialDefaults';
+import { type SettingMode, isVisibleAtMode } from '../data/orcaFieldModes';
+import { safeStorage } from '../utils/storage';
 import { densityForMaterial, STANDARD_DIAMETERS } from '../utils/materialDensity';
 import { MaterialTypeSelect } from './MaterialTypeSelect';
 import { EditGCodeModal } from './EditGCodeModal';
@@ -239,6 +241,20 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
   // Вкладка "Заметки"
   const [filamentNotes, setFilamentNotes] = useState('');
   const [activeTab, setActiveTab] = useState<'profile' | 'cooling' | 'override' | 'advanced' | 'extruder' | 'notes'>('profile'); // Активная вкладка (как в OrcaSlicer)
+  // Уровень сложности (как в OrcaSlicer: Simple/Advanced/Expert). Прячет продвинутые
+  // вкладки/поля для новичков; классификация полей — из Orca (orcaFieldModes).
+  // Выбор сохраняется — при следующем открытии не нужно переключать заново.
+  const [settingMode, setSettingMode] = useState<SettingMode>(() => {
+    const saved = safeStorage.get('fh_preset_setting_mode');
+    return saved === 'simple' || saved === 'advanced' || saved === 'expert' ? saved : 'advanced';
+  });
+  useEffect(() => {
+    safeStorage.set('fh_preset_setting_mode', settingMode);
+    // Если активная вкладка спрятана текущим режимом — вернуться на «Профиль прутка»
+    if (!isVisibleAtMode('advanced', settingMode) && (activeTab === 'override' || activeTab === 'advanced' || activeTab === 'extruder')) {
+      setActiveTab('profile');
+    }
+  }, [settingMode, activeTab]);
   const [error, setError] = useState<string | null>(null);
   const [duplicateFilamentSuggestion, setDuplicateFilamentSuggestion] = useState<DuplicateFilamentSuggestion | null>(null);
   const [selectedFilamentId, setSelectedFilamentId] = useState<number | null>(filamentId || null);
@@ -2682,8 +2698,26 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
 
           {/* OrcaSlicer Settings Tabs (как в OrcaSlicer) */}
           <div className="mt-6">
-            <h3 className="text-lg font-semibold text-white mb-4">{t('presetModal.detailedSettings')}</h3>
-            
+            <div className="flex items-center justify-between mb-4 gap-3 flex-wrap">
+              <h3 className="text-lg font-semibold text-white">{t('presetModal.detailedSettings')}</h3>
+              {/* Уровень сложности (Simple/Advanced/Expert) — как в OrcaSlicer, выбор сохраняется */}
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-gray-400">{t('presetModal.settingMode.label')}</span>
+                <div className="inline-flex rounded-lg border border-white/20 overflow-hidden text-xs">
+                  {(['simple', 'advanced', 'expert'] as SettingMode[]).map((m) => (
+                    <button
+                      key={m}
+                      type="button"
+                      onClick={() => setSettingMode(m)}
+                      className={`px-3 py-1 transition-all ${settingMode === m ? 'bg-purple-600 text-white' : 'text-gray-400 hover:text-white'}`}
+                    >
+                      {t(`presetModal.settingMode.${m}`)}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+
             {/* Вкладки */}
             <div className="flex flex-wrap gap-2 mb-4 border-b border-white/20">
               <button
@@ -2708,6 +2742,7 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
               >
                 {t('presetModal.tabs.cooling')}
               </button>
+              {isVisibleAtMode('advanced', settingMode) && (
               <button
                 type="button"
                 onClick={() => setActiveTab('override')}
@@ -2719,6 +2754,8 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
               >
                 {t('presetModal.tabs.override')}
               </button>
+              )}
+              {isVisibleAtMode('advanced', settingMode) && (
               <button
                 type="button"
                 onClick={() => setActiveTab('advanced')}
@@ -2730,6 +2767,8 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
               >
                 {t('presetModal.tabs.advanced')}
               </button>
+              )}
+              {isVisibleAtMode('advanced', settingMode) && (
               <button
                 type="button"
                 onClick={() => setActiveTab('extruder')}
@@ -2741,6 +2780,7 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
               >
                 {t('presetModal.tabs.extruder')}
               </button>
+              )}
               <button
                 type="button"
                 onClick={() => setActiveTab('notes')}

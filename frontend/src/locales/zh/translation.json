@@ -1381,6 +1381,12 @@
     "retractionLength": "回抽长度 (mm)",
     "retractionSpeed": "回抽速度 (mm/s)",
     "detailedSettings": "详细设置",
+    "settingMode": {
+      "label": "级别：",
+      "simple": "简单",
+      "advanced": "高级",
+      "expert": "专家"
+    },
     "tabs": {
       "profile": "耗材配置文件",
       "cooling": "冷却",

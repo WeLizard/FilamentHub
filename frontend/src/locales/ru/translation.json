@@ -1513,6 +1513,12 @@
     "retractionLength": "Длина ретракта (mm)",
     "retractionSpeed": "Скорость ретракта (mm/s)",
     "detailedSettings": "Подробные настройки",
+    "settingMode": {
+      "label": "Уровень:",
+      "simple": "Простой",
+      "advanced": "Продвинутый",
+      "expert": "Эксперт"
+    },
     "tabs": {
       "profile": "Профиль прутка",
       "cooling": "Охлаждение",

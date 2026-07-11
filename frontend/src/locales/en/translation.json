@@ -1384,6 +1384,12 @@
     "retractionLength": "Retraction length (mm)",
     "retractionSpeed": "Retraction speed (mm/s)",
     "detailedSettings": "Detailed settings",
+    "settingMode": {
+      "label": "Level:",
+      "simple": "Simple",
+      "advanced": "Advanced",
+      "expert": "Expert"
+    },
     "tabs": {
       "profile": "Filament profile",
       "cooling": "Cooling",
