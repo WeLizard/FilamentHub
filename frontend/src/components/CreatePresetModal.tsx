@@ -3026,7 +3026,7 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                 </div>
 
                 {/* Рекомендуемая температура сопла */}
-                <div>
+                <div className={isVisibleAtMode('advanced', settingMode) ? '' : 'hidden'}>
                   <h4 className="text-sm font-semibold text-white mb-3">{t('presetModal.recommendedNozzleTemp')}</h4>
                   <div className="grid grid-cols-2 gap-3">
                       <div>
@@ -3059,7 +3059,7 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                   </div>
 
                 {/* Коэффициент потока и Pressure Advance */}
-                <div>
+                <div className={isVisibleAtMode('advanced', settingMode) ? '' : 'hidden'}>
                   <h4 className="text-sm font-semibold text-white mb-3 pb-2 border-b border-white/10">{t('presetModal.flowAndPA')}</h4>
                   
                   <div className="space-y-4">
@@ -3263,7 +3263,7 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                 </div>
 
                 {/* Ограничение объёмного расхода */}
-                <div>
+                <div className={isVisibleAtMode('advanced', settingMode) ? '' : 'hidden'}>
                   <h4 className="text-sm font-semibold text-white mb-3 pb-2 border-b border-white/10">{t('presetModal.volumetricLimit')}</h4>
                   
                   <div className="space-y-3">
