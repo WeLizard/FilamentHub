@@ -304,6 +304,16 @@ class CalculatorParsedMaterial(BaseModel):
     is_support_material: bool | None = Field(None, description="Профиль помечен как материал поддержек")
     used_for_model: bool | None = Field(None, description="Материал использован для модели")
     used_for_support: bool | None = Field(None, description="Материал использован для поддержек")
+    infill_weight_g: float | None = Field(
+        None,
+        ge=0,
+        description="Расход материала на G-code роли infill, нормализованный к весу tool",
+    )
+    support_weight_g: float | None = Field(
+        None,
+        ge=0,
+        description="Расход материала на G-code роли support, нормализованный к весу tool",
+    )
 
 
 class CalculatorGcodeParseResponse(BaseModel):
@@ -314,9 +324,24 @@ class CalculatorGcodeParseResponse(BaseModel):
     slicer_name: str | None = Field(None, description="Определённый слайсер")
     slicer_version: str | None = Field(None, description="Версия слайсера")
     print_time_seconds: int | None = Field(None, ge=0, description="Оценка времени печати в секундах")
+    first_layer_print_time_seconds: int | None = Field(
+        None,
+        ge=0,
+        description="Время первого слоя как подмножество общего времени",
+    )
     total_filament_weight_g: float | None = Field(None, ge=0, description="Суммарный вес филамента в граммах")
     total_filament_length_mm: float | None = Field(None, ge=0, description="Суммарная длина филамента в миллиметрах")
     total_filament_volume_cm3: float | None = Field(None, ge=0, description="Суммарный объём филамента в см³")
+    infill_filament_weight_g: float | None = Field(
+        None,
+        ge=0,
+        description="Суммарный фактический расход на роли infill",
+    )
+    support_filament_weight_g: float | None = Field(
+        None,
+        ge=0,
+        description="Суммарный фактический расход на роли support",
+    )
     layer_height_mm: float | None = Field(None, ge=0, description="Высота слоя")
     initial_layer_height_mm: float | None = Field(None, ge=0, description="Высота первого слоя")
     sparse_infill_density_percent: float | None = Field(None, ge=0, description="Плотность заполнения в процентах")

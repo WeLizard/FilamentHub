@@ -2105,6 +2105,8 @@
     "notDetected": "未检测到",
     "parsedPrintTime": "打印时间",
     "parsedWeight": "重量",
+    "parsedInfillWeight": "填充（含实心填充）",
+    "parsedSupportWeight": "支撑耗材",
     "parsedLength": "耗材长度",
     "parsedVolume": "耗材体积",
     "parsedPlate": "打印板",

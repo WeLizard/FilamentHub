@@ -3089,7 +3089,7 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
               }}
             />
 
-            <div className="grid grid-cols-1 gap-5 xl:grid-cols-[minmax(0,1.1fr)_minmax(0,0.9fr)]">
+            <div className="space-y-5">
               <WorkspacePanel
                 step="1"
                 title={tc('workspaceSourceTitle')}
@@ -3121,15 +3121,15 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
                     onDragStateChange(false);
                     await onFileSelect(event.dataTransfer.files);
                   }}
-                  className={`block w-full cursor-pointer rounded-[1.5rem] border border-dashed p-6 text-left transition-all ${
+                  className={`block min-h-[9.5rem] w-full cursor-pointer rounded-[1.5rem] border border-dashed p-7 text-left transition-all md:p-8 ${
                     dragActive
                       ? 'border-cyan-300/80 bg-cyan-400/12 shadow-[0_25px_50px_-35px_rgba(34,211,238,0.65)]'
                       : 'border-cyan-400/30 bg-[radial-gradient(circle_at_top,rgba(34,211,238,0.14),transparent_52%),linear-gradient(180deg,rgba(15,23,42,0.8),rgba(2,6,23,0.85))] hover:border-cyan-300/50'
                   }`}
                 >
-                  <div className="flex items-start gap-4">
-                    <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-[1.1rem] border border-white/10 bg-white/5">
-                      {isParsingGcode ? <Loader2 className="h-5 w-5 animate-spin text-cyan-300" /> : <Upload className="h-5 w-5 text-cyan-300" />}
+                  <div className="flex min-h-[5.5rem] items-center gap-5">
+                    <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-[1.2rem] border border-white/10 bg-white/5">
+                      {isParsingGcode ? <Loader2 className="h-6 w-6 animate-spin text-cyan-300" /> : <Upload className="h-6 w-6 text-cyan-300" />}
                     </div>
                     <div>
                       <p className="text-base font-semibold text-white">
@@ -3157,7 +3157,7 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
                 title={tc('workspaceMaterialTitle')}
               >
                 {materialLines.length > 0 ? (
-                  <div className="space-y-3">
+                  <div className="grid grid-cols-1 gap-3 xl:grid-cols-2">
                     {materialLines.map((line) => (
                       <div key={line.line_id} className="rounded-[1.25rem] border border-white/10 bg-white/5 p-4">
                         <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
@@ -3521,6 +3521,18 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
                             : '—'
                         }
                       />
+                      {parsedGcode.infill_filament_weight_g != null ? (
+                        <CompactMetric
+                          label={tc('parsedInfillWeight')}
+                          value={`${parsedGcode.infill_filament_weight_g.toFixed(2)} ${tc('grams')}`}
+                        />
+                      ) : null}
+                      {parsedGcode.support_filament_weight_g != null ? (
+                        <CompactMetric
+                          label={tc('parsedSupportWeight')}
+                          value={`${parsedGcode.support_filament_weight_g.toFixed(2)} ${tc('grams')}`}
+                        />
+                      ) : null}
                       <CompactMetric
                         label={tc('parsedLength')}
                         value={

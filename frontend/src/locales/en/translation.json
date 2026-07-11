@@ -2108,6 +2108,8 @@
     "notDetected": "Not detected",
     "parsedPrintTime": "Print time",
     "parsedWeight": "Weight",
+    "parsedInfillWeight": "Infill, including solid infill",
+    "parsedSupportWeight": "Supports",
     "parsedLength": "Filament length",
     "parsedVolume": "Filament volume",
     "parsedPlate": "Build plate",

@@ -2237,6 +2237,8 @@
       "notDetected": "Не определён",
       "parsedPrintTime": "Время печати",
       "parsedWeight": "Вес",
+      "parsedInfillWeight": "На заполнение, включая сплошное",
+      "parsedSupportWeight": "На поддержки",
       "parsedLength": "Длина филамента",
       "parsedVolume": "Объём филамента",
       "parsedPlate": "Платформа",

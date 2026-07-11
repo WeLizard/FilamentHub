@@ -47,6 +47,17 @@ _NOZZLE_TEMPERATURE_COMMAND_RE = re.compile(r"^M10(?:4|9)\s+S([\d.]+)", re.IGNOR
 _BED_TEMPERATURE_COMMAND_RE = re.compile(r"^M1(?:4|9)0\s+S([\d.]+)", re.IGNORECASE)
 _GCODE_3MF_PLATE_RE = re.compile(r"^Metadata/plate_(\d+)\.gcode$", re.IGNORECASE)
 _SUPPORT_ROLE_RE = re.compile(r"^TYPE:\s*(Support(?:\s+interface)?)\s*$", re.IGNORECASE)
+_EXTRUSION_ROLE_RE = re.compile(r"^;\s*TYPE:\s*(.+?)\s*$", re.IGNORECASE)
+_GCODE_NUMBER_PATTERN = r"-?(?:\d+(?:\.\d*)?|\.\d+)"
+_EXTRUSION_MOVE_RE = re.compile(
+    rf"^(?:G0|G1|G2|G3)\b.*?\bE({_GCODE_NUMBER_PATTERN})",
+    re.IGNORECASE,
+)
+_EXTRUSION_RESET_RE = re.compile(
+    rf"^G92\b.*?\bE({_GCODE_NUMBER_PATTERN})",
+    re.IGNORECASE,
+)
+_TOOL_CHANGE_RE = re.compile(r"^T(\d+)\b", re.IGNORECASE)
 
 
 def parse_gcode_payload(
@@ -80,9 +91,12 @@ def _parse_plain_gcode_payload(file_name: str, raw_bytes: bytes) -> dict[str, An
         "slicer_name": slicer_name,
         "slicer_version": slicer_version,
         "print_time_seconds": None,
+        "first_layer_print_time_seconds": None,
         "total_filament_weight_g": None,
         "total_filament_length_mm": None,
         "total_filament_volume_cm3": None,
+        "infill_filament_weight_g": None,
+        "support_filament_weight_g": None,
         "layer_height_mm": None,
         "initial_layer_height_mm": None,
         "sparse_infill_density_percent": None,
@@ -186,7 +200,11 @@ def _parse_plain_gcode_payload(file_name: str, raw_bytes: bytes) -> dict[str, An
         _collect_key_value_metadata(parsed, collector, comment)
 
     if collector["estimated_normal_seconds"] is not None:
-        parsed["print_time_seconds"] = collector["estimated_normal_seconds"] + (collector["estimated_first_layer_seconds"] or 0)
+        # Orca/Prusa "normal mode" is already the complete print duration.
+        # The following first-layer value is a subset and must not be added.
+        parsed["print_time_seconds"] = collector["estimated_normal_seconds"]
+    if collector["estimated_first_layer_seconds"] is not None:
+        parsed["first_layer_print_time_seconds"] = collector["estimated_first_layer_seconds"]
 
     if collector["cura_setting_fragments"]:
         _apply_cura_settings(parsed, "".join(collector["cura_setting_fragments"]))
@@ -196,6 +214,7 @@ def _parse_plain_gcode_payload(file_name: str, raw_bytes: bytes) -> dict[str, An
         parsed["support_used"] = True
 
     _finalize_materials(parsed, collector)
+    _apply_extrusion_role_usage(parsed, lines)
     _finalize_totals(parsed)
     return parsed
 
@@ -268,6 +287,14 @@ def _parse_gcode_3mf_payload(
 
             slice_info = _read_gcode_3mf_slice_info(archive, members, selected_plate_index)
             _merge_gcode_3mf_slice_info(parsed, slice_info)
+            # Some Bambu/Orca containers keep per-tool weights only in
+            # slice_info.config. Re-run the role pass after that metadata is
+            # merged so infill/support grams are also available for .gcode.3mf.
+            _apply_extrusion_role_usage(
+                parsed,
+                _decode_gcode_bytes(selected_member.filename, gcode_bytes).splitlines(),
+            )
+            _finalize_totals(parsed)
 
             thumbnail = _read_gcode_3mf_thumbnail(archive, members, selected_plate_index)
             if thumbnail is not None:
@@ -1009,6 +1036,121 @@ def _finalize_materials(parsed: dict[str, Any], collector: dict[str, Any]) -> No
     )
 
 
+def _apply_extrusion_role_usage(parsed: dict[str, Any], lines: list[str]) -> None:
+    """Estimate per-role weight from real extrusion moves, normalized to slicer totals.
+
+    Retractions and their matching recoveries are excluded. Normalization against
+    the slicer's per-tool weight keeps the result in grams without inventing a
+    second density/diameter source.
+    """
+    relative_extrusion = False
+    current_tool = 0
+    current_role = "unclassified"
+    last_absolute_e: dict[int, float] = {}
+    retraction_debt: dict[int, float] = {}
+    extrusion_by_tool_role: dict[int, dict[str, float]] = {}
+
+    for raw_line in lines:
+        stripped = raw_line.strip()
+        if not stripped:
+            continue
+
+        role_match = _EXTRUSION_ROLE_RE.match(stripped)
+        if role_match:
+            current_role = role_match.group(1).strip().lower()
+            continue
+
+        command = stripped.split(";", 1)[0].strip()
+        if not command:
+            continue
+        upper_command = command.upper()
+        if upper_command == "M82":
+            relative_extrusion = False
+            continue
+        if upper_command == "M83":
+            relative_extrusion = True
+            continue
+
+        tool_match = _TOOL_CHANGE_RE.match(command)
+        if tool_match:
+            current_tool = int(tool_match.group(1))
+            continue
+
+        reset_match = _EXTRUSION_RESET_RE.match(command)
+        if reset_match:
+            last_absolute_e[current_tool] = float(reset_match.group(1))
+            continue
+
+        move_match = _EXTRUSION_MOVE_RE.match(command)
+        if not move_match:
+            continue
+
+        extrusion_value = float(move_match.group(1))
+        if relative_extrusion:
+            delta = extrusion_value
+        else:
+            previous = last_absolute_e.get(current_tool, 0.0)
+            delta = extrusion_value - previous
+            last_absolute_e[current_tool] = extrusion_value
+
+        debt = retraction_debt.get(current_tool, 0.0)
+        if delta < 0:
+            retraction_debt[current_tool] = debt + abs(delta)
+            continue
+        if delta <= 0:
+            continue
+
+        recovery = min(debt, delta)
+        retraction_debt[current_tool] = max(0.0, debt - recovery)
+        consumed = delta - recovery
+        if consumed <= 0:
+            continue
+
+        tool_roles = extrusion_by_tool_role.setdefault(current_tool, {})
+        tool_roles[current_role] = tool_roles.get(current_role, 0.0) + consumed
+
+    if not extrusion_by_tool_role or not parsed["materials"]:
+        return
+
+    materials = parsed["materials"]
+    role_tools = list(extrusion_by_tool_role)
+    single_material_fallback = len(materials) == 1 and len(role_tools) == 1
+    total_infill_weight = 0.0
+    total_support_weight = 0.0
+    resolved_any = False
+
+    for material in materials:
+        tool_index = material.get("tool_index")
+        role_tool = role_tools[0] if single_material_fallback else tool_index
+        role_usage = extrusion_by_tool_role.get(role_tool)
+        material_weight = material.get("weight_g")
+        if not role_usage or material_weight is None or material_weight <= 0:
+            continue
+
+        total_extrusion = sum(role_usage.values())
+        if total_extrusion <= 0:
+            continue
+
+        grams_per_extrusion_mm = float(material_weight) / total_extrusion
+        infill_extrusion = sum(
+            amount for role, amount in role_usage.items() if "infill" in role
+        )
+        support_extrusion = sum(
+            amount for role, amount in role_usage.items() if role.startswith("support")
+        )
+        infill_weight = infill_extrusion * grams_per_extrusion_mm
+        support_weight = support_extrusion * grams_per_extrusion_mm
+        material["infill_weight_g"] = round(infill_weight, 3)
+        material["support_weight_g"] = round(support_weight, 3)
+        total_infill_weight += infill_weight
+        total_support_weight += support_weight
+        resolved_any = True
+
+    if resolved_any:
+        parsed["infill_filament_weight_g"] = round(total_infill_weight, 3)
+        parsed["support_filament_weight_g"] = round(total_support_weight, 3)
+
+
 def _finalize_totals(parsed: dict[str, Any]) -> None:
     if parsed["total_filament_weight_g"] is None:
         weights = [material["weight_g"] for material in parsed["materials"] if material.get("weight_g") is not None]
@@ -1031,6 +1173,14 @@ def _finalize_totals(parsed: dict[str, Any]) -> None:
         parsed["total_filament_length_mm"] = round(float(parsed["total_filament_length_mm"]), 2)
     if parsed["total_filament_volume_cm3"] is not None:
         parsed["total_filament_volume_cm3"] = round(float(parsed["total_filament_volume_cm3"]), 3)
+    if parsed["infill_filament_weight_g"] is not None:
+        parsed["infill_filament_weight_g"] = round(float(parsed["infill_filament_weight_g"]), 3)
+    if parsed["support_filament_weight_g"] is not None:
+        parsed["support_filament_weight_g"] = round(float(parsed["support_filament_weight_g"]), 3)
+    for material in parsed["materials"]:
+        for field in ("infill_weight_g", "support_weight_g"):
+            if material.get(field) is not None:
+                material[field] = round(float(material[field]), 3)
     if parsed["layer_height_mm"] is not None:
         parsed["layer_height_mm"] = round(float(parsed["layer_height_mm"]), 3)
     if parsed["initial_layer_height_mm"] is not None:
@@ -1227,30 +1377,30 @@ def _parse_time_to_seconds(value: str | None) -> int | None:
     if not raw_value:
         return None
 
-    if re.fullmatch(r"\d+", raw_value):
-        return int(raw_value)
+    if re.fullmatch(r"\d+(?:\.\d+)?", raw_value):
+        return round(float(raw_value))
 
-    colon_match = re.fullmatch(r"(?:(\d+):)?(\d+):(\d+)", raw_value)
+    colon_match = re.fullmatch(r"(?:(\d+):)?(\d+):(\d+(?:\.\d+)?)", raw_value)
     if colon_match:
         hours = int(colon_match.group(1) or 0)
         minutes = int(colon_match.group(2))
-        seconds = int(colon_match.group(3))
-        return hours * 3600 + minutes * 60 + seconds
+        seconds = float(colon_match.group(3))
+        return round(hours * 3600 + minutes * 60 + seconds)
 
-    total_seconds = 0
+    total_seconds = 0.0
     matched = False
     for pattern, multiplier in (
-        (r"(\d+)\s*d", 86400),
-        (r"(\d+)\s*h", 3600),
-        (r"(\d+)\s*m(?!m)", 60),
-        (r"(\d+)\s*s", 1),
+        (r"(\d+(?:\.\d+)?)\s*d", 86400),
+        (r"(\d+(?:\.\d+)?)\s*h", 3600),
+        (r"(\d+(?:\.\d+)?)\s*m(?!m)", 60),
+        (r"(\d+(?:\.\d+)?)\s*s", 1),
     ):
         match = re.search(pattern, raw_value)
         if match:
-            total_seconds += int(match.group(1)) * multiplier
+            total_seconds += float(match.group(1)) * multiplier
             matched = True
 
-    return total_seconds if matched else None
+    return round(total_seconds) if matched else None
 
 
 def _get_list_value(values: list[Any] | None, index: int) -> Any:
