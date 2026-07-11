@@ -2867,9 +2867,8 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                       />
                     </div>
 
-                    {/* Filament ramming length - это параметр мультитула, будет в вкладке "Дополнительно" */}
-                    {/* Но в OrcaSlicer он показывается в "Профиль прутка", оставляем здесь */}
-                    <div>
+                    {/* Filament ramming length — MMU-параметр (advanced) */}
+                    <div className={isVisibleAtMode('advanced', settingMode) ? '' : 'hidden'}>
                       <label className="block text-gray-300 mb-1 text-sm">{t('presetModal.filamentRammingLength')}</label>
                       <div className="relative">
                         <input
@@ -2958,7 +2957,7 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                     )}
 
                     {/* Компенсация усадки по XY */}
-                    <div>
+                    <div className={isVisibleAtMode('advanced', settingMode) ? '' : 'hidden'}>
                       <label className="block text-gray-300 mb-1 text-sm">{t('presetModal.shrinkXY')}</label>
                       <div className="relative">
                         <input
@@ -2973,7 +2972,7 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                     </div>
 
                     {/* Компенсация усадки по Z */}
-                    <div>
+                    <div className={isVisibleAtMode('advanced', settingMode) ? '' : 'hidden'}>
                       <label className="block text-gray-300 mb-1 text-sm">{t('presetModal.shrinkZ')}</label>
                       <div className="relative">
                         <input
