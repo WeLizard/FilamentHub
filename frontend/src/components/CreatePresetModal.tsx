@@ -2826,7 +2826,7 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                     )}
 
                     {/* Растворимый материал */}
-                    <div className="flex items-center space-x-3">
+                    <div className={`flex items-center space-x-3 ${isVisibleAtMode('advanced', settingMode) ? '' : 'hidden'}`}>
                       <input
                         type="checkbox"
                         id="filamentSoluble"
@@ -2840,7 +2840,7 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                     </div>
 
                     {/* Поддержка */}
-                    <div className="flex items-center space-x-3">
+                    <div className={`flex items-center space-x-3 ${isVisibleAtMode('advanced', settingMode) ? '' : 'hidden'}`}>
                       <input
                         type="checkbox"
                         id="filamentIsSupport"
@@ -2854,7 +2854,7 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                     </div>
 
                     {/* Группа адгезивности (свойство материала, как в Orca) */}
-                    <div>
+                    <div className={isVisibleAtMode('advanced', settingMode) ? '' : 'hidden'}>
                       <label className="block text-gray-300 mb-1 text-sm">{t('presetModal.adhesivenessCategory')}</label>
                       <input
                         type="number"
@@ -3326,7 +3326,7 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                       </div>
 
                       {/* Полная скорость вентилятора на слое */}
-                      <div>
+                      <div className={isVisibleAtMode('advanced', settingMode) ? '' : 'hidden'}>
                         <label className="block text-gray-300 mb-1 text-sm">{t('presetModal.fullFanSpeedLayer')}</label>
                         <div className="relative">
                           <input
@@ -3468,7 +3468,7 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                       </div>
 
                       {/* Минимальная скорость печати */}
-                      {slowDownForLayerCooling && (
+                      {slowDownForLayerCooling && isVisibleAtMode('advanced', settingMode) && (
                         <div>
                           <label className="block text-gray-300 mb-1 text-sm">{t('presetModal.minPrintSpeed')}</label>
                           <input
@@ -3485,7 +3485,7 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                       )}
 
                       {/* Принудительный обдув нависаний и мостов */}
-                      <div className="flex items-center space-x-3">
+                      <div className={`flex items-center space-x-3 ${isVisibleAtMode('advanced', settingMode) ? '' : 'hidden'}`}>
                         <input
                           type="checkbox"
                           id="enableOverhangBridgeFan"
@@ -3499,7 +3499,7 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                       </div>
 
                       {/* Порог нависания для включения обдува */}
-                      {enableOverhangBridgeFan && (
+                      {enableOverhangBridgeFan && isVisibleAtMode('advanced', settingMode) && (
                         <div>
                           <label className="block text-gray-300 mb-1 text-sm">{t('presetModal.overhangFanThreshold')}</label>
                           <div className="relative">
@@ -3516,7 +3516,7 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                       )}
 
                       {/* Скорость вентилятора для нависаний и внешних мостов */}
-                      {enableOverhangBridgeFan && (
+                      {enableOverhangBridgeFan && isVisibleAtMode('advanced', settingMode) && (
                         <div>
                           <label className="block text-gray-300 mb-1 text-sm">{t('presetModal.overhangBridgeFanSpeed')}</label>
                           <div className="relative">
@@ -3537,7 +3537,7 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                       )}
 
                       {/* Скорость вентилятора для внутренних мостов */}
-                      {enableOverhangBridgeFan && (
+                      {enableOverhangBridgeFan && isVisibleAtMode('advanced', settingMode) && (
                         <div>
                           <label className="block text-gray-300 mb-1 text-sm">{t('presetModal.internalBridgeFanSpeed')}</label>
                           <div className="relative">
@@ -3558,7 +3558,7 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                       )}
 
                       {/* Скорость вентилятора на связующем слое */}
-                      {enableOverhangBridgeFan && (
+                      {enableOverhangBridgeFan && isVisibleAtMode('advanced', settingMode) && (
                         <div>
                           <label className="block text-gray-300 mb-1 text-sm">{t('presetModal.supportInterfaceFanSpeed')}</label>
                           <div className="relative">
@@ -3579,7 +3579,7 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                       )}
 
                       {/* Ironing fan speed */}
-                      <div>
+                      <div className={isVisibleAtMode('advanced', settingMode) ? '' : 'hidden'}>
                         <label className="block text-gray-300 mb-1 text-sm">{t('presetModal.ironingFanSpeed')}</label>
                         <div className="relative">
                           <input
