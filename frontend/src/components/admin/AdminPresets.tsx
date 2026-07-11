@@ -153,7 +153,6 @@ export function AdminPresets() {
                     <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-sm text-gray-400">
                       <div>{t('adminPresets.nozzle')}: {preset.extruder_temp}°C</div>
                       <div>{t('adminPresets.bed')}: {preset.bed_temp}°C</div>
-                      <div>{t('adminPresets.speed')}: {preset.print_speed}mm/s</div>
                       <div>{t('adminPresets.usages')}: {preset.usage_count}</div>
                     </div>
                     <p className="text-xs text-gray-500 mt-2">

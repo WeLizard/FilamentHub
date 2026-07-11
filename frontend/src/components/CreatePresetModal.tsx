@@ -2650,33 +2650,6 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
               )}
             </div>
             <div>
-              <label className="block text-gray-300 mb-2 text-sm font-medium">{t('presetModal.printSpeed')} *</label>
-              <input
-                type="number"
-                value={printSpeed}
-                onChange={(e) => { setPrintSpeed(Number(e.target.value)); }}
-                required
-                min={10}
-                max={300}
-                step="1"
-                className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all"
-              />
-            </div>
-            <div>
-              <label className="block text-gray-300 mb-2 text-sm font-medium">
-                {t('presetModal.travelSpeed')}
-              </label>
-              <input
-                type="number"
-                value={travelSpeed}
-                onChange={(e) => { setTravelSpeed(Number(e.target.value)); }}
-                min={50}
-                max={300}
-                step="1"
-                className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all"
-              />
-            </div>
-            <div>
               <label className="block text-gray-300 mb-2 text-sm font-medium">{t('presetModal.flowRate')}</label>
               <input
                 type="number"
