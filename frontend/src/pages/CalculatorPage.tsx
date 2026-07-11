@@ -10,6 +10,7 @@ import { useTranslation } from 'react-i18next';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   Calculator,
+  Boxes,
   ChevronDown,
   CheckCircle2,
   Clock,
@@ -18,6 +19,7 @@ import {
   FileText,
   HelpCircle,
   Link2,
+  Layers3,
   Loader2,
   Plus,
   Printer,
@@ -40,6 +42,7 @@ import {
   type MaterialMatchConfidence,
 } from '../utils/calculatorMaterialMatcher';
 import { allocateRoundedTotal, quoteTitleFromFileName } from '../utils/calculatorQuote';
+import { buildCalculatorBatchSummary } from '../utils/calculatorBatch';
 import { safeStorage } from '../utils/storage';
 import type {
   CalculatorEstimateRequest,
@@ -1533,9 +1536,21 @@ export const CalculatorPage: React.FC = () => {
     () => toHours(form.timeHours, form.timeMinutes, form.timeSec),
     [form.timeHours, form.timeMinutes, form.timeSec],
   );
+  const headerJobs = parsedJobs.length > 0
+    ? parsedJobs
+    : parsedGcode
+      ? [{ key: 'single-job', parsed: parsedGcode }]
+      : [];
+  const headerBatchSummary = buildCalculatorBatchSummary(
+    headerJobs.map((job) => ({ objectCount: job.parsed.object_count })),
+    form.quantity,
+  );
 
   const summaryTotal = result ? result.cost_final || result.cost_total : null;
-  const summaryTime = result?.total_time_hours ?? result?.time_hours ?? currentWorkTimeHours;
+  const summaryTime = result?.total_time_hours ?? result?.time_hours ?? currentWorkTimeHours * Math.max(1, form.quantity);
+  const summaryQuantity = headerBatchSummary.jobCount > 0
+    ? headerBatchSummary.outputObjectCount
+    : form.quantity;
 
   const updateField = <K extends keyof CalculatorFormState>(field: K, value: CalculatorFormState[K]) => {
     if (field === 'spoolPrice') {
@@ -2436,7 +2451,7 @@ export const CalculatorPage: React.FC = () => {
                 label={t('profilePage.calc.totalWorkTime')}
                 value={formatHoursShort(summaryTime, t('profilePage.calc.h'), t('profilePage.calc.min'))}
               />
-              <MetricTile label={t('profilePage.calc.quantity')} value={formatQuantity(form.quantity)} />
+              <MetricTile label={t('profilePage.calc.quantity')} value={formatQuantity(summaryQuantity)} />
             </div>
           </div>
 
@@ -2799,6 +2814,117 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
         || (parsedGcode.toolchange_count != null && parsedGcode.toolchange_count > 0)
         || parsedGcode.is_multi_material
       ),
+  );
+  const displayJobs: ParsedJobState[] = parsedJobs.length > 0
+    ? parsedJobs
+    : parsedGcode
+      ? [{ key: 'single-job', parsed: parsedGcode }]
+      : [];
+  const hasParsedJobs = displayJobs.length > 0;
+  const isBatchMode = displayJobs.length > 1;
+  const hasMixedObjectGroups = displayJobs.some((job) => (job.parsed.object_groups?.length ?? 0) > 1);
+  const batchSummary = buildCalculatorBatchSummary(
+    displayJobs.map((job) => ({
+      printTimeSeconds: job.parsed.print_time_seconds,
+      weightG: job.parsed.total_filament_weight_g,
+      objectCount: job.parsed.object_count,
+    })),
+    form.quantity,
+  );
+  const adjustedPartyPrintTimeSeconds = toHours(form.timeHours, form.timeMinutes, form.timeSec)
+    * 3600
+    * batchSummary.repeatCount;
+  const formatBatchWeight = (weightG: number) =>
+    weightG >= 1000 ? `${(weightG / 1000).toFixed(2)} ${tc('kg')}` : `${weightG.toFixed(2)} ${tc('grams')}`;
+  const renderMaterialLine = (line: CalculatorMaterialLineState) => (
+    <div key={line.line_id} className="rounded-[1.15rem] border border-white/[0.08] bg-black/15 p-3.5">
+      <div className="mb-3 flex flex-wrap items-start justify-between gap-2">
+        <div className="min-w-0">
+          <p className="truncate text-sm font-semibold text-white">{line.label}</p>
+          <p className="mt-1 text-xs text-slate-400">
+            {line.tool_index != null ? `T${line.tool_index} · ` : ''}
+            {line.weight_g.toFixed(2)} {tc('grams')}
+          </p>
+        </div>
+        <StatusPill tone={line.priceResolved ? 'success' : 'warning'}>
+          {line.priceResolved ? tc(`materialLineSource.${line.price_source}`) : tc('materialLineNeedsPrice')}
+        </StatusPill>
+      </div>
+      <div className="space-y-3">
+        <select
+          className={`${inputClass} py-2.5 text-sm`}
+          value={line.selectionValue}
+          onChange={(event) => {
+            const selectionValue = event.target.value;
+            onMaterialLineSelection(line.line_id, selectionValue);
+            setExpandedMaterialLineIds((current) => {
+              const next = new Set(current);
+              if (!selectionValue || selectionValue === 'manual') next.add(line.line_id);
+              else next.delete(line.line_id);
+              return next;
+            });
+          }}
+        >
+          {line.requiresSpoolChoice ? <option value="">{tc('chooseExactSpool')}</option> : null}
+          <option value="manual">{tc('materialManualOption')}</option>
+          <optgroup label={tc('chooseFromMyFilaments')}>
+            {spools.map((spool) => (
+              <option key={`line-spool-${line.line_id}-${spool.id}`} value={`spool:${spool.id}`}>
+                {buildSpoolLabel(spool)}
+              </option>
+            ))}
+          </optgroup>
+          <optgroup label={tc('chooseFromCatalog')}>
+            {filaments.map((filament) => (
+              <option key={`line-filament-${line.line_id}-${filament.id}`} value={`filament:${filament.id}`}>
+                {buildFilamentLabel(filament)}
+              </option>
+            ))}
+          </optgroup>
+        </select>
+        <div className="flex min-h-9 flex-wrap items-center justify-between gap-3 rounded-xl border border-white/[0.06] bg-white/[0.035] px-3 py-2">
+          <p className="text-xs text-slate-300">
+            {line.priceResolved
+              ? `${formatCurrency(line.spool_price)} · ${line.spool_weight_kg} ${tc('kg')}`
+              : tc('materialLineNeedsPrice')}
+          </p>
+          <button
+            type="button"
+            className="inline-flex items-center gap-1.5 text-xs font-medium text-cyan-200 transition-colors hover:text-white"
+            onClick={() => setExpandedMaterialLineIds((current) => {
+              const next = new Set(current);
+              if (next.has(line.line_id)) next.delete(line.line_id);
+              else next.add(line.line_id);
+              return next;
+            })}
+          >
+            {expandedMaterialLineIds.has(line.line_id) ? tc('hideMaterialCost') : tc('editMaterialCost')}
+            <ChevronDown className={`h-3.5 w-3.5 transition-transform ${expandedMaterialLineIds.has(line.line_id) ? 'rotate-180' : ''}`} />
+          </button>
+        </div>
+        {expandedMaterialLineIds.has(line.line_id) ? (
+          <div className="grid grid-cols-1 gap-3 border-t border-white/[0.06] pt-3 sm:grid-cols-2">
+            <FieldBlock label={tc('spoolPrice')}>
+              <InputWithSuffix
+                value={line.spool_price}
+                onChange={(value) => onMaterialLinePriceChange(line.line_id, value)}
+                placeholder="1200"
+                suffix={currencySymbol(quoteProfile.currency)}
+              />
+            </FieldBlock>
+            <FieldBlock label={tc('spoolWeight')}>
+              <InputWithSuffix
+                value={line.spool_weight_kg}
+                onChange={(value) => onMaterialLineSpoolWeightChange(line.line_id, value)}
+                placeholder="1"
+                suffix={tc('kg')}
+                step="0.1"
+              />
+            </FieldBlock>
+          </div>
+        ) : null}
+      </div>
+    </div>
   );
 
   return (
@@ -3295,106 +3421,151 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
                 )}
               </WorkspacePanel>
 
+              {hasParsedJobs ? (
+                <div className="overflow-hidden rounded-[1.55rem] border border-cyan-400/20 bg-[radial-gradient(circle_at_top_left,rgba(34,211,238,0.14),transparent_42%),linear-gradient(145deg,rgba(15,23,42,0.96),rgba(2,6,23,0.92))] shadow-[0_28px_70px_-45px_rgba(34,211,238,0.55)]">
+                  <div className="grid gap-5 p-5 md:p-6 lg:grid-cols-[minmax(0,1fr)_12rem] lg:items-start">
+                    <div>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <StatusPill tone="success">
+                          {isBatchMode
+                            ? tc('batchJobsTitle').replace('{{count}}', String(batchSummary.jobCount))
+                            : tc('singleJobTitle')}
+                        </StatusPill>
+                        <span className="text-xs text-slate-400">
+                          {isBatchMode
+                            ? tc('batchSetFormula')
+                                .replace('{{jobs}}', String(batchSummary.jobCount))
+                                .replace('{{objects}}', String(batchSummary.objectCountPerSet))
+                            : quoteTitleFromFileName(displayJobs[0].parsed.file_name, tc('jobFallbackTitle'))}
+                        </span>
+                      </div>
+                      <div className="mt-5 grid grid-cols-2 gap-3">
+                        <BatchMetric
+                          icon={<Boxes className="h-4 w-4" />}
+                          label={hasMixedObjectGroups ? tc('partyObjects') : tc('partyOutput')}
+                          value={String(batchSummary.outputObjectCount)}
+                          accent
+                        />
+                        <BatchMetric
+                          icon={<Clock className="h-4 w-4" />}
+                          label={tc('partyTime')}
+                          value={formatHoursShort(adjustedPartyPrintTimeSeconds / 3600, t('profilePage.calc.h'), t('profilePage.calc.min'))}
+                          accent
+                        />
+                        <BatchMetric
+                          icon={<Printer className="h-4 w-4" />}
+                          label={tc('partyRuns')}
+                          value={String(batchSummary.printRunCount)}
+                        />
+                        <BatchMetric
+                          icon={<Layers3 className="h-4 w-4" />}
+                          label={tc('partyMaterial')}
+                          value={formatBatchWeight(batchSummary.partyWeightG)}
+                        />
+                      </div>
+                    </div>
+
+                    <label className="rounded-[1.25rem] border border-white/10 bg-black/25 p-4">
+                      <span className="text-xs font-semibold uppercase tracking-[0.15em] text-slate-400">
+                        {isBatchMode ? tc('batchRepeats') : tc('singleRepeats')}
+                      </span>
+                      <input
+                        type="number"
+                        min="1"
+                        className={`${inputClass} ${numberInputResetClass} mt-3 text-2xl font-semibold`}
+                        value={form.quantity || ''}
+                        onChange={(event) => onChange('quantity', Math.max(1, Number(event.target.value) || 1))}
+                      />
+                      <span className="mt-2 block text-xs leading-5 text-slate-400">
+                        {isBatchMode ? tc('batchRepeatsHint') : tc('singleRepeatsHint')}
+                      </span>
+                    </label>
+                  </div>
+                </div>
+              ) : null}
+
               <WorkspacePanel
                 step="2"
-                title={tc('workspaceMaterialTitle')}
+                title={hasParsedJobs ? tc('orderCompositionTitle') : tc('workspaceMaterialTitle')}
               >
-                {materialLines.length > 0 ? (
-                  <div className="grid grid-cols-1 gap-3 xl:grid-cols-2">
-                    {materialLines.map((line) => (
-                      <div key={line.line_id} className="rounded-[1.25rem] border border-white/10 bg-white/5 p-4">
-                        <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-                          <div>
-                            <p className="text-sm font-semibold text-white">{line.label}</p>
-                            <p className="mt-1 text-xs text-slate-400">
-                              {line.fileName}
-                              {line.plateIndex != null ? ` · ${tc('parsedPlateOption').replace('{{index}}', String(line.plateIndex))}` : ''}
-                              {line.tool_index != null ? ` · T${line.tool_index}` : ''}
-                              {` · ${line.weight_g.toFixed(2)} ${tc('grams')}`}
-                            </p>
-                          </div>
-                          <StatusPill tone={line.priceResolved ? 'success' : 'warning'}>
-                            {line.priceResolved ? tc(`materialLineSource.${line.price_source}`) : tc('materialLineNeedsPrice')}
-                          </StatusPill>
-                        </div>
-                        <div className="space-y-3">
-                          <select
-                            className={inputClass}
-                            value={line.selectionValue}
-                            onChange={(event) => {
-                              const selectionValue = event.target.value;
-                              onMaterialLineSelection(line.line_id, selectionValue);
-                              setExpandedMaterialLineIds((current) => {
-                                const next = new Set(current);
-                                if (!selectionValue || selectionValue === 'manual') next.add(line.line_id);
-                                else next.delete(line.line_id);
-                                return next;
-                              });
-                            }}
+                {hasParsedJobs ? (
+                  <div className={`grid grid-cols-1 gap-4 ${isBatchMode ? 'xl:grid-cols-2' : ''}`}>
+                    {displayJobs.map((job, jobIndex) => {
+                      const jobLines = materialLines.filter((line) => line.job_key === job.key);
+                      const objectCount = Math.max(1, job.parsed.object_count ?? 1);
+                      const objectGroups = job.parsed.object_groups ?? [];
+                      return (
+                        <article
+                          key={job.key}
+                          className={`overflow-hidden rounded-[1.35rem] border bg-black/20 ${
+                            job.key === activeParsedJobKey || (!activeParsedJobKey && jobIndex === 0)
+                              ? 'border-cyan-400/25'
+                              : 'border-white/10'
+                          }`}
+                        >
+                          <button
+                            type="button"
+                            onClick={() => onJobSelect(job.key)}
+                            className="flex w-full items-start gap-3 p-4 text-left transition-colors hover:bg-white/[0.035]"
                           >
-                            {line.requiresSpoolChoice ? (
-                              <option value="">{tc('chooseExactSpool')}</option>
+                            {isBatchMode ? (
+                              <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl border border-white/10 bg-white/[0.05] text-xs font-semibold text-slate-300">
+                                {jobIndex + 1}
+                              </span>
                             ) : null}
-                            <option value="manual">{tc('materialManualOption')}</option>
-                            <optgroup label={tc('chooseFromMyFilaments')}>
-                              {spools.map((spool) => (
-                                <option key={`line-spool-${spool.id}`} value={`spool:${spool.id}`}>
-                                  {buildSpoolLabel(spool)}
-                                </option>
-                              ))}
-                            </optgroup>
-                            <optgroup label={tc('chooseFromCatalog')}>
-                              {filaments.map((filament) => (
-                                <option key={`line-filament-${filament.id}`} value={`filament:${filament.id}`}>
-                                  {buildFilamentLabel(filament)}
-                                </option>
-                              ))}
-                            </optgroup>
-                          </select>
-                          <div className="flex min-h-10 flex-wrap items-center justify-between gap-3 rounded-2xl border border-white/[0.08] bg-black/15 px-3 py-2">
-                            <p className="text-xs text-slate-300">
-                              {line.priceResolved
-                                ? `${formatCurrency(line.spool_price)} · ${line.spool_weight_kg} ${tc('kg')}`
-                                : tc('materialLineNeedsPrice')}
-                            </p>
-                            <button
-                              type="button"
-                              className="inline-flex items-center gap-1.5 text-xs font-medium text-cyan-200 transition-colors hover:text-white"
-                              onClick={() => setExpandedMaterialLineIds((current) => {
-                                const next = new Set(current);
-                                if (next.has(line.line_id)) next.delete(line.line_id);
-                                else next.add(line.line_id);
-                                return next;
-                              })}
-                            >
-                              {expandedMaterialLineIds.has(line.line_id) ? tc('hideMaterialCost') : tc('editMaterialCost')}
-                              <ChevronDown className={`h-3.5 w-3.5 transition-transform ${expandedMaterialLineIds.has(line.line_id) ? 'rotate-180' : ''}`} />
-                            </button>
-                          </div>
-                          {expandedMaterialLineIds.has(line.line_id) ? (
-                            <div className="grid grid-cols-1 gap-3 border-t border-white/[0.06] pt-3 sm:grid-cols-2">
-                              <FieldBlock label={tc('spoolPrice')}>
-                                <InputWithSuffix
-                                  value={line.spool_price}
-                                  onChange={(value) => onMaterialLinePriceChange(line.line_id, value)}
-                                  placeholder="1200"
-                                  suffix={currencySymbol(quoteProfile.currency)}
-                                />
-                              </FieldBlock>
-                              <FieldBlock label={tc('spoolWeight')}>
-                                <InputWithSuffix
-                                  value={line.spool_weight_kg}
-                                  onChange={(value) => onMaterialLineSpoolWeightChange(line.line_id, value)}
-                                  placeholder="1"
-                                  suffix={tc('kg')}
-                                  step="0.1"
-                                />
-                              </FieldBlock>
+                            <span className="min-w-0 flex-1">
+                              <span className="block truncate text-sm font-semibold text-white">
+                                {quoteTitleFromFileName(job.parsed.file_name, tc('jobFallbackTitle'))}
+                              </span>
+                              <span className="mt-1.5 flex flex-wrap gap-x-3 gap-y-1 text-xs text-slate-400">
+                                <span>{formatHoursShort((job.parsed.print_time_seconds ?? 0) / 3600, t('profilePage.calc.h'), t('profilePage.calc.min'))}</span>
+                                <span>{formatBatchWeight(job.parsed.total_filament_weight_g ?? 0)}</span>
+                                {objectCount > 1 ? <span>{tc('jobObjectCount').replace('{{count}}', String(objectCount))}</span> : null}
+                                {job.parsed.plate_index != null ? (
+                                  <span>{tc('parsedPlateOption').replace('{{index}}', String(job.parsed.plate_index))}</span>
+                                ) : null}
+                              </span>
+                            </span>
+                            {job.parsed.thumbnail_data_url ? (
+                              <img
+                                src={job.parsed.thumbnail_data_url}
+                                alt={tc('parsedPreviewAlt')}
+                                className="h-14 w-14 shrink-0 rounded-xl border border-white/10 bg-slate-950/60 object-contain"
+                              />
+                            ) : null}
+                          </button>
+
+                          {objectCount > 1 ? (
+                            <div className="border-t border-white/[0.07] px-4 py-3">
+                              <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-500">{tc('jobObjects')}</p>
+                              <div className="mt-2 flex flex-wrap gap-2">
+                                {objectGroups.length > 0 ? objectGroups.map((group, groupIndex) => (
+                                  <span
+                                    key={`${job.key}-${group.name}-${groupIndex}`}
+                                    className="rounded-full border border-white/[0.08] bg-white/[0.04] px-2.5 py-1 text-xs text-slate-300"
+                                  >
+                                    {group.name || tc('jobObjectFallback')} × {group.count}
+                                  </span>
+                                )) : (
+                                  <span className="text-xs text-slate-400">{tc('jobObjectCount').replace('{{count}}', String(objectCount))}</span>
+                                )}
+                              </div>
                             </div>
                           ) : null}
-                        </div>
-                      </div>
-                    ))}
+
+                          <div className="border-t border-white/[0.07] p-4">
+                            <p className="mb-3 text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-500">{tc('jobMaterials')}</p>
+                            {jobLines.length > 0 ? (
+                              <div className="space-y-3">{jobLines.map(renderMaterialLine)}</div>
+                            ) : (
+                              <p className="text-xs leading-5 text-slate-400">
+                                {isFilamentsLoading || isSpoolsLoading ? tc('loadingMaterials') : tc('jobMaterialsUnavailable')}
+                              </p>
+                            )}
+                          </div>
+                        </article>
+                      );
+                    })}
                   </div>
                 ) : (
                   <FieldBlock label={tc('selectMaterialSource')}>
@@ -3435,7 +3606,7 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
                   </FieldBlock>
                 )}
 
-                {autoMaterialMatch && materialMatchConfidenceLabel && (
+                {!hasParsedJobs && autoMaterialMatch && materialMatchConfidenceLabel && (
                   <div className="rounded-[1.25rem] border border-emerald-400/25 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-100">
                     <div className="flex items-center gap-2 font-semibold text-white">
                       <CheckCircle2 className="h-4 w-4 text-emerald-300" />
@@ -3454,11 +3625,11 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
                   </div>
                 )}
 
-                {materialLines.length === 0 ? (
+                {!hasParsedJobs ? (
                   <StatusPill tone={materialPriceSource === 'spool' ? 'success' : 'neutral'}>{materialSourceLabel}</StatusPill>
                 ) : null}
 
-                {materialLines.length === 0 && selectedFilament && materialSummary && (
+                {!hasParsedJobs && selectedFilament && materialSummary && (
                   <div className="rounded-[1.25rem] border border-cyan-400/20 bg-cyan-400/10 px-4 py-3 text-sm text-cyan-100">
                     <span className="font-semibold text-white">{selectedFilament.name}</span>
                     <span className="mx-2 text-cyan-200/70">·</span>
@@ -3496,7 +3667,7 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
                   </div>
                 ) : null}
 
-                {materialLines.length === 0 ? (
+                {!hasParsedJobs ? (
                 <div className="space-y-3">
                   <FieldBlock label={t('profilePage.calc.partWeight')}>
                     <InputWithSuffix
@@ -3565,12 +3736,17 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
 
             <WorkspacePanel
               step="3"
-              title={tc('workspaceProductionTitle')}
+              title={hasParsedJobs ? tc('timeOverrideTitle') : tc('workspaceProductionTitle')}
             >
-                <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
+                {hasParsedJobs ? (
+                  <p className="text-sm leading-6 text-slate-400">{tc('timeOverrideHint')}</p>
+                ) : null}
+                <div className={`grid grid-cols-1 gap-4 md:grid-cols-2 ${hasParsedJobs ? 'xl:grid-cols-3' : 'xl:grid-cols-4'}`}>
+                  {!hasParsedJobs ? (
                   <FieldBlock label={t('profilePage.calc.quantity')}>
                     <NumberInput value={form.quantity} onChange={(value) => onChange('quantity', Math.max(1, value))} min="1" placeholder="1" />
                   </FieldBlock>
+                  ) : null}
                   <FieldBlock label={t('profilePage.calc.hours')}>
                     <NumberInput value={form.timeHours} onChange={(value) => onChange('timeHours', value)} placeholder="0" />
                   </FieldBlock>
@@ -3584,11 +3760,15 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
               </WorkspacePanel>
 
             {parsedGcode && (
-              <WorkspacePanel
-                step="4"
-                title={tc('workspaceGcodeSummaryTitle')}
-              >
-                <div className="space-y-4">
+              <details className="group rounded-[1.35rem] border border-white/[0.08] bg-black/15">
+                <summary className="flex cursor-pointer list-none items-center justify-between gap-4 px-4 py-4 marker:hidden">
+                  <span>
+                    <span className="block text-sm font-semibold text-slate-200">{tc('technicalDetailsTitle')}</span>
+                    <span className="mt-1 block text-xs leading-5 text-slate-500">{tc('technicalDetailsHint')}</span>
+                  </span>
+                  <ChevronDown className="h-4 w-4 shrink-0 text-slate-400 transition-transform group-open:rotate-180" />
+                </summary>
+                <div className="space-y-4 border-t border-white/[0.07] p-4">
                   <div className="rounded-[1.3rem] border border-white/10 bg-white/5 p-4">
                     <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
                       <div className="min-w-0">
@@ -3779,7 +3959,7 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
                     ) : null}
                   </div>
                 </div>
-              </WorkspacePanel>
+              </details>
             )}
           </div>
         </SurfaceCard>
@@ -4826,6 +5006,25 @@ const MetricTile: React.FC<{ label: string; value: string }> = ({ label, value }
   <div className="rounded-[1.45rem] bg-white/[0.04] px-4 py-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.05)] ring-1 ring-white/5">
     <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">{label}</p>
     <p className="mt-2 text-2xl font-semibold tracking-tight text-white">{value}</p>
+  </div>
+);
+
+const BatchMetric: React.FC<{
+  icon: ReactNode;
+  label: string;
+  value: string;
+  accent?: boolean;
+}> = ({ icon, label, value, accent = false }) => (
+  <div className={`rounded-[1.15rem] border px-3.5 py-3 ${
+    accent
+      ? 'border-cyan-400/20 bg-cyan-400/[0.08]'
+      : 'border-white/[0.08] bg-white/[0.035]'
+  }`}>
+    <div className={`flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.14em] ${accent ? 'text-cyan-200' : 'text-slate-500'}`}>
+      {icon}
+      <span>{label}</span>
+    </div>
+    <p className={`mt-2 font-semibold tracking-tight text-white ${accent ? 'text-xl md:text-2xl' : 'text-lg'}`}>{value}</p>
   </div>
 );
 
