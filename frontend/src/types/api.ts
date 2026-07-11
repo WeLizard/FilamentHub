@@ -77,6 +77,8 @@ export interface Filament {
   recommended_nozzle_temp_max: number | null;
   recommended_bed_temp_min: number | null;
   recommended_bed_temp_max: number | null;
+  // Требуемая твёрдость сопла (HRC): абразивные наполнители требуют закалённого сопла
+  required_nozzle_hrc: number | null;
   price_display_unit?: 'per_kg' | 'per_spool'; // в каком виде бренд назначил цену (основной показ)
   line_id?: number | null; // линейка (группировка вариантов-цвета)
   line_name?: string | null; // имя линейки (денормализовано)
@@ -138,6 +140,7 @@ export interface FilamentPalettePayload {
   recommended_nozzle_temp_max?: number | null;
   recommended_bed_temp_min?: number | null;
   recommended_bed_temp_max?: number | null;
+  required_nozzle_hrc?: number | null;
   description?: string | null;
   availability?: FilamentAvailability;
   price_display_unit?: 'per_kg' | 'per_spool';

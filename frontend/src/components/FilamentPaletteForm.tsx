@@ -12,6 +12,7 @@ import { AvailabilitySelect } from './AvailabilitySelect';
 import { DensityField } from './DensityField';
 import { PriceUnitField } from './PriceUnitField';
 import { RecommendedTempsField, RecommendedTemps } from './RecommendedTempsField';
+import { NozzleHardnessField } from './NozzleHardnessField';
 import { translateApiError } from '../utils/translateApiError';
 import type { Filament, FilamentAvailability, FilamentImportResult, FilamentPalettePayload } from '../types/api';
 
@@ -61,6 +62,7 @@ export function FilamentPaletteForm({ brandId, onClose, sourceFilament }: Filame
     bedMin: sourceFilament?.recommended_bed_temp_min ?? null,
     bedMax: sourceFilament?.recommended_bed_temp_max ?? null,
   });
+  const [nozzleHrc, setNozzleHrc] = useState<number | null>(sourceFilament?.required_nozzle_hrc ?? null);
   const [availability, setAvailability] = useState<FilamentAvailability>(sourceFilament?.availability ?? 'available');
   const [entries, setEntries] = useState<PaletteEntry[]>([emptyEntry(), emptyEntry(), emptyEntry()]);
   const [openPicker, setOpenPicker] = useState<number | null>(null);
@@ -154,6 +156,7 @@ export function FilamentPaletteForm({ brandId, onClose, sourceFilament }: Filame
         recommended_nozzle_temp_max: recTemps.nozzleMax,
         recommended_bed_temp_min: recTemps.bedMin,
         recommended_bed_temp_max: recTemps.bedMax,
+        required_nozzle_hrc: nozzleHrc,
         price_display_unit: priceMode,
         availability,
         variants: filledEntries.map((e) => ({
@@ -293,6 +296,8 @@ export function FilamentPaletteForm({ brandId, onClose, sourceFilament }: Filame
         </div>
         <div className="mt-3">
           <RecommendedTempsField value={recTemps} onChange={setRecTemps} />
+
+          <NozzleHardnessField value={nozzleHrc} onChange={setNozzleHrc} filler={sourceFilament?.visual_settings?.filler} />
         </div>
       </div>
 

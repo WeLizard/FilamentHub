@@ -22,6 +22,7 @@ import { useClickOutside } from '../hooks/useClickOutside';
 import { ModalOverlay } from './ModalOverlay';
 import { RecommendedTempsField, EMPTY_RECOMMENDED_TEMPS } from './RecommendedTempsField';
 import type { RecommendedTemps } from './RecommendedTempsField';
+import { NozzleHardnessField } from './NozzleHardnessField';
 import { useDebounce } from '../hooks/useDebounce';
 import { ColorMaterialSection } from './ColorMaterialSection';
 import { HSLColorPicker } from './HSLColorPicker';
@@ -229,7 +230,6 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
   
   // Вкладка "Экструдер мм"
   const [filamentExtruderVariant, setFilamentExtruderVariant] = useState('');
-  const [requiredNozzleHRC, setRequiredNozzleHRC] = useState<number | ''>('');
   
   // Вкладка "Зависимости" - НЕ нужна для агрегации (не используется для расчета средних значений)
   // Но нужны для импорта из OrcaSlicer - оставляем сеттеры для загрузки данных
@@ -282,6 +282,7 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
   const [filamentSpoolWeight, setFilamentSpoolWeight] = useState<number | ''>('');
   const [filamentPriceUnit, setFilamentPriceUnit] = useState<'per_kg' | 'per_spool'>('per_kg');
   const [filamentRecTemps, setFilamentRecTemps] = useState<RecommendedTemps>(EMPTY_RECOMMENDED_TEMPS);
+  const [filamentNozzleHrc, setFilamentNozzleHrc] = useState<number | null>(null);
   const [filamentDescription, setFilamentDescription] = useState('');
   const [showFilamentForm, setShowFilamentForm] = useState(false); // true = создать новый, false = выбрать существующий
   const [filamentSearch, setFilamentSearch] = useState(''); // Поиск существующего филамента
@@ -607,7 +608,6 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
         
         // === ВКЛАДКА "ЭКСТРУДЕР ММ" ===
         setFilamentExtruderVariant(settings.filament_extruder_variant?.[0] ? String(settings.filament_extruder_variant[0]) : '');
-        setRequiredNozzleHRC(settings.required_nozzle_HRC?.[0] ? Number(settings.required_nozzle_HRC[0]) : '');
         
         // === ВКЛАДКА "ЗАВИСИМОСТИ" ===
         if (settings.compatible_printers && Array.isArray(settings.compatible_printers)) {
@@ -693,7 +693,6 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
         setFilamentMinimalPurgeOnWipeTower('');
         setPelletFlowCoefficient('');
         setFilamentExtruderVariant('');
-        setRequiredNozzleHRC('');
         setCompatiblePrinters('');
         setCompatiblePrintersCondition('');
         setCompatiblePrints('');
@@ -814,7 +813,6 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
       setFilamentMinimalPurgeOnWipeTower('');
       setPelletFlowCoefficient('');
       setFilamentExtruderVariant('');
-      setRequiredNozzleHRC('');
       setCompatiblePrinters('');
       setCompatiblePrintersCondition('');
       setCompatiblePrints('');
@@ -837,6 +835,7 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
       setFilamentColorName('');
       setFilamentColorHex('#FF0000');
       setFilamentRecTemps(EMPTY_RECOMMENDED_TEMPS);
+      setFilamentNozzleHrc(null);
       // Сброс расширенных визуальных эффектов
       setFilamentVisualColorType('single');
       setFilamentVisualColors(['#FF0000']);
@@ -1049,6 +1048,7 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
       recommended_nozzle_temp_max?: number;
       recommended_bed_temp_min?: number;
       recommended_bed_temp_max?: number;
+      required_nozzle_hrc?: number;
       price_display_unit?: 'per_kg' | 'per_spool';
       description?: string;
     }) => filamentsAPI.create(data),
@@ -1447,7 +1447,6 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
 
     // === ВКЛАДКА "ЭКСТРУДЕР ММ" ===
     addParam('filament_extruder_variant', filamentExtruderVariant);
-    addParam('required_nozzle_HRC', requiredNozzleHRC);
 
     // === ВКЛАДКА "ЗАВИСИМОСТИ" ===
     if (compatiblePrinters.trim() !== '') {
@@ -1577,6 +1576,7 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
           recommended_nozzle_temp_max: filamentRecTemps.nozzleMax ?? undefined,
           recommended_bed_temp_min: filamentRecTemps.bedMin ?? undefined,
           recommended_bed_temp_max: filamentRecTemps.bedMax ?? undefined,
+          required_nozzle_hrc: filamentNozzleHrc ?? undefined,
           price_display_unit: canCreateOfficial ? filamentPriceUnit : undefined,
           description: filamentDescription.trim() || undefined,
         });
@@ -2463,6 +2463,8 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
 
                   {/* Рекомендованный вендором диапазон температур (спека материала) */}
                   <RecommendedTempsField value={filamentRecTemps} onChange={setFilamentRecTemps} />
+
+                  <NozzleHardnessField value={filamentNozzleHrc} onChange={setFilamentNozzleHrc} filler={filamentVisualFiller} />
 
                   {/* Описание филамента */}
                   <div>
@@ -4134,25 +4136,6 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                           className={`w-full px-3 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-gray-500 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all `}
                         />
                         <p className="text-xs text-gray-500 mt-1">{t('presetModal.extruderVariantHint')}</p>
-                      </div>
-
-                      {/* Требуемая твердость сопла HRC */}
-                      <div>
-                        <label className="block text-gray-300 mb-1 text-sm">{t('presetModal.nozzleHRC')}</label>
-                        <div className="relative">
-                          <input
-                            type="number"
-                            value={requiredNozzleHRC}
-                            onChange={(e) => { setRequiredNozzleHRC(e.target.value === '' ? '' : Number(e.target.value)); }}
-                            min={0}
-                            max={100}
-                            step="1"
-                            placeholder="3"
-                            className={`w-full pl-3 pr-10 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-gray-500 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all `}
-                          />
-                          <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400 pointer-events-none">HRC</span>
-                        </div>
-                        <p className="text-xs text-gray-500 mt-1">{t('presetModal.nozzleHRCHint')}</p>
                       </div>
                     </div>
                   </div>

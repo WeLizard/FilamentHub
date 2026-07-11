@@ -1176,6 +1176,16 @@
     "errorsCount": "Errors",
     "close": "Close"
   },
+  "nozzleHardness": {
+    "label": "Required nozzle hardness",
+    "hint": "A material property: abrasive fillers wear soft brass and need a hardened nozzle. Exported to the profile as a minimum HRC.",
+    "notSet": "Not set",
+    "brass": "Brass / standard",
+    "hardenedSteel": "Hardened steel",
+    "ruby": "Ruby",
+    "tungstenCarbide": "Tungsten carbide",
+    "abrasiveHint": "Abrasive filler — a hardened nozzle is recommended (HRC ≥ 50)."
+  },
   "createFilament": {
     "createTitle": "Create new material",
     "editTitle": "Edit material",

@@ -1173,6 +1173,16 @@
     "errorsCount": "错误",
     "close": "关闭"
   },
+  "nozzleHardness": {
+    "label": "所需喷嘴硬度",
+    "hint": "材料属性：磨蚀性填料会磨损黄铜，需要硬化喷嘴。以最低 HRC 导出到配置。",
+    "notSet": "未指定",
+    "brass": "黄铜 / 标准",
+    "hardenedSteel": "硬化钢",
+    "ruby": "红宝石",
+    "tungstenCarbide": "碳化钨",
+    "abrasiveHint": "磨蚀性填料——建议使用硬化喷嘴（HRC ≥ 50）。"
+  },
   "createFilament": {
     "createTitle": "创建新耗材",
     "editTitle": "编辑耗材",

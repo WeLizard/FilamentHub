@@ -21,6 +21,7 @@ import { MaterialTypeSelect, FALLBACK_TYPES } from './MaterialTypeSelect';
 import { AvailabilitySelect } from './AvailabilitySelect';
 import { DensityField } from './DensityField';
 import { RecommendedTempsField, RecommendedTemps, EMPTY_RECOMMENDED_TEMPS } from './RecommendedTempsField';
+import { NozzleHardnessField } from './NozzleHardnessField';
 import { ModalOverlay } from './ModalOverlay';
 import type { AxiosError } from 'axios';
 
@@ -73,6 +74,7 @@ export const CreateFilamentModal: React.FC<CreateFilamentModalProps> = ({
   const [spoolWeight, setSpoolWeight] = useState(1000);
   const [emptySpoolWeight, setEmptySpoolWeight] = useState<number | null>(null);
   const [recTemps, setRecTemps] = useState<RecommendedTemps>(EMPTY_RECOMMENDED_TEMPS);
+  const [nozzleHrc, setNozzleHrc] = useState<number | null>(null);
   const [description, setDescription] = useState('');
   const [availability, setAvailability] = useState<FilamentAvailability>('available');
   const [error, setError] = useState<string | null>(null);
@@ -238,6 +240,7 @@ export const CreateFilamentModal: React.FC<CreateFilamentModalProps> = ({
         bedMin: filament.recommended_bed_temp_min ?? null,
         bedMax: filament.recommended_bed_temp_max ?? null,
       });
+      setNozzleHrc(filament.required_nozzle_hrc ?? null);
       // Вычисляем цену за катушку из цены за кг
       setPricePerSpool(initialPricePerKg > 0 && initialSpoolWeight > 0 ? (initialPricePerKg * initialSpoolWeight) / 1000 : 0);
       setPriceMode(filament.price_display_unit === 'per_spool' ? 'per_spool' : 'per_kg');
@@ -334,6 +337,7 @@ export const CreateFilamentModal: React.FC<CreateFilamentModalProps> = ({
       recommended_nozzle_temp_max?: number;
       recommended_bed_temp_min?: number;
       recommended_bed_temp_max?: number;
+      required_nozzle_hrc?: number;
       description?: string;
       availability?: FilamentAvailability;
       price_display_unit?: 'per_kg' | 'per_spool';
@@ -383,6 +387,7 @@ export const CreateFilamentModal: React.FC<CreateFilamentModalProps> = ({
         recommended_nozzle_temp_max?: number;
         recommended_bed_temp_min?: number;
         recommended_bed_temp_max?: number;
+        required_nozzle_hrc?: number;
         description?: string;
         active?: boolean;
         availability?: FilamentAvailability;
@@ -460,6 +465,7 @@ export const CreateFilamentModal: React.FC<CreateFilamentModalProps> = ({
           recommended_nozzle_temp_max: recTemps.nozzleMax ?? undefined,
           recommended_bed_temp_min: recTemps.bedMin ?? undefined,
           recommended_bed_temp_max: recTemps.bedMax ?? undefined,
+          required_nozzle_hrc: nozzleHrc ?? undefined,
           description: description || undefined,
           availability,
           price_display_unit: priceMode,
@@ -500,6 +506,7 @@ export const CreateFilamentModal: React.FC<CreateFilamentModalProps> = ({
         recommended_nozzle_temp_max: recTemps.nozzleMax ?? undefined,
         recommended_bed_temp_min: recTemps.bedMin ?? undefined,
         recommended_bed_temp_max: recTemps.bedMax ?? undefined,
+        required_nozzle_hrc: nozzleHrc ?? undefined,
         description: description || undefined,
         availability,
         price_display_unit: priceMode,
@@ -1016,6 +1023,8 @@ export const CreateFilamentModal: React.FC<CreateFilamentModalProps> = ({
           />
 
           <RecommendedTempsField value={recTemps} onChange={setRecTemps} />
+
+          <NozzleHardnessField value={nozzleHrc} onChange={setNozzleHrc} filler={effectiveFiller} />
 
           <AvailabilitySelect
             value={availability}
