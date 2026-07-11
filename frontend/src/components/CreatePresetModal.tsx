@@ -3155,7 +3155,7 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                     )}
 
                     {/* Измеренные значения адаптивного Pressure advance (beta) */}
-                    {adaptivePressureAdvance && (
+                    {adaptivePressureAdvance && isVisibleAtMode('expert', settingMode) && (
                       <div>
                         <label className="block text-gray-300 mb-1 text-sm">{t('presetModal.adaptivePAMeasured')}</label>
                         <textarea
@@ -3267,7 +3267,7 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                   <h4 className="text-sm font-semibold text-white mb-3 pb-2 border-b border-white/10">{t('presetModal.volumetricLimit')}</h4>
                   
                   <div className="space-y-3">
-                    <div className="flex items-center space-x-3">
+                    <div className={`flex items-center space-x-3 ${isVisibleAtMode('expert', settingMode) ? '' : 'hidden'}`}>
                       <input
                         type="checkbox"
                         id="adaptiveVolumetricSpeed"
