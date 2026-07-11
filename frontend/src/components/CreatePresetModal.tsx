@@ -124,8 +124,6 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
   const [isOfficial, setIsOfficial] = useState(false);
   const [extruderTemp, setExtruderTemp] = useState(200);
   const [bedTemp, setBedTemp] = useState(60);
-  const [printSpeed, setPrintSpeed] = useState(50);
-  const [travelSpeed, setTravelSpeed] = useState(150);
   const [flowRate, setFlowRate] = useState(100);
   const [fanSpeed, setFanSpeed] = useState(100);
   const [retractionLength, setRetractionLength] = useState(5.0);
@@ -433,8 +431,6 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
       setIsOfficial(preset.is_official);
       setExtruderTemp(preset.extruder_temp);
       setBedTemp(preset.bed_temp);
-      setPrintSpeed(preset.print_speed);
-      setTravelSpeed(preset.travel_speed || 150);
       setFlowRate(preset.flow_rate || 100);
       setFanSpeed(preset.fan_speed || 100);
       setRetractionLength(preset.retraction_length || 5.0);
@@ -710,8 +706,6 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
       setIsOfficial(false);
       setExtruderTemp(200);
       setBedTemp(60);
-      setPrintSpeed(50);
-      setTravelSpeed(150);
       setFlowRate(100);
       setFanSpeed(100);
       setRetractionLength(5.0);
@@ -923,8 +917,6 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
     applyMaterialDefaults(materialTypeValue, {
       setExtruderTemp,
       setBedTemp,
-      setPrintSpeed,
-      setTravelSpeed,
       setFlowRate,
       setFanSpeed,
       setRetractionLength,
@@ -1152,8 +1144,6 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
       is_official: boolean;
       extruder_temp: number;
       bed_temp: number;
-      print_speed: number;
-      travel_speed?: number;
       flow_rate?: number;
       fan_speed?: number;
       retraction_length?: number;
@@ -1192,8 +1182,6 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
         description?: string;
         extruder_temp?: number;
         bed_temp?: number;
-        print_speed?: number;
-        travel_speed?: number;
         flow_rate?: number;
         fan_speed?: number;
         retraction_length?: number;
@@ -1593,8 +1581,6 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
               description?: string;
               extruder_temp: number;
               bed_temp: number;
-              print_speed: number;
-              travel_speed: number;
               flow_rate: number;
               fan_speed: number;
               retraction_length: number;
@@ -1608,8 +1594,6 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
               description: description || undefined,
               extruder_temp: extruderTemp,
               bed_temp: bedTemp,
-              print_speed: printSpeed,
-              travel_speed: travelSpeed,
               flow_rate: flowRate,
               fan_speed: fanSpeed,
               retraction_length: retractionLength,
@@ -1632,8 +1616,6 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
               is_official: isOfficial,
               extruder_temp: extruderTemp,
               bed_temp: bedTemp,
-              print_speed: printSpeed,
-              travel_speed: travelSpeed,
               flow_rate: flowRate,
               fan_speed: fanSpeed,
               retraction_length: retractionLength,
@@ -1685,8 +1667,6 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
         description?: string;
         extruder_temp: number;
         bed_temp: number;
-        print_speed: number;
-        travel_speed: number;
         flow_rate: number;
         fan_speed: number;
         retraction_length: number;
@@ -1700,8 +1680,6 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
         description: description || undefined,
         extruder_temp: extruderTemp,
         bed_temp: bedTemp,
-        print_speed: printSpeed,
-        travel_speed: travelSpeed,
         flow_rate: flowRate,
         fan_speed: fanSpeed,
         retraction_length: retractionLength,
@@ -1729,8 +1707,6 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
         is_official: isOfficial,
         extruder_temp: extruderTemp,
         bed_temp: bedTemp,
-        print_speed: printSpeed,
-        travel_speed: travelSpeed,
         flow_rate: flowRate,
         fan_speed: fanSpeed,
         retraction_length: retractionLength,
@@ -1973,8 +1949,6 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                           applyMaterialDefaults(value, {
                             setExtruderTemp,
                             setBedTemp,
-                            setPrintSpeed,
-                            setTravelSpeed,
                             setFlowRate,
                             setFanSpeed,
                             setRetractionLength,

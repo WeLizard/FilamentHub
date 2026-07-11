@@ -4,12 +4,9 @@
  */
 
 export interface MaterialDefaults {
-  // Базовые параметры пресета
+  // Базовые параметры пресета (material scope; скорости/высоты слоёв — process)
   extruder_temp: number;
   bed_temp: number;
-  print_speed: number;
-  travel_speed: number;
-  layer_height: number;
   flow_rate: number;
   fan_speed: number;
   retraction_length: number;
@@ -66,9 +63,6 @@ export const MATERIAL_DEFAULTS: Record<string, MaterialDefaults> = {
   ABS: {
     extruder_temp: 270,
     bed_temp: 90,
-    print_speed: 50,
-    travel_speed: 150,
-    layer_height: 0.2,
     flow_rate: 100,
     fan_speed: 10,
     retraction_length: 5.0,
@@ -100,9 +94,6 @@ export const MATERIAL_DEFAULTS: Record<string, MaterialDefaults> = {
   PLA: {
     extruder_temp: 210,
     bed_temp: 60,
-    print_speed: 80,
-    travel_speed: 150,
-    layer_height: 0.2,
     flow_rate: 100,
     fan_speed: 100,
     retraction_length: 5.0,
@@ -134,9 +125,6 @@ export const MATERIAL_DEFAULTS: Record<string, MaterialDefaults> = {
   PETG: {
     extruder_temp: 240,
     bed_temp: 80,
-    print_speed: 60,
-    travel_speed: 150,
-    layer_height: 0.2,
     flow_rate: 100,
     fan_speed: 50,
     retraction_length: 5.0,
@@ -168,9 +156,6 @@ export const MATERIAL_DEFAULTS: Record<string, MaterialDefaults> = {
   TPU: {
     extruder_temp: 230,
     bed_temp: 60,
-    print_speed: 30,
-    travel_speed: 150,
-    layer_height: 0.2,
     flow_rate: 95,
     fan_speed: 0,
     retraction_length: 0,
@@ -202,9 +187,6 @@ export const MATERIAL_DEFAULTS: Record<string, MaterialDefaults> = {
   ASA: {
     extruder_temp: 270,
     bed_temp: 100,
-    print_speed: 50,
-    travel_speed: 150,
-    layer_height: 0.2,
     flow_rate: 100,
     fan_speed: 10,
     retraction_length: 5.0,
@@ -236,9 +218,6 @@ export const MATERIAL_DEFAULTS: Record<string, MaterialDefaults> = {
   PA: {
     extruder_temp: 260,
     bed_temp: 80,
-    print_speed: 50,
-    travel_speed: 150,
-    layer_height: 0.2,
     flow_rate: 95,
     fan_speed: 20,
     retraction_length: 5.0,
@@ -270,9 +249,6 @@ export const MATERIAL_DEFAULTS: Record<string, MaterialDefaults> = {
   PC: {
     extruder_temp: 280,
     bed_temp: 110,
-    print_speed: 40,
-    travel_speed: 150,
-    layer_height: 0.2,
     flow_rate: 100,
     fan_speed: 0,
     retraction_length: 5.0,
@@ -304,9 +280,6 @@ export const MATERIAL_DEFAULTS: Record<string, MaterialDefaults> = {
   PVA: {
     extruder_temp: 200,
     bed_temp: 60,
-    print_speed: 50,
-    travel_speed: 150,
-    layer_height: 0.2,
     flow_rate: 100,
     fan_speed: 100,
     retraction_length: 5.0,
@@ -352,8 +325,6 @@ export function applyMaterialDefaults(
     // Базовые параметры
     setExtruderTemp: (value: number) => void;
     setBedTemp: (value: number) => void;
-    setPrintSpeed: (value: number) => void;
-    setTravelSpeed: (value: number) => void;
     setFlowRate: (value: number) => void;
     setFanSpeed: (value: number) => void;
     setRetractionLength: (value: number) => void;
@@ -388,8 +359,6 @@ export function applyMaterialDefaults(
   // Применяем базовые параметры
   setters.setExtruderTemp(defaults.extruder_temp);
   setters.setBedTemp(defaults.bed_temp);
-  setters.setPrintSpeed(defaults.print_speed);
-  setters.setTravelSpeed(defaults.travel_speed);
   setters.setFlowRate(defaults.flow_rate);
   setters.setFanSpeed(defaults.fan_speed);
   setters.setRetractionLength(defaults.retraction_length);

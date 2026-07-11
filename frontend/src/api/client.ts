@@ -700,10 +700,6 @@ export const presetsAPI = {
     filament_id?: number | null; // Может быть null для черновиков
     extruder_temp?: number;
     bed_temp?: number;
-    print_speed?: number;
-    travel_speed?: number;
-    layer_height?: number;
-    first_layer_height?: number;
     flow_rate?: number;
     fan_speed?: number;
     retraction_length?: number;
@@ -724,10 +720,6 @@ export const presetsAPI = {
     is_official: boolean;
     extruder_temp: number;
     bed_temp: number;
-    print_speed: number;
-    travel_speed?: number;
-    layer_height?: number;
-    first_layer_height?: number;
     flow_rate?: number;
     fan_speed?: number;
     retraction_length?: number;

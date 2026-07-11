@@ -48,11 +48,8 @@ export interface FilamentPresetSummary {
   is_weighted: boolean;
   extruder_temp: number | null;
   bed_temp: number | null;
-  print_speed: number | null;
   fan_speed: number | null;
   flow_rate: number | null;
-  layer_height?: number | null;
-  first_layer_height?: number | null;
   rating: number | null;
   success_rate: number | null;
   updated_at: string | null;
@@ -322,10 +319,6 @@ export interface Preset {
   is_weighted: boolean; // Динамический взвешенный пресет, автоматически пересчитывается системой
   extruder_temp: number;
   bed_temp: number;
-  print_speed: number;
-  travel_speed: number | null;
-  layer_height: number | null;
-  first_layer_height: number | null;
   flow_rate: number | null;
   fan_speed: number | null;
   retraction_length: number | null;
@@ -370,10 +363,6 @@ export interface RecommendedPreset {
   filament_id: number;
   extruder_temp: number;
   bed_temp: number;
-  print_speed: number;
-  travel_speed: number | null;
-  layer_height: number | null;
-  first_layer_height: number | null;
   flow_rate: number | null;
   fan_speed: number | null;
   retraction_length: number | null;
