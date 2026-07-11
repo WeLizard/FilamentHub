@@ -571,6 +571,37 @@ export interface UserSavedPreset {
 export type PricingMethod = 'by_weight' | 'by_time' | 'combined';
 export type RoundingMode = 'up' | 'down' | 'nearest';
 
+export type CalculatorMaterialPriceSource = 'spool' | 'filamenthub' | 'slicer' | 'manual';
+
+export interface CalculatorMaterialLineRequest {
+  line_id: string;
+  job_key?: string | null;
+  tool_index?: number | null;
+  label?: string | null;
+  weight_g: number;
+  spool_price: number;
+  spool_weight_kg: number;
+  delivery_cost?: number;
+  price_source: CalculatorMaterialPriceSource;
+  spool_id?: number | null;
+  filament_id?: number | null;
+  density_g_cm3?: number | null;
+  abrasiveness?: number | null;
+}
+
+export interface CalculatorMaterialLineCost {
+  line_id: string;
+  job_key?: string | null;
+  tool_index?: number | null;
+  label?: string | null;
+  weight_g: number;
+  price_per_gram: number;
+  cost: number;
+  price_source: CalculatorMaterialPriceSource;
+  spool_id?: number | null;
+  filament_id?: number | null;
+}
+
 export interface CalculatorEstimateRequest {
   pricing_method?: PricingMethod;
   
@@ -581,6 +612,7 @@ export interface CalculatorEstimateRequest {
   spool_price?: number | null;
   spool_weight_kg?: number | null;
   delivery_cost?: number | null;
+  material_lines?: CalculatorMaterialLineRequest[];
   
   // Параметры времени печати
   time_sec?: number | null;
@@ -637,11 +669,14 @@ export interface CalculatorEstimateRequest {
 export interface CalculatorEstimateResponse {
   // Компоненты стоимости
   cost_material: number;
+  cost_waste?: number;
   cost_electricity: number;
   cost_modeling: number;
   cost_printing: number;
   cost_postprocessing: number;
   cost_amortization: number;
+  cost_monitoring?: number;
+  cost_nozzle_wear?: number;
   cost_bed_prep: number;
   cost_tax: number;
   
@@ -650,6 +685,7 @@ export interface CalculatorEstimateResponse {
   cost_overhead: number;
   cost_before_markup: number;
   cost_markup: number;
+  material_line_costs?: CalculatorMaterialLineCost[];
   
   // Итоговые суммы
   cost_first_part: number;
@@ -757,6 +793,11 @@ export interface CalculatorHistoryFilamentSnapshot {
   color_name?: string | null;
 }
 
+export interface CalculatorHistoryParsedJob {
+  job_key: string;
+  parsed_gcode: CalculatorGcodeParseResponse;
+}
+
 export interface CalculatorHistoryEntry {
   id: number;
   user_id: number;
@@ -765,6 +806,7 @@ export interface CalculatorHistoryEntry {
   request_data: CalculatorEstimateRequest;
   result_data: CalculatorEstimateResponse;
   parsed_gcode?: CalculatorGcodeParseResponse | null;
+  parsed_jobs?: CalculatorHistoryParsedJob[];
   filament_snapshot?: CalculatorHistoryFilamentSnapshot | null;
   created_at: string;
   updated_at: string;
@@ -775,6 +817,7 @@ export interface CalculatorHistoryEntryCreate {
   request_data: CalculatorEstimateRequest;
   result_data: CalculatorEstimateResponse;
   parsed_gcode?: CalculatorGcodeParseResponse | null;
+  parsed_jobs?: CalculatorHistoryParsedJob[];
   filament_snapshot?: CalculatorHistoryFilamentSnapshot | null;
 }
 

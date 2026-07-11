@@ -47,6 +47,7 @@ import type {
   CalculatorHistoryEntry,
   CalculatorHistoryEntryCreate,
   CalculatorHistoryFilamentSnapshot,
+  CalculatorMaterialLineRequest,
   CalculatorParsedMaterial,
   Filament,
   PricingMethod,
@@ -150,6 +151,20 @@ interface AutoMaterialMatchCandidate {
   materialType: string | null;
   color: string | null;
   spoolIds: number[];
+}
+
+interface ParsedJobState {
+  key: string;
+  parsed: CalculatorGcodeParseResponse;
+}
+
+interface CalculatorMaterialLineState extends CalculatorMaterialLineRequest {
+  selectionValue: string;
+  fileName: string;
+  plateIndex: number | null;
+  confidence: MaterialMatchConfidence | null;
+  requiresSpoolChoice: boolean;
+  priceResolved: boolean;
 }
 
 const DEFAULT_FORM_STATE: CalculatorFormState = {
@@ -338,7 +353,10 @@ const buildSpoolLabel = (spool: UserSpool): string => {
   return `${buildFilamentLabel(spool.filament)} · ${Math.round(spool.remaining_weight_g)} g`;
 };
 
-const buildEstimateRequest = (form: CalculatorFormState): CalculatorEstimateRequest => {
+const buildEstimateRequest = (
+  form: CalculatorFormState,
+  materialLines: CalculatorMaterialLineState[] = [],
+): CalculatorEstimateRequest => {
   const requestData: CalculatorEstimateRequest = {
     pricing_method: 'combined',
     quantity: form.quantity,
@@ -352,6 +370,23 @@ const buildEstimateRequest = (form: CalculatorFormState): CalculatorEstimateRequ
   requestData.spool_price = form.spoolPrice;
   requestData.spool_weight_kg = form.spoolWeightKg;
   requestData.delivery_cost = form.deliveryCost || undefined;
+  if (materialLines.length > 0) {
+    requestData.material_lines = materialLines.map((line) => ({
+      line_id: line.line_id,
+      job_key: line.job_key,
+      tool_index: line.tool_index,
+      label: line.label,
+      weight_g: line.weight_g,
+      spool_price: line.spool_price,
+      spool_weight_kg: line.spool_weight_kg,
+      delivery_cost: line.delivery_cost,
+      price_source: line.price_source,
+      spool_id: line.spool_id,
+      filament_id: line.filament_id,
+      density_g_cm3: line.density_g_cm3,
+      abrasiveness: line.abrasiveness,
+    }));
+  }
   requestData.time_hours = form.timeHours;
   requestData.time_minutes = form.timeMinutes;
   requestData.time_sec = form.timeSec || undefined;
@@ -394,6 +429,29 @@ const buildEstimateRequest = (form: CalculatorFormState): CalculatorEstimateRequ
 
   return requestData;
 };
+
+const resolveParsedMaterialWeight = (
+  material: CalculatorParsedMaterial,
+  fallbackWeightG?: number | null,
+): number => {
+  if ((material.weight_g ?? 0) > 0) return material.weight_g!;
+  if ((material.volume_cm3 ?? 0) > 0 && (material.density_g_cm3 ?? 0) > 0) {
+    return Number((material.volume_cm3! * material.density_g_cm3!).toFixed(3));
+  }
+  if (
+    (material.length_mm ?? 0) > 0
+    && (material.diameter_mm ?? 0) > 0
+    && (material.density_g_cm3 ?? 0) > 0
+  ) {
+    const radiusMm = material.diameter_mm! / 2;
+    const volumeCm3 = (Math.PI * radiusMm * radiusMm * material.length_mm!) / 1000;
+    return Number((volumeCm3 * material.density_g_cm3!).toFixed(3));
+  }
+  return fallbackWeightG && fallbackWeightG > 0 ? fallbackWeightG : 0;
+};
+
+const parsedJobKey = (parsed: CalculatorGcodeParseResponse, uploadIndex: number): string =>
+  `${uploadIndex}:${parsed.file_name}:${parsed.file_size_bytes}:${parsed.plate_index ?? 0}`;
 
 const formatHoursShort = (value: number | null | undefined, hourLabel: string, minLabel: string): string => {
   if (value == null || !Number.isFinite(value) || value <= 0) {
@@ -673,6 +731,37 @@ const applyParsedGcodeToForm = (
   return nextForm;
 };
 
+const applyParsedJobsToForm = (
+  current: CalculatorFormState,
+  jobs: ParsedJobState[],
+): CalculatorFormState => {
+  if (jobs.length === 0) return current;
+
+  const next = jobs.reduce(
+    (accumulator, job) => applyParsedGcodeToForm(accumulator, job.parsed),
+    { ...current },
+  );
+  const totalWeightG = jobs.reduce(
+    (sum, job) => sum + (job.parsed.total_filament_weight_g ?? 0),
+    0,
+  );
+  const totalSeconds = jobs.reduce(
+    (sum, job) => sum + (job.parsed.print_time_seconds ?? 0),
+    0,
+  );
+  if (totalWeightG > 0) next.weightG = Number(totalWeightG.toFixed(3));
+  if (totalSeconds > 0) {
+    next.timeHours = Math.floor(totalSeconds / 3600);
+    next.timeMinutes = Math.floor((totalSeconds % 3600) / 60);
+    next.timeSec = totalSeconds % 60;
+  }
+  next.complexityCoefficient = Math.max(
+    current.complexityCoefficient,
+    ...jobs.map((job) => suggestComplexityCoefficient(job.parsed)),
+  );
+  return next;
+};
+
 const buildHistoryFilamentSnapshot = (
   filament: MaterialSelectionSnapshot | null,
 ): CalculatorHistoryFilamentSnapshot | null => {
@@ -694,8 +783,10 @@ const buildHistoryPayload = (
   result: CalculatorEstimateResponse,
   parsedGcode: CalculatorGcodeParseResponse | null,
   selectedFilament: MaterialSelectionSnapshot | null,
+  materialLines: CalculatorMaterialLineState[] = [],
+  parsedJobs: ParsedJobState[] = [],
 ): CalculatorHistoryEntryCreate => ({
-  request_data: buildEstimateRequest(form),
+  request_data: buildEstimateRequest(form, materialLines),
   result_data: result,
   parsed_gcode: parsedGcode
     ? {
@@ -703,6 +794,13 @@ const buildHistoryPayload = (
         thumbnail_data_url: null,
       }
     : null,
+  parsed_jobs: parsedJobs.map((job) => ({
+    job_key: job.key,
+    parsed_gcode: {
+      ...job.parsed,
+      thumbnail_data_url: null,
+    },
+  })),
   filament_snapshot: buildHistoryFilamentSnapshot(selectedFilament),
 });
 
@@ -1027,6 +1125,10 @@ export const CalculatorPage: React.FC = () => {
   const [activeTab, setActiveTab] = useState<CalculatorTab>('calculator');
   const [form, setForm] = useState<CalculatorFormState>(DEFAULT_FORM_STATE);
   const [parsedGcode, setParsedGcode] = useState<CalculatorGcodeParseResponse | null>(null);
+  const [parsedJobs, setParsedJobs] = useState<ParsedJobState[]>([]);
+  const [materialLines, setMaterialLines] = useState<CalculatorMaterialLineState[]>([]);
+  const [batchParseWarning, setBatchParseWarning] = useState<string | null>(null);
+  const [materialLinesError, setMaterialLinesError] = useState<string | null>(null);
   const [dragActive, setDragActive] = useState(false);
   const [historyFeedback, setHistoryFeedback] = useState<{ kind: 'success' | 'error'; message: string } | null>(null);
   const [deletingHistoryEntry, setDeletingHistoryEntry] = useState<CalculatorHistoryEntry | null>(null);
@@ -1041,10 +1143,10 @@ export const CalculatorPage: React.FC = () => {
   const [isSharing, setIsSharing] = useState(false);
   const [isPdfDownloading, setIsPdfDownloading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
-  const gcodeSourceFileRef = useRef<File | null>(null);
   const skipNextFilamentDefaultsRef = useRef(false);
   const priceManuallyEditedRef = useRef(false);
   const lastAutoMatchedGcodeKeyRef = useRef<string | null>(null);
+  const lastBuiltMaterialJobsKeyRef = useRef<string | null>(null);
   const quoteSequenceRef = useRef(0);
 
   const formatCurrency = useMemo(
@@ -1087,8 +1189,36 @@ export const CalculatorPage: React.FC = () => {
   });
 
   const parseGcodeMutation = useMutation({
-    mutationFn: ({ file, plateIndex }: { file: File; plateIndex?: number }) =>
-      calculatorAPI.parseGcode(file, plateIndex),
+    mutationFn: async (files: File[]) => {
+      const limitedFiles = files.slice(0, 20);
+      const settled = await Promise.allSettled(
+        limitedFiles.map(async (file, uploadIndex) => {
+          const first = await calculatorAPI.parseGcode(file);
+          const plateIndices = first.available_plate_indices ?? [];
+          const remainingPlateIndices = plateIndices.filter(
+            (plateIndex) => plateIndex !== first.plate_index,
+          );
+          const remaining = await Promise.all(
+            remainingPlateIndices.map((plateIndex) => calculatorAPI.parseGcode(file, plateIndex)),
+          );
+          return [first, ...remaining]
+            .sort((left, right) => (left.plate_index ?? 0) - (right.plate_index ?? 0))
+            .map((parsed) => ({ key: parsedJobKey(parsed, uploadIndex), parsed }));
+        }),
+      );
+      const jobs = settled.flatMap((result) => (result.status === 'fulfilled' ? result.value : []));
+      const failedFiles = settled.flatMap((result, index) =>
+        result.status === 'rejected' ? [limitedFiles[index]?.name ?? `#${index + 1}`] : [],
+      );
+      if (jobs.length === 0) {
+        throw new Error('all_gcode_files_failed');
+      }
+      return {
+        jobs,
+        failedFiles,
+        skippedCount: Math.max(0, files.length - limitedFiles.length),
+      };
+    },
   });
 
   const historyQuery = useQuery({
@@ -1341,6 +1471,92 @@ export const CalculatorPage: React.FC = () => {
     }));
   };
 
+  const handleMaterialLineSelection = (lineId: string, selectionValue: string) => {
+    setMaterialLinesError(null);
+    setMaterialLines((currentLines) =>
+      currentLines.map((line) => {
+        if (line.line_id !== lineId) return line;
+        if (selectionValue.startsWith('spool:')) {
+          const spoolId = Number(selectionValue.slice('spool:'.length));
+          const spool = availableSpools.find((item) => item.id === spoolId);
+          if (!spool) return line;
+          const defaults = deriveUserSpoolDefaults(spool);
+          const brandCurrency = spool.filament?.currency
+            ? normalizeCurrency(spool.filament.currency)
+            : null;
+          const currencyMatches =
+            spool.price != null || !brandCurrency || brandCurrency === calcCurrencyRef.current;
+          return {
+            ...line,
+            selectionValue,
+            spool_id: spool.id,
+            filament_id: spool.filament_id,
+            spool_price: currencyMatches ? (defaults.spoolPrice ?? 0) : 0,
+            spool_weight_kg: defaults.spoolWeightKg ?? 1,
+            price_source: spool.price != null ? 'spool' : 'filamenthub',
+            requiresSpoolChoice: false,
+            priceResolved: currencyMatches && defaults.spoolPrice != null,
+          };
+        }
+        if (selectionValue.startsWith('filament:')) {
+          const filamentId = Number(selectionValue.slice('filament:'.length));
+          const filament = filamentsQuery.data?.items.find((item) => item.id === filamentId);
+          if (!filament) return line;
+          const defaults = deriveCatalogFilamentDefaults(filament);
+          const brandCurrency = filament.currency ? normalizeCurrency(filament.currency) : null;
+          const currencyMatches = !brandCurrency || brandCurrency === calcCurrencyRef.current;
+          return {
+            ...line,
+            selectionValue,
+            spool_id: null,
+            filament_id: filament.id,
+            spool_price: currencyMatches ? (defaults.spoolPrice ?? 0) : 0,
+            spool_weight_kg: defaults.spoolWeightKg ?? 1,
+            price_source: 'filamenthub',
+            requiresSpoolChoice: false,
+            priceResolved: currencyMatches && defaults.spoolPrice != null,
+          };
+        }
+        return {
+          ...line,
+          selectionValue: selectionValue || 'manual',
+          spool_id: null,
+          filament_id: null,
+          price_source: 'manual',
+          requiresSpoolChoice: false,
+          priceResolved: selectionValue === 'manual' && line.priceResolved,
+        };
+      }),
+    );
+  };
+
+  const handleMaterialLinePriceChange = (lineId: string, value: number) => {
+    setMaterialLinesError(null);
+    setMaterialLines((currentLines) =>
+      currentLines.map((line) =>
+        line.line_id === lineId
+          ? {
+              ...line,
+              spool_price: value,
+              price_source: 'manual',
+              priceResolved: Number.isFinite(value) && value >= 0,
+            }
+          : line,
+      ),
+    );
+  };
+
+  const handleMaterialLineSpoolWeightChange = (lineId: string, value: number) => {
+    setMaterialLinesError(null);
+    setMaterialLines((currentLines) =>
+      currentLines.map((line) =>
+        line.line_id === lineId
+          ? { ...line, spool_weight_kg: value, priceResolved: line.priceResolved && value > 0 }
+          : line,
+      ),
+    );
+  };
+
   const updateStaticField = <K extends CalculatorStaticSettingKey>(field: K, value: CalculatorFormState[K]) => {
     setForm((prev) => {
       const next = { ...prev, [field]: value };
@@ -1361,40 +1577,52 @@ export const CalculatorPage: React.FC = () => {
   };
 
   const handleCalculate = () => {
-    calculateMutation.mutate(buildEstimateRequest(form));
+    if (materialLines.some((line) => !line.priceResolved || line.spool_weight_kg <= 0)) {
+      setMaterialLinesError(tc('materialLinesIncomplete'));
+      return;
+    }
+    setMaterialLinesError(null);
+    calculateMutation.mutate(buildEstimateRequest(form, materialLines));
   };
 
-  const handleGcodeFile = async (file: File, plateIndex?: number) => {
-    const parsed = await parseGcodeMutation.mutateAsync({ file, plateIndex });
-    gcodeSourceFileRef.current = file;
+  const handleGcodeFiles = async (files: File[]) => {
+    const batch = await parseGcodeMutation.mutateAsync(files);
+    const firstJob = batch.jobs[0];
     priceManuallyEditedRef.current = false;
     lastAutoMatchedGcodeKeyRef.current = null;
+    lastBuiltMaterialJobsKeyRef.current = null;
     setSelectedSpoolId('');
     setAutoMaterialMatch(null);
     setMaterialPriceSource('unset');
-    setParsedGcode(parsed);
+    setMaterialLinesError(null);
+    setParsedJobs(batch.jobs);
+    setParsedGcode(firstJob?.parsed ?? null);
+    setBatchParseWarning(
+      batch.failedFiles.length > 0 || batch.skippedCount > 0
+        ? tc('batchParsePartial')
+            .replace('{{failed}}', String(batch.failedFiles.length))
+            .replace('{{skipped}}', String(batch.skippedCount))
+        : null,
+    );
     setForm((prev) => ({
-      ...applyParsedGcodeToForm(prev, parsed),
+      ...applyParsedJobsToForm(prev, batch.jobs),
       selectedFilamentId: '',
       spoolPrice: 0,
     }));
   };
 
-  const handlePlateSelect = async (plateIndex: number) => {
-    const file = gcodeSourceFileRef.current;
-    if (!file || parsedGcode?.plate_index === plateIndex) {
-      return;
-    }
-    await handleGcodeFile(file, plateIndex);
+  const handleJobSelect = (jobKey: string) => {
+    const job = parsedJobs.find((candidate) => candidate.key === jobKey);
+    if (job) setParsedGcode(job.parsed);
   };
 
   const handleFileSelection = async (files: FileList | null) => {
-    const file = files?.[0];
-    if (!file) {
+    const selectedFiles = Array.from(files ?? []);
+    if (selectedFiles.length === 0) {
       return;
     }
 
-    await handleGcodeFile(file);
+    await handleGcodeFiles(selectedFiles);
   };
 
   const handleSaveToHistory = async () => {
@@ -1405,7 +1633,9 @@ export const CalculatorPage: React.FC = () => {
     setHistoryFeedback(null);
 
     try {
-      await saveHistoryMutation.mutateAsync(buildHistoryPayload(form, result, parsedGcode, selectedMaterial));
+      await saveHistoryMutation.mutateAsync(
+        buildHistoryPayload(form, result, parsedGcode, selectedMaterial, materialLines, parsedJobs),
+      );
       setHistoryFeedback({ kind: 'success', message: tc('historySaved') });
       setActiveTab('history');
     } catch (error) {
@@ -1425,16 +1655,43 @@ export const CalculatorPage: React.FC = () => {
   };
 
   const handleRestoreHistory = (entry: CalculatorHistoryEntry) => {
+    const restoredJobs: ParsedJobState[] = entry.parsed_jobs?.length
+      ? entry.parsed_jobs.map((job) => ({ key: job.job_key, parsed: job.parsed_gcode }))
+      : entry.parsed_gcode
+        ? [{ key: parsedJobKey(entry.parsed_gcode, 0), parsed: entry.parsed_gcode }]
+        : [];
+    const restoredJobsByKey = new Map(restoredJobs.map((job) => [job.key, job.parsed]));
     skipNextFilamentDefaultsRef.current = true;
     setSelectedSpoolId('');
-    gcodeSourceFileRef.current = null;
     lastAutoMatchedGcodeKeyRef.current = entry.parsed_gcode
       ? `${entry.parsed_gcode.file_name}:${entry.parsed_gcode.file_size_bytes}:${entry.parsed_gcode.plate_index ?? 0}`
       : null;
     setForm(buildFormFromHistoryEntry(entry));
     priceManuallyEditedRef.current = true;
     setMaterialPriceSource('manual');
-    setParsedGcode(entry.parsed_gcode ?? null);
+    lastBuiltMaterialJobsKeyRef.current = restoredJobs.map((job) => job.key).join('|') || null;
+    setParsedGcode(restoredJobs[0]?.parsed ?? entry.parsed_gcode ?? null);
+    setParsedJobs(restoredJobs);
+    setMaterialLines(
+      (entry.request_data.material_lines ?? []).map((line) => ({
+        ...line,
+        selectionValue: line.spool_id
+          ? `spool:${line.spool_id}`
+          : line.filament_id
+            ? `filament:${line.filament_id}`
+            : 'manual',
+        fileName: (line.job_key ? restoredJobsByKey.get(line.job_key)?.file_name : null)
+          ?? entry.parsed_gcode?.file_name
+          ?? line.job_key
+          ?? tc('manualMaterialLine'),
+        plateIndex: (line.job_key ? restoredJobsByKey.get(line.job_key)?.plate_index : null)
+          ?? entry.parsed_gcode?.plate_index
+          ?? null,
+        confidence: null,
+        requiresSpoolChoice: false,
+        priceResolved: true,
+      })),
+    );
     setActiveTab('calculator');
     setHistoryFeedback({ kind: 'success', message: tc('historyRestored') });
   };
@@ -1714,6 +1971,140 @@ export const CalculatorPage: React.FC = () => {
   };
 
   useEffect(() => {
+    if (parsedJobs.length === 0 || filamentsQuery.isPending || spoolsQuery.isPending) {
+      return;
+    }
+    const jobsKey = parsedJobs.map((job) => job.key).join('|');
+    if (lastBuiltMaterialJobsKeyRef.current === jobsKey) {
+      return;
+    }
+
+    const spoolCandidatesByFilamentId = new Map<number, AutoMaterialMatchCandidate>();
+    for (const spool of availableSpools) {
+      if (!spool.filament_id || !spool.filament) continue;
+      const candidate = spoolCandidatesByFilamentId.get(spool.filament_id) ?? {
+        filamentId: spool.filament_id,
+        name: spool.filament.name,
+        vendor: spool.filament.brand_name,
+        materialType: spool.filament.material_type,
+        color: spool.filament.color_name,
+        spoolIds: [],
+      };
+      candidate.spoolIds.push(spool.id);
+      spoolCandidatesByFilamentId.set(candidate.filamentId, candidate);
+    }
+
+    const nextLines: CalculatorMaterialLineState[] = [];
+    for (const job of parsedJobs) {
+      const usedMaterials = job.parsed.materials.filter(
+        (material) => resolveParsedMaterialWeight(material) > 0,
+      );
+      const parsedMaterials = usedMaterials.length > 0
+        ? usedMaterials
+        : job.parsed.total_filament_weight_g
+          ? [{ weight_g: job.parsed.total_filament_weight_g }]
+          : [];
+
+      parsedMaterials.forEach((material, materialIndex) => {
+        const weightG = resolveParsedMaterialWeight(
+          material,
+          parsedMaterials.length === 1 ? job.parsed.total_filament_weight_g : null,
+        );
+        if (weightG <= 0) return;
+
+        const toolIndex = material.tool_index ?? materialIndex;
+        const match = findPrioritizedMaterialMatch(
+          material,
+          Array.from(spoolCandidatesByFilamentId.values()),
+          filamentsQuery.data?.items ?? [],
+          (candidate) => candidate,
+          (filament) => ({
+            name: filament.name,
+            vendor: filament.brand_name,
+            materialType: filament.material_type,
+            color: filament.color_name,
+          }),
+        );
+        const baseLine: CalculatorMaterialLineState = {
+          line_id: `${job.key}:t${toolIndex}`,
+          job_key: job.key,
+          tool_index: toolIndex,
+          label: buildParsedMaterialLabel(material, tc('unknownMaterial')),
+          weight_g: weightG,
+          spool_price: 0,
+          spool_weight_kg: 1,
+          delivery_cost: 0,
+          price_source: 'manual',
+          spool_id: null,
+          filament_id: null,
+          density_g_cm3: material.density_g_cm3 ?? null,
+          selectionValue: 'manual',
+          fileName: job.parsed.file_name,
+          plateIndex: job.parsed.plate_index ?? null,
+          confidence: match?.match.confidence ?? null,
+          requiresSpoolChoice: false,
+          priceResolved: false,
+        };
+
+        if (match?.source === 'user') {
+          const candidate = match.match.item;
+          if (candidate.spoolIds.length === 1) {
+            const spool = availableSpools.find((item) => item.id === candidate.spoolIds[0]);
+            if (spool) {
+              const defaults = deriveUserSpoolDefaults(spool);
+              const brandCurrency = spool.filament?.currency
+                ? normalizeCurrency(spool.filament.currency)
+                : null;
+              const currencyMatches =
+                spool.price != null || !brandCurrency || brandCurrency === calcCurrencyRef.current;
+              baseLine.selectionValue = `spool:${spool.id}`;
+              baseLine.spool_id = spool.id;
+              baseLine.filament_id = spool.filament_id;
+              baseLine.spool_price = currencyMatches ? (defaults.spoolPrice ?? 0) : 0;
+              baseLine.spool_weight_kg = defaults.spoolWeightKg ?? 1;
+              baseLine.price_source = spool.price != null ? 'spool' : 'filamenthub';
+              baseLine.priceResolved = currencyMatches && defaults.spoolPrice != null;
+            }
+          } else {
+            baseLine.selectionValue = '';
+            baseLine.filament_id = candidate.filamentId;
+            baseLine.requiresSpoolChoice = true;
+          }
+        } else if (match?.source === 'catalog') {
+          const filament = match.match.item;
+          const defaults = deriveCatalogFilamentDefaults(filament);
+          const brandCurrency = filament.currency ? normalizeCurrency(filament.currency) : null;
+          const currencyMatches = !brandCurrency || brandCurrency === calcCurrencyRef.current;
+          baseLine.selectionValue = `filament:${filament.id}`;
+          baseLine.filament_id = filament.id;
+          baseLine.spool_price = currencyMatches ? (defaults.spoolPrice ?? 0) : 0;
+          baseLine.spool_weight_kg = defaults.spoolWeightKg ?? 1;
+          baseLine.price_source = 'filamenthub';
+          baseLine.priceResolved = currencyMatches && defaults.spoolPrice != null;
+        } else if ((material.slicer_profile_price_per_kg ?? 0) > 0) {
+          baseLine.spool_price = material.slicer_profile_price_per_kg!;
+          baseLine.spool_weight_kg = 1;
+          baseLine.price_source = 'slicer';
+          baseLine.priceResolved = true;
+        }
+        nextLines.push(baseLine);
+      });
+    }
+
+    lastBuiltMaterialJobsKeyRef.current = jobsKey;
+    setMaterialLines(nextLines);
+  }, [
+    availableSpools,
+    filamentsQuery.data?.items,
+    filamentsQuery.isPending,
+    parsedJobs,
+    spoolsQuery.isPending,
+  ]);
+
+  useEffect(() => {
+    if (parsedJobs.length > 0) {
+      return;
+    }
     const currentParsedKey = parsedGcode
       ? `${parsedGcode.file_name}:${parsedGcode.file_size_bytes}:${parsedGcode.plate_index ?? 0}`
       : null;
@@ -1946,6 +2337,10 @@ export const CalculatorPage: React.FC = () => {
           autoMaterialMatch={autoMaterialMatch}
           materialPriceSource={materialPriceSource}
           parsedGcode={parsedGcode}
+          parsedJobs={parsedJobs}
+          materialLines={materialLines}
+          batchParseWarning={batchParseWarning}
+          materialLinesError={materialLinesError}
           dragActive={dragActive}
           filaments={filamentsQuery.data?.items ?? []}
           isFilamentsLoading={filamentsQuery.isPending}
@@ -1966,8 +2361,10 @@ export const CalculatorPage: React.FC = () => {
           onSpoolSelect={handleSelectSpool}
           onCatalogFilamentSelect={handleSelectCatalogFilament}
           onFileSelect={handleFileSelection}
-          onPlateSelect={handlePlateSelect}
-          canSelectPlate={gcodeSourceFileRef.current !== null}
+          onJobSelect={handleJobSelect}
+          onMaterialLineSelection={handleMaterialLineSelection}
+          onMaterialLinePriceChange={handleMaterialLinePriceChange}
+          onMaterialLineSpoolWeightChange={handleMaterialLineSpoolWeightChange}
           onDragStateChange={setDragActive}
           quoteProfile={quoteProfile}
           onQuoteProfileChange={updateQuoteProfileField}
@@ -2040,6 +2437,10 @@ interface CalculatorViewProps {
   autoMaterialMatch: AutoMaterialMatchNotice | null;
   materialPriceSource: MaterialPriceSource;
   parsedGcode: CalculatorGcodeParseResponse | null;
+  parsedJobs: ParsedJobState[];
+  materialLines: CalculatorMaterialLineState[];
+  batchParseWarning: string | null;
+  materialLinesError: string | null;
   dragActive: boolean;
   filaments: Filament[];
   isFilamentsLoading: boolean;
@@ -2061,8 +2462,10 @@ interface CalculatorViewProps {
   onCatalogFilamentSelect: (filamentId: number | '') => void;
   onQuoteProfileChange: <K extends keyof QuoteProfileState>(field: K, value: QuoteProfileState[K]) => void;
   onFileSelect: (files: FileList | null) => Promise<void>;
-  onPlateSelect: (plateIndex: number) => Promise<void>;
-  canSelectPlate: boolean;
+  onJobSelect: (jobKey: string) => void;
+  onMaterialLineSelection: (lineId: string, selectionValue: string) => void;
+  onMaterialLinePriceChange: (lineId: string, value: number) => void;
+  onMaterialLineSpoolWeightChange: (lineId: string, value: number) => void;
   onDragStateChange: (active: boolean) => void;
   onOpenQuote: () => void;
   onAddToQuote: () => void;
@@ -2084,6 +2487,10 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
   autoMaterialMatch,
   materialPriceSource,
   parsedGcode,
+  parsedJobs,
+  materialLines,
+  batchParseWarning,
+  materialLinesError,
   dragActive,
   filaments,
   isFilamentsLoading,
@@ -2105,8 +2512,10 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
   onCatalogFilamentSelect,
   onQuoteProfileChange,
   onFileSelect,
-  onPlateSelect,
-  canSelectPlate,
+  onJobSelect,
+  onMaterialLineSelection,
+  onMaterialLinePriceChange,
+  onMaterialLineSpoolWeightChange,
   onDragStateChange,
   onOpenQuote,
   onAddToQuote,
@@ -2125,6 +2534,19 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
   const [postprocessChecked, setPostprocessChecked] = useState<Record<string, boolean>>({});
   const [customPresets, setCustomPresets] = useState<PricingPreset[]>(() => loadCustomPricingPresets());
   const [presetNameInput, setPresetNameInput] = useState('');
+  const [expandedMaterialLineIds, setExpandedMaterialLineIds] = useState<Set<string>>(new Set());
+  const [singleMaterialCostOpen, setSingleMaterialCostOpen] = useState(true);
+
+  useEffect(() => {
+    setExpandedMaterialLineIds((current) => {
+      const availableIds = new Set(materialLines.map((line) => line.line_id));
+      const next = new Set([...current].filter((lineId) => availableIds.has(lineId)));
+      materialLines.forEach((line) => {
+        if (!line.priceResolved) next.add(line.line_id);
+      });
+      return next;
+    });
+  }, [materialLines]);
 
   const materialSourceLabel = {
     spool: tc('materialSourceSpool'),
@@ -2133,6 +2555,16 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
     manual: tc('materialSourceManual'),
     unset: tc('materialSourceUnset'),
   }[materialPriceSource];
+  const unifiedMaterialSelectionValue = selectedSpool
+    ? `spool:${selectedSpool.id}`
+    : selectedCatalogFilament
+      ? `filament:${selectedCatalogFilament.id}`
+      : 'manual';
+  const activeParsedJobKey = parsedJobs.find(
+    (job) =>
+      job.parsed.file_name === parsedGcode?.file_name
+      && job.parsed.plate_index === parsedGcode?.plate_index,
+  )?.key;
   const materialMatchConfidenceLabel = autoMaterialMatch
     ? {
         high: tc('materialMatchConfidenceHigh'),
@@ -2647,6 +3079,7 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
               id="calculator-gcode-upload"
               ref={fileInputRef}
               type="file"
+              multiple
               accept=".gcode,.gcode.3mf,.txt,.gz"
               className="sr-only"
               onChange={async (event) => {
@@ -2712,43 +3145,152 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
                     {parseGcodeError}
                   </div>
                 )}
+                {batchParseWarning && (
+                  <div className="rounded-[1.25rem] border border-amber-400/25 bg-amber-500/10 px-4 py-3 text-sm text-amber-100">
+                    {batchParseWarning}
+                  </div>
+                )}
               </WorkspacePanel>
 
               <WorkspacePanel
                 step="2"
                 title={tc('workspaceMaterialTitle')}
               >
-                <FieldBlock label={tc('selectSpool')}>
-                  <select
-                    className={inputClass}
-                    value={selectedSpool?.id ?? ''}
-                    onChange={(event) => onSpoolSelect(event.target.value ? Number(event.target.value) : '')}
-                  >
-                    <option value="">{tc('chooseFromMyFilaments')}</option>
-                    {spools.map((spool) => (
-                      <option key={spool.id} value={spool.id}>
-                        {buildSpoolLabel(spool)}
-                      </option>
+                {materialLines.length > 0 ? (
+                  <div className="space-y-3">
+                    {materialLines.map((line) => (
+                      <div key={line.line_id} className="rounded-[1.25rem] border border-white/10 bg-white/5 p-4">
+                        <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                          <div>
+                            <p className="text-sm font-semibold text-white">{line.label}</p>
+                            <p className="mt-1 text-xs text-slate-400">
+                              {line.fileName}
+                              {line.plateIndex != null ? ` · ${tc('parsedPlateOption').replace('{{index}}', String(line.plateIndex))}` : ''}
+                              {line.tool_index != null ? ` · T${line.tool_index}` : ''}
+                              {` · ${line.weight_g.toFixed(2)} ${tc('grams')}`}
+                            </p>
+                          </div>
+                          <StatusPill tone={line.priceResolved ? 'success' : 'warning'}>
+                            {line.priceResolved ? tc(`materialLineSource.${line.price_source}`) : tc('materialLineNeedsPrice')}
+                          </StatusPill>
+                        </div>
+                        <div className="space-y-3">
+                          <select
+                            className={inputClass}
+                            value={line.selectionValue}
+                            onChange={(event) => {
+                              const selectionValue = event.target.value;
+                              onMaterialLineSelection(line.line_id, selectionValue);
+                              setExpandedMaterialLineIds((current) => {
+                                const next = new Set(current);
+                                if (!selectionValue || selectionValue === 'manual') next.add(line.line_id);
+                                else next.delete(line.line_id);
+                                return next;
+                              });
+                            }}
+                          >
+                            {line.requiresSpoolChoice ? (
+                              <option value="">{tc('chooseExactSpool')}</option>
+                            ) : null}
+                            <option value="manual">{tc('materialManualOption')}</option>
+                            <optgroup label={tc('chooseFromMyFilaments')}>
+                              {spools.map((spool) => (
+                                <option key={`line-spool-${spool.id}`} value={`spool:${spool.id}`}>
+                                  {buildSpoolLabel(spool)}
+                                </option>
+                              ))}
+                            </optgroup>
+                            <optgroup label={tc('chooseFromCatalog')}>
+                              {filaments.map((filament) => (
+                                <option key={`line-filament-${filament.id}`} value={`filament:${filament.id}`}>
+                                  {buildFilamentLabel(filament)}
+                                </option>
+                              ))}
+                            </optgroup>
+                          </select>
+                          <div className="flex min-h-10 flex-wrap items-center justify-between gap-3 rounded-2xl border border-white/[0.08] bg-black/15 px-3 py-2">
+                            <p className="text-xs text-slate-300">
+                              {line.priceResolved
+                                ? `${formatCurrency(line.spool_price)} · ${line.spool_weight_kg} ${tc('kg')}`
+                                : tc('materialLineNeedsPrice')}
+                            </p>
+                            <button
+                              type="button"
+                              className="inline-flex items-center gap-1.5 text-xs font-medium text-cyan-200 transition-colors hover:text-white"
+                              onClick={() => setExpandedMaterialLineIds((current) => {
+                                const next = new Set(current);
+                                if (next.has(line.line_id)) next.delete(line.line_id);
+                                else next.add(line.line_id);
+                                return next;
+                              })}
+                            >
+                              {expandedMaterialLineIds.has(line.line_id) ? tc('hideMaterialCost') : tc('editMaterialCost')}
+                              <ChevronDown className={`h-3.5 w-3.5 transition-transform ${expandedMaterialLineIds.has(line.line_id) ? 'rotate-180' : ''}`} />
+                            </button>
+                          </div>
+                          {expandedMaterialLineIds.has(line.line_id) ? (
+                            <div className="grid grid-cols-1 gap-3 border-t border-white/[0.06] pt-3 sm:grid-cols-2">
+                              <FieldBlock label={tc('spoolPrice')}>
+                                <InputWithSuffix
+                                  value={line.spool_price}
+                                  onChange={(value) => onMaterialLinePriceChange(line.line_id, value)}
+                                  placeholder="1200"
+                                  suffix={currencySymbol(quoteProfile.currency)}
+                                />
+                              </FieldBlock>
+                              <FieldBlock label={tc('spoolWeight')}>
+                                <InputWithSuffix
+                                  value={line.spool_weight_kg}
+                                  onChange={(value) => onMaterialLineSpoolWeightChange(line.line_id, value)}
+                                  placeholder="1"
+                                  suffix={tc('kg')}
+                                  step="0.1"
+                                />
+                              </FieldBlock>
+                            </div>
+                          ) : null}
+                        </div>
+                      </div>
                     ))}
-                  </select>
-                </FieldBlock>
-
-                <FieldBlock label={tc('selectMaterial')}>
-                  <select
-                    className={inputClass}
-                    value={form.selectedFilamentId}
-                    onChange={(event) =>
-                      onCatalogFilamentSelect(event.target.value ? Number(event.target.value) : '')
-                    }
-                  >
-                    <option value="">{tc('chooseFromCatalog')}</option>
-                    {filaments.map((filament) => (
-                      <option key={filament.id} value={filament.id}>
-                        {buildFilamentLabel(filament)}
-                      </option>
-                    ))}
-                  </select>
-                </FieldBlock>
+                  </div>
+                ) : (
+                  <FieldBlock label={tc('selectMaterialSource')}>
+                    <select
+                      className={inputClass}
+                      value={unifiedMaterialSelectionValue}
+                      onChange={(event) => {
+                        const value = event.target.value;
+                        if (value.startsWith('spool:')) {
+                          onSpoolSelect(Number(value.slice('spool:'.length)));
+                          setSingleMaterialCostOpen(false);
+                        } else if (value.startsWith('filament:')) {
+                          onCatalogFilamentSelect(Number(value.slice('filament:'.length)));
+                          setSingleMaterialCostOpen(false);
+                        } else {
+                          onSpoolSelect('');
+                          onCatalogFilamentSelect('');
+                          setSingleMaterialCostOpen(true);
+                        }
+                      }}
+                    >
+                      <option value="manual">{tc('materialManualOption')}</option>
+                      <optgroup label={tc('chooseFromMyFilaments')}>
+                        {spools.map((spool) => (
+                          <option key={`spool-${spool.id}`} value={`spool:${spool.id}`}>
+                            {buildSpoolLabel(spool)}
+                          </option>
+                        ))}
+                      </optgroup>
+                      <optgroup label={tc('chooseFromCatalog')}>
+                        {filaments.map((filament) => (
+                          <option key={`filament-${filament.id}`} value={`filament:${filament.id}`}>
+                            {buildFilamentLabel(filament)}
+                          </option>
+                        ))}
+                      </optgroup>
+                    </select>
+                  </FieldBlock>
+                )}
 
                 {autoMaterialMatch && materialMatchConfidenceLabel && (
                   <div className="rounded-[1.25rem] border border-emerald-400/25 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-100">
@@ -2769,9 +3311,11 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
                   </div>
                 )}
 
-                <StatusPill tone={materialPriceSource === 'spool' ? 'success' : 'neutral'}>{materialSourceLabel}</StatusPill>
+                {materialLines.length === 0 ? (
+                  <StatusPill tone={materialPriceSource === 'spool' ? 'success' : 'neutral'}>{materialSourceLabel}</StatusPill>
+                ) : null}
 
-                {selectedFilament && materialSummary && (
+                {materialLines.length === 0 && selectedFilament && materialSummary && (
                   <div className="rounded-[1.25rem] border border-cyan-400/20 bg-cyan-400/10 px-4 py-3 text-sm text-cyan-100">
                     <span className="font-semibold text-white">{selectedFilament.name}</span>
                     <span className="mx-2 text-cyan-200/70">·</span>
@@ -2803,7 +3347,14 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
                   </div>
                 )}
 
-                <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                {materialLinesError ? (
+                  <div className="rounded-[1.25rem] border border-red-400/25 bg-red-500/10 px-4 py-3 text-sm text-red-100">
+                    {materialLinesError}
+                  </div>
+                ) : null}
+
+                {materialLines.length === 0 ? (
+                <div className="space-y-3">
                   <FieldBlock label={t('profilePage.calc.partWeight')}>
                     <InputWithSuffix
                       value={form.weightG}
@@ -2812,35 +3363,60 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
                       suffix={tc('grams')}
                     />
                   </FieldBlock>
-                  <FieldBlock label={t('profilePage.calc.spoolPrice')}>
-                    <InputWithSuffix
-                      value={form.spoolPrice}
-                      onChange={(value) => onChange('spoolPrice', value)}
-                      placeholder="1200"
-                      suffix={currencySymbol(quoteProfile.currency)}
-                    />
-                    {catalogPriceMismatch && (
-                      <p className="mt-1 text-[11px] leading-snug text-amber-300/90">
-                        {t('profilePage.calc.priceCurrencyMismatch')}
-                        {catalogPriceMismatch.reference != null && (
-                          <> {t('profilePage.calc.priceCurrencyMismatchRef', {
-                            price: Math.round(catalogPriceMismatch.reference),
-                            symbol: catalogPriceMismatch.brandSymbol,
-                          })}</>
-                        )}
-                      </p>
-                    )}
-                  </FieldBlock>
-                  <FieldBlock label={t('profilePage.calc.spoolWeight')}>
-                    <InputWithSuffix
-                      value={form.spoolWeightKg}
-                      onChange={(value) => onChange('spoolWeightKg', value)}
-                      placeholder="1"
-                      suffix={tc('kg')}
-                      step="0.1"
-                    />
-                  </FieldBlock>
+                  <div className="rounded-[1.25rem] border border-white/[0.08] bg-black/15 p-3">
+                    <div className="flex min-h-10 flex-wrap items-center justify-between gap-3">
+                      <div>
+                        <p className="text-xs font-medium text-slate-200">{tc('materialCostBasis')}</p>
+                        <p className="mt-1 text-xs text-slate-400">
+                          {form.spoolPrice > 0
+                            ? `${formatCurrency(form.spoolPrice)} · ${form.spoolWeightKg} ${tc('kg')}`
+                            : tc('materialLineNeedsPrice')}
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        className="inline-flex items-center gap-1.5 text-xs font-medium text-cyan-200 transition-colors hover:text-white"
+                        onClick={() => setSingleMaterialCostOpen((current) => !current)}
+                      >
+                        {singleMaterialCostOpen ? tc('hideMaterialCost') : tc('editMaterialCost')}
+                        <ChevronDown className={`h-3.5 w-3.5 transition-transform ${singleMaterialCostOpen ? 'rotate-180' : ''}`} />
+                      </button>
+                    </div>
+                    {singleMaterialCostOpen ? (
+                      <div className="mt-3 grid grid-cols-1 gap-3 border-t border-white/[0.06] pt-3 sm:grid-cols-2">
+                        <FieldBlock label={t('profilePage.calc.spoolPrice')}>
+                          <InputWithSuffix
+                            value={form.spoolPrice}
+                            onChange={(value) => onChange('spoolPrice', value)}
+                            placeholder="1200"
+                            suffix={currencySymbol(quoteProfile.currency)}
+                          />
+                          {catalogPriceMismatch && (
+                            <p className="mt-1 text-[11px] leading-snug text-amber-300/90">
+                              {t('profilePage.calc.priceCurrencyMismatch')}
+                              {catalogPriceMismatch.reference != null && (
+                                <> {t('profilePage.calc.priceCurrencyMismatchRef', {
+                                  price: Math.round(catalogPriceMismatch.reference),
+                                  symbol: catalogPriceMismatch.brandSymbol,
+                                })}</>
+                              )}
+                            </p>
+                          )}
+                        </FieldBlock>
+                        <FieldBlock label={t('profilePage.calc.spoolWeight')}>
+                          <InputWithSuffix
+                            value={form.spoolWeightKg}
+                            onChange={(value) => onChange('spoolWeightKg', value)}
+                            placeholder="1"
+                            suffix={tc('kg')}
+                            step="0.1"
+                          />
+                        </FieldBlock>
+                      </div>
+                    ) : null}
+                  </div>
                 </div>
+                ) : null}
               </WorkspacePanel>
             </div>
 
@@ -2848,7 +3424,7 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
               step="3"
               title={tc('workspaceProductionTitle')}
             >
-                <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-5">
+                <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
                   <FieldBlock label={t('profilePage.calc.quantity')}>
                     <NumberInput value={form.quantity} onChange={(value) => onChange('quantity', Math.max(1, value))} min="1" placeholder="1" />
                   </FieldBlock>
@@ -2874,18 +3450,21 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
                     <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
                       <div className="min-w-0">
                         <p className="text-sm font-semibold text-white">{parsedGcode.file_name}</p>
-                        {(parsedGcode.available_plate_indices?.length ?? 0) > 1 ? (
+                        {parsedJobs.length > 1 ? (
                           <label className="mt-3 flex max-w-xs items-center gap-3 text-xs text-slate-300">
-                            <span className="shrink-0">{tc('parsedPlate')}</span>
+                            <span className="shrink-0">{tc('parsedJob')}</span>
                             <select
                               className={`${inputClass} py-2 text-sm`}
-                              value={parsedGcode.plate_index ?? parsedGcode.available_plate_indices?.[0] ?? ''}
-                              disabled={!canSelectPlate || isParsingGcode}
-                              onChange={(event) => void onPlateSelect(Number(event.target.value))}
+                              value={activeParsedJobKey ?? ''}
+                              disabled={isParsingGcode}
+                              onChange={(event) => onJobSelect(event.target.value)}
                             >
-                              {parsedGcode.available_plate_indices?.map((plateIndex) => (
-                                <option key={plateIndex} value={plateIndex}>
-                                  {tc('parsedPlateOption').replace('{{index}}', String(plateIndex))}
+                              {parsedJobs.map((job) => (
+                                <option key={job.key} value={job.key}>
+                                  {job.parsed.file_name}
+                                  {job.parsed.plate_index != null
+                                    ? ` · ${tc('parsedPlateOption').replace('{{index}}', String(job.parsed.plate_index))}`
+                                    : ''}
                                 </option>
                               ))}
                             </select>
@@ -3344,6 +3923,24 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
               <div className="mt-6 space-y-4">
                 <SectionPanel title={tc('resultsCostStructureTitle')}>
                   <MetricRow label={t('profilePage.calc.material')} value={formatCurrency(result.cost_material)} />
+                  {result.material_line_costs?.length ? (
+                    <div className="mx-3 mb-2 rounded-xl border border-white/[0.06] bg-black/15 px-3 py-2">
+                      <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">
+                        {tc('materialCostBreakdown')}
+                      </p>
+                      <div className="space-y-1.5">
+                        {result.material_line_costs.map((line) => (
+                          <div key={line.line_id} className="flex items-start justify-between gap-3 text-xs">
+                            <span className="min-w-0 text-slate-400">
+                              <span className="text-slate-200">{line.label || (line.tool_index != null ? `T${line.tool_index}` : tc('unknownMaterial'))}</span>
+                              <span className="ml-1.5 whitespace-nowrap">{line.weight_g.toFixed(2)} {tc('grams')}</span>
+                            </span>
+                            <span className="shrink-0 font-medium text-white">{formatCurrency(line.cost)}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ) : null}
                   <MetricRow label={t('profilePage.calc.electricityLabel')} value={formatCurrency(result.cost_electricity)} />
                   <MetricRow label={t('profilePage.calc.modeling')} value={formatCurrency(result.cost_modeling)} />
                   <MetricRow label={t('profilePage.calc.printing')} value={formatCurrency(result.cost_printing)} />
@@ -3948,12 +4545,14 @@ const WorkspacePanel: React.FC<{
   </div>
 );
 
-const StatusPill: React.FC<{ children: ReactNode; tone?: 'neutral' | 'success' }> = ({ children, tone = 'neutral' }) => (
+const StatusPill: React.FC<{ children: ReactNode; tone?: 'neutral' | 'success' | 'warning' }> = ({ children, tone = 'neutral' }) => (
   <div
     className={`rounded-full border px-3 py-1.5 text-xs font-medium ${
       tone === 'success'
         ? 'border-emerald-400/20 bg-emerald-500/10 text-emerald-100'
-        : 'border-white/10 bg-black/20 text-slate-300'
+        : tone === 'warning'
+          ? 'border-amber-400/20 bg-amber-500/10 text-amber-100'
+          : 'border-white/10 bg-black/20 text-slate-300'
     }`}
   >
     {children}
@@ -3979,8 +4578,8 @@ const SectionHeading: React.FC<{ icon: ReactNode; title: string; compact?: boole
 
 const FieldBlock: React.FC<{ label: ReactNode; children: ReactNode; hint?: string | null }> = ({ label, children, hint }) => (
   <label className="flex h-full flex-col">
-    <span className="mb-1.5 block text-sm font-medium text-slate-300">{label}</span>
-    <div className="mt-auto">{children}</div>
+    <span className="mb-1.5 flex min-h-10 items-end text-sm font-medium leading-5 text-slate-300">{label}</span>
+    <div>{children}</div>
     {hint ? <span className="mt-1.5 block text-xs leading-5 text-slate-400">{hint}</span> : null}
   </label>
 );

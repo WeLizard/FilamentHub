@@ -15,6 +15,10 @@ export interface MaterialMatch<T> {
   confidence: MaterialMatchConfidence;
 }
 
+export type PrioritizedMaterialMatch<TUser, TCatalog> =
+  | { source: 'user'; match: MaterialMatch<TUser> }
+  | { source: 'catalog'; match: MaterialMatch<TCatalog> };
+
 const MIN_AUTO_MATCH_SCORE = 8;
 const MIN_UNAMBIGUOUS_MARGIN = 2;
 
@@ -130,6 +134,22 @@ export const findBestMaterialMatch = <T,>(
     ...best,
     confidence: confidenceForScore(best.score),
   };
+};
+
+export const findPrioritizedMaterialMatch = <TUser, TCatalog>(
+  parsed: CalculatorParsedMaterial,
+  userItems: TUser[],
+  catalogItems: TCatalog[],
+  getUserCandidate: (item: TUser) => MaterialCandidateFields,
+  getCatalogCandidate: (item: TCatalog) => MaterialCandidateFields,
+): PrioritizedMaterialMatch<TUser, TCatalog> | null => {
+  const userMatch = findBestMaterialMatch(userItems, parsed, getUserCandidate);
+  if (userMatch) {
+    return { source: 'user', match: userMatch };
+  }
+
+  const catalogMatch = findBestMaterialMatch(catalogItems, parsed, getCatalogCandidate);
+  return catalogMatch ? { source: 'catalog', match: catalogMatch } : null;
 };
 
 export const pickPrimaryParsedMaterial = (

@@ -1077,10 +1077,11 @@ export const calculatorAPI = {
     return response.data;
   },
 
-  parseGcode: async (file: File) => {
+  parseGcode: async (file: File, plateIndex?: number) => {
     const formData = new FormData();
     formData.append('file', file);
     const response = await api.post<import('../types/api').CalculatorGcodeParseResponse>('/calculator/parse-gcode', formData, {
+      params: plateIndex != null ? { plate_index: plateIndex } : undefined,
       headers: {
         'Content-Type': 'multipart/form-data',
       },

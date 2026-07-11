@@ -8,11 +8,18 @@ import io
 import json
 import logging
 import re
+import zipfile
 from typing import Any
+from xml.etree import ElementTree
 
 logger = logging.getLogger(__name__)
 
-SUPPORTED_GCODE_EXTENSIONS = (".gcode", ".gcode.gz", ".txt")
+SUPPORTED_GCODE_EXTENSIONS = (".gcode.3mf", ".gcode.gz", ".gcode", ".txt")
+
+MAX_DECOMPRESSED_GCODE_BYTES = 200 * 1024 * 1024
+MAX_GCODE_3MF_ENTRIES = 1024
+MAX_GCODE_3MF_SLICE_INFO_BYTES = 2 * 1024 * 1024
+MAX_GCODE_3MF_THUMBNAIL_BYTES = 8 * 1024 * 1024
 
 _THUMBNAIL_BEGIN_RE = re.compile(r"^;\s*thumbnail begin(?:\s+(\d+)x(\d+))?", re.IGNORECASE)
 _THUMBNAIL_END_RE = re.compile(r"^;\s*thumbnail end", re.IGNORECASE)
@@ -38,10 +45,28 @@ _OBJECT_NAME_RE = re.compile(r"\bNAME=([^\s]+)", re.IGNORECASE)
 _PRINT_START_PARAMETER_RE = re.compile(r"\b(EXTRUDER|BED)=([\d.]+)", re.IGNORECASE)
 _NOZZLE_TEMPERATURE_COMMAND_RE = re.compile(r"^M10(?:4|9)\s+S([\d.]+)", re.IGNORECASE)
 _BED_TEMPERATURE_COMMAND_RE = re.compile(r"^M1(?:4|9)0\s+S([\d.]+)", re.IGNORECASE)
+_GCODE_3MF_PLATE_RE = re.compile(r"^Metadata/plate_(\d+)\.gcode$", re.IGNORECASE)
+_SUPPORT_ROLE_RE = re.compile(r"^TYPE:\s*(Support(?:\s+interface)?)\s*$", re.IGNORECASE)
 
 
-def parse_gcode_payload(file_name: str, raw_bytes: bytes) -> dict[str, Any]:
+def parse_gcode_payload(
+    file_name: str,
+    raw_bytes: bytes,
+    plate_index: int | None = None,
+) -> dict[str, Any]:
     """Parse supported G-code payload into calculator-friendly metadata."""
+    if file_name.lower().endswith(".gcode.3mf"):
+        return _parse_gcode_3mf_payload(
+            file_name=file_name,
+            raw_bytes=raw_bytes,
+            plate_index=plate_index,
+        )
+
+    return _parse_plain_gcode_payload(file_name=file_name, raw_bytes=raw_bytes)
+
+
+def _parse_plain_gcode_payload(file_name: str, raw_bytes: bytes) -> dict[str, Any]:
+    """Parse one plain (or gzip-compressed) G-code stream."""
     decoded_text = _decode_gcode_bytes(file_name=file_name, raw_bytes=raw_bytes)
     if not decoded_text.strip():
         raise ValueError("empty_file")
@@ -57,11 +82,20 @@ def parse_gcode_payload(file_name: str, raw_bytes: bytes) -> dict[str, Any]:
         "print_time_seconds": None,
         "total_filament_weight_g": None,
         "total_filament_length_mm": None,
+        "total_filament_volume_cm3": None,
         "layer_height_mm": None,
         "initial_layer_height_mm": None,
         "sparse_infill_density_percent": None,
         "sparse_infill_pattern": None,
         "wall_loops": None,
+        "outer_wall_line_width_mm": None,
+        "inner_wall_line_width_mm": None,
+        "outer_wall_speed_mm_s": None,
+        "inner_wall_speed_mm_s": None,
+        "sparse_infill_speed_mm_s": None,
+        "support_speed_mm_s": None,
+        "initial_layer_speed_mm_s": None,
+        "prime_volume_mm3": None,
         "nozzle_diameter_mm": None,
         "nozzle_temperature_first_layer_c": None,
         "nozzle_temperature_other_layers_c": None,
@@ -72,12 +106,19 @@ def parse_gcode_payload(file_name: str, raw_bytes: bytes) -> dict[str, Any]:
         "max_z_height_mm": None,
         "support_type": None,
         "support_threshold_angle_deg": None,
+        "support_used": None,
+        "support_filament_config_index": None,
+        "support_interface_filament_config_index": None,
+        "support_roles_detected": [],
         "brim_width_mm": None,
         "raft_layers": None,
         "active_material_count": None,
         "is_multi_material": None,
         "toolchange_count": None,
         "thumbnail_data_url": _extract_thumbnail_data_url(lines),
+        "container_format": "plain_gcode",
+        "plate_index": None,
+        "available_plate_indices": [],
         "materials": [],
     }
 
@@ -88,6 +129,17 @@ def parse_gcode_payload(file_name: str, raw_bytes: bytes) -> dict[str, Any]:
         "filament_vendors": None,
         "filament_weights_g": None,
         "filament_lengths_mm": None,
+        "filament_volumes_cm3": None,
+        "filament_densities": None,
+        "filament_diameters": None,
+        "filament_settings_ids": None,
+        "filament_ids": None,
+        "filament_usage_costs": None,
+        "filament_profile_prices_per_kg": None,
+        "filament_flow_ratios": None,
+        "filament_max_volumetric_speeds": None,
+        "filament_prime_volumes": None,
+        "filament_is_support": None,
         "estimated_normal_seconds": None,
         "estimated_first_layer_seconds": None,
         "referenced_tools": None,
@@ -95,6 +147,7 @@ def parse_gcode_payload(file_name: str, raw_bytes: bytes) -> dict[str, Any]:
         "cura_setting_fragments": [],
         "object_centers": set(),
         "object_names": set(),
+        "support_roles": set(),
     }
 
     for line in lines:
@@ -113,6 +166,10 @@ def parse_gcode_payload(file_name: str, raw_bytes: bytes) -> dict[str, Any]:
         comment = stripped[1:].strip()
         if not comment:
             continue
+
+        support_role_match = _SUPPORT_ROLE_RE.match(comment)
+        if support_role_match:
+            collector["support_roles"].add(support_role_match.group(1).lower())
 
         cura_setting_match = _CURA_SETTING_RE.match(comment)
         if cura_setting_match:
@@ -134,6 +191,10 @@ def parse_gcode_payload(file_name: str, raw_bytes: bytes) -> dict[str, Any]:
     if collector["cura_setting_fragments"]:
         _apply_cura_settings(parsed, "".join(collector["cura_setting_fragments"]))
 
+    parsed["support_roles_detected"] = sorted(collector["support_roles"])
+    if collector["support_roles"]:
+        parsed["support_used"] = True
+
     _finalize_materials(parsed, collector)
     _finalize_totals(parsed)
     return parsed
@@ -147,7 +208,235 @@ def is_supported_gcode_filename(file_name: str | None) -> bool:
     return any(lower_name.endswith(extension) for extension in SUPPORTED_GCODE_EXTENSIONS)
 
 
-MAX_DECOMPRESSED_GCODE_BYTES = 200 * 1024 * 1024
+def _read_zip_member_capped(
+    archive: zipfile.ZipFile,
+    member: zipfile.ZipInfo,
+    limit: int,
+) -> bytes:
+    """Read one archive member without allowing unbounded decompression."""
+    if member.file_size > limit:
+        raise ValueError("gcode_3mf_member_too_large")
+
+    with archive.open(member, "r") as source:
+        payload = source.read(limit + 1)
+    if len(payload) > limit:
+        raise ValueError("gcode_3mf_member_too_large")
+    return payload
+
+
+def _parse_gcode_3mf_payload(
+    file_name: str,
+    raw_bytes: bytes,
+    plate_index: int | None,
+) -> dict[str, Any]:
+    """Parse a Bambu/Orca sliced 3MF bundle entirely in memory."""
+    try:
+        with zipfile.ZipFile(io.BytesIO(raw_bytes), "r") as archive:
+            members = archive.infolist()
+            if len(members) > MAX_GCODE_3MF_ENTRIES:
+                raise ValueError("gcode_3mf_too_many_entries")
+
+            plate_members: dict[int, zipfile.ZipInfo] = {}
+            for member in members:
+                match = _GCODE_3MF_PLATE_RE.fullmatch(member.filename.replace("\\", "/"))
+                if match:
+                    plate_members[int(match.group(1))] = member
+
+            available_plate_indices = sorted(plate_members)
+            if not available_plate_indices:
+                raise ValueError("gcode_3mf_has_no_gcode")
+
+            selected_plate_index = plate_index or available_plate_indices[0]
+            selected_member = plate_members.get(selected_plate_index)
+            if selected_member is None:
+                raise ValueError("gcode_3mf_plate_not_found")
+
+            gcode_bytes = _read_zip_member_capped(
+                archive,
+                selected_member,
+                MAX_DECOMPRESSED_GCODE_BYTES,
+            )
+            parsed = _parse_plain_gcode_payload(
+                file_name=selected_member.filename,
+                raw_bytes=gcode_bytes,
+            )
+            parsed["file_name"] = file_name
+            parsed["file_size_bytes"] = len(raw_bytes)
+            parsed["container_format"] = "gcode_3mf"
+            parsed["plate_index"] = selected_plate_index
+            parsed["available_plate_indices"] = available_plate_indices
+
+            slice_info = _read_gcode_3mf_slice_info(archive, members, selected_plate_index)
+            _merge_gcode_3mf_slice_info(parsed, slice_info)
+
+            thumbnail = _read_gcode_3mf_thumbnail(archive, members, selected_plate_index)
+            if thumbnail is not None:
+                parsed["thumbnail_data_url"] = thumbnail
+            return parsed
+    except (zipfile.BadZipFile, OSError, RuntimeError) as exc:
+        raise ValueError("invalid_gcode_3mf") from exc
+
+
+def _read_gcode_3mf_slice_info(
+    archive: zipfile.ZipFile,
+    members: list[zipfile.ZipInfo],
+    plate_index: int,
+) -> dict[str, Any]:
+    member = next(
+        (
+            item
+            for item in members
+            if item.filename.replace("\\", "/").lower() == "metadata/slice_info.config"
+        ),
+        None,
+    )
+    if member is None:
+        return {}
+
+    try:
+        payload = _read_zip_member_capped(
+            archive,
+            member,
+            MAX_GCODE_3MF_SLICE_INFO_BYTES,
+        )
+        if b"<!DOCTYPE" in payload.upper() or b"<!ENTITY" in payload.upper():
+            raise ValueError("unsafe_gcode_3mf_xml")
+        root = ElementTree.fromstring(payload)
+    except (ElementTree.ParseError, ValueError):
+        logger.warning("Failed to parse Metadata/slice_info.config", exc_info=True)
+        return {}
+
+    for plate in root.findall(".//plate"):
+        metadata = {
+            item.get("key"): item.get("value")
+            for item in plate.findall("metadata")
+            if item.get("key")
+        }
+        if _parse_first_int(metadata.get("index")) != plate_index:
+            continue
+
+        filaments: list[dict[str, Any]] = []
+        for item in plate.findall("filament"):
+            raw_id = _parse_first_int(item.get("id"))
+            if raw_id is None or raw_id <= 0:
+                continue
+            used_m = _parse_first_float(item.get("used_m"))
+            filaments.append(
+                {
+                    "tool_index": raw_id - 1,
+                    "type": item.get("type"),
+                    "color": item.get("color"),
+                    "weight_g": _parse_first_float(item.get("used_g")),
+                    "length_mm": used_m * 1000 if used_m is not None else None,
+                    "settings_id": item.get("tray_info_idx"),
+                    "used_for_model": _parse_bool(item.get("used_for_object")),
+                    "used_for_support": _parse_bool(item.get("used_for_support")),
+                }
+            )
+
+        return {
+            "support_used": _parse_bool(metadata.get("support_used")),
+            "print_time_seconds": _parse_first_int(metadata.get("prediction")),
+            "total_filament_weight_g": _parse_first_float(metadata.get("weight")),
+            "filaments": filaments,
+        }
+    return {}
+
+
+def _merge_gcode_3mf_slice_info(parsed: dict[str, Any], slice_info: dict[str, Any]) -> None:
+    if not slice_info:
+        return
+
+    if slice_info.get("support_used") is not None:
+        parsed["support_used"] = slice_info["support_used"]
+    if parsed.get("print_time_seconds") is None and slice_info.get("print_time_seconds") is not None:
+        parsed["print_time_seconds"] = slice_info["print_time_seconds"]
+    if parsed.get("total_filament_weight_g") is None and slice_info.get("total_filament_weight_g") is not None:
+        parsed["total_filament_weight_g"] = slice_info["total_filament_weight_g"]
+
+    materials_by_tool = {
+        material.get("tool_index"): material
+        for material in parsed["materials"]
+        if material.get("tool_index") is not None
+    }
+    for info in slice_info.get("filaments", []):
+        tool_index = info["tool_index"]
+        material = materials_by_tool.get(tool_index)
+        if material is None:
+            material = {
+                "tool_index": tool_index,
+                "type": None,
+                "name": None,
+                "vendor": None,
+                "color": None,
+                "weight_g": None,
+                "length_mm": None,
+                "volume_cm3": None,
+                "density_g_cm3": None,
+                "diameter_mm": None,
+                "slicer_filament_id": None,
+                "slicer_usage_cost": None,
+                "slicer_profile_price_per_kg": None,
+                "flow_ratio": None,
+                "max_volumetric_speed_mm3_s": None,
+                "prime_volume_mm3": None,
+                "is_support_material": None,
+                "used_for_model": None,
+                "used_for_support": None,
+                "settings_id": None,
+            }
+            parsed["materials"].append(material)
+            materials_by_tool[tool_index] = material
+
+        for key in (
+            "type",
+            "color",
+            "weight_g",
+            "length_mm",
+            "used_for_model",
+            "used_for_support",
+            "settings_id",
+        ):
+            if material.get(key) is None and info.get(key) is not None:
+                material[key] = info[key]
+
+        if info.get("used_for_support") is True:
+            material["is_support_material"] = True
+
+    parsed["materials"].sort(key=lambda item: item.get("tool_index", 0))
+    parsed["active_material_count"] = len(parsed["materials"])
+    parsed["is_multi_material"] = len(parsed["materials"]) > 1
+    _finalize_totals(parsed)
+
+
+def _read_gcode_3mf_thumbnail(
+    archive: zipfile.ZipFile,
+    members: list[zipfile.ZipInfo],
+    plate_index: int,
+) -> str | None:
+    expected_names = {
+        f"metadata/plate_{plate_index}.png",
+        f"metadata/plate_{plate_index}_small.png",
+    }
+    candidates = [
+        item
+        for item in members
+        if item.filename.replace("\\", "/").lower() in expected_names
+        and item.file_size <= MAX_GCODE_3MF_THUMBNAIL_BYTES
+    ]
+    if not candidates:
+        return None
+
+    member = max(candidates, key=lambda item: item.file_size)
+    payload = _read_zip_member_capped(
+        archive,
+        member,
+        MAX_GCODE_3MF_THUMBNAIL_BYTES,
+    )
+    if not payload.startswith(b"\x89PNG"):
+        return None
+    encoded = base64.b64encode(payload).decode("ascii")
+    return f"data:image/png;base64,{encoded}"
 
 
 def _gunzip_capped(raw_bytes: bytes, limit: int) -> bytes:
@@ -242,6 +531,30 @@ def _collect_summary_metadata(parsed: dict[str, Any], collector: dict[str, Any],
         parsed["total_filament_weight_g"] = _parse_first_float(value)
         return
 
+    if "total filament weight [g]" in lower_comment:
+        _, value = _split_key_value(comment)
+        values = _parse_float_list(value, separators=[","])
+        collector["filament_weights_g"] = values
+        if values:
+            parsed["total_filament_weight_g"] = sum(values)
+        return
+
+    if "total filament length [mm]" in lower_comment:
+        _, value = _split_key_value(comment)
+        values = _parse_float_list(value, separators=[","])
+        collector["filament_lengths_mm"] = values
+        if values:
+            parsed["total_filament_length_mm"] = sum(values)
+        return
+
+    if "total filament volume [cm3]" in lower_comment or "total filament volume [cm^3]" in lower_comment:
+        _, value = _split_key_value(comment)
+        values = _parse_float_list(value, separators=[","])
+        collector["filament_volumes_cm3"] = values
+        if values:
+            parsed["total_filament_volume_cm3"] = sum(values)
+        return
+
     if "filament used [g]" in lower_comment:
         _, value = _split_key_value(comment)
         collector["filament_weights_g"] = _parse_float_list(value, separators=[","])
@@ -250,6 +563,11 @@ def _collect_summary_metadata(parsed: dict[str, Any], collector: dict[str, Any],
     if "filament used [mm]" in lower_comment:
         _, value = _split_key_value(comment)
         collector["filament_lengths_mm"] = _parse_float_list(value, separators=[","])
+        return
+
+    if "filament used [cm3]" in lower_comment or "filament used [cm^3]" in lower_comment:
+        _, value = _split_key_value(comment)
+        collector["filament_volumes_cm3"] = _parse_float_list(value, separators=[","])
         return
 
     if lower_comment.startswith("filament used"):
@@ -301,6 +619,34 @@ def _collect_key_value_metadata(parsed: dict[str, Any], collector: dict[str, Any
             parsed["wall_loops"] = wall_loops
         return
 
+    if normalized_key in {"outer_wall_line_width", "external_perimeter_extrusion_width"} and parsed["outer_wall_line_width_mm"] is None:
+        parsed["outer_wall_line_width_mm"] = _parse_first_float(value)
+        return
+
+    if normalized_key in {"inner_wall_line_width", "perimeter_extrusion_width"} and parsed["inner_wall_line_width_mm"] is None:
+        parsed["inner_wall_line_width_mm"] = _parse_first_float(value)
+        return
+
+    speed_fields = {
+        "outer_wall_speed": "outer_wall_speed_mm_s",
+        "external_perimeter_speed": "outer_wall_speed_mm_s",
+        "inner_wall_speed": "inner_wall_speed_mm_s",
+        "perimeter_speed": "inner_wall_speed_mm_s",
+        "sparse_infill_speed": "sparse_infill_speed_mm_s",
+        "infill_speed": "sparse_infill_speed_mm_s",
+        "support_speed": "support_speed_mm_s",
+        "initial_layer_speed": "initial_layer_speed_mm_s",
+        "first_layer_speed": "initial_layer_speed_mm_s",
+    }
+    speed_field = speed_fields.get(normalized_key)
+    if speed_field and parsed[speed_field] is None:
+        parsed[speed_field] = _parse_first_float(value)
+        return
+
+    if normalized_key == "prime_volume" and parsed["prime_volume_mm3"] is None:
+        parsed["prime_volume_mm3"] = _parse_first_float(value)
+        return
+
     if normalized_key in {"total_layers_count", "total_layers", "total_layer", "layer_count", "layercount"} and parsed["total_layers"] is None:
         total_layers = _parse_first_int(value)
         if total_layers is not None:
@@ -313,6 +659,21 @@ def _collect_key_value_metadata(parsed: dict[str, Any], collector: dict[str, Any
 
     if normalized_key == "support_type" and parsed["support_type"] is None:
         parsed["support_type"] = value.strip()
+        return
+
+    if normalized_key == "enable_support" and parsed["support_used"] is None:
+        parsed["support_used"] = _parse_bool(value)
+        return
+
+    if normalized_key == "support_filament" and parsed["support_filament_config_index"] is None:
+        parsed["support_filament_config_index"] = _parse_first_int(value)
+        return
+
+    if (
+        normalized_key == "support_interface_filament"
+        and parsed["support_interface_filament_config_index"] is None
+    ):
+        parsed["support_interface_filament_config_index"] = _parse_first_int(value)
         return
 
     if normalized_key == "support_threshold_angle" and parsed["support_threshold_angle_deg"] is None:
@@ -364,7 +725,13 @@ def _collect_key_value_metadata(parsed: dict[str, Any], collector: dict[str, Any
         collector["filament_types"] = _parse_string_list(value)
         return
 
-    if normalized_key in {"filament_settings_id", "filament_name"} and collector["filament_names"] is None:
+    if normalized_key == "filament_settings_id" and collector["filament_settings_ids"] is None:
+        collector["filament_settings_ids"] = _parse_string_list(value)
+        if collector["filament_names"] is None:
+            collector["filament_names"] = list(collector["filament_settings_ids"])
+        return
+
+    if normalized_key == "filament_name" and collector["filament_names"] is None:
         collector["filament_names"] = _parse_string_list(value)
         return
 
@@ -374,6 +741,38 @@ def _collect_key_value_metadata(parsed: dict[str, Any], collector: dict[str, Any
 
     if normalized_key == "filament_vendor" and collector["filament_vendors"] is None:
         collector["filament_vendors"] = _parse_string_list(value)
+        return
+
+
+    list_fields = {
+        "filament_density": "filament_densities",
+        "filament_diameter": "filament_diameters",
+        "filament_flow_ratio": "filament_flow_ratios",
+        "filament_max_volumetric_speed": "filament_max_volumetric_speeds",
+        "filament_prime_volume": "filament_prime_volumes",
+    }
+    collector_field = list_fields.get(normalized_key)
+    if collector_field and collector[collector_field] is None:
+        collector[collector_field] = _parse_float_list(value)
+        return
+
+    if normalized_key == "filament_cost":
+        # Orca/Bambu use `filament cost` in the header for the cost of the
+        # consumed amount, while `filament_cost` in CONFIG_BLOCK is the profile
+        # price per kilogram. Keep both facts separate: their units differ.
+        collector_field = (
+            "filament_profile_prices_per_kg" if "_" in key else "filament_usage_costs"
+        )
+        if collector[collector_field] is None:
+            collector[collector_field] = _parse_float_list(value)
+        return
+
+    if normalized_key in {"filament_id", "filament_ids"} and collector["filament_ids"] is None:
+        collector["filament_ids"] = _parse_string_list(value)
+        return
+
+    if normalized_key == "filament_is_support" and collector["filament_is_support"] is None:
+        collector["filament_is_support"] = [_parse_bool(item) for item in _split_list(value)]
 
 
 def _apply_cura_settings(parsed: dict[str, Any], settings_blob: str) -> None:
@@ -503,6 +902,17 @@ def _finalize_materials(parsed: dict[str, Any], collector: dict[str, Any]) -> No
             collector["filament_vendors"],
             collector["filament_weights_g"],
             collector["filament_lengths_mm"],
+            collector["filament_volumes_cm3"],
+            collector["filament_densities"],
+            collector["filament_diameters"],
+            collector["filament_settings_ids"],
+            collector["filament_ids"],
+            collector["filament_usage_costs"],
+            collector["filament_profile_prices_per_kg"],
+            collector["filament_flow_ratios"],
+            collector["filament_max_volumetric_speeds"],
+            collector["filament_prime_volumes"],
+            collector["filament_is_support"],
         )
         if values
     ]
@@ -511,16 +921,35 @@ def _finalize_materials(parsed: dict[str, Any], collector: dict[str, Any]) -> No
     materials: list[dict[str, Any]] = []
     for index in range(material_count):
         material = {
+            "tool_index": index,
             "type": _get_list_value(collector["filament_types"], index),
             "name": _get_list_value(collector["filament_names"], index),
             "vendor": _get_list_value(collector["filament_vendors"], index),
             "color": _get_list_value(collector["filament_colors"], index),
             "weight_g": _get_list_value(collector["filament_weights_g"], index),
             "length_mm": _get_list_value(collector["filament_lengths_mm"], index),
+            "volume_cm3": _get_list_value(collector["filament_volumes_cm3"], index),
+            "density_g_cm3": _get_list_value(collector["filament_densities"], index),
+            "diameter_mm": _get_list_value(collector["filament_diameters"], index),
+            "slicer_filament_id": _get_list_value(collector["filament_ids"], index),
+            "slicer_usage_cost": _get_list_value(collector["filament_usage_costs"], index),
+            "slicer_profile_price_per_kg": _get_list_value(
+                collector["filament_profile_prices_per_kg"], index
+            ),
+            "flow_ratio": _get_list_value(collector["filament_flow_ratios"], index),
+            "max_volumetric_speed_mm3_s": _get_list_value(
+                collector["filament_max_volumetric_speeds"], index
+            ),
+            "prime_volume_mm3": _get_list_value(collector["filament_prime_volumes"], index),
+            "is_support_material": _get_list_value(collector["filament_is_support"], index),
+            "used_for_model": None,
+            "used_for_support": None,
+            "settings_id": _get_list_value(collector["filament_settings_ids"], index),
         }
         has_real_usage = (
             (material["weight_g"] is not None and float(material["weight_g"]) > 0)
             or (material["length_mm"] is not None and float(material["length_mm"]) > 0)
+            or (material["volume_cm3"] is not None and float(material["volume_cm3"]) > 0)
         )
         if has_real_usage:
             materials.append(material)
@@ -528,12 +957,30 @@ def _finalize_materials(parsed: dict[str, Any], collector: dict[str, Any]) -> No
     if not materials and parsed["total_filament_weight_g"] is not None:
         materials.append(
             {
+                "tool_index": 0,
                 "type": _get_list_value(collector["filament_types"], 0),
                 "name": _get_list_value(collector["filament_names"], 0),
                 "vendor": _get_list_value(collector["filament_vendors"], 0),
                 "color": _get_list_value(collector["filament_colors"], 0),
                 "weight_g": parsed["total_filament_weight_g"],
                 "length_mm": parsed["total_filament_length_mm"],
+                "volume_cm3": parsed["total_filament_volume_cm3"],
+                "density_g_cm3": _get_list_value(collector["filament_densities"], 0),
+                "diameter_mm": _get_list_value(collector["filament_diameters"], 0),
+                "slicer_filament_id": _get_list_value(collector["filament_ids"], 0),
+                "slicer_usage_cost": _get_list_value(collector["filament_usage_costs"], 0),
+                "slicer_profile_price_per_kg": _get_list_value(
+                    collector["filament_profile_prices_per_kg"], 0
+                ),
+                "flow_ratio": _get_list_value(collector["filament_flow_ratios"], 0),
+                "max_volumetric_speed_mm3_s": _get_list_value(
+                    collector["filament_max_volumetric_speeds"], 0
+                ),
+                "prime_volume_mm3": _get_list_value(collector["filament_prime_volumes"], 0),
+                "is_support_material": _get_list_value(collector["filament_is_support"], 0),
+                "used_for_model": None,
+                "used_for_support": None,
+                "settings_id": _get_list_value(collector["filament_settings_ids"], 0),
             }
         )
 
@@ -573,14 +1020,33 @@ def _finalize_totals(parsed: dict[str, Any]) -> None:
         if lengths:
             parsed["total_filament_length_mm"] = round(sum(lengths), 2)
 
+    if parsed["total_filament_volume_cm3"] is None:
+        volumes = [material["volume_cm3"] for material in parsed["materials"] if material.get("volume_cm3") is not None]
+        if volumes:
+            parsed["total_filament_volume_cm3"] = round(sum(volumes), 3)
+
     if parsed["total_filament_weight_g"] is not None:
         parsed["total_filament_weight_g"] = round(float(parsed["total_filament_weight_g"]), 2)
     if parsed["total_filament_length_mm"] is not None:
         parsed["total_filament_length_mm"] = round(float(parsed["total_filament_length_mm"]), 2)
+    if parsed["total_filament_volume_cm3"] is not None:
+        parsed["total_filament_volume_cm3"] = round(float(parsed["total_filament_volume_cm3"]), 3)
     if parsed["layer_height_mm"] is not None:
         parsed["layer_height_mm"] = round(float(parsed["layer_height_mm"]), 3)
     if parsed["initial_layer_height_mm"] is not None:
         parsed["initial_layer_height_mm"] = round(float(parsed["initial_layer_height_mm"]), 3)
+    for field in (
+        "outer_wall_line_width_mm",
+        "inner_wall_line_width_mm",
+        "outer_wall_speed_mm_s",
+        "inner_wall_speed_mm_s",
+        "sparse_infill_speed_mm_s",
+        "support_speed_mm_s",
+        "initial_layer_speed_mm_s",
+        "prime_volume_mm3",
+    ):
+        if parsed[field] is not None:
+            parsed[field] = round(float(parsed[field]), 3)
     if parsed["nozzle_diameter_mm"] is not None:
         parsed["nozzle_diameter_mm"] = round(float(parsed["nozzle_diameter_mm"]), 3)
     if parsed["nozzle_temperature_first_layer_c"] is not None:
@@ -716,7 +1182,7 @@ def _parse_float_list(value: str, separators: list[str] | None = None) -> list[f
 
 
 def _parse_string_list(value: str) -> list[str]:
-    return [chunk for chunk in _split_list(value) if chunk]
+    return [chunk.strip('"\'') for chunk in _split_list(value) if chunk.strip('"\'')]
 
 
 def _split_list(value: str, separators: list[str] | None = None) -> list[str]:
@@ -740,6 +1206,17 @@ def _parse_first_float(value: str | None) -> float | None:
 def _parse_first_int(value: str | None) -> int | None:
     parsed = _parse_first_float(value)
     return int(parsed) if parsed is not None else None
+
+
+def _parse_bool(value: str | None) -> bool | None:
+    if value is None:
+        return None
+    normalized = value.strip().lower()
+    if normalized in {"1", "true", "yes", "on"}:
+        return True
+    if normalized in {"0", "false", "no", "off"}:
+        return False
+    return None
 
 
 def _parse_time_to_seconds(value: str | None) -> int | None:

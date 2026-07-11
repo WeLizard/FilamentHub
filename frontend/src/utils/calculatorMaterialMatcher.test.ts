@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   findBestMaterialMatch,
+  findPrioritizedMaterialMatch,
   pickPrimaryParsedMaterial,
   scoreMaterialCandidate,
 } from './calculatorMaterialMatcher';
@@ -47,6 +48,32 @@ describe('calculator material matcher', () => {
 
     expect(score).toBe(6);
     expect(match).toBeNull();
+  });
+
+  it('prefers a qualified user material over a stronger catalog candidate', () => {
+    const match = findPrioritizedMaterialMatch(
+      { name: 'PLA Basic', vendor: 'Acme', type: 'PLA' },
+      [{ id: 'spool-material', name: 'PLA Basic', vendor: 'Acme', materialType: 'PLA', color: null }],
+      [{ id: 'catalog', name: 'PLA Basic', vendor: 'Acme', materialType: 'PLA', color: '#000000' }],
+      (item) => item,
+      (item) => item,
+    );
+
+    expect(match?.source).toBe('user');
+    expect(match?.match.item.id).toBe('spool-material');
+  });
+
+  it('falls back to the catalog only when user materials have no qualified match', () => {
+    const match = findPrioritizedMaterialMatch(
+      { name: 'PETG Pro', vendor: 'Acme', type: 'PETG' },
+      [{ id: 'spool-material', name: 'PLA Basic', vendor: 'Acme', materialType: 'PLA', color: null }],
+      [{ id: 'catalog', name: 'PETG Pro', vendor: 'Acme', materialType: 'PETG', color: null }],
+      (item) => item,
+      (item) => item,
+    );
+
+    expect(match?.source).toBe('catalog');
+    expect(match?.match.item.id).toBe('catalog');
   });
 
   it('selects the material row that has real usage', () => {

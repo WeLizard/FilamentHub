@@ -43,6 +43,8 @@ from app.schemas.calculator import (
     CalculatorHistoryEntryCreate,
     CalculatorHistoryEntryListResponse,
     CalculatorHistoryEntryResponse,
+    CalculatorHistoryParsedJob,
+    CalculatorMaterialLineCost,
     CalculatorProfileResponse,
     CalculatorProfileUpdate,
     PricingMethod,
@@ -120,6 +122,39 @@ def _calculate_tax(value: float, tax_rate_percent: float | None) -> float:
     return value * (tax_rate_percent / 100.0)
 
 
+def _calculate_material_lines(
+    data: CalculatorEstimateRequest,
+    quantity: int,
+) -> tuple[float, float, list[CalculatorMaterialLineCost]]:
+    """Calculate material cost with per-tool provenance when lines are supplied."""
+    total_cost = 0.0
+    total_weight_g = 0.0
+    resolved: list[CalculatorMaterialLineCost] = []
+
+    for line in data.material_lines:
+        price_per_gram = ((line.spool_price + line.delivery_cost) / line.spool_weight_kg) / 1000.0
+        line_weight_g = line.weight_g * quantity
+        line_cost = line_weight_g * price_per_gram
+        total_cost += line_cost
+        total_weight_g += line_weight_g
+        resolved.append(
+            CalculatorMaterialLineCost(
+                line_id=line.line_id,
+                job_key=line.job_key,
+                tool_index=line.tool_index,
+                label=line.label,
+                weight_g=round(line_weight_g, 3),
+                price_per_gram=round(price_per_gram, 6),
+                cost=round(line_cost, 2),
+                price_source=line.price_source,
+                spool_id=line.spool_id,
+                filament_id=line.filament_id,
+            )
+        )
+
+    return total_cost, total_weight_g, resolved
+
+
 def _strip_history_thumbnail(parsed_gcode: CalculatorGcodeParseResponse | None) -> dict | None:
     """Remove heavy preview payload before persisting calculator history."""
     if not parsed_gcode:
@@ -130,13 +165,42 @@ def _strip_history_thumbnail(parsed_gcode: CalculatorGcodeParseResponse | None) 
     return payload
 
 
+def _encode_history_gcode(data: CalculatorHistoryEntryCreate) -> dict | None:
+    """Persist old single-job and new batch histories in the existing JSON column."""
+    if data.parsed_jobs:
+        return {
+            "format": "calculator_batch_v1",
+            "jobs": [
+                {
+                    "job_key": job.job_key,
+                    "parsed_gcode": _strip_history_thumbnail(job.parsed_gcode),
+                }
+                for job in data.parsed_jobs
+            ],
+        }
+    return _strip_history_thumbnail(data.parsed_gcode)
+
+
+def _decode_history_gcode(
+    payload: dict | None,
+) -> tuple[CalculatorGcodeParseResponse | None, list[CalculatorHistoryParsedJob]]:
+    """Read both legacy single-job snapshots and calculator_batch_v1 envelopes."""
+    if not payload:
+        return None, []
+    if payload.get("format") == "calculator_batch_v1":
+        jobs = [CalculatorHistoryParsedJob.model_validate(job) for job in payload.get("jobs", [])]
+        return (jobs[0].parsed_gcode if jobs else None), jobs
+    return CalculatorGcodeParseResponse.model_validate(payload), []
+
+
 def _build_history_title(data: CalculatorHistoryEntryCreate) -> str:
     """Generate a stable history title when the client does not provide one."""
     if data.title and data.title.strip():
         return data.title.strip()[:255]
 
-    if data.parsed_gcode and data.parsed_gcode.file_name:
-        file_stem = Path(data.parsed_gcode.file_name).name
+    first_parsed = data.parsed_jobs[0].parsed_gcode if data.parsed_jobs else data.parsed_gcode
+    if first_parsed and first_parsed.file_name:
+        file_stem = Path(first_parsed.file_name).name
         return file_stem[:255]
 
     if data.filament_snapshot:
@@ -150,6 +214,7 @@ def _build_history_title(data: CalculatorHistoryEntryCreate) -> str:
 
 def _serialize_history_entry(entry: CalculatorHistoryEntry) -> CalculatorHistoryEntryResponse:
     """Convert ORM row into typed response payload."""
+    parsed_gcode, parsed_jobs = _decode_history_gcode(entry.parsed_gcode)
     return CalculatorHistoryEntryResponse(
         id=entry.id,
         user_id=entry.user_id,
@@ -157,7 +222,8 @@ def _serialize_history_entry(entry: CalculatorHistoryEntry) -> CalculatorHistory
         pricing_method=PricingMethod(entry.pricing_method),
         request_data=CalculatorEstimateRequest.model_validate(entry.request_data),
         result_data=CalculatorEstimateResponse.model_validate(entry.result_data),
-        parsed_gcode=CalculatorGcodeParseResponse.model_validate(entry.parsed_gcode) if entry.parsed_gcode else None,
+        parsed_gcode=parsed_gcode,
+        parsed_jobs=parsed_jobs,
         filament_snapshot=entry.filament_snapshot,
         created_at=entry.created_at,
         updated_at=entry.updated_at,
@@ -192,15 +258,22 @@ async def estimate_cost(
 
     # ========== Простые методы (для обратной совместимости) ==========
     if data.pricing_method == PricingMethod.BY_WEIGHT:
-        if data.weight_g is None:
-            raise_error(400, ERR_WEIGHT_REQUIRED)
-        if data.spool_price is None or data.spool_weight_kg is None:
-            raise_error(400, ERR_SPOOL_PRICE_REQUIRED)
+        material_line_costs: list[CalculatorMaterialLineCost] = []
+        if data.material_lines:
+            cost_material, total_material_weight_g, material_line_costs = _calculate_material_lines(
+                data, quantity
+            )
+            weight_kg = total_material_weight_g / 1000.0
+        else:
+            if data.weight_g is None:
+                raise_error(400, ERR_WEIGHT_REQUIRED)
+            if data.spool_price is None or data.spool_weight_kg is None:
+                raise_error(400, ERR_SPOOL_PRICE_REQUIRED)
 
-        delivery = data.delivery_cost or 0.0
-        weight_kg = (data.weight_g * quantity) / 1000.0
-        # Формула из Excel: ((цена_катушки + доставка) / вес_катушки_кг) / 1000 * (вес_г * количество)
-        cost_material = ((data.spool_price + delivery) / data.spool_weight_kg) / 1000.0 * (data.weight_g * quantity)
+            delivery = data.delivery_cost or 0.0
+            weight_kg = (data.weight_g * quantity) / 1000.0
+            # Формула из Excel: ((цена_катушки + доставка) / вес_катушки_кг) / 1000 * (вес_г * количество)
+            cost_material = ((data.spool_price + delivery) / data.spool_weight_kg) / 1000.0 * (data.weight_g * quantity)
 
         # Электроэнергия (если указана)
         cost_electricity = 0.0
@@ -224,6 +297,7 @@ async def estimate_cost(
             cost_postprocessing=0.0,
             cost_amortization=0.0,
             cost_tax=round(cost_tax, 2),
+            material_line_costs=material_line_costs,
             cost_first_part=round(cost_total, 2),
             cost_subsequent_parts=round(cost_total, 2),
             cost_total=round(cost_total, 2),
@@ -286,7 +360,13 @@ async def estimate_cost(
         # 1. Материал (с учетом поддержек и коэффициента потерь)
         cost_material = 0.0
         weight_kg = None
-        if data.weight_g and data.spool_price and data.spool_weight_kg:
+        material_line_costs: list[CalculatorMaterialLineCost] = []
+        if data.material_lines:
+            cost_material, total_material_weight_g, material_line_costs = _calculate_material_lines(
+                data, quantity
+            )
+            weight_kg = total_material_weight_g / 1000.0
+        elif data.weight_g and data.spool_price and data.spool_weight_kg:
             delivery = data.delivery_cost or 0.0
             price_per_gram = ((data.spool_price + delivery) / data.spool_weight_kg) / 1000.0
 
@@ -360,13 +440,23 @@ async def estimate_cost(
 
         # 7b. Износ сопла (объёмная модель — по см³ экструзии, не по часам)
         cost_nozzle_wear = 0.0
-        if data.nozzle_price and data.nozzle_life_cm3 and data.weight_g:
-            # Объём = вес / плотность. Плотность по умолчанию 1.24 г/см³ (PLA)
-            density = data.filament_density or 1.24
-            total_weight_g = data.weight_g * quantity + (data.supports_weight_g or 0.0) * quantity
-            extruded_volume_cm3 = total_weight_g / density
-            abrasiveness = data.material_abrasiveness or 1.0
-            cost_nozzle_wear = data.nozzle_price * (extruded_volume_cm3 / data.nozzle_life_cm3) * abrasiveness
+        if data.nozzle_price and data.nozzle_life_cm3:
+            if data.material_lines:
+                wear_equivalent_volume_cm3 = sum(
+                    (line.weight_g * quantity / (line.density_g_cm3 or 1.24))
+                    * (line.abrasiveness or 1.0)
+                    for line in data.material_lines
+                )
+                cost_nozzle_wear = data.nozzle_price * (
+                    wear_equivalent_volume_cm3 / data.nozzle_life_cm3
+                )
+            elif data.weight_g:
+                # Объём = вес / плотность. Плотность по умолчанию 1.24 г/см³ (PLA)
+                density = data.filament_density or 1.24
+                total_weight_g = data.weight_g * quantity + (data.supports_weight_g or 0.0) * quantity
+                extruded_volume_cm3 = total_weight_g / density
+                abrasiveness = data.material_abrasiveness or 1.0
+                cost_nozzle_wear = data.nozzle_price * (extruded_volume_cm3 / data.nozzle_life_cm3) * abrasiveness
 
         # 8. Прямые затраты (материалы + время + труд + износ)
         cost_direct = (
@@ -483,6 +573,7 @@ async def estimate_cost(
             cost_overhead=round(cost_overhead, 2),
             cost_before_markup=round(cost_before_markup, 2),
             cost_markup=round(cost_markup, 2),
+            material_line_costs=material_line_costs,
             cost_first_part=round(cost_first_part, 2),
             cost_subsequent_parts=round(cost_subsequent_parts, 2),
             cost_total=round(cost_total, 2),
@@ -509,6 +600,7 @@ async def estimate_cost(
 async def parse_gcode(
     _: Annotated[User, Depends(require_calculator_access)],
     file: UploadFile = File(...),
+    plate_index: int | None = Query(None, ge=1),
 ) -> CalculatorGcodeParseResponse:
     """Parse uploaded G-code metadata for Calculator Pro auto-fill."""
     if not is_supported_gcode_filename(file.filename):
@@ -526,7 +618,11 @@ async def parse_gcode(
         raise_error(status.HTTP_400_BAD_REQUEST, ERR_FILE_TOO_LARGE, {"max_size": f"{settings.MAX_UPLOAD_SIZE_MB}MB"})
 
     try:
-        parsed = parse_gcode_payload(file_name=file.filename or "gcode", raw_bytes=raw_bytes)
+        parsed = parse_gcode_payload(
+            file_name=file.filename or "gcode",
+            raw_bytes=raw_bytes,
+            plate_index=plate_index,
+        )
     except ValueError as exc:
         logger.warning("Calculator G-code parse failed for %s: %s", file.filename, exc)
         raise_error(status.HTTP_400_BAD_REQUEST, ERR_GCODE_PARSE_FAILED)
@@ -574,7 +670,7 @@ async def save_calculator_history(
         pricing_method=data.request_data.pricing_method.value,
         request_data=data.request_data.model_dump(mode="json"),
         result_data=data.result_data.model_dump(mode="json"),
-        parsed_gcode=_strip_history_thumbnail(data.parsed_gcode),
+        parsed_gcode=_encode_history_gcode(data),
         filament_snapshot=data.filament_snapshot.model_dump(mode="json") if data.filament_snapshot else None,
     )
     db.add(entry)

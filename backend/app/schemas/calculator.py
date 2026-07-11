@@ -2,6 +2,7 @@
 
 from datetime import datetime
 from enum import Enum
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -18,6 +19,39 @@ class RoundingMode(str, Enum):
     UP = "up"
     DOWN = "down"
     NEAREST = "nearest"
+
+
+class CalculatorMaterialLineRequest(BaseModel):
+    """One material/tool contribution to a calculator estimate."""
+
+    line_id: str = Field(..., min_length=1, max_length=160)
+    job_key: str | None = Field(None, max_length=160)
+    tool_index: int | None = Field(None, ge=0)
+    label: str | None = Field(None, max_length=255)
+    weight_g: float = Field(..., gt=0)
+    spool_price: float = Field(..., ge=0)
+    spool_weight_kg: float = Field(..., gt=0)
+    delivery_cost: float = Field(0, ge=0)
+    price_source: Literal["spool", "filamenthub", "slicer", "manual"] = "manual"
+    spool_id: int | None = Field(None, ge=1)
+    filament_id: int | None = Field(None, ge=1)
+    density_g_cm3: float | None = Field(None, gt=0, le=10)
+    abrasiveness: float | None = Field(None, ge=0.5, le=5)
+
+
+class CalculatorMaterialLineCost(BaseModel):
+    """Resolved cost of one material/tool line."""
+
+    line_id: str
+    job_key: str | None = None
+    tool_index: int | None = None
+    label: str | None = None
+    weight_g: float = Field(..., gt=0)
+    price_per_gram: float = Field(..., ge=0)
+    cost: float = Field(..., ge=0)
+    price_source: Literal["spool", "filamenthub", "slicer", "manual"]
+    spool_id: int | None = None
+    filament_id: int | None = None
 
 
 class CalculatorEstimateRequest(BaseModel):
@@ -46,6 +80,11 @@ class CalculatorEstimateRequest(BaseModel):
     )
     delivery_cost: float | None = Field(
         None, ge=0, description="Стоимость доставки материала (руб), по умолчанию 0"
+    )
+    material_lines: list[CalculatorMaterialLineRequest] = Field(
+        default_factory=list,
+        max_length=128,
+        description="Построчная стоимость материалов для multi-job/multi-material расчёта",
     )
 
     # ========== Параметры времени печати ==========
@@ -201,6 +240,7 @@ class CalculatorEstimateResponse(BaseModel):
     cost_overhead: float = Field(0, ge=0, description="Накладные расходы")
     cost_before_markup: float = Field(0, ge=0, description="Стоимость до наценки")
     cost_markup: float = Field(0, ge=0, description="Наценка")
+    material_line_costs: list[CalculatorMaterialLineCost] = Field(default_factory=list)
 
     # Итоговые суммы
     cost_first_part: float = Field(..., ge=0, description="Цена первой детали (включает все затраты)")
@@ -232,12 +272,38 @@ class CalculatorEstimateResponse(BaseModel):
 class CalculatorParsedMaterial(BaseModel):
     """Parsed material row extracted from G-code metadata."""
 
+    tool_index: int | None = Field(None, ge=0, description="Индекс инструмента T0..TN")
     type: str | None = Field(None, description="Тип материала из G-code metadata")
     name: str | None = Field(None, description="Имя / settings id материала")
+    settings_id: str | None = Field(None, description="Стабильный идентификатор профиля из контейнера, если доступен")
     vendor: str | None = Field(None, description="Вендор материала")
     color: str | None = Field(None, description="Цвет материала")
     weight_g: float | None = Field(None, ge=0, description="Вес материала в граммах")
     length_mm: float | None = Field(None, ge=0, description="Длина материала в миллиметрах")
+    volume_cm3: float | None = Field(None, ge=0, description="Использованный объём в кубических сантиметрах")
+    density_g_cm3: float | None = Field(None, gt=0, description="Плотность из профиля слайсера")
+    diameter_mm: float | None = Field(None, gt=0, description="Диаметр прутка из профиля слайсера")
+    slicer_filament_id: str | None = Field(None, description="Идентификатор филамента из профиля слайсера")
+    slicer_usage_cost: float | None = Field(
+        None,
+        ge=0,
+        description="Справочная стоимость фактически израсходованного материала по расчёту слайсера",
+    )
+    slicer_profile_price_per_kg: float | None = Field(
+        None,
+        ge=0,
+        description="Цена за кг из профиля слайсера; резервная рекомендация, не источник валюты",
+    )
+    flow_ratio: float | None = Field(None, gt=0, description="Коэффициент потока из профиля слайсера")
+    max_volumetric_speed_mm3_s: float | None = Field(
+        None,
+        ge=0,
+        description="Максимальная объёмная скорость из профиля слайсера",
+    )
+    prime_volume_mm3: float | None = Field(None, ge=0, description="Объём прочистки/прайма из профиля слайсера")
+    is_support_material: bool | None = Field(None, description="Профиль помечен как материал поддержек")
+    used_for_model: bool | None = Field(None, description="Материал использован для модели")
+    used_for_support: bool | None = Field(None, description="Материал использован для поддержек")
 
 
 class CalculatorGcodeParseResponse(BaseModel):
@@ -250,11 +316,20 @@ class CalculatorGcodeParseResponse(BaseModel):
     print_time_seconds: int | None = Field(None, ge=0, description="Оценка времени печати в секундах")
     total_filament_weight_g: float | None = Field(None, ge=0, description="Суммарный вес филамента в граммах")
     total_filament_length_mm: float | None = Field(None, ge=0, description="Суммарная длина филамента в миллиметрах")
+    total_filament_volume_cm3: float | None = Field(None, ge=0, description="Суммарный объём филамента в см³")
     layer_height_mm: float | None = Field(None, ge=0, description="Высота слоя")
     initial_layer_height_mm: float | None = Field(None, ge=0, description="Высота первого слоя")
     sparse_infill_density_percent: float | None = Field(None, ge=0, description="Плотность заполнения в процентах")
     sparse_infill_pattern: str | None = Field(None, description="Паттерн заполнения")
     wall_loops: int | None = Field(None, ge=0, description="Количество периметров / стенок")
+    outer_wall_line_width_mm: float | None = Field(None, ge=0, description="Ширина линии внешней стенки")
+    inner_wall_line_width_mm: float | None = Field(None, ge=0, description="Ширина линии внутренней стенки")
+    outer_wall_speed_mm_s: float | None = Field(None, ge=0, description="Скорость внешней стенки")
+    inner_wall_speed_mm_s: float | None = Field(None, ge=0, description="Скорость внутренней стенки")
+    sparse_infill_speed_mm_s: float | None = Field(None, ge=0, description="Скорость разреженного заполнения")
+    support_speed_mm_s: float | None = Field(None, ge=0, description="Скорость печати поддержек")
+    initial_layer_speed_mm_s: float | None = Field(None, ge=0, description="Скорость первого слоя")
+    prime_volume_mm3: float | None = Field(None, ge=0, description="Общий объём прайма из настроек процесса")
     nozzle_diameter_mm: float | None = Field(None, ge=0, description="Диаметр сопла")
     nozzle_temperature_first_layer_c: float | None = Field(None, ge=0, description="Температура сопла первого слоя")
     nozzle_temperature_other_layers_c: float | None = Field(None, ge=0, description="Температура сопла остальных слоёв")
@@ -265,12 +340,19 @@ class CalculatorGcodeParseResponse(BaseModel):
     max_z_height_mm: float | None = Field(None, ge=0, description="Максимальная высота модели по Z")
     support_type: str | None = Field(None, description="Тип поддержек")
     support_threshold_angle_deg: float | None = Field(None, ge=0, description="Угол поддержек")
+    support_used: bool | None = Field(None, description="Поддержки реально присутствуют в sliced job")
+    support_filament_config_index: int | None = Field(None, ge=0, description="Raw support_filament setting (0 = auto/current)")
+    support_interface_filament_config_index: int | None = Field(None, ge=0, description="Raw support_interface_filament setting")
+    support_roles_detected: list[str] = Field(default_factory=list, description="Роли support, обнаруженные в toolpath comments")
     brim_width_mm: float | None = Field(None, ge=0, description="Ширина brim")
     raft_layers: int | None = Field(None, ge=0, description="Количество raft-слоёв")
     active_material_count: int | None = Field(None, ge=0, description="Количество реально используемых материалов")
     is_multi_material: bool | None = Field(None, description="Мульти-материальная ли печать")
     toolchange_count: int | None = Field(None, ge=0, description="Количество смен инструмента / материала")
     thumbnail_data_url: str | None = Field(None, description="Data URL превью G-code, если найден")
+    container_format: str = Field("plain_gcode", description="plain_gcode или gcode_3mf")
+    plate_index: int | None = Field(None, ge=1, description="Выбранная plate внутри gcode.3mf")
+    available_plate_indices: list[int] = Field(default_factory=list, description="Доступные sliced plates внутри gcode.3mf")
     materials: list[CalculatorParsedMaterial] = Field(default_factory=list, description="Материалы, извлечённые из G-code")
 
 
@@ -284,6 +366,13 @@ class CalculatorHistoryFilamentSnapshot(BaseModel):
     color_name: str | None = Field(None, description="Цвет")
 
 
+class CalculatorHistoryParsedJob(BaseModel):
+    """One parsed file/plate preserved as part of a calculator batch."""
+
+    job_key: str = Field(..., min_length=1, max_length=160)
+    parsed_gcode: CalculatorGcodeParseResponse
+
+
 class CalculatorHistoryEntryCreate(BaseModel):
     """Persisted Calculator Pro estimate payload."""
 
@@ -291,6 +380,7 @@ class CalculatorHistoryEntryCreate(BaseModel):
     request_data: CalculatorEstimateRequest
     result_data: CalculatorEstimateResponse
     parsed_gcode: CalculatorGcodeParseResponse | None = None
+    parsed_jobs: list[CalculatorHistoryParsedJob] = Field(default_factory=list, max_length=128)
     filament_snapshot: CalculatorHistoryFilamentSnapshot | None = None
 
 
@@ -304,6 +394,7 @@ class CalculatorHistoryEntryResponse(BaseModel):
     request_data: CalculatorEstimateRequest
     result_data: CalculatorEstimateResponse
     parsed_gcode: CalculatorGcodeParseResponse | None = None
+    parsed_jobs: list[CalculatorHistoryParsedJob] = Field(default_factory=list)
     filament_snapshot: CalculatorHistoryFilamentSnapshot | None = None
     created_at: datetime
     updated_at: datetime
