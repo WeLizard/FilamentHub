@@ -1376,6 +1376,7 @@
     "officialPresetInfo": "This preset will be created as an official preset of your brand",
     "nozzleTemp": "Nozzle temperature (°C)",
     "bedTemp": "Bed temperature (°C)",
+    "vendorRecommended": "Vendor recommended",
     "printSpeed": "Print speed (mm/s)",
     "travelSpeed": "Travel speed (mm/s)",
     "flowRate": "Flow (%)",

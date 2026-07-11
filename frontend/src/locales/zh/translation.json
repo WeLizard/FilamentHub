@@ -1373,6 +1373,7 @@
     "officialPresetInfo": "该预设将作为您品牌的官方预设创建",
     "nozzleTemp": "喷嘴温度 (°C)",
     "bedTemp": "热床温度 (°C)",
+    "vendorRecommended": "厂商推荐",
     "printSpeed": "打印速度 (mm/s)",
     "travelSpeed": "移动速度 (mm/s)",
     "flowRate": "流量 (%)",

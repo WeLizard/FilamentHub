@@ -845,6 +845,10 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
     if (editingFilament && (preset || filamentId)) {
       setFilamentSearch(editingFilament.color_name ? `${editingFilament.name} (${editingFilament.color_name})` : editingFilament.name);
       setSelectedFilament(editingFilament);
+      // Ф6: при создании пресета из карточки материала подтягиваем вендорский диапазон как дефолт
+      if (!preset && filamentId) {
+        applyRecommendedTempsFromFilament(editingFilament);
+      }
     }
   }, [editingFilament, preset, filamentId]);
 
@@ -944,6 +948,46 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
     });
   };
 
+  // Диапазон «min–max» для подсказки (одна из границ может отсутствовать).
+  const formatTempRange = (min: number | null, max: number | null): string => {
+    if (min != null && max != null) return `${min}–${max}`;
+    if (min != null) return `≥${min}`;
+    if (max != null) return `≤${max}`;
+    return '';
+  };
+
+  // Ф6: вендор задаёт рекомендованный диапазон температур на материале — пресет подтягивает
+  // его как дефолт (середина диапазона), а границы сопла — в nozzle_temperature_range.
+  // Вызывается после applyDefaultsByMaterialType (диапазон вендора конкретнее типовых значений)
+  // и только при создании нового пресета — у существующего свои сохранённые значения.
+  const applyRecommendedTempsFromFilament = (filament: Filament | null) => {
+    if (!filament) return;
+    const nMin = filament.recommended_nozzle_temp_min;
+    const nMax = filament.recommended_nozzle_temp_max;
+    const bMin = filament.recommended_bed_temp_min;
+    const bMax = filament.recommended_bed_temp_max;
+
+    if (nMin != null && nMax != null) {
+      setExtruderTemp(Math.round((nMin + nMax) / 2));
+      setTempRangeLow(nMin);
+      setTempRangeHigh(nMax);
+    } else if (nMin != null) {
+      setExtruderTemp(nMin);
+      setTempRangeLow(nMin);
+    } else if (nMax != null) {
+      setExtruderTemp(nMax);
+      setTempRangeHigh(nMax);
+    }
+
+    if (bMin != null && bMax != null) {
+      setBedTemp(Math.round((bMin + bMax) / 2));
+    } else if (bMin != null) {
+      setBedTemp(bMin);
+    } else if (bMax != null) {
+      setBedTemp(bMax);
+    }
+  };
+
   const selectExistingFilament = (filament: {
     id: number;
     name: string;
@@ -964,6 +1008,7 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
     setShowFilamentForm(false);
     setError(null);
     applyDefaultsByMaterialType(filament.material_type);
+    applyRecommendedTempsFromFilament(fullFilament);
   };
 
   // Мутация для создания бренда
@@ -2563,6 +2608,11 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                 step="1"
                 className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all"
               />
+              {selectedFilament && (selectedFilament.recommended_nozzle_temp_min != null || selectedFilament.recommended_nozzle_temp_max != null) && (
+                <p className="mt-1 text-xs text-gray-400">
+                  {t('presetModal.vendorRecommended')}: {formatTempRange(selectedFilament.recommended_nozzle_temp_min, selectedFilament.recommended_nozzle_temp_max)} °C
+                </p>
+              )}
             </div>
             <div>
               <label className="block text-gray-300 mb-2 text-sm font-medium">
@@ -2578,6 +2628,11 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                 step="1"
                 className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all"
               />
+              {selectedFilament && (selectedFilament.recommended_bed_temp_min != null || selectedFilament.recommended_bed_temp_max != null) && (
+                <p className="mt-1 text-xs text-gray-400">
+                  {t('presetModal.vendorRecommended')}: {formatTempRange(selectedFilament.recommended_bed_temp_min, selectedFilament.recommended_bed_temp_max)} °C
+                </p>
+              )}
             </div>
             <div>
               <label className="block text-gray-300 mb-2 text-sm font-medium">{t('presetModal.printSpeed')} *</label>
