@@ -67,15 +67,10 @@ class Preset(Base):
     is_weighted: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
     # is_weighted=True - динамический взвешенный пресет, автоматически пересчитывается системой
 
-    # Print settings
+    # Filament settings (material scope). print/travel speed и layer heights —
+    # process-scope (Orca print profile), на filament-пресете их нет.
     extruder_temp: Mapped[float] = mapped_column(Float)
     bed_temp: Mapped[float] = mapped_column(Float)
-    print_speed: Mapped[float] = mapped_column(Float)
-    travel_speed: Mapped[float] = mapped_column(Float, nullable=True)
-
-    # Advanced settings (optional)
-    layer_height: Mapped[float | None] = mapped_column(Float, nullable=True)
-    first_layer_height: Mapped[float | None] = mapped_column(Float, nullable=True)
     flow_rate: Mapped[float | None] = mapped_column(Float, nullable=True)
 
     # Cooling

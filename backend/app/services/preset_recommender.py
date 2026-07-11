@@ -136,10 +136,6 @@ async def get_recommended_preset_values(
 
     extruder_temp = _median(lambda p: p.extruder_temp)
     bed_temp = _median(lambda p: p.bed_temp)
-    print_speed = _median(lambda p: p.print_speed)
-    travel_speed = _median(lambda p: p.travel_speed)
-    layer_height = _median(lambda p: p.layer_height)
-    first_layer_height = _median(lambda p: p.first_layer_height)
     flow_rate = _median(lambda p: p.flow_rate)
 
     fan_median = _median(lambda p: p.fan_speed)
@@ -155,10 +151,6 @@ async def get_recommended_preset_values(
     return {
         "extruder_temp": round(extruder_temp, 1),
         "bed_temp": round(bed_temp, 1),
-        "print_speed": round(print_speed, 1),
-        "travel_speed": round(travel_speed, 1) if travel_speed is not None else None,
-        "layer_height": round(layer_height, 3) if layer_height is not None else None,
-        "first_layer_height": round(first_layer_height, 3) if first_layer_height is not None else None,
         "flow_rate": round(flow_rate, 1) if flow_rate is not None else None,
         "fan_speed": fan_speed,
         "retraction_length": round(retraction_length, 2) if retraction_length is not None else None,

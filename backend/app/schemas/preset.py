@@ -21,15 +21,10 @@ class PresetBase(BaseModel):
     is_official: bool = Field(False)
     is_weighted: bool = Field(False, description="Динамический взвешенный пресет, автоматически пересчитывается системой")
 
-    # Print settings (required)
+    # Filament settings (material scope). print/travel speed и layer heights —
+    # process-scope (Orca print profile), не свойства филамента: на пресете их нет.
     extruder_temp: float = Field(..., ge=0, le=400)
     bed_temp: float = Field(..., ge=0, le=150)
-    print_speed: float = Field(..., ge=1, le=500)
-    travel_speed: float | None = Field(None, ge=1, le=500)
-
-    # Advanced settings (optional)
-    layer_height: float | None = Field(None, ge=0.05, le=1.0)
-    first_layer_height: float | None = Field(None, ge=0.05, le=1.0)
     flow_rate: float | None = Field(None, ge=50, le=150)
     # flow_rate: % от стандартного
 
@@ -76,15 +71,9 @@ class PresetUpdate(BaseModel):
     # Filament (для активации черновиков/заготовок)
     filament_id: int | None = Field(None, gt=0, description="ID филамента (для привязки черновика)")
 
-    # Print settings
+    # Filament settings (material scope)
     extruder_temp: float | None = Field(None, ge=0, le=400)
     bed_temp: float | None = Field(None, ge=0, le=150)
-    print_speed: float | None = Field(None, ge=1, le=500)
-    travel_speed: float | None = Field(None, ge=1, le=500)
-
-    # Advanced settings
-    layer_height: float | None = Field(None, ge=0.05, le=1.0)
-    first_layer_height: float | None = Field(None, ge=0.05, le=1.0)
     flow_rate: float | None = Field(None, ge=50, le=150)
     fan_speed: int | None = Field(None, ge=0, le=100)
     retraction_length: float | None = Field(None, ge=0, le=10)
@@ -156,15 +145,9 @@ class RecommendedPresetResponse(BaseModel):
 
     filament_id: int
 
-    # Calculated optimal values
+    # Calculated optimal values (material scope only)
     extruder_temp: float = Field(..., ge=0, le=400)
     bed_temp: float = Field(..., ge=0, le=150)
-    print_speed: float = Field(..., ge=1, le=500)
-    travel_speed: float | None = Field(None, ge=1, le=500)
-
-    # Advanced settings
-    layer_height: float | None = Field(None, ge=0.05, le=1.0)
-    first_layer_height: float | None = Field(None, ge=0.05, le=1.0)
     flow_rate: float | None = Field(None, ge=50, le=150)
     fan_speed: int | None = Field(None, ge=0, le=100)
     retraction_length: float | None = Field(None, ge=0, le=10)

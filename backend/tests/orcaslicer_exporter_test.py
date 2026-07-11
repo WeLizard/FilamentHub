@@ -30,7 +30,6 @@ def _preset(orcaslicer_settings: dict) -> Preset:
         name="Test [fh]",
         extruder_temp=210,
         bed_temp=60,
-        print_speed=80,
         fan_speed=50,
         flow_rate=100,
         retraction_length=5.0,

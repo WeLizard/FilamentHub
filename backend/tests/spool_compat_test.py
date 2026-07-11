@@ -127,7 +127,6 @@ def _approved_preset(**overrides) -> Preset:
         "name": "test preset",
         "extruder_temp": 240.0,
         "bed_temp": 80.0,
-        "print_speed": 50.0,
         "is_official": True,
         "active": True,
         "moderation_status": PresetModerationStatus.APPROVED,

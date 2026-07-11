@@ -240,8 +240,6 @@ async def list_filaments(
                 "bed_temp": preset_obj.bed_temp,
                 "fan_speed": preset_obj.fan_speed,
                 "flow_rate": preset_obj.flow_rate,
-                "print_speed": preset_obj.print_speed,
-                "layer_height": preset_obj.layer_height,
                 "rating": preset_obj.rating,
                 "success_rate": preset_obj.success_rate,
                 "updated_at": preset_obj.updated_at,

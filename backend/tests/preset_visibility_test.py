@@ -34,7 +34,6 @@ async def test_auto_generated_preset_is_publicly_visible(db_session: AsyncSessio
             filament_id=filament.id,
             extruder_temp=210,
             bed_temp=60,
-            print_speed=80,
             is_weighted=True,
             active=True,
             moderation_status=PresetModerationStatus.AUTO_GENERATED,
@@ -46,7 +45,6 @@ async def test_auto_generated_preset_is_publicly_visible(db_session: AsyncSessio
             filament_id=filament.id,
             extruder_temp=210,
             bed_temp=60,
-            print_speed=80,
             active=True,
             moderation_status=PresetModerationStatus.REJECTED,
         )

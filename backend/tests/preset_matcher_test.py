@@ -47,7 +47,6 @@ def _preset(*linked: Printer, is_official: bool = False, is_weighted: bool = Fal
         name="Test preset",
         extruder_temp=210,
         bed_temp=60,
-        print_speed=60,
         is_official=is_official,
         is_weighted=is_weighted,
         rating=rating,

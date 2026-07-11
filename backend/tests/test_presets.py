@@ -207,7 +207,6 @@ async def test_get_preset(client: AsyncClient, db_session: AsyncSession):
         is_official=False,
         extruder_temp=200.0,
         bed_temp=60.0,
-        print_speed=50.0,
         moderation_status=PresetModerationStatus.APPROVED,
         active=True,
     )
@@ -267,7 +266,6 @@ async def test_list_presets_filter_by_filament(
         is_official=False,
         extruder_temp=200.0,
         bed_temp=60.0,
-        print_speed=50.0,
         moderation_status=PresetModerationStatus.APPROVED,
         active=True,
     )
@@ -277,7 +275,6 @@ async def test_list_presets_filter_by_filament(
         is_official=False,
         extruder_temp=240.0,
         bed_temp=80.0,
-        print_speed=40.0,
         moderation_status=PresetModerationStatus.APPROVED,
         active=True,
     )
@@ -321,7 +318,6 @@ async def test_list_presets_filter_by_official(
         is_official=True,
         extruder_temp=200.0,
         bed_temp=60.0,
-        print_speed=50.0,
         moderation_status=PresetModerationStatus.APPROVED,
         active=True,
     )
@@ -331,7 +327,6 @@ async def test_list_presets_filter_by_official(
         is_official=False,
         extruder_temp=195.0,
         bed_temp=60.0,
-        print_speed=45.0,
         moderation_status=PresetModerationStatus.APPROVED,
         active=True,
     )
@@ -373,7 +368,6 @@ async def test_list_presets_search_by_name(
         is_official=False,
         extruder_temp=205.0,
         bed_temp=60.0,
-        print_speed=55.0,
         moderation_status=PresetModerationStatus.APPROVED,
         active=True,
     )
@@ -383,7 +377,6 @@ async def test_list_presets_search_by_name(
         is_official=False,
         extruder_temp=200.0,
         bed_temp=60.0,
-        print_speed=45.0,
         moderation_status=PresetModerationStatus.APPROVED,
         active=True,
     )
@@ -424,7 +417,6 @@ async def test_get_preset_recommend(client: AsyncClient, db_session: AsyncSessio
         is_official=False,
         extruder_temp=200.0,
         bed_temp=60.0,
-        print_speed=50.0,
         rating=4.8,
         usage_count=100,
         moderation_status=PresetModerationStatus.APPROVED,
@@ -436,7 +428,6 @@ async def test_get_preset_recommend(client: AsyncClient, db_session: AsyncSessio
         is_official=False,
         extruder_temp=195.0,
         bed_temp=60.0,
-        print_speed=45.0,
         rating=4.5,
         usage_count=50,
         moderation_status=PresetModerationStatus.APPROVED,
@@ -451,7 +442,7 @@ async def test_get_preset_recommend(client: AsyncClient, db_session: AsyncSessio
     data = response.json()
     assert "extruder_temp" in data
     assert "bed_temp" in data
-    assert "print_speed" in data
+    assert "flow_rate" in data  # material scope; print/travel speed больше не в рекомендации
     assert data["filament_id"] == filament.id
 
 
@@ -487,7 +478,6 @@ async def test_update_preset(client: AsyncClient, db_session: AsyncSession):
         is_official=False,
         extruder_temp=200.0,
         bed_temp=60.0,
-        print_speed=50.0,
         moderation_status=PresetModerationStatus.APPROVED,
         active=True,
     )
@@ -540,7 +530,6 @@ async def test_increment_usage_requires_auth(client: AsyncClient, db_session: As
         is_official=False,
         extruder_temp=200.0,
         bed_temp=60.0,
-        print_speed=50.0,
         moderation_status=PresetModerationStatus.APPROVED,
         active=True,
     )

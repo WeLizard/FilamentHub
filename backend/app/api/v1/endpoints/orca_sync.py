@@ -2411,7 +2411,6 @@ async def _upsert_filament_preset(
             basic_params_changed = (
                 (payload.extruder_temp is not None and preset.extruder_temp != payload.extruder_temp) or
                 (payload.bed_temp is not None and preset.bed_temp != payload.bed_temp) or
-                (payload.print_speed is not None and preset.print_speed != payload.print_speed) or
                 (payload.name and preset.name != payload.name.replace(' @fh', '').replace('@fh', '').replace(' @FilamentHub', '').replace('@FilamentHub', '').strip())
             )
 
@@ -2518,22 +2517,6 @@ async def _upsert_filament_preset(
                 preset.bed_temp = payload.bed_temp
             elif extracted.get("bed_temp") is not None:
                 preset.bed_temp = extracted["bed_temp"]
-            if payload.print_speed is not None:
-                preset.print_speed = payload.print_speed
-            elif extracted.get("print_speed") is not None:
-                preset.print_speed = extracted["print_speed"]
-            if payload.travel_speed is not None:
-                preset.travel_speed = payload.travel_speed
-            elif extracted.get("travel_speed") is not None:
-                preset.travel_speed = extracted["travel_speed"]
-            if payload.layer_height is not None:
-                preset.layer_height = payload.layer_height
-            elif extracted.get("layer_height") is not None:
-                preset.layer_height = extracted["layer_height"]
-            if payload.first_layer_height is not None:
-                preset.first_layer_height = payload.first_layer_height
-            elif extracted.get("first_layer_height") is not None:
-                preset.first_layer_height = extracted["first_layer_height"]
             if payload.flow_rate is not None:
                 preset.flow_rate = payload.flow_rate
             elif extracted.get("flow_rate") is not None:
@@ -2653,22 +2636,6 @@ async def _upsert_filament_preset(
                 preset.bed_temp = payload.bed_temp
             elif extracted.get("bed_temp") is not None:
                 preset.bed_temp = extracted["bed_temp"]
-            if payload.print_speed is not None:
-                preset.print_speed = payload.print_speed
-            elif extracted.get("print_speed") is not None:
-                preset.print_speed = extracted["print_speed"]
-            if payload.travel_speed is not None:
-                preset.travel_speed = payload.travel_speed
-            elif extracted.get("travel_speed") is not None:
-                preset.travel_speed = extracted["travel_speed"]
-            if payload.layer_height is not None:
-                preset.layer_height = payload.layer_height
-            elif extracted.get("layer_height") is not None:
-                preset.layer_height = extracted["layer_height"]
-            if payload.first_layer_height is not None:
-                preset.first_layer_height = payload.first_layer_height
-            elif extracted.get("first_layer_height") is not None:
-                preset.first_layer_height = extracted["first_layer_height"]
             if payload.flow_rate is not None:
                 preset.flow_rate = payload.flow_rate
             elif extracted.get("flow_rate") is not None:
@@ -2726,8 +2693,6 @@ async def _upsert_filament_preset(
         extracted = _extract_values_from_orcaslicer_settings(payload.orcaslicer_settings or {})
         extruder_temp = payload.extruder_temp or extracted.get("extruder_temp") or 200.0
         bed_temp = payload.bed_temp or extracted.get("bed_temp") or 60.0
-        print_speed = payload.print_speed or extracted.get("print_speed") or 50.0
-        travel_speed = payload.travel_speed or extracted.get("travel_speed")
 
         # Убираем постфиксы FilamentHub из названия для отображения на сайте
         clean_name = payload.name if payload.name else 'Unnamed Preset'
@@ -2769,10 +2734,6 @@ async def _upsert_filament_preset(
             user_id=current_user.id,
             extruder_temp=extruder_temp,
             bed_temp=bed_temp,
-            print_speed=print_speed,
-            travel_speed=travel_speed,
-            layer_height=payload.layer_height or extracted.get("layer_height"),
-            first_layer_height=payload.first_layer_height or extracted.get("first_layer_height"),
             flow_rate=payload.flow_rate or extracted.get("flow_rate"),
             fan_speed=payload.fan_speed if payload.fan_speed is not None else extracted.get("fan_speed"),
             retraction_length=payload.retraction_length or extracted.get("retraction_length"),

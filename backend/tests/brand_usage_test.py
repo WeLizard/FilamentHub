@@ -38,7 +38,6 @@ async def test_brand_usage_aggregates_real_data(
         name="UB PLA Fast",
         extruder_temp=210,
         bed_temp=60,
-        print_speed=80,
         usage_count=5,
     )
     db_session.add(preset)

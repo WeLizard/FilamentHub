@@ -321,13 +321,6 @@ def validate_preset_settings(
         if preset.bed_temp > ranges["bed_temp"]["max"]:
             return False, {"code": "ERR_BED_TEMP_TOO_HIGH", "params": {"value": preset.bed_temp, "max": ranges["bed_temp"]["max"]}}
 
-    # Проверка скорости печати
-    if preset.print_speed:
-        if preset.print_speed < ranges["print_speed"]["min"]:
-            return False, {"code": "ERR_PRINT_SPEED_TOO_LOW", "params": {"value": preset.print_speed, "min": ranges["print_speed"]["min"]}}
-        if preset.print_speed > ranges["print_speed"]["max"]:
-            return False, {"code": "ERR_PRINT_SPEED_TOO_HIGH", "params": {"value": preset.print_speed, "max": ranges["print_speed"]["max"]}}
-
     # Проверка скорости вентилятора (всегда 0-100%)
     if preset.fan_speed is not None:
         if preset.fan_speed < ranges["fan_speed"]["min"]:
@@ -370,7 +363,6 @@ def _collect_soft_range_flags(preset: Preset, filament: Filament) -> list[dict[s
     checks: list[tuple[str, float | int | None]] = [
         ("extruder_temp", preset.extruder_temp),
         ("bed_temp", preset.bed_temp),
-        ("print_speed", preset.print_speed),
         ("fan_speed", preset.fan_speed),
         ("retraction_length", preset.retraction_length),
         ("retraction_speed", preset.retraction_speed),
@@ -435,7 +427,6 @@ def _looks_like_duplicate_settings(preset: Preset, candidate: Preset) -> bool:
     comparisons = [
         (preset.extruder_temp, candidate.extruder_temp, 3.0),
         (preset.bed_temp, candidate.bed_temp, 3.0),
-        (preset.print_speed, candidate.print_speed, 8.0),
         (preset.flow_rate, candidate.flow_rate, 4.0),
         (preset.fan_speed, candidate.fan_speed, 12.0),
         (preset.retraction_length, candidate.retraction_length, 0.8),

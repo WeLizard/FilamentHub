@@ -37,7 +37,6 @@ async def test_moderation_can_return_pending_when_manual_review_enabled(
         is_official=False,
         extruder_temp=240.0,
         bed_temp=60.0,
-        print_speed=50.0,
         flow_rate=100.0,
         fan_speed=80,
         retraction_length=5.0,
@@ -55,7 +54,6 @@ async def test_moderation_can_return_pending_when_manual_review_enabled(
         is_official=False,
         extruder_temp=260.0,  # PLA soft_max=250 => soft warning
         bed_temp=60.0,
-        print_speed=50.0,
         flow_rate=100.0,
         fan_speed=80,
         retraction_length=5.0,
@@ -104,7 +102,6 @@ async def test_moderation_auto_approves_when_manual_review_disabled(
         is_official=False,
         extruder_temp=240.0,
         bed_temp=60.0,
-        print_speed=50.0,
         flow_rate=100.0,
         fan_speed=80,
         retraction_length=5.0,
@@ -122,7 +119,6 @@ async def test_moderation_auto_approves_when_manual_review_disabled(
         is_official=False,
         extruder_temp=260.0,
         bed_temp=60.0,
-        print_speed=50.0,
         flow_rate=100.0,
         fan_speed=80,
         retraction_length=5.0,
@@ -170,7 +166,6 @@ async def test_moderation_still_rejects_invalid_settings_with_manual_review_disa
         is_official=False,
         extruder_temp=600.0,  # hard max violation
         bed_temp=60.0,
-        print_speed=50.0,
         active=True,
     )
 

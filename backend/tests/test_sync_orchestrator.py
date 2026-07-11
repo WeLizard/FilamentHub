@@ -86,7 +86,6 @@ async def test_preset(
         user_id=test_user.id,
         extruder_temp=200.0,
         bed_temp=60.0,
-        print_speed=100.0,
         moderation_status=PresetModerationStatus.APPROVED,
         active=True,
         orcaslicer_settings={"temperature": 200, "bed_temperature": 60},

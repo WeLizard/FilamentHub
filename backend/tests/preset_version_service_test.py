@@ -8,7 +8,7 @@ import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.preset import Preset, PresetModerationStatus
-from app.models.preset_version import PresetVersion, PresetVersionSource
+from app.models.preset_version import PresetVersionSource
 from app.models.user import User
 from app.services import preset_version_service as svc
 
@@ -28,7 +28,6 @@ async def _seed(db: AsyncSession) -> tuple[User, Preset]:
         user_id=user.id,
         extruder_temp=210,
         bed_temp=60,
-        print_speed=100,
         orcaslicer_settings={"nozzle_temperature": "210", "filament_flow_ratio": "0.95"},
         moderation_status=PresetModerationStatus.APPROVED,
     )

@@ -21,15 +21,12 @@ _material_defaults: dict | None = None
 _DUMMY_DEFAULTS = {
     "extruder_temp": 200.0,
     "bed_temp": 60.0,
-    "print_speed": 50.0,
 }
 
-# Fields on the Preset model that can be enriched
+# Fields on the Preset model that can be enriched (material scope only)
 _ENRICHABLE_FIELDS = [
     "extruder_temp",
     "bed_temp",
-    "print_speed",
-    "travel_speed",
     "fan_speed",
     "retraction_length",
     "retraction_speed",
@@ -151,8 +148,9 @@ def _is_dummy_value(field: str, value) -> bool:
     if field in _DUMMY_DEFAULTS and value == _DUMMY_DEFAULTS[field]:
         return True
     # Zero values for optional fields indicate missing data
-    if field in ("fan_speed", "retraction_length", "retraction_speed", "flow_rate",
-                 "travel_speed") and (value is None or value == 0):
+    if field in ("fan_speed", "retraction_length", "retraction_speed", "flow_rate") and (
+        value is None or value == 0
+    ):
         return True
     return False
 

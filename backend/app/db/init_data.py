@@ -214,9 +214,11 @@ async def init_test_data() -> None:
             },
         ]
 
-        # Add all presets
+        # Add all presets. print/travel speed и layer heights — process-scope,
+        # на filament-пресете их нет (модель их не имеет) → отбрасываем из сид-данных.
+        _process_keys = {"print_speed", "travel_speed", "layer_height", "first_layer_height"}
         for preset_data in official_presets_data + community_presets_data:
-            preset = Preset(**preset_data)
+            preset = Preset(**{k: v for k, v in preset_data.items() if k not in _process_keys})
             db.add(preset)
 
         await db.commit()
