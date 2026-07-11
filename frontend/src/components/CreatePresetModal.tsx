@@ -3640,58 +3640,6 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
 
               {activeTab === 'override' && (
                 <div className="space-y-6">
-                  {/* Скорости и замедления */}
-                  <div>
-                    <h4 className="text-sm font-semibold text-white mb-3 pb-2 border-b border-white/10">{t('presetModal.speedsAndSlowdowns')}</h4>
-                    
-                    <div className="space-y-4">
-                      {/* Замедлять печать для лучшего охлаждения слоёв */}
-                      <div className="flex items-center space-x-3">
-                        <input
-                          type="checkbox"
-                          id="slowDownForLayerCoolingOverride"
-                          checked={slowDownForLayerCooling}
-                          onChange={(e) => { setSlowDownForLayerCooling(e.target.checked); }}
-                          className="w-4 h-4 rounded border-white/20 bg-white/10 text-purple-500 focus:ring-purple-500"
-                        />
-                        <label htmlFor="slowDownForLayerCoolingOverride" className="text-gray-300 text-sm">
-                          {t('presetModal.slowDownForCooling')}
-                        </label>
-                      </div>
-
-                      {/* Не замедляться на внешнем периметре */}
-                      <div className="flex items-center space-x-3">
-                        <input
-                          type="checkbox"
-                          id="dontSlowDownOuterWallOverride"
-                          checked={dontSlowDownOuterWall}
-                          onChange={(e) => { setDontSlowDownOuterWall(e.target.checked); }}
-                          className="w-4 h-4 rounded border-white/20 bg-white/10 text-purple-500 focus:ring-purple-500"
-                        />
-                        <label htmlFor="dontSlowDownOuterWallOverride" className="text-gray-300 text-sm">
-                          {t('presetModal.dontSlowOuterWall')}
-                        </label>
-                      </div>
-
-                      {/* Минимальная скорость печати */}
-                      {slowDownForLayerCooling && (
-                        <div>
-                          <label className="block text-gray-300 mb-1 text-sm">{t('presetModal.minPrintSpeed')}</label>
-                          <input
-                            type="number"
-                            value={slowDownMinSpeed}
-                            onChange={(e) => { setSlowDownMinSpeed(e.target.value === '' ? '' : Number(e.target.value)); }}
-                            min={0}
-                            step="1"
-                            placeholder="10"
-                            className={`w-full pl-3 pr-12 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-gray-500 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all `}
-                          />
-                          <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400 pointer-events-none">mm/s</span>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-
                   {/* Откат */}
                   <div>
                     <h4 className="text-sm font-semibold text-white mb-3 pb-2 border-b border-white/10">{t('presetModal.retraction')}</h4>
