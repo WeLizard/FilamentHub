@@ -334,7 +334,14 @@ const makeCurrencyFormatter = (code: CurrencyCode) =>
   (value: number | null | undefined): string =>
     value == null || !Number.isFinite(value) ? '—' : `${value.toFixed(2)} ${currencySymbol(code)}`;
 
-const formatQuantity = (value: number): string => `${value}`;
+const normalizeFilamentColor = (value: string | null | undefined): string | null => {
+  if (!value) return null;
+  const normalized = value.trim().startsWith('#') ? value.trim() : `#${value.trim()}`;
+  if (/^#[0-9a-f]{8}$/i.test(normalized)) return normalized.slice(0, 7);
+  return /^#[0-9a-f]{6}$/i.test(normalized) ? normalized : null;
+};
+
+const filamentColorAlpha = (color: string, alpha: string): string => `${color}${alpha}`;
 
 const toHours = (hours: number, minutes: number, seconds: number): number =>
   hours + minutes / 60 + seconds / 3600;
@@ -377,7 +384,7 @@ const buildSpoolLabel = (spool: UserSpool): string => {
   return `${buildFilamentLabel(spool.filament)} · ${Math.round(spool.remaining_weight_g)} g`;
 };
 
-const buildEstimateRequest = (
+export const buildEstimateRequest = (
   form: CalculatorFormState,
   materialLines: CalculatorMaterialLineState[] = [],
   parsedJobs: ParsedJobState[] = [],
@@ -390,12 +397,6 @@ const buildEstimateRequest = (
     rounding_mode: form.roundingMode,
   };
 
-  requestData.weight_g = form.weightG;
-  requestData.supports_weight_g = form.supportsWeightG || undefined;
-  requestData.supports_loss_coefficient = form.supportsLossCoefficient || undefined;
-  requestData.spool_price = form.spoolPrice;
-  requestData.spool_weight_kg = form.spoolWeightKg;
-  requestData.delivery_cost = form.deliveryCost || undefined;
   if (materialLines.length > 0) {
     requestData.material_lines = materialLines.map((line) => ({
       line_id: line.line_id,
@@ -409,9 +410,22 @@ const buildEstimateRequest = (
       price_source: line.price_source,
       spool_id: line.spool_id,
       filament_id: line.filament_id,
-      density_g_cm3: line.density_g_cm3,
-      abrasiveness: line.abrasiveness,
+      density_g_cm3: line.density_g_cm3 != null && line.density_g_cm3 > 0
+        ? line.density_g_cm3
+        : null,
+      abrasiveness: line.abrasiveness != null && line.abrasiveness >= 0.5
+        ? line.abrasiveness
+        : undefined,
     }));
+  } else {
+    if (form.weightG > 0) {
+      requestData.weight_g = form.weightG;
+    }
+    requestData.supports_weight_g = form.supportsWeightG || undefined;
+    requestData.supports_loss_coefficient = form.supportsLossCoefficient || undefined;
+    requestData.spool_price = form.spoolPrice;
+    requestData.spool_weight_kg = form.spoolWeightKg;
+    requestData.delivery_cost = form.deliveryCost || undefined;
   }
   if (parsedJobs.length > 0) {
     const configsByJob = new Map(jobConfigs.map((config) => [config.jobKey, config]));
@@ -1593,10 +1607,15 @@ export const CalculatorPage: React.FC = () => {
       response?: { data?: { detail?: unknown } };
       message?: string;
     };
+    const detail = errorWithResponse.response?.data?.detail;
+
+    if (Array.isArray(detail)) {
+      return translateCalculator(t, 'estimateValidationError');
+    }
 
     return translateApiError(
       t,
-      errorWithResponse.response?.data?.detail ?? errorWithResponse.message,
+      detail ?? errorWithResponse.message,
       t('profilePage.calc.unknownError'),
     );
   }, [calculateMutation.error, t]);
@@ -1635,47 +1654,7 @@ export const CalculatorPage: React.FC = () => {
     );
   }, [historyQuery.error, t]);
 
-  const currentWorkTimeHours = useMemo(
-    () => toHours(form.timeHours, form.timeMinutes, form.timeSec),
-    [form.timeHours, form.timeMinutes, form.timeSec],
-  );
-  const headerJobs = parsedJobs.length > 0
-    ? parsedJobs
-    : parsedGcode
-      ? [{ key: 'single-job', parsed: parsedGcode }]
-      : [];
-  const headerConfigsByJob = new Map(jobConfigs.map((config) => [config.jobKey, config]));
-  const headerBatchSummary = buildConfiguredCalculatorBatchSummary(
-    headerJobs.map((job) => {
-      const config = headerConfigsByJob.get(job.key) ?? {
-        ...createDefaultJobConfig(job),
-        repeats: form.quantity,
-      };
-      const groups = job.parsed.object_groups ?? [];
-      const quoteMode = config.quoteMode === 'groups'
-        && groups.length > 1
-        && !canSplitCalculatorObjectGroups(groups)
-        ? 'set'
-        : config.quoteMode;
-      return {
-        repeats: config.repeats,
-        outputQuantityPerRun: calculatorOutputQuantityPerRun(groups, quoteMode),
-        objectCount: job.parsed.object_count,
-        printTimeSeconds: config.printTimeSeconds,
-        weightG: job.parsed.total_filament_weight_g,
-      };
-    }),
-  );
-
-  const summaryTotal = result ? result.cost_final || result.cost_total : null;
-  const summaryTime = result?.total_time_hours
-    ?? result?.time_hours
-    ?? (headerBatchSummary.jobCount > 0
-      ? headerBatchSummary.partyPrintTimeSeconds / 3600
-      : currentWorkTimeHours * Math.max(1, form.quantity));
-  const summaryQuantity = headerBatchSummary.jobCount > 0
-    ? headerBatchSummary.quoteQuantity
-    : form.quantity;
+  const currentJobCount = parsedJobs.length > 0 ? parsedJobs.length : parsedGcode ? 1 : 0;
 
   const updateField = <K extends keyof CalculatorFormState>(field: K, value: CalculatorFormState[K]) => {
     if (field === 'spoolPrice') {
@@ -1830,6 +1809,7 @@ export const CalculatorPage: React.FC = () => {
   const handleGcodeFiles = async (files: File[]) => {
     const batch = await parseGcodeMutation.mutateAsync(files);
     const firstJob = batch.jobs[0];
+    calculateMutation.reset();
     priceManuallyEditedRef.current = false;
     lastAutoMatchedGcodeKeyRef.current = null;
     lastBuiltMaterialJobsKeyRef.current = null;
@@ -2617,12 +2597,12 @@ export const CalculatorPage: React.FC = () => {
             </div>
 
             <div className="grid gap-3 sm:min-w-[24rem] sm:grid-cols-3">
-              <MetricTile label={tc('totalCost')} value={formatCurrency(summaryTotal)} />
               <MetricTile
-                label={t('profilePage.calc.totalWorkTime')}
-                value={formatHoursShort(summaryTime, t('profilePage.calc.h'), t('profilePage.calc.min'))}
+                label={tc('workspaceSavedEstimates')}
+                value={historyQuery.isPending ? '—' : String(historyQuery.data?.total ?? 0)}
               />
-              <MetricTile label={t('profilePage.calc.quantity')} value={formatQuantity(summaryQuantity)} />
+              <MetricTile label={tc('workspaceQuoteDraft')} value={String(quoteItems.length)} />
+              <MetricTile label={tc('workspaceCurrentJobs')} value={String(currentJobCount)} />
             </div>
           </div>
 
@@ -2875,6 +2855,8 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
   const [expandedMaterialLineIds, setExpandedMaterialLineIds] = useState<Set<string>>(new Set());
   const [materialPickerLineIds, setMaterialPickerLineIds] = useState<Set<string>>(new Set());
   const [singleMaterialCostOpen, setSingleMaterialCostOpen] = useState(true);
+  const resultsRef = useRef<HTMLDivElement | null>(null);
+  const scrollToResultAfterEstimateRef = useRef(false);
 
   useEffect(() => {
     setExpandedMaterialLineIds((current) => {
@@ -2899,6 +2881,12 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
       return next;
     });
   }, [materialLines]);
+
+  useEffect(() => {
+    if (!scrollToResultAfterEstimateRef.current || (!result && !estimateError)) return;
+    scrollToResultAfterEstimateRef.current = false;
+    resultsRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }, [estimateError, result]);
 
   const materialSourceLabel = {
     spool: tc('materialSourceSpool'),
@@ -3016,6 +3004,27 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
       : [];
   const hasParsedJobs = displayJobs.length > 0;
   const isBatchMode = displayJobs.length > 1;
+  const hasManualCalculationData = !hasParsedJobs
+    && form.weightG > 0
+    && toHours(form.timeHours, form.timeMinutes, form.timeSec) > 0;
+  const showCalculateAction = hasParsedJobs || hasManualCalculationData;
+  const materialsReadyForCalculation = !hasParsedJobs || (
+    materialLines.length > 0
+    && materialLines.every((line) => (
+      line.weight_g > 0
+      && line.spool_weight_kg > 0
+      && line.priceResolved
+    ))
+  );
+  const calculateActionEnabled = showCalculateAction
+    && materialsReadyForCalculation
+    && !isParsingGcode
+    && !isCalculating;
+  const handleCalculateAction = () => {
+    if (!calculateActionEnabled) return;
+    scrollToResultAfterEstimateRef.current = true;
+    onCalculate();
+  };
   const jobConfigsByKey = new Map(jobConfigs.map((config) => [config.jobKey, config]));
   const getJobConfig = (job: ParsedJobState): CalculatorJobConfig => jobConfigsByKey.get(job.key)
     ?? createDefaultJobConfig(job);
@@ -3189,7 +3198,7 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
   };
 
   return (
-    <div className="flex flex-col gap-5">
+    <div className={`flex flex-col gap-5 ${showCalculateAction ? 'pb-20' : ''}`}>
       <div className="order-2 min-w-0 space-y-5">
         <SurfaceCard className="p-4 md:p-5">
           <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
@@ -3811,7 +3820,9 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
                               <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                                 <div>
                                   <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-500">{tc('jobObjects')}</p>
-                                  <p className="mt-1 text-xs leading-5 text-slate-400">{tc('jobObjectsHint')}</p>
+                                  <p className="mt-1 text-xs leading-5 text-slate-400">
+                                    {objectGroups.length > 1 ? tc('jobObjectsHint') : tc('jobObjectsSingleHint')}
+                                  </p>
                                 </div>
                                 {objectGroups.length > 1 ? (
                                   <div className="inline-flex rounded-xl border border-white/[0.08] bg-black/20 p-1">
@@ -3853,6 +3864,17 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
                                           || parsedMaterial?.name
                                           || matchingLine?.label
                                           || `T${numericToolIndex}`;
+                                        const usageSpool = matchingLine?.selectionValue.startsWith('spool:')
+                                          ? spools.find((spool) => spool.id === Number(matchingLine.selectionValue.slice('spool:'.length)))
+                                          : null;
+                                        const usageFilament = matchingLine?.selectionValue.startsWith('filament:')
+                                          ? filaments.find((filament) => filament.id === Number(matchingLine.selectionValue.slice('filament:'.length)))
+                                          : null;
+                                        const color = normalizeFilamentColor(
+                                          usageSpool?.filament?.color_hex
+                                            || usageFilament?.color_hex
+                                            || parsedMaterial?.color,
+                                        );
                                         return {
                                           toolIndex: numericToolIndex,
                                           technicalLabel: matchingLine?.label
@@ -3860,6 +3882,7 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
                                               ? buildParsedMaterialLabel(parsedMaterial, `T${numericToolIndex}`)
                                               : `T${numericToolIndex}`),
                                           compactLabel,
+                                          color,
                                           weightG,
                                         };
                                       });
@@ -3876,8 +3899,19 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
                                                  <span
                                                    key={`${job.key}-${group.name}-t${usage.toolIndex}`}
                                                    title={`T${usage.toolIndex} · ${usage.technicalLabel}`}
-                                                   className="rounded-md border border-cyan-400/15 bg-cyan-400/[0.06] px-1.5 py-0.5 text-[10px] text-cyan-100/85"
+                                                   data-testid="calculator-group-material"
+                                                   className="inline-flex items-center gap-1.5 rounded-md border border-cyan-400/15 bg-cyan-400/[0.06] px-1.5 py-0.5 text-[10px] text-cyan-100/85"
+                                                   style={usage.color ? {
+                                                     borderColor: filamentColorAlpha(usage.color, '66'),
+                                                     backgroundColor: filamentColorAlpha(usage.color, '1f'),
+                                                   } : undefined}
                                                  >
+                                                   {usage.color ? (
+                                                     <span
+                                                       className="h-2 w-2 shrink-0 rounded-full border border-white/25"
+                                                       style={{ backgroundColor: usage.color }}
+                                                     />
+                                                   ) : null}
                                                    {usage.compactLabel} · {usage.weightG.toFixed(2)} {tc('grams')}
                                                  </span>
                                               ))}
@@ -4605,41 +4639,17 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
           ) : null}
         </SurfaceCard>
 
-        {estimateError && (
-          <div className="rounded-[1.45rem] border border-red-400/25 bg-red-500/10 px-5 py-4 text-sm text-red-100">
-            {t('profilePage.calc.error')}: {estimateError}
-          </div>
-        )}
-
       </div>
 
-      <div className="order-1 min-w-0">
+      {result || estimateError ? (
+      <div ref={resultsRef} data-testid="calculator-result" className="order-1 min-w-0 scroll-mt-6">
         <SurfaceCard className="p-5 md:p-6">
           <div className="flex items-center justify-between gap-4">
             <SectionHeading icon={<Calculator className="h-5 w-5 text-cyan-300" />} title={tc('resultsTitle')} compact />
             <div className="rounded-full border border-cyan-400/20 bg-cyan-400/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-cyan-200">
-              {result ? tc('lastEstimate') : tc('readyForEstimate')}
+              {result ? tc('lastEstimate') : tc('estimateFailed')}
             </div>
           </div>
-
-          <button
-            type="button"
-            onClick={onCalculate}
-            disabled={isCalculating}
-            className="mt-5 inline-flex w-full items-center justify-center gap-2 rounded-[1.6rem] bg-[linear-gradient(135deg,#0891b2,#7c3aed)] px-6 py-4 text-base font-semibold text-white shadow-[0_18px_35px_-18px_rgba(6,182,212,0.7)] transition-all hover:translate-y-[-1px] hover:shadow-[0_22px_42px_-18px_rgba(124,58,237,0.72)] disabled:cursor-not-allowed disabled:opacity-60"
-          >
-            {isCalculating ? (
-              <>
-                <Loader2 className="h-5 w-5 animate-spin" />
-                {t('profilePage.calc.calculating')}
-              </>
-            ) : (
-              <>
-                <Calculator className="h-5 w-5" />
-                {t('profilePage.calc.calculate')}
-              </>
-            )}
-          </button>
 
           {result ? (
             <>
@@ -4767,7 +4777,8 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
                 <button
                   type="button"
                   onClick={onAddToQuote}
-                  className="inline-flex w-full items-center justify-center gap-2 rounded-2xl border border-cyan-400/20 bg-cyan-400/10 px-4 py-3 text-sm font-medium text-cyan-200 transition-all hover:bg-cyan-400/20 hover:text-white"
+                  title={tc('quoteDraftActionHint')}
+                  className={`${ghostButtonClass} w-full`}
                 >
                   <Plus className="h-4 w-4" />
                   {tc('addToQuote')}
@@ -4775,7 +4786,8 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
                 <button
                   type="button"
                   onClick={onOpenQuote}
-                  className={`${ghostButtonClass} w-full relative`}
+                  title={tc('quoteOpenActionHint')}
+                  className="relative inline-flex w-full items-center justify-center gap-2 rounded-2xl border border-cyan-400/20 bg-cyan-400/10 px-4 py-3 text-sm font-medium text-cyan-100 transition-all hover:bg-cyan-400/20 hover:text-white"
                 >
                   <FileText className="h-4 w-4" />
                   {tc('openQuoteBuilder')}
@@ -4796,21 +4808,35 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
                 </button>
               </div>
             </>
-          ) : (
-            <div className="mt-5 rounded-[1.35rem] border border-dashed border-white/12 bg-[radial-gradient(circle_at_left,rgba(34,211,238,0.08),transparent_42%),linear-gradient(90deg,rgba(2,6,23,0.35),rgba(2,6,23,0.58))] px-5 py-5 text-left shadow-[inset_0_1px_0_rgba(255,255,255,0.05)]">
-              <div className="flex items-start gap-4">
-                <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-[1.1rem] border border-white/10 bg-white/5">
-                  <CheckCircle2 className="h-6 w-6 text-cyan-300" />
-                </div>
-                <div>
-                  <h3 className="text-lg font-semibold text-white">{tc('resultsEmptyTitle')}</h3>
-                  <p className="mt-2 text-sm leading-6 text-slate-300">{tc('resultsEmptyDescription')}</p>
-                </div>
-              </div>
+          ) : estimateError ? (
+            <div className="mt-5 rounded-[1.35rem] border border-red-400/25 bg-red-500/10 px-5 py-4 text-sm text-red-100">
+              {t('profilePage.calc.error')}: {estimateError}
             </div>
-          )}
+          ) : null}
         </SurfaceCard>
       </div>
+      ) : null}
+
+      {showCalculateAction ? (
+        <div className="fixed bottom-5 right-5 z-40 max-w-[calc(100vw-2.5rem)] lg:bottom-8 lg:right-8">
+          <button
+            type="button"
+            data-testid="calculator-floating-action"
+            onClick={handleCalculateAction}
+            disabled={!calculateActionEnabled}
+            className="inline-flex min-h-14 items-center justify-center gap-3 rounded-2xl border border-cyan-200/20 bg-[linear-gradient(135deg,rgba(8,145,178,0.96),rgba(124,58,237,0.96))] px-5 py-3 text-sm font-semibold text-white shadow-[0_22px_55px_-20px_rgba(34,211,238,0.85)] backdrop-blur-xl transition-all hover:-translate-y-0.5 hover:shadow-[0_26px_60px_-20px_rgba(124,58,237,0.9)] disabled:cursor-not-allowed disabled:border-amber-300/15 disabled:bg-[linear-gradient(135deg,rgba(51,65,85,0.96),rgba(30,41,59,0.96))] disabled:text-slate-300 disabled:shadow-none"
+          >
+            {isCalculating ? <Loader2 className="h-5 w-5 animate-spin" /> : <Calculator className="h-5 w-5" />}
+            <span>
+              {isCalculating
+                ? t('profilePage.calc.calculating')
+                : materialsReadyForCalculation
+                  ? tc('calculateOrder')
+                  : tc('completeMaterialsAction')}
+            </span>
+          </button>
+        </div>
+      ) : null}
     </div>
   );
 };

@@ -1,7 +1,7 @@
 import type { TFunction } from 'i18next';
 import { describe, expect, it } from 'vitest';
 
-import { buildQuoteLineItems } from '../pages/CalculatorPage';
+import { buildEstimateRequest, buildQuoteLineItems } from '../pages/CalculatorPage';
 import type { CalculatorEstimateResponse, CalculatorGcodeParseResponse } from '../types/api';
 import { allocateRoundedTotal, quoteTitleFromFileName } from './calculatorQuote';
 
@@ -11,6 +11,59 @@ describe('quoteTitleFromFileName', () => {
       'Orca Head_PETG_6h24m_supps',
     );
     expect(quoteTitleFromFileName('Metadata/plate_1.gcode.3mf', 'Item')).toBe('plate_1');
+  });
+});
+
+describe('buildEstimateRequest', () => {
+  it('omits an empty manual weight from the request', () => {
+    const request = buildEstimateRequest({
+      quantity: 1,
+      roundToNearest: 10,
+      roundingMode: 'up',
+      weightG: 0,
+    } as never);
+
+    expect(request).not.toHaveProperty('weight_g');
+  });
+
+  it('does not mix legacy material fields into a material-lines request', () => {
+    const request = buildEstimateRequest({
+      quantity: 1,
+      roundToNearest: 10,
+      roundingMode: 'up',
+      weightG: 36.68,
+      supportsWeightG: 0,
+      supportsLossCoefficient: 1.2,
+      spoolPrice: 0,
+      spoolWeightKg: 1,
+      deliveryCost: 0,
+    } as never, [{
+      line_id: 'job:t0',
+      job_key: 'job',
+      tool_index: 0,
+      label: 'PETG',
+      weight_g: 36.68,
+      spool_price: 1400,
+      spool_weight_kg: 1,
+      delivery_cost: 0,
+      price_source: 'slicer',
+      spool_id: null,
+      filament_id: null,
+      density_g_cm3: 0,
+      selectionValue: 'manual',
+      fileName: 'part.gcode',
+      plateIndex: null,
+      confidence: null,
+      requiresSpoolChoice: false,
+      priceResolved: true,
+    } as never]);
+
+    expect(request.material_lines).toHaveLength(1);
+    expect(request.material_lines?.[0]?.density_g_cm3).toBeNull();
+    expect(request).not.toHaveProperty('weight_g');
+    expect(request).not.toHaveProperty('spool_price');
+    expect(request).not.toHaveProperty('spool_weight_kg');
+    expect(request).not.toHaveProperty('supports_loss_coefficient');
   });
 });
 
