@@ -14,6 +14,7 @@ import {
   Boxes,
   ChevronDown,
   CheckCircle2,
+  Check,
   Clock,
   CloudDownload,
   CloudUpload,
@@ -1245,16 +1246,18 @@ const buildQuoteDocumentHtml = ({
       .included { margin-bottom: 24px; }
       .included-title { font-weight: 700; margin-bottom: 8px; font-size: 14px; }
       .included ul { padding-left: 20px; font-size: 13px; color: #4b5563; line-height: 1.8; }
-      .signatures { display: flex; justify-content: space-between; margin-top: 48px; }
+      .signatures { display: flex; justify-content: space-between; margin-top: 28px; }
       .sig-block { width: 38%; }
       .sig-block p { font-size: 13px; margin-bottom: 32px; }
       .sig-line { border-bottom: 1px solid #1f2937; padding-bottom: 4px; font-size: 13px; }
       .sig-hint { font-size: 10px; color: #9ca3af; margin-top: 4px; }
-      .footer-note { margin-top: 32px; text-align: center; font-size: 10px; color: #d1d5db; }
+      .footer-note { margin-top: 18px; text-align: center; font-size: 10px; color: #d1d5db; }
       .total-row td { font-weight: 700; font-size: 15px; background: #f9fafb; }
       @media print {
+        @page { size: A4; margin: 14mm; }
         body { background: white; }
-        .page { width: 100%; min-height: auto; margin: 0; padding: 15mm; box-shadow: none; }
+        .page { width: 100%; min-height: auto; margin: 0; padding: 0; box-shadow: none; }
+        .signatures, .footer-note { break-inside: avoid; }
       }
     </style>
   </head>
@@ -1395,6 +1398,7 @@ export const CalculatorPage: React.FC<CalculatorPageProps> = ({
   const [quoteItems, setQuoteItems] = useState<QuoteItem[]>([]);
   const [quoteCustomerSelection, setQuoteCustomerSelection] = useState('new');
   const [isSharing, setIsSharing] = useState(false);
+  const [shareCopied, setShareCopied] = useState(false);
   const [isPdfDownloading, setIsPdfDownloading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const skipNextFilamentDefaultsRef = useRef(false);
@@ -2084,6 +2088,8 @@ export const CalculatorPage: React.FC<CalculatorPageProps> = ({
       });
 
       await navigator.clipboard.writeText(resp.share_url);
+      setShareCopied(true);
+      window.setTimeout(() => setShareCopied(false), 2500);
       setHistoryFeedback({ kind: 'success', message: tc('quoteShareCopied') });
     } catch (err) {
       const errorWithResponse = err as { response?: { data?: { detail?: unknown } }; message?: string };
@@ -2884,6 +2890,7 @@ export const CalculatorPage: React.FC<CalculatorPageProps> = ({
         onShare={handleShareQuote}
         onDownloadPdf={handleDownloadPdf}
         isSharing={isSharing}
+        shareCopied={shareCopied}
         isPdfDownloading={isPdfDownloading}
         isSavingToWorkspace={saveQuoteToWorkspaceMutation.isPending}
         isLoggedIn={!!user}
@@ -5216,6 +5223,7 @@ interface QuoteModalProps {
   onShare: () => void;
   onDownloadPdf: () => void;
   isSharing: boolean;
+  shareCopied: boolean;
   isPdfDownloading: boolean;
   isSavingToWorkspace: boolean;
   isLoggedIn: boolean;
@@ -5242,6 +5250,7 @@ const QuoteModal: React.FC<QuoteModalProps> = ({
   onShare,
   onDownloadPdf,
   isSharing,
+  shareCopied,
   isPdfDownloading,
   isSavingToWorkspace,
   isLoggedIn,
@@ -5548,8 +5557,14 @@ const QuoteModal: React.FC<QuoteModalProps> = ({
                     disabled={isSharing}
                     className="inline-flex w-full items-center justify-center gap-2 rounded-[1.4rem] border border-cyan-400/20 bg-cyan-400/10 px-5 py-4 text-sm font-semibold text-cyan-200 transition-all hover:bg-cyan-400/20 hover:text-white disabled:opacity-50 disabled:cursor-not-allowed"
                   >
-                    {isSharing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Link2 className="h-4 w-4" />}
-                    {tc('quoteShareAction')}
+                    {isSharing ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : shareCopied ? (
+                      <Check className="h-4 w-4" />
+                    ) : (
+                      <Link2 className="h-4 w-4" />
+                    )}
+                    {shareCopied ? tc('quoteShareCopied') : tc('quoteShareAction')}
                   </button>
                 )}
                 <button
