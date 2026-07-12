@@ -3,7 +3,7 @@
 import { ReactNode, useState, useEffect, useRef } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
-import { Package, User, LogOut, Shield, MessageCircle, Download, Menu, X, BookOpen, ScanLine, BriefcaseBusiness } from 'lucide-react';
+import { Package, User, LogOut, Shield, MessageCircle, Download, Menu, X, BookOpen, ScanLine } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { QrScannerModal } from './QrScannerModal';
 import { authAPI, qrAPI } from '../api/client';
@@ -237,20 +237,6 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
                 <span>{t('layout.nav_wiki')}</span>
               </Link>
 
-              {user && (
-                <Link
-                  to="/workspace"
-                  className={`flex items-center space-x-2 px-4 py-2 rounded-lg transition-all ${
-                    isActive('/workspace')
-                      ? 'bg-cyan-600 text-white shadow-lg shadow-cyan-500/25'
-                      : 'text-gray-300 hover:text-white hover:bg-white/10'
-                  }`}
-                >
-                  <BriefcaseBusiness className="w-4 h-4" />
-                  <span>{t('layout.nav_workspace')}</span>
-                </Link>
-              )}
-
               {user?.role === 'admin' && (
                 <Link
                   to="/admin"
@@ -361,20 +347,6 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
                 <BookOpen className="w-5 h-5" />
                 <span className="font-medium">{t('layout.nav_wiki')}</span>
               </Link>
-
-              {user && (
-                <Link
-                  to="/workspace"
-                  className={`flex items-center space-x-3 px-4 py-3 rounded-lg transition-all ${
-                    isActive('/workspace')
-                      ? 'bg-cyan-600 text-white'
-                      : 'text-gray-300 hover:text-white hover:bg-white/10'
-                  }`}
-                >
-                  <BriefcaseBusiness className="w-5 h-5" />
-                  <span className="font-medium">{t('layout.nav_workspace')}</span>
-                </Link>
-              )}
 
               {user?.role === 'admin' && (
                 <Link

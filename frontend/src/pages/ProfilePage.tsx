@@ -40,6 +40,7 @@ import {
   QrCode,
   Camera,
   Lock,
+  BriefcaseBusiness,
 } from 'lucide-react';
 import { Printer3DIcon } from '../components/icons/Printer3DIcon';
 import { useAuth } from '../contexts/AuthContext';
@@ -74,6 +75,7 @@ import { Badge, BADGE_CONFIG, type BadgeType } from '../components/Badge';
 import { PresetSlotsPanel } from '../components/presetSlots/PresetSlotsPanel';
 import { BrandProfilePage } from './BrandProfilePage';
 import { CalculatorPage } from './CalculatorPage';
+import { CrmWorkspacePage } from './CrmWorkspacePage';
 import type { Preset, PrinterProfile, PrintProfile, Filament } from '../types/api';
 
 export const ProfilePage: React.FC = () => {
@@ -108,6 +110,7 @@ export const ProfilePage: React.FC = () => {
       ? (requested as 'dashboard' | 'presets' | 'spools' | 'calculator-pro' | 'settings' | 'printer-profiles')
       : 'dashboard';
   });
+  const [calculatorSection, setCalculatorSection] = useState<'estimate' | 'workspace'>('estimate');
   const [isAddSpoolOpen, setIsAddSpoolOpen] = useState(false);
   const [showHelpModal, setShowHelpModal] = useState(false);
   const [isCreatePresetModalOpen, setIsCreatePresetModalOpen] = useState(false);
@@ -871,8 +874,41 @@ export const ProfilePage: React.FC = () => {
 
       {/* Print Calculator Tab */}
       {userTab === 'calculator-pro' && (
-        <div className="max-w-7xl mx-auto">
-          <CalculatorPage />
+        <div className="space-y-4">
+          <div
+            className="mx-auto flex w-fit max-w-full items-center gap-1 overflow-x-auto rounded-2xl border border-white/10 bg-slate-950/55 p-1.5 shadow-lg shadow-black/20 backdrop-blur-sm"
+            role="group"
+            aria-label={t('profilePage.tabs.calculatorPro')}
+          >
+            <button
+              type="button"
+              onClick={() => setCalculatorSection('estimate')}
+              aria-pressed={calculatorSection === 'estimate'}
+              className={`inline-flex shrink-0 items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold transition ${calculatorSection === 'estimate' ? 'bg-cyan-500 text-slate-950 shadow-md shadow-cyan-500/20' : 'text-slate-300 hover:bg-white/10 hover:text-white'}`}
+            >
+              <Calculator className="h-4 w-4" />
+              {t('layout.nav_calculator')}
+            </button>
+            <button
+              type="button"
+              onClick={() => setCalculatorSection('workspace')}
+              aria-pressed={calculatorSection === 'workspace'}
+              className={`inline-flex shrink-0 items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold transition ${calculatorSection === 'workspace' ? 'bg-cyan-500 text-slate-950 shadow-md shadow-cyan-500/20' : 'text-slate-300 hover:bg-white/10 hover:text-white'}`}
+            >
+              <BriefcaseBusiness className="h-4 w-4" />
+              {t('crmWorkspace.title')}
+            </button>
+          </div>
+
+          {calculatorSection === 'estimate' ? (
+            <div className="mx-auto max-w-7xl">
+              <CalculatorPage />
+            </div>
+          ) : (
+            <div className="mx-auto max-w-7xl">
+              <CrmWorkspacePage onNewCalculation={() => setCalculatorSection('estimate')} />
+            </div>
+          )}
         </div>
       )}
 

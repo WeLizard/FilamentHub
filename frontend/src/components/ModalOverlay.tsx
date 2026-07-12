@@ -14,6 +14,8 @@ interface ModalOverlayProps {
   closeOnEscape?: boolean;
   /** Extra classes for the outer fixed overlay div */
   className?: string;
+  /** Classes for the inner content container (default centers the modal; override for drawers) */
+  contentClassName?: string;
 }
 
 export const ModalOverlay: React.FC<ModalOverlayProps> = ({
@@ -22,6 +24,7 @@ export const ModalOverlay: React.FC<ModalOverlayProps> = ({
   closeOnOverlayClick = true,
   closeOnEscape = true,
   className = '',
+  contentClassName = 'min-h-full flex items-center justify-center p-4',
 }) => {
   const handleKeyDown = useCallback(
     (e: KeyboardEvent) => {
@@ -70,7 +73,7 @@ export const ModalOverlay: React.FC<ModalOverlayProps> = ({
   return createPortal(
     <div className={`fixed inset-0 bg-black/50 backdrop-blur-sm z-[9999] overflow-y-auto ${className}`}>
       <div
-        className="min-h-full flex items-center justify-center p-4"
+        className={contentClassName}
         onMouseDown={handleOverlayMouseDown}
         onClick={handleOverlayClick}
       >
