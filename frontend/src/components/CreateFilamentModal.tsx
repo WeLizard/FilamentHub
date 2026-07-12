@@ -24,6 +24,7 @@ import { RecommendedTempsField, RecommendedTemps, EMPTY_RECOMMENDED_TEMPS } from
 import { NozzleHardnessField } from './NozzleHardnessField';
 import { ModalOverlay } from './ModalOverlay';
 import { ConfirmModal } from './ConfirmModal';
+import { InfoHint } from './InfoHint';
 import type { AxiosError } from 'axios';
 
 interface CreateFilamentModalProps {
@@ -1002,7 +1003,7 @@ export const CreateFilamentModal: React.FC<CreateFilamentModalProps> = ({
           {/* Diameter and Density */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <Dropdown
-              label={`${t('createFilament.diameterLabel')} *`}
+              label={<>{t('createFilament.diameterLabel')} * <InfoHint text={t('paramHints.diameter')} /></>}
               value={diameter}
               options={[
                 { value: 1.75, label: '1.75 mm' },

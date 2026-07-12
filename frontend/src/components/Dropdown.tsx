@@ -16,7 +16,7 @@ interface DropdownProps {
   options: DropdownOption[];
   onChange: (value: string | number) => void;
   placeholder?: string;
-  label?: string;
+  label?: ReactNode;
   className?: string;
   disabled?: boolean;
   filterable?: boolean; // Можно ли фильтровать по введенному тексту
