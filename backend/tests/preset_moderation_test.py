@@ -3,10 +3,35 @@
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.models.bad_word import BadWord
 from app.models.brand import Brand
 from app.models.filament import Filament
 from app.models.preset import Preset, PresetModerationStatus
-from app.services.preset_moderation import moderate_preset
+from app.services.preset_moderation import _BAD_WORDS_CACHE, check_bad_words, moderate_preset
+
+
+@pytest.mark.asyncio
+async def test_check_bad_words_loads_custom_word_from_db(db_session: AsyncSession):
+    """Регресс: кастомное слово из таблицы bad_words должно отклонять текст.
+
+    Модель BadWord отсутствовала — путь модерации молча отдавал пустой список,
+    и русская нецензурщина из пользовательского словаря не ловилась.
+    """
+    _BAD_WORDS_CACHE.clear()
+    try:
+        db_session.add(BadWord(word="запретслово", language="ru"))
+        await db_session.commit()
+
+        is_valid, reason = await check_bad_words("это запретслово в тексте", db_session)
+        assert is_valid is False
+        assert reason is not None
+        assert reason.get("code") == "ERR_BAD_WORDS"
+
+        ok, ok_reason = await check_bad_words("совершенно нормальный текст", db_session)
+        assert ok is True
+        assert ok_reason is None
+    finally:
+        _BAD_WORDS_CACHE.clear()
 
 
 @pytest.mark.asyncio
