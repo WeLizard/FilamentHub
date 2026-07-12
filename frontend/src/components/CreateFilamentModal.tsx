@@ -23,6 +23,7 @@ import { DensityField } from './DensityField';
 import { RecommendedTempsField, RecommendedTemps, EMPTY_RECOMMENDED_TEMPS } from './RecommendedTempsField';
 import { NozzleHardnessField } from './NozzleHardnessField';
 import { ModalOverlay } from './ModalOverlay';
+import { ConfirmModal } from './ConfirmModal';
 import type { AxiosError } from 'axios';
 
 interface CreateFilamentModalProps {
@@ -50,6 +51,12 @@ export const CreateFilamentModal: React.FC<CreateFilamentModalProps> = ({
   const { t } = useTranslation();
   const [brandIdValue, setBrandIdValue] = useState<number | null>(brandId || null);
   const [formMode, setFormMode] = useState<'single' | 'palette'>('single');
+  const [formDirty, setFormDirty] = useState(false);
+  const [showDiscardConfirm, setShowDiscardConfirm] = useState(false);
+  const requestClose = () => {
+    if (formDirty) setShowDiscardConfirm(true);
+    else onClose();
+  };
   const [name, setName] = useState('');
   const [materialType, setMaterialType] = useState('');
   const [customMaterialType, setCustomMaterialType] = useState('');
@@ -524,11 +531,12 @@ export const CreateFilamentModal: React.FC<CreateFilamentModalProps> = ({
   if (!isOpen) return null;
 
   return (
-    <ModalOverlay onClose={onClose}>
+    <ModalOverlay onClose={requestClose}>
       <div
         className="bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900 rounded-2xl w-full max-w-5xl max-h-[90vh] overflow-hidden flex flex-col border border-white/20 shadow-2xl"
         onClick={(e) => e.stopPropagation()}
         onMouseDown={(e) => e.stopPropagation()}
+        onChangeCapture={() => setFormDirty(true)}
       >
         {/* Header */}
         <div className="flex items-center justify-between p-6 border-b border-white/10">
@@ -536,7 +544,7 @@ export const CreateFilamentModal: React.FC<CreateFilamentModalProps> = ({
             {filament ? t('createFilament.editTitle') : t('createFilament.createTitle')}
           </h2>
           <button
-            onClick={onClose}
+            onClick={requestClose}
             className="p-2 hover:bg-white/10 rounded-lg transition-all text-gray-300 hover:text-white"
           >
             <X className="w-5 h-5" />
@@ -1048,7 +1056,7 @@ export const CreateFilamentModal: React.FC<CreateFilamentModalProps> = ({
           <div className="flex justify-end space-x-3 pt-4 border-t border-white/10">
             <button
               type="button"
-              onClick={onClose}
+              onClick={requestClose}
               disabled={isLoading}
               className="px-6 py-3 bg-white/10 hover:bg-white/20 text-white rounded-xl transition-all disabled:opacity-50"
             >
@@ -1078,6 +1086,15 @@ export const CreateFilamentModal: React.FC<CreateFilamentModalProps> = ({
           )}
         </div>
       </div>
+      <ConfirmModal
+        isOpen={showDiscardConfirm}
+        onClose={() => setShowDiscardConfirm(false)}
+        onConfirm={() => { setShowDiscardConfirm(false); onClose(); }}
+        title={t('unsavedGuard.title')}
+        message={t('unsavedGuard.message')}
+        confirmText={t('unsavedGuard.confirm')}
+        cancelText={t('unsavedGuard.cancel')}
+      />
     </ModalOverlay>
   );
 };

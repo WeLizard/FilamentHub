@@ -1300,6 +1300,12 @@
     "rubPerSpool": "{{currency}} 每线轴",
     "rubPerKg": "{{currency}} 每千克"
   },
+  "unsavedGuard": {
+    "title": "放弃更改？",
+    "message": "有未保存的更改。不保存就关闭表单吗？",
+    "confirm": "不保存并关闭",
+    "cancel": "继续编辑"
+  },
   "paramHints": {
     "extruderTemp": "打印时的喷嘴温度。过低层间粘合弱，过高会拉丝和溢料。请参考料盘标注范围。",
     "extruderTempFirst": "首层喷嘴温度。通常比正常高 5–10 °C，以增强与热床的附着。",

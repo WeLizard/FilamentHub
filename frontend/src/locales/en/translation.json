@@ -1303,6 +1303,12 @@
     "rubPerSpool": "{{currency}} per spool",
     "rubPerKg": "{{currency}} per kg"
   },
+  "unsavedGuard": {
+    "title": "Discard changes?",
+    "message": "You have unsaved changes. Close the form without saving?",
+    "confirm": "Close without saving",
+    "cancel": "Keep editing"
+  },
   "paramHints": {
     "extruderTemp": "Nozzle temperature while printing. Too low — weak layer bonding; too high — blobs and stringing. Start from the spool's stated range.",
     "extruderTempFirst": "Nozzle temperature for the first layer. Often 5–10 °C higher than normal for better bed adhesion.",

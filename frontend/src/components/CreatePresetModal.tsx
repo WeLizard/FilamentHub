@@ -21,6 +21,7 @@ import { Dropdown } from './Dropdown';
 import { useClickOutside } from '../hooks/useClickOutside';
 import { ModalOverlay } from './ModalOverlay';
 import { InfoHint } from './InfoHint';
+import { ConfirmModal } from './ConfirmModal';
 import { RecommendedTempsField, EMPTY_RECOMMENDED_TEMPS } from './RecommendedTempsField';
 import type { RecommendedTemps } from './RecommendedTempsField';
 import { NozzleHardnessField } from './NozzleHardnessField';
@@ -242,6 +243,12 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
   // Вкладка "Заметки"
   const [filamentNotes, setFilamentNotes] = useState('');
   const [activeTab, setActiveTab] = useState<'profile' | 'cooling' | 'override' | 'advanced' | 'extruder' | 'notes'>('profile'); // Активная вкладка (как в OrcaSlicer)
+  const [formDirty, setFormDirty] = useState(false);
+  const [showDiscardConfirm, setShowDiscardConfirm] = useState(false);
+  const requestClose = () => {
+    if (formDirty) setShowDiscardConfirm(true);
+    else onClose();
+  };
   // Уровень сложности (как в OrcaSlicer: Simple/Advanced/Expert). Прячет продвинутые
   // вкладки/поля для новичков; классификация полей — из Orca (orcaFieldModes).
   // Выбор сохраняется — при следующем открытии не нужно переключать заново.
@@ -1771,11 +1778,12 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
   if (!isOpen) return null;
 
   return (
-    <ModalOverlay onClose={onClose}>
+    <ModalOverlay onClose={requestClose}>
       <div
         className="bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900 rounded-2xl w-full max-w-5xl overflow-hidden flex flex-col border border-white/20 shadow-2xl max-h-[90vh]"
         onClick={(e) => e.stopPropagation()}
         onMouseDown={(e) => e.stopPropagation()}
+        onChangeCapture={() => setFormDirty(true)}
       >
         {/* Header */}
         <div className="flex items-center justify-between p-6 border-b border-white/10">
@@ -1786,7 +1794,7 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
             }
           </h2>
           <button
-            onClick={onClose}
+            onClick={requestClose}
             className="p-2 hover:bg-white/10 rounded-lg transition-all text-gray-300 hover:text-white"
           >
             <X className="w-5 h-5" />
@@ -3097,7 +3105,7 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                     {/* Коэф. Pressure advance */}
                     {enablePressureAdvance && (
                       <div>
-                        <label className="block text-gray-300 mb-1 text-sm">{t('presetModal.paCoefficient')}</label>
+                        <label className="block text-gray-300 mb-1 text-sm">{t('presetModal.paCoefficient')} <InfoHint text={t('paramHints.pressureAdvance')} /></label>
                         <input
                           type="number"
                           value={pressureAdvance}
@@ -3219,7 +3227,7 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                       <label className="block text-gray-300 mb-2 text-sm">{t('presetModal.nozzle')} <InfoHint text={t('paramHints.extruderTemp')} /></label>
                       <div className="space-y-3">
                         <div>
-                          <label className="block text-gray-400 mb-1 text-xs">{t('presetModal.firstLayer')}</label>
+                          <label className="block text-gray-400 mb-1 text-xs">{t('presetModal.firstLayer')} <InfoHint text={t('paramHints.extruderTempFirst')} /></label>
                           <div className="relative">
                             <input
                               type="number"
@@ -3242,7 +3250,7 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                       <label className="block text-gray-300 mb-2 text-sm">{t('presetModal.bed')} <InfoHint text={t('paramHints.bedTemp')} /></label>
                       <div className="space-y-3">
                         <div>
-                          <label className="block text-gray-400 mb-1 text-xs">{t('presetModal.firstLayer')}</label>
+                          <label className="block text-gray-400 mb-1 text-xs">{t('presetModal.firstLayer')} <InfoHint text={t('paramHints.bedTempFirst')} /></label>
                           <div className="relative">
                           <input
                             type="number"
@@ -3707,7 +3715,7 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                       {/* Первая строка: Длина / Скорость извлечения */}
                       <div className="grid grid-cols-2 gap-4">
                         <div>
-                          <label className="block text-gray-300 mb-1 text-sm">{t('presetModal.length')}</label>
+                          <label className="block text-gray-300 mb-1 text-sm">{t('presetModal.length')} <InfoHint text={t('paramHints.retractionLength')} /></label>
                           <div className="relative">
                             <input
                               type="number"
@@ -4466,7 +4474,7 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
             <div className="flex items-center space-x-3 self-end sm:self-auto">
               <button
                 type="button"
-                onClick={onClose}
+                onClick={requestClose}
                 disabled={isLoading}
                 className="px-6 py-3 bg-white/10 hover:bg-white/20 text-white rounded-xl transition-all disabled:opacity-50"
               >
@@ -4494,6 +4502,15 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
         </form>
         </div>
       </div>
+      <ConfirmModal
+        isOpen={showDiscardConfirm}
+        onClose={() => setShowDiscardConfirm(false)}
+        onConfirm={() => { setShowDiscardConfirm(false); onClose(); }}
+        title={t('unsavedGuard.title')}
+        message={t('unsavedGuard.message')}
+        confirmText={t('unsavedGuard.confirm')}
+        cancelText={t('unsavedGuard.cancel')}
+      />
     </ModalOverlay>
   );
 };
