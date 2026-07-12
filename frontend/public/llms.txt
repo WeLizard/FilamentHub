@@ -1,0 +1,22 @@
+# FilamentHub
+
+> FilamentHub is a platform for managing 3D-printing materials and slicer settings, tightly integrated with OrcaSlicer. It hosts a community catalog of filament presets, a print-cost calculator with client quotes and a lightweight CRM, and one-click preset sync into OrcaSlicer.
+
+Key capabilities:
+
+- Community filament catalog — brands, filament lines, colors, and shareable OrcaSlicer presets recommended per printer.
+- Print-cost calculator — parses G-code, resolves materials, computes cost, and generates commercial quotes (PDF) with a lightweight CRM for studios and sole proprietors.
+- OrcaSlicer integration — import/export filament presets, printer and process profiles, and QR labels for spools.
+- Multilingual interface (Russian, English, Chinese).
+
+## Explore (public)
+
+- [Catalog](https://filamenthub.ru/): filament brands, lines, colors, and presets.
+- [Knowledge base](https://filamenthub.ru/wiki): guides on materials, printing, and slicer settings.
+- [Print-cost calculator](https://filamenthub.ru/calculator): estimate print cost and build client quotes.
+- [Downloads and OrcaSlicer plugin](https://filamenthub.ru/download): connect FilamentHub to OrcaSlicer.
+
+## Legal
+
+- [User agreement](https://filamenthub.ru/user-agreement)
+- [Privacy policy](https://filamenthub.ru/privacy-policy)
