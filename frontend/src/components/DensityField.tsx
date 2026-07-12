@@ -4,6 +4,8 @@
 
 import { useTranslation } from 'react-i18next';
 
+import { InfoHint } from './InfoHint';
+
 interface DensityFieldProps {
   value: number;
   onChange: (value: number) => void;
@@ -15,7 +17,7 @@ export function DensityField({ value, onChange, locked = false, label }: Density
   const { t } = useTranslation();
   return (
     <div>
-      <label className="block text-gray-300 mb-2 text-sm font-medium">{label ?? t('createFilament.densityLabel')}</label>
+      <label className="block text-gray-300 mb-2 text-sm font-medium">{label ?? t('createFilament.densityLabel')} <InfoHint text={t('paramHints.density')} /></label>
       <input
         type="number"
         value={value}

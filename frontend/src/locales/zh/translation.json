@@ -1300,6 +1300,23 @@
     "rubPerSpool": "{{currency}} 每线轴",
     "rubPerKg": "{{currency}} 每千克"
   },
+  "paramHints": {
+    "extruderTemp": "打印时的喷嘴温度。过低层间粘合弱，过高会拉丝和溢料。请参考料盘标注范围。",
+    "extruderTempFirst": "首层喷嘴温度。通常比正常高 5–10 °C，以增强与热床的附着。",
+    "bedTemp": "热床温度，决定首层附着。PLA 通常 50–60 °C，PETG/ABS 更高。",
+    "bedTempFirst": "首层热床温度。有时略高于正常值，让模型更牢地粘住热床。",
+    "flow": "出料流量系数。1.0 为正常；出料过多则调低，出料不足（缝隙）则调高。",
+    "retractionLength": "空驶时回抽的长度——对抗拉丝和溢料。直驱约 0.5–2 mm，波顿更长。",
+    "retractionSpeed": "回抽速度。过快可能打滑并磨损耗材。",
+    "fanSpeed": "模型散热风扇。冷却层：对 PLA 和小件很重要，但对 ABS 有害（开裂分层）。",
+    "maxVolumetricSpeed": "喷嘴每秒能熔化的最大出料量（mm³/s）。这是打印速度的真正上限。",
+    "pressureAdvance": "补偿喷嘴压力——消除转角及线段起止处的溢料。需要校准。",
+    "tempRange": "该材料的推荐温度范围，作为预设的起始参考。",
+    "diameter": "耗材直径。几乎都是 1.75 mm，少数 2.85 mm。必须与实际装入的一致。",
+    "density": "材料密度（g/cm³）。用于根据耗材长度计算重量和打印成本。",
+    "nozzleHardness": "材料磨蚀性。复合材料（碳纤维、玻纤、夜光）会磨损黄铜喷嘴——需用硬化钢。",
+    "drying": "耗材干燥温度和时间。受潮耗材会产生气泡、爆裂和拉丝——尤其是尼龙、PETG、TPU。"
+  },
   "presetModal": {
     "errors": {
       "createBrand": "创建品牌出错",

@@ -1,6 +1,7 @@
 import React from 'react';
 import { useTranslation } from 'react-i18next';
 import { CustomSelect } from './CustomSelect';
+import { InfoHint } from './InfoHint';
 
 /**
  * Nozzle type → required nozzle hardness (Orca `required_nozzle_HRC`, a minimum
@@ -46,7 +47,7 @@ export const NozzleHardnessField: React.FC<{
   return (
     <div>
       <label className="block text-gray-300 mb-1 text-sm font-medium">
-        {t('nozzleHardness.label')}
+        {t('nozzleHardness.label')} <InfoHint text={t('paramHints.nozzleHardness')} />
       </label>
       <p className="text-gray-400 text-xs mb-2">{t('nozzleHardness.hint')}</p>
       <CustomSelect

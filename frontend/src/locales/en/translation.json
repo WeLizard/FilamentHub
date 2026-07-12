@@ -1303,6 +1303,23 @@
     "rubPerSpool": "{{currency}} per spool",
     "rubPerKg": "{{currency}} per kg"
   },
+  "paramHints": {
+    "extruderTemp": "Nozzle temperature while printing. Too low — weak layer bonding; too high — blobs and stringing. Start from the spool's stated range.",
+    "extruderTempFirst": "Nozzle temperature for the first layer. Often 5–10 °C higher than normal for better bed adhesion.",
+    "bedTemp": "Bed temperature — controls first-layer adhesion. Usually 50–60 °C for PLA, higher for PETG/ABS.",
+    "bedTempFirst": "Bed temperature for the first layer. Sometimes slightly higher than normal so the part grips the bed.",
+    "flow": "Filament flow multiplier. 1.0 is normal; lower it for over-extrusion, raise it for under-extrusion (gaps).",
+    "retractionLength": "How far filament is pulled back on travel moves — fights stringing and blobs. ~0.5–2 mm for direct drive, more for Bowden.",
+    "retractionSpeed": "How fast filament is retracted. Too high can click and grind the filament.",
+    "fanSpeed": "Part cooling fan. Cools layers: vital for PLA and small parts, but harmful for ABS (delamination).",
+    "maxVolumetricSpeed": "Max plastic per second the hotend can melt (mm³/s). This is the real cap on print speed.",
+    "pressureAdvance": "Compensates nozzle pressure — removes blobs at corners and line start/end. Needs calibration.",
+    "tempRange": "Recommended temperature range for this material, used as a starting point in the preset.",
+    "diameter": "Filament diameter. Almost always 1.75 mm; rarely 2.85 mm. Must match what's actually loaded.",
+    "density": "Material density (g/cm³). Needed to compute weight and print cost from filament length.",
+    "nozzleHardness": "Material abrasiveness. Composites (carbon, glass fiber, glow) wear out a brass nozzle — use hardened steel.",
+    "drying": "Filament drying temperature and time. Wet filament causes bubbles, popping and stringing — especially nylon, PETG, TPU."
+  },
   "presetModal": {
     "errors": {
       "createBrand": "Error creating brand",

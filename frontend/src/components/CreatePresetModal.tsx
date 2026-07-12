@@ -20,6 +20,7 @@ import type { FilamentVisualSettings } from '../types/api';
 import { Dropdown } from './Dropdown';
 import { useClickOutside } from '../hooks/useClickOutside';
 import { ModalOverlay } from './ModalOverlay';
+import { InfoHint } from './InfoHint';
 import { RecommendedTempsField, EMPTY_RECOMMENDED_TEMPS } from './RecommendedTempsField';
 import type { RecommendedTemps } from './RecommendedTempsField';
 import { NozzleHardnessField } from './NozzleHardnessField';
@@ -2645,7 +2646,7 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
               )}
             </div>
             <div>
-              <label className="block text-gray-300 mb-2 text-sm font-medium">{t('presetModal.flowRate')}</label>
+              <label className="block text-gray-300 mb-2 text-sm font-medium">{t('presetModal.flowRate')} <InfoHint text={t('paramHints.flow')} /></label>
               <input
                 type="number"
                 value={flowRate}
@@ -2657,7 +2658,7 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
               />
             </div>
             <div>
-              <label className="block text-gray-300 mb-2 text-sm font-medium">{t('presetModal.fanSpeed')}</label>
+              <label className="block text-gray-300 mb-2 text-sm font-medium">{t('presetModal.fanSpeed')} <InfoHint text={t('paramHints.fanSpeed')} /></label>
               <input
                 type="number"
                 value={fanSpeed}
@@ -3215,7 +3216,7 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                   <div className="grid grid-cols-2 gap-4">
                     {/* Слева: Сопло */}
                     <div>
-                      <label className="block text-gray-300 mb-2 text-sm">{t('presetModal.nozzle')}</label>
+                      <label className="block text-gray-300 mb-2 text-sm">{t('presetModal.nozzle')} <InfoHint text={t('paramHints.extruderTemp')} /></label>
                       <div className="space-y-3">
                         <div>
                           <label className="block text-gray-400 mb-1 text-xs">{t('presetModal.firstLayer')}</label>
@@ -3238,7 +3239,7 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
 
                     {/* Справа: Стол */}
                     <div>
-                      <label className="block text-gray-300 mb-2 text-sm">{t('presetModal.bed')}</label>
+                      <label className="block text-gray-300 mb-2 text-sm">{t('presetModal.bed')} <InfoHint text={t('paramHints.bedTemp')} /></label>
                       <div className="space-y-3">
                         <div>
                           <label className="block text-gray-400 mb-1 text-xs">{t('presetModal.firstLayer')}</label>
@@ -3282,7 +3283,7 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                     </div>
 
                     <div>
-                      <label className="block text-gray-300 mb-1 text-sm">{t('presetModal.maxVolumetricSpeed')}</label>
+                      <label className="block text-gray-300 mb-1 text-sm">{t('presetModal.maxVolumetricSpeed')} <InfoHint text={t('paramHints.maxVolumetricSpeed')} /></label>
                       <div className="relative">
                         <input
                           type="number"
@@ -3723,7 +3724,7 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                           <p className="text-xs text-gray-500 mt-1">{t('presetModal.syncsWithBase')}</p>
                         </div>
                         <div>
-                          <label className="block text-gray-300 mb-1 text-sm">{t('presetModal.retractionExtractSpeed')}</label>
+                          <label className="block text-gray-300 mb-1 text-sm">{t('presetModal.retractionExtractSpeed')} <InfoHint text={t('paramHints.retractionSpeed')} /></label>
                           <div className="relative">
                             <input
                               type="number"
