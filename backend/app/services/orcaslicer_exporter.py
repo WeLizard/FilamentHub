@@ -4,11 +4,18 @@ import json
 import logging
 from typing import Any
 
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.filament import Filament
 from app.models.preset import Preset
+from app.models.preset_printer import PresetPrinter
+from app.models.printer import Printer
 from app.services.material_mapping_service import get_material_preset
+from app.services.orca_printer_identity import (
+    is_orca_system_printer,
+    resolve_orca_printer_model,
+)
 from app.services.profile_validator import (
     log_validation_result,
     validate_filament_profile,
@@ -101,6 +108,50 @@ setting_id = {setting_id}
 base_id = {base_id}
 updated_time = {updated_time}
 """
+
+
+def _escape_condition_value(value: str) -> str:
+    """Escape double quotes for an Orca condition string literal."""
+    return value.replace('"', '\\"')
+
+
+async def build_compatible_printers_condition(preset: Preset, db: AsyncSession) -> str | None:
+    """Build an Orca ``compatible_printers_condition`` from the preset's links.
+
+    Matches the preset's authored ``PresetPrinter`` printers by canonical
+    ``printer_model``. Returns None to leave the preset compatible with all
+    printers — when it has no links, or only links to non-system/custom printers
+    whose names match no Orca machine preset (self-builds, generic Klipper).
+    """
+    result = await db.execute(
+        select(Printer)
+        .join(PresetPrinter, PresetPrinter.printer_id == Printer.id)
+        .where(PresetPrinter.preset_id == preset.id)
+    )
+    printers = result.scalars().all()
+    if not printers:
+        return None
+
+    models: list[str] = []
+    skipped_non_system = False
+    for printer in printers:
+        if not is_orca_system_printer(printer):
+            skipped_non_system = True
+            continue
+        model = resolve_orca_printer_model(printer)
+        if model and model not in models:
+            models.append(model)
+
+    if not models:
+        if skipped_non_system:
+            logger.warning(
+                "Preset %s links only non-system printers; leaving compatible_printers open",
+                preset.id,
+            )
+        return None
+
+    clauses = [f'printer_model=="{_escape_condition_value(m)}"' for m in models]
+    return " or ".join(clauses)
 
 
 async def preset_to_orcaslicer_json(
@@ -292,9 +343,18 @@ async def preset_to_orcaslicer_json(
     if filament.color_hex:
         profile["default_filament_colour"] = [filament.color_hex]
 
-    # Совместимые принтеры (пусто по умолчанию = совместим со всеми)
-    # Можно расширить в будущем для специфических принтеров
+    # Совместимые принтеры — авторитетно из авторской привязки PresetPrinter.
+    # По умолчанию пусто (совместим со всеми); condition сужает по каноничному
+    # printer_model привязанных системных принтеров. Переживает переименования
+    # пресетов и перетирает стейл-condition из обратного синка.
     profile["compatible_printers"] = []
+    condition = None
+    if db is not None and preset.id is not None:
+        condition = await build_compatible_printers_condition(preset, db)
+    if condition:
+        profile["compatible_printers_condition"] = condition
+    else:
+        profile.pop("compatible_printers_condition", None)
 
     # Bundle metadata — совместимость с upstream OrcaSlicer 2.4 (Orca Cloud) bundle model.
     # Формат `"filamenthub:<id>"` соответствует Orca Cloud convention `"<provider>:<uuid>"`.
@@ -306,6 +366,11 @@ async def preset_to_orcaslicer_json(
     # TODO(post-2026-12): удалить после того как все юзеры обновились на форк с bundle_id поддержкой.
     profile["fhub_id"] = str(preset.id)
     profile["fhub_source"] = "filamenthub"
+
+    # Hardware provenance (мешок железа) — отдаём как метаданные, Orca игнорирует
+    # неизвестный ключ. Не блокирующая совместимость, а подсказка/происхождение.
+    if preset.compat_context:
+        profile["fhub_compat_context"] = json.dumps(preset.compat_context, ensure_ascii=False)
 
     # Draft preset: fhub_draft_id для поиска черновика при следующей синхронизации
     if not preset.active and preset.orcaslicer_settings and isinstance(preset.orcaslicer_settings, dict):

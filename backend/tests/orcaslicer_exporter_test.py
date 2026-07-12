@@ -68,6 +68,20 @@ async def test_filament_scope_keys_survive():
 
 
 @pytest.mark.asyncio
+async def test_compat_context_exported_as_provenance():
+    preset = _preset({})
+    preset.compat_context = {"nozzle_type": "CHT", "plate": "textured"}
+    profile = await preset_to_orcaslicer_json(preset, _filament(), db=None)
+    assert '"nozzle_type": "CHT"' in profile["fhub_compat_context"]
+
+
+@pytest.mark.asyncio
+async def test_compat_context_absent_when_unset():
+    profile = await preset_to_orcaslicer_json(_preset({}), _filament(), db=None)
+    assert "fhub_compat_context" not in profile
+
+
+@pytest.mark.asyncio
 async def test_required_nozzle_hrc_exported_from_material():
     # Nozzle hardness is a material property — exported on the profile from the filament.
     fil = _filament()

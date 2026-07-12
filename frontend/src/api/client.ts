@@ -386,6 +386,11 @@ export const brandsAPI = {
     return response.data;
   },
 
+  backfillQr: async (brandId: number) => {
+    const response = await api.post<{ assigned: number }>(`/brands/${brandId}/backfill-qr`);
+    return response.data;
+  },
+
   update: async (id: number, data: { description?: string | null; website?: string | null; logo_url?: string | null; logo_bg?: string | null; social_media_urls?: string[] | null; shop_links?: { platform: string; url: string }[] | null; price_hidden?: boolean }) => {
     const response = await api.patch<Brand>(`/brands/${id}`, data);
     return response.data;

@@ -681,50 +681,55 @@ export const FilamentDetailPage: React.FC = () => {
                   <div className="mt-4 pt-4 border-t border-white/10">
                     <h4 className="text-sm font-medium text-gray-300 mb-3">{t('filamentDetailPage.advancedSettings')}</h4>
                     <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-                      {primaryPreset.orcaslicer_settings.nozzle_temperature_range_low?.[0] && primaryPreset.orcaslicer_settings.nozzle_temperature_range_high?.[0] && (
-                        <div className="flex items-center space-x-2">
-                          <Thermometer className="w-4 h-4 text-orange-400" />
-                          <div>
-                            <div className="text-gray-400 text-xs">{t('filamentDetailPage.tempRange')}</div>
-                            <div className="text-white text-sm font-semibold">
-                              {primaryPreset.orcaslicer_settings.nozzle_temperature_range_low[0]}–{primaryPreset.orcaslicer_settings.nozzle_temperature_range_high[0]}°C
-                            </div>
-                          </div>
-                        </div>
-                      )}
-                      {primaryPreset.orcaslicer_settings.filament_max_volumetric_speed?.[0] && (
-                        <div className="flex items-center space-x-2">
-                          <Gauge className="w-4 h-4 text-blue-400" />
-                          <div>
-                            <div className="text-gray-400 text-xs">{t('filamentDetailPage.volumetricSpeed')}</div>
-                            <div className="text-white text-sm font-semibold">
-                              {primaryPreset.orcaslicer_settings.filament_max_volumetric_speed[0]}mm³/s
-                            </div>
-                          </div>
-                        </div>
-                      )}
-                      {primaryPreset.orcaslicer_settings.fan_min_speed?.[0] && primaryPreset.orcaslicer_settings.fan_max_speed?.[0] && (
-                        <div className="flex items-center space-x-2">
-                          <Fan className="w-4 h-4 text-cyan-400" />
-                          <div>
-                            <div className="text-gray-400 text-xs">{t('filamentDetailPage.fan')}</div>
-                            <div className="text-white text-sm font-semibold">
-                              {primaryPreset.orcaslicer_settings.fan_min_speed[0]}–{primaryPreset.orcaslicer_settings.fan_max_speed[0]}%
-                            </div>
-                          </div>
-                        </div>
-                      )}
-                      {primaryPreset.orcaslicer_settings.chamber_temperature?.[0] && Number(primaryPreset.orcaslicer_settings.chamber_temperature[0]) > 0 && (
-                        <div className="flex items-center space-x-2">
-                          <Thermometer className="w-4 h-4 text-red-400" />
-                          <div>
-                            <div className="text-gray-400 text-xs">{t('filamentDetailPage.chamber')}</div>
-                            <div className="text-white text-sm font-semibold">
-                              {primaryPreset.orcaslicer_settings.chamber_temperature[0]}°C
-                            </div>
-                          </div>
-                        </div>
-                      )}
+                      {(() => {
+                        const s = primaryPreset.orcaslicer_settings;
+                        const tLow = getOrcaNumber(s, 'nozzle_temperature_range_low');
+                        const tHigh = getOrcaNumber(s, 'nozzle_temperature_range_high');
+                        const vol = getOrcaNumber(s, 'filament_max_volumetric_speed');
+                        const fanMin = getOrcaNumber(s, 'fan_min_speed');
+                        const fanMax = getOrcaNumber(s, 'fan_max_speed');
+                        const chamber = getOrcaNumber(s, 'chamber_temperature');
+                        return (
+                          <>
+                            {tLow !== null && tHigh !== null && (
+                              <div className="flex items-center space-x-2">
+                                <Thermometer className="w-4 h-4 text-orange-400" />
+                                <div>
+                                  <div className="text-gray-400 text-xs">{t('filamentDetailPage.tempRange')}</div>
+                                  <div className="text-white text-sm font-semibold">{tLow}–{tHigh}°C</div>
+                                </div>
+                              </div>
+                            )}
+                            {vol !== null && (
+                              <div className="flex items-center space-x-2">
+                                <Gauge className="w-4 h-4 text-blue-400" />
+                                <div>
+                                  <div className="text-gray-400 text-xs">{t('filamentDetailPage.volumetricSpeed')}</div>
+                                  <div className="text-white text-sm font-semibold">{vol}mm³/s</div>
+                                </div>
+                              </div>
+                            )}
+                            {fanMin !== null && fanMax !== null && (
+                              <div className="flex items-center space-x-2">
+                                <Fan className="w-4 h-4 text-cyan-400" />
+                                <div>
+                                  <div className="text-gray-400 text-xs">{t('filamentDetailPage.fan')}</div>
+                                  <div className="text-white text-sm font-semibold">{fanMin}–{fanMax}%</div>
+                                </div>
+                              </div>
+                            )}
+                            {chamber !== null && chamber > 0 && (
+                              <div className="flex items-center space-x-2">
+                                <Thermometer className="w-4 h-4 text-red-400" />
+                                <div>
+                                  <div className="text-gray-400 text-xs">{t('filamentDetailPage.chamber')}</div>
+                                  <div className="text-white text-sm font-semibold">{chamber}°C</div>
+                                </div>
+                              </div>
+                            )}
+                          </>
+                        );
+                      })()}
                     </div>
                   </div>
                 )}
@@ -888,50 +893,55 @@ export const FilamentDetailPage: React.FC = () => {
                       {preset.orcaslicer_settings && Object.keys(preset.orcaslicer_settings).length > 0 && (
                         <div className="mt-3 pt-3 border-t border-white/10">
                           <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
-                            {preset.orcaslicer_settings.nozzle_temperature_range_low?.[0] && preset.orcaslicer_settings.nozzle_temperature_range_high?.[0] && (
-                              <div className="flex items-center space-x-2">
-                                <Thermometer className="w-4 h-4 text-orange-400" />
-                                <div>
-                                  <div className="text-gray-400 text-xs">{t('filamentDetailPage.tempRange')}</div>
-                                  <div className="text-white text-sm font-semibold">
-                                    {preset.orcaslicer_settings.nozzle_temperature_range_low[0]}–{preset.orcaslicer_settings.nozzle_temperature_range_high[0]}°C
-                                  </div>
-                                </div>
-                              </div>
-                            )}
-                            {preset.orcaslicer_settings.filament_max_volumetric_speed?.[0] && (
-                              <div className="flex items-center space-x-2">
-                                <Gauge className="w-4 h-4 text-blue-400" />
-                                <div>
-                                  <div className="text-gray-400 text-xs">{t('filamentDetailPage.volumetricSpeed')}</div>
-                                  <div className="text-white text-sm font-semibold">
-                                    {preset.orcaslicer_settings.filament_max_volumetric_speed[0]}mm³/s
-                                  </div>
-                                </div>
-                              </div>
-                            )}
-                            {preset.orcaslicer_settings.fan_min_speed?.[0] && preset.orcaslicer_settings.fan_max_speed?.[0] && (
-                              <div className="flex items-center space-x-2">
-                                <Fan className="w-4 h-4 text-cyan-400" />
-                                <div>
-                                  <div className="text-gray-400 text-xs">{t('filamentDetailPage.fan')}</div>
-                                  <div className="text-white text-sm font-semibold">
-                                    {preset.orcaslicer_settings.fan_min_speed[0]}–{preset.orcaslicer_settings.fan_max_speed[0]}%
-                                  </div>
-                                </div>
-                              </div>
-                            )}
-                            {preset.orcaslicer_settings.chamber_temperature?.[0] && Number(preset.orcaslicer_settings.chamber_temperature[0]) > 0 && (
-                              <div className="flex items-center space-x-2">
-                                <Thermometer className="w-4 h-4 text-red-400" />
-                                <div>
-                                  <div className="text-gray-400 text-xs">{t('filamentDetailPage.chamber')}</div>
-                                  <div className="text-white text-sm font-semibold">
-                                    {preset.orcaslicer_settings.chamber_temperature[0]}°C
-                                  </div>
-                                </div>
-                              </div>
-                            )}
+                            {(() => {
+                              const s = preset.orcaslicer_settings;
+                              const tLow = getOrcaNumber(s, 'nozzle_temperature_range_low');
+                              const tHigh = getOrcaNumber(s, 'nozzle_temperature_range_high');
+                              const vol = getOrcaNumber(s, 'filament_max_volumetric_speed');
+                              const fanMin = getOrcaNumber(s, 'fan_min_speed');
+                              const fanMax = getOrcaNumber(s, 'fan_max_speed');
+                              const chamber = getOrcaNumber(s, 'chamber_temperature');
+                              return (
+                                <>
+                                  {tLow !== null && tHigh !== null && (
+                                    <div className="flex items-center space-x-2">
+                                      <Thermometer className="w-4 h-4 text-orange-400" />
+                                      <div>
+                                        <div className="text-gray-400 text-xs">{t('filamentDetailPage.tempRange')}</div>
+                                        <div className="text-white text-sm font-semibold">{tLow}–{tHigh}°C</div>
+                                      </div>
+                                    </div>
+                                  )}
+                                  {vol !== null && (
+                                    <div className="flex items-center space-x-2">
+                                      <Gauge className="w-4 h-4 text-blue-400" />
+                                      <div>
+                                        <div className="text-gray-400 text-xs">{t('filamentDetailPage.volumetricSpeed')}</div>
+                                        <div className="text-white text-sm font-semibold">{vol}mm³/s</div>
+                                      </div>
+                                    </div>
+                                  )}
+                                  {fanMin !== null && fanMax !== null && (
+                                    <div className="flex items-center space-x-2">
+                                      <Fan className="w-4 h-4 text-cyan-400" />
+                                      <div>
+                                        <div className="text-gray-400 text-xs">{t('filamentDetailPage.fan')}</div>
+                                        <div className="text-white text-sm font-semibold">{fanMin}–{fanMax}%</div>
+                                      </div>
+                                    </div>
+                                  )}
+                                  {chamber !== null && chamber > 0 && (
+                                    <div className="flex items-center space-x-2">
+                                      <Thermometer className="w-4 h-4 text-red-400" />
+                                      <div>
+                                        <div className="text-gray-400 text-xs">{t('filamentDetailPage.chamber')}</div>
+                                        <div className="text-white text-sm font-semibold">{chamber}°C</div>
+                                      </div>
+                                    </div>
+                                  )}
+                                </>
+                              );
+                            })()}
                           </div>
                         </div>
                       )}

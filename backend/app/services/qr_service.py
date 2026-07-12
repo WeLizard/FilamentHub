@@ -6,8 +6,12 @@ from pathlib import Path
 
 import qrcode
 from PIL import Image
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
+from app.models.brand import Brand
+from app.models.filament import Filament
 
 
 def generate_short_code(filament_id: int) -> str:
@@ -188,4 +192,47 @@ def get_qr_code_path(short_code: str, size: int = 300) -> Path | None:
     if filepath.exists():
         return filepath
     return None
+
+
+async def ensure_filament_qr_code(filament: Filament, db: AsyncSession) -> bool:
+    """Assign a QR short code + label images to a filament that lacks one.
+
+    Idempotent: a no-op if the filament already has a code. Collisions get an
+    id-based suffix. Returns True when a code was newly assigned. Shared by
+    filament creation (verified brands) and brand-verification backfill.
+    """
+    if filament.qr_code:
+        return False
+
+    short_code = generate_short_code(filament.id)
+    if await db.scalar(select(Filament.id).where(Filament.qr_code == short_code)):
+        short_code = f"{short_code}-{filament.id % 1000}"
+
+    filament.qr_code = short_code
+    # 300px (web), 600px (print), 1200px (high quality) for labels.
+    save_qr_code_image(short_code, sizes=[300, 600, 1200])
+    return True
+
+
+async def backfill_brand_qr_codes(brand: Brand, db: AsyncSession) -> int:
+    """Assign QR codes to a verified brand's active materials that still lack one.
+
+    Covers materials created before the brand was verified (by users or the brand
+    itself). Returns the number of codes assigned. The caller commits.
+    """
+    if not brand.verified:
+        return 0
+
+    result = await db.execute(
+        select(Filament).where(
+            Filament.brand_id == brand.id,
+            Filament.active.is_(True),
+            Filament.qr_code.is_(None),
+        )
+    )
+    assigned = 0
+    for filament in result.scalars().all():
+        if await ensure_filament_qr_code(filament, db):
+            assigned += 1
+    return assigned
 

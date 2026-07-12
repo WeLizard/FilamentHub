@@ -234,6 +234,9 @@ async def verify_brand(
         raise_error(status.HTTP_404_NOT_FOUND, ERR_BRAND_NOT_FOUND)
 
     brand.verified = True
+    # Бэкофилл QR для материалов, созданных до верификации (юзерами или брендом).
+    from app.services.qr_service import backfill_brand_qr_codes
+    await backfill_brand_qr_codes(brand, db)
     await db.commit()
     await db.refresh(brand)
 

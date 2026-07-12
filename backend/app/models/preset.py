@@ -87,6 +87,12 @@ class Preset(Base):
     # Используется для хранения расширенных параметров, которых нет в базовых полях
     # Например: nozzle_temperature_range_low, filament_max_volumetric_speed, pressure_advance и т.д.
 
+    # Hardware provenance (JSON) — расширяемый мешок железа, которым принтер юзера
+    # отличается от заводского дефолта (nozzle_type/kinematics/plate/cooling/…).
+    # Ключи схемой не фиксируем (растёт без миграций). Отдаётся в экспорт как
+    # provenance/мягкое предупреждение, НЕ как блокирующая совместимость.
+    compat_context: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+
     # Rating & usage stats
     rating: Mapped[float | None] = mapped_column(Float, nullable=True)
     # rating: средняя оценка пользователей (1-5), вычисляется из отзывов

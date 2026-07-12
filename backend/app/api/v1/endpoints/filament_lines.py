@@ -206,12 +206,8 @@ async def create_line_variants(
         await db.flush()
 
         if brand.verified:
-            from app.services.qr_service import generate_short_code, save_qr_code_image
-            short_code = generate_short_code(filament.id)
-            if await db.scalar(select(Filament.id).where(Filament.qr_code == short_code)):
-                short_code = f"{short_code}-{filament.id % 1000}"
-            filament.qr_code = short_code
-            save_qr_code_image(short_code, sizes=[300, 600, 1200])
+            from app.services.qr_service import ensure_filament_qr_code
+            await ensure_filament_qr_code(filament, db)
 
         result.created += 1
         result.rows.append(FilamentImportRowResult(

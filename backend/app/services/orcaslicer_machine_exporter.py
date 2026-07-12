@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.print_profile import PrintProfile
 from app.models.printer import Printer
 from app.models.printer_profile import PrinterProfile
+from app.services.orca_printer_identity import resolve_orca_printer_model
 from app.services.profile_validator import (
     log_validation_result,
     validate_print_profile,
@@ -377,8 +378,9 @@ async def printer_profile_to_orca_json(
 
     # printer_model - используем значения из orcaslicer_settings (приоритет), если нет - из printer.name
     if "printer_model" not in settings:
-        if printer and printer.name:
-            settings["printer_model"] = printer.name
+        printer_model = resolve_orca_printer_model(printer) if printer else None
+        if printer_model:
+            settings["printer_model"] = printer_model
         elif profile.extra_metadata and profile.extra_metadata.get("printer_model"):
             settings["printer_model"] = profile.extra_metadata["printer_model"]
 

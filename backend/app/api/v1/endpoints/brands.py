@@ -184,6 +184,29 @@ async def get_brand_usage(
     )
 
 
+@router.post("/{brand_id}/backfill-qr")
+async def backfill_brand_qr(
+    brand_id: int,
+    current_user: Annotated[User, Depends(get_current_active_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> dict[str, int]:
+    """Сгенерировать QR-коды для материалов бренда, у которых их ещё нет.
+
+    Для верифицированного бренда: закрывает материалы, созданные до верификации
+    (напр. юзерами до прихода представителя). Доступно бренду или админу.
+    """
+    brand = (await db.execute(select(Brand).where(Brand.id == brand_id))).scalar_one_or_none()
+    if not brand:
+        raise_error(404, ERR_BRAND_NOT_FOUND)
+    if current_user.role != UserRole.ADMIN and current_user.brand_id != brand_id:
+        raise_error(403, ERR_NO_PERMISSION)
+
+    from app.services.qr_service import backfill_brand_qr_codes
+    assigned = await backfill_brand_qr_codes(brand, db)
+    await db.commit()
+    return {"assigned": assigned}
+
+
 @router.post("/", response_model=BrandResponse, status_code=201)
 async def create_brand(
     data: BrandCreate,

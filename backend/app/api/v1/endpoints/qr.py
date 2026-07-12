@@ -22,10 +22,9 @@ from app.models.filament import Filament
 from app.models.user import User
 from app.schemas.filament import FilamentResponse
 from app.services.qr_service import (
+    ensure_filament_qr_code,
     generate_qr_code_image,
-    generate_short_code,
     get_qr_code_path,
-    save_qr_code_image,
 )
 
 router = APIRouter(prefix="/qr", tags=["qr"])
@@ -204,21 +203,9 @@ async def get_filament_qr_code(
         if not brand or not brand.verified:
             raise_error(403, ERR_QR_VERIFIED_ONLY)
 
-        # Генерируем QR-код
-        short_code = generate_short_code(filament.id)
-
-        # Проверяем уникальность
-        existing = await db.execute(
-            select(Filament).where(Filament.qr_code == short_code)
-        )
-        if existing.scalar_one_or_none():
-            short_code = f"{short_code}-{filament.id % 1000}"
-
-        filament.qr_code = short_code
+        # Генерируем QR-код (short code + изображения этикеток)
+        await ensure_filament_qr_code(filament, db)
         await db.commit()
-
-        # Сохраняем изображения QR-кода на диск (если еще не сохранены)
-        save_qr_code_image(short_code, sizes=[300, 600, 1200])
 
     # Проверяем, есть ли сохраненное изображение нужного размера
     saved_path = get_qr_code_path(filament.qr_code, size)

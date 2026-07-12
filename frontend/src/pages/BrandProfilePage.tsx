@@ -215,6 +215,18 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({ onBack, init
     },
   });
 
+  // Генерация недостающих QR для материалов, созданных до верификации бренда
+  const backfillQrMutation = useMutation({
+    mutationFn: () => brandsAPI.backfillQr(user!.brand_id!),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['brand-filaments'] });
+      setProfileError(null);
+    },
+    onError: (err: AxiosError<{ detail: unknown }>) => {
+      setProfileError(translateApiError(t, err.response?.data?.detail, t('brandProfile.qrBackfillError')));
+    },
+  });
+
   // Мутация для обновления профиля бренда
   const updateBrandMutation = useMutation({
     mutationFn: (data: { description?: string | null; website?: string | null; logo_url?: string | null; logo_bg?: string | null; social_media_urls?: string[] | null; shop_links?: { platform: string; url: string }[] | null; price_hidden?: boolean; currency?: string }) =>
@@ -859,8 +871,18 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({ onBack, init
       {/* QR Codes Tab */}
       {brandTab === 'qr' && (
         <div className="space-y-6">
-          <div className="flex items-center justify-between">
+          <div className="flex items-center justify-between gap-4">
             <h3 className="text-2xl font-bold text-white">{t('brandProfile.qrCodes')}</h3>
+            {brandData?.verified && filaments.some(f => !f.qr_code) && (
+              <button
+                onClick={() => backfillQrMutation.mutate()}
+                disabled={backfillQrMutation.isPending}
+                className="flex items-center gap-2 px-4 py-2 bg-green-500/20 hover:bg-green-500/30 border border-green-500/30 text-green-300 rounded-xl text-sm font-medium transition-colors disabled:opacity-50"
+              >
+                <QrCode className="w-4 h-4" />
+                {backfillQrMutation.isPending ? t('brandProfile.qrBackfillPending') : t('brandProfile.qrBackfill')}
+              </button>
+            )}
           </div>
 
           <div className="bg-white/10 backdrop-blur-sm rounded-2xl p-6 border border-white/20 shadow-xl">
