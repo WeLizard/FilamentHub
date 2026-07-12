@@ -81,6 +81,16 @@ type CalculatorTab = 'calculator' | 'history';
 type QuoteDisclaimerMode = 'not_offer' | 'offer';
 type CurrencyCode = string;
 
+interface CalculatorPageProps {
+  embedded?: boolean;
+  activeTab?: CalculatorTab;
+  onActiveTabChange?: (tab: CalculatorTab) => void;
+  staticSettingsOpen?: boolean;
+  quoteProfileOpen?: boolean;
+  onStaticSettingsOpenChange?: (open: boolean) => void;
+  onQuoteProfileOpenChange?: (open: boolean) => void;
+}
+
 interface QuoteProfileState {
   sellerName: string;
   sellerInn: string;
@@ -1332,14 +1342,39 @@ const buildQuoteDocumentHtml = ({
 </html>`;
 };
 
-export const CalculatorPage: React.FC = () => {
+export const CalculatorPage: React.FC<CalculatorPageProps> = ({
+  embedded = false,
+  activeTab: controlledActiveTab,
+  onActiveTabChange,
+  staticSettingsOpen: controlledStaticSettingsOpen,
+  quoteProfileOpen: controlledQuoteProfileOpen,
+  onStaticSettingsOpenChange,
+  onQuoteProfileOpenChange,
+}) => {
   const { t, i18n } = useTranslation();
   const { user, refreshUser } = useAuth();
   const queryClient = useQueryClient();
   const tc = (key: string) => translateCalculator(t, key);
   const hasCalculatorAccess = user?.has_calculator_access ?? false;
   const canStartTrial = !hasCalculatorAccess && user?.subscription == null;
-  const [activeTab, setActiveTab] = useState<CalculatorTab>('calculator');
+  const [internalActiveTab, setInternalActiveTab] = useState<CalculatorTab>('calculator');
+  const [internalStaticSettingsOpen, setInternalStaticSettingsOpen] = useState(false);
+  const [internalQuoteProfileOpen, setInternalQuoteProfileOpen] = useState(false);
+  const activeTab = controlledActiveTab ?? internalActiveTab;
+  const staticSettingsOpen = controlledStaticSettingsOpen ?? internalStaticSettingsOpen;
+  const quoteProfileOpen = controlledQuoteProfileOpen ?? internalQuoteProfileOpen;
+  const setActiveTab = (tab: CalculatorTab) => {
+    if (controlledActiveTab === undefined) setInternalActiveTab(tab);
+    onActiveTabChange?.(tab);
+  };
+  const setStaticSettingsOpen = (open: boolean) => {
+    if (controlledStaticSettingsOpen === undefined) setInternalStaticSettingsOpen(open);
+    onStaticSettingsOpenChange?.(open);
+  };
+  const setQuoteProfileOpen = (open: boolean) => {
+    if (controlledQuoteProfileOpen === undefined) setInternalQuoteProfileOpen(open);
+    onQuoteProfileOpenChange?.(open);
+  };
   const [form, setForm] = useState<CalculatorFormState>(DEFAULT_FORM_STATE);
   const [parsedGcode, setParsedGcode] = useState<CalculatorGcodeParseResponse | null>(null);
   const [parsedJobs, setParsedJobs] = useState<ParsedJobState[]>([]);
@@ -2682,7 +2717,7 @@ export const CalculatorPage: React.FC = () => {
           <span>{t('profilePage.calculator.trialBanner', { days: trialDaysLeft })}</span>
         </div>
       )}
-      <section className="relative overflow-hidden rounded-[2rem] bg-[linear-gradient(180deg,rgba(15,23,42,0.88),rgba(15,23,42,0.72))] shadow-[0_30px_90px_-50px_rgba(15,23,42,0.95)] backdrop-blur-xl ring-1 ring-white/5">
+      {!embedded && <section className="relative overflow-hidden rounded-[2rem] bg-[linear-gradient(180deg,rgba(15,23,42,0.88),rgba(15,23,42,0.72))] shadow-[0_30px_90px_-50px_rgba(15,23,42,0.95)] backdrop-blur-xl ring-1 ring-white/5">
         <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top_left,rgba(34,211,238,0.18),transparent_34%),radial-gradient(circle_at_85%_18%,rgba(251,191,36,0.16),transparent_28%),radial-gradient(circle_at_50%_120%,rgba(16,185,129,0.12),transparent_42%)]" />
         <div className="relative px-6 py-7 md:px-8 md:py-8">
           <div className="flex flex-col gap-6 xl:flex-row xl:items-end xl:justify-between">
@@ -2740,7 +2775,19 @@ export const CalculatorPage: React.FC = () => {
             </div>
           ) : null}
         </div>
-      </section>
+      </section>}
+
+      {embedded && historyFeedback ? (
+        <div
+          className={`rounded-[1.25rem] border px-4 py-3 text-sm ${
+            historyFeedback.kind === 'success'
+              ? 'border-emerald-400/25 bg-emerald-500/10 text-emerald-100'
+              : 'border-red-400/25 bg-red-500/10 text-red-100'
+          }`}
+        >
+          {historyFeedback.message}
+        </div>
+      ) : null}
 
       {activeTab === 'calculator' ? (
         <CalculatorView
@@ -2784,6 +2831,11 @@ export const CalculatorPage: React.FC = () => {
           onMaterialLineSpoolWeightChange={handleMaterialLineSpoolWeightChange}
           onDragStateChange={setDragActive}
           quoteProfile={quoteProfile}
+          embedded={embedded}
+          staticSettingsOpen={staticSettingsOpen}
+          quoteProfileOpen={quoteProfileOpen}
+          onStaticSettingsOpenChange={setStaticSettingsOpen}
+          onQuoteProfileOpenChange={setQuoteProfileOpen}
           onQuoteProfileChange={updateQuoteProfileField}
           onOpenQuote={handleOpenQuote}
           onAddToQuote={handleAddToQuote}
@@ -2852,6 +2904,9 @@ export const CalculatorPage: React.FC = () => {
 };
 
 interface CalculatorViewProps {
+  embedded: boolean;
+  staticSettingsOpen: boolean;
+  quoteProfileOpen: boolean;
   form: CalculatorFormState;
   quoteProfile: QuoteProfileState;
   result: CalculatorEstimateResponse | null;
@@ -2886,6 +2941,8 @@ interface CalculatorViewProps {
   onSpoolSelect: (spoolId: number | '') => void;
   onCatalogFilamentSelect: (filamentId: number | '') => void;
   onQuoteProfileChange: <K extends keyof QuoteProfileState>(field: K, value: QuoteProfileState[K]) => void;
+  onStaticSettingsOpenChange: (open: boolean) => void;
+  onQuoteProfileOpenChange: (open: boolean) => void;
   onFileSelect: (files: FileList | null) => Promise<void>;
   onJobSelect: (jobKey: string) => void;
   onJobConfigChange: (
@@ -2907,6 +2964,9 @@ interface CalculatorViewProps {
 }
 
 const CalculatorView: React.FC<CalculatorViewProps> = ({
+  embedded,
+  staticSettingsOpen,
+  quoteProfileOpen,
   form,
   quoteProfile,
   result,
@@ -2941,6 +3001,8 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
   onSpoolSelect,
   onCatalogFilamentSelect,
   onQuoteProfileChange,
+  onStaticSettingsOpenChange,
+  onQuoteProfileOpenChange,
   onFileSelect,
   onJobSelect,
   onJobConfigChange,
@@ -2959,8 +3021,6 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
 }) => {
   const { t } = useTranslation();
   const tc = (key: string) => translateCalculator(t, key);
-  const [staticSettingsOpen, setStaticSettingsOpen] = useState(false);
-  const [quoteProfileOpen, setQuoteProfileOpen] = useState(false);
   const [advancedSettingsOpen, setAdvancedSettingsOpen] = useState(false);
   const [postprocessChecked, setPostprocessChecked] = useState<Record<string, boolean>>({});
   const [customPresets, setCustomPresets] = useState<PricingPreset[]>(() => loadCustomPricingPresets());
@@ -3354,13 +3414,14 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
   return (
     <div className={`flex flex-col gap-5 ${showCalculateAction ? 'pb-20' : ''}`}>
       <div className="order-2 min-w-0 space-y-5">
-        <SurfaceCard className="p-4 md:p-5">
-          <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+        {(!embedded || staticSettingsOpen || quoteProfileOpen) && <SurfaceCard className="p-4 md:p-5">
+          {!embedded && <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
             <SectionHeading icon={<Settings2 className="h-5 w-5 text-cyan-300" />} title={tc('staticSettingsTitle')} compact />
             <div className="flex flex-wrap gap-2">
               <button
                 type="button"
-                onClick={() => setStaticSettingsOpen((prev) => !prev)}
+                onClick={() => onStaticSettingsOpenChange(!staticSettingsOpen)}
+                aria-expanded={staticSettingsOpen}
                 className={ghostButtonClass}
               >
                 <Settings2 className="h-4 w-4" />
@@ -3369,7 +3430,8 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
               </button>
               <button
                 type="button"
-                onClick={() => setQuoteProfileOpen((prev) => !prev)}
+                onClick={() => onQuoteProfileOpenChange(!quoteProfileOpen)}
+                aria-expanded={quoteProfileOpen}
                 className={ghostButtonClass}
               >
                 <FileText className="h-4 w-4" />
@@ -3377,10 +3439,10 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
                 <ChevronDown className={`h-4 w-4 transition-transform ${quoteProfileOpen ? 'rotate-180' : ''}`} />
               </button>
             </div>
-          </div>
+          </div>}
 
           {staticSettingsOpen || quoteProfileOpen ? (
-            <div className="mt-4 space-y-4 border-t border-white/10 pt-4">
+            <div className={`${embedded ? '' : 'mt-4 border-t border-white/10 pt-4'} space-y-4`}>
               {staticSettingsOpen ? (
                 <div>
                   <p className="text-sm font-semibold text-white">{tc('staticEconomicsTitle')}</p>
@@ -3762,7 +3824,7 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
               </div>
             </div>
           ) : null}
-        </SurfaceCard>
+        </SurfaceCard>}
 
         <SurfaceCard className="p-5 md:p-6">
           <SectionHeading icon={<Printer className="h-5 w-5 text-cyan-300" />} title={tc('workspaceTitle')} />

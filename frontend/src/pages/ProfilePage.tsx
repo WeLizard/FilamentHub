@@ -41,11 +41,13 @@ import {
   Camera,
   Lock,
   BriefcaseBusiness,
+  FileText,
+  UsersRound,
 } from 'lucide-react';
 import { Printer3DIcon } from '../components/icons/Printer3DIcon';
 import { useAuth } from '../contexts/AuthContext';
 import { useHeaderVisible } from '../hooks/useHeaderVisible';
-import { presetsAPI, filamentsAPI, brandsAPI, savedPresetsAPI, filamentReviewsAPI, printerProfilesAPI, printProfilesAPI, authAPI, spoolsAPI, qrAPI, devicesAPI, presetSlotsAPI, printersAPI } from '../api/client';
+import { presetsAPI, filamentsAPI, brandsAPI, savedPresetsAPI, filamentReviewsAPI, printerProfilesAPI, printProfilesAPI, authAPI, spoolsAPI, qrAPI, devicesAPI, presetSlotsAPI, printersAPI, calculatorAPI, crmAPI } from '../api/client';
 import { extractQrShortCode, createQrFrameDecoder } from '../utils/qrScanner';
 import type { UserSpool, SpoolState, UserPrinterDevice } from '../api/client';
 import { SpoolIcon } from '../components/icons/SpoolIcon';
@@ -77,6 +79,8 @@ import { BrandProfilePage } from './BrandProfilePage';
 import { CalculatorPage } from './CalculatorPage';
 import { CrmWorkspacePage } from './CrmWorkspacePage';
 import type { Preset, PrinterProfile, PrintProfile, Filament } from '../types/api';
+
+type CalculatorWorkspaceMode = 'calculator' | 'history' | 'quotes' | 'orders' | 'customers';
 
 export const ProfilePage: React.FC = () => {
   const { user, refreshUser } = useAuth();
@@ -110,7 +114,9 @@ export const ProfilePage: React.FC = () => {
       ? (requested as 'dashboard' | 'presets' | 'spools' | 'calculator-pro' | 'settings' | 'printer-profiles')
       : 'dashboard';
   });
-  const [calculatorSection, setCalculatorSection] = useState<'estimate' | 'workspace'>('estimate');
+  const [calculatorWorkspaceMode, setCalculatorWorkspaceMode] = useState<CalculatorWorkspaceMode>('calculator');
+  const [calculatorEconomicsOpen, setCalculatorEconomicsOpen] = useState(false);
+  const [calculatorQuoteProfileOpen, setCalculatorQuoteProfileOpen] = useState(false);
   const [isAddSpoolOpen, setIsAddSpoolOpen] = useState(false);
   const [showHelpModal, setShowHelpModal] = useState(false);
   const [isCreatePresetModalOpen, setIsCreatePresetModalOpen] = useState(false);
@@ -130,6 +136,16 @@ export const ProfilePage: React.FC = () => {
   const [_viewMode, _setViewMode] = useState<'grid' | 'list'>('grid');
   const [presetFilter, setPresetFilter] = useState<'all' | 'own' | 'saved' | 'drafts'>('all');
   const [isScanning, setIsScanning] = useState(false);
+  const workspaceHistoryQuery = useQuery({
+    queryKey: ['calculator-pro', 'history'],
+    queryFn: () => calculatorAPI.listHistory({ page: 1, size: 50 }),
+    enabled: userTab === 'calculator-pro' && (user?.has_calculator_access ?? false),
+  });
+  const workspaceSummaryQuery = useQuery({
+    queryKey: ['crm', 'summary'],
+    queryFn: crmAPI.getSummary,
+    enabled: userTab === 'calculator-pro' && (user?.has_calculator_access ?? false),
+  });
   const profileBadges = useMemo(() => {
     const validBadgeTypes = new Set<BadgeType>(Object.keys(BADGE_CONFIG) as BadgeType[]);
     return (user?.badges ?? []).filter((badge): badge is BadgeType => validBadgeTypes.has(badge as BadgeType));
@@ -875,38 +891,97 @@ export const ProfilePage: React.FC = () => {
       {/* Print Calculator Tab */}
       {userTab === 'calculator-pro' && (
         <div className="space-y-4">
-          <div
-            className="mx-auto flex w-fit max-w-full items-center gap-1 overflow-x-auto rounded-2xl border border-white/10 bg-slate-950/55 p-1.5 shadow-lg shadow-black/20 backdrop-blur-sm"
-            role="group"
-            aria-label={t('profilePage.tabs.calculatorPro')}
-          >
-            <button
-              type="button"
-              onClick={() => setCalculatorSection('estimate')}
-              aria-pressed={calculatorSection === 'estimate'}
-              className={`inline-flex shrink-0 items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold transition ${calculatorSection === 'estimate' ? 'bg-cyan-500 text-slate-950 shadow-md shadow-cyan-500/20' : 'text-slate-300 hover:bg-white/10 hover:text-white'}`}
-            >
-              <Calculator className="h-4 w-4" />
-              {t('layout.nav_calculator')}
-            </button>
-            <button
-              type="button"
-              onClick={() => setCalculatorSection('workspace')}
-              aria-pressed={calculatorSection === 'workspace'}
-              className={`inline-flex shrink-0 items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold transition ${calculatorSection === 'workspace' ? 'bg-cyan-500 text-slate-950 shadow-md shadow-cyan-500/20' : 'text-slate-300 hover:bg-white/10 hover:text-white'}`}
-            >
-              <BriefcaseBusiness className="h-4 w-4" />
-              {t('crmWorkspace.title')}
-            </button>
-          </div>
+          <section className="relative mx-auto max-w-7xl overflow-hidden rounded-[1.65rem] border border-white/10 bg-slate-950/70 shadow-xl shadow-black/25 backdrop-blur-xl">
+            <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_0%_0%,rgba(34,211,238,0.16),transparent_30%),radial-gradient(circle_at_100%_0%,rgba(245,158,11,0.1),transparent_26%)]" />
+            <div className="relative p-3.5 md:p-4">
+              <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+                <div className="flex min-w-0 items-center gap-3">
+                  <span className="shrink-0 rounded-full border border-cyan-400/25 bg-cyan-400/10 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.2em] text-cyan-200">
+                    {t('profilePage.calculator.proBadge')}
+                  </span>
+                  <h2 className="truncate text-base font-semibold text-white md:text-lg">{t('crmWorkspace.workspaceTitle')}</h2>
+                </div>
 
-          {calculatorSection === 'estimate' ? (
+                {calculatorWorkspaceMode === 'calculator' && (
+                  <div className="flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setCalculatorEconomicsOpen((open) => !open)}
+                      aria-expanded={calculatorEconomicsOpen}
+                      className={`inline-flex items-center gap-2 rounded-xl border px-3 py-2 text-xs font-medium transition ${calculatorEconomicsOpen ? 'border-cyan-400/30 bg-cyan-400/15 text-cyan-50' : 'border-white/10 bg-white/5 text-slate-300 hover:bg-white/10 hover:text-white'}`}
+                    >
+                      <Settings className="h-3.5 w-3.5" />
+                      {t('profilePage.calculator.staticEconomicsTitle')}
+                      <ChevronDown className={`h-3.5 w-3.5 transition-transform ${calculatorEconomicsOpen ? 'rotate-180' : ''}`} />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setCalculatorQuoteProfileOpen((open) => !open)}
+                      aria-expanded={calculatorQuoteProfileOpen}
+                      className={`inline-flex items-center gap-2 rounded-xl border px-3 py-2 text-xs font-medium transition ${calculatorQuoteProfileOpen ? 'border-cyan-400/30 bg-cyan-400/15 text-cyan-50' : 'border-white/10 bg-white/5 text-slate-300 hover:bg-white/10 hover:text-white'}`}
+                    >
+                      <FileText className="h-3.5 w-3.5" />
+                      {t('profilePage.calculator.quoteProfileTitle')}
+                      <ChevronDown className={`h-3.5 w-3.5 transition-transform ${calculatorQuoteProfileOpen ? 'rotate-180' : ''}`} />
+                    </button>
+                  </div>
+                )}
+              </div>
+
+              <div className="mt-3 flex flex-col gap-3 border-t border-white/10 pt-3 xl:flex-row xl:items-center xl:justify-between">
+                <div className="min-w-0 overflow-x-auto scrollbar-hide" role="tablist" aria-label={t('crmWorkspace.workspaceTitle')}>
+                  <div className="flex min-w-max gap-1">
+                    {([
+                      { id: 'calculator' as const, label: t('profilePage.calculator.tabs.calculator'), icon: Calculator },
+                      { id: 'history' as const, label: t('profilePage.calculator.tabs.history'), icon: Clock },
+                      { id: 'quotes' as const, label: t('crmWorkspace.tabs.quotesShort'), icon: FileText },
+                      { id: 'orders' as const, label: t('crmWorkspace.tabs.orders'), icon: BriefcaseBusiness },
+                      { id: 'customers' as const, label: t('crmWorkspace.tabs.customers'), icon: UsersRound },
+                    ]).map((item) => (
+                      <button
+                        key={item.id}
+                        type="button"
+                        role="tab"
+                        aria-selected={calculatorWorkspaceMode === item.id}
+                        onClick={() => setCalculatorWorkspaceMode(item.id)}
+                        className={`inline-flex items-center gap-2 rounded-xl px-3 py-2 text-xs font-semibold transition md:text-sm ${calculatorWorkspaceMode === item.id ? 'bg-cyan-500 text-slate-950 shadow-md shadow-cyan-500/20' : 'text-slate-300 hover:bg-white/10 hover:text-white'}`}
+                      >
+                        <item.icon className="h-4 w-4" />
+                        {item.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-slate-400">
+                  <span><strong className="mr-1 font-semibold tabular-nums text-white">{workspaceHistoryQuery.isPending ? '—' : workspaceHistoryQuery.data?.total ?? 0}</strong>{t('profilePage.calculator.workspaceSavedEstimates')}</span>
+                  <span><strong className="mr-1 font-semibold tabular-nums text-white">{workspaceSummaryQuery.isPending ? '—' : (workspaceSummaryQuery.data?.quotes_draft ?? 0) + (workspaceSummaryQuery.data?.quotes_sent ?? 0)}</strong>{t('crmWorkspace.metrics.awaiting')}</span>
+                  <span><strong className="mr-1 font-semibold tabular-nums text-white">{workspaceSummaryQuery.isPending ? '—' : workspaceSummaryQuery.data?.orders_active ?? 0}</strong>{t('crmWorkspace.metrics.activeOrders')}</span>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          {calculatorWorkspaceMode === 'calculator' || calculatorWorkspaceMode === 'history' ? (
             <div className="mx-auto max-w-7xl">
-              <CalculatorPage />
+              <CalculatorPage
+                embedded
+                activeTab={calculatorWorkspaceMode}
+                onActiveTabChange={setCalculatorWorkspaceMode}
+                staticSettingsOpen={calculatorEconomicsOpen}
+                quoteProfileOpen={calculatorQuoteProfileOpen}
+                onStaticSettingsOpenChange={setCalculatorEconomicsOpen}
+                onQuoteProfileOpenChange={setCalculatorQuoteProfileOpen}
+              />
             </div>
           ) : (
             <div className="mx-auto max-w-7xl">
-              <CrmWorkspacePage onNewCalculation={() => setCalculatorSection('estimate')} />
+              <CrmWorkspacePage
+                embedded
+                activeTab={calculatorWorkspaceMode}
+                onActiveTabChange={setCalculatorWorkspaceMode}
+                onNewCalculation={() => setCalculatorWorkspaceMode('calculator')}
+              />
             </div>
           )}
         </div>

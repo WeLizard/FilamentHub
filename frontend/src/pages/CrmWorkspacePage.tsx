@@ -44,6 +44,9 @@ type Feedback = { kind: 'success' | 'error'; text: string } | null;
 
 interface CrmWorkspacePageProps {
   onNewCalculation?: () => void;
+  embedded?: boolean;
+  activeTab?: WorkspaceTab;
+  onActiveTabChange?: (tab: WorkspaceTab) => void;
 }
 
 const surfaceClass =
@@ -103,11 +106,21 @@ const formatCurrencyBreakdown = (amounts: Record<string, number> | undefined): s
   return entries.map(([currency, value]) => makeCurrencyFormatter(currency).format(value)).join(' · ');
 };
 
-export const CrmWorkspacePage: React.FC<CrmWorkspacePageProps> = ({ onNewCalculation }) => {
+export const CrmWorkspacePage: React.FC<CrmWorkspacePageProps> = ({
+  onNewCalculation,
+  embedded = false,
+  activeTab: controlledActiveTab,
+  onActiveTabChange,
+}) => {
   const { t } = useTranslation();
   const { user } = useAuth();
   const queryClient = useQueryClient();
-  const [activeTab, setActiveTab] = useState<WorkspaceTab>('quotes');
+  const [internalActiveTab, setInternalActiveTab] = useState<WorkspaceTab>('quotes');
+  const activeTab = controlledActiveTab ?? internalActiveTab;
+  const setActiveTab = (tab: WorkspaceTab) => {
+    if (controlledActiveTab === undefined) setInternalActiveTab(tab);
+    onActiveTabChange?.(tab);
+  };
   const [search, setSearch] = useState('');
   const [feedback, setFeedback] = useState<Feedback>(null);
   const [customerDialog, setCustomerDialog] = useState<CrmCustomer | 'new' | null>(null);
@@ -274,7 +287,7 @@ export const CrmWorkspacePage: React.FC<CrmWorkspacePageProps> = ({ onNewCalcula
 
   return (
     <div className="space-y-6">
-      <section className="relative overflow-hidden rounded-[2rem] border border-white/10 bg-slate-950/70 shadow-2xl shadow-slate-950/35">
+      {!embedded && <section className="relative overflow-hidden rounded-[2rem] border border-white/10 bg-slate-950/70 shadow-2xl shadow-slate-950/35">
         <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_10%_0%,rgba(34,211,238,0.2),transparent_32%),radial-gradient(circle_at_90%_20%,rgba(245,158,11,0.14),transparent_28%)]" />
         <div className="relative p-6 md:p-8">
           <div className="flex flex-col gap-6 xl:flex-row xl:items-end xl:justify-between">
@@ -302,15 +315,15 @@ export const CrmWorkspacePage: React.FC<CrmWorkspacePageProps> = ({ onNewCalcula
             <MetricCard icon={<UsersRound />} label={t('crmWorkspace.metrics.customers')} value={summary ? String(summary.customers_total) : '—'} />
           </div>
         </div>
-      </section>
+      </section>}
 
       <section className={`${surfaceClass} p-4 md:p-5`}>
-        <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-          <div className="flex flex-wrap gap-2">
+        <div className={`flex flex-col gap-4 lg:flex-row lg:items-center ${embedded ? 'lg:justify-end' : 'lg:justify-between'}`}>
+          {!embedded && <div className="flex flex-wrap gap-2">
             <WorkspaceTabButton active={activeTab === 'quotes'} icon={<FileText />} label={t('crmWorkspace.tabs.quotes')} count={quotesQuery.data?.total} onClick={() => setActiveTab('quotes')} />
             <WorkspaceTabButton active={activeTab === 'orders'} icon={<BriefcaseBusiness />} label={t('crmWorkspace.tabs.orders')} count={ordersQuery.data?.total} onClick={() => setActiveTab('orders')} />
             <WorkspaceTabButton active={activeTab === 'customers'} icon={<UsersRound />} label={t('crmWorkspace.tabs.customers')} count={customersQuery.data?.total} onClick={() => setActiveTab('customers')} />
-          </div>
+          </div>}
           <div className="flex w-full gap-2 lg:w-auto">
             <label className="relative min-w-0 flex-1 lg:w-72">
               <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500" />
