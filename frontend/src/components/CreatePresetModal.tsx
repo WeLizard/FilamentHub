@@ -3732,7 +3732,7 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                       {/* Вторая строка: Высота поднятия оси Z / Скорость заправки */}
                       <div className="grid grid-cols-2 gap-4">
                         <div>
-                          <label className="block text-gray-300 mb-1 text-sm">{t('presetModal.zHopHeight')}</label>
+                          <label className="block text-gray-300 mb-1 text-sm">{t('presetModal.zHopHeight')} <InfoHint text={t('paramHints.zHop')} /></label>
                           <div className="relative">
                             <input
                               type="number"
@@ -3748,7 +3748,7 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                           </div>
                         </div>
                         <div className={isVisibleAtMode('advanced', settingMode) ? '' : 'hidden'}>
-                          <label className="block text-gray-300 mb-1 text-sm">{t('presetModal.deretractionSpeed')}</label>
+                          <label className="block text-gray-300 mb-1 text-sm">{t('presetModal.deretractionSpeed')} <InfoHint text={t('paramHints.deretractionSpeed')} /></label>
                           <div className="relative">
                             <input
                               type="number"
@@ -3768,7 +3768,7 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                       {/* Третья строка: Тип подъёма оси Z / На поверхностях (advanced) */}
                       <div className={`grid grid-cols-2 gap-4 ${isVisibleAtMode('advanced', settingMode) ? '' : 'hidden'}`}>
                         <div>
-                          <label className="block text-gray-300 mb-1 text-sm">{t('presetModal.zHopType')}</label>
+                          <label className="block text-gray-300 mb-1 text-sm">{t('presetModal.zHopType')} <InfoHint text={t('paramHints.zHopType')} /></label>
                           <CustomSelect
                             value={filamentZHopTypes || null}
                             onChange={(value: string | number | null) => {  setFilamentZHopTypes(value as string || ''); }}
@@ -3782,7 +3782,7 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                           />
                         </div>
                         <div>
-                          <label className="block text-gray-300 mb-1 text-sm">{t('presetModal.onSurfaces')}</label>
+                          <label className="block text-gray-300 mb-1 text-sm">{t('presetModal.onSurfaces')} <InfoHint text={t('paramHints.liftEnforce')} /></label>
                           <CustomSelect
                             value={retractLiftEnforce || null}
                             onChange={(value: string | number | null) => {  setRetractLiftEnforce(value as string || ''); }}
@@ -3800,7 +3800,7 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                       {/* Четвертая строка: Приподнимать ось Z только выше / Приподнимать ось Z только ниже (advanced) */}
                       <div className={`grid grid-cols-2 gap-4 ${isVisibleAtMode('advanced', settingMode) ? '' : 'hidden'}`}>
                         <div>
-                          <label className="block text-gray-300 mb-1 text-sm">{t('presetModal.liftZAbove')}</label>
+                          <label className="block text-gray-300 mb-1 text-sm">{t('presetModal.liftZAbove')} <InfoHint text={t('paramHints.liftAbove')} /></label>
                           <div className="relative">
                             <input
                               type="number"
@@ -3815,7 +3815,7 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                           </div>
                         </div>
                         <div>
-                          <label className="block text-gray-300 mb-1 text-sm">{t('presetModal.liftZBelow')}</label>
+                          <label className="block text-gray-300 mb-1 text-sm">{t('presetModal.liftZBelow')} <InfoHint text={t('paramHints.liftBelow')} /></label>
                           <div className="relative">
                             <input
                               type="number"
@@ -3834,7 +3834,7 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                       {/* Пятая строка: Доп. длина подачи / Порог перемещения (advanced) */}
                       <div className={`grid grid-cols-2 gap-4 ${isVisibleAtMode('advanced', settingMode) ? '' : 'hidden'}`}>
                         <div>
-                          <label className="block text-gray-300 mb-1 text-sm">{t('presetModal.extraRestartLength')}</label>
+                          <label className="block text-gray-300 mb-1 text-sm">{t('presetModal.extraRestartLength')} <InfoHint text={t('paramHints.retractRestartExtra')} /></label>
                           <div className="relative">
                             <input
                               type="number"
@@ -3849,7 +3849,7 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                           </div>
                         </div>
                         <div>
-                          <label className="block text-gray-300 mb-1 text-sm">{t('presetModal.retractionMinTravel')}</label>
+                          <label className="block text-gray-300 mb-1 text-sm">{t('presetModal.retractionMinTravel')} <InfoHint text={t('paramHints.retractMinTravel')} /></label>
                           <div className="relative">
                             <input
                               type="number"
@@ -3878,6 +3878,7 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                           <label htmlFor="retractWhenChangingLayerOverride" className="text-gray-300 text-sm">
                             {t('presetModal.retractOnLayerChange')}
                           </label>
+                          <InfoHint text={t('paramHints.retractOnLayerChange')} />
                         </div>
                         <div className="flex items-center space-x-3">
                           <input
@@ -3890,6 +3891,7 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                           <label htmlFor="filamentWipeOverride" className="text-gray-300 text-sm">
                             {t('presetModal.wipeOnRetract')}
                           </label>
+                          <InfoHint text={t('paramHints.wipe')} />
                         </div>
                       </div>
 
@@ -3897,7 +3899,7 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                       {filamentWipe && isVisibleAtMode('advanced', settingMode) && (
                         <div className="grid grid-cols-2 gap-4">
                           <div>
-                            <label className="block text-gray-300 mb-1 text-sm">{t('presetModal.wipeDistance')}</label>
+                            <label className="block text-gray-300 mb-1 text-sm">{t('presetModal.wipeDistance')} <InfoHint text={t('paramHints.wipeDistance')} /></label>
                             <div className="relative">
                               <input
                                 type="number"
@@ -3912,7 +3914,7 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                             </div>
                           </div>
                           <div>
-                            <label className="block text-gray-300 mb-1 text-sm">{t('presetModal.retractBeforeWipe')}</label>
+                            <label className="block text-gray-300 mb-1 text-sm">{t('presetModal.retractBeforeWipe')} <InfoHint text={t('paramHints.retractBeforeWipe')} /></label>
                             <div className="relative">
                               <input
                                 type="text"
@@ -3937,7 +3939,7 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                       {/* Первая строка: Расстояния при обрезке / Длинные ретракты при обрезке */}
                       <div className="grid grid-cols-2 gap-4">
                         <div>
-                          <label className="block text-gray-300 mb-1 text-sm">{t('presetModal.retractDistanceCut')}</label>
+                          <label className="block text-gray-300 mb-1 text-sm">{t('presetModal.retractDistanceCut')} <InfoHint text={t('paramHints.retractDistanceCut')} /></label>
                           <input
                             type="text"
                             value={retractionDistancesWhenCut}
@@ -3948,7 +3950,7 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                           <p className="text-xs text-gray-500 mt-1">{t('presetModal.commaSeparatedValues')}</p>
                         </div>
                         <div>
-                          <label className="block text-gray-300 mb-1 text-sm">{t('presetModal.longRetractsCut')}</label>
+                          <label className="block text-gray-300 mb-1 text-sm">{t('presetModal.longRetractsCut')} <InfoHint text={t('paramHints.longRetractCut')} /></label>
                           <input
                             type="text"
                             value={longRetractionsWhenCut}
@@ -3971,12 +3973,13 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                         <label htmlFor="longRetractionsWhenEC" className="text-gray-300 text-sm">
                           {t('presetModal.longRetractsEC')}
                         </label>
+                        <InfoHint text={t('paramHints.longRetractEC')} />
                       </div>
 
                       {/* Расстояния ретракта при смене экструдера (advanced) */}
                       {longRetractionsWhenEC && isVisibleAtMode('advanced', settingMode) && (
                         <div>
-                          <label className="block text-gray-300 mb-1 text-sm">{t('presetModal.retractDistanceEC')}</label>
+                          <label className="block text-gray-300 mb-1 text-sm">{t('presetModal.retractDistanceEC')} <InfoHint text={t('paramHints.retractDistanceEC')} /></label>
                           <div className="relative">
                             <input
                               type="number"
