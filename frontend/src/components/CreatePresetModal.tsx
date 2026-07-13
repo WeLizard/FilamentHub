@@ -2835,8 +2835,8 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                       </label>
                     </div>
 
-                    {/* Группа адгезивности (свойство материала, как в Orca) */}
-                    <div className={isVisibleAtMode('advanced', settingMode) ? '' : 'hidden'}>
+                    {/* Группа адгезивности (свойство материала; в Orca comDevelop → expert) */}
+                    <div className={isVisibleAtMode('expert', settingMode) ? '' : 'hidden'}>
                       <label className="block text-gray-300 mb-1 text-sm">{t('presetModal.adhesivenessCategory')}</label>
                       <input
                         type="number"
@@ -3704,7 +3704,7 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                             <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400 pointer-events-none">mm</span>
                           </div>
                         </div>
-                        <div>
+                        <div className={isVisibleAtMode('advanced', settingMode) ? '' : 'hidden'}>
                           <label className="block text-gray-300 mb-1 text-sm">{t('presetModal.retractionExtractSpeed')} <InfoHint text={t('paramHints.retractionSpeed')} /></label>
                           <div className="relative">
                             <input
@@ -3740,7 +3740,7 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                             <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400 pointer-events-none">mm</span>
                           </div>
                         </div>
-                        <div>
+                        <div className={isVisibleAtMode('advanced', settingMode) ? '' : 'hidden'}>
                           <label className="block text-gray-300 mb-1 text-sm">{t('presetModal.deretractionSpeed')}</label>
                           <div className="relative">
                             <input
@@ -3758,8 +3758,8 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                         </div>
                       </div>
 
-                      {/* Третья строка: Тип подъёма оси Z / На поверхностях */}
-                      <div className="grid grid-cols-2 gap-4">
+                      {/* Третья строка: Тип подъёма оси Z / На поверхностях (advanced) */}
+                      <div className={`grid grid-cols-2 gap-4 ${isVisibleAtMode('advanced', settingMode) ? '' : 'hidden'}`}>
                         <div>
                           <label className="block text-gray-300 mb-1 text-sm">{t('presetModal.zHopType')}</label>
                           <CustomSelect
@@ -3790,8 +3790,8 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                         </div>
                       </div>
 
-                      {/* Четвертая строка: Приподнимать ось Z только выше / Приподнимать ось Z только ниже */}
-                      <div className="grid grid-cols-2 gap-4">
+                      {/* Четвертая строка: Приподнимать ось Z только выше / Приподнимать ось Z только ниже (advanced) */}
+                      <div className={`grid grid-cols-2 gap-4 ${isVisibleAtMode('advanced', settingMode) ? '' : 'hidden'}`}>
                         <div>
                           <label className="block text-gray-300 mb-1 text-sm">{t('presetModal.liftZAbove')}</label>
                           <div className="relative">
@@ -3824,8 +3824,8 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                         </div>
                       </div>
 
-                      {/* Пятая строка: Доп. длина подачи / Порог перемещения */}
-                      <div className="grid grid-cols-2 gap-4">
+                      {/* Пятая строка: Доп. длина подачи / Порог перемещения (advanced) */}
+                      <div className={`grid grid-cols-2 gap-4 ${isVisibleAtMode('advanced', settingMode) ? '' : 'hidden'}`}>
                         <div>
                           <label className="block text-gray-300 mb-1 text-sm">{t('presetModal.extraRestartLength')}</label>
                           <div className="relative">
@@ -3858,8 +3858,8 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                         </div>
                       </div>
 
-                      {/* Чекбоксы: Откат при смене слоя / Очистка сопла */}
-                      <div className="grid grid-cols-2 gap-4">
+                      {/* Чекбоксы: Откат при смене слоя / Очистка сопла (advanced) */}
+                      <div className={`grid grid-cols-2 gap-4 ${isVisibleAtMode('advanced', settingMode) ? '' : 'hidden'}`}>
                         <div className="flex items-center space-x-3">
                           <input
                             type="checkbox"
@@ -3886,8 +3886,8 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                         </div>
                       </div>
 
-                      {/* Расстояние очистки / Величина отката перед очисткой */}
-                      {filamentWipe && (
+                      {/* Расстояние очистки / Величина отката перед очисткой (advanced) */}
+                      {filamentWipe && isVisibleAtMode('advanced', settingMode) && (
                         <div className="grid grid-cols-2 gap-4">
                           <div>
                             <label className="block text-gray-300 mb-1 text-sm">{t('presetModal.wipeDistance')}</label>
@@ -3952,8 +3952,8 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                         </div>
                       </div>
 
-                      {/* Длинные ретракты при смене экструдера */}
-                      <div className="flex items-center space-x-3">
+                      {/* Длинные ретракты при смене экструдера (advanced) */}
+                      <div className={`flex items-center space-x-3 ${isVisibleAtMode('advanced', settingMode) ? '' : 'hidden'}`}>
                         <input
                           type="checkbox"
                           id="longRetractionsWhenEC"
@@ -3966,8 +3966,8 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                         </label>
                       </div>
 
-                      {/* Расстояния ретракта при смене экструдера */}
-                      {longRetractionsWhenEC && (
+                      {/* Расстояния ретракта при смене экструдера (advanced) */}
+                      {longRetractionsWhenEC && isVisibleAtMode('advanced', settingMode) && (
                         <div>
                           <label className="block text-gray-300 mb-1 text-sm">{t('presetModal.retractDistanceEC')}</label>
                           <div className="relative">

@@ -37,6 +37,14 @@ export const ORCA_FIELD_MODE: Record<string, SettingMode> = {
   activate_air_filtration: 'simple',
   during_print_exhaust_fan_speed: 'simple',
   complete_print_exhaust_fan_speed: 'simple',
+  slow_down_layer_time: 'simple',
+  fan_cooling_layer_time: 'simple',
+  // Filament overrides exposed in Simple (Orca keeps machine retract in Develop
+  // but surfaces these basics on the filament — PrintConfig.cpp:7318).
+  filament_retraction_length: 'simple',
+  filament_z_hop: 'simple',
+  filament_retraction_distances_when_cut: 'simple',
+  filament_long_retractions_when_cut: 'simple',
 
   // --- Advanced ---
   pressure_advance: 'advanced',
@@ -48,8 +56,6 @@ export const ORCA_FIELD_MODE: Record<string, SettingMode> = {
   filament_shrinkage_compensation_z: 'advanced',
   filament_soluble: 'advanced',
   filament_is_support: 'advanced',
-  filament_adhesiveness_category: 'advanced',
-  required_nozzle_HRC: 'advanced',
   full_fan_speed_layer: 'advanced',
   overhang_fan_speed: 'advanced',
   overhang_fan_threshold: 'advanced',
@@ -57,10 +63,7 @@ export const ORCA_FIELD_MODE: Record<string, SettingMode> = {
   ironing_fan_speed: 'advanced',
   support_material_interface_fan_speed: 'advanced',
   slow_down_min_speed: 'advanced',
-  slow_down_layer_time: 'advanced',
-  fan_cooling_layer_time: 'advanced',
-  // Filament overrides (retraction / wipe / z-hop)
-  filament_retraction_length: 'advanced',
+  // Filament overrides (retraction / wipe / z-hop) — advanced tier
   filament_retraction_speed: 'advanced',
   filament_deretraction_speed: 'advanced',
   filament_retraction_minimum_travel: 'advanced',
@@ -69,7 +72,6 @@ export const ORCA_FIELD_MODE: Record<string, SettingMode> = {
   filament_retract_restart_extra: 'advanced',
   filament_wipe: 'advanced',
   filament_wipe_distance: 'advanced',
-  filament_z_hop: 'advanced',
   filament_z_hop_types: 'advanced',
   // Multimaterial (MMU / toolchange)
   filament_loading_speed: 'advanced',
@@ -84,9 +86,11 @@ export const ORCA_FIELD_MODE: Record<string, SettingMode> = {
   filament_start_gcode: 'advanced',
   filament_end_gcode: 'advanced',
 
-  // --- Expert / Develop ---
+  // --- Expert / Develop (comDevelop → expert) ---
   filament_adaptive_volumetric_speed: 'expert',
   volumetric_speed_coefficients: 'expert',
+  required_nozzle_HRC: 'expert',
+  filament_adhesiveness_category: 'expert',
 };
 
 /** True if a field of `fieldMode` (default 'simple') should show at `current`. */
