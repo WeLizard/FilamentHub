@@ -3296,7 +3296,7 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                     <div className="space-y-4">
                       {/* Не включать вентилятор на первых */}
                       <div>
-                        <label className="block text-gray-300 mb-1 text-sm">{t('presetModal.disableFanFirstLayers')}</label>
+                        <label className="block text-gray-300 mb-1 text-sm">{t('presetModal.disableFanFirstLayers')} <InfoHint text={t('paramHints.closeFanFirstLayers')} /></label>
                         <div className="relative">
                           <input
                             type="number"
@@ -3313,7 +3313,7 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
 
                       {/* Полная скорость вентилятора на слое */}
                       <div className={isVisibleAtMode('advanced', settingMode) ? '' : 'hidden'}>
-                        <label className="block text-gray-300 mb-1 text-sm">{t('presetModal.fullFanSpeedLayer')}</label>
+                        <label className="block text-gray-300 mb-1 text-sm">{t('presetModal.fullFanSpeedLayer')} <InfoHint text={t('paramHints.fullFanSpeedLayer')} /></label>
                         <div className="relative">
                           <input
                             type="number"
@@ -3337,7 +3337,7 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                     <div className="space-y-4">
                       {/* Порог мин. скорости вентилятора */}
                       <div>
-                        <label className="block text-gray-300 mb-2 text-sm font-medium">{t('presetModal.minFanThreshold')}</label>
+                        <label className="block text-gray-300 mb-2 text-sm font-medium">{t('presetModal.minFanThreshold')} <InfoHint text={t('paramHints.minFanThreshold')} /></label>
                         <div className="grid grid-cols-2 gap-3">
                           <div>
                             <label className="block text-gray-400 mb-1 text-xs">{t('presetModal.fanSpeedLabel')}</label>
@@ -3375,7 +3375,7 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
 
                       {/* Порог макс. скорости вентилятора */}
                       <div>
-                        <label className="block text-gray-300 mb-2 text-sm font-medium">{t('presetModal.maxFanThreshold')}</label>
+                        <label className="block text-gray-300 mb-2 text-sm font-medium">{t('presetModal.maxFanThreshold')} <InfoHint text={t('paramHints.maxFanThreshold')} /></label>
                         <div className="grid grid-cols-2 gap-3">
                           <div>
                             <label className="block text-gray-400 mb-1 text-xs">{t('presetModal.fanSpeedLabel')}</label>
@@ -3423,6 +3423,7 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                         <label htmlFor="reduceFanStopStartFreq" className="text-gray-300 text-sm">
                           {t('presetModal.fanAlwaysOn')}
                         </label>
+                        <InfoHint text={t('paramHints.fanAlwaysOn')} />
                       </div>
 
                       {/* Замедлять печать для лучшего охлаждения слоёв */}
@@ -3437,6 +3438,7 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                         <label htmlFor="slowDownForLayerCooling" className="text-gray-300 text-sm">
                           {t('presetModal.slowDownForCooling')}
                         </label>
+                        <InfoHint text={t('paramHints.slowForCooling')} />
                       </div>
 
                       {/* Не замедляться на внешнем периметре */}
@@ -3451,12 +3453,13 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                         <label htmlFor="dontSlowDownOuterWall" className="text-gray-300 text-sm">
                           {t('presetModal.dontSlowOuterWall')}
                         </label>
+                        <InfoHint text={t('paramHints.dontSlowOuterWall')} />
                       </div>
 
                       {/* Минимальная скорость печати */}
                       {slowDownForLayerCooling && isVisibleAtMode('advanced', settingMode) && (
                         <div>
-                          <label className="block text-gray-300 mb-1 text-sm">{t('presetModal.minPrintSpeed')}</label>
+                          <label className="block text-gray-300 mb-1 text-sm">{t('presetModal.minPrintSpeed')} <InfoHint text={t('paramHints.minPrintSpeed')} /></label>
                           <input
                             type="number"
                             value={slowDownMinSpeed}
@@ -3482,12 +3485,13 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                         <label htmlFor="enableOverhangBridgeFan" className="text-gray-300 text-sm">
                           {t('presetModal.forceOverhangBridgeFan')}
                         </label>
+                        <InfoHint text={t('paramHints.overhangFan')} />
                       </div>
 
                       {/* Порог нависания для включения обдува */}
                       {enableOverhangBridgeFan && isVisibleAtMode('advanced', settingMode) && (
                         <div>
-                          <label className="block text-gray-300 mb-1 text-sm">{t('presetModal.overhangFanThreshold')}</label>
+                          <label className="block text-gray-300 mb-1 text-sm">{t('presetModal.overhangFanThreshold')} <InfoHint text={t('paramHints.overhangThreshold')} /></label>
                           <div className="relative">
                             <input
                               type="text"
@@ -3504,7 +3508,7 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                       {/* Скорость вентилятора для нависаний и внешних мостов */}
                       {enableOverhangBridgeFan && isVisibleAtMode('advanced', settingMode) && (
                         <div>
-                          <label className="block text-gray-300 mb-1 text-sm">{t('presetModal.overhangBridgeFanSpeed')}</label>
+                          <label className="block text-gray-300 mb-1 text-sm">{t('presetModal.overhangBridgeFanSpeed')} <InfoHint text={t('paramHints.overhangFanSpeed')} /></label>
                           <div className="relative">
                             <input
                               type="number"
@@ -3525,7 +3529,7 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                       {/* Скорость вентилятора для внутренних мостов */}
                       {enableOverhangBridgeFan && isVisibleAtMode('advanced', settingMode) && (
                         <div>
-                          <label className="block text-gray-300 mb-1 text-sm">{t('presetModal.internalBridgeFanSpeed')}</label>
+                          <label className="block text-gray-300 mb-1 text-sm">{t('presetModal.internalBridgeFanSpeed')} <InfoHint text={t('paramHints.internalBridgeFanSpeed')} /></label>
                           <div className="relative">
                             <input
                               type="number"
@@ -3546,7 +3550,7 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                       {/* Скорость вентилятора на связующем слое */}
                       {enableOverhangBridgeFan && isVisibleAtMode('advanced', settingMode) && (
                         <div>
-                          <label className="block text-gray-300 mb-1 text-sm">{t('presetModal.supportInterfaceFanSpeed')}</label>
+                          <label className="block text-gray-300 mb-1 text-sm">{t('presetModal.supportInterfaceFanSpeed')} <InfoHint text={t('paramHints.supportInterfaceFanSpeed')} /></label>
                           <div className="relative">
                             <input
                               type="number"
@@ -3566,7 +3570,7 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
 
                       {/* Ironing fan speed */}
                       <div className={isVisibleAtMode('advanced', settingMode) ? '' : 'hidden'}>
-                        <label className="block text-gray-300 mb-1 text-sm">{t('presetModal.ironingFanSpeed')}</label>
+                        <label className="block text-gray-300 mb-1 text-sm">{t('presetModal.ironingFanSpeed')} <InfoHint text={t('paramHints.ironingFanSpeed')} /></label>
                         <div className="relative">
                           <input
                             type="number"
@@ -3587,7 +3591,7 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
 
                   {/* Вспомогательный вентилятор модели */}
                   <div>
-                    <h4 className="text-sm font-semibold text-white mb-3 pb-2 border-b border-white/10">{t('presetModal.auxiliaryFan')}</h4>
+                    <h4 className="text-sm font-semibold text-white mb-3 pb-2 border-b border-white/10">{t('presetModal.auxiliaryFan')} <InfoHint text={t('paramHints.auxiliaryFan')} /></h4>
                     
                     <div>
                       <label className="block text-gray-300 mb-1 text-sm">{t('presetModal.fanSpeedLabel')}</label>
@@ -3623,6 +3627,7 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                         <label htmlFor="enableExhaustFan" className="text-gray-300 text-sm">
                           {t('presetModal.enableExhaustFan')}
                         </label>
+                        <InfoHint text={t('paramHints.exhaustFan')} />
                       </div>
 
                       {enableExhaustFan && (
