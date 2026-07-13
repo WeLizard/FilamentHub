@@ -66,7 +66,7 @@ export const InfoHint: React.FC<InfoHintProps> = ({ text, className }) => {
           ref={popRef}
           role="tooltip"
           style={{ position: 'fixed', top: pos.top, left: pos.left, transform: 'translateX(-50%)' }}
-          className="z-[10000] w-64 max-w-[80vw] rounded-lg border border-white/15 bg-gray-900 px-3 py-2 text-xs font-normal leading-relaxed text-gray-200 shadow-xl"
+          className="z-[10000] w-64 max-w-[80vw] hyphens-auto break-words rounded-lg border border-white/15 bg-gray-900 px-3 py-2 text-xs font-normal leading-relaxed text-gray-200 shadow-xl"
         >
           {text}
         </div>,
