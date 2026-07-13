@@ -1310,6 +1310,11 @@
     "cancel": "Keep editing"
   },
   "paramHints": {
+    "adaptivePA": "Automatically tunes Pressure Advance to speed/flow from a calibration model. Removes bulges on accelerations without calibrating per speed. Beta.",
+    "adaptivePAOverhangs": "Extend adaptive Pressure Advance to overhangs too, where flow changes sharply. Beta.",
+    "adaptivePABridges": "Pressure Advance value used for bridges in adaptive mode. Bridges print at a fixed PA.",
+    "adaptivePAMeasured": "Calibration data for adaptive Pressure Advance: flow→PA pairs the model is built from. Filled in from calibration results.",
+    "adhesiveness": "Material adhesion category (for Bambu's algorithms). Affects which build surfaces are considered compatible. Optional.",
     "zHop": "Lifts the nozzle (along Z) during a retraction so it clears printed parts while travelling. 0 = no lift.",
     "deretractionSpeed": "Speed of pushing filament back (unretract) after a retraction. Usually equal to or slightly below the retraction speed.",
     "zHopType": "How the Z axis lifts on retraction: normal, spiral, or auto. Affects travel speed and Z wear.",

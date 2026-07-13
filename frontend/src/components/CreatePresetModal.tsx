@@ -2839,7 +2839,7 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
 
                     {/* Группа адгезивности (свойство материала; в Orca comDevelop → expert) */}
                     <div className={isVisibleAtMode('expert', settingMode) ? '' : 'hidden'}>
-                      <label className="block text-gray-300 mb-1 text-sm">{t('presetModal.adhesivenessCategory')}</label>
+                      <label className="block text-gray-300 mb-1 text-sm">{t('presetModal.adhesivenessCategory')} <InfoHint text={t('paramHints.adhesiveness')} /></label>
                       <input
                         type="number"
                         value={filamentAdhesivenessCategory}
@@ -3048,7 +3048,7 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                   <div className="space-y-4">
                     {/* Коэф. потока модели */}
                     <div>
-                      <label className="block text-gray-300 mb-1 text-sm">{t('presetModal.modelFlowRatio')}</label>
+                      <label className="block text-gray-300 mb-1 text-sm">{t('presetModal.modelFlowRatio')} <InfoHint text={t('paramHints.flow')} /></label>
                       <input
                         type="number"
                         value={flowRate !== 100 ? parseFloat((flowRate / 100).toFixed(3)) : 0.95}
@@ -3105,6 +3105,7 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                       <label htmlFor="adaptivePA" className="text-gray-300 text-sm">
                         {t('presetModal.enableAdaptivePA')}
                       </label>
+                      <InfoHint text={t('paramHints.adaptivePA')} />
                     </div>
 
                     {/* Включить адаптивное Pressure advance на нависаниях (beta) */}
@@ -3119,12 +3120,13 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                       <label htmlFor="adaptivePAOverhangs" className="text-gray-300 text-sm">
                         {t('presetModal.enableAdaptivePAOverhangs')}
                       </label>
+                      <InfoHint text={t('paramHints.adaptivePAOverhangs')} />
                     </div>
 
                     {/* Коэф. Pressure advance для мостов */}
                     {adaptivePressureAdvance && (
                       <div>
-                        <label className="block text-gray-300 mb-1 text-sm">{t('presetModal.paBridges')}</label>
+                        <label className="block text-gray-300 mb-1 text-sm">{t('presetModal.paBridges')} <InfoHint text={t('paramHints.adaptivePABridges')} /></label>
                         <input
                           type="number"
                           value={adaptivePABridges}
@@ -3141,7 +3143,7 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                     {/* Измеренные значения адаптивного Pressure advance (beta) */}
                     {adaptivePressureAdvance && isVisibleAtMode('expert', settingMode) && (
                       <div>
-                        <label className="block text-gray-300 mb-1 text-sm">{t('presetModal.adaptivePAMeasured')}</label>
+                        <label className="block text-gray-300 mb-1 text-sm">{t('presetModal.adaptivePAMeasured')} <InfoHint text={t('paramHints.adaptivePAMeasured')} /></label>
                         <textarea
                           value={volumetricSpeedCoefficients || ''}
                           onChange={(e) => { setVolumetricSpeedCoefficients(e.target.value); }}
