@@ -2853,7 +2853,7 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
 
                     {/* Filament ramming length — MMU-параметр (advanced) */}
                     <div className={isVisibleAtMode('advanced', settingMode) ? '' : 'hidden'}>
-                      <label className="block text-gray-300 mb-1 text-sm">{t('presetModal.filamentRammingLength')}</label>
+                      <label className="block text-gray-300 mb-1 text-sm">{t('presetModal.filamentRammingLength')} <InfoHint text={t('paramHints.multitoolRammingVolume')} /></label>
                       <div className="relative">
                         <input
                           type="number"
@@ -4138,7 +4138,7 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                     <h4 className="text-sm font-semibold text-white mb-3 pb-2 border-b border-white/10">{t('presetModal.wipeTowerParams')}</h4>
                     
                     <div>
-                      <label className="block text-gray-300 mb-1 text-sm">{t('presetModal.minPurgeVolume')}</label>
+                      <label className="block text-gray-300 mb-1 text-sm">{t('presetModal.minPurgeVolume')} <InfoHint text={t('paramHints.minPurge')} /></label>
                       <div className="relative">
                         <input
                           type="number"
@@ -4162,7 +4162,7 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                       {/* Первая строка: Начальная скорость загрузки / Скорость загрузки */}
                       <div className="grid grid-cols-2 gap-4">
                         <div>
-                          <label className="block text-gray-300 mb-1 text-sm">{t('presetModal.loadingSpeedStart')}</label>
+                          <label className="block text-gray-300 mb-1 text-sm">{t('presetModal.loadingSpeedStart')} <InfoHint text={t('paramHints.loadSpeedStart')} /></label>
                           <div className="relative">
                             <input
                               type="number"
@@ -4178,7 +4178,7 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                         </div>
 
                         <div>
-                          <label className="block text-gray-300 mb-1 text-sm">{t('presetModal.loadingSpeed')}</label>
+                          <label className="block text-gray-300 mb-1 text-sm">{t('presetModal.loadingSpeed')} <InfoHint text={t('paramHints.loadSpeed')} /></label>
                           <div className="relative">
                             <input
                               type="number"
@@ -4197,7 +4197,7 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                       {/* Вторая строка: Начальная скорость выгрузки / Скорость выгрузки */}
                       <div className="grid grid-cols-2 gap-4">
                         <div>
-                          <label className="block text-gray-300 mb-1 text-sm">{t('presetModal.unloadingSpeedStart')}</label>
+                          <label className="block text-gray-300 mb-1 text-sm">{t('presetModal.unloadingSpeedStart')} <InfoHint text={t('paramHints.unloadSpeedStart')} /></label>
                           <div className="relative">
                             <input
                               type="number"
@@ -4213,7 +4213,7 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                         </div>
 
                         <div>
-                          <label className="block text-gray-300 mb-1 text-sm">{t('presetModal.unloadingSpeed')}</label>
+                          <label className="block text-gray-300 mb-1 text-sm">{t('presetModal.unloadingSpeed')} <InfoHint text={t('paramHints.unloadSpeed')} /></label>
                           <div className="relative">
                             <input
                               type="number"
@@ -4232,7 +4232,7 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                       {/* Третья строка: Задержка после выгрузки / Количество охлаждающих движений */}
                       <div className="grid grid-cols-2 gap-4">
                         <div>
-                          <label className="block text-gray-300 mb-1 text-sm">{t('presetModal.toolchangeDelay')}</label>
+                          <label className="block text-gray-300 mb-1 text-sm">{t('presetModal.toolchangeDelay')} <InfoHint text={t('paramHints.toolchangeDelay')} /></label>
                           <div className="relative">
                             <input
                               type="number"
@@ -4248,7 +4248,7 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                         </div>
 
                         <div>
-                          <label className="block text-gray-300 mb-1 text-sm">{t('presetModal.coolingMoves')}</label>
+                          <label className="block text-gray-300 mb-1 text-sm">{t('presetModal.coolingMoves')} <InfoHint text={t('paramHints.coolingMoves')} /></label>
                           <input
                             type="number"
                             value={filamentCoolingMoves}
@@ -4264,7 +4264,7 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                       {/* Четвертая строка: Скорость первого охлаждающего движения / Скорость последнего охлаждающего движения */}
                       <div className="grid grid-cols-2 gap-4">
                         <div>
-                          <label className="block text-gray-300 mb-1 text-sm">{t('presetModal.coolingInitialSpeed')}</label>
+                          <label className="block text-gray-300 mb-1 text-sm">{t('presetModal.coolingInitialSpeed')} <InfoHint text={t('paramHints.coolingInitialSpeed')} /></label>
                           <div className="relative">
                             <input
                               type="number"
@@ -4280,7 +4280,7 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                         </div>
 
                         <div>
-                          <label className="block text-gray-300 mb-1 text-sm">{t('presetModal.coolingFinalSpeed')}</label>
+                          <label className="block text-gray-300 mb-1 text-sm">{t('presetModal.coolingFinalSpeed')} <InfoHint text={t('paramHints.coolingFinalSpeed')} /></label>
                           <div className="relative">
                             <input
                               type="number"
@@ -4299,7 +4299,7 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                       {/* Пятая строка: Скорость загрузки при утрамбовке / Расстояние утрамбовки */}
                       <div className="grid grid-cols-2 gap-4">
                         <div>
-                          <label className="block text-gray-300 mb-1 text-sm">{t('presetModal.stampingLoadSpeed')}</label>
+                          <label className="block text-gray-300 mb-1 text-sm">{t('presetModal.stampingLoadSpeed')} <InfoHint text={t('paramHints.stampingLoadSpeed')} /></label>
                           <div className="relative">
                             <input
                               type="number"
@@ -4315,7 +4315,7 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                         </div>
 
                         <div>
-                          <label className="block text-gray-300 mb-1 text-sm">{t('presetModal.stampingDistance')}</label>
+                          <label className="block text-gray-300 mb-1 text-sm">{t('presetModal.stampingDistance')} <InfoHint text={t('paramHints.stampingDistance')} /></label>
                           <div className="relative">
                             <input
                               type="number"
@@ -4350,12 +4350,13 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                         <label htmlFor="filamentMultitoolRammingExtruder" className="text-gray-300 text-sm">
                           {t('presetModal.enableMultitoolRamming')}
                         </label>
+                        <InfoHint text={t('paramHints.multitoolRamming')} />
                       </div>
 
                       {/* Объём рэмминга многоинструментального принтера / Поток рэмминга многоинструментального принтера */}
                       <div className="grid grid-cols-2 gap-4">
                         <div>
-                          <label className="block text-gray-300 mb-1 text-sm">{t('presetModal.multitoolRammingVolume')}</label>
+                          <label className="block text-gray-300 mb-1 text-sm">{t('presetModal.multitoolRammingVolume')} <InfoHint text={t('paramHints.multitoolRammingVolume')} /></label>
                           <div className="relative">
                             <input
                               type="number"
@@ -4371,7 +4372,7 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                         </div>
 
                         <div>
-                          <label className="block text-gray-300 mb-1 text-sm">{t('presetModal.multitoolRammingFlow')}</label>
+                          <label className="block text-gray-300 mb-1 text-sm">{t('presetModal.multitoolRammingFlow')} <InfoHint text={t('paramHints.multitoolRammingFlow')} /></label>
                           <div className="relative">
                             <input
                               type="number"
@@ -4396,7 +4397,7 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                     <div className="grid grid-cols-2 gap-4">
                       {/* Длина смены филамента */}
                       <div>
-                        <label className="block text-gray-300 mb-1 text-sm">{t('presetModal.filamentChangeLength')}</label>
+                        <label className="block text-gray-300 mb-1 text-sm">{t('presetModal.filamentChangeLength')} <InfoHint text={t('paramHints.filamentChangeLength')} /></label>
                         <div className="relative">
                           <input
                             type="number"
