@@ -1380,11 +1380,9 @@
     "fanSpeed": "Part cooling fan. Cools layers: vital for PLA and small parts, but harmful for ABS (delamination).",
     "maxVolumetricSpeed": "Max plastic per second the hotend can melt (mm³/s). This is the real cap on print speed.",
     "pressureAdvance": "Compensates nozzle pressure — removes blobs at corners and line start/end. Needs calibration.",
-    "tempRange": "Recommended temperature range for this material, used as a starting point in the preset.",
     "diameter": "Filament diameter. Almost always 1.75 mm; rarely 2.85 mm. Must match what's actually loaded.",
     "density": "Material density (g/cm³). Needed to compute weight and print cost from filament length.",
-    "nozzleHardness": "Material abrasiveness. Composites (carbon, glass fiber, glow) wear out a brass nozzle — use hardened steel.",
-    "drying": "Filament drying temperature and time. Wet filament causes bubbles, popping and stringing — especially nylon, PETG, TPU."
+    "nozzleHardness": "Material abrasiveness. Composites (carbon, glass fiber, glow) wear out a brass nozzle — use hardened steel."
   },
   "presetModal": {
     "errors": {
