@@ -1310,6 +1310,12 @@
     "cancel": "Keep editing"
   },
   "paramHints": {
+    "soluble": "Soluble material (PVA, BVOH): supports wash away in water instead of being broken off. Used for support interfaces in multi-material printing.",
+    "supportMaterial": "Material intended for printing supports. The slicer uses it for supports and their interface in multi-material printing.",
+    "shrinkXY": "Shrinkage compensation in the XY plane. The model is pre-scaled so it matches the target size after cooling. 100% means no compensation.",
+    "shrinkZ": "Shrinkage compensation along height (Z). Set separately from XY, since shrinkage across layers often differs from in-plane shrinkage.",
+    "softeningTemp": "Material softening temperature: above it the part starts to lose shape. Acts as a safe-chamber reference — Orca warns when it's exceeded.",
+    "idleTemp": "Nozzle temperature while idle (when the filament isn't printing, e.g. during a multi-material change). Keeps the plastic hot without letting it scorch in the nozzle.",
     "chamberTemp": "An active chamber keeps the air around the part warm. Needed for ABS/ASA/PC (less warping and delamination); usually not needed for PLA/PETG.",
     "adaptiveFlow": "The slicer automatically lowers volumetric flow on areas where the nozzle can't melt fast enough. Avoids manual tuning of the limit.",
     "extruderTemp": "Nozzle temperature while printing. Too low — weak layer bonding; too high — blobs and stringing. Start from the spool's stated range.",

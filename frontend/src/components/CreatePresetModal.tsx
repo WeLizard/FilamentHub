@@ -2819,6 +2819,7 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                       <label htmlFor="filamentSoluble" className="text-gray-300 text-sm">
                         {t('presetModal.solubleMaterial')}
                       </label>
+                      <InfoHint text={t('paramHints.soluble')} />
                     </div>
 
                     {/* Поддержка */}
@@ -2833,6 +2834,7 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                       <label htmlFor="filamentIsSupport" className="text-gray-300 text-sm">
                         {t('presetModal.supportMaterial')}
                       </label>
+                      <InfoHint text={t('paramHints.supportMaterial')} />
                     </div>
 
                     {/* Группа адгезивности (свойство материала; в Orca comDevelop → expert) */}
@@ -2940,7 +2942,7 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
 
                     {/* Компенсация усадки по XY */}
                     <div className={isVisibleAtMode('advanced', settingMode) ? '' : 'hidden'}>
-                      <label className="block text-gray-300 mb-1 text-sm">{t('presetModal.shrinkXY')}</label>
+                      <label className="block text-gray-300 mb-1 text-sm">{t('presetModal.shrinkXY')} <InfoHint text={t('paramHints.shrinkXY')} /></label>
                       <div className="relative">
                         <input
                           type="text"
@@ -2955,7 +2957,7 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
 
                     {/* Компенсация усадки по Z */}
                     <div className={isVisibleAtMode('advanced', settingMode) ? '' : 'hidden'}>
-                      <label className="block text-gray-300 mb-1 text-sm">{t('presetModal.shrinkZ')}</label>
+                      <label className="block text-gray-300 mb-1 text-sm">{t('presetModal.shrinkZ')} <InfoHint text={t('paramHints.shrinkZ')} /></label>
                       <div className="relative">
                         <input
                           type="text"
@@ -2970,7 +2972,7 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
 
                     {/* Температура размягчения */}
                     <div>
-                      <label className="block text-gray-300 mb-1 text-sm">{t('presetModal.softeningTemp')}</label>
+                      <label className="block text-gray-300 mb-1 text-sm">{t('presetModal.softeningTemp')} <InfoHint text={t('paramHints.softeningTemp')} /></label>
                       <div className="relative">
                         <input
                           type="number"
@@ -2988,7 +2990,7 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
 
                     {/* Температура ожидания */}
                     <div>
-                      <label className="block text-gray-300 mb-1 text-sm">{t('presetModal.idleTemp')}</label>
+                      <label className="block text-gray-300 mb-1 text-sm">{t('presetModal.idleTemp')} <InfoHint text={t('paramHints.idleTemp')} /></label>
                       <div className="relative">
                         <input
                           type="number"
