@@ -1310,6 +1310,8 @@
     "cancel": "Keep editing"
   },
   "paramHints": {
+    "chamberTemp": "An active chamber keeps the air around the part warm. Needed for ABS/ASA/PC (less warping and delamination); usually not needed for PLA/PETG.",
+    "adaptiveFlow": "The slicer automatically lowers volumetric flow on areas where the nozzle can't melt fast enough. Avoids manual tuning of the limit.",
     "extruderTemp": "Nozzle temperature while printing. Too low — weak layer bonding; too high — blobs and stringing. Start from the spool's stated range.",
     "extruderTempFirst": "Nozzle temperature for the first layer. Often 5–10 °C higher than normal for better bed adhesion.",
     "bedTemp": "Bed temperature — controls first-layer adhesion. Usually 50–60 °C for PLA, higher for PETG/ABS.",

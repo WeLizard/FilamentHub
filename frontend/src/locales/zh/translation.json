@@ -1307,6 +1307,8 @@
     "cancel": "继续编辑"
   },
   "paramHints": {
+    "chamberTemp": "主动式腔体保持模型周围温度。ABS/ASA/PC 需要（减少翘曲和分层）；PLA/PETG 通常不需要。",
+    "adaptiveFlow": "切片器在喷嘴来不及熔化的区域自动降低体积流量。无需手动调节上限。",
     "extruderTemp": "打印时的喷嘴温度。过低层间粘合弱，过高会拉丝和溢料。请参考料盘标注范围。",
     "extruderTempFirst": "首层喷嘴温度。通常比正常高 5–10 °C，以增强与热床的附着。",
     "bedTemp": "热床温度，决定首层附着。PLA 通常 50–60 °C，PETG/ABS 更高。",

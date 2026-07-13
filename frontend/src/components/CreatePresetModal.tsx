@@ -258,8 +258,9 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
   });
   useEffect(() => {
     safeStorage.set('fh_preset_setting_mode', settingMode);
-    // Если активная вкладка спрятана текущим режимом — вернуться на «Профиль прутка»
-    if (!isVisibleAtMode('advanced', settingMode) && (activeTab === 'override' || activeTab === 'advanced' || activeTab === 'extruder')) {
+    // Если активная вкладка спрятана текущим режимом — вернуться на «Профиль прутка».
+    // «override» (Замещение настроек/ретракт) видно и в Simple — как в OrcaSlicer.
+    if (!isVisibleAtMode('advanced', settingMode) && (activeTab === 'advanced' || activeTab === 'extruder')) {
       setActiveTab('profile');
     }
   }, [settingMode, activeTab]);
@@ -2677,34 +2678,6 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                 className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all"
               />
             </div>
-            <div>
-              <label className="block text-gray-300 mb-2 text-sm font-medium">
-                {t('presetModal.retractionLength')}
-              </label>
-              <input
-                type="number"
-                value={retractionLength}
-                onChange={(e) => { setRetractionLength(Number(e.target.value)); }}
-                min={0}
-                max={10}
-                step="0.1"
-                className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all"
-              />
-            </div>
-            <div>
-              <label className="block text-gray-300 mb-2 text-sm font-medium">
-                {t('presetModal.retractionSpeed')}
-              </label>
-              <input
-                type="number"
-                value={retractionSpeed}
-                onChange={(e) => { setRetractionSpeed(Number(e.target.value)); }}
-                min={10}
-                max={100}
-                step="1"
-                className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all"
-              />
-            </div>
           </div>
 
           {/* OrcaSlicer Settings Tabs (как в OrcaSlicer) */}
@@ -2753,7 +2726,6 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
               >
                 {t('presetModal.tabs.cooling')}
               </button>
-              {isVisibleAtMode('advanced', settingMode) && (
               <button
                 type="button"
                 onClick={() => setActiveTab('override')}
@@ -2765,7 +2737,6 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
               >
                 {t('presetModal.tabs.override')}
               </button>
-              )}
               {isVisibleAtMode('advanced', settingMode) && (
               <button
                 type="button"
@@ -3100,12 +3071,13 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                       <label htmlFor="enablePA" className="text-gray-300 text-sm">
                         {t('presetModal.enablePA')}
                       </label>
+                      <InfoHint text={t('paramHints.pressureAdvance')} />
                     </div>
 
                     {/* Коэф. Pressure advance */}
                     {enablePressureAdvance && (
                       <div>
-                        <label className="block text-gray-300 mb-1 text-sm">{t('presetModal.paCoefficient')} <InfoHint text={t('paramHints.pressureAdvance')} /></label>
+                        <label className="block text-gray-300 mb-1 text-sm">{t('presetModal.paCoefficient')}</label>
                         <input
                           type="number"
                           value={pressureAdvance}
@@ -3213,6 +3185,7 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                       <label htmlFor="enableChamber" className="text-gray-300 text-sm whitespace-nowrap">
                         {t('presetModal.enableTempControl')}
                       </label>
+                      <InfoHint text={t('paramHints.chamberTemp')} />
                     </div>
                   </div>
                 </div>
@@ -3288,6 +3261,7 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                       <label htmlFor="adaptiveVolumetricSpeed" className="text-gray-300 text-sm">
                         {t('presetModal.adaptiveVolumetricSpeed')}
                       </label>
+                      <InfoHint text={t('paramHints.adaptiveFlow')} />
                     </div>
 
                     <div>
@@ -3729,7 +3703,6 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                             />
                             <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400 pointer-events-none">mm</span>
                           </div>
-                          <p className="text-xs text-gray-500 mt-1">{t('presetModal.syncsWithBase')}</p>
                         </div>
                         <div>
                           <label className="block text-gray-300 mb-1 text-sm">{t('presetModal.retractionExtractSpeed')} <InfoHint text={t('paramHints.retractionSpeed')} /></label>
@@ -3746,7 +3719,6 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                             />
                             <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400 pointer-events-none">mm/s</span>
                           </div>
-                          <p className="text-xs text-gray-500 mt-1">{t('presetModal.syncsWithBase')}</p>
                         </div>
                       </div>
 
