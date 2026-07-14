@@ -6,7 +6,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Annotated
 
 from fastapi import APIRouter, Depends
-from sqlalchemy import func, select, update
+from sqlalchemy import delete, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.concurrency import run_in_threadpool
 
@@ -40,7 +40,7 @@ from app.schemas.brand_invite import (
     BrandInviteCreate,
     BrandInvitePublicResponse,
 )
-from app.services.email_service import send_brand_invite_email
+from app.services.email_service import send_brand_invite_email, send_brand_team_invite_email
 from app.services.qr_service import backfill_brand_qr_codes
 from app.services.slug_service import generate_unique_slug
 
@@ -59,7 +59,7 @@ def _now() -> datetime:
 
 
 def _is_active(invite: BrandInvite) -> bool:
-    if invite.accepted_at is not None:
+    if invite.accepted_at is not None or invite.revoked_at is not None:
         return False
     expires = invite.expires_at
     if expires.tzinfo is not None:
@@ -170,15 +170,26 @@ async def _build_invite(
 
 
 async def _deliver_invite(db: AsyncSession, invite: BrandInvite) -> None:
-    result = await run_in_threadpool(
-        send_brand_invite_email,
-        to=invite.email,
-        brand_name=invite.brand_name,
-        invite_url=_invite_url(invite.token),
-        site_url=settings.BASE_URL,
-        sender_profile=invite.sender_profile,
-        reply_to=_reply_to(invite),
-    )
+    if invite.purpose == "team":
+        result = await run_in_threadpool(
+            send_brand_team_invite_email,
+            to=invite.email,
+            brand_name=invite.brand_name or "FilamentHub",
+            invite_url=_invite_url(invite.token),
+            site_url=settings.BASE_URL,
+            role=invite.member_role,
+            reply_to=_reply_to(invite),
+        )
+    else:
+        result = await run_in_threadpool(
+            send_brand_invite_email,
+            to=invite.email,
+            brand_name=invite.brand_name,
+            invite_url=_invite_url(invite.token),
+            site_url=settings.BASE_URL,
+            sender_profile=invite.sender_profile,
+            reply_to=_reply_to(invite),
+        )
     invite.send_status = "sent" if result.sent else "failed"
     invite.sent_at = _now() if result.sent else None
     invite.provider_message_id = result.provider_message_id
@@ -209,6 +220,8 @@ async def get_brand_invite(
             email=_mask_email(invite.email),
             target_type=invite.target_type,
             brand_id=invite.brand_id,
+            purpose=invite.purpose,
+            member_role=invite.member_role,
             reason=ERR_BRAND_INVITE_INVALID,
         )
     return BrandInvitePublicResponse(
@@ -217,6 +230,8 @@ async def get_brand_invite(
         email=_mask_email(invite.email),
         target_type=invite.target_type,
         brand_id=invite.brand_id,
+        purpose=invite.purpose,
+        member_role=invite.member_role,
     )
 
 
@@ -252,10 +267,15 @@ async def accept_brand_invite(
         raise_error(400, ERR_BRAND_INVITE_INVALID)
     if not _is_active(invite):
         raise_error(400, ERR_BRAND_INVITE_INVALID)
-    if not secrets.compare_digest(
-        _email_domain(current_user.email),
-        _email_domain(invite.email),
-    ):
+    email_matches = (
+        secrets.compare_digest(current_user.email.strip().casefold(), invite.email)
+        if invite.purpose == "team"
+        else secrets.compare_digest(
+            _email_domain(current_user.email),
+            _email_domain(invite.email),
+        )
+    )
+    if not email_matches:
         raise_error(403, ERR_BRAND_INVITE_EMAIL_MISMATCH)
 
     # The invite target is authored by the admin and cannot be replaced by a
@@ -264,6 +284,8 @@ async def accept_brand_invite(
         raise_error(400, ERR_BRAND_INVITE_TARGET_MISSING)
     brand = await db.get(Brand, invite.brand_id) if invite.brand_id else None
     if brand is None and invite.target_type == "existing":
+        raise_error(400, ERR_BRAND_INVITE_TARGET_MISSING)
+    if brand is None and invite.purpose == "team":
         raise_error(400, ERR_BRAND_INVITE_TARGET_MISSING)
     if brand is None:
         brand_name = invite.brand_name.strip()
@@ -289,6 +311,8 @@ async def accept_brand_invite(
     )
     if organization is None and brand.organization_id is not None:
         organization = await db.get(Organization, brand.organization_id)
+    if organization is None and invite.purpose == "team":
+        raise_error(400, ERR_BRAND_INVITE_TARGET_MISSING)
     if organization is None:
         organization_slug = await generate_unique_slug(
             db=db,
@@ -304,14 +328,22 @@ async def accept_brand_invite(
         )
         db.add(organization)
         await db.flush()
+    else:
+        locked_organization_id = await db.scalar(
+            select(Organization.id)
+            .where(Organization.id == organization.id, Organization.active.is_(True))
+            .with_for_update()
+        )
+        if locked_organization_id is None:
+            raise_error(400, ERR_BRAND_INVITE_TARGET_MISSING)
     if brand.organization_id not in (None, organization.id):
         raise_error(409, ERR_BRAND_INVITE_TARGET_CONFLICT, {"brand_id": brand.id})
-
     brand.organization_id = organization.id
-    if invite.pre_verified and not brand.verified:
-        brand.name_correction_available = True
-    brand.verified = brand.verified or bool(invite.pre_verified)
-    await backfill_brand_qr_codes(brand, db)
+    if invite.purpose != "team":
+        if invite.pre_verified and not brand.verified:
+            brand.name_correction_available = True
+        brand.verified = brand.verified or bool(invite.pre_verified)
+        await backfill_brand_qr_codes(brand, db)
 
     try:
         invited_role = OrganizationMemberRole(invite.member_role)
@@ -329,23 +361,48 @@ async def accept_brand_invite(
         OrganizationMemberRole.EDITOR: 0,
         OrganizationMemberRole.OWNER: 1,
     }
+    invited_all_brands = (
+        invited_role == OrganizationMemberRole.OWNER
+        or (invite.purpose == "team" and invite.all_brands)
+    )
     if membership is None:
         membership = OrganizationMembership(
             organization_id=organization.id,
             user_id=current_user.id,
             role=invited_role,
-            all_brands=invited_role == OrganizationMemberRole.OWNER,
+            all_brands=invited_all_brands,
             active=True,
             invited_by_id=invite.invited_by_id,
         )
         db.add(membership)
         await db.flush()
     else:
+        was_active = membership.active
         membership.active = True
-        if role_rank[invited_role] > role_rank[membership.role]:
+        if not was_active:
+            # A removed member must return with the role and scope from the new
+            # invitation, not silently regain stale owner privileges.
             membership.role = invited_role
-        if membership.role == OrganizationMemberRole.OWNER:
-            membership.all_brands = True
+            membership.all_brands = invited_all_brands
+            membership.invited_by_id = invite.invited_by_id
+            await db.execute(
+                delete(OrganizationBrandAccess).where(
+                    OrganizationBrandAccess.membership_id == membership.id
+                )
+            )
+        else:
+            if role_rank[invited_role] > role_rank[membership.role]:
+                membership.role = invited_role
+            if membership.role == OrganizationMemberRole.OWNER:
+                membership.all_brands = True
+            elif invite.purpose == "team" and invite.all_brands:
+                membership.all_brands = True
+        if membership.all_brands:
+            await db.execute(
+                delete(OrganizationBrandAccess).where(
+                    OrganizationBrandAccess.membership_id == membership.id
+                )
+            )
 
     if not membership.all_brands:
         access = await db.scalar(
@@ -367,7 +424,7 @@ async def accept_brand_invite(
     invite.accepted_at = _now()
     invite.accepted_by_id = current_user.id
 
-    if invite.batch_id:
+    if invite.batch_id and invite.purpose != "team":
         await db.execute(
             update(BrandInvite)
             .where(

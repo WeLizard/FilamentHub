@@ -4,11 +4,17 @@ from sqlalchemy import and_, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from app.core.errors import (
+    ERR_OWNERSHIP_TRANSFER_REQUIRED,
+    ERR_REPRESENTATION_RELEASE_REQUIRED,
+    raise_error,
+)
 from app.models.brand import Brand
 from app.models.brand_request import BrandRequest, BrandRequestStatus
 from app.models.filament_review import FilamentReview
+from app.models.organization import Organization, OrganizationMemberRole, OrganizationMembership
 from app.models.preset import Preset, PresetModerationStatus
-from app.models.user import User
+from app.models.user import User, UserRole
 from app.models.user_saved_preset import UserSavedPreset
 
 
@@ -75,27 +81,49 @@ async def get_deletion_stats(user_id: int, db: AsyncSession) -> dict:
     )
     brand_requests_count = brand_requests_result.scalar() or 0
 
-    # Проверка, является ли пользователь представителем бренда
-    user_result = await db.execute(
-        select(User).where(User.id == user_id).options(selectinload(User.presets))
-    )
-    user = user_result.scalar_one_or_none()
-
-    is_brand_representative = user.brand_id is not None if user else False
-    brand_other_representatives_count = 0
-
-    if is_brand_representative and user:
-        # Подсчет других представителей бренда
-        other_reps_result = await db.execute(
-            select(func.count(User.id)).where(
-                and_(
-                    User.brand_id == user.brand_id,
-                    User.id != user_id,
-                    User.active == True
-                )
+    memberships = (
+        await db.scalars(
+            select(OrganizationMembership).where(
+                OrganizationMembership.user_id == user_id,
+                OrganizationMembership.active.is_(True),
             )
         )
-        brand_other_representatives_count = other_reps_result.scalar() or 0
+    ).all()
+    is_brand_representative = bool(memberships)
+    organization_memberships_count = len(memberships)
+    owned_organizations_count = sum(
+        membership.role == OrganizationMemberRole.OWNER for membership in memberships
+    )
+    sole_owner_organizations_count = 0
+    transfer_required = False
+    brand_other_representatives_count = 0
+    for membership in memberships:
+        other_members = int(
+            await db.scalar(
+                select(func.count(OrganizationMembership.id)).where(
+                    OrganizationMembership.organization_id == membership.organization_id,
+                    OrganizationMembership.active.is_(True),
+                    OrganizationMembership.id != membership.id,
+                )
+            )
+            or 0
+        )
+        brand_other_representatives_count += other_members
+        if membership.role == OrganizationMemberRole.OWNER:
+            other_owners = int(
+                await db.scalar(
+                    select(func.count(OrganizationMembership.id)).where(
+                        OrganizationMembership.organization_id == membership.organization_id,
+                        OrganizationMembership.active.is_(True),
+                        OrganizationMembership.role == OrganizationMemberRole.OWNER,
+                        OrganizationMembership.id != membership.id,
+                    )
+                )
+                or 0
+            )
+            if other_owners == 0:
+                sole_owner_organizations_count += 1
+                transfer_required = transfer_required or other_members > 0
 
     return {
         "presets_count": presets_count,
@@ -107,13 +135,20 @@ async def get_deletion_stats(user_id: int, db: AsyncSession) -> dict:
         "brand_requests_count": brand_requests_count,
         "is_brand_representative": is_brand_representative,
         "brand_other_representatives_count": brand_other_representatives_count,
+        "organization_memberships_count": organization_memberships_count,
+        "owned_organizations_count": owned_organizations_count,
+        "sole_owner_organizations_count": sole_owner_organizations_count,
+        "ownership_transfer_required": transfer_required,
+        "representation_release_available": (
+            sole_owner_organizations_count > 0 and not transfer_required
+        ),
     }
 
 
 async def delete_user_account(
     user: User,
     delete_reviews: bool,
-    delete_brand_if_sole_representative: bool,
+    release_brand_representation: bool,
     db: AsyncSession,
 ) -> None:
     """
@@ -122,11 +157,74 @@ async def delete_user_account(
     Args:
         user: Пользователь для удаления
         delete_reviews: True - удалить отзывы полностью, False - анонимизировать
-        delete_brand_if_sole_representative: True - удалить бренд, если единственный представитель,
-            False - передать админу
+        release_brand_representation: снять официальное представительство у организаций,
+            где пользователь является единственным участником-owner
         db: Сессия базы данных
     """
     user_id = user.id
+
+    memberships = (
+        await db.scalars(
+            select(OrganizationMembership)
+            .where(
+                OrganizationMembership.user_id == user_id,
+                OrganizationMembership.active.is_(True),
+            )
+        )
+    ).all()
+    organization_ids = sorted({membership.organization_id for membership in memberships})
+    if organization_ids:
+        # Serialize deletion with role changes/transfers so two owners cannot
+        # concurrently leave the same organization without a successor.
+        await db.execute(
+            select(Organization.id)
+            .where(Organization.id.in_(organization_ids))
+            .order_by(Organization.id)
+            .with_for_update()
+        )
+        memberships = (
+            await db.scalars(
+                select(OrganizationMembership)
+                .where(
+                    OrganizationMembership.user_id == user_id,
+                    OrganizationMembership.active.is_(True),
+                )
+                .order_by(OrganizationMembership.organization_id)
+                .with_for_update()
+            )
+        ).all()
+    release_organization_ids: set[int] = set()
+    for membership in memberships:
+        if membership.role != OrganizationMemberRole.OWNER:
+            continue
+        other_owners = int(
+            await db.scalar(
+                select(func.count(OrganizationMembership.id)).where(
+                    OrganizationMembership.organization_id == membership.organization_id,
+                    OrganizationMembership.active.is_(True),
+                    OrganizationMembership.role == OrganizationMemberRole.OWNER,
+                    OrganizationMembership.id != membership.id,
+                )
+            )
+            or 0
+        )
+        if other_owners > 0:
+            continue
+        other_members = int(
+            await db.scalar(
+                select(func.count(OrganizationMembership.id)).where(
+                    OrganizationMembership.organization_id == membership.organization_id,
+                    OrganizationMembership.active.is_(True),
+                    OrganizationMembership.id != membership.id,
+                )
+            )
+            or 0
+        )
+        if other_members > 0:
+            raise_error(409, ERR_OWNERSHIP_TRANSFER_REQUIRED)
+        if not release_brand_representation:
+            raise_error(409, ERR_REPRESENTATION_RELEASE_REQUIRED)
+        release_organization_ids.add(membership.organization_id)
 
     # 1. Обработка пресетов
     presets_result = await db.execute(
@@ -197,37 +295,22 @@ async def delete_user_account(
             await db.delete(request)
         # Одобренные заявки оставляем для истории (можно добавить флаг archived)
 
-    # 5. Обработка связи с брендом
-    if user.brand_id:
-        # Проверяем, есть ли другие активные представители
-        other_reps_result = await db.execute(
-            select(func.count(User.id)).where(
-                and_(
-                    User.brand_id == user.brand_id,
-                    User.id != user_id,
-                    User.active == True
-                )
+    # 5. Membership lifecycle. Public brands and their catalog content are
+    # never deleted with an account. Explicit release only removes the
+    # official verified status; existing QR identifiers stay untouched.
+    if release_organization_ids:
+        release_brands = (
+            await db.scalars(
+                select(Brand).where(Brand.organization_id.in_(release_organization_ids))
             )
-        )
-        other_reps_count = other_reps_result.scalar() or 0
-
-        if other_reps_count == 0:
-            # Единственный представитель
-            if delete_brand_if_sole_representative:
-                # Удаляем бренд (cascade удалит все связанные филаменты)
-                brand_result = await db.execute(
-                    select(Brand).where(Brand.id == user.brand_id)
-                )
-                brand = brand_result.scalar_one_or_none()
-                if brand:
-                    await db.delete(brand)
-            else:
-                # Передаем админу - оставляем бренд, но отвязываем пользователя
-                # Можно добавить флаг в Brand: managed_by_admin
-                pass
-
-        # Отвязываем пользователя от бренда (роль не меняем)
-        user.brand_id = None
+        ).all()
+        for brand in release_brands:
+            brand.verified = False
+    for membership in memberships:
+        membership.active = False
+    user.brand_id = None
+    if user.role == UserRole.BRAND:
+        user.role = UserRole.USER
 
     # 6. Деактивация аккаунта (мягкое удаление)
     # Устанавливаем active=False вместо полного удаления
@@ -240,4 +323,3 @@ async def delete_user_account(
     user.password_hash = ""  # Очищаем пароль
 
     await db.commit()
-

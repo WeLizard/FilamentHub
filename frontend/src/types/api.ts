@@ -155,6 +155,8 @@ export interface BrandInvitePublic {
   email: string | null;
   target_type: 'new' | 'existing' | null;
   brand_id: number | null;
+  purpose: 'representative' | 'team' | null;
+  member_role: 'owner' | 'editor' | null;
   reason: string | null;
 }
 
@@ -167,6 +169,8 @@ export interface BrandInviteAdmin {
   brand_id: number | null;
   organization_id: number | null;
   member_role: 'owner' | 'editor';
+  purpose: 'representative' | 'team';
+  all_brands: boolean;
   sender_profile: 'partnerships' | 'pr' | 'transactional';
   batch_id: string | null;
   send_status: 'pending' | 'sent' | 'failed';
@@ -174,6 +178,7 @@ export interface BrandInviteAdmin {
   pre_verified: boolean;
   expires_at: string;
   accepted_at: string | null;
+  revoked_at: string | null;
   created_at: string;
   invite_url: string | null;
 }
@@ -446,6 +451,58 @@ export interface AccountDeletionStats {
   brand_requests_count: number;
   is_brand_representative: boolean;
   brand_other_representatives_count: number;
+  organization_memberships_count: number;
+  owned_organizations_count: number;
+  sole_owner_organizations_count: number;
+  ownership_transfer_required: boolean;
+  representation_release_available: boolean;
+}
+
+export type BrandTeamRole = 'owner' | 'editor';
+
+export interface BrandTeamMember {
+  membership_id: number;
+  user_id: number;
+  username: string;
+  email: string;
+  role: BrandTeamRole;
+  all_brands: boolean;
+  brand_ids: number[];
+  joined_at: string;
+  is_current_user: boolean;
+}
+
+export interface BrandTeamInvite {
+  id: number;
+  email: string;
+  role: BrandTeamRole;
+  all_brands: boolean;
+  brand_id: number;
+  status: 'pending' | 'sent' | 'failed' | 'accepted' | 'expired' | 'revoked';
+  invite_url: string;
+  expires_at: string;
+  accepted_at: string | null;
+  revoked_at: string | null;
+  send_error: string | null;
+}
+
+export interface BrandTeamJoinRequest {
+  id: number;
+  user_id: number;
+  username: string;
+  email: string;
+  message: string | null;
+  created_at: string;
+}
+
+export interface BrandTeamWorkspace {
+  organization_id: number;
+  organization_name: string;
+  current_role: BrandTeamRole;
+  can_manage_team: boolean;
+  members: BrandTeamMember[];
+  pending_invites: BrandTeamInvite[];
+  pending_join_requests: BrandTeamJoinRequest[];
 }
 
 export interface Token {

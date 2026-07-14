@@ -4,7 +4,7 @@
 always comes from an active organization membership (or the global admin role).
 """
 
-from sqlalchemy import or_, select
+from sqlalchemy import delete, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.brand import Brand
@@ -56,6 +56,12 @@ async def grant_brand_owner_membership(
         db.add(organization)
         await db.flush()
         brand.organization_id = organization.id
+    else:
+        await db.execute(
+            select(Organization.id)
+            .where(Organization.id == organization.id)
+            .with_for_update()
+        )
 
     membership = await db.scalar(
         select(OrganizationMembership)
@@ -86,6 +92,72 @@ async def grant_brand_owner_membership(
     if user.role == UserRole.USER:
         user.role = UserRole.BRAND
 
+    await db.flush()
+    return organization, membership
+
+
+async def grant_brand_editor_membership(
+    db: AsyncSession,
+    *,
+    brand: Brand,
+    user: User,
+    granted_by_id: int | None = None,
+) -> tuple[Organization, OrganizationMembership]:
+    """Grant editor access to one brand in an already owned organization."""
+    if brand.organization_id is None:
+        raise ValueError("Brand organization is required for an editor membership")
+    organization = await db.get(Organization, brand.organization_id)
+    if organization is None or not organization.active:
+        raise ValueError("Active brand organization is required for an editor membership")
+
+    await db.execute(
+        select(Organization.id)
+        .where(Organization.id == organization.id)
+        .with_for_update()
+    )
+    membership = await db.scalar(
+        select(OrganizationMembership)
+        .where(
+            OrganizationMembership.organization_id == organization.id,
+            OrganizationMembership.user_id == user.id,
+        )
+        .with_for_update()
+    )
+    if membership is None:
+        membership = OrganizationMembership(
+            organization_id=organization.id,
+            user_id=user.id,
+            role=OrganizationMemberRole.EDITOR,
+            all_brands=False,
+            active=True,
+            invited_by_id=granted_by_id,
+        )
+        db.add(membership)
+        await db.flush()
+    elif not membership.active:
+        membership.role = OrganizationMemberRole.EDITOR
+        membership.all_brands = False
+        membership.active = True
+        membership.invited_by_id = granted_by_id
+        await db.execute(
+            delete(OrganizationBrandAccess).where(
+                OrganizationBrandAccess.membership_id == membership.id
+            )
+        )
+
+    if membership.role != OrganizationMemberRole.OWNER and not membership.all_brands:
+        access = await db.scalar(
+            select(OrganizationBrandAccess).where(
+                OrganizationBrandAccess.membership_id == membership.id,
+                OrganizationBrandAccess.brand_id == brand.id,
+            )
+        )
+        if access is None:
+            db.add(OrganizationBrandAccess(membership_id=membership.id, brand_id=brand.id))
+
+    user.brand_id = brand.id
+    if user.role == UserRole.USER:
+        user.role = UserRole.BRAND
     await db.flush()
     return organization, membership
 

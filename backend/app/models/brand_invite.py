@@ -40,6 +40,10 @@ class BrandInvite(Base):
     member_role: Mapped[str] = mapped_column(
         String(16), default="owner", server_default="owner"
     )
+    purpose: Mapped[str] = mapped_column(
+        String(24), default="representative", server_default="representative", index=True
+    )
+    all_brands: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
     pre_verified: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     sender_profile: Mapped[str] = mapped_column(
         String(32), default="partnerships", server_default="partnerships"
@@ -58,6 +62,7 @@ class BrandInvite(Base):
     invited_by_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
     accepted_by_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
     accepted_at: Mapped[datetime | None] = mapped_column(nullable=True)
+    revoked_at: Mapped[datetime | None] = mapped_column(nullable=True)
     expires_at: Mapped[datetime] = mapped_column(nullable=False)
 
     created_at: Mapped[datetime] = mapped_column(default=func.now(), server_default=func.now())

@@ -36,6 +36,7 @@ import {
   Upload,
   Info,
   ChevronDown,
+  Users,
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { authAPI, brandsAPI, filamentsAPI, brandRequestsAPI, presetsAPI, proofFilesAPI, qrAPI } from '../api/client';
@@ -55,6 +56,7 @@ const CreatePresetModal = lazy(() =>
 import { PresetSyncToggle } from '../components/PresetSyncToggle';
 import { Dropdown } from '../components/Dropdown';
 import { FilamentPreview } from '../components/FilamentPreview';
+import { BrandTeamPanel } from '../components/BrandTeamPanel';
 import type { Filament, FilamentAvailability, Brand, BrandRequest, Preset } from '../types/api';
 import type { AxiosError } from 'axios';
 
@@ -68,7 +70,7 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({ onBack, init
   const { user, refreshUser } = useAuth();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
-  const [brandTab, setBrandTab] = useState<'materials' | 'presets' | 'qr' | 'analytics' | 'usage'>('materials');
+  const [brandTab, setBrandTab] = useState<'materials' | 'presets' | 'qr' | 'analytics' | 'usage' | 'team'>('materials');
   const [materialsViewMode, setMaterialsViewMode] = useState<'grid' | 'list'>('grid');
   const [isCreateFilamentModalOpen, setIsCreateFilamentModalOpen] = useState(false);
   const [isCreatePresetModalOpen, setIsCreatePresetModalOpen] = useState(false);
@@ -557,18 +559,20 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({ onBack, init
         )}
 
         {/* Tabs */}
-        <div className="flex justify-center space-x-2 mt-4">
+        <div className="-mx-4 mt-4 overflow-x-auto px-4 pb-2 md:mx-0 md:px-0">
+          <div className="flex w-max min-w-full justify-start gap-2 md:justify-center">
           {([
             { id: 'materials', label: t('brandProfile.tabs.materials'), icon: Package },
             { id: 'presets', label: t('brandProfile.tabs.presets'), icon: Settings },
             { id: 'qr', label: t('brandProfile.tabs.qr'), icon: QrCode },
             { id: 'analytics', label: t('brandProfile.tabs.analytics'), icon: BarChart3 },
             { id: 'usage', label: t('brandProfile.tabs.usage'), icon: TrendingUp },
+            { id: 'team', label: t('brandProfile.tabs.team'), icon: Users },
           ] as const).map((tab) => (
             <button
               key={tab.id}
               onClick={() => setBrandTab(tab.id)}
-              className={`flex items-center space-x-2 px-4 py-2 rounded-lg transition-all ${
+              className={`flex shrink-0 items-center space-x-2 whitespace-nowrap rounded-lg px-4 py-2 transition-all ${
                 brandTab === tab.id
                   ? 'bg-purple-600 text-white shadow-lg shadow-purple-500/25'
                   : 'text-gray-300 hover:text-white hover:bg-white/10'
@@ -578,6 +582,7 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({ onBack, init
               <span>{tab.label}</span>
             </button>
           ))}
+          </div>
         </div>
       </div>
 
@@ -1104,6 +1109,8 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({ onBack, init
           </div>
         </div>
       )}
+
+      {brandTab === 'team' && <BrandTeamPanel brandId={brandData.id} />}
 
       {/* Create/Edit Filament Modal */}
       <CreateFilamentModal

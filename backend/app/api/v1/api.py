@@ -7,6 +7,7 @@ from app.api.v1.endpoints import (
     auth,
     brand_invites,
     brand_requests,
+    brand_team,
     brands,
     calculator,
     catalog_bundles,
@@ -44,6 +45,7 @@ api_router.include_router(brand_invites.router)
 api_router.include_router(brand_invites.admin_router)
 api_router.include_router(devices.router)
 api_router.include_router(brand_requests.router)
+api_router.include_router(brand_team.router)
 api_router.include_router(filaments.router)
 api_router.include_router(filament_lines.router)
 api_router.include_router(filament_import.router)

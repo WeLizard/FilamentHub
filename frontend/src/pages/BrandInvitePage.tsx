@@ -34,6 +34,8 @@ export function BrandInvitePage() {
         email: null,
         target_type: null,
         brand_id: null,
+        purpose: null,
+        member_role: null,
         reason: null,
       }))
       .finally(() => active && setLoading(false));
@@ -57,7 +59,7 @@ export function BrandInvitePage() {
     }
   };
 
-  const perks = [
+  const perks = invite?.purpose === 'team' ? [] : [
     { icon: Layers, text: t('brandInvite.perkCatalog') },
     { icon: Upload, text: t('brandInvite.perkImport') },
     { icon: QrCode, text: t('brandInvite.perkQr') },
@@ -88,8 +90,14 @@ export function BrandInvitePage() {
           </div>
         ) : (
           <div>
-            <h2 className="text-2xl font-bold text-white mb-2 text-center">{t('brandInvite.title')}</h2>
-            <p className="text-gray-300 mb-5 text-center">{t('brandInvite.subtitle')}</p>
+            <h2 className="text-2xl font-bold text-white mb-2 text-center">
+              {t(invite.purpose === 'team' ? 'brandInvite.teamTitle' : 'brandInvite.title')}
+            </h2>
+            <p className="text-gray-300 mb-5 text-center">
+              {t(invite.purpose === 'team' ? 'brandInvite.teamSubtitle' : 'brandInvite.subtitle', {
+                role: t(`brandTeam.roles.${invite.member_role ?? 'editor'}`),
+              })}
+            </p>
 
             <div className="mb-6 rounded-xl border border-purple-400/25 bg-purple-400/10 px-4 py-3">
               <div className="flex items-center gap-3">
@@ -105,7 +113,7 @@ export function BrandInvitePage() {
               </div>
               {invite.email && (
                 <p className="mt-3 text-xs leading-5 text-gray-400">
-                  {t('brandInvite.emailHint', { email: invite.email })}
+                  {t(invite.purpose === 'team' ? 'brandInvite.teamEmailHint' : 'brandInvite.emailHint', { email: invite.email })}
                 </p>
               )}
             </div>

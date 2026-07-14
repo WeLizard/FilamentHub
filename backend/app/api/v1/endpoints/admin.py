@@ -55,6 +55,7 @@ from app.db.session import get_db
 from app.models.brand import Brand
 from app.models.brand_request import BrandRequest, BrandRequestStatus
 from app.models.notification import NotificationType
+from app.models.organization import OrganizationMemberRole, OrganizationMembership
 from app.models.preset import Preset, PresetModerationStatus
 from app.models.printer import Printer
 from app.models.printer_request import PrinterRequest, PrinterRequestStatus
@@ -149,6 +150,7 @@ from app.services.notification_service import (
     notify_brand_verified,
 )
 from app.services.organization_access import (
+    grant_brand_editor_membership,
     grant_brand_owner_membership,
     revoke_brand_membership,
 )
@@ -1078,16 +1080,39 @@ async def update_brand_request(
             brand = request.brand or await db.get(Brand, request.brand_id)
             if not brand:
                 raise_error(status.HTTP_404_NOT_FOUND, ERR_BRAND_NOT_FOUND)
-            if not brand.verified:
-                brand.name_correction_available = True
-            brand.verified = True
-            await grant_brand_owner_membership(
-                db,
-                brand=brand,
-                user=user,
-                granted_by_id=admin.id,
-            )
-            await backfill_brand_qr_codes(brand, db)
+            active_owner_exists = False
+            if brand.verified and brand.organization_id is not None:
+                active_owner_exists = bool(
+                    await db.scalar(
+                        select(OrganizationMembership.id)
+                        .where(
+                            OrganizationMembership.organization_id == brand.organization_id,
+                            OrganizationMembership.active.is_(True),
+                            OrganizationMembership.role == OrganizationMemberRole.OWNER,
+                        )
+                        .limit(1)
+                    )
+                )
+            if active_owner_exists:
+                # A JOIN request to an already represented brand is a team
+                # membership, even when a FilamentHub admin moderates it.
+                await grant_brand_editor_membership(
+                    db,
+                    brand=brand,
+                    user=user,
+                    granted_by_id=admin.id,
+                )
+            else:
+                if not brand.verified:
+                    brand.name_correction_available = True
+                brand.verified = True
+                await grant_brand_owner_membership(
+                    db,
+                    brand=brand,
+                    user=user,
+                    granted_by_id=admin.id,
+                )
+                await backfill_brand_qr_codes(brand, db)
 
         elif request.request_type == BrandRequestType.CREATE:
             # Для CREATE: создаем новый бренд и привязываем пользователя

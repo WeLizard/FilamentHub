@@ -269,9 +269,14 @@ class AccountDeleteRequest(BaseModel):
         default=False,
         description="Полностью удалить отзывы (True) или анонимизировать (False)"
     )
-    delete_brand_if_sole_representative: bool = Field(
+    release_brand_representation: bool = Field(
         default=False,
-        description="Удалить бренд, если пользователь единственный представитель (True) или передать админу (False)"
+        description="Снять официальное представительство, сохранив бренд, каталог и QR"
+    )
+    delete_brand_if_sole_representative: bool | None = Field(
+        default=None,
+        description="Deprecated compatibility alias for release_brand_representation",
+        deprecated=True,
     )
     password_confirm: str = Field(
         ...,
@@ -291,6 +296,11 @@ class AccountDeletionStats(BaseModel):
     brand_requests_count: int = Field(description="Количество заявок на верификацию бренда")
     is_brand_representative: bool = Field(description="Является ли пользователь представителем бренда")
     brand_other_representatives_count: int = Field(description="Количество других представителей бренда (если есть)")
+    organization_memberships_count: int = 0
+    owned_organizations_count: int = 0
+    sole_owner_organizations_count: int = 0
+    ownership_transfer_required: bool = False
+    representation_release_available: bool = False
 
 
 class ForgotPasswordRequest(BaseModel):

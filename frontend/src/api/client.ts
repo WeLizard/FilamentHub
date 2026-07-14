@@ -2,7 +2,7 @@
 
 import axios from 'axios';
 import type { InternalAxiosRequestConfig } from 'axios';
-import type { AccessibleBrand, Brand, BrandUsage, BrandRequest, BrandRequestStatus, Filament, FilamentLine, FilamentImportResult, FilamentPalettePayload, BrandInvitePublic, BrandInviteAdmin, BrandInviteAcceptResult, FilamentAvailability, FilamentVisualSettings, FilamentReview, FilamentRatingStats, Notification, NotificationListResponse, Preset, RecommendedPreset, RecommendedForPrinterResponse, Printer, PrinterProfile, PrintProfile, PrinterRequest, User, Token, RefreshTokenRequest, RefreshTokenResponse, ListResponse, AccountDeletionStats, UserSavedPreset, CalculatorEstimateRequest, CalculatorEstimateResponse, CalculatorProfileResponse, CalculatorProfileUpdate, Feedback, FeedbackListResponse, FeedbackType, CompatiblePrinter, CompatibleFilament, DownloadVersion, DownloadVersionsResponse, WikiCategory, WikiCategoryListResponse, WikiArticle, WikiArticleListResponse, WikiFeedbackStats, WikiFeedbackCreate, WikiFeedback } from '../types/api';
+import type { AccessibleBrand, Brand, BrandUsage, BrandRequest, BrandRequestStatus, BrandTeamInvite, BrandTeamRole, BrandTeamWorkspace, Filament, FilamentLine, FilamentImportResult, FilamentPalettePayload, BrandInvitePublic, BrandInviteAdmin, BrandInviteAcceptResult, FilamentAvailability, FilamentVisualSettings, FilamentReview, FilamentRatingStats, Notification, NotificationListResponse, Preset, RecommendedPreset, RecommendedForPrinterResponse, Printer, PrinterProfile, PrintProfile, PrinterRequest, User, Token, RefreshTokenRequest, RefreshTokenResponse, ListResponse, AccountDeletionStats, UserSavedPreset, CalculatorEstimateRequest, CalculatorEstimateResponse, CalculatorProfileResponse, CalculatorProfileUpdate, Feedback, FeedbackListResponse, FeedbackType, CompatiblePrinter, CompatibleFilament, DownloadVersion, DownloadVersionsResponse, WikiCategory, WikiCategoryListResponse, WikiArticle, WikiArticleListResponse, WikiFeedbackStats, WikiFeedbackCreate, WikiFeedback } from '../types/api';
 import { getCsrfToken, getRefreshToken, getToken, isCookieAuthMode, isJwtAuthMode, isOrcaEmbedded, removeToken, setToken, shouldPersistTokensLocally } from '../utils/auth';
 import { isPluginEmbed, reportPluginSessionToPlugin } from '../utils/pluginBridge';
 import { downloadBlob } from '../utils/download';
@@ -334,7 +334,7 @@ export const authAPI = {
 
   deleteAccount: async (data: { 
     delete_reviews: boolean; 
-    delete_brand_if_sole_representative: boolean; 
+    release_brand_representation: boolean;
     password_confirm: string;
   }) => {
     await api.delete('/auth/me', {
@@ -392,6 +392,57 @@ export const authAPI = {
   }) => {
     const response = await api.patch<User>('/auth/me/username', data);
     return response.data;
+  },
+};
+
+export const brandTeamAPI = {
+  get: async (brandId: number): Promise<BrandTeamWorkspace> => {
+    const response = await api.get<BrandTeamWorkspace>(`/brands/${brandId}/team`);
+    return response.data;
+  },
+
+  invite: async (brandId: number, payload: {
+    email: string;
+    role: BrandTeamRole;
+    all_brands: boolean;
+    send_email: boolean;
+  }): Promise<BrandTeamInvite> => {
+    const response = await api.post<BrandTeamInvite>(`/brands/${brandId}/team/invites`, payload);
+    return response.data;
+  },
+
+  revokeInvite: async (brandId: number, inviteId: number): Promise<void> => {
+    await api.delete(`/brands/${brandId}/team/invites/${inviteId}`);
+  },
+
+  updateMember: async (brandId: number, membershipId: number, payload: {
+    role: BrandTeamRole;
+    all_brands: boolean;
+    brand_ids: number[];
+  }): Promise<void> => {
+    await api.patch(`/brands/${brandId}/team/members/${membershipId}`, payload);
+  },
+
+  removeMember: async (brandId: number, membershipId: number): Promise<void> => {
+    await api.delete(`/brands/${brandId}/team/members/${membershipId}`);
+  },
+
+  transferOwnership: async (brandId: number, targetMembershipId: number): Promise<void> => {
+    await api.post(`/brands/${brandId}/team/transfer`, {
+      target_membership_id: targetMembershipId,
+    });
+  },
+
+  decideJoinRequest: async (
+    brandId: number,
+    requestId: number,
+    status: 'approved' | 'rejected',
+    rejectionReason?: string,
+  ): Promise<void> => {
+    await api.patch(`/brands/${brandId}/team/join-requests/${requestId}`, {
+      status,
+      rejection_reason: rejectionReason,
+    });
   },
 };
 

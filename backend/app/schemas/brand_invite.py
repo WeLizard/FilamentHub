@@ -67,6 +67,8 @@ class BrandInviteAdminResponse(BaseModel):
     brand_id: int | None = None
     organization_id: int | None = None
     member_role: str
+    purpose: str
+    all_brands: bool
     sender_profile: str
     batch_id: str | None = None
     send_status: str
@@ -74,6 +76,7 @@ class BrandInviteAdminResponse(BaseModel):
     pre_verified: bool
     expires_at: datetime
     accepted_at: datetime | None = None
+    revoked_at: datetime | None = None
     created_at: datetime
     invite_url: str | None = None
 
@@ -86,6 +89,8 @@ class BrandInvitePublicResponse(BaseModel):
     email: str | None = None
     target_type: str | None = None
     brand_id: int | None = None
+    purpose: str | None = None
+    member_role: str | None = None
     reason: str | None = None  # ERR-код, если невалиден
 
 

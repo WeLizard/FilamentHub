@@ -30,6 +30,7 @@ from app.core.errors import (
 from app.db.session import get_db
 from app.models.brand import Brand
 from app.models.brand_request import BrandRequest, BrandRequestStatus, BrandRequestType
+from app.models.organization import OrganizationMemberRole, OrganizationMembership
 from app.models.user import User, UserRole
 from app.schemas.brand_request import (
     BrandRequestCreate,
@@ -76,16 +77,24 @@ async def create_brand_request(
         if not brand:
             raise_error(status.HTTP_404_NOT_FOUND, ERR_BRAND_NOT_FOUND)
 
-        # Проверяем, есть ли у бренда сотрудники (пользователи с brand_id = brand.id)
-        from app.models.user import User
-        employees_count_result = await db.execute(
-            select(func.count(User.id)).where(User.brand_id == brand.id)
-        )
-        employees_count = employees_count_result.scalar() or 0
-        has_employees = employees_count > 0
+        # У verified-бренда с действующим owner это запрос в команду. Если owner
+        # отсутствует, сохраняется полный первичный claim через FilamentHub admin.
+        owners_count = 0
+        if brand.organization_id is not None:
+            owners_count = int(
+                await db.scalar(
+                    select(func.count(OrganizationMembership.id)).where(
+                        OrganizationMembership.organization_id == brand.organization_id,
+                        OrganizationMembership.active.is_(True),
+                        OrganizationMembership.role == OrganizationMemberRole.OWNER,
+                    )
+                )
+                or 0
+            )
+        has_owner = owners_count > 0
 
         # Если бренд не верифицирован ИЛИ у бренда нет сотрудников - требуем полную заявку как для CREATE
-        if not brand.verified or not has_employees:
+        if not brand.verified or not has_owner:
             # Нормализуем URL сайта перед проверкой
             normalized_website = None
             if data.company_website:

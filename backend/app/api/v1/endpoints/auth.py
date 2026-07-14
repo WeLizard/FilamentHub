@@ -941,7 +941,10 @@ async def delete_account(
     await delete_user_account(
         user=current_user,
         delete_reviews=data.delete_reviews,
-        delete_brand_if_sole_representative=data.delete_brand_if_sole_representative,
+        release_brand_representation=(
+            data.release_brand_representation
+            or bool(data.delete_brand_if_sole_representative)
+        ),
         db=db,
     )
 

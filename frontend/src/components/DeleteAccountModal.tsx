@@ -25,7 +25,7 @@ export const DeleteAccountModal: React.FC<DeleteAccountModalProps> = ({ isOpen, 
 
   const [password, setPassword] = useState('');
   const [deleteReviews, setDeleteReviews] = useState(false);
-  const [deleteBrandIfSole, setDeleteBrandIfSole] = useState(false);
+  const [releaseBrandRepresentation, setReleaseBrandRepresentation] = useState(false);
   const [confirmText, setConfirmText] = useState('');
   const [formError, setFormError] = useState<string | null>(null);
 
@@ -42,7 +42,7 @@ export const DeleteAccountModal: React.FC<DeleteAccountModalProps> = ({ isOpen, 
   const deleteAccountMutation = useMutation({
     mutationFn: (data: {
       delete_reviews: boolean;
-      delete_brand_if_sole_representative: boolean;
+      release_brand_representation: boolean;
       password_confirm: string;
     }) => authAPI.deleteAccount(data),
     onSuccess: async () => {
@@ -73,7 +73,7 @@ export const DeleteAccountModal: React.FC<DeleteAccountModalProps> = ({ isOpen, 
 
     deleteAccountMutation.mutate({
       delete_reviews: deleteReviews,
-      delete_brand_if_sole_representative: deleteBrandIfSole,
+      release_brand_representation: releaseBrandRepresentation,
       password_confirm: user?.has_password ? password : '',
     });
   };
@@ -201,21 +201,28 @@ export const DeleteAccountModal: React.FC<DeleteAccountModalProps> = ({ isOpen, 
             </div>
 
             {/* Опция для бренда */}
-            {stats?.is_brand_representative && stats.brand_other_representatives_count === 0 && (
+            {stats?.ownership_transfer_required && (
+              <div className="rounded-xl border border-amber-400/30 bg-amber-400/10 p-4 text-sm text-amber-100">
+                <p className="font-semibold">{t('deleteAccount.transferRequired')}</p>
+                <p className="mt-1 text-xs text-amber-100/75">{t('deleteAccount.transferRequiredHint')}</p>
+              </div>
+            )}
+
+            {stats?.representation_release_available && (
               <div className="bg-white/5 rounded-xl p-4 border border-white/10">
                 <label className="flex items-start space-x-3 cursor-pointer">
                   <input
                     type="checkbox"
-                    checked={deleteBrandIfSole}
-                    onChange={(e) => setDeleteBrandIfSole(e.target.checked)}
+                    checked={releaseBrandRepresentation}
+                    onChange={(e) => setReleaseBrandRepresentation(e.target.checked)}
                     className="mt-1 w-4 h-4 rounded border-white/20 bg-white/10 text-red-500 focus:ring-2 focus:ring-red-500"
                   />
                   <div className="flex-1">
                     <p className="text-sm font-medium text-white mb-1">
-                      {t('deleteAccount.deleteBrand')}
+                      {t('deleteAccount.releaseRepresentation')}
                     </p>
                     <p className="text-xs text-gray-400">
-                      {t('deleteAccount.deleteBrandHint')}
+                      {t('deleteAccount.releaseRepresentationHint')}
                     </p>
                   </div>
                 </label>
@@ -295,7 +302,13 @@ export const DeleteAccountModal: React.FC<DeleteAccountModalProps> = ({ isOpen, 
               </button>
               <button
                 type="submit"
-                disabled={deleteAccountMutation.isPending || confirmText !== confirmWord || (!!user?.has_password && !password)}
+                disabled={
+                  deleteAccountMutation.isPending
+                  || confirmText !== confirmWord
+                  || (!!user?.has_password && !password)
+                  || Boolean(stats?.ownership_transfer_required)
+                  || Boolean(stats?.representation_release_available && !releaseBrandRepresentation)
+                }
                 className="flex-1 px-6 py-3 bg-gradient-to-r from-red-600 to-red-700 hover:from-red-700 hover:to-red-800 text-white rounded-xl transition-all shadow-lg shadow-red-500/25 hover:shadow-red-500/40 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center"
               >
                 {deleteAccountMutation.isPending ? (

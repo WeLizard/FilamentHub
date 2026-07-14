@@ -168,3 +168,31 @@ def send_brand_invite_email(
         sender_profile=sender_profile,
         reply_to=reply_to,
     )
+
+
+def send_brand_team_invite_email(
+    *,
+    to: str,
+    brand_name: str,
+    invite_url: str,
+    site_url: str,
+    role: str,
+    reply_to: str | None = None,
+) -> EmailSendResult:
+    """Invite one exact email address to an existing manufacturer team."""
+    subject = f"Приглашение в команду {brand_name} в FilamentHub"
+    html = _render(
+        "brand_team_invite.html",
+        subject=subject,
+        brand_name=brand_name,
+        invite_url=invite_url,
+        site_url=site_url,
+        role_label="владельца" if role == "owner" else "редактора",
+    )
+    return send_email_tracked(
+        to=to,
+        subject=subject,
+        html=html,
+        sender_profile="transactional",
+        reply_to=reply_to,
+    )
