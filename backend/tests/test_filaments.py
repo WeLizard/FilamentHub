@@ -57,6 +57,38 @@ async def test_create_filament(auth_client: AsyncClient, db_session: AsyncSessio
 
 
 @pytest.mark.asyncio
+async def test_community_user_can_add_filament_to_verified_brand(
+    auth_client: AsyncClient,
+    db_session: AsyncSession,
+):
+    """Brand verification grants management rights but does not close catalog contributions."""
+    brand = Brand(
+        name="Verified Open Catalog Brand",
+        slug="verified-open-catalog-brand",
+        verified=True,
+        active=True,
+    )
+    db_session.add(brand)
+    await db_session.commit()
+    await db_session.refresh(brand)
+
+    response = await auth_client.post(
+        "/api/v1/filaments/",
+        json={
+            "brand_id": brand.id,
+            "name": "Community Added PETG",
+            "material_type": "PETG",
+            "color_name": "Purple",
+            "color_hex": "#7C3AED",
+        },
+    )
+
+    assert response.status_code == 201
+    assert response.json()["brand_id"] == brand.id
+    assert response.json()["name"] == "Community Added PETG"
+
+
+@pytest.mark.asyncio
 async def test_create_filament_custom_filler_rejected_for_unverified(
     auth_client: AsyncClient, db_session: AsyncSession
 ):

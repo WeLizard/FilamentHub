@@ -3,7 +3,7 @@
 from datetime import datetime
 from typing import TYPE_CHECKING
 
-from sqlalchemy import JSON, Boolean, String, Text
+from sqlalchemy import JSON, Boolean, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.sql import func
 
@@ -12,6 +12,7 @@ from app.db.base import Base
 if TYPE_CHECKING:
     from app.models.filament import Filament
     from app.models.material_mapping import MaterialMapping
+    from app.models.organization import Organization
 
 
 class Brand(Base):
@@ -25,6 +26,12 @@ class Brand(Base):
 
     # Primary key
     id: Mapped[int] = mapped_column(primary_key=True, index=True)
+
+    # Official owner workspace. Public brands stay separate even when one
+    # company owns several of them.
+    organization_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("organizations.id", ondelete="SET NULL"), nullable=True, index=True
+    )
 
     # Basic info
     name: Mapped[str] = mapped_column(String(100), unique=True, index=True)
@@ -54,6 +61,10 @@ class Brand(Base):
     # Verification
     verified: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
     # verified=True означает что это официальный аккаунт производителя
+    name_correction_available: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default="false", nullable=False
+    )
+    name_corrected_at: Mapped[datetime | None] = mapped_column(nullable=True)
 
     # Status
     active: Mapped[bool] = mapped_column(Boolean, default=True, index=True)
@@ -73,9 +84,9 @@ class Brand(Base):
     material_mappings: Mapped[list["MaterialMapping"]] = relationship(
         "MaterialMapping", back_populates="brand"
     )
+    organization: Mapped["Organization | None"] = relationship(back_populates="brands")
 
     def __repr__(self) -> str:
         """String representation."""
         verified_badge = "✓" if self.verified else ""
         return f"<Brand(id={self.id}, name='{self.name}'{verified_badge})>"
-

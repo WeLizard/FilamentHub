@@ -134,7 +134,11 @@ from app.services.database_service import (
 from app.services.database_service import (
     validate_migration_integrity as validate_migration_integrity_service,
 )
-from app.services.file_service import get_upload_root_dir, normalize_brand_logo_upload
+from app.services.file_service import (
+    BRAND_LOGO_ALLOWED_EXTENSIONS,
+    get_upload_root_dir,
+    normalize_brand_logo_upload,
+)
 from app.services.maintenance_service import (
     get_maintenance_info,
     set_maintenance_mode,
@@ -145,6 +149,7 @@ from app.services.notification_service import (
     notify_brand_request_rejected,
     notify_brand_verified,
 )
+from app.services.qr_service import backfill_brand_qr_codes
 from app.services.subscription_service import (
     get_or_create_subscription,
     paywall_enforced,
@@ -235,7 +240,6 @@ async def verify_brand(
 
     brand.verified = True
     # Бэкофилл QR для материалов, созданных до верификации (юзерами или брендом).
-    from app.services.qr_service import backfill_brand_qr_codes
     await backfill_brand_qr_codes(brand, db)
     await db.commit()
     await db.refresh(brand)
@@ -346,7 +350,7 @@ async def upload_brand_logo(
         raise_error(status.HTTP_404_NOT_FOUND, ERR_BRAND_NOT_FOUND)
 
     # Validate extension
-    allowed_ext = {".png", ".jpg", ".jpeg", ".webp", ".svg"}
+    allowed_ext = BRAND_LOGO_ALLOWED_EXTENSIONS
     file_ext = Path(file.filename or "").suffix.lower()
     if file_ext not in allowed_ext:
         raise_error(
@@ -1067,6 +1071,13 @@ async def update_brand_request(
                 raise_error(status.HTTP_400_BAD_REQUEST, ERR_BRAND_ID_REQUIRED_JOIN
                 )
             user.brand_id = request.brand_id
+            brand = request.brand or await db.get(Brand, request.brand_id)
+            if not brand:
+                raise_error(status.HTTP_404_NOT_FOUND, ERR_BRAND_NOT_FOUND)
+            if not brand.verified:
+                brand.name_correction_available = True
+            brand.verified = True
+            await backfill_brand_qr_codes(brand, db)
 
         elif request.request_type == BrandRequestType.CREATE:
             # Для CREATE: создаем новый бренд и привязываем пользователя
@@ -1090,6 +1101,7 @@ async def update_brand_request(
                 description=request.new_brand_description,
                 website=request.new_brand_website,
                 verified=True,  # Автоматически верифицируем после одобрения админом
+                name_correction_available=True,
                 active=True,
             )
             db.add(new_brand)
@@ -1593,13 +1605,18 @@ async def import_database(
         raise_error(status.HTTP_400_BAD_REQUEST, ERR_FILE_TOO_LARGE, {"max_size": "1GB"})
 
     # Сохраняем загруженный файл
-    dumps_dir = Path(settings.UPLOAD_DIR) / "database_dumps"
+    dumps_dir = (Path(settings.UPLOAD_DIR) / "database_dumps").resolve()
     dumps_dir.mkdir(parents=True, exist_ok=True)
 
-    # Используем оригинальное имя файла с timestamp для избежания конфликтов
+    # Never include the client-supplied filename in a filesystem path. Keep only
+    # the validated extension and generate the storage name server-side.
+    import uuid
+
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    safe_filename = f"{timestamp}_{file.filename}"
-    filepath = dumps_dir / safe_filename
+    safe_filename = f"{timestamp}_{uuid.uuid4().hex}{file_ext}"
+    filepath = (dumps_dir / safe_filename).resolve()
+    if not filepath.is_relative_to(dumps_dir):
+        raise_error(status.HTTP_400_BAD_REQUEST, ERR_INVALID_FILE_PATH)
 
     with open(filepath, "wb") as f:
         f.write(content)

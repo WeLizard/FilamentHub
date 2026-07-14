@@ -34,6 +34,7 @@ from app.schemas.filament import (
     FilamentResponse,
     FilamentUpdate,
 )
+from app.services.organization_access import can_edit_brand_catalog
 
 logger = logging.getLogger(__name__)
 
@@ -437,14 +438,9 @@ async def create_filament(
     if not brand:
         raise_error(404, ERR_BRAND_NOT_FOUND)
 
-    # Проверка прав доступа:
-    # - Админ может создавать для любого бренда
-    # - Сотрудник бренда может создавать для своего бренда
-    # - Любой авторизованный пользователь может создавать для неверифицированного бренда
-    #   (например, только что созданного через форму пресета)
-    if current_user.role != UserRole.ADMIN and current_user.brand_id != data.brand_id:
-        if brand.verified:
-            raise_error(403, ERR_NO_PERMISSION_CREATE_FILAMENT)
+    # FilamentHub is an open catalog: authenticated community members may add a
+    # missing filament whether or not the brand already has a verified owner.
+    # Verification controls official brand management, not catalog contribution.
 
     # Проверка текстовых полей на плохие слова
     from app.services.preset_moderation import validate_text_field
@@ -598,7 +594,7 @@ async def update_filament(
         raise_error(404, ERR_FILAMENT_NOT_FOUND)
 
     # Проверка прав доступа: только админ или сотрудник бренда может редактировать материалы
-    if current_user.role != UserRole.ADMIN and current_user.brand_id != filament.brand_id:
+    if not await can_edit_brand_catalog(db, current_user, filament.brand_id):
         raise_error(403, ERR_NO_PERMISSION_EDIT_FILAMENT)
 
     # Проверка текстовых полей на плохие слова
@@ -658,7 +654,7 @@ async def delete_filament(
         raise_error(404, ERR_FILAMENT_NOT_FOUND)
 
     # Проверка прав доступа: только админ или сотрудник бренда может удалять материалы
-    if current_user.role != UserRole.ADMIN and current_user.brand_id != filament.brand_id:
+    if not await can_edit_brand_catalog(db, current_user, filament.brand_id):
         raise_error(403, ERR_NO_PERMISSION_DELETE_FILAMENT)
 
     await db.delete(filament)
@@ -727,5 +723,3 @@ async def get_compatible_printers(
             })
 
     return compatible_printers
-
-

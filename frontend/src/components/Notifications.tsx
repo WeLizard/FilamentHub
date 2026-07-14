@@ -17,11 +17,12 @@ interface NotificationsProps {
 
 export const Notifications: React.FC<NotificationsProps> = ({ floating = false }) => {
   const { t } = useTranslation();
-  const { user } = useAuth();
+  const { user, refreshUser } = useAuth();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [isOpen, setIsOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
+  const lastAccountRefreshNotificationId = useRef<number | null>(null);
   const [selectedNotification, setSelectedNotification] = useState<Notification | null>(null);
   const [viewNotification, setViewNotification] = useState<Notification | null>(null);
   
@@ -37,6 +38,31 @@ export const Notifications: React.FC<NotificationsProps> = ({ floating = false }
   });
 
   const notifications = notificationsData?.items || [];
+
+  // Brand approval happens in another admin session. Keep the active account
+  // context in sync as soon as the corresponding notification reaches the user.
+  useEffect(() => {
+    const accountChangeNotification = notificationsData?.items
+      .filter((notification) => (
+        notification.type === 'brand_request_approved'
+        || notification.type === 'brand_verified'
+      ))
+      .reduce<Notification | null>(
+        (latest, notification) => (!latest || notification.id > latest.id ? notification : latest),
+        null,
+      );
+
+    if (
+      !accountChangeNotification
+      || lastAccountRefreshNotificationId.current === accountChangeNotification.id
+    ) {
+      return;
+    }
+
+    lastAccountRefreshNotificationId.current = accountChangeNotification.id;
+    void refreshUser();
+  }, [notificationsData?.items, refreshUser]);
+
   // Для плавающей версии используем внешний счётчик (от C++), иначе счётчик из API
   const unreadCount = floating && externalUnreadCount !== null 
     ? externalUnreadCount 

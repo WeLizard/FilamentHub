@@ -1,10 +1,10 @@
 /** Компонент для управления брендами */
 
-import { useState, useEffect, useRef, FormEvent } from 'react';
+import { useDeferredValue, useState, useEffect, useRef, FormEvent } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
-import { Building2, CheckCircle, XCircle, Shield, Search, ExternalLink, Edit, X, Save, Loader2, Upload, Send, Copy } from 'lucide-react';
+import { Building2, CheckCircle, XCircle, Shield, Search, ExternalLink, Edit, X, Save, Loader2, Upload, Send, Copy, Plus } from 'lucide-react';
 import { ModalOverlay } from '../ModalOverlay';
 import { adminAPI, brandInvitesAPI } from '../../api/client';
 import { translateApiError } from '../../utils/translateApiError';
@@ -35,18 +35,45 @@ export function AdminBrands() {
   const [showInviteModal, setShowInviteModal] = useState(false);
   const [inviteEmail, setInviteEmail] = useState('');
   const [inviteBrandName, setInviteBrandName] = useState('');
+  const [inviteBrandId, setInviteBrandId] = useState<number | null>(null);
+  const [inviteBrandFocused, setInviteBrandFocused] = useState(false);
+  const [inviteSenderProfile, setInviteSenderProfile] = useState<'partnerships' | 'pr' | 'transactional'>('partnerships');
   const [inviteResult, setInviteResult] = useState<BrandInviteAdmin | null>(null);
   const [inviteError, setInviteError] = useState<string | null>(null);
   const [inviteSubmitting, setInviteSubmitting] = useState(false);
+  const deferredInviteBrandSearch = useDeferredValue(inviteBrandName.trim());
+
+  const { data: inviteBrandsData, isFetching: inviteBrandsLoading } = useQuery({
+    queryKey: ['admin-brand-invite-search', deferredInviteBrandSearch],
+    queryFn: () => adminAPI.listBrands({
+      page: 1,
+      size: 8,
+      active_only: true,
+      search: deferredInviteBrandSearch || undefined,
+    }),
+    enabled: showInviteModal,
+    staleTime: 30_000,
+  });
+
+  const inviteBrandMatches = inviteBrandsData?.items ?? [];
+  const exactInviteBrand = inviteBrandMatches.find(
+    (brand) => brand.name.localeCompare(inviteBrandName.trim(), undefined, { sensitivity: 'accent' }) === 0,
+  );
+  const selectedInviteBrand = inviteBrandMatches.find((brand) => brand.id === inviteBrandId) ?? null;
 
   const submitInvite = async (e: FormEvent) => {
     e.preventDefault();
     setInviteError(null);
     setInviteSubmitting(true);
     try {
+      const existingBrand = selectedInviteBrand ?? exactInviteBrand ?? null;
       const res = await brandInvitesAPI.adminCreate({
         email: inviteEmail.trim(),
-        brand_name: inviteBrandName.trim() || null,
+        target_type: existingBrand ? 'existing' : 'new',
+        brand_id: existingBrand?.id ?? null,
+        brand_name: existingBrand ? null : inviteBrandName.trim(),
+        member_role: 'owner',
+        sender_profile: inviteSenderProfile,
       });
       setInviteResult(res);
     } catch (err) {
@@ -61,6 +88,9 @@ export function AdminBrands() {
     setShowInviteModal(false);
     setInviteEmail('');
     setInviteBrandName('');
+    setInviteBrandId(null);
+    setInviteBrandFocused(false);
+    setInviteSenderProfile('partnerships');
     setInviteResult(null);
     setInviteError(null);
   };
@@ -461,7 +491,7 @@ export function AdminBrands() {
                   <input
                     ref={fileInputRef}
                     type="file"
-                    accept=".png,.jpg,.jpeg,.webp,.svg"
+                    accept=".png,.jpg,.jpeg,.bmp,.webp"
                     className="hidden"
                     onChange={async (e) => {
                       const file = e.target.files?.[0];
@@ -570,7 +600,7 @@ export function AdminBrands() {
 
       {showInviteModal && (
         <ModalOverlay onClose={closeInvite}>
-          <div className="bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900 rounded-2xl w-full max-w-md border border-white/20 shadow-2xl overflow-hidden">
+          <div className="bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900 rounded-2xl w-full max-w-lg border border-white/20 shadow-2xl overflow-hidden">
             <div className="flex items-center justify-between p-6 border-b border-white/10">
               <div className="flex items-center gap-2">
                 <Send className="w-5 h-5 text-purple-400" />
@@ -619,13 +649,78 @@ export function AdminBrands() {
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-300 mb-2">{t('adminBrands.inviteBrandName')}</label>
-                  <input
-                    type="text"
-                    value={inviteBrandName}
-                    onChange={(e) => setInviteBrandName(e.target.value)}
-                    placeholder={t('adminBrands.inviteBrandNamePlaceholder')}
-                    className="w-full px-4 py-2 bg-white/5 border border-white/20 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500"
-                  />
+                  <div className="relative">
+                    <div className="relative">
+                      <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-500" />
+                      <input
+                        type="text"
+                        required
+                        value={inviteBrandName}
+                        onFocus={() => setInviteBrandFocused(true)}
+                        onBlur={() => setInviteBrandFocused(false)}
+                        onChange={(e) => {
+                          setInviteBrandName(e.target.value);
+                          setInviteBrandId(null);
+                        }}
+                        placeholder={t('adminBrands.inviteBrandNamePlaceholder')}
+                        className="w-full rounded-lg border border-white/20 bg-white/5 py-2 pl-10 pr-4 text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500"
+                      />
+                    </div>
+
+                    {inviteBrandFocused && (inviteBrandsLoading || inviteBrandMatches.length > 0) && (
+                      <div className="absolute z-20 mt-2 max-h-56 w-full overflow-y-auto rounded-xl border border-white/15 bg-gray-950/95 p-1.5 shadow-2xl backdrop-blur-xl">
+                        {inviteBrandsLoading && inviteBrandMatches.length === 0 ? (
+                          <div className="flex items-center gap-2 px-3 py-3 text-sm text-gray-400">
+                            <Loader2 className="h-4 w-4 animate-spin" />
+                            {t('adminBrands.inviteBrandSearching')}
+                          </div>
+                        ) : inviteBrandMatches.map((brand) => (
+                          <button
+                            key={brand.id}
+                            type="button"
+                            onMouseDown={(event) => event.preventDefault()}
+                            onClick={() => {
+                              setInviteBrandId(brand.id);
+                              setInviteBrandName(brand.name);
+                              setInviteBrandFocused(false);
+                            }}
+                            className="flex w-full items-center justify-between gap-3 rounded-lg px-3 py-2.5 text-left transition-colors hover:bg-white/10"
+                          >
+                            <span className="min-w-0">
+                              <span className="block truncate text-sm font-medium text-white">{brand.name}</span>
+                              <span className="block truncate text-xs text-gray-500">/{brand.slug}</span>
+                            </span>
+                            <span className={`shrink-0 rounded-full px-2 py-1 text-[11px] font-medium ${brand.verified ? 'bg-green-500/15 text-green-300' : 'bg-amber-500/15 text-amber-300'}`}>
+                              {brand.verified ? t('adminBrands.verified') : t('adminBrands.unverified')}
+                            </span>
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
+                  {inviteBrandName.trim() && (
+                    <div className={`mt-2 flex items-start gap-2 rounded-lg border px-3 py-2 text-xs ${selectedInviteBrand || exactInviteBrand ? 'border-cyan-400/20 bg-cyan-400/10 text-cyan-200' : 'border-purple-400/20 bg-purple-400/10 text-purple-200'}`}>
+                      {selectedInviteBrand || exactInviteBrand ? <Building2 className="mt-0.5 h-3.5 w-3.5 shrink-0" /> : <Plus className="mt-0.5 h-3.5 w-3.5 shrink-0" />}
+                      <span>
+                        {selectedInviteBrand || exactInviteBrand
+                          ? t('adminBrands.inviteExistingBrandHint')
+                          : t('adminBrands.inviteNewBrandHint')}
+                      </span>
+                    </div>
+                  )}
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-300 mb-2">{t('adminBrands.inviteSender')}</label>
+                  <select
+                    value={inviteSenderProfile}
+                    onChange={(e) => setInviteSenderProfile(e.target.value as 'partnerships' | 'pr' | 'transactional')}
+                    className="w-full rounded-lg border border-white/20 bg-gray-900 px-4 py-2 text-white focus:outline-none focus:ring-2 focus:ring-purple-500"
+                  >
+                    <option value="partnerships">{t('adminBrands.inviteSenderPartnerships')}</option>
+                    <option value="pr">{t('adminBrands.inviteSenderPr')}</option>
+                    <option value="transactional">{t('adminBrands.inviteSenderTransactional')}</option>
+                  </select>
                 </div>
                 {inviteError && <p className="text-red-400 text-sm">{inviteError}</p>}
                 <div className="flex justify-end gap-3">
@@ -634,7 +729,7 @@ export function AdminBrands() {
                   </button>
                   <button
                     type="submit"
-                    disabled={inviteSubmitting || !inviteEmail.trim()}
+                    disabled={inviteSubmitting || !inviteEmail.trim() || !inviteBrandName.trim()}
                     className="px-5 py-2.5 bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white rounded-xl transition-all disabled:opacity-50 flex items-center gap-2"
                   >
                     {inviteSubmitting && <Loader2 className="w-4 h-4 animate-spin" />}

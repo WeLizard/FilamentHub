@@ -653,7 +653,7 @@ export const ProfilePage: React.FC = () => {
             <span className="absolute inset-0 flex items-center justify-center bg-black/45 opacity-0 group-hover/avatar:opacity-100 transition-opacity">
               {isUploadingAvatar ? <Loader2 className="w-4 h-4 text-white animate-spin" /> : <Camera className="w-4 h-4 text-white" />}
             </span>
-            <input type="file" accept=".png,.jpg,.jpeg,.webp" onChange={handleAvatarUpload} className="hidden" disabled={isUploadingAvatar} />
+            <input type="file" accept=".png,.jpg,.jpeg,.bmp,.webp" onChange={handleAvatarUpload} className="hidden" disabled={isUploadingAvatar} />
           </label>
           <div className="min-w-0">
             <p className="text-base md:text-xl font-bold text-white truncate">{user.full_name || user.username}</p>

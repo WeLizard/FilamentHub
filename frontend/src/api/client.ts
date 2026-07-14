@@ -391,7 +391,7 @@ export const brandsAPI = {
     return response.data;
   },
 
-  update: async (id: number, data: { description?: string | null; website?: string | null; logo_url?: string | null; logo_bg?: string | null; social_media_urls?: string[] | null; shop_links?: { platform: string; url: string }[] | null; price_hidden?: boolean }) => {
+  update: async (id: number, data: { name?: string; description?: string | null; website?: string | null; logo_url?: string | null; logo_bg?: string | null; social_media_urls?: string[] | null; shop_links?: { platform: string; url: string }[] | null; price_hidden?: boolean; currency?: string }) => {
     const response = await api.patch<Brand>(`/brands/${id}`, data);
     return response.data;
   },
@@ -534,11 +534,19 @@ export const brandInvitesAPI = {
     const response = await api.get<BrandInvitePublic>(`/brand-invites/${token}`);
     return response.data;
   },
-  accept: async (token: string, brandName: string): Promise<BrandInviteAcceptResult> => {
-    const response = await api.post<BrandInviteAcceptResult>(`/brand-invites/${token}/accept`, { brand_name: brandName });
+  accept: async (token: string): Promise<BrandInviteAcceptResult> => {
+    const response = await api.post<BrandInviteAcceptResult>(`/brand-invites/${token}/accept`, {});
     return response.data;
   },
-  adminCreate: async (payload: { email: string; brand_name?: string | null; expires_days?: number }): Promise<BrandInviteAdmin> => {
+  adminCreate: async (payload: {
+    email: string;
+    target_type: 'new' | 'existing';
+    brand_id?: number | null;
+    brand_name?: string | null;
+    member_role?: 'owner' | 'editor';
+    sender_profile?: 'partnerships' | 'pr' | 'transactional';
+    expires_days?: number;
+  }): Promise<BrandInviteAdmin> => {
     const response = await api.post<BrandInviteAdmin>('/admin/brand-invites', payload);
     return response.data;
   },

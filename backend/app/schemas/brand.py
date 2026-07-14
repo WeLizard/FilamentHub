@@ -49,6 +49,8 @@ class BrandResponse(BrandBase):
 
     id: int
     active: bool
+    name_correction_available: bool = False
+    name_corrected_at: datetime | None = None
     created_at: datetime
     updated_at: datetime
     employees_count: int | None = Field(None, description="Количество сотрудников (только при запросе)")
@@ -82,4 +84,3 @@ class BrandUsageResponse(BaseModel):
     spools_tracked: int
     total_preset_usage: int
     presets_count: int
-

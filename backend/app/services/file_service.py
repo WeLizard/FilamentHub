@@ -9,7 +9,7 @@ from io import BytesIO
 from pathlib import Path
 
 from fastapi import UploadFile, status
-from PIL import Image, UnidentifiedImageError
+from PIL import Image, ImageOps, UnidentifiedImageError
 
 from app.core.config import settings
 from app.core.errors import (
@@ -24,7 +24,55 @@ from app.core.errors import (
 
 logger = logging.getLogger(__name__)
 
-BRAND_LOGO_RASTER_EXTENSIONS = {".png", ".jpg", ".jpeg"}
+IMAGE_FORMATS_BY_EXTENSION = {
+    ".png": "PNG",
+    ".jpg": "JPEG",
+    ".jpeg": "JPEG",
+    ".bmp": "BMP",
+    ".webp": "WEBP",
+}
+MAX_AVATAR_SOURCE_PIXELS = 25_000_000
+MAX_BRAND_LOGO_SOURCE_PIXELS = 25_000_000
+AVATAR_ALLOWED_EXTENSIONS = frozenset(IMAGE_FORMATS_BY_EXTENSION)
+BRAND_LOGO_ALLOWED_EXTENSIONS = frozenset(IMAGE_FORMATS_BY_EXTENSION)
+
+
+def _load_validated_raster_image(
+    content: bytes,
+    file_ext: str,
+    *,
+    pixel_budget: int,
+    context: str,
+) -> Image.Image:
+    """Load and validate a raster image before normalization.
+
+    Fails closed on:
+    - content/extension mismatch
+    - oversized pixel dimensions
+    - malformed or truncated image data
+    """
+    expected_format = IMAGE_FORMATS_BY_EXTENSION.get(file_ext)
+    if expected_format is None:
+        raise_error(status.HTTP_400_BAD_REQUEST, ERR_FILE_CONTENT_MISMATCH, {"ext": file_ext})
+
+    try:
+        with Image.open(BytesIO(content)) as image:
+            if image.format != expected_format:
+                raise_error(status.HTTP_400_BAD_REQUEST, ERR_FILE_CONTENT_MISMATCH, {"ext": file_ext})
+            if image.width <= 0 or image.height <= 0:
+                raise_error(status.HTTP_400_BAD_REQUEST, ERR_FILE_CONTENT_MISMATCH, {"ext": file_ext})
+            if image.width * image.height > pixel_budget:
+                raise_error(
+                    status.HTTP_400_BAD_REQUEST,
+                    ERR_FILE_SIZE_EXCEEDED,
+                    {"size_mb": "pixel budget", "max_mb": f"{pixel_budget} pixels"},
+                )
+
+            image.load()
+            return ImageOps.exif_transpose(image).copy()
+    except (UnidentifiedImageError, Image.DecompressionBombError, OSError, ValueError) as exc:
+        logger.warning("%s: %s", context, exc)
+        raise_error(status.HTTP_400_BAD_REQUEST, ERR_FILE_CONTENT_MISMATCH, {"ext": file_ext})
 
 
 def get_upload_root_dir() -> Path:
@@ -86,49 +134,51 @@ def normalize_brand_logo_upload(content: bytes, file_ext: str) -> tuple[bytes, s
     """
     Convert raster brand logos to WebP before saving them.
 
-    SVG and already-WebP files are returned unchanged.
+    Raster uploads are validated by actual image format and pixel budget, then
+    normalized to WebP. Active formats such as SVG are not accepted here.
     """
-    if file_ext not in BRAND_LOGO_RASTER_EXTENSIONS:
-        return content, file_ext
+    image = _load_validated_raster_image(
+        content,
+        file_ext,
+        pixel_budget=MAX_BRAND_LOGO_SOURCE_PIXELS,
+        context="Rejected invalid brand logo upload",
+    )
+    has_alpha = "A" in image.getbands() or (
+        image.mode == "P" and "transparency" in image.info
+    )
+    converted = image.convert("RGBA" if has_alpha else "RGB")
 
-    try:
-        with Image.open(BytesIO(content)) as image:
-            image.load()
-            has_alpha = "A" in image.getbands() or (
-                image.mode == "P" and "transparency" in image.info
-            )
-            converted = image.convert("RGBA" if has_alpha else "RGB")
-
-            output = BytesIO()
-            converted.save(output, "WEBP", quality=90, method=6)
-            return output.getvalue(), ".webp"
-    except (UnidentifiedImageError, OSError, ValueError) as exc:
-        logger.warning("Failed to convert brand logo to WebP, keeping original: %s", exc)
-        return content, file_ext
+    output = BytesIO()
+    converted.save(output, "WEBP", quality=90, method=6)
+    return output.getvalue(), ".webp"
 
 
 def normalize_avatar_upload(content: bytes, file_ext: str, size: int = 256) -> tuple[bytes, str]:
     """Center-crop to a square, resize and convert a user avatar to WebP.
 
-    Keeps avatars small and fast to load. Falls back to the original on failure.
+    Keeps avatars small and fast to load. Raster uploads are validated by actual
+    image format and pixel budget before normalization. Any mismatch is rejected.
     """
-    try:
-        with Image.open(BytesIO(content)) as image:
-            image.load()
-            converted = image.convert("RGB")
-            width, height = converted.size
-            side = min(width, height)
-            left = (width - side) // 2
-            top = (height - side) // 2
-            square = converted.crop((left, top, left + side, top + side))
-            resized = square.resize((size, size), Image.LANCZOS)
+    image = _load_validated_raster_image(
+        content,
+        file_ext,
+        pixel_budget=MAX_AVATAR_SOURCE_PIXELS,
+        context="Rejected invalid avatar upload",
+    )
+    has_alpha = "A" in image.getbands() or (
+        image.mode == "P" and "transparency" in image.info
+    )
+    converted = image.convert("RGBA" if has_alpha else "RGB")
+    width, height = converted.size
+    side = min(width, height)
+    left = (width - side) // 2
+    top = (height - side) // 2
+    square = converted.crop((left, top, left + side, top + side))
+    resized = square.resize((size, size), Image.LANCZOS)
 
-            output = BytesIO()
-            resized.save(output, "WEBP", quality=82, method=6)
-            return output.getvalue(), ".webp"
-    except (UnidentifiedImageError, OSError, ValueError) as exc:
-        logger.warning("Failed to normalize avatar, keeping original: %s", exc)
-        return content, file_ext
+    output = BytesIO()
+    resized.save(output, "WEBP", quality=82, method=6)
+    return output.getvalue(), ".webp"
 
 
 def get_allowed_extensions() -> list[str]:

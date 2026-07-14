@@ -32,6 +32,12 @@ from app.models.filament_review import FilamentReview
 from app.models.material_mapping import MaterialMapping, MaterialMappingPriority
 from app.models.material_property import MaterialProperty
 from app.models.notification import Notification, NotificationType
+from app.models.organization import (
+    Organization,
+    OrganizationBrandAccess,
+    OrganizationMembership,
+    OrganizationMemberRole,
+)
 from app.models.preset import Preset, PresetModerationStatus
 from app.models.preset_gate_state import PresetGateState, PresetGateStateSource
 from app.models.preset_printer import PresetPrinter
@@ -92,6 +98,10 @@ __all__ = [
     "MaterialProperty",
     "Notification",
     "NotificationType",
+    "Organization",
+    "OrganizationBrandAccess",
+    "OrganizationMembership",
+    "OrganizationMemberRole",
     "Preset",
     "PresetGateState",
     "PresetGateStateSource",

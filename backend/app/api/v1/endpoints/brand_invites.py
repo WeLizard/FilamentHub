@@ -1,34 +1,47 @@
 """Brand invitation endpoints — admin issues pre-verified invites, brands accept them."""
 
 import secrets
+import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Annotated
 
 from fastapi import APIRouter, Depends
-from sqlalchemy import select
+from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
+from starlette.concurrency import run_in_threadpool
 
 from app.core.config import settings
 from app.core.dependencies import get_current_active_user, get_current_admin_user
 from app.core.errors import (
+    ERR_BRAND_INVITE_EMAIL_MISMATCH,
     ERR_BRAND_INVITE_INVALID,
     ERR_BRAND_INVITE_NOT_FOUND,
-    ERR_BRAND_SLUG_EXISTS,
-    ERR_USER_ALREADY_IN_BRAND,
+    ERR_BRAND_INVITE_TARGET_CONFLICT,
+    ERR_BRAND_INVITE_TARGET_MISSING,
+    ERR_BRAND_NOT_FOUND,
+    ERR_ORGANIZATION_NOT_FOUND,
     raise_error,
 )
 from app.db.session import get_db
 from app.models.brand import Brand
 from app.models.brand_invite import BrandInvite
-from app.models.user import User
+from app.models.organization import (
+    Organization,
+    OrganizationBrandAccess,
+    OrganizationMembership,
+    OrganizationMemberRole,
+)
+from app.models.user import User, UserRole
 from app.schemas.brand_invite import (
     BrandInviteAccept,
     BrandInviteAcceptResponse,
     BrandInviteAdminResponse,
+    BrandInviteBatchCreate,
     BrandInviteCreate,
     BrandInvitePublicResponse,
 )
 from app.services.email_service import send_brand_invite_email
+from app.services.qr_service import backfill_brand_qr_codes
 from app.services.slug_service import generate_unique_slug
 
 router = APIRouter(prefix="/brand-invites", tags=["brand-invites"])
@@ -54,6 +67,124 @@ def _is_active(invite: BrandInvite) -> bool:
     return expires > _now()
 
 
+def _mask_email(email: str) -> str:
+    """Return a hint that is useful to the recipient without exposing the address."""
+    local, separator, domain = email.partition("@")
+    if not separator:
+        return "***"
+    visible = local[:1]
+    return f"{visible}{'*' * max(3, len(local) - 1)}@{domain}"
+
+
+def _reply_to(invite: BrandInvite) -> str:
+    if settings.EMAIL_INBOUND_DOMAIN and invite.reply_token:
+        return f"invite-{invite.reply_token}@{settings.EMAIL_INBOUND_DOMAIN}"
+    return settings.EMAIL_CONTACT
+
+
+async def _resolve_invite_target(
+    *,
+    db: AsyncSession,
+    target_type: str,
+    brand_id: int | None,
+    brand_name: str | None,
+    organization_id: int | None,
+) -> tuple[Brand | None, Organization | None, str, str | None]:
+    """Validate an admin-authored target before an invitation is sent."""
+    organization = None
+    if organization_id is not None:
+        organization = await db.get(Organization, organization_id)
+        if organization is None or not organization.active:
+            raise_error(404, ERR_ORGANIZATION_NOT_FOUND)
+
+    if target_type == "existing":
+        brand = await db.get(Brand, brand_id)
+        if brand is None:
+            raise_error(404, ERR_BRAND_NOT_FOUND)
+        if organization and brand.organization_id not in (None, organization.id):
+            raise_error(409, ERR_BRAND_INVITE_TARGET_CONFLICT, {"brand_id": brand.id})
+        return brand, organization, brand.name, brand.slug
+
+    normalized_name = (brand_name or "").strip()
+    if not normalized_name:
+        raise_error(400, ERR_BRAND_INVITE_TARGET_MISSING)
+    duplicate = await db.scalar(
+        select(Brand.id).where(func.lower(Brand.name) == normalized_name.casefold())
+    )
+    if duplicate is not None:
+        raise_error(409, ERR_BRAND_INVITE_TARGET_CONFLICT, {"brand_id": duplicate})
+    proposed_slug = await generate_unique_slug(
+        db=db,
+        model=Brand,
+        source=normalized_name,
+        fallback="brand",
+    )
+    return None, organization, normalized_name, proposed_slug
+
+
+async def _build_invite(
+    *,
+    db: AsyncSession,
+    email: str,
+    target_type: str,
+    brand_id: int | None,
+    brand_name: str | None,
+    organization_id: int | None,
+    member_role: str,
+    sender_profile: str,
+    expires_days: int,
+    admin_id: int,
+    batch_id: str | None,
+) -> BrandInvite:
+    brand, organization, resolved_name, proposed_slug = await _resolve_invite_target(
+        db=db,
+        target_type=target_type,
+        brand_id=brand_id,
+        brand_name=brand_name,
+        organization_id=organization_id,
+    )
+    invite = BrandInvite(
+        token=secrets.token_urlsafe(32),
+        email=email.strip().casefold(),
+        brand_name=resolved_name,
+        proposed_slug=proposed_slug,
+        target_type=target_type,
+        brand_id=brand.id if brand else None,
+        organization_id=organization.id if organization else None,
+        member_role=member_role,
+        pre_verified=True,
+        sender_profile=sender_profile,
+        batch_id=batch_id,
+        reply_token=secrets.token_urlsafe(24),
+        invited_by_id=admin_id,
+        expires_at=_now() + timedelta(days=expires_days),
+    )
+    db.add(invite)
+    return invite
+
+
+async def _deliver_invite(db: AsyncSession, invite: BrandInvite) -> None:
+    result = await run_in_threadpool(
+        send_brand_invite_email,
+        to=invite.email,
+        brand_name=invite.brand_name,
+        invite_url=_invite_url(invite.token),
+        site_url=settings.BASE_URL,
+        sender_profile=invite.sender_profile,
+        reply_to=_reply_to(invite),
+    )
+    invite.send_status = "sent" if result.sent else "failed"
+    invite.sent_at = _now() if result.sent else None
+    invite.provider_message_id = result.provider_message_id
+    invite.send_error = result.error[:500] if result.error else None
+
+
+def _admin_response(invite: BrandInvite) -> BrandInviteAdminResponse:
+    response = BrandInviteAdminResponse.model_validate(invite)
+    response.invite_url = _invite_url(invite.token)
+    return response
+
+
 # --- Public / brand-facing ---
 
 @router.get("/{token}", response_model=BrandInvitePublicResponse)
@@ -67,10 +198,20 @@ async def get_brand_invite(
         return BrandInvitePublicResponse(valid=False, reason=ERR_BRAND_INVITE_NOT_FOUND)
     if not _is_active(invite):
         return BrandInvitePublicResponse(
-            valid=False, brand_name=invite.brand_name, email=invite.email,
+            valid=False,
+            brand_name=invite.brand_name,
+            email=_mask_email(invite.email),
+            target_type=invite.target_type,
+            brand_id=invite.brand_id,
             reason=ERR_BRAND_INVITE_INVALID,
         )
-    return BrandInvitePublicResponse(valid=True, brand_name=invite.brand_name, email=invite.email)
+    return BrandInvitePublicResponse(
+        valid=True,
+        brand_name=invite.brand_name,
+        email=_mask_email(invite.email),
+        target_type=invite.target_type,
+        brand_id=invite.brand_id,
+    )
 
 
 @router.post("/{token}/accept", response_model=BrandInviteAcceptResponse)
@@ -80,34 +221,161 @@ async def accept_brand_invite(
     db: Annotated[AsyncSession, Depends(get_db)],
     current_user: Annotated[User, Depends(get_current_active_user)],
 ) -> BrandInviteAcceptResponse:
-    """Принять приглашение: создаётся верифицированный бренд и привязывается к пользователю."""
-    invite = await db.scalar(select(BrandInvite).where(BrandInvite.token == token))
+    """Accept an admin invitation and grant organization rights atomically."""
+    invite = await db.scalar(
+        select(BrandInvite).where(BrandInvite.token == token).with_for_update()
+    )
     if invite is None:
         raise_error(404, ERR_BRAND_INVITE_NOT_FOUND)
+    if not secrets.compare_digest(current_user.email.strip().casefold(), invite.email.casefold()):
+        raise_error(403, ERR_BRAND_INVITE_EMAIL_MISMATCH)
+
+    # A successful request may be retried after the response was interrupted.
+    if invite.accepted_at is not None:
+        if (
+            invite.accepted_by_id == current_user.id
+            and invite.brand_id is not None
+            and invite.organization_id is not None
+        ):
+            accepted_brand = await db.get(Brand, invite.brand_id)
+            if accepted_brand is not None:
+                return BrandInviteAcceptResponse(
+                    brand_id=accepted_brand.id,
+                    brand_name=accepted_brand.name,
+                    organization_id=invite.organization_id,
+                    member_role=invite.member_role,
+                )
+        raise_error(400, ERR_BRAND_INVITE_INVALID)
     if not _is_active(invite):
         raise_error(400, ERR_BRAND_INVITE_INVALID)
-    if current_user.brand_id is not None:
-        raise_error(400, ERR_USER_ALREADY_IN_BRAND)
 
-    brand_name = data.brand_name.strip()
-    slug = await generate_unique_slug(db=db, model=Brand, source=brand_name, fallback="brand")
+    # The invite target is authored by the admin and cannot be replaced by a
+    # client-controlled value during acceptance.
+    if not invite.brand_name or not invite.brand_name.strip():
+        raise_error(400, ERR_BRAND_INVITE_TARGET_MISSING)
+    brand = await db.get(Brand, invite.brand_id) if invite.brand_id else None
+    if brand is None and invite.target_type == "existing":
+        raise_error(400, ERR_BRAND_INVITE_TARGET_MISSING)
+    if brand is None:
+        brand_name = invite.brand_name.strip()
+        existing = await db.scalar(
+            select(Brand.id).where(func.lower(Brand.name) == brand_name.casefold())
+        )
+        if existing is not None:
+            raise_error(409, ERR_BRAND_INVITE_TARGET_CONFLICT, {"brand_id": existing})
+        slug = await generate_unique_slug(
+            db=db,
+            model=Brand,
+            source=invite.proposed_slug or brand_name,
+            fallback="brand",
+        )
+        brand = Brand(name=brand_name, slug=slug, verified=False, active=True)
+        db.add(brand)
+        await db.flush()
 
-    # Имя бренда уникально — если занято, сообщаем понятным кодом.
-    existing = await db.scalar(select(Brand.id).where(Brand.name == brand_name))
-    if existing is not None:
-        raise_error(400, ERR_BRAND_SLUG_EXISTS)
+    organization = (
+        await db.get(Organization, invite.organization_id)
+        if invite.organization_id is not None
+        else None
+    )
+    if organization is None and brand.organization_id is not None:
+        organization = await db.get(Organization, brand.organization_id)
+    if organization is None:
+        organization_slug = await generate_unique_slug(
+            db=db,
+            model=Organization,
+            source=brand.name,
+            fallback="organization",
+        )
+        organization = Organization(
+            name=brand.name,
+            slug=organization_slug,
+            created_by_id=current_user.id,
+            active=True,
+        )
+        db.add(organization)
+        await db.flush()
+    if brand.organization_id not in (None, organization.id):
+        raise_error(409, ERR_BRAND_INVITE_TARGET_CONFLICT, {"brand_id": brand.id})
 
-    brand = Brand(name=brand_name, slug=slug, verified=bool(invite.pre_verified), active=True)
-    db.add(brand)
-    await db.flush()
+    brand.organization_id = organization.id
+    if invite.pre_verified and not brand.verified:
+        brand.name_correction_available = True
+    brand.verified = brand.verified or bool(invite.pre_verified)
+    await backfill_brand_qr_codes(brand, db)
 
+    try:
+        invited_role = OrganizationMemberRole(invite.member_role)
+    except ValueError:
+        invited_role = OrganizationMemberRole.OWNER
+    membership = await db.scalar(
+        select(OrganizationMembership)
+        .where(
+            OrganizationMembership.organization_id == organization.id,
+            OrganizationMembership.user_id == current_user.id,
+        )
+        .with_for_update()
+    )
+    role_rank = {
+        OrganizationMemberRole.EDITOR: 0,
+        OrganizationMemberRole.OWNER: 1,
+    }
+    if membership is None:
+        membership = OrganizationMembership(
+            organization_id=organization.id,
+            user_id=current_user.id,
+            role=invited_role,
+            all_brands=invited_role == OrganizationMemberRole.OWNER,
+            active=True,
+            invited_by_id=invite.invited_by_id,
+        )
+        db.add(membership)
+        await db.flush()
+    else:
+        membership.active = True
+        if role_rank[invited_role] > role_rank[membership.role]:
+            membership.role = invited_role
+        if membership.role == OrganizationMemberRole.OWNER:
+            membership.all_brands = True
+
+    if not membership.all_brands:
+        access = await db.scalar(
+            select(OrganizationBrandAccess).where(
+                OrganizationBrandAccess.membership_id == membership.id,
+                OrganizationBrandAccess.brand_id == brand.id,
+            )
+        )
+        if access is None:
+            db.add(OrganizationBrandAccess(membership_id=membership.id, brand_id=brand.id))
+
+    # Transitional pointer used by the current single-brand profile UI. It is
+    # the user's active brand, not the source of truth for authorization.
     current_user.brand_id = brand.id
+    if current_user.role == UserRole.USER:
+        current_user.role = UserRole.BRAND
+    invite.brand_id = brand.id
+    invite.organization_id = organization.id
     invite.accepted_at = _now()
     invite.accepted_by_id = current_user.id
+
+    if invite.batch_id:
+        await db.execute(
+            update(BrandInvite)
+            .where(
+                BrandInvite.batch_id == invite.batch_id,
+                BrandInvite.accepted_at.is_(None),
+            )
+            .values(brand_id=brand.id, organization_id=organization.id, target_type="existing")
+        )
     await db.commit()
     await db.refresh(brand)
 
-    return BrandInviteAcceptResponse(brand_id=brand.id, brand_name=brand.name)
+    return BrandInviteAcceptResponse(
+        brand_id=brand.id,
+        brand_name=brand.name,
+        organization_id=organization.id,
+        member_role=membership.role.value,
+    )
 
 
 # --- Admin ---
@@ -118,27 +386,64 @@ async def create_brand_invite(
     db: Annotated[AsyncSession, Depends(get_db)],
     admin: Annotated[User, Depends(get_current_admin_user)],
 ) -> BrandInviteAdminResponse:
-    """Создать приглашение и отправить письмо на корпоративную почту бренда."""
-    invite = BrandInvite(
-        token=secrets.token_urlsafe(32),
-        email=str(data.email).strip().lower(),
-        brand_name=data.brand_name.strip() if data.brand_name else None,
-        pre_verified=True,
-        invited_by_id=admin.id,
-        expires_at=_now() + timedelta(days=data.expires_days),
+    """Create one independently trackable manufacturer invitation."""
+    invite = await _build_invite(
+        db=db,
+        email=str(data.email),
+        target_type=data.target_type,
+        brand_id=data.brand_id,
+        brand_name=data.brand_name,
+        organization_id=data.organization_id,
+        member_role=data.member_role,
+        sender_profile=data.sender_profile,
+        expires_days=data.expires_days,
+        admin_id=admin.id,
+        batch_id=None,
     )
-    db.add(invite)
+    await db.flush()
     await db.commit()
     await db.refresh(invite)
 
-    url = _invite_url(invite.token)
-    send_brand_invite_email(
-        to=invite.email, brand_name=invite.brand_name, invite_url=url, site_url=settings.BASE_URL,
-    )
+    await _deliver_invite(db, invite)
+    await db.commit()
+    await db.refresh(invite)
+    return _admin_response(invite)
 
-    response = BrandInviteAdminResponse.model_validate(invite)
-    response.invite_url = url
-    return response
+
+@admin_router.post("/batch", response_model=list[BrandInviteAdminResponse], status_code=201)
+async def create_brand_invite_batch(
+    data: BrandInviteBatchCreate,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    admin: Annotated[User, Depends(get_current_admin_user)],
+) -> list[BrandInviteAdminResponse]:
+    """Send one single-use token per normalized, de-duplicated recipient."""
+    emails = list(dict.fromkeys(str(email).strip().casefold() for email in data.emails))
+    batch_id = str(uuid.uuid4())
+    invites: list[BrandInvite] = []
+    for email in emails:
+        invite = await _build_invite(
+            db=db,
+            email=email,
+            target_type=data.target_type,
+            brand_id=data.brand_id,
+            brand_name=data.brand_name,
+            organization_id=data.organization_id,
+            member_role=data.member_role,
+            sender_profile=data.sender_profile,
+            expires_days=data.expires_days,
+            admin_id=admin.id,
+            batch_id=batch_id,
+        )
+        invites.append(invite)
+    await db.flush()
+    await db.commit()
+
+    for invite in invites:
+        await _deliver_invite(db, invite)
+    await db.commit()
+    for invite in invites:
+        await db.refresh(invite)
+    return [_admin_response(invite) for invite in invites]
 
 
 @admin_router.get("", response_model=list[BrandInviteAdminResponse])
@@ -151,9 +456,7 @@ async def list_brand_invites(
     invites = result.scalars().all()
     out: list[BrandInviteAdminResponse] = []
     for invite in invites:
-        item = BrandInviteAdminResponse.model_validate(invite)
-        item.invite_url = _invite_url(invite.token)
-        out.append(item)
+        out.append(_admin_response(invite))
     return out
 
 

@@ -11,6 +11,7 @@ import { ForgotPasswordModal } from './ForgotPasswordModal';
 import { ModalOverlay } from './ModalOverlay';
 import { useTranslation } from 'react-i18next';
 import { translateApiError } from '../utils/translateApiError';
+import { rememberAuthReturnTo } from '../utils/authReturn';
 
 interface AuthModalProps {
   isOpen: boolean;
@@ -136,6 +137,14 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
         setIsLoading(false);
       }
     } catch (err: any) {
+      if (err?.registrationSucceeded) {
+        setAuthMode('login');
+        setConfirmPassword('');
+        setAgreed(false);
+        setError(t('authModal.registration_succeeded_login_required'));
+        setIsLoading(false);
+        return;
+      }
       const fallback = authMode === 'login'
         ? t('authModal.error_login_failed')
         : t('authModal.error_register_failed');
@@ -166,6 +175,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
     setError(null);
     setOauthLoading(provider);
     try {
+      rememberAuthReturnTo();
       const { url } = await authAPI.getOAuthUrl(provider);
       window.location.href = url;
     } catch (err: any) {

@@ -44,6 +44,7 @@ from app.services.file_service import (
     save_proof_file,
     serialize_proof_files,
 )
+from app.services.qr_service import backfill_brand_qr_codes
 
 router = APIRouter(prefix="/brand-requests", tags=["brand-requests"])
 
@@ -369,6 +370,13 @@ async def update_brand_request(
             if user:
                 # Просто привязываем к бренду, роль не меняем
                 user.brand_id = request.brand_id
+            brand = await db.get(Brand, request.brand_id)
+            if not brand:
+                raise_error(status.HTTP_404_NOT_FOUND, ERR_BRAND_NOT_FOUND)
+            if not brand.verified:
+                brand.name_correction_available = True
+            brand.verified = True
+            await backfill_brand_qr_codes(brand, db)
         elif request.request_type == BrandRequestType.CREATE:
             # Создаем бренд и привязываем пользователя
             social_media = None
@@ -384,6 +392,7 @@ async def update_brand_request(
                 website=request.new_brand_website,
                 social_media_urls=social_media,
                 verified=True,  # Автоматически верифицируем после одобрения админом
+                name_correction_available=True,
                 active=True,
             )
             db.add(new_brand)

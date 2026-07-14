@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import { Loader, XCircle, Upload, Layers, QrCode, RefreshCw } from 'lucide-react';
+import { Building2, Loader, XCircle, Upload, Layers, QrCode, RefreshCw } from 'lucide-react';
 import { brandInvitesAPI } from '../api/client';
 import { useAuth } from '../contexts/AuthContext';
 import { AuthModal } from '../components/AuthModal';
@@ -16,7 +16,6 @@ export function BrandInvitePage() {
 
   const [invite, setInvite] = useState<BrandInvitePublic | null>(null);
   const [loading, setLoading] = useState(true);
-  const [brandName, setBrandName] = useState('');
   const [accepting, setAccepting] = useState(false);
   const [error, setError] = useState('');
   const [authOpen, setAuthOpen] = useState(false);
@@ -28,9 +27,15 @@ export function BrandInvitePage() {
       .then((data) => {
         if (!active) return;
         setInvite(data);
-        setBrandName(data.brand_name || '');
       })
-      .catch(() => active && setInvite({ valid: false, brand_name: null, email: null, reason: null }))
+      .catch(() => active && setInvite({
+        valid: false,
+        brand_name: null,
+        email: null,
+        target_type: null,
+        brand_id: null,
+        reason: null,
+      }))
       .finally(() => active && setLoading(false));
     return () => {
       active = false;
@@ -39,13 +44,9 @@ export function BrandInvitePage() {
 
   const handleAccept = async () => {
     setError('');
-    if (!brandName.trim()) {
-      setError(t('brandInvite.errorName'));
-      return;
-    }
     setAccepting(true);
     try {
-      await brandInvitesAPI.accept(token, brandName.trim());
+      await brandInvitesAPI.accept(token);
       await refreshUser();
       navigate('/profile', { state: { brandCabinet: true, editBrand: true } });
     } catch (err) {
@@ -90,6 +91,25 @@ export function BrandInvitePage() {
             <h2 className="text-2xl font-bold text-white mb-2 text-center">{t('brandInvite.title')}</h2>
             <p className="text-gray-300 mb-5 text-center">{t('brandInvite.subtitle')}</p>
 
+            <div className="mb-6 rounded-xl border border-purple-400/25 bg-purple-400/10 px-4 py-3">
+              <div className="flex items-center gap-3">
+                <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-purple-400/15 text-purple-200">
+                  <Building2 className="h-5 w-5" />
+                </span>
+                <div className="min-w-0">
+                  <p className="text-xs uppercase tracking-[0.16em] text-purple-200/70">
+                    {t('brandInvite.invitedBrand')}
+                  </p>
+                  <p className="truncate text-lg font-semibold text-white">{invite.brand_name}</p>
+                </div>
+              </div>
+              {invite.email && (
+                <p className="mt-3 text-xs leading-5 text-gray-400">
+                  {t('brandInvite.emailHint', { email: invite.email })}
+                </p>
+              )}
+            </div>
+
             <ul className="space-y-2 mb-6">
               {perks.map(({ icon: Icon, text }, i) => (
                 <li key={i} className="flex items-center gap-3 text-gray-300 text-sm">
@@ -103,20 +123,11 @@ export function BrandInvitePage() {
 
             {user ? (
               <>
-                <label className="block text-gray-300 mb-2 text-sm font-medium">{t('brandInvite.brandNameLabel')}</label>
-                <input
-                  type="text"
-                  value={brandName}
-                  onChange={(e) => setBrandName(e.target.value)}
-                  maxLength={100}
-                  placeholder={t('brandInvite.brandNamePlaceholder')}
-                  className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500 mb-4"
-                />
                 {error && <p className="text-red-400 text-sm mb-3">{error}</p>}
                 <button
                   type="button"
                   onClick={handleAccept}
-                  disabled={accepting || !brandName.trim()}
+                  disabled={accepting}
                   className="w-full px-6 py-3 bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white rounded-xl transition-all disabled:opacity-50 flex items-center justify-center gap-2"
                 >
                   {accepting && <Loader className="w-4 h-4 animate-spin" />}

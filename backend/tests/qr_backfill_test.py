@@ -11,7 +11,9 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.brand import Brand
+from app.models.brand_request import BrandRequest, BrandRequestType
 from app.models.filament import Filament
+from app.models.user import User
 from app.services import qr_service
 from app.services.qr_service import backfill_brand_qr_codes
 
@@ -77,3 +79,55 @@ async def test_backfill_endpoint_forbidden_for_non_owner(client: AsyncClient, db
 
     response = await client.post(f"/api/v1/brands/{brand.id}/backfill-qr", headers=headers)
     assert response.status_code == 403
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "endpoint_prefix",
+    ["/api/v1/admin/brand-requests", "/api/v1/brand-requests"],
+)
+async def test_approved_existing_brand_claim_backfills_qr_codes(
+    endpoint_prefix: str,
+    admin_client: AsyncClient,
+    admin_user: User,
+    db_session: AsyncSession,
+    monkeypatch,
+):
+    """Both legacy moderation routes verify the claimed brand and issue its QR codes."""
+    monkeypatch.setattr(qr_service, "save_qr_code_image", lambda *args, **kwargs: [])
+    suffix = endpoint_prefix.replace("/", "-").strip("-")
+    brand = Brand(
+        name=f"Claimed {suffix}",
+        slug=f"claimed-{suffix}",
+        active=True,
+        verified=False,
+    )
+    db_session.add(brand)
+    await db_session.flush()
+    filament = Filament(
+        brand_id=brand.id,
+        name="Claimed PLA",
+        slug=f"claimed-pla-{suffix}",
+        material_type="PLA",
+        active=True,
+    )
+    request = BrandRequest(
+        user_id=admin_user.id,
+        request_type=BrandRequestType.JOIN,
+        brand_id=brand.id,
+    )
+    db_session.add_all([filament, request])
+    await db_session.commit()
+
+    response = await admin_client.patch(
+        f"{endpoint_prefix}/{request.id}",
+        json={"status": "approved"},
+    )
+    assert response.status_code == 200
+
+    await db_session.refresh(brand)
+    qr_code = await db_session.scalar(
+        select(Filament.qr_code).where(Filament.id == filament.id)
+    )
+    assert brand.verified is True
+    assert qr_code

@@ -18,12 +18,13 @@ from app.db.session import get_db
 from app.models.brand import Brand
 from app.models.filament import Filament, FilamentAvailability
 from app.models.filament_line import FilamentLine
-from app.models.user import User, UserRole
+from app.models.user import User
 from app.schemas.filament import (
     FilamentImportResult,
     FilamentImportRowResult,
 )
 from app.services.preset_moderation import validate_text_field
+from app.services.organization_access import can_edit_brand_catalog
 from app.services.slug_service import generate_unique_slug
 
 router = APIRouter(prefix="/filament-import", tags=["filament-import"])
@@ -77,7 +78,7 @@ async def import_filaments(
     brand = await db.scalar(select(Brand).where(Brand.id == brand_id))
     if brand is None:
         raise_error(404, ERR_BRAND_NOT_FOUND)
-    if current_user.role != UserRole.ADMIN and current_user.brand_id != brand_id:
+    if not await can_edit_brand_catalog(db, current_user, brand_id):
         raise_error(403, ERR_NO_PERMISSION_EDIT_FILAMENT)
 
     raw = await file.read()

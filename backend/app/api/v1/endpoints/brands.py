@@ -1,5 +1,7 @@
 """Brand endpoints."""
 
+from datetime import datetime, timezone
+
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
@@ -12,7 +14,9 @@ from app.core.dependencies import (
     get_current_user,
 )
 from app.core.errors import (
+    ERR_BRAND_NAME_EXISTS,
     ERR_BRAND_NOT_FOUND,
+    ERR_BRAND_NAME_CORRECTION_USED,
     ERR_BRAND_SLUG_EXISTS,
     ERR_FILE_EXT_NOT_ALLOWED,
     ERR_FILE_SIZE_EXCEEDED,
@@ -37,7 +41,12 @@ from app.schemas.brand import (
     BrandUsageResponse,
     PopularPrinterItem,
 )
-from app.services.file_service import get_upload_root_dir, normalize_brand_logo_upload
+from app.services.file_service import (
+    BRAND_LOGO_ALLOWED_EXTENSIONS,
+    get_upload_root_dir,
+    normalize_brand_logo_upload,
+)
+from app.services.organization_access import can_edit_brand_catalog, can_view_private_brand_data
 
 router = APIRouter(prefix="/brands", tags=["brands"])
 
@@ -129,7 +138,7 @@ async def get_brand_usage(
     if not brand:
         raise_error(404, ERR_BRAND_NOT_FOUND)
 
-    if current_user.role != UserRole.ADMIN and current_user.brand_id != brand_id:
+    if not await can_view_private_brand_data(db, current_user, brand_id):
         raise_error(403, ERR_NO_PERMISSION)
 
     printers_result = await db.execute(
@@ -198,7 +207,7 @@ async def backfill_brand_qr(
     brand = (await db.execute(select(Brand).where(Brand.id == brand_id))).scalar_one_or_none()
     if not brand:
         raise_error(404, ERR_BRAND_NOT_FOUND)
-    if current_user.role != UserRole.ADMIN and current_user.brand_id != brand_id:
+    if not await can_edit_brand_catalog(db, current_user, brand_id):
         raise_error(403, ERR_NO_PERMISSION)
 
     from app.services.qr_service import backfill_brand_qr_codes
@@ -230,8 +239,13 @@ async def create_brand(
     if existing.scalar_one_or_none():
         raise_error(400, ERR_BRAND_SLUG_EXISTS)
 
+    # Verification is a server-controlled state. Public brand creation must
+    # never allow a caller to self-assign the verified manufacturer badge.
+    brand_data = data.model_dump()
+    brand_data["verified"] = False
+
     # Create brand
-    brand = Brand(**data.model_dump())
+    brand = Brand(**brand_data)
     db.add(brand)
     await db.commit()
     await db.refresh(brand)
@@ -247,26 +261,49 @@ async def update_brand(
     current_user: Annotated[User, Depends(get_current_user)],
 ) -> BrandResponse:
     """Обновить производителя."""
-    result = await db.execute(select(Brand).where(Brand.id == brand_id))
+    result = await db.execute(
+        select(Brand).where(Brand.id == brand_id).with_for_update()
+    )
     brand = result.scalar_one_or_none()
 
     if not brand:
         raise_error(404, ERR_BRAND_NOT_FOUND)
 
     is_admin = current_user.role == UserRole.ADMIN
-    is_employee = current_user.brand_id == brand_id
+    is_employee = await can_edit_brand_catalog(db, current_user, brand_id)
 
     if not is_admin and not is_employee:
         raise_error(403, ERR_NO_PERMISSION)
 
     update_data = data.model_dump(exclude_unset=True)
 
-    # Сотрудник может менять только description, website, logo_url
-    # name, slug, verified, active — только админ
+    # A representative may correct the community-authored name exactly once
+    # after the first verified claim. The existing slug is deliberately kept:
+    # public links must not break as a side effect of correcting display text.
     if not is_admin:
-        admin_only = {"name", "slug", "verified", "active"}
+        admin_only = {"slug", "verified", "active"}
         for field in admin_only:
             update_data.pop(field, None)
+
+        requested_name = update_data.get("name")
+        if requested_name is not None:
+            requested_name = requested_name.strip()
+            if requested_name == brand.name:
+                update_data.pop("name", None)
+            elif not brand.name_correction_available:
+                raise_error(409, ERR_BRAND_NAME_CORRECTION_USED)
+            else:
+                duplicate = await db.scalar(
+                    select(Brand.id).where(
+                        Brand.id != brand.id,
+                        func.lower(Brand.name) == requested_name.casefold(),
+                    )
+                )
+                if duplicate is not None:
+                    raise_error(409, ERR_BRAND_NAME_EXISTS)
+                update_data["name"] = requested_name
+                brand.name_correction_available = False
+                brand.name_corrected_at = datetime.now(timezone.utc)
 
     # Проверка текстовых полей на плохие слова
     from app.services.preset_moderation import validate_text_field
@@ -308,11 +345,11 @@ async def upload_brand_logo(
         raise_error(404, ERR_BRAND_NOT_FOUND)
 
     is_admin = current_user.role == UserRole.ADMIN
-    is_employee = current_user.brand_id == brand_id
+    is_employee = await can_edit_brand_catalog(db, current_user, brand_id)
     if not is_admin and not is_employee:
         raise_error(403, ERR_NO_PERMISSION)
 
-    allowed_ext = {".png", ".jpg", ".jpeg", ".webp", ".svg"}
+    allowed_ext = BRAND_LOGO_ALLOWED_EXTENSIONS
     file_ext = Path(file.filename or "").suffix.lower()
     if file_ext not in allowed_ext:
         raise_error(

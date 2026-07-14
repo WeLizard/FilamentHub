@@ -79,6 +79,7 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({ onBack, init
   const [presetFilterFilament, setPresetFilterFilament] = useState<Filament | null>(null);
   const [addColorsFilament, setAddColorsFilament] = useState<Filament | null>(null);
   const [isEditingProfile, setIsEditingProfile] = useState(false);
+  const [profileName, setProfileName] = useState('');
   const [profileDescription, setProfileDescription] = useState('');
   const [profileWebsite, setProfileWebsite] = useState('');
   const [profileLogoUrl, setProfileLogoUrl] = useState('');
@@ -229,7 +230,7 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({ onBack, init
 
   // Мутация для обновления профиля бренда
   const updateBrandMutation = useMutation({
-    mutationFn: (data: { description?: string | null; website?: string | null; logo_url?: string | null; logo_bg?: string | null; social_media_urls?: string[] | null; shop_links?: { platform: string; url: string }[] | null; price_hidden?: boolean; currency?: string }) =>
+    mutationFn: (data: { name?: string; description?: string | null; website?: string | null; logo_url?: string | null; logo_bg?: string | null; social_media_urls?: string[] | null; shop_links?: { platform: string; url: string }[] | null; price_hidden?: boolean; currency?: string }) =>
       brandsAPI.update(user!.brand_id!, data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['brand', user?.brand_id] });
@@ -243,6 +244,7 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({ onBack, init
 
   const handleEditProfile = () => {
     if (brandData) {
+      setProfileName(brandData.name);
       setProfileDescription(brandData.description || '');
       setProfileWebsite(brandData.website || '');
       setProfileLogoUrl(brandData.logo_url || '');
@@ -267,6 +269,9 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({ onBack, init
 
   const handleSaveProfile = () => {
     updateBrandMutation.mutate({
+      ...(brandData?.name_correction_available && profileName.trim() !== brandData.name
+        ? { name: profileName.trim() }
+        : {}),
       description: profileDescription.trim() || null,
       website: profileWebsite.trim() || null,
       logo_url: profileLogoUrl.trim() || null,
@@ -1204,6 +1209,19 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({ onBack, init
               <div className="grid md:grid-cols-2 gap-5">
               <div className="space-y-4">
               <p className="text-xs font-semibold uppercase tracking-wide text-purple-300/80 mb-1">{t('brandProfile.sectionAbout')}</p>
+              {brandData.name_correction_available && (
+                <div className="rounded-xl border border-cyan-400/20 bg-cyan-400/5 p-4">
+                  <label className="block text-gray-200 mb-2 text-sm font-medium">{t('brandProfile.officialNameLabel')}</label>
+                  <input
+                    type="text"
+                    value={profileName}
+                    maxLength={100}
+                    onChange={(e) => setProfileName(e.target.value)}
+                    className="w-full px-4 py-3 bg-white/10 border border-cyan-300/25 rounded-xl text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-cyan-400 focus:border-transparent transition-all"
+                  />
+                  <p className="mt-2 text-xs leading-5 text-cyan-100/70">{t('brandProfile.officialNameHint')}</p>
+                </div>
+              )}
               <div>
                 <label className="block text-gray-300 mb-2 text-sm font-medium">{t('brandProfile.descriptionLabel')}</label>
                 <textarea
@@ -1266,7 +1284,7 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({ onBack, init
                     <span className="text-sm">{t('brandProfile.uploadLogo')}</span>
                     <input
                       type="file"
-                      accept=".png,.jpg,.jpeg,.webp,.svg"
+                      accept=".png,.jpg,.jpeg,.bmp,.webp"
                       onChange={handleLogoUpload}
                       className="hidden"
                       disabled={isUploadingLogo}
@@ -1376,7 +1394,7 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({ onBack, init
               </button>
               <button
                 onClick={handleSaveProfile}
-                disabled={updateBrandMutation.isPending}
+                disabled={updateBrandMutation.isPending || (brandData.name_correction_available && !profileName.trim())}
                 className="px-6 py-2.5 bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white rounded-xl transition-all shadow-lg shadow-purple-500/25 flex items-center space-x-2 disabled:opacity-50"
               >
                 {updateBrandMutation.isPending ? (

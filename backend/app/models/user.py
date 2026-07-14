@@ -16,6 +16,7 @@ if TYPE_CHECKING:
     from app.models.feedback import Feedback
     from app.models.filament_review import FilamentReview
     from app.models.notification import Notification
+    from app.models.organization import OrganizationMembership
     from app.models.preset import Preset
     from app.models.print_profile import PrintProfile
     from app.models.printer_profile import PrinterProfile
@@ -32,6 +33,7 @@ class UserRole(str, Enum):
 
     USER = "user"
     BRAND = "brand"
+    MODERATOR = "moderator"
     ADMIN = "admin"
 
 
@@ -146,7 +148,12 @@ class User(Base):
     subscription: Mapped["Subscription | None"] = relationship(
         "Subscription", back_populates="user", uselist=False, cascade="all, delete-orphan"
     )
+    organization_memberships: Mapped[list["OrganizationMembership"]] = relationship(
+        "OrganizationMembership",
+        back_populates="user",
+        foreign_keys="OrganizationMembership.user_id",
+        cascade="all, delete-orphan",
+    )
 
     def __repr__(self) -> str:
         return f"<User(id={self.id}, email={self.email}, role={self.role.value})>"
-

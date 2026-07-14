@@ -1,6 +1,7 @@
 """Email sending service via Resend."""
 
 import logging
+from dataclasses import dataclass
 from pathlib import Path
 
 import resend
@@ -26,8 +27,27 @@ def _is_configured() -> bool:
     return bool(settings.RESEND_API_KEY)
 
 
-def _get_from() -> str:
-    return f"{settings.EMAIL_FROM_NAME} <{settings.EMAIL_FROM}>"
+@dataclass(frozen=True)
+class EmailSendResult:
+    """Provider result kept explicit for admin delivery tracking."""
+
+    sent: bool
+    provider_message_id: str | None = None
+    error: str | None = None
+
+    def __bool__(self) -> bool:
+        return self.sent
+
+
+def _get_from(profile: str = "transactional") -> str:
+    addresses = {
+        "transactional": settings.EMAIL_FROM,
+        "partnerships": settings.EMAIL_PARTNERSHIPS_FROM,
+        "pr": settings.EMAIL_PR_FROM,
+    }
+    if profile not in addresses:
+        raise ValueError(f"Unknown email sender profile: {profile}")
+    return f"{settings.EMAIL_FROM_NAME} <{addresses[profile]}>"
 
 
 def send_email(*, to: str, subject: str, html: str) -> bool:
@@ -49,6 +69,42 @@ def send_email(*, to: str, subject: str, html: str) -> bool:
         logger.error("Failed to send email to %s", to, exc_info=True)
         return False
 
+
+def send_email_tracked(
+    *,
+    to: str,
+    subject: str,
+    html: str,
+    sender_profile: str = "transactional",
+    reply_to: str | None = None,
+) -> EmailSendResult:
+    """Send email and return a trackable provider result."""
+    if not _is_configured():
+        logger.warning("Email sending skipped: RESEND_API_KEY not configured")
+        return EmailSendResult(sent=False, error="RESEND_API_KEY is not configured")
+
+    try:
+        from_address = _get_from(sender_profile)
+    except ValueError as exc:
+        return EmailSendResult(sent=False, error=str(exc))
+
+    params: dict[str, object] = {
+        "from": from_address,
+        "to": [to],
+        "subject": subject,
+        "html": html,
+    }
+    if reply_to:
+        params["reply_to"] = [reply_to]
+
+    resend.api_key = settings.RESEND_API_KEY
+    try:
+        response = resend.Emails.send(params)  # type: ignore[arg-type]
+        provider_id = response.get("id") if isinstance(response, dict) else None
+        return EmailSendResult(sent=True, provider_message_id=provider_id)
+    except Exception as exc:
+        logger.error("Failed to send tracked email to %s", to, exc_info=True)
+        return EmailSendResult(sent=False, error=str(exc)[:500])
 
 def send_password_reset_email(*, to: str, reset_url: str) -> bool:
     """Send password reset link."""
@@ -81,7 +137,15 @@ def send_brand_status_email(*, to: str, brand_name: str, approved: bool, reason:
     return send_email(to=to, subject=subject, html=html)
 
 
-def send_brand_invite_email(*, to: str, brand_name: str | None, invite_url: str, site_url: str) -> bool:
+def send_brand_invite_email(
+    *,
+    to: str,
+    brand_name: str | None,
+    invite_url: str,
+    site_url: str,
+    sender_profile: str = "partnerships",
+    reply_to: str | None = None,
+) -> EmailSendResult:
     """Send a pre-verified brand invitation to a manufacturer's corporate email."""
     brand_display = brand_name or "ваш бренд"
     subject = (
@@ -97,4 +161,10 @@ def send_brand_invite_email(*, to: str, brand_name: str | None, invite_url: str,
         site_url=site_url,
         contact_email=settings.EMAIL_CONTACT,
     )
-    return send_email(to=to, subject=subject, html=html)
+    return send_email_tracked(
+        to=to,
+        subject=subject,
+        html=html,
+        sender_profile=sender_profile,
+        reply_to=reply_to,
+    )

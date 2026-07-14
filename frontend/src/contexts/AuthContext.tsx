@@ -236,11 +236,14 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       try {
         await login(data.email, data.password);
       } catch (loginError: any) {
-        // Если автоматический логин не удался, это не критично
-        // Пользователь сможет войти вручную
-        // Но все равно пробрасываем ошибку регистрации, чтобы пользователь знал об успехе
         console.warn('Auto-login after registration failed:', loginError);
-        // Не пробрасываем ошибку логина, т.к. регистрация прошла успешно
+        const error = new Error('Registration succeeded but automatic login failed') as Error & {
+          registrationSucceeded: true;
+          cause?: unknown;
+        };
+        error.registrationSucceeded = true;
+        error.cause = loginError;
+        throw error;
       }
       
       // Возвращаем успешный результат регистрации

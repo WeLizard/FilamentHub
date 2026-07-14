@@ -101,6 +101,10 @@ class Settings(BaseSettings):
     EMAIL_FROM: str = "noreply@filamenthub.ru"
     EMAIL_FROM_NAME: str = "FilamentHub"
     EMAIL_CONTACT: str = "support@filamenthub.ru"  # реальный ящик для ответов (не noreply)
+    EMAIL_PARTNERSHIPS_FROM: str = "partnerships@filamenthub.ru"
+    EMAIL_PR_FROM: str = "pr@filamenthub.ru"
+    EMAIL_INBOUND_DOMAIN: str = ""  # e.g. reply.filamenthub.ru after Resend MX setup
+    RESEND_WEBHOOK_SECRET: str = ""
 
     model_config = SettingsConfigDict(
         env_file=".env",

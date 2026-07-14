@@ -7,6 +7,7 @@ import { Loader2, AlertCircle } from 'lucide-react';
 import { authAPI } from '../api/client';
 import { useAuth } from '../contexts/AuthContext';
 import { translateApiError } from '../utils/translateApiError';
+import { consumeAuthReturnTo } from '../utils/authReturn';
 
 export function OAuthCallbackPage() {
   const { t } = useTranslation();
@@ -40,7 +41,7 @@ export function OAuthCallbackPage() {
       try {
         const tokenData = await authAPI.oauthCallback(provider, code, state);
         await loginWithToken(tokenData.access_token, tokenData.refresh_token);
-        navigate('/', { replace: true });
+        navigate(consumeAuthReturnTo() ?? '/', { replace: true });
       } catch (err: any) {
         const detail = err?.response?.data?.detail;
         const fallback = t('oauthCallback.error_fallback', { provider: provider ?? '' });

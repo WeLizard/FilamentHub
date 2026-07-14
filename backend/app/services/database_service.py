@@ -899,7 +899,10 @@ async def import_database(
         db_port = parsed.port or 5432
 
         # Check file existence
-        dump_file = Path(settings.UPLOAD_DIR) / "database_dumps" / filepath
+        dumps_dir = (Path(settings.UPLOAD_DIR) / "database_dumps").resolve()
+        dump_file = (dumps_dir / filepath).resolve()
+        if not dump_file.is_relative_to(dumps_dir):
+            return False, "Invalid dump file path"
         if not dump_file.exists():
             return False, f"Dump file not found: {filepath}"
 

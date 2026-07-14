@@ -307,8 +307,16 @@ async def test_legacy_refresh_body_still_works_in_dual_mode(client: AsyncClient,
 
 
 @pytest.mark.asyncio
-async def test_upload_avatar(client: AsyncClient):
-    """Uploading an avatar stores the file and returns avatar_url."""
+async def test_upload_avatar(client: AsyncClient, monkeypatch, tmp_path):
+    """Avatar uploads are decoded, normalized to WebP and replace the old file."""
+    from io import BytesIO
+    import struct
+
+    from PIL import Image
+
+    from app.services import file_service
+
+    monkeypatch.setattr(file_service, "get_upload_root_dir", lambda: tmp_path)
     user_data = {
         "email": "avatar@example.com",
         "username": "avataruser",
@@ -322,18 +330,67 @@ async def test_upload_avatar(client: AsyncClient):
     )
     token = login.json()["access_token"]
 
-    png = (
-        b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01\x00\x00\x00\x01"
-        b"\x08\x06\x00\x00\x00\x1f\x15\xc4\x89\x00\x00\x00\nIDATx\x9cc\x00\x01"
-        b"\x00\x00\x05\x00\x01\r\n-\xb4\x00\x00\x00\x00IEND\xaeB`\x82"
-    )
+    def png_bytes(color: tuple[int, int, int]) -> bytes:
+        output = BytesIO()
+        Image.new("RGB", (640, 320), color).save(output, "PNG")
+        return output.getvalue()
+
+    def bmp_bytes(color: tuple[int, int, int]) -> bytes:
+        output = BytesIO()
+        Image.new("RGB", (640, 320), color).save(output, "BMP")
+        return output.getvalue()
+
+    def oversized_bmp_bytes(width: int, height: int) -> bytes:
+        output = BytesIO()
+        Image.new("RGB", (1, 1), (0, 0, 0)).save(output, "BMP")
+        data = bytearray(output.getvalue())
+        struct.pack_into("<I", data, 18, width)
+        struct.pack_into("<I", data, 22, height)
+        return bytes(data)
+
     resp = await client.post(
         "/api/v1/auth/me/avatar",
-        files={"file": ("a.png", png, "image/png")},
+        files={"file": ("a.bmp", bmp_bytes((255, 0, 0)), "image/bmp")},
         headers={"Authorization": f"Bearer {token}"},
     )
     assert resp.status_code == 200
-    assert (resp.json().get("avatar_url") or "").startswith("/uploads/avatars/")
+    first_url = resp.json().get("avatar_url") or ""
+    assert first_url.startswith("/uploads/avatars/")
+    assert first_url.endswith(".webp")
+    first_path = tmp_path / "avatars" / first_url.rsplit("/", 1)[-1]
+    assert first_path.exists()
+    with Image.open(first_path) as stored:
+        assert stored.format == "WEBP"
+        assert stored.size == (256, 256)
+
+    oversize = await client.post(
+        "/api/v1/auth/me/avatar",
+        files={"file": ("too-big.bmp", oversized_bmp_bytes(5001, 5000), "image/bmp")},
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert oversize.status_code == 400
+    assert oversize.json()["detail"]["code"] == "ERR_FILE_SIZE_EXCEEDED"
+    assert first_path.exists()
+
+    disguised = await client.post(
+        "/api/v1/auth/me/avatar",
+        files={"file": ("payload.png", b"<script>alert(1)</script>", "image/png")},
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert disguised.status_code == 400
+    assert disguised.json()["detail"]["code"] == "ERR_FILE_CONTENT_MISMATCH"
+    assert first_path.exists()
+
+    replaced = await client.post(
+        "/api/v1/auth/me/avatar",
+        files={"file": ("b.png", png_bytes((0, 0, 255)), "image/png")},
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert replaced.status_code == 200
+    second_url = replaced.json()["avatar_url"]
+    second_path = tmp_path / "avatars" / second_url.rsplit("/", 1)[-1]
+    assert second_path.exists()
+    assert not first_path.exists()
 
 
 @pytest.mark.asyncio

@@ -98,7 +98,7 @@ async def auth_user(db_session: AsyncSession) -> "User":
     from app.models.user import User
 
     user = User(
-        email="auth_user@test.local",
+        email="auth_user@example.com",
         username="authuser",
         password_hash="$2b$12$test",
         active=True,
@@ -125,7 +125,7 @@ async def admin_user(db_session: AsyncSession) -> "User":
     from app.models.user import User, UserRole
 
     user = User(
-        email="admin_user@test.local",
+        email="admin_user@example.com",
         username="adminuser",
         password_hash="$2b$12$test",
         active=True,

@@ -17,7 +17,7 @@ from app.db.session import get_db
 from app.models.brand import Brand
 from app.models.filament import Filament, FilamentAvailability
 from app.models.filament_line import FilamentLine
-from app.models.user import User, UserRole
+from app.models.user import User
 from app.schemas.filament import (
     FilamentImportResult,
     FilamentImportRowResult,
@@ -27,13 +27,10 @@ from app.schemas.filament import (
     FilamentPaletteCreate,
 )
 from app.services.preset_moderation import validate_text_field
+from app.services.organization_access import can_edit_brand_catalog
 from app.services.slug_service import generate_unique_slug
 
 router = APIRouter(prefix="/filament-lines", tags=["filament-lines"])
-
-
-def _can_manage(user: User, brand_id: int) -> bool:
-    return user.role == UserRole.ADMIN or user.brand_id == brand_id
 
 
 async def _to_response(db: AsyncSession, line: FilamentLine) -> FilamentLineResponse:
@@ -73,7 +70,7 @@ async def create_filament_line(
     brand = await db.scalar(select(Brand).where(Brand.id == brand_id))
     if brand is None:
         raise_error(404, ERR_BRAND_NOT_FOUND)
-    if not _can_manage(current_user, brand_id):
+    if not await can_edit_brand_catalog(db, current_user, brand_id):
         raise_error(403, ERR_NO_PERMISSION_EDIT_FILAMENT)
 
     line = FilamentLine(brand_id=brand_id, name=data.name.strip())
@@ -94,7 +91,7 @@ async def update_filament_line(
     line = await db.scalar(select(FilamentLine).where(FilamentLine.id == line_id))
     if line is None:
         raise_error(404, ERR_FILAMENT_LINE_NOT_FOUND)
-    if not _can_manage(current_user, line.brand_id):
+    if not await can_edit_brand_catalog(db, current_user, line.brand_id):
         raise_error(403, ERR_NO_PERMISSION_EDIT_FILAMENT)
 
     line.name = data.name.strip()
@@ -123,7 +120,7 @@ async def create_line_variants(
     brand = await db.scalar(select(Brand).where(Brand.id == line.brand_id))
     if brand is None:
         raise_error(404, ERR_BRAND_NOT_FOUND)
-    if not _can_manage(current_user, line.brand_id):
+    if not await can_edit_brand_catalog(db, current_user, line.brand_id):
         raise_error(403, ERR_NO_PERMISSION_EDIT_FILAMENT)
 
     # Кастомный наполнитель — только для верифицированного бренда (проверяем один раз).
@@ -228,7 +225,7 @@ async def delete_filament_line(
     line = await db.scalar(select(FilamentLine).where(FilamentLine.id == line_id))
     if line is None:
         raise_error(404, ERR_FILAMENT_LINE_NOT_FOUND)
-    if not _can_manage(current_user, line.brand_id):
+    if not await can_edit_brand_catalog(db, current_user, line.brand_id):
         raise_error(403, ERR_NO_PERMISSION_EDIT_FILAMENT)
 
     await db.delete(line)

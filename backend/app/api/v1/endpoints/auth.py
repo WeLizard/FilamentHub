@@ -1,5 +1,6 @@
 """Authentication endpoints."""
 
+import logging
 import secrets
 from datetime import datetime, timezone
 from typing import Annotated
@@ -81,6 +82,7 @@ from app.services.email_validator import (
 )
 
 router = APIRouter(prefix="/auth", tags=["auth"])
+logger = logging.getLogger(__name__)
 
 # Импортируем limiter из core
 from app.core.errors import (
@@ -479,9 +481,13 @@ async def upload_avatar(
         ERR_FILE_SIZE_EXCEEDED,
         ERR_INVALID_FILE_PATH,
     )
-    from app.services.file_service import get_upload_root_dir, normalize_avatar_upload
+    from app.services.file_service import (
+        AVATAR_ALLOWED_EXTENSIONS,
+        get_upload_root_dir,
+        normalize_avatar_upload,
+    )
 
-    allowed_ext = {".png", ".jpg", ".jpeg", ".webp"}
+    allowed_ext = AVATAR_ALLOWED_EXTENSIONS
     file_ext = Path(file.filename or "").suffix.lower()
     if file_ext not in allowed_ext:
         raise_error(
@@ -490,6 +496,7 @@ async def upload_avatar(
             {"ext": file_ext, "allowed": ", ".join(sorted(allowed_ext))},
         )
 
+    old_avatar_url = current_user.avatar_url
     content = await file.read()
     max_size = 2 * 1024 * 1024
     if len(content) > max_size:
@@ -514,6 +521,16 @@ async def upload_avatar(
     current_user.avatar_url = f"/uploads/avatars/{file_name}"
     await db.commit()
     await db.refresh(current_user)
+
+    # The owner explicitly replaces the previous avatar. Remove the superseded
+    # file only after the new file and DB update both succeeded.
+    if old_avatar_url and old_avatar_url.startswith("/uploads/avatars/"):
+        old_path = (avatar_dir / Path(old_avatar_url).name).resolve()
+        if old_path != file_path and old_path.is_relative_to(avatar_dir.resolve()):
+            try:
+                old_path.unlink(missing_ok=True)
+            except OSError:
+                logger.warning("Failed to remove replaced avatar %s", old_path, exc_info=True)
     return UserResponse.model_validate(current_user)
 
 
@@ -1297,5 +1314,3 @@ async def oauth_callback(
         _set_auth_cookies(response, access_token, refresh_token)
 
     return Token(access_token=access_token, refresh_token=refresh_token)
-
-

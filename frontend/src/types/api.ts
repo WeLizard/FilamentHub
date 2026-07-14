@@ -9,6 +9,8 @@ export interface Brand {
   logo_url: string | null;
   logo_bg: string | null; // фон под лого (для прозрачных PNG/SVG)
   verified: boolean;
+  name_correction_available: boolean;
+  name_corrected_at: string | null;
   active: boolean;
   currency: string;
   social_media_urls: string[] | null;
@@ -151,6 +153,8 @@ export interface BrandInvitePublic {
   valid: boolean;
   brand_name: string | null;
   email: string | null;
+  target_type: 'new' | 'existing' | null;
+  brand_id: number | null;
   reason: string | null;
 }
 
@@ -159,6 +163,14 @@ export interface BrandInviteAdmin {
   token: string;
   email: string;
   brand_name: string | null;
+  target_type: 'new' | 'existing';
+  brand_id: number | null;
+  organization_id: number | null;
+  member_role: 'owner' | 'editor';
+  sender_profile: 'partnerships' | 'pr' | 'transactional';
+  batch_id: string | null;
+  send_status: 'pending' | 'sent' | 'failed';
+  send_error: string | null;
   pre_verified: boolean;
   expires_at: string;
   accepted_at: string | null;
@@ -169,6 +181,8 @@ export interface BrandInviteAdmin {
 export interface BrandInviteAcceptResult {
   brand_id: number;
   brand_name: string;
+  organization_id: number;
+  member_role: 'owner' | 'editor';
 }
 
 export interface Printer {

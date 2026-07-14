@@ -97,6 +97,40 @@ async def test_admin_endpoints_require_admin_role(client: AsyncClient):
     assert response.status_code == 403
 
 
+@pytest.mark.asyncio
+async def test_admin_database_import_ignores_client_filename(
+    admin_client: AsyncClient,
+    monkeypatch,
+    tmp_path,
+):
+    """A dump upload cannot escape the server-controlled database dump directory."""
+    import re
+
+    from app.api.v1.endpoints import admin as admin_module
+    from app.core.config import settings
+
+    captured: dict[str, str] = {}
+
+    async def fake_import_database_service(**kwargs):
+        captured["filepath"] = kwargs["filepath"]
+        return True, "ok"
+
+    monkeypatch.setattr(settings, "UPLOAD_DIR", str(tmp_path))
+    monkeypatch.setattr(admin_module, "import_database_service", fake_import_database_service)
+
+    response = await admin_client.post(
+        "/api/v1/admin/database/import?format=custom",
+        files={"file": ("../../outside.dump", b"database dump", "application/octet-stream")},
+    )
+
+    assert response.status_code == 200
+    stored_name = captured["filepath"]
+    assert re.fullmatch(r"\d{8}_\d{6}_[0-9a-f]{32}\.dump", stored_name)
+    # The import endpoint removes its temporary file after the service returns.
+    assert not (tmp_path / "database_dumps" / stored_name).exists()
+    assert not (tmp_path.parent / "outside.dump").exists()
+
+
 # ---------------------------------------------------------------------------
 # Brands
 # ---------------------------------------------------------------------------

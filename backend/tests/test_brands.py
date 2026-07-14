@@ -27,13 +27,14 @@ async def test_create_brand(auth_client: AsyncClient):
         "slug": "test-brand",
         "description": "Test description",
         "website": "https://test.com",
-        "verified": False,
+        "verified": True,
     }
     response = await auth_client.post("/api/v1/brands/", json=brand_data)
     assert response.status_code == 201
     data = response.json()
     assert data["name"] == brand_data["name"]
     assert data["slug"] == brand_data["slug"]
+    assert data["verified"] is False
     assert data["id"] is not None
 
 
@@ -146,6 +147,60 @@ async def test_brand_request_proof_files_are_gated(client: AsyncClient, db_sessi
         assert traversal.status_code == 404
     finally:
         proof_file.unlink(missing_ok=True)
+
+
+@pytest.mark.asyncio
+async def test_admin_brand_logo_accepts_bmp_and_rejects_disguised_bmp(
+    admin_client: AsyncClient,
+    db_session: AsyncSession,
+    monkeypatch,
+    tmp_path,
+):
+    """Brand logos are normalized to WebP and BMP uploads are validated by content."""
+    from io import BytesIO
+
+    from PIL import Image
+
+    from app.api.v1.endpoints import admin as admin_endpoints
+    from app.models.brand import Brand
+
+    monkeypatch.setattr(admin_endpoints, "get_upload_root_dir", lambda: tmp_path)
+
+    brand = Brand(name="Logo BMP Brand", slug="logo-bmp-brand", active=True, verified=False)
+    db_session.add(brand)
+    await db_session.commit()
+    await db_session.refresh(brand)
+
+    def bmp_bytes(color: tuple[int, int, int]) -> bytes:
+        output = BytesIO()
+        Image.new("RGB", (300, 150), color).save(output, "BMP")
+        return output.getvalue()
+
+    ok = await admin_client.post(
+        f"/api/v1/admin/brands/{brand.id}/logo",
+        files={"file": ("logo.bmp", bmp_bytes((10, 20, 30)), "image/bmp")},
+    )
+    assert ok.status_code == 200
+    logo_url = ok.json()["logo_url"] or ""
+    assert logo_url.endswith(".webp")
+    stored_path = tmp_path / "brand_logos" / logo_url.rsplit("/", 1)[-1]
+    assert stored_path.exists()
+    with Image.open(stored_path) as stored:
+        assert stored.format == "WEBP"
+
+    bad = await admin_client.post(
+        f"/api/v1/admin/brands/{brand.id}/logo",
+        files={"file": ("bad.bmp", b"not really a bmp", "image/bmp")},
+    )
+    assert bad.status_code == 400
+    assert bad.json()["detail"]["code"] == "ERR_FILE_CONTENT_MISMATCH"
+
+    active_svg = await admin_client.post(
+        f"/api/v1/admin/brands/{brand.id}/logo",
+        files={"file": ("active.svg", b"<svg><script>alert(1)</script></svg>", "image/svg+xml")},
+    )
+    assert active_svg.status_code == 400
+    assert active_svg.json()["detail"]["code"] == "ERR_FILE_EXT_NOT_ALLOWED"
 
 
 def test_validate_file_signature_rejects_content_ext_mismatch():
