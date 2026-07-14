@@ -2,8 +2,12 @@
 
 import pytest
 from httpx import AsyncClient
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
+from app.models.brand import Brand
+from app.models.user import User
+from app.services.organization_access import grant_brand_owner_membership
 
 
 @pytest.mark.asyncio
@@ -114,6 +118,71 @@ async def test_get_current_user(client: AsyncClient):
     data = response.json()
     assert data["email"] == user_data["email"]
     assert data["username"] == user_data["username"]
+
+
+@pytest.mark.asyncio
+async def test_profile_update_cannot_assign_arbitrary_brand(
+    auth_client: AsyncClient,
+    auth_user: User,
+    db_session: AsyncSession,
+):
+    """The generic profile endpoint must never grant or select brand access."""
+    brand = Brand(name="Protected Brand", slug="protected-brand", active=True, verified=True)
+    db_session.add(brand)
+    await db_session.commit()
+    await db_session.refresh(brand)
+
+    response = await auth_client.patch("/api/v1/auth/me", json={"brand_id": brand.id})
+    assert response.status_code == 200
+    assert response.json()["brand_id"] is None
+    await db_session.refresh(auth_user)
+    assert auth_user.brand_id is None
+
+
+@pytest.mark.asyncio
+async def test_active_brand_requires_membership_and_lists_granted_brands(
+    auth_client: AsyncClient,
+    auth_user: User,
+    admin_user: User,
+    db_session: AsyncSession,
+):
+    """Active brand is a scoped workspace choice, not an authorization grant."""
+    allowed = Brand(name="Allowed Brand", slug="allowed-brand", active=True, verified=True)
+    denied = Brand(name="Denied Brand", slug="denied-brand", active=True, verified=True)
+    db_session.add_all([allowed, denied])
+    await db_session.flush()
+    await grant_brand_owner_membership(
+        db_session,
+        brand=allowed,
+        user=auth_user,
+        granted_by_id=admin_user.id,
+    )
+    await db_session.commit()
+
+    denied_response = await auth_client.put(
+        "/api/v1/auth/me/active-brand",
+        json={"brand_id": denied.id},
+    )
+    assert denied_response.status_code == 403
+
+    brands_response = await auth_client.get("/api/v1/auth/me/brands")
+    assert brands_response.status_code == 200
+    assert [item["brand_id"] for item in brands_response.json()] == [allowed.id]
+    assert brands_response.json()[0]["membership_role"] == "owner"
+
+    selected = await auth_client.put(
+        "/api/v1/auth/me/active-brand",
+        json={"brand_id": allowed.id},
+    )
+    assert selected.status_code == 200
+    assert selected.json()["brand_id"] == allowed.id
+
+    cleared = await auth_client.put(
+        "/api/v1/auth/me/active-brand",
+        json={"brand_id": None},
+    )
+    assert cleared.status_code == 200
+    assert cleared.json()["brand_id"] is None
 
 
 @pytest.mark.asyncio

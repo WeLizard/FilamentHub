@@ -35,9 +35,10 @@ import {
   List,
   Upload,
   Info,
+  ChevronDown,
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
-import { brandsAPI, filamentsAPI, brandRequestsAPI, presetsAPI, proofFilesAPI, qrAPI } from '../api/client';
+import { authAPI, brandsAPI, filamentsAPI, brandRequestsAPI, presetsAPI, proofFilesAPI, qrAPI } from '../api/client';
 import { translateApiError } from '../utils/translateApiError';
 import { PERSONAL_EMAIL_DOMAINS } from '../data/personalEmailDomains';
 import { currencySymbol, CURRENCY_CODES } from '../utils/currency';
@@ -64,7 +65,7 @@ interface BrandProfilePageProps {
 
 export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({ onBack, initialEditing }) => {
   const { t } = useTranslation();
-  const { user } = useAuth();
+  const { user, refreshUser } = useAuth();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [brandTab, setBrandTab] = useState<'materials' | 'presets' | 'qr' | 'analytics' | 'usage'>('materials');
@@ -95,6 +96,46 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({ onBack, init
   const [isImporting, setIsImporting] = useState(false);
   const [importResult, setImportResult] = useState<FilamentImportResult | null>(null);
   const [isBrandLogoVisible, setIsBrandLogoVisible] = useState(false);
+  const [isBrandSwitcherOpen, setIsBrandSwitcherOpen] = useState(false);
+  const brandSwitcherRef = useRef<HTMLDivElement>(null);
+
+  const accessibleBrandsQuery = useQuery({
+    queryKey: ['auth', 'accessible-brands', user?.id],
+    queryFn: authAPI.getAccessibleBrands,
+    enabled: Boolean(user?.id),
+  });
+  const setActiveBrandMutation = useMutation({
+    mutationFn: authAPI.setActiveBrand,
+    onSuccess: async () => {
+      setIsBrandSwitcherOpen(false);
+      setProfileError(null);
+      await refreshUser();
+      await queryClient.invalidateQueries({ queryKey: ['auth', 'accessible-brands'] });
+      await queryClient.invalidateQueries({ queryKey: ['brand'] });
+      await queryClient.invalidateQueries({ queryKey: ['brand-filaments'] });
+      await queryClient.invalidateQueries({ queryKey: ['brand-presets'] });
+    },
+    onError: (error: AxiosError<{ detail: unknown }>) => {
+      setProfileError(
+        translateApiError(
+          t,
+          error.response?.data?.detail,
+          t('profilePage.activeBrandChangeError'),
+        ),
+      );
+    },
+  });
+
+  useEffect(() => {
+    if (!isBrandSwitcherOpen) return;
+    const closeOnOutsideClick = (event: MouseEvent) => {
+      if (!brandSwitcherRef.current?.contains(event.target as Node)) {
+        setIsBrandSwitcherOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', closeOnOutsideClick);
+    return () => document.removeEventListener('mousedown', closeOnOutsideClick);
+  }, [isBrandSwitcherOpen]);
 
   // Загружаем данные бренда
   const { data: brandData, isLoading: isLoadingBrand } = useQuery({
@@ -430,7 +471,50 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({ onBack, init
             </div>
             <div className="text-center md:text-right">
               <div className="flex items-center justify-center space-x-2 md:justify-end">
-                <h2 className="text-3xl font-bold text-white">{brandData.name}</h2>
+                <div ref={brandSwitcherRef} className="relative">
+                  {(accessibleBrandsQuery.data?.length ?? 0) > 1 ? (
+                    <button
+                      type="button"
+                      onClick={() => setIsBrandSwitcherOpen((open) => !open)}
+                      disabled={setActiveBrandMutation.isPending}
+                      className="group inline-flex items-center gap-2 rounded-lg px-1.5 py-1 text-left transition hover:bg-white/5 focus:outline-none focus:ring-2 focus:ring-cyan-400/60 disabled:cursor-wait disabled:opacity-60"
+                      aria-expanded={isBrandSwitcherOpen}
+                      aria-haspopup="listbox"
+                      title={t('profilePage.activeBrand')}
+                    >
+                      <h2 className="text-3xl font-bold text-white">{brandData.name}</h2>
+                      <ChevronDown
+                        className={`h-5 w-5 text-cyan-300 transition-transform ${isBrandSwitcherOpen ? 'rotate-180' : ''}`}
+                      />
+                    </button>
+                  ) : (
+                    <h2 className="text-3xl font-bold text-white">{brandData.name}</h2>
+                  )}
+                  {isBrandSwitcherOpen && (
+                    <div
+                      role="listbox"
+                      aria-label={t('profilePage.activeBrand')}
+                      className="absolute left-1/2 top-full z-50 mt-2 max-h-72 min-w-64 -translate-x-1/2 overflow-y-auto rounded-xl border border-white/15 bg-slate-950/95 p-1.5 text-left shadow-2xl backdrop-blur-xl md:left-auto md:right-0 md:translate-x-0"
+                    >
+                      {accessibleBrandsQuery.data?.map((brand) => (
+                        <button
+                          key={brand.brand_id}
+                          type="button"
+                          role="option"
+                          aria-selected={brand.brand_id === user.brand_id}
+                          onClick={() => setActiveBrandMutation.mutate(brand.brand_id)}
+                          className="flex w-full items-center justify-between gap-4 rounded-lg px-3 py-2.5 text-left text-sm text-white transition hover:bg-white/10"
+                        >
+                          <span className="min-w-0">
+                            <span className="block truncate font-medium">{brand.brand_name}</span>
+                            <span className="block truncate text-xs text-gray-400">{brand.organization_name}</span>
+                          </span>
+                          {brand.brand_id === user.brand_id && <Check className="h-4 w-4 shrink-0 text-cyan-300" />}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
                 <button
                   onClick={handleEditProfile}
                   className="p-1.5 text-gray-400 hover:text-white hover:bg-white/10 rounded-lg transition-all"

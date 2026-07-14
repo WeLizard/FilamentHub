@@ -270,11 +270,17 @@ async def get_current_active_user_optional(
 
 async def get_current_brand_user(
     current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
 ) -> User:
-    """Get current user linked to a brand (by brand_id, not role)."""
-    # Проверяем наличие brand_id, а не роль (админ может быть привязан к бренду, но оставаться админом)
+    """Get a user with an authorized active brand workspace."""
     if not current_user.brand_id:
         raise_error(status.HTTP_403_FORBIDDEN, ERR_NOT_BRAND_USER)
+    if current_user.role != UserRole.ADMIN:
+        from app.services.organization_access import get_brand_membership
+
+        membership = await get_brand_membership(db, current_user, current_user.brand_id)
+        if membership is None:
+            raise_error(status.HTTP_403_FORBIDDEN, ERR_NOT_BRAND_USER)
     return current_user
 
 

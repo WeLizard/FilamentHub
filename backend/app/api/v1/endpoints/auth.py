@@ -52,8 +52,10 @@ from app.models.user import User, UserRole
 from app.models.user_saved_preset import UserSavedPreset
 from app.schemas.preset import PresetListResponse, PresetResponse
 from app.schemas.user import (
+    AccessibleBrandResponse,
     AccountDeleteRequest,
     AccountDeletionStats,
+    ActiveBrandUpdate,
     APIKeyResponse,
     ConfirmEmailChangeResponse,
     EmailChangeResponse,
@@ -78,11 +80,8 @@ from app.schemas.user import (
     UserUsernameUpdate,
 )
 from app.services.email_service import send_email_change_email, send_password_reset_email
-from app.services.email_validator import (
-    is_personal_email,
-    normalize_website_url,
-    validate_email_domain,
-)
+from app.services.email_validator import validate_email_domain
+from app.services.organization_access import can_select_active_brand, list_accessible_brands
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 logger = logging.getLogger(__name__)
@@ -746,8 +745,6 @@ async def update_current_user(
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> UserResponse:
     """Обновить профиль текущего пользователя."""
-    from app.models.brand import Brand
-
     # Обновляем поля пользователя
     update_data = data.model_dump(exclude_unset=True)
 
@@ -781,13 +778,6 @@ async def update_current_user(
         if not is_valid:
             raise HTTPException(status_code=400, detail=error_msg)
 
-    # Если обновляется brand_id, проверяем что бренд существует
-    if "brand_id" in update_data and update_data["brand_id"]:
-        result = await db.execute(select(Brand).where(Brand.id == update_data["brand_id"]))
-        brand = result.scalar_one_or_none()
-        if not brand:
-            raise_error(status.HTTP_404_NOT_FOUND, ERR_BRAND_NOT_FOUND)
-
     # Если обновляется printer_id, проверяем что принтер существует
     # (None допустим — это сброс выбранного принтера)
     if "printer_id" in update_data and update_data["printer_id"] is not None:
@@ -807,6 +797,47 @@ async def update_current_user(
     await db.commit()
     await db.refresh(current_user)
 
+    return UserResponse.model_validate(current_user)
+
+
+@router.get("/me/brands", response_model=list[AccessibleBrandResponse])
+async def get_accessible_brands(
+    current_user: Annotated[User, Depends(get_current_active_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> list[AccessibleBrandResponse]:
+    """Return brand workspaces available to the current user."""
+    rows = await list_accessible_brands(db, current_user)
+    return [
+        AccessibleBrandResponse(
+            brand_id=brand.id,
+            brand_name=brand.name,
+            brand_slug=brand.slug,
+            organization_id=organization.id,
+            organization_name=organization.name,
+            membership_role=membership.role if membership else None,
+            is_active=current_user.brand_id == brand.id,
+        )
+        for brand, organization, membership in rows
+    ]
+
+
+@router.put("/me/active-brand", response_model=UserResponse)
+async def update_active_brand(
+    data: ActiveBrandUpdate,
+    current_user: Annotated[User, Depends(get_current_active_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> UserResponse:
+    """Select a brand workspace without changing authorization grants."""
+    if data.brand_id is not None:
+        brand = await db.get(Brand, data.brand_id)
+        if brand is None or not brand.active:
+            raise_error(status.HTTP_404_NOT_FOUND, ERR_BRAND_NOT_FOUND)
+        if not await can_select_active_brand(db, current_user, data.brand_id):
+            raise_error(status.HTTP_403_FORBIDDEN, ERR_ACCESS_DENIED)
+
+    current_user.brand_id = data.brand_id
+    await db.commit()
+    await db.refresh(current_user)
     return UserResponse.model_validate(current_user)
 
 
@@ -881,32 +912,6 @@ async def verify_email(
 
     # Устанавливаем email_verified = True
     user.email_verified = True
-
-    # Проверяем, можно ли автоматически присвоить роль brand
-    # Если email не личный и есть существующий верифицированный бренд с таким доменом сайта
-    if not is_personal_email(user.email):
-        # Извлекаем домен email
-        email_domain = user.email.split("@")[1].lower() if "@" in user.email else None
-
-        if email_domain:
-            # Ищем верифицированные бренды с таким доменом сайта
-            result = await db.execute(
-                select(Brand).where(Brand.active == True, Brand.verified == True)
-            )
-            brands = result.scalars().all()
-
-            for brand in brands:
-                if brand.website:
-                    # Нормализуем сайт бренда и сравниваем с доменом email
-                    brand_website_domain = normalize_website_url(brand.website)
-                    if brand_website_domain and email_domain == brand_website_domain:
-                        # Нашли совпадение! Привязываем к бренду (роль не меняем)
-                        user.brand_id = brand.id
-                        logger.info(
-                            f"Auto-linked user {user.email} (id={user.id}) to brand {brand.name} "
-                            f"after email verification (email domain: {email_domain}, brand website: {brand_website_domain})"
-                        )
-                        break
 
     await db.commit()
     await db.refresh(user)

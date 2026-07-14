@@ -24,7 +24,6 @@ from app.core.errors import (
     ERR_NO_PERMISSION_DELETE_PRESET,
     ERR_NO_PERMISSION_EDIT_PRESET,
     ERR_OFFICIAL_VERIFIED_ONLY,
-    ERR_ONLY_BRAND_OFFICIAL,
     ERR_ONLY_OWN_BRAND_OFFICIAL,
     ERR_PRESET_ALREADY_ACTIVE,
     ERR_PRESET_NOT_FOUND,
@@ -304,11 +303,9 @@ async def create_preset(
 
     # Проверка прав на создание официального пресета
     if data.is_official:
-        # Только пользователи, привязанные к бренду (или админы), могут создавать официальные пресеты
-        if not current_user.brand_id and current_user.role.value != "admin":
-            raise_error(403, ERR_ONLY_BRAND_OFFICIAL)
-        # Проверяем, что filament принадлежит бренду пользователя (админы могут создавать для любого бренда)
-        if current_user.brand_id and filament.brand_id != current_user.brand_id:
+        from app.services.organization_access import can_edit_brand_catalog
+
+        if not await can_edit_brand_catalog(db, current_user, filament.brand_id):
             raise_error(403, ERR_ONLY_OWN_BRAND_OFFICIAL)
         # Официальный пресет — только для верифицированного бренда (админ — исключение)
         if current_user.role.value != "admin":
@@ -488,9 +485,9 @@ async def update_preset(
     # Поднять официальный статус можно только представителю верифицированного бренда
     # (тот же гейт, что и при создании); админ — исключение.
     if update_data.get("is_official") and current_user.role.value != "admin":
-        if not current_user.brand_id:
-            raise_error(403, ERR_ONLY_BRAND_OFFICIAL)
-        if not filament or filament.brand_id != current_user.brand_id:
+        from app.services.organization_access import can_edit_brand_catalog
+
+        if not filament or not await can_edit_brand_catalog(db, current_user, filament.brand_id):
             raise_error(403, ERR_ONLY_OWN_BRAND_OFFICIAL)
         from app.models.brand import Brand
         brand_result = await db.execute(select(Brand).where(Brand.id == filament.brand_id))

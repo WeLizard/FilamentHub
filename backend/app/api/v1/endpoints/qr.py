@@ -264,8 +264,9 @@ async def download_filament_qr_code(
     if not brand:
         raise_error(404, ERR_BRAND_NOT_FOUND)
 
-    # Проверяем права доступа (админ или пользователь привязан к этому бренду)
-    if current_user.role.value != 'admin' and (not current_user.brand_id or current_user.brand_id != brand.id):
+    from app.services.organization_access import can_edit_brand_catalog
+
+    if not await can_edit_brand_catalog(db, current_user, brand.id):
         raise_error(403, ERR_ACCESS_DENIED)
 
     if not filament.qr_code:

@@ -6,6 +6,7 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
 
+from app.models.organization import OrganizationMemberRole
 from app.models.user import UserRole
 
 
@@ -55,7 +56,6 @@ class UserUpdate(BaseModel):
         if v is not None:
             return validate_password_strength(v)
         return v
-    brand_id: int | None = Field(None, gt=0, description="ID бренда, который представляет пользователь")
     printer_id: int | None = Field(None, gt=0, description="ID выбранного принтера из каталога. Передайте null чтобы сбросить выбор.")
     # Sync settings
     allow_filament_presets_import: bool | None = None
@@ -149,6 +149,28 @@ class UserResponse(UserBase):
             instance.has_calculator_access = pro_active(obj)
             instance.subscription_info = subscription_summary(obj)
         return instance
+
+
+class ActiveBrandUpdate(BaseModel):
+    """Select or clear the user's active brand workspace."""
+
+    brand_id: int | None = Field(
+        None,
+        gt=0,
+        description="Accessible brand ID, or null to clear the active workspace",
+    )
+
+
+class AccessibleBrandResponse(BaseModel):
+    """A brand workspace available to the current user."""
+
+    brand_id: int
+    brand_name: str
+    brand_slug: str
+    organization_id: int
+    organization_name: str
+    membership_role: OrganizationMemberRole | None = None
+    is_active: bool
 
 
 class UserPublic(UserBase):

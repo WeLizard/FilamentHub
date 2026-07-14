@@ -426,6 +426,16 @@ export interface User {
   last_login: string | null; // Дата последнего входа
 }
 
+export interface AccessibleBrand {
+  brand_id: number;
+  brand_name: string;
+  brand_slug: string;
+  organization_id: number;
+  organization_name: string;
+  membership_role: 'owner' | 'editor' | null;
+  is_active: boolean;
+}
+
 export interface AccountDeletionStats {
   presets_count: number;
   official_presets_count: number;

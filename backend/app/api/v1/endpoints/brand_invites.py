@@ -76,6 +76,12 @@ def _mask_email(email: str) -> str:
     return f"{visible}{'*' * max(3, len(local) - 1)}@{domain}"
 
 
+def _email_domain(email: str) -> str:
+    """Return a normalized domain for domain-bound manufacturer invites."""
+    _, separator, domain = email.strip().casefold().rpartition("@")
+    return domain.rstrip(".") if separator else ""
+
+
 def _reply_to(invite: BrandInvite) -> str:
     if settings.EMAIL_INBOUND_DOMAIN and invite.reply_token:
         return f"invite-{invite.reply_token}@{settings.EMAIL_INBOUND_DOMAIN}"
@@ -227,8 +233,6 @@ async def accept_brand_invite(
     )
     if invite is None:
         raise_error(404, ERR_BRAND_INVITE_NOT_FOUND)
-    if not secrets.compare_digest(current_user.email.strip().casefold(), invite.email.casefold()):
-        raise_error(403, ERR_BRAND_INVITE_EMAIL_MISMATCH)
 
     # A successful request may be retried after the response was interrupted.
     if invite.accepted_at is not None:
@@ -248,6 +252,11 @@ async def accept_brand_invite(
         raise_error(400, ERR_BRAND_INVITE_INVALID)
     if not _is_active(invite):
         raise_error(400, ERR_BRAND_INVITE_INVALID)
+    if not secrets.compare_digest(
+        _email_domain(current_user.email),
+        _email_domain(invite.email),
+    ):
+        raise_error(403, ERR_BRAND_INVITE_EMAIL_MISMATCH)
 
     # The invite target is authored by the admin and cannot be replaced by a
     # client-controlled value during acceptance.

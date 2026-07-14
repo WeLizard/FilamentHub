@@ -144,16 +144,33 @@ async def test_existing_brand_invite_backfills_qr_codes(
 
 
 @pytest.mark.asyncio
-async def test_brand_invite_requires_matching_account_email(admin_client: AsyncClient):
+async def test_brand_invite_accepts_another_account_on_same_domain(admin_client: AsyncClient):
     created = await admin_client.post(
         "/api/v1/admin/brand-invites",
-        json={"email": "representative@example.com", "brand_name": "Bound Brand"},
+        json={"email": "representative@example.com", "brand_name": "Domain Brand"},
     )
     assert created.status_code == 201
 
     accepted = await admin_client.post(
         f"/api/v1/brand-invites/{created.json()['token']}/accept",
-        json={"brand_name": "Bound Brand"},
+        json={},
+    )
+
+    assert accepted.status_code == 200
+    assert accepted.json()["brand_name"] == "Domain Brand"
+
+
+@pytest.mark.asyncio
+async def test_brand_invite_rejects_account_from_another_domain(admin_client: AsyncClient):
+    created = await admin_client.post(
+        "/api/v1/admin/brand-invites",
+        json={"email": "representative@brand.example", "brand_name": "Bound Brand"},
+    )
+    assert created.status_code == 201
+
+    accepted = await admin_client.post(
+        f"/api/v1/brand-invites/{created.json()['token']}/accept",
+        json={},
     )
 
     assert accepted.status_code == 403

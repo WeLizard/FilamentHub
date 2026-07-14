@@ -467,14 +467,21 @@ export const FilamentDetailPage: React.FC = () => {
         {showQR && (
           <div className="mt-6 p-6 bg-white/5 rounded-xl border border-white/10">
             <div className="text-center">
-              {filament.qr_code ? (
+              {filament.qr_code || brandData?.verified ? (
                 <>
                   <img
                     src={qrAPI.getQRCodeURL(filament.id, 256)}
                     alt={t('filamentDetailPage.qrCodeAlt', { name: filament.name })}
                     className="w-64 h-64 mx-auto mb-4 rounded-lg bg-white p-3"
+                    onLoad={() => {
+                      if (!filament.qr_code) {
+                        void queryClient.invalidateQueries({ queryKey: ['filament', id] });
+                      }
+                    }}
                   />
-                  <p className="text-gray-300 text-base font-medium mb-1">{t('filamentDetailPage.qrCode')}: {filament.qr_code}</p>
+                  {filament.qr_code && (
+                    <p className="text-gray-300 text-base font-medium mb-1">{t('filamentDetailPage.qrCode')}: {filament.qr_code}</p>
+                  )}
                   <p className="text-gray-400 text-sm mb-2">{t('filamentDetailPage.scanForImport')}</p>
                   <div className="flex items-center justify-center gap-2 text-gray-500 text-xs">
                     <QrCode className="w-4 h-4" />

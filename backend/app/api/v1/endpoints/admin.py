@@ -43,7 +43,6 @@ from app.core.errors import (
     ERR_TABLE_NOT_FOUND,
     ERR_TABLE_STRUCTURE_ERROR,
     ERR_TABLE_UPDATE_ERROR,
-    ERR_USER_ALREADY_IN_BRAND,
     ERR_USER_IDS_EMPTY,
     ERR_USER_NOT_FOUND,
     ERR_USER_NOT_IN_BRAND,
@@ -149,7 +148,10 @@ from app.services.notification_service import (
     notify_brand_request_rejected,
     notify_brand_verified,
 )
-from app.services.organization_access import grant_brand_owner_membership
+from app.services.organization_access import (
+    grant_brand_owner_membership,
+    revoke_brand_membership,
+)
 from app.services.qr_service import backfill_brand_qr_codes
 from app.services.subscription_service import (
     get_or_create_subscription,
@@ -612,9 +614,6 @@ async def link_user_to_brand(
     if not user:
         raise_error(status.HTTP_404_NOT_FOUND, ERR_USER_NOT_FOUND)
 
-    if user.brand_id:
-        raise_error(status.HTTP_400_BAD_REQUEST, ERR_USER_ALREADY_IN_BRAND)
-
     # Проверяем существование бренда
     brand_result = await db.execute(select(Brand).where(Brand.id == brand_id))
     brand = brand_result.scalar_one_or_none()
@@ -622,8 +621,12 @@ async def link_user_to_brand(
     if not brand:
         raise_error(status.HTTP_404_NOT_FOUND, ERR_BRAND_NOT_FOUND)
 
-    # Привязываем к бренду (роль не меняем)
-    user.brand_id = brand_id
+    await grant_brand_owner_membership(
+        db,
+        brand=brand,
+        user=user,
+        granted_by_id=admin.id,
+    )
     await db.commit()
 
     # Загружаем пользователя с брендом для корректной сериализации
@@ -656,8 +659,9 @@ async def unlink_user_from_brand(
     if not user.brand_id:
         raise_error(status.HTTP_400_BAD_REQUEST, ERR_USER_NOT_IN_BRAND)
 
-    # Отвязываем от бренда (роль не меняем)
-    user.brand_id = None
+    brand_id = user.brand_id
+    if not await revoke_brand_membership(db, user=user, brand_id=brand_id):
+        raise_error(status.HTTP_400_BAD_REQUEST, ERR_USER_NOT_IN_BRAND)
     await db.commit()
 
     # Загружаем пользователя с брендом для корректной сериализации

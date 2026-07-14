@@ -1,7 +1,7 @@
 """Authorization helpers for organization-owned brands.
 
-The legacy ``User.brand_id`` relationship remains a compatibility fallback
-while existing accounts and UI are migrated to scoped organization memberships.
+``User.brand_id`` is only the user's active workspace pointer. Authorization
+always comes from an active organization membership (or the global admin role).
 """
 
 from sqlalchemy import or_, select
@@ -117,13 +117,100 @@ async def get_brand_membership(
     return await db.scalar(query)
 
 
+async def list_accessible_brands(
+    db: AsyncSession,
+    user: User,
+) -> list[tuple[Brand, Organization, OrganizationMembership | None]]:
+    """List brands the user may select as their active brand.
+
+    Admins may select any active brand. Other users only see brands granted by
+    an active organization membership and its optional per-brand scope.
+    """
+    if user.role == UserRole.ADMIN:
+        result = await db.execute(
+            select(Brand, Organization)
+            .join(Organization, Brand.organization_id == Organization.id)
+            .where(Brand.active.is_(True), Organization.active.is_(True))
+            .order_by(Organization.name.asc(), Brand.name.asc())
+        )
+        return [(brand, organization, None) for brand, organization in result.all()]
+
+    result = await db.execute(
+        select(Brand, Organization, OrganizationMembership)
+        .join(Organization, Brand.organization_id == Organization.id)
+        .join(
+            OrganizationMembership,
+            OrganizationMembership.organization_id == Organization.id,
+        )
+        .outerjoin(
+            OrganizationBrandAccess,
+            OrganizationBrandAccess.membership_id == OrganizationMembership.id,
+        )
+        .where(
+            OrganizationMembership.user_id == user.id,
+            OrganizationMembership.active.is_(True),
+            Organization.active.is_(True),
+            Brand.active.is_(True),
+            or_(
+                OrganizationMembership.all_brands.is_(True),
+                OrganizationBrandAccess.brand_id == Brand.id,
+            ),
+        )
+        .distinct()
+        .order_by(Organization.name.asc(), Brand.name.asc())
+    )
+    return list(result.all())
+
+
+async def can_select_active_brand(
+    db: AsyncSession,
+    user: User,
+    brand_id: int,
+) -> bool:
+    """Whether ``brand_id`` is a valid workspace choice for ``user``."""
+    if user.role == UserRole.ADMIN:
+        return True
+    return await get_brand_membership(db, user, brand_id) is not None
+
+
+async def revoke_brand_membership(
+    db: AsyncSession,
+    *,
+    user: User,
+    brand_id: int,
+) -> bool:
+    """Revoke the organization membership that grants access to a brand."""
+    membership = await get_brand_membership(db, user, brand_id)
+    if membership is None:
+        return False
+
+    membership.active = False
+    if user.brand_id == brand_id:
+        user.brand_id = None
+
+    remaining = await db.scalar(
+        select(OrganizationMembership.id)
+        .where(
+            OrganizationMembership.user_id == user.id,
+            OrganizationMembership.active.is_(True),
+            OrganizationMembership.id != membership.id,
+        )
+        .limit(1)
+    )
+    if remaining is None and user.role == UserRole.BRAND:
+        user.role = UserRole.USER
+
+    await db.flush()
+    return True
+
+
 async def can_view_private_brand_data(
     db: AsyncSession,
     user: User,
     brand_id: int,
 ) -> bool:
     """Whether a user may view private manufacturer analytics/settings."""
-    if user.role == UserRole.ADMIN or user.brand_id == brand_id:
+    if user.role == UserRole.ADMIN:
         return True
     return await get_brand_membership(db, user, brand_id) is not None
 
@@ -134,7 +221,7 @@ async def can_edit_brand_catalog(
     brand_id: int,
 ) -> bool:
     """Whether a user may edit official brand and filament catalog data."""
-    if user.role == UserRole.ADMIN or user.brand_id == brand_id:
+    if user.role == UserRole.ADMIN:
         return True
     membership = await get_brand_membership(db, user, brand_id)
     return membership is not None and membership.role in BRAND_EDITOR_ROLES

@@ -9,6 +9,7 @@ from app.models.brand import Brand
 from app.models.filament import Filament
 from app.models.preset import Preset, PresetModerationStatus
 from app.models.user import User
+from app.services.organization_access import grant_brand_owner_membership
 
 
 async def _register_and_login(
@@ -122,7 +123,7 @@ async def test_create_official_preset(client: AsyncClient, db_session: AsyncSess
     # Link current user to this brand to allow official preset creation.
     user_result = await db_session.execute(select(User).where(User.email == email))
     user = user_result.scalar_one()
-    user.brand_id = brand.id
+    await grant_brand_owner_membership(db_session, brand=brand, user=user)
     await db_session.commit()
     
     # Create official preset
@@ -165,7 +166,7 @@ async def test_create_official_preset_requires_verified_brand(client: AsyncClien
 
     user_result = await db_session.execute(select(User).where(User.email == email))
     user = user_result.scalar_one()
-    user.brand_id = brand.id
+    await grant_brand_owner_membership(db_session, brand=brand, user=user)
     await db_session.commit()
 
     preset_data = {

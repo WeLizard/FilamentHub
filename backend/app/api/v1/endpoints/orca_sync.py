@@ -29,7 +29,6 @@ from app.core.errors import (
     ERR_IMPORT_PRINTER_DISABLED,
     ERR_INTERNAL_ERROR,
     ERR_NO_NOTIFICATION_DATA,
-    ERR_NO_PERMISSION,
     ERR_NOTIFICATION_NOT_FOUND,
     ERR_PRESET_IDS_REQUIRED,
     ERR_PRESET_NOT_FOUND,
@@ -2218,17 +2217,6 @@ async def _upsert_filament_preset(
                     status="error",
                     message="Filament not found in FilamentHub",
                 )
-            if (
-                filament.brand_id is not None
-                and current_user.brand_id != filament.brand_id
-                and current_user.role != UserRole.ADMIN
-            ):
-                return OrcaSyncResult(
-                    external_id=payload.external_id,
-                    fhub_id=payload.fhub_id,
-                    status="error",
-                    message=ERR_NO_PERMISSION,
-                )
         elif payload.filament_name:
             # Определяем material_type: inherits приоритетнее payload (OrcaSlicer часто шлёт неточный тип)
             if payload.inherits:
@@ -2264,10 +2252,17 @@ async def _upsert_filament_preset(
 
     # Dedup guard: если филамент не найден, но is_our_preset — попробуем найти по brand + name
     if is_our_preset and not filament:
-        if not current_user.brand_id:
+        from app.services.organization_access import can_select_active_brand
+
+        active_brand_id = current_user.brand_id
+        has_active_brand_access = bool(
+            active_brand_id
+            and await can_select_active_brand(db, current_user, active_brand_id)
+        )
+        if not active_brand_id or not has_active_brand_access:
             logger.warning(
                 f"[fh] preset '{payload.name}' has no matching catalog filament "
-                f"and user has no brand_id. Storing as draft."
+                f"and user has no authorized active brand. Storing as draft."
             )
             is_our_preset = False
         else:
@@ -2282,7 +2277,7 @@ async def _upsert_filament_preset(
             result = await db.execute(
                 select(Filament).where(
                     Filament.name == clean_name,
-                    Filament.brand_id == current_user.brand_id,
+                    Filament.brand_id == active_brand_id,
                 ).order_by(Filament.id.asc())
             )
             existing_brand_filament = result.scalars().first()
@@ -2291,7 +2286,7 @@ async def _upsert_filament_preset(
                 filament = existing_brand_filament
                 logger.info(
                     f"Dedup guard: found existing filament (id={filament.id}, name='{filament.name}') "
-                    f"for brand_id={current_user.brand_id} — reusing instead of creating duplicate"
+                    f"for brand_id={active_brand_id} — reusing instead of creating duplicate"
                 )
             else:
                 filament_slug = await generate_unique_slug(
@@ -2305,7 +2300,7 @@ async def _upsert_filament_preset(
                     name=clean_name,
                     slug=filament_slug,
                     material_type=material_type,
-                    brand_id=current_user.brand_id,
+                    brand_id=active_brand_id,
                     diameter=1.75,
                     active=True,
                 )
