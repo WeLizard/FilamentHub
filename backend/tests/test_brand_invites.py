@@ -44,10 +44,27 @@ async def test_brand_invite_flow(admin_client: AsyncClient):
 @pytest.mark.asyncio
 async def test_brand_invite_requires_admin(auth_client: AsyncClient):
     """A non-admin cannot create invites."""
-    resp = await auth_client.post(
-        "/api/v1/admin/brand-invites", json={"email": "x@example.com"}
-    )
+    resp = await auth_client.post("/api/v1/admin/brand-invites", json={"email": "x@example.com"})
     assert resp.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_brand_invite_transliterates_cyrillic_brand_slug(admin_client: AsyncClient):
+    created = await admin_client.post(
+        "/api/v1/admin/brand-invites",
+        json={"email": "nit@example.com", "brand_name": "НИТ", "expires_days": 7},
+    )
+    assert created.status_code == 201
+
+    accepted = await admin_client.post(
+        f"/api/v1/brand-invites/{created.json()['token']}/accept",
+        json={"brand_name": "НИТ"},
+    )
+    assert accepted.status_code == 200
+
+    brand = await admin_client.get(f"/api/v1/brands/{accepted.json()['brand_id']}")
+    assert brand.status_code == 200
+    assert brand.json()["slug"] == "nit"
 
 
 @pytest.mark.asyncio

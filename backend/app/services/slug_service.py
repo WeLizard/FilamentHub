@@ -9,6 +9,49 @@ from sqlalchemy import Select, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import DeclarativeMeta
 
+_CYRILLIC_TRANSLITERATION = str.maketrans(
+    {
+        "а": "a",
+        "б": "b",
+        "в": "v",
+        "г": "g",
+        "д": "d",
+        "е": "e",
+        "ё": "e",
+        "ж": "zh",
+        "з": "z",
+        "и": "i",
+        "й": "i",
+        "к": "k",
+        "л": "l",
+        "м": "m",
+        "н": "n",
+        "о": "o",
+        "п": "p",
+        "р": "r",
+        "с": "s",
+        "т": "t",
+        "у": "u",
+        "ф": "f",
+        "х": "h",
+        "ц": "ts",
+        "ч": "ch",
+        "ш": "sh",
+        "щ": "shch",
+        "ъ": "",
+        "ы": "y",
+        "ь": "",
+        "э": "e",
+        "ю": "yu",
+        "я": "ya",
+        "і": "i",
+        "ї": "yi",
+        "є": "ye",
+        "ґ": "g",
+        "ў": "u",
+    }
+)
+
 
 def _slugify(value: str, fallback: str) -> str:
     """
@@ -21,7 +64,8 @@ def _slugify(value: str, fallback: str) -> str:
     Returns:
         Slug string composed of lowercase latin chars, numbers and dashes.
     """
-    normalized = unicodedata.normalize("NFKD", value)
+    transliterated = value.casefold().translate(_CYRILLIC_TRANSLITERATION)
+    normalized = unicodedata.normalize("NFKD", transliterated)
     ascii_encoded = normalized.encode("ascii", "ignore").decode("ascii")
     value_ascii = ascii_encoded.lower()
     value_ascii = re.sub(r"[^a-z0-9]+", "-", value_ascii)
@@ -65,5 +109,3 @@ async def generate_unique_slug(
             return slug_candidate
         counter += 1
         slug_candidate = f"{base_slug}-{counter}"
-
-
