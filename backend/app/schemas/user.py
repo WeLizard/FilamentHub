@@ -190,6 +190,14 @@ class RefreshTokenResponse(BaseModel):
     token_type: str = "bearer"
 
 
+class PluginSessionTokenResponse(BaseModel):
+    """Short-lived capability used by the OrcaSlicer plugin bridge."""
+
+    plugin_token: str
+    expires_in: int
+    token_type: str = "bearer"
+
+
 class TokenData(BaseModel):
     """Schema for token payload."""
 

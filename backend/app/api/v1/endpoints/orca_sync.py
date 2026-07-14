@@ -16,7 +16,10 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.core.dependencies import get_current_active_user
+from app.core.dependencies import (
+    get_current_active_user,
+    get_current_user_or_plugin_preset_write,
+)
 from app.core.errors import (
     ERR_ACCESS_DENIED,
     ERR_EXPORT_PRINT_DISABLED,
@@ -2810,7 +2813,7 @@ async def _upsert_filament_preset(
 )
 async def import_filament_presets(
     payload: FilamentPresetSyncRequest,
-    current_user: Annotated[User, Depends(get_current_active_user)],
+    current_user: Annotated[User, Depends(get_current_user_or_plugin_preset_write)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> FilamentPresetSyncResponse:
     """Import or update filament presets submitted by OrcaSlicer.

@@ -445,3 +445,54 @@ async def test_oauth_callback_validates_state(client: AsyncClient, monkeypatch):
     )
     assert ok.status_code == 200
     assert ok.json()["access_token"]
+
+
+@pytest.mark.asyncio
+async def test_plugin_session_is_short_lived_and_endpoint_scoped(
+    auth_client: AsyncClient,
+    auth_user,
+):
+    """Plugin capability must never become a replacement account access token."""
+    from app.core.security import create_plugin_token, decode_plugin_token
+
+    issued = await auth_client.post("/api/v1/auth/plugin-session", json={})
+    assert issued.status_code == 200
+    assert issued.headers["Cache-Control"] == "no-store"
+    payload = issued.json()
+    assert payload["expires_in"] == settings.PLUGIN_TOKEN_EXPIRE_MINUTES * 60
+    assert "refresh_token" not in payload
+
+    plugin_token = payload["plugin_token"]
+    decoded = decode_plugin_token(plugin_token)
+    assert decoded is not None
+    assert decoded["user_id"] == auth_user.id
+    assert set(decoded["scopes"]) == {"presets:read", "presets:write"}
+    plugin_headers = {"Authorization": f"Bearer {plugin_token}"}
+
+    regular_api = await auth_client.get("/api/v1/auth/me", headers=plugin_headers)
+    assert regular_api.status_code == 401
+
+    plugin_read = await auth_client.get(
+        "/api/v1/auth/my-presets",
+        headers=plugin_headers,
+    )
+    assert plugin_read.status_code == 200
+
+    plugin_write = await auth_client.post(
+        "/api/v1/orcaslicer/filaments/import",
+        headers=plugin_headers,
+        json={"profiles": []},
+    )
+    assert plugin_write.status_code == 200
+
+    read_only_token = create_plugin_token(
+        {"sub": auth_user.email, "user_id": auth_user.id},
+        ["presets:read"],
+    )
+    denied_write = await auth_client.post(
+        "/api/v1/orcaslicer/filaments/import",
+        headers={"Authorization": f"Bearer {read_only_token}"},
+        json={"profiles": []},
+    )
+    assert denied_write.status_code == 403
+    assert denied_write.json()["detail"]["code"] == "ERR_ACCESS_DENIED"

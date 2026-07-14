@@ -11,7 +11,11 @@ from sqlalchemy import func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.core.dependencies import get_current_active_user, get_current_active_user_optional
+from app.core.dependencies import (
+    get_current_active_user,
+    get_current_active_user_optional,
+    get_current_user_or_plugin_preset_read,
+)
 from app.core.errors import (
     ERR_EXPORT_MISSING_FIELDS,
     ERR_EXPORT_PRESET_ERROR,
@@ -723,7 +727,7 @@ async def activate_preset(
 async def export_preset_json(
     preset_id: int,
     db: Annotated[AsyncSession, Depends(get_db)],
-    current_user: Annotated[User, Depends(get_current_active_user)],
+    current_user: Annotated[User, Depends(get_current_user_or_plugin_preset_read)],
 ) -> Response:
     """
     Экспортировать профиль в формате OrcaSlicer (.json).
@@ -824,7 +828,7 @@ async def export_preset_json(
 async def export_preset_info(
     preset_id: int,
     db: Annotated[AsyncSession, Depends(get_db)],
-    current_user: Annotated[User, Depends(get_current_active_user)],
+    current_user: Annotated[User, Depends(get_current_user_or_plugin_preset_read)],
 ) -> Response:
     """
     Экспортировать .info файл в формате INI для OrcaSlicer.

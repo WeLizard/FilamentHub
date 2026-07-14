@@ -9,8 +9,6 @@
  * тот WebView-мост не трогаем, он продолжает работать как раньше.
  */
 
-import { getToken } from './auth';
-
 export const PLUGIN_MESSAGE_SOURCE = 'filamenthub-plugin';
 
 const EMBED_FLAG = 'fh_plugin_embed';
@@ -20,6 +18,7 @@ const EMBED_FLAG = 'fh_plugin_embed';
 // страницу не перезагружает, и он живёт всю iframe-сессию. sessionStorage
 // остаётся страховкой на жёсткую перезагрузку в обычном браузере.
 let embedSessionFlag = false;
+let activePluginToken: string | null = null;
 
 /**
  * Запущен ли каталог во встроенном (плагинном) режиме. Определяем по маршруту
@@ -60,6 +59,15 @@ function postToPlugin(message: PluginMessage): void {
     return;
   }
   window.parent.postMessage(message, '*');
+}
+
+function isTrustedPluginParentEvent(event: MessageEvent): boolean {
+  if (event.source !== window.parent) {
+    return false;
+  }
+  // A file:// WebView parent has an opaque `null` origin. HTTPS parents are
+  // restricted by the /embed CSP to our own origin.
+  return event.origin === 'null' || event.origin === window.location.origin;
 }
 
 /**
@@ -104,6 +112,9 @@ export function stripOrcaHostTheme(): void {
  */
 export function subscribeToPluginNavigation(onNavigate: (path: string) => void): () => void {
   const handler = (event: MessageEvent) => {
+    if (!isTrustedPluginParentEvent(event)) {
+      return;
+    }
     const data = event.data as Partial<PluginMessage> | undefined;
     if (!data || data.source !== PLUGIN_MESSAGE_SOURCE || data.type !== 'navigate') {
       return;
@@ -129,19 +140,19 @@ export function reportAuthStateToPlugin(label: string | null): void {
 }
 
 /**
- * Передать токены Python-плагину на хранение (файл в data_dir, как AppConfig
- * у форка): storage в iframe партиционирован, без этого перезапуск окна
- * плагина/Orca выбивает из авторизации.
+ * Передать Python-плагину только короткоживущую capability-сессию. Основные
+ * access/refresh credentials браузера никогда не пересекают iframe boundary.
  */
-export function reportAuthTokensToPlugin(accessToken: string, refreshToken: string | null): void {
+export function reportPluginSessionToPlugin(pluginToken: string): void {
   if (!isPluginEmbed()) {
     return;
   }
+  activePluginToken = pluginToken;
   postToPlugin({
     source: PLUGIN_MESSAGE_SOURCE,
     type: 'auth-token',
-    accessToken,
-    refreshToken: refreshToken ?? '',
+    accessToken: pluginToken,
+    refreshToken: '',
   });
 }
 
@@ -150,6 +161,7 @@ export function reportLogoutToPlugin(): void {
   if (!isPluginEmbed()) {
     return;
   }
+  activePluginToken = null;
   postToPlugin({ source: PLUGIN_MESSAGE_SOURCE, type: 'auth-logout' });
 }
 
@@ -170,6 +182,9 @@ export function notifyProfileChanged(): void {
  */
 export function subscribeToPluginLogout(onLogout: () => void): () => void {
   const handler = (event: MessageEvent) => {
+    if (!isTrustedPluginParentEvent(event)) {
+      return;
+    }
     const data = event.data as Partial<PluginMessage> | undefined;
     if (!data || data.source !== PLUGIN_MESSAGE_SOURCE || data.type !== 'do-logout') {
       return;
@@ -181,40 +196,15 @@ export function subscribeToPluginLogout(onLogout: () => void): () => void {
 }
 
 /**
- * Восстановление сессии при открытии окна плагина: подписываемся на
- * auth-restore и сигналим шеллу готовность (embed-ready) — в ответ он пришлёт
- * сохранённые токены, если они есть. Возвращает функцию отписки.
- */
-export function subscribeToPluginAuthRestore(
-  onRestore: (accessToken: string, refreshToken: string | null) => void,
-): () => void {
-  const handler = (event: MessageEvent) => {
-    const data = event.data as Partial<PluginMessage> | undefined;
-    if (!data || data.source !== PLUGIN_MESSAGE_SOURCE || data.type !== 'auth-restore') {
-      return;
-    }
-    const access = (data as { accessToken?: unknown }).accessToken;
-    const refresh = (data as { refreshToken?: unknown }).refreshToken;
-    if (typeof access === 'string' && access) {
-      onRestore(access, typeof refresh === 'string' && refresh ? refresh : null);
-    }
-  };
-  window.addEventListener('message', handler);
-  postToPlugin({ source: PLUGIN_MESSAGE_SOURCE, type: 'embed-ready' });
-  return () => window.removeEventListener('message', handler);
-}
-
-/**
  * Импортировать пресет в OrcaSlicer через плагин: шелл → Python → data_dir.
- * Токен нужен, чтобы Python скачал авторизованный экспорт
- * (GET /presets/{id}/export/orcaslicer.json). В iframe пользователь входит на
- * сайте как обычно, поэтому токен берём каноническим getToken().
+ * В сообщение попадает только короткоживущая plugin capability, а не браузерная
+ * account session.
  */
 export function importPresetToPlugin(presetId: number): void {
   postToPlugin({
     source: PLUGIN_MESSAGE_SOURCE,
     type: 'import-preset',
     presetId,
-    token: getToken() ?? '',
+    token: activePluginToken ?? '',
   });
 }

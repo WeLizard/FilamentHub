@@ -22,7 +22,12 @@ from app.core.errors import (
     ERR_USER_NOT_FOUND,
     raise_error,
 )
-from app.core.security import decode_access_token, token_fingerprint
+from app.core.security import (
+    decode_access_token,
+    decode_plugin_token,
+    get_unverified_token_type,
+    token_fingerprint,
+)
 from app.db.session import get_db
 from app.models.revoked_token import RevokedToken
 from app.models.user import User, UserRole
@@ -111,6 +116,103 @@ async def get_current_user(
         raise_error(status.HTTP_403_FORBIDDEN, ERR_USER_INACTIVE)
 
     return user
+
+
+async def _get_current_user_or_plugin_scope(
+    *,
+    request: Request,
+    credentials: HTTPAuthorizationCredentials | None,
+    db: AsyncSession,
+    required_scope: str,
+) -> User:
+    """Authenticate a normal web session or a narrowly scoped plugin token."""
+    token: str | None = None
+    using_cookie_auth = False
+    if credentials is not None and credentials.credentials:
+        token = credentials.credentials
+    elif _cookie_auth_enabled():
+        token = request.cookies.get(settings.AUTH_ACCESS_COOKIE_NAME)
+        using_cookie_auth = bool(token)
+
+    if not token:
+        raise_error(
+            status.HTTP_401_UNAUTHORIZED,
+            ERR_AUTH_REQUIRED,
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    if using_cookie_auth:
+        _validate_cookie_csrf(request)
+
+    token_type = get_unverified_token_type(token)
+    if token_type == "access":
+        payload = decode_access_token(token)
+    elif token_type == "plugin" and not using_cookie_auth:
+        payload = decode_plugin_token(token)
+        scopes = payload.get("scopes", []) if payload else []
+        if payload is not None and required_scope not in scopes:
+            raise_error(status.HTTP_403_FORBIDDEN, ERR_ACCESS_DENIED)
+    else:
+        payload = None
+
+    if payload is None or await is_token_revoked(token, db):
+        raise_error(
+            status.HTTP_401_UNAUTHORIZED,
+            ERR_COULD_NOT_VALIDATE,
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    user_id = payload.get("user_id")
+    email = payload.get("sub")
+    if not isinstance(user_id, int) and not isinstance(email, str):
+        raise_error(
+            status.HTTP_401_UNAUTHORIZED,
+            ERR_COULD_NOT_VALIDATE,
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    query = select(User).options(selectinload(User.subscription))
+    query = (
+        query.where(User.id == user_id)
+        if isinstance(user_id, int)
+        else query.where(User.email == email)
+    )
+    user = (await db.execute(query)).scalar_one_or_none()
+    if user is None:
+        raise_error(
+            status.HTTP_401_UNAUTHORIZED,
+            ERR_USER_NOT_FOUND,
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    if not user.active:
+        raise_error(status.HTTP_403_FORBIDDEN, ERR_USER_INACTIVE)
+    return user
+
+
+async def get_current_user_or_plugin_preset_read(
+    request: Request,
+    credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(security)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> User:
+    return await _get_current_user_or_plugin_scope(
+        request=request,
+        credentials=credentials,
+        db=db,
+        required_scope="presets:read",
+    )
+
+
+async def get_current_user_or_plugin_preset_write(
+    request: Request,
+    credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(security)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> User:
+    return await _get_current_user_or_plugin_scope(
+        request=request,
+        credentials=credentials,
+        db=db,
+        required_scope="presets:write",
+    )
 
 
 async def get_current_active_user(

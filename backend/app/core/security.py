@@ -66,6 +66,33 @@ def create_refresh_token(data: dict[str, Any]) -> str:
     return encoded_jwt
 
 
+def create_plugin_token(data: dict[str, Any], scopes: list[str]) -> str:
+    """Create a short-lived token accepted only by plugin-scoped dependencies."""
+    to_encode = data.copy()
+    expire = datetime.now(timezone.utc) + timedelta(
+        minutes=settings.PLUGIN_TOKEN_EXPIRE_MINUTES
+    )
+    to_encode.update(
+        {
+            "aud": "orcaslicer-plugin",
+            "exp": calendar.timegm(expire.utctimetuple()),
+            "scopes": scopes,
+            "type": "plugin",
+        }
+    )
+    return jwt.encode(to_encode, settings.SECRET_KEY, algorithm=ALGORITHM)
+
+
+def get_unverified_token_type(token: str) -> str | None:
+    """Route a token to the correct verified decoder without trusting claims."""
+    try:
+        payload = jwt.decode(token, options={"verify_signature": False})
+    except InvalidTokenError:
+        return None
+    token_type = payload.get("type")
+    return token_type if isinstance(token_type, str) else None
+
+
 def decode_access_token(token: str) -> dict[str, Any] | None:
     """Decode a JWT access token."""
     try:
@@ -110,6 +137,35 @@ def decode_refresh_token(token: str) -> dict[str, Any] | None:
         return None
     except Exception as e:
         logger.error("Unexpected error decoding JWT refresh token: %s", str(e), exc_info=True)
+        return None
+
+
+def decode_plugin_token(token: str) -> dict[str, Any] | None:
+    """Decode a short-lived OrcaSlicer plugin capability token."""
+    try:
+        payload = jwt.decode(
+            token,
+            settings.SECRET_KEY,
+            algorithms=[ALGORITHM],
+            audience="orcaslicer-plugin",
+            leeway=30,
+        )
+        if payload.get("type") != "plugin":
+            return None
+        scopes = payload.get("scopes")
+        if not isinstance(scopes, list) or not all(
+            isinstance(scope, str) for scope in scopes
+        ):
+            return None
+        return payload
+    except ExpiredSignatureError:
+        logger.debug("JWT plugin token expired")
+        return None
+    except InvalidTokenError as exc:
+        logger.warning("JWT plugin token validation failed: %s", str(exc))
+        return None
+    except Exception:
+        logger.error("Unexpected error decoding JWT plugin token", exc_info=True)
         return None
 
 

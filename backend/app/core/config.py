@@ -38,6 +38,7 @@ class Settings(BaseSettings):
     ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 1440  # 24 часа — не банк, удобство важнее
     REFRESH_TOKEN_EXPIRE_DAYS: int = 90  # 90 дней для refresh token
+    PLUGIN_TOKEN_EXPIRE_MINUTES: int = 30
     AUTH_WEB_MODE: str = "jwt"  # jwt | cookie | dual
     AUTH_ORCA_MODE: str = "bearer"  # bearer (reserved for explicit mode control)
     AUTH_ACCESS_COOKIE_NAME: str = "fh_access_token"

@@ -3,7 +3,7 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { authAPI } from '../api/client';
 import { getRefreshToken, getToken, isCookieAuthMode, isOrcaEmbedded, removeToken, setRefreshToken, setToken, setUserId, shouldPersistTokensLocally } from '../utils/auth';
-import { isPluginEmbed, reportAuthTokensToPlugin, reportLogoutToPlugin, subscribeToPluginAuthRestore, subscribeToPluginLogout } from '../utils/pluginBridge';
+import { isPluginEmbed, reportLogoutToPlugin, reportPluginSessionToPlugin, subscribeToPluginLogout } from '../utils/pluginBridge';
 import type { User } from '../types/api';
 
 interface AuthContextType {
@@ -145,20 +145,6 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     return () => window.removeEventListener('storage', handleStorageChange);
   }, [user]);
 
-  // В iframe плагина OrcaSlicer: просим у шелла сохранённые токены (embed-ready
-  // → auth-restore) — восстанавливаем сессию после перезапуска окна/Orca
-  useEffect(() => {
-    if (!isPluginEmbed()) {
-      return;
-    }
-    return subscribeToPluginAuthRestore((accessToken, refreshToken) => {
-      loginWithToken(accessToken, refreshToken).catch(() => {
-        // Сохранённые токены истекли и не обновились — остаёмся гостем
-      });
-    });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
   // Выход по кнопке в тулбаре шелла плагина (рядом с ником)
   useEffect(() => {
     if (!isPluginEmbed()) {
@@ -169,6 +155,18 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  const authorizePluginSession = async () => {
+    if (!isPluginEmbed()) {
+      return;
+    }
+    try {
+      const pluginSession = await authAPI.createPluginSession();
+      reportPluginSessionToPlugin(pluginSession.plugin_token);
+    } catch {
+      // Browser login remains valid; plugin actions will ask to sign in again.
+    }
+  };
 
   const login = async (email: string, password: string) => {
     try {
@@ -196,9 +194,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       if (isOrcaEmbedded() && window.filamenthub?.sendLoginSuccess) {
         window.filamenthub.sendLoginSuccess(tokenData.access_token, userData.id, tokenData.refresh_token ?? '');
       }
-      // В iframe плагина — отдаём токены Python-плагину на хранение,
-      // чтобы сессия переживала перезапуск окна/OrcaSlicer
-      reportAuthTokensToPlugin(tokenData.access_token, tokenData.refresh_token ?? null);
+      await authorizePluginSession();
     } catch (error: any) {
       // Удаляем токен если логин не удался
       removeToken();
@@ -220,7 +216,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       if (userData.id && persistLocally) {
         setUserId(userData.id);
       }
-      reportAuthTokensToPlugin(accessToken, refreshToken ?? null);
+      await authorizePluginSession();
     } catch (error: any) {
       removeToken();
       throw error;

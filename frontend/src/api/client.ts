@@ -4,7 +4,7 @@ import axios from 'axios';
 import type { InternalAxiosRequestConfig } from 'axios';
 import type { Brand, BrandUsage, BrandRequest, BrandRequestStatus, Filament, FilamentLine, FilamentImportResult, FilamentPalettePayload, BrandInvitePublic, BrandInviteAdmin, BrandInviteAcceptResult, FilamentAvailability, FilamentVisualSettings, FilamentReview, FilamentRatingStats, Notification, NotificationListResponse, Preset, RecommendedPreset, RecommendedForPrinterResponse, Printer, PrinterProfile, PrintProfile, PrinterRequest, User, Token, RefreshTokenRequest, RefreshTokenResponse, ListResponse, AccountDeletionStats, UserSavedPreset, CalculatorEstimateRequest, CalculatorEstimateResponse, CalculatorProfileResponse, CalculatorProfileUpdate, Feedback, FeedbackListResponse, FeedbackType, CompatiblePrinter, CompatibleFilament, DownloadVersion, DownloadVersionsResponse, WikiCategory, WikiCategoryListResponse, WikiArticle, WikiArticleListResponse, WikiFeedbackStats, WikiFeedbackCreate, WikiFeedback } from '../types/api';
 import { getCsrfToken, getRefreshToken, getToken, isCookieAuthMode, isJwtAuthMode, isOrcaEmbedded, removeToken, setToken, shouldPersistTokensLocally } from '../utils/auth';
-import { reportAuthTokensToPlugin } from '../utils/pluginBridge';
+import { isPluginEmbed, reportPluginSessionToPlugin } from '../utils/pluginBridge';
 import { downloadBlob } from '../utils/download';
 
 const API_BASE_URL = '/api/v1';
@@ -191,8 +191,21 @@ api.interceptors.response.use(
           setToken(access_token);
           // Обновляем заголовок оригинального запроса
           originalRequest.headers.Authorization = `Bearer ${access_token}`;
-          // В iframe плагина — обновляем токен и в хранилище плагина
-          reportAuthTokensToPlugin(access_token, getRefreshToken());
+          if (isPluginEmbed()) {
+            try {
+              const pluginSession = await axios.post<{ plugin_token: string }>(
+                `${API_BASE_URL}/auth/plugin-session`,
+                {},
+                {
+                  baseURL: '',
+                  headers: { Authorization: `Bearer ${access_token}` },
+                },
+              );
+              reportPluginSessionToPlugin(pluginSession.data.plugin_token);
+            } catch {
+              // Browser auth remains valid; plugin actions will request sign-in.
+            }
+          }
         } else if (originalRequest.headers?.Authorization) {
           delete originalRequest.headers.Authorization;
         }
@@ -234,6 +247,11 @@ export const authAPI = {
 
   login: async (data: { email: string; password: string }) => {
     const response = await api.post<Token>('/auth/login', data);
+    return response.data;
+  },
+
+  createPluginSession: async (): Promise<{ plugin_token: string; expires_in: number; token_type: string }> => {
+    const response = await api.post('/auth/plugin-session', {});
     return response.data;
   },
 
@@ -538,6 +556,7 @@ export const brandInvitesAPI = {
     const response = await api.post<BrandInviteAcceptResult>(`/brand-invites/${token}/accept`, {});
     return response.data;
   },
+
   adminCreate: async (payload: {
     email: string;
     target_type: 'new' | 'existing';

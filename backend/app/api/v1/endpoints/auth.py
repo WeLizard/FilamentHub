@@ -24,10 +24,12 @@ from sqlalchemy.orm import selectinload
 from app.core.config import settings
 from app.core.dependencies import (
     get_current_active_user,
+    get_current_user_or_plugin_preset_read,
     is_token_revoked,
 )
 from app.core.security import (
     create_access_token,
+    create_plugin_token,
     create_refresh_token,
     decode_access_token,
     decode_email_change_token,
@@ -61,6 +63,7 @@ from app.schemas.user import (
     LogoutRequest,
     OAuthCallbackRequest,
     OAuthUrlResponse,
+    PluginSessionTokenResponse,
     RefreshTokenRequest,
     RefreshTokenResponse,
     RegisterRequest,
@@ -637,7 +640,7 @@ async def get_my_presets_stats(
 
 @router.get("/my-presets", response_model=PresetListResponse)
 async def get_my_presets(
-    current_user: Annotated[User, Depends(get_current_active_user)],
+    current_user: Annotated[User, Depends(get_current_user_or_plugin_preset_read)],
     db: Annotated[AsyncSession, Depends(get_db)],
     updated_since: datetime | None = Query(
         None,
@@ -711,6 +714,28 @@ async def get_my_presets(
         page=1,
         size=len(preset_responses),
         pages=1,
+    )
+
+
+@router.post("/plugin-session", response_model=PluginSessionTokenResponse)
+@limiter.limit("10/minute")
+async def create_plugin_session(
+    request: Request,
+    response: Response,
+    current_user: Annotated[User, Depends(get_current_active_user)],
+) -> PluginSessionTokenResponse:
+    """Mint a capability that cannot authenticate against regular user APIs."""
+    plugin_token = create_plugin_token(
+        data={
+            "sub": current_user.email,
+            "user_id": current_user.id,
+        },
+        scopes=["presets:read", "presets:write"],
+    )
+    response.headers["Cache-Control"] = "no-store"
+    return PluginSessionTokenResponse(
+        plugin_token=plugin_token,
+        expires_in=settings.PLUGIN_TOKEN_EXPIRE_MINUTES * 60,
     )
 
 
