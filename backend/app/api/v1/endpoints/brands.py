@@ -1,7 +1,6 @@
 """Brand endpoints."""
 
 from datetime import datetime, timezone
-
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
@@ -14,9 +13,9 @@ from app.core.dependencies import (
     get_current_user,
 )
 from app.core.errors import (
+    ERR_BRAND_NAME_CORRECTION_USED,
     ERR_BRAND_NAME_EXISTS,
     ERR_BRAND_NOT_FOUND,
-    ERR_BRAND_NAME_CORRECTION_USED,
     ERR_BRAND_SLUG_EXISTS,
     ERR_FILE_EXT_NOT_ALLOWED,
     ERR_FILE_SIZE_EXCEEDED,

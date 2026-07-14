@@ -10,8 +10,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.brand import Brand
 from app.models.organization import (
     OrganizationBrandAccess,
-    OrganizationMembership,
     OrganizationMemberRole,
+    OrganizationMembership,
 )
 from app.models.user import User, UserRole
 

@@ -35,8 +35,8 @@ from app.models.notification import Notification, NotificationType
 from app.models.organization import (
     Organization,
     OrganizationBrandAccess,
-    OrganizationMembership,
     OrganizationMemberRole,
+    OrganizationMembership,
 )
 from app.models.preset import Preset, PresetModerationStatus
 from app.models.preset_gate_state import PresetGateState, PresetGateStateSource

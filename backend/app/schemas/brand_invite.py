@@ -1,7 +1,6 @@
 """Pydantic schemas for brand invitations."""
 
 from datetime import datetime
-
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field, model_validator

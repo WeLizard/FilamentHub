@@ -28,8 +28,8 @@ from app.models.brand_invite import BrandInvite
 from app.models.organization import (
     Organization,
     OrganizationBrandAccess,
-    OrganizationMembership,
     OrganizationMemberRole,
+    OrganizationMembership,
 )
 from app.models.user import User, UserRole
 from app.schemas.brand_invite import (

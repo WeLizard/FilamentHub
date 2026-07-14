@@ -26,8 +26,8 @@ from app.schemas.filament import (
     FilamentLineUpdate,
     FilamentPaletteCreate,
 )
-from app.services.preset_moderation import validate_text_field
 from app.services.organization_access import can_edit_brand_catalog
+from app.services.preset_moderation import validate_text_field
 from app.services.slug_service import generate_unique_slug
 
 router = APIRouter(prefix="/filament-lines", tags=["filament-lines"])
