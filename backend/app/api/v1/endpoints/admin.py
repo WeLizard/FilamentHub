@@ -149,6 +149,7 @@ from app.services.notification_service import (
     notify_brand_request_rejected,
     notify_brand_verified,
 )
+from app.services.organization_access import grant_brand_owner_membership
 from app.services.qr_service import backfill_brand_qr_codes
 from app.services.subscription_service import (
     get_or_create_subscription,
@@ -1070,13 +1071,18 @@ async def update_brand_request(
             if not request.brand_id:
                 raise_error(status.HTTP_400_BAD_REQUEST, ERR_BRAND_ID_REQUIRED_JOIN
                 )
-            user.brand_id = request.brand_id
             brand = request.brand or await db.get(Brand, request.brand_id)
             if not brand:
                 raise_error(status.HTTP_404_NOT_FOUND, ERR_BRAND_NOT_FOUND)
             if not brand.verified:
                 brand.name_correction_available = True
             brand.verified = True
+            await grant_brand_owner_membership(
+                db,
+                brand=brand,
+                user=user,
+                granted_by_id=admin.id,
+            )
             await backfill_brand_qr_codes(brand, db)
 
         elif request.request_type == BrandRequestType.CREATE:
@@ -1107,8 +1113,12 @@ async def update_brand_request(
             db.add(new_brand)
             await db.flush()  # Получаем ID бренда
 
-            # Привязываем пользователя к новому бренду
-            user.brand_id = new_brand.id
+            await grant_brand_owner_membership(
+                db,
+                brand=new_brand,
+                user=user,
+                granted_by_id=admin.id,
+            )
 
     await db.commit()
     await db.refresh(request)

@@ -23,6 +23,7 @@ from app.core.errors import (
     ERR_REQUEST_NOT_FOUND,
     ERR_REQUEST_NOT_PENDING,
     ERR_UPLOAD_OWN_REQUESTS_ONLY,
+    ERR_USER_NOT_FOUND,
     ERR_VIEW_OWN_REQUESTS_ONLY,
     raise_error,
 )
@@ -44,6 +45,7 @@ from app.services.file_service import (
     save_proof_file,
     serialize_proof_files,
 )
+from app.services.organization_access import grant_brand_owner_membership
 from app.services.qr_service import backfill_brand_qr_codes
 
 router = APIRouter(prefix="/brand-requests", tags=["brand-requests"])
@@ -367,15 +369,20 @@ async def update_brand_request(
     if data.status == BrandRequestStatus.APPROVED:
         if request.request_type == BrandRequestType.JOIN:
             user = await db.get(User, request.user_id)
-            if user:
-                # Просто привязываем к бренду, роль не меняем
-                user.brand_id = request.brand_id
+            if not user:
+                raise_error(status.HTTP_404_NOT_FOUND, ERR_USER_NOT_FOUND)
             brand = await db.get(Brand, request.brand_id)
             if not brand:
                 raise_error(status.HTTP_404_NOT_FOUND, ERR_BRAND_NOT_FOUND)
             if not brand.verified:
                 brand.name_correction_available = True
             brand.verified = True
+            await grant_brand_owner_membership(
+                db,
+                brand=brand,
+                user=user,
+                granted_by_id=admin.id,
+            )
             await backfill_brand_qr_codes(brand, db)
         elif request.request_type == BrandRequestType.CREATE:
             # Создаем бренд и привязываем пользователя
@@ -399,9 +406,14 @@ async def update_brand_request(
             await db.flush()  # Чтобы получить ID бренда
 
             user = await db.get(User, request.user_id)
-            if user:
-                # Просто привязываем к бренду, роль не меняем
-                user.brand_id = new_brand.id
+            if not user:
+                raise_error(status.HTTP_404_NOT_FOUND, ERR_USER_NOT_FOUND)
+            await grant_brand_owner_membership(
+                db,
+                brand=new_brand,
+                user=user,
+                granted_by_id=admin.id,
+            )
 
     await db.commit()
     await db.refresh(request)

@@ -13,7 +13,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.brand import Brand
 from app.models.brand_request import BrandRequest, BrandRequestType
 from app.models.filament import Filament
-from app.models.user import User
+from app.models.organization import OrganizationMemberRole, OrganizationMembership
+from app.models.user import User, UserRole
 from app.services import qr_service
 from app.services.qr_service import backfill_brand_qr_codes
 
@@ -89,7 +90,6 @@ async def test_backfill_endpoint_forbidden_for_non_owner(client: AsyncClient, db
 async def test_approved_existing_brand_claim_backfills_qr_codes(
     endpoint_prefix: str,
     admin_client: AsyncClient,
-    admin_user: User,
     db_session: AsyncSession,
     monkeypatch,
 ):
@@ -111,8 +111,17 @@ async def test_approved_existing_brand_claim_backfills_qr_codes(
         material_type="PLA",
         active=True,
     )
+    claimant = User(
+        email=f"claimant-{suffix}@example.com",
+        username="claimant",
+        password_hash="$2b$12$test",
+        active=True,
+        role=UserRole.USER,
+    )
+    db_session.add(claimant)
+    await db_session.flush()
     request = BrandRequest(
-        user_id=admin_user.id,
+        user_id=claimant.id,
         request_type=BrandRequestType.JOIN,
         brand_id=brand.id,
     )
@@ -131,3 +140,73 @@ async def test_approved_existing_brand_claim_backfills_qr_codes(
     )
     assert brand.verified is True
     assert qr_code
+    await db_session.refresh(claimant)
+    membership = await db_session.scalar(
+        select(OrganizationMembership).where(
+            OrganizationMembership.user_id == claimant.id,
+            OrganizationMembership.organization_id == brand.organization_id,
+        )
+    )
+    assert brand.organization_id is not None
+    assert claimant.brand_id == brand.id
+    assert claimant.role == UserRole.BRAND
+    assert membership is not None
+    assert membership.role == OrganizationMemberRole.OWNER
+    assert membership.all_brands is True
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "endpoint_prefix",
+    ["/api/v1/admin/brand-requests", "/api/v1/brand-requests"],
+)
+async def test_approved_new_brand_claim_creates_owner_membership(
+    endpoint_prefix: str,
+    admin_client: AsyncClient,
+    db_session: AsyncSession,
+):
+    """Both moderation routes create the same owner workspace for a new brand."""
+    suffix = endpoint_prefix.replace("/", "-").strip("-")
+    claimant = User(
+        email=f"new-claimant-{suffix}@example.com",
+        username="new_claimant",
+        password_hash="$2b$12$test",
+        active=True,
+        role=UserRole.USER,
+    )
+    db_session.add(claimant)
+    await db_session.flush()
+    request = BrandRequest(
+        user_id=claimant.id,
+        request_type=BrandRequestType.CREATE,
+        new_brand_name=f"New Claim {suffix}",
+        new_brand_slug=f"new-claim-{suffix}",
+    )
+    db_session.add(request)
+    await db_session.commit()
+
+    response = await admin_client.patch(
+        f"{endpoint_prefix}/{request.id}",
+        json={"status": "approved"},
+    )
+    assert response.status_code == 200
+
+    brand = await db_session.scalar(
+        select(Brand).where(Brand.slug == request.new_brand_slug)
+    )
+    assert brand is not None
+    assert brand.verified is True
+    assert brand.organization_id is not None
+
+    await db_session.refresh(claimant)
+    membership = await db_session.scalar(
+        select(OrganizationMembership).where(
+            OrganizationMembership.user_id == claimant.id,
+            OrganizationMembership.organization_id == brand.organization_id,
+        )
+    )
+    assert claimant.brand_id == brand.id
+    assert claimant.role == UserRole.BRAND
+    assert membership is not None
+    assert membership.role == OrganizationMemberRole.OWNER
+    assert membership.all_brands is True

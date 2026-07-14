@@ -9,16 +9,85 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.brand import Brand
 from app.models.organization import (
+    Organization,
     OrganizationBrandAccess,
     OrganizationMemberRole,
     OrganizationMembership,
 )
 from app.models.user import User, UserRole
+from app.services.slug_service import generate_unique_slug
 
 BRAND_EDITOR_ROLES = {
     OrganizationMemberRole.OWNER,
     OrganizationMemberRole.EDITOR,
 }
+
+
+async def grant_brand_owner_membership(
+    db: AsyncSession,
+    *,
+    brand: Brand,
+    user: User,
+    granted_by_id: int | None = None,
+) -> tuple[Organization, OrganizationMembership]:
+    """Grant a verified representative owner access to a public brand.
+
+    The public Brand remains the catalog identity. An Organization is created
+    only when the brand has no owner workspace yet; existing organizations and
+    accumulated community content are preserved.
+    """
+    organization = (
+        await db.get(Organization, brand.organization_id)
+        if brand.organization_id is not None
+        else None
+    )
+    if organization is None:
+        organization = Organization(
+            name=brand.name,
+            slug=await generate_unique_slug(
+                db=db,
+                model=Organization,
+                source=brand.name,
+                fallback="organization",
+            ),
+            created_by_id=user.id,
+            active=True,
+        )
+        db.add(organization)
+        await db.flush()
+        brand.organization_id = organization.id
+
+    membership = await db.scalar(
+        select(OrganizationMembership)
+        .where(
+            OrganizationMembership.organization_id == organization.id,
+            OrganizationMembership.user_id == user.id,
+        )
+        .with_for_update()
+    )
+    if membership is None:
+        membership = OrganizationMembership(
+            organization_id=organization.id,
+            user_id=user.id,
+            role=OrganizationMemberRole.OWNER,
+            all_brands=True,
+            active=True,
+            invited_by_id=granted_by_id,
+        )
+        db.add(membership)
+    else:
+        membership.role = OrganizationMemberRole.OWNER
+        membership.all_brands = True
+        membership.active = True
+        if membership.invited_by_id is None:
+            membership.invited_by_id = granted_by_id
+
+    user.brand_id = brand.id
+    if user.role == UserRole.USER:
+        user.role = UserRole.BRAND
+
+    await db.flush()
+    return organization, membership
 
 
 async def get_brand_membership(
