@@ -89,13 +89,13 @@ Then:
 - Backend API: http://localhost:8001
 - Swagger UI: http://localhost:8001/api/v1/docs
 
-For non-Docker setup and production deployment, see [docs/current/DEPLOY.md](docs/current/DEPLOY.md).
+Production updates are automated by [`scripts/deploy.sh`](scripts/deploy.sh); internal deployment notes are kept outside the Git repository.
 
 ---
 
 ## Contributing
 
-Issues and PRs welcome. The project is in active development; some areas are intentionally scoped down for the first release (see [`docs/current/ROADMAP.md`](docs/current/ROADMAP.md)).
+Issues and PRs welcome. The project is in active development; some areas are intentionally scoped down for the first release.
 
 If you're a **filament brand representative** interested in publishing official presets — open an issue or contact the maintainer.
 

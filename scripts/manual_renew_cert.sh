@@ -14,7 +14,7 @@
 # Requires interactive TTY: prompts you to add TXT records by hand into
 # the DNS panel (litehost) and wait for propagation. Slow, error-prone.
 #
-# Recovery / setup details: docs/current/SSL_AUTORENEWAL_RUNBOOK.md
+# Recovery / setup details: docs/deployment/SSL_AUTORENEWAL_RUNBOOK.md
 # ─────────────────────────────────────────────────────────────────────────
 set -Eeuo pipefail
 
