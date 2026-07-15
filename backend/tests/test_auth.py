@@ -186,6 +186,55 @@ async def test_active_brand_requires_membership_and_lists_granted_brands(
 
 
 @pytest.mark.asyncio
+async def test_admin_role_does_not_grant_company_workspace_access(
+    admin_client: AsyncClient,
+    admin_user: User,
+    auth_user: User,
+    db_session: AsyncSession,
+):
+    """Site admins moderate brands without implicitly joining their workspaces."""
+    admin_brand = Brand(
+        name="Admin Membership Brand",
+        slug="admin-membership-brand",
+        active=True,
+        verified=True,
+    )
+    other_brand = Brand(
+        name="Other Company Brand",
+        slug="other-company-brand",
+        active=True,
+        verified=True,
+    )
+    db_session.add_all([admin_brand, other_brand])
+    await db_session.flush()
+    await grant_brand_owner_membership(
+        db_session,
+        brand=admin_brand,
+        user=admin_user,
+    )
+    await grant_brand_owner_membership(
+        db_session,
+        brand=other_brand,
+        user=auth_user,
+        granted_by_id=admin_user.id,
+    )
+    await db_session.commit()
+
+    brands_response = await admin_client.get("/api/v1/auth/me/brands")
+    assert brands_response.status_code == 200
+    assert [item["brand_id"] for item in brands_response.json()] == [admin_brand.id]
+    assert brands_response.json()[0]["membership_role"] == "owner"
+
+    denied_response = await admin_client.put(
+        "/api/v1/auth/me/active-brand",
+        json={"brand_id": other_brand.id},
+    )
+    assert denied_response.status_code == 403
+    await db_session.refresh(admin_user)
+    assert admin_user.brand_id == admin_brand.id
+
+
+@pytest.mark.asyncio
 async def test_cookie_auth_login_and_me_in_dual_mode(client: AsyncClient, monkeypatch):
     """Cookie auth should work in dual mode without Authorization header."""
     monkeypatch.setattr(settings, "AUTH_WEB_MODE", "dual")

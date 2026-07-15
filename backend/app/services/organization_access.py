@@ -1,7 +1,9 @@
 """Authorization helpers for organization-owned brands.
 
-``User.brand_id`` is only the user's active workspace pointer. Authorization
-always comes from an active organization membership (or the global admin role).
+``User.brand_id`` is only the user's active workspace pointer. Access to a
+company workspace always comes from an active organization membership. Global
+administrators use dedicated moderation endpoints instead of entering company
+workspaces implicitly.
 """
 
 from sqlalchemy import delete, or_, select
@@ -192,21 +194,12 @@ async def get_brand_membership(
 async def list_accessible_brands(
     db: AsyncSession,
     user: User,
-) -> list[tuple[Brand, Organization, OrganizationMembership | None]]:
+) -> list[tuple[Brand, Organization, OrganizationMembership]]:
     """List brands the user may select as their active brand.
 
-    Admins may select any active brand. Other users only see brands granted by
+    Every user, including a global administrator, only sees brands granted by
     an active organization membership and its optional per-brand scope.
     """
-    if user.role == UserRole.ADMIN:
-        result = await db.execute(
-            select(Brand, Organization)
-            .join(Organization, Brand.organization_id == Organization.id)
-            .where(Brand.active.is_(True), Organization.active.is_(True))
-            .order_by(Organization.name.asc(), Brand.name.asc())
-        )
-        return [(brand, organization, None) for brand, organization in result.all()]
-
     result = await db.execute(
         select(Brand, Organization, OrganizationMembership)
         .join(Organization, Brand.organization_id == Organization.id)
@@ -240,8 +233,6 @@ async def can_select_active_brand(
     brand_id: int,
 ) -> bool:
     """Whether ``brand_id`` is a valid workspace choice for ``user``."""
-    if user.role == UserRole.ADMIN:
-        return True
     return await get_brand_membership(db, user, brand_id) is not None
 
 
