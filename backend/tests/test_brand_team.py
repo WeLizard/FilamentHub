@@ -270,6 +270,26 @@ async def test_editor_sees_only_self_and_cannot_invite(
 
 
 @pytest.mark.asyncio
+async def test_site_admin_can_open_team_without_organization_membership(
+    admin_client: AsyncClient,
+    admin_user: User,
+    auth_user: User,
+    db_session: AsyncSession,
+):
+    _, brand, _ = await _workspace(db_session, auth_user, slug="site-admin")
+
+    workspace = await admin_client.get(f"/api/v1/brands/{brand.id}/team")
+
+    assert workspace.status_code == 200
+    payload = workspace.json()
+    assert payload["current_role"] == "admin"
+    assert payload["can_manage_team"] is True
+    assert payload["can_transfer_ownership"] is False
+    assert [member["user_id"] for member in payload["members"]] == [auth_user.id]
+    assert all(member["user_id"] != admin_user.id for member in payload["members"])
+
+
+@pytest.mark.asyncio
 async def test_owner_cannot_remove_member_from_another_organization(
     auth_client: AsyncClient,
     auth_user: User,

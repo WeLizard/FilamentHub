@@ -1298,7 +1298,7 @@
   },
   "brandTeam": {
     "organization": "Компания",
-    "roles": { "owner": "Владелец", "editor": "Редактор" },
+    "roles": { "admin": "Администратор FilamentHub", "owner": "Владелец", "editor": "Редактор" },
     "inviteTitle": "Добавить участника",
     "emailPlaceholder": "Рабочий или личный email",
     "send": "Отправить",

@@ -59,7 +59,7 @@ async def _brand_workspace(
     brand_id: int,
     user: User,
     owner_required: bool = False,
-) -> tuple[Brand, Organization, OrganizationMembership]:
+) -> tuple[Brand, Organization, OrganizationMembership | None]:
     brand = await db.get(Brand, brand_id)
     if brand is None or not brand.active:
         raise_error(status.HTTP_404_NOT_FOUND, ERR_BRAND_NOT_FOUND)
@@ -69,9 +69,14 @@ async def _brand_workspace(
     if organization is None or not organization.active:
         raise_error(status.HTTP_404_NOT_FOUND, ERR_ORGANIZATION_NOT_FOUND)
     membership = await get_brand_membership(db, user, brand_id)
-    if membership is None:
+    is_site_admin = user.role == UserRole.ADMIN
+    if membership is None and not is_site_admin:
         raise_error(status.HTTP_403_FORBIDDEN, ERR_ACCESS_DENIED)
-    if owner_required and membership.role != OrganizationMemberRole.OWNER:
+    if (
+        owner_required
+        and not is_site_admin
+        and (membership is None or membership.role != OrganizationMemberRole.OWNER)
+    ):
         raise_error(status.HTTP_403_FORBIDDEN, ERR_ACCESS_DENIED)
     return brand, organization, membership
 
@@ -137,7 +142,7 @@ async def _owner_workspace(
     *,
     brand_id: int,
     user: User,
-) -> tuple[Brand, Organization, OrganizationMembership]:
+) -> tuple[Brand, Organization, OrganizationMembership | None]:
     """Lock an organization and revalidate the caller's owner role."""
     brand, organization, _ = await _brand_workspace(
         db,
@@ -146,6 +151,8 @@ async def _owner_workspace(
         owner_required=True,
     )
     await _lock_organization(db, organization.id)
+    if user.role == UserRole.ADMIN:
+        return brand, organization, await get_brand_membership(db, user, brand_id)
     membership = await get_brand_membership(db, user, brand_id)
     if membership is None or membership.role != OrganizationMemberRole.OWNER:
         raise_error(status.HTTP_403_FORBIDDEN, ERR_ACCESS_DENIED)
@@ -206,7 +213,12 @@ async def get_brand_team(
     brand, organization, current_membership = await _brand_workspace(
         db, brand_id=brand_id, user=current_user
     )
-    is_owner = current_membership.role == OrganizationMemberRole.OWNER
+    is_site_admin = current_user.role == UserRole.ADMIN
+    is_owner = (
+        current_membership is not None
+        and current_membership.role == OrganizationMemberRole.OWNER
+    )
+    can_manage_team = is_site_admin or is_owner
     member_query = (
         select(OrganizationMembership, User)
         .join(User, User.id == OrganizationMembership.user_id)
@@ -217,7 +229,9 @@ async def get_brand_team(
         )
         .order_by(OrganizationMembership.joined_at.asc())
     )
-    if not is_owner:
+    if not can_manage_team:
+        if current_membership is None:
+            raise_error(status.HTTP_403_FORBIDDEN, ERR_ACCESS_DENIED)
         member_query = member_query.where(OrganizationMembership.id == current_membership.id)
     member_rows = (await db.execute(member_query)).all()
     membership_ids = [membership.id for membership, _ in member_rows]
@@ -252,7 +266,7 @@ async def get_brand_team(
 
     invites: list[TeamInviteResponse] = []
     join_requests: list[TeamJoinRequestResponse] = []
-    if is_owner:
+    if can_manage_team:
         invite_models = (
             await db.scalars(
                 select(BrandInvite)
@@ -295,8 +309,13 @@ async def get_brand_team(
     return BrandTeamWorkspaceResponse(
         organization_id=organization.id,
         organization_name=organization.name,
-        current_role=current_membership.role.value,
-        can_manage_team=is_owner,
+        current_role=(
+            "admin"
+            if is_site_admin
+            else current_membership.role.value
+        ),
+        can_manage_team=can_manage_team,
+        can_transfer_ownership=is_owner,
         members=members,
         pending_invites=invites,
         pending_join_requests=join_requests,
@@ -489,6 +508,8 @@ async def transfer_ownership(
     _, organization, current_membership = await _owner_workspace(
         db, brand_id=brand_id, user=current_user
     )
+    if current_membership is None:
+        raise_error(status.HTTP_403_FORBIDDEN, ERR_ACCESS_DENIED)
     current_membership = await db.scalar(
         select(OrganizationMembership)
         .where(

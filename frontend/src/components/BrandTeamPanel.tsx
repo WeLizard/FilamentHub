@@ -238,7 +238,7 @@ export function BrandTeamPanel({ brandId }: BrandTeamPanelProps) {
                       <option value="all">{t('brandTeam.allBrandsShort')}</option>
                     </select>
                   )}
-                  {member.role !== 'owner' && (
+                  {workspace.can_transfer_ownership && member.role !== 'owner' && (
                     <button
                       type="button"
                       onClick={() => setPendingMemberAction({

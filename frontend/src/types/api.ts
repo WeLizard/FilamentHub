@@ -498,8 +498,9 @@ export interface BrandTeamJoinRequest {
 export interface BrandTeamWorkspace {
   organization_id: number;
   organization_name: string;
-  current_role: BrandTeamRole;
+  current_role: BrandTeamRole | 'admin';
   can_manage_team: boolean;
+  can_transfer_ownership: boolean;
   members: BrandTeamMember[];
   pending_invites: BrandTeamInvite[];
   pending_join_requests: BrandTeamJoinRequest[];

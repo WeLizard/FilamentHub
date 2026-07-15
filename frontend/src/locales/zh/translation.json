@@ -1166,7 +1166,7 @@
   },
   "brandTeam": {
     "organization": "公司",
-    "roles": { "owner": "所有者", "editor": "编辑者" },
+    "roles": { "admin": "FilamentHub 管理员", "owner": "所有者", "editor": "编辑者" },
     "inviteTitle": "添加团队成员",
     "emailPlaceholder": "工作或个人邮箱",
     "send": "发送",

@@ -1169,7 +1169,7 @@
   },
   "brandTeam": {
     "organization": "Company",
-    "roles": { "owner": "Owner", "editor": "Editor" },
+    "roles": { "admin": "FilamentHub administrator", "owner": "Owner", "editor": "Editor" },
     "inviteTitle": "Add a team member",
     "emailPlaceholder": "Work or personal email",
     "send": "Send",

@@ -6,6 +6,7 @@ from typing import Literal
 from pydantic import BaseModel, EmailStr, Field, model_validator
 
 TeamRole = Literal["owner", "editor"]
+TeamWorkspaceRole = Literal["admin", "owner", "editor"]
 RequestDecision = Literal["approved", "rejected"]
 
 
@@ -61,8 +62,9 @@ class TeamJoinRequestResponse(BaseModel):
 class BrandTeamWorkspaceResponse(BaseModel):
     organization_id: int
     organization_name: str
-    current_role: TeamRole
+    current_role: TeamWorkspaceRole
     can_manage_team: bool
+    can_transfer_ownership: bool
     members: list[TeamMemberResponse]
     pending_invites: list[TeamInviteResponse]
     pending_join_requests: list[TeamJoinRequestResponse]
