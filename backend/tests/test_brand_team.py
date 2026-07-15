@@ -290,6 +290,27 @@ async def test_site_admin_can_open_team_without_organization_membership(
 
 
 @pytest.mark.asyncio
+async def test_member_cannot_request_access_to_brand_again(
+    auth_client: AsyncClient,
+    auth_user: User,
+    db_session: AsyncSession,
+):
+    _, brand, _ = await _workspace(db_session, auth_user, slug="duplicate-claim")
+
+    response = await auth_client.post(
+        "/api/v1/brand-requests/",
+        json={
+            "request_type": "join",
+            "brand_id": brand.id,
+            "proof_text": "Existing organization membership",
+        },
+    )
+
+    assert response.status_code == 400
+    assert response.json()["detail"]["code"] == "ERR_USER_ALREADY_IN_BRAND"
+
+
+@pytest.mark.asyncio
 async def test_owner_cannot_remove_member_from_another_organization(
     auth_client: AsyncClient,
     auth_user: User,

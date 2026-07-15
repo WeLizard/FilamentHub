@@ -99,10 +99,11 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({ onBack, init
   const [importResult, setImportResult] = useState<FilamentImportResult | null>(null);
   const [isBrandLogoVisible, setIsBrandLogoVisible] = useState(false);
   const [isBrandSwitcherOpen, setIsBrandSwitcherOpen] = useState(false);
+  const [isAddingBrand, setIsAddingBrand] = useState(false);
   const brandSwitcherRef = useRef<HTMLDivElement>(null);
 
   const accessibleBrandsQuery = useQuery({
-    queryKey: ['auth', 'accessible-brands', user?.id],
+    queryKey: ['auth', 'accessible-brands', user?.id, user?.brand_id],
     queryFn: authAPI.getAccessibleBrands,
     enabled: Boolean(user?.id),
   });
@@ -422,6 +423,10 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({ onBack, init
     );
   }
 
+  if (isAddingBrand) {
+    return <BrandSelectionForm onClose={() => setIsAddingBrand(false)} />;
+  }
+
   // Если у пользователя нет brand_id, показываем форму выбора/создания бренда
   if (!user.brand_id) {
     return <BrandSelectionForm />;
@@ -474,27 +479,23 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({ onBack, init
             <div className="text-center md:text-right">
               <div className="flex items-center justify-center space-x-2 md:justify-end">
                 <div ref={brandSwitcherRef} className="relative">
-                  {(accessibleBrandsQuery.data?.length ?? 0) > 1 ? (
-                    <button
-                      type="button"
-                      onClick={() => setIsBrandSwitcherOpen((open) => !open)}
-                      disabled={setActiveBrandMutation.isPending}
-                      className="group inline-flex items-center gap-2 rounded-lg px-1.5 py-1 text-left transition hover:bg-white/5 focus:outline-none focus:ring-2 focus:ring-cyan-400/60 disabled:cursor-wait disabled:opacity-60"
-                      aria-expanded={isBrandSwitcherOpen}
-                      aria-haspopup="listbox"
-                      title={t('profilePage.activeBrand')}
-                    >
-                      <h2 className="text-3xl font-bold text-white">{brandData.name}</h2>
-                      <ChevronDown
-                        className={`h-5 w-5 text-cyan-300 transition-transform ${isBrandSwitcherOpen ? 'rotate-180' : ''}`}
-                      />
-                    </button>
-                  ) : (
+                  <button
+                    type="button"
+                    onClick={() => setIsBrandSwitcherOpen((open) => !open)}
+                    disabled={setActiveBrandMutation.isPending}
+                    className="group inline-flex items-center gap-2 rounded-lg px-1.5 py-1 text-left transition hover:bg-white/5 focus:outline-none focus:ring-2 focus:ring-cyan-400/60 disabled:cursor-wait disabled:opacity-60"
+                    aria-expanded={isBrandSwitcherOpen}
+                    aria-haspopup="menu"
+                    title={t('profilePage.activeBrand')}
+                  >
                     <h2 className="text-3xl font-bold text-white">{brandData.name}</h2>
-                  )}
+                    <ChevronDown
+                      className={`h-5 w-5 text-cyan-300 transition-transform ${isBrandSwitcherOpen ? 'rotate-180' : ''}`}
+                    />
+                  </button>
                   {isBrandSwitcherOpen && (
                     <div
-                      role="listbox"
+                      role="menu"
                       aria-label={t('profilePage.activeBrand')}
                       className="absolute left-1/2 top-full z-50 mt-2 max-h-72 min-w-64 -translate-x-1/2 overflow-y-auto rounded-xl border border-white/15 bg-slate-950/95 p-1.5 text-left shadow-2xl backdrop-blur-xl md:left-auto md:right-0 md:translate-x-0"
                     >
@@ -502,8 +503,8 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({ onBack, init
                         <button
                           key={brand.brand_id}
                           type="button"
-                          role="option"
-                          aria-selected={brand.brand_id === user.brand_id}
+                          role="menuitemradio"
+                          aria-checked={brand.brand_id === user.brand_id}
                           onClick={() => setActiveBrandMutation.mutate(brand.brand_id)}
                           className="flex w-full items-center justify-between gap-4 rounded-lg px-3 py-2.5 text-left text-sm text-white transition hover:bg-white/10"
                         >
@@ -514,6 +515,20 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({ onBack, init
                           {brand.brand_id === user.brand_id && <Check className="h-4 w-4 shrink-0 text-cyan-300" />}
                         </button>
                       ))}
+                      <div className="mt-1 border-t border-white/10 pt-1">
+                        <button
+                          type="button"
+                          role="menuitem"
+                          onClick={() => {
+                            setIsBrandSwitcherOpen(false);
+                            setIsAddingBrand(true);
+                          }}
+                          className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-sm font-medium text-cyan-200 transition hover:bg-cyan-400/10 hover:text-cyan-100"
+                        >
+                          <Plus className="h-4 w-4 shrink-0" />
+                          <span>{t('brandProfile.addBrand')}</span>
+                        </button>
+                      </div>
                     </div>
                   )}
                 </div>
@@ -1504,7 +1519,11 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({ onBack, init
 };
 
 /** Форма выбора/создания бренда */
-const BrandSelectionForm: React.FC = () => {
+interface BrandSelectionFormProps {
+  onClose?: () => void;
+}
+
+const BrandSelectionForm: React.FC<BrandSelectionFormProps> = ({ onClose }) => {
   const { t } = useTranslation();
   const { user, refreshUser } = useAuth();
   const queryClient = useQueryClient();
@@ -1538,13 +1557,19 @@ const BrandSelectionForm: React.FC = () => {
 
   // При загрузке страницы, если есть pending заявка - показываем её
   useEffect(() => {
-    if (myRequests && myRequests.length > 0 && !submittedRequest) {
+    if (!onClose && myRequests && myRequests.length > 0 && !submittedRequest) {
       const pendingRequest = myRequests.find((r) => r.status === 'pending');
       if (pendingRequest) {
         setSubmittedRequest(pendingRequest);
       }
     }
-  }, [myRequests, submittedRequest]);
+  }, [myRequests, onClose, submittedRequest]);
+
+  const { data: accessibleBrands = [] } = useQuery({
+    queryKey: ['auth', 'accessible-brands', user?.id, user?.brand_id],
+    queryFn: authAPI.getAccessibleBrands,
+    enabled: Boolean(user?.id),
+  });
 
   // Загружаем список брендов с поиском (все бренды)
   const { data: brandsData, isLoading: _isLoadingBrands } = useQuery({
@@ -1552,8 +1577,9 @@ const BrandSelectionForm: React.FC = () => {
     queryFn: () => brandsAPI.list({ active_only: true, page: 1, size: 100, search: brandSearch || undefined }),
   });
 
-  // Все бренды для выбора
-  const allBrands = brandsData?.items || [];
+  // Не предлагаем повторно заявлять права на уже доступный пользователю бренд.
+  const accessibleBrandIds = new Set(accessibleBrands.map((brand) => brand.brand_id));
+  const allBrands = (brandsData?.items || []).filter((brand) => !accessibleBrandIds.has(brand.id));
 
   // Находим выбранный бренд для отображения
   const selectedBrand = selectedBrandId ? allBrands.find((b: Brand) => b.id === selectedBrandId) : null;
@@ -1903,11 +1929,24 @@ const BrandSelectionForm: React.FC = () => {
       .replace(/[^a-z0-9-]/g, ''); // Удаляем всё кроме латиницы, цифр и дефисов
   };
 
+  const closeFlowButton = onClose ? (
+    <button
+      type="button"
+      onClick={onClose}
+      className="absolute right-4 top-4 rounded-lg p-2 text-gray-400 transition hover:bg-white/10 hover:text-white focus:outline-none focus:ring-2 focus:ring-cyan-400/60"
+      aria-label={t('brandProfile.backToBrandCabinet')}
+      title={t('brandProfile.backToBrandCabinet')}
+    >
+      <X className="h-5 w-5" />
+    </button>
+  ) : null;
+
   // Если показываем статус отправленной заявки
   if (submittedRequest) {
     return (
       <div className="max-w-2xl mx-auto">
-        <div className="bg-white/10 backdrop-blur-sm rounded-2xl p-8 border border-white/20 shadow-xl">
+        <div className="relative bg-white/10 backdrop-blur-sm rounded-2xl p-8 border border-white/20 shadow-xl">
+          {closeFlowButton}
           <div className="text-center mb-8">
             <div className="w-20 h-20 bg-gradient-to-r from-yellow-500 to-orange-500 rounded-xl flex items-center justify-center mx-auto mb-4 shadow-lg shadow-yellow-500/25">
               <Shield className="w-10 h-10 text-white" />
@@ -2609,14 +2648,17 @@ const BrandSelectionForm: React.FC = () => {
 
   return (
     <div className="max-w-2xl mx-auto">
-      <div className="bg-white/10 backdrop-blur-sm rounded-2xl p-8 border border-white/20 shadow-xl">
+      <div className="relative bg-white/10 backdrop-blur-sm rounded-2xl p-8 border border-white/20 shadow-xl">
+        {closeFlowButton}
         <div className="text-center mb-8">
           <div className="w-16 h-16 bg-gradient-to-r from-green-500 to-emerald-500 rounded-xl flex items-center justify-center mx-auto mb-4 shadow-lg shadow-green-500/25">
             <Factory className="w-8 h-8 text-white" />
           </div>
-          <h2 className="text-2xl font-bold text-white mb-2">{t('brandProfile.getManufacturerAccess')}</h2>
+          <h2 className="text-2xl font-bold text-white mb-2">
+            {onClose ? t('brandProfile.addBrand') : t('brandProfile.getManufacturerAccess')}
+          </h2>
           <p className="text-gray-300 mb-4">
-            {t('brandProfile.getManufacturerAccessDescription')}
+            {onClose ? t('brandProfile.addBrandDescription') : t('brandProfile.getManufacturerAccessDescription')}
           </p>
           
           {/* Информационный блок о процессе */}

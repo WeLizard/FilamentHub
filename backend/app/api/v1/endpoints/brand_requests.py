@@ -23,6 +23,7 @@ from app.core.errors import (
     ERR_REQUEST_NOT_FOUND,
     ERR_REQUEST_NOT_PENDING,
     ERR_UPLOAD_OWN_REQUESTS_ONLY,
+    ERR_USER_ALREADY_IN_BRAND,
     ERR_USER_NOT_FOUND,
     ERR_VIEW_OWN_REQUESTS_ONLY,
     raise_error,
@@ -46,7 +47,7 @@ from app.services.file_service import (
     save_proof_file,
     serialize_proof_files,
 )
-from app.services.organization_access import grant_brand_owner_membership
+from app.services.organization_access import get_brand_membership, grant_brand_owner_membership
 from app.services.qr_service import backfill_brand_qr_codes
 
 router = APIRouter(prefix="/brand-requests", tags=["brand-requests"])
@@ -92,6 +93,9 @@ async def create_brand_request(
                 or 0
             )
         has_owner = owners_count > 0
+
+        if await get_brand_membership(db, current_user, brand.id) is not None:
+            raise_error(status.HTTP_400_BAD_REQUEST, ERR_USER_ALREADY_IN_BRAND)
 
         # Если бренд не верифицирован ИЛИ у бренда нет сотрудников - требуем полную заявку как для CREATE
         if not brand.verified or not has_owner:
