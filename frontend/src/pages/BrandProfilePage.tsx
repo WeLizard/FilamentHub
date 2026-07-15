@@ -497,42 +497,44 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({ onBack, init
       {/* Header */}
       <div className="mb-6">
         <div className="mb-4 flex justify-center md:justify-end">
-          <div className="relative flex min-h-14 w-full max-w-lg justify-center md:inline-flex md:min-h-16 md:w-auto md:max-w-none md:justify-end">
-            <BrandLogoFrame
-              src={isBrandLogoVisible ? brandData.logo_url : null}
-              alt={brandData.name}
-              backgroundColor={brandData.logo_bg}
-              size="cabinet"
-              fallback={<Factory className="h-8 w-8 text-white" />}
-              fallbackBackgroundClassName="bg-gradient-to-r from-green-500 to-emerald-500 shadow-green-500/25"
-              position="absolute"
-              className="left-0 top-0 md:left-auto md:right-full md:top-1/2 md:mr-3 md:-translate-y-1/2"
-              onError={() => setIsBrandLogoVisible(false)}
-            />
-            <div className="min-w-0 w-full text-center md:w-auto md:flex-none md:text-right">
-              <div className="relative flex min-w-0 items-center justify-center gap-2 px-16 md:justify-end md:px-0">
-                <div ref={brandSwitcherRef} className="relative flex min-w-0 items-center md:gap-2">
-                  {brandData.verified && (
-                    <span
-                      className="absolute right-full top-1/2 mr-0.5 inline-flex shrink-0 -translate-y-1/2 text-green-400 md:static md:mr-0 md:translate-y-0"
-                      title={t('brandProfile.verifiedManufacturer')}
-                      aria-label={t('brandProfile.verifiedManufacturer')}
-                    >
-                      <ShieldCheck className="h-5 w-5" aria-hidden="true" />
-                    </span>
-                  )}
+          <div className="min-w-0 w-full max-w-lg text-center md:w-auto md:max-w-none md:text-right">
+            <div className="flex justify-center md:justify-end">
+              <div
+                className="inline-flex max-w-full items-center gap-2"
+                data-brand-profile-title-row
+              >
+                <BrandLogoFrame
+                  src={isBrandLogoVisible ? brandData.logo_url : null}
+                  alt={brandData.name}
+                  backgroundColor={brandData.logo_bg}
+                  size="cabinet"
+                  fallback={<Factory className="h-8 w-8 text-white" />}
+                  fallbackBackgroundClassName="bg-gradient-to-r from-green-500 to-emerald-500 shadow-green-500/25"
+                  onError={() => setIsBrandLogoVisible(false)}
+                />
+                {brandData.verified && (
+                  <span
+                    className="inline-flex shrink-0 text-green-400"
+                    title={t('brandProfile.verifiedManufacturer')}
+                    aria-label={t('brandProfile.verifiedManufacturer')}
+                  >
+                    <ShieldCheck className="h-5 w-5" aria-hidden="true" />
+                  </span>
+                )}
+                <div ref={brandSwitcherRef} className="relative min-w-0">
                   <button
                     type="button"
                     onClick={() => setIsBrandSwitcherOpen((open) => !open)}
                     disabled={setActiveBrandMutation.isPending}
-                    className="group relative inline-flex min-w-0 max-w-full items-center gap-0 rounded-lg px-1.5 py-1 text-center transition hover:bg-white/5 focus:outline-none focus:ring-2 focus:ring-cyan-400/60 disabled:cursor-wait disabled:opacity-60 md:gap-2 md:text-right"
+                    className="group inline-flex min-w-0 max-w-full items-center gap-1 rounded-lg px-1.5 py-1 text-center transition hover:bg-white/5 focus:outline-none focus:ring-2 focus:ring-cyan-400/60 disabled:cursor-wait disabled:opacity-60 md:gap-2 md:text-right"
                     aria-expanded={isBrandSwitcherOpen}
                     aria-haspopup="menu"
                     title={t('profilePage.activeBrand')}
                   >
                     <h2 className="truncate text-2xl font-bold text-white sm:text-3xl">{brandData.name}</h2>
                     <ChevronDown
-                      className={`absolute left-full top-1/2 ml-1 h-5 w-5 -translate-y-1/2 text-cyan-300 transition-transform md:static md:ml-0 md:translate-y-0 ${isBrandSwitcherOpen ? 'rotate-180' : ''}`}
+                      className={`h-5 w-5 shrink-0 text-cyan-300 transition-transform ${isBrandSwitcherOpen ? 'rotate-180' : ''}`}
+                      aria-hidden="true"
                     />
                   </button>
                   {isBrandSwitcherOpen && (
@@ -573,31 +575,31 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({ onBack, init
                 </div>
                 <button
                   onClick={handleEditProfile}
-                  className="absolute right-0 top-1/2 -translate-y-1/2 rounded-lg p-1.5 text-gray-400 transition-all hover:bg-white/10 hover:text-white md:static md:translate-y-0"
+                  className="shrink-0 rounded-lg p-1.5 text-gray-400 transition-all hover:bg-white/10 hover:text-white"
                   title={t('brandProfile.editProfile')}
                 >
                   <Edit className="w-4 h-4" />
                 </button>
               </div>
-              {brandData.website && (
-                <a
-                  href={brandData.website.startsWith('http') ? brandData.website : `https://${brandData.website}`}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="mt-1 inline-block max-w-full truncate text-sm text-purple-400 hover:text-purple-300"
-                >
-                  {brandData.website}
-                </a>
-              )}
-              <div className="mt-3">
-                <button
-                  onClick={() => navigate(`/brands/${brandData.id}`)}
-                  className="inline-flex items-center gap-2 rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 text-sm text-white transition-all hover:bg-white/10"
-                >
-                  <Eye className="w-4 h-4" />
-                  <span>{t('brandProfile.openPublicPage')}</span>
-                </button>
-              </div>
+            </div>
+            {brandData.website && (
+              <a
+                href={brandData.website.startsWith('http') ? brandData.website : `https://${brandData.website}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="mt-1 inline-block max-w-full truncate text-sm text-purple-400 hover:text-purple-300"
+              >
+                {brandData.website}
+              </a>
+            )}
+            <div className="mt-3">
+              <button
+                onClick={() => navigate(`/brands/${brandData.id}`)}
+                className="inline-flex items-center gap-2 rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 text-sm text-white transition-all hover:bg-white/10"
+              >
+                <Eye className="w-4 h-4" />
+                <span>{t('brandProfile.openPublicPage')}</span>
+              </button>
             </div>
           </div>
         </div>
