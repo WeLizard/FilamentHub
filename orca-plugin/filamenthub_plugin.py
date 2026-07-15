@@ -544,8 +544,6 @@ PAGE = r"""<!DOCTYPE html>
     <span id="left">
       <span id="brand">Sign in</span>
       <button id="logout" title="Sign out">Sign out</button>
-      <!-- TEMP diagnostic: shell document origin, to pick the frame-ancestors CSP token -->
-      <span id="dbg" style="font-size:10px;color:#888"></span>
     </span>
     <button data-path="/" class="active">Catalog</button>
     <button data-path="/profile">Profile</button>
@@ -558,8 +556,6 @@ PAGE = r"""<!DOCTYPE html>
 var SITE_ORIGIN = '__SITE_ORIGIN__';
 var RESTORE_AUTH = __RESTORE_AUTH__;
 var frame = document.getElementById('fh');
-document.getElementById('dbg').textContent =
-  ' [origin=' + (window.origin || 'null') + ' | ' + location.protocol + '//' + location.host + location.pathname + ']';
 var wasLoggedIn = false;
 
 // Auth-only toolbar controls: Profile and Sync only make sense when signed in.
