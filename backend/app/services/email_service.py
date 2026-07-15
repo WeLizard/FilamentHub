@@ -75,8 +75,10 @@ def send_email_tracked(
     to: str,
     subject: str,
     html: str,
+    text: str | None = None,
     sender_profile: str = "transactional",
     reply_to: str | None = None,
+    headers: dict[str, str] | None = None,
 ) -> EmailSendResult:
     """Send email and return a trackable provider result."""
     if not _is_configured():
@@ -94,8 +96,12 @@ def send_email_tracked(
         "subject": subject,
         "html": html,
     }
+    if text:
+        params["text"] = text
     if reply_to:
         params["reply_to"] = [reply_to]
+    if headers:
+        params["headers"] = headers
 
     resend.api_key = settings.RESEND_API_KEY
     try:
@@ -105,6 +111,47 @@ def send_email_tracked(
     except Exception as exc:
         logger.error("Failed to send tracked email to %s", to, exc_info=True)
         return EmailSendResult(sent=False, error=str(exc)[:500])
+
+
+def get_email_sender(profile: str) -> str:
+    """Return the configured sender identity for persistence and UI display."""
+    return _get_from(profile)
+
+
+def get_received_email(email_id: str) -> dict:
+    """Retrieve full content for a verified Resend inbound event."""
+    if not _is_configured():
+        raise RuntimeError("RESEND_API_KEY is not configured")
+    resend.api_key = settings.RESEND_API_KEY
+    return dict(resend.Emails.Receiving.get(email_id))
+
+
+def send_admin_reply_email(
+    *,
+    to: str,
+    subject: str,
+    body: str,
+    sender_profile: str,
+    reply_to: str | None,
+    headers: dict[str, str] | None = None,
+) -> EmailSendResult:
+    """Send a safe plain-text authored reply using the shared email template."""
+    html = _render(
+        "admin_reply.html",
+        subject=subject,
+        body=body,
+        contact_email=settings.EMAIL_CONTACT,
+    )
+    return send_email_tracked(
+        to=to,
+        subject=subject,
+        html=html,
+        text=body,
+        sender_profile=sender_profile,
+        reply_to=reply_to,
+        headers=headers,
+    )
+
 
 def send_password_reset_email(*, to: str, reset_url: str) -> bool:
     """Send password reset link."""

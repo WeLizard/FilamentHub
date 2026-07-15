@@ -18,6 +18,7 @@ import {
   TrendingUp,
   MessageCircle,
   Package,
+  Plus,
   Wind,
   ExternalLink,
   Fan,
@@ -54,6 +55,7 @@ export const FilamentDetailPage: React.FC = () => {
   const [editingReview, setEditingReview] = useState<FilamentReview | null>(null);
   const [reviewsPage, setReviewsPage] = useState(1);
   const [deletingReviewId, setDeletingReviewId] = useState<number | null>(null);
+  const isQrEntry = new URLSearchParams(location.search).get('qr') === 'true';
   
   // Определяем откуда пришли (из каталога или профиля)
   const cameFrom = location.state?.from || 'catalog';
@@ -140,6 +142,18 @@ export const FilamentDetailPage: React.FC = () => {
 
   const handleDeleteReview = (reviewId: number) => {
     setDeletingReviewId(reviewId);
+  };
+
+  const handleAddScannedSpool = () => {
+    if (!filament) {
+      return;
+    }
+    const target = `/profile?tab=spools&add_spool=1&filament_id=${filament.id}&source=qr`;
+    if (user) {
+      navigate(target);
+      return;
+    }
+    navigate(`/?auth=login&return_url=${encodeURIComponent(target)}`);
   };
 
   if (isLoadingFilament) {
@@ -410,6 +424,28 @@ export const FilamentDetailPage: React.FC = () => {
             </div>
           </div>
         </div>
+
+        {isQrEntry && (
+          <div className="mb-4 flex flex-col gap-3 rounded-xl border border-emerald-400/25 bg-emerald-500/10 p-4 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex items-start gap-3">
+              <Package className="mt-0.5 h-5 w-5 shrink-0 text-emerald-300" />
+              <div>
+                <p className="font-medium text-white">{t('profilePage.spoolAddModal.scanQrSuccess')}</p>
+                {!user && (
+                  <p className="mt-1 text-sm text-emerald-100/70">{t('filamentDetailPage.loginRequired')}</p>
+                )}
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={handleAddScannedSpool}
+              className="inline-flex shrink-0 items-center justify-center gap-2 rounded-lg bg-emerald-500 px-4 py-2.5 text-sm font-semibold text-slate-950 transition-colors hover:bg-emerald-400"
+            >
+              <Plus className="h-4 w-4" />
+              {t('profilePage.spoolsAdd')}
+            </button>
+          </div>
+        )}
 
         {/* Кнопки действий */}
         <div className="flex space-x-4">

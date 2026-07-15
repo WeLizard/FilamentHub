@@ -14,6 +14,7 @@ from app.api.v1.endpoints import (
     crm,
     devices,
     downloads,
+    email_communications,
     feedback,
     filament_import,
     filament_lines,
@@ -43,6 +44,8 @@ api_router.include_router(auth.router)
 api_router.include_router(brands.router)
 api_router.include_router(brand_invites.router)
 api_router.include_router(brand_invites.admin_router)
+api_router.include_router(email_communications.webhook_router)
+api_router.include_router(email_communications.admin_router)
 api_router.include_router(devices.router)
 api_router.include_router(brand_requests.router)
 api_router.include_router(brand_team.router)

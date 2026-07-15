@@ -57,7 +57,7 @@ class SpoolCreateRequest(BaseModel):
     initial_weight_g: float = Field(..., gt=0, le=10_000)
     used_weight_g: float = Field(default=0.0, ge=0)
     price: float | None = Field(default=None, ge=0)
-    state: SpoolState = "active"
+    state: SpoolState = "shelf"
     source: SpoolSource = "manual"
     lot_nr: str | None = Field(default=None, max_length=100)
     comment: str | None = Field(default=None, max_length=500)

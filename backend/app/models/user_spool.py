@@ -41,7 +41,7 @@ class UserSpool(Base):
     used_weight_g: Mapped[float] = mapped_column(Float, default=0.0, nullable=False)
     state: Mapped[UserSpoolState] = mapped_column(
         Enum(UserSpoolState, name="user_spool_state", native_enum=False),
-        default=UserSpoolState.active,
+        default=UserSpoolState.shelf,
         nullable=False,
         index=True,
     )

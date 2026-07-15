@@ -190,6 +190,57 @@ export interface BrandInviteAcceptResult {
   member_role: 'owner' | 'editor';
 }
 
+export type EmailThreadStatus = 'open' | 'closed';
+export type EmailMessageDirection = 'inbound' | 'outbound';
+export type EmailSenderProfile = 'partnerships' | 'pr' | 'transactional';
+
+export interface EmailAttachment {
+  filename: string;
+  content_type: string | null;
+  size: number | null;
+}
+
+export interface EmailMessage {
+  id: number;
+  direction: EmailMessageDirection;
+  sender_email: string;
+  recipient_emails: string[];
+  subject: string;
+  text_body: string;
+  attachment_metadata: EmailAttachment[];
+  read_at: string | null;
+  created_at: string;
+}
+
+export interface EmailThreadSummary {
+  id: number;
+  invite_id: number | null;
+  brand_id: number | null;
+  brand_name: string | null;
+  participant_email: string;
+  participant_name: string | null;
+  subject: string;
+  status: EmailThreadStatus;
+  unread_count: number;
+  last_message_at: string;
+  latest_preview: string;
+  latest_direction: EmailMessageDirection | null;
+  suggested_sender_profile: EmailSenderProfile;
+}
+
+export interface EmailThreadDetail extends EmailThreadSummary {
+  messages: EmailMessage[];
+}
+
+export interface EmailThreadListResponse {
+  items: EmailThreadSummary[];
+  total: number;
+  page: number;
+  size: number;
+  pages: number;
+  unread_total: number;
+}
+
 export interface Printer {
   id: number;
   name: string;

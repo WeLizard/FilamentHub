@@ -24,13 +24,18 @@ from app.models.preset_gate_state import PresetGateState, PresetGateStateSource
 from app.models.preset_usage_event import PresetUsageEvent, PresetUsageEventType
 from app.models.user import User
 from app.models.user_printer_device import UserPrinterDevice
-from app.models.user_spool import UserSpool
+from app.models.user_spool import UserSpool, UserSpoolState
 from app.schemas.preset_slot_sync import (
     DeviceRegisterRequest,
     DeviceUpdateRequest,
     HHSnapshotRequest,
     ManualAssignmentRequest,
     UsageEstimateRequest,
+)
+from app.services.spool_service import (
+    clear_spool_gate_assignments,
+    clear_spool_location_projection,
+    spool_has_gate_assignment,
 )
 
 logger = logging.getLogger(__name__)
@@ -466,7 +471,9 @@ async def _check_spool_accessible(
     db: AsyncSession,
     user_id: int,
     spool_id: int,
-) -> None:
+    *,
+    require_usable: bool = False,
+) -> UserSpool:
     result = await db.execute(
         select(UserSpool).where(
             UserSpool.id == spool_id,
@@ -474,8 +481,18 @@ async def _check_spool_accessible(
         )
     )
     spool = result.scalars().first()
-    if spool is None:
+    if (
+        spool is None
+        or (
+            require_usable
+            and (
+                spool.remaining_weight_g <= 0
+                or spool.state in {UserSpoolState.archived, UserSpoolState.empty}
+            )
+        )
+    ):
         raise_error(404, ERR_SPOOL_NOT_ACCESSIBLE, {"spool_id": spool_id})
+    return spool
 
 
 async def handle_manual_assignment(
@@ -508,8 +525,14 @@ async def handle_manual_assignment(
     if payload.preset_id is not None:
         await _check_preset_accessible(db, user.id, payload.preset_id)
 
+    new_spool: UserSpool | None = None
     if payload.spool_id is not None:
-        await _check_spool_accessible(db, user.id, payload.spool_id)
+        new_spool = await _check_spool_accessible(
+            db,
+            user.id,
+            payload.spool_id,
+            require_usable=True,
+        )
 
     if preset_id_provided is None:
         preset_id_provided = "preset_id" in payload.model_fields_set
@@ -518,6 +541,7 @@ async def handle_manual_assignment(
 
     # Capture old spool at this gate before upsert (to clear its HH extra fields later)
     old_spool_id: int | None = None
+    old_spool: UserSpool | None = None
     if spool_id_provided:
         old_spool_row = await db.execute(
             select(PresetGateState.spool_id).where(
@@ -526,8 +550,22 @@ async def handle_manual_assignment(
             )
         )
         old_spool_id = old_spool_row.scalar_one_or_none()
+        if old_spool_id is not None and old_spool_id != payload.spool_id:
+            old_spool_result = await db.execute(
+                select(UserSpool).where(UserSpool.id == old_spool_id)
+            )
+            old_spool = old_spool_result.scalars().first()
 
     now = datetime.now(timezone.utc)
+    if new_spool is not None:
+        await clear_spool_gate_assignments(
+            db,
+            new_spool,
+            source=source,
+            except_device_id=resolved_device.id,
+            except_gate_index=payload.gate,
+        )
+
     state = await _upsert_gate_state(
         db,
         user_id=user.id,
@@ -540,51 +578,48 @@ async def handle_manual_assignment(
         spool_id=payload.spool_id,
         spool_id_provided=spool_id_provided,
     )
-    await db.commit()
-    await db.refresh(state)
+    await db.flush()
 
     # Sync spool.extra with HH-format fields so HH can read gate assignments from GET /spool
     # HH reads: json.loads(extra.get('printer_name', '""')) and int(extra.get('mmu_gate_map', -1))
     if spool_id_provided:
         new_spool_id = state.spool_id
-        if old_spool_id != new_spool_id:
-            # Clear HH fields on the previously assigned spool
-            if old_spool_id is not None:
-                old_spool_row2 = await db.execute(
-                    select(UserSpool).where(UserSpool.id == old_spool_id)
-                )
-                old_spool = old_spool_row2.scalars().first()
-                if old_spool is not None:
-                    extra = dict(old_spool.extra or {})
-                    extra["printer_name"] = json.dumps("")
-                    extra["mmu_gate_map"] = json.dumps(-1)
-                    old_spool.extra = extra
-                    logger.debug(
-                        "Cleared HH extra fields on spool %d (unassigned from gate %d)",
-                        old_spool_id,
-                        payload.gate,
-                    )
+        if old_spool_id != new_spool_id and old_spool is not None:
+            if not await spool_has_gate_assignment(db, old_spool.id):
+                extra = dict(old_spool.extra or {})
+                extra["printer_name"] = json.dumps("")
+                extra["mmu_gate_map"] = json.dumps(-1)
+                old_spool.extra = extra
+                if old_spool.state not in {UserSpoolState.archived, UserSpoolState.empty}:
+                    old_spool.state = UserSpoolState.shelf
+            logger.debug(
+                "Cleared HH extra fields on spool %d (unassigned from gate %d)",
+                old_spool_id,
+                payload.gate,
+            )
 
-            # Set HH fields on the newly assigned spool
-            if new_spool_id is not None:
+        # Set HH fields and active state even when re-applying the same assignment.
+        if new_spool_id is not None:
+            if new_spool is None or new_spool.id != new_spool_id:
                 new_spool_row = await db.execute(
                     select(UserSpool).where(UserSpool.id == new_spool_id)
                 )
                 new_spool = new_spool_row.scalars().first()
-                if new_spool is not None:
-                    extra = dict(new_spool.extra or {})
-                    extra["printer_name"] = json.dumps(resolved_device.name)
-                    extra["mmu_gate_map"] = json.dumps(payload.gate)
-                    new_spool.extra = extra
-                    logger.debug(
-                        "Set HH extra fields on spool %d: printer=%r gate=%d",
-                        new_spool_id,
-                        resolved_device.name,
-                        payload.gate,
-                    )
+            if new_spool is not None:
+                extra = dict(new_spool.extra or {})
+                extra["printer_name"] = json.dumps(resolved_device.name)
+                extra["mmu_gate_map"] = json.dumps(payload.gate)
+                new_spool.extra = extra
+                new_spool.state = UserSpoolState.active
+                logger.debug(
+                    "Set HH extra fields on spool %d: printer=%r gate=%d",
+                    new_spool_id,
+                    resolved_device.name,
+                    payload.gate,
+                )
 
-            if old_spool_id is not None or new_spool_id is not None:
-                await db.commit()
+    await db.commit()
+    await db.refresh(state)
 
     return state
 
@@ -664,6 +699,13 @@ async def clear_device_slots(
 ) -> int:
     device = await require_device(db, user.id, device_id)
     now = _normalize_utc(datetime.now(timezone.utc))
+    spool_ids_result = await db.execute(
+        select(PresetGateState.spool_id).where(
+            PresetGateState.device_id == device.id,
+            PresetGateState.spool_id.is_not(None),
+        )
+    )
+    spool_ids = {spool_id for spool_id in spool_ids_result.scalars().all() if spool_id is not None}
     result = await db.execute(
         update(PresetGateState)
         .where(PresetGateState.device_id == device.id)
@@ -675,5 +717,21 @@ async def clear_device_slots(
             is_active=True,
         )
     )
+    await db.flush()
+
+    if spool_ids:
+        spools_result = await db.execute(
+            select(UserSpool).where(
+                UserSpool.id.in_(spool_ids),
+                UserSpool.user_id == user.id,
+            )
+        )
+        for spool in spools_result.scalars().all():
+            if await spool_has_gate_assignment(db, spool.id):
+                continue
+            clear_spool_location_projection(spool)
+            if spool.state not in {UserSpoolState.archived, UserSpoolState.empty}:
+                spool.state = UserSpoolState.shelf
+
     await db.commit()
     return int(result.rowcount or 0)

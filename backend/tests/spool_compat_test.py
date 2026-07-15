@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import pytest
 from httpx import AsyncClient
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.v1.endpoints.spool_compat import (
@@ -14,6 +15,7 @@ from app.api.v1.endpoints.spool_compat import (
 from app.models.brand import Brand
 from app.models.filament import Filament
 from app.models.preset import Preset, PresetModerationStatus
+from app.models.preset_gate_state import PresetGateState
 from app.models.user import User
 from app.models.user_printer_device import UserPrinterDevice
 from app.models.user_spool import UserSpool, UserSpoolState
@@ -120,6 +122,123 @@ async def test_spool_compat_v1_list_get_use_spool(client: AsyncClient, db_sessio
     assert use_response.status_code == 200
     used_weight = use_response.json()["used_weight"]
     assert used_weight == pytest.approx(150.0, rel=1e-6)
+
+
+@pytest.mark.asyncio
+async def test_spool_compat_create_defaults_to_shelf_and_rejects_empty(
+    client: AsyncClient,
+    db_session: AsyncSession,
+):
+    """Compatibility imports create stock spools, not phantom loaded/empty spools."""
+    _user, seed_spool, device = await _seed_spool_context(db_session)
+    endpoint = f"/api/v1/spool_compat/{device.api_key}/v1/spool"
+
+    created_response = await client.post(
+        endpoint,
+        json={"filament_id": seed_spool.filament_id, "initial_weight": 1000},
+    )
+    assert created_response.status_code == 200
+    created = await db_session.get(UserSpool, created_response.json()["id"])
+    assert created is not None
+    assert created.state == UserSpoolState.shelf
+
+    duplicate_response = await client.post(
+        endpoint,
+        json={"filament_id": seed_spool.filament_id, "initial_weight": 1000},
+    )
+    assert duplicate_response.status_code == 200
+    assert duplicate_response.json()["id"] != created.id
+
+    empty_response = await client.post(
+        endpoint,
+        json={
+            "filament_id": seed_spool.filament_id,
+            "initial_weight": 1000,
+            "remaining_weight": 0,
+        },
+    )
+    assert empty_response.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_spool_compat_gate_assignment_moves_one_physical_spool(
+    client: AsyncClient,
+    db_session: AsyncSession,
+):
+    user, first_spool, device = await _seed_spool_context(db_session)
+    second_spool = UserSpool(
+        user_id=user.id,
+        filament_id=first_spool.filament_id,
+        initial_weight_g=1000,
+        used_weight_g=0,
+        state=UserSpoolState.shelf,
+        source="manual",
+    )
+    db_session.add(second_spool)
+    await db_session.commit()
+    await db_session.refresh(second_spool)
+    location = f"{device.name}:Gate0"
+
+    first_response = await client.patch(
+        f"/api/v1/spool_compat/{device.api_key}/v1/spool/{first_spool.id}",
+        json={"location": location},
+    )
+    assert first_response.status_code == 200
+
+    second_response = await client.patch(
+        f"/api/v1/spool_compat/{device.api_key}/v1/spool/{second_spool.id}",
+        json={"location": location},
+    )
+    assert second_response.status_code == 200
+    await db_session.refresh(first_spool)
+    await db_session.refresh(second_spool)
+    assert first_spool.state == UserSpoolState.shelf
+    assert first_spool.extra == {"printer_name": '""', "mmu_gate_map": "-1"}
+    assert second_spool.state == UserSpoolState.active
+
+    gate_spool_id = await db_session.scalar(
+        select(PresetGateState.spool_id).where(
+            PresetGateState.device_id == device.id,
+            PresetGateState.gate_index == 0,
+        )
+    )
+    assert gate_spool_id == second_spool.id
+
+    shelf_response = await client.patch(
+        f"/api/v1/spool_compat/{device.api_key}/v1/spool/{second_spool.id}",
+        json={"location": None},
+    )
+    assert shelf_response.status_code == 200
+    await db_session.refresh(second_spool)
+    assert second_spool.state == UserSpoolState.shelf
+    assert second_spool.extra == {"printer_name": '""', "mmu_gate_map": "-1"}
+
+
+@pytest.mark.asyncio
+async def test_spool_compat_finished_spool_clears_gate(
+    client: AsyncClient,
+    db_session: AsyncSession,
+):
+    _user, spool, device = await _seed_spool_context(db_session)
+    endpoint = f"/api/v1/spool_compat/{device.api_key}/v1/spool/{spool.id}"
+    assign_response = await client.patch(
+        endpoint,
+        json={"location": f"{device.name}:Gate0"},
+    )
+    assert assign_response.status_code == 200
+
+    use_response = await client.put(f"{endpoint}/use", json={"use_weight": 900})
+    assert use_response.status_code == 200
+    await db_session.refresh(spool)
+    assert spool.state == UserSpoolState.empty
+    assert spool.extra == {"printer_name": '""', "mmu_gate_map": "-1"}
+    gate_spool_id = await db_session.scalar(
+        select(PresetGateState.spool_id).where(
+            PresetGateState.device_id == device.id,
+            PresetGateState.gate_index == 0,
+        )
+    )
+    assert gate_spool_id is None
 
 
 def _approved_preset(**overrides) -> Preset:
@@ -229,4 +348,3 @@ def test_spool_payload_ungated_uses_representative_preset():
     payload = _to_spool_payload(spool, {}, {})
     assert payload["filament"]["settings_extruder_temp"] == 248.0
     assert payload["filament"]["settings_bed_temp"] == 88.0
-

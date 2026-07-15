@@ -2,14 +2,22 @@
 
 from __future__ import annotations
 
+import json
 from datetime import datetime, timezone
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import joinedload
 
-from app.core.errors import ERR_ACCESS_DENIED, ERR_FILAMENT_NOT_FOUND, raise_error
+from app.core.errors import (
+    ERR_ACCESS_DENIED,
+    ERR_FILAMENT_NOT_FOUND,
+    ERR_SPOOL_EMPTY_ON_CREATE,
+    ERR_SPOOL_USED_EXCEEDS_INITIAL,
+    raise_error,
+)
 from app.models.filament import Filament
+from app.models.preset_gate_state import PresetGateState, PresetGateStateSource
 from app.models.user import User
 from app.models.user_spool import UserSpool, UserSpoolState
 from app.schemas.spool import (
@@ -18,6 +26,63 @@ from app.schemas.spool import (
     SpoolResponse,
     SpoolUpdateRequest,
 )
+
+
+def clear_spool_location_projection(spool: UserSpool) -> None:
+    extra = dict(spool.extra or {})
+    extra["printer_name"] = json.dumps("")
+    extra["mmu_gate_map"] = json.dumps(-1)
+    spool.extra = extra
+
+
+async def clear_spool_gate_assignments(
+    db: AsyncSession,
+    spool: UserSpool,
+    *,
+    source: PresetGateStateSource = PresetGateStateSource.web_manual,
+    except_device_id: int | None = None,
+    except_gate_index: int | None = None,
+) -> int:
+    """Clear canonical gate bindings for a physical spool without committing."""
+    result = await db.execute(
+        select(PresetGateState)
+        .where(PresetGateState.spool_id == spool.id)
+        .with_for_update()
+    )
+    states = list(result.scalars().all())
+    now = datetime.now(timezone.utc)
+    cleared = 0
+    for gate_state in states:
+        if (
+            except_device_id is not None
+            and except_gate_index is not None
+            and gate_state.device_id == except_device_id
+            and gate_state.gate_index == except_gate_index
+        ):
+            continue
+        gate_state.spool_id = None
+        gate_state.source = source
+        gate_state.source_ts = now
+        gate_state.is_active = True
+        cleared += 1
+
+    if cleared:
+        clear_spool_location_projection(spool)
+    return cleared
+
+
+async def spool_has_gate_assignment(db: AsyncSession, spool_id: int) -> bool:
+    result = await db.execute(
+        select(PresetGateState.id)
+        .where(PresetGateState.spool_id == spool_id)
+        .limit(1)
+    )
+    return result.scalar_one_or_none() is not None
+
+
+def _validate_spool_weights(initial_weight_g: float, used_weight_g: float) -> None:
+    if used_weight_g > initial_weight_g:
+        raise_error(400, ERR_SPOOL_USED_EXCEEDS_INITIAL)
 
 
 async def _load_filament_info(db: AsyncSession, filament_id: int) -> Filament | None:
@@ -90,6 +155,13 @@ async def create_spool(
     user: User,
     payload: SpoolCreateRequest,
 ) -> SpoolResponse:
+    _validate_spool_weights(payload.initial_weight_g, payload.used_weight_g)
+    if (
+        payload.used_weight_g >= payload.initial_weight_g
+        or payload.state == UserSpoolState.empty.value
+    ):
+        raise_error(400, ERR_SPOOL_EMPTY_ON_CREATE)
+
     if payload.filament_id is not None:
         filament = await _load_filament_info(db, payload.filament_id)
         if filament is None:
@@ -138,10 +210,19 @@ async def update_spool(
     else:
         filament = await _load_filament_info(db, spool.filament_id) if spool.filament_id else None
 
-    if payload.initial_weight_g is not None:
-        spool.initial_weight_g = payload.initial_weight_g
-    if payload.used_weight_g is not None:
-        spool.used_weight_g = payload.used_weight_g
+    next_initial_weight = (
+        payload.initial_weight_g
+        if payload.initial_weight_g is not None
+        else spool.initial_weight_g
+    )
+    next_used_weight = (
+        payload.used_weight_g
+        if payload.used_weight_g is not None
+        else spool.used_weight_g
+    )
+    _validate_spool_weights(next_initial_weight, next_used_weight)
+    spool.initial_weight_g = next_initial_weight
+    spool.used_weight_g = next_used_weight
     if payload.state is not None:
         spool.state = UserSpoolState(payload.state)
     if "price" in payload.model_fields_set:
@@ -150,6 +231,19 @@ async def update_spool(
         spool.lot_nr = payload.lot_nr
     if "comment" in payload.model_fields_set:
         spool.comment = payload.comment
+
+    if spool.state == UserSpoolState.empty:
+        spool.used_weight_g = spool.initial_weight_g
+    elif spool.remaining_weight_g <= 0:
+        spool.state = UserSpoolState.empty
+
+    if spool.state in {
+        UserSpoolState.shelf,
+        UserSpoolState.archived,
+        UserSpoolState.empty,
+    }:
+        await clear_spool_gate_assignments(db, spool)
+        clear_spool_location_projection(spool)
 
     await db.commit()
     await db.refresh(spool)
@@ -174,9 +268,13 @@ async def use_spool(
         spool.used_weight_g + delta_weight_g,
     )
     spool.last_used_at = datetime.now(timezone.utc)
+    if spool.first_used_at is None:
+        spool.first_used_at = spool.last_used_at
 
     if spool.remaining_weight_g <= 0:
         spool.state = UserSpoolState.empty
+        await clear_spool_gate_assignments(db, spool)
+        clear_spool_location_projection(spool)
 
     filament = await _load_filament_info(db, spool.filament_id) if spool.filament_id else None
     await db.commit()

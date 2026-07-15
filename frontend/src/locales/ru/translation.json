@@ -903,6 +903,7 @@
       "printers": "Принтеры",
       "printer-requests": "Заявки на принтеры",
       "users": "Пользователи",
+      "communications": "Коммуникации",
       "feedback": "Обратная связь",
       "notifications": "Уведомления",
       "stats": "Статистика",
@@ -918,6 +919,7 @@
       "printers": "Принтеры",
       "printer-requests": "Заявки",
       "users": "Юзеры",
+      "communications": "Связь",
       "feedback": "Фидбек",
       "notifications": "Уведомления",
       "stats": "Стат.",
@@ -1006,8 +1008,8 @@
   },
   "catalogPage": {
     "seoTitle": "Каталог материалов для 3D-печати",
-    "seoDescription": "Найдите идеальные настройки для вашего пластика. Каталог филаментов PLA, PETG, ABS, TPU и других материалов с готовыми пресетами для слайсеров.",
-    "seoKeywords": "каталог филаментов, 3D печать, PLA, PETG, ABS, настройки печати, пресеты слайсера",
+    "seoDescription": "FilamentHub (ФиламентХаб, Филамент Хаб) — каталог филаментов PLA, PETG, ABS, TPU и других материалов с готовыми пресетами для слайсеров.",
+    "seoKeywords": "FilamentHub, ФиламентХаб, Филамент Хаб, каталог филаментов, 3D печать, PLA, PETG, ABS, настройки печати, пресеты слайсера",
     "heroTitle": "Найдите идеальные настройки для вашего пластика",
     "heroSubtitle": "База данных материалов с официальными пресетами от производителей и проверенными настройками от сообщества",
     "loading": "Загрузка материалов...",
@@ -2080,7 +2082,8 @@
       "deleteConfirm": "Удалить эту катушку?",
       "invalidInitialWeight": "Начальный вес должен быть больше 0.",
       "invalidUsedWeight": "Использованный вес не может быть отрицательным.",
-      "usedGreaterThanInitial": "Использованный вес не может быть больше начального."
+      "usedGreaterThanInitial": "Использованный вес не может быть больше начального.",
+      "emptyOnCreate": "Нельзя добавить уже пустую катушку."
     },
     "spoolHelp": {
       "toggle": "Как это работает?",
@@ -4234,6 +4237,44 @@
     "selectAtLeastOne": "Выберите хотя бы одного пользователя",
     "confirmSpecific": "Отправить сообщение {{count}} выбранным пользователям?"
   },
+  "adminCommunications": {
+    "eyebrow": "Центр коммуникаций",
+    "title": "Коммуникации",
+    "description": "Ответы брендов, обращения пользователей и внутренние рассылки собраны в одном рабочем пространстве, но сохраняют отдельные статусы и каналы доставки.",
+    "sections": {
+      "inbox": "Входящие email",
+      "feedback": "Обратная связь",
+      "broadcasts": "Рассылки"
+    },
+    "inboxTitle": "Входящие письма",
+    "threadCount": "Переписок: {{count}}",
+    "unreadCount": "Непрочитанных: {{count}}",
+    "filters": {
+      "all": "Все",
+      "open": "Открытые",
+      "closed": "Закрытые"
+    },
+    "refresh": "Обновить",
+    "loading": "Загрузка переписок…",
+    "loadError": "Не удалось загрузить входящие письма",
+    "emptyTitle": "Входящих писем пока нет",
+    "emptyHint": "Ответы появятся здесь после настройки receiving-домена и webhook Resend.",
+    "selectThread": "Выберите переписку слева",
+    "loadingThread": "Загрузка переписки…",
+    "closeThread": "Закрыть",
+    "reopenThread": "Открыть снова",
+    "statusError": "Не удалось изменить статус переписки",
+    "sentByFilamentHub": "FilamentHub",
+    "noTextBody": "У письма нет текстовой части",
+    "attachmentsMetadataOnly": "Вложения не загружаются автоматически: показаны только безопасные метаданные.",
+    "replyLabel": "Ответить по email",
+    "replyPlaceholder": "Напишите ответ представителю бренда…",
+    "plainTextHint": "Ответ отправляется как безопасный текст без пользовательского HTML.",
+    "sendReply": "Отправить ответ",
+    "sending": "Отправка…",
+    "replySent": "Ответ отправлен",
+    "replyError": "Не удалось отправить ответ"
+  },
   "adminStats": {
     "title": "Статистика платформы",
     "subtitle": "Общая информация о платформе",
@@ -4368,7 +4409,7 @@
   },
   "seo": {
     "defaultTitle": "FilamentHub — платформа для 3D-печати",
-    "defaultDescription": "Каталог филаментов, профили принтеров и настройки печати для 3D-принтеров"
+    "defaultDescription": "FilamentHub (ФиламентХаб, Филамент Хаб) — каталог филаментов, профили принтеров и настройки печати для 3D-принтеров"
   },
   "filamentSummary": {
     "noColor": "Без цвета",
@@ -4957,6 +4998,11 @@
     "ERR_INVALID_API_KEY": "Недействительный API-ключ",
     "ERR_EMAIL_DOMAIN_TYPO": "Возможно, вы имели в виду @{{domain}}?",
     "ERR_DOMAIN_NO_MAIL": "Домен @{{domain}} не принимает почту",
+    "ERR_EMAIL_THREAD_NOT_FOUND": "Переписка не найдена",
+    "ERR_EMAIL_DELIVERY_FAILED": "Не удалось отправить письмо",
+    "ERR_EMAIL_WEBHOOK_INVALID": "Некорректный webhook почтового сервиса",
+    "ERR_EMAIL_WEBHOOK_NOT_CONFIGURED": "Приём входящих писем ещё не настроен",
+    "ERR_EMAIL_INBOUND_FETCH_FAILED": "Не удалось получить содержимое входящего письма",
     "ERR_BRAND_ID_REQUIRED_JOIN": "Для вступления в бренд укажите brand_id",
     "ERR_BRAND_NAME_SLUG_REQUIRED": "Для создания бренда укажите название и slug",
     "ERR_FILENAME_REQUIRED": "Укажите имя файла",
@@ -5041,6 +5087,8 @@
     "ERR_GATE_STATE_NOT_FOUND": "Состояние слота {{gate}} не найдено",
     "ERR_PRESET_NOT_ACCESSIBLE": "Пресет {{preset_id}} недоступен",
     "ERR_SPOOL_NOT_ACCESSIBLE": "Катушка {{spool_id}} недоступна",
+    "ERR_SPOOL_EMPTY_ON_CREATE": "Нельзя добавить уже пустую катушку",
+    "ERR_SPOOL_USED_EXCEEDS_INITIAL": "Использованный вес не может превышать начальный",
     "ERR_SNAPSHOT_TOO_FREQUENT": "Снимки отправляются слишком часто"
   },
   "presetSlots": {

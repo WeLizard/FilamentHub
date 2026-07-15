@@ -41,7 +41,7 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
       const res = await qrAPI.scan(code);
       if (res?.filament) {
         setIsScannerOpen(false);
-        navigate(`/filaments/${res.filament.id}`);
+        navigate(`/filaments/${res.filament.id}?qr=true`);
         return true;
       }
       return false;

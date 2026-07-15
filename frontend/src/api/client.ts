@@ -2,7 +2,7 @@
 
 import axios from 'axios';
 import type { InternalAxiosRequestConfig } from 'axios';
-import type { AccessibleBrand, Brand, BrandUsage, BrandRequest, BrandRequestStatus, BrandTeamInvite, BrandTeamRole, BrandTeamWorkspace, Filament, FilamentLine, FilamentImportResult, FilamentPalettePayload, BrandInvitePublic, BrandInviteAdmin, BrandInviteAcceptResult, FilamentAvailability, FilamentVisualSettings, FilamentReview, FilamentRatingStats, Notification, NotificationListResponse, Preset, RecommendedPreset, RecommendedForPrinterResponse, Printer, PrinterProfile, PrintProfile, PrinterRequest, User, Token, RefreshTokenRequest, RefreshTokenResponse, ListResponse, AccountDeletionStats, UserSavedPreset, CalculatorEstimateRequest, CalculatorEstimateResponse, CalculatorProfileResponse, CalculatorProfileUpdate, Feedback, FeedbackListResponse, FeedbackType, CompatiblePrinter, CompatibleFilament, DownloadVersion, DownloadVersionsResponse, WikiCategory, WikiCategoryListResponse, WikiArticle, WikiArticleListResponse, WikiFeedbackStats, WikiFeedbackCreate, WikiFeedback } from '../types/api';
+import type { AccessibleBrand, Brand, BrandUsage, BrandRequest, BrandRequestStatus, BrandTeamInvite, BrandTeamRole, BrandTeamWorkspace, Filament, FilamentLine, FilamentImportResult, FilamentPalettePayload, BrandInvitePublic, BrandInviteAdmin, BrandInviteAcceptResult, FilamentAvailability, FilamentVisualSettings, FilamentReview, FilamentRatingStats, Notification, NotificationListResponse, Preset, RecommendedPreset, RecommendedForPrinterResponse, Printer, PrinterProfile, PrintProfile, PrinterRequest, User, Token, RefreshTokenRequest, RefreshTokenResponse, ListResponse, AccountDeletionStats, UserSavedPreset, CalculatorEstimateRequest, CalculatorEstimateResponse, CalculatorProfileResponse, CalculatorProfileUpdate, Feedback, FeedbackListResponse, FeedbackType, CompatiblePrinter, CompatibleFilament, DownloadVersion, DownloadVersionsResponse, WikiCategory, WikiCategoryListResponse, WikiArticle, WikiArticleListResponse, WikiFeedbackStats, WikiFeedbackCreate, WikiFeedback, EmailThreadDetail, EmailThreadListResponse, EmailThreadStatus, EmailMessage, EmailSenderProfile } from '../types/api';
 import { getCsrfToken, getRefreshToken, getToken, isCookieAuthMode, isJwtAuthMode, isOrcaEmbedded, removeToken, setToken, shouldPersistTokensLocally } from '../utils/auth';
 import { isPluginEmbed, reportPluginSessionToPlugin } from '../utils/pluginBridge';
 import { downloadBlob } from '../utils/download';
@@ -2009,6 +2009,40 @@ export const adminNotificationsAPI = {
       link: data.link || null,
       active_only: data.active_only !== false,
     });
+    return response.data;
+  },
+};
+
+export const adminCommunicationsAPI = {
+  listEmailThreads: async (params?: {
+    page?: number;
+    size?: number;
+    status?: EmailThreadStatus;
+  }): Promise<EmailThreadListResponse> => {
+    const response = await api.get<EmailThreadListResponse>('/admin/communications/email-threads', { params });
+    return response.data;
+  },
+
+  getEmailThread: async (threadId: number): Promise<EmailThreadDetail> => {
+    const response = await api.get<EmailThreadDetail>(`/admin/communications/email-threads/${threadId}`);
+    return response.data;
+  },
+
+  markEmailThreadRead: async (threadId: number): Promise<EmailThreadDetail> => {
+    const response = await api.post<EmailThreadDetail>(`/admin/communications/email-threads/${threadId}/read`);
+    return response.data;
+  },
+
+  updateEmailThread: async (threadId: number, status: EmailThreadStatus): Promise<EmailThreadDetail> => {
+    const response = await api.patch<EmailThreadDetail>(`/admin/communications/email-threads/${threadId}`, { status });
+    return response.data;
+  },
+
+  replyToEmailThread: async (threadId: number, data: {
+    body: string;
+    sender_profile?: EmailSenderProfile;
+  }): Promise<EmailMessage> => {
+    const response = await api.post<EmailMessage>(`/admin/communications/email-threads/${threadId}/reply`, data);
     return response.data;
   },
 };

@@ -26,6 +26,11 @@ from app.models.user import User
 from app.models.user_printer_device import UserPrinterDevice
 from app.models.user_spool import UserSpool, UserSpoolState
 from app.services.preset_enrichment_service import _load_material_defaults
+from app.services.spool_service import (
+    clear_spool_gate_assignments,
+    clear_spool_location_projection,
+    spool_has_gate_assignment,
+)
 
 from . import spool_compat_fields
 from .spool_compat_ws import spool_ws_manager
@@ -67,7 +72,7 @@ class SpoolCreateBody(BaseModel):
     """Compatibility body for POST /v1/spool."""
 
     filament_id: int = Field(gt=0)
-    initial_weight: float | None = Field(default=None, ge=0)
+    initial_weight: float | None = Field(default=None, gt=0)
     used_weight: float | None = Field(default=None, ge=0)
     remaining_weight: float | None = Field(default=None, ge=0)
     location: str | None = Field(default=None, max_length=128)
@@ -81,7 +86,7 @@ class SpoolPatchBody(BaseModel):
     """Compatibility body for PATCH /v1/spool/{id}."""
 
     filament_id: int | None = Field(default=None, gt=0)
-    initial_weight: float | None = Field(default=None, ge=0)
+    initial_weight: float | None = Field(default=None, gt=0)
     used_weight: float | None = Field(default=None, ge=0)
     remaining_weight: float | None = Field(default=None, ge=0)
     location: str | None = Field(default=None, max_length=128)
@@ -498,6 +503,14 @@ def _sort_key(payload: dict, field_name: str):
     return (value is None, value)
 
 
+async def _shelf_spool_if_unassigned(db: AsyncSession, spool: UserSpool) -> None:
+    if await spool_has_gate_assignment(db, spool.id):
+        return
+    clear_spool_location_projection(spool)
+    if spool.state not in {UserSpoolState.archived, UserSpoolState.empty}:
+        spool.state = UserSpoolState.shelf
+
+
 async def _apply_location_assignment(
     db: AsyncSession,
     user: User,
@@ -519,7 +532,15 @@ async def _apply_location_assignment(
             state.spool_id = None
             state.source = PresetGateStateSource.web_manual
             state.source_ts = datetime.now(timezone.utc)
+        await db.flush()
+        await _shelf_spool_if_unassigned(db, spool)
         return True, None
+
+    if (
+        spool.remaining_weight_g <= 0
+        or spool.state in {UserSpoolState.archived, UserSpoolState.empty}
+    ):
+        return False, "An archived or empty spool cannot be assigned to an MMU gate."
 
     location_clean = location.strip()
     match = (
@@ -565,6 +586,7 @@ async def _apply_location_assignment(
         )
     )
     target_state = target_result.scalar_one_or_none()
+    displaced_spool_id = target_state.spool_id if target_state is not None else None
     now = datetime.now(timezone.utc)
     if target_state is None:
         target_state = PresetGateState(
@@ -591,6 +613,24 @@ async def _apply_location_assignment(
         state.source = PresetGateStateSource.web_manual
         state.source_ts = now
 
+    await db.flush()
+    if displaced_spool_id is not None and displaced_spool_id != spool.id:
+        displaced_result = await db.execute(
+            select(UserSpool).where(
+                UserSpool.id == displaced_spool_id,
+                UserSpool.user_id == user.id,
+            )
+        )
+        displaced_spool = displaced_result.scalar_one_or_none()
+        if displaced_spool is not None:
+            await _shelf_spool_if_unassigned(db, displaced_spool)
+
+    projection_name = device.printer_hostname or device.name
+    extra = dict(spool.extra or {})
+    extra["printer_name"] = json.dumps(projection_name)
+    extra["mmu_gate_map"] = json.dumps(gate_index)
+    spool.extra = extra
+    spool.state = UserSpoolState.active
     return True, None
 
 
@@ -634,6 +674,19 @@ async def _sync_extra_to_gate_state(
             state.spool_id = None
             state.source = PresetGateStateSource.hh_snapshot
             state.source_ts = now
+        await db.flush()
+        await _shelf_spool_if_unassigned(db, spool)
+        return
+
+    if (
+        spool.remaining_weight_g <= 0
+        or spool.state in {UserSpoolState.archived, UserSpoolState.empty}
+    ):
+        for state in existing_states:
+            state.spool_id = None
+            state.source = PresetGateStateSource.hh_snapshot
+            state.source_ts = now
+        clear_spool_location_projection(spool)
         return
 
     if device is not None and printer_name:
@@ -666,6 +719,7 @@ async def _sync_extra_to_gate_state(
         )
     )
     target_state = target_result.scalar_one_or_none()
+    displaced_spool_id = target_state.spool_id if target_state is not None else None
 
     if target_state is None:
         target_state = PresetGateState(
@@ -691,6 +745,20 @@ async def _sync_extra_to_gate_state(
         state.spool_id = None
         state.source = PresetGateStateSource.hh_snapshot
         state.source_ts = now
+
+    await db.flush()
+    if displaced_spool_id is not None and displaced_spool_id != spool.id:
+        displaced_result = await db.execute(
+            select(UserSpool).where(
+                UserSpool.id == displaced_spool_id,
+                UserSpool.user_id == user.id,
+            )
+        )
+        displaced_spool = displaced_result.scalar_one_or_none()
+        if displaced_spool is not None:
+            await _shelf_spool_if_unassigned(db, displaced_spool)
+
+    spool.state = UserSpoolState.active
 
 
 async def _get_user_spool(db: AsyncSession, user_id: int, spool_id: int) -> UserSpool | None:
@@ -1031,12 +1099,22 @@ async def create_spool(
     else:
         used_weight = 0.0
 
+    if body.used_weight is not None and body.used_weight >= initial_weight:
+        return _err(status.HTTP_400_BAD_REQUEST, "A new spool must have remaining filament.")
+    if body.remaining_weight is not None and (
+        body.remaining_weight <= 0 or body.remaining_weight > initial_weight
+    ):
+        return _err(
+            status.HTTP_400_BAD_REQUEST,
+            "Remaining weight must be greater than zero and not exceed initial weight.",
+        )
+
     spool = UserSpool(
         user_id=user.id,
         filament_id=body.filament_id,
         initial_weight_g=float(initial_weight),
         used_weight_g=float(min(max(used_weight, 0.0), initial_weight)),
-        state=UserSpoolState.archived if body.archived else UserSpoolState.active,
+        state=UserSpoolState.archived if body.archived else UserSpoolState.shelf,
         source="spool_compat",
         lot_nr=body.lot_nr,
         comment=body.comment,
@@ -1123,6 +1201,12 @@ async def patch_spool(
     if "extra" in fields_set and "location" not in fields_set:
         await _sync_extra_to_gate_state(db, user, spool, device=_device)
 
+    if spool.state in {UserSpoolState.archived, UserSpoolState.empty}:
+        await clear_spool_gate_assignments(db, spool)
+        clear_spool_location_projection(spool)
+    elif body.archived is False and "location" not in fields_set and "extra" not in fields_set:
+        await _shelf_spool_if_unassigned(db, spool)
+
     await db.commit()
     updated = await _get_user_spool(db, user.id, spool.id)
     if updated is None:
@@ -1169,6 +1253,8 @@ async def use_spool(
     spool.last_used_at = now
     if spool.used_weight_g >= spool.initial_weight_g:
         spool.state = UserSpoolState.empty
+        await clear_spool_gate_assignments(db, spool)
+        clear_spool_location_projection(spool)
 
     await db.commit()
     updated = await _get_user_spool(db, user.id, spool.id)
@@ -1206,6 +1292,8 @@ async def measure_spool(
     spool.last_used_at = now
     if spool.used_weight_g >= spool.initial_weight_g:
         spool.state = UserSpoolState.empty
+        await clear_spool_gate_assignments(db, spool)
+        clear_spool_location_projection(spool)
 
     await db.commit()
     updated = await _get_user_spool(db, user.id, spool.id)

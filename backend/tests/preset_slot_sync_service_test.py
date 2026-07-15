@@ -11,7 +11,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.preset_gate_state import PresetGateState, PresetGateStateSource
 from app.models.user import User
 from app.models.user_printer_device import UserPrinterDevice
-from app.services.preset_slot_sync_service import _upsert_gate_state, clear_device_slots
+from app.models.user_spool import UserSpool, UserSpoolState
+from app.services.preset_slot_sync_service import (
+    _upsert_gate_state,
+    clear_device_slots,
+    web_assign_preset_to_slot,
+)
 
 
 async def _seed_user_device(db: AsyncSession) -> tuple[User, UserPrinterDevice]:
@@ -117,6 +122,24 @@ async def test_clear_device_slots_should_bulk_clear_and_set_web_manual_source(
     user, device = await _seed_user_device(db_session)
 
     now = datetime.now(timezone.utc)
+    first_spool = UserSpool(
+        user_id=user.id,
+        initial_weight_g=1000,
+        used_weight_g=0,
+        state=UserSpoolState.active,
+        source="manual",
+        extra={"printer_name": '"Test Device"', "mmu_gate_map": "0"},
+    )
+    second_spool = UserSpool(
+        user_id=user.id,
+        initial_weight_g=750,
+        used_weight_g=50,
+        state=UserSpoolState.active,
+        source="manual",
+        extra={"printer_name": '"Test Device"', "mmu_gate_map": "1"},
+    )
+    db_session.add_all([first_spool, second_spool])
+    await db_session.flush()
     db_session.add_all(
         [
             PresetGateState(
@@ -124,7 +147,7 @@ async def test_clear_device_slots_should_bulk_clear_and_set_web_manual_source(
                 device_id=device.id,
                 gate_index=0,
                 preset_id=101,
-                spool_id=201,
+                spool_id=first_spool.id,
                 source=PresetGateStateSource.manual_orca,
                 source_ts=now - timedelta(minutes=10),
                 is_active=True,
@@ -134,7 +157,7 @@ async def test_clear_device_slots_should_bulk_clear_and_set_web_manual_source(
                 device_id=device.id,
                 gate_index=1,
                 preset_id=102,
-                spool_id=202,
+                spool_id=second_spool.id,
                 source=PresetGateStateSource.hh_snapshot,
                 source_ts=now - timedelta(minutes=8),
                 is_active=True,
@@ -161,3 +184,92 @@ async def test_clear_device_slots_should_bulk_clear_and_set_web_manual_source(
         assert state.spool_id is None
         assert state.source == PresetGateStateSource.web_manual
         assert state.source_ts >= clear_started_at
+
+    await db_session.refresh(first_spool)
+    await db_session.refresh(second_spool)
+    assert first_spool.state == UserSpoolState.shelf
+    assert second_spool.state == UserSpoolState.shelf
+    assert first_spool.extra == {"printer_name": '""', "mmu_gate_map": "-1"}
+    assert second_spool.extra == {"printer_name": '""', "mmu_gate_map": "-1"}
+
+
+@pytest.mark.asyncio
+async def test_web_assignment_moves_one_physical_spool_between_gates(
+    db_session: AsyncSession,
+):
+    """A spool has one physical location; moving it clears its previous gate."""
+    user, device = await _seed_user_device(db_session)
+    first_spool = UserSpool(
+        user_id=user.id,
+        initial_weight_g=1000,
+        used_weight_g=0,
+        state=UserSpoolState.shelf,
+        source="qr",
+    )
+    second_spool = UserSpool(
+        user_id=user.id,
+        initial_weight_g=1000,
+        used_weight_g=0,
+        state=UserSpoolState.shelf,
+        source="manual",
+    )
+    db_session.add_all([first_spool, second_spool])
+    await db_session.commit()
+    await db_session.refresh(first_spool)
+    await db_session.refresh(second_spool)
+
+    await web_assign_preset_to_slot(
+        db_session,
+        user,
+        device.id,
+        0,
+        preset_id=None,
+        spool_id=first_spool.id,
+        preset_id_provided=False,
+        spool_id_provided=True,
+    )
+    await web_assign_preset_to_slot(
+        db_session,
+        user,
+        device.id,
+        1,
+        preset_id=None,
+        spool_id=first_spool.id,
+        preset_id_provided=False,
+        spool_id_provided=True,
+    )
+
+    moved_states_result = await db_session.execute(
+        select(PresetGateState)
+        .where(PresetGateState.device_id == device.id)
+        .order_by(PresetGateState.gate_index)
+    )
+    moved_states = list(moved_states_result.scalars().all())
+    await db_session.refresh(first_spool)
+    assert [state.spool_id for state in moved_states] == [None, first_spool.id]
+    assert first_spool.state == UserSpoolState.active
+    assert first_spool.extra == {
+        "printer_name": '"Test Device"',
+        "mmu_gate_map": "1",
+    }
+
+    await web_assign_preset_to_slot(
+        db_session,
+        user,
+        device.id,
+        1,
+        preset_id=None,
+        spool_id=second_spool.id,
+        preset_id_provided=False,
+        spool_id_provided=True,
+    )
+
+    await db_session.refresh(first_spool)
+    await db_session.refresh(second_spool)
+    assert first_spool.state == UserSpoolState.shelf
+    assert first_spool.extra == {"printer_name": '""', "mmu_gate_map": "-1"}
+    assert second_spool.state == UserSpoolState.active
+    assert second_spool.extra == {
+        "printer_name": '"Test Device"',
+        "mmu_gate_map": "1",
+    }

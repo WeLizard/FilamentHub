@@ -779,6 +779,7 @@
       "printers": "打印机",
       "printer-requests": "打印机请求",
       "users": "用户",
+      "communications": "沟通",
       "feedback": "反馈",
       "notifications": "通知",
       "stats": "统计",
@@ -794,6 +795,7 @@
       "printers": "打印机",
       "printer-requests": "请求",
       "users": "用户",
+      "communications": "沟通",
       "feedback": "反馈",
       "notifications": "通知",
       "stats": "统计",
@@ -2364,7 +2366,8 @@
       "deleteConfirm": "删除此线轴？",
       "invalidInitialWeight": "初始重量必须大于0。",
       "invalidUsedWeight": "已使用重量不能为负。",
-      "usedGreaterThanInitial": "已使用重量不能超过初始重量。"
+      "usedGreaterThanInitial": "已使用重量不能超过初始重量。",
+      "emptyOnCreate": "无法添加已空的线轴。"
     },
     "spoolHelp": {
       "toggle": "这是如何工作的？",
@@ -4098,6 +4101,44 @@
     "selectAtLeastOne": "请至少选择一个用户",
     "confirmSpecific": "向 {{count}} 个选定用户发送消息？"
   },
+  "adminCommunications": {
+    "eyebrow": "沟通中心",
+    "title": "沟通",
+    "description": "品牌回复、用户反馈和站内广播集中在一个工作区中，同时保留各自的发送渠道和状态。",
+    "sections": {
+      "inbox": "邮件收件箱",
+      "feedback": "反馈",
+      "broadcasts": "广播"
+    },
+    "inboxTitle": "收到的邮件",
+    "threadCount": "会话：{{count}}",
+    "unreadCount": "未读：{{count}}",
+    "filters": {
+      "all": "全部",
+      "open": "处理中",
+      "closed": "已关闭"
+    },
+    "refresh": "刷新",
+    "loading": "正在加载会话…",
+    "loadError": "无法加载收到的邮件",
+    "emptyTitle": "暂无收到的邮件",
+    "emptyHint": "配置 Resend 接收域名和 webhook 后，回复将显示在这里。",
+    "selectThread": "请从左侧选择一个会话",
+    "loadingThread": "正在加载会话…",
+    "closeThread": "关闭",
+    "reopenThread": "重新打开",
+    "statusError": "无法更新会话状态",
+    "sentByFilamentHub": "FilamentHub",
+    "noTextBody": "此邮件没有文本正文",
+    "attachmentsMetadataOnly": "附件不会自动下载；这里只显示安全的元数据。",
+    "replyLabel": "通过邮件回复",
+    "replyPlaceholder": "给品牌代表写一封回复…",
+    "plainTextHint": "回复以安全文本发送，不包含用户提供的 HTML。",
+    "sendReply": "发送回复",
+    "sending": "正在发送…",
+    "replySent": "回复已发送",
+    "replyError": "无法发送回复"
+  },
   "adminStats": {
     "title": "平台统计",
     "subtitle": "平台基本信息",
@@ -4821,6 +4862,11 @@
     "ERR_INVALID_API_KEY": "无效的 API 密钥",
     "ERR_EMAIL_DOMAIN_TYPO": "您的意思是 @{{domain}} 吗？",
     "ERR_DOMAIN_NO_MAIL": "域名 @{{domain}} 无法接收邮件",
+    "ERR_EMAIL_THREAD_NOT_FOUND": "未找到邮件会话",
+    "ERR_EMAIL_DELIVERY_FAILED": "无法发送邮件",
+    "ERR_EMAIL_WEBHOOK_INVALID": "邮件服务 webhook 无效",
+    "ERR_EMAIL_WEBHOOK_NOT_CONFIGURED": "尚未配置接收邮件",
+    "ERR_EMAIL_INBOUND_FETCH_FAILED": "无法获取收到的邮件内容",
     "ERR_BRAND_ID_REQUIRED_JOIN": "指定 brand_id 以加入品牌",
     "ERR_BRAND_NAME_SLUG_REQUIRED": "指定名称和路由以创建品牌",
     "ERR_FILENAME_REQUIRED": "需要文件名",
@@ -4905,6 +4951,8 @@
     "ERR_GATE_STATE_NOT_FOUND": "未找到门 {{gate}} 的状态",
     "ERR_PRESET_NOT_ACCESSIBLE": "预设 {{preset_id}} 无法访问",
     "ERR_SPOOL_NOT_ACCESSIBLE": "线轴 {{spool_id}} 无法访问",
+    "ERR_SPOOL_EMPTY_ON_CREATE": "无法添加已空的线轴",
+    "ERR_SPOOL_USED_EXCEEDS_INITIAL": "已使用重量不能超过初始重量",
     "ERR_SNAPSHOT_TOO_FREQUENT": "快照发送过于频繁"
   },
   "presetSlots": {

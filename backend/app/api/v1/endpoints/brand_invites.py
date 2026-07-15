@@ -170,6 +170,11 @@ async def _build_invite(
 
 
 async def _deliver_invite(db: AsyncSession, invite: BrandInvite) -> None:
+    # Legacy invitations created before inbound replies were introduced receive
+    # a routing token on their next delivery/resend.
+    if not invite.reply_token:
+        invite.reply_token = secrets.token_urlsafe(24)
+
     if invite.purpose == "team":
         result = await run_in_threadpool(
             send_brand_team_invite_email,
