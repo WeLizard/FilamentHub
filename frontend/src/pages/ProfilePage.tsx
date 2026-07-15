@@ -106,6 +106,7 @@ export const ProfilePage: React.FC = () => {
   const [showBrandCabinet, setShowBrandCabinet] = useState<boolean>(
     () => Boolean((location.state as { brandCabinet?: boolean } | null)?.brandCabinet),
   ); // Показывать ли кабинет производителя
+  const [isAddBrandFlowActive, setIsAddBrandFlowActive] = useState(false);
   const [userTab, setUserTab] = useState<'dashboard' | 'presets' | 'spools' | 'calculator-pro' | 'settings' | 'printer-profiles'>(() => {
     // Deep-link на конкретную вкладку: navigate('/profile', { state: { tab } })
     const requested = (location.state as { tab?: string } | null)?.tab;
@@ -579,29 +580,43 @@ export const ProfilePage: React.FC = () => {
     return (
       <div>
         {/* Переключатель профилей */}
-        <div className="flex justify-center mb-4 min-[1140px]:mb-0 relative z-10 pointer-events-none">
-          <div className="flex bg-white/10 rounded-lg p-1 border border-white/20 pointer-events-auto">
-            <button
-              onClick={() => setShowBrandCabinet(false)}
-              className="flex items-center space-x-2 px-6 py-2 rounded-lg transition-all text-gray-300 hover:text-white"
-            >
-              <User className="w-4 h-4" />
-              <span className="hidden sm:inline">{t('profilePage.user')}</span>
-              <span className="sm:hidden">{t('profilePage.profile')}</span>
-            </button>
-            <button
-              onClick={() => setShowBrandCabinet(true)}
-              className="flex items-center space-x-2 px-6 py-2 rounded-lg transition-all bg-green-600 text-white shadow-lg shadow-green-500/25"
-            >
-              <Factory className="w-4 h-4" />
-              <span className="hidden sm:inline">{t('profilePage.company')}</span>
-              <span className="sm:hidden">{t('profilePage.brand')}</span>
-            </button>
+        {!isAddBrandFlowActive && (
+          <div className="flex justify-center mb-4 min-[1140px]:mb-0 relative z-10 pointer-events-none">
+            <div className="flex bg-white/10 rounded-lg p-1 border border-white/20 pointer-events-auto">
+              <button
+                onClick={() => setShowBrandCabinet(false)}
+                className="flex items-center space-x-2 px-6 py-2 rounded-lg transition-all text-gray-300 hover:text-white"
+              >
+                <User className="w-4 h-4" />
+                <span className="hidden sm:inline">{t('profilePage.user')}</span>
+                <span className="sm:hidden">{t('profilePage.profile')}</span>
+              </button>
+              <button
+                onClick={() => setShowBrandCabinet(true)}
+                className="flex items-center space-x-2 px-6 py-2 rounded-lg transition-all bg-green-600 text-white shadow-lg shadow-green-500/25"
+              >
+                <Factory className="w-4 h-4" />
+                <span className="hidden sm:inline">{t('profilePage.company')}</span>
+                <span className="sm:hidden">{t('profilePage.brand')}</span>
+              </button>
+            </div>
           </div>
-        </div>
+        )}
         
-        <div className={user.brand_id ? 'min-[1140px]:-mt-14' : 'md:mt-12'}>
-          <BrandProfilePage onBack={() => setShowBrandCabinet(false)} initialEditing={Boolean((location.state as { editBrand?: boolean } | null)?.editBrand)} />
+        <div
+          className={
+            user.brand_id
+              ? isAddBrandFlowActive
+                ? ''
+                : 'min-[1140px]:-mt-14'
+              : 'md:mt-12'
+          }
+        >
+          <BrandProfilePage
+            onBack={() => setShowBrandCabinet(false)}
+            initialEditing={Boolean((location.state as { editBrand?: boolean } | null)?.editBrand)}
+            onAddBrandFlowChange={setIsAddBrandFlowActive}
+          />
         </div>
       </div>
     );

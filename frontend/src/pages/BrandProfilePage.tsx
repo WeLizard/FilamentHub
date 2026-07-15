@@ -63,9 +63,10 @@ import type { AxiosError } from 'axios';
 interface BrandProfilePageProps {
   onBack?: () => void; // Callback для возврата в обычный профиль
   initialEditing?: boolean; // Открыть редактирование карточки сразу (после принятия инвайта)
+  onAddBrandFlowChange?: (isActive: boolean) => void;
 }
 
-export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({ onBack, initialEditing }) => {
+export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({ onBack, initialEditing, onAddBrandFlowChange }) => {
   const { t } = useTranslation();
   const { user, refreshUser } = useAuth();
   const navigate = useNavigate();
@@ -442,6 +443,17 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({ onBack, init
     setEditingPreset(null);
   };
 
+  const handleOpenAddBrandFlow = () => {
+    setIsBrandSwitcherOpen(false);
+    setIsAddingBrand(true);
+    onAddBrandFlowChange?.(true);
+  };
+
+  const handleCloseAddBrandFlow = () => {
+    setIsAddingBrand(false);
+    onAddBrandFlowChange?.(false);
+  };
+
   if (!user) {
     return (
       <div className="flex items-center justify-center min-h-[400px]">
@@ -451,7 +463,7 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({ onBack, init
   }
 
   if (isAddingBrand) {
-    return <BrandSelectionForm onClose={() => setIsAddingBrand(false)} />;
+    return <BrandSelectionForm onClose={handleCloseAddBrandFlow} />;
   }
 
   // Если у пользователя нет brand_id, показываем форму выбора/создания бренда
@@ -482,13 +494,13 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({ onBack, init
     <div className="space-y-6">
       {/* Header */}
       <div className="mb-6">
-        <div className="flex justify-center md:justify-end mb-4">
-          <div className="relative flex flex-col items-center md:inline-flex md:flex-row md:items-center">
+        <div className="mb-4 flex justify-center md:justify-end">
+          <div className="relative flex w-full max-w-lg items-start gap-3 md:inline-flex md:w-auto md:max-w-none md:items-center md:gap-0">
             <div
-              className={`mb-3 inline-flex h-16 shrink-0 items-center justify-center overflow-hidden rounded-xl shadow-lg p-0.5 md:mb-0 md:absolute md:right-full md:top-1/2 md:mr-3 md:-translate-y-1/2 ${
+              className={`inline-flex h-14 w-14 shrink-0 items-center justify-center overflow-hidden rounded-xl p-0.5 shadow-lg md:absolute md:right-full md:top-1/2 md:mr-3 md:h-16 md:-translate-y-1/2 ${
                 isBrandLogoVisible && brandData.logo_url
-                  ? 'border border-white/10 bg-white/10'
-                  : 'w-16 bg-gradient-to-r from-green-500 to-emerald-500 shadow-green-500/25'
+                  ? 'border border-white/10 bg-white/10 md:w-auto'
+                  : 'bg-gradient-to-r from-green-500 to-emerald-500 shadow-green-500/25 md:w-16'
               }`}
               style={isBrandLogoVisible && brandData.logo_url && brandData.logo_bg ? { backgroundColor: brandData.logo_bg } : undefined}
             >
@@ -496,26 +508,26 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({ onBack, init
                 <img
                   src={brandData.logo_url}
                   alt={brandData.name}
-                  className="block h-full w-auto max-w-[15rem] object-contain"
+                  className="block h-full w-full object-contain md:w-auto md:max-w-[15rem]"
                   onError={() => setIsBrandLogoVisible(false)}
                 />
               ) : (
                 <Factory className="w-8 h-8 text-white" />
               )}
             </div>
-            <div className="text-center md:text-right">
-              <div className="flex items-center justify-center space-x-2 md:justify-end">
-                <div ref={brandSwitcherRef} className="relative">
+            <div className="min-w-0 flex-1 text-left md:flex-none md:text-right">
+              <div className="flex min-w-0 items-center justify-start space-x-2 md:justify-end">
+                <div ref={brandSwitcherRef} className="relative min-w-0">
                   <button
                     type="button"
                     onClick={() => setIsBrandSwitcherOpen((open) => !open)}
                     disabled={setActiveBrandMutation.isPending}
-                    className="group inline-flex items-center gap-2 rounded-lg px-1.5 py-1 text-left transition hover:bg-white/5 focus:outline-none focus:ring-2 focus:ring-cyan-400/60 disabled:cursor-wait disabled:opacity-60"
+                    className="group inline-flex min-w-0 max-w-full items-center gap-2 rounded-lg px-1.5 py-1 text-left transition hover:bg-white/5 focus:outline-none focus:ring-2 focus:ring-cyan-400/60 disabled:cursor-wait disabled:opacity-60"
                     aria-expanded={isBrandSwitcherOpen}
                     aria-haspopup="menu"
                     title={t('profilePage.activeBrand')}
                   >
-                    <h2 className="text-3xl font-bold text-white">{brandData.name}</h2>
+                    <h2 className="truncate text-2xl font-bold text-white sm:text-3xl">{brandData.name}</h2>
                     <ChevronDown
                       className={`h-5 w-5 text-cyan-300 transition-transform ${isBrandSwitcherOpen ? 'rotate-180' : ''}`}
                     />
@@ -546,10 +558,7 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({ onBack, init
                         <button
                           type="button"
                           role="menuitem"
-                          onClick={() => {
-                            setIsBrandSwitcherOpen(false);
-                            setIsAddingBrand(true);
-                          }}
+                          onClick={handleOpenAddBrandFlow}
                           className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-sm font-medium text-cyan-200 transition hover:bg-cyan-400/10 hover:text-cyan-100"
                         >
                           <Plus className="h-4 w-4 shrink-0" />
@@ -567,7 +576,7 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({ onBack, init
                   <Edit className="w-4 h-4" />
                 </button>
               </div>
-              <div className="mt-1 flex items-center justify-center space-x-2 text-gray-300 md:justify-end">
+              <div className="mt-1 flex items-center justify-start space-x-2 text-gray-300 md:justify-end">
                 {brandData.verified && <Shield className="w-4 h-4 text-green-400" />}
                 <span>{brandData.verified ? t('brandProfile.verifiedManufacturer') : t('brandProfile.manufacturer')}</span>
               </div>
@@ -656,11 +665,11 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({ onBack, init
       {/* Materials Tab */}
       {brandTab === 'materials' && (
         <div className="space-y-6">
-          <div className="flex items-center justify-between">
-            <h3 className="text-2xl font-bold text-white">{t('brandProfile.myMaterials')}</h3>
-            <div className="flex items-center space-x-3">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <h3 className="text-xl font-bold text-white sm:text-2xl">{t('brandProfile.myMaterials')}</h3>
+            <div className="grid w-full grid-cols-[auto_minmax(0,1fr)_auto] gap-2 sm:flex sm:w-auto sm:items-center sm:gap-3">
               {/* View Mode Toggle */}
-              <div className="flex items-center bg-white/10 rounded-lg p-1 border border-white/20">
+              <div className="order-1 flex items-center rounded-lg border border-white/20 bg-white/10 p-1 sm:order-none">
                 <button
                   onClick={() => setMaterialsViewMode('grid')}
                   className={`p-2 rounded transition-all ${
@@ -687,7 +696,7 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({ onBack, init
             <a
               href={filamentImportAPI.templateUrl}
               download
-              className="px-4 py-2 rounded-xl border border-white/20 bg-white/10 text-gray-300 hover:text-white hover:bg-white/20 transition-all flex items-center space-x-2"
+              className="order-3 flex items-center justify-center space-x-2 rounded-xl border border-white/20 bg-white/10 px-3 py-2 text-gray-300 transition-all hover:bg-white/20 hover:text-white sm:order-none sm:px-4"
             >
               <Download className="w-4 h-4" />
               <span>{t('brandProfile.importTemplate')}</span>
@@ -695,12 +704,12 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({ onBack, init
             <button
               type="button"
               onClick={() => setShowCsvHelp((v) => !v)}
-              className={`px-3 py-2 rounded-xl border border-white/20 transition-all flex items-center ${showCsvHelp ? 'bg-purple-600/30 text-white' : 'bg-white/10 text-gray-300 hover:text-white hover:bg-white/20'}`}
+              className={`order-5 flex items-center justify-center rounded-xl border border-white/20 px-3 py-2 transition-all sm:order-none ${showCsvHelp ? 'bg-purple-600/30 text-white' : 'bg-white/10 text-gray-300 hover:text-white hover:bg-white/20'}`}
               title={t('brandProfile.csvHelpToggle')}
             >
               <Info className="w-4 h-4" />
             </button>
-            <label className="px-4 py-2 rounded-xl border border-white/20 bg-white/10 text-gray-300 hover:text-white hover:bg-white/20 transition-all cursor-pointer flex items-center space-x-2">
+            <label className="order-4 flex min-w-0 cursor-pointer items-center justify-center space-x-2 whitespace-nowrap rounded-xl border border-white/20 bg-white/10 px-3 py-2 text-gray-300 transition-all hover:bg-white/20 hover:text-white sm:order-none sm:px-4">
               {isImporting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />}
               <span>{t('brandProfile.importCsv')}</span>
               <input type="file" accept=".csv,text/csv" onChange={handleImportCsv} className="hidden" disabled={isImporting} />
@@ -708,7 +717,7 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({ onBack, init
             <button
               onClick={handleCreateFilament}
               disabled={isLoadingFilaments}
-              className="bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700 text-white px-4 py-2 rounded-xl transition-all shadow-lg shadow-green-500/25 hover:shadow-green-500/40 disabled:opacity-50 disabled:cursor-not-allowed flex items-center space-x-2"
+              className="order-2 col-span-2 flex w-full items-center justify-center space-x-2 rounded-xl bg-gradient-to-r from-green-600 to-emerald-600 px-4 py-2 text-white shadow-lg shadow-green-500/25 transition-all hover:from-green-700 hover:to-emerald-700 hover:shadow-green-500/40 disabled:cursor-not-allowed disabled:opacity-50 sm:order-none sm:col-auto sm:w-auto"
             >
               <Plus className="w-4 h-4" />
               <span>{t('brandProfile.newMaterial')}</span>
