@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en">
+<html lang="ru">
   <head>
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/logo.svg" sizes="any" />
@@ -7,30 +7,64 @@
     <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 
-    <!-- Base SEO tags (updated dynamically by SEOHead per language) -->
-    <meta name="description" content="Self-hosted platform for 3D-printing filaments, presets, spool inventory, and brand workflows — with deep OrcaSlicer integration." />
-    <meta name="keywords" content="3D printing, filament, PLA, PETG, ABS, slicer, OrcaSlicer, print settings, 3D printer, Happy Hare, MMU, Klipper, Moonraker" />
-    <meta name="author" content="FilamentHub" />
+    <!-- Static crawler fallback; SEOHead updates these tags after the app loads. -->
+    <meta data-seo-base="true" name="description" content="FilamentHub (ФиламентХаб, Филамент Хаб) — каталог филаментов и материалов для 3D-печати с профилями, пресетами, отзывами и интеграцией с OrcaSlicer." />
+    <meta data-seo-base="true" name="keywords" content="FilamentHub, ФиламентХаб, Филамент Хаб, каталог филаментов, материалы для 3D-печати, PLA, PETG, ABS, OrcaSlicer, настройки печати, пресеты слайсера" />
+    <meta data-seo-base="true" name="author" content="FilamentHub" />
     <meta name="theme-color" content="#7c3aed" />
 
     <!-- Open Graph base -->
-    <meta property="og:site_name" content="FilamentHub" />
-    <meta property="og:locale" content="en_US" />
+    <meta data-seo-base="true" property="og:title" content="FilamentHub — каталог филаментов и настроек 3D-печати" />
+    <meta data-seo-base="true" property="og:description" content="Каталог материалов для 3D-печати, профилей и пресетов с интеграцией в OrcaSlicer." />
+    <meta data-seo-base="true" property="og:url" content="https://filamenthub.ru/" />
+    <meta data-seo-base="true" property="og:type" content="website" />
+    <meta data-seo-base="true" property="og:site_name" content="FilamentHub" />
+    <meta data-seo-base="true" property="og:locale" content="ru_RU" />
     <meta property="og:locale:alternate" content="ru_RU" />
+    <meta property="og:locale:alternate" content="en_US" />
+    <meta property="og:locale:alternate" content="zh_CN" />
 
     <!-- Twitter Card base -->
-    <meta name="twitter:card" content="summary_large_image" />
+    <meta data-seo-base="true" name="twitter:card" content="summary_large_image" />
+    <meta data-seo-base="true" name="twitter:title" content="FilamentHub — каталог филаментов и настроек 3D-печати" />
+    <meta data-seo-base="true" name="twitter:description" content="Каталог материалов для 3D-печати, профилей и пресетов с интеграцией в OrcaSlicer." />
 
     <!-- Webmaster verification -->
     <meta name="yandex-verification" content="a36e9671900c9269" />
     <meta name="google-site-verification" content="l6p83QQrU9uFHwz4avxFYlU6UYD0mqEZi5PDDEBny7s" />
 
     <!-- Search engines and AI -->
-    <meta name="robots" content="index, follow, max-image-preview:large, max-snippet:-1, max-video-preview:-1" />
-    <meta name="googlebot" content="index, follow" />
-    <meta name="bingbot" content="index, follow" />
+    <meta data-seo-base="true" name="robots" content="index, follow, max-image-preview:large, max-snippet:-1, max-video-preview:-1" />
+    <meta data-seo-base="true" name="googlebot" content="index, follow" />
+    <meta data-seo-base="true" name="bingbot" content="index, follow" />
 
-    <title>FilamentHub — 3D Printing Materials Platform</title>
+    <link data-seo-base="true" rel="canonical" href="https://filamenthub.ru/" />
+
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@type": "WebSite",
+        "@id": "https://filamenthub.ru/#website",
+        "url": "https://filamenthub.ru/",
+        "name": "FilamentHub",
+        "alternateName": ["Filament Hub", "ФиламентХаб", "Филамент Хаб"],
+        "description": "Каталог филаментов, профилей и настроек для 3D-печати с интеграцией в OrcaSlicer.",
+        "inLanguage": ["ru", "en", "zh"]
+      }
+    </script>
+
+    <script>
+      window.YandexRotorSettings = {
+        WaiterEnabled: true,
+        FailOnTimeout: false,
+        NoJsRedirectsToMain: true,
+        IsLoaded: function () {
+          return Boolean(document.querySelector('#root main'));
+        }
+      };
+    </script>
+
+    <title>FilamentHub — каталог филаментов и настроек 3D-печати</title>
   </head>
   <body>
     <div id="root"></div>

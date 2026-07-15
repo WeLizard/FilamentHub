@@ -45,7 +45,11 @@ export const SEOHead: React.FC<SEOHeadProps> = ({
   const { t, i18n } = useTranslation();
   const fullTitle = title ? `${title} | FilamentHub` : t('seo.defaultTitle');
   const fullDescription = description || t('seo.defaultDescription');
-  const ogLocale = i18n.language?.startsWith('ru') ? 'ru_RU' : 'en_US';
+  const ogLocale = i18n.language?.startsWith('ru')
+    ? 'ru_RU'
+    : i18n.language?.startsWith('zh')
+      ? 'zh_CN'
+      : 'en_US';
   const fullImage = image ? (image.startsWith('http') ? image : `${BASE_URL}${image}`) : `${BASE_URL}${DEFAULT_IMAGE}`;
   const fullUrl = url ? (url.startsWith('http') ? url : `${BASE_URL}${url}`) : BASE_URL;
 
@@ -57,14 +61,27 @@ export const SEOHead: React.FC<SEOHeadProps> = ({
     const existingMeta = document.querySelectorAll('meta[data-seo]');
     existingMeta.forEach((meta) => meta.remove());
 
-    // Создаём функцию для добавления meta тега
+    // Reuse the static crawler fallback from index.html instead of leaving
+    // duplicate title/description/OG tags in the document after hydration.
     const addMeta = (nameOrProperty: string, content: string, isProperty = false) => {
-      const meta = document.createElement('meta');
-      if (isProperty) {
-        meta.setAttribute('property', nameOrProperty);
-      } else {
-        meta.setAttribute('name', nameOrProperty);
+      const attribute = isProperty ? 'property' : 'name';
+      const baseMeta = Array.from(document.head.querySelectorAll<HTMLMetaElement>(`meta[${attribute}]`))
+        .find((meta) => (
+          meta.getAttribute(attribute) === nameOrProperty
+          && meta.dataset.seoBase === 'true'
+        ));
+
+      if (baseMeta) {
+        if (baseMeta.dataset.seoOriginalContent === undefined) {
+          baseMeta.dataset.seoOriginalContent = baseMeta.content;
+        }
+        baseMeta.content = content;
+        baseMeta.dataset.seoManaged = 'true';
+        return;
       }
+
+      const meta = document.createElement('meta');
+      meta.setAttribute(attribute, nameOrProperty);
       meta.setAttribute('content', content);
       meta.setAttribute('data-seo', 'true');
       document.head.appendChild(meta);
@@ -119,13 +136,22 @@ export const SEOHead: React.FC<SEOHeadProps> = ({
     }
 
     // Canonical URL
-    const existingCanonical = document.querySelector('link[rel="canonical"][data-seo]');
-    if (existingCanonical) existingCanonical.remove();
-    const canonical = document.createElement('link');
-    canonical.setAttribute('rel', 'canonical');
-    canonical.setAttribute('href', fullUrl);
-    canonical.setAttribute('data-seo', 'true');
-    document.head.appendChild(canonical);
+    const baseCanonical = document.querySelector<HTMLLinkElement>('link[rel="canonical"][data-seo-base="true"]');
+    if (baseCanonical) {
+      if (baseCanonical.dataset.seoOriginalHref === undefined) {
+        baseCanonical.dataset.seoOriginalHref = baseCanonical.href;
+      }
+      baseCanonical.href = fullUrl;
+      baseCanonical.dataset.seoManaged = 'true';
+    } else {
+      const existingCanonical = document.querySelector('link[rel="canonical"][data-seo]');
+      if (existingCanonical) existingCanonical.remove();
+      const canonical = document.createElement('link');
+      canonical.setAttribute('rel', 'canonical');
+      canonical.setAttribute('href', fullUrl);
+      canonical.setAttribute('data-seo', 'true');
+      document.head.appendChild(canonical);
+    }
 
     // Дополнительные meta теги
     additionalMeta.forEach(({ name, content }) => {
@@ -151,8 +177,24 @@ export const SEOHead: React.FC<SEOHeadProps> = ({
     return () => {
       const metaTags = document.querySelectorAll('meta[data-seo]');
       metaTags.forEach((meta) => meta.remove());
+      const managedBaseMeta = document.querySelectorAll<HTMLMetaElement>('meta[data-seo-managed="true"]');
+      managedBaseMeta.forEach((meta) => {
+        if (meta.dataset.seoOriginalContent !== undefined) {
+          meta.content = meta.dataset.seoOriginalContent;
+        }
+        delete meta.dataset.seoOriginalContent;
+        delete meta.dataset.seoManaged;
+      });
       const canonicalLink = document.querySelector('link[rel="canonical"][data-seo]');
       if (canonicalLink) canonicalLink.remove();
+      const managedBaseCanonical = document.querySelector<HTMLLinkElement>('link[rel="canonical"][data-seo-managed="true"]');
+      if (managedBaseCanonical) {
+        if (managedBaseCanonical.dataset.seoOriginalHref !== undefined) {
+          managedBaseCanonical.href = managedBaseCanonical.dataset.seoOriginalHref;
+        }
+        delete managedBaseCanonical.dataset.seoOriginalHref;
+        delete managedBaseCanonical.dataset.seoManaged;
+      }
       const jsonLdScript = document.querySelector('script[type="application/ld+json"][data-seo]');
       if (jsonLdScript) {
         jsonLdScript.remove();
