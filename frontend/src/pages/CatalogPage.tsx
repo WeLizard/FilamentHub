@@ -560,6 +560,11 @@ const MaterialCard: React.FC<MaterialCardProps> = ({
                 <button
                   onClick={(e) => {
                     e.stopPropagation();
+                    // Import must not bypass the profile: saving keeps the site
+                    // library and the slicer copy managed by the same sync set.
+                    if (!isPresetSaved) {
+                      onSelect(currentPreset.id);
+                    }
                     importPresetToPlugin(currentPreset.id);
                   }}
                   title={t('catalogPage.importToOrcaTitle')}

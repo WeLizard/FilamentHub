@@ -6,6 +6,7 @@ import { RefreshCw, RefreshCwOff } from 'lucide-react';
 import { useMutation, useQueryClient, useQuery } from '@tanstack/react-query';
 import { savedPresetsAPI } from '../api/client';
 import { translateApiError } from '../utils/translateApiError';
+import { notifyProfileChanged } from '../utils/pluginBridge';
 import { useAuth } from '../contexts/AuthContext';
 import type { Preset } from '../types/api';
 import type { AxiosError } from 'axios';
@@ -62,6 +63,10 @@ export const PresetSyncToggle: React.FC<PresetSyncToggleProps> = ({
       queryClient.invalidateQueries({ queryKey: ['filament-presets', preset.filament_id] });
       queryClient.invalidateQueries({ queryKey: ['user-presets'] });
       queryClient.invalidateQueries({ queryKey: ['my-presets'] });
+      // Счётчик «всего/к синхронизации» на дашборде и в тулбаре плагина.
+      queryClient.invalidateQueries({ queryKey: ['presets-stats'] });
+      // Плагин пересинхронизирует набор (включая removal sync) без ручного Sync.
+      notifyProfileChanged();
     },
     onError: (error: AxiosError<{ detail: unknown }>) => {
       console.error('Sync toggle error:', error);
