@@ -53,6 +53,7 @@ import type { UserSpool, SpoolState, UserPrinterDevice } from '../api/client';
 import { SpoolIcon } from '../components/icons/SpoolIcon';
 import api from '../api/client';
 import { translateApiError } from '../utils/translateApiError';
+import { getSpoolCurrentLocation, getSpoolLastLocation } from '../utils/spoolLocation';
 import { notifyProfileChanged } from '../utils/pluginBridge';
 import { downloadBlob } from '../utils/download';
 const CreatePresetModal = lazy(() =>
@@ -1755,25 +1756,32 @@ const SpoolCard: React.FC<SpoolCardProps> = ({ spool, isBusy = false, onEdit, on
           </p>
         )}
 
-        {/* MMU gate badge */}
+        {/* Current slot badge, or the last known slot for shelf twins */}
         {(() => {
-          const printerNameRaw = spool.extra?.printer_name;
-          const gateRaw = spool.extra?.mmu_gate_map;
-          if (!printerNameRaw || gateRaw == null) return null;
-          try {
-            const printerName = JSON.parse(printerNameRaw) as string;
-            const gate = typeof gateRaw === 'string' ? JSON.parse(gateRaw) : Number(gateRaw);
-            if (!printerName || typeof gate !== 'number' || !Number.isFinite(gate) || gate < 0) return null;
+          const current = getSpoolCurrentLocation(spool.extra);
+          if (current) {
             return (
               <span className="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded bg-purple-500/20 border border-purple-500/30 text-purple-300 w-fit">
                 <span className="font-mono">MMU</span>
-                <span className="text-purple-400">{printerName}</span>
-                <span>#{gate}</span>
+                <span className="text-purple-400">{current.printer}</span>
+                <span>#{current.gate}</span>
               </span>
             );
-          } catch {
-            return null;
           }
+          const last = getSpoolLastLocation(spool.extra);
+          if (!last) return null;
+          const dateLabel = last.unloadedAt
+            ? new Date(last.unloadedAt).toLocaleDateString()
+            : null;
+          return (
+            <span className="text-[10px] text-gray-500 w-fit">
+              {t('profilePage.spoolLastLocation', {
+                printer: last.printer,
+                gate: last.gate,
+              })}
+              {dateLabel && ` · ${dateLabel}`}
+            </span>
+          );
         })()}
 
         <div className="grid grid-cols-2 gap-2 pt-1">

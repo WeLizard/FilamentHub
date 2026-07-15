@@ -31,8 +31,29 @@ from app.schemas.spool import (
 )
 
 
+def _read_projected_location(extra: dict) -> tuple[str, int]:
+    try:
+        printer = json.loads(extra.get("printer_name") or '""')
+    except (json.JSONDecodeError, TypeError):
+        printer = str(extra.get("printer_name") or "")
+    try:
+        gate = int(json.loads(extra.get("mmu_gate_map") or "-1"))
+    except (json.JSONDecodeError, TypeError, ValueError):
+        gate = -1
+    return printer, gate
+
+
 def clear_spool_location_projection(spool: UserSpool) -> None:
     extra = dict(spool.extra or {})
+    # Keep the released location as a hint: identical spools of one catalog
+    # SKU stay tellable apart by where each one was loaded last.
+    printer, gate = _read_projected_location(extra)
+    if printer and gate >= 0:
+        extra["fhub_last_printer"] = json.dumps(printer)
+        extra["fhub_last_gate"] = json.dumps(gate)
+        extra["fhub_last_unloaded_at"] = json.dumps(
+            datetime.now(timezone.utc).isoformat()
+        )
     extra["printer_name"] = json.dumps("")
     extra["mmu_gate_map"] = json.dumps(-1)
     spool.extra = extra

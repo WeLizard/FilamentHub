@@ -186,7 +186,8 @@ async def test_putting_spool_on_shelf_clears_gate_binding_and_projection(
     )
     assert result.state == UserSpoolState.shelf.value
     assert gate_spool_id is None
-    assert result.extra == {"printer_name": '""', "mmu_gate_map": "-1"}
+    assert result.extra["printer_name"] == '""'
+    assert result.extra["mmu_gate_map"] == "-1"
 
 
 @pytest.mark.asyncio

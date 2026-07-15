@@ -2305,6 +2305,8 @@
       "empty": "空的"
     },
     "spoolNoFilament": "无目录链接",
+    "spoolCurrentLocation": "当前位置：{{printer}} · 通道 {{gate}}",
+    "spoolLastLocation": "上次位置：{{printer}} · 通道 {{gate}}",
     "spoolGateStep": {
       "title": "线轴已添加！放在哪里？",
       "hint": "将线轴分配到MMU门槽，或跳过 — 您可以稍后从门图中分配它。",

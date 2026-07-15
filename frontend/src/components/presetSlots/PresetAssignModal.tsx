@@ -6,6 +6,7 @@ import { presetsAPI, presetSlotsAPI } from '../../api/client';
 import type { GateState, UserSpool } from '../../api/client';
 import { toast } from '../Toast';
 import { translateApiError } from '../../utils/translateApiError';
+import { getSpoolCurrentLocation, getSpoolLastLocation } from '../../utils/spoolLocation';
 import { ModalOverlay } from '../ModalOverlay';
 
 interface PresetAssignModalProps {
@@ -79,8 +80,11 @@ export function PresetAssignModal({
 
   const filtered = presetsPage?.items ?? [];
 
-  // Only active spools are useful to assign
-  const activeSpools = spools.filter((s) => s.state === 'active');
+  // Shelf spools are the primary candidates to load; active ones can be
+  // re-seated from another slot. Archived/empty spools cannot be assigned.
+  const activeSpools = spools.filter(
+    (s) => (s.state === 'active' || s.state === 'shelf') && s.remaining_weight_g > 0,
+  );
 
   const handleAssign = async () => {
     if (selectedPresetId === null && selectedSpoolId === null) return;
@@ -333,7 +337,33 @@ export function PresetAssignModal({
                             {s.filament?.material_type && `${s.filament.material_type} · `}
                             {Math.round(s.remaining_weight_g)}г /{' '}
                             {Math.round(s.remaining_pct)}%
+                            {s.lot_nr && ` · № ${s.lot_nr}`}
                           </p>
+                          {(() => {
+                            const current = getSpoolCurrentLocation(s.extra);
+                            if (current) {
+                              return (
+                                <p className="truncate text-[11px] text-purple-400/80">
+                                  {t('profilePage.spoolCurrentLocation', {
+                                    printer: current.printer,
+                                    gate: current.gate,
+                                  })}
+                                </p>
+                              );
+                            }
+                            const last = getSpoolLastLocation(s.extra);
+                            if (!last) return null;
+                            return (
+                              <p className="truncate text-[11px] text-gray-600">
+                                {t('profilePage.spoolLastLocation', {
+                                  printer: last.printer,
+                                  gate: last.gate,
+                                })}
+                                {last.unloadedAt &&
+                                  ` · ${new Date(last.unloadedAt).toLocaleDateString()}`}
+                              </p>
+                            );
+                          })()}
                         </div>
                       </button>
                     );

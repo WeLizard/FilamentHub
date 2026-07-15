@@ -160,6 +160,35 @@ async def test_move_slot_to_shelf(db_session: AsyncSession, auth_user: User):
 
 
 @pytest.mark.asyncio
+async def test_release_remembers_last_location(
+    db_session: AsyncSession, auth_user: User
+):
+    """Shelf twins stay tellable apart: the released slot is kept as a hint."""
+    filament = await _make_filament(db_session, "lastloc")
+    device = await _make_device(db_session, auth_user, "lastloc")
+    spool = await _make_spool(db_session, auth_user, filament)
+
+    await assign_spool_to_gate(
+        db_session,
+        user_id=auth_user.id,
+        spool=spool,
+        device=device,
+        gate_index=4,
+        source=PresetGateStateSource.web_manual,
+    )
+    await db_session.commit()
+
+    await release_spool_location(db_session, spool)
+    await db_session.commit()
+
+    assert json.loads(spool.extra["printer_name"]) == ""
+    assert json.loads(spool.extra["mmu_gate_map"]) == -1
+    assert json.loads(spool.extra["fhub_last_printer"]) == device.name
+    assert json.loads(spool.extra["fhub_last_gate"]) == 4
+    assert json.loads(spool.extra["fhub_last_unloaded_at"])
+
+
+@pytest.mark.asyncio
 async def test_move_between_two_slots(db_session: AsyncSession, auth_user: User):
     filament = await _make_filament(db_session, "slot2slot")
     device = await _make_device(db_session, auth_user, "slot2slot")

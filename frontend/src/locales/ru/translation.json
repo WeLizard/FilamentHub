@@ -2021,6 +2021,8 @@
       "empty": "Пуста"
     },
     "spoolNoFilament": "Без привязки к каталогу",
+    "spoolCurrentLocation": "Сейчас: {{printer}} · гейт {{gate}}",
+    "spoolLastLocation": "Был в: {{printer}} · гейт {{gate}}",
     "spoolGateStep": {
       "title": "Катушка добавлена! Куда её положить?",
       "hint": "Назначьте катушку в слот MMU или пропустите - её можно назначить позже из карты слотов.",

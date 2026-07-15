@@ -193,7 +193,8 @@ async def test_spool_compat_gate_assignment_moves_one_physical_spool(
     await db_session.refresh(first_spool)
     await db_session.refresh(second_spool)
     assert first_spool.state == UserSpoolState.shelf
-    assert first_spool.extra == {"printer_name": '""', "mmu_gate_map": "-1"}
+    assert first_spool.extra["printer_name"] == '""'
+    assert first_spool.extra["mmu_gate_map"] == "-1"
     assert second_spool.state == UserSpoolState.active
 
     gate_spool_id = await db_session.scalar(
@@ -211,7 +212,8 @@ async def test_spool_compat_gate_assignment_moves_one_physical_spool(
     assert shelf_response.status_code == 200
     await db_session.refresh(second_spool)
     assert second_spool.state == UserSpoolState.shelf
-    assert second_spool.extra == {"printer_name": '""', "mmu_gate_map": "-1"}
+    assert second_spool.extra["printer_name"] == '""'
+    assert second_spool.extra["mmu_gate_map"] == "-1"
 
 
 @pytest.mark.asyncio
@@ -231,7 +233,8 @@ async def test_spool_compat_finished_spool_clears_gate(
     assert use_response.status_code == 200
     await db_session.refresh(spool)
     assert spool.state == UserSpoolState.empty
-    assert spool.extra == {"printer_name": '""', "mmu_gate_map": "-1"}
+    assert spool.extra["printer_name"] == '""'
+    assert spool.extra["mmu_gate_map"] == "-1"
     gate_spool_id = await db_session.scalar(
         select(PresetGateState.spool_id).where(
             PresetGateState.device_id == device.id,

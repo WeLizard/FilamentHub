@@ -189,8 +189,10 @@ async def test_clear_device_slots_should_bulk_clear_and_set_web_manual_source(
     await db_session.refresh(second_spool)
     assert first_spool.state == UserSpoolState.shelf
     assert second_spool.state == UserSpoolState.shelf
-    assert first_spool.extra == {"printer_name": '""', "mmu_gate_map": "-1"}
-    assert second_spool.extra == {"printer_name": '""', "mmu_gate_map": "-1"}
+    assert first_spool.extra["printer_name"] == '""'
+    assert first_spool.extra["mmu_gate_map"] == "-1"
+    assert second_spool.extra["printer_name"] == '""'
+    assert second_spool.extra["mmu_gate_map"] == "-1"
 
 
 @pytest.mark.asyncio
@@ -248,10 +250,8 @@ async def test_web_assignment_moves_one_physical_spool_between_gates(
     await db_session.refresh(first_spool)
     assert [state.spool_id for state in moved_states] == [None, first_spool.id]
     assert first_spool.state == UserSpoolState.active
-    assert first_spool.extra == {
-        "printer_name": '"Test Device"',
-        "mmu_gate_map": "1",
-    }
+    assert first_spool.extra["printer_name"] == '"Test Device"'
+    assert first_spool.extra["mmu_gate_map"] == "1"
 
     await web_assign_preset_to_slot(
         db_session,
@@ -267,9 +267,8 @@ async def test_web_assignment_moves_one_physical_spool_between_gates(
     await db_session.refresh(first_spool)
     await db_session.refresh(second_spool)
     assert first_spool.state == UserSpoolState.shelf
-    assert first_spool.extra == {"printer_name": '""', "mmu_gate_map": "-1"}
+    assert first_spool.extra["printer_name"] == '""'
+    assert first_spool.extra["mmu_gate_map"] == "-1"
     assert second_spool.state == UserSpoolState.active
-    assert second_spool.extra == {
-        "printer_name": '"Test Device"',
-        "mmu_gate_map": "1",
-    }
+    assert second_spool.extra["printer_name"] == '"Test Device"'
+    assert second_spool.extra["mmu_gate_map"] == "1"
