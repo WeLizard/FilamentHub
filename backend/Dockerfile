@@ -11,12 +11,23 @@ RUN apt-get update && apt-get install -y \
     fonts-liberation fonts-dejavu-core \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy all source files first (needed for editable install)
+# Copy the dependency manifest alone: the layer below must depend only on
+# pyproject.toml so code-only rebuilds reuse the cached dependency install.
+COPY pyproject.toml ./
+
+# Pre-install dependencies against a stub package (source is not copied yet);
+# the stub itself is uninstalled, the dependency set stays in this layer.
+RUN pip install --no-cache-dir --upgrade pip && \
+    mkdir -p app && touch app/__init__.py && \
+    pip install --no-cache-dir ".[dev]" && \
+    pip uninstall -y filamenthub-backend && \
+    rm -rf app
+
+# Copy application code
 COPY . .
 
-# Install Python dependencies
-RUN pip install --no-cache-dir --upgrade pip && \
-    pip install --no-cache-dir -e ".[dev]"
+# Editable install of the application itself; dependencies are already cached
+RUN pip install --no-cache-dir --no-deps -e ".[dev]"
 
 # Expose port
 EXPOSE 8000

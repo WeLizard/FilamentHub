@@ -16,15 +16,24 @@ RUN apt-get update && apt-get install -y \
 RUN curl -fsSL https://download.docker.com/linux/static/stable/x86_64/docker-27.5.1.tgz \
     | tar xz --strip-components=1 -C /usr/local/bin docker/docker
 
-# Copy dependency files first
+# Copy the dependency manifest alone: the layer below must depend only on
+# pyproject.toml so code-only deploys reuse the cached dependency install
+# instead of re-downloading everything from PyPI (~10 min per deploy).
 COPY pyproject.toml ./
 
-# Copy application code (needed for editable install)
+# Pre-install dependencies against a stub package (source is not copied yet);
+# the stub itself is uninstalled, the dependency set stays in this layer.
+RUN pip install --no-cache-dir --upgrade pip && \
+    mkdir -p app && touch app/__init__.py && \
+    pip install --no-cache-dir . && \
+    pip uninstall -y filamenthub-backend && \
+    rm -rf app
+
+# Copy application code
 COPY . .
 
-# Install Python dependencies (без dev зависимостей)
-RUN pip install --no-cache-dir --upgrade pip && \
-    pip install --no-cache-dir -e .
+# Editable install of the application itself; dependencies are already cached
+RUN pip install --no-cache-dir --no-deps -e .
 
 # Copy and set up entrypoint script
 COPY docker-entrypoint.sh /app/docker-entrypoint.sh
