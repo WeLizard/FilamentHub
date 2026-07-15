@@ -249,6 +249,15 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({ onBack, init
   const displayedPresets = presetFilterFilament
     ? brandPresets.filter((p) => p.filament_id === presetFilterFilament.id)
     : brandPresets;
+  const presetsCountFilaments = presetFilterFilament ? [presetFilterFilament] : filaments;
+  const displayedOfficialPresetsCount = presetsCountFilaments.reduce(
+    (total, filament) => total + (filament.official_presets_count ?? 0),
+    0,
+  );
+  const displayedCommunityPresetsCount = presetsCountFilaments.reduce(
+    (total, filament) => total + (filament.community_presets_count ?? 0),
+    0,
+  );
   const filamentNameById = (id: number | null | undefined) =>
     filaments.find((f) => f.id === id)?.name ?? null;
 
@@ -924,17 +933,49 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({ onBack, init
       {/* Presets Tab */}
       {brandTab === 'presets' && (
         <div className="space-y-6">
-          <div className="flex items-center justify-between">
-            <h3 className="text-2xl font-bold text-white">{t('brandProfile.officialPresets')}</h3>
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+            <div className="min-w-0">
+              <h3 className="text-2xl font-bold text-white">{t('brandProfile.presetLibraryTitle')}</h3>
+              <p className="mt-1 max-w-2xl text-sm leading-relaxed text-gray-400">
+                {t('brandProfile.presetLibraryDescription')}
+              </p>
+            </div>
             <button
               onClick={handleCreatePreset}
               disabled={isLoadingPresets || filaments.length === 0}
-              className="bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700 text-white px-4 py-2 rounded-xl transition-all shadow-lg shadow-green-500/25 hover:shadow-green-500/40 disabled:opacity-50 disabled:cursor-not-allowed flex items-center space-x-2"
+              className="flex shrink-0 items-center justify-center space-x-2 rounded-xl bg-gradient-to-r from-green-600 to-emerald-600 px-4 py-2 text-white shadow-lg shadow-green-500/25 transition-all hover:from-green-700 hover:to-emerald-700 hover:shadow-green-500/40 disabled:cursor-not-allowed disabled:opacity-50"
               title={filaments.length === 0 ? t('brandProfile.createMaterialFirst') : ''}
             >
               <Plus className="w-4 h-4" />
               <span>{t('brandProfile.newPreset')}</span>
             </button>
+          </div>
+
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <div className="flex items-center gap-3 rounded-2xl border border-emerald-400/20 bg-emerald-400/[0.07] px-4 py-3">
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-emerald-400/15 text-emerald-300">
+                <ShieldCheck className="h-5 w-5" />
+              </div>
+              <div className="min-w-0">
+                <div className="flex items-baseline gap-2">
+                  <span className="text-xl font-bold text-white">{displayedOfficialPresetsCount}</span>
+                  <span className="truncate text-sm font-medium text-emerald-200">{t('brandProfile.officialPresets')}</span>
+                </div>
+                <p className="truncate text-xs text-gray-400">{t('brandProfile.officialPresetsDescription')}</p>
+              </div>
+            </div>
+            <div className="flex items-center gap-3 rounded-2xl border border-cyan-400/20 bg-cyan-400/[0.07] px-4 py-3">
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-cyan-400/15 text-cyan-300">
+                <Users className="h-5 w-5" />
+              </div>
+              <div className="min-w-0">
+                <div className="flex items-baseline gap-2">
+                  <span className="text-xl font-bold text-white">{displayedCommunityPresetsCount}</span>
+                  <span className="truncate text-sm font-medium text-cyan-200">{t('brandProfile.communityPresets')}</span>
+                </div>
+                <p className="truncate text-xs text-gray-400">{t('brandProfile.communityPresetsShortDescription')}</p>
+              </div>
+            </div>
           </div>
 
           {presetFilterFilament && (
