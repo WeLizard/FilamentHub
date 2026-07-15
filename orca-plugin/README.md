@@ -29,26 +29,27 @@ iframe (React /embed/catalog)
 plugin shell window  ── window.addEventListener('message') ──▶ orca.postMessage(...)
    ▼
 Python on_message  ──GET /api/v1/presets/{id}/export/orcaslicer.json (Bearer token)──▶
-   write <data_dir>/user/default/filament/<name>.json  ──▶  native "restart required" dialog
+   write <data_dir>/user/<active>/_local/filamenthub/filament/<name>__fh_<id>.json
+      ──▶  native "restart required" dialog
 ```
 
 ### postMessage protocol
 
-**iframe → shell → Python** (the only message today):
+**iframe → shell → Python** (preset import message):
 
 ```js
-{ source: 'filamenthub-plugin', type: 'import-preset', presetId: <number>, token: '<jwt|"">' }
+{ source: 'filamenthub-plugin', type: 'import-preset', presetId: <number>, token: '<scoped-jwt|"">' }
 ```
 
 - `source` namespaces our messages so the shell relay ignores anything else.
-- `token` is the logged-in user's access token, read via the canonical
-  `getToken()` in `utils/auth.ts`. The export endpoint requires auth, and Python
-  (outside the iframe) has no session, so the page hands it the token.
+- `token` is a short-lived OrcaSlicer plugin capability (`aud=orcaslicer-plugin`,
+  `presets:read`/`presets:write`, 30-minute expiry). Browser access and refresh
+  credentials never cross the iframe boundary.
 - Python → iframe is **not used** for the MVP; confirmation is a native host
   dialog, which keeps us clear of the existing `useOrcaSlicerNotifications`
   message listener.
 
-**shell → iframe** (toolbar navigation, v0.3.0): the shell renders an
+**shell → iframe** (toolbar navigation): the shell renders an
 Orca-themed toolbar (host `--orca-*` CSS variables — same role as the native
 Catalog/Profile/Wiki buttons of the C++ fork panel) and posts
 
@@ -60,13 +61,13 @@ into the iframe (targetOrigin = our site). The SPA subscribes via
 `subscribeToPluginNavigation()` in `utils/pluginBridge.ts` and switches routes
 without reloading.
 
-**Session persistence + toolbar status (v0.4.0)** — the iframe's storage is
+**Session persistence + toolbar status** — the iframe's storage is
 partitioned (dies with the window), so the plugin plays the fork's AppConfig
 role:
 
 ```js
 // iframe → shell → Python: persist on login / token refresh, clear on logout
-{ source, type: 'auth-token', accessToken, refreshToken }
+{ source, type: 'auth-token', accessToken: pluginCapability, refreshToken: '' }
 { source, type: 'auth-logout' }
 // iframe → shell: toolbar label ("<username> · Presets: N (M synced)", null = guest)
 { source, type: 'auth-state', label }
@@ -75,8 +76,9 @@ role:
 { source, type: 'auth-restore', accessToken, refreshToken }   // shell replies
 ```
 
-Python stores tokens in `.auth.json` next to the plugin (inside `data_dir`,
-the allowed write root) and bakes them into the shell page on `execute()`.
+Python stores only the short-lived plugin capability in `.auth.json` next to the
+plugin (inside `data_dir`, the allowed write root) and bakes it into the shell
+page on `execute()`. Account access/refresh credentials are never stored there.
 The label comes ready-made (i18n happens in the SPA) from the same
 `/auth/me/presets-stats` endpoint the fork's panel used.
 
@@ -106,9 +108,9 @@ The label comes ready-made (i18n happens in the SPA) from the same
 # [tool.orcaslicer.plugin]
 # id = "filamenthub"
 # name = "FilamentHub"
-# description = "Browse the FilamentHub brand/material catalog and import community-rated filament presets."
+# description = "Browse and sync community-rated filament profiles from FilamentHub, with spool inventory and print-cost tools."
 # author = "FilamentHub"
-# version = "0.2.0"
+# version = "0.1.0-alpha.1"
 # network = ["filamenthub.ru", "*.filamenthub.ru"]   # proposed; ignored by current host
 # ///
 ```
@@ -116,13 +118,39 @@ The label comes ready-made (i18n happens in the SPA) from the same
 Zero dependencies (stdlib `urllib`/`json`/`ssl`/`threading`). `network` is the
 forward-looking outbound-HTTPS allow-list we're proposing on PR #14530.
 
+The shell accepts messages only from `https://filamenthub.ru` and only from its
+catalog iframe. HTTP responses are bounded to 5 MiB; preset/state writes use
+same-directory atomic replacement; generated filenames are Windows-safe and
+include the FilamentHub preset id to avoid collisions.
+
+---
+
+## Build and unit tests
+
+The Orca package is intentionally a single `.py` file. The reproducible build
+validates Python syntax and PEP 723 metadata, checks that metadata/runtime
+versions agree, and writes a SHA-256 checksum:
+
+```powershell
+python orca-plugin/build_package.py
+python -m pytest orca-plugin/tests -q
+```
+
+Output:
+
+```text
+orca-plugin/dist/filamenthub-0.1.0-alpha.1/
+  filamenthub_plugin.py       # install this file
+  package-metadata.json       # build provenance
+  SHA256SUMS                  # integrity check
+```
+
 ---
 
 ## Test steps (owner)
 
-**Prerequisite — deploy the `/embed/` nginx location** (already added to
-`frontend/nginx.conf`). Until `https://filamenthub.ru/embed/catalog` is live and
-framable, the iframe shows blank. Verify:
+The production embed route was verified live and framable on 2026-07-15. Recheck
+it before a release:
 
 ```
 curl -sI https://filamenthub.ru/embed/catalog   # 200, and NO "X-Frame-Options" header
@@ -130,13 +158,13 @@ curl -sI https://filamenthub.ru/embed/catalog   # 200, and NO "X-Frame-Options" 
 
 Then, with an OrcaSlicer build from `feat/plugin-feature`:
 
-1. The test plugin is already staged at
-   `F:\FilamentHub\OrcaPR14530\data\orca_plugins\filamenthub\filamenthub_plugin.py`.
-   Launch OrcaSlicer with that data_dir (`OrcaPR14530\run-isolated.bat`).
-2. Open the **Plugins** dialog → **FilamentHub Catalog** → **Run**.
-3. The window opens with our catalog inside. **Sign in** (inside the iframe, our
+1. Build the package and copy `filamenthub_plugin.py` to
+   `<isolated-data-dir>/orca_plugins/filamenthub/filamenthub_plugin.py`.
+2. Launch the official PR artifact with that isolated data directory.
+3. Open the **Plugins** dialog → **FilamentHub Catalog** → **Run**.
+4. The window opens with our catalog inside. **Sign in** (inside the iframe, our
    normal login), browse/search, and click **Import into OrcaSlicer** on a preset.
-4. A native dialog confirms the import and asks you to restart. **Restart**, then
+5. A native dialog confirms the import and asks you to restart. **Restart**, then
    pick the filament from the dropdown.
 
 To side-load into any other build: create
@@ -145,12 +173,13 @@ folder) and restart.
 
 ---
 
-## Publish to the Orca Plugin Hub BETA
+## Submit to the Orca Plugin Hub BETA
 
-The Hub install/update path is `CloudPluginService` + `PluginManager`. Submit the
-single `.py` through Orca's plugin-developer / Plugin Hub BETA portal with the
-`id`, `name`, `version`, author, description, and the `network` allow-list. Bump
-`version` on every release (compared against `.install_state.json`). Bonus: a
+The Hub install/update path is `CloudPluginService` + `PluginManager`. SoftFever
+has demonstrated an end-to-end published sample, but the official GitHub docs do
+not yet describe a public self-service submission workflow. Send the built
+single `.py`, `package-metadata.json`, checksum and test matrix to the maintainers
+for Plugin Hub BETA review. Bump `version` on every release. Bonus: a
 FilamentHub preset can carry a `plugins` `"name;uuid;capability"` reference, and
 Orca will auto-offer to install our Hub plugin for anyone who receives it
 (`PluginResolver::resolve_missing_plugins`).
@@ -161,19 +190,22 @@ Orca will auto-offer to install our Hub plugin for anyone who receives it
 
 | # | Gap | Impact | Workaround |
 |---|---|---|---|
-| A | **`/embed/` must be deployed** (owner). | Without it the iframe is blank. | Owner deploys `frontend/nginx.conf`; verify no `X-Frame-Options` on `/embed/`. **This is the one hard prerequisite before testing.** |
-| 1 | **No preset-install / hot-reload host API.** `orca.host` is read-only; `PluginType.Importer` has no capability base. | Import needs an **app restart**. Not a publish blocker; rough UX. | File-write to `data_dir/user/default/filament/` + native "restart" dialog. Ask on PR #14530 for `orca.host.presets.install(...)` / `reload_user_presets()`. |
-| 2 | **Token crosses the postMessage boundary** (iframe → `file://` shell) with `targetOrigin: '*'`. | Acceptable — the only listener is our trusted shell — but not ideal. | Restrict once a stable shell origin exists. In cookie-only auth mode with no local token, `getToken()` may be empty and import is blocked with a "sign in" dialog. |
+| 1 | **No preset-install / hot-reload host API.** `orca.host` is read-only; `PluginType.Importer` has no capability base. | Import needs an **app restart**. Not a publish blocker; rough UX. | Atomic file-write to `data_dir/user/<active>/_local/filamenthub/filament/` + native "restart" dialog. Ask on PR #14530 for `orca.host.presets.install(...)` / `reload_user_presets()`. |
+| 2 | **A short-lived plugin capability crosses the iframe boundary** with `targetOrigin: '*'` because the `file://` parent has an opaque origin. | The shell rejects every message not originating from the exact catalog iframe and `https://filamenthub.ru`; account access/refresh credentials never cross. | Keep the origin/source regression test and rotate the capability every 30 minutes. |
 | 3 | **Outbound HTTPS ungated today** but `AuditMode::Enforcing` is scaffolded to block sockets. | A future OrcaSlicer could break the export fetch. | Declare `network = [...]`; push for manifest allow-listing. |
 
-None block publishing to the BETA today, **once the `/embed/` route is
-deployed**. Gap #1 (restart-to-see-import) is the only thing users feel.
+The package is suitable for BETA review once the exact official PR artifact E2E
+passes. Gap #1 (restart-to-see-import on stock upstream) is the main user-visible
+limitation; public listing still depends on the maintainers' submission/review
+process.
 
 ---
 
 ## Files
 
 - `filamenthub_plugin.py` — the plugin (PEP 723, single file, zero deps).
+- `build_package.py` — deterministic package/metadata/checksum builder.
+- `tests/test_filamenthub_plugin.py` — package, origin, filesystem and payload tests.
 - `README.md` — this file.
 - Frontend embed support: `frontend/src/utils/pluginBridge.ts`,
   `frontend/src/App.tsx`, `frontend/src/pages/CatalogPage.tsx`,
