@@ -5024,6 +5024,7 @@
     "ERR_SPOOL_NOT_ACCESSIBLE": "Spool {{spool_id}} is not accessible",
     "ERR_SPOOL_EMPTY_ON_CREATE": "An already empty spool cannot be added",
     "ERR_SPOOL_USED_EXCEEDS_INITIAL": "Used weight cannot exceed initial weight",
+    "ERR_SPOOL_LOCATION_CONFLICT": "This spool is being moved by another request. Refresh and try again",
     "ERR_SNAPSHOT_TOO_FREQUENT": "Snapshots are being sent too frequently"
   },
   "presetSlots": {

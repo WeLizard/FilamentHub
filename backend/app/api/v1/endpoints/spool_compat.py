@@ -9,7 +9,16 @@ import re
 from datetime import datetime, timezone
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Header, Query, WebSocket, WebSocketDisconnect, status
+from fastapi import (
+    APIRouter,
+    Depends,
+    Header,
+    HTTPException,
+    Query,
+    WebSocket,
+    WebSocketDisconnect,
+    status,
+)
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 from sqlalchemy import select
@@ -27,9 +36,12 @@ from app.models.user_printer_device import UserPrinterDevice
 from app.models.user_spool import UserSpool, UserSpoolState
 from app.services.preset_enrichment_service import _load_material_defaults
 from app.services.spool_service import (
+    assign_spool_to_gate,
     clear_spool_gate_assignments,
     clear_spool_location_projection,
-    spool_has_gate_assignment,
+    lock_spool_row,
+    release_spool_location,
+    shelf_spool_if_unassigned,
 )
 
 from . import spool_compat_fields
@@ -503,14 +515,6 @@ def _sort_key(payload: dict, field_name: str):
     return (value is None, value)
 
 
-async def _shelf_spool_if_unassigned(db: AsyncSession, spool: UserSpool) -> None:
-    if await spool_has_gate_assignment(db, spool.id):
-        return
-    clear_spool_location_projection(spool)
-    if spool.state not in {UserSpoolState.archived, UserSpoolState.empty}:
-        spool.state = UserSpoolState.shelf
-
-
 async def _apply_location_assignment(
     db: AsyncSession,
     user: User,
@@ -518,22 +522,10 @@ async def _apply_location_assignment(
     location: str | None,
     device_from_key: UserPrinterDevice | None = None,
 ) -> tuple[bool, str | None]:
-    # Clear previous location bindings for this spool in any case.
-    existing_result = await db.execute(
-        select(PresetGateState).where(
-            PresetGateState.user_id == user.id,
-            PresetGateState.spool_id == spool.id,
-        )
-    )
-    existing_states = list(existing_result.scalars().all())
-
     if location is None or location.strip() == "":
-        for state in existing_states:
-            state.spool_id = None
-            state.source = PresetGateStateSource.web_manual
-            state.source_ts = datetime.now(timezone.utc)
-        await db.flush()
-        await _shelf_spool_if_unassigned(db, spool)
+        await release_spool_location(
+            db, spool, source=PresetGateStateSource.web_manual
+        )
         return True, None
 
     if (
@@ -578,59 +570,19 @@ async def _apply_location_assignment(
     if device is None:
         return False, f"Device '{device_hint}' not found for this API key."
 
-    target_result = await db.execute(
-        select(PresetGateState).where(
-            PresetGateState.user_id == user.id,
-            PresetGateState.device_id == device.id,
-            PresetGateState.gate_index == gate_index,
-        )
-    )
-    target_state = target_result.scalar_one_or_none()
-    displaced_spool_id = target_state.spool_id if target_state is not None else None
-    now = datetime.now(timezone.utc)
-    if target_state is None:
-        target_state = PresetGateState(
+    try:
+        await assign_spool_to_gate(
+            db,
             user_id=user.id,
-            device_id=device.id,
+            spool=spool,
+            device=device,
             gate_index=gate_index,
-            preset_id=None,
-            spool_id=spool.id,
             source=PresetGateStateSource.web_manual,
-            source_ts=now,
-            is_active=True,
         )
-        db.add(target_state)
-    else:
-        target_state.spool_id = spool.id
-        target_state.source = PresetGateStateSource.web_manual
-        target_state.source_ts = now
-        target_state.is_active = True
-
-    for state in existing_states:
-        if target_state.id is not None and state.id == target_state.id:
-            continue
-        state.spool_id = None
-        state.source = PresetGateStateSource.web_manual
-        state.source_ts = now
-
-    await db.flush()
-    if displaced_spool_id is not None and displaced_spool_id != spool.id:
-        displaced_result = await db.execute(
-            select(UserSpool).where(
-                UserSpool.id == displaced_spool_id,
-                UserSpool.user_id == user.id,
-            )
-        )
-        displaced_spool = displaced_result.scalar_one_or_none()
-        if displaced_spool is not None:
-            await _shelf_spool_if_unassigned(db, displaced_spool)
-
-    projection_name = device.printer_hostname or device.name
-    extra = dict(spool.extra or {})
-    extra["printer_name"] = json.dumps(projection_name)
-    extra["mmu_gate_map"] = json.dumps(gate_index)
-    spool.extra = extra
-    spool.state = UserSpoolState.active
+    except HTTPException as exc:
+        if exc.status_code != 409:
+            raise
+        return False, "Spool is being moved by another request; retry."
     return True, None
 
 
@@ -659,33 +611,21 @@ async def _sync_extra_to_gate_state(
     except (json.JSONDecodeError, TypeError, ValueError):
         gate_index = -1
 
-    now = datetime.now(timezone.utc)
-
-    existing_result = await db.execute(
-        select(PresetGateState).where(
-            PresetGateState.user_id == user.id,
-            PresetGateState.spool_id == spool.id,
-        )
-    )
-    existing_states = list(existing_result.scalars().all())
-
     if not printer_name or gate_index < 0:
-        for state in existing_states:
-            state.spool_id = None
-            state.source = PresetGateStateSource.hh_snapshot
-            state.source_ts = now
-        await db.flush()
-        await _shelf_spool_if_unassigned(db, spool)
+        await release_spool_location(
+            db, spool, source=PresetGateStateSource.hh_snapshot
+        )
         return
 
     if (
         spool.remaining_weight_g <= 0
         or spool.state in {UserSpoolState.archived, UserSpoolState.empty}
     ):
-        for state in existing_states:
-            state.spool_id = None
-            state.source = PresetGateStateSource.hh_snapshot
-            state.source_ts = now
+        await lock_spool_row(db, spool.id)
+        await clear_spool_gate_assignments(
+            db, spool, source=PresetGateStateSource.hh_snapshot
+        )
+        await db.flush()
         clear_spool_location_projection(spool)
         return
 
@@ -711,54 +651,25 @@ async def _sync_extra_to_gate_state(
         )
         return
 
-    target_result = await db.execute(
-        select(PresetGateState).where(
-            PresetGateState.user_id == user.id,
-            PresetGateState.device_id == device.id,
-            PresetGateState.gate_index == gate_index,
-        )
-    )
-    target_state = target_result.scalar_one_or_none()
-    displaced_spool_id = target_state.spool_id if target_state is not None else None
-
-    if target_state is None:
-        target_state = PresetGateState(
+    try:
+        await assign_spool_to_gate(
+            db,
             user_id=user.id,
-            device_id=device.id,
+            spool=spool,
+            device=device,
             gate_index=gate_index,
-            preset_id=None,
-            spool_id=spool.id,
             source=PresetGateStateSource.hh_snapshot,
-            source_ts=now,
-            is_active=True,
         )
-        db.add(target_state)
-    else:
-        target_state.spool_id = spool.id
-        target_state.source = PresetGateStateSource.hh_snapshot
-        target_state.source_ts = now
-        target_state.is_active = True
-
-    for state in existing_states:
-        if target_state.id is not None and state.id == target_state.id:
-            continue
-        state.spool_id = None
-        state.source = PresetGateStateSource.hh_snapshot
-        state.source_ts = now
-
-    await db.flush()
-    if displaced_spool_id is not None and displaced_spool_id != spool.id:
-        displaced_result = await db.execute(
-            select(UserSpool).where(
-                UserSpool.id == displaced_spool_id,
-                UserSpool.user_id == user.id,
-            )
+    except HTTPException as exc:
+        if exc.status_code != 409:
+            raise
+        # Backstop race: another request moved this spool mid-sync.
+        # The failed flush poisoned the transaction; discard it.
+        await db.rollback()
+        logger.warning(
+            "Concurrent location conflict while syncing HH extra for spool %d",
+            spool.id,
         )
-        displaced_spool = displaced_result.scalar_one_or_none()
-        if displaced_spool is not None:
-            await _shelf_spool_if_unassigned(db, displaced_spool)
-
-    spool.state = UserSpoolState.active
 
 
 async def _get_user_spool(db: AsyncSession, user_id: int, spool_id: int) -> UserSpool | None:
@@ -1205,7 +1116,7 @@ async def patch_spool(
         await clear_spool_gate_assignments(db, spool)
         clear_spool_location_projection(spool)
     elif body.archived is False and "location" not in fields_set and "extra" not in fields_set:
-        await _shelf_spool_if_unassigned(db, spool)
+        await shelf_spool_if_unassigned(db, spool)
 
     await db.commit()
     updated = await _get_user_spool(db, user.id, spool.id)

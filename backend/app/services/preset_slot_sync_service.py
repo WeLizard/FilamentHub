@@ -2,12 +2,12 @@
 
 from __future__ import annotations
 
-import json
 import logging
 from datetime import datetime, timezone
 
 from sqlalchemy import and_, case, or_, select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.errors import (
@@ -15,6 +15,7 @@ from app.core.errors import (
     ERR_DEVICE_NOT_OWNER,
     ERR_GATE_INDEX_INVALID,
     ERR_PRESET_NOT_ACCESSIBLE,
+    ERR_SPOOL_LOCATION_CONFLICT,
     ERR_SPOOL_NOT_ACCESSIBLE,
     raise_error,
 )
@@ -34,8 +35,9 @@ from app.schemas.preset_slot_sync import (
 )
 from app.services.spool_service import (
     clear_spool_gate_assignments,
-    clear_spool_location_projection,
-    spool_has_gate_assignment,
+    lock_spool_row,
+    set_spool_location_projection,
+    shelf_spool_if_unassigned,
 )
 
 logger = logging.getLogger(__name__)
@@ -533,6 +535,9 @@ async def handle_manual_assignment(
             payload.spool_id,
             require_usable=True,
         )
+        # Serialize concurrent moves of this physical spool before touching
+        # any of its gate bindings.
+        await lock_spool_row(db, new_spool.id)
 
     if preset_id_provided is None:
         preset_id_provided = "preset_id" in payload.model_fields_set
@@ -565,33 +570,33 @@ async def handle_manual_assignment(
             except_device_id=resolved_device.id,
             except_gate_index=payload.gate,
         )
+        # Old bindings must hit the DB before the new one to satisfy the
+        # single-location unique index within the transaction.
+        await db.flush()
 
-    state = await _upsert_gate_state(
-        db,
-        user_id=user.id,
-        device_id=resolved_device.id,
-        gate_index=payload.gate,
-        source=source,
-        source_ts=now,
-        preset_id=payload.preset_id,
-        preset_id_provided=preset_id_provided,
-        spool_id=payload.spool_id,
-        spool_id_provided=spool_id_provided,
-    )
-    await db.flush()
+    try:
+        state = await _upsert_gate_state(
+            db,
+            user_id=user.id,
+            device_id=resolved_device.id,
+            gate_index=payload.gate,
+            source=source,
+            source_ts=now,
+            preset_id=payload.preset_id,
+            preset_id_provided=preset_id_provided,
+            spool_id=payload.spool_id,
+            spool_id_provided=spool_id_provided,
+        )
+        await db.flush()
+    except IntegrityError:
+        raise_error(409, ERR_SPOOL_LOCATION_CONFLICT)
 
     # Sync spool.extra with HH-format fields so HH can read gate assignments from GET /spool
     # HH reads: json.loads(extra.get('printer_name', '""')) and int(extra.get('mmu_gate_map', -1))
     if spool_id_provided:
         new_spool_id = state.spool_id
         if old_spool_id != new_spool_id and old_spool is not None:
-            if not await spool_has_gate_assignment(db, old_spool.id):
-                extra = dict(old_spool.extra or {})
-                extra["printer_name"] = json.dumps("")
-                extra["mmu_gate_map"] = json.dumps(-1)
-                old_spool.extra = extra
-                if old_spool.state not in {UserSpoolState.archived, UserSpoolState.empty}:
-                    old_spool.state = UserSpoolState.shelf
+            await shelf_spool_if_unassigned(db, old_spool)
             logger.debug(
                 "Cleared HH extra fields on spool %d (unassigned from gate %d)",
                 old_spool_id,
@@ -606,10 +611,7 @@ async def handle_manual_assignment(
                 )
                 new_spool = new_spool_row.scalars().first()
             if new_spool is not None:
-                extra = dict(new_spool.extra or {})
-                extra["printer_name"] = json.dumps(resolved_device.name)
-                extra["mmu_gate_map"] = json.dumps(payload.gate)
-                new_spool.extra = extra
+                set_spool_location_projection(new_spool, resolved_device, payload.gate)
                 new_spool.state = UserSpoolState.active
                 logger.debug(
                     "Set HH extra fields on spool %d: printer=%r gate=%d",
@@ -727,11 +729,7 @@ async def clear_device_slots(
             )
         )
         for spool in spools_result.scalars().all():
-            if await spool_has_gate_assignment(db, spool.id):
-                continue
-            clear_spool_location_projection(spool)
-            if spool.state not in {UserSpoolState.archived, UserSpoolState.empty}:
-                spool.state = UserSpoolState.shelf
+            await shelf_spool_if_unassigned(db, spool)
 
     await db.commit()
     return int(result.rowcount or 0)

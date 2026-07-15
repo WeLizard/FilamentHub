@@ -5019,6 +5019,7 @@
     "ERR_SPOOL_NOT_ACCESSIBLE": "线轴 {{spool_id}} 无法访问",
     "ERR_SPOOL_EMPTY_ON_CREATE": "无法添加已空的线轴",
     "ERR_SPOOL_USED_EXCEEDS_INITIAL": "已使用重量不能超过初始重量",
+    "ERR_SPOOL_LOCATION_CONFLICT": "该线轴正被另一个请求移动，请刷新后重试",
     "ERR_SNAPSHOT_TOO_FREQUENT": "快照发送过于频繁"
   },
   "presetSlots": {

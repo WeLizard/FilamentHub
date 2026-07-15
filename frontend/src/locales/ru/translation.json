@@ -5155,6 +5155,7 @@
     "ERR_SPOOL_NOT_ACCESSIBLE": "Катушка {{spool_id}} недоступна",
     "ERR_SPOOL_EMPTY_ON_CREATE": "Нельзя добавить уже пустую катушку",
     "ERR_SPOOL_USED_EXCEEDS_INITIAL": "Использованный вес не может превышать начальный",
+    "ERR_SPOOL_LOCATION_CONFLICT": "Катушку уже перемещает другой запрос. Обновите страницу и повторите",
     "ERR_SNAPSHOT_TOO_FREQUENT": "Снимки отправляются слишком часто"
   },
   "presetSlots": {

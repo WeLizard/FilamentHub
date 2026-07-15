@@ -6,6 +6,7 @@ import json
 from datetime import datetime, timezone
 
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import joinedload
 
@@ -13,12 +14,14 @@ from app.core.errors import (
     ERR_ACCESS_DENIED,
     ERR_FILAMENT_NOT_FOUND,
     ERR_SPOOL_EMPTY_ON_CREATE,
+    ERR_SPOOL_LOCATION_CONFLICT,
     ERR_SPOOL_USED_EXCEEDS_INITIAL,
     raise_error,
 )
 from app.models.filament import Filament
 from app.models.preset_gate_state import PresetGateState, PresetGateStateSource
 from app.models.user import User
+from app.models.user_printer_device import UserPrinterDevice
 from app.models.user_spool import UserSpool, UserSpoolState
 from app.schemas.spool import (
     SpoolCreateRequest,
@@ -33,6 +36,129 @@ def clear_spool_location_projection(spool: UserSpool) -> None:
     extra["printer_name"] = json.dumps("")
     extra["mmu_gate_map"] = json.dumps(-1)
     spool.extra = extra
+
+
+def set_spool_location_projection(
+    spool: UserSpool, device: UserPrinterDevice, gate_index: int
+) -> None:
+    extra = dict(spool.extra or {})
+    extra["printer_name"] = json.dumps(device.printer_hostname or device.name)
+    extra["mmu_gate_map"] = json.dumps(gate_index)
+    spool.extra = extra
+
+
+async def lock_spool_row(db: AsyncSession, spool_id: int) -> None:
+    """Serialize concurrent moves of the same physical spool (no-op on SQLite)."""
+    await db.execute(
+        select(UserSpool.id).where(UserSpool.id == spool_id).with_for_update()
+    )
+
+
+async def shelf_spool_if_unassigned(db: AsyncSession, spool: UserSpool) -> None:
+    """Return a spool to the shelf once it has no current slot binding."""
+    if await spool_has_gate_assignment(db, spool.id):
+        return
+    clear_spool_location_projection(spool)
+    if spool.state not in {UserSpoolState.archived, UserSpoolState.empty}:
+        spool.state = UserSpoolState.shelf
+
+
+async def assign_spool_to_gate(
+    db: AsyncSession,
+    *,
+    user_id: int,
+    spool: UserSpool,
+    device: UserPrinterDevice,
+    gate_index: int,
+    source: PresetGateStateSource,
+) -> tuple[PresetGateState, int | None]:
+    """Atomically move a physical spool into a specific device slot.
+
+    Locks the spool row, releases every previous binding of this spool,
+    then claims the target gate; a spool displaced from the target gate
+    goes back to the shelf. Does not commit. Raises 409 when a concurrent
+    move wins the race (unique index on active spool_id is the backstop).
+    """
+    await lock_spool_row(db, spool.id)
+
+    await clear_spool_gate_assignments(
+        db,
+        spool,
+        source=source,
+        except_device_id=device.id,
+        except_gate_index=gate_index,
+    )
+    # Old bindings must hit the DB before the new one to satisfy the
+    # single-location unique index within the transaction.
+    await db.flush()
+
+    target_result = await db.execute(
+        select(PresetGateState)
+        .where(
+            PresetGateState.device_id == device.id,
+            PresetGateState.gate_index == gate_index,
+        )
+        .with_for_update()
+    )
+    target_state = target_result.scalars().first()
+    displaced_spool_id = target_state.spool_id if target_state is not None else None
+    now = datetime.now(timezone.utc)
+
+    if target_state is None:
+        target_state = PresetGateState(
+            user_id=user_id,
+            device_id=device.id,
+            gate_index=gate_index,
+            preset_id=None,
+            spool_id=spool.id,
+            source=source,
+            source_ts=now,
+            is_active=True,
+        )
+        db.add(target_state)
+    else:
+        target_state.spool_id = spool.id
+        target_state.source = source
+        target_state.source_ts = now
+        target_state.is_active = True
+
+    try:
+        await db.flush()
+    except IntegrityError:
+        raise_error(409, ERR_SPOOL_LOCATION_CONFLICT)
+
+    if displaced_spool_id is not None and displaced_spool_id != spool.id:
+        displaced_result = await db.execute(
+            select(UserSpool).where(
+                UserSpool.id == displaced_spool_id,
+                UserSpool.user_id == user_id,
+            )
+        )
+        displaced_spool = displaced_result.scalars().first()
+        if displaced_spool is not None:
+            await shelf_spool_if_unassigned(db, displaced_spool)
+
+    set_spool_location_projection(spool, device, gate_index)
+    spool.state = UserSpoolState.active
+    return target_state, displaced_spool_id
+
+
+async def release_spool_location(
+    db: AsyncSession,
+    spool: UserSpool,
+    *,
+    source: PresetGateStateSource = PresetGateStateSource.web_manual,
+) -> None:
+    """Atomically take a physical spool off any slot (shelf semantics).
+
+    Does not commit; keeps archived/empty state untouched.
+    """
+    await lock_spool_row(db, spool.id)
+    await clear_spool_gate_assignments(db, spool, source=source)
+    await db.flush()
+    clear_spool_location_projection(spool)
+    if spool.state not in {UserSpoolState.archived, UserSpoolState.empty}:
+        spool.state = UserSpoolState.shelf
 
 
 async def clear_spool_gate_assignments(

@@ -9,9 +9,11 @@ from sqlalchemy import (
     DateTime,
     Enum,
     ForeignKey,
+    Index,
     Integer,
     String,
     UniqueConstraint,
+    text,
 )
 from sqlalchemy.orm import Mapped, mapped_column, reconstructor, relationship
 from sqlalchemy.sql import func
@@ -95,6 +97,14 @@ class PresetGateState(Base):
 
     __table_args__ = (
         UniqueConstraint("device_id", "gate_index", name="uq_device_gate_index"),
+        # A physical spool can occupy at most one slot across all devices.
+        Index(
+            "uq_gate_state_active_spool",
+            "spool_id",
+            unique=True,
+            postgresql_where=text("spool_id IS NOT NULL"),
+            sqlite_where=text("spool_id IS NOT NULL"),
+        ),
     )
 
     # Relationships
