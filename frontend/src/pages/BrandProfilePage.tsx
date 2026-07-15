@@ -100,7 +100,10 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({ onBack, init
   const [isBrandLogoVisible, setIsBrandLogoVisible] = useState(false);
   const [isBrandSwitcherOpen, setIsBrandSwitcherOpen] = useState(false);
   const [isAddingBrand, setIsAddingBrand] = useState(false);
+  const [isDescriptionExpanded, setIsDescriptionExpanded] = useState(false);
+  const [isDescriptionOverflowing, setIsDescriptionOverflowing] = useState(false);
   const brandSwitcherRef = useRef<HTMLDivElement>(null);
+  const brandDescriptionRef = useRef<HTMLParagraphElement>(null);
 
   const accessibleBrandsQuery = useQuery({
     queryKey: ['auth', 'accessible-brands', user?.id, user?.brand_id],
@@ -146,6 +149,30 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({ onBack, init
     queryFn: () => brandsAPI.get(user!.brand_id!),
     enabled: !!user?.brand_id,
   });
+
+  useEffect(() => {
+    setIsDescriptionExpanded(false);
+  }, [brandData?.id, brandData?.description]);
+
+  useEffect(() => {
+    const description = brandDescriptionRef.current;
+    if (!description || isDescriptionExpanded) return;
+
+    const updateOverflowState = () => {
+      setIsDescriptionOverflowing(description.scrollHeight > description.clientHeight + 1);
+    };
+
+    updateOverflowState();
+
+    if (typeof ResizeObserver === 'undefined') {
+      window.addEventListener('resize', updateOverflowState);
+      return () => window.removeEventListener('resize', updateOverflowState);
+    }
+
+    const resizeObserver = new ResizeObserver(updateOverflowState);
+    resizeObserver.observe(description);
+    return () => resizeObserver.disconnect();
+  }, [brandData?.description, isDescriptionExpanded]);
 
   // Загружаем материалы производителя
   const { 
@@ -568,9 +595,34 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({ onBack, init
         </div>
 
         {brandData.description && (
-          <p className="mt-2 text-sm text-gray-400 text-center md:text-right md:ml-auto md:max-w-md">
-            {brandData.description}
-          </p>
+          <div className="mt-2 text-center md:ml-auto md:max-w-md md:text-right">
+            <p
+              ref={brandDescriptionRef}
+              id="brand-profile-description"
+              className={`whitespace-pre-line text-sm leading-6 text-gray-400 ${isDescriptionExpanded ? '' : 'line-clamp-1'}`}
+            >
+              {brandData.description}
+            </p>
+            {isDescriptionOverflowing && (
+              <button
+                type="button"
+                onClick={() => setIsDescriptionExpanded((expanded) => !expanded)}
+                aria-expanded={isDescriptionExpanded}
+                aria-controls="brand-profile-description"
+                className="mt-1.5 inline-flex items-center gap-1 rounded-md text-xs font-medium text-cyan-300 transition-colors hover:text-cyan-200 focus:outline-none focus:ring-2 focus:ring-cyan-400/60"
+              >
+                <span>
+                  {isDescriptionExpanded
+                    ? t('brandProfile.collapseDescription')
+                    : t('brandProfile.showFullDescription')}
+                </span>
+                <ChevronDown
+                  className={`h-3.5 w-3.5 transition-transform ${isDescriptionExpanded ? 'rotate-180' : ''}`}
+                  aria-hidden="true"
+                />
+              </button>
+            )}
+          </div>
         )}
 
         {/* Tabs */}

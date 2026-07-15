@@ -3447,6 +3447,8 @@
     "officialNameHint": "Check the spelling carefully: a representative can correct the name once. The page address, materials, and presets stay intact.",
     "descriptionLabel": "Company description",
     "descriptionPlaceholder": "Brief brand description...",
+    "showFullDescription": "Show full description",
+    "collapseDescription": "Collapse",
     "websiteLabel": "Website",
     "sectionAbout": "About the brand",
     "sectionLogo": "Logo",

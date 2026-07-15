@@ -3577,6 +3577,8 @@
     "officialNameHint": "Проверьте написание: представитель может исправить название один раз. Адрес карточки, материалы и пресеты не изменятся.",
     "descriptionLabel": "Описание компании",
     "descriptionPlaceholder": "Краткое описание бренда...",
+    "showFullDescription": "Показать полностью",
+    "collapseDescription": "Свернуть",
     "websiteLabel": "Сайт",
     "sectionAbout": "О бренде",
     "sectionLogo": "Логотип",

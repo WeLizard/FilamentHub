@@ -3444,6 +3444,8 @@
     "officialNameHint": "请仔细检查拼写：品牌代表只能更正一次名称。页面地址、材料和预设不会改变。",
     "descriptionLabel": "公司描述",
     "descriptionPlaceholder": "简短的品牌描述...",
+    "showFullDescription": "展开完整描述",
+    "collapseDescription": "收起",
     "websiteLabel": "网站",
     "sectionAbout": "关于品牌",
     "sectionLogo": "标志",
