@@ -18,6 +18,7 @@ import { FilamentPreview } from '../components/FilamentPreview';
 import { Dropdown } from '../components/Dropdown';
 import { SEOHead } from '../components/SEOHead';
 import { SocialIcon } from '../components/socialIcons';
+import { BrandLogoFrame } from '../components/BrandLogoFrame';
 
 const hostOf = (url: string): string => {
   try {
@@ -168,23 +169,15 @@ export const BrandDetailPage: React.FC = () => {
       <div className="bg-white/10 backdrop-blur-sm rounded-2xl p-8 border border-white/20 shadow-xl">
         <div className="flex flex-col md:flex-row items-start md:items-center gap-6">
           {/* Логотип (если есть) */}
-          {isBrandLogoVisible && brand.logo_url ? (
-            <div
-              className="inline-flex h-24 shrink-0 overflow-hidden rounded-xl border border-white/10 bg-white/10 p-0.5 shadow-lg shadow-black/10"
-              style={brand.logo_bg ? { backgroundColor: brand.logo_bg } : undefined}
-            >
-              <img
-                src={brand.logo_url}
-                alt={brand.name}
-                className="block h-full w-auto max-w-[20rem] object-contain"
-                onError={() => setIsBrandLogoVisible(false)}
-              />
-            </div>
-          ) : (
-            <div className="w-24 h-24 flex items-center justify-center bg-purple-500/20 rounded-xl border border-purple-500/30">
-              <Building2 className="w-12 h-12 text-purple-400" />
-            </div>
-          )}
+          <BrandLogoFrame
+            src={isBrandLogoVisible ? brand.logo_url : null}
+            alt={brand.name}
+            backgroundColor={brand.logo_bg}
+            size="hero"
+            fallback={<Building2 className="h-12 w-12 text-purple-400" />}
+            fallbackBackgroundClassName="bg-purple-500/20"
+            onError={() => setIsBrandLogoVisible(false)}
+          />
 
           {/* Информация о бренде */}
           <div className="flex-1">

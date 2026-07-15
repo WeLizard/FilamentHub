@@ -6,6 +6,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 import { Building2, CheckCircle, XCircle, Shield, Search, ExternalLink, Edit, X, Save, Loader2, Upload, Send, Copy, Plus } from 'lucide-react';
 import { ModalOverlay } from '../ModalOverlay';
+import { BrandLogoFrame } from '../BrandLogoFrame';
 import { adminAPI, brandInvitesAPI } from '../../api/client';
 import { translateApiError } from '../../utils/translateApiError';
 import type { Brand, BrandInviteAdmin } from '../../types/api';
@@ -526,11 +527,12 @@ export function AdminBrands() {
                 </div>
                 {editLogoUrl && (
                   <div className="mt-2 flex items-center space-x-3">
-                    <img
+                    <BrandLogoFrame
                       src={editLogoUrl}
-                      alt="Logo preview"
-                      className="h-10 w-10 object-contain rounded bg-white/10 p-1"
-                      onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
+                      alt={editName || editingBrand.name}
+                      backgroundColor={editLogoBg}
+                      size="thumbnail"
+                      onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }}
                     />
                     <span className="text-xs text-gray-400 truncate">{editLogoUrl}</span>
                   </div>
