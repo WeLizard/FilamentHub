@@ -115,10 +115,11 @@ if [ "$DANGLING" -gt 0 ]; then
     echo "   Удалено $DANGLING неиспользуемых образов"
 fi
 
-# Clean build cache
-CACHE_SIZE=$(docker system df --format '{{.Size}}' 2>/dev/null | tail -1)
-docker builder prune -f > /dev/null 2>&1
-echo "   Build cache очищен"
+# Preserve recently used build layers (npm ci, pip installs, etc.) so unchanged
+# dependencies are reused on the next deploy. Only stale cache is removed.
+BUILD_CACHE_RETENTION="${BUILD_CACHE_RETENTION:-336h}"
+docker builder prune -f --filter "until=${BUILD_CACHE_RETENTION}" > /dev/null 2>&1
+echo "   Build cache моложе ${BUILD_CACHE_RETENTION} сохранён"
 
 # Show disk usage
 AVAIL=$(df -h / | awk 'NR==2{print $4}')
