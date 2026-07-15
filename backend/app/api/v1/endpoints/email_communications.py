@@ -1,15 +1,19 @@
 """Verified Resend inbound webhook and the administrative communication inbox."""
 
+import base64
+import binascii
+import hashlib
+import hmac
 import json
 import logging
 import re
+import time
 from datetime import datetime, timezone
 from email.utils import parseaddr
 from html.parser import HTMLParser
 from math import ceil
 from typing import Annotated, Literal
 
-import resend
 from fastapi import APIRouter, Depends, Query, Request
 from sqlalchemy import func, select, update
 from sqlalchemy.exc import IntegrityError
@@ -52,6 +56,7 @@ admin_router = APIRouter(prefix="/admin/communications", tags=["admin"])
 
 _MAX_WEBHOOK_BYTES = 256 * 1024
 _MAX_BODY_CHARS = 100_000
+_WEBHOOK_TIMESTAMP_TOLERANCE_SECONDS = 5 * 60
 _REPLY_TOKEN_PATTERN = re.compile(r"^invite-([A-Za-z0-9_-]{20,64})$")
 
 
@@ -95,6 +100,57 @@ def _truncate(value: object, limit: int) -> str:
 
 def _header_value(value: object, limit: int) -> str:
     return re.sub(r"[\x00-\x1f\x7f]+", " ", str(value or "")).strip()[:limit]
+
+
+def _verify_svix_signature(
+    *,
+    raw_body: bytes,
+    event_id: str,
+    timestamp: str,
+    signature: str,
+    secret: str,
+) -> None:
+    """Verify a Resend/Svix signature without requiring a newer Resend SDK."""
+    if (
+        not secret.startswith("whsec_")
+        or len(event_id) > 200
+        or len(timestamp) > 20
+        or len(signature) > 2048
+    ):
+        raise ValueError("Invalid webhook signature metadata")
+
+    try:
+        timestamp_value = int(timestamp)
+    except ValueError as exc:
+        raise ValueError("Invalid webhook timestamp") from exc
+    if abs(int(time.time()) - timestamp_value) > _WEBHOOK_TIMESTAMP_TOLERANCE_SECONDS:
+        raise ValueError("Webhook timestamp is outside the accepted window")
+
+    encoded_secret = secret.removeprefix("whsec_")
+    encoded_secret += "=" * (-len(encoded_secret) % 4)
+    try:
+        secret_bytes = base64.b64decode(
+            encoded_secret,
+            altchars=b"-_",
+            validate=True,
+        )
+    except (binascii.Error, ValueError) as exc:
+        raise ValueError("Invalid webhook signing secret") from exc
+    if not secret_bytes:
+        raise ValueError("Invalid webhook signing secret")
+
+    signed_payload = f"{event_id}.{timestamp}.".encode() + raw_body
+    expected_signature = base64.b64encode(
+        hmac.new(secret_bytes, signed_payload, hashlib.sha256).digest()
+    ).decode()
+    valid = False
+    for candidate in signature.split():
+        version, separator, value = candidate.partition(",")
+        if separator and version == "v1" and hmac.compare_digest(value, expected_signature):
+            valid = True
+            break
+    if not valid:
+        raise ValueError("Invalid webhook signature")
 
 
 def _string_list(value: object, *, limit: int = 50) -> list[str]:
@@ -255,18 +311,18 @@ async def receive_resend_webhook(
 
     try:
         payload_text = raw_body.decode("utf-8")
-        resend.Webhooks.verify(
-            {
-                "payload": payload_text,
-                "headers": {"id": event_id, "timestamp": timestamp, "signature": signature},
-                "webhook_secret": settings.RESEND_WEBHOOK_SECRET,
-            }
+        _verify_svix_signature(
+            raw_body=raw_body,
+            event_id=event_id,
+            timestamp=timestamp,
+            signature=signature,
+            secret=settings.RESEND_WEBHOOK_SECRET,
         )
         payload = json.loads(payload_text)
         if not isinstance(payload, dict):
             raise ValueError("Webhook payload must be an object")
-    except Exception:
-        logger.warning("Rejected invalid Resend webhook", exc_info=True)
+    except (UnicodeDecodeError, json.JSONDecodeError, ValueError):
+        logger.warning("Rejected invalid Resend webhook")
         raise_error(400, ERR_EMAIL_WEBHOOK_INVALID)
 
     if payload.get("type") != "email.received":

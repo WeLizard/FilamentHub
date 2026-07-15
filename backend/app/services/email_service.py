@@ -1,9 +1,11 @@
 """Email sending service via Resend."""
 
 import logging
+import re
 from dataclasses import dataclass
 from pathlib import Path
 
+import httpx
 import resend
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 
@@ -12,6 +14,8 @@ from app.core.config import settings
 logger = logging.getLogger(__name__)
 
 _TEMPLATES_DIR = Path(__file__).resolve().parent.parent / "templates" / "email"
+_RESEND_RECEIVING_URL = "https://api.resend.com/emails/receiving"
+_RESEND_EMAIL_ID_PATTERN = re.compile(r"^[A-Za-z0-9_-]{1,128}$")
 _jinja_env = Environment(
     loader=FileSystemLoader(str(_TEMPLATES_DIR)),
     autoescape=select_autoescape(["html"]),
@@ -122,8 +126,20 @@ def get_received_email(email_id: str) -> dict:
     """Retrieve full content for a verified Resend inbound event."""
     if not _is_configured():
         raise RuntimeError("RESEND_API_KEY is not configured")
-    resend.api_key = settings.RESEND_API_KEY
-    return dict(resend.Emails.Receiving.get(email_id))
+    if not _RESEND_EMAIL_ID_PATTERN.fullmatch(email_id):
+        raise ValueError("Invalid Resend received email ID")
+
+    response = httpx.get(
+        f"{_RESEND_RECEIVING_URL}/{email_id}",
+        headers={"Authorization": f"Bearer {settings.RESEND_API_KEY}"},
+        params={"html_format": "cid"},
+        timeout=15.0,
+    )
+    response.raise_for_status()
+    payload = response.json()
+    if not isinstance(payload, dict):
+        raise RuntimeError("Unexpected Resend received email response")
+    return payload
 
 
 def send_admin_reply_email(

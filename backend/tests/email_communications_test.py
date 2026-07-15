@@ -1,6 +1,10 @@
 """Regression tests for the verified administrative email inbox."""
 
+import base64
+import hashlib
+import hmac
 import json
+import time
 from datetime import datetime, timedelta
 
 import pytest
@@ -13,6 +17,7 @@ from app.core.config import settings
 from app.models.brand import Brand
 from app.models.brand_invite import BrandInvite
 from app.models.email_communication import EmailMessage, EmailThread
+from app.services import email_service
 from app.services.email_service import EmailSendResult
 
 
@@ -37,11 +42,22 @@ async def _invite(db: AsyncSession) -> BrandInvite:
     return invite
 
 
-def _webhook_headers(event_id: str) -> dict[str, str]:
+def _webhook_headers(
+    event_id: str,
+    raw_body: bytes,
+    *,
+    timestamp: int | None = None,
+) -> dict[str, str]:
+    timestamp_value = str(timestamp if timestamp is not None else int(time.time()))
+    signing_secret = base64.b64decode("dGVzdA==")
+    signed_payload = f"{event_id}.{timestamp_value}.".encode() + raw_body
+    signature = base64.b64encode(
+        hmac.new(signing_secret, signed_payload, hashlib.sha256).digest()
+    ).decode()
     return {
         "svix-id": event_id,
-        "svix-timestamp": "1784100000",
-        "svix-signature": "v1,test",
+        "svix-timestamp": timestamp_value,
+        "svix-signature": f"v1,{signature}",
     }
 
 
@@ -71,11 +87,6 @@ async def test_inbound_webhook_is_verified_sanitized_and_idempotent(
     monkeypatch.setattr(settings, "RESEND_WEBHOOK_SECRET", "whsec_dGVzdA==")
     monkeypatch.setattr(settings, "EMAIL_INBOUND_DOMAIN", "reply.filamenthub.test")
     monkeypatch.setattr(
-        email_communications.resend.Webhooks,
-        "verify",
-        staticmethod(lambda options: None),
-    )
-    monkeypatch.setattr(
         email_communications,
         "get_received_email",
         lambda email_id: {
@@ -99,15 +110,16 @@ async def test_inbound_webhook_is_verified_sanitized_and_idempotent(
     )
 
     payload = _webhook_payload()
+    raw_body = json.dumps(payload).encode()
     first = await client.post(
         "/api/v1/webhooks/resend",
-        content=json.dumps(payload),
-        headers=_webhook_headers("event-1"),
+        content=raw_body,
+        headers=_webhook_headers("event-1", raw_body),
     )
     second = await client.post(
         "/api/v1/webhooks/resend",
-        content=json.dumps(payload),
-        headers=_webhook_headers("event-1"),
+        content=raw_body,
+        headers=_webhook_headers("event-1", raw_body),
     )
 
     assert first.status_code == 200
@@ -145,19 +157,66 @@ async def test_invalid_webhook_signature_is_rejected(
 ) -> None:
     monkeypatch.setattr(settings, "RESEND_API_KEY", "re_test")
     monkeypatch.setattr(settings, "RESEND_WEBHOOK_SECRET", "whsec_dGVzdA==")
-    monkeypatch.setattr(
-        email_communications.resend.Webhooks,
-        "verify",
-        staticmethod(lambda options: (_ for _ in ()).throw(ValueError("invalid"))),
-    )
+    raw_body = json.dumps(_webhook_payload()).encode()
+    headers = _webhook_headers("invalid-event", raw_body)
+    headers["svix-signature"] = "v1,invalid"
 
     response = await client.post(
         "/api/v1/webhooks/resend",
-        content=json.dumps(_webhook_payload()),
-        headers=_webhook_headers("invalid-event"),
+        content=raw_body,
+        headers=headers,
     )
     assert response.status_code == 400
     assert response.json()["detail"]["code"] == "ERR_EMAIL_WEBHOOK_INVALID"
+
+
+@pytest.mark.asyncio
+async def test_stale_webhook_signature_is_rejected(
+    client: AsyncClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(settings, "RESEND_API_KEY", "re_test")
+    monkeypatch.setattr(settings, "RESEND_WEBHOOK_SECRET", "whsec_dGVzdA==")
+    raw_body = json.dumps(_webhook_payload()).encode()
+
+    response = await client.post(
+        "/api/v1/webhooks/resend",
+        content=raw_body,
+        headers=_webhook_headers("stale-event", raw_body, timestamp=int(time.time()) - 301),
+    )
+
+    assert response.status_code == 400
+    assert response.json()["detail"]["code"] == "ERR_EMAIL_WEBHOOK_INVALID"
+
+
+def test_received_email_uses_compatible_resend_api(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(settings, "RESEND_API_KEY", "re_test")
+    captured: dict[str, object] = {}
+
+    class FakeResponse:
+        def raise_for_status(self) -> None:
+            return None
+
+        def json(self) -> dict:
+            return {"id": "received-email-1", "text": "Hello"}
+
+    def fake_get(url: str, **kwargs: object) -> FakeResponse:
+        captured["url"] = url
+        captured.update(kwargs)
+        return FakeResponse()
+
+    monkeypatch.setattr(email_service.httpx, "get", fake_get)
+
+    result = email_service.get_received_email("received-email-1")
+
+    assert result == {"id": "received-email-1", "text": "Hello"}
+    assert captured["url"] == (
+        "https://api.resend.com/emails/receiving/received-email-1"
+    )
+    assert captured["headers"] == {"Authorization": "Bearer re_test"}
+    assert captured["params"] == {"html_format": "cid"}
 
 
 @pytest.mark.asyncio
