@@ -5,11 +5,12 @@ from httpx import AsyncClient
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.security import create_access_token
 from app.models.brand import Brand
 from app.models.filament import Filament
-from app.models.organization import OrganizationMembership, OrganizationMemberRole
-from app.core.security import create_access_token
+from app.models.organization import OrganizationMemberRole, OrganizationMembership
 from app.services import qr_service
+from app.services.email_service import EmailSendResult
 
 
 @pytest.mark.asyncio
@@ -62,6 +63,139 @@ async def test_brand_invite_requires_admin(auth_client: AsyncClient):
         json={"email": "x@example.com", "brand_name": "Example"},
     )
     assert resp.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_brand_invite_batch_requires_preview_and_is_idempotent(
+    admin_client: AsyncClient,
+    db_session: AsyncSession,
+    monkeypatch,
+):
+    from app.api.v1.endpoints import brand_invites as invite_endpoints
+    from app.models.brand_invite import BrandInvite
+
+    async def fake_validate_domain(email: str) -> dict | None:
+        domain = email.rpartition("@")[2]
+        if domain == "nomail-domain.com":
+            return {"code": "ERR_DOMAIN_NO_MAIL", "params": {"domain": domain}}
+        if domain == "gmial.com":
+            return {"code": "ERR_EMAIL_DOMAIN_TYPO", "params": {"domain": "gmail.com"}}
+        return None
+
+    def fake_send(**kwargs) -> EmailSendResult:
+        recipient = str(kwargs["to"]).replace("@", "-")
+        return EmailSendResult(sent=True, provider_message_id=f"msg-{recipient}")
+
+    monkeypatch.setattr(invite_endpoints, "validate_email_domain", fake_validate_domain)
+    monkeypatch.setattr(invite_endpoints, "send_brand_invite_email", fake_send)
+
+    brand = Brand(name="Batch Brand", slug="batch-brand", active=True, verified=False)
+    db_session.add(brand)
+    await db_session.commit()
+    await db_session.refresh(brand)
+
+    preview_payload = {
+        "recipients": (
+            "First@Example.com; first@example.com\n"
+            "invalid-address second@nomail-domain.com third@gmial.com"
+        ),
+        "target_type": "existing",
+        "brand_id": brand.id,
+        "sender_profile": "partnerships",
+    }
+    preview = await admin_client.post(
+        "/api/v1/admin/brand-invites/batch/preview",
+        json=preview_payload,
+    )
+    assert preview.status_code == 200
+    preview_data = preview.json()
+    assert preview_data["normalized_emails"] == [
+        "first@example.com",
+        "second@nomail-domain.com",
+        "third@gmial.com",
+    ]
+    assert preview_data["send_emails"] == ["first@example.com"]
+    assert preview_data["duplicates"] == ["first@example.com"]
+    assert {item["code"] for item in preview_data["invalid"]} == {
+        "invalid_format",
+        "domain_no_mail",
+        "domain_typo",
+    }
+    assert preview_data["confirmation_token"]
+
+    send_payload = {
+        "emails": preview_data["send_emails"],
+        "confirmation_token": preview_data["confirmation_token"],
+        "target_type": "existing",
+        "brand_id": brand.id,
+        "sender_profile": "partnerships",
+    }
+    sent = await admin_client.post("/api/v1/admin/brand-invites/batch", json=send_payload)
+    assert sent.status_code == 201
+    assert sent.json()["replayed"] is False
+    assert [item["email"] for item in sent.json()["invites"]] == ["first@example.com"]
+
+    replay = await admin_client.post("/api/v1/admin/brand-invites/batch", json=send_payload)
+    assert replay.status_code == 201
+    assert replay.json()["replayed"] is True
+    assert replay.json()["batch_id"] == sent.json()["batch_id"]
+    stored_invites = list(
+        (
+            await db_session.scalars(
+                select(BrandInvite).where(BrandInvite.batch_id == sent.json()["batch_id"])
+            )
+        ).all()
+    )
+    assert len(stored_invites) == 1
+
+    preview_again = await admin_client.post(
+        "/api/v1/admin/brand-invites/batch/preview",
+        json={**preview_payload, "recipients": "first@example.com"},
+    )
+    assert preview_again.status_code == 200
+    assert preview_again.json()["already_invited"] == ["first@example.com"]
+    assert preview_again.json()["send_emails"] == []
+    assert preview_again.json()["confirmation_token"] is None
+
+
+@pytest.mark.asyncio
+async def test_brand_invite_batch_confirmation_rejects_changed_payload(
+    admin_client: AsyncClient,
+    db_session: AsyncSession,
+    monkeypatch,
+):
+    from app.api.v1.endpoints import brand_invites as invite_endpoints
+
+    async def valid_domain(email: str) -> None:
+        return None
+
+    monkeypatch.setattr(invite_endpoints, "validate_email_domain", valid_domain)
+    brand = Brand(name="Signed Batch", slug="signed-batch", active=True, verified=False)
+    db_session.add(brand)
+    await db_session.commit()
+    await db_session.refresh(brand)
+
+    preview = await admin_client.post(
+        "/api/v1/admin/brand-invites/batch/preview",
+        json={
+            "recipients": "one@example.com",
+            "target_type": "existing",
+            "brand_id": brand.id,
+        },
+    )
+    assert preview.status_code == 200
+
+    changed = await admin_client.post(
+        "/api/v1/admin/brand-invites/batch",
+        json={
+            "emails": ["another@example.com"],
+            "confirmation_token": preview.json()["confirmation_token"],
+            "target_type": "existing",
+            "brand_id": brand.id,
+        },
+    )
+    assert changed.status_code == 409
+    assert changed.json()["detail"]["code"] == "ERR_BRAND_INVITE_BATCH_CONFIRMATION_INVALID"
 
 
 @pytest.mark.asyncio

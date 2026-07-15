@@ -3,7 +3,7 @@
 from datetime import datetime
 from typing import TYPE_CHECKING
 
-from sqlalchemy import Boolean, ForeignKey, Integer, String
+from sqlalchemy import Boolean, ForeignKey, Integer, String, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.sql import func
 
@@ -24,6 +24,9 @@ class BrandInvite(Base):
     """
 
     __tablename__ = "brand_invites"
+    __table_args__ = (
+        UniqueConstraint("batch_id", "email", name="uq_brand_invites_batch_email"),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
     token: Mapped[str] = mapped_column(String(64), unique=True, index=True, nullable=False)

@@ -2,7 +2,7 @@
 
 import axios from 'axios';
 import type { InternalAxiosRequestConfig } from 'axios';
-import type { AccessibleBrand, Brand, BrandUsage, BrandRequest, BrandRequestStatus, BrandTeamInvite, BrandTeamRole, BrandTeamWorkspace, Filament, FilamentLine, FilamentImportResult, FilamentPalettePayload, BrandInvitePublic, BrandInviteAdmin, BrandInviteAcceptResult, FilamentAvailability, FilamentVisualSettings, FilamentReview, FilamentRatingStats, Notification, NotificationListResponse, Preset, RecommendedPreset, RecommendedForPrinterResponse, Printer, PrinterProfile, PrintProfile, PrinterRequest, User, Token, RefreshTokenRequest, RefreshTokenResponse, ListResponse, AccountDeletionStats, UserSavedPreset, CalculatorEstimateRequest, CalculatorEstimateResponse, CalculatorProfileResponse, CalculatorProfileUpdate, Feedback, FeedbackListResponse, FeedbackType, CompatiblePrinter, CompatibleFilament, DownloadVersion, DownloadVersionsResponse, WikiCategory, WikiCategoryListResponse, WikiArticle, WikiArticleListResponse, WikiFeedbackStats, WikiFeedbackCreate, WikiFeedback, EmailThreadDetail, EmailThreadListResponse, EmailThreadStatus, EmailMessage, EmailSenderProfile } from '../types/api';
+import type { AccessibleBrand, Brand, BrandUsage, BrandRequest, BrandRequestStatus, BrandTeamInvite, BrandTeamRole, BrandTeamWorkspace, Filament, FilamentLine, FilamentImportResult, FilamentPalettePayload, BrandInvitePublic, BrandInviteAdmin, BrandInviteAcceptResult, BrandInviteBatchPreview, BrandInviteBatchSendResult, FilamentAvailability, FilamentVisualSettings, FilamentReview, FilamentRatingStats, Notification, NotificationListResponse, Preset, RecommendedPreset, RecommendedForPrinterResponse, Printer, PrinterProfile, PrintProfile, PrinterRequest, User, Token, RefreshTokenRequest, RefreshTokenResponse, ListResponse, AccountDeletionStats, UserSavedPreset, CalculatorEstimateRequest, CalculatorEstimateResponse, CalculatorProfileResponse, CalculatorProfileUpdate, Feedback, FeedbackListResponse, FeedbackType, CompatiblePrinter, CompatibleFilament, DownloadVersion, DownloadVersionsResponse, WikiCategory, WikiCategoryListResponse, WikiArticle, WikiArticleListResponse, WikiFeedbackStats, WikiFeedbackCreate, WikiFeedback, EmailThreadDetail, EmailThreadListResponse, EmailThreadStatus, EmailMessage, EmailSenderProfile } from '../types/api';
 import { getCsrfToken, getRefreshToken, getToken, isCookieAuthMode, isJwtAuthMode, isOrcaEmbedded, removeToken, setToken, shouldPersistTokensLocally } from '../utils/auth';
 import { isPluginEmbed, reportPluginSessionToPlugin } from '../utils/pluginBridge';
 import { downloadBlob } from '../utils/download';
@@ -628,6 +628,31 @@ export const brandInvitesAPI = {
     expires_days?: number;
   }): Promise<BrandInviteAdmin> => {
     const response = await api.post<BrandInviteAdmin>('/admin/brand-invites', payload);
+    return response.data;
+  },
+  adminPreviewBatch: async (payload: {
+    recipients: string;
+    target_type: 'new' | 'existing';
+    brand_id?: number | null;
+    brand_name?: string | null;
+    member_role?: 'owner' | 'editor';
+    sender_profile?: 'partnerships' | 'pr' | 'transactional';
+    expires_days?: number;
+  }): Promise<BrandInviteBatchPreview> => {
+    const response = await api.post<BrandInviteBatchPreview>('/admin/brand-invites/batch/preview', payload);
+    return response.data;
+  },
+  adminCreateBatch: async (payload: {
+    emails: string[];
+    confirmation_token: string;
+    target_type: 'new' | 'existing';
+    brand_id?: number | null;
+    brand_name?: string | null;
+    member_role?: 'owner' | 'editor';
+    sender_profile?: 'partnerships' | 'pr' | 'transactional';
+    expires_days?: number;
+  }): Promise<BrandInviteBatchSendResult> => {
+    const response = await api.post<BrandInviteBatchSendResult>('/admin/brand-invites/batch', payload);
     return response.data;
   },
   adminList: async (): Promise<BrandInviteAdmin[]> => {
@@ -2022,7 +2047,6 @@ export const adminCommunicationsAPI = {
     const response = await api.get<EmailThreadListResponse>('/admin/communications/email-threads', { params });
     return response.data;
   },
-
   createEmailThread: async (data: {
     to: string;
     participant_name?: string;

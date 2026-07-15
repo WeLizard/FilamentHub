@@ -1,18 +1,28 @@
 """Brand invitation endpoints — admin issues pre-verified invites, brands accept them."""
 
+import asyncio
+import hashlib
+import hmac
+import json
+import re
 import secrets
 import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Annotated
 
-from fastapi import APIRouter, Depends
+import jwt
+from fastapi import APIRouter, Depends, Request
+from jwt.exceptions import InvalidTokenError
+from pydantic import EmailStr, TypeAdapter, ValidationError
 from sqlalchemy import delete, func, select, update
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.concurrency import run_in_threadpool
 
 from app.core.config import settings
 from app.core.dependencies import get_current_active_user, get_current_admin_user
 from app.core.errors import (
+    ERR_BRAND_INVITE_BATCH_CONFIRMATION_INVALID,
     ERR_BRAND_INVITE_EMAIL_MISMATCH,
     ERR_BRAND_INVITE_INVALID,
     ERR_BRAND_INVITE_NOT_FOUND,
@@ -22,6 +32,7 @@ from app.core.errors import (
     ERR_ORGANIZATION_NOT_FOUND,
     raise_error,
 )
+from app.core.limiter import limiter
 from app.db.session import get_db
 from app.models.brand import Brand
 from app.models.brand_invite import BrandInvite
@@ -37,15 +48,26 @@ from app.schemas.brand_invite import (
     BrandInviteAcceptResponse,
     BrandInviteAdminResponse,
     BrandInviteBatchCreate,
+    BrandInviteBatchPreviewCreate,
+    BrandInviteBatchPreviewResponse,
+    BrandInviteBatchRecipientIssue,
+    BrandInviteBatchSendResponse,
     BrandInviteCreate,
     BrandInvitePublicResponse,
 )
 from app.services.email_service import send_brand_invite_email, send_brand_team_invite_email
+from app.services.email_validator import validate_email_domain
 from app.services.qr_service import backfill_brand_qr_codes
 from app.services.slug_service import generate_unique_slug
 
 router = APIRouter(prefix="/brand-invites", tags=["brand-invites"])
 admin_router = APIRouter(prefix="/admin/brand-invites", tags=["admin"])
+
+_BATCH_MAX_RECIPIENTS = 100
+_BATCH_CONFIRMATION_MINUTES = 15
+_BATCH_CONFIRMATION_TYPE = "brand_invite_batch_confirmation"
+_BATCH_SPLIT_PATTERN = re.compile(r"[\s,;]+")
+_EMAIL_ADAPTER = TypeAdapter(EmailStr)
 
 
 def _invite_url(token: str) -> str:
@@ -86,6 +108,172 @@ def _reply_to(invite: BrandInvite) -> str:
     if settings.EMAIL_INBOUND_DOMAIN and invite.reply_token:
         return f"invite-{invite.reply_token}@{settings.EMAIL_INBOUND_DOMAIN}"
     return settings.EMAIL_CONTACT
+
+
+def _batch_payload_digest(
+    *,
+    emails: list[str],
+    target_type: str,
+    brand_id: int | None,
+    brand_name: str | None,
+    organization_id: int | None,
+    organization_name: str | None,
+    member_role: str,
+    sender_profile: str,
+    expires_days: int,
+) -> str:
+    payload = {
+        "emails": emails,
+        "target_type": target_type,
+        "brand_id": brand_id,
+        "brand_name": (brand_name or "").strip(),
+        "organization_id": organization_id,
+        "organization_name": (organization_name or "").strip(),
+        "member_role": member_role,
+        "sender_profile": sender_profile,
+        "expires_days": expires_days,
+    }
+    serialized = json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(serialized.encode("utf-8")).hexdigest()
+
+
+def _create_batch_confirmation_token(
+    *,
+    admin_id: int,
+    digest: str,
+) -> tuple[str, str, datetime]:
+    batch_id = str(uuid.uuid4())
+    expires_at = datetime.now(timezone.utc) + timedelta(minutes=_BATCH_CONFIRMATION_MINUTES)
+    token = jwt.encode(
+        {
+            "type": _BATCH_CONFIRMATION_TYPE,
+            "admin_id": admin_id,
+            "digest": digest,
+            "batch_id": batch_id,
+            "exp": expires_at,
+        },
+        settings.SECRET_KEY,
+        algorithm=settings.ALGORITHM,
+    )
+    return token, batch_id, expires_at
+
+
+def _decode_batch_confirmation_token(
+    *,
+    token: str,
+    admin_id: int,
+    digest: str,
+) -> str:
+    try:
+        payload = jwt.decode(
+            token,
+            settings.SECRET_KEY,
+            algorithms=[settings.ALGORITHM],
+            leeway=30,
+        )
+        if payload.get("type") != _BATCH_CONFIRMATION_TYPE:
+            raise ValueError("Invalid batch confirmation type")
+        if payload.get("admin_id") != admin_id:
+            raise ValueError("Batch confirmation belongs to another administrator")
+        stored_digest = payload.get("digest")
+        if not isinstance(stored_digest, str) or not hmac.compare_digest(stored_digest, digest):
+            raise ValueError("Batch confirmation payload changed")
+        batch_id = str(uuid.UUID(str(payload.get("batch_id"))))
+    except (InvalidTokenError, TypeError, ValueError):
+        raise_error(409, ERR_BRAND_INVITE_BATCH_CONFIRMATION_INVALID)
+    return batch_id
+
+
+def _parse_batch_recipients(
+    value: str,
+) -> tuple[list[str], list[BrandInviteBatchRecipientIssue], list[str]]:
+    normalized: list[str] = []
+    invalid: list[BrandInviteBatchRecipientIssue] = []
+    duplicates: list[str] = []
+    seen: set[str] = set()
+    duplicate_seen: set[str] = set()
+
+    for raw_value in _BATCH_SPLIT_PATTERN.split(value.strip()):
+        candidate = raw_value.strip()
+        if not candidate:
+            continue
+        try:
+            email = str(_EMAIL_ADAPTER.validate_python(candidate)).casefold()
+        except ValidationError:
+            invalid.append(
+                BrandInviteBatchRecipientIssue(value=candidate[:320], code="invalid_format")
+            )
+            continue
+        if email in seen:
+            if email not in duplicate_seen:
+                duplicates.append(email)
+                duplicate_seen.add(email)
+            continue
+        seen.add(email)
+        normalized.append(email)
+
+    return normalized, invalid, duplicates
+
+
+async def _validate_batch_domains(
+    emails: list[str],
+) -> tuple[list[str], list[BrandInviteBatchRecipientIssue]]:
+    by_domain: dict[str, list[str]] = {}
+    for email in emails:
+        by_domain.setdefault(email.rpartition("@")[2], []).append(email)
+
+    domains = list(by_domain)
+    results = await asyncio.gather(
+        *(validate_email_domain(by_domain[domain][0]) for domain in domains)
+    )
+    invalid_domains = dict(zip(domains, results, strict=True))
+    valid: list[str] = []
+    invalid: list[BrandInviteBatchRecipientIssue] = []
+    for email in emails:
+        result = invalid_domains[email.rpartition("@")[2]]
+        if result is None:
+            valid.append(email)
+            continue
+        params = result.get("params") if isinstance(result.get("params"), dict) else {}
+        code = "domain_typo" if result.get("code") == "ERR_EMAIL_DOMAIN_TYPO" else "domain_no_mail"
+        invalid.append(
+            BrandInviteBatchRecipientIssue(
+                value=email,
+                code=code,
+                suggestion=params.get("domain"),
+            )
+        )
+    return valid, invalid
+
+
+async def _active_invite_emails(
+    *,
+    db: AsyncSession,
+    emails: list[str],
+    target_type: str,
+    brand_id: int | None,
+    brand_name: str | None,
+) -> set[str]:
+    if not emails:
+        return set()
+    target_filter = (
+        BrandInvite.brand_id == brand_id
+        if target_type == "existing"
+        else func.lower(BrandInvite.brand_name) == (brand_name or "").strip().lower()
+    )
+    result = await db.scalars(
+        select(BrandInvite.email).where(
+            BrandInvite.email.in_(emails),
+            BrandInvite.purpose == "representative",
+            BrandInvite.target_type == target_type,
+            target_filter,
+            BrandInvite.accepted_at.is_(None),
+            BrandInvite.revoked_at.is_(None),
+            BrandInvite.expires_at > _now(),
+            BrandInvite.send_status.in_(("pending", "sent")),
+        )
+    )
+    return set(result.all())
 
 
 async def _resolve_invite_target(
@@ -141,14 +329,17 @@ async def _build_invite(
     expires_days: int,
     admin_id: int,
     batch_id: str | None,
+    resolved_target: tuple[Brand | None, Organization | None, str, str | None] | None = None,
 ) -> BrandInvite:
-    brand, organization, resolved_name, proposed_slug = await _resolve_invite_target(
-        db=db,
-        target_type=target_type,
-        brand_id=brand_id,
-        brand_name=brand_name,
-        organization_id=organization_id,
-    )
+    if resolved_target is None:
+        resolved_target = await _resolve_invite_target(
+            db=db,
+            target_type=target_type,
+            brand_id=brand_id,
+            brand_name=brand_name,
+            organization_id=organization_id,
+        )
+    brand, organization, resolved_name, proposed_slug = resolved_target
     invite = BrandInvite(
         token=secrets.token_urlsafe(32),
         email=email.strip().casefold(),
@@ -452,7 +643,9 @@ async def accept_brand_invite(
 # --- Admin ---
 
 @admin_router.post("", response_model=BrandInviteAdminResponse, status_code=201)
+@limiter.limit("60/hour")
 async def create_brand_invite(
+    request: Request,
     data: BrandInviteCreate,
     db: Annotated[AsyncSession, Depends(get_db)],
     admin: Annotated[User, Depends(get_current_admin_user)],
@@ -481,17 +674,129 @@ async def create_brand_invite(
     return _admin_response(invite)
 
 
-@admin_router.post("/batch", response_model=list[BrandInviteAdminResponse], status_code=201)
+@admin_router.post("/batch/preview", response_model=BrandInviteBatchPreviewResponse)
+@limiter.limit("120/hour")
+async def preview_brand_invite_batch(
+    request: Request,
+    data: BrandInviteBatchPreviewCreate,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    admin: Annotated[User, Depends(get_current_admin_user)],
+) -> BrandInviteBatchPreviewResponse:
+    """Normalize and validate pasted recipients without sending email."""
+    resolved_target = await _resolve_invite_target(
+        db=db,
+        target_type=data.target_type,
+        brand_id=data.brand_id,
+        brand_name=data.brand_name,
+        organization_id=data.organization_id,
+    )
+    _, _, resolved_name, _ = resolved_target
+    normalized, invalid, duplicates = _parse_batch_recipients(data.recipients)
+    domain_valid, domain_invalid = await _validate_batch_domains(normalized)
+    invalid.extend(domain_invalid)
+    already_invited = await _active_invite_emails(
+        db=db,
+        emails=domain_valid,
+        target_type=data.target_type,
+        brand_id=data.brand_id,
+        brand_name=resolved_name,
+    )
+    send_emails = [email for email in domain_valid if email not in already_invited]
+    limit_exceeded = len(send_emails) > _BATCH_MAX_RECIPIENTS
+
+    confirmation_token = None
+    confirmation_expires_at = None
+    if send_emails and not limit_exceeded:
+        digest = _batch_payload_digest(
+            emails=send_emails,
+            target_type=data.target_type,
+            brand_id=data.brand_id,
+            brand_name=resolved_name if data.target_type == "new" else None,
+            organization_id=data.organization_id,
+            organization_name=data.organization_name,
+            member_role=data.member_role,
+            sender_profile=data.sender_profile,
+            expires_days=data.expires_days,
+        )
+        confirmation_token, _, confirmation_expires_at = _create_batch_confirmation_token(
+            admin_id=admin.id,
+            digest=digest,
+        )
+
+    return BrandInviteBatchPreviewResponse(
+        normalized_emails=normalized,
+        send_emails=send_emails,
+        invalid=invalid,
+        duplicates=duplicates,
+        already_invited=sorted(already_invited),
+        max_recipients=_BATCH_MAX_RECIPIENTS,
+        limit_exceeded=limit_exceeded,
+        confirmation_token=confirmation_token,
+        confirmation_expires_at=confirmation_expires_at,
+    )
+
+
+@admin_router.post("/batch", response_model=BrandInviteBatchSendResponse, status_code=201)
+@limiter.limit("10/hour")
 async def create_brand_invite_batch(
+    request: Request,
     data: BrandInviteBatchCreate,
     db: Annotated[AsyncSession, Depends(get_db)],
     admin: Annotated[User, Depends(get_current_admin_user)],
-) -> list[BrandInviteAdminResponse]:
-    """Send one single-use token per normalized, de-duplicated recipient."""
+) -> BrandInviteBatchSendResponse:
+    """Send a previewed batch once; retries return the original batch."""
     emails = list(dict.fromkeys(str(email).strip().casefold() for email in data.emails))
-    batch_id = str(uuid.uuid4())
+    digest = _batch_payload_digest(
+        emails=emails,
+        target_type=data.target_type,
+        brand_id=data.brand_id,
+        brand_name=data.brand_name,
+        organization_id=data.organization_id,
+        organization_name=data.organization_name,
+        member_role=data.member_role,
+        sender_profile=data.sender_profile,
+        expires_days=data.expires_days,
+    )
+    batch_id = _decode_batch_confirmation_token(
+        token=data.confirmation_token,
+        admin_id=admin.id,
+        digest=digest,
+    )
+    existing_batch = list(
+        (
+            await db.scalars(
+                select(BrandInvite)
+                .where(BrandInvite.batch_id == batch_id)
+                .order_by(BrandInvite.id)
+            )
+        ).all()
+    )
+    if existing_batch:
+        return BrandInviteBatchSendResponse(
+            batch_id=batch_id,
+            invites=[_admin_response(invite) for invite in existing_batch],
+            skipped_existing=[],
+            replayed=True,
+        )
+
+    resolved_target = await _resolve_invite_target(
+        db=db,
+        target_type=data.target_type,
+        brand_id=data.brand_id,
+        brand_name=data.brand_name,
+        organization_id=data.organization_id,
+    )
+    _, _, resolved_name, _ = resolved_target
+    already_invited = await _active_invite_emails(
+        db=db,
+        emails=emails,
+        target_type=data.target_type,
+        brand_id=data.brand_id,
+        brand_name=resolved_name,
+    )
+    send_emails = [email for email in emails if email not in already_invited]
     invites: list[BrandInvite] = []
-    for email in emails:
+    for email in send_emails:
         invite = await _build_invite(
             db=db,
             email=email,
@@ -504,17 +809,43 @@ async def create_brand_invite_batch(
             expires_days=data.expires_days,
             admin_id=admin.id,
             batch_id=batch_id,
+            resolved_target=resolved_target,
         )
         invites.append(invite)
-    await db.flush()
-    await db.commit()
+
+    try:
+        await db.flush()
+        await db.commit()
+    except IntegrityError:
+        await db.rollback()
+        existing_batch = list(
+            (
+                await db.scalars(
+                    select(BrandInvite)
+                    .where(BrandInvite.batch_id == batch_id)
+                    .order_by(BrandInvite.id)
+                )
+            ).all()
+        )
+        if not existing_batch:
+            raise
+        return BrandInviteBatchSendResponse(
+            batch_id=batch_id,
+            invites=[_admin_response(invite) for invite in existing_batch],
+            skipped_existing=sorted(already_invited),
+            replayed=True,
+        )
 
     for invite in invites:
         await _deliver_invite(db, invite)
     await db.commit()
     for invite in invites:
         await db.refresh(invite)
-    return [_admin_response(invite) for invite in invites]
+    return BrandInviteBatchSendResponse(
+        batch_id=batch_id,
+        invites=[_admin_response(invite) for invite in invites],
+        skipped_existing=sorted(already_invited),
+    )
 
 
 @admin_router.get("", response_model=list[BrandInviteAdminResponse])
@@ -532,7 +863,9 @@ async def list_brand_invites(
 
 
 @admin_router.delete("/{invite_id}", status_code=204)
+@limiter.limit("60/hour")
 async def delete_brand_invite(
+    request: Request,
     invite_id: int,
     db: Annotated[AsyncSession, Depends(get_db)],
     admin: Annotated[User, Depends(get_current_admin_user)],

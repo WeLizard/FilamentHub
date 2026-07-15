@@ -183,6 +183,31 @@ export interface BrandInviteAdmin {
   invite_url: string | null;
 }
 
+export interface BrandInviteBatchRecipientIssue {
+  value: string;
+  code: 'invalid_format' | 'domain_typo' | 'domain_no_mail';
+  suggestion: string | null;
+}
+
+export interface BrandInviteBatchPreview {
+  normalized_emails: string[];
+  send_emails: string[];
+  invalid: BrandInviteBatchRecipientIssue[];
+  duplicates: string[];
+  already_invited: string[];
+  max_recipients: number;
+  limit_exceeded: boolean;
+  confirmation_token: string | null;
+  confirmation_expires_at: string | null;
+}
+
+export interface BrandInviteBatchSendResult {
+  batch_id: string;
+  invites: BrandInviteAdmin[];
+  skipped_existing: string[];
+  replayed: boolean;
+}
+
 export interface BrandInviteAcceptResult {
   brand_id: number;
   brand_name: string;

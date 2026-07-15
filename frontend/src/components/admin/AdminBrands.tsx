@@ -9,7 +9,7 @@ import { ModalOverlay } from '../ModalOverlay';
 import { BrandLogoFrame } from '../BrandLogoFrame';
 import { adminAPI, brandInvitesAPI } from '../../api/client';
 import { translateApiError } from '../../utils/translateApiError';
-import type { Brand, BrandInviteAdmin } from '../../types/api';
+import type { Brand, BrandInviteBatchPreview, BrandInviteBatchSendResult } from '../../types/api';
 import type { AxiosError } from 'axios';
 
 type FilterType = 'all' | 'verified' | 'unverified';
@@ -34,12 +34,13 @@ export function AdminBrands() {
 
   // Приглашение бренда
   const [showInviteModal, setShowInviteModal] = useState(false);
-  const [inviteEmail, setInviteEmail] = useState('');
+  const [inviteRecipients, setInviteRecipients] = useState('');
   const [inviteBrandName, setInviteBrandName] = useState('');
   const [inviteBrandId, setInviteBrandId] = useState<number | null>(null);
   const [inviteBrandFocused, setInviteBrandFocused] = useState(false);
   const [inviteSenderProfile, setInviteSenderProfile] = useState<'partnerships' | 'pr' | 'transactional'>('partnerships');
-  const [inviteResult, setInviteResult] = useState<BrandInviteAdmin | null>(null);
+  const [invitePreview, setInvitePreview] = useState<BrandInviteBatchPreview | null>(null);
+  const [inviteResult, setInviteResult] = useState<BrandInviteBatchSendResult | null>(null);
   const [inviteError, setInviteError] = useState<string | null>(null);
   const [inviteSubmitting, setInviteSubmitting] = useState(false);
   const deferredInviteBrandSearch = useDeferredValue(inviteBrandName.trim());
@@ -62,21 +63,46 @@ export function AdminBrands() {
   );
   const selectedInviteBrand = inviteBrandMatches.find((brand) => brand.id === inviteBrandId) ?? null;
 
-  const submitInvite = async (e: FormEvent) => {
+  const submitInvitePreview = async (e: FormEvent) => {
     e.preventDefault();
     setInviteError(null);
     setInviteSubmitting(true);
     try {
       const existingBrand = selectedInviteBrand ?? exactInviteBrand ?? null;
-      const res = await brandInvitesAPI.adminCreate({
-        email: inviteEmail.trim(),
+      const preview = await brandInvitesAPI.adminPreviewBatch({
+        recipients: inviteRecipients,
         target_type: existingBrand ? 'existing' : 'new',
         brand_id: existingBrand?.id ?? null,
         brand_name: existingBrand ? null : inviteBrandName.trim(),
         member_role: 'owner',
         sender_profile: inviteSenderProfile,
       });
-      setInviteResult(res);
+      setInvitePreview(preview);
+    } catch (err) {
+      const detail = (err as AxiosError<{ detail?: unknown }>)?.response?.data?.detail;
+      setInviteError(translateApiError(t, detail, t('adminBrands.inviteError')));
+    } finally {
+      setInviteSubmitting(false);
+    }
+  };
+
+  const confirmInviteBatch = async () => {
+    if (!invitePreview?.confirmation_token || invitePreview.send_emails.length === 0) return;
+    setInviteError(null);
+    setInviteSubmitting(true);
+    try {
+      const existingBrand = selectedInviteBrand ?? exactInviteBrand ?? null;
+      const result = await brandInvitesAPI.adminCreateBatch({
+        emails: invitePreview.send_emails,
+        confirmation_token: invitePreview.confirmation_token,
+        target_type: existingBrand ? 'existing' : 'new',
+        brand_id: existingBrand?.id ?? null,
+        brand_name: existingBrand ? null : inviteBrandName.trim(),
+        member_role: 'owner',
+        sender_profile: inviteSenderProfile,
+      });
+      setInviteResult(result);
+      setInvitePreview(null);
     } catch (err) {
       const detail = (err as AxiosError<{ detail?: unknown }>)?.response?.data?.detail;
       setInviteError(translateApiError(t, detail, t('adminBrands.inviteError')));
@@ -87,11 +113,12 @@ export function AdminBrands() {
 
   const closeInvite = () => {
     setShowInviteModal(false);
-    setInviteEmail('');
+    setInviteRecipients('');
     setInviteBrandName('');
     setInviteBrandId(null);
     setInviteBrandFocused(false);
     setInviteSenderProfile('partnerships');
+    setInvitePreview(null);
     setInviteResult(null);
     setInviteError(null);
   };
@@ -602,7 +629,7 @@ export function AdminBrands() {
 
       {showInviteModal && (
         <ModalOverlay onClose={closeInvite}>
-          <div className="bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900 rounded-2xl w-full max-w-lg border border-white/20 shadow-2xl overflow-hidden">
+          <div className="flex max-h-[calc(100vh-2rem)] w-full max-w-2xl flex-col overflow-hidden rounded-2xl border border-white/20 bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900 shadow-2xl">
             <div className="flex items-center justify-between p-6 border-b border-white/10">
               <div className="flex items-center gap-2">
                 <Send className="w-5 h-5 text-purple-400" />
@@ -613,23 +640,44 @@ export function AdminBrands() {
               </button>
             </div>
             {inviteResult ? (
-              <div className="p-6 space-y-4">
-                <p className="text-green-300 text-sm">{t('adminBrands.inviteSent', { email: inviteResult.email })}</p>
-                <div className="flex items-center gap-2">
-                  <input
-                    readOnly
-                    value={inviteResult.invite_url || ''}
-                    className="flex-1 px-3 py-2 bg-white/5 border border-white/20 rounded-lg text-gray-300 text-sm"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => inviteResult.invite_url && navigator.clipboard.writeText(inviteResult.invite_url)}
-                    className="p-2 bg-white/10 hover:bg-white/20 rounded-lg text-gray-300 transition-all"
-                    title={t('adminBrands.inviteCopy')}
-                  >
-                    <Copy className="w-4 h-4" />
-                  </button>
+              <div className="space-y-4 overflow-y-auto p-6">
+                <div className="flex items-start gap-3 rounded-xl border border-green-400/20 bg-green-400/10 p-4">
+                  <CheckCircle className="mt-0.5 h-5 w-5 shrink-0 text-green-300" />
+                  <div>
+                    <p className="font-medium text-green-200">
+                      {t('adminBrands.inviteBatchSent', { count: inviteResult.invites.length })}
+                    </p>
+                    {inviteResult.skipped_existing.length > 0 && (
+                      <p className="mt-1 text-xs text-green-200/70">
+                        {t('adminBrands.inviteBatchSkippedExisting', { count: inviteResult.skipped_existing.length })}
+                      </p>
+                    )}
+                  </div>
                 </div>
+                {inviteResult.invites.length > 0 && (
+                  <div className="max-h-72 space-y-2 overflow-y-auto pr-1">
+                    {inviteResult.invites.map((invite) => (
+                      <div key={invite.id} className="flex items-center gap-3 rounded-xl border border-white/10 bg-white/5 p-3">
+                        <div className="min-w-0 flex-1">
+                          <p className="truncate text-sm font-medium text-white">{invite.email}</p>
+                          <p className={`mt-0.5 text-xs ${invite.send_status === 'sent' ? 'text-green-300' : 'text-amber-300'}`}>
+                            {t(`adminBrands.inviteStatus_${invite.send_status}`)}
+                          </p>
+                        </div>
+                        {invite.invite_url && (
+                          <button
+                            type="button"
+                            onClick={() => navigator.clipboard.writeText(invite.invite_url || '')}
+                            className="rounded-lg bg-white/10 p-2 text-gray-300 transition-all hover:bg-white/20"
+                            title={t('adminBrands.inviteCopy')}
+                          >
+                            <Copy className="h-4 w-4" />
+                          </button>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
                 <div className="flex justify-end">
                   <button type="button" onClick={closeInvite} className="px-5 py-2.5 bg-purple-600 hover:bg-purple-700 text-white rounded-xl transition-all">
                     {t('adminBrands.inviteClose')}
@@ -637,17 +685,21 @@ export function AdminBrands() {
                 </div>
               </div>
             ) : (
-              <form onSubmit={submitInvite} className="p-6 space-y-4">
+              <form onSubmit={submitInvitePreview} className="space-y-4 overflow-y-auto p-6">
                 <div>
                   <label className="block text-sm font-medium text-gray-300 mb-2">{t('adminBrands.inviteEmail')}</label>
-                  <input
-                    type="email"
+                  <textarea
                     required
-                    value={inviteEmail}
-                    onChange={(e) => setInviteEmail(e.target.value)}
-                    placeholder="info@brand.com"
-                    className="w-full px-4 py-2 bg-white/5 border border-white/20 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500"
+                    rows={4}
+                    value={inviteRecipients}
+                    onChange={(e) => {
+                      setInviteRecipients(e.target.value);
+                      setInvitePreview(null);
+                    }}
+                    placeholder={t('adminBrands.inviteEmailsPlaceholder')}
+                    className="w-full resize-y rounded-lg border border-white/20 bg-white/5 px-4 py-3 text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500"
                   />
+                  <p className="mt-1.5 text-xs text-gray-500">{t('adminBrands.inviteEmailsHint')}</p>
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-300 mb-2">{t('adminBrands.inviteBrandName')}</label>
@@ -663,6 +715,7 @@ export function AdminBrands() {
                         onChange={(e) => {
                           setInviteBrandName(e.target.value);
                           setInviteBrandId(null);
+                          setInvitePreview(null);
                         }}
                         placeholder={t('adminBrands.inviteBrandNamePlaceholder')}
                         className="w-full rounded-lg border border-white/20 bg-white/5 py-2 pl-10 pr-4 text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500"
@@ -685,6 +738,7 @@ export function AdminBrands() {
                               setInviteBrandId(brand.id);
                               setInviteBrandName(brand.name);
                               setInviteBrandFocused(false);
+                              setInvitePreview(null);
                             }}
                             className="flex w-full items-center justify-between gap-3 rounded-lg px-3 py-2.5 text-left transition-colors hover:bg-white/10"
                           >
@@ -716,7 +770,10 @@ export function AdminBrands() {
                   <label className="block text-sm font-medium text-gray-300 mb-2">{t('adminBrands.inviteSender')}</label>
                   <select
                     value={inviteSenderProfile}
-                    onChange={(e) => setInviteSenderProfile(e.target.value as 'partnerships' | 'pr' | 'transactional')}
+                    onChange={(e) => {
+                      setInviteSenderProfile(e.target.value as 'partnerships' | 'pr' | 'transactional');
+                      setInvitePreview(null);
+                    }}
                     className="w-full rounded-lg border border-white/20 bg-gray-900 px-4 py-2 text-white focus:outline-none focus:ring-2 focus:ring-purple-500"
                   >
                     <option value="partnerships">{t('adminBrands.inviteSenderPartnerships')}</option>
@@ -724,19 +781,76 @@ export function AdminBrands() {
                     <option value="transactional">{t('adminBrands.inviteSenderTransactional')}</option>
                   </select>
                 </div>
+                {invitePreview && (
+                  <div className="space-y-3 rounded-xl border border-white/15 bg-black/20 p-4">
+                    <div className="flex items-center justify-between gap-3">
+                      <span className="text-sm font-medium text-white">{t('adminBrands.invitePreviewTitle')}</span>
+                      <span className={`rounded-full px-2.5 py-1 text-xs font-medium ${invitePreview.limit_exceeded ? 'bg-red-500/15 text-red-300' : 'bg-green-500/15 text-green-300'}`}>
+                        {t('adminBrands.invitePreviewReady', { count: invitePreview.send_emails.length })}
+                      </span>
+                    </div>
+                    {invitePreview.limit_exceeded && (
+                      <p className="text-sm text-red-300">
+                        {t('adminBrands.invitePreviewLimit', { count: invitePreview.max_recipients })}
+                      </p>
+                    )}
+                    {invitePreview.invalid.length > 0 && (
+                      <div>
+                        <p className="mb-1.5 text-xs font-medium uppercase tracking-wide text-red-300">
+                          {t('adminBrands.invitePreviewInvalid', { count: invitePreview.invalid.length })}
+                        </p>
+                        <div className="max-h-28 space-y-1 overflow-y-auto text-xs text-gray-300">
+                          {invitePreview.invalid.map((item, index) => (
+                            <p key={`${item.value}-${index}`}>
+                              <span className="text-red-200">{item.value}</span>
+                              {' · '}
+                              {t(`adminBrands.inviteIssue_${item.code}`, { suggestion: item.suggestion || '' })}
+                            </p>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                    {invitePreview.duplicates.length > 0 && (
+                      <p className="text-xs text-amber-200">
+                        {t('adminBrands.invitePreviewDuplicates', { count: invitePreview.duplicates.length })}
+                      </p>
+                    )}
+                    {invitePreview.already_invited.length > 0 && (
+                      <p className="text-xs text-cyan-200">
+                        {t('adminBrands.invitePreviewAlreadyInvited', { count: invitePreview.already_invited.length })}
+                      </p>
+                    )}
+                    {invitePreview.confirmation_token && (
+                      <p className="text-xs leading-relaxed text-gray-400">
+                        {t('adminBrands.invitePreviewConfirmation')}
+                      </p>
+                    )}
+                  </div>
+                )}
                 {inviteError && <p className="text-red-400 text-sm">{inviteError}</p>}
-                <div className="flex justify-end gap-3">
+                <div className="flex flex-wrap justify-end gap-3">
                   <button type="button" onClick={closeInvite} className="px-5 py-2.5 bg-white/10 hover:bg-white/20 text-white rounded-xl transition-all">
                     {t('adminBrands.inviteCancel')}
                   </button>
                   <button
                     type="submit"
-                    disabled={inviteSubmitting || !inviteEmail.trim() || !inviteBrandName.trim()}
-                    className="px-5 py-2.5 bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white rounded-xl transition-all disabled:opacity-50 flex items-center gap-2"
+                    disabled={inviteSubmitting || !inviteRecipients.trim() || !inviteBrandName.trim()}
+                    className="flex items-center gap-2 rounded-xl bg-white/10 px-5 py-2.5 text-white transition-all hover:bg-white/20 disabled:opacity-50"
                   >
                     {inviteSubmitting && <Loader2 className="w-4 h-4 animate-spin" />}
-                    {t('adminBrands.inviteSubmit')}
+                    {t(invitePreview ? 'adminBrands.invitePreviewAgain' : 'adminBrands.invitePreviewSubmit')}
                   </button>
+                  {invitePreview?.confirmation_token && (
+                    <button
+                      type="button"
+                      onClick={confirmInviteBatch}
+                      disabled={inviteSubmitting || invitePreview.send_emails.length === 0 || invitePreview.limit_exceeded}
+                      className="flex items-center gap-2 rounded-xl bg-gradient-to-r from-purple-600 to-pink-600 px-5 py-2.5 text-white transition-all hover:from-purple-700 hover:to-pink-700 disabled:opacity-50"
+                    >
+                      {inviteSubmitting && <Loader2 className="h-4 w-4 animate-spin" />}
+                      {t('adminBrands.inviteSubmitCount', { count: invitePreview.send_emails.length })}
+                    </button>
+                  )}
                 </div>
               </form>
             )}
