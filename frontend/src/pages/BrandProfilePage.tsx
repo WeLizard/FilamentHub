@@ -59,6 +59,7 @@ import { Dropdown } from '../components/Dropdown';
 import { FilamentPreview } from '../components/FilamentPreview';
 import { BrandTeamPanel } from '../components/BrandTeamPanel';
 import { BrandLogoFrame } from '../components/BrandLogoFrame';
+import { useDebounce } from '../hooks/useDebounce';
 import type { Filament, FilamentAvailability, Brand, BrandRequest, Preset } from '../types/api';
 import type { AxiosError } from 'axios';
 
@@ -603,7 +604,7 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({ onBack, init
             )}
             <div className="mt-3">
               <button
-                onClick={() => navigate(`/brands/${brandData.id}`)}
+                onClick={() => navigate(`/brands/${brandData.slug}`)}
                 className="inline-flex items-center gap-2 rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 text-sm text-white transition-all hover:bg-white/10"
               >
                 <Eye className="w-4 h-4" />
@@ -1634,6 +1635,7 @@ const BrandSelectionForm: React.FC<BrandSelectionFormProps> = ({ onClose }) => {
   const [newBrandName, setNewBrandName] = useState('');
   const [newBrandSlug, setNewBrandSlug] = useState('');
   const [slugManuallyEdited, setSlugManuallyEdited] = useState(false); // Отслеживаем, редактировал ли пользователь slug вручную
+  const debouncedNewBrandName = useDebounce(newBrandName.trim(), 350);
   const [newBrandDescription, setNewBrandDescription] = useState('');
   // Структурированные поля для подтверждающих документов
   // Автоматически заполняем email компании из email пользователя
@@ -1676,6 +1678,19 @@ const BrandSelectionForm: React.FC<BrandSelectionFormProps> = ({ onClose }) => {
     queryKey: ['brands', 'selection', { search: brandSearch }],
     queryFn: () => brandsAPI.list({ active_only: true, page: 1, size: 100, search: brandSearch || undefined }),
   });
+
+  const { data: suggestedBrandSlug, isFetching: isSuggestingBrandSlug } = useQuery({
+    queryKey: ['brands', 'slug-suggestion', debouncedNewBrandName],
+    queryFn: () => brandsAPI.suggestSlug(debouncedNewBrandName),
+    enabled: isCreatingNew && !slugManuallyEdited && debouncedNewBrandName.length > 0,
+    staleTime: 30_000,
+  });
+
+  useEffect(() => {
+    if (!slugManuallyEdited && suggestedBrandSlug) {
+      setNewBrandSlug(suggestedBrandSlug);
+    }
+  }, [slugManuallyEdited, suggestedBrandSlug]);
 
   // Не предлагаем повторно заявлять права на уже доступный пользователю бренд.
   const accessibleBrandIds = new Set(accessibleBrands.map((brand) => brand.brand_id));
@@ -1921,7 +1936,7 @@ const BrandSelectionForm: React.FC<BrandSelectionFormProps> = ({ onClose }) => {
 
   const handleCreateBrandRequest = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newBrandName.trim() || !newBrandSlug.trim()) {
+    if (!newBrandName.trim()) {
       setError(t('brandProfile.errorFillNameAndSlug'));
       return;
     }
@@ -1950,7 +1965,7 @@ const BrandSelectionForm: React.FC<BrandSelectionFormProps> = ({ onClose }) => {
     await createRequestMutation.mutateAsync({
       request_type: 'create',
       new_brand_name: newBrandName.trim(),
-      new_brand_slug: newBrandSlug.trim().toLowerCase().replace(/\s+/g, '-'),
+      new_brand_slug: newBrandSlug.trim().toLowerCase().replace(/\s+/g, '-') || undefined,
       new_brand_description: newBrandDescription.trim() || undefined,
       new_brand_website: companyWebsite.trim() || undefined, // Используем company_website из блока "Информация о компании"
       message: message.trim() || undefined,
@@ -2010,13 +2025,6 @@ const BrandSelectionForm: React.FC<BrandSelectionFormProps> = ({ onClose }) => {
       proof_text: hasEmployees ? (message.trim() || 'Brand join request') : proofText.trim(),
       files: hasEmployees ? undefined : (localFiles.length > 0 ? localFiles : undefined),
     });
-  };
-
-  const generateSlug = (name: string) => {
-    return name
-      .toLowerCase()
-      .replace(/\s+/g, '-')
-      .replace(/[^a-z0-9-]/g, '');
   };
 
   // Функция для валидации и очистки slug при вводе
@@ -2382,9 +2390,8 @@ const BrandSelectionForm: React.FC<BrandSelectionFormProps> = ({ onClose }) => {
                 value={newBrandName}
                 onChange={(e) => {
                   setNewBrandName(e.target.value);
-                  // Автоматически обновляем slug только если пользователь не редактировал его вручную
                   if (!slugManuallyEdited) {
-                    setNewBrandSlug(generateSlug(e.target.value));
+                    setNewBrandSlug('');
                   }
                 }}
                 required
@@ -2394,7 +2401,7 @@ const BrandSelectionForm: React.FC<BrandSelectionFormProps> = ({ onClose }) => {
             </div>
 
             <div>
-              <label className="block text-gray-300 mb-2 text-sm font-medium">Slug *</label>
+              <label className="block text-gray-300 mb-2 text-sm font-medium">{t('brandProfile.slugLabel')}</label>
               <input
                 type="text"
                 value={newBrandSlug}
@@ -2404,9 +2411,11 @@ const BrandSelectionForm: React.FC<BrandSelectionFormProps> = ({ onClose }) => {
                   setNewBrandSlug(sanitized);
                   setSlugManuallyEdited(true); // Помечаем, что пользователь редактирует slug вручную
                 }}
-                required
+                onBlur={() => {
+                  if (!newBrandSlug.trim()) setSlugManuallyEdited(false);
+                }}
                 className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all"
-                placeholder="thermplast"
+                placeholder={isSuggestingBrandSlug ? '…' : 'thermplast'}
               />
               <p className="mt-1 text-xs text-gray-400">
                 {t('brandProfile.slugHint')}

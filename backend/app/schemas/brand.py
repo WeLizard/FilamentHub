@@ -24,7 +24,7 @@ class BrandBase(BaseModel):
 class BrandCreate(BrandBase):
     """Schema for creating Brand."""
 
-    pass
+    slug: str | None = Field(None, max_length=100)
 
 
 class BrandUpdate(BaseModel):
@@ -84,3 +84,16 @@ class BrandUsageResponse(BaseModel):
     spools_tracked: int
     total_preset_usage: int
     presets_count: int
+
+
+class BrandSlugSuggestionResponse(BaseModel):
+    """Server-owned suggestion for a new public brand URL."""
+
+    slug: str
+
+
+class BrandSlugRename(BaseModel):
+    """Explicit administrative rename of a published brand URL."""
+
+    slug: str = Field(..., min_length=1, max_length=100)
+    expected_current_slug: str = Field(..., min_length=1, max_length=100)

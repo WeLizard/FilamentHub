@@ -187,7 +187,7 @@ function AppContent() {
           }
         />
         <Route
-          path="/brands/:id"
+          path="/brands/:identifier"
           element={
             <Layout>
               <Suspense fallback={<PageLoader />}>

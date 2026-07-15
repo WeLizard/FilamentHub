@@ -17,6 +17,7 @@ from app.core.errors import (
     ERR_BRAND_REQUEST_PENDING_CREATE,
     ERR_BRAND_REQUEST_PENDING_JOIN,
     ERR_BRAND_SLUG_EXISTS,
+    ERR_BRAND_SLUG_INVALID,
     ERR_DELETE_OWN_FILES_ONLY,
     ERR_DOCUMENTS_REQUIRED,
     ERR_FILE_NOT_FOUND_IN_REQUEST,
@@ -39,6 +40,7 @@ from app.schemas.brand_request import (
     BrandRequestResponse,
     BrandRequestUpdate,
 )
+from app.services.brand_slug_service import choose_brand_slug
 from app.services.email_validator import is_email_requiring_documents, normalize_website_url
 from app.services.file_service import (
     delete_proof_files,
@@ -66,6 +68,8 @@ async def create_brand_request(
     # was imported only inside the CREATE branch, so a JOIN request with a
     # message/proof_text raised UnboundLocalError → HTTP 500.
     from app.services.preset_moderation import validate_text_field
+
+    resolved_new_brand_slug = data.new_brand_slug
 
     # Валидация в зависимости от типа заявки
     if data.request_type == BrandRequestType.JOIN:
@@ -128,21 +132,24 @@ async def create_brand_request(
             raise_error(status.HTTP_400_BAD_REQUEST, ERR_BRAND_REQUEST_PENDING_JOIN)
 
     elif data.request_type == BrandRequestType.CREATE:
-        if not data.new_brand_name or not data.new_brand_slug:
+        if not data.new_brand_name:
             raise_error(status.HTTP_400_BAD_REQUEST, ERR_BRAND_CREATE_NAME_SLUG_REQUIRED)
 
-        # Проверяем, что slug бренда не существует
-        existing_brand = await db.execute(
-            select(Brand).where(Brand.slug == data.new_brand_slug)
+        resolved_new_brand_slug, available = await choose_brand_slug(
+            db,
+            name=data.new_brand_name,
+            requested_slug=data.new_brand_slug,
         )
-        if existing_brand.scalar_one_or_none():
+        if resolved_new_brand_slug is None:
+            raise_error(status.HTTP_400_BAD_REQUEST, ERR_BRAND_SLUG_INVALID)
+        if not available:
             raise_error(status.HTTP_400_BAD_REQUEST, ERR_BRAND_SLUG_EXISTS)
 
         # Проверяем, что у пользователя еще нет активной заявки на создание этого бренда
         existing_request = await db.execute(
             select(BrandRequest).where(
                 BrandRequest.user_id == current_user.id,
-                BrandRequest.new_brand_slug == data.new_brand_slug,
+                BrandRequest.new_brand_slug == resolved_new_brand_slug,
                 BrandRequest.request_type == BrandRequestType.CREATE,
                 BrandRequest.status == BrandRequestStatus.PENDING,
             )
@@ -220,7 +227,7 @@ async def create_brand_request(
         request_type=data.request_type,
         brand_id=data.brand_id,
         new_brand_name=data.new_brand_name,
-        new_brand_slug=data.new_brand_slug,
+        new_brand_slug=resolved_new_brand_slug,
         new_brand_description=data.new_brand_description,
         new_brand_website=new_brand_website_normalized,  # Сохраняем нормализованный URL
         message=data.message,
@@ -399,6 +406,17 @@ async def update_brand_request(
             await backfill_brand_qr_codes(brand, db)
         elif request.request_type == BrandRequestType.CREATE:
             # Создаем бренд и привязываем пользователя
+            selected_slug, available = await choose_brand_slug(
+                db,
+                name=request.new_brand_name or "",
+                requested_slug=request.new_brand_slug,
+            )
+            if selected_slug is None:
+                raise_error(status.HTTP_400_BAD_REQUEST, ERR_BRAND_SLUG_INVALID)
+            if not available:
+                raise_error(status.HTTP_400_BAD_REQUEST, ERR_BRAND_SLUG_EXISTS)
+            request.new_brand_slug = selected_slug
+
             social_media = None
             if request.social_media_urls:
                 try:

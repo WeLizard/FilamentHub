@@ -287,7 +287,7 @@ export const FilamentDetailPage: React.FC = () => {
               {brandData && (
                 <>
                   <span
-                    onClick={() => navigate(`/brands/${brandData.id}`)}
+                    onClick={() => navigate(`/brands/${brandData.slug}`)}
                     className={`${brandData.verified ? 'text-green-400' : 'text-purple-300'} font-bold text-lg md:text-2xl hover:underline cursor-pointer transition-colors`}
                   >
                     {brandData.name}

@@ -20,6 +20,9 @@ from app.core.errors import (
     ERR_BRAND_NOT_FOUND,
     ERR_BRAND_REQUEST_NOT_FOUND,
     ERR_BRAND_SLUG_EXISTS,
+    ERR_BRAND_SLUG_INVALID,
+    ERR_BRAND_SLUG_RENAME_REQUIRED,
+    ERR_BRAND_SLUG_STALE,
     ERR_DATA_REQUIRED,
     ERR_DB_IMPORT_ERROR,
     ERR_DUMP_NOT_FOUND,
@@ -62,7 +65,7 @@ from app.models.printer_request import PrinterRequest, PrinterRequestStatus
 from app.models.subscription import Subscription, SubscriptionStatus
 from app.models.user import User, UserRole
 from app.schemas.bad_word import BadWordCreate, BadWordListResponse, BadWordResponse, BadWordUpdate
-from app.schemas.brand import BrandListResponse, BrandResponse, BrandUpdate
+from app.schemas.brand import BrandListResponse, BrandResponse, BrandSlugRename, BrandUpdate
 from app.schemas.brand_request import (
     BrandRequestListResponse,
     BrandRequestResponse,
@@ -95,6 +98,7 @@ from app.schemas.printer_request import (
     PrinterRequestUpdate,
 )
 from app.schemas.user import UserResponse
+from app.services.brand_slug_service import apply_brand_slug_rename, choose_brand_slug
 from app.services.database_service import (
     apply_migration as apply_migration_service,
 )
@@ -310,6 +314,11 @@ async def update_brand_admin(
     from app.services.preset_moderation import validate_text_field
     update_data = data.model_dump(exclude_unset=True)
 
+    requested_slug = update_data.get("slug")
+    if requested_slug is not None and requested_slug != brand.slug:
+        raise_error(status.HTTP_409_CONFLICT, ERR_BRAND_SLUG_RENAME_REQUIRED)
+    update_data.pop("slug", None)
+
     if "name" in update_data:
         is_valid, error_msg = await validate_text_field(update_data["name"], db, "brand_name")
         if not is_valid:
@@ -320,14 +329,6 @@ async def update_brand_admin(
         if not is_valid:
             raise HTTPException(status_code=400, detail=error_msg)
 
-    # Проверка уникальности slug, если он изменяется
-    if "slug" in update_data and update_data["slug"] != brand.slug:
-        existing_brand = await db.execute(
-            select(Brand).where(Brand.slug == update_data["slug"]).where(Brand.id != brand_id)
-        )
-        if existing_brand.scalar_one_or_none():
-            raise_error(status.HTTP_400_BAD_REQUEST, ERR_BRAND_SLUG_EXISTS)
-
     # Update fields
     for field, value in update_data.items():
         setattr(brand, field, value)
@@ -335,6 +336,43 @@ async def update_brand_admin(
     await db.commit()
     await db.refresh(brand)
 
+    return BrandResponse.model_validate(brand)
+
+
+@router.post("/brands/{brand_id}/slug", response_model=BrandResponse)
+async def rename_brand_slug_admin(
+    brand_id: int,
+    data: BrandSlugRename,
+    admin: Annotated[User, Depends(get_current_admin_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> BrandResponse:
+    """Rename a published brand URL and preserve the previous slug as an alias."""
+    del admin
+    brand = await db.scalar(
+        select(Brand).where(Brand.id == brand_id).with_for_update()
+    )
+    if brand is None:
+        raise_error(status.HTTP_404_NOT_FOUND, ERR_BRAND_NOT_FOUND)
+    if data.expected_current_slug != brand.slug:
+        raise_error(status.HTTP_409_CONFLICT, ERR_BRAND_SLUG_STALE)
+
+    selected_slug, available = await choose_brand_slug(
+        db,
+        name=brand.name,
+        requested_slug=data.slug,
+        exclude_brand_id=brand.id,
+    )
+    if selected_slug is None:
+        raise_error(status.HTTP_400_BAD_REQUEST, ERR_BRAND_SLUG_INVALID)
+    if not available:
+        raise_error(status.HTTP_409_CONFLICT, ERR_BRAND_SLUG_EXISTS)
+
+    try:
+        await apply_brand_slug_rename(db, brand=brand, new_slug=selected_slug)
+    except ValueError:
+        raise_error(status.HTTP_409_CONFLICT, ERR_BRAND_SLUG_EXISTS)
+    await db.commit()
+    await db.refresh(brand)
     return BrandResponse.model_validate(brand)
 
 
@@ -1116,18 +1154,22 @@ async def update_brand_request(
 
         elif request.request_type == BrandRequestType.CREATE:
             # Для CREATE: создаем новый бренд и привязываем пользователя
-            if not request.new_brand_name or not request.new_brand_slug:
+            if not request.new_brand_name:
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
                     detail={"code": ERR_BRAND_NAME_SLUG_REQUIRED},
                 )
 
-            # Проверяем, что бренд еще не создан
-            existing_brand = await db.execute(
-                select(Brand).where(Brand.slug == request.new_brand_slug)
+            selected_slug, available = await choose_brand_slug(
+                db,
+                name=request.new_brand_name,
+                requested_slug=request.new_brand_slug,
             )
-            if existing_brand.scalar_one_or_none():
+            if selected_slug is None:
+                raise_error(status.HTTP_400_BAD_REQUEST, ERR_BRAND_SLUG_INVALID)
+            if not available:
                 raise_error(status.HTTP_400_BAD_REQUEST, ERR_BRAND_SLUG_EXISTS)
+            request.new_brand_slug = selected_slug
 
             # Создаем новый бренд
             new_brand = Brand(

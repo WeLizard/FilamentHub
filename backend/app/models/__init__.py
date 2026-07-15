@@ -5,6 +5,7 @@ from app.models.bad_word import BadWord
 from app.models.brand import Brand
 from app.models.brand_invite import BrandInvite
 from app.models.brand_request import BrandRequest, BrandRequestStatus, BrandRequestType
+from app.models.brand_slug_redirect import BrandSlugRedirect
 from app.models.bundle import (
     Bundle,
     BundleImport,
@@ -71,6 +72,7 @@ __all__ = [
     "BrandRequest",
     "BrandRequestStatus",
     "BrandRequestType",
+    "BrandSlugRedirect",
     "Bundle",
     "BundleImport",
     "BundleImportStatus",

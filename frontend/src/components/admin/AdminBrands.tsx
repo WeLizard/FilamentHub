@@ -24,6 +24,7 @@ export function AdminBrands() {
   const [editingBrand, setEditingBrand] = useState<Brand | null>(null);
   const [editName, setEditName] = useState('');
   const [editSlug, setEditSlug] = useState('');
+  const [showSlugRename, setShowSlugRename] = useState(false);
   const [editDescription, setEditDescription] = useState('');
   const [editWebsite, setEditWebsite] = useState('');
   const [editLogoUrl, setEditLogoUrl] = useState('');
@@ -168,6 +169,25 @@ export function AdminBrands() {
     },
   });
 
+  const renameSlugMutation = useMutation({
+    mutationFn: ({ id, slug, expectedCurrentSlug }: { id: number; slug: string; expectedCurrentSlug: string }) =>
+      adminAPI.renameBrandSlug(id, {
+        slug,
+        expected_current_slug: expectedCurrentSlug,
+      }),
+    onSuccess: (updatedBrand) => {
+      queryClient.invalidateQueries({ queryKey: ['admin-brands'] });
+      queryClient.invalidateQueries({ queryKey: ['brand'] });
+      setEditingBrand(updatedBrand);
+      setEditSlug(updatedBrand.slug);
+      setShowSlugRename(false);
+      setEditError(null);
+    },
+    onError: (error: AxiosError<{ detail: unknown }>) => {
+      setEditError(translateApiError(t, error?.response?.data?.detail, t('adminBrands.slugRenameError')));
+    },
+  });
+
   // Инициализация формы редактирования
   useEffect(() => {
     if (editingBrand) {
@@ -177,6 +197,7 @@ export function AdminBrands() {
       setEditWebsite(editingBrand.website || '');
       setEditLogoUrl(editingBrand.logo_url || '');
       setEditLogoBg(editingBrand.logo_bg || '');
+      setShowSlugRename(false);
       setEditError(null);
     }
   }, [editingBrand]);
@@ -190,18 +211,6 @@ export function AdminBrands() {
 
     if (!editName.trim()) {
       setEditError(t('adminBrands.nameRequired'));
-      return;
-    }
-
-    if (!editSlug.trim()) {
-      setEditError(t('adminBrands.slugRequired'));
-      return;
-    }
-
-    // Валидация slug (только латиница, цифры, дефисы и подчеркивания)
-    const slugRegex = /^[a-z0-9_-]+$/;
-    if (!slugRegex.test(editSlug.toLowerCase())) {
-      setEditError(t('adminBrands.slugInvalid'));
       return;
     }
 
@@ -219,12 +228,29 @@ export function AdminBrands() {
       id: editingBrand.id,
       data: {
         name: editName.trim(),
-        slug: editSlug.trim().toLowerCase(),
         description: editDescription.trim() || null,
         website: editWebsite.trim() || null,
         logo_url: editLogoUrl.trim() || null,
         logo_bg: editLogoBg.trim() || null,
       },
+    });
+  };
+
+  const handleRenameSlug = () => {
+    if (!editingBrand) return;
+    const nextSlug = editSlug.trim().toLowerCase();
+    if (!nextSlug) {
+      setEditError(t('adminBrands.slugRequired'));
+      return;
+    }
+    if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(nextSlug) || /^\d+$/.test(nextSlug)) {
+      setEditError(t('adminBrands.slugInvalid'));
+      return;
+    }
+    renameSlugMutation.mutate({
+      id: editingBrand.id,
+      slug: nextSlug,
+      expectedCurrentSlug: editingBrand.slug,
     });
   };
 
@@ -330,7 +356,7 @@ export function AdminBrands() {
                       </span>
                     )}
                     <button
-                      onClick={() => navigate(`/brands/${brand.id}`)}
+                      onClick={() => navigate(`/brands/${brand.slug}`)}
                       className="flex items-center space-x-1 px-2 py-1 rounded bg-purple-500/20 text-purple-300 hover:bg-purple-500/30 text-xs transition-all"
                       title={t('adminBrands.openPageTitle')}
                     >
@@ -460,19 +486,59 @@ export function AdminBrands() {
               </div>
 
               <div>
-                <label htmlFor="edit-slug" className="block text-sm font-medium text-gray-300 mb-2">
-                  Slug (URL) <span className="text-red-400">*</span>
-                </label>
-                <input
-                  id="edit-slug"
-                  type="text"
-                  value={editSlug}
-                  onChange={(e) => setEditSlug(e.target.value.toLowerCase().replace(/[^a-z0-9_-]/g, ''))}
-                  required
-                  className="w-full px-4 py-2 bg-white/5 border border-white/20 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500"
-                  placeholder="brand-slug"
-                />
-                <p className="text-xs text-gray-500 mt-1">{t('adminBrands.slugHint')}</p>
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <span className="block text-sm font-medium text-gray-300">{t('adminBrands.publicUrl')}</span>
+                    <span className="text-sm font-mono text-cyan-300">/brands/{editingBrand.slug}</span>
+                  </div>
+                  {!showSlugRename && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setEditSlug(editingBrand.slug);
+                        setShowSlugRename(true);
+                        setEditError(null);
+                      }}
+                      className="rounded-lg border border-white/15 bg-white/5 px-3 py-2 text-sm text-gray-200 transition hover:bg-white/10"
+                    >
+                      {t('adminBrands.changePublicUrl')}
+                    </button>
+                  )}
+                </div>
+                {showSlugRename && (
+                  <div className="mt-3 rounded-xl border border-amber-400/30 bg-amber-500/10 p-3">
+                    <p className="mb-3 text-xs text-amber-100">{t('adminBrands.slugRenameWarning')}</p>
+                    <div className="flex flex-col gap-2 sm:flex-row">
+                      <input
+                        id="edit-slug"
+                        type="text"
+                        value={editSlug}
+                        onChange={(e) => setEditSlug(e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, ''))}
+                        className="min-w-0 flex-1 rounded-lg border border-white/20 bg-black/20 px-4 py-2 font-mono text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-amber-400"
+                        placeholder="brand-slug"
+                      />
+                      <button
+                        type="button"
+                        onClick={handleRenameSlug}
+                        disabled={renameSlugMutation.isPending || editSlug === editingBrand.slug}
+                        className="rounded-lg bg-amber-500 px-4 py-2 text-sm font-medium text-gray-950 transition hover:bg-amber-400 disabled:opacity-50"
+                      >
+                        {renameSlugMutation.isPending ? t('adminBrands.saving') : t('adminBrands.confirmSlugRename')}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setEditSlug(editingBrand.slug);
+                          setShowSlugRename(false);
+                          setEditError(null);
+                        }}
+                        className="rounded-lg border border-white/15 px-3 py-2 text-sm text-gray-300 transition hover:bg-white/10"
+                      >
+                        {t('adminBrands.cancel')}
+                      </button>
+                    </div>
+                  </div>
+                )}
               </div>
 
               <div>

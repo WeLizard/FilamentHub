@@ -55,6 +55,7 @@ from app.schemas.brand_invite import (
     BrandInviteCreate,
     BrandInvitePublicResponse,
 )
+from app.services.brand_slug_service import suggest_brand_slug
 from app.services.email_service import send_brand_invite_email, send_brand_team_invite_email
 from app.services.email_validator import validate_email_domain
 from app.services.qr_service import backfill_brand_qr_codes
@@ -307,12 +308,7 @@ async def _resolve_invite_target(
     )
     if duplicate is not None:
         raise_error(409, ERR_BRAND_INVITE_TARGET_CONFLICT, {"brand_id": duplicate})
-    proposed_slug = await generate_unique_slug(
-        db=db,
-        model=Brand,
-        source=normalized_name,
-        fallback="brand",
-    )
+    proposed_slug = await suggest_brand_slug(db, normalized_name)
     return None, organization, normalized_name, proposed_slug
 
 
@@ -490,12 +486,7 @@ async def accept_brand_invite(
         )
         if existing is not None:
             raise_error(409, ERR_BRAND_INVITE_TARGET_CONFLICT, {"brand_id": existing})
-        slug = await generate_unique_slug(
-            db=db,
-            model=Brand,
-            source=invite.proposed_slug or brand_name,
-            fallback="brand",
-        )
+        slug = await suggest_brand_slug(db, invite.proposed_slug or brand_name)
         brand = Brand(name=brand_name, slug=slug, verified=False, active=True)
         db.add(brand)
         await db.flush()

@@ -17,6 +17,8 @@ from app.core.errors import (
     ERR_BRAND_NAME_EXISTS,
     ERR_BRAND_NOT_FOUND,
     ERR_BRAND_SLUG_EXISTS,
+    ERR_BRAND_SLUG_INVALID,
+    ERR_BRAND_SLUG_RENAME_REQUIRED,
     ERR_FILE_EXT_NOT_ALLOWED,
     ERR_FILE_SIZE_EXCEEDED,
     ERR_INVALID_FILE_PATH,
@@ -27,6 +29,7 @@ from app.core.utils import like_pattern
 from app.db.session import get_db
 from app.models.brand import Brand
 from app.models.filament import Filament
+from app.models.organization import OrganizationMembership
 from app.models.preset import Preset
 from app.models.preset_printer import PresetPrinter
 from app.models.printer import Printer
@@ -36,9 +39,15 @@ from app.schemas.brand import (
     BrandCreate,
     BrandListResponse,
     BrandResponse,
+    BrandSlugSuggestionResponse,
     BrandUpdate,
     BrandUsageResponse,
     PopularPrinterItem,
+)
+from app.services.brand_slug_service import (
+    choose_brand_slug,
+    resolve_brand_identifier,
+    suggest_brand_slug,
 )
 from app.services.file_service import (
     BRAND_LOGO_ALLOWED_EXTENSIONS,
@@ -99,15 +108,23 @@ async def list_brands(
     )
 
 
-@router.get("/{brand_id}", response_model=BrandResponse)
+@router.get("/slug-suggestion", response_model=BrandSlugSuggestionResponse)
+async def get_brand_slug_suggestion(
+    db: Annotated[AsyncSession, Depends(get_db)],
+    name: str = Query(..., min_length=1, max_length=100),
+) -> BrandSlugSuggestionResponse:
+    """Suggest a canonical, currently available slug for a new brand."""
+    return BrandSlugSuggestionResponse(slug=await suggest_brand_slug(db, name))
+
+
+@router.get("/{identifier}", response_model=BrandResponse)
 async def get_brand(
-    brand_id: int,
+    identifier: str,
     db: Annotated[AsyncSession, Depends(get_db)],
     include_employees_count: bool = Query(False, description="Включить количество сотрудников"),
 ) -> BrandResponse:
-    """Получить производителя по ID."""
-    result = await db.execute(select(Brand).where(Brand.id == brand_id))
-    brand = result.scalar_one_or_none()
+    """Resolve a brand by numeric ID, current slug or historical slug."""
+    brand, _redirected_from = await resolve_brand_identifier(db, identifier)
 
     if not brand:
         raise_error(404, ERR_BRAND_NOT_FOUND)
@@ -116,11 +133,25 @@ async def get_brand(
 
     # Если запрошено количество сотрудников - добавляем его
     if include_employees_count:
-        from app.models.user import User
-        employees_count_result = await db.execute(
-            select(func.count(User.id)).where(User.brand_id == brand.id)
-        )
-        employees_count = employees_count_result.scalar() or 0
+        if brand.organization_id is not None:
+            employees_count = int(
+                await db.scalar(
+                    select(func.count(OrganizationMembership.id)).where(
+                        OrganizationMembership.organization_id == brand.organization_id,
+                        OrganizationMembership.active.is_(True),
+                    )
+                )
+                or 0
+            )
+        else:
+            # Compatibility fallback for brands that predate the organization
+            # backfill. ``User.brand_id`` is never used as authorization.
+            employees_count = int(
+                await db.scalar(
+                    select(func.count(User.id)).where(User.brand_id == brand.id)
+                )
+                or 0
+            )
         response.employees_count = employees_count
 
     return response
@@ -233,15 +264,21 @@ async def create_brand(
         if not is_valid:
             raise HTTPException(status_code=400, detail=error_msg)
 
-    # Check if slug exists
-    existing = await db.execute(select(Brand).where(Brand.slug == data.slug))
-    if existing.scalar_one_or_none():
+    selected_slug, available = await choose_brand_slug(
+        db,
+        name=data.name,
+        requested_slug=data.slug,
+    )
+    if selected_slug is None:
+        raise_error(400, ERR_BRAND_SLUG_INVALID)
+    if not available:
         raise_error(400, ERR_BRAND_SLUG_EXISTS)
 
     # Verification is a server-controlled state. Public brand creation must
     # never allow a caller to self-assign the verified manufacturer badge.
     brand_data = data.model_dump()
     brand_data["verified"] = False
+    brand_data["slug"] = selected_slug
 
     # Create brand
     brand = Brand(**brand_data)
@@ -276,11 +313,16 @@ async def update_brand(
 
     update_data = data.model_dump(exclude_unset=True)
 
+    requested_slug = update_data.get("slug")
+    if requested_slug is not None and requested_slug != brand.slug:
+        raise_error(409, ERR_BRAND_SLUG_RENAME_REQUIRED)
+    update_data.pop("slug", None)
+
     # A representative may correct the community-authored name exactly once
     # after the first verified claim. The existing slug is deliberately kept:
     # public links must not break as a side effect of correcting display text.
     if not is_admin:
-        admin_only = {"slug", "verified", "active"}
+        admin_only = {"verified", "active"}
         for field in admin_only:
             update_data.pop(field, None)
 

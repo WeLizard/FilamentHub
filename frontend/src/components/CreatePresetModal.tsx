@@ -1033,7 +1033,7 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
 
   // Мутация для создания бренда
   const createBrandMutation = useMutation({
-    mutationFn: (data: { name: string; slug: string; website?: string }) => brandsAPI.create(data),
+    mutationFn: (data: { name: string; slug?: string; website?: string }) => brandsAPI.create(data),
     onError: (err: AxiosError<{ detail: unknown }>) => {
       setError(translateApiError(t, err?.response?.data?.detail, t('presetModal.errors.createBrand')));
       console.error('Failed to create brand:', err);
@@ -1504,7 +1504,7 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
             const slug = newBrandName.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
             const newBrand = await createBrandMutation.mutateAsync({
               name: newBrandName.trim(),
-              slug: slug,
+              slug: slug || undefined,
               website: newBrandWebsite.trim() || undefined,
             });
             brandIdFromSelection = newBrand.id;
@@ -1518,7 +1518,7 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
             const slug = brandSearch.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
             const newBrand = await createBrandMutation.mutateAsync({
               name: brandSearch.trim(),
-              slug: slug,
+              slug: slug || undefined,
             });
             brandIdFromSelection = newBrand.id;
           } catch (err) {

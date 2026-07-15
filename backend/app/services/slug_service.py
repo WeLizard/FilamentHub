@@ -53,7 +53,7 @@ _CYRILLIC_TRANSLITERATION = str.maketrans(
 )
 
 
-def _slugify(value: str, fallback: str) -> str:
+def slugify(value: str, fallback: str) -> str:
     """
     Convert text to a filesystem/web friendly slug.
 
@@ -96,7 +96,7 @@ async def generate_unique_slug(
     Returns:
         Unique slug string.
     """
-    base_slug = _slugify(source, fallback)
+    base_slug = slugify(source, fallback)
     slug_candidate = base_slug
     counter = 1
 
@@ -109,3 +109,7 @@ async def generate_unique_slug(
             return slug_candidate
         counter += 1
         slug_candidate = f"{base_slug}-{counter}"
+
+
+# Backward-compatible private alias for existing internal imports.
+_slugify = slugify

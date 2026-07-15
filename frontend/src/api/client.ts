@@ -453,14 +453,19 @@ export const brandsAPI = {
     return response.data;
   },
 
-  get: async (id: number, includeEmployeesCount?: boolean) => {
-    const response = await api.get<Brand>(`/brands/${id}`, { 
+  get: async (identifier: number | string, includeEmployeesCount?: boolean) => {
+    const response = await api.get<Brand>(`/brands/${encodeURIComponent(String(identifier))}`, {
       params: includeEmployeesCount ? { include_employees_count: true } : undefined 
     });
     return response.data;
   },
 
-  create: async (data: { name: string; slug: string; description?: string; website?: string; logo_url?: string }) => {
+  suggestSlug: async (name: string): Promise<string> => {
+    const response = await api.get<{ slug: string }>('/brands/slug-suggestion', { params: { name } });
+    return response.data.slug;
+  },
+
+  create: async (data: { name: string; slug?: string; description?: string; website?: string; logo_url?: string }) => {
     const response = await api.post<Brand>('/brands/', data);
     return response.data;
   },
@@ -1357,7 +1362,6 @@ export const adminAPI = {
 
   updateBrand: async (id: number, data: {
     name?: string;
-    slug?: string;
     description?: string | null;
     website?: string | null;
     logo_url?: string | null;
@@ -1366,6 +1370,14 @@ export const adminAPI = {
     active?: boolean;
   }): Promise<Brand> => {
     const response = await api.patch<Brand>(`/admin/brands/${id}`, data);
+    return response.data;
+  },
+
+  renameBrandSlug: async (
+    id: number,
+    data: { slug: string; expected_current_slug: string },
+  ): Promise<Brand> => {
+    const response = await api.post<Brand>(`/admin/brands/${id}/slug`, data);
     return response.data;
   },
 
@@ -2047,6 +2059,7 @@ export const adminCommunicationsAPI = {
     const response = await api.get<EmailThreadListResponse>('/admin/communications/email-threads', { params });
     return response.data;
   },
+
   createEmailThread: async (data: {
     to: string;
     participant_name?: string;

@@ -30,7 +30,7 @@ const hostOf = (url: string): string => {
 
 export const BrandDetailPage: React.FC = () => {
   const { t } = useTranslation();
-  const { id } = useParams<{ id: string }>();
+  const { identifier } = useParams<{ identifier: string }>();
   const navigate = useNavigate();
   const [searchQuery, setSearchQuery] = useState('');
   const [materialTypeFilter, setMaterialTypeFilter] = useState<string | null>(null);
@@ -42,9 +42,9 @@ export const BrandDetailPage: React.FC = () => {
     isLoading: isLoadingBrand,
     error: brandError,
   } = useQuery({
-    queryKey: ['brand', id],
-    queryFn: () => brandsAPI.get(Number(id)),
-    enabled: !!id,
+    queryKey: ['brand', identifier],
+    queryFn: () => brandsAPI.get(identifier!),
+    enabled: !!identifier,
   });
 
   // Загружаем филаменты бренда
@@ -53,22 +53,22 @@ export const BrandDetailPage: React.FC = () => {
     isLoading: isLoadingFilaments,
     error: filamentsError,
   } = useQuery({
-    queryKey: ['brand-filaments', id, searchQuery, materialTypeFilter],
+    queryKey: ['brand-filaments', brand?.id, searchQuery, materialTypeFilter],
     queryFn: () =>
       filamentsAPI.list({
         page: 1,
         size: 100,
-        brand_id: Number(id),
+        brand_id: brand!.id,
         search: searchQuery || undefined,
         material_type: materialTypeFilter || undefined,
       }),
-    enabled: !!id,
+    enabled: !!brand?.id,
   });
 
   // Загружаем рейтинги для всех филаментов бренда (хук должен быть ДО early returns)
   const filamentIds = (filamentsData?.items || []).map((f) => f.id);
   const { data: ratingsData } = useQuery({
-    queryKey: ['brand-ratings', id, filamentIds],
+    queryKey: ['brand-ratings', brand?.id, filamentIds],
     queryFn: async () => {
       const stats = await Promise.all(
         filamentIds.map((fid) => filamentReviewsAPI.getStats(fid).catch(() => null))
@@ -81,6 +81,12 @@ export const BrandDetailPage: React.FC = () => {
   useEffect(() => {
     setIsBrandLogoVisible(Boolean(brand?.logo_url));
   }, [brand?.logo_url]);
+
+  useEffect(() => {
+    if (brand && identifier !== brand.slug) {
+      navigate(`/brands/${brand.slug}`, { replace: true });
+    }
+  }, [brand, identifier, navigate]);
 
   if (isLoadingBrand) {
     return (
@@ -152,7 +158,7 @@ export const BrandDetailPage: React.FC = () => {
         title={brand.name}
         description={seoDescription}
         image={brand.logo_url || undefined}
-        url={`/brands/${id}`}
+        url={`/brands/${brand.slug}`}
         type="website"
       />
       <div className="space-y-6">

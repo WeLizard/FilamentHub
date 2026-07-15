@@ -383,7 +383,7 @@ const MaterialCard: React.FC<MaterialCardProps> = ({
                 <span
                   onClick={(e) => {
                     e.stopPropagation();
-                    navigate(`/brands/${brand.id}`);
+                    navigate(`/brands/${brand.slug}`);
                   }}
                     className={`${brand.verified ? "text-green-400" : "text-purple-300"} font-semibold hover:underline cursor-pointer transition-colors text-sm sm:text-base`}
                 >
