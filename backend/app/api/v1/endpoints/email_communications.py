@@ -7,6 +7,7 @@ import hmac
 import json
 import logging
 import re
+import secrets
 import time
 from datetime import datetime, timezone
 from email.utils import parseaddr
@@ -31,12 +32,14 @@ from app.core.errors import (
     ERR_EMAIL_WEBHOOK_NOT_CONFIGURED,
     raise_error,
 )
+from app.core.limiter import limiter
 from app.db.session import get_db
 from app.models.brand_invite import BrandInvite
 from app.models.email_communication import EmailMessage, EmailThread
 from app.models.user import User
 from app.schemas.email_communication import (
     EmailMessageResponse,
+    EmailThreadCreate,
     EmailThreadDetailResponse,
     EmailThreadListResponse,
     EmailThreadReplyCreate,
@@ -58,6 +61,16 @@ _MAX_WEBHOOK_BYTES = 256 * 1024
 _MAX_BODY_CHARS = 100_000
 _WEBHOOK_TIMESTAMP_TOLERANCE_SECONDS = 5 * 60
 _REPLY_TOKEN_PATTERN = re.compile(r"^invite-([A-Za-z0-9_-]{20,64})$")
+_THREAD_TOKEN_PATTERN = re.compile(r"^thread-([A-Za-z0-9_-]{20,64})$")
+_MANUAL_SENDER_PROFILES = {"support", "partnerships", "pr"}
+_DELIVERY_EVENT_STATUSES = {
+    "email.sent": "sent",
+    "email.delivered": "delivered",
+    "email.delivery_delayed": "delayed",
+    "email.bounced": "bounced",
+    "email.complained": "complained",
+}
+_DELIVERY_STATUS_RANK = {"sent": 1, "delayed": 2, "delivered": 3}
 
 
 class _PlainTextParser(HTMLParser):
@@ -220,6 +233,57 @@ def _reply_token(recipients: list[str]) -> str | None:
     return None
 
 
+def _thread_token(recipients: list[str]) -> str | None:
+    inbound_domain = settings.EMAIL_INBOUND_DOMAIN.strip().casefold().lstrip("@")
+    if not inbound_domain:
+        return None
+    for recipient in recipients:
+        _, address = parseaddr(recipient)
+        local, separator, domain = address.rpartition("@")
+        if not separator or domain.casefold().rstrip(".") != inbound_domain:
+            continue
+        match = _THREAD_TOKEN_PATTERN.fullmatch(local)
+        if match:
+            return match.group(1)
+    return None
+
+
+def _sender_profile_for_recipients(recipients: list[str]) -> str:
+    recipient_addresses = {parseaddr(value)[1].casefold() for value in recipients}
+    sender_addresses = {
+        "support": settings.EMAIL_CONTACT,
+        "partnerships": settings.EMAIL_PARTNERSHIPS_FROM,
+        "pr": settings.EMAIL_PR_FROM,
+    }
+    for profile, address in sender_addresses.items():
+        if address.strip().casefold() in recipient_addresses:
+            return profile
+    return "support"
+
+
+def _ensure_thread_reply_token(thread: EmailThread) -> str:
+    if not thread.reply_token:
+        thread.reply_token = secrets.token_urlsafe(24)
+    return thread.reply_token
+
+
+def _thread_reply_address(thread: EmailThread) -> str:
+    inbound_domain = settings.EMAIL_INBOUND_DOMAIN.strip().casefold().lstrip("@")
+    if not inbound_domain:
+        return settings.EMAIL_CONTACT
+    return f"thread-{_ensure_thread_reply_token(thread)}@{inbound_domain}"
+
+
+def _advance_delivery_status(current: str | None, incoming: str) -> str:
+    if current in {"bounced", "complained"}:
+        return current
+    if incoming in {"bounced", "complained"}:
+        return incoming
+    if _DELIVERY_STATUS_RANK.get(incoming, 0) >= _DELIVERY_STATUS_RANK.get(current or "", 0):
+        return incoming
+    return current or incoming
+
+
 def _message_response(message: EmailMessage) -> EmailMessageResponse:
     return EmailMessageResponse(
         id=message.id,
@@ -229,6 +293,7 @@ def _message_response(message: EmailMessage) -> EmailMessageResponse:
         subject=message.subject,
         text_body=message.text_body,
         attachment_metadata=message.attachment_metadata,
+        delivery_status=message.delivery_status,
         read_at=message.read_at,
         created_at=message.created_at,
     )
@@ -239,12 +304,13 @@ def _thread_summary(
     latest: EmailMessage | None,
 ) -> EmailThreadSummaryResponse:
     preview = latest.text_body.replace("\n", " ").strip()[:180] if latest else ""
-    suggested_sender_profile = (
-        thread.invite.sender_profile
-        if thread.invite
-        and thread.invite.sender_profile in {"partnerships", "pr", "transactional"}
-        else "partnerships"
-    )
+    suggested_sender_profile = thread.sender_profile
+    if suggested_sender_profile not in _MANUAL_SENDER_PROFILES:
+        suggested_sender_profile = (
+            thread.invite.sender_profile
+            if thread.invite and thread.invite.sender_profile in _MANUAL_SENDER_PROFILES
+            else "support"
+        )
     return EmailThreadSummaryResponse(
         id=thread.id,
         invite_id=thread.invite_id,
@@ -325,7 +391,24 @@ async def receive_resend_webhook(
         logger.warning("Rejected invalid Resend webhook")
         raise_error(400, ERR_EMAIL_WEBHOOK_INVALID)
 
-    if payload.get("type") != "email.received":
+    event_type = _header_value(payload.get("type"), 100)
+    if event_type != "email.received":
+        delivery_status = _DELIVERY_EVENT_STATUSES.get(event_type)
+        event_data = payload.get("data") if isinstance(payload.get("data"), dict) else {}
+        provider_email_id = _header_value(event_data.get("email_id"), 100)
+        if delivery_status and provider_email_id:
+            message = await db.scalar(
+                select(EmailMessage).where(
+                    EmailMessage.provider_message_id == provider_email_id,
+                    EmailMessage.direction == "outbound",
+                )
+            )
+            if message is not None:
+                message.delivery_status = _advance_delivery_status(
+                    message.delivery_status,
+                    delivery_status,
+                )
+                await db.commit()
         return {"received": True}
 
     stored_event_id = _header_value(event_id, 100)
@@ -353,11 +436,6 @@ async def receive_resend_webhook(
         raise_error(502, ERR_EMAIL_INBOUND_FETCH_FAILED)
 
     recipients = _string_list(received.get("to") or event_data.get("to"))
-    token = _reply_token(recipients)
-    invite = None
-    if token:
-        invite = await db.scalar(select(BrandInvite).where(BrandInvite.reply_token == token))
-
     sender_raw = _truncate(received.get("from") or event_data.get("from"), 500)
     participant_name, participant_address = parseaddr(sender_raw)
     participant_email = _header_value(participant_address or sender_raw, 255).casefold()
@@ -367,11 +445,30 @@ async def receive_resend_webhook(
     subject = _header_value(received.get("subject") or event_data.get("subject"), 500) or "(no subject)"
     body = _plain_text(received.get("text"), received.get("html"))
     created_at = _parse_datetime(received.get("created_at") or event_data.get("created_at"))
+    headers = received.get("headers") if isinstance(received.get("headers"), dict) else {}
+
+    thread = None
+    thread_token = _thread_token(recipients)
+    if thread_token:
+        thread = await db.scalar(
+            select(EmailThread).where(EmailThread.reply_token == thread_token)
+        )
+        if thread is not None and thread.participant_email.casefold() != participant_email:
+            logger.warning(
+                "Inbound sender %s does not match email thread %s participant",
+                participant_email,
+                thread.id,
+            )
+            thread = None
+
+    token = _reply_token(recipients)
+    invite = None
+    if thread is None and token:
+        invite = await db.scalar(select(BrandInvite).where(BrandInvite.reply_token == token))
 
     invite_id = invite.id if invite else None
     invite_brand_id = invite.brand_id if invite else None
-    thread = None
-    if invite is not None:
+    if thread is None and invite is not None:
         thread = await db.scalar(
             select(EmailThread)
             .where(EmailThread.invite_id == invite_id)
@@ -383,6 +480,12 @@ async def receive_resend_webhook(
             participant_email=participant_email,
             participant_name=participant_name,
             subject=subject,
+            reply_token=secrets.token_urlsafe(24),
+            sender_profile=(
+                invite.sender_profile
+                if invite and invite.sender_profile in _MANUAL_SENDER_PROFILES
+                else _sender_profile_for_recipients(recipients)
+            ),
             status="open",
             unread_count=0,
             last_message_at=created_at,
@@ -402,7 +505,9 @@ async def receive_resend_webhook(
             if thread is None:
                 raise
 
-    headers = received.get("headers") if isinstance(received.get("headers"), dict) else {}
+    if thread.sender_profile not in _MANUAL_SENDER_PROFILES:
+        thread.sender_profile = _sender_profile_for_recipients(recipients)
+    _ensure_thread_reply_token(thread)
     message = EmailMessage(
         thread_id=thread.id,
         direction="inbound",
@@ -418,6 +523,7 @@ async def receive_resend_webhook(
         or None,
         in_reply_to=_header_value(headers.get("in-reply-to"), 500) or None,
         attachment_metadata=_attachment_metadata(received.get("attachments")),
+        delivery_status="received",
         created_at=created_at,
     )
     db.add(message)
@@ -486,6 +592,64 @@ async def list_email_threads(
     )
 
 
+@admin_router.post("/email-threads", response_model=EmailThreadDetailResponse, status_code=201)
+@limiter.limit("60/hour")
+async def create_email_thread(
+    request: Request,
+    data: EmailThreadCreate,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    admin: Annotated[User, Depends(get_current_admin_user)],
+) -> EmailThreadDetailResponse:
+    """Start an external email conversation from the administrative mailbox."""
+    now = datetime.now(timezone.utc)
+    participant_email = str(data.to).casefold()
+    thread = EmailThread(
+        participant_email=participant_email,
+        participant_name=data.participant_name,
+        subject=data.subject,
+        reply_token=secrets.token_urlsafe(24),
+        sender_profile=data.sender_profile,
+        status="open",
+        unread_count=0,
+        last_message_at=now,
+    )
+    db.add(thread)
+    await db.flush()
+
+    result = await run_in_threadpool(
+        send_admin_reply_email,
+        to=participant_email,
+        subject=data.subject,
+        body=data.body,
+        sender_profile=data.sender_profile,
+        reply_to=_thread_reply_address(thread),
+        headers=None,
+    )
+    if not result.sent:
+        await db.rollback()
+        logger.error("Failed to start admin email thread: %s", result.error)
+        raise_error(502, ERR_EMAIL_DELIVERY_FAILED)
+
+    db.add(
+        EmailMessage(
+            thread_id=thread.id,
+            direction="outbound",
+            sender_email=get_email_sender(data.sender_profile),
+            recipient_emails=[participant_email],
+            subject=data.subject,
+            text_body=data.body,
+            provider_message_id=result.provider_message_id,
+            attachment_metadata=[],
+            delivery_status="sent",
+            sent_by_id=admin.id,
+            read_at=now,
+            created_at=now,
+        )
+    )
+    await db.commit()
+    return _thread_detail(await _load_thread(db, thread.id))
+
+
 @admin_router.get("/email-threads/{thread_id}", response_model=EmailThreadDetailResponse)
 async def get_email_thread(
     thread_id: int,
@@ -533,8 +697,26 @@ async def update_email_thread(
     return _thread_detail(await _load_thread(db, thread_id))
 
 
+@admin_router.delete("/email-threads/{thread_id}")
+@limiter.limit("30/hour")
+async def delete_email_thread(
+    request: Request,
+    thread_id: int,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    admin: Annotated[User, Depends(get_current_admin_user)],
+) -> dict[str, bool]:
+    """Permanently delete an administrative email thread and all of its messages."""
+    del admin
+    thread = await _load_thread(db, thread_id)
+    await db.delete(thread)
+    await db.commit()
+    return {"deleted": True}
+
+
 @admin_router.post("/email-threads/{thread_id}/reply", response_model=EmailMessageResponse)
+@limiter.limit("60/hour")
 async def reply_to_email_thread(
+    request: Request,
     thread_id: int,
     data: EmailThreadReplyCreate,
     db: Annotated[AsyncSession, Depends(get_db)],
@@ -542,9 +724,13 @@ async def reply_to_email_thread(
 ) -> EmailMessageResponse:
     """Reply through Resend while preserving the external email thread."""
     thread = await _load_thread(db, thread_id)
-    sender_profile = data.sender_profile or (
-        thread.invite.sender_profile if thread.invite else "partnerships"
-    )
+    sender_profile = data.sender_profile or thread.sender_profile
+    if sender_profile not in _MANUAL_SENDER_PROFILES:
+        sender_profile = (
+            thread.invite.sender_profile
+            if thread.invite and thread.invite.sender_profile in _MANUAL_SENDER_PROFILES
+            else "support"
+        )
     subject = thread.subject if thread.subject.casefold().startswith("re:") else f"Re: {thread.subject}"
     latest_inbound = next(
         (message for message in reversed(thread.messages) if message.direction == "inbound"),
@@ -556,9 +742,9 @@ async def reply_to_email_thread(
             "In-Reply-To": latest_inbound.internet_message_id,
             "References": latest_inbound.internet_message_id,
         }
-    reply_to = settings.EMAIL_CONTACT
-    if thread.invite and settings.EMAIL_INBOUND_DOMAIN and thread.invite.reply_token:
-        reply_to = f"invite-{thread.invite.reply_token}@{settings.EMAIL_INBOUND_DOMAIN}"
+    reply_to = _thread_reply_address(thread)
+    thread.sender_profile = sender_profile
+    await db.flush()
 
     result = await run_in_threadpool(
         send_admin_reply_email,
@@ -584,6 +770,7 @@ async def reply_to_email_thread(
         provider_message_id=result.provider_message_id,
         in_reply_to=latest_inbound.internet_message_id if latest_inbound else None,
         attachment_metadata=[],
+        delivery_status="sent",
         sent_by_id=admin.id,
         read_at=now,
         created_at=now,

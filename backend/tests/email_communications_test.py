@@ -268,11 +268,220 @@ async def test_admin_reply_preserves_thread_headers_and_sender(
     )
     assert response.status_code == 200
     assert response.json()["direction"] == "outbound"
+    assert response.json()["delivery_status"] == "sent"
     assert captured["sender_profile"] == "pr"
     assert captured["headers"]["In-Reply-To"] == "<incoming-thread@example.com>"
-    assert captured["reply_to"] == f"invite-{'A' * 32}@reply.filamenthub.test"
+    await db_session.refresh(thread)
+    assert thread.reply_token
+    assert captured["reply_to"] == f"thread-{thread.reply_token}@reply.filamenthub.test"
 
     outbound = await db_session.scalar(
         select(EmailMessage).where(EmailMessage.provider_message_id == "sent-reply-1")
     )
     assert outbound is not None and outbound.sent_by_id == admin_user.id
+
+
+@pytest.mark.asyncio
+async def test_admin_can_start_email_thread(
+    admin_client: AsyncClient,
+    admin_user,
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(settings, "EMAIL_INBOUND_DOMAIN", "reply.filamenthub.test")
+    monkeypatch.setattr(settings, "EMAIL_CONTACT", "support@filamenthub.test")
+    captured: dict = {}
+
+    def fake_send(**kwargs):
+        captured.update(kwargs)
+        return EmailSendResult(sent=True, provider_message_id="sent-new-thread-1")
+
+    monkeypatch.setattr(email_communications, "send_admin_reply_email", fake_send)
+
+    response = await admin_client.post(
+        "/api/v1/admin/communications/email-threads",
+        json={
+            "to": "Contact@Example.com",
+            "participant_name": "Example Plastics",
+            "subject": "FilamentHub partnership",
+            "body": "Hello from FilamentHub.",
+            "sender_profile": "support",
+        },
+    )
+
+    assert response.status_code == 201
+    payload = response.json()
+    assert payload["participant_email"] == "contact@example.com"
+    assert payload["suggested_sender_profile"] == "support"
+    assert payload["messages"][0]["delivery_status"] == "sent"
+    assert captured["sender_profile"] == "support"
+    assert captured["reply_to"].startswith("thread-")
+    assert captured["reply_to"].endswith("@reply.filamenthub.test")
+
+    thread = await db_session.get(EmailThread, payload["id"])
+    assert thread is not None
+    assert thread.sender_profile == "support"
+    assert thread.reply_token
+    message = await db_session.scalar(
+        select(EmailMessage).where(EmailMessage.provider_message_id == "sent-new-thread-1")
+    )
+    assert message is not None and message.sent_by_id == admin_user.id
+
+
+@pytest.mark.asyncio
+async def test_thread_reply_address_routes_inbound_to_existing_thread(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(settings, "RESEND_API_KEY", "re_test")
+    monkeypatch.setattr(settings, "RESEND_WEBHOOK_SECRET", "whsec_dGVzdA==")
+    monkeypatch.setattr(settings, "EMAIL_INBOUND_DOMAIN", "reply.filamenthub.test")
+    reply_token = "B" * 32
+    thread = EmailThread(
+        participant_email="contact@example.com",
+        participant_name="Example Plastics",
+        subject="FilamentHub partnership",
+        reply_token=reply_token,
+        sender_profile="support",
+    )
+    db_session.add(thread)
+    await db_session.flush()
+    db_session.add(
+        EmailMessage(
+            thread_id=thread.id,
+            direction="outbound",
+            sender_email="FilamentHub <support@filamenthub.test>",
+            recipient_emails=[thread.participant_email],
+            subject=thread.subject,
+            text_body="Hello from FilamentHub.",
+            provider_message_id="sent-thread-route-1",
+            attachment_metadata=[],
+            delivery_status="sent",
+        )
+    )
+    await db_session.commit()
+
+    monkeypatch.setattr(
+        email_communications,
+        "get_received_email",
+        lambda email_id: {
+            "id": email_id,
+            "from": "Example Plastics <contact@example.com>",
+            "to": [f"thread-{reply_token}@reply.filamenthub.test"],
+            "subject": "Re: FilamentHub partnership",
+            "text": "We are interested.",
+            "headers": {"in-reply-to": "<outbound@example.com>"},
+            "message_id": "<inbound@example.com>",
+            "created_at": "2026-07-15T10:00:00Z",
+            "attachments": [],
+        },
+    )
+    payload = {
+        "type": "email.received",
+        "data": {
+            "email_id": "received-thread-route-1",
+            "from": "contact@example.com",
+            "to": [f"thread-{reply_token}@reply.filamenthub.test"],
+            "subject": "Re: FilamentHub partnership",
+        },
+    }
+    raw_body = json.dumps(payload).encode()
+    response = await client.post(
+        "/api/v1/webhooks/resend",
+        content=raw_body,
+        headers=_webhook_headers("event-thread-route-1", raw_body),
+    )
+
+    assert response.status_code == 200
+    assert await db_session.scalar(select(func.count(EmailThread.id))) == 1
+    assert await db_session.scalar(select(func.count(EmailMessage.id))) == 2
+
+
+@pytest.mark.asyncio
+async def test_delivery_webhook_updates_outbound_status_without_downgrade(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(settings, "RESEND_API_KEY", "re_test")
+    monkeypatch.setattr(settings, "RESEND_WEBHOOK_SECRET", "whsec_dGVzdA==")
+    thread = EmailThread(
+        participant_email="contact@example.com",
+        subject="Delivery status",
+        reply_token="C" * 32,
+        sender_profile="support",
+    )
+    db_session.add(thread)
+    await db_session.flush()
+    message = EmailMessage(
+        thread_id=thread.id,
+        direction="outbound",
+        sender_email="FilamentHub <support@filamenthub.test>",
+        recipient_emails=[thread.participant_email],
+        subject=thread.subject,
+        text_body="Delivery test",
+        provider_message_id="sent-delivery-status-1",
+        attachment_metadata=[],
+        delivery_status="sent",
+    )
+    db_session.add(message)
+    await db_session.commit()
+
+    async def post_event(event_id: str, event_type: str) -> None:
+        payload = {
+            "type": event_type,
+            "data": {"email_id": "sent-delivery-status-1"},
+        }
+        raw_body = json.dumps(payload).encode()
+        response = await client.post(
+            "/api/v1/webhooks/resend",
+            content=raw_body,
+            headers=_webhook_headers(event_id, raw_body),
+        )
+        assert response.status_code == 200
+
+    await post_event("event-delivered-1", "email.delivered")
+    await db_session.refresh(message)
+    assert message.delivery_status == "delivered"
+
+    await post_event("event-sent-late-1", "email.sent")
+    await db_session.refresh(message)
+    assert message.delivery_status == "delivered"
+
+
+@pytest.mark.asyncio
+async def test_admin_can_permanently_delete_email_thread(
+    admin_client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    thread = EmailThread(
+        participant_email="delete@example.com",
+        subject="Delete this thread",
+        reply_token="D" * 32,
+        sender_profile="support",
+    )
+    db_session.add(thread)
+    await db_session.flush()
+    db_session.add(
+        EmailMessage(
+            thread_id=thread.id,
+            direction="inbound",
+            sender_email=thread.participant_email,
+            recipient_emails=["support@filamenthub.test"],
+            subject=thread.subject,
+            text_body="This thread should be deleted.",
+            attachment_metadata=[],
+            delivery_status="received",
+        )
+    )
+    await db_session.commit()
+
+    response = await admin_client.delete(
+        f"/api/v1/admin/communications/email-threads/{thread.id}"
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {"deleted": True}
+    assert await db_session.scalar(select(func.count(EmailThread.id))) == 0
+    assert await db_session.scalar(select(func.count(EmailMessage.id))) == 0

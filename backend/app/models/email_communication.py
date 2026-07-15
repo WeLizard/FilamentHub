@@ -33,6 +33,10 @@ class EmailThread(Base):
     participant_email: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
     participant_name: Mapped[str | None] = mapped_column(String(200), nullable=True)
     subject: Mapped[str] = mapped_column(String(500), nullable=False)
+    reply_token: Mapped[str | None] = mapped_column(
+        String(64), nullable=True, unique=True, index=True
+    )
+    sender_profile: Mapped[str | None] = mapped_column(String(32), nullable=True)
     status: Mapped[str] = mapped_column(
         String(16), nullable=False, default="open", server_default="open", index=True
     )
@@ -88,6 +92,7 @@ class EmailMessage(Base):
     attachment_metadata: Mapped[list[dict]] = mapped_column(
         JSON, nullable=False, default=list, server_default="[]"
     )
+    delivery_status: Mapped[str | None] = mapped_column(String(32), nullable=True)
     sent_by_id: Mapped[int | None] = mapped_column(
         ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True
     )

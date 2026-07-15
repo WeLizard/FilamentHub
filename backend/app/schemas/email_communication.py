@@ -3,7 +3,17 @@
 from datetime import datetime
 from typing import Literal
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, EmailStr, Field, field_validator
+
+EmailSenderProfile = Literal["support", "partnerships", "pr"]
+EmailDeliveryStatus = Literal[
+    "received",
+    "sent",
+    "delivered",
+    "delayed",
+    "bounced",
+    "complained",
+]
 
 
 class EmailAttachmentResponse(BaseModel):
@@ -20,6 +30,7 @@ class EmailMessageResponse(BaseModel):
     subject: str
     text_body: str
     attachment_metadata: list[EmailAttachmentResponse]
+    delivery_status: EmailDeliveryStatus | None
     read_at: datetime | None
     created_at: datetime
 
@@ -37,7 +48,7 @@ class EmailThreadSummaryResponse(BaseModel):
     last_message_at: datetime
     latest_preview: str
     latest_direction: Literal["inbound", "outbound"] | None
-    suggested_sender_profile: Literal["partnerships", "pr", "transactional"]
+    suggested_sender_profile: EmailSenderProfile
 
 
 class EmailThreadDetailResponse(EmailThreadSummaryResponse):
@@ -57,9 +68,32 @@ class EmailThreadStatusUpdate(BaseModel):
     status: Literal["open", "closed"]
 
 
+class EmailThreadCreate(BaseModel):
+    to: EmailStr
+    participant_name: str | None = Field(default=None, max_length=200)
+    subject: str = Field(..., min_length=1, max_length=500)
+    body: str = Field(..., min_length=1, max_length=20_000)
+    sender_profile: EmailSenderProfile = "support"
+
+    @field_validator("participant_name")
+    @classmethod
+    def normalize_participant_name(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        return value.strip() or None
+
+    @field_validator("subject", "body")
+    @classmethod
+    def normalize_required_text(cls, value: str) -> str:
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("value cannot be blank")
+        return normalized
+
+
 class EmailThreadReplyCreate(BaseModel):
     body: str = Field(..., min_length=1, max_length=20_000)
-    sender_profile: Literal["partnerships", "pr", "transactional"] | None = None
+    sender_profile: EmailSenderProfile | None = None
 
     @field_validator("body")
     @classmethod

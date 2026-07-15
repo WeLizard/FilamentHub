@@ -46,6 +46,7 @@ class EmailSendResult:
 def _get_from(profile: str = "transactional") -> str:
     addresses = {
         "transactional": settings.EMAIL_FROM,
+        "support": settings.EMAIL_CONTACT,
         "partnerships": settings.EMAIL_PARTNERSHIPS_FROM,
         "pr": settings.EMAIL_PR_FROM,
     }

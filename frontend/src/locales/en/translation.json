@@ -4116,11 +4116,11 @@
     "title": "Communications",
     "description": "Brand replies, user feedback, and in-app broadcasts share one workspace while keeping their own delivery channels and statuses.",
     "sections": {
-      "inbox": "Email inbox",
+      "inbox": "Email",
       "feedback": "Feedback",
       "broadcasts": "Broadcasts"
     },
-    "inboxTitle": "Incoming email",
+    "inboxTitle": "FilamentHub email",
     "threadCount": "Threads: {{count}}",
     "unreadCount": "Unread: {{count}}",
     "filters": {
@@ -4130,9 +4130,9 @@
     },
     "refresh": "Refresh",
     "loading": "Loading conversations…",
-    "loadError": "Could not load incoming email",
-    "emptyTitle": "No incoming email yet",
-    "emptyHint": "Replies will appear here after the Resend receiving domain and webhook are configured.",
+    "loadError": "Could not load email",
+    "emptyTitle": "No conversations yet",
+    "emptyHint": "Write the first email or wait for an incoming message.",
     "selectThread": "Select a conversation on the left",
     "loadingThread": "Loading conversation…",
     "closeThread": "Close",
@@ -4147,7 +4147,38 @@
     "sendReply": "Send reply",
     "sending": "Sending…",
     "replySent": "Reply sent",
-    "replyError": "Could not send the reply"
+    "replyError": "Could not send the reply",
+    "delete": {
+      "action": "Delete",
+      "title": "Delete this conversation?",
+      "message": "Every email in this thread will be permanently deleted.",
+      "confirm": "Delete conversation",
+      "success": "Conversation deleted",
+      "error": "Could not delete the conversation"
+    },
+    "compose": {
+      "action": "New email",
+      "title": "New email",
+      "description": "The message is saved as a conversation, and the recipient's reply returns to the same thread.",
+      "to": "To",
+      "from": "From",
+      "name": "Name or company",
+      "namePlaceholder": "Optional",
+      "subject": "Subject",
+      "message": "Message",
+      "messagePlaceholder": "Write your email…",
+      "send": "Send email",
+      "sent": "Email sent",
+      "error": "Could not send email"
+    },
+    "delivery": {
+      "sent": "Sent",
+      "delivered": "Delivered",
+      "delayed": "Delayed",
+      "bounced": "Not delivered",
+      "complained": "Recipient complaint",
+      "received": "Received"
+    }
   },
   "adminStats": {
     "title": "Platform Statistics",

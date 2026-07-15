@@ -2023,6 +2023,17 @@ export const adminCommunicationsAPI = {
     return response.data;
   },
 
+  createEmailThread: async (data: {
+    to: string;
+    participant_name?: string;
+    subject: string;
+    body: string;
+    sender_profile: EmailSenderProfile;
+  }): Promise<EmailThreadDetail> => {
+    const response = await api.post<EmailThreadDetail>('/admin/communications/email-threads', data);
+    return response.data;
+  },
+
   getEmailThread: async (threadId: number): Promise<EmailThreadDetail> => {
     const response = await api.get<EmailThreadDetail>(`/admin/communications/email-threads/${threadId}`);
     return response.data;
@@ -2036,6 +2047,10 @@ export const adminCommunicationsAPI = {
   updateEmailThread: async (threadId: number, status: EmailThreadStatus): Promise<EmailThreadDetail> => {
     const response = await api.patch<EmailThreadDetail>(`/admin/communications/email-threads/${threadId}`, { status });
     return response.data;
+  },
+
+  deleteEmailThread: async (threadId: number): Promise<void> => {
+    await api.delete(`/admin/communications/email-threads/${threadId}`);
   },
 
   replyToEmailThread: async (threadId: number, data: {

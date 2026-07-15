@@ -192,7 +192,8 @@ export interface BrandInviteAcceptResult {
 
 export type EmailThreadStatus = 'open' | 'closed';
 export type EmailMessageDirection = 'inbound' | 'outbound';
-export type EmailSenderProfile = 'partnerships' | 'pr' | 'transactional';
+export type EmailSenderProfile = 'support' | 'partnerships' | 'pr';
+export type EmailDeliveryStatus = 'received' | 'sent' | 'delivered' | 'delayed' | 'bounced' | 'complained';
 
 export interface EmailAttachment {
   filename: string;
@@ -208,6 +209,7 @@ export interface EmailMessage {
   subject: string;
   text_body: string;
   attachment_metadata: EmailAttachment[];
+  delivery_status: EmailDeliveryStatus | null;
   read_at: string | null;
   created_at: string;
 }

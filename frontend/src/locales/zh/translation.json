@@ -4111,11 +4111,11 @@
     "title": "沟通",
     "description": "品牌回复、用户反馈和站内广播集中在一个工作区中，同时保留各自的发送渠道和状态。",
     "sections": {
-      "inbox": "邮件收件箱",
+      "inbox": "邮件",
       "feedback": "反馈",
       "broadcasts": "广播"
     },
-    "inboxTitle": "收到的邮件",
+    "inboxTitle": "FilamentHub 邮件",
     "threadCount": "会话：{{count}}",
     "unreadCount": "未读：{{count}}",
     "filters": {
@@ -4125,9 +4125,9 @@
     },
     "refresh": "刷新",
     "loading": "正在加载会话…",
-    "loadError": "无法加载收到的邮件",
-    "emptyTitle": "暂无收到的邮件",
-    "emptyHint": "配置 Resend 接收域名和 webhook 后，回复将显示在这里。",
+    "loadError": "无法加载邮件",
+    "emptyTitle": "暂无会话",
+    "emptyHint": "发送第一封邮件或等待收到新邮件。",
     "selectThread": "请从左侧选择一个会话",
     "loadingThread": "正在加载会话…",
     "closeThread": "关闭",
@@ -4142,7 +4142,38 @@
     "sendReply": "发送回复",
     "sending": "正在发送…",
     "replySent": "回复已发送",
-    "replyError": "无法发送回复"
+    "replyError": "无法发送回复",
+    "delete": {
+      "action": "删除",
+      "title": "删除此会话？",
+      "message": "此会话中的所有邮件都将被永久删除，无法恢复。",
+      "confirm": "删除会话",
+      "success": "会话已删除",
+      "error": "无法删除会话"
+    },
+    "compose": {
+      "action": "新邮件",
+      "title": "新邮件",
+      "description": "邮件会保存为会话，收件人的回复将返回到同一会话中。",
+      "to": "收件人",
+      "from": "发件人",
+      "name": "姓名或公司",
+      "namePlaceholder": "可选",
+      "subject": "主题",
+      "message": "正文",
+      "messagePlaceholder": "撰写邮件…",
+      "send": "发送邮件",
+      "sent": "邮件已发送",
+      "error": "无法发送邮件"
+    },
+    "delivery": {
+      "sent": "已发送",
+      "delivered": "已送达",
+      "delayed": "延迟中",
+      "bounced": "未送达",
+      "complained": "收件人投诉",
+      "received": "已收到"
+    }
   },
   "adminStats": {
     "title": "平台统计",

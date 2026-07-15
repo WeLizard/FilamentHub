@@ -4,19 +4,26 @@ import {
   Archive,
   ArrowLeft,
   Building2,
+  Check,
   CheckCircle2,
+  CheckCheck,
+  Clock3,
   Inbox,
   Mail,
+  MailPlus,
   MessageCircle,
   Paperclip,
   RefreshCw,
   Reply,
   Send,
+  Trash2,
+  TriangleAlert,
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import type { AxiosError } from 'axios';
 import { adminCommunicationsAPI } from '../../api/client';
 import type {
+  EmailDeliveryStatus,
   EmailMessage,
   EmailSenderProfile,
   EmailThreadDetail,
@@ -24,6 +31,8 @@ import type {
 } from '../../types/api';
 import { translateApiError } from '../../utils/translateApiError';
 import { toast } from '../Toast';
+import { ModalOverlay } from '../ModalOverlay';
+import { ConfirmModal } from '../ConfirmModal';
 import { AdminFeedback } from './AdminFeedback';
 import { AdminNotifications } from './AdminNotifications';
 
@@ -37,13 +46,166 @@ const formatBytes = (value: number | null, locale: string): string => {
   return `${new Intl.NumberFormat(locale, { maximumFractionDigits: 1 }).format(value / (1024 * 1024))} MB`;
 };
 
+const deliveryStatusIcon = (status: EmailDeliveryStatus) => {
+  if (status === 'delivered') return CheckCheck;
+  if (status === 'delayed') return Clock3;
+  if (status === 'bounced' || status === 'complained') return TriangleAlert;
+  return Check;
+};
+
+function EmailComposeModal({
+  onClose,
+  onSent,
+}: {
+  onClose: () => void;
+  onSent: (thread: EmailThreadDetail) => void;
+}) {
+  const { t } = useTranslation();
+  const [to, setTo] = useState('');
+  const [participantName, setParticipantName] = useState('');
+  const [subject, setSubject] = useState('');
+  const [body, setBody] = useState('');
+  const [profile, setProfile] = useState<EmailSenderProfile>('support');
+
+  const createMutation = useMutation({
+    mutationFn: () => adminCommunicationsAPI.createEmailThread({
+      to: to.trim(),
+      participant_name: participantName.trim() || undefined,
+      subject: subject.trim(),
+      body: body.trim(),
+      sender_profile: profile,
+    }),
+    onSuccess: (thread) => {
+      toast.success(t('adminCommunications.compose.sent'));
+      onSent(thread);
+    },
+    onError: (error: AxiosError<{ detail: unknown }>) => {
+      toast.error(translateApiError(t, error.response?.data?.detail, t('adminCommunications.compose.error')));
+    },
+  });
+
+  const canSend = Boolean(to.trim() && subject.trim() && body.trim()) && !createMutation.isPending;
+
+  return (
+    <ModalOverlay onClose={onClose} closeOnOverlayClick={!createMutation.isPending} className="!bg-black/70">
+      <form
+        className="w-full max-w-2xl overflow-hidden rounded-2xl border border-cyan-300/15 bg-[#111124] shadow-2xl shadow-black/50"
+        onSubmit={(event) => {
+          event.preventDefault();
+          if (canSend) createMutation.mutate();
+        }}
+      >
+        <header className="flex items-start gap-3 border-b border-white/10 bg-gradient-to-r from-cyan-400/10 to-transparent px-5 py-5 md:px-6">
+          <span className="grid h-11 w-11 shrink-0 place-items-center rounded-xl border border-cyan-300/20 bg-cyan-400/10 text-cyan-300">
+            <MailPlus className="h-5 w-5" />
+          </span>
+          <div>
+            <h3 className="text-lg font-semibold text-white">{t('adminCommunications.compose.title')}</h3>
+            <p className="mt-1 text-xs leading-5 text-gray-400">{t('adminCommunications.compose.description')}</p>
+          </div>
+        </header>
+
+        <div className="space-y-4 px-5 py-5 md:px-6">
+          <div className="grid gap-4 md:grid-cols-[minmax(0,1fr)_220px]">
+            <label className="block text-xs font-medium text-gray-300">
+              {t('adminCommunications.compose.to')}
+              <input
+                type="email"
+                required
+                maxLength={255}
+                value={to}
+                onChange={(event) => setTo(event.target.value)}
+                placeholder="name@company.com"
+                className="mt-2 w-full rounded-xl border border-white/10 bg-white/5 px-3.5 py-2.5 text-sm text-white placeholder:text-gray-600 focus:border-cyan-400/40 focus:outline-none focus:ring-2 focus:ring-cyan-400/20"
+              />
+            </label>
+            <label className="block text-xs font-medium text-gray-300">
+              {t('adminCommunications.compose.from')}
+              <select
+                value={profile}
+                onChange={(event) => setProfile(event.target.value as EmailSenderProfile)}
+                className="mt-2 w-full rounded-xl border border-white/10 bg-[#19172d] px-3.5 py-2.5 text-sm text-gray-100 focus:outline-none focus:ring-2 focus:ring-cyan-400/40"
+              >
+                <option value="support">support@filamenthub.ru</option>
+                <option value="partnerships">partnerships@filamenthub.ru</option>
+                <option value="pr">pr@filamenthub.ru</option>
+              </select>
+            </label>
+          </div>
+
+          <label className="block text-xs font-medium text-gray-300">
+            {t('adminCommunications.compose.name')}
+            <input
+              type="text"
+              maxLength={200}
+              value={participantName}
+              onChange={(event) => setParticipantName(event.target.value)}
+              placeholder={t('adminCommunications.compose.namePlaceholder')}
+              className="mt-2 w-full rounded-xl border border-white/10 bg-white/5 px-3.5 py-2.5 text-sm text-white placeholder:text-gray-600 focus:border-cyan-400/40 focus:outline-none focus:ring-2 focus:ring-cyan-400/20"
+            />
+          </label>
+
+          <label className="block text-xs font-medium text-gray-300">
+            {t('adminCommunications.compose.subject')}
+            <input
+              type="text"
+              required
+              maxLength={500}
+              value={subject}
+              onChange={(event) => setSubject(event.target.value)}
+              className="mt-2 w-full rounded-xl border border-white/10 bg-white/5 px-3.5 py-2.5 text-sm text-white focus:border-cyan-400/40 focus:outline-none focus:ring-2 focus:ring-cyan-400/20"
+            />
+          </label>
+
+          <label className="block text-xs font-medium text-gray-300">
+            {t('adminCommunications.compose.message')}
+            <textarea
+              required
+              rows={9}
+              maxLength={20_000}
+              value={body}
+              onChange={(event) => setBody(event.target.value)}
+              placeholder={t('adminCommunications.compose.messagePlaceholder')}
+              className="mt-2 w-full resize-y rounded-xl border border-white/10 bg-white/5 px-3.5 py-3 text-sm leading-6 text-white placeholder:text-gray-600 focus:border-cyan-400/40 focus:outline-none focus:ring-2 focus:ring-cyan-400/20"
+            />
+          </label>
+        </div>
+
+        <footer className="flex flex-col-reverse gap-3 border-t border-white/10 bg-black/10 px-5 py-4 sm:flex-row sm:items-center sm:justify-between md:px-6">
+          <p className="text-[11px] leading-4 text-gray-500">{t('adminCommunications.plainTextHint')}</p>
+          <div className="flex justify-end gap-2">
+            <button
+              type="button"
+              onClick={onClose}
+              disabled={createMutation.isPending}
+              className="rounded-xl border border-white/10 px-4 py-2 text-sm text-gray-300 transition hover:bg-white/10 hover:text-white disabled:opacity-40"
+            >
+              {t('common.cancel')}
+            </button>
+            <button
+              type="submit"
+              disabled={!canSend}
+              className="inline-flex items-center gap-2 rounded-xl bg-cyan-400 px-4 py-2 text-sm font-semibold text-slate-950 transition hover:bg-cyan-300 disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              <Send className="h-4 w-4" />
+              {createMutation.isPending ? t('adminCommunications.sending') : t('adminCommunications.compose.send')}
+            </button>
+          </div>
+        </footer>
+      </form>
+    </ModalOverlay>
+  );
+}
+
 function AdminEmailInbox() {
   const { t, i18n } = useTranslation();
   const queryClient = useQueryClient();
   const [selectedThreadId, setSelectedThreadId] = useState<number | null>(null);
   const [filter, setFilter] = useState<ThreadFilter>('all');
   const [replyBody, setReplyBody] = useState('');
-  const [senderProfile, setSenderProfile] = useState<EmailSenderProfile>('partnerships');
+  const [senderProfile, setSenderProfile] = useState<EmailSenderProfile>('support');
+  const [composeOpen, setComposeOpen] = useState(false);
+  const [deleteThreadId, setDeleteThreadId] = useState<number | null>(null);
 
   const listQuery = useQuery({
     queryKey: ['admin-email-threads', filter],
@@ -96,6 +258,19 @@ function AdminEmailInbox() {
     },
   });
 
+  const deleteMutation = useMutation({
+    mutationFn: (threadId: number) => adminCommunicationsAPI.deleteEmailThread(threadId),
+    onSuccess: () => {
+      setDeleteThreadId(null);
+      setSelectedThreadId(null);
+      queryClient.invalidateQueries({ queryKey: ['admin-email-threads'] });
+      toast.success(t('adminCommunications.delete.success'));
+    },
+    onError: (error: AxiosError<{ detail: unknown }>) => {
+      toast.error(translateApiError(t, error.response?.data?.detail, t('adminCommunications.delete.error')));
+    },
+  });
+
   useEffect(() => {
     const thread = detailQuery.data;
     if (thread && thread.unread_count > 0 && !markReadMutation.isPending) {
@@ -118,7 +293,8 @@ function AdminEmailInbox() {
   const selectedThread = detailQuery.data;
 
   return (
-    <div className="overflow-hidden rounded-2xl border border-white/10 bg-[#121226]/70">
+    <>
+      <div className="overflow-hidden rounded-2xl border border-white/10 bg-[#121226]/70">
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-white/10 px-4 py-3 md:px-5">
         <div className="flex items-center gap-3">
           <span className="grid h-10 w-10 place-items-center rounded-xl border border-cyan-400/20 bg-cyan-400/10 text-cyan-300">
@@ -137,6 +313,14 @@ function AdminEmailInbox() {
           </div>
         </div>
         <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => setComposeOpen(true)}
+            className="inline-flex items-center gap-2 rounded-xl bg-cyan-400 px-3 py-2 text-xs font-semibold text-slate-950 transition hover:bg-cyan-300"
+          >
+            <MailPlus className="h-4 w-4" />
+            <span className="hidden sm:inline">{t('adminCommunications.compose.action')}</span>
+          </button>
           <div className="flex rounded-xl border border-white/10 bg-white/5 p-1">
             {(['all', 'open', 'closed'] as const).map((value) => (
               <button
@@ -178,6 +362,14 @@ function AdminEmailInbox() {
                 <Mail className="mx-auto mb-3 h-9 w-9 text-gray-600" />
                 <p className="font-medium text-gray-300">{t('adminCommunications.emptyTitle')}</p>
                 <p className="mt-1 text-xs leading-5 text-gray-500">{t('adminCommunications.emptyHint')}</p>
+                <button
+                  type="button"
+                  onClick={() => setComposeOpen(true)}
+                  className="mt-4 inline-flex items-center gap-2 rounded-xl border border-cyan-400/20 bg-cyan-400/10 px-3 py-2 text-xs font-medium text-cyan-300 hover:bg-cyan-400/15"
+                >
+                  <MailPlus className="h-4 w-4" />
+                  {t('adminCommunications.compose.action')}
+                </button>
               </div>
             </div>
           ) : (
@@ -253,26 +445,38 @@ function AdminEmailInbox() {
                       </p>
                     </div>
                   </div>
-                  <button
-                    type="button"
-                    onClick={() => statusMutation.mutate({
-                      threadId: selectedThread.id,
-                      status: selectedThread.status === 'open' ? 'closed' : 'open',
-                    })}
-                    disabled={statusMutation.isPending}
-                    className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-xs text-gray-300 transition hover:bg-white/10 hover:text-white disabled:opacity-50"
-                  >
-                    {selectedThread.status === 'open' ? <Archive className="h-4 w-4" /> : <CheckCircle2 className="h-4 w-4" />}
-                    <span className="hidden sm:inline">
-                      {selectedThread.status === 'open' ? t('adminCommunications.closeThread') : t('adminCommunications.reopenThread')}
-                    </span>
-                  </button>
+                  <div className="flex shrink-0 items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => statusMutation.mutate({
+                        threadId: selectedThread.id,
+                        status: selectedThread.status === 'open' ? 'closed' : 'open',
+                      })}
+                      disabled={statusMutation.isPending}
+                      className="inline-flex items-center gap-1.5 rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-xs text-gray-300 transition hover:bg-white/10 hover:text-white disabled:opacity-50"
+                    >
+                      {selectedThread.status === 'open' ? <Archive className="h-4 w-4" /> : <CheckCircle2 className="h-4 w-4" />}
+                      <span className="hidden sm:inline">
+                        {selectedThread.status === 'open' ? t('adminCommunications.closeThread') : t('adminCommunications.reopenThread')}
+                      </span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setDeleteThreadId(selectedThread.id)}
+                      className="inline-flex items-center gap-1.5 rounded-lg border border-rose-400/20 bg-rose-400/10 px-3 py-2 text-xs text-rose-300 transition hover:bg-rose-400/20 hover:text-rose-200"
+                      title={t('adminCommunications.delete.action')}
+                    >
+                      <Trash2 className="h-4 w-4" />
+                      <span className="hidden sm:inline">{t('adminCommunications.delete.action')}</span>
+                    </button>
+                  </div>
                 </div>
               </header>
 
               <div className="flex-1 space-y-4 overflow-y-auto px-4 py-5 custom-scrollbar md:px-6">
                 {selectedThread.messages.map((message) => {
                   const inbound = message.direction === 'inbound';
+                  const DeliveryIcon = message.delivery_status ? deliveryStatusIcon(message.delivery_status) : null;
                   return (
                     <article
                       key={message.id}
@@ -284,9 +488,23 @@ function AdminEmailInbox() {
                     >
                       <div className="mb-2 flex flex-wrap items-center justify-between gap-2 text-[11px]">
                         <span className={inbound ? 'text-gray-400' : 'text-cyan-300'}>
-                          {inbound ? message.sender_email : t('adminCommunications.sentByFilamentHub')}
+                          {message.sender_email}
                         </span>
-                        <time className="text-gray-500">{dateFormatter.format(new Date(message.created_at))}</time>
+                        <span className="flex items-center gap-2 text-gray-500">
+                          {!inbound && message.delivery_status && DeliveryIcon && (
+                            <span className={`inline-flex items-center gap-1 ${
+                              message.delivery_status === 'bounced' || message.delivery_status === 'complained'
+                                ? 'text-rose-300'
+                                : message.delivery_status === 'delayed'
+                                  ? 'text-amber-300'
+                                  : 'text-cyan-300'
+                            }`}>
+                              <DeliveryIcon className="h-3.5 w-3.5" />
+                              {t(`adminCommunications.delivery.${message.delivery_status}`)}
+                            </span>
+                          )}
+                          <time>{dateFormatter.format(new Date(message.created_at))}</time>
+                        </span>
                       </div>
                       <p className="whitespace-pre-wrap break-words text-sm leading-6">{message.text_body || t('adminCommunications.noTextBody')}</p>
                       {message.attachment_metadata.length > 0 && (
@@ -324,9 +542,9 @@ function AdminEmailInbox() {
                     onChange={(event) => setSenderProfile(event.target.value as EmailSenderProfile)}
                     className="rounded-lg border border-white/10 bg-[#19172d] px-2.5 py-1.5 text-xs text-gray-200 focus:outline-none focus:ring-2 focus:ring-cyan-400/40"
                   >
+                    <option value="support">support@filamenthub.ru</option>
                     <option value="partnerships">partnerships@filamenthub.ru</option>
                     <option value="pr">pr@filamenthub.ru</option>
-                    <option value="transactional">noreply@filamenthub.ru</option>
                   </select>
                 </div>
                 <textarea
@@ -353,8 +571,36 @@ function AdminEmailInbox() {
             </div>
           )}
         </section>
+        </div>
       </div>
-    </div>
+      {composeOpen && (
+        <EmailComposeModal
+          onClose={() => setComposeOpen(false)}
+          onSent={(thread) => {
+            setComposeOpen(false);
+            setFilter('all');
+            setSelectedThreadId(thread.id);
+            queryClient.setQueryData(['admin-email-thread', thread.id], thread);
+            queryClient.invalidateQueries({ queryKey: ['admin-email-threads'] });
+          }}
+        />
+      )}
+      <ConfirmModal
+        isOpen={deleteThreadId !== null}
+        onClose={() => {
+          if (!deleteMutation.isPending) setDeleteThreadId(null);
+        }}
+        onConfirm={() => {
+          if (deleteThreadId !== null) deleteMutation.mutate(deleteThreadId);
+        }}
+        title={t('adminCommunications.delete.title')}
+        message={t('adminCommunications.delete.message')}
+        confirmText={t('adminCommunications.delete.confirm')}
+        isLoading={deleteMutation.isPending}
+        variant="danger"
+        icon={<Trash2 className="h-5 w-5" />}
+      />
+    </>
   );
 }
 
