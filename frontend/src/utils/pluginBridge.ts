@@ -61,13 +61,28 @@ function postToPlugin(message: PluginMessage): void {
   window.parent.postMessage(message, '*');
 }
 
+function isLoopbackOrigin(origin: string): boolean {
+  try {
+    const url = new URL(origin);
+    return url.protocol === 'http:' && (url.hostname === '127.0.0.1' || url.hostname === 'localhost');
+  } catch {
+    return false;
+  }
+}
+
 function isTrustedPluginParentEvent(event: MessageEvent): boolean {
   if (event.source !== window.parent) {
     return false;
   }
-  // A file:// WebView parent has an opaque `null` origin. HTTPS parents are
-  // restricted by the /embed CSP to our own origin.
-  return event.origin === 'null' || event.origin === window.location.origin;
+  // Trusted parents mirror the /embed frame-ancestors CSP: an opaque `null`
+  // origin (file:// WebView shell), our own origin, or the plugin's
+  // loopback-served shell (http://127.0.0.1:*), which exists because WebView2
+  // SetPage documents get an opaque origin the CSP could never allowlist.
+  return (
+    event.origin === 'null' ||
+    event.origin === window.location.origin ||
+    isLoopbackOrigin(event.origin)
+  );
 }
 
 /**
@@ -83,13 +98,20 @@ export function stripOrcaHostTheme(): void {
   if (typeof document === 'undefined' || !isPluginEmbed()) {
     return;
   }
+  // The injected style id was renamed upstream (orca-host-theme →
+  // orca-plugin-defaults in the PR #14530 lifecycle refactor); strip both so
+  // the SPA stays correct on either host build.
+  const hostThemeIds = ['orca-host-theme', 'orca-plugin-defaults'];
   const removeIfPresent = () => {
-    const style = document.getElementById('orca-host-theme');
-    if (style) {
-      style.remove();
-      return true;
+    let removed = false;
+    for (const id of hostThemeIds) {
+      const style = document.getElementById(id);
+      if (style) {
+        style.remove();
+        removed = true;
+      }
     }
-    return false;
+    return removed;
   };
   if (removeIfPresent()) {
     return;
