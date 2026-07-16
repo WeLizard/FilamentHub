@@ -138,6 +138,19 @@ def test_stale_preset_files_are_removed_after_rename(plugin_module, tmp_path):
     assert remaining == ["New Name.json"]
 
 
+def test_profile_change_reports_automatic_sync_result(plugin_module):
+    capability = plugin_module.FilamentHubCatalog()
+    calls = []
+    capability._auto_sync = lambda announce=False: calls.append(announce)
+
+    capability.on_message({
+        "source": "filamenthub-plugin",
+        "type": "profile-changed",
+    })
+
+    assert calls == [True]
+
+
 def test_profile_payload_must_be_an_object(plugin_module):
     with pytest.raises(ValueError, match="JSON object"):
         plugin_module.validate_filament_profile([])

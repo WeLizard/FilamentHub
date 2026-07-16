@@ -808,16 +808,17 @@ class FilamentHubCatalog(orca.script.ScriptPluginCapabilityBase):
                 pass  # main window not ready yet; the user can still Run it
         self._auto_sync()  # pull the signed-in user's presets on open, silently
 
-    def _auto_sync(self):
+    def _auto_sync(self, announce=False):
         # Reconcile presets automatically when the tab opens (and after sign-in),
-        # so the user doesn't have to press Sync. Silent: no dialogs, just a live
-        # reload if anything changed. The manual Sync button still reports results.
+        # so the user doesn't have to press Sync. Startup/auth refresh stays
+        # silent; a user-initiated profile change reports its result immediately
+        # so a following manual Sync cannot hide the preceding new/removed count.
         saved = load_saved_auth() or {}
         token = saved.get("accessToken") or ""
         if not token:
             return
         known = self._known_filament_preset_names()  # host read on the UI thread
-        threading.Thread(target=self._do_sync, args=(token, known, False), daemon=True).start()
+        threading.Thread(target=self._do_sync, args=(token, known, announce), daemon=True).start()
 
     def execute(self):
         created = self._open()
@@ -877,8 +878,8 @@ class FilamentHubCatalog(orca.script.ScriptPluginCapabilityBase):
                 self._auto_sync()
         elif msg_type == "profile-changed":
             # The catalog saved/removed a preset in the user's profile — reconcile
-            # into the slicer automatically (silently), no manual Sync needed.
-            self._auto_sync()
+            # into the slicer automatically and report this user-initiated delta.
+            self._auto_sync(announce=True)
         elif msg_type == "auth-logout":
             clear_auth()
 
