@@ -1,0 +1,13 @@
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "filamenthub"
+version = "0.0.2"
+description = "Browse and sync community-rated filament profiles from FilamentHub, with spool inventory and print-cost tools."
+requires-python = ">=3.12"
+authors = [{ name = "FilamentHub" }]
+
+[tool.setuptools]
+py-modules = ["filamenthub_plugin"]

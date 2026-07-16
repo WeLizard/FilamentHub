@@ -17,13 +17,12 @@ import {
   Palette,
   Fan,
   Printer,
-  Download,
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { filamentsAPI, brandsAPI, savedPresetsAPI, qrAPI } from '../api/client';
 import { translateApiError } from '../utils/translateApiError';
 import { currencySymbol } from '../utils/currency';
-import { isPluginEmbed, importPresetToPlugin, notifyProfileChanged } from '../utils/pluginBridge';
+import { isPluginEmbed, notifyProfileChanged } from '../utils/pluginBridge';
 import { Dropdown } from '../components/Dropdown';
 import { FilamentPreview } from '../components/FilamentPreview';
 import { RecommendedForPrinterSection } from '../components/RecommendedForPrinterSection';
@@ -556,31 +555,19 @@ const MaterialCard: React.FC<MaterialCardProps> = ({
                   </button>
                 </div>
               )}
-              {isPluginEmbed() && (
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    // Import must not bypass the profile: saving keeps the site
-                    // library and the slicer copy managed by the same sync set.
-                    if (!isPresetSaved) {
-                      onSelect(currentPreset.id);
-                    }
-                    importPresetToPlugin(currentPreset.id);
-                  }}
-                  title={t('catalogPage.importToOrcaTitle')}
-                  className="px-3 sm:px-4 py-1.5 sm:py-2 rounded-lg border border-purple-400/40 bg-purple-500/20 text-xs sm:text-sm text-purple-100 hover:bg-purple-500/30 transition-colors"
-                >
-                  <Download className="w-3.5 h-3.5 inline sm:mr-1" />
-                  <span className="hidden sm:inline">{t('catalogPage.importToOrca')}</span>
-                </button>
-              )}
               <button
                 onClick={handleSavePreset}
                 className="px-3 sm:px-4 py-1.5 sm:py-2 rounded-lg border border-white/20 text-xs sm:text-sm text-white hover:bg-white/10 transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
                 disabled={isPresetSaved}
               >
                 {isPresetSaved ? '✓' : '+'}
-                <span className="hidden sm:inline ml-1">{isPresetSaved ? t('catalogPage.addedToProfile') : t('catalogPage.addToProfile')}</span>
+                <span className="hidden sm:inline ml-1">
+                  {isPresetSaved
+                    ? t('catalogPage.addedToProfile')
+                    : isPluginEmbed()
+                      ? t('catalogPage.importToOrca')
+                      : t('catalogPage.addToProfile')}
+                </span>
               </button>
             </div>
           </div>

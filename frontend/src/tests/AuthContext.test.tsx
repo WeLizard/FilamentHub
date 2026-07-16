@@ -6,6 +6,7 @@ const authApiMocks = vi.hoisted(() => ({
   me: vi.fn(),
   logout: vi.fn(),
   register: vi.fn(),
+  createPluginSession: vi.fn(),
   getMaintenanceStatus: vi.fn(),
 }));
 
@@ -26,6 +27,15 @@ vi.mock('../api/client', () => ({
 }));
 
 vi.mock('../utils/auth', () => authUtilsMocks);
+
+const pluginBridgeMocks = vi.hoisted(() => ({
+  isPluginEmbed: vi.fn(() => false),
+  reportLogoutToPlugin: vi.fn(),
+  reportPluginSessionToPlugin: vi.fn(),
+  subscribeToPluginLogout: vi.fn(() => undefined),
+}));
+
+vi.mock('../utils/pluginBridge', () => pluginBridgeMocks);
 
 import { AuthProvider, useAuth } from '../contexts/AuthContext';
 
@@ -55,7 +65,9 @@ describe('AuthContext', () => {
 
     authUtilsMocks.getToken.mockReturnValue(null);
     authUtilsMocks.isCookieAuthMode.mockReturnValue(false);
+    authUtilsMocks.isOrcaEmbedded.mockReturnValue(false);
     authUtilsMocks.shouldPersistTokensLocally.mockReturnValue(true);
+    pluginBridgeMocks.isPluginEmbed.mockReturnValue(false);
 
     authApiMocks.getMaintenanceStatus.mockResolvedValue({
       maintenance_mode: false,
@@ -173,5 +185,35 @@ describe('AuthContext', () => {
     });
 
     expect(authApiMocks.getMaintenanceStatus).toHaveBeenCalledTimes(1);
+  });
+
+  it('mints a fresh plugin capability for an existing embedded cookie session', async () => {
+    authUtilsMocks.isCookieAuthMode.mockReturnValue(true);
+    pluginBridgeMocks.isPluginEmbed.mockReturnValue(true);
+    authApiMocks.me.mockResolvedValue({
+      id: 7,
+      email: 'user@example.com',
+      username: 'user',
+    });
+    authApiMocks.createPluginSession.mockResolvedValue({
+      plugin_token: 'scoped-plugin-token',
+      expires_in: 1800,
+      token_type: 'bearer',
+    });
+
+    render(
+      <AuthProvider>
+        <AuthProbe />
+      </AuthProvider>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTestId('is-authenticated')).toHaveTextContent('true');
+      expect(pluginBridgeMocks.reportPluginSessionToPlugin).toHaveBeenCalledWith(
+        'scoped-plugin-token',
+      );
+    });
+
+    expect(authApiMocks.createPluginSession).toHaveBeenCalledTimes(1);
   });
 });

@@ -30,6 +30,24 @@ export const useAuth = () => {
   return context;
 };
 
+const PLUGIN_SESSION_RETRY_MS = 60_000;
+const PLUGIN_SESSION_REFRESH_MARGIN_SECONDS = 60;
+
+async function authorizePluginSession(): Promise<number | null> {
+  if (!isPluginEmbed()) {
+    return null;
+  }
+  try {
+    const pluginSession = await authAPI.createPluginSession();
+    reportPluginSessionToPlugin(pluginSession.plugin_token);
+    return pluginSession.expires_in;
+  } catch {
+    // The account session remains valid. Retry separately without logging the
+    // user out or letting a stale plugin capability block the embedded site.
+    return null;
+  }
+}
+
 interface AuthProviderProps {
   children: ReactNode;
 }
@@ -156,17 +174,40 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const authorizePluginSession = async () => {
-    if (!isPluginEmbed()) {
+  // Plugin capabilities are deliberately short-lived and cannot authenticate
+  // against regular account endpoints. Mint one whenever an authenticated
+  // embed session appears (including cookie-restored sessions after a plugin
+  // update), then refresh it before expiry while the window stays open.
+  useEffect(() => {
+    if (!user || !isPluginEmbed()) {
       return;
     }
-    try {
-      const pluginSession = await authAPI.createPluginSession();
-      reportPluginSessionToPlugin(pluginSession.plugin_token);
-    } catch {
-      // Browser login remains valid; plugin actions will ask to sign in again.
-    }
-  };
+
+    let cancelled = false;
+    let refreshTimer: ReturnType<typeof setTimeout> | undefined;
+
+    const refreshPluginSession = async () => {
+      const expiresIn = await authorizePluginSession();
+      if (cancelled) {
+        return;
+      }
+      const delay = expiresIn
+        ? Math.max(
+            PLUGIN_SESSION_RETRY_MS,
+            (expiresIn - PLUGIN_SESSION_REFRESH_MARGIN_SECONDS) * 1000,
+          )
+        : PLUGIN_SESSION_RETRY_MS;
+      refreshTimer = setTimeout(refreshPluginSession, delay);
+    };
+
+    void refreshPluginSession();
+    return () => {
+      cancelled = true;
+      if (refreshTimer !== undefined) {
+        clearTimeout(refreshTimer);
+      }
+    };
+  }, [user?.id]);
 
   const login = async (email: string, password: string) => {
     try {
@@ -194,7 +235,6 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       if (isOrcaEmbedded() && window.filamenthub?.sendLoginSuccess) {
         window.filamenthub.sendLoginSuccess(tokenData.access_token, userData.id, tokenData.refresh_token ?? '');
       }
-      await authorizePluginSession();
     } catch (error: any) {
       // Удаляем токен если логин не удался
       removeToken();
@@ -216,7 +256,6 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       if (userData.id && persistLocally) {
         setUserId(userData.id);
       }
-      await authorizePluginSession();
     } catch (error: any) {
       removeToken();
       throw error;

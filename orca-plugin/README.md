@@ -3,7 +3,10 @@
 A single-file plugin for OrcaSlicer's new Python plugin system (upstream PR
 **#14530**, branch `feat/plugin-feature`). It opens a **FilamentHub catalog
 window** inside OrcaSlicer that **embeds our real React catalog** in an
-`<iframe>`, and imports a selected filament preset into your user preset folder.
+`<iframe>`, and synchronizes the user's saved presets into OrcaSlicer.
+
+**Active testing:** this is an alpha plugin tested against OrcaSlicer PR #14530
+artifacts. The upstream plugin API is still evolving and updates may be frequent.
 
 Replaces the ~9.5K-LOC C++ WebView fork with **one `.py` file** plus a small
 embed route in our existing frontend.
@@ -24,7 +27,7 @@ no hand-written catalog UI.
 
 ```
 iframe (React /embed/catalog)
-   │  window.parent.postMessage({ source:'filamenthub-plugin', type:'import-preset', presetId, token })
+   │  save preset → profile-changed; authenticated embed → scoped auth-token
    ▼
 plugin shell window  ── window.addEventListener('message') ──▶ orca.postMessage(...)
    ▼
@@ -35,14 +38,14 @@ Python on_message  ──GET /api/v1/presets/{id}/export/orcaslicer.json (Bearer
 
 ### postMessage protocol
 
-**iframe → shell → Python** (preset import message):
+**iframe → shell → Python** (managed preset sync):
 
 ```js
-{ source: 'filamenthub-plugin', type: 'import-preset', presetId: <number>, token: '<scoped-jwt|"">' }
+{ source: 'filamenthub-plugin', type: 'profile-changed' }
 ```
 
 - `source` namespaces our messages so the shell relay ignores anything else.
-- `token` is a short-lived OrcaSlicer plugin capability (`aud=orcaslicer-plugin`,
+- Authentication is a short-lived OrcaSlicer plugin capability (`aud=orcaslicer-plugin`,
   `presets:read`/`presets:write`, 30-minute expiry). Browser access and refresh
   credentials never cross the iframe boundary.
 - Python → iframe is **not used** for the MVP; confirmation is a native host
@@ -87,9 +90,10 @@ The label comes ready-made (i18n happens in the SPA) from the same
 - `App.tsx` — routes `/embed` and `/embed/catalog` render `<CatalogPage />` in a
   chrome-less `EmbedShell` (no `<Layout>` header/footer).
 - `utils/pluginBridge.ts` — `isPluginEmbed()` (route-based, sticky for the iframe
-  session via `sessionStorage`) and `importPresetToPlugin(presetId)`.
-- `CatalogPage.tsx` — each preset shows an **"Import into OrcaSlicer"** button in
-  embed mode only; it calls `importPresetToPlugin(...)`.
+  session via `sessionStorage`) and the profile/auth bridge messages.
+- `CatalogPage.tsx` — the normal save action becomes **"Import into OrcaSlicer"**
+  in embed mode; saving updates the managed profile and triggers auto-sync instead
+  of using a second direct-import path.
 - `Layout.tsx` — also hides header/footer in embed mode, so navigating to a
   material detail page inside the iframe stays chrome-less.
 - The existing fork bridge (`window.filamenthub` / `window.wx`,
@@ -110,7 +114,7 @@ The label comes ready-made (i18n happens in the SPA) from the same
 # name = "FilamentHub"
 # description = "Browse and sync community-rated filament profiles from FilamentHub, with spool inventory and print-cost tools."
 # author = "FilamentHub"
-# version = "0.1.0-alpha.1"
+# version = "0.0.2"
 # network = ["filamenthub.ru", "*.filamenthub.ru"]   # proposed; ignored by current host
 # ///
 ```
@@ -139,7 +143,7 @@ python -m pytest orca-plugin/tests -q
 Output:
 
 ```text
-orca-plugin/dist/filamenthub-0.1.0-alpha.1/
+orca-plugin/dist/filamenthub-0.0.2/
   filamenthub_plugin.py       # install this file
   package-metadata.json       # build provenance
   SHA256SUMS                  # integrity check
@@ -164,8 +168,8 @@ Then, with an OrcaSlicer build from `feat/plugin-feature`:
 3. Open the **Plugins** dialog → **FilamentHub Catalog** → **Run**.
 4. The window opens with our catalog inside. **Sign in** (inside the iframe, our
    normal login), browse/search, and click **Import into OrcaSlicer** on a preset.
-5. A native dialog confirms the import and asks you to restart. **Restart**, then
-   pick the filament from the dropdown.
+5. The preset is saved to the managed FilamentHub profile and synchronized. On the
+   current host API, restart OrcaSlicer before selecting a newly created preset.
 
 To side-load into any other build: create
 `<data_dir>/orca_plugins/filamenthub/filamenthub_plugin.py` (one entry file per
@@ -173,31 +177,26 @@ folder) and restart.
 
 ---
 
-## Submit to the Orca Plugin Hub BETA
+## Plugin Hub alpha
 
-The Hub install/update path is `CloudPluginService` + `PluginManager`. SoftFever
-has demonstrated an end-to-end published sample, but the official GitHub docs do
-not yet describe a public self-service submission workflow. Send the built
-single `.py`, `package-metadata.json`, checksum and test matrix to the maintainers
-for Plugin Hub BETA review. Bump `version` on every release. Bonus: a
-FilamentHub preset can carry a `plugins` `"name;uuid;capability"` reference, and
-Orca will auto-offer to install our Hub plugin for anyone who receives it
-(`PluginResolver::resolve_missing_plugins`).
+Upload the pure-Python wheel plus the tested description/changelog. Plugin Hub
+accepts release versions only in numeric `X.Y.Z` form, so alpha status belongs in
+the listing text rather than a `-alpha` version suffix. Bump the numeric version
+for every uploaded update.
 
 ---
 
-## Gaps and what blocks "publishable to beta"
+## Alpha limitations
 
 | # | Gap | Impact | Workaround |
 |---|---|---|---|
 | 1 | **No preset-install / hot-reload host API.** `orca.host` is read-only; `PluginType.Importer` has no capability base. | Import needs an **app restart**. Not a publish blocker; rough UX. | Atomic file-write to `data_dir/user/<active>/_local/filamenthub/filament/` + native "restart" dialog. Ask on PR #14530 for `orca.host.presets.install(...)` / `reload_user_presets()`. |
 | 2 | **A short-lived plugin capability crosses the iframe boundary** with `targetOrigin: '*'` because the `file://` parent has an opaque origin. | The shell rejects every message not originating from the exact catalog iframe and `https://filamenthub.ru`; account access/refresh credentials never cross. | Keep the origin/source regression test and rotate the capability every 30 minutes. |
-| 3 | **Outbound HTTPS ungated today** but `AuditMode::Enforcing` is scaffolded to block sockets. | A future OrcaSlicer could break the export fetch. | Declare `network = [...]`; push for manifest allow-listing. |
+| 3 | **Outbound HTTPS is ungated today** and the declared network allow-list is not enforced yet. | A future host policy may require an explicit permission contract. | Keep `network = [...]` declared and follow the host's audit-first permission design. |
+| 4 | **Package updates recreate the plugin install directory.** | Sidecar auth/sync caches are not guaranteed to survive an update. | The embedded cookie session mints a fresh scoped plugin capability, and sync rebuilds identity from managed preset content; migrate durable state to the host storage API when it lands. |
 
-The package is suitable for BETA review once the exact official PR artifact E2E
-passes. Gap #1 (restart-to-see-import on stock upstream) is the main user-visible
-limitation; public listing still depends on the maintainers' submission/review
-process.
+These limitations are disclosed in the alpha listing. Gap #1
+(restart-to-see-import on stock upstream) remains the main user-visible one.
 
 ---
 

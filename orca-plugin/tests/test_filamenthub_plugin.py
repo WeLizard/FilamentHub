@@ -4,6 +4,7 @@ import hashlib
 import importlib.util
 import json
 import sys
+import tomllib
 from pathlib import Path
 from types import ModuleType, SimpleNamespace
 
@@ -53,6 +54,21 @@ def test_pep723_and_runtime_versions_match(plugin_module):
         "*.filamenthub.ru",
     ]
     assert metadata["dependencies"] == []
+    project = tomllib.loads((PLUGIN_ROOT / "pyproject.toml").read_text(encoding="utf-8"))
+    assert project["project"]["version"] == plugin_module.PLUGIN_VERSION
+
+
+def test_plugin_hub_version_rejects_prerelease_suffix(plugin_module):
+    builder = _load_module(BUILD_PATH, "filamenthub_build_version_test")
+    source = PLUGIN_PATH.read_text(encoding="utf-8")
+    version = plugin_module.PLUGIN_VERSION
+    invalid = source.replace(
+        f'# version = "{version}"',
+        f'# version = "{version}-alpha.1"',
+        1,
+    )
+    with pytest.raises(ValueError, match="numeric X.Y.Z"):
+        builder.extract_metadata(invalid)
 
 
 def test_shell_accepts_messages_only_from_catalog_frame(plugin_module):

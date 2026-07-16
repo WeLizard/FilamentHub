@@ -4,6 +4,7 @@ import argparse
 import ast
 import hashlib
 import json
+import re
 import tomllib
 from pathlib import Path
 
@@ -35,6 +36,8 @@ def extract_metadata(source: str) -> dict[str, object]:
     version = plugin.get("version")
     if not isinstance(version, str) or not version:
         raise ValueError("Plugin version is missing")
+    if re.fullmatch(r"\d+\.\d+\.\d+", version) is None:
+        raise ValueError("Plugin Hub version must use numeric X.Y.Z format")
     if metadata.get("dependencies") != []:
         raise ValueError("The single-file package must remain dependency-free")
     return metadata
