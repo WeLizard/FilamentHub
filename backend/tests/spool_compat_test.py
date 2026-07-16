@@ -14,6 +14,7 @@ from app.api.v1.endpoints.spool_compat import (
     _filament_temps,
     _to_spool_payload,
 )
+from app.core.config import settings
 from app.models.brand import Brand
 from app.models.filament import Filament
 from app.models.preset import Preset, PresetModerationStatus
@@ -89,6 +90,56 @@ async def test_spool_compat_v1_health_info(client: AsyncClient):
     info = await client.get("/api/v1/spool_compat/v1/info")
     assert info.status_code == 200
     assert "version" in info.json()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "path",
+    [
+        "/api/v1/spool_compat/browser-secret",
+        "/spool_compat/browser-secret",
+    ],
+)
+async def test_spool_compat_bare_url_opens_filament_inventory(client: AsyncClient, path: str):
+    response = await client.get(path, follow_redirects=False)
+
+    assert response.status_code == 302
+    assert response.headers["location"] == "https://filamenthub.ru/profile?tab=spools"
+    assert "browser-secret" not in response.headers["location"]
+
+
+@pytest.mark.asyncio
+async def test_spool_compat_bare_url_uses_lan_frontend_in_debug(
+    client: AsyncClient,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    monkeypatch.setattr(settings, "DEBUG", True)
+
+    response = await client.get(
+        "/api/v1/spool_compat/browser-secret",
+        headers={"host": "192.168.0.51:8001"},
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 302
+    assert response.headers["location"] == "http://192.168.0.51:3000/profile?tab=spools"
+
+
+@pytest.mark.asyncio
+async def test_spool_compat_bare_url_rejects_untrusted_debug_host(
+    client: AsyncClient,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    monkeypatch.setattr(settings, "DEBUG", True)
+
+    response = await client.get(
+        "/api/v1/spool_compat/browser-secret",
+        headers={"host": "attacker.example:8001"},
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 302
+    assert response.headers["location"] == "https://filamenthub.ru/profile?tab=spools"
 
 
 @pytest.mark.asyncio

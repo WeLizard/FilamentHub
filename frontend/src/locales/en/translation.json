@@ -5056,6 +5056,8 @@
     },
     "gateEmpty": "Empty",
     "gateUnknown": "No data",
+    "unknownFilament": "Unknown filament",
+    "identifySpool": "Identify spool",
     "assignPreset": "Assign preset",
     "clearAll": "Clear all slots",
     "clearAllConfirm": "Clear all assignments for \"{{name}}\"?",
@@ -5080,6 +5082,11 @@
       "copied": "Copied",
       "check": "Check connection"
     },
+    "unidentified": {
+      "title": "Happy Hare sees filament but does not know the spool",
+      "description": "Open the My Filaments tab and select the actual spool. Happy Hare will receive its details on the next Sync Spoolman.",
+      "emptyHint": "If the gate is actually empty, correct HH's saved state with:"
+    },
     "modal": {
       "title": "Gate {{gate}}",
       "hhInfo": "Happy Hare: {{material}}",
@@ -5088,7 +5095,7 @@
       "assign": "Assign",
       "clear": "Clear slot",
       "cancel": "Cancel",
-      "assigned": "Preset assigned to gate {{gate}}"
+      "assigned": "Assignment for gate {{gate}} saved"
     },
     "edit": {
       "button": "Settings",

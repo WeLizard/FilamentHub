@@ -1,6 +1,7 @@
 import { useTranslation } from 'react-i18next';
 import type { GateState, UserPrinterDevice, UserSpool } from '../../api/client';
 import type { Preset } from '../../types/api';
+import { isUnidentifiedHHFilament } from '../../utils/hhGateState';
 
 interface GateMapGridProps {
   device: UserPrinterDevice;
@@ -14,11 +15,13 @@ function SpoolIcon({
   color,
   remainingPct,
   isEmpty,
+  isUnknown,
   size = 56,
 }: {
   color?: string | null;
   remainingPct?: number | null;
   isEmpty?: boolean;
+  isUnknown?: boolean;
   size?: number;
 }) {
   const center = size / 2;
@@ -63,6 +66,19 @@ function SpoolIcon({
       {/* Hub cross marks */}
       <line x1={center - innerR + 2} y1={center} x2={center + innerR - 2} y2={center} stroke="rgba(255,255,255,0.08)" strokeWidth="0.5" />
       <line x1={center} y1={center - innerR + 2} x2={center} y2={center + innerR - 2} stroke="rgba(255,255,255,0.08)" strokeWidth="0.5" />
+      {isUnknown && (
+        <text
+          x={center}
+          y={center + 1}
+          dominantBaseline="middle"
+          textAnchor="middle"
+          fill="rgb(253 230 138)"
+          fontSize={size * 0.32}
+          fontWeight="700"
+        >
+          ?
+        </text>
+      )}
     </svg>
   );
 }
@@ -93,9 +109,10 @@ export function GateMapGrid({ device, gates, presets, spools, onGateClick }: Gat
           ? `#${spool.filament.color_hex.replace(/^#/, '')}`
           : null;
         const hhColor = gate?.hh_color_hex ? `#${gate.hh_color_hex.replace(/^#/, '')}` : null;
-        const displayColor = spoolColor ?? hhColor;
+        const isUnidentified = isUnidentifiedHHFilament(gate);
+        const displayColor = spoolColor ?? hhColor ?? (isUnidentified ? '#F59E0B' : null);
         const displayMaterial = spool?.filament?.material_type ?? gate?.hh_material ?? null;
-        const hasContent = !!(gate?.preset_id || gate?.spool_id || displayMaterial);
+        const hasContent = !!(gate?.preset_id || gate?.spool_id || displayMaterial || isUnidentified);
         const hhBadge = gate ? hhStatusBadge(gate.hh_status, t) : null;
 
         return (
@@ -106,7 +123,9 @@ export function GateMapGrid({ device, gates, presets, spools, onGateClick }: Gat
             className={[
               'group relative flex flex-col items-center gap-1 rounded-xl border px-2 py-2 text-center transition',
               'hover:border-purple-500/50 hover:bg-purple-500/8 focus:outline-none focus:ring-2 focus:ring-purple-500/40',
-              hasContent
+              isUnidentified
+                ? 'border-amber-400/35 bg-amber-500/[0.07]'
+                : hasContent
                 ? 'border-purple-500/25 bg-purple-500/[0.04]'
                 : 'border-white/[0.06] bg-white/[0.015]',
             ].join(' ')}
@@ -134,12 +153,15 @@ export function GateMapGrid({ device, gates, presets, spools, onGateClick }: Gat
                 color={displayColor}
                 remainingPct={spool?.remaining_pct}
                 isEmpty={!hasContent}
+                isUnknown={isUnidentified}
               />
             </div>
 
             {/* Material type */}
             {displayMaterial ? (
               <span className="text-xs font-medium text-gray-200">{displayMaterial}</span>
+            ) : isUnidentified ? (
+              <span className="text-[11px] font-medium text-amber-200">{t('presetSlots.unknownFilament')}</span>
             ) : (
               <span className="text-[11px] text-gray-400">{t('presetSlots.gateEmpty')}</span>
             )}
@@ -148,6 +170,12 @@ export function GateMapGrid({ device, gates, presets, spools, onGateClick }: Gat
             {spool?.filament && (
               <p className="max-w-full truncate text-[10px] leading-tight text-gray-300">
                 {[spool.filament.brand_name, spool.filament.name].filter(Boolean).join(' ')}
+              </p>
+            )}
+
+            {isUnidentified && (
+              <p className="max-w-full truncate text-[10px] leading-tight text-amber-300/80">
+                {t('presetSlots.identifySpool')}
               </p>
             )}
 
@@ -178,7 +206,7 @@ export function GateMapGrid({ device, gates, presets, spools, onGateClick }: Gat
             {/* Hover overlay */}
             <span className="absolute inset-0 flex items-center justify-center rounded-xl opacity-0 transition group-hover:opacity-100">
               <span className="rounded-lg bg-purple-600/90 px-2.5 py-1 text-[10px] font-medium text-white shadow-lg backdrop-blur-sm">
-                {t('presetSlots.assignPreset')}
+                {t(isUnidentified ? 'presetSlots.identifySpool' : 'presetSlots.assignPreset')}
               </span>
             </span>
           </button>

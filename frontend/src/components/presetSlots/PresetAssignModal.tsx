@@ -1,13 +1,14 @@
 import { useState, useEffect, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { Search, X, Loader2, CheckCircle2, Trash2, Package } from 'lucide-react';
+import { Search, X, Loader2, CheckCircle2, Trash2, Package, Copy, Check, AlertTriangle } from 'lucide-react';
 import { presetsAPI, presetSlotsAPI } from '../../api/client';
 import type { GateState, UserSpool } from '../../api/client';
 import { toast } from '../Toast';
 import { translateApiError } from '../../utils/translateApiError';
 import { getSpoolCurrentLocation, getSpoolLastLocation } from '../../utils/spoolLocation';
 import { ModalOverlay } from '../ModalOverlay';
+import { isUnidentifiedHHFilament, markHHGateEmptyCommand } from '../../utils/hhGateState';
 
 interface PresetAssignModalProps {
   isOpen: boolean;
@@ -40,6 +41,7 @@ export function PresetAssignModal({
   const [selectedSpoolId, setSelectedSpoolId] = useState<number | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [activeTab, setActiveTab] = useState<'preset' | 'spool'>('preset');
+  const [emptyCommandCopied, setEmptyCommandCopied] = useState(false);
 
   const searchRef = useRef<HTMLInputElement>(null);
 
@@ -50,7 +52,8 @@ export function PresetAssignModal({
       setSelectedSpoolId(gate?.spool_id ?? null);
       setSearch('');
       setDebouncedSearch('');
-      setActiveTab('preset');
+      setActiveTab(isUnidentifiedHHFilament(gate) ? 'spool' : 'preset');
+      setEmptyCommandCopied(false);
     }
   }, [gate, isOpen]);
 
@@ -118,6 +121,31 @@ export function PresetAssignModal({
     }
   };
 
+  const unidentifiedFilament = isUnidentifiedHHFilament(gate);
+  const emptyGateCommand = markHHGateEmptyCommand(gateIndex);
+
+  const handleCopyEmptyCommand = async () => {
+    try {
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(emptyGateCommand);
+      } else {
+        const textarea = document.createElement('textarea');
+        textarea.value = emptyGateCommand;
+        textarea.style.position = 'fixed';
+        textarea.style.opacity = '0';
+        document.body.appendChild(textarea);
+        textarea.focus();
+        textarea.select();
+        document.execCommand('copy');
+        textarea.remove();
+      }
+      setEmptyCommandCopied(true);
+      window.setTimeout(() => setEmptyCommandCopied(false), 1800);
+    } catch {
+      toast.error(t('common.error'));
+    }
+  };
+
   if (!isOpen) return null;
 
   const colorHex = gate?.hh_color_hex ? `#${gate.hh_color_hex.replace(/^#/, '')}` : null;
@@ -161,6 +189,38 @@ export function PresetAssignModal({
             <span className="text-xs text-gray-400">
               {t('presetSlots.modal.hhInfo', { material: gate?.hh_material ?? '' })}
             </span>
+          </div>
+        )}
+
+        {unidentifiedFilament && (
+          <div className="border-b border-amber-400/15 bg-amber-500/10 px-5 py-3">
+            <div className="flex items-start gap-2.5">
+              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-300" />
+              <div className="min-w-0 flex-1">
+                <p className="text-xs font-semibold text-amber-100">
+                  {t('presetSlots.unidentified.title')}
+                </p>
+                <p className="mt-1 text-[11px] leading-relaxed text-amber-100/70">
+                  {t('presetSlots.unidentified.description')}
+                </p>
+                <p className="mt-2 text-[11px] text-amber-100/70">
+                  {t('presetSlots.unidentified.emptyHint')}
+                </p>
+                <div className="mt-1.5 flex items-center gap-2">
+                  <code className="min-w-0 flex-1 overflow-x-auto rounded-lg border border-white/10 bg-black/25 px-2.5 py-1.5 text-[10px] text-white">
+                    {emptyGateCommand}
+                  </code>
+                  <button
+                    type="button"
+                    onClick={handleCopyEmptyCommand}
+                    className="inline-flex shrink-0 items-center gap-1 rounded-lg border border-amber-300/25 bg-white/5 px-2.5 py-1.5 text-[10px] text-amber-100 transition hover:bg-white/10"
+                  >
+                    {emptyCommandCopied ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
+                    {t(emptyCommandCopied ? 'presetSlots.pairing.copied' : 'presetSlots.pairing.copy')}
+                  </button>
+                </div>
+              </div>
+            </div>
           </div>
         )}
 

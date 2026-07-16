@@ -5051,6 +5051,8 @@
     },
     "gateEmpty": "空",
     "gateUnknown": "无数据",
+    "unknownFilament": "未知耗材",
+    "identifySpool": "指定线轴",
     "assignPreset": "分配预设",
     "clearAll": "清空所有位置",
     "clearAllConfirm": "清空 \"{{name}}\" 的所有分配？",
@@ -5075,6 +5077,11 @@
       "copied": "已复制",
       "check": "检查连接"
     },
+    "unidentified": {
+      "title": "Happy Hare 检测到耗材，但不知道对应线轴",
+      "description": "打开“我的耗材”标签并选择实际线轴。下次执行 Sync Spoolman 时，Happy Hare 将获取其数据。",
+      "emptyHint": "如果该位置实际为空，请使用以下命令修正 HH 保存的状态："
+    },
     "modal": {
       "title": "位置 {{gate}}",
       "hhInfo": "Happy Hare: {{material}}",
@@ -5083,7 +5090,7 @@
       "assign": "分配",
       "clear": "清空位置",
       "cancel": "取消",
-      "assigned": "预设已分配到位置 {{gate}}"
+      "assigned": "位置 {{gate}} 的分配已保存"
     },
     "edit": {
       "button": "设置",

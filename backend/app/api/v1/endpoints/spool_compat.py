@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import ipaddress
 import json
 import logging
 import math
@@ -15,11 +16,12 @@ from fastapi import (
     Header,
     HTTPException,
     Query,
+    Request,
     WebSocket,
     WebSocketDisconnect,
     status,
 )
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, RedirectResponse
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -110,6 +112,25 @@ class SpoolPatchBody(BaseModel):
 
 def _err(code: int, message: str) -> JSONResponse:
     return JSONResponse(status_code=code, content={"message": message})
+
+
+def _spool_compat_ui_url(request: Request) -> str:
+    """Return the safe frontend destination for browser-opened Spoolman URLs."""
+    if settings.DEBUG:
+        hostname = request.url.hostname
+        trusted_dev_host = hostname == "localhost"
+        if hostname and not trusted_dev_host:
+            try:
+                ipaddress.ip_address(hostname)
+                trusted_dev_host = True
+            except ValueError:
+                trusted_dev_host = False
+
+        if hostname and trusted_dev_host:
+            host = f"[{hostname}]" if ":" in hostname else hostname
+            return f"{request.url.scheme}://{host}:3000/profile?tab=spools"
+
+    return f"{settings.BASE_URL.rstrip('/')}/profile?tab=spools"
 
 
 def _iso(dt: datetime | None) -> str | None:
@@ -753,10 +774,13 @@ async def spool_compat_info_scoped(api_key: str) -> dict:
 
 
 @router.get("/{api_key}")
-async def spool_compat_root(api_key: str) -> dict:
-    """Base URL handler — returned when Mainsail or browser hits the bare api_key path."""
+async def spool_compat_root(api_key: str, request: Request) -> RedirectResponse:
+    """Open FilamentHub's spool inventory when a browser hits the configured server URL."""
     _ = api_key
-    return await spool_compat_info()
+    return RedirectResponse(
+        url=_spool_compat_ui_url(request),
+        status_code=status.HTTP_302_FOUND,
+    )
 
 
 @router.websocket("/v1/spool")
