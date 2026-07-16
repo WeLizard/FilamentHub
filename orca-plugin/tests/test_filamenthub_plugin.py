@@ -84,6 +84,31 @@ def test_preset_paths_are_stable_and_collision_resistant(plugin_module, tmp_path
     assert foreign.endswith("User PETG (FH-12).json")
 
 
+def test_recover_sync_record_never_treats_lost_state_as_remote_newer(plugin_module):
+    # The state file dies with plugin updates; a local file without a record
+    # must be adopted when identical and pushed when edited — never re-pulled.
+    remote = {"name": "PLA", "inherits": "fdm_filament_common", "nozzle_temperature": ["210"]}
+
+    def fake_http_get(path, token=None, **kw):
+        return 200, json.dumps(remote).encode("utf-8")
+
+    plugin_module.http_get = fake_http_get
+    normalized = dict(remote)
+    plugin_module.ensure_parent_exists(normalized, {"fdm_filament_common"})
+    plugin_module.ensure_filament_colour(normalized)
+    normalized["bundle_id"] = "filamenthub:5"
+    local_same = {"hash": plugin_module.preset_content_hash(normalized),
+                  "profile": {"name": "PLA"}}
+    rec = plugin_module.recover_sync_record(5, "tok", {"fdm_filament_common"}, local_same, "2026-07-16")
+    assert rec == {"updated_at": "2026-07-16", "hash": local_same["hash"], "name": "PLA"}
+
+    local_edited = {"hash": "deadbeef", "profile": {"name": "PLA"}}
+    assert plugin_module.recover_sync_record(5, "tok", {"fdm_filament_common"}, local_edited, "2026-07-16") is False
+
+    plugin_module.http_get = lambda path, token=None, **kw: (503, b"")
+    assert plugin_module.recover_sync_record(5, "tok", set(), local_same, "2026-07-16") is None
+
+
 def test_stale_preset_files_are_removed_after_rename(plugin_module, tmp_path):
     plugin_module.remove_host_filament = lambda name: False
     (tmp_path / "Old Name__fh_10.json").write_text(

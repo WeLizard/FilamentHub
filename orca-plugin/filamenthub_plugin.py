@@ -7,7 +7,7 @@
 # name = "FilamentHub"
 # description = "Browse and sync community-rated filament profiles from FilamentHub, with spool inventory and print-cost tools."
 # author = "FilamentHub"
-# version = "0.1.0-alpha.3"
+# version = "0.1.0-alpha.4"
 #
 # # Proposed forward-looking key (see README gap / PR #14530 feedback). The current
 # # host reads only name/description/author/version/dependencies and ignores unknown
@@ -66,7 +66,7 @@ import orca
 # --------------------------------------------------------------------------- #
 # Configuration
 # --------------------------------------------------------------------------- #
-PLUGIN_VERSION = "0.1.0-alpha.3"
+PLUGIN_VERSION = "0.1.0-alpha.4"
 SITE_URL = "https://filamenthub.ru"
 EMBED_URL = SITE_URL + "/embed/catalog"
 API_BASE = SITE_URL + "/api/v1"
@@ -535,6 +535,32 @@ def save_sync_state(state):
         write_json_atomic(SYNC_STATE_FILE, state)
     except OSError:
         pass
+
+
+def recover_sync_record(pid, token, known_presets, local_entry, remote_updated):
+    """The sync state file is a cache next to the plugin and dies with it (a
+    dialog-driven plugin update recreates the whole directory). A local preset
+    with no state record must NOT be treated as outdated — re-pulling would
+    silently overwrite the user's local edits. Rebuild the record by content:
+    download the remote export, normalize it exactly like a pull would, and
+    compare hashes. Returns the record to adopt when contents match, False when
+    the local copy differs (a real local edit — caller pushes it), or None when
+    the remote couldn't be fetched (caller skips this round)."""
+    status, body = http_get("/presets/%d/export/orcaslicer.json" % pid, token=token)
+    if status != 200:
+        return None
+    try:
+        remote = validate_filament_profile(json.loads(body.decode("utf-8")))
+    except (TypeError, ValueError):
+        return None
+    ensure_parent_exists(remote, known_presets)
+    ensure_filament_colour(remote)
+    remote["bundle_id"] = "%s%d" % (BUNDLE_PREFIX, pid)
+    if preset_content_hash(remote) != local_entry["hash"]:
+        return False
+    return {"updated_at": remote_updated or "",
+            "hash": local_entry["hash"],
+            "name": local_entry["profile"].get("name") or ""}
 
 
 def scan_local_fh_presets(folder):
@@ -1011,7 +1037,25 @@ class FilamentHubCatalog(orca.script.ScriptPluginCapabilityBase):
                 else:
                     failed += 1
                 continue
-            local_changed = bool(rec) and local_entry["hash"] != (rec.get("hash") or "")
+            if not rec:
+                # No record for an existing local file: the state cache was lost
+                # (plugin update wipes the dir). Rebuild by content — never assume
+                # "remote is newer" here, that path deletes the local copy.
+                recovered = recover_sync_record(pid, token, known_presets, local_entry, remote_updated)
+                if recovered is None:
+                    skipped += 1
+                    continue
+                if recovered is False:
+                    res = self._push_one(pid, token, local_entry, rp)
+                    if res:
+                        state[str(pid)] = res
+                        pushed += 1
+                    else:
+                        failed += 1
+                    continue
+                rec = recovered
+                state[str(pid)] = rec
+            local_changed = local_entry["hash"] != (rec.get("hash") or "")
             remote_newer = remote_updated > (rec.get("updated_at") or "")
             if local_changed:
                 res = self._push_one(pid, token, local_entry, rp)
@@ -1020,7 +1064,7 @@ class FilamentHubCatalog(orca.script.ScriptPluginCapabilityBase):
                     pushed += 1
                 else:
                     failed += 1
-            elif remote_newer or not rec:
+            elif remote_newer:
                 # Update = idiomatic delete + add: drop the old preset (host + files)
                 # first so the append reload picks up the new content.
                 bare = os.path.basename(local_entry["path"])[:-len(".json")]
