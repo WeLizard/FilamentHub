@@ -7,7 +7,7 @@
 # name = "FilamentHub"
 # description = "Browse and sync community-rated filament profiles from FilamentHub, with spool inventory and print-cost tools."
 # author = "FilamentHub"
-# version = "0.1.0-alpha.1"
+# version = "0.1.0-alpha.2"
 #
 # # Proposed forward-looking key (see README gap / PR #14530 feedback). The current
 # # host reads only name/description/author/version/dependencies and ignores unknown
@@ -66,7 +66,7 @@ import orca
 # --------------------------------------------------------------------------- #
 # Configuration
 # --------------------------------------------------------------------------- #
-PLUGIN_VERSION = "0.1.0-alpha.1"
+PLUGIN_VERSION = "0.1.0-alpha.2"
 SITE_URL = "https://filamenthub.ru"
 EMBED_URL = SITE_URL + "/embed/catalog"
 API_BASE = SITE_URL + "/api/v1"
@@ -193,7 +193,19 @@ def ensure_bundle_metadata():
         pass
 
 
-PLUGIN_DIR = os.path.dirname(os.path.abspath(__file__))
+def resolve_plugin_dir():
+    """The plugin's install dir (orca_plugins/<name>), stable across package
+    formats. A wheel runs from __whl_extracted__/<pkg>/ INSIDE the install dir
+    and that cache is wiped on update — sidecar state (.auth.json, .fh_sync.json,
+    the icon) must live in the install dir, not wherever __file__ happens to be."""
+    here = os.path.dirname(os.path.abspath(__file__)).replace("\\", "/")
+    parts = here.split("/")
+    if "__whl_extracted__" in parts:
+        return "/".join(parts[: parts.index("__whl_extracted__")])
+    return here
+
+
+PLUGIN_DIR = resolve_plugin_dir()
 # Tab icon. Embedded here rather than shipped as a sibling file so it survives a
 # single-file install: OrcaSlicer copies only the .py, not adjacent assets. It is
 # materialized next to the plugin on first use and handed to create_panel by path.
@@ -216,7 +228,7 @@ def ensure_icon():
 # root) so signing in survives window/OrcaSlicer restarts — the iframe's own
 # storage is partitioned and dies with the window. Same role as the fork's
 # AppConfig token storage.
-AUTH_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".auth.json")
+AUTH_FILE = os.path.join(PLUGIN_DIR, ".auth.json")
 
 
 class ShellServer:
