@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
-import { Cpu, Clock, Layers, Zap, Trash2, Loader2, Wifi, WifiOff, AlertTriangle, Settings2 } from 'lucide-react';
+import { Cpu, Clock, Layers, Zap, Trash2, Loader2, Wifi, WifiOff, AlertTriangle, Settings2, Copy, Check, RefreshCw } from 'lucide-react';
 import { devicesAPI, presetSlotsAPI, presetsAPI, spoolsAPI } from '../../api/client';
 import type { GateState, UserPrinterDevice, UserSpool } from '../../api/client';
 import type { Preset } from '../../types/api';
@@ -49,6 +49,7 @@ function DeviceSection({ device, presetsSeedMap, spools, printerProfileName = nu
   const queryClient = useQueryClient();
   const [clearing, setClearing] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
+  const [pairingCommandCopied, setPairingCommandCopied] = useState(false);
   const [editName, setEditName] = useState(device.name);
   const [editGateCount, setEditGateCount] = useState<string>(device.gate_count?.toString() ?? '');
   const connectionState = getDeviceConnectionState(device.last_seen_at);
@@ -79,6 +80,41 @@ function DeviceSection({ device, presetsSeedMap, spools, printerProfileName = nu
     queryFn: () => presetSlotsAPI.list(device.id),
     staleTime: 30_000,
   });
+
+  const pairingGate = useMemo(
+    () => gates.find((gate) => gate.spool_id != null) ?? null,
+    [gates],
+  );
+  const pairingCommand = pairingGate?.spool_id != null
+    ? `MMU_SPOOLMAN GATE=${pairingGate.gate_index} SPOOLID=${pairingGate.spool_id}`
+    : null;
+
+  const handleCopyPairingCommand = async () => {
+    if (!pairingCommand) return;
+    try {
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(pairingCommand);
+      } else {
+        const textarea = document.createElement('textarea');
+        textarea.value = pairingCommand;
+        textarea.style.position = 'fixed';
+        textarea.style.opacity = '0';
+        document.body.appendChild(textarea);
+        textarea.focus();
+        textarea.select();
+        document.execCommand('copy');
+        textarea.remove();
+      }
+      setPairingCommandCopied(true);
+      window.setTimeout(() => setPairingCommandCopied(false), 1800);
+    } catch {
+      toast.error(t('common.error'));
+    }
+  };
+
+  const handleCheckPairing = async () => {
+    await queryClient.invalidateQueries({ queryKey: ['devices'] });
+  };
 
   const missingPresetIds = useMemo(() => {
     const ids = new Set<number>();
@@ -272,6 +308,50 @@ function DeviceSection({ device, presetsSeedMap, spools, printerProfileName = nu
             >
               {t('presetSlots.edit.cancel')}
             </button>
+          </div>
+        </div>
+      )}
+
+      {device.supports_hh && !device.printer_hostname && (
+        <div className="mb-4 rounded-xl border border-amber-400/25 bg-amber-500/10 p-4">
+          <div className="flex items-start gap-3">
+            <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-amber-300" />
+            <div className="min-w-0 flex-1">
+              <p className="text-sm font-semibold text-amber-100">{t('presetSlots.pairing.title')}</p>
+              <p className="mt-1 text-xs leading-relaxed text-amber-100/75">
+                {t('presetSlots.pairing.description')}
+              </p>
+              {pairingCommand ? (
+                <>
+                  <p className="mt-3 text-[11px] font-medium uppercase tracking-wide text-amber-200/70">
+                    {t('presetSlots.pairing.commandLabel')}
+                  </p>
+                  <code className="mt-1 block overflow-x-auto rounded-lg border border-white/10 bg-black/30 px-3 py-2 text-xs text-white">
+                    {pairingCommand}
+                  </code>
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      onClick={handleCopyPairingCommand}
+                      className="inline-flex items-center gap-1.5 rounded-lg bg-amber-400 px-3 py-1.5 text-xs font-medium text-black transition hover:bg-amber-300"
+                    >
+                      {pairingCommandCopied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
+                      {t(pairingCommandCopied ? 'presetSlots.pairing.copied' : 'presetSlots.pairing.copy')}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleCheckPairing}
+                      className="inline-flex items-center gap-1.5 rounded-lg border border-amber-300/25 bg-white/5 px-3 py-1.5 text-xs text-amber-100 transition hover:bg-white/10"
+                    >
+                      <RefreshCw className="h-3.5 w-3.5" />
+                      {t('presetSlots.pairing.check')}
+                    </button>
+                  </div>
+                </>
+              ) : (
+                <p className="mt-3 text-xs text-amber-200/80">{t('presetSlots.pairing.waitingForSpool')}</p>
+              )}
+            </div>
           </div>
         </div>
       )}

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from datetime import datetime, timezone
+
 import pytest
 from httpx import AsyncClient
 from sqlalchemy import select
@@ -15,7 +17,7 @@ from app.api.v1.endpoints.spool_compat import (
 from app.models.brand import Brand
 from app.models.filament import Filament
 from app.models.preset import Preset, PresetModerationStatus
-from app.models.preset_gate_state import PresetGateState
+from app.models.preset_gate_state import PresetGateState, PresetGateStateSource
 from app.models.user import User
 from app.models.user_printer_device import UserPrinterDevice
 from app.models.user_spool import UserSpool, UserSpoolState
@@ -217,6 +219,54 @@ async def test_spool_compat_gate_assignment_moves_one_physical_spool(
 
 
 @pytest.mark.asyncio
+async def test_hh_patch_bootstraps_hostname_then_exposes_existing_gate_map(
+    client: AsyncClient,
+    db_session: AsyncSession,
+):
+    """The one-time HH assignment pairs the endpoint without user-entered hostname."""
+    user, spool, device = await _seed_spool_context(db_session)
+    gate_state = PresetGateState(
+        user_id=user.id,
+        device_id=device.id,
+        gate_index=0,
+        spool_id=spool.id,
+        source=PresetGateStateSource.web_manual,
+        source_ts=datetime.now(timezone.utc),
+        is_active=True,
+    )
+    # Reproduce the pre-fix data shape: the friendly label was persisted as if
+    # it were Happy Hare's actual hostname.
+    spool.extra = {
+        "printer_name": f'"{device.name}"',
+        "mmu_gate_map": "0",
+    }
+    db_session.add(gate_state)
+    await db_session.commit()
+
+    endpoint = f"/api/v1/spool_compat/{device.api_key}/v1/spool/{spool.id}"
+    before = await client.get(endpoint)
+    assert before.status_code == 200
+    assert before.json()["extra"]["printer_name"] == '""'
+    assert before.json()["extra"]["mmu_gate_map"] == "-1"
+
+    paired = await client.patch(
+        endpoint,
+        json={
+            "location": "voron @ MMU Gate:0",
+            "extra": {"printer_name": '"voron"', "mmu_gate_map": "0"},
+        },
+    )
+    assert paired.status_code == 200
+    await db_session.refresh(device)
+    assert device.printer_hostname == "voron"
+
+    after = await client.get(endpoint)
+    assert after.status_code == 200
+    assert after.json()["extra"]["printer_name"] == '"voron"'
+    assert after.json()["extra"]["mmu_gate_map"] == "0"
+
+
+@pytest.mark.asyncio
 async def test_spool_compat_finished_spool_clears_gate(
     client: AsyncClient,
     db_session: AsyncSession,
@@ -340,6 +390,35 @@ def test_spool_payload_gate_without_preset_uses_material_default():
     payload = _to_spool_payload(spool, location_map, gate_meta_map)
     assert payload["filament"]["settings_extruder_temp"] == 240.0
     assert payload["filament"]["settings_bed_temp"] == 80.0
+
+
+def test_spool_payload_never_uses_display_name_as_hh_printer_name():
+    """A friendly device label cannot be used as Happy Hare's hostname."""
+    filament = Filament(name="PLA Pairing", slug="pla-pairing", material_type="PLA")
+    filament.presets = []
+    spool = _spool_for_payload(filament)
+    spool.extra = {"printer_name": '"Living Room Voron"', "mmu_gate_map": "3"}
+    location_map = {2: "Living Room Voron @ MMU Gate:3"}
+    gate_meta_map = {2: ("Living Room Voron", 3, "", None)}
+
+    payload = _to_spool_payload(spool, location_map, gate_meta_map)
+
+    assert payload["extra"]["printer_name"] == '""'
+    assert payload["extra"]["mmu_gate_map"] == "-1"
+
+
+def test_spool_payload_uses_authoritative_hh_hostname_after_pairing():
+    filament = Filament(name="PLA Paired", slug="pla-paired", material_type="PLA")
+    filament.presets = []
+    spool = _spool_for_payload(filament)
+    spool.extra = {"printer_name": '"Living Room Voron"', "mmu_gate_map": "3"}
+    location_map = {2: "Living Room Voron @ MMU Gate:3"}
+    gate_meta_map = {2: ("Living Room Voron", 3, "voron", None)}
+
+    payload = _to_spool_payload(spool, location_map, gate_meta_map)
+
+    assert payload["extra"]["printer_name"] == '"voron"'
+    assert payload["extra"]["mmu_gate_map"] == "3"
 
 
 def test_spool_payload_ungated_uses_representative_preset():

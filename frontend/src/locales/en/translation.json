@@ -5071,6 +5071,15 @@
       "spool": "Spool",
       "buffer": "Buffer"
     },
+    "pairing": {
+      "title": "Finish linking Happy Hare",
+      "description": "On its first connection Happy Hare does not include its internal printer name in a normal Spoolman request. Paste the command below into the Mainsail or Fluidd console once so HH can report the correct name. After that, Sync Spoolman will receive the correct gate map.",
+      "waitingForSpool": "Assign any spool to a gate first. A ready-to-copy one-time command will appear here.",
+      "commandLabel": "One-time command",
+      "copy": "Copy",
+      "copied": "Copied",
+      "check": "Check connection"
+    },
     "modal": {
       "title": "Gate {{gate}}",
       "hhInfo": "Happy Hare: {{material}}",

@@ -5066,6 +5066,15 @@
       "spool": "线轴",
       "buffer": "缓冲区"
     },
+    "pairing": {
+      "title": "完成 Happy Hare 连接",
+      "description": "首次连接时，Happy Hare 不会在普通 Spoolman 请求中发送其内部打印机名称。请将下面的命令粘贴到 Mainsail 或 Fluidd 控制台并执行一次，让 HH 自行报告正确名称。之后，Sync Spoolman 将获得正确的位置映射。",
+      "waitingForSpool": "请先将任意线轴分配到一个位置，随后这里会显示可直接复制的一次性命令。",
+      "commandLabel": "一次性命令",
+      "copy": "复制",
+      "copied": "已复制",
+      "check": "检查连接"
+    },
     "modal": {
       "title": "位置 {{gate}}",
       "hhInfo": "Happy Hare: {{material}}",

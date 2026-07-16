@@ -373,15 +373,17 @@ def _to_spool_payload(
         # HH reads: json.loads(extra.get('printer_name', '""')) and int(extra.get('mmu_gate_map', -1))
         # So printer_name must be JSON-encoded string ('"voron"'), mmu_gate_map must be string int ('0')
         # IMPORTANT: printer_name must match the Klipper printer hostname, NOT the device display name.
-        # Always override with the authoritative hostname from device record when available,
-        # because stored extra may contain the display name (e.g. "Voron R2.4 350" vs "voron").
+        # Always derive the compatibility fields from the authoritative hostname.
+        # A device display name is only a UI label and must never become an HH
+        # printer identifier (e.g. "Voron R2.4 350" does not match "voron").
+        # Until HH has bootstrapped its real hostname, expose this spool as
+        # unassigned to HH while keeping the canonical PresetGateState intact.
         if printer_hostname:
             extra["printer_name"] = json.dumps(printer_hostname)
+            extra["mmu_gate_map"] = json.dumps(gate_index)
         else:
-            stored_name = extra.get("printer_name", "")
-            if not stored_name or stored_name == '""':
-                extra["printer_name"] = json.dumps("")
-        extra["mmu_gate_map"] = json.dumps(gate_index)
+            extra["printer_name"] = json.dumps("")
+            extra["mmu_gate_map"] = json.dumps(-1)
 
     # Sanitize extra values for HH compatibility: bare empty strings are not
     # valid JSON and cause json.loads("") → ValueError in HH mmu_server.py.
@@ -536,9 +538,12 @@ async def _apply_location_assignment(
 
     location_clean = location.strip()
     match = (
-        _LOCATION_PATTERN.match(location_clean)
+        # HH's canonical format also matches the generic "device:gate"
+        # pattern, so it must be checked first or the device becomes
+        # "voron @ MMU Gate" instead of "voron".
+        _LOCATION_HH_PATTERN.match(location_clean)
+        or _LOCATION_PATTERN.match(location_clean)
         or _LOCATION_FALLBACK_PATTERN.match(location_clean)
-        or _LOCATION_HH_PATTERN.match(location_clean)
     )
     if not match:
         return False, "Invalid location format. Expected '<device>:Gate<index>'."
