@@ -7,7 +7,7 @@
 # name = "FilamentHub"
 # description = "Browse and sync community-rated filament profiles from FilamentHub, with spool inventory and print-cost tools."
 # author = "FilamentHub"
-# version = "0.1.0-alpha.4"
+# version = "0.1.0-alpha.5"
 #
 # # Proposed forward-looking key (see README gap / PR #14530 feedback). The current
 # # host reads only name/description/author/version/dependencies and ignores unknown
@@ -66,7 +66,7 @@ import orca
 # --------------------------------------------------------------------------- #
 # Configuration
 # --------------------------------------------------------------------------- #
-PLUGIN_VERSION = "0.1.0-alpha.4"
+PLUGIN_VERSION = "0.1.0-alpha.5"
 SITE_URL = "https://filamenthub.ru"
 EMBED_URL = SITE_URL + "/embed/catalog"
 API_BASE = SITE_URL + "/api/v1"
@@ -856,6 +856,11 @@ class FilamentHubCatalog(orca.script.ScriptPluginCapabilityBase):
             token = msg.get("token") or ""
             if not isinstance(token, str) or len(token) > MAX_TOKEN_LENGTH:
                 return
+            # The catalog only carries a token when it minted a fresh plugin
+            # session this window; a session restored from .auth.json leaves it
+            # empty. Fall back to the persisted token — the same source Sync uses.
+            if not token:
+                token = (load_saved_auth() or {}).get("accessToken") or ""
             known = self._known_filament_preset_names()  # host read on the UI thread
             threading.Thread(target=self._do_import, args=(preset_id, token, known), daemon=True).start()
         elif msg_type == "sync":
