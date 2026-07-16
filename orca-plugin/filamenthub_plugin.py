@@ -7,7 +7,7 @@
 # name = "FilamentHub"
 # description = "Browse and sync community-rated filament profiles from FilamentHub, with spool inventory and print-cost tools."
 # author = "FilamentHub"
-# version = "0.1.0-alpha.2"
+# version = "0.1.0-alpha.3"
 #
 # # Proposed forward-looking key (see README gap / PR #14530 feedback). The current
 # # host reads only name/description/author/version/dependencies and ignores unknown
@@ -36,7 +36,7 @@ iframe's own storage is partitioned and dies with the window.
   iframe (React) --window.parent.postMessage({source:'filamenthub-plugin',...})-->
       shell window --orca.postMessage(...)--> Python on_message
           --GET /presets/{id}/export/orcaslicer.json (Bearer token from the page)-->
-              write {data_dir}/user/<active>/_local/filamenthub/filament/<name>__fh_<id>.json
+              write {data_dir}/user/<active>/_local/filamenthub/filament/<name>.json
                   --> host restart dialog
 
 Runtime surface used (confirmed against upstream/feat/plugin-feature):
@@ -66,7 +66,7 @@ import orca
 # --------------------------------------------------------------------------- #
 # Configuration
 # --------------------------------------------------------------------------- #
-PLUGIN_VERSION = "0.1.0-alpha.2"
+PLUGIN_VERSION = "0.1.0-alpha.3"
 SITE_URL = "https://filamenthub.ru"
 EMBED_URL = SITE_URL + "/embed/catalog"
 API_BASE = SITE_URL + "/api/v1"
@@ -370,7 +370,57 @@ def validate_filament_profile(profile):
 
 
 def preset_file_path(folder, name, preset_id):
-    return os.path.join(folder, "%s__fh_%d.json" % (safe_filename(name), int(preset_id)))
+    """Path for a managed preset file. OrcaSlicer displays user presets by the
+    file stem, so the stem must be the clean preset name; identity lives in the
+    bundle_id inside the JSON. If the name is already taken by a file we don't
+    own (the user's own preset, or another FilamentHub id), disambiguate with a
+    short stable suffix instead of overwriting it."""
+    stem = safe_filename(name) or ("FilamentHub preset %d" % int(preset_id))
+    candidate = os.path.join(folder, stem + ".json")
+    if not os.path.exists(candidate):
+        return candidate
+    try:
+        with open(candidate, "r", encoding="utf-8") as fh:
+            existing = json.load(fh)
+        if isinstance(existing, dict) and preset_id_from_bundle(existing.get("bundle_id")) == int(preset_id):
+            return candidate
+    except (OSError, ValueError):
+        pass
+    return os.path.join(folder, "%s (FH-%d).json" % (stem, int(preset_id)))
+
+
+def remove_stale_preset_files(folder, preset_id, keep_path):
+    """Delete other files carrying this preset's bundle_id — the old
+    `__fh_<id>`-suffixed naming and leftovers from a rename on FilamentHub —
+    so one preset never shows up twice in the dropdown. Touches only files
+    whose bundle_id we own."""
+    try:
+        names = os.listdir(folder)
+    except OSError:
+        return
+    keep = os.path.normcase(os.path.abspath(keep_path))
+    for fn in names:
+        if not fn.endswith(".json"):
+            continue
+        path = os.path.join(folder, fn)
+        if os.path.normcase(os.path.abspath(path)) == keep:
+            continue
+        try:
+            with open(path, "r", encoding="utf-8") as fh:
+                profile = json.load(fh)
+        except (OSError, ValueError):
+            continue
+        if not isinstance(profile, dict) or preset_id_from_bundle(profile.get("bundle_id")) != int(preset_id):
+            continue
+        try:
+            remove_host_filament(fn[:-len(".json")])  # best-effort live removal
+        except Exception:
+            pass
+        for stale in (path, path[:-len(".json")] + ".info"):
+            try:
+                os.remove(stale)
+            except OSError:
+                pass
 
 
 # Universal base filament preset present in every OrcaSlicer install.
@@ -838,6 +888,7 @@ class FilamentHubCatalog(orca.script.ScriptPluginCapabilityBase):
             profile_path = preset_file_path(target_dir, name, preset_id)
             base = profile_path[:-len(".json")]
             write_json_atomic(profile_path, profile)
+            remove_stale_preset_files(target_dir, preset_id, profile_path)
 
             # Best-effort .info sidecar (sync metadata; not required to load).
             try:
@@ -880,6 +931,7 @@ class FilamentHubCatalog(orca.script.ScriptPluginCapabilityBase):
             write_json_atomic(profile_path, profile)
         except OSError:
             return None
+        remove_stale_preset_files(folder, pid, profile_path)
         try:
             istatus, info = http_get("/presets/%d/export/orcaslicer.info" % pid, token=token)
             if istatus == 200:
@@ -943,7 +995,7 @@ class FilamentHubCatalog(orca.script.ScriptPluginCapabilityBase):
 
         local = scan_local_fh_presets(folder)
         state = load_sync_state()
-        pulled = updated = pushed = skipped = failed = 0
+        pulled = updated = pushed = skipped = failed = renamed = 0
         for rp in remote_items:
             pid = rp.get("id")
             if not isinstance(pid, int):
@@ -984,6 +1036,27 @@ class FilamentHubCatalog(orca.script.ScriptPluginCapabilityBase):
                 else:
                     failed += 1
             else:
+                # Content is up to date, but the file may still carry the legacy
+                # `__fh_<id>` stem (shown verbatim in the dropdown) — move it to
+                # the clean name; the host entry under the old name is dropped and
+                # the reload below picks up the renamed file.
+                name = local_entry["profile"].get("name") or ("FilamentHub preset %d" % pid)
+                canonical = preset_file_path(folder, name, pid)
+                if os.path.normcase(os.path.abspath(canonical)) != os.path.normcase(os.path.abspath(local_entry["path"])):
+                    bare = os.path.basename(local_entry["path"])[:-len(".json")]
+                    try:
+                        os.replace(local_entry["path"], canonical)
+                        info_old = local_entry["path"][:-len(".json")] + ".info"
+                        if os.path.exists(info_old):
+                            os.replace(info_old, canonical[:-len(".json")] + ".info")
+                    except OSError:
+                        pass
+                    else:
+                        try:
+                            remove_host_filament(bare)
+                        except Exception:
+                            pass
+                        renamed += 1
                 skipped += 1
 
         # Removal sync: a preset that was synced before but is no longer in the
@@ -1014,13 +1087,15 @@ class FilamentHubCatalog(orca.script.ScriptPluginCapabilityBase):
             parts.append("%d sent to FilamentHub" % pushed)
         if removed:
             parts.append("%d removed" % removed)
+        if renamed:
+            parts.append("%d renamed" % renamed)
         if skipped:
             parts.append("%d up to date" % skipped)
         if failed:
             parts.append("%d failed" % failed)
         summary = ", ".join(parts) or "nothing to sync"
         note = ""
-        if pulled or updated or removed:
+        if pulled or updated or removed or renamed:
             note = ("\n\nThe filament dropdown is up to date." if reload_host_presets()
                     else "\n\nRestart OrcaSlicer to apply the changes in the filament dropdown.")
         if announce:
