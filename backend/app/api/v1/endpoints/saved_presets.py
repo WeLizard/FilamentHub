@@ -11,17 +11,20 @@ from app.core.dependencies import get_current_active_user
 from app.core.errors import (
     ERR_PRESET_INACTIVE,
     ERR_PRESET_NOT_FOUND,
+    ERR_PRINTER_PROFILE_NOT_FOUND,
     ERR_SAVED_PRESET_NOT_FOUND,
     raise_error,
 )
 from app.db.session import get_db
 from app.models.preset import Preset
+from app.models.printer_profile import PrinterProfile
 from app.models.user import User
 from app.models.user_saved_preset import UserSavedPreset
 from app.schemas.user_saved_preset import (
     UserSavedPresetCreate,
     UserSavedPresetListResponse,
     UserSavedPresetResponse,
+    UserSavedPresetScopeUpdate,
 )
 
 router = APIRouter(prefix="/saved-presets", tags=["saved-presets"])
@@ -152,5 +155,51 @@ async def toggle_saved_preset_sync(
     await db.commit()
     await db.refresh(saved_preset)
 
+    return UserSavedPresetResponse.model_validate(saved_preset)
+
+
+@router.patch("/{preset_id}/scope", response_model=UserSavedPresetResponse)
+async def update_saved_preset_scope(
+    preset_id: int,
+    data: UserSavedPresetScopeUpdate,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    current_user: Annotated[User, Depends(get_current_active_user)],
+) -> UserSavedPresetResponse:
+    """Задать scope библиотеки: универсальный или под конкретный принтер-профиль.
+
+    targeted принимает только собственный профиль пользователя — targeting a
+    foreign machine profile would leak someone else's library structure into
+    the export.
+    """
+    result = await db.execute(
+        select(UserSavedPreset).where(
+            UserSavedPreset.user_id == current_user.id,
+            UserSavedPreset.preset_id == preset_id,
+        )
+    )
+    saved_preset = result.scalar_one_or_none()
+    if not saved_preset:
+        raise_error(404, ERR_SAVED_PRESET_NOT_FOUND)
+
+    if data.scope == "targeted":
+        if data.target_printer_profile_id is None:
+            raise_error(404, ERR_PRINTER_PROFILE_NOT_FOUND)
+        profile_result = await db.execute(
+            select(PrinterProfile).where(
+                PrinterProfile.id == data.target_printer_profile_id,
+                PrinterProfile.owner_user_id == current_user.id,
+                PrinterProfile.active.is_(True),
+            )
+        )
+        if profile_result.scalar_one_or_none() is None:
+            raise_error(404, ERR_PRINTER_PROFILE_NOT_FOUND)
+        saved_preset.scope = "targeted"
+        saved_preset.target_printer_profile_id = data.target_printer_profile_id
+    else:
+        saved_preset.scope = "unscoped"
+        saved_preset.target_printer_profile_id = None
+
+    await db.commit()
+    await db.refresh(saved_preset)
     return UserSavedPresetResponse.model_validate(saved_preset)
 

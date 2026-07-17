@@ -757,9 +757,33 @@ async def export_preset_json(
     if missing_fields:
         raise_error(422, ERR_EXPORT_MISSING_FIELDS, params={"fields": ", ".join(missing_fields)})
 
+    # Library scope запрашивающего: targeted-пресет сужается до выбранного
+    # machine-профиля пользователя (RFC §3.3); unscoped — как раньше.
+    from app.models.printer_profile import PrinterProfile
+    from app.models.user_saved_preset import UserSavedPreset
+
+    target_profile = None
+    scope_result = await db.execute(
+        select(UserSavedPreset)
+        .options(
+            selectinload(UserSavedPreset.target_profile).selectinload(PrinterProfile.printer)
+        )
+        .where(
+            UserSavedPreset.user_id == current_user.id,
+            UserSavedPreset.preset_id == preset_id,
+        )
+    )
+    saved_row = scope_result.scalar_one_or_none()
+    if saved_row is not None and saved_row.scope == "targeted":
+        candidate = saved_row.target_profile
+        if candidate is not None and candidate.owner_user_id == current_user.id and candidate.active:
+            target_profile = candidate
+
     # Экспортируем в JSON
     try:
-        profile_dict = await preset_to_orcaslicer_json(preset, preset.filament, db)
+        profile_dict = await preset_to_orcaslicer_json(
+            preset, preset.filament, db, target_profile=target_profile
+        )
     except Exception as e:
         logger.error(f"Error exporting preset {preset_id}: {str(e)}", exc_info=True)
         raise_error(500, ERR_EXPORT_PRESET_ERROR)
