@@ -195,9 +195,20 @@ async def update_saved_preset_scope(
         if valid_ids != set(target_ids):
             raise_error(404, ERR_PRINTER_PROFILE_NOT_FOUND)
 
-    saved_preset.targets = [
-        UserSavedPresetTarget(printer_profile_id=profile_id) for profile_id in target_ids
-    ]
+    # Diff the set instead of reassigning the whole collection: reassigning
+    # would orphan-delete and re-insert unchanged rows in the same flush, and
+    # Postgres fires ix_usp_targets_saved_profile_unique when the INSERT of an
+    # unchanged (saved_preset, profile) pair races its DELETE.
+    desired = set(target_ids)
+    existing = {target.printer_profile_id: target for target in saved_preset.targets}
+    for profile_id, target in existing.items():
+        if profile_id not in desired:
+            saved_preset.targets.remove(target)
+    for profile_id in target_ids:
+        if profile_id not in existing:
+            saved_preset.targets.append(
+                UserSavedPresetTarget(printer_profile_id=profile_id)
+            )
     if not target_ids:
         saved_preset.scope = "unscoped"
     elif len(target_ids) == 1:

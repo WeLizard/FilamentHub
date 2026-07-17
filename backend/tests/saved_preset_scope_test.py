@@ -167,6 +167,30 @@ async def test_scope_multiple_targets_is_compatible(
 
 
 @pytest.mark.asyncio
+async def test_scope_reassign_overlapping_set(client: AsyncClient, db_session: AsyncSession):
+    """Re-selecting a set that overlaps the current one must not collide on
+    the (saved_preset, profile) unique index — the writer diffs the set
+    instead of reassigning it wholesale (Postgres regression)."""
+    headers, email = await _register_and_login(client, "scope-overlap")
+    user = await _get_user(db_session, email)
+    preset = await _seed_preset(db_session, "overlap")
+    a = await _seed_profile(db_session, owner_user_id=user.id, slug="scope-ovl-a", name="A")
+    b = await _seed_profile(db_session, owner_user_id=user.id, slug="scope-ovl-b", name="B")
+    c = await _seed_profile(db_session, owner_user_id=user.id, slug="scope-ovl-c", name="C")
+    await db_session.commit()
+    await _save_preset(client, headers, preset.id)
+
+    # [A] → [A, B] (A stays) → [A, C] (A stays, B removed, C added)
+    assert (await _patch_scope(client, headers, preset.id, [a.id])).status_code == 200
+    step2 = await _patch_scope(client, headers, preset.id, [a.id, b.id])
+    assert step2.status_code == 200
+    assert sorted(step2.json()["target_printer_profile_ids"]) == sorted([a.id, b.id])
+    step3 = await _patch_scope(client, headers, preset.id, [a.id, c.id])
+    assert step3.status_code == 200
+    assert sorted(step3.json()["target_printer_profile_ids"]) == sorted([a.id, c.id])
+
+
+@pytest.mark.asyncio
 async def test_scope_rejects_foreign_profile(client: AsyncClient, db_session: AsyncSession):
     headers, email = await _register_and_login(client, "scope-foreign")
     _other_headers, other_email = await _register_and_login(client, "scope-foreign-other")
