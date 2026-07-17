@@ -3,7 +3,7 @@
 from datetime import datetime
 from typing import TYPE_CHECKING
 
-from sqlalchemy import DateTime, ForeignKey, Integer, String
+from sqlalchemy import DateTime, ForeignKey, Index, Integer, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.sql import func
 
@@ -22,6 +22,8 @@ class SyncDevice(Base):
     user_id: Mapped[int] = mapped_column(
         ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
     )
+    # Length differs from UserPrinterDevice.device_fingerprint (String(200)) —
+    # separate tables with separate lifecycles; kept as created by migration.
     device_fingerprint: Mapped[str] = mapped_column(String(255), nullable=False)
     orcaslicer_version: Mapped[str | None] = mapped_column(String(50), nullable=True)
     last_sync_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
@@ -37,10 +39,16 @@ class SyncDevice(Base):
     # Relationships
     user: Mapped["User"] = relationship("User", back_populates="sync_devices")
 
-    # Unique constraint: one device per user
     __table_args__ = (
+        # Mirrors the unique index created by add_sync_device_and_sync_history_tables.
+        Index(
+            "ix_sync_devices_user_fingerprint",
+            "user_id",
+            "device_fingerprint",
+            unique=True,
+        ),
         {"extend_existing": True},
     )
 
     def __repr__(self) -> str:
-        return f"<SyncDevice(id={self.id}, user_id={self.user_id}, fingerprint={self.device_fingerprint})>"
+        return f"<SyncDevice(id={self.id}, user_id={self.user_id})>"

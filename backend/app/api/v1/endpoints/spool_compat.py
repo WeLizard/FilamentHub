@@ -37,6 +37,7 @@ from app.models.user import User
 from app.models.user_printer_device import UserPrinterDevice
 from app.models.user_spool import UserSpool, UserSpoolState
 from app.services.preset_enrichment_service import _load_material_defaults
+from app.services.preset_slot_sync_service import touch_device_last_seen
 from app.services.spool_service import (
     assign_spool_to_gate,
     clear_spool_gate_assignments,
@@ -308,7 +309,7 @@ async def _resolve_user_and_device(
     if result is None:
         return None, None
     device, user = result.tuple()
-    device.last_seen_at = datetime.now(timezone.utc)
+    touch_device_last_seen(device)
     return user, device
 
 
@@ -591,7 +592,7 @@ async def _apply_location_assignment(
     if device is not None and device_hint:
         if device.printer_hostname != device_hint:
             device.printer_hostname = device_hint
-            logger.info("Detected printer hostname '%s' for device id=%s", device_hint, device.id)
+            logger.info("Detected printer hostname for device id=%s", device.id)
 
     if device is None:
         return False, f"Device '{device_hint}' not found for this API key."
@@ -672,8 +673,8 @@ async def _sync_extra_to_gate_state(
 
     if device is None:
         logger.warning(
-            "Cannot sync HH extra to gate state: no device '%s' for user_id=%s",
-            printer_name, user.id,
+            "Cannot sync HH extra to gate state: unknown device for user_id=%s (spool_id=%s)",
+            user.id, spool.id,
         )
         return
 
@@ -799,6 +800,11 @@ async def spool_ws(websocket: WebSocket) -> None:
 async def spool_ws_scoped(websocket: WebSocket, api_key: str) -> None:
     async with AsyncSessionLocal() as db:
         user, _device = await _resolve_user_and_device(db, api_key)
+        if user is not None:
+            # Fresh session: the only dirty object is the device's adapter-link
+            # touch — persist it, unlike HTTP paths this session has no get_db
+            # commit behind it.
+            await db.commit()
 
     if user is None:
         await websocket.accept()

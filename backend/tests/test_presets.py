@@ -547,3 +547,53 @@ async def test_saving_preset_increments_usage_once(client: AsyncClient, db_sessi
     assert again.status_code in (200, 201)
     await db_session.refresh(preset)
     assert preset.usage_count == 1
+
+
+@pytest.mark.asyncio
+async def test_saved_preset_unique_constraint_blocks_duplicates(db_session: AsyncSession):
+    """The composite unique (user_id, preset_id) is a real DB invariant again
+    (restored by usp_user_preset_unique_restore; declared in the model): a
+    concurrent double-insert must fail at the database, not rely on the
+    endpoint's pre-SELECT."""
+    from sqlalchemy.exc import IntegrityError
+
+    from app.models.user import User
+    from app.models.user_saved_preset import UserSavedPreset
+
+    user = User(
+        email="usp-unique@example.com",
+        username="usp_unique_user",
+        password_hash="not-used",
+        active=True,
+    )
+    brand = Brand(name="USP Unique Brand", slug="usp-unique-brand", active=True)
+    db_session.add_all([user, brand])
+    await db_session.flush()
+    filament = Filament(
+        brand_id=brand.id,
+        name="USP Unique PLA",
+        slug="usp-unique-pla",
+        material_type="PLA",
+        active=True,
+    )
+    db_session.add(filament)
+    await db_session.flush()
+    preset = Preset(
+        filament_id=filament.id,
+        name="USP Unique Preset",
+        is_official=True,
+        extruder_temp=200.0,
+        bed_temp=60.0,
+        moderation_status=PresetModerationStatus.APPROVED,
+        active=True,
+    )
+    db_session.add(preset)
+    await db_session.commit()
+
+    db_session.add(UserSavedPreset(user_id=user.id, preset_id=preset.id, sync=True))
+    await db_session.commit()
+
+    db_session.add(UserSavedPreset(user_id=user.id, preset_id=preset.id, sync=True))
+    with pytest.raises(IntegrityError):
+        await db_session.commit()
+    await db_session.rollback()

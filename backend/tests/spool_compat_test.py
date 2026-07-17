@@ -71,6 +71,27 @@ async def _seed_spool_context(db: AsyncSession) -> tuple[User, UserSpool, UserPr
 
 
 @pytest.mark.asyncio
+async def test_adapter_touch_persists_after_request(client: AsyncClient, db_session: AsyncSession):
+    """An authenticated Spoolman-compat request records the adapter-link touch.
+
+    last_seen_at means "the adapter talked to us", not printer state; the same
+    resolve+commit pair backs the WebSocket connect path."""
+    _, _, device = await _seed_spool_context(db_session)
+    assert device.last_seen_at is None
+
+    response = await client.get(f"/api/v1/spool_compat/{device.api_key}/v1/spool")
+    assert response.status_code == 200
+
+    result = await db_session.execute(
+        select(UserPrinterDevice).where(UserPrinterDevice.id == device.id)
+    )
+    refreshed = result.scalars().one()
+    await db_session.refresh(refreshed)
+    assert refreshed.last_seen_at is not None
+    assert refreshed.last_seen_at.replace(tzinfo=timezone.utc) <= datetime.now(timezone.utc)
+
+
+@pytest.mark.asyncio
 async def test_spool_compat_sync_legacy_deprecated(client: AsyncClient):
     """Legacy /sync endpoint should remain available but marked deprecated."""
     response = await client.get("/api/v1/spool_compat/sync")

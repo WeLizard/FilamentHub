@@ -62,6 +62,5 @@ class UserPrinterDevice(Base):
 
     def __repr__(self) -> str:
         return (
-            f"<UserPrinterDevice(id={self.id}, user_id={self.user_id}, "
-            f"name='{self.name}', fingerprint='{self.device_fingerprint}')>"
+            f"<UserPrinterDevice(id={self.id}, user_id={self.user_id})>"
         )

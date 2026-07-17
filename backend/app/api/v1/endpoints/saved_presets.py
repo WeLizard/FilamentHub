@@ -4,6 +4,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.dependencies import get_current_active_user
@@ -81,7 +82,22 @@ async def save_preset(
     )
     db.add(saved_preset)
     preset.usage_count += 1
-    await db.commit()
+    try:
+        await db.commit()
+    except IntegrityError:
+        # Concurrent save of the same preset: the unique (user_id, preset_id)
+        # index fired. Return the row the other request created.
+        await db.rollback()
+        existing_result = await db.execute(
+            select(UserSavedPreset).where(
+                UserSavedPreset.user_id == current_user.id,
+                UserSavedPreset.preset_id == data.preset_id,
+            )
+        )
+        existing = existing_result.scalar_one_or_none()
+        if existing is None:
+            raise
+        return UserSavedPresetResponse.model_validate(existing)
     await db.refresh(saved_preset)
 
     return UserSavedPresetResponse.model_validate(saved_preset)

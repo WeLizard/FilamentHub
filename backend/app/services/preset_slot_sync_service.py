@@ -53,6 +53,15 @@ def _normalize_utc(ts: datetime) -> datetime:
 # ── Device helpers ─────────────────────────────────────────────────────────
 
 
+def touch_device_last_seen(device: UserPrinterDevice) -> None:
+    """Record the adapter's last successful contact with the backend.
+
+    Presence semantics: this timestamp only says the plugin/adapter talked to
+    FilamentHub recently — it is NOT the printer's power or online state.
+    """
+    device.last_seen_at = datetime.now(timezone.utc)
+
+
 async def get_device_by_fingerprint(
     db: AsyncSession,
     user_id: int,
@@ -89,7 +98,6 @@ async def register_or_update_device(
     payload: DeviceRegisterRequest,
 ) -> UserPrinterDevice:
     device = await get_device_by_fingerprint(db, user.id, payload.device_fingerprint)
-    now = datetime.now(timezone.utc)
 
     if device is None:
         device = UserPrinterDevice(
@@ -99,7 +107,6 @@ async def register_or_update_device(
             printer_id=payload.printer_id,
             supports_hh=payload.supports_hh,
             gate_count=payload.gate_count,
-            last_seen_at=now,
         )
         db.add(device)
     else:
@@ -109,7 +116,7 @@ async def register_or_update_device(
         device.supports_hh = payload.supports_hh
         if payload.gate_count is not None:
             device.gate_count = payload.gate_count
-        device.last_seen_at = now
+    touch_device_last_seen(device)
 
     await db.commit()
     await db.refresh(device)
@@ -332,7 +339,6 @@ async def handle_heartbeat(
     gate_count: int | None,
 ) -> UserPrinterDevice:
     device = await get_device_by_fingerprint(db, user.id, fingerprint)
-    now = datetime.now(timezone.utc)
 
     if device is None:
         device = UserPrinterDevice(
@@ -341,16 +347,15 @@ async def handle_heartbeat(
             name=device_name or fingerprint,
             supports_hh=supports_hh,
             gate_count=gate_count,
-            last_seen_at=now,
         )
         db.add(device)
     else:
-        device.last_seen_at = now
         device.supports_hh = supports_hh
         if gate_count is not None:
             device.gate_count = gate_count
         if device_name:
             device.name = device_name
+    touch_device_last_seen(device)
 
     await db.commit()
     await db.refresh(device)
@@ -367,7 +372,6 @@ async def handle_hh_snapshot(
 ) -> tuple[UserPrinterDevice, int, list[int]]:
     """Process HH snapshot. Returns (device, updated_count, mismatch_gate_indices)."""
     device = await get_device_by_fingerprint(db, user.id, payload.device_fingerprint)
-    now = datetime.now(timezone.utc)
 
     if device is None:
         device = UserPrinterDevice(
@@ -376,14 +380,13 @@ async def handle_hh_snapshot(
             name=payload.device_fingerprint,
             supports_hh=True,
             gate_count=payload.gate_count,
-            last_seen_at=now,
         )
         db.add(device)
         await db.flush()
     else:
-        device.last_seen_at = now
         device.supports_hh = True
         device.gate_count = payload.gate_count
+    touch_device_last_seen(device)
 
     snapshot_ts = _normalize_utc(payload.snapshot_ts)
     current_states = await get_gate_states(db, device.id)
@@ -391,6 +394,33 @@ async def handle_hh_snapshot(
 
     updated = 0
     gate_state_updates: list[tuple[int, PresetGateState]] = []
+
+    # An explicit empty gates list is a fresh observation: the MMU reports that
+    # no gate holds filament. Reflect it in the observed hh_* fields of every
+    # known gate (same out-of-order guard as per-gate items); the desired
+    # assignment (preset_id/spool_id) is intentionally untouched and no rows
+    # are deleted — freshness/cleanup policy is a later slice.
+    if not payload.gates:
+        for gate_index, prev_state in sorted(state_by_gate.items()):
+            prev_ts = _normalize_utc(prev_state.source_ts)
+            if snapshot_ts <= prev_ts:
+                continue
+            state = await _upsert_gate_state(
+                db,
+                user_id=user.id,
+                device_id=device.id,
+                gate_index=gate_index,
+                source=PresetGateStateSource.hh_snapshot,
+                source_ts=snapshot_ts,
+                preset_id_provided=False,
+                spool_id_provided=False,
+                hh_material=None,
+                hh_color_hex=None,
+                hh_status=0,
+            )
+            await db.flush()
+            state_by_gate[gate_index] = state
+            updated += 1
 
     for gate_item in payload.gates:
         prev_state = state_by_gate.get(gate_item.gate)
@@ -614,9 +644,9 @@ async def handle_manual_assignment(
                 set_spool_location_projection(new_spool, resolved_device, payload.gate)
                 new_spool.state = UserSpoolState.active
                 logger.debug(
-                    "Set HH extra fields on spool %d: printer=%r gate=%d",
+                    "Set HH extra fields on spool %d: printer_device_id=%s gate=%d",
                     new_spool_id,
-                    resolved_device.name,
+                    resolved_device.id,
                     payload.gate,
                 )
 

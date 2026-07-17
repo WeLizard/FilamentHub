@@ -3,7 +3,7 @@
 from datetime import datetime
 from typing import TYPE_CHECKING
 
-from sqlalchemy import Boolean, DateTime, ForeignKey
+from sqlalchemy import Boolean, DateTime, ForeignKey, Index
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.sql import func
 
@@ -32,9 +32,24 @@ class UserSavedPreset(Base):
     )
 
     # Sync settings
-    sync: Mapped[bool] = mapped_column(Boolean, default=True, index=True)
+    sync: Mapped[bool] = mapped_column(Boolean, default=True)
     # sync: Включена ли синхронизация с OrcaSlicer для этого пресета у этого пользователя
     # Каждый пользователь имеет свою настройку синхронизации для каждого пресета в "Профили филамента"
+
+    __table_args__ = (
+        # One saved row per (user, preset). The original unique index from
+        # 572fc7e611e3 was dropped by cd4a3c3232ff; restored by the
+        # usp_user_preset_unique_restore migration under the historical name.
+        Index(
+            "ix_user_saved_presets_user_preset_unique",
+            "user_id",
+            "preset_id",
+            unique=True,
+        ),
+        # Historical name: the column was renamed sync_enabled -> sync in
+        # 0de996edecbd, the index was not.
+        Index("ix_user_saved_presets_sync_enabled", "sync"),
+    )
 
     # Relationships
     user: Mapped["User"] = relationship("User", back_populates="saved_presets")
