@@ -7,7 +7,7 @@
 # name = "FilamentHub"
 # description = "Browse and sync community-rated filament profiles from FilamentHub, with spool inventory and print-cost tools."
 # author = "FilamentHub"
-# version = "0.0.3"
+# version = "0.0.4"
 #
 # # Proposed forward-looking key (see README gap / PR #14530 feedback). The current
 # # host reads only name/description/author/version/dependencies and ignores unknown
@@ -75,7 +75,7 @@ import orca
 # --------------------------------------------------------------------------- #
 # Configuration
 # --------------------------------------------------------------------------- #
-PLUGIN_VERSION = "0.0.3"
+PLUGIN_VERSION = "0.0.4"
 SITE_URL = "https://filamenthub.ru"
 EMBED_URL = SITE_URL + "/embed/catalog"
 API_BASE = SITE_URL + "/api/v1"
@@ -824,9 +824,10 @@ function pollOAuthOnce() {
         } catch (e) { /* iframe not ready */ }
         return;
       }
-      // Auto-open failed (sandbox blocked spawning a browser): show the link so
-      // the user can open it manually. Loopback delivery is identical either way.
-      if (st.stage === 'awaiting' && st.browserOpened === false && st.startUrl) {
+      // Show the link proactively: even when the browser reports opened, we can't
+      // be sure it actually surfaced (embedded-Python quirks), so the user always
+      // has a manual path. Loopback delivery is identical either way.
+      if (st.stage === 'awaiting' && st.startUrl) {
         showOAuthOverlay(st.startUrl);
       }
       oauthPollTimer = setTimeout(pollOAuthOnce, 1500);
@@ -849,11 +850,11 @@ function showOAuthOverlay(url) {
     'background:var(--orca-bg,#1e1e2e);color:var(--orca-fg,#e0e0e0);' +
     'border:1px solid var(--orca-border,#3c3c4c);font-size:13px;';
   var title = document.createElement('div');
-  title.textContent = "Couldn't open your browser automatically";
+  title.textContent = 'Finish signing in in your web browser';
   title.style.cssText = 'font-weight:600;margin-bottom:8px;';
   var hint = document.createElement('div');
-  hint.textContent = 'Copy this link and open it in your web browser to sign in, ' +
-    'then return here.';
+  hint.textContent = 'Your browser should have opened. If it did not, copy this ' +
+    'link and open it in your browser, then return here.';
   hint.style.cssText = 'margin-bottom:10px;color:var(--orca-muted,#a0a0a0);';
   var input = document.createElement('input');
   input.id = 'oauth-url';
@@ -1093,10 +1094,24 @@ class FilamentHubCatalog(orca.script.ScriptPluginCapabilityBase):
         start_url = "%s/oauth/plugin-start/%s?%s" % (
             SITE_URL, provider,
             urllib.parse.urlencode({"cb": deliver, "nonce": nonce}))
+        # Mirror how OrcaSlicer itself opens URLs: wxLaunchDefaultBrowser(), which
+        # on Windows is ShellExecute("open", url). os.startfile is that same call
+        # and works inside Orca's embedded Python, where webbrowser.open can report
+        # success without actually launching anything. Fall back to webbrowser on
+        # non-Windows or if startfile is unavailable/raises.
+        opened = False
         try:
-            opened = bool(webbrowser.open(start_url))
+            startfile = getattr(os, "startfile", None)
+            if startfile is not None:
+                startfile(start_url)
+                opened = True
+            else:
+                opened = bool(webbrowser.open(start_url))
         except Exception:
-            opened = False
+            try:
+                opened = bool(webbrowser.open(start_url))
+            except Exception:
+                opened = False
         SHELL_SERVER.arm_oauth(nonce, opened, start_url)
 
     def _do_import(self, preset_id, token, known_presets):
