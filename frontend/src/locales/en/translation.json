@@ -5029,6 +5029,20 @@
     "ERR_SPOOL_LOCATION_CONFLICT": "This spool is being moved by another request. Refresh and try again",
     "ERR_SNAPSHOT_TOO_FREQUENT": "Snapshots are being sent too frequently"
   },
+  "deviceLink": {
+    "label": "Plugin link",
+    "active": "Link active",
+    "delayed": "Data delayed",
+    "inactive": "No recent data",
+    "never": "Never connected",
+    "tooltip": "Freshness of the plugin's link to FilamentHub. Does not indicate whether the printer is powered on.",
+    "lastData": "Last data: {{time}}",
+    "time": {
+      "ltMinute": "< 1 min",
+      "minutesAgo": "{{count}} min ago",
+      "hoursAgo": "{{count}} h ago"
+    }
+  },
   "presetSlots": {
     "title": "Printer Slots",
     "subtitle": "Preset assignments for MMU / AMS gates",
@@ -5037,23 +5051,10 @@
     "noMappedDevices": "No devices matched to your printer profiles",
     "noMappedDevicesDesc": "Check device-to-printer binding and ensure printer profiles exist in your account",
     "mappedPrinter": "Printer: {{name}}",
-    "lastSeen": "Last seen: {{time}}",
-    "neverSeen": "Never connected",
-    "time": {
-      "ltMinute": "< 1 min",
-      "minutesAgo": "{{count}} min ago",
-      "hoursAgo": "{{count}} h ago"
-    },
     "gates_one": "{{count}} slot",
     "gates_other": "{{count}} slots",
     "hhActive": "Happy Hare",
     "manualMode": "Manual mode",
-    "connection": {
-      "online": "Online",
-      "stale": "Stale",
-      "offline": "Offline",
-      "unknown": "No data"
-    },
     "gateEmpty": "Empty",
     "gateUnknown": "No data",
     "unknownFilament": "Unknown filament",

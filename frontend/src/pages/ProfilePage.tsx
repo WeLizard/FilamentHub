@@ -54,6 +54,7 @@ import { SpoolIcon } from '../components/icons/SpoolIcon';
 import api from '../api/client';
 import { translateApiError } from '../utils/translateApiError';
 import { getSpoolCurrentLocation, getSpoolLastLocation } from '../utils/spoolLocation';
+import { getDeviceLinkState, useNow } from '../utils/deviceLink';
 import { notifyProfileChanged } from '../utils/pluginBridge';
 import { downloadBlob } from '../utils/download';
 const CreatePresetModal = lazy(() =>
@@ -2792,6 +2793,7 @@ const SpoolsTab: React.FC<SpoolsTabProps> = ({
   const [savingHostname, setSavingHostname] = useState<number | null>(null);
   const [regeneratingDeviceId, setRegeneratingDeviceId] = useState<number | null>(null);
   const [deletingDeviceId, setDeletingDeviceId] = useState<number | null>(null);
+  const deviceLinkNow = useNow();
   const [deletingSpoolId, setDeletingSpoolId] = useState<number | null>(null);
 
   const { data: devices = [], refetch: refetchDevices } = useQuery({
@@ -3071,23 +3073,33 @@ const SpoolsTab: React.FC<SpoolsTabProps> = ({
             const apiKey = revealedKeys[device.id];
             const endpoint = apiKey ? `${spoolCompatBaseUrl}/${apiKey}` : null;
             const configSnippet = endpoint ? `[spoolman]\nserver: ${endpoint}\nsync_rate: 5` : null;
-            const isConnected = device.last_seen_at != null;
+            const linkState = getDeviceLinkState(device.last_seen_at, deviceLinkNow);
             return (
               <div key={device.id} className="bg-black/20 border border-white/10 rounded-lg p-3 space-y-2">
                 <div className="flex items-center justify-between gap-2">
                   <div className="flex items-center gap-2">
                     <span className="text-white font-medium text-sm">{device.name}</span>
-                    {isConnected ? (
-                      <span className="flex items-center gap-1 rounded-full bg-emerald-500/15 px-2 py-0.5 text-[11px] font-medium text-emerald-300">
+                    {linkState === 'active' ? (
+                      <span title={t('deviceLink.tooltip')} className="flex items-center gap-1 rounded-full bg-emerald-500/15 px-2 py-0.5 text-[11px] font-medium text-emerald-300">
                         <Zap className="w-3 h-3" />
                         {device.gate_count != null
                           ? t('profilePage.deviceSetup.connectedGates', { count: device.gate_count })
                           : t('profilePage.deviceSetup.connected')}
                       </span>
-                    ) : (
-                      <span className="flex items-center gap-1 rounded-full bg-amber-500/15 px-2 py-0.5 text-[11px] font-medium text-amber-300">
+                    ) : linkState === 'never' ? (
+                      <span title={t('deviceLink.tooltip')} className="flex items-center gap-1 rounded-full bg-amber-500/15 px-2 py-0.5 text-[11px] font-medium text-amber-300">
                         <Clock className="w-3 h-3" />
                         {t('profilePage.deviceSetup.awaitingConnection')}
+                      </span>
+                    ) : (
+                      <span
+                        title={t('deviceLink.tooltip')}
+                        className={`flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium ${
+                          linkState === 'delayed' ? 'bg-amber-500/15 text-amber-300' : 'bg-white/10 text-gray-400'
+                        }`}
+                      >
+                        <Clock className="w-3 h-3" />
+                        {t(`deviceLink.${linkState}`)}
                       </span>
                     )}
                   </div>

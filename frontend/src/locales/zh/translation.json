@@ -5024,6 +5024,20 @@
     "ERR_SPOOL_LOCATION_CONFLICT": "该线轴正被另一个请求移动，请刷新后重试",
     "ERR_SNAPSHOT_TOO_FREQUENT": "快照发送过于频繁"
   },
+  "deviceLink": {
+    "label": "插件连接",
+    "active": "连接正常",
+    "delayed": "数据延迟",
+    "inactive": "暂无最新数据",
+    "never": "尚未连接",
+    "tooltip": "插件与 FilamentHub 的连接状态，不代表打印机是否开机。",
+    "lastData": "最近数据：{{time}}",
+    "time": {
+      "ltMinute": "< 1 分钟",
+      "minutesAgo": "{{count}} 分钟前",
+      "hoursAgo": "{{count}} 小时前"
+    }
+  },
   "presetSlots": {
     "title": "打印机位置",
     "subtitle": "MMU / AMS 位置的预设分配",
@@ -5032,23 +5046,10 @@
     "noMappedDevices": "没有设备匹配到您的打印机配置文件",
     "noMappedDevicesDesc": "检查设备到打印机的绑定，并确保您的账户中存在打印机配置文件",
     "mappedPrinter": "打印机: {{name}}",
-    "lastSeen": "最后在线: {{time}}",
-    "neverSeen": "从未连接",
-    "time": {
-      "ltMinute": "< 1 分钟",
-      "minutesAgo": "{{count}} 分钟前",
-      "hoursAgo": "{{count}} 小时前"
-    },
     "gates_one": "{{count}} 个位置",
     "gates_other": "{{count}} 个位置",
     "hhActive": "Happy Hare",
     "manualMode": "手动模式",
-    "connection": {
-      "online": "在线",
-      "stale": "陈旧",
-      "offline": "离线",
-      "unknown": "无数据"
-    },
     "gateEmpty": "空",
     "gateUnknown": "无数据",
     "unknownFilament": "未知耗材",

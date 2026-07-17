@@ -9,32 +9,9 @@ import { GateMapGrid } from './GateMapGrid';
 import { PresetAssignModal } from './PresetAssignModal';
 import { toast } from '../Toast';
 import { translateApiError } from '../../utils/translateApiError';
+import { formatLastSeen, getDeviceLinkState, useNow } from '../../utils/deviceLink';
 import { useAuth } from '../../contexts/AuthContext';
 import type { AxiosError } from 'axios';
-
-function formatLastSeen(
-  ts: string | null,
-  t: (key: string, options?: Record<string, unknown>) => string,
-  locale: string,
-): string {
-  if (!ts) return t('presetSlots.neverSeen');
-  const d = new Date(ts);
-  const diff = Date.now() - d.getTime();
-  if (diff < 60_000) return t('presetSlots.time.ltMinute');
-  if (diff < 3_600_000) return t('presetSlots.time.minutesAgo', { count: Math.floor(diff / 60_000) });
-  if (diff < 86_400_000) return t('presetSlots.time.hoursAgo', { count: Math.floor(diff / 3_600_000) });
-  return d.toLocaleDateString(locale);
-}
-
-type DeviceConnectionState = 'online' | 'stale' | 'offline' | 'unknown';
-
-function getDeviceConnectionState(ts: string | null): DeviceConnectionState {
-  if (!ts) return 'unknown';
-  const diff = Date.now() - new Date(ts).getTime();
-  if (diff < 30_000) return 'online';
-  if (diff < 180_000) return 'stale';
-  return 'offline';
-}
 
 interface DeviceSectionProps {
   device: UserPrinterDevice;
@@ -52,7 +29,8 @@ function DeviceSection({ device, presetsSeedMap, spools, printerProfileName = nu
   const [pairingCommandCopied, setPairingCommandCopied] = useState(false);
   const [editName, setEditName] = useState(device.name);
   const [editGateCount, setEditGateCount] = useState<string>(device.gate_count?.toString() ?? '');
-  const connectionState = getDeviceConnectionState(device.last_seen_at);
+  const now = useNow();
+  const linkState = getDeviceLinkState(device.last_seen_at, now);
 
   const updateMutation = useMutation({
     mutationFn: (payload: { name?: string; gate_count?: number | null }) =>
@@ -180,7 +158,6 @@ function DeviceSection({ device, presetsSeedMap, spools, printerProfileName = nu
           </div>
           <div>
             <h2 className="text-sm font-semibold text-white">{device.name}</h2>
-            <p className="text-xs text-gray-500">{device.device_fingerprint}</p>
             {printerProfileName && (
               <p className="text-[11px] text-purple-300 mt-0.5">
                 {t('presetSlots.mappedPrinter', { name: printerProfileName })}
@@ -191,27 +168,28 @@ function DeviceSection({ device, presetsSeedMap, spools, printerProfileName = nu
 
         <div className="flex flex-wrap items-center gap-2">
           <span
+            title={t('deviceLink.tooltip')}
             className={[
               'flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-medium',
-              connectionState === 'online'
+              linkState === 'active'
                 ? 'bg-emerald-500/15 text-emerald-300'
-                : connectionState === 'stale'
+                : linkState === 'delayed'
                   ? 'bg-amber-500/15 text-amber-300'
-                  : connectionState === 'offline'
-                    ? 'bg-rose-500/15 text-rose-300'
-                    : 'bg-white/10 text-gray-400',
+                  : linkState === 'inactive'
+                    ? 'bg-white/10 text-gray-400'
+                    : 'bg-white/5 text-gray-500',
             ].join(' ')}
           >
-            {connectionState === 'online' ? (
+            {linkState === 'active' ? (
               <Wifi className="h-3 w-3" />
-            ) : connectionState === 'stale' ? (
+            ) : linkState === 'delayed' ? (
               <AlertTriangle className="h-3 w-3" />
-            ) : connectionState === 'offline' ? (
+            ) : linkState === 'inactive' ? (
               <WifiOff className="h-3 w-3" />
             ) : (
               <Clock className="h-3 w-3" />
             )}
-            {t(`presetSlots.connection.${connectionState}`)}
+            {t(`deviceLink.${linkState}`)}
           </span>
 
           {device.supports_hh ? (
@@ -233,7 +211,7 @@ function DeviceSection({ device, presetsSeedMap, spools, printerProfileName = nu
           )}
           <span className="flex items-center gap-1 rounded-full bg-white/5 px-2.5 py-1 text-xs text-gray-500">
             <Clock className="h-3 w-3" />
-            {formatLastSeen(device.last_seen_at, t, i18n.language)}
+            {formatLastSeen(device.last_seen_at, t, i18n.language, now)}
           </span>
           <button
             type="button"

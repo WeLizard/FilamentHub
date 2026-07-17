@@ -5160,6 +5160,20 @@
     "ERR_SPOOL_LOCATION_CONFLICT": "Катушку уже перемещает другой запрос. Обновите страницу и повторите",
     "ERR_SNAPSHOT_TOO_FREQUENT": "Снимки отправляются слишком часто"
   },
+  "deviceLink": {
+    "label": "Связь с плагином",
+    "active": "Связь активна",
+    "delayed": "Данные с задержкой",
+    "inactive": "Нет свежих данных",
+    "never": "Ещё не подключался",
+    "tooltip": "Состояние связи плагина с FilamentHub. Не показывает, включён ли принтер.",
+    "lastData": "Последние данные: {{time}}",
+    "time": {
+      "ltMinute": "< 1 мин",
+      "minutesAgo": "{{count}} мин назад",
+      "hoursAgo": "{{count}} ч назад"
+    }
+  },
   "presetSlots": {
     "title": "Слоты принтера",
     "subtitle": "Карта назначений пресетов для слотов MMU / AMS",
@@ -5168,24 +5182,11 @@
     "noMappedDevices": "Нет устройств, сопоставленных с вашими профилями принтера",
     "noMappedDevicesDesc": "Проверьте привязку устройства к принтеру и наличие профиля принтера в вашем аккаунте",
     "mappedPrinter": "Принтер: {{name}}",
-    "lastSeen": "Последний раз: {{time}}",
-    "neverSeen": "Ещё не подключался",
-    "time": {
-      "ltMinute": "< 1 мин",
-      "minutesAgo": "{{count}} мин назад",
-      "hoursAgo": "{{count}} ч назад"
-    },
     "gates_one": "{{count}} слот",
     "gates_few": "{{count}} слота",
     "gates_many": "{{count}} слотов",
     "hhActive": "Happy Hare",
     "manualMode": "Ручной режим",
-    "connection": {
-      "online": "Онлайн",
-      "stale": "Задержка",
-      "offline": "Офлайн",
-      "unknown": "Нет данных"
-    },
     "gateEmpty": "Пусто",
     "gateUnknown": "Нет данных",
     "unknownFilament": "Неизвестный филамент",
