@@ -4495,6 +4495,12 @@
     "toggleError": "Error toggling sync",
     "unknownError": "Unknown error"
   },
+  "presetScope": {
+    "label": "Export for",
+    "allPrinters": "All printers",
+    "tooltip": "Which printer this preset is exported for in OrcaSlicer",
+    "updateError": "Failed to update preset scope"
+  },
   "colorMaterial": {
     "sectionLabel": "Material color",
     "colorName": "Color name",

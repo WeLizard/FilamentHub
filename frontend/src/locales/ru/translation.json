@@ -4626,6 +4626,12 @@
     "toggleError": "Ошибка при переключении синхронизации",
     "unknownError": "Неизвестная ошибка"
   },
+  "presetScope": {
+    "label": "Экспорт для",
+    "allPrinters": "Все принтеры",
+    "tooltip": "Для какого принтера пресет экспортируется в OrcaSlicer",
+    "updateError": "Не удалось изменить область пресета"
+  },
   "colorMaterial": {
     "sectionLabel": "Цвет материала",
     "colorName": "Название цвета",

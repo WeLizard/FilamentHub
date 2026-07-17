@@ -25,6 +25,7 @@ interface DropdownProps {
   renderOption?: (option: DropdownOption) => ReactNode; // Кастомный рендеринг опции
   emptyMessage?: string; // Сообщение когда нет опций
   maxHeight?: string; // Максимальная высота списка
+  size?: 'sm' | 'md'; // sm — компактный вариант для карточек/тулбаров
 }
 
 export const Dropdown: React.FC<DropdownProps> = ({
@@ -41,8 +42,11 @@ export const Dropdown: React.FC<DropdownProps> = ({
   renderOption,
   emptyMessage: emptyMessageProp,
   maxHeight = 'max-h-60',
+  size = 'md',
 }) => {
   const { t } = useTranslation();
+  const inputSizeClasses = size === 'sm' ? 'px-3 py-1.5 text-sm rounded-lg' : 'px-4 py-3 rounded-xl';
+  const optionSizeClasses = size === 'sm' ? 'px-3 py-2 text-sm' : 'px-4 py-3';
   const placeholder = placeholderProp || t('dropdown.placeholder');
   const emptyMessage = emptyMessageProp || t('dropdown.emptyMessage');
   const containerRef = useRef<HTMLDivElement>(null);
@@ -200,7 +204,7 @@ export const Dropdown: React.FC<DropdownProps> = ({
               }}
               placeholder={placeholder}
               disabled={disabled}
-              className={`w-full px-4 py-3 ${value !== '' ? 'pr-10' : ''} bg-white/10 border border-white/20 rounded-xl text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all ${
+              className={`w-full ${inputSizeClasses} ${value !== '' ? 'pr-10' : ''} bg-white/10 border border-white/20 text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all ${
                 disabled ? 'opacity-50 cursor-not-allowed' : ''
               }`}
             />
@@ -228,7 +232,7 @@ export const Dropdown: React.FC<DropdownProps> = ({
               placeholder={placeholder}
               disabled={disabled}
               readOnly
-              className={`w-full px-4 py-3 ${value !== '' ? 'pr-10' : ''} bg-white/10 border border-white/20 rounded-xl text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all cursor-pointer ${
+              className={`w-full ${inputSizeClasses} ${value !== '' ? 'pr-10' : ''} bg-white/10 border border-white/20 text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all cursor-pointer ${
                 disabled ? 'opacity-50 cursor-not-allowed' : ''
               }`}
             />
@@ -265,7 +269,7 @@ export const Dropdown: React.FC<DropdownProps> = ({
                   key={option.value}
                   type="button"
                   onClick={() => handleOptionClick(option.value)}
-                  className="w-full px-4 py-3 text-left hover:bg-white/10 transition-all text-white border-b border-white/5 last:border-b-0 flex items-center justify-between"
+                  className={`w-full ${optionSizeClasses} text-left hover:bg-white/10 transition-all text-white border-b border-white/5 last:border-b-0 flex items-center justify-between`}
                 >
                   {renderOption ? (
                     renderOption(option)
