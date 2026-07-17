@@ -1,4 +1,4 @@
-/** Контрол library scope пресета: экспорт для всех принтеров или под конкретный принтер-профиль */
+/** Контрол library scope пресета: экспорт для всех принтеров или под выбранные принтер-профили */
 
 import { useTranslation } from 'react-i18next';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -9,10 +9,25 @@ import { translateApiError } from '../utils/translateApiError';
 import { notifyProfileChanged } from '../utils/pluginBridge';
 import { useAuth } from '../contexts/AuthContext';
 import { Dropdown } from './Dropdown';
-import type { Preset, PresetLibraryScope } from '../types/api';
+import type { Preset } from '../types/api';
 import type { AxiosError } from 'axios';
 
-const UNSCOPED_VALUE = 'unscoped';
+/** Активные принтер-профили текущего пользователя (общий кэш с ProfilePage). */
+export function useMyActivePrinterProfiles() {
+  const { user } = useAuth();
+  const { data } = useQuery({
+    queryKey: ['printer-profiles', user?.id],
+    queryFn: () =>
+      printerProfilesAPI.list({
+        owner_user_id: user!.id,
+        page: 1,
+        size: 50,
+        active_only: false,
+      }),
+    enabled: !!user?.id,
+  });
+  return (data?.items ?? []).filter(p => p.active);
+}
 
 interface PresetScopeControlProps {
   preset: Preset;
@@ -24,7 +39,7 @@ export const PresetScopeControl: React.FC<PresetScopeControlProps> = ({ preset, 
   const { user } = useAuth();
   const queryClient = useQueryClient();
 
-  // Запись user_saved_preset несёт scope/target текущего пользователя
+  // Запись user_saved_preset несёт scope/цели текущего пользователя
   const { data: savedPresets } = useQuery({
     queryKey: ['saved-presets', user?.id],
     queryFn: () => savedPresetsAPI.list(),
@@ -32,26 +47,13 @@ export const PresetScopeControl: React.FC<PresetScopeControlProps> = ({ preset, 
   });
   const savedPreset = savedPresets?.items.find(sp => sp.preset_id === preset.id);
 
-  // Тот же ключ, что в ProfilePage — кэш общий, лишнего запроса нет
-  const { data: printerProfilesData } = useQuery({
-    queryKey: ['printer-profiles', user?.id],
-    queryFn: () =>
-      printerProfilesAPI.list({
-        owner_user_id: user!.id,
-        page: 1,
-        size: 50,
-        active_only: false,
-      }),
-    enabled: !!user?.id && !!savedPreset,
-  });
-  const activeProfiles = (printerProfilesData?.items ?? []).filter(p => p.active);
+  const activeProfiles = useMyActivePrinterProfiles();
 
   const updateScopeMutation = useMutation({
-    mutationFn: async (params: { scope: PresetLibraryScope; targetId: number | null }) =>
-      savedPresetsAPI.updateScope(preset.id, params.scope, params.targetId),
+    mutationFn: async (targetIds: number[]) => savedPresetsAPI.updateScope(preset.id, targetIds),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['saved-presets', user?.id] });
-      // Экспорт пресета меняется — плагин пересинхронизирует набор
+      // Экспорт пресета меняется — плагин пересинхронизирует изменившийся JSON
       notifyProfileChanged();
     },
     onError: (error: AxiosError<{ detail: unknown }>) => {
@@ -64,28 +66,15 @@ export const PresetScopeControl: React.FC<PresetScopeControlProps> = ({ preset, 
     return null;
   }
 
-  const currentValue =
-    savedPreset.scope === 'targeted' && savedPreset.target_printer_profile_id != null
-      ? savedPreset.target_printer_profile_id
-      : UNSCOPED_VALUE;
+  const selectedIds = savedPreset.target_printer_profile_ids.filter(id =>
+    activeProfiles.some(profile => profile.id === id)
+  );
 
-  const options = [
-    { value: UNSCOPED_VALUE, label: t('presetScope.allPrinters') },
-    ...activeProfiles.map(profile => ({ value: profile.id, label: profile.name })),
-  ];
+  const options = activeProfiles.map(profile => ({ value: profile.id, label: profile.name }));
 
-  const handleChange = (value: string | number) => {
+  const handleMultiChange = (values: (string | number)[]) => {
     if (updateScopeMutation.isPending) return;
-    if (value === UNSCOPED_VALUE || value === '') {
-      if (savedPreset.scope !== 'unscoped') {
-        updateScopeMutation.mutate({ scope: 'unscoped', targetId: null });
-      }
-      return;
-    }
-    const targetId = Number(value);
-    if (targetId !== savedPreset.target_printer_profile_id || savedPreset.scope !== 'targeted') {
-      updateScopeMutation.mutate({ scope: 'targeted', targetId });
-    }
+    updateScopeMutation.mutate(values.map(Number));
   };
 
   return (
@@ -93,9 +82,13 @@ export const PresetScopeControl: React.FC<PresetScopeControlProps> = ({ preset, 
       <Crosshair className="w-4 h-4 text-gray-400 flex-shrink-0" />
       <span className="text-xs text-gray-400 whitespace-nowrap">{t('presetScope.label')}</span>
       <Dropdown
-        value={currentValue}
+        value=""
+        onChange={() => {}}
+        multiple
+        selectedValues={selectedIds}
+        onMultiChange={handleMultiChange}
         options={options}
-        onChange={handleChange}
+        placeholder={t('presetScope.allPrinters')}
         size="sm"
         className="w-52"
         disabled={updateScopeMutation.isPending}

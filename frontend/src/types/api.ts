@@ -712,7 +712,7 @@ export interface NotificationListResponse {
   unread_count: number;
 }
 
-export type PresetLibraryScope = 'unscoped' | 'targeted';
+export type PresetLibraryScope = 'unscoped' | 'targeted' | 'compatible';
 
 export interface UserSavedPreset {
   id: number;
@@ -720,8 +720,8 @@ export interface UserSavedPreset {
   preset_id: number;
   saved_at: string; // ISO 8601 datetime string
   sync: boolean; // Включена ли синхронизация с OrcaSlicer для этого пресета у этого пользователя
-  scope: PresetLibraryScope; // Библиотечный scope: универсальный или под конкретный принтер-профиль
-  target_printer_profile_id: number | null; // PrinterProfile.id при scope=targeted
+  scope: PresetLibraryScope; // Выводится из набора целей: 0 → unscoped, 1 → targeted, 2+ → compatible
+  target_printer_profile_ids: number[]; // PrinterProfile.id целевых принтер-профилей
 }
 
 export type PricingMethod = 'by_weight' | 'by_time' | 'combined';

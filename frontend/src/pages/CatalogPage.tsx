@@ -26,6 +26,8 @@ import { isPluginEmbed, notifyProfileChanged } from '../utils/pluginBridge';
 import { Dropdown } from '../components/Dropdown';
 import { FilamentPreview } from '../components/FilamentPreview';
 import { RecommendedForPrinterSection } from '../components/RecommendedForPrinterSection';
+import { SavePresetTargetsModal } from '../components/SavePresetTargetsModal';
+import { useMyActivePrinterProfiles } from '../components/PresetScopeControl';
 import { SEOHead } from '../components/SEOHead';
 import type { Filament } from '../types/api';
 import type { AxiosError } from 'axios';
@@ -51,6 +53,10 @@ export const CatalogPage: React.FC = () => {
 
   const savedPresetIds = new Set(savedPresets?.items.map(sp => sp.preset_id) || []);
 
+  // При 2+ принтер-профилях сохранение идёт через выбор целей (RFC §3.3)
+  const activePrinterProfiles = useMyActivePrinterProfiles();
+  const [pendingSavePresetId, setPendingSavePresetId] = useState<number | null>(null);
+
   // Мутация для сохранения пресета
   const savePresetMutation = useMutation({
     mutationFn: (presetId: number) => {
@@ -72,6 +78,14 @@ export const CatalogPage: React.FC = () => {
       alert(translateApiError(t, error.response?.data?.detail, t('catalogPage.errorSavePreset')));
     },
   });
+
+  const handleSavePreset = (presetId: number) => {
+    if (user && activePrinterProfiles.length >= 2) {
+      setPendingSavePresetId(presetId);
+      return;
+    }
+    savePresetMutation.mutate(presetId);
+  };
 
   // Загружаем материалы
   const {
@@ -228,7 +242,7 @@ export const CatalogPage: React.FC = () => {
       {/* Рекомендации под принтер пользователя (над основным гридом) */}
       <RecommendedForPrinterSection
         savedPresetIds={savedPresetIds}
-        onSavePreset={(presetId) => savePresetMutation.mutate(presetId)}
+        onSavePreset={handleSavePreset}
       />
 
       {/* Material Grid */}
@@ -239,7 +253,7 @@ export const CatalogPage: React.FC = () => {
             filament={filament}
             brand={brandsMap.get(filament.brand_id)}
             isSelected={selectedFilament === filament.id}
-            onSelect={(presetId) => savePresetMutation.mutate(presetId)}
+            onSelect={handleSavePreset}
             onShowQR={() => setShowQR(showQR === filament.id ? null : filament.id)}
             showQR={showQR === filament.id}
             onClick={() => navigate(`/filaments/${filament.id}`)}
@@ -255,6 +269,12 @@ export const CatalogPage: React.FC = () => {
         </div>
       )}
       </div>
+
+      <SavePresetTargetsModal
+        presetId={pendingSavePresetId}
+        profiles={activePrinterProfiles}
+        onClose={() => setPendingSavePresetId(null)}
+      />
     </>
   );
 };

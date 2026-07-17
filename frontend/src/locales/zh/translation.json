@@ -4494,7 +4494,11 @@
     "label": "导出目标",
     "allPrinters": "所有打印机",
     "tooltip": "此预设在 OrcaSlicer 中导出适用的打印机",
-    "updateError": "更新预设范围失败"
+    "updateError": "更新预设范围失败",
+    "saveTitle": "添加到 Orca",
+    "saveHint": "选择此预设适用的打印机，或为所有打印机添加。",
+    "saveForSelected": "保存（{{count}}）",
+    "saveError": "保存预设失败"
   },
   "colorMaterial": {
     "sectionLabel": "材料颜色",

@@ -26,6 +26,9 @@ interface DropdownProps {
   emptyMessage?: string; // Сообщение когда нет опций
   maxHeight?: string; // Максимальная высота списка
   size?: 'sm' | 'md'; // sm — компактный вариант для карточек/тулбаров
+  multiple?: boolean; // Мультивыбор: опции переключаются, список не закрывается
+  selectedValues?: (string | number)[]; // Выбранные значения в multiple-режиме
+  onMultiChange?: (values: (string | number)[]) => void; // Callback multiple-режима
 }
 
 export const Dropdown: React.FC<DropdownProps> = ({
@@ -43,10 +46,15 @@ export const Dropdown: React.FC<DropdownProps> = ({
   emptyMessage: emptyMessageProp,
   maxHeight = 'max-h-60',
   size = 'md',
+  multiple = false,
+  selectedValues = [],
+  onMultiChange,
 }) => {
   const { t } = useTranslation();
   const inputSizeClasses = size === 'sm' ? 'px-3 py-1.5 text-sm rounded-lg' : 'px-4 py-3 rounded-xl';
   const optionSizeClasses = size === 'sm' ? 'px-3 py-2 text-sm' : 'px-4 py-3';
+  const selectedSet = new Set(selectedValues);
+  const hasSelection = multiple ? selectedValues.length > 0 : value !== '';
   const placeholder = placeholderProp || t('dropdown.placeholder');
   const emptyMessage = emptyMessageProp || t('dropdown.emptyMessage');
   const containerRef = useRef<HTMLDivElement>(null);
@@ -134,9 +142,17 @@ export const Dropdown: React.FC<DropdownProps> = ({
   }, [filter, filterable, options]);
 
   const selectedOption = options.find(opt => opt.value === value);
+  const multiLabel = multiple
+    ? options.filter(opt => selectedSet.has(opt.value)).map(opt => opt.label).join(', ')
+    : '';
+  const displayLabel = multiple ? multiLabel : (selectedOption?.label || '');
 
   const handleClear = () => {
-    onChange('');
+    if (multiple) {
+      onMultiChange?.([]);
+    } else {
+      onChange('');
+    }
     setIsOpen(false);
     if (filterable) {
       setFilter('');
@@ -160,6 +176,14 @@ export const Dropdown: React.FC<DropdownProps> = ({
   };
 
   const handleOptionClick = (optionValue: string | number) => {
+    if (multiple) {
+      // Toggle без закрытия — пользователь отмечает несколько опций подряд
+      const next = selectedSet.has(optionValue)
+        ? selectedValues.filter(v => v !== optionValue)
+        : [...selectedValues, optionValue];
+      onMultiChange?.(next);
+      return;
+    }
     onChange(optionValue);
     setIsOpen(false);
     if (filterable) {
@@ -182,7 +206,7 @@ export const Dropdown: React.FC<DropdownProps> = ({
             <input
               ref={inputRef}
               type="text"
-              value={isOpen ? filter : (selectedOption?.label || '')}
+              value={isOpen ? filter : displayLabel}
               onChange={(e) => handleInputChange(e.target.value)}
               onFocus={() => {
                 setIsOpen(true);
@@ -204,11 +228,11 @@ export const Dropdown: React.FC<DropdownProps> = ({
               }}
               placeholder={placeholder}
               disabled={disabled}
-              className={`w-full ${inputSizeClasses} ${value !== '' ? 'pr-10' : ''} bg-white/10 border border-white/20 text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all ${
+              className={`w-full ${inputSizeClasses} ${hasSelection ? 'pr-10' : ''} bg-white/10 border border-white/20 text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all ${
                 disabled ? 'opacity-50 cursor-not-allowed' : ''
               }`}
             />
-            {value !== '' && !disabled && (
+            {hasSelection && !disabled && (
               <button
                 type="button"
                 onClick={(e) => {
@@ -227,16 +251,16 @@ export const Dropdown: React.FC<DropdownProps> = ({
             <input
               ref={inputRef}
               type="text"
-              value={selectedOption?.label || ''}
+              value={displayLabel}
               onFocus={() => setIsOpen(true)}
               placeholder={placeholder}
               disabled={disabled}
               readOnly
-              className={`w-full ${inputSizeClasses} ${value !== '' ? 'pr-10' : ''} bg-white/10 border border-white/20 text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all cursor-pointer ${
+              className={`w-full ${inputSizeClasses} ${hasSelection ? 'pr-10' : ''} bg-white/10 border border-white/20 text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all cursor-pointer ${
                 disabled ? 'opacity-50 cursor-not-allowed' : ''
               }`}
             />
-            {value !== '' && !disabled && (
+            {hasSelection && !disabled && (
               <button
                 type="button"
                 onClick={(e) => {
@@ -279,7 +303,7 @@ export const Dropdown: React.FC<DropdownProps> = ({
                         {option.icon && <span>{option.icon}</span>}
                         <span>{option.label}</span>
                       </span>
-                      {value === option.value && (
+                      {(multiple ? selectedSet.has(option.value) : value === option.value) && (
                         <Check className="w-5 h-5 text-purple-400 flex-shrink-0" />
                       )}
                     </>

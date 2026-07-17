@@ -4498,8 +4498,12 @@
   "presetScope": {
     "label": "Export for",
     "allPrinters": "All printers",
-    "tooltip": "Which printer this preset is exported for in OrcaSlicer",
-    "updateError": "Failed to update preset scope"
+    "tooltip": "Which printers this preset is exported for in OrcaSlicer",
+    "updateError": "Failed to update preset scope",
+    "saveTitle": "Add to Orca",
+    "saveHint": "Choose the printers this preset will be visible for, or add it for all of them.",
+    "saveForSelected": "Save ({{count}})",
+    "saveError": "Failed to save preset"
   },
   "colorMaterial": {
     "sectionLabel": "Material color",

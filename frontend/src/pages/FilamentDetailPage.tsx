@@ -35,6 +35,8 @@ import { CreateReviewModal } from '../components/CreateReviewModal';
 import { ConfirmDeleteModal } from '../components/ConfirmDeleteModal';
 import { toast } from '../components/Toast';
 import { PresetSyncToggle } from '../components/PresetSyncToggle';
+import { SavePresetTargetsModal } from '../components/SavePresetTargetsModal';
+import { useMyActivePrinterProfiles } from '../components/PresetScopeControl';
 import { ViewPresetModal } from '../components/ViewPresetModal';
 import { SEOHead } from '../components/SEOHead';
 import { FilamentReview } from '../types/api';
@@ -94,6 +96,10 @@ export const FilamentDetailPage: React.FC = () => {
 
   const savedPresetIds = new Set(savedPresets?.items.map(sp => sp.preset_id) || []);
 
+  // При 2+ принтер-профилях сохранение идёт через выбор целей (RFC §3.3)
+  const activePrinterProfiles = useMyActivePrinterProfiles();
+  const [pendingSavePresetId, setPendingSavePresetId] = useState<number | null>(null);
+
   // Мутация для сохранения пресета
   const savePresetMutation = useMutation({
     mutationFn: (presetId: number) => {
@@ -111,6 +117,14 @@ export const FilamentDetailPage: React.FC = () => {
       toast.error(translateApiError(t, error.response?.data?.detail, t('filamentDetailPage.errorSavingPreset')));
     },
   });
+
+  const handleSavePreset = (presetId: number) => {
+    if (user && activePrinterProfiles.length >= 2) {
+      setPendingSavePresetId(presetId);
+      return;
+    }
+    savePresetMutation.mutate(presetId);
+  };
 
   // Загружаем отзывы
   const { data: reviewsData, isLoading: isLoadingReviews, refetch: refetchReviews } = useQuery({
@@ -476,7 +490,7 @@ export const FilamentDetailPage: React.FC = () => {
               </button>
             ) : (
               <button
-                onClick={() => primaryPreset && savePresetMutation.mutate(primaryPreset.id)}
+                onClick={() => primaryPreset && handleSavePreset(primaryPreset.id)}
                 disabled={savePresetMutation.isPending}
                 className="flex-1 bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white py-4 px-8 rounded-xl transition-all shadow-lg shadow-purple-500/25 hover:shadow-purple-500/40 text-lg font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
               >
@@ -1019,7 +1033,7 @@ export const FilamentDetailPage: React.FC = () => {
                           <button
                             onClick={(e) => {
                               e.stopPropagation();
-                              savePresetMutation.mutate(preset.id);
+                              handleSavePreset(preset.id);
                             }}
                             disabled={savePresetMutation.isPending}
                             className="w-full bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white py-2 px-4 rounded-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed"
@@ -1163,6 +1177,12 @@ export const FilamentDetailPage: React.FC = () => {
           }}
           message={t('filamentDetailPage.confirmDeleteReview')}
           isLoading={deleteReviewMutation.isPending}
+        />
+
+        <SavePresetTargetsModal
+          presetId={pendingSavePresetId}
+          profiles={activePrinterProfiles}
+          onClose={() => setPendingSavePresetId(null)}
         />
       </div>
       </div>
