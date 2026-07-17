@@ -1017,6 +1017,15 @@
     "searchPlaceholder": "Поиск...",
     "allTypes": "Все типы",
     "allBrands": "Все бренды",
+    "ownership": {
+      "all": "Все",
+      "mine": "Мои",
+      "new": "Новые"
+    },
+    "presetType": {
+      "generative": "Генеративный",
+      "brand": "От бренда"
+    },
     "noResults": "Материалы не найдены",
     "errorLoginRequired": "Необходимо войти в систему",
     "errorSavePreset": "Не удалось добавить пресет в профиль",
@@ -5235,6 +5244,10 @@
       "hhInfo": "Happy Hare: {{material}}",
       "searchPreset": "Поиск пресета...",
       "noPresets": "Пресеты не найдены",
+      "noPresetsForFilament": "В вашей библиотеке нет пресетов для этого филамента",
+      "presetsForFilament": "Пресеты для {{filament}}",
+      "showAllPresets": "Показать все",
+      "backToFilamentPresets": "← Пресеты для {{filament}}",
       "assign": "Назначить",
       "clear": "Очистить слот",
       "cancel": "Отмена",

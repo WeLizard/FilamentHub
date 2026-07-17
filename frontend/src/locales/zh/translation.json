@@ -868,6 +868,15 @@
     "searchPlaceholder": "搜索...",
     "allTypes": "所有类型",
     "allBrands": "所有品牌",
+    "ownership": {
+      "all": "全部",
+      "mine": "我的",
+      "new": "新的"
+    },
+    "presetType": {
+      "generative": "生成式",
+      "brand": "品牌提供"
+    },
     "noResults": "未找到材料",
     "errorLoginRequired": "需要登录",
     "errorSavePreset": "添加预设到配置文件失败",
@@ -5098,6 +5107,10 @@
       "hhInfo": "Happy Hare: {{material}}",
       "searchPreset": "搜索预设...",
       "noPresets": "未找到预设",
+      "noPresetsForFilament": "您的库中没有该耗材的预设",
+      "presetsForFilament": "{{filament}} 的预设",
+      "showAllPresets": "显示全部",
+      "backToFilamentPresets": "← {{filament}} 的预设",
       "assign": "分配",
       "clear": "清空位置",
       "cancel": "取消",

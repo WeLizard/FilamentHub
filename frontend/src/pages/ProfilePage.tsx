@@ -2775,7 +2775,7 @@ const SpoolsTab: React.FC<SpoolsTabProps> = ({
 }) => {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
-  const [spoolTab, setSpoolTab] = useState<'shelf' | 'active' | 'archived'>('shelf');
+  const [spoolTab, setSpoolTab] = useState<'shelf' | 'active' | 'archived'>('active');
   const [editingSpool, setEditingSpool] = useState<UserSpool | null>(null);
   const [usingSpool, setUsingSpool] = useState<UserSpool | null>(null);
   const [busySpoolId, setBusySpoolId] = useState<number | null>(null);
@@ -2968,8 +2968,8 @@ const SpoolsTab: React.FC<SpoolsTabProps> = ({
   }, [spools, spoolTab]);
 
   const spoolTabs: Array<{ key: 'shelf' | 'active' | 'archived'; label: string; count: number }> = [
-    { key: 'shelf', label: t('profilePage.spoolTabs.shelf'), count: spoolTabCounts.shelf },
     { key: 'active', label: t('profilePage.spoolTabs.active'), count: spoolTabCounts.active },
+    { key: 'shelf', label: t('profilePage.spoolTabs.shelf'), count: spoolTabCounts.shelf },
     { key: 'archived', label: t('profilePage.spoolTabs.archived'), count: spoolTabCounts.archived },
   ];
 

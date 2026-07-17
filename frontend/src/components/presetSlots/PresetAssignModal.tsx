@@ -2,8 +2,9 @@ import { useState, useEffect, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Search, X, Loader2, CheckCircle2, Trash2, Package, Copy, Check, AlertTriangle } from 'lucide-react';
-import { presetsAPI, presetSlotsAPI } from '../../api/client';
+import { presetsAPI, presetSlotsAPI, savedPresetsAPI } from '../../api/client';
 import type { GateState, UserSpool } from '../../api/client';
+import { useAuth } from '../../contexts/AuthContext';
 import { toast } from '../Toast';
 import { translateApiError } from '../../utils/translateApiError';
 import { getSpoolCurrentLocation, getSpoolLastLocation } from '../../utils/spoolLocation';
@@ -33,6 +34,7 @@ export function PresetAssignModal({
   onAssigned,
 }: PresetAssignModalProps) {
   const { t } = useTranslation();
+  const { user } = useAuth();
   const queryClient = useQueryClient();
 
   const [search, setSearch] = useState('');
@@ -40,8 +42,11 @@ export function PresetAssignModal({
   const [selectedPresetId, setSelectedPresetId] = useState<number | null>(null);
   const [selectedSpoolId, setSelectedSpoolId] = useState<number | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [activeTab, setActiveTab] = useState<'preset' | 'spool'>('preset');
+  const [activeTab, setActiveTab] = useState<'preset' | 'spool'>('spool');
   const [emptyCommandCopied, setEmptyCommandCopied] = useState(false);
+  // When a spool is chosen, the preset list is scoped to its filament to cut
+  // the noise of the whole catalog; this opts back into the global search.
+  const [showAllPresets, setShowAllPresets] = useState(false);
 
   const searchRef = useRef<HTMLInputElement>(null);
 
@@ -52,8 +57,11 @@ export function PresetAssignModal({
       setSelectedSpoolId(gate?.spool_id ?? null);
       setSearch('');
       setDebouncedSearch('');
-      setActiveTab(isUnidentifiedHHFilament(gate) ? 'spool' : 'preset');
+      // Filament-first: start on the spool tab so the preset choice can be
+      // narrowed to the loaded filament.
+      setActiveTab('spool');
       setEmptyCommandCopied(false);
+      setShowAllPresets(false);
     }
   }, [gate, isOpen]);
 
@@ -68,20 +76,46 @@ export function PresetAssignModal({
     return () => clearTimeout(timer);
   }, [search]);
 
+  // Filament of the selected spool scopes the preset list. Within that scope
+  // the default is the user's own library for the filament (saved + created);
+  // "show all" opens the whole catalog for the same filament.
+  const selectedSpool =
+    selectedSpoolId != null ? spools.find((s) => s.id === selectedSpoolId) ?? null : null;
+  const selectedSpoolFilamentName = selectedSpool?.filament
+    ? [selectedSpool.filament.brand_name, selectedSpool.filament.name].filter(Boolean).join(' ')
+    : null;
+  const spoolFilamentId = selectedSpool?.filament?.id ?? null;
+
+  // The user's saved library — reuses the app-wide cache key so no extra fetch.
+  const { data: savedPresets } = useQuery({
+    queryKey: ['saved-presets', user?.id],
+    queryFn: () => savedPresetsAPI.list(),
+    enabled: isOpen && !!user?.id,
+    staleTime: 30_000,
+  });
+
   const { data: presetsPage, isLoading: loadingPresets } = useQuery({
-    queryKey: ['presets-for-assign', debouncedSearch],
+    queryKey: ['presets-for-assign', debouncedSearch, spoolFilamentId],
     queryFn: () =>
       presetsAPI.list({
         page: 1,
         size: 50,
         active_only: true,
         search: debouncedSearch || undefined,
+        filament_id: spoolFilamentId ?? undefined,
       }),
     enabled: isOpen,
     staleTime: 30_000,
   });
 
-  const filtered = presetsPage?.items ?? [];
+  const catalogPresets = presetsPage?.items ?? [];
+  // Library scope active when a filament is chosen and the user hasn't opted
+  // into the full catalog. Own presets and saved-from-catalog both count.
+  const libraryScoped = spoolFilamentId != null && !showAllPresets;
+  const savedPresetIds = new Set((savedPresets?.items ?? []).map((s) => s.preset_id));
+  const filtered = libraryScoped
+    ? catalogPresets.filter((p) => savedPresetIds.has(p.id) || p.user_id === user?.id)
+    : catalogPresets;
 
   // Shelf spools are the primary candidates to load; active ones can be
   // re-seated from another slot. Archived/empty spools cannot be assigned.
@@ -226,7 +260,7 @@ export function PresetAssignModal({
 
         {/* Tabs: Preset | Spool */}
         <div className="flex border-b border-white/10 px-5">
-          {(['preset', 'spool'] as const).map((tab) => (
+          {(['spool', 'preset'] as const).map((tab) => (
             <button
               key={tab}
               type="button"
@@ -259,6 +293,34 @@ export function PresetAssignModal({
         <div className="min-h-0 flex-1">
           {activeTab === 'preset' && (
             <>
+              {/* Filament scope banner */}
+              {selectedSpoolFilamentName && (
+                <div className="flex items-center justify-between gap-2 px-5 pt-4">
+                  {libraryScoped ? (
+                    <>
+                      <span className="min-w-0 truncate text-xs text-purple-300/80">
+                        {t('presetSlots.modal.presetsForFilament', { filament: selectedSpoolFilamentName })}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => setShowAllPresets(true)}
+                        className="shrink-0 text-xs text-gray-400 underline transition hover:text-white"
+                      >
+                        {t('presetSlots.modal.showAllPresets')}
+                      </button>
+                    </>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => setShowAllPresets(false)}
+                      className="text-xs text-purple-300 underline transition hover:text-white"
+                    >
+                      {t('presetSlots.modal.backToFilamentPresets', { filament: selectedSpoolFilamentName })}
+                    </button>
+                  )}
+                </div>
+              )}
+
               {/* Search */}
               <div className="px-5 pt-4">
                 <div className="relative">
@@ -291,7 +353,9 @@ export function PresetAssignModal({
                   </div>
                 ) : filtered.length === 0 ? (
                   <p className="py-6 text-center text-sm text-gray-500">
-                    {t('presetSlots.modal.noPresets')}
+                    {libraryScoped
+                      ? t('presetSlots.modal.noPresetsForFilament')
+                      : t('presetSlots.modal.noPresets')}
                   </p>
                 ) : (
                   <div className="space-y-1">

@@ -1,8 +1,8 @@
 /** Страница каталога материалов */
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import {
   Search,
@@ -19,7 +19,7 @@ import {
   Printer,
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
-import { filamentsAPI, brandsAPI, savedPresetsAPI, qrAPI } from '../api/client';
+import { filamentsAPI, brandsAPI, savedPresetsAPI, presetsAPI, spoolsAPI, qrAPI } from '../api/client';
 import { translateApiError } from '../utils/translateApiError';
 import { currencySymbol } from '../utils/currency';
 import { isPluginEmbed, notifyProfileChanged } from '../utils/pluginBridge';
@@ -35,12 +35,15 @@ import type { AxiosError } from 'axios';
 export const CatalogPage: React.FC = () => {
   const { t } = useTranslation();
   const navigate = useNavigate();
+  const location = useLocation();
   const { user } = useAuth();
   const queryClient = useQueryClient();
   const [searchQuery, setSearchQuery] = useState('');
   const [_printerModel, _setPrinterModel] = useState('Ender 3 Pro');
   const [materialTypeFilter, setMaterialTypeFilter] = useState<string | null>(null);
   const [brandFilter, setBrandFilter] = useState<number | null>(null);
+  const [ownershipFilter, setOwnershipFilter] = useState<'all' | 'mine' | 'new'>('all');
+  const [presetTypeFilter, setPresetTypeFilter] = useState<Array<'weighted' | 'official'>>([]);
   const [selectedFilament, _setSelectedFilament] = useState<number | null>(null);
   const [showQR, setShowQR] = useState<number | null>(null);
   
@@ -52,6 +55,37 @@ export const CatalogPage: React.FC = () => {
   });
 
   const savedPresetIds = new Set(savedPresets?.items.map(sp => sp.preset_id) || []);
+
+  // Владение материалом: есть катушка этого филамента или сохранён его пресет.
+  const { data: spoolsData } = useQuery({
+    queryKey: ['spools'],
+    queryFn: spoolsAPI.list,
+    enabled: !!user?.id,
+    staleTime: 60_000,
+  });
+  const savedPresetIdList = useMemo(
+    () => (savedPresets?.items ?? []).map((sp) => sp.preset_id),
+    [savedPresets],
+  );
+  // Сохранённые пресеты → их филаменты (для «Мои»/«Новые»); тянем полные пресеты
+  // по ids одним запросом, без per-preset обращений.
+  const { data: savedPresetDetails } = useQuery({
+    queryKey: ['saved-preset-filaments', savedPresetIdList],
+    queryFn: () =>
+      presetsAPI.list({ ids: savedPresetIdList.join(','), size: 100, active_only: false }),
+    enabled: !!user?.id && savedPresetIdList.length > 0,
+    staleTime: 60_000,
+  });
+  const ownedFilamentIds = useMemo(() => {
+    const ids = new Set<number>();
+    (spoolsData ?? []).forEach((s) => {
+      if (s.filament_id != null) ids.add(s.filament_id);
+    });
+    (savedPresetDetails?.items ?? []).forEach((p) => {
+      if (p.filament_id != null) ids.add(p.filament_id);
+    });
+    return ids;
+  }, [spoolsData, savedPresetDetails]);
 
   // При 2+ принтер-профилях сохранение идёт через выбор целей (RFC §3.3)
   const activePrinterProfiles = useMyActivePrinterProfiles();
@@ -80,7 +114,16 @@ export const CatalogPage: React.FC = () => {
   });
 
   const handleSavePreset = (presetId: number) => {
-    if (user && activePrinterProfiles.length >= 2) {
+    // Signed-out: route into sign-in instead of firing the save (which 401s
+    // and surfaces a misleading "failed to add preset" error). Layout opens
+    // AuthModal on ?auth=login.
+    if (!user) {
+      const params = new URLSearchParams(location.search);
+      params.set('auth', 'login');
+      navigate({ search: params.toString() });
+      return;
+    }
+    if (activePrinterProfiles.length >= 2) {
       setPendingSavePresetId(presetId);
       return;
     }
@@ -113,16 +156,32 @@ export const CatalogPage: React.FC = () => {
   // Создаем мапу брендов для быстрого доступа
   const brandsMap = new Map(brandsData?.items.map((b) => [b.id, b]) || []);
 
-  // Фильтруем материалы по поисковому запросу
-  const filteredFilaments = filamentsData?.items.filter((filament) => {
-    if (!searchQuery) return true;
-    const query = searchQuery.toLowerCase();
-    return (
-      filament.name.toLowerCase().includes(query) ||
-      filament.material_type.toLowerCase().includes(query) ||
-      filament.color_name?.toLowerCase().includes(query)
-    );
-  }) || [];
+  // Поиск + владение (Все/Мои/Новые) + тип пресета (генеративный/от бренда).
+  const filteredFilaments = (filamentsData?.items ?? []).filter((filament) => {
+    if (searchQuery) {
+      const query = searchQuery.toLowerCase();
+      const matchesSearch =
+        filament.name.toLowerCase().includes(query) ||
+        filament.material_type.toLowerCase().includes(query) ||
+        filament.color_name?.toLowerCase().includes(query);
+      if (!matchesSearch) return false;
+    }
+
+    if (ownershipFilter === 'mine' && !ownedFilamentIds.has(filament.id)) return false;
+    if (ownershipFilter === 'new' && ownedFilamentIds.has(filament.id)) return false;
+
+    if (presetTypeFilter.length > 0) {
+      const summaries = filament.preset_summaries ?? [];
+      const matchesType = presetTypeFilter.some((type) =>
+        type === 'weighted'
+          ? summaries.some((s) => s.is_weighted)
+          : summaries.some((s) => s.is_official),
+      );
+      if (!matchesType) return false;
+    }
+
+    return true;
+  });
 
   // Получаем уникальные типы материалов для фильтра
   const materialTypes = Array.from(
@@ -235,6 +294,53 @@ export const CatalogPage: React.FC = () => {
                 <span className="truncate">{t('recommendedForPrinter.ctaTitle')}</span>
               </button>
             )}
+          </div>
+
+          {/* Владение (Все/Мои/Новые) + тип пресета. Владение — только залогиненным. */}
+          <div className="flex flex-wrap items-center gap-2">
+            {user && (
+              <div className="inline-flex rounded-lg border border-white/20 bg-white/5 p-0.5">
+                {(['all', 'mine', 'new'] as const).map((key) => (
+                  <button
+                    key={key}
+                    type="button"
+                    onClick={() => setOwnershipFilter(key)}
+                    className={`px-3 py-1.5 text-xs sm:text-sm rounded-md transition-all ${
+                      ownershipFilter === key
+                        ? 'bg-purple-600 text-white'
+                        : 'text-gray-300 hover:text-white'
+                    }`}
+                  >
+                    {t(`catalogPage.ownership.${key}`)}
+                  </button>
+                ))}
+              </div>
+            )}
+
+            {([
+              { key: 'weighted', label: t('catalogPage.presetType.generative') },
+              { key: 'official', label: t('catalogPage.presetType.brand') },
+            ] as const).map(({ key, label }) => {
+              const active = presetTypeFilter.includes(key);
+              return (
+                <button
+                  key={key}
+                  type="button"
+                  onClick={() =>
+                    setPresetTypeFilter((prev) =>
+                      prev.includes(key) ? prev.filter((v) => v !== key) : [...prev, key],
+                    )
+                  }
+                  className={`px-3 py-1.5 text-xs sm:text-sm rounded-lg border transition-all ${
+                    active
+                      ? 'bg-purple-600/30 border-purple-500/50 text-purple-200'
+                      : 'bg-white/5 border-white/20 text-gray-300 hover:text-white'
+                  }`}
+                >
+                  {label}
+                </button>
+              );
+            })}
           </div>
         </div>
       </div>

@@ -868,6 +868,15 @@
     "searchPlaceholder": "Search...",
     "allTypes": "All types",
     "allBrands": "All brands",
+    "ownership": {
+      "all": "All",
+      "mine": "Mine",
+      "new": "New"
+    },
+    "presetType": {
+      "generative": "Generative",
+      "brand": "From brand"
+    },
     "noResults": "No materials found",
     "errorLoginRequired": "Login required",
     "errorSavePreset": "Failed to add preset to profile",
@@ -5103,6 +5112,10 @@
       "hhInfo": "Happy Hare: {{material}}",
       "searchPreset": "Search preset...",
       "noPresets": "No presets found",
+      "noPresetsForFilament": "No presets in your library for this filament",
+      "presetsForFilament": "Presets for {{filament}}",
+      "showAllPresets": "Show all",
+      "backToFilamentPresets": "← Presets for {{filament}}",
       "assign": "Assign",
       "clear": "Clear slot",
       "cancel": "Cancel",

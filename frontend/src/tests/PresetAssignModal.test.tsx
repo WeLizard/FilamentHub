@@ -26,6 +26,13 @@ vi.mock('../api/client', () => ({
   presetSlotsAPI: {
     assign: vi.fn(),
   },
+  savedPresetsAPI: {
+    list: vi.fn().mockResolvedValue({ items: [] }),
+  },
+}));
+
+vi.mock('../contexts/AuthContext', () => ({
+  useAuth: () => ({ user: { id: 1 } }),
 }));
 
 vi.mock('../components/Toast', () => ({
