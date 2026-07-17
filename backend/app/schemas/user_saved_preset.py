@@ -5,7 +5,7 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
-PresetLibraryScope = Literal["unscoped", "targeted"]
+PresetLibraryScope = Literal["unscoped", "targeted", "compatible"]
 
 
 class UserSavedPresetCreate(BaseModel):
@@ -15,14 +15,13 @@ class UserSavedPresetCreate(BaseModel):
 
 
 class UserSavedPresetScopeUpdate(BaseModel):
-    """Library scope update: universal or pinned to one of the user's own
-    Orca machine profiles (PrinterProfile.id)."""
+    """Library scope update: the set of the user's own Orca machine profiles
+    the preset is meant for. Scope is derived from the set size: empty →
+    unscoped, one → targeted, several → compatible."""
 
-    scope: PresetLibraryScope
-    target_printer_profile_id: int | None = Field(
-        default=None,
-        gt=0,
-        description="Обязателен при scope=targeted; игнорируется при unscoped",
+    target_printer_profile_ids: list[int] = Field(
+        default_factory=list,
+        description="PrinterProfile.id целей; пустой список = unscoped",
     )
 
 
@@ -35,7 +34,7 @@ class UserSavedPresetResponse(BaseModel):
     saved_at: datetime
     sync: bool = Field(True, description="Включена ли синхронизация с OrcaSlicer для этого пресета у этого пользователя")
     scope: PresetLibraryScope = "unscoped"
-    target_printer_profile_id: int | None = None
+    target_printer_profile_ids: list[int] = Field(default_factory=list)
 
     model_config = ConfigDict(from_attributes=True)
 

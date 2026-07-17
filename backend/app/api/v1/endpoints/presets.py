@@ -757,16 +757,18 @@ async def export_preset_json(
     if missing_fields:
         raise_error(422, ERR_EXPORT_MISSING_FIELDS, params={"fields": ", ".join(missing_fields)})
 
-    # Library scope запрашивающего: targeted-пресет сужается до выбранного
-    # machine-профиля пользователя (RFC §3.3); unscoped — как раньше.
+    # Library scope запрашивающего: targeted/compatible-пресет сужается до
+    # выбранных machine-профилей пользователя (RFC §3.3); unscoped — как раньше.
     from app.models.printer_profile import PrinterProfile
-    from app.models.user_saved_preset import UserSavedPreset
+    from app.models.user_saved_preset import UserSavedPreset, UserSavedPresetTarget
 
-    target_profile = None
+    target_profiles: list[PrinterProfile] = []
     scope_result = await db.execute(
         select(UserSavedPreset)
         .options(
-            selectinload(UserSavedPreset.target_profile).selectinload(PrinterProfile.printer)
+            selectinload(UserSavedPreset.targets)
+            .selectinload(UserSavedPresetTarget.profile)
+            .selectinload(PrinterProfile.printer)
         )
         .where(
             UserSavedPreset.user_id == current_user.id,
@@ -774,15 +776,19 @@ async def export_preset_json(
         )
     )
     saved_row = scope_result.scalar_one_or_none()
-    if saved_row is not None and saved_row.scope == "targeted":
-        candidate = saved_row.target_profile
-        if candidate is not None and candidate.owner_user_id == current_user.id and candidate.active:
-            target_profile = candidate
+    if saved_row is not None and saved_row.scope in ("targeted", "compatible"):
+        target_profiles = [
+            target.profile
+            for target in saved_row.targets
+            if target.profile is not None
+            and target.profile.owner_user_id == current_user.id
+            and target.profile.active
+        ]
 
     # Экспортируем в JSON
     try:
         profile_dict = await preset_to_orcaslicer_json(
-            preset, preset.filament, db, target_profile=target_profile
+            preset, preset.filament, db, target_profiles=target_profiles
         )
     except Exception as e:
         logger.error(f"Error exporting preset {preset_id}: {str(e)}", exc_info=True)

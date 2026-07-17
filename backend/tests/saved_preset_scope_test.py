@@ -1,8 +1,9 @@
 """Tests for the filament-library scope (PROFILE-LIBRARY-1, RFC §3.3).
 
-A saved preset is either unscoped (universal — compatibility from the
-preset's catalog PresetPrinter links) or targeted to one of the user's own
-Orca machine profiles. Export must respect the requesting user's scope.
+A saved preset carries a set of target machine profiles: empty → unscoped
+(universal, compatibility from the preset's catalog PresetPrinter links),
+one → targeted, several → compatible. Export must respect the requesting
+user's target set.
 """
 
 import pytest
@@ -17,7 +18,7 @@ from app.models.preset_printer import PresetPrinter
 from app.models.printer import Printer
 from app.models.printer_profile import PrinterProfile
 from app.models.user import User
-from app.models.user_saved_preset import UserSavedPreset
+from app.models.user_saved_preset import UserSavedPreset, UserSavedPresetTarget
 
 
 async def _register_and_login(client: AsyncClient, suffix: str) -> tuple[dict[str, str], str]:
@@ -97,6 +98,15 @@ async def _seed_profile(
     return profile
 
 
+async def _seed_system_printer(db: AsyncSession, *, name: str, slug: str) -> Printer:
+    printer = Printer(
+        name=name, manufacturer="Vendor", model=name, slug=slug, source="system"
+    )
+    db.add(printer)
+    await db.flush()
+    return printer
+
+
 async def _save_preset(client: AsyncClient, headers: dict[str, str], preset_id: int) -> None:
     response = await client.post(
         "/api/v1/saved-presets/", json={"preset_id": preset_id}, headers=headers
@@ -104,8 +114,18 @@ async def _save_preset(client: AsyncClient, headers: dict[str, str], preset_id: 
     assert response.status_code == 201
 
 
+async def _patch_scope(
+    client: AsyncClient, headers: dict[str, str], preset_id: int, target_ids: list[int]
+):
+    return await client.patch(
+        f"/api/v1/saved-presets/{preset_id}/scope",
+        json={"target_printer_profile_ids": target_ids},
+        headers=headers,
+    )
+
+
 @pytest.mark.asyncio
-async def test_scope_targeted_own_profile(client: AsyncClient, db_session: AsyncSession):
+async def test_scope_single_target_is_targeted(client: AsyncClient, db_session: AsyncSession):
     headers, email = await _register_and_login(client, "scope-own")
     user = await _get_user(db_session, email)
     preset = await _seed_preset(db_session, "own")
@@ -115,60 +135,71 @@ async def test_scope_targeted_own_profile(client: AsyncClient, db_session: Async
     await db_session.commit()
     await _save_preset(client, headers, preset.id)
 
-    response = await client.patch(
-        f"/api/v1/saved-presets/{preset.id}/scope",
-        json={"scope": "targeted", "target_printer_profile_id": profile.id},
-        headers=headers,
-    )
+    response = await _patch_scope(client, headers, preset.id, [profile.id])
     assert response.status_code == 200
     data = response.json()
     assert data["scope"] == "targeted"
-    assert data["target_printer_profile_id"] == profile.id
+    assert data["target_printer_profile_ids"] == [profile.id]
 
 
 @pytest.mark.asyncio
-async def test_scope_targeted_requires_target(client: AsyncClient, db_session: AsyncSession):
-    headers, _ = await _register_and_login(client, "scope-notarget")
-    preset = await _seed_preset(db_session, "notarget")
+async def test_scope_multiple_targets_is_compatible(
+    client: AsyncClient, db_session: AsyncSession
+):
+    headers, email = await _register_and_login(client, "scope-multi")
+    user = await _get_user(db_session, email)
+    preset = await _seed_preset(db_session, "multi")
+    p1 = await _seed_profile(
+        db_session, owner_user_id=user.id, slug="scope-multi-1", name="Voron"
+    )
+    p2 = await _seed_profile(
+        db_session, owner_user_id=user.id, slug="scope-multi-2", name="P2S"
+    )
     await db_session.commit()
     await _save_preset(client, headers, preset.id)
 
-    response = await client.patch(
-        f"/api/v1/saved-presets/{preset.id}/scope",
-        json={"scope": "targeted"},
-        headers=headers,
-    )
-    assert response.status_code == 404
-    assert response.json()["detail"]["code"] == "ERR_PRINTER_PROFILE_NOT_FOUND"
+    # duplicates in the request must collapse
+    response = await _patch_scope(client, headers, preset.id, [p1.id, p2.id, p1.id])
+    assert response.status_code == 200
+    data = response.json()
+    assert data["scope"] == "compatible"
+    assert sorted(data["target_printer_profile_ids"]) == sorted([p1.id, p2.id])
 
 
 @pytest.mark.asyncio
-async def test_scope_targeted_rejects_foreign_profile(
-    client: AsyncClient, db_session: AsyncSession
-):
-    headers, _ = await _register_and_login(client, "scope-foreign")
-    other_headers, other_email = await _register_and_login(client, "scope-foreign-other")
+async def test_scope_rejects_foreign_profile(client: AsyncClient, db_session: AsyncSession):
+    headers, email = await _register_and_login(client, "scope-foreign")
+    _other_headers, other_email = await _register_and_login(client, "scope-foreign-other")
+    user = await _get_user(db_session, email)
     other_user = await _get_user(db_session, other_email)
     preset = await _seed_preset(db_session, "foreign")
+    own_profile = await _seed_profile(
+        db_session, owner_user_id=user.id, slug="scope-foreign-own", name="Own"
+    )
     foreign_profile = await _seed_profile(
         db_session, owner_user_id=other_user.id, slug="scope-foreign-p", name="Foreign"
     )
     await db_session.commit()
     await _save_preset(client, headers, preset.id)
 
-    response = await client.patch(
-        f"/api/v1/saved-presets/{preset.id}/scope",
-        json={"scope": "targeted", "target_printer_profile_id": foreign_profile.id},
-        headers=headers,
+    # a single foreign id in the set rejects the whole update
+    response = await _patch_scope(
+        client, headers, preset.id, [own_profile.id, foreign_profile.id]
     )
     assert response.status_code == 404
     assert response.json()["detail"]["code"] == "ERR_PRINTER_PROFILE_NOT_FOUND"
 
+    # nothing was written
+    result = await db_session.execute(
+        select(UserSavedPresetTarget).join(
+            UserSavedPreset, UserSavedPresetTarget.user_saved_preset_id == UserSavedPreset.id
+        ).where(UserSavedPreset.user_id == user.id, UserSavedPreset.preset_id == preset.id)
+    )
+    assert result.scalars().all() == []
+
 
 @pytest.mark.asyncio
-async def test_scope_targeted_rejects_inactive_profile(
-    client: AsyncClient, db_session: AsyncSession
-):
+async def test_scope_rejects_inactive_profile(client: AsyncClient, db_session: AsyncSession):
     headers, email = await _register_and_login(client, "scope-inactive")
     user = await _get_user(db_session, email)
     preset = await _seed_preset(db_session, "inactive")
@@ -182,11 +213,7 @@ async def test_scope_targeted_rejects_inactive_profile(
     await db_session.commit()
     await _save_preset(client, headers, preset.id)
 
-    response = await client.patch(
-        f"/api/v1/saved-presets/{preset.id}/scope",
-        json={"scope": "targeted", "target_printer_profile_id": profile.id},
-        headers=headers,
-    )
+    response = await _patch_scope(client, headers, preset.id, [profile.id])
     assert response.status_code == 404
     assert response.json()["detail"]["code"] == "ERR_PRINTER_PROFILE_NOT_FOUND"
 
@@ -197,17 +224,13 @@ async def test_scope_unsaved_preset_404(client: AsyncClient, db_session: AsyncSe
     preset = await _seed_preset(db_session, "unsaved")
     await db_session.commit()
 
-    response = await client.patch(
-        f"/api/v1/saved-presets/{preset.id}/scope",
-        json={"scope": "unscoped"},
-        headers=headers,
-    )
+    response = await _patch_scope(client, headers, preset.id, [])
     assert response.status_code == 404
     assert response.json()["detail"]["code"] == "ERR_SAVED_PRESET_NOT_FOUND"
 
 
 @pytest.mark.asyncio
-async def test_scope_unscoped_clears_target(client: AsyncClient, db_session: AsyncSession):
+async def test_scope_empty_set_clears_targets(client: AsyncClient, db_session: AsyncSession):
     headers, email = await _register_and_login(client, "scope-clear")
     user = await _get_user(db_session, email)
     preset = await _seed_preset(db_session, "clear")
@@ -217,50 +240,31 @@ async def test_scope_unscoped_clears_target(client: AsyncClient, db_session: Asy
     await db_session.commit()
     await _save_preset(client, headers, preset.id)
 
-    targeted = await client.patch(
-        f"/api/v1/saved-presets/{preset.id}/scope",
-        json={"scope": "targeted", "target_printer_profile_id": profile.id},
-        headers=headers,
-    )
+    targeted = await _patch_scope(client, headers, preset.id, [profile.id])
     assert targeted.status_code == 200
 
-    # target id in the unscoped payload must be ignored, not validated
-    response = await client.patch(
-        f"/api/v1/saved-presets/{preset.id}/scope",
-        json={"scope": "unscoped", "target_printer_profile_id": profile.id},
-        headers=headers,
-    )
+    response = await _patch_scope(client, headers, preset.id, [])
     assert response.status_code == 200
     data = response.json()
     assert data["scope"] == "unscoped"
-    assert data["target_printer_profile_id"] is None
+    assert data["target_printer_profile_ids"] == []
 
 
 @pytest.mark.asyncio
 async def test_export_targeted_narrows_to_profile_model(
     client: AsyncClient, db_session: AsyncSession
 ):
-    """Targeted at a profile linked to a system printer → condition by its
-    canonical printer_model, overriding the preset's own PresetPrinter links."""
+    """One target linked to a system printer → condition by its canonical
+    printer_model, overriding the preset's own PresetPrinter links."""
     headers, email = await _register_and_login(client, "scope-exp-model")
     user = await _get_user(db_session, email)
     preset = await _seed_preset(db_session, "exp-model")
-    authored = Printer(
-        name="Bambu Lab X1 Carbon",
-        manufacturer="Bambu Lab",
-        model="X1 Carbon",
-        slug="scope-exp-x1c",
-        source="system",
+    authored = await _seed_system_printer(
+        db_session, name="Bambu Lab X1 Carbon", slug="scope-exp-x1c"
     )
-    target_printer = Printer(
-        name="Voron 2.4 350",
-        manufacturer="Voron",
-        model="2.4 350",
-        slug="scope-exp-voron",
-        source="system",
+    target_printer = await _seed_system_printer(
+        db_session, name="Voron 2.4 350", slug="scope-exp-voron"
     )
-    db_session.add_all([authored, target_printer])
-    await db_session.flush()
     db_session.add(PresetPrinter(preset_id=preset.id, printer_id=authored.id, is_primary=True))
     profile = await _seed_profile(
         db_session,
@@ -272,11 +276,7 @@ async def test_export_targeted_narrows_to_profile_model(
     await db_session.commit()
     await _save_preset(client, headers, preset.id)
 
-    targeted = await client.patch(
-        f"/api/v1/saved-presets/{preset.id}/scope",
-        json={"scope": "targeted", "target_printer_profile_id": profile.id},
-        headers=headers,
-    )
+    targeted = await _patch_scope(client, headers, preset.id, [profile.id])
     assert targeted.status_code == 200
 
     response = await client.get(
@@ -289,36 +289,93 @@ async def test_export_targeted_narrows_to_profile_model(
 
 
 @pytest.mark.asyncio
-async def test_export_targeted_custom_profile_pins_by_name(
+async def test_export_compatible_ors_system_models(
     client: AsyncClient, db_session: AsyncSession
 ):
-    """Targeted at a profile without a resolvable system model (self-build,
-    generic Klipper) → pin by the exact machine-profile name."""
-    headers, email = await _register_and_login(client, "scope-exp-pin")
+    """Several targets, all resolvable → OR-condition across their models."""
+    headers, email = await _register_and_login(client, "scope-exp-or")
     user = await _get_user(db_session, email)
-    preset = await _seed_preset(db_session, "exp-pin")
-    profile = await _seed_profile(
+    preset = await _seed_preset(db_session, "exp-or")
+    voron = await _seed_system_printer(
+        db_session, name="Voron 2.4 350", slug="scope-exp-or-voron"
+    )
+    p2s = await _seed_system_printer(
+        db_session, name="Bambu Lab P2S", slug="scope-exp-or-p2s"
+    )
+    profile1 = await _seed_profile(
         db_session,
         owner_user_id=user.id,
-        slug="scope-exp-custom",
+        slug="scope-exp-or-1",
+        name="Voron machine",
+        printer=voron,
+    )
+    profile2 = await _seed_profile(
+        db_session,
+        owner_user_id=user.id,
+        slug="scope-exp-or-2",
+        name="P2S machine",
+        printer=p2s,
+    )
+    await db_session.commit()
+    await _save_preset(client, headers, preset.id)
+
+    response = await _patch_scope(client, headers, preset.id, [profile1.id, profile2.id])
+    assert response.status_code == 200
+
+    exported = (
+        await client.get(
+            f"/api/v1/presets/{preset.id}/export/orcaslicer.json", headers=headers
+        )
+    ).json()
+    condition = exported["compatible_printers_condition"]
+    assert 'printer_model=="Voron 2.4 350"' in condition
+    assert 'printer_model=="Bambu Lab P2S"' in condition
+    assert " or " in condition
+    assert exported["compatible_printers"] == []
+
+
+@pytest.mark.asyncio
+async def test_export_mixed_targets_pin_all_by_name(
+    client: AsyncClient, db_session: AsyncSession
+):
+    """A set with at least one custom profile (no resolvable system model)
+    pins the whole set by exact profile names — mixing a condition with a
+    compatible_printers list would AND them in Orca."""
+    headers, email = await _register_and_login(client, "scope-exp-mixed")
+    user = await _get_user(db_session, email)
+    preset = await _seed_preset(db_session, "exp-mixed")
+    voron = await _seed_system_printer(
+        db_session, name="Voron 2.4 350", slug="scope-exp-mixed-voron"
+    )
+    system_profile = await _seed_profile(
+        db_session,
+        owner_user_id=user.id,
+        slug="scope-exp-mixed-sys",
+        name="Voron machine",
+        printer=voron,
+    )
+    custom_profile = await _seed_profile(
+        db_session,
+        owner_user_id=user.id,
+        slug="scope-exp-mixed-custom",
         name="My Custom Rig 0.6",
     )
     await db_session.commit()
     await _save_preset(client, headers, preset.id)
 
-    targeted = await client.patch(
-        f"/api/v1/saved-presets/{preset.id}/scope",
-        json={"scope": "targeted", "target_printer_profile_id": profile.id},
-        headers=headers,
-    )
-    assert targeted.status_code == 200
-
-    response = await client.get(
-        f"/api/v1/presets/{preset.id}/export/orcaslicer.json", headers=headers
+    response = await _patch_scope(
+        client, headers, preset.id, [system_profile.id, custom_profile.id]
     )
     assert response.status_code == 200
-    exported = response.json()
-    assert exported["compatible_printers"] == ["My Custom Rig 0.6"]
+
+    exported = (
+        await client.get(
+            f"/api/v1/presets/{preset.id}/export/orcaslicer.json", headers=headers
+        )
+    ).json()
+    assert sorted(exported["compatible_printers"]) == sorted(
+        ["Voron machine", "My Custom Rig 0.6"]
+    )
     assert "compatible_printers_condition" not in exported
 
 
@@ -330,42 +387,36 @@ async def test_export_unscoped_keeps_authored_links(
     preset's catalog PresetPrinter links."""
     headers, _ = await _register_and_login(client, "scope-exp-unscoped")
     preset = await _seed_preset(db_session, "exp-unscoped")
-    authored = Printer(
-        name="Bambu Lab X1 Carbon",
-        manufacturer="Bambu Lab",
-        model="X1 Carbon",
-        slug="scope-exp-unscoped-x1c",
-        source="system",
+    authored = await _seed_system_printer(
+        db_session, name="Bambu Lab X1 Carbon", slug="scope-exp-unscoped-x1c"
     )
-    db_session.add(authored)
-    await db_session.flush()
     db_session.add(PresetPrinter(preset_id=preset.id, printer_id=authored.id, is_primary=True))
     await db_session.commit()
 
     # not saved at all
-    response = await client.get(
-        f"/api/v1/presets/{preset.id}/export/orcaslicer.json", headers=headers
-    )
-    assert response.status_code == 200
-    exported = response.json()
+    exported = (
+        await client.get(
+            f"/api/v1/presets/{preset.id}/export/orcaslicer.json", headers=headers
+        )
+    ).json()
     assert exported["compatible_printers_condition"] == 'printer_model=="Bambu Lab X1 Carbon"'
 
     # saved with default (unscoped) scope — same result
     await _save_preset(client, headers, preset.id)
-    response = await client.get(
-        f"/api/v1/presets/{preset.id}/export/orcaslicer.json", headers=headers
-    )
-    assert response.status_code == 200
-    exported = response.json()
+    exported = (
+        await client.get(
+            f"/api/v1/presets/{preset.id}/export/orcaslicer.json", headers=headers
+        )
+    ).json()
     assert exported["compatible_printers_condition"] == 'printer_model=="Bambu Lab X1 Carbon"'
 
 
 @pytest.mark.asyncio
-async def test_export_targeted_deleted_profile_falls_back(
+async def test_export_deactivated_target_falls_back(
     client: AsyncClient, db_session: AsyncSession
 ):
-    """A targeted row whose profile was deactivated must not break export —
-    it falls back to the authored-links behavior."""
+    """A target whose profile was deactivated must not break export — with no
+    live targets left it falls back to the authored-links behavior."""
     headers, email = await _register_and_login(client, "scope-exp-gone")
     user = await _get_user(db_session, email)
     preset = await _seed_preset(db_session, "exp-gone")
@@ -375,23 +426,47 @@ async def test_export_targeted_deleted_profile_falls_back(
     await db_session.commit()
     await _save_preset(client, headers, preset.id)
 
-    targeted = await client.patch(
-        f"/api/v1/saved-presets/{preset.id}/scope",
-        json={"scope": "targeted", "target_printer_profile_id": profile.id},
-        headers=headers,
-    )
+    targeted = await _patch_scope(client, headers, preset.id, [profile.id])
     assert targeted.status_code == 200
 
     profile.active = False
     await db_session.commit()
 
-    response = await client.get(
+    exported_response = await client.get(
         f"/api/v1/presets/{preset.id}/export/orcaslicer.json", headers=headers
     )
-    assert response.status_code == 200
-    exported = response.json()
+    assert exported_response.status_code == 200
+    exported = exported_response.json()
     assert exported["compatible_printers"] == []
     assert "compatible_printers_condition" not in exported
+
+
+@pytest.mark.asyncio
+async def test_unsave_removes_target_rows(client: AsyncClient, db_session: AsyncSession):
+    """Removing a preset from the library must not leave orphan target rows
+    (ORM delete-orphan cascade; profile deletion is covered by the DB-level
+    ON DELETE CASCADE, which SQLite test engine does not enforce)."""
+    headers, email = await _register_and_login(client, "scope-cascade")
+    user = await _get_user(db_session, email)
+    preset = await _seed_preset(db_session, "cascade")
+    profile = await _seed_profile(
+        db_session, owner_user_id=user.id, slug="scope-cascade-p", name="Doomed"
+    )
+    await db_session.commit()
+    await _save_preset(client, headers, preset.id)
+
+    response = await _patch_scope(client, headers, preset.id, [profile.id])
+    assert response.status_code == 200
+
+    unsave = await client.delete(f"/api/v1/saved-presets/{preset.id}", headers=headers)
+    assert unsave.status_code == 204
+
+    result = await db_session.execute(
+        select(UserSavedPresetTarget).where(
+            UserSavedPresetTarget.printer_profile_id == profile.id
+        )
+    )
+    assert result.scalars().all() == []
 
 
 @pytest.mark.asyncio
@@ -410,4 +485,4 @@ async def test_scope_defaults_unscoped_on_save(client: AsyncClient, db_session: 
     )
     saved = result.scalar_one()
     assert saved.scope == "unscoped"
-    assert saved.target_printer_profile_id is None
+    assert saved.target_printer_profile_ids == []

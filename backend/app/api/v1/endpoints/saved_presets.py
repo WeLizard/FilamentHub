@@ -19,7 +19,7 @@ from app.db.session import get_db
 from app.models.preset import Preset
 from app.models.printer_profile import PrinterProfile
 from app.models.user import User
-from app.models.user_saved_preset import UserSavedPreset
+from app.models.user_saved_preset import UserSavedPreset, UserSavedPresetTarget
 from app.schemas.user_saved_preset import (
     UserSavedPresetCreate,
     UserSavedPresetListResponse,
@@ -165,11 +165,12 @@ async def update_saved_preset_scope(
     db: Annotated[AsyncSession, Depends(get_db)],
     current_user: Annotated[User, Depends(get_current_active_user)],
 ) -> UserSavedPresetResponse:
-    """Задать scope библиотеки: универсальный или под конкретный принтер-профиль.
+    """Задать набор целевых принтер-профилей библиотечного пресета.
 
-    targeted принимает только собственный профиль пользователя — targeting a
-    foreign machine profile would leak someone else's library structure into
-    the export.
+    Scope выводится из размера набора: пусто → unscoped, один → targeted,
+    несколько → compatible. Принимаются только собственные активные профили
+    пользователя — чужой machine profile в экспорте раскрыл бы структуру
+    чужой библиотеки.
     """
     result = await db.execute(
         select(UserSavedPreset).where(
@@ -181,23 +182,28 @@ async def update_saved_preset_scope(
     if not saved_preset:
         raise_error(404, ERR_SAVED_PRESET_NOT_FOUND)
 
-    if data.scope == "targeted":
-        if data.target_printer_profile_id is None:
-            raise_error(404, ERR_PRINTER_PROFILE_NOT_FOUND)
+    target_ids = list(dict.fromkeys(data.target_printer_profile_ids))
+    if target_ids:
         profile_result = await db.execute(
-            select(PrinterProfile).where(
-                PrinterProfile.id == data.target_printer_profile_id,
+            select(PrinterProfile.id).where(
+                PrinterProfile.id.in_(target_ids),
                 PrinterProfile.owner_user_id == current_user.id,
                 PrinterProfile.active.is_(True),
             )
         )
-        if profile_result.scalar_one_or_none() is None:
+        valid_ids = set(profile_result.scalars().all())
+        if valid_ids != set(target_ids):
             raise_error(404, ERR_PRINTER_PROFILE_NOT_FOUND)
-        saved_preset.scope = "targeted"
-        saved_preset.target_printer_profile_id = data.target_printer_profile_id
-    else:
+
+    saved_preset.targets = [
+        UserSavedPresetTarget(printer_profile_id=profile_id) for profile_id in target_ids
+    ]
+    if not target_ids:
         saved_preset.scope = "unscoped"
-        saved_preset.target_printer_profile_id = None
+    elif len(target_ids) == 1:
+        saved_preset.scope = "targeted"
+    else:
+        saved_preset.scope = "compatible"
 
     await db.commit()
     await db.refresh(saved_preset)

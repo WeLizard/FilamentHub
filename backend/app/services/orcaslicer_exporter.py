@@ -116,21 +116,29 @@ def _escape_condition_value(value: str) -> str:
     return value.replace('"', '\\"')
 
 
-def _targeted_profile_condition(target_profile: "PrinterProfile") -> str | None:
-    """Condition for a preset targeted at one user machine profile.
+def _target_profiles_condition(target_profiles: list["PrinterProfile"]) -> str | None:
+    """Condition for a preset scoped to the user's machine profiles.
 
-    Resolves the profile's linked catalog printer to a canonical Orca
-    printer_model (robust against machine-preset renames). Returns None when
-    the profile has no resolvable system model — the caller pins by the
-    profile's exact name instead.
+    Resolves each profile's linked catalog printer to a canonical Orca
+    printer_model (robust against machine-preset renames) and ORs them.
+    Returns None when any profile has no resolvable system model — the caller
+    pins by exact profile names instead. Mixing a condition with a
+    compatible_printers list is not an option: Orca ANDs them, which would
+    break the OR semantics across targets.
     """
-    printer = target_profile.printer
-    if printer is None or not is_orca_system_printer(printer):
+    models: list[str] = []
+    for profile in target_profiles:
+        printer = profile.printer
+        if printer is None or not is_orca_system_printer(printer):
+            return None
+        model = resolve_orca_printer_model(printer)
+        if not model:
+            return None
+        if model not in models:
+            models.append(model)
+    if not models:
         return None
-    model = resolve_orca_printer_model(printer)
-    if not model:
-        return None
-    return f'printer_model=="{_escape_condition_value(model)}"'
+    return " or ".join(f'printer_model=="{_escape_condition_value(m)}"' for m in models)
 
 
 async def build_compatible_printers_condition(preset: Preset, db: AsyncSession) -> str | None:
@@ -176,7 +184,7 @@ async def preset_to_orcaslicer_json(
     preset: Preset,
     filament: Filament,
     db: AsyncSession | None = None,
-    target_profile: "PrinterProfile | None" = None,
+    target_profiles: "list[PrinterProfile] | None" = None,
 ) -> dict[str, Any]:
     """
     Конвертировать Preset из FilamentHub в формат профиля OrcaSlicer.
@@ -362,21 +370,22 @@ async def preset_to_orcaslicer_json(
     if filament.color_hex:
         profile["default_filament_colour"] = [filament.color_hex]
 
-    # Совместимые принтеры. Приоритет — library scope пользователя: targeted
-    # пресет сужается до его собственного machine-профиля (RFC §3.3), у
-    # остальных авторитет — авторская привязка PresetPrinter: по умолчанию
-    # пусто (совместим со всеми), condition сужает по каноничному
+    # Совместимые принтеры. Приоритет — library scope пользователя:
+    # targeted/compatible пресет сужается до его собственных machine-профилей
+    # (RFC §3.3), у остальных авторитет — авторская привязка PresetPrinter:
+    # по умолчанию пусто (совместим со всеми), condition сужает по каноничному
     # printer_model привязанных системных принтеров. Переживает переименования
     # пресетов и перетирает стейл-condition из обратного синка.
     profile["compatible_printers"] = []
     condition = None
-    if target_profile is not None:
-        condition = _targeted_profile_condition(target_profile)
+    if target_profiles:
+        condition = _target_profiles_condition(target_profiles)
         if condition is None:
-            # Профиль без разрешимой системной модели (самосбор, generic
-            # Klipper): пиним по точному имени machine-профиля — оно и есть
-            # имя пресета принтера в Orca пользователя.
-            profile["compatible_printers"] = [target_profile.name]
+            # Хотя бы один профиль без разрешимой системной модели (самосбор,
+            # generic Klipper): пиним весь набор по точным именам
+            # machine-профилей — это имена пресетов принтеров в Orca
+            # пользователя.
+            profile["compatible_printers"] = [p.name for p in target_profiles]
     elif db is not None and preset.id is not None:
         condition = await build_compatible_printers_condition(preset, db)
     if condition:

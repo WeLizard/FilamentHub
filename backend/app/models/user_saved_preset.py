@@ -37,17 +37,16 @@ class UserSavedPreset(Base):
     # sync: Включена ли синхронизация с OrcaSlicer для этого пресета у этого пользователя
     # Каждый пользователь имеет свою настройку синхронизации для каждого пресета в "Профили филамента"
 
-    # Library scope (RFC material-systems §3.3, filament slice):
-    #   unscoped — universal: compatibility comes from the preset's catalog
-    #              PresetPrinter links, today's behavior;
-    #   targeted — pinned to one of the user's own Orca machine profiles;
-    #              export narrows compatible_printers to that profile.
-    # "compatible" is computed at apply time, never stored. Target is the
-    # existing PrinterProfile.id — no separate target table (RFC §3.1).
+    # Library scope (RFC material-systems §3.3, filament slice), derived from
+    # the target set in user_saved_preset_targets:
+    #   unscoped   — universal, no targets: compatibility comes from the
+    #                preset's catalog PresetPrinter links, today's behavior;
+    #   targeted   — exactly one of the user's own Orca machine profiles;
+    #   compatible — allowed for a chosen set of the user's machine profiles.
+    # The scope/target-count invariant is maintained by the single writer
+    # (PATCH /saved-presets/{id}/scope); export narrows compatible_printers
+    # to the target profiles.
     scope: Mapped[str] = mapped_column(String(20), default="unscoped", server_default="unscoped")
-    target_printer_profile_id: Mapped[int | None] = mapped_column(
-        ForeignKey("printer_profiles.id", ondelete="SET NULL"), nullable=True
-    )
 
     __table_args__ = (
         # One saved row per (user, preset). The original unique index from
@@ -62,14 +61,60 @@ class UserSavedPreset(Base):
         # Historical name: the column was renamed sync_enabled -> sync in
         # 0de996edecbd, the index was not.
         Index("ix_user_saved_presets_sync_enabled", "sync"),
-        Index("ix_user_saved_presets_target_profile", "target_printer_profile_id"),
     )
 
     # Relationships
     user: Mapped["User"] = relationship("User", back_populates="saved_presets")
     preset: Mapped["Preset"] = relationship("Preset", back_populates="saved_by_users")
-    target_profile: Mapped["PrinterProfile | None"] = relationship("PrinterProfile")
+    # lazy="selectin": the target set is small and needed by every response
+    # serialization; avoids MissingGreenlet on async lazy loads.
+    targets: Mapped[list["UserSavedPresetTarget"]] = relationship(
+        "UserSavedPresetTarget",
+        back_populates="saved_preset",
+        cascade="all, delete-orphan",
+        lazy="selectin",
+    )
+
+    @property
+    def target_printer_profile_ids(self) -> list[int]:
+        return [t.printer_profile_id for t in self.targets]
 
     def __repr__(self) -> str:
         """String representation."""
         return f"<UserSavedPreset(id={self.id}, user_id={self.user_id}, preset_id={self.preset_id})>"
+
+
+class UserSavedPresetTarget(Base):
+    """Target machine profile of a saved preset (RFC §3.3 target set)."""
+
+    __tablename__ = "user_saved_preset_targets"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_saved_preset_id: Mapped[int] = mapped_column(
+        ForeignKey("user_saved_presets.id", ondelete="CASCADE"), nullable=False
+    )
+    printer_profile_id: Mapped[int] = mapped_column(
+        ForeignKey("printer_profiles.id", ondelete="CASCADE"), nullable=False
+    )
+
+    __table_args__ = (
+        Index(
+            "ix_usp_targets_saved_profile_unique",
+            "user_saved_preset_id",
+            "printer_profile_id",
+            unique=True,
+        ),
+        Index("ix_usp_targets_printer_profile", "printer_profile_id"),
+    )
+
+    saved_preset: Mapped["UserSavedPreset"] = relationship(
+        "UserSavedPreset", back_populates="targets"
+    )
+    profile: Mapped["PrinterProfile"] = relationship("PrinterProfile")
+
+    def __repr__(self) -> str:
+        """String representation."""
+        return (
+            f"<UserSavedPresetTarget(id={self.id}, "
+            f"saved_preset={self.user_saved_preset_id}, profile={self.printer_profile_id})>"
+        )
