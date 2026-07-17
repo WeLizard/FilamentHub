@@ -52,6 +52,11 @@
     "missing_params": "无效的授权请求",
     "back_home": "返回首页"
   },
+  "pluginOAuth": {
+    "continueInBrowser": "我们已打开您的网页浏览器以完成登录。完成后请返回 OrcaSlicer。",
+    "startRedirecting": "正在跳转到登录页面…",
+    "startError": "此登录链接无效或已过期。请返回 OrcaSlicer 重新开始。"
+  },
   "notFound": {
     "title": "页面未找到",
     "subtitle": "该页面可能已移动或不再存在。请返回目录继续浏览。",

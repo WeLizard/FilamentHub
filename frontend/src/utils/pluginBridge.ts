@@ -70,6 +70,43 @@ function isLoopbackOrigin(origin: string): boolean {
   }
 }
 
+/**
+ * Проверка, что URL доставки OAuth-сессии указывает строго на loopback плагина
+ * (http://127.0.0.1|localhost). Единственный адресат, которому позволено принять
+ * минтованные токены — чтобы поддельная ссылка plugin-start не увела сессию на
+ * чужой хост. Применяется и при сохранении, и при чтении хендофа.
+ */
+export function isLoopbackDeliveryUrl(url: string): boolean {
+  return isLoopbackOrigin(url);
+}
+
+// Хендоф внешнего OAuth: страница plugin-start кладёт сюда loopback-cb + nonce,
+// страница callback их считывает и редиректит браузер на loopback с токенами.
+export const PLUGIN_OAUTH_HANDOFF_KEY = 'fh_plugin_oauth_handoff';
+
+export function consumePluginOAuthHandoff(): { cb: string; nonce: string } | null {
+  try {
+    const raw = sessionStorage.getItem(PLUGIN_OAUTH_HANDOFF_KEY);
+    if (!raw) {
+      return null;
+    }
+    sessionStorage.removeItem(PLUGIN_OAUTH_HANDOFF_KEY);
+    const parsed = JSON.parse(raw) as { cb?: unknown; nonce?: unknown };
+    if (
+      typeof parsed.cb === 'string' &&
+      typeof parsed.nonce === 'string' &&
+      parsed.cb &&
+      parsed.nonce &&
+      isLoopbackDeliveryUrl(parsed.cb)
+    ) {
+      return { cb: parsed.cb, nonce: parsed.nonce };
+    }
+  } catch {
+    // Хранилище недоступно или мусор — хендофа нет.
+  }
+  return null;
+}
+
 function isTrustedPluginParentEvent(event: MessageEvent): boolean {
   if (event.source !== window.parent) {
     return false;
@@ -229,4 +266,48 @@ export function importPresetToPlugin(presetId: number): void {
     presetId,
     token: activePluginToken ?? '',
   });
+}
+
+/**
+ * Запустить вход через Google/Yandex во внешнем системном браузере. Внутри
+ * встроенного WebView провайдеры отдают 403 (disallowed_useragent) / «refused to
+ * connect», поэтому Python открывает браузер, а сессия возвращается в плагин по
+ * loopback. Здесь мы лишь просим шелл начать флоу.
+ */
+export function startPluginOAuth(provider: 'google' | 'yandex'): void {
+  postToPlugin({ source: PLUGIN_MESSAGE_SOURCE, type: 'open-oauth', provider });
+}
+
+export interface PluginAuthRestore {
+  accessToken: string;
+  refreshToken: string;
+}
+
+/**
+ * Подписка на доставку account-сессии от шелла: после внешнего OAuth шелл,
+ * опросив loopback, шлёт вниз auth-restore с access/refresh токенами. SPA входит
+ * ими как при обычном логине. Возвращает функцию отписки.
+ */
+export function subscribeToPluginAuthRestore(
+  onRestore: (tokens: PluginAuthRestore) => void,
+): () => void {
+  const handler = (event: MessageEvent) => {
+    if (!isTrustedPluginParentEvent(event)) {
+      return;
+    }
+    const data = event.data as Partial<PluginMessage> | undefined;
+    if (!data || data.source !== PLUGIN_MESSAGE_SOURCE || data.type !== 'auth-restore') {
+      return;
+    }
+    const accessToken = (data as { accessToken?: unknown }).accessToken;
+    const refreshToken = (data as { refreshToken?: unknown }).refreshToken;
+    if (typeof accessToken === 'string' && accessToken) {
+      onRestore({
+        accessToken,
+        refreshToken: typeof refreshToken === 'string' ? refreshToken : '',
+      });
+    }
+  };
+  window.addEventListener('message', handler);
+  return () => window.removeEventListener('message', handler);
 }

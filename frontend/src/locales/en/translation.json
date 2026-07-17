@@ -52,6 +52,11 @@
     "missing_params": "Invalid authorization request",
     "back_home": "Go to Home"
   },
+  "pluginOAuth": {
+    "continueInBrowser": "We've opened your web browser to finish signing in. Come back to OrcaSlicer once you're done.",
+    "startRedirecting": "Redirecting you to sign in…",
+    "startError": "This sign-in link is invalid or has expired. Return to OrcaSlicer and start again."
+  },
   "notFound": {
     "title": "Page Not Found",
     "subtitle": "The page may have moved or no longer exists. Return to the catalog and continue where you left off.",

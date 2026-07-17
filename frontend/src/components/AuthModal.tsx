@@ -12,6 +12,7 @@ import { ModalOverlay } from './ModalOverlay';
 import { useTranslation } from 'react-i18next';
 import { translateApiError } from '../utils/translateApiError';
 import { rememberAuthReturnTo } from '../utils/authReturn';
+import { isPluginEmbed, startPluginOAuth } from '../utils/pluginBridge';
 
 interface AuthModalProps {
   isOpen: boolean;
@@ -38,8 +39,11 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
   const [isTermsModalOpen, setIsTermsModalOpen] = useState(false);
   const [isConsentModalOpen, setIsConsentModalOpen] = useState(false);
   const [isForgotPasswordModalOpen, setIsForgotPasswordModalOpen] = useState(false);
+  // Встроенный WebView блокирует страницы согласия Google/Yandex, поэтому в
+  // плагине OAuth уходит в системный браузер; ждём возврата сессии по loopback.
+  const [oauthExternalPending, setOauthExternalPending] = useState(false);
 
-  const { login, register } = useAuth();
+  const { login, register, user } = useAuth();
   const isOauthBusy = oauthLoading !== null;
 
   // Проверка сложности пароля
@@ -67,8 +71,16 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
       setError(null);
       setIsLoading(false);
       setOauthLoading(null);
+      setOauthExternalPending(false);
     }
   }, [isOpen]);
+
+  // Внешний OAuth завершился успехом (auth-restore → вход) — закрываем модалку.
+  useEffect(() => {
+    if (oauthExternalPending && user) {
+      onClose();
+    }
+  }, [oauthExternalPending, user, onClose]);
 
   if (!isOpen) return null;
 
@@ -173,6 +185,13 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
 
   const handleOAuthLogin = async (provider: 'google' | 'yandex') => {
     setError(null);
+    if (isPluginEmbed()) {
+      // В плагине провайдер откажется грузиться внутри WebView. Открываем флоу в
+      // системном браузере; сессия вернётся через мост (auth-restore).
+      startPluginOAuth(provider);
+      setOauthExternalPending(true);
+      return;
+    }
     setOauthLoading(provider);
     try {
       rememberAuthReturnTo();
@@ -248,6 +267,14 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
         {error && (
           <div className="mb-4 p-3 bg-red-500/20 border border-red-500/30 rounded-xl text-red-300 text-sm">
             {error}
+          </div>
+        )}
+
+        {/* Внешний OAuth: вход идёт в системном браузере */}
+        {oauthExternalPending && (
+          <div className="mb-4 p-3 bg-purple-500/15 border border-purple-500/30 rounded-xl text-purple-200 text-sm flex items-start gap-2">
+            <Loader2 className="w-4 h-4 mt-0.5 flex-shrink-0 animate-spin" />
+            <span>{t('pluginOAuth.continueInBrowser')}</span>
           </div>
         )}
 
@@ -487,7 +514,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
                 <button
                   type="button"
                   onClick={() => handleOAuthLogin('google')}
-                  disabled={isLoading || isOauthBusy}
+                  disabled={isLoading || isOauthBusy || oauthExternalPending}
                   className="flex-1 flex items-center justify-center gap-2 py-2.5 px-4 bg-white/10 hover:bg-white/20 border border-white/20 rounded-xl text-white text-sm transition-all disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   {oauthLoading === 'google' ? (
@@ -507,7 +534,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
                 <button
                   type="button"
                   onClick={() => handleOAuthLogin('yandex')}
-                  disabled={isLoading || isOauthBusy}
+                  disabled={isLoading || isOauthBusy || oauthExternalPending}
                   className="flex-1 flex items-center justify-center gap-2 py-2.5 px-4 bg-white/10 hover:bg-white/20 border border-white/20 rounded-xl text-white text-sm transition-all disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   {oauthLoading === 'yandex' ? (

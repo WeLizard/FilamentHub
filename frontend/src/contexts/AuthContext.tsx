@@ -3,7 +3,7 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { authAPI } from '../api/client';
 import { getRefreshToken, getToken, isCookieAuthMode, isOrcaEmbedded, removeToken, setRefreshToken, setToken, setUserId, shouldPersistTokensLocally } from '../utils/auth';
-import { isPluginEmbed, reportLogoutToPlugin, reportPluginSessionToPlugin, subscribeToPluginLogout } from '../utils/pluginBridge';
+import { isPluginEmbed, reportLogoutToPlugin, reportPluginSessionToPlugin, subscribeToPluginAuthRestore, subscribeToPluginLogout } from '../utils/pluginBridge';
 import type { User } from '../types/api';
 
 interface AuthContextType {
@@ -170,6 +170,18 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     }
     return subscribeToPluginLogout(() => {
       logout();
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Внешний OAuth (Google/Yandex) идёт в системном браузере; шелл возвращает
+  // account-сессию в iframe через auth-restore. Входим ею как при обычном логине.
+  useEffect(() => {
+    if (!isPluginEmbed()) {
+      return;
+    }
+    return subscribeToPluginAuthRestore(({ accessToken, refreshToken }) => {
+      void loginWithToken(accessToken, refreshToken);
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);

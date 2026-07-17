@@ -8,6 +8,7 @@ import { authAPI } from '../api/client';
 import { useAuth } from '../contexts/AuthContext';
 import { translateApiError } from '../utils/translateApiError';
 import { consumeAuthReturnTo } from '../utils/authReturn';
+import { consumePluginOAuthHandoff } from '../utils/pluginBridge';
 
 export function OAuthCallbackPage() {
   const { t } = useTranslation();
@@ -41,6 +42,17 @@ export function OAuthCallbackPage() {
       try {
         const tokenData = await authAPI.oauthCallback(provider, code, state);
         await loginWithToken(tokenData.access_token, tokenData.refresh_token);
+        // Плагинный флоу: сессию нужно вернуть в OrcaSlicer по loopback, а не
+        // остаться в браузере. cb уже провалидирован как loopback при записи.
+        const handoff = consumePluginOAuthHandoff();
+        if (handoff) {
+          const deliver = new URL(handoff.cb);
+          deliver.searchParams.set('access', tokenData.access_token);
+          deliver.searchParams.set('refresh', tokenData.refresh_token ?? '');
+          deliver.searchParams.set('nonce', handoff.nonce);
+          window.location.replace(deliver.toString());
+          return;
+        }
         navigate(consumeAuthReturnTo() ?? '/', { replace: true });
       } catch (err: any) {
         const detail = err?.response?.data?.detail;

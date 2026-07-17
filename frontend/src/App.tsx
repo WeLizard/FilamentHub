@@ -9,6 +9,7 @@ import { TermsPage } from './pages/TermsPage';
 import { ConsentPage } from './pages/ConsentPage';
 import { ResetPasswordPage } from './pages/ResetPasswordPage';
 import { OAuthCallbackPage } from './pages/OAuthCallbackPage';
+import { OAuthPluginStartPage } from './pages/OAuthPluginStartPage';
 import { ConfirmEmailChangePage } from './pages/ConfirmEmailChangePage';
 import { BrandInvitePage } from './pages/BrandInvitePage';
 import { DownloadPage } from './pages/DownloadPage';
@@ -292,6 +293,7 @@ function AppContent() {
         <Route path="/confirm-email-change" element={<ConfirmEmailChangePage />} />
         <Route path="/brand-invite/:token" element={<BrandInvitePage />} />
         <Route path="/oauth/callback/:provider" element={<OAuthCallbackPage />} />
+        <Route path="/oauth/plugin-start/:provider" element={<OAuthPluginStartPage />} />
         <Route
           path="/quote/:uuid"
           element={

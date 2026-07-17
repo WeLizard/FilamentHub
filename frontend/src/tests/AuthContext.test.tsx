@@ -33,6 +33,7 @@ const pluginBridgeMocks = vi.hoisted(() => ({
   reportLogoutToPlugin: vi.fn(),
   reportPluginSessionToPlugin: vi.fn(),
   subscribeToPluginLogout: vi.fn(() => undefined),
+  subscribeToPluginAuthRestore: vi.fn(() => undefined),
 }));
 
 vi.mock('../utils/pluginBridge', () => pluginBridgeMocks);
