@@ -7,7 +7,7 @@
 # name = "FilamentHub"
 # description = "Browse and sync community-rated filament profiles from FilamentHub, with spool inventory and print-cost tools."
 # author = "FilamentHub"
-# version = "0.0.2"
+# version = "0.0.3"
 #
 # # Proposed forward-looking key (see README gap / PR #14530 feedback). The current
 # # host reads only name/description/author/version/dependencies and ignores unknown
@@ -29,9 +29,16 @@ role as the native Catalog/Profile/Wiki buttons of the C++ fork panel) and drive
 the catalog by posting {type:'navigate', path} down into the iframe — the SPA
 listens and switches routes without reloading. The catalog reports the signed-in
 user (auth-state) for the toolbar label, and hands tokens over (auth-token) so
-Python persists them in .auth.json next to the plugin — the shell restores the
-session (embed-ready -> auth-restore) when the window reopens, because the
-iframe's own storage is partitioned and dies with the window.
+Python persists the scoped plugin capability in .auth.json next to the plugin.
+
+External-browser OAuth: Google/Yandex refuse their consent pages inside an
+embedded WebView, so the "Sign in with Google/Yandex" buttons post open-oauth up
+here; Python opens the user's real browser at /oauth/plugin-start (falling back to
+a copy-the-link overlay if the browser can't be launched). After the provider
+round-trip the site redirects the minted session back to a loopback /d/<secret>
+endpoint (guarded by a one-time nonce); the shell polls /s/<secret>, then hands
+the session down to the iframe (auth-restore), which signs in exactly like the
+normal flow. Account tokens are held in memory only — never written to disk.
 
   iframe (React) --window.parent.postMessage({source:'filamenthub-plugin',...})-->
       shell window --orca.postMessage(...)--> Python on_message
@@ -59,14 +66,16 @@ import secrets
 import ssl
 import threading
 import urllib.error
+import urllib.parse
 import urllib.request
+import webbrowser
 
 import orca
 
 # --------------------------------------------------------------------------- #
 # Configuration
 # --------------------------------------------------------------------------- #
-PLUGIN_VERSION = "0.0.2"
+PLUGIN_VERSION = "0.0.3"
 SITE_URL = "https://filamenthub.ru"
 EMBED_URL = SITE_URL + "/embed/catalog"
 API_BASE = SITE_URL + "/api/v1"
@@ -231,6 +240,24 @@ def ensure_icon():
 AUTH_FILE = os.path.join(PLUGIN_DIR, ".auth.json")
 
 
+# Shown in the user's real browser at the end of the external OAuth flow, right
+# after the session has been handed back to the plugin over loopback.
+OAUTH_DELIVER_OK_HTML = (
+    "<!DOCTYPE html><html><head><meta charset='utf-8'><title>FilamentHub</title></head>"
+    "<body style='font-family:sans-serif;background:#1e1e2e;color:#e0e0e0;"
+    "display:flex;align-items:center;justify-content:center;height:100vh;margin:0'>"
+    "<div style='text-align:center'><h2>Signed in to FilamentHub</h2>"
+    "<p>You can close this tab and return to OrcaSlicer.</p></div></body></html>"
+)
+OAUTH_DELIVER_ERR_HTML = (
+    "<!DOCTYPE html><html><head><meta charset='utf-8'><title>FilamentHub</title></head>"
+    "<body style='font-family:sans-serif;background:#1e1e2e;color:#e0e0e0;"
+    "display:flex;align-items:center;justify-content:center;height:100vh;margin:0'>"
+    "<div style='text-align:center'><h2>Sign-in link expired</h2>"
+    "<p>Return to OrcaSlicer and start the sign-in again.</p></div></body></html>"
+)
+
+
 class ShellServer:
     """Loopback-only HTTP host for the shell page.
 
@@ -249,6 +276,58 @@ class ShellServer:
         self._server = None
         self._html = b""
         self._path = ""
+        # OAuth handoff: Google/Yandex refuse to render their consent pages in an
+        # embedded WebView, so the provider flow runs in the user's real browser
+        # and returns the session here over loopback. Two secret sibling paths on
+        # the same server: /s/<secret> the shell polls for state, /d/<secret> the
+        # external browser posts the session to. A per-attempt nonce guards /d.
+        self._oauth_secret = secrets.token_urlsafe(24)
+        self._oauth = None
+        self._oauth_lock = threading.Lock()
+
+    def status_path(self):
+        return "/s/" + self._oauth_secret
+
+    def deliver_url(self):
+        # Absolute loopback URL the external browser is redirected to with the
+        # freshly minted session; empty until the server is bound (window open).
+        if self._server is None:
+            return ""
+        return "http://127.0.0.1:%d/d/%s" % (self._server.server_address[1], self._oauth_secret)
+
+    def arm_oauth(self, nonce, browser_opened, start_url):
+        with self._oauth_lock:
+            self._oauth = {"nonce": nonce, "browser_opened": bool(browser_opened),
+                           "start_url": start_url, "delivered": None}
+
+    def _oauth_status(self):
+        with self._oauth_lock:
+            state = self._oauth
+            if not state:
+                return {"stage": "idle"}
+            if state.get("delivered"):
+                tokens = state["delivered"]
+                self._oauth = None  # one-shot: hand off exactly once
+                return {"stage": "delivered",
+                        "accessToken": tokens.get("access", ""),
+                        "refreshToken": tokens.get("refresh", "")}
+            out = {"stage": "awaiting", "browserOpened": bool(state.get("browser_opened"))}
+            if not state.get("browser_opened"):
+                out["startUrl"] = state.get("start_url", "")
+            return out
+
+    def _oauth_deliver(self, query):
+        nonce = (query.get("nonce") or [""])[0]
+        access = (query.get("access") or [""])[0]
+        refresh = (query.get("refresh") or [""])[0]
+        with self._oauth_lock:
+            state = self._oauth
+            if not state or not nonce or not secrets.compare_digest(state.get("nonce", ""), nonce):
+                return False
+            if not access or len(access) > MAX_TOKEN_LENGTH or len(refresh) > MAX_TOKEN_LENGTH:
+                return False
+            state["delivered"] = {"access": access, "refresh": refresh}
+            return True
 
     def url_for(self, html):
         self._html = html.encode("utf-8")
@@ -257,20 +336,34 @@ class ShellServer:
             owner = self
 
             class Handler(http.server.BaseHTTPRequestHandler):
-                def do_GET(self):
-                    if self.path != owner._path:
-                        self.send_error(404)
-                        return
-                    body = owner._html
-                    self.send_response(200)
-                    self.send_header("Content-Type", "text/html; charset=utf-8")
+                def _send(self, status, content_type, body):
+                    self.send_response(status)
+                    self.send_header("Content-Type", content_type)
                     self.send_header("Content-Length", str(len(body)))
                     self.send_header("Cache-Control", "no-store")
                     self.end_headers()
                     self.wfile.write(body)
 
+                def do_GET(self):
+                    path = self.path.split("?", 1)[0]
+                    if path == owner._path:
+                        self._send(200, "text/html; charset=utf-8", owner._html)
+                        return
+                    if path == owner.status_path():
+                        body = json.dumps(owner._oauth_status()).encode("utf-8")
+                        self._send(200, "application/json; charset=utf-8", body)
+                        return
+                    if path == "/d/" + owner._oauth_secret:
+                        query = urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)
+                        ok = owner._oauth_deliver(query)
+                        html = OAUTH_DELIVER_OK_HTML if ok else OAUTH_DELIVER_ERR_HTML
+                        self._send(200 if ok else 400, "text/html; charset=utf-8",
+                                   html.encode("utf-8"))
+                        return
+                    self.send_error(404)
+
                 def log_message(self, *args):
-                    pass  # keep the secret path out of stderr
+                    pass  # keep the secret paths out of stderr
 
             self._server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Handler)
             threading.Thread(target=self._server.serve_forever, daemon=True).start()
@@ -278,6 +371,8 @@ class ShellServer:
 
     def stop(self):
         server, self._server = self._server, None
+        with self._oauth_lock:
+            self._oauth = None
         if server is not None:
             threading.Thread(target=server.shutdown, daemon=True).start()
 
@@ -642,9 +737,11 @@ PAGE = r"""<!DOCTYPE html>
 <script>
 'use strict';
 var SITE_ORIGIN = '__SITE_ORIGIN__';
-var RESTORE_AUTH = __RESTORE_AUTH__;
+var OAUTH_STATUS_PATH = '__OAUTH_STATUS_PATH__';
 var frame = document.getElementById('fh');
 var wasLoggedIn = false;
+var oauthPollTimer = null;
+var oauthDeadline = 0;
 
 // Auth-only toolbar controls: Profile and Sync only make sense when signed in.
 // When signed out, the "FilamentHub" brand label doubles as a sign-in trigger.
@@ -671,8 +768,9 @@ function navigateActive() {
 }
 setAuthControls(false);  // hidden until the catalog reports a signed-in state
 
-// Catalog -> shell. auth-state updates the toolbar label, embed-ready answers
-// with saved tokens (session restore); everything else relays to Python.
+// Catalog -> shell. auth-state updates the toolbar label; open-oauth runs the
+// provider sign-in in the real browser and waits for the session over loopback;
+// everything else relays to Python.
 window.addEventListener('message', function (event) {
   var data = event.data;
   if (event.source !== frame.contentWindow || event.origin !== SITE_ORIGIN) return;
@@ -689,19 +787,115 @@ window.addEventListener('message', function (event) {
     wasLoggedIn = loggedIn;
     return;
   }
-  if (data.type === 'embed-ready') {
-    if (RESTORE_AUTH && RESTORE_AUTH.accessToken) {
-      try {
-        frame.contentWindow.postMessage(
-          { source: 'filamenthub-plugin', type: 'auth-restore',
-            accessToken: RESTORE_AUTH.accessToken, refreshToken: RESTORE_AUTH.refreshToken || '' },
-          SITE_ORIGIN);
-      } catch (e) { /* iframe not ready */ }
-    }
+  if (data.type === 'open-oauth') {
+    // Google/Yandex refuse their consent pages inside this WebView. Hand the
+    // request to Python (opens the system browser) and start polling loopback
+    // for the session the external browser will deliver back.
+    try { orca.postMessage(data); } catch (e) { /* bridge not ready */ }
+    startOAuthPolling();
     return;
   }
   try { orca.postMessage(data); } catch (e) { /* bridge not ready */ }
 });
+
+// Poll the loopback status endpoint (same origin as this shell) for the session
+// the external browser posts back after the provider flow completes.
+function stopOAuthPolling() {
+  if (oauthPollTimer) { clearTimeout(oauthPollTimer); oauthPollTimer = null; }
+}
+function startOAuthPolling() {
+  stopOAuthPolling();
+  oauthDeadline = Date.now() + 5 * 60 * 1000;  // give up after 5 minutes
+  pollOAuthOnce();
+}
+function pollOAuthOnce() {
+  if (Date.now() > oauthDeadline) { stopOAuthPolling(); hideOAuthOverlay(); return; }
+  fetch(OAUTH_STATUS_PATH, { cache: 'no-store' })
+    .then(function (r) { return r.json(); })
+    .then(function (st) {
+      if (st.stage === 'delivered') {
+        stopOAuthPolling();
+        hideOAuthOverlay();
+        try {
+          frame.contentWindow.postMessage(
+            { source: 'filamenthub-plugin', type: 'auth-restore',
+              accessToken: st.accessToken || '', refreshToken: st.refreshToken || '' },
+            SITE_ORIGIN);
+        } catch (e) { /* iframe not ready */ }
+        return;
+      }
+      // Auto-open failed (sandbox blocked spawning a browser): show the link so
+      // the user can open it manually. Loopback delivery is identical either way.
+      if (st.stage === 'awaiting' && st.browserOpened === false && st.startUrl) {
+        showOAuthOverlay(st.startUrl);
+      }
+      oauthPollTimer = setTimeout(pollOAuthOnce, 1500);
+    })
+    .catch(function () { oauthPollTimer = setTimeout(pollOAuthOnce, 2000); });
+}
+function hideOAuthOverlay() {
+  var ov = document.getElementById('oauth-overlay');
+  if (ov) ov.remove();
+}
+function showOAuthOverlay(url) {
+  var existing = document.getElementById('oauth-url');
+  if (existing) { existing.value = url; return; }
+  var ov = document.createElement('div');
+  ov.id = 'oauth-overlay';
+  ov.style.cssText = 'position:fixed;inset:0;z-index:2147483647;display:flex;' +
+    'align-items:center;justify-content:center;background:rgba(0,0,0,0.7);';
+  var box = document.createElement('div');
+  box.style.cssText = 'max-width:520px;margin:16px;padding:20px;border-radius:10px;' +
+    'background:var(--orca-bg,#1e1e2e);color:var(--orca-fg,#e0e0e0);' +
+    'border:1px solid var(--orca-border,#3c3c4c);font-size:13px;';
+  var title = document.createElement('div');
+  title.textContent = "Couldn't open your browser automatically";
+  title.style.cssText = 'font-weight:600;margin-bottom:8px;';
+  var hint = document.createElement('div');
+  hint.textContent = 'Copy this link and open it in your web browser to sign in, ' +
+    'then return here.';
+  hint.style.cssText = 'margin-bottom:10px;color:var(--orca-muted,#a0a0a0);';
+  var input = document.createElement('input');
+  input.id = 'oauth-url';
+  input.readOnly = true;
+  input.value = url;
+  input.style.cssText = 'width:100%;box-sizing:border-box;padding:8px;margin-bottom:10px;' +
+    'background:rgba(255,255,255,0.06);color:inherit;' +
+    'border:1px solid var(--orca-border,#3c3c4c);border-radius:6px;';
+  var row = document.createElement('div');
+  row.style.cssText = 'display:flex;gap:8px;justify-content:flex-end;';
+  var copy = document.createElement('button');
+  copy.textContent = 'Copy link';
+  copy.style.cssText = 'padding:6px 14px;border-radius:6px;cursor:pointer;' +
+    'border:1px solid var(--orca-accent,#8b7cf8);background:transparent;' +
+    'color:var(--orca-accent,#8b7cf8);font:inherit;';
+  copy.addEventListener('click', function () {
+    input.focus();
+    input.select();
+    var done = function () { copy.textContent = 'Copied'; };
+    try {
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(input.value).then(done, function () {
+          try { document.execCommand('copy'); done(); } catch (e) {}
+        });
+      } else { document.execCommand('copy'); done(); }
+    } catch (e) {}
+  });
+  var close = document.createElement('button');
+  close.textContent = 'Cancel';
+  close.style.cssText = 'padding:6px 14px;border-radius:6px;cursor:pointer;' +
+    'border:1px solid var(--orca-border,#3c3c4c);background:transparent;' +
+    'color:var(--orca-fg,#e0e0e0);font:inherit;';
+  close.addEventListener('click', function () { stopOAuthPolling(); hideOAuthOverlay(); });
+  row.appendChild(copy);
+  row.appendChild(close);
+  box.appendChild(title);
+  box.appendChild(hint);
+  box.appendChild(input);
+  box.appendChild(row);
+  ov.appendChild(box);
+  document.body.appendChild(ov);
+}
 
 // Toolbar -> catalog: SPA navigation inside the iframe (no page reload).
 var buttons = Array.prototype.slice.call(document.querySelectorAll('#bar button[data-path]'));
@@ -744,7 +938,8 @@ document.getElementById('logout').addEventListener('click', function () {
 </script>
 </body>
 </html>
-""".replace("__EMBED_URL__", EMBED_URL).replace("__SITE_ORIGIN__", SITE_URL)
+""".replace("__EMBED_URL__", EMBED_URL).replace("__SITE_ORIGIN__", SITE_URL).replace(
+    "__OAUTH_STATUS_PATH__", SHELL_SERVER.status_path())
 
 
 # --------------------------------------------------------------------------- #
@@ -766,12 +961,9 @@ class FilamentHubCatalog(orca.script.ScriptPluginCapabilityBase):
         # not spawn duplicates on repeated Run / on_load).
         if self.win is not None and self.win.is_open():
             return False
-        # Saved session tokens (if any) are baked into the shell page; it hands
-        # them to the catalog when the SPA reports embed-ready.
-        html = PAGE.replace("__RESTORE_AUTH__", json.dumps(load_saved_auth()))
         # Hop from the host's opaque-origin SetPage document onto the loopback
         # server, so the shell gains a real origin the site CSP can allow.
-        shell_url = SHELL_SERVER.url_for(html)
+        shell_url = SHELL_SERVER.url_for(PAGE)
         html = (
             "<!DOCTYPE html><html><body><script>location.replace("
             + json.dumps(shell_url)
@@ -880,8 +1072,32 @@ class FilamentHubCatalog(orca.script.ScriptPluginCapabilityBase):
             # The catalog saved/removed a preset in the user's profile — reconcile
             # into the slicer automatically and report this user-initiated delta.
             self._auto_sync(announce=True)
+        elif msg_type == "open-oauth":
+            self._start_external_oauth(msg.get("provider"))
         elif msg_type == "auth-logout":
             clear_auth()
+
+    def _start_external_oauth(self, provider):
+        # Google/Yandex block their consent pages in embedded WebViews, so run the
+        # provider flow in the user's real browser. Python opens a dedicated site
+        # route that carries a loopback callback (cb) + one-time nonce; after the
+        # provider round-trip the site redirects the session back to /d/<secret>,
+        # which the shell is polling for. If the browser can't be launched (sandbox
+        # or headless), the shell shows the URL so the user can open it manually.
+        if provider not in ("google", "yandex"):
+            return
+        deliver = SHELL_SERVER.deliver_url()
+        if not deliver:
+            return
+        nonce = secrets.token_urlsafe(24)
+        start_url = "%s/oauth/plugin-start/%s?%s" % (
+            SITE_URL, provider,
+            urllib.parse.urlencode({"cb": deliver, "nonce": nonce}))
+        try:
+            opened = bool(webbrowser.open(start_url))
+        except Exception:
+            opened = False
+        SHELL_SERVER.arm_oauth(nonce, opened, start_url)
 
     def _do_import(self, preset_id, token, known_presets):
         try:
