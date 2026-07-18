@@ -2,6 +2,7 @@
 
 from datetime import datetime
 from typing import TYPE_CHECKING
+from uuid import uuid4
 
 from sqlalchemy import (
     Boolean,
@@ -17,6 +18,8 @@ from sqlalchemy.sql import func
 from app.db.base import Base
 
 if TYPE_CHECKING:
+    from app.models.material_system import MaterialSystem, PhysicalPrinterConnector
+    from app.models.physical_printer_profile import UserPrinterProfileLink
     from app.models.preset_gate_state import PresetGateState
     from app.models.user import User
 
@@ -27,6 +30,9 @@ class UserPrinterDevice(Base):
     __tablename__ = "user_printer_devices"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    logical_id: Mapped[str] = mapped_column(
+        String(36), default=lambda: str(uuid4()), nullable=False, unique=True, index=True
+    )
     user_id: Mapped[int] = mapped_column(
         ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
     )
@@ -34,7 +40,7 @@ class UserPrinterDevice(Base):
         ForeignKey("printers.id", ondelete="SET NULL"), nullable=True, index=True
     )
     name: Mapped[str] = mapped_column(String(200), nullable=False)
-    device_fingerprint: Mapped[str] = mapped_column(String(200), nullable=False)
+    device_fingerprint: Mapped[str | None] = mapped_column(String(200), nullable=True)
     api_key: Mapped[str | None] = mapped_column(String(64), unique=True, index=True, nullable=True)
     supports_hh: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     gate_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
@@ -58,6 +64,21 @@ class UserPrinterDevice(Base):
     user: Mapped["User"] = relationship("User", back_populates="printer_devices")
     gate_states: Mapped[list["PresetGateState"]] = relationship(
         "PresetGateState", back_populates="device", cascade="all, delete-orphan"
+    )
+    profile_links: Mapped[list["UserPrinterProfileLink"]] = relationship(
+        "UserPrinterProfileLink",
+        back_populates="physical_printer",
+        cascade="all, delete-orphan",
+    )
+    material_systems: Mapped[list["MaterialSystem"]] = relationship(
+        "MaterialSystem",
+        back_populates="physical_printer",
+        cascade="all, delete-orphan",
+    )
+    connectors: Mapped[list["PhysicalPrinterConnector"]] = relationship(
+        "PhysicalPrinterConnector",
+        back_populates="physical_printer",
+        cascade="all, delete-orphan",
     )
 
     def __repr__(self) -> str:

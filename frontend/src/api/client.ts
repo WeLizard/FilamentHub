@@ -2326,10 +2326,11 @@ export const spoolsAPI = {
 
 export interface UserPrinterDevice {
   id: number;
+  logical_id: string;
   user_id: number;
   printer_id: number | null;
   name: string;
-  device_fingerprint: string;
+  device_fingerprint: string | null;
   supports_hh: boolean;
   gate_count: number | null;
   printer_hostname: string | null;

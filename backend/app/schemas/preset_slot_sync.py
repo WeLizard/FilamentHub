@@ -34,10 +34,11 @@ class DeviceResponse(BaseModel):
     """Printer device info."""
 
     id: int
+    logical_id: str
     user_id: int
     printer_id: int | None
     name: str
-    device_fingerprint: str
+    device_fingerprint: str | None
     supports_hh: bool
     gate_count: int | None
     printer_hostname: str | None

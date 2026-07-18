@@ -5165,6 +5165,7 @@
     "WARN_PRESET_PARAM_OUTSIDE_TYPICAL_RANGE": "Параметр «{{field_name}}» вне типичного диапазона для {{material_type}}: {{value}} (норма {{soft_min}}–{{soft_max}})",
     "WARN_PRESET_POSSIBLE_DUPLICATE": "Возможный дубликат пресета «{{duplicate_preset_name}}» (ID {{duplicate_preset_id}})",
     "ERR_DEVICE_NOT_FOUND": "Устройство не найдено",
+    "ERR_MATERIAL_SYSTEM_NOT_FOUND": "Система подачи материала не найдена",
     "ERR_DEVICE_NOT_OWNER": "Нет доступа к этому устройству",
     "ERR_GATE_INDEX_INVALID": "Неверный индекс слота: {{gate}} (макс. {{max}})",
     "ERR_GATE_STATE_NOT_FOUND": "Состояние слота {{gate}} не найдено",

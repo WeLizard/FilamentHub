@@ -33,6 +33,7 @@ from app.models.filament_line import FilamentLine
 from app.models.filament_review import FilamentReview
 from app.models.material_mapping import MaterialMapping, MaterialMappingPriority
 from app.models.material_property import MaterialProperty
+from app.models.material_system import MaterialSlot, MaterialSystem, PhysicalPrinterConnector
 from app.models.notification import Notification, NotificationType
 from app.models.organization import (
     Organization,
@@ -40,6 +41,7 @@ from app.models.organization import (
     OrganizationMemberRole,
     OrganizationMembership,
 )
+from app.models.physical_printer_profile import UserPrinterProfileLink
 from app.models.preset import Preset, PresetModerationStatus
 from app.models.preset_gate_state import PresetGateState, PresetGateStateSource
 from app.models.preset_printer import PresetPrinter
@@ -101,6 +103,9 @@ __all__ = [
     "MaterialMapping",
     "MaterialMappingPriority",
     "MaterialProperty",
+    "MaterialSlot",
+    "MaterialSystem",
+    "PhysicalPrinterConnector",
     "Notification",
     "NotificationType",
     "Organization",
@@ -123,6 +128,7 @@ __all__ = [
     "PrinterProfile",
     "PrintProblem",
     "PrintProblemSeverity",
+    "UserPrinterProfileLink",
     "PrintProfile",
     "PrintProfilePrinter",
     "PrintProfileFilament",

@@ -21,6 +21,7 @@ from sqlalchemy.sql import func
 from app.db.base import Base
 
 if TYPE_CHECKING:
+    from app.models.material_system import MaterialSlot
     from app.models.preset import Preset
     from app.models.user import User
     from app.models.user_printer_device import UserPrinterDevice
@@ -71,6 +72,9 @@ class PresetGateState(Base):
     spool_id: Mapped[int | None] = mapped_column(
         ForeignKey("user_spools.id", ondelete="SET NULL"), nullable=True, index=True
     )
+    material_slot_id: Mapped[int | None] = mapped_column(
+        ForeignKey("material_slots.id", ondelete="SET NULL"), nullable=True, index=True
+    )
 
     # HH actual data (from Happy Hare snapshot)
     hh_material: Mapped[str | None] = mapped_column(String(50), nullable=True)
@@ -114,6 +118,9 @@ class PresetGateState(Base):
     )
     preset: Mapped["Preset | None"] = relationship("Preset")
     spool: Mapped["UserSpool | None"] = relationship("UserSpool")
+    material_slot: Mapped["MaterialSlot | None"] = relationship(
+        "MaterialSlot", back_populates="legacy_gate_states"
+    )
 
     @staticmethod
     def _to_aware_utc(ts: datetime) -> datetime:

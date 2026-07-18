@@ -148,7 +148,10 @@ async def list_user_devices(
     user_id: int,
 ) -> list[UserPrinterDevice]:
     result = await db.execute(
-        select(UserPrinterDevice).where(UserPrinterDevice.user_id == user_id)
+        select(UserPrinterDevice).where(
+            UserPrinterDevice.user_id == user_id,
+            UserPrinterDevice.device_fingerprint.is_not(None),
+        )
     )
     return list(result.scalars().all())
 

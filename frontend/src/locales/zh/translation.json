@@ -5029,6 +5029,7 @@
     "WARN_PRESET_PARAM_OUTSIDE_TYPICAL_RANGE": "参数 \"{{field_name}}\" 超出了典型 {{material_type}} 范围：{{value}}（预期 {{soft_min}}–{{soft_max}}）",
     "WARN_PRESET_POSSIBLE_DUPLICATE": "可能是预设 \"{{duplicate_preset_name}}\" 的重复项（ID {{duplicate_preset_id}}）",
     "ERR_DEVICE_NOT_FOUND": "未找到设备",
+    "ERR_MATERIAL_SYSTEM_NOT_FOUND": "未找到材料系统",
     "ERR_DEVICE_NOT_OWNER": "您不拥有此设备",
     "ERR_GATE_INDEX_INVALID": "无效的门索引：{{gate}}（最大 {{max}}）",
     "ERR_GATE_STATE_NOT_FOUND": "未找到门 {{gate}} 的状态",

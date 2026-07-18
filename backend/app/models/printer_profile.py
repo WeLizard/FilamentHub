@@ -10,6 +10,7 @@ from sqlalchemy.sql import func
 from app.db.base import Base
 
 if TYPE_CHECKING:
+    from app.models.physical_printer_profile import UserPrinterProfileLink
     from app.models.printer import Printer
     from app.models.user import User
 
@@ -64,9 +65,13 @@ class PrinterProfile(Base):
 
     printer: Mapped["Printer | None"] = relationship("Printer", back_populates="profiles")
     owner: Mapped["User | None"] = relationship("User", back_populates="printer_profiles")
+    physical_printer_links: Mapped[list["UserPrinterProfileLink"]] = relationship(
+        "UserPrinterProfileLink",
+        back_populates="printer_profile",
+        cascade="all, delete-orphan",
+    )
 
     def __repr__(self) -> str:
         status = "official" if self.is_official else "user"
         return f"<PrinterProfile(id={self.id}, name='{self.name}', status={status})>"
-
 

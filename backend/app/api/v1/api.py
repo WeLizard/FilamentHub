@@ -23,6 +23,7 @@ from app.api.v1.endpoints import (
     notifications,
     orca_preset_slot_sync,
     orca_sync,
+    physical_printers,
     preset_slots,
     preset_versions,
     presets,
@@ -47,6 +48,7 @@ api_router.include_router(brand_invites.admin_router)
 api_router.include_router(email_communications.webhook_router)
 api_router.include_router(email_communications.admin_router)
 api_router.include_router(devices.router)
+api_router.include_router(physical_printers.router)
 api_router.include_router(brand_requests.router)
 api_router.include_router(brand_team.router)
 api_router.include_router(filaments.router)

@@ -5034,6 +5034,7 @@
     "WARN_PRESET_PARAM_OUTSIDE_TYPICAL_RANGE": "Parameter \"{{field_name}}\" is outside the typical {{material_type}} range: {{value}} (expected {{soft_min}}–{{soft_max}})",
     "WARN_PRESET_POSSIBLE_DUPLICATE": "Possible duplicate of preset \"{{duplicate_preset_name}}\" (ID {{duplicate_preset_id}})",
     "ERR_DEVICE_NOT_FOUND": "Device not found",
+    "ERR_MATERIAL_SYSTEM_NOT_FOUND": "Material system not found",
     "ERR_DEVICE_NOT_OWNER": "You do not own this device",
     "ERR_GATE_INDEX_INVALID": "Invalid gate index: {{gate}} (max {{max}})",
     "ERR_GATE_STATE_NOT_FOUND": "Gate {{gate}} state not found",
