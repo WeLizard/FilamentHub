@@ -8,6 +8,12 @@ import type { DownloadVersionsResponse } from '../types/api';
 import { ModalOverlay } from '../components/ModalOverlay';
 import { SEOHead } from '../components/SEOHead';
 
+// Official OrcaSlicer entry points and the FilamentHub Plugin Hub page. The release
+// link resolves to whatever is current so we never hardcode a version.
+const ORCA_OFFICIAL_DOWNLOAD_URL = 'https://www.orcaslicer.com/download/';
+const ORCA_RELEASES_LATEST_URL = 'https://github.com/OrcaSlicer/OrcaSlicer/releases/latest';
+const FILAMENTHUB_PLUGIN_HUB_URL = 'https://cloud.orcaslicer.com/app/plugins/plugin-hub/34c1321c-7d46-4c5a-a8e9-f6c78fa9898e';
+
 type DownloadScreenshotCardImageProps = {
   src: string;
   alt: string;
@@ -72,6 +78,28 @@ export function DownloadPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [previewImage, setPreviewImage] = useState<{ src: string; alt: string } | null>(null);
+  const [orcaRelease, setOrcaRelease] = useState<{ tag: string; url: string } | null>(null);
+
+  // Latest official OrcaSlicer release for the dynamic "get OrcaSlicer" link.
+  // Best-effort: if GitHub is unreachable we fall back to the releases/latest URL.
+  useEffect(() => {
+    let cancelled = false;
+    fetch('https://api.github.com/repos/OrcaSlicer/OrcaSlicer/releases/latest', {
+      headers: { Accept: 'application/vnd.github+json' },
+    })
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (cancelled || !data?.tag_name) return;
+        setOrcaRelease({
+          tag: data.tag_name,
+          url: data.html_url || `https://github.com/OrcaSlicer/OrcaSlicer/releases/tag/${data.tag_name}`,
+        });
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   // Загружаем данные с API
   useEffect(() => {
@@ -211,27 +239,68 @@ export function DownloadPage() {
               <span className="w-8 h-8 rounded-full bg-purple-600/30 border border-purple-500/40 text-purple-200 font-bold flex items-center justify-center">1</span>
               <h3 className="text-lg font-semibold text-white">{t('downloadPage.step1Title')}</h3>
             </div>
-            <p className="text-gray-300 text-sm flex-1">{t('downloadPage.step1Desc')}</p>
-            <a
-              href="https://github.com/OrcaSlicer/OrcaSlicer/releases"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="mt-4 inline-flex items-center justify-center gap-2 px-4 py-2 bg-white/10 hover:bg-white/20 border border-white/20 text-white text-sm font-medium rounded-lg transition-all"
-            >
-              <Download className="w-4 h-4" />
-              <span>{t('downloadPage.step1Cta')}</span>
-              <ExternalLink className="w-3 h-3" />
-            </a>
+            <p className="text-gray-300 text-sm mb-4">{t('downloadPage.step1Desc')}</p>
+            <DownloadScreenshotCardImage
+              src="/download-media/step-download-orca.webp"
+              alt={t('downloadPage.step1ShotAlt')}
+              comingSoonLabel={t('downloadPage.comingSoon')}
+              openPreviewLabel={t('downloadPage.openPreview')}
+              onOpenPreview={(src, alt) => setPreviewImage({ src, alt })}
+            />
+            <div className="mt-auto space-y-2">
+              <a
+                href={ORCA_OFFICIAL_DOWNLOAD_URL}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex w-full items-center justify-center gap-2 px-4 py-2 bg-white/10 hover:bg-white/20 border border-white/20 text-white text-sm font-medium rounded-lg transition-all"
+              >
+                <Download className="w-4 h-4" />
+                <span>{t('downloadPage.step1Cta')}</span>
+                <ExternalLink className="w-3 h-3" />
+              </a>
+              <a
+                href={orcaRelease?.url || ORCA_RELEASES_LATEST_URL}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1 text-xs text-purple-300 hover:text-purple-200 transition-colors"
+              >
+                <span>
+                  {orcaRelease
+                    ? t('downloadPage.step1Release', { tag: orcaRelease.tag })
+                    : t('downloadPage.step1ReleaseFallback')}
+                </span>
+                <ExternalLink className="w-3 h-3" />
+              </a>
+            </div>
           </div>
 
-          {/* Step 2 — install the plugin from the Plugin Hub */}
+          {/* Step 2 — subscribe to the plugin in the Plugin Hub */}
           <div className="bg-white/5 rounded-xl p-5 border border-white/10 flex flex-col">
             <div className="flex items-center gap-3 mb-3">
               <span className="w-8 h-8 rounded-full bg-purple-600/30 border border-purple-500/40 text-purple-200 font-bold flex items-center justify-center">2</span>
               <h3 className="text-lg font-semibold text-white">{t('downloadPage.step2Title')}</h3>
             </div>
-            <p className="text-gray-300 text-sm flex-1">{t('downloadPage.step2Desc')}</p>
-            <p className="text-gray-500 text-xs mt-3">{t('downloadPage.step2Sideload')}</p>
+            <p className="text-gray-300 text-sm mb-4">{t('downloadPage.step2Desc')}</p>
+            <DownloadScreenshotCardImage
+              src="/download-media/step-install-plugin.webp"
+              alt={t('downloadPage.step2ShotAlt')}
+              comingSoonLabel={t('downloadPage.comingSoon')}
+              openPreviewLabel={t('downloadPage.openPreview')}
+              onOpenPreview={(src, alt) => setPreviewImage({ src, alt })}
+            />
+            <div className="mt-auto space-y-2">
+              <a
+                href={FILAMENTHUB_PLUGIN_HUB_URL}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex w-full items-center justify-center gap-2 px-4 py-2 bg-purple-600 hover:bg-purple-500 text-white text-sm font-medium rounded-lg transition-all"
+              >
+                <Package className="w-4 h-4" />
+                <span>{t('downloadPage.step2Cta')}</span>
+                <ExternalLink className="w-3 h-3" />
+              </a>
+              <p className="text-gray-500 text-xs">{t('downloadPage.step2Sideload')}</p>
+            </div>
           </div>
 
           {/* Step 3 — open FilamentHub */}
@@ -240,7 +309,14 @@ export function DownloadPage() {
               <span className="w-8 h-8 rounded-full bg-purple-600/30 border border-purple-500/40 text-purple-200 font-bold flex items-center justify-center">3</span>
               <h3 className="text-lg font-semibold text-white">{t('downloadPage.step3Title')}</h3>
             </div>
-            <p className="text-gray-300 text-sm flex-1">{t('downloadPage.step3Desc')}</p>
+            <p className="text-gray-300 text-sm mb-4">{t('downloadPage.step3Desc')}</p>
+            <DownloadScreenshotCardImage
+              src="/download-media/step-open-filamenthub.webp"
+              alt={t('downloadPage.step3ShotAlt')}
+              comingSoonLabel={t('downloadPage.comingSoon')}
+              openPreviewLabel={t('downloadPage.openPreview')}
+              onOpenPreview={(src, alt) => setPreviewImage({ src, alt })}
+            />
           </div>
         </div>
       </div>
