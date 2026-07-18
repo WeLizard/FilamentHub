@@ -43,7 +43,9 @@ LEGACY_HH_CAPABILITIES = [
 def _printer_load_options():
     return (
         selectinload(UserPrinterDevice.profile_links),
-        selectinload(UserPrinterDevice.material_systems).selectinload(MaterialSystem.slots),
+        selectinload(UserPrinterDevice.material_systems)
+        .selectinload(MaterialSystem.slots)
+        .selectinload(MaterialSlot.legacy_gate_state),
         selectinload(UserPrinterDevice.connectors),
     )
 

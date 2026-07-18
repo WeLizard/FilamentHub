@@ -91,8 +91,8 @@ class MaterialSlot(Base):
     material_system: Mapped["MaterialSystem"] = relationship(
         "MaterialSystem", back_populates="slots"
     )
-    legacy_gate_states: Mapped[list["PresetGateState"]] = relationship(
-        "PresetGateState", back_populates="material_slot"
+    legacy_gate_state: Mapped["PresetGateState | None"] = relationship(
+        "PresetGateState", back_populates="material_slot", uselist=False
     )
 
 

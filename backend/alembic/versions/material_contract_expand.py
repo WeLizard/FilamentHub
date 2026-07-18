@@ -280,6 +280,14 @@ def upgrade() -> None:
         "preset_gate_states",
         ["material_slot_id"],
     )
+    op.create_index(
+        "uq_preset_gate_state_material_slot",
+        "preset_gate_states",
+        ["material_slot_id"],
+        unique=True,
+        postgresql_where=sa.text("material_slot_id IS NOT NULL"),
+        sqlite_where=sa.text("material_slot_id IS NOT NULL"),
+    )
 
     material_systems = sa.table(
         "material_systems",
@@ -391,6 +399,9 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    op.drop_index(
+        "uq_preset_gate_state_material_slot", table_name="preset_gate_states"
+    )
     op.drop_index(
         "ix_preset_gate_states_material_slot_id", table_name="preset_gate_states"
     )

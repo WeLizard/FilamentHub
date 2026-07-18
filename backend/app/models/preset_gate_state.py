@@ -109,6 +109,13 @@ class PresetGateState(Base):
             postgresql_where=text("spool_id IS NOT NULL"),
             sqlite_where=text("spool_id IS NOT NULL"),
         ),
+        Index(
+            "uq_preset_gate_state_material_slot",
+            "material_slot_id",
+            unique=True,
+            postgresql_where=text("material_slot_id IS NOT NULL"),
+            sqlite_where=text("material_slot_id IS NOT NULL"),
+        ),
     )
 
     # Relationships
@@ -119,7 +126,7 @@ class PresetGateState(Base):
     preset: Mapped["Preset | None"] = relationship("Preset")
     spool: Mapped["UserSpool | None"] = relationship("UserSpool")
     material_slot: Mapped["MaterialSlot | None"] = relationship(
-        "MaterialSlot", back_populates="legacy_gate_states"
+        "MaterialSlot", back_populates="legacy_gate_state"
     )
 
     @staticmethod

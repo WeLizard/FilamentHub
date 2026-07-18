@@ -102,12 +102,22 @@ class PhysicalPrinterConnectorCreate(BaseModel):
         return value
 
 
+class LegacySlotProjectionResponse(BaseModel):
+    gate_state_id: int
+    preset_id: int | None
+    spool_id: int | None
+    source: str
+    source_ts: datetime
+    is_active: bool
+
+
 class MaterialSlotResponse(BaseModel):
     id: int
     provider_index: int
     label: str | None
     kind: str
     active: bool
+    legacy_projection: LegacySlotProjectionResponse | None = None
 
     model_config = {"from_attributes": True}
 
@@ -150,8 +160,6 @@ class PhysicalPrinterResponse(BaseModel):
     @classmethod
     def from_model(cls, printer: Any) -> "PhysicalPrinterResponse":
         systems = sorted(printer.material_systems, key=lambda system: system.id)
-        for system in systems:
-            system.slots.sort(key=lambda slot: (slot.provider_index, slot.id))
         return cls(
             id=printer.id,
             logical_id=printer.logical_id,
@@ -160,13 +168,48 @@ class PhysicalPrinterResponse(BaseModel):
             printer_profile_ids=sorted(
                 link.printer_profile_id for link in printer.profile_links
             ),
-            material_systems=[
-                MaterialSystemResponse.model_validate(system) for system in systems
-            ],
+            material_systems=[cls._material_system_response(system) for system in systems],
             connectors=[
                 PhysicalPrinterConnectorResponse.model_validate(connector)
                 for connector in sorted(printer.connectors, key=lambda item: item.id)
             ],
             created_at=printer.created_at,
             updated_at=printer.updated_at,
+        )
+
+    @staticmethod
+    def _material_system_response(system: Any) -> MaterialSystemResponse:
+        slots = []
+        for slot in sorted(system.slots, key=lambda item: (item.provider_index, item.id)):
+            state = slot.legacy_gate_state
+            projection = None
+            if state is not None:
+                projection = LegacySlotProjectionResponse(
+                    gate_state_id=state.id,
+                    preset_id=state.preset_id,
+                    spool_id=state.spool_id,
+                    source=state.source.value
+                    if hasattr(state.source, "value")
+                    else str(state.source),
+                    source_ts=state.source_ts,
+                    is_active=state.is_active,
+                )
+            slots.append(
+                MaterialSlotResponse(
+                    id=slot.id,
+                    provider_index=slot.provider_index,
+                    label=slot.label,
+                    kind=slot.kind,
+                    active=slot.active,
+                    legacy_projection=projection,
+                )
+            )
+        return MaterialSystemResponse(
+            id=system.id,
+            name=system.name,
+            kind=system.kind,
+            provider=system.provider,
+            capabilities=list(system.capabilities),
+            active=system.active,
+            slots=slots,
         )

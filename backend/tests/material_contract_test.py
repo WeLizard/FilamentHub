@@ -165,6 +165,7 @@ async def test_manual_material_system_and_connector_are_separate(
     system = system_response.json()["material_systems"][0]
     assert system["provider"] == "manual"
     assert [slot["provider_index"] for slot in system["slots"]] == [0, 1]
+    assert [slot["legacy_projection"] for slot in system["slots"]] == [None, None]
     assert system_response.json()["connectors"] == []
 
     connector_response = await auth_client.put(
@@ -291,3 +292,17 @@ async def test_legacy_hh_flow_dual_writes_system_slots_and_connector(
     )
     assert gate_state is not None
     assert gate_state.material_slot_id == slots[1].id
+
+    physical = await auth_client.get(f"/api/v1/physical-printers/{device_id}")
+    assert physical.status_code == 200
+    physical_slots = physical.json()["material_systems"][0]["slots"]
+    assert physical_slots[0]["legacy_projection"] is None
+    projection = physical_slots[1]["legacy_projection"]
+    assert projection == {
+        "gate_state_id": gate_state.id,
+        "preset_id": None,
+        "spool_id": None,
+        "source": "web_manual",
+        "source_ts": gate_state.source_ts.isoformat().replace("+00:00", "Z"),
+        "is_active": True,
+    }
