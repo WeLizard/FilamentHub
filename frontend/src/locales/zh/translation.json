@@ -938,6 +938,8 @@
     "step2Title": "安装插件",
     "step2Desc": "在 Plugin Hub 订阅 FilamentHub 插件——之后它会出现在 OrcaSlicer 的 Plugins 对话框中供安装。",
     "step2Cta": "在 Plugin Hub 中打开",
+    "step2WheelCta": "下载 .whl 手动安装（{{tag}}）",
+    "step2WheelCtaPlain": "下载 .whl 手动安装",
     "step2Sideload": "您的版本还没有列出？可以手动安装（side-load wheel）。",
     "step2ShotAlt": "截图：在 Plugin Hub 订阅 FilamentHub 插件",
     "step3Title": "打开 FilamentHub",

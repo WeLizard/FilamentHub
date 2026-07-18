@@ -938,6 +938,8 @@
     "step2Title": "Install the plugin",
     "step2Desc": "Subscribe to the FilamentHub plugin in the Plugin Hub — it then shows up in OrcaSlicer's Plugins dialog to install.",
     "step2Cta": "Open in Plugin Hub",
+    "step2WheelCta": "Download .whl for manual install ({{tag}})",
+    "step2WheelCtaPlain": "Download .whl for manual install",
     "step2Sideload": "Not listed for your version yet? You can install it manually (side-load the wheel).",
     "step2ShotAlt": "Screenshot: subscribing to the FilamentHub plugin in the Plugin Hub",
     "step3Title": "Open FilamentHub",

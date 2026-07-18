@@ -1064,6 +1064,8 @@
     "step2Title": "Установите плагин",
     "step2Desc": "Подпишитесь на плагин FilamentHub в Plugin Hub — после этого он появится в OrcaSlicer в диалоге Plugins для установки.",
     "step2Cta": "Открыть в Plugin Hub",
+    "step2WheelCta": "Скачать .whl для ручной установки ({{tag}})",
+    "step2WheelCtaPlain": "Скачать .whl для ручной установки",
     "step2Sideload": "Не появился для вашей версии? Плагин можно установить вручную (side-load wheel).",
     "step2ShotAlt": "Скриншот: подписка на плагин FilamentHub в Plugin Hub",
     "step3Title": "Откройте FilamentHub",

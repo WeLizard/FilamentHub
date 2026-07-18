@@ -13,6 +13,10 @@ import { SEOHead } from '../components/SEOHead';
 const ORCA_OFFICIAL_DOWNLOAD_URL = 'https://www.orcaslicer.com/download/';
 const ORCA_RELEASES_LATEST_URL = 'https://github.com/OrcaSlicer/OrcaSlicer/releases/latest';
 const FILAMENTHUB_PLUGIN_HUB_URL = 'https://cloud.orcaslicer.com/app/plugins/plugin-hub/34c1321c-7d46-4c5a-a8e9-f6c78fa9898e';
+// The plugin wheel is served as a GitHub release asset (built locally, attached to a
+// release). We resolve the latest .whl at runtime so the side-load link is always
+// current — and render nothing when no wheel is published, to avoid a dead button.
+const FILAMENTHUB_PLUGIN_REPO = 'WeLizard/FilamentHub';
 
 type DownloadScreenshotCardImageProps = {
   src: string;
@@ -79,6 +83,7 @@ export function DownloadPage() {
   const [error, setError] = useState<string | null>(null);
   const [previewImage, setPreviewImage] = useState<{ src: string; alt: string } | null>(null);
   const [orcaRelease, setOrcaRelease] = useState<{ tag: string; url: string } | null>(null);
+  const [pluginWheel, setPluginWheel] = useState<{ url: string; name: string; tag: string } | null>(null);
 
   // Latest official OrcaSlicer release for the dynamic "get OrcaSlicer" link.
   // Best-effort: if GitHub is unreachable we fall back to the releases/latest URL.
@@ -94,6 +99,29 @@ export function DownloadPage() {
           tag: data.tag_name,
           url: data.html_url || `https://github.com/OrcaSlicer/OrcaSlicer/releases/tag/${data.tag_name}`,
         });
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // Latest plugin wheel published as a GitHub release asset, for the manual
+  // (side-load) install fallback. The button renders only when a .whl exists.
+  useEffect(() => {
+    let cancelled = false;
+    fetch(`https://api.github.com/repos/${FILAMENTHUB_PLUGIN_REPO}/releases/latest`, {
+      headers: { Accept: 'application/vnd.github+json' },
+    })
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (cancelled || !data) return;
+        const asset = (data.assets || []).find(
+          (a: { name?: string }) => a?.name?.toLowerCase().endsWith('.whl'),
+        );
+        if (asset?.browser_download_url) {
+          setPluginWheel({ url: asset.browser_download_url, name: asset.name, tag: data.tag_name || '' });
+        }
       })
       .catch(() => {});
     return () => {
@@ -299,6 +327,19 @@ export function DownloadPage() {
                 <span>{t('downloadPage.step2Cta')}</span>
                 <ExternalLink className="w-3 h-3" />
               </a>
+              {pluginWheel && (
+                <a
+                  href={pluginWheel.url}
+                  className="inline-flex items-center gap-1 text-xs text-purple-300 hover:text-purple-200 transition-colors"
+                >
+                  <Download className="w-3 h-3" />
+                  <span>
+                    {pluginWheel.tag
+                      ? t('downloadPage.step2WheelCta', { tag: pluginWheel.tag })
+                      : t('downloadPage.step2WheelCtaPlain')}
+                  </span>
+                </a>
+              )}
               <p className="text-gray-500 text-xs">{t('downloadPage.step2Sideload')}</p>
             </div>
           </div>
