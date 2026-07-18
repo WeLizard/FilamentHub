@@ -2382,6 +2382,70 @@ export interface SlotAssignPayload {
   spool_id?: number | null;
 }
 
+export interface MaterialSlotAssignment {
+  id: number;
+  preset_id: number | null;
+  spool_id: number | null;
+  source: string;
+  source_ts: string;
+  active: boolean;
+}
+
+export interface LegacySlotProjection {
+  gate_state_id: number;
+  preset_id: number | null;
+  spool_id: number | null;
+  source: string;
+  source_ts: string;
+  is_active: boolean;
+  hh_material: string | null;
+  hh_color_hex: string | null;
+  hh_status: number | null;
+  updated_at: string;
+}
+
+export interface MaterialSlot {
+  id: number;
+  provider_index: number;
+  label: string | null;
+  kind: string;
+  active: boolean;
+  assignment: MaterialSlotAssignment | null;
+  legacy_projection: LegacySlotProjection | null;
+}
+
+export interface MaterialSystem {
+  id: number;
+  name: string;
+  kind: string;
+  provider: string;
+  capabilities: string[];
+  active: boolean;
+  slots: MaterialSlot[];
+}
+
+export interface PhysicalPrinterConnector {
+  id: number;
+  material_system_id: number | null;
+  provider: string;
+  transport: string;
+  capabilities: string[];
+  active: boolean;
+  last_seen_at: string | null;
+}
+
+export interface PhysicalPrinter {
+  id: number;
+  logical_id: string;
+  printer_id: number | null;
+  name: string;
+  printer_profile_ids: number[];
+  material_systems: MaterialSystem[];
+  connectors: PhysicalPrinterConnector[];
+  created_at: string;
+  updated_at: string;
+}
+
 export interface DeviceUpdatePayload {
   name?: string | null;
   gate_count?: number | null;
@@ -2425,6 +2489,35 @@ export const devicesAPI = {
 
   remove: async (id: number): Promise<void> => {
     await api.delete(`/devices/${id}`);
+  },
+};
+
+export const physicalPrintersAPI = {
+  list: async (): Promise<PhysicalPrinter[]> => {
+    const response = await api.get<PhysicalPrinter[]>('/physical-printers');
+    return response.data;
+  },
+
+  assignSlot: async (
+    physicalPrinterId: number,
+    materialSlotId: number,
+    payload: SlotAssignPayload,
+  ): Promise<PhysicalPrinter> => {
+    const response = await api.patch<PhysicalPrinter>(
+      `/physical-printers/${physicalPrinterId}/material-slots/${materialSlotId}`,
+      payload,
+    );
+    return response.data;
+  },
+
+  clearSystem: async (
+    physicalPrinterId: number,
+    materialSystemId: number,
+  ): Promise<PhysicalPrinter> => {
+    const response = await api.post<PhysicalPrinter>(
+      `/physical-printers/${physicalPrinterId}/material-systems/${materialSystemId}/clear`,
+    );
+    return response.data;
   },
 };
 

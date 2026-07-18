@@ -23,8 +23,8 @@ vi.mock('../api/client', () => ({
   presetsAPI: {
     list: listMock,
   },
-  presetSlotsAPI: {
-    assign: vi.fn(),
+  physicalPrintersAPI: {
+    assignSlot: vi.fn(),
   },
   savedPresetsAPI: {
     list: vi.fn().mockResolvedValue({ items: [] }),
@@ -56,8 +56,11 @@ describe('PresetAssignModal', () => {
         isOpen
         gateIndex={0}
         gate={null}
-        deviceId={1}
+        physicalPrinterId={1}
+        materialSlotId={10}
         deviceName="Device"
+        systemName="MMU"
+        provider="manual"
         spools={[]}
         onClose={vi.fn()}
         onAssigned={vi.fn()}

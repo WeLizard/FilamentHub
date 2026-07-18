@@ -33,6 +33,7 @@ from app.models.filament_line import FilamentLine
 from app.models.filament_review import FilamentReview
 from app.models.material_mapping import MaterialMapping, MaterialMappingPriority
 from app.models.material_property import MaterialProperty
+from app.models.material_slot_assignment import MaterialSlotAssignment
 from app.models.material_system import MaterialSlot, MaterialSystem, PhysicalPrinterConnector
 from app.models.notification import Notification, NotificationType
 from app.models.organization import (
@@ -103,6 +104,7 @@ __all__ = [
     "MaterialMapping",
     "MaterialMappingPriority",
     "MaterialProperty",
+    "MaterialSlotAssignment",
     "MaterialSlot",
     "MaterialSystem",
     "PhysicalPrinterConnector",

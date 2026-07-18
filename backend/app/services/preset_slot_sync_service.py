@@ -14,13 +14,11 @@ from app.core.errors import (
     ERR_DEVICE_NOT_FOUND,
     ERR_DEVICE_NOT_OWNER,
     ERR_GATE_INDEX_INVALID,
-    ERR_PRESET_NOT_ACCESSIBLE,
     ERR_SPOOL_LOCATION_CONFLICT,
-    ERR_SPOOL_NOT_ACCESSIBLE,
     raise_error,
 )
 from app.models.filament import Filament
-from app.models.preset import Preset, PresetModerationStatus
+from app.models.preset import Preset
 from app.models.preset_gate_state import PresetGateState, PresetGateStateSource
 from app.models.preset_usage_event import PresetUsageEvent, PresetUsageEventType
 from app.models.user import User
@@ -32,6 +30,11 @@ from app.schemas.preset_slot_sync import (
     HHSnapshotRequest,
     ManualAssignmentRequest,
     UsageEstimateRequest,
+)
+from app.services.material_assignment_service import (
+    require_accessible_preset,
+    require_accessible_spool,
+    sync_legacy_material_assignment,
 )
 from app.services.material_contract_service import ensure_legacy_material_contract
 from app.services.spool_service import (
@@ -495,51 +498,6 @@ async def handle_hh_snapshot(
 # ── Manual assignment ──────────────────────────────────────────────────────
 
 
-async def _check_preset_accessible(
-    db: AsyncSession,
-    user_id: int,
-    preset_id: int,
-) -> None:
-    result = await db.execute(
-        select(Preset).where(Preset.id == preset_id)
-    )
-    preset = result.scalars().first()
-    if not preset:
-        raise_error(404, ERR_PRESET_NOT_ACCESSIBLE, {"preset_id": preset_id})
-    is_public = preset.moderation_status == PresetModerationStatus.APPROVED
-    is_own = preset.user_id == user_id
-    if not (is_public or is_own):
-        raise_error(403, ERR_PRESET_NOT_ACCESSIBLE, {"preset_id": preset_id})
-
-
-async def _check_spool_accessible(
-    db: AsyncSession,
-    user_id: int,
-    spool_id: int,
-    *,
-    require_usable: bool = False,
-) -> UserSpool:
-    result = await db.execute(
-        select(UserSpool).where(
-            UserSpool.id == spool_id,
-            UserSpool.user_id == user_id,
-        )
-    )
-    spool = result.scalars().first()
-    if (
-        spool is None
-        or (
-            require_usable
-            and (
-                spool.remaining_weight_g <= 0
-                or spool.state in {UserSpoolState.archived, UserSpoolState.empty}
-            )
-        )
-    ):
-        raise_error(404, ERR_SPOOL_NOT_ACCESSIBLE, {"spool_id": spool_id})
-    return spool
-
-
 async def handle_manual_assignment(
     db: AsyncSession,
     user: User,
@@ -568,11 +526,11 @@ async def handle_manual_assignment(
         )
 
     if payload.preset_id is not None:
-        await _check_preset_accessible(db, user.id, payload.preset_id)
+        await require_accessible_preset(db, user.id, payload.preset_id)
 
     new_spool: UserSpool | None = None
     if payload.spool_id is not None:
-        new_spool = await _check_spool_accessible(
+        new_spool = await require_accessible_spool(
             db,
             user.id,
             payload.spool_id,
@@ -634,6 +592,10 @@ async def handle_manual_assignment(
     except IntegrityError:
         raise_error(409, ERR_SPOOL_LOCATION_CONFLICT)
 
+    await ensure_legacy_material_contract(
+        db, resolved_device, gate_indices={payload.gate}
+    )
+
     # Sync spool.extra with HH-format fields so HH can read gate assignments from GET /spool
     # HH reads: json.loads(extra.get('printer_name', '""')) and int(extra.get('mmu_gate_map', -1))
     if spool_id_provided:
@@ -663,9 +625,6 @@ async def handle_manual_assignment(
                     payload.gate,
                 )
 
-    await ensure_legacy_material_contract(
-        db, resolved_device, gate_indices={payload.gate}
-    )
     await db.commit()
     await db.refresh(state)
 
@@ -683,7 +642,7 @@ async def handle_usage_estimate(
     device = await get_device_by_fingerprint(db, user.id, payload.device_fingerprint)
 
     if payload.spool_id is not None:
-        await _check_spool_accessible(db, user.id, payload.spool_id)
+        await require_accessible_spool(db, user.id, payload.spool_id)
 
     event = PresetUsageEvent(
         user_id=user.id,
@@ -721,7 +680,7 @@ async def web_assign_preset_to_slot(
         raise_error(400, ERR_GATE_INDEX_INVALID, {"gate": gate_index, "max": device.gate_count - 1})
 
     if preset_id is not None:
-        await _check_preset_accessible(db, user.id, preset_id)
+        await require_accessible_preset(db, user.id, preset_id)
 
     payload = ManualAssignmentRequest(
         device_fingerprint=device.device_fingerprint or f"logical:{device.logical_id}",
@@ -766,6 +725,9 @@ async def clear_device_slots(
         )
     )
     await db.flush()
+    states = await get_gate_states(db, device.id)
+    for state in states:
+        await sync_legacy_material_assignment(db, state)
 
     if spool_ids:
         spools_result = await db.execute(

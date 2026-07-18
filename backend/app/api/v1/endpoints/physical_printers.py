@@ -9,12 +9,17 @@ from app.core.dependencies import get_current_active_user
 from app.db.session import get_db
 from app.models.user import User
 from app.schemas.material_contract import (
+    MaterialSlotAssignmentUpdate,
     MaterialSystemCreate,
     PhysicalPrinterConfigurationsUpdate,
     PhysicalPrinterConnectorCreate,
     PhysicalPrinterCreate,
     PhysicalPrinterResponse,
     PhysicalPrinterUpdate,
+)
+from app.services.material_assignment_service import (
+    clear_material_system_assignments,
+    update_material_slot_assignment,
 )
 from app.services.material_contract_service import (
     create_material_system,
@@ -118,5 +123,51 @@ async def upsert_connector(
 ) -> PhysicalPrinterResponse:
     printer = await upsert_physical_printer_connector(
         db, current_user.id, physical_printer_id, payload
+    )
+    return PhysicalPrinterResponse.from_model(printer)
+
+
+@router.patch(
+    "/{physical_printer_id}/material-slots/{material_slot_id}",
+    response_model=PhysicalPrinterResponse,
+)
+async def patch_material_slot_assignment(
+    physical_printer_id: int,
+    material_slot_id: int,
+    payload: MaterialSlotAssignmentUpdate,
+    current_user: Annotated[User, Depends(get_current_active_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> PhysicalPrinterResponse:
+    await update_material_slot_assignment(
+        db,
+        current_user,
+        physical_printer_id=physical_printer_id,
+        material_slot_id=material_slot_id,
+        payload=payload,
+    )
+    printer = await require_physical_printer(
+        db, current_user.id, physical_printer_id
+    )
+    return PhysicalPrinterResponse.from_model(printer)
+
+
+@router.post(
+    "/{physical_printer_id}/material-systems/{material_system_id}/clear",
+    response_model=PhysicalPrinterResponse,
+)
+async def clear_material_system(
+    physical_printer_id: int,
+    material_system_id: int,
+    current_user: Annotated[User, Depends(get_current_active_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> PhysicalPrinterResponse:
+    await clear_material_system_assignments(
+        db,
+        current_user,
+        physical_printer_id=physical_printer_id,
+        material_system_id=material_system_id,
+    )
+    printer = await require_physical_printer(
+        db, current_user.id, physical_printer_id
     )
     return PhysicalPrinterResponse.from_model(printer)

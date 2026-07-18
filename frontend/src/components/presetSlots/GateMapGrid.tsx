@@ -1,14 +1,14 @@
 import { useTranslation } from 'react-i18next';
-import type { GateState, UserPrinterDevice, UserSpool } from '../../api/client';
+import type { GateState, MaterialSlot, UserSpool } from '../../api/client';
 import type { Preset } from '../../types/api';
 import { isUnidentifiedHHFilament } from '../../utils/hhGateState';
 
 interface GateMapGridProps {
-  device: UserPrinterDevice;
+  slots: MaterialSlot[];
   gates: GateState[];
   presets: Record<number, Pick<Preset, 'id' | 'name' | 'extruder_temp' | 'bed_temp'>>;
   spools: UserSpool[];
-  onGateClick: (gate: GateState | null, gateIndex: number) => void;
+  onGateClick: (gate: GateState | null, slot: MaterialSlot) => void;
 }
 
 function SpoolIcon({
@@ -90,18 +90,20 @@ function hhStatusBadge(status: number | null, t: (k: string) => string): { label
   return null;
 }
 
-export function GateMapGrid({ device, gates, presets, spools, onGateClick }: GateMapGridProps) {
+export function GateMapGrid({ slots, gates, presets, spools, onGateClick }: GateMapGridProps) {
   const { t } = useTranslation();
 
   const gateMap = new Map<number, GateState>(gates.map((g) => [g.gate_index, g]));
   const spoolMap = new Map<number, UserSpool>(spools.map((s) => [s.id, s]));
 
-  const totalGates = device.gate_count ?? Math.max(gates.length, 4);
+  const sortedSlots = [...slots].sort(
+    (left, right) => left.provider_index - right.provider_index || left.id - right.id,
+  );
 
   return (
     <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-4 xl:grid-cols-8">
-      {Array.from({ length: totalGates }, (_, i) => {
-        const gate = gateMap.get(i) ?? null;
+      {sortedSlots.map((slot) => {
+        const gate = gateMap.get(slot.provider_index) ?? null;
         const preset = gate?.preset_id != null ? presets[gate.preset_id] : null;
         const spool = gate?.spool_id != null ? spoolMap.get(gate.spool_id) : null;
 
@@ -117,9 +119,10 @@ export function GateMapGrid({ device, gates, presets, spools, onGateClick }: Gat
 
         return (
           <button
-            key={i}
+            key={slot.id}
             type="button"
-            onClick={() => onGateClick(gate, i)}
+            onClick={() => onGateClick(gate, slot)}
+            title={slot.label ?? undefined}
             className={[
               'group relative flex flex-col items-center gap-1 rounded-xl border px-2 py-2 text-center transition',
               'hover:border-purple-500/50 hover:bg-purple-500/8 focus:outline-none focus:ring-2 focus:ring-purple-500/40',
@@ -138,7 +141,7 @@ export function GateMapGrid({ device, gates, presets, spools, onGateClick }: Gat
                   hasContent ? 'bg-purple-500/20 text-purple-300' : 'bg-white/8 text-gray-400',
                 ].join(' ')}
               >
-                {i}
+                {slot.provider_index}
               </span>
               {gate && (
                 <span className="text-[9px] font-medium text-gray-400">

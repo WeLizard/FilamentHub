@@ -9,6 +9,7 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import joinedload
+from sqlalchemy.orm.attributes import set_committed_value
 
 from app.core.errors import (
     ERR_ACCESS_DENIED,
@@ -19,6 +20,7 @@ from app.core.errors import (
     raise_error,
 )
 from app.models.filament import Filament
+from app.models.material_slot_assignment import MaterialSlotAssignment
 from app.models.preset_gate_state import PresetGateState, PresetGateStateSource
 from app.models.user import User
 from app.models.user_printer_device import UserPrinterDevice
@@ -148,6 +150,10 @@ async def assign_spool_to_gate(
     except IntegrityError:
         raise_error(409, ERR_SPOOL_LOCATION_CONFLICT)
 
+    from app.services.material_contract_service import ensure_legacy_material_contract
+
+    await ensure_legacy_material_contract(db, device, gate_indices={gate_index})
+
     if displaced_spool_id is not None and displaced_spool_id != spool.id:
         displaced_result = await db.execute(
             select(UserSpool).where(
@@ -189,8 +195,9 @@ async def clear_spool_gate_assignments(
     source: PresetGateStateSource = PresetGateStateSource.web_manual,
     except_device_id: int | None = None,
     except_gate_index: int | None = None,
+    except_material_slot_id: int | None = None,
 ) -> int:
-    """Clear canonical gate bindings for a physical spool without committing."""
+    """Clear current slot bindings for a physical spool without committing."""
     result = await db.execute(
         select(PresetGateState)
         .where(PresetGateState.spool_id == spool.id)
@@ -213,6 +220,24 @@ async def clear_spool_gate_assignments(
         gate_state.is_active = True
         cleared += 1
 
+    assignment_result = await db.execute(
+        select(MaterialSlotAssignment)
+        .where(MaterialSlotAssignment.spool_id == spool.id)
+        .options(joinedload(MaterialSlotAssignment.material_slot))
+        .with_for_update()
+    )
+    for assignment in assignment_result.scalars().all():
+        if assignment.material_slot_id == except_material_slot_id:
+            continue
+        assignment.spool_id = None
+        assignment.source = source.value
+        assignment.source_ts = now
+        if assignment.preset_id is None:
+            material_slot = assignment.material_slot
+            await db.delete(assignment)
+            set_committed_value(material_slot, "assignment", None)
+        cleared += 1
+
     if cleared:
         clear_spool_location_projection(spool)
     return cleared
@@ -224,7 +249,14 @@ async def spool_has_gate_assignment(db: AsyncSession, spool_id: int) -> bool:
         .where(PresetGateState.spool_id == spool_id)
         .limit(1)
     )
-    return result.scalar_one_or_none() is not None
+    if result.scalar_one_or_none() is not None:
+        return True
+    assignment_result = await db.execute(
+        select(MaterialSlotAssignment.id)
+        .where(MaterialSlotAssignment.spool_id == spool_id)
+        .limit(1)
+    )
+    return assignment_result.scalar_one_or_none() is not None
 
 
 def _validate_spool_weights(initial_weight_g: float, used_weight_g: float) -> None:

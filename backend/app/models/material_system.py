@@ -10,6 +10,7 @@ from sqlalchemy.sql import func
 from app.db.base import Base
 
 if TYPE_CHECKING:
+    from app.models.material_slot_assignment import MaterialSlotAssignment
     from app.models.preset_gate_state import PresetGateState
     from app.models.user_printer_device import UserPrinterDevice
 
@@ -93,6 +94,13 @@ class MaterialSlot(Base):
     )
     legacy_gate_state: Mapped["PresetGateState | None"] = relationship(
         "PresetGateState", back_populates="material_slot", uselist=False
+    )
+    assignment: Mapped["MaterialSlotAssignment | None"] = relationship(
+        "MaterialSlotAssignment",
+        back_populates="material_slot",
+        cascade="all, delete-orphan",
+        single_parent=True,
+        uselist=False,
     )
 
 

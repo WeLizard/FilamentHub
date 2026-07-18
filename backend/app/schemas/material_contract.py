@@ -86,6 +86,11 @@ class MaterialSystemCreate(BaseModel):
         return self
 
 
+class MaterialSlotAssignmentUpdate(BaseModel):
+    preset_id: int | None = Field(default=None, ge=1)
+    spool_id: int | None = Field(default=None, ge=1)
+
+
 class PhysicalPrinterConnectorCreate(BaseModel):
     provider: str = Field(min_length=1, max_length=50)
     transport: str = Field(min_length=1, max_length=50)
@@ -109,6 +114,19 @@ class LegacySlotProjectionResponse(BaseModel):
     source: str
     source_ts: datetime
     is_active: bool
+    hh_material: str | None
+    hh_color_hex: str | None
+    hh_status: int | None
+    updated_at: datetime
+
+
+class MaterialSlotAssignmentResponse(BaseModel):
+    id: int
+    preset_id: int | None
+    spool_id: int | None
+    source: str
+    source_ts: datetime
+    active: bool
 
 
 class MaterialSlotResponse(BaseModel):
@@ -117,6 +135,7 @@ class MaterialSlotResponse(BaseModel):
     label: str | None
     kind: str
     active: bool
+    assignment: MaterialSlotAssignmentResponse | None = None
     legacy_projection: LegacySlotProjectionResponse | None = None
 
     model_config = {"from_attributes": True}
@@ -193,6 +212,15 @@ class PhysicalPrinterResponse(BaseModel):
                     else str(state.source),
                     source_ts=state.source_ts,
                     is_active=state.is_active,
+                    hh_material=state.hh_material,
+                    hh_color_hex=state.hh_color_hex,
+                    hh_status=state.hh_status,
+                    updated_at=state.updated_at,
+                )
+            assignment = None
+            if slot.assignment is not None:
+                assignment = MaterialSlotAssignmentResponse.model_validate(
+                    slot.assignment, from_attributes=True
                 )
             slots.append(
                 MaterialSlotResponse(
@@ -201,6 +229,7 @@ class PhysicalPrinterResponse(BaseModel):
                     label=slot.label,
                     kind=slot.kind,
                     active=slot.active,
+                    assignment=assignment,
                     legacy_projection=projection,
                 )
             )

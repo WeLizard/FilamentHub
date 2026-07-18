@@ -1,9 +1,9 @@
 import { useMemo, useState } from 'react';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
-import { Cpu, Clock, Layers, Zap, Trash2, Loader2, Wifi, WifiOff, AlertTriangle, Settings2, Copy, Check, RefreshCw } from 'lucide-react';
-import { devicesAPI, presetSlotsAPI, presetsAPI, spoolsAPI } from '../../api/client';
-import type { GateState, UserPrinterDevice, UserSpool } from '../../api/client';
+import { Cpu, Clock, Layers, Zap, Trash2, Loader2, Wifi, WifiOff, AlertTriangle, Copy, Check, RefreshCw } from 'lucide-react';
+import { physicalPrintersAPI, presetsAPI, spoolsAPI } from '../../api/client';
+import type { GateState, MaterialSlot, MaterialSystem, PhysicalPrinter, UserSpool } from '../../api/client';
 import type { Preset } from '../../types/api';
 import { GateMapGrid } from './GateMapGrid';
 import { PresetAssignModal } from './PresetAssignModal';
@@ -11,53 +11,62 @@ import { toast } from '../Toast';
 import { translateApiError } from '../../utils/translateApiError';
 import { formatLastSeen, getDeviceLinkState, useNow } from '../../utils/deviceLink';
 import { useAuth } from '../../contexts/AuthContext';
-import type { AxiosError } from 'axios';
 
-interface DeviceSectionProps {
-  device: UserPrinterDevice;
+interface MaterialSystemSectionProps {
+  printer: PhysicalPrinter;
+  system: MaterialSystem;
   presetsSeedMap: Record<number, Pick<Preset, 'id' | 'name' | 'extruder_temp' | 'bed_temp'>>;
   spools: UserSpool[];
   printerProfileName?: string | null;
-  onGateClick: (gate: GateState | null, gateIndex: number, device: UserPrinterDevice) => void;
+  onGateClick: (
+    gate: GateState | null,
+    slot: MaterialSlot,
+    printer: PhysicalPrinter,
+    system: MaterialSystem,
+  ) => void;
 }
 
-function DeviceSection({ device, presetsSeedMap, spools, printerProfileName = null, onGateClick }: DeviceSectionProps) {
+function gateSource(value: string | undefined): GateState['source'] {
+  if (value === 'hh_snapshot' || value === 'manual_orca' || value === 'web_manual') {
+    return value;
+  }
+  return 'web_manual';
+}
+
+function materialSlotGateState(slot: MaterialSlot): GateState | null {
+  const assignment = slot.assignment;
+  const projection = slot.legacy_projection;
+  if (!assignment && !projection) return null;
+  return {
+    id: projection?.gate_state_id ?? assignment!.id,
+    gate_index: slot.provider_index,
+    preset_id: assignment?.preset_id ?? projection?.preset_id ?? null,
+    spool_id: assignment?.spool_id ?? projection?.spool_id ?? null,
+    hh_material: projection?.hh_material ?? null,
+    hh_color_hex: projection?.hh_color_hex ?? null,
+    hh_status: projection?.hh_status ?? null,
+    source: gateSource(assignment?.source ?? projection?.source),
+    source_ts: assignment?.source_ts ?? projection!.source_ts,
+    is_active: assignment?.active ?? projection?.is_active ?? true,
+    updated_at: projection?.updated_at ?? assignment!.source_ts,
+  };
+}
+
+function MaterialSystemSection({ printer, system, presetsSeedMap, spools, printerProfileName = null, onGateClick }: MaterialSystemSectionProps) {
   const { t, i18n } = useTranslation();
   const queryClient = useQueryClient();
   const [clearing, setClearing] = useState(false);
-  const [editOpen, setEditOpen] = useState(false);
   const [pairingCommandCopied, setPairingCommandCopied] = useState(false);
-  const [editName, setEditName] = useState(device.name);
-  const [editGateCount, setEditGateCount] = useState<string>(device.gate_count?.toString() ?? '');
   const now = useNow();
-  const linkState = getDeviceLinkState(device.last_seen_at, now);
-
-  const updateMutation = useMutation({
-    mutationFn: (payload: { name?: string; gate_count?: number | null }) =>
-      devicesAPI.update(device.id, payload),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['devices'] });
-      toast.success(t('presetSlots.edit.saved'));
-      setEditOpen(false);
-    },
-    onError: (err: AxiosError<{ detail: unknown }>) => {
-      toast.error(translateApiError(t, err?.response?.data?.detail, t('common.error')));
-    },
-  });
-
-  const handleEditSave = () => {
-    const gateCountNum = editGateCount.trim() === '' ? null : parseInt(editGateCount, 10);
-    updateMutation.mutate({
-      name: editName.trim() || device.name,
-      gate_count: gateCountNum,
-    });
-  };
-
-  const { data: gates = [], isLoading } = useQuery({
-    queryKey: ['gates', device.id],
-    queryFn: () => presetSlotsAPI.list(device.id),
-    staleTime: 30_000,
-  });
+  const connector = printer.connectors.find(
+    (item) => item.material_system_id === system.id && item.active,
+  ) ?? null;
+  const linkState = getDeviceLinkState(connector?.last_seen_at ?? null, now);
+  const isHappyHare = system.provider === 'happy_hare';
+  const gates = useMemo(
+    () => system.slots.map(materialSlotGateState).filter((gate): gate is GateState => gate !== null),
+    [system.slots],
+  );
 
   const pairingGate = useMemo(
     () => gates.find((gate) => gate.spool_id != null) ?? null,
@@ -91,7 +100,7 @@ function DeviceSection({ device, presetsSeedMap, spools, printerProfileName = nu
   };
 
   const handleCheckPairing = async () => {
-    await queryClient.invalidateQueries({ queryKey: ['devices'] });
+    await queryClient.invalidateQueries({ queryKey: ['physical-printers'] });
   };
 
   const missingPresetIds = useMemo(() => {
@@ -105,7 +114,7 @@ function DeviceSection({ device, presetsSeedMap, spools, printerProfileName = nu
   }, [gates, presetsSeedMap]);
 
   const { data: missingPresets = [] } = useQuery({
-    queryKey: ['preset-slot-missing-presets', device.id, missingPresetIds],
+    queryKey: ['material-slot-missing-presets', system.id, missingPresetIds],
     queryFn: async () => {
       const results = await Promise.all(
         missingPresetIds.map(async (presetId) => {
@@ -136,12 +145,15 @@ function DeviceSection({ device, presetsSeedMap, spools, printerProfileName = nu
   }, [missingPresets, presetsSeedMap]);
 
   const handleClearAll = async () => {
-    if (!window.confirm(t('presetSlots.clearAllConfirm', { name: device.name }))) return;
+    if (!window.confirm(t('presetSlots.clearAllConfirm', { name: system.name }))) return;
     setClearing(true);
     try {
-      const result = await presetSlotsAPI.clear(device.id);
-      await queryClient.invalidateQueries({ queryKey: ['gates', device.id] });
-      toast.success(t('presetSlots.cleared') + ` (${result.cleared})`);
+      await physicalPrintersAPI.clearSystem(printer.id, system.id);
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['physical-printers'] }),
+        queryClient.invalidateQueries({ queryKey: ['spools'] }),
+      ]);
+      toast.success(t('presetSlots.cleared'));
     } catch (err: any) {
       toast.error(translateApiError(t, err?.response?.data?.detail, t('common.error')));
     } finally {
@@ -157,7 +169,8 @@ function DeviceSection({ device, presetsSeedMap, spools, printerProfileName = nu
             <Cpu className="h-5 w-5 text-purple-300" />
           </div>
           <div>
-            <h2 className="text-sm font-semibold text-white">{device.name}</h2>
+            <h2 className="text-sm font-semibold text-white">{printer.name}</h2>
+            <p className="mt-0.5 text-[11px] text-gray-400">{system.name}</p>
             {printerProfileName && (
               <p className="text-[11px] text-purple-300 mt-0.5">
                 {t('presetSlots.mappedPrinter', { name: printerProfileName })}
@@ -192,7 +205,7 @@ function DeviceSection({ device, presetsSeedMap, spools, printerProfileName = nu
             {t(`deviceLink.${linkState}`)}
           </span>
 
-          {device.supports_hh ? (
+          {isHappyHare ? (
             <span className="flex items-center gap-1 rounded-full bg-green-500/15 px-2.5 py-1 text-xs font-medium text-green-400">
               <Zap className="h-3 w-3" />
               {t('presetSlots.hhActive')}
@@ -200,18 +213,16 @@ function DeviceSection({ device, presetsSeedMap, spools, printerProfileName = nu
           ) : (
             <span className="flex items-center gap-1 rounded-full bg-blue-500/15 px-2.5 py-1 text-xs font-medium text-blue-300">
               <Layers className="h-3 w-3" />
-              {t('presetSlots.manualMode')}
+              {system.provider === 'manual' ? t('presetSlots.manualMode') : system.provider}
             </span>
           )}
-          {device.gate_count != null && (
-            <span className="flex items-center gap-1 rounded-full bg-white/5 px-2.5 py-1 text-xs text-gray-400">
-              <Layers className="h-3 w-3" />
-              {t('presetSlots.gates', { count: device.gate_count })}
-            </span>
-          )}
+          <span className="flex items-center gap-1 rounded-full bg-white/5 px-2.5 py-1 text-xs text-gray-400">
+            <Layers className="h-3 w-3" />
+            {t('presetSlots.gates', { count: system.slots.length })}
+          </span>
           <span className="flex items-center gap-1 rounded-full bg-white/5 px-2.5 py-1 text-xs text-gray-500">
             <Clock className="h-3 w-3" />
-            {formatLastSeen(device.last_seen_at, t, i18n.language, now)}
+            {formatLastSeen(connector?.last_seen_at ?? null, t, i18n.language, now)}
           </span>
           <button
             type="button"
@@ -226,71 +237,10 @@ function DeviceSection({ device, presetsSeedMap, spools, printerProfileName = nu
             )}
             {t('presetSlots.clearAll')}
           </button>
-
-          <button
-            type="button"
-            onClick={() => {
-              setEditName(device.name);
-              setEditGateCount(device.gate_count?.toString() ?? '');
-              setEditOpen((v) => !v);
-            }}
-            className="flex items-center gap-1.5 rounded-xl border border-white/10 bg-white/5 px-3 py-1.5 text-xs text-gray-300 transition hover:bg-white/10"
-          >
-            <Settings2 className="h-3.5 w-3.5" />
-            {t('presetSlots.edit.button')}
-          </button>
         </div>
       </div>
 
-      {editOpen && (
-        <div className="mb-4 rounded-xl border border-white/10 bg-white/5 p-4">
-          <div className="flex flex-wrap gap-3">
-            <div className="flex-1 min-w-[160px]">
-              <label className="mb-1 block text-xs text-gray-400">{t('presetSlots.edit.name')}</label>
-              <input
-                type="text"
-                value={editName}
-                onChange={(e) => setEditName(e.target.value)}
-                maxLength={200}
-                className="w-full rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 text-sm text-white placeholder-gray-600 focus:border-purple-500 focus:outline-none"
-              />
-            </div>
-            <div className="w-36">
-              <label className="mb-1 block text-xs text-gray-400">{t('presetSlots.edit.gateCount')}</label>
-              <input
-                type="number"
-                value={editGateCount}
-                onChange={(e) => setEditGateCount(e.target.value)}
-                min={1}
-                max={256}
-                placeholder="auto"
-                className="w-full rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 text-sm text-white placeholder-gray-600 focus:border-purple-500 focus:outline-none"
-              />
-              <p className="mt-0.5 text-[10px] text-gray-600">{t('presetSlots.edit.gateCountHint')}</p>
-            </div>
-          </div>
-          <div className="mt-3 flex gap-2">
-            <button
-              type="button"
-              onClick={handleEditSave}
-              disabled={updateMutation.isPending}
-              className="flex items-center gap-1.5 rounded-lg bg-purple-600 px-4 py-1.5 text-xs font-medium text-white transition hover:bg-purple-500 disabled:opacity-50"
-            >
-              {updateMutation.isPending && <Loader2 className="h-3 w-3 animate-spin" />}
-              {t('presetSlots.edit.save')}
-            </button>
-            <button
-              type="button"
-              onClick={() => setEditOpen(false)}
-              className="rounded-lg border border-white/10 bg-white/5 px-4 py-1.5 text-xs text-gray-400 transition hover:bg-white/10"
-            >
-              {t('presetSlots.edit.cancel')}
-            </button>
-          </div>
-        </div>
-      )}
-
-      {device.supports_hh && !device.printer_hostname && (
+      {isHappyHare && connector?.last_seen_at == null && (
         <div className="mb-4 rounded-xl border border-amber-400/25 bg-amber-500/10 p-4">
           <div className="flex items-start gap-3">
             <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-amber-300" />
@@ -334,19 +284,13 @@ function DeviceSection({ device, presetsSeedMap, spools, printerProfileName = nu
         </div>
       )}
 
-      {isLoading ? (
-        <div className="flex items-center justify-center py-10">
-          <Loader2 className="h-6 w-6 animate-spin text-purple-400" />
-        </div>
-      ) : (
-        <GateMapGrid
-          device={device}
-          gates={gates}
-          presets={effectivePresetsMap}
-          spools={spools}
-          onGateClick={(gate, gateIndex) => onGateClick(gate, gateIndex, device)}
-        />
-      )}
+      <GateMapGrid
+        slots={system.slots}
+        gates={gates}
+        presets={effectivePresetsMap}
+        spools={spools}
+        onGateClick={(gate, slot) => onGateClick(gate, slot, printer, system)}
+      />
     </div>
   );
 }
@@ -368,13 +312,14 @@ export function PresetSlotsPanel({
   const [modalState, setModalState] = useState<{
     open: boolean;
     gate: GateState | null;
-    gateIndex: number;
-    device: UserPrinterDevice | null;
-  }>({ open: false, gate: null, gateIndex: 0, device: null });
+    slot: MaterialSlot | null;
+    printer: PhysicalPrinter | null;
+    system: MaterialSystem | null;
+  }>({ open: false, gate: null, slot: null, printer: null, system: null });
 
-  const { data: devices = [], isLoading: loadingDevices } = useQuery({
-    queryKey: ['devices'],
-    queryFn: devicesAPI.list,
+  const { data: physicalPrinters = [], isLoading: loadingPrinters } = useQuery({
+    queryKey: ['physical-printers'],
+    queryFn: physicalPrintersAPI.list,
     staleTime: 60_000,
   });
 
@@ -382,7 +327,7 @@ export function PresetSlotsPanel({
     queryKey: ['presets', { page: 1, size: 100, userId: user?.id }],
     queryFn: () => presetsAPI.list({ page: 1, size: 100, user_id: user?.id }),
     staleTime: 60_000,
-    enabled: devices.length > 0 && !!user,
+    enabled: physicalPrinters.length > 0 && !!user,
   });
 
   const shouldFetchSpools = externalSpools == null;
@@ -390,7 +335,7 @@ export function PresetSlotsPanel({
     queryKey: ['spools'],
     queryFn: spoolsAPI.list,
     staleTime: 60_000,
-    enabled: devices.length > 0 && shouldFetchSpools,
+    enabled: physicalPrinters.length > 0 && shouldFetchSpools,
   });
 
   const spools = externalSpools ?? fetchedSpools;
@@ -403,15 +348,24 @@ export function PresetSlotsPanel({
     return map;
   }, [printerBindings]);
 
-  const filteredDevices = useMemo(() => {
+  const filteredPrinters = useMemo(() => {
     if (!printerBindings || printerBindings.length === 0) {
-      return devices;
+      return physicalPrinters;
     }
-    return devices.filter(
-      (device) => device.supports_hh ||
-      (device.printer_id != null && printerNameById.has(device.printer_id))
+    return physicalPrinters.filter(
+      (printer) => printer.material_systems.some((system) => system.provider === 'happy_hare') ||
+      (printer.printer_id != null && printerNameById.has(printer.printer_id))
     );
-  }, [devices, printerBindings, printerNameById]);
+  }, [physicalPrinters, printerBindings, printerNameById]);
+
+  const materialSections = useMemo(
+    () => filteredPrinters.flatMap((printer) =>
+      printer.material_systems
+        .filter((system) => system.active)
+        .map((system) => ({ printer, system })),
+    ),
+    [filteredPrinters],
+  );
 
   const presetsMap: Record<number, Pick<Preset, 'id' | 'name' | 'extruder_temp' | 'bed_temp'>> = {};
   (presetsPage?.items ?? []).forEach((preset) => {
@@ -420,13 +374,14 @@ export function PresetSlotsPanel({
 
   const handleGateClick = (
     gate: GateState | null,
-    gateIndex: number,
-    device: UserPrinterDevice,
+    slot: MaterialSlot,
+    printer: PhysicalPrinter,
+    system: MaterialSystem,
   ) => {
-    setModalState({ open: true, gate, gateIndex, device });
+    setModalState({ open: true, gate, slot, printer, system });
   };
 
-  if (loadingDevices) {
+  if (loadingPrinters) {
     return (
       <div className="flex items-center justify-center py-10">
         <Loader2 className="h-8 w-8 animate-spin text-purple-400" />
@@ -434,7 +389,7 @@ export function PresetSlotsPanel({
     );
   }
 
-  if (devices.length === 0) {
+  if (physicalPrinters.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center rounded-2xl border border-dashed border-white/10 py-12 text-center">
         <Cpu className="mb-4 h-12 w-12 text-gray-600" />
@@ -444,7 +399,7 @@ export function PresetSlotsPanel({
     );
   }
 
-  if (filteredDevices.length === 0) {
+  if (filteredPrinters.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center rounded-2xl border border-dashed border-white/10 py-12 text-center">
         <Cpu className="mb-4 h-12 w-12 text-gray-600" />
@@ -454,28 +409,42 @@ export function PresetSlotsPanel({
     );
   }
 
+  if (materialSections.length === 0) {
+    return (
+      <div className="flex flex-col items-center justify-center rounded-2xl border border-dashed border-white/10 py-12 text-center">
+        <Layers className="mb-4 h-12 w-12 text-gray-600" />
+        <h2 className="mb-2 text-lg font-semibold text-white">{t('presetSlots.noMaterialSystems')}</h2>
+        <p className="max-w-sm text-sm text-gray-500">{t('presetSlots.noMaterialSystemsDesc')}</p>
+      </div>
+    );
+  }
+
   return (
     <>
       <div className={compact ? 'space-y-4' : 'space-y-6'}>
-        {filteredDevices.map((device) => (
-          <DeviceSection
-            key={device.id}
-            device={device}
+        {materialSections.map(({ printer, system }) => (
+          <MaterialSystemSection
+            key={system.id}
+            printer={printer}
+            system={system}
             presetsSeedMap={presetsMap}
             spools={spools}
-            printerProfileName={device.printer_id != null ? (printerNameById.get(device.printer_id) ?? null) : null}
+            printerProfileName={printer.printer_id != null ? (printerNameById.get(printer.printer_id) ?? null) : null}
             onGateClick={handleGateClick}
           />
         ))}
       </div>
 
-      {modalState.device && (
+      {modalState.printer && modalState.system && modalState.slot && (
         <PresetAssignModal
           isOpen={modalState.open}
-          gateIndex={modalState.gateIndex}
+          gateIndex={modalState.slot.provider_index}
           gate={modalState.gate}
-          deviceId={modalState.device.id}
-          deviceName={modalState.device.name}
+          physicalPrinterId={modalState.printer.id}
+          materialSlotId={modalState.slot.id}
+          deviceName={modalState.printer.name}
+          systemName={modalState.system.name}
+          provider={modalState.system.provider}
           spools={spools}
           onClose={() => setModalState((s) => ({ ...s, open: false }))}
           onAssigned={() => setModalState((s) => ({ ...s, open: false }))}

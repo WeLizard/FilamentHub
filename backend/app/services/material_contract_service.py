@@ -30,6 +30,7 @@ from app.schemas.material_contract import (
     PhysicalPrinterCreate,
     PhysicalPrinterUpdate,
 )
+from app.services.material_assignment_service import sync_legacy_material_assignment
 
 LEGACY_HH_CAPABILITIES = [
     "read",
@@ -46,6 +47,9 @@ def _printer_load_options():
         selectinload(UserPrinterDevice.material_systems)
         .selectinload(MaterialSystem.slots)
         .selectinload(MaterialSlot.legacy_gate_state),
+        selectinload(UserPrinterDevice.material_systems)
+        .selectinload(MaterialSystem.slots)
+        .selectinload(MaterialSlot.assignment),
         selectinload(UserPrinterDevice.connectors),
     )
 
@@ -350,6 +354,7 @@ async def ensure_legacy_material_contract(
         )
         for state in states_result.scalars().all():
             state.material_slot_id = slots_by_index[state.gate_index].id
+            await sync_legacy_material_assignment(db, state)
 
     connector = await db.scalar(
         select(PhysicalPrinterConnector)

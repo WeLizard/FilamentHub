@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Search, X, Loader2, CheckCircle2, Trash2, Package, Copy, Check, AlertTriangle } from 'lucide-react';
-import { presetsAPI, presetSlotsAPI, savedPresetsAPI } from '../../api/client';
+import { physicalPrintersAPI, presetsAPI, savedPresetsAPI } from '../../api/client';
 import type { GateState, UserSpool } from '../../api/client';
 import { useAuth } from '../../contexts/AuthContext';
 import { toast } from '../Toast';
@@ -15,8 +15,11 @@ interface PresetAssignModalProps {
   isOpen: boolean;
   gateIndex: number;
   gate: GateState | null;
-  deviceId: number;
+  physicalPrinterId: number;
+  materialSlotId: number;
   deviceName: string;
+  systemName: string;
+  provider: string;
   /** User's spools from "Мои филаменты" */
   spools: UserSpool[];
   onClose: () => void;
@@ -27,8 +30,11 @@ export function PresetAssignModal({
   isOpen,
   gateIndex,
   gate,
-  deviceId,
+  physicalPrinterId,
+  materialSlotId,
   deviceName,
+  systemName,
+  provider,
   spools,
   onClose,
   onAssigned,
@@ -127,11 +133,14 @@ export function PresetAssignModal({
     if (selectedPresetId === null && selectedSpoolId === null) return;
     setIsSubmitting(true);
     try {
-      await presetSlotsAPI.assign(deviceId, gateIndex, {
+      await physicalPrintersAPI.assignSlot(physicalPrinterId, materialSlotId, {
         preset_id: selectedPresetId,
         spool_id: selectedSpoolId,
       });
-      await queryClient.invalidateQueries({ queryKey: ['gates', deviceId] });
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['physical-printers'] }),
+        queryClient.invalidateQueries({ queryKey: ['spools'] }),
+      ]);
       toast.success(t('presetSlots.modal.assigned', { gate: gateIndex }));
       onAssigned();
     } catch (err: any) {
@@ -144,8 +153,14 @@ export function PresetAssignModal({
   const handleClear = async () => {
     setIsSubmitting(true);
     try {
-      await presetSlotsAPI.assign(deviceId, gateIndex, { preset_id: null, spool_id: null });
-      await queryClient.invalidateQueries({ queryKey: ['gates', deviceId] });
+      await physicalPrintersAPI.assignSlot(physicalPrinterId, materialSlotId, {
+        preset_id: null,
+        spool_id: null,
+      });
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['physical-printers'] }),
+        queryClient.invalidateQueries({ queryKey: ['spools'] }),
+      ]);
       toast.success(t('presetSlots.modal.assigned', { gate: gateIndex }));
       onAssigned();
     } catch (err: any) {
@@ -155,7 +170,7 @@ export function PresetAssignModal({
     }
   };
 
-  const unidentifiedFilament = isUnidentifiedHHFilament(gate);
+  const unidentifiedFilament = provider === 'happy_hare' && isUnidentifiedHHFilament(gate);
   const emptyGateCommand = markHHGateEmptyCommand(gateIndex);
 
   const handleCopyEmptyCommand = async () => {
@@ -199,7 +214,7 @@ export function PresetAssignModal({
               <h2 className="text-sm font-semibold text-white">
                 {t('presetSlots.modal.title', { gate: gateIndex })}
               </h2>
-              <p className="text-xs text-gray-500">{deviceName}</p>
+              <p className="text-xs text-gray-500">{deviceName} · {systemName}</p>
             </div>
           </div>
           <button

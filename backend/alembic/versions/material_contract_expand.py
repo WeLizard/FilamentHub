@@ -204,6 +204,76 @@ def upgrade() -> None:
     )
 
     op.create_table(
+        "material_slot_assignments",
+        sa.Column("id", sa.Integer(), primary_key=True),
+        sa.Column(
+            "user_id",
+            sa.Integer(),
+            sa.ForeignKey("users.id", ondelete="CASCADE"),
+            nullable=False,
+        ),
+        sa.Column(
+            "material_slot_id",
+            sa.Integer(),
+            sa.ForeignKey("material_slots.id", ondelete="CASCADE"),
+            nullable=False,
+        ),
+        sa.Column(
+            "preset_id",
+            sa.Integer(),
+            sa.ForeignKey("presets.id", ondelete="SET NULL"),
+            nullable=True,
+        ),
+        sa.Column(
+            "spool_id",
+            sa.Integer(),
+            sa.ForeignKey("user_spools.id", ondelete="SET NULL"),
+            nullable=True,
+        ),
+        sa.Column("source", sa.String(length=50), nullable=False),
+        sa.Column("source_ts", sa.DateTime(timezone=True), nullable=False),
+        sa.Column("active", sa.Boolean(), server_default=sa.true(), nullable=False),
+        sa.Column(
+            "created_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.func.now(),
+            nullable=False,
+        ),
+        sa.Column(
+            "updated_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.func.now(),
+            nullable=False,
+        ),
+        sa.UniqueConstraint(
+            "material_slot_id", name="uq_material_slot_assignment_slot"
+        ),
+    )
+    op.create_index(
+        "ix_material_slot_assignments_user_id",
+        "material_slot_assignments",
+        ["user_id"],
+    )
+    op.create_index(
+        "ix_material_slot_assignments_preset_id",
+        "material_slot_assignments",
+        ["preset_id"],
+    )
+    op.create_index(
+        "ix_material_slot_assignments_spool_id",
+        "material_slot_assignments",
+        ["spool_id"],
+    )
+    op.create_index(
+        "uq_material_slot_assignment_spool",
+        "material_slot_assignments",
+        ["spool_id"],
+        unique=True,
+        postgresql_where=sa.text("spool_id IS NOT NULL"),
+        sqlite_where=sa.text("spool_id IS NOT NULL"),
+    )
+
+    op.create_table(
         "physical_printer_connectors",
         sa.Column("id", sa.Integer(), primary_key=True),
         sa.Column(
@@ -322,10 +392,26 @@ def upgrade() -> None:
         sa.column("active", sa.Boolean()),
         sa.column("last_seen_at", sa.DateTime(timezone=True)),
     )
+    material_slot_assignments = sa.table(
+        "material_slot_assignments",
+        sa.column("id", sa.Integer()),
+        sa.column("user_id", sa.Integer()),
+        sa.column("material_slot_id", sa.Integer()),
+        sa.column("preset_id", sa.Integer()),
+        sa.column("spool_id", sa.Integer()),
+        sa.column("source", sa.String()),
+        sa.column("source_ts", sa.DateTime(timezone=True)),
+        sa.column("active", sa.Boolean()),
+    )
 
     gate_rows = bind.execute(
         sa.text(
-            "SELECT id, device_id, gate_index FROM preset_gate_states ORDER BY device_id, gate_index"
+            """
+            SELECT id, user_id, device_id, gate_index, preset_id, spool_id,
+                   source, source_ts
+            FROM preset_gate_states
+            ORDER BY device_id, gate_index
+            """
         )
     ).mappings()
     gates_by_device: dict[int, list[dict[str, int]]] = {}
@@ -370,12 +456,25 @@ def upgrade() -> None:
                     .returning(material_slots.c.id)
                 ).scalar_one()
             for gate in device_gates:
+                slot_id = slots_by_index[gate["gate_index"]]
                 bind.execute(
                     sa.text(
                         "UPDATE preset_gate_states SET material_slot_id = :slot_id WHERE id = :id"
                     ),
-                    {"slot_id": slots_by_index[gate["gate_index"]], "id": gate["id"]},
+                    {"slot_id": slot_id, "id": gate["id"]},
                 )
+                if gate["preset_id"] is not None or gate["spool_id"] is not None:
+                    bind.execute(
+                        sa.insert(material_slot_assignments).values(
+                            user_id=gate["user_id"],
+                            material_slot_id=slot_id,
+                            preset_id=gate["preset_id"],
+                            spool_id=gate["spool_id"],
+                            source=gate["source"],
+                            source_ts=gate["source_ts"],
+                            active=True,
+                        )
+                    )
 
         has_legacy_connector = bool(
             device["device_fingerprint"]
@@ -420,6 +519,24 @@ def downgrade() -> None:
         table_name="physical_printer_connectors",
     )
     op.drop_table("physical_printer_connectors")
+
+    op.drop_index(
+        "uq_material_slot_assignment_spool",
+        table_name="material_slot_assignments",
+    )
+    op.drop_index(
+        "ix_material_slot_assignments_spool_id",
+        table_name="material_slot_assignments",
+    )
+    op.drop_index(
+        "ix_material_slot_assignments_preset_id",
+        table_name="material_slot_assignments",
+    )
+    op.drop_index(
+        "ix_material_slot_assignments_user_id",
+        table_name="material_slot_assignments",
+    )
+    op.drop_table("material_slot_assignments")
 
     op.drop_index("ix_material_slots_material_system_id", table_name="material_slots")
     op.drop_index("ix_material_slots_user_id", table_name="material_slots")
