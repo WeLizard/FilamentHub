@@ -35,8 +35,6 @@ import { CreateReviewModal } from '../components/CreateReviewModal';
 import { ConfirmDeleteModal } from '../components/ConfirmDeleteModal';
 import { toast } from '../components/Toast';
 import { PresetSyncToggle } from '../components/PresetSyncToggle';
-import { SavePresetTargetsModal } from '../components/SavePresetTargetsModal';
-import { useMyActivePrinterProfiles } from '../components/PresetScopeControl';
 import { ViewPresetModal } from '../components/ViewPresetModal';
 import { SEOHead } from '../components/SEOHead';
 import { FilamentReview } from '../types/api';
@@ -96,10 +94,6 @@ export const FilamentDetailPage: React.FC = () => {
 
   const savedPresetIds = new Set(savedPresets?.items.map(sp => sp.preset_id) || []);
 
-  // При 2+ принтер-профилях сохранение идёт через выбор целей (RFC §3.3)
-  const activePrinterProfiles = useMyActivePrinterProfiles();
-  const [pendingSavePresetId, setPendingSavePresetId] = useState<number | null>(null);
-
   // Мутация для сохранения пресета
   const savePresetMutation = useMutation({
     mutationFn: (presetId: number) => {
@@ -119,10 +113,6 @@ export const FilamentDetailPage: React.FC = () => {
   });
 
   const handleSavePreset = (presetId: number) => {
-    if (user && activePrinterProfiles.length >= 2) {
-      setPendingSavePresetId(presetId);
-      return;
-    }
     savePresetMutation.mutate(presetId);
   };
 
@@ -1177,12 +1167,6 @@ export const FilamentDetailPage: React.FC = () => {
           }}
           message={t('filamentDetailPage.confirmDeleteReview')}
           isLoading={deleteReviewMutation.isPending}
-        />
-
-        <SavePresetTargetsModal
-          presetId={pendingSavePresetId}
-          profiles={activePrinterProfiles}
-          onClose={() => setPendingSavePresetId(null)}
         />
       </div>
       </div>

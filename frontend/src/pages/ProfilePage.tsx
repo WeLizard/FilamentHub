@@ -75,7 +75,6 @@ const CreatePrinterProfileModal = lazy(() =>
 );
 import { CreatePrintProfileModal } from '../components/CreatePrintProfileModal';
 import { PresetSyncToggle } from '../components/PresetSyncToggle';
-import { PresetScopeControl } from '../components/PresetScopeControl';
 import { Badge, BADGE_CONFIG, type BadgeType } from '../components/Badge';
 import { PresetSlotsPanel } from '../components/presetSlots/PresetSlotsPanel';
 import { BrandProfilePage } from './BrandProfilePage';
@@ -3757,8 +3756,6 @@ const PresetCard: React.FC<PresetCardProps> = ({ preset, onEdit, onView, onDelet
           <span className="text-gray-300 leading-tight break-words">{t('profilePage.preset.usageCount')}: {preset.usage_count}</span>
         </div>
       </div>
-
-      <PresetScopeControl preset={preset} className="mb-4" />
 
       <div className="flex items-center justify-between text-xs sm:text-sm gap-3">
         {preset.rating ? (
