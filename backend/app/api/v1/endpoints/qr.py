@@ -5,6 +5,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, Query, Request
 from fastapi.responses import RedirectResponse, StreamingResponse
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.dependencies import get_current_active_user, get_current_active_user_optional
@@ -78,8 +79,11 @@ async def handle_qr_scan(
     if not filament:
         raise_error(404, ERR_FILAMENT_NOT_FOUND)
 
-    # Инкрементируем счетчик
+    # Регистрируем скан отдельным коммитом: авто-сохранение пресета ниже может
+    # проиграть гонку по unique (user_id, preset_id) и откатиться — счётчик
+    # скана при этом должен сохраниться.
     filament.scans_count += 1
+    await db.commit()
 
     preset_added = False
     official_preset = None
@@ -118,9 +122,16 @@ async def handle_qr_scan(
                 )
                 db.add(saved_preset)
                 official_preset.usage_count += 1
-                preset_added = True
+                try:
+                    await db.commit()
+                    preset_added = True
+                except IntegrityError:
+                    # Конкурентный скан того же SKU уже добавил этот
+                    # (user_id, preset_id) — сработал восстановленный unique
+                    # индекс. Откатываем дубль-insert; пресет уже в профиле.
+                    await db.rollback()
+                    preset_added = False
 
-    await db.commit()
     await db.refresh(filament)
     # reload after commit: usage_count write expires attrs, model_validate would lazy-load
     if official_preset is not None:

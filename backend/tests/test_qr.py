@@ -2,6 +2,7 @@
 
 import pytest
 from httpx import AsyncClient
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.brand import Brand
@@ -173,6 +174,85 @@ async def test_handle_qr_scan_no_duplicate_preset(client: AsyncClient, db_sessio
 
     r2 = await client.post(f"/api/v1/qr/{filament.qr_code}/scan", headers=headers)
     assert r2.json()["preset_added"] is False  # already in profile
+
+
+@pytest.mark.asyncio
+async def test_handle_qr_scan_counts_and_dedups(client: AsyncClient, db_session: AsyncSession):
+    """Repeat scans always register the scan and never duplicate the saved
+    preset — the scan commit is separate from the racy auto-save."""
+    from app.models.user_saved_preset import UserSavedPreset
+
+    headers, user_id = await _register_and_login(client, "qr-count")
+    filament = await _create_verified_filament(db_session)
+    start_scans = filament.scans_count
+
+    preset = Preset(
+        filament_id=filament.id, user_id=user_id, name="Official Count Preset",
+        is_official=True, active=True, moderation_status=PresetModerationStatus.APPROVED,
+        extruder_temp=210.0, bed_temp=65.0,
+    )
+    db_session.add(preset)
+    await db_session.commit()
+    await db_session.refresh(preset)
+
+    r1 = await client.post(f"/api/v1/qr/{filament.qr_code}/scan", headers=headers)
+    r2 = await client.post(f"/api/v1/qr/{filament.qr_code}/scan", headers=headers)
+    assert r1.status_code == 200 and r2.status_code == 200
+    assert r1.json()["preset_added"] is True
+    assert r2.json()["preset_added"] is False
+
+    await db_session.refresh(filament)
+    assert filament.scans_count == start_scans + 2
+
+    saved = await db_session.execute(
+        select(UserSavedPreset).where(
+            UserSavedPreset.user_id == user_id, UserSavedPreset.preset_id == preset.id
+        )
+    )
+    assert len(saved.scalars().all()) == 1
+
+
+@pytest.mark.asyncio
+async def test_handle_qr_scan_insert_race_returns_ok(
+    client: AsyncClient, db_session: AsyncSession, monkeypatch
+):
+    """If a concurrent scan inserts the same (user, preset) first, our insert
+    hits the restored unique index. The endpoint must roll back that insert and
+    still return 200 with the scan counted — not a 500."""
+    from sqlalchemy.exc import IntegrityError
+
+    headers, user_id = await _register_and_login(client, "qr-race")
+    filament = await _create_verified_filament(db_session)
+    start_scans = filament.scans_count
+
+    preset = Preset(
+        filament_id=filament.id, user_id=user_id, name="Official Race Preset",
+        is_official=True, active=True, moderation_status=PresetModerationStatus.APPROVED,
+        extruder_temp=210.0, bed_temp=65.0,
+    )
+    db_session.add(preset)
+    await db_session.commit()
+
+    # Force the second commit (the saved-preset insert; the first is the scan
+    # counter) to fail as if a concurrent scan won the unique race.
+    real_commit = db_session.commit
+    calls = {"n": 0}
+
+    async def flaky_commit():
+        calls["n"] += 1
+        if calls["n"] == 2:
+            raise IntegrityError("duplicate saved preset", None, Exception("unique"))
+        return await real_commit()
+
+    monkeypatch.setattr(db_session, "commit", flaky_commit)
+
+    response = await client.post(f"/api/v1/qr/{filament.qr_code}/scan", headers=headers)
+    assert response.status_code == 200
+    assert response.json()["preset_added"] is False
+
+    monkeypatch.undo()
+    await db_session.refresh(filament)
+    assert filament.scans_count == start_scans + 1  # scan committed despite the race
 
 
 @pytest.mark.asyncio
