@@ -873,15 +873,6 @@
     "searchPlaceholder": "Search...",
     "allTypes": "All types",
     "allBrands": "All brands",
-    "ownership": {
-      "all": "All",
-      "mine": "Mine",
-      "new": "New"
-    },
-    "presetType": {
-      "generative": "Generative",
-      "brand": "From brand"
-    },
     "noResults": "No materials found",
     "errorLoginRequired": "Login required",
     "errorSavePreset": "Failed to add preset to profile",

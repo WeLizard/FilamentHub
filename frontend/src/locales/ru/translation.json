@@ -1022,15 +1022,6 @@
     "searchPlaceholder": "Поиск...",
     "allTypes": "Все типы",
     "allBrands": "Все бренды",
-    "ownership": {
-      "all": "Все",
-      "mine": "Мои",
-      "new": "Новые"
-    },
-    "presetType": {
-      "generative": "Генеративный",
-      "brand": "От бренда"
-    },
     "noResults": "Материалы не найдены",
     "errorLoginRequired": "Необходимо войти в систему",
     "errorSavePreset": "Не удалось добавить пресет в профиль",
