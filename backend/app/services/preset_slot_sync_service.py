@@ -33,6 +33,7 @@ from app.schemas.preset_slot_sync import (
     ManualAssignmentRequest,
     UsageEstimateRequest,
 )
+from app.services.material_contract_service import ensure_legacy_material_contract
 from app.services.spool_service import (
     clear_spool_gate_assignments,
     lock_spool_row,
@@ -118,6 +119,7 @@ async def register_or_update_device(
             device.gate_count = payload.gate_count
     touch_device_last_seen(device)
 
+    await ensure_legacy_material_contract(db, device)
     await db.commit()
     await db.refresh(device)
     return device
@@ -138,6 +140,7 @@ async def update_device(
         device.supports_hh = payload.supports_hh
     if payload.printer_hostname is not None:
         device.printer_hostname = payload.printer_hostname
+    await ensure_legacy_material_contract(db, device)
     await db.commit()
     await db.refresh(device)
     return device
@@ -360,6 +363,7 @@ async def handle_heartbeat(
             device.name = device_name
     touch_device_last_seen(device)
 
+    await ensure_legacy_material_contract(db, device)
     await db.commit()
     await db.refresh(device)
     return device
@@ -477,6 +481,12 @@ async def handle_hh_snapshot(
         if preset_material and hh_material and preset_material != hh_material:
             mismatches.append(gate_index)
 
+    await ensure_legacy_material_contract(
+        db,
+        device,
+        gate_indices={state.gate_index for _, state in gate_state_updates}
+        | set(state_by_gate),
+    )
     await db.commit()
     await db.refresh(device)
     return device, updated, mismatches
@@ -653,6 +663,9 @@ async def handle_manual_assignment(
                     payload.gate,
                 )
 
+    await ensure_legacy_material_contract(
+        db, resolved_device, gate_indices={payload.gate}
+    )
     await db.commit()
     await db.refresh(state)
 
@@ -711,7 +724,7 @@ async def web_assign_preset_to_slot(
         await _check_preset_accessible(db, user.id, preset_id)
 
     payload = ManualAssignmentRequest(
-        device_fingerprint=device.device_fingerprint,
+        device_fingerprint=device.device_fingerprint or f"logical:{device.logical_id}",
         gate=gate_index,
         preset_id=preset_id,
         spool_id=spool_id,

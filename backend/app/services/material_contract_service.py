@@ -19,6 +19,7 @@ from app.models.material_system import (
     PhysicalPrinterConnector,
 )
 from app.models.physical_printer_profile import UserPrinterProfileLink
+from app.models.preset_gate_state import PresetGateState
 from app.models.printer import Printer
 from app.models.printer_profile import PrinterProfile
 from app.models.user_printer_device import UserPrinterDevice
@@ -29,6 +30,14 @@ from app.schemas.material_contract import (
     PhysicalPrinterCreate,
     PhysicalPrinterUpdate,
 )
+
+LEGACY_HH_CAPABILITIES = [
+    "read",
+    "write",
+    "presence",
+    "spool_identity",
+    "consumption",
+]
 
 
 def _printer_load_options():
@@ -270,3 +279,96 @@ async def upsert_physical_printer_connector(
     connector.active = True
     await db.commit()
     return await require_physical_printer(db, user_id, physical_printer_id)
+
+
+async def ensure_legacy_material_contract(
+    db: AsyncSession,
+    device: UserPrinterDevice,
+    *,
+    gate_indices: set[int] | None = None,
+) -> None:
+    """Dual-write legacy HH/device topology into the expanded contract."""
+    indices = set(gate_indices or ())
+    if device.gate_count is not None:
+        indices.update(range(device.gate_count))
+    if not device.supports_hh and not indices:
+        return
+
+    await db.flush()
+    system = await db.scalar(
+        select(MaterialSystem)
+        .where(
+            MaterialSystem.physical_printer_id == device.id,
+            MaterialSystem.user_id == device.user_id,
+            MaterialSystem.provider.in_(["happy_hare", "legacy"]),
+        )
+        .order_by(MaterialSystem.id)
+    )
+    if system is None:
+        system = MaterialSystem(
+            user_id=device.user_id,
+            physical_printer_id=device.id,
+            name="Legacy material system",
+            kind="mmu",
+            provider="happy_hare" if device.supports_hh else "legacy",
+            capabilities=LEGACY_HH_CAPABILITIES if device.supports_hh else [],
+        )
+        db.add(system)
+        await db.flush()
+    elif device.supports_hh:
+        system.provider = "happy_hare"
+        system.kind = "mmu"
+        system.capabilities = list(LEGACY_HH_CAPABILITIES)
+        system.active = True
+
+    existing_slots_result = await db.execute(
+        select(MaterialSlot).where(MaterialSlot.material_system_id == system.id)
+    )
+    slots_by_index = {
+        slot.provider_index: slot for slot in existing_slots_result.scalars().all()
+    }
+    for provider_index in sorted(indices):
+        if provider_index not in slots_by_index:
+            slot = MaterialSlot(
+                user_id=device.user_id,
+                material_system_id=system.id,
+                provider_index=provider_index,
+                kind="slot",
+            )
+            db.add(slot)
+            await db.flush()
+            slots_by_index[provider_index] = slot
+
+    if slots_by_index:
+        states_result = await db.execute(
+            select(PresetGateState).where(
+                PresetGateState.device_id == device.id,
+                PresetGateState.gate_index.in_(slots_by_index),
+            )
+        )
+        for state in states_result.scalars().all():
+            state.material_slot_id = slots_by_index[state.gate_index].id
+
+    connector = await db.scalar(
+        select(PhysicalPrinterConnector)
+        .where(
+            PhysicalPrinterConnector.physical_printer_id == device.id,
+            PhysicalPrinterConnector.user_id == device.user_id,
+            PhysicalPrinterConnector.provider.in_(["happy_hare", "legacy"]),
+        )
+        .order_by(PhysicalPrinterConnector.id)
+    )
+    if connector is None:
+        connector = PhysicalPrinterConnector(
+            user_id=device.user_id,
+            physical_printer_id=device.id,
+            provider="happy_hare" if device.supports_hh else "legacy",
+            transport="spoolman_compat" if device.api_key else "legacy_adapter",
+        )
+        db.add(connector)
+    connector.material_system_id = system.id
+    connector.capabilities = (
+        list(LEGACY_HH_CAPABILITIES) if device.supports_hh else []
+    )
+    connector.last_seen_at = device.last_seen_at
+    connector.active = True

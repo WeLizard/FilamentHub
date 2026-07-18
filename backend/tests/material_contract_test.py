@@ -4,8 +4,11 @@ from __future__ import annotations
 
 import pytest
 from httpx import AsyncClient
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.models.material_system import MaterialSlot, MaterialSystem, PhysicalPrinterConnector
+from app.models.preset_gate_state import PresetGateState
 from app.models.printer import Printer
 from app.models.printer_profile import PrinterProfile
 from app.models.user import User
@@ -235,3 +238,56 @@ async def test_duplicate_provider_indices_are_rejected_before_write(
         },
     )
     assert response.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_legacy_hh_flow_dual_writes_system_slots_and_connector(
+    auth_client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    created = await auth_client.post(
+        "/api/v1/devices/create-with-key", json={"name": "Legacy HH"}
+    )
+    assert created.status_code == 200
+    device_id = created.json()["device"]["id"]
+
+    updated = await auth_client.patch(
+        f"/api/v1/devices/{device_id}",
+        json={"supports_hh": True, "gate_count": 2},
+    )
+    assert updated.status_code == 200
+    assigned = await auth_client.patch(
+        f"/api/v1/preset-slots/{device_id}/1", json={}
+    )
+    assert assigned.status_code == 200
+
+    system = await db_session.scalar(
+        select(MaterialSystem).where(
+            MaterialSystem.physical_printer_id == device_id
+        )
+    )
+    assert system is not None
+    assert system.provider == "happy_hare"
+    slots = (
+        await db_session.execute(
+            select(MaterialSlot)
+            .where(MaterialSlot.material_system_id == system.id)
+            .order_by(MaterialSlot.provider_index)
+        )
+    ).scalars().all()
+    assert [slot.provider_index for slot in slots] == [0, 1]
+    connector = await db_session.scalar(
+        select(PhysicalPrinterConnector).where(
+            PhysicalPrinterConnector.physical_printer_id == device_id
+        )
+    )
+    assert connector is not None
+    assert connector.material_system_id == system.id
+    gate_state = await db_session.scalar(
+        select(PresetGateState).where(
+            PresetGateState.device_id == device_id,
+            PresetGateState.gate_index == 1,
+        )
+    )
+    assert gate_state is not None
+    assert gate_state.material_slot_id == slots[1].id

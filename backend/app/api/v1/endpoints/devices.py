@@ -23,6 +23,7 @@ from app.schemas.preset_slot_sync import (
     DeviceUpdateRequest,
     GateStateResponse,
 )
+from app.services.material_contract_service import ensure_legacy_material_contract
 from app.services.preset_slot_sync_service import (
     get_gate_states,
     list_user_devices,
@@ -100,6 +101,7 @@ async def create_device_with_key(
         printer_id=payload.printer_id,
     )
     db.add(device)
+    await ensure_legacy_material_contract(db, device)
     await db.commit()
     await db.refresh(device)
     return DeviceCreateWithKeyResponse(
@@ -118,6 +120,7 @@ async def regenerate_device_key(
     device = await require_device(db, current_user.id, device_id)
     new_key = generate_api_key()
     device.api_key = new_key
+    await ensure_legacy_material_contract(db, device)
     await db.commit()
     return DeviceRegenerateKeyResponse(api_key=new_key)
 
