@@ -4,10 +4,17 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "filamenthub"
-version = "0.0.4"
+dynamic = ["version"]
 description = "Browse and sync community-rated filament profiles from FilamentHub, with spool inventory and print-cost tools."
 requires-python = ">=3.12"
 authors = [{ name = "FilamentHub" }]
 
 [tool.setuptools]
 py-modules = ["filamenthub_plugin"]
+
+# Single source of truth for the version: the PLUGIN_VERSION constant in the
+# module. The wheel derives from it here (no hand-copied number), and
+# build_package.py validates that the PEP 723 `# version` comment matches it —
+# so the three readers (host manifest, wheel, runtime User-Agent) can't drift.
+[tool.setuptools.dynamic]
+version = { attr = "filamenthub_plugin.PLUGIN_VERSION" }
