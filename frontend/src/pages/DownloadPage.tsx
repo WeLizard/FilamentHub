@@ -181,20 +181,67 @@ export function DownloadPage() {
         type="website"
       />
       <div className="max-w-5xl mx-auto px-4 md:px-6 py-6 md:py-12">
-      {/* Header */}
+      {/* Header — plugin-first */}
       <div className="text-center mb-8 md:mb-12">
         <div className="flex flex-col sm:flex-row items-center justify-center gap-3 mb-4">
           <div className="w-12 h-12 md:w-16 md:h-16 bg-gradient-to-br from-purple-500 to-pink-500 rounded-xl md:rounded-2xl flex items-center justify-center shadow-lg shadow-purple-500/25">
-            <Download className="w-6 h-6 md:w-8 md:h-8 text-white" />
+            <Package className="w-6 h-6 md:w-8 md:h-8 text-white" />
           </div>
-          <h1 className="text-2xl sm:text-3xl md:text-4xl font-bold text-white text-center">OrcaSlicer FilamentHub Edition</h1>
+          <h1 className="text-2xl sm:text-3xl md:text-4xl font-bold text-white text-center">{t('downloadPage.pluginTitle')}</h1>
         </div>
         <p className="text-base md:text-xl text-gray-300 max-w-2xl mx-auto mb-4">
-          {t('downloadPage.headerSubtitle')}
+          {t('downloadPage.pluginSubtitle')}
         </p>
         <div className="inline-flex items-center gap-2 px-3 py-1.5 md:px-4 md:py-2 bg-purple-600/20 border border-purple-500/30 rounded-lg text-purple-300 text-xs md:text-sm">
           <Zap className="w-3.5 h-3.5 md:w-4 md:h-4" />
-          <span>{t('downloadPage.uniqueIntegration')}</span>
+          <span>{t('downloadPage.pluginBadge')}</span>
+        </div>
+      </div>
+
+      {/* Primary path — install the plugin in 3 steps */}
+      <div className="mb-12 bg-white/5 backdrop-blur-sm rounded-2xl p-6 md:p-8 border border-white/10">
+        <h2 className="text-2xl font-bold text-white mb-6 flex items-center gap-2">
+          <Zap className="w-6 h-6 text-purple-400" />
+          {t('downloadPage.stepsTitle')}
+        </h2>
+        <div className="grid md:grid-cols-3 gap-4 md:gap-6">
+          {/* Step 1 — get official OrcaSlicer */}
+          <div className="bg-white/5 rounded-xl p-5 border border-white/10 flex flex-col">
+            <div className="flex items-center gap-3 mb-3">
+              <span className="w-8 h-8 rounded-full bg-purple-600/30 border border-purple-500/40 text-purple-200 font-bold flex items-center justify-center">1</span>
+              <h3 className="text-lg font-semibold text-white">{t('downloadPage.step1Title')}</h3>
+            </div>
+            <p className="text-gray-300 text-sm flex-1">{t('downloadPage.step1Desc')}</p>
+            <a
+              href="https://github.com/OrcaSlicer/OrcaSlicer/releases"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="mt-4 inline-flex items-center justify-center gap-2 px-4 py-2 bg-white/10 hover:bg-white/20 border border-white/20 text-white text-sm font-medium rounded-lg transition-all"
+            >
+              <Download className="w-4 h-4" />
+              <span>{t('downloadPage.step1Cta')}</span>
+              <ExternalLink className="w-3 h-3" />
+            </a>
+          </div>
+
+          {/* Step 2 — install the plugin from the Plugin Hub */}
+          <div className="bg-white/5 rounded-xl p-5 border border-white/10 flex flex-col">
+            <div className="flex items-center gap-3 mb-3">
+              <span className="w-8 h-8 rounded-full bg-purple-600/30 border border-purple-500/40 text-purple-200 font-bold flex items-center justify-center">2</span>
+              <h3 className="text-lg font-semibold text-white">{t('downloadPage.step2Title')}</h3>
+            </div>
+            <p className="text-gray-300 text-sm flex-1">{t('downloadPage.step2Desc')}</p>
+            <p className="text-gray-500 text-xs mt-3">{t('downloadPage.step2Sideload')}</p>
+          </div>
+
+          {/* Step 3 — open FilamentHub */}
+          <div className="bg-white/5 rounded-xl p-5 border border-white/10 flex flex-col">
+            <div className="flex items-center gap-3 mb-3">
+              <span className="w-8 h-8 rounded-full bg-purple-600/30 border border-purple-500/40 text-purple-200 font-bold flex items-center justify-center">3</span>
+              <h3 className="text-lg font-semibold text-white">{t('downloadPage.step3Title')}</h3>
+            </div>
+            <p className="text-gray-300 text-sm flex-1">{t('downloadPage.step3Desc')}</p>
+          </div>
         </div>
       </div>
 
@@ -396,7 +443,18 @@ export function DownloadPage() {
         </div>
       </div>
 
-      {/* Download Section */}
+      {/* Archival fallback — the prebuilt FilamentHub Edition fork */}
+      <div className="mt-12 mb-6 rounded-2xl border border-amber-500/25 bg-amber-500/5 p-5 md:p-6">
+        <div className="flex items-start gap-3">
+          <Package className="w-5 h-5 text-amber-300 flex-shrink-0 mt-0.5" />
+          <div>
+            <h2 className="text-xl font-bold text-amber-200 mb-1">{t('downloadPage.fallbackTitle')}</h2>
+            <p className="text-sm text-amber-100/70">{t('downloadPage.fallbackDesc')}</p>
+          </div>
+        </div>
+      </div>
+
+      {/* Download Section (archival fork build) */}
       <div className="bg-gradient-to-br from-purple-900/50 to-indigo-900/50 backdrop-blur-sm rounded-2xl p-8 border border-white/20 shadow-xl">
         <h2 className="text-2xl font-bold text-white mb-6">{t('downloadPage.selectPlatform')}</h2>
 
