@@ -298,13 +298,13 @@ function MaterialSystemSection({ printer, system, presetsSeedMap, spools, printe
 interface PresetSlotsPanelProps {
   compact?: boolean;
   spools?: UserSpool[];
-  printerBindings?: Array<{ id: number; name: string }>;
+  printerProfiles?: Array<{ id: number; name: string }>;
 }
 
 export function PresetSlotsPanel({
   compact = false,
   spools: externalSpools,
-  printerBindings,
+  printerProfiles,
 }: PresetSlotsPanelProps) {
   const { t } = useTranslation();
   const { user } = useAuth();
@@ -340,31 +340,21 @@ export function PresetSlotsPanel({
 
   const spools = externalSpools ?? fetchedSpools;
 
-  const printerNameById = useMemo(() => {
+  const printerProfileNameById = useMemo(() => {
     const map = new Map<number, string>();
-    for (const binding of printerBindings ?? []) {
-      map.set(binding.id, binding.name);
+    for (const profile of printerProfiles ?? []) {
+      map.set(profile.id, profile.name);
     }
     return map;
-  }, [printerBindings]);
-
-  const filteredPrinters = useMemo(() => {
-    if (!printerBindings || printerBindings.length === 0) {
-      return physicalPrinters;
-    }
-    return physicalPrinters.filter(
-      (printer) => printer.material_systems.some((system) => system.provider === 'happy_hare') ||
-      (printer.printer_id != null && printerNameById.has(printer.printer_id))
-    );
-  }, [physicalPrinters, printerBindings, printerNameById]);
+  }, [printerProfiles]);
 
   const materialSections = useMemo(
-    () => filteredPrinters.flatMap((printer) =>
+    () => physicalPrinters.flatMap((printer) =>
       printer.material_systems
         .filter((system) => system.active)
         .map((system) => ({ printer, system })),
     ),
-    [filteredPrinters],
+    [physicalPrinters],
   );
 
   const presetsMap: Record<number, Pick<Preset, 'id' | 'name' | 'extruder_temp' | 'bed_temp'>> = {};
@@ -399,16 +389,6 @@ export function PresetSlotsPanel({
     );
   }
 
-  if (filteredPrinters.length === 0) {
-    return (
-      <div className="flex flex-col items-center justify-center rounded-2xl border border-dashed border-white/10 py-12 text-center">
-        <Cpu className="mb-4 h-12 w-12 text-gray-600" />
-        <h2 className="mb-2 text-lg font-semibold text-white">{t('presetSlots.noMappedDevices')}</h2>
-        <p className="max-w-sm text-sm text-gray-500">{t('presetSlots.noMappedDevicesDesc')}</p>
-      </div>
-    );
-  }
-
   if (materialSections.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center rounded-2xl border border-dashed border-white/10 py-12 text-center">
@@ -429,7 +409,10 @@ export function PresetSlotsPanel({
             system={system}
             presetsSeedMap={presetsMap}
             spools={spools}
-            printerProfileName={printer.printer_id != null ? (printerNameById.get(printer.printer_id) ?? null) : null}
+            printerProfileName={printer.printer_profile_ids
+              .map((profileId) => printerProfileNameById.get(profileId))
+              .filter((name): name is string => name != null)
+              .join(', ') || null}
             onGateClick={handleGateClick}
           />
         ))}

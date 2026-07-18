@@ -938,7 +938,7 @@ export const ProfilePage: React.FC = () => {
       {userTab === 'spools' && (
         <SpoolsTab
           spools={spoolsData}
-          printerBindings={printersWithProfiles.map((printer) => ({ id: printer.id, name: printer.name }))}
+          printerProfiles={myPrinterProfiles.map((profile) => ({ id: profile.id, name: profile.name }))}
           onRefetch={refetchSpools}
           isAddOpen={isAddSpoolOpen}
           setIsAddOpen={setAddSpoolOpen}
@@ -2650,7 +2650,7 @@ const UseSpoolForm: React.FC<UseSpoolFormProps> = ({ spool, onSaved, onCancel })
 
 interface SpoolsTabProps {
   spools: UserSpool[];
-  printerBindings: Array<{ id: number; name: string }>;
+  printerProfiles: Array<{ id: number; name: string }>;
   onRefetch: () => void;
   isAddOpen: boolean;
   setIsAddOpen: (v: boolean) => void;
@@ -2765,7 +2765,7 @@ const AddDeviceForm: React.FC<{
 
 const SpoolsTab: React.FC<SpoolsTabProps> = ({
   spools,
-  printerBindings,
+  printerProfiles,
   onRefetch,
   isAddOpen,
   setIsAddOpen,
@@ -3263,7 +3263,7 @@ const SpoolsTab: React.FC<SpoolsTabProps> = ({
         {spoolTab === 'active' ? (
           <div className="space-y-4 md:space-y-5">
             <div className="bg-white/10 backdrop-blur-sm border border-white/20 rounded-2xl p-4 md:p-5">
-              <PresetSlotsPanel compact spools={spools} printerBindings={printerBindings} />
+              <PresetSlotsPanel compact spools={spools} printerProfiles={printerProfiles} />
             </div>
 
             <div className="space-y-3">
