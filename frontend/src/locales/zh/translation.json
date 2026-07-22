@@ -2518,6 +2518,8 @@
     "calculatorSubtitleLong": "使用地区调整计算零件的确切成本",
     "myPrinters": "我的打印机",
     "myPrintersDescription": "管理打印机及其配置。与OrcaSlicer同步。",
+    "orcaProfilesHeading": "Orca 配置",
+    "orcaProfilesDescription": "来自 OrcaSlicer 的配置：喷嘴和打印配置。构成你打印机的基本单元。",
     "printersCount": "{{count}}台打印机",
     "profilesCount": "{{count}}个配置文件",
     "nozzles": "喷嘴",
@@ -5060,6 +5062,17 @@
     "ERR_SPOOL_USED_EXCEEDS_INITIAL": "已使用重量不能超过初始重量",
     "ERR_SPOOL_LOCATION_CONFLICT": "该线轴正被另一个请求移动，请刷新后重试",
     "ERR_SNAPSHOT_TOO_FREQUENT": "快照发送过于频繁"
+  },
+  "myPrinters": {
+    "title": "我的打印机",
+    "subtitle": "通过网络打印时，它们会自动从 OrcaSlicer 出现。",
+    "loading": "加载中…",
+    "loadError": "无法加载打印机。",
+    "empty": "一旦插件在 OrcaSlicer 中发现打印机，它们就会自动显示在这里。",
+    "configurations": "配置",
+    "noConfigurations": "暂无配置",
+    "gates": "{{count}} 个通道",
+    "directFeed": "直接供料"
   },
   "deviceLink": {
     "label": "插件连接",

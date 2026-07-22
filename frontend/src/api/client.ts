@@ -2446,6 +2446,15 @@ export interface PhysicalPrinter {
   updated_at: string;
 }
 
+// Safe display view of a connection binding. The printer is identified by
+// physical_printer_id; the endpoint is a volatile label, never identity.
+export interface PrinterConnectionBinding {
+  physical_printer_id: number;
+  provider: string | null;
+  display_endpoint: string | null;
+  last_seen_at: string;
+}
+
 export interface DeviceUpdatePayload {
   name?: string | null;
   gate_count?: number | null;
@@ -2495,6 +2504,13 @@ export const devicesAPI = {
 export const physicalPrintersAPI = {
   list: async (): Promise<PhysicalPrinter[]> => {
     const response = await api.get<PhysicalPrinter[]>('/physical-printers');
+    return response.data;
+  },
+
+  listBindings: async (): Promise<PrinterConnectionBinding[]> => {
+    const response = await api.get<PrinterConnectionBinding[]>(
+      '/orcaslicer/printer-connections/bindings',
+    );
     return response.data;
   },
 

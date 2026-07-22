@@ -72,6 +72,25 @@ async def _ensure_profile_link(
         )
 
 
+def display_endpoint(binding: PrinterConnectionBinding) -> str | None:
+    """A human-readable endpoint label (host[:port]) — never identity or secrets."""
+    if binding.host:
+        return f"{binding.host}:{binding.port}" if binding.port else binding.host
+    return binding.print_host
+
+
+async def list_user_bindings(db: AsyncSession, user_id: int) -> list[PrinterConnectionBinding]:
+    return list(
+        (
+            await db.execute(
+                select(PrinterConnectionBinding)
+                .where(PrinterConnectionBinding.user_id == user_id)
+                .order_by(PrinterConnectionBinding.physical_printer_id)
+            )
+        ).scalars().all()
+    )
+
+
 async def reconcile_user_printers(db: AsyncSession, user_id: int) -> int:
     """Upsert physical printers + bindings from the user's observations.
 

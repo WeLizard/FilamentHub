@@ -70,6 +70,7 @@ import { CreatePrinterRequestModal } from '../components/CreatePrinterRequestMod
 import { SettingsTab } from '../components/SettingsTab';
 import { ExportFromOrcaSlicerButton } from '../components/ExportFromOrcaSlicerButton';
 import { ExportPrinterProfilesButton } from '../components/ExportPrinterProfilesButton';
+import { MyPrintersList } from '../components/MyPrintersList';
 const CreatePrinterProfileModal = lazy(() =>
   import('../components/CreatePrinterProfileModal').then(m => ({ default: m.CreatePrinterProfileModal }))
 );
@@ -1048,12 +1049,16 @@ export const ProfilePage: React.FC = () => {
 
       {/* Printer Profiles Tab */}
       {userTab === 'printer-profiles' && (
-        <div className="space-y-6">
-          <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+        <div className="space-y-8">
+          <MyPrintersList
+            printerProfiles={myPrinterProfiles.map((p) => ({ id: p.id, name: p.name }))}
+          />
+
+          <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between pt-6 border-t border-white/10">
             <div>
-              <h2 className="text-2xl font-bold text-white">{t('profilePage.myPrinters')}</h2>
+              <h2 className="text-2xl font-bold text-white">{t('profilePage.orcaProfilesHeading')}</h2>
               <p className="text-sm text-gray-400">
-                {t('profilePage.myPrintersDescription')}
+                {t('profilePage.orcaProfilesDescription')}
               </p>
             </div>
             <div className="flex items-center gap-3">

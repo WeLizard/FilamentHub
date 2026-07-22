@@ -2235,6 +2235,8 @@
     "calculatorSubtitleLong": "Рассчитайте точную стоимость детали с учётом региональных особенностей",
     "myPrinters": "Мои принтеры",
     "myPrintersDescription": "Управление принтерами и их профилями. Синхронизация с OrcaSlicer.",
+    "orcaProfilesHeading": "Профили Orca",
+    "orcaProfilesDescription": "Конфигурации из OrcaSlicer: сопла и профили печати. Кирпичики, из которых складываются ваши принтеры.",
     "printersCount": "{{count}} принтеров",
     "profilesCount": "{{count}} профилей",
     "nozzles": "Сопла",
@@ -5196,6 +5198,17 @@
     "ERR_SPOOL_USED_EXCEEDS_INITIAL": "Использованный вес не может превышать начальный",
     "ERR_SPOOL_LOCATION_CONFLICT": "Катушку уже перемещает другой запрос. Обновите страницу и повторите",
     "ERR_SNAPSHOT_TOO_FREQUENT": "Снимки отправляются слишком часто"
+  },
+  "myPrinters": {
+    "title": "Мои принтеры",
+    "subtitle": "Появляются сами из OrcaSlicer, когда вы печатаете по сети.",
+    "loading": "Загрузка…",
+    "loadError": "Не удалось загрузить принтеры.",
+    "empty": "Принтеры появятся здесь сами, как только плагин увидит их в OrcaSlicer.",
+    "configurations": "Конфигурации",
+    "noConfigurations": "Пока без конфигураций",
+    "gates": "{{count}} гейтов",
+    "directFeed": "Прямая подача"
   },
   "deviceLink": {
     "label": "Связь с плагином",

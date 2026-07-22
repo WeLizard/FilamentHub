@@ -2521,6 +2521,8 @@
     "calculatorSubtitleLong": "Calculate the exact cost of a part with regional adjustments",
     "myPrinters": "My Printers",
     "myPrintersDescription": "Manage printers and their profiles. Sync with OrcaSlicer.",
+    "orcaProfilesHeading": "Orca Profiles",
+    "orcaProfilesDescription": "Configurations from OrcaSlicer: nozzles and print profiles. The building blocks your printers are made of.",
     "printersCount": "{{count}} printers",
     "profilesCount": "{{count}} profiles",
     "nozzles": "Nozzles",
@@ -5065,6 +5067,17 @@
     "ERR_SPOOL_USED_EXCEEDS_INITIAL": "Used weight cannot exceed initial weight",
     "ERR_SPOOL_LOCATION_CONFLICT": "This spool is being moved by another request. Refresh and try again",
     "ERR_SNAPSHOT_TOO_FREQUENT": "Snapshots are being sent too frequently"
+  },
+  "myPrinters": {
+    "title": "My Printers",
+    "subtitle": "They show up on their own from OrcaSlicer when you print over the network.",
+    "loading": "Loading…",
+    "loadError": "Failed to load printers.",
+    "empty": "Printers will appear here on their own once the plugin sees them in OrcaSlicer.",
+    "configurations": "Configurations",
+    "noConfigurations": "No configurations yet",
+    "gates": "{{count}} gates",
+    "directFeed": "Direct feed"
   },
   "deviceLink": {
     "label": "Plugin link",

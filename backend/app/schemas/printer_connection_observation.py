@@ -1,5 +1,7 @@
 """Schemas for the OrcaSlicer plugin printer-connection observation stream."""
 
+from datetime import datetime
+
 from pydantic import BaseModel, Field
 
 
@@ -25,3 +27,15 @@ class PrinterConnectionObserveResponse(BaseModel):
     accepted: int
     matched: int
     unmatched: int
+
+
+class PrinterConnectionBindingResponse(BaseModel):
+    """Safe display view of a connection binding — never identity, never secrets.
+
+    The physical printer is identified by physical_printer_id; the endpoint is a
+    volatile label. No access codes / tokens / raw credentials are exposed."""
+
+    physical_printer_id: int
+    provider: str | None
+    display_endpoint: str | None
+    last_seen_at: datetime
