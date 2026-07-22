@@ -55,7 +55,10 @@ def test_pep723_and_runtime_versions_match(plugin_module):
     ]
     assert metadata["dependencies"] == []
     project = tomllib.loads((PLUGIN_ROOT / "pyproject.toml").read_text(encoding="utf-8"))
-    assert project["project"]["version"] == plugin_module.PLUGIN_VERSION
+    assert project["project"]["dynamic"] == ["version"]
+    assert project["tool"]["setuptools"]["dynamic"]["version"] == {
+        "attr": "filamenthub_plugin.PLUGIN_VERSION"
+    }
 
 
 def test_plugin_hub_version_rejects_prerelease_suffix(plugin_module):
@@ -74,6 +77,21 @@ def test_plugin_hub_version_rejects_prerelease_suffix(plugin_module):
 def test_shell_accepts_messages_only_from_catalog_frame(plugin_module):
     assert "event.source !== frame.contentWindow" in plugin_module.PAGE
     assert "event.origin !== SITE_ORIGIN" in plugin_module.PAGE
+
+
+def test_shell_replaces_webview_errors_with_maintenance_status(plugin_module):
+    page = plugin_module.PAGE
+    assert 'id="service-status"' in page
+    assert "FilamentHub is temporarily unavailable" in page
+    assert "Your local OrcaSlicer presets are safe" in page
+    assert "FilamentHub временно недоступен" in page
+    assert "FilamentHub 暂时不可用" in page
+    assert "frame.style.visibility = 'hidden'" in page
+    assert "markCatalogReady();" in page
+    assert "fh_retry=" in page
+    assert 'title="FilamentHub catalog"' in page
+    assert "prefers-reduced-motion: reduce" in page
+    assert "#service-retry:focus-visible" in page
 
 
 def test_safe_filename_handles_windows_names_and_bounds(plugin_module):

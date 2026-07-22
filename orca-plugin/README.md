@@ -114,7 +114,7 @@ The label comes ready-made (i18n happens in the SPA) from the same
 # name = "FilamentHub"
 # description = "Browse and sync community-rated filament profiles from FilamentHub, with spool inventory and print-cost tools."
 # author = "FilamentHub"
-# version = "0.0.2"
+# version = "0.0.5"
 # network = ["filamenthub.ru", "*.filamenthub.ru"]   # proposed; ignored by current host
 # ///
 ```
@@ -143,7 +143,7 @@ python -m pytest orca-plugin/tests -q
 Output:
 
 ```text
-orca-plugin/dist/filamenthub-0.0.2/
+orca-plugin/dist/filamenthub-0.0.5/
   filamenthub_plugin.py       # install this file
   package-metadata.json       # build provenance
   SHA256SUMS                  # integrity check
@@ -187,6 +187,10 @@ for every uploaded update.
 ---
 
 ## Alpha limitations
+
+If the FilamentHub service is unreachable or under maintenance, the plugin keeps
+the remote iframe hidden and shows a local, non-technical maintenance message
+with a retry action. Local OrcaSlicer presets remain available.
 
 | # | Gap | Impact | Workaround |
 |---|---|---|---|

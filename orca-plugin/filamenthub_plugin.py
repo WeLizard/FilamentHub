@@ -7,7 +7,7 @@
 # name = "FilamentHub"
 # description = "Browse and sync community-rated filament profiles from FilamentHub, with spool inventory and print-cost tools."
 # author = "FilamentHub"
-# version = "0.0.4"
+# version = "0.0.6"
 #
 # # Proposed forward-looking key (see README gap / PR #14530 feedback). The current
 # # host reads only name/description/author/version/dependencies and ignores unknown
@@ -75,7 +75,7 @@ import orca
 # --------------------------------------------------------------------------- #
 # Configuration
 # --------------------------------------------------------------------------- #
-PLUGIN_VERSION = "0.0.4"
+PLUGIN_VERSION = "0.0.6"
 SITE_URL = "https://filamenthub.ru"
 EMBED_URL = SITE_URL + "/embed/catalog"
 API_BASE = SITE_URL + "/api/v1"
@@ -141,24 +141,49 @@ def resolve_data_dir():
 DATA_DIR = resolve_data_dir()
 
 
-def resolve_user_preset_folder():
-    """Name of the active user's preset folder under {data_dir}/user/.
+# Active user's preset folder under {data_dir}/user/<folder>/, derived from a
+# user preset's file path via preset_bundle — the audit blocks OrcaSlicer.conf.
+_user_preset_folder = None
 
-    OrcaSlicer stores user presets in user/<preset_folder>/; preset_folder is the
-    signed-in account id (a GUID) or 'default' when signed out, recorded in
-    OrcaSlicer.conf under "app". Writing to the wrong folder means the preset is
-    never loaded — the dropdown only shows presets from the active user's folder.
-    The config file has a trailing "# MD5 checksum" line, so decode just the JSON
-    prefix rather than json.load the whole thing.
-    """
-    conf = os.path.join(DATA_DIR, "OrcaSlicer.conf")
+
+def _preset_folder_from_file(preset_file):
+    parts = os.path.normpath(preset_file or "").replace("\\", "/").split("/")
+    if "user" in parts:
+        idx = parts.index("user")
+        if idx + 1 < len(parts):
+            return parts[idx + 1]
+    return None
+
+
+def refresh_user_preset_folder():
+    """Resolve and cache the folder. UI thread only (reads preset_bundle)."""
+    global _user_preset_folder
     try:
-        with open(conf, "r", encoding="utf-8-sig") as fh:
-            obj, _ = json.JSONDecoder().raw_decode(fh.read().lstrip())
-        folder = (obj.get("app") or {}).get("preset_folder")
-        if folder:
-            return folder
-    except (OSError, ValueError):
+        bundle = orca.host.preset_bundle()
+        for collection in (bundle.filaments, bundle.printers):
+            for i in range(collection.size()):
+                preset = collection.preset(i)
+                if preset.is_user():
+                    folder = _preset_folder_from_file(preset.file)
+                    if folder:
+                        _user_preset_folder = folder
+                        return folder
+    except Exception:
+        pass
+    return _user_preset_folder
+
+
+def resolve_user_preset_folder():
+    """Cached folder, else the sole non-default account dir on disk, else 'default'."""
+    if _user_preset_folder:
+        return _user_preset_folder
+    try:
+        base = os.path.join(DATA_DIR, "user")
+        subs = [d for d in os.listdir(base)
+                if d != "default" and os.path.isdir(os.path.join(base, d))]
+        if len(subs) == 1:
+            return subs[0]
+    except OSError:
         pass
     return "default"
 
@@ -582,6 +607,41 @@ def http_post_json(path, token, payload):
         return 0, str(exc).encode("utf-8", errors="replace")
 
 
+def observe_printer_presets():
+    """User printer presets that carry a network endpoint, as observed connection
+    data (UI thread — reads preset_bundle). printhost_apikey is never sent."""
+    observed = []
+    try:
+        printers = orca.host.preset_bundle().printers
+        for i in range(printers.size()):
+            preset = printers.preset(i)
+            if not preset.is_user():
+                continue
+            host = preset.config_value("print_host")
+            if not host:
+                continue
+            observed.append({
+                "preset_name": preset.name,
+                "printer_settings_id": preset.config_value("printer_settings_id") or "",
+                "inherits": preset.config_value("inherits") or "",
+                "printer_model": preset.config_value("printer_model") or "",
+                "print_host": host,
+                "host_type": preset.config_value("host_type") or "",
+            })
+    except Exception:
+        pass
+    return observed
+
+
+def send_printer_observations(token, observations):
+    """POST observed printer connection data. The backend records it raw; the
+    plugin makes no physical-printer identity decisions."""
+    if not token or not observations:
+        return
+    http_post_json("/orcaslicer/printer-connections/observe", token,
+                   {"observations": observations})
+
+
 # --------------------------------------------------------------------------- #
 # Two-way sync (all plugin-side; the host is never touched). Mirrors the fork's
 # model: identity is the "filamenthub:<id>" bundle_id; the FilamentHub version is
@@ -720,7 +780,40 @@ PAGE = r"""<!DOCTYPE html>
     color:var(--orca-accent,#8b7cf8);
     border-color:var(--orca-accent,#8b7cf8);
   }
-  iframe { flex:1 1 auto; border:0; width:100%; display:block; }
+  #content { position:relative; flex:1 1 auto; min-height:0; display:flex; }
+  iframe { flex:1 1 auto; border:0; width:100%; display:block; visibility:hidden; }
+  #service-status {
+    position:absolute; inset:0; z-index:10;
+    display:flex; align-items:center; justify-content:center;
+    padding:24px; box-sizing:border-box;
+    background:var(--orca-bg,#1e1e2e); color:var(--orca-fg,#e0e0e0);
+    text-align:center;
+  }
+  #service-status-card { max-width:520px; }
+  #service-status h2 { margin:14px 0 8px; font-size:20px; font-weight:600; }
+  #service-status p {
+    margin:0; color:var(--orca-muted,#a0a0a0); font-size:13px; line-height:1.55;
+  }
+  #service-spinner {
+    width:28px; height:28px; margin:0 auto;
+    border:3px solid var(--orca-border,#3c3c4c);
+    border-top-color:var(--orca-accent,#8b7cf8); border-radius:50%;
+    animation:fh-spin .9s linear infinite;
+  }
+  #service-retry {
+    display:none; margin:18px auto 0; padding:7px 18px;
+    border:1px solid var(--orca-accent,#8b7cf8); border-radius:6px;
+    background:transparent; color:var(--orca-accent,#8b7cf8);
+    font:inherit; font-size:13px; cursor:pointer;
+  }
+  #service-retry:hover { background:rgba(139,124,248,.1); }
+  #service-retry:focus-visible {
+    outline:2px solid var(--orca-accent,#8b7cf8); outline-offset:3px;
+  }
+  @keyframes fh-spin { to { transform:rotate(360deg); } }
+  @media (prefers-reduced-motion: reduce) {
+    #service-spinner { animation:none; }
+  }
 </style></head>
 <body>
   <div id="bar">
@@ -733,15 +826,98 @@ PAGE = r"""<!DOCTYPE html>
     <button data-path="/wiki">Wiki</button>
     <button id="sync" title="Sync your FilamentHub presets with OrcaSlicer">Sync</button>
   </div>
-  <iframe id="fh" src="__EMBED_URL__" allow="clipboard-write"></iframe>
+  <div id="content">
+    <div id="service-status" role="status" aria-live="polite">
+      <div id="service-status-card">
+        <div id="service-spinner"></div>
+        <h2 id="service-status-title">Connecting to FilamentHub...</h2>
+        <p id="service-status-message">Please wait while the catalog is loaded.</p>
+        <button id="service-retry" type="button">Try again</button>
+      </div>
+    </div>
+    <iframe id="fh" src="__EMBED_URL__" title="FilamentHub catalog" allow="clipboard-write"></iframe>
+  </div>
 <script>
 'use strict';
 var SITE_ORIGIN = '__SITE_ORIGIN__';
+var EMBED_URL = '__EMBED_URL__';
 var OAUTH_STATUS_PATH = '__OAUTH_STATUS_PATH__';
 var frame = document.getElementById('fh');
 var wasLoggedIn = false;
 var oauthPollTimer = null;
 var oauthDeadline = 0;
+var catalogReady = false;
+var catalogReadyTimer = null;
+var STATUS_COPY = {
+  en: {
+    connectTitle: 'Connecting to FilamentHub...',
+    connectMessage: 'Please wait while the catalog is loaded.',
+    unavailableTitle: 'FilamentHub is temporarily unavailable',
+    unavailableMessage: 'The service may be undergoing maintenance. Your local OrcaSlicer presets are safe. Please try again later.',
+    retry: 'Try again'
+  },
+  ru: {
+    connectTitle: 'Подключение к FilamentHub…',
+    connectMessage: 'Подождите, пока загрузится каталог.',
+    unavailableTitle: 'FilamentHub временно недоступен',
+    unavailableMessage: 'Возможно, сейчас идут технические работы. Ваши локальные профили OrcaSlicer в безопасности. Попробуйте ещё раз позже.',
+    retry: 'Повторить'
+  },
+  zh: {
+    connectTitle: '正在连接 FilamentHub…',
+    connectMessage: '请稍候，目录正在加载。',
+    unavailableTitle: 'FilamentHub 暂时不可用',
+    unavailableMessage: '服务可能正在维护中。您的本地 OrcaSlicer 预设不会受到影响，请稍后重试。',
+    retry: '重试'
+  }
+};
+var browserLanguage = (navigator.language || 'en').toLowerCase();
+var statusLocale = browserLanguage.indexOf('ru') === 0
+  ? 'ru'
+  : browserLanguage.indexOf('zh') === 0
+    ? 'zh'
+    : 'en';
+var statusCopy = STATUS_COPY[statusLocale];
+document.documentElement.lang = statusLocale;
+
+
+function showCatalogStatus(mode) {
+  var unavailable = mode === 'unavailable';
+  document.getElementById('service-status').style.display = 'flex';
+  document.getElementById('service-spinner').style.display = unavailable ? 'none' : 'block';
+  document.getElementById('service-status-title').textContent = unavailable
+    ? statusCopy.unavailableTitle
+    : statusCopy.connectTitle;
+  document.getElementById('service-status-message').textContent = unavailable
+    ? statusCopy.unavailableMessage
+    : statusCopy.connectMessage;
+  document.getElementById('service-retry').textContent = statusCopy.retry;
+  document.getElementById('service-retry').style.display = unavailable ? 'block' : 'none';
+}
+function waitForCatalog() {
+  catalogReady = false;
+  frame.style.visibility = 'hidden';
+  showCatalogStatus('connecting');
+  if (catalogReadyTimer) clearTimeout(catalogReadyTimer);
+  catalogReadyTimer = setTimeout(function () {
+    if (!catalogReady) showCatalogStatus('unavailable');
+  }, 10000);
+}
+function markCatalogReady() {
+  catalogReady = true;
+  if (catalogReadyTimer) {
+    clearTimeout(catalogReadyTimer);
+    catalogReadyTimer = null;
+  }
+  document.getElementById('service-status').style.display = 'none';
+  frame.style.visibility = 'visible';
+}
+document.getElementById('service-retry').addEventListener('click', function () {
+  waitForCatalog();
+  var separator = EMBED_URL.indexOf('?') === -1 ? '?' : '&';
+  frame.src = EMBED_URL + separator + 'fh_retry=' + Date.now();
+});
+waitForCatalog();
 
 // Auth-only toolbar controls: Profile and Sync only make sense when signed in.
 // When signed out, the "FilamentHub" brand label doubles as a sign-in trigger.
@@ -775,6 +951,7 @@ window.addEventListener('message', function (event) {
   var data = event.data;
   if (event.source !== frame.contentWindow || event.origin !== SITE_ORIGIN) return;
   if (!data || data.source !== 'filamenthub-plugin') return;
+  markCatalogReady();
   if (data.type === 'auth-state') {
     // label present = signed in: show the username + a sign-out button, and the
     // auth-only controls (Profile, Sync). On a fresh sign-in, return the catalog
@@ -1011,7 +1188,10 @@ class FilamentHubCatalog(orca.script.ScriptPluginCapabilityBase):
         if not token:
             return
         known = self._known_filament_preset_names()  # host read on the UI thread
+        refresh_user_preset_folder()
+        observations = observe_printer_presets()  # UI thread: read printer connection data
         threading.Thread(target=self._do_sync, args=(token, known, announce), daemon=True).start()
+        threading.Thread(target=send_printer_observations, args=(token, observations), daemon=True).start()
 
     def execute(self):
         created = self._open()
@@ -1056,11 +1236,13 @@ class FilamentHubCatalog(orca.script.ScriptPluginCapabilityBase):
             if not token:
                 token = (load_saved_auth() or {}).get("accessToken") or ""
             known = self._known_filament_preset_names()  # host read on the UI thread
+            refresh_user_preset_folder()
             threading.Thread(target=self._do_import, args=(preset_id, token, known), daemon=True).start()
         elif msg_type == "sync":
             saved = load_saved_auth() or {}
             token = saved.get("accessToken") or ""
             known = self._known_filament_preset_names()  # host read on the UI thread
+            refresh_user_preset_folder()
             threading.Thread(target=self._do_sync, args=(token, known), daemon=True).start()
         elif msg_type == "auth-token":
             # Login / token refresh in the catalog — persist for session restore,
