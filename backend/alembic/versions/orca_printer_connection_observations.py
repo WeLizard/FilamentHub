@@ -45,10 +45,9 @@ def upgrade() -> None:
         sa.ForeignKeyConstraint(["matched_printer_profile_id"], ["printer_profiles.id"], ondelete="SET NULL"),
         sa.PrimaryKeyConstraint("id"),
     )
-    op.create_index(f"ix_{TABLE}_owner_user_id", TABLE, ["owner_user_id"])
-    op.create_index(f"ix_{TABLE}_printer_settings_id", TABLE, ["printer_settings_id"])
-    op.create_index(f"ix_{TABLE}_observation_fingerprint", TABLE, ["observation_fingerprint"])
-    op.create_index(f"ix_{TABLE}_matched_printer_profile_id", TABLE, ["matched_printer_profile_id"])
+    # Short explicit names — PostgreSQL caps identifiers at 63 chars.
+    op.create_index("ix_orca_conn_obs_settings_id", TABLE, ["printer_settings_id"])
+    op.create_index("ix_orca_conn_obs_matched_profile", TABLE, ["matched_printer_profile_id"])
     op.create_index(
         "ix_orca_conn_obs_owner_fingerprint",
         TABLE,
@@ -59,8 +58,6 @@ def upgrade() -> None:
 
 def downgrade() -> None:
     op.drop_index("ix_orca_conn_obs_owner_fingerprint", table_name=TABLE)
-    op.drop_index(f"ix_{TABLE}_matched_printer_profile_id", table_name=TABLE)
-    op.drop_index(f"ix_{TABLE}_observation_fingerprint", table_name=TABLE)
-    op.drop_index(f"ix_{TABLE}_printer_settings_id", table_name=TABLE)
-    op.drop_index(f"ix_{TABLE}_owner_user_id", table_name=TABLE)
+    op.drop_index("ix_orca_conn_obs_matched_profile", table_name=TABLE)
+    op.drop_index("ix_orca_conn_obs_settings_id", table_name=TABLE)
     op.drop_table(TABLE)

@@ -24,7 +24,7 @@ class OrcaPrinterConnectionObservation(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     owner_user_id: Mapped[int] = mapped_column(
-        ForeignKey("users.id", ondelete="CASCADE"), index=True
+        ForeignKey("users.id", ondelete="CASCADE")
     )
 
     source: Mapped[str] = mapped_column(
@@ -33,7 +33,7 @@ class OrcaPrinterConnectionObservation(Base):
     # Stable identity of the plugin install, when available; nullable until we have one.
     source_instance_id: Mapped[str | None] = mapped_column(String(100), nullable=True)
 
-    printer_settings_id: Mapped[str | None] = mapped_column(String(200), nullable=True, index=True)
+    printer_settings_id: Mapped[str | None] = mapped_column(String(200), nullable=True)
     preset_name: Mapped[str | None] = mapped_column(String(200), nullable=True)
     inherits: Mapped[str | None] = mapped_column(String(200), nullable=True)
     printer_model: Mapped[str | None] = mapped_column(String(200), nullable=True)
@@ -45,11 +45,11 @@ class OrcaPrinterConnectionObservation(Base):
 
     # Dedup key only (owner/source/source_instance/printer_settings_id/host_type/print_host).
     # NOT a PhysicalPrinter identity.
-    observation_fingerprint: Mapped[str] = mapped_column(String(64), index=True)
+    observation_fingerprint: Mapped[str] = mapped_column(String(64))
 
     # Match by exact printer_settings_id in the owner scope; nullable when unmatched.
     matched_printer_profile_id: Mapped[int | None] = mapped_column(
-        ForeignKey("printer_profiles.id", ondelete="SET NULL"), nullable=True, index=True
+        ForeignKey("printer_profiles.id", ondelete="SET NULL"), nullable=True
     )
 
     # Credential-free copy of what was accepted.
@@ -60,12 +60,16 @@ class OrcaPrinterConnectionObservation(Base):
     received_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     __table_args__ = (
+        # Short explicit names: PostgreSQL caps identifiers at 63 chars and the
+        # table name alone leaves no room for auto-generated ix_<table>_<column>.
         Index(
             "ix_orca_conn_obs_owner_fingerprint",
             "owner_user_id",
             "observation_fingerprint",
             unique=True,
         ),
+        Index("ix_orca_conn_obs_settings_id", "printer_settings_id"),
+        Index("ix_orca_conn_obs_matched_profile", "matched_printer_profile_id"),
     )
 
     def __repr__(self) -> str:
