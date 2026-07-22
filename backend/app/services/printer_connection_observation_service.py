@@ -1,6 +1,6 @@
 """Record OrcaSlicer plugin printer-connection observations (stage A).
 
-Staging/evidence only: idempotent upsert per observation fingerprint, credential
+Staging/evidence only: idempotent upsert per observation hash, credential
 stripping, and best-effort match to an existing PrinterProfile by exact
 printer_settings_id. No PhysicalPrinter / ConnectionBinding is created here.
 """
@@ -37,7 +37,7 @@ def _sanitize_host(value: str | None) -> str | None:
     return scheme + authority + remainder
 
 
-def _fingerprint(
+def _content_hash(
     owner_id: int,
     source_instance_id: str | None,
     printer_settings_id: str | None,
@@ -67,7 +67,7 @@ async def record_observations(
     accepted = matched = unmatched = 0
     for obs in observations:
         host = _sanitize_host(obs.print_host)
-        fingerprint = _fingerprint(
+        content_hash = _content_hash(
             owner_id, source_instance_id, obs.printer_settings_id, obs.host_type, host
         )
 
@@ -96,7 +96,7 @@ async def record_observations(
             await db.execute(
                 select(OrcaPrinterConnectionObservation).where(
                     OrcaPrinterConnectionObservation.owner_user_id == owner_id,
-                    OrcaPrinterConnectionObservation.observation_fingerprint == fingerprint,
+                    OrcaPrinterConnectionObservation.observation_hash == content_hash,
                 )
             )
         ).scalar_one_or_none()
@@ -115,7 +115,7 @@ async def record_observations(
                     print_host=host,
                     host_type=obs.host_type,
                     payload_version=PAYLOAD_VERSION,
-                    observation_fingerprint=fingerprint,
+                    observation_hash=content_hash,
                     matched_printer_profile_id=matched_id,
                     sanitized_payload=sanitized,
                 )
@@ -123,7 +123,7 @@ async def record_observations(
         else:
             # Same endpoint seen again: bump last_seen/received, refresh display
             # fields and match, never touch first_seen_at. An endpoint change
-            # produces a different fingerprint, i.e. a separate row.
+            # produces a different hash, i.e. a separate row.
             existing.last_seen_at = now
             existing.received_at = now
             existing.matched_printer_profile_id = matched_id

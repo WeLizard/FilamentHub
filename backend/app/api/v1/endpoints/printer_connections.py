@@ -12,6 +12,7 @@ from app.schemas.printer_connection_observation import (
     PrinterConnectionObserveRequest,
     PrinterConnectionObserveResponse,
 )
+from app.services.physical_printer_discovery_service import reconcile_user_printers
 from app.services.printer_connection_observation_service import record_observations
 
 router = APIRouter(prefix="/orcaslicer/printer-connections", tags=["printer-connections"])
@@ -23,13 +24,12 @@ async def observe_printer_connections(
     current_user: Annotated[User, Depends(get_current_user_or_plugin_preset_write)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> PrinterConnectionObserveResponse:
-    """Record observed printer connection data from the OrcaSlicer plugin.
-
-    Staging/evidence only — no PhysicalPrinter or ConnectionBinding is created.
-    """
+    """Record observed printer connection data from the OrcaSlicer plugin, then
+    reconcile it into physical printers + connection bindings."""
     accepted, matched, unmatched = await record_observations(
         db, current_user.id, payload.source_instance_id, payload.observations
     )
+    await reconcile_user_printers(db, current_user.id)
     return PrinterConnectionObserveResponse(
         accepted=accepted, matched=matched, unmatched=unmatched
     )

@@ -43,9 +43,9 @@ class OrcaPrinterConnectionObservation(Base):
 
     payload_version: Mapped[int] = mapped_column(Integer, default=1, server_default="1")
 
-    # Dedup key only (owner/source/source_instance/printer_settings_id/host_type/print_host).
-    # NOT a PhysicalPrinter identity.
-    observation_fingerprint: Mapped[str] = mapped_column(String(64))
+    # Content dedup hash only (owner/source/source_instance/printer_settings_id/
+    # host_type/print_host). NOT a device fingerprint or a PhysicalPrinter identity.
+    observation_hash: Mapped[str] = mapped_column(String(64))
 
     # Match by exact printer_settings_id in the owner scope; nullable when unmatched.
     matched_printer_profile_id: Mapped[int | None] = mapped_column(
@@ -63,9 +63,9 @@ class OrcaPrinterConnectionObservation(Base):
         # Short explicit names: PostgreSQL caps identifiers at 63 chars and the
         # table name alone leaves no room for auto-generated ix_<table>_<column>.
         Index(
-            "ix_orca_conn_obs_owner_fingerprint",
+            "ix_orca_conn_obs_owner_hash",
             "owner_user_id",
-            "observation_fingerprint",
+            "observation_hash",
             unique=True,
         ),
         Index("ix_orca_conn_obs_settings_id", "printer_settings_id"),

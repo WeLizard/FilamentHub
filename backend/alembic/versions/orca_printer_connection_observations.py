@@ -35,7 +35,7 @@ def upgrade() -> None:
         sa.Column("print_host", sa.String(length=500), nullable=True),
         sa.Column("host_type", sa.String(length=50), nullable=True),
         sa.Column("payload_version", sa.Integer(), server_default="1", nullable=False),
-        sa.Column("observation_fingerprint", sa.String(length=64), nullable=False),
+        sa.Column("observation_hash", sa.String(length=64), nullable=False),
         sa.Column("matched_printer_profile_id", sa.Integer(), nullable=True),
         sa.Column("sanitized_payload", sa.JSON(), nullable=True),
         sa.Column("first_seen_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
@@ -49,15 +49,15 @@ def upgrade() -> None:
     op.create_index("ix_orca_conn_obs_settings_id", TABLE, ["printer_settings_id"])
     op.create_index("ix_orca_conn_obs_matched_profile", TABLE, ["matched_printer_profile_id"])
     op.create_index(
-        "ix_orca_conn_obs_owner_fingerprint",
+        "ix_orca_conn_obs_owner_hash",
         TABLE,
-        ["owner_user_id", "observation_fingerprint"],
+        ["owner_user_id", "observation_hash"],
         unique=True,
     )
 
 
 def downgrade() -> None:
-    op.drop_index("ix_orca_conn_obs_owner_fingerprint", table_name=TABLE)
+    op.drop_index("ix_orca_conn_obs_owner_hash", table_name=TABLE)
     op.drop_index("ix_orca_conn_obs_matched_profile", table_name=TABLE)
     op.drop_index("ix_orca_conn_obs_settings_id", table_name=TABLE)
     op.drop_table(TABLE)
