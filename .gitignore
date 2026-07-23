@@ -83,6 +83,8 @@ backend/static/uploads/*
 
 # Docs folder - exclude completely from Git to keep the repository small.
 docs/
+# Private local documentation repository
+.docs/
 
 # Backend test files and scripts
 backend/test_*.py
@@ -161,3 +163,14 @@ bot/start.bat
 
 # acme-dns API credentials for SSL auto-renewal — secrets, never commit
 certbot/acmedns-creds.json
+
+# Graphify knowledge-graph output (local only)
+graphify-out/
+agy.mcp.json
+cline.mcp.json
+cursor.mcp.json
+gemini.mcp.json
+.vscode/mcp.json
+opencode.json
+
+
