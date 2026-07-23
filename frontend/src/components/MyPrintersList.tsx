@@ -1,11 +1,14 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
-import { Printer, Wifi } from 'lucide-react';
+import { Printer, Settings, Wifi } from 'lucide-react';
 import {
   physicalPrintersAPI,
+  type PhysicalPrinter,
   type PrinterConnectionBinding,
 } from '../api/client';
+import type { PrinterProfile } from '../types/api';
+import { PhysicalPrinterSettingsModal } from './PhysicalPrinterSettingsModal';
 
 interface AttachableProfile {
   id: number;
@@ -15,6 +18,8 @@ interface AttachableProfile {
 interface MyPrintersListProps {
   /** The user's Orca machine profiles, to resolve a printer's config names. */
   printerProfiles: AttachableProfile[];
+  /** Open the configuration (PrinterProfile) editor from a printer's settings. */
+  onEditConfiguration?: (profile: PrinterProfile) => void;
 }
 
 /**
@@ -22,8 +27,9 @@ interface MyPrintersListProps {
  * Identity is physical_printer_id; the endpoint is only a label. Gate/spool
  * layout lives in "My Filaments" — here we only show how a printer is equipped.
  */
-export function MyPrintersList({ printerProfiles }: MyPrintersListProps) {
+export function MyPrintersList({ printerProfiles, onEditConfiguration }: MyPrintersListProps) {
   const { t } = useTranslation();
+  const [settingsPrinter, setSettingsPrinter] = useState<PhysicalPrinter | null>(null);
 
   const { data: printers, isLoading, isError } = useQuery({
     queryKey: ['physical-printers'],
@@ -49,6 +55,7 @@ export function MyPrintersList({ printerProfiles }: MyPrintersListProps) {
   const list = printers ?? [];
 
   return (
+    <>
     <div className="space-y-4">
       <div>
         <h3 className="text-lg font-semibold text-white">{t('myPrinters.title')}</h3>
@@ -72,7 +79,15 @@ export function MyPrintersList({ printerProfiles }: MyPrintersListProps) {
               <div key={printer.id} className="bg-white/5 rounded-xl border border-white/10 p-4 flex flex-col gap-3">
                 <div className="flex items-center gap-2 min-w-0">
                   <Printer className="w-5 h-5 text-purple-400 flex-shrink-0" />
-                  <h4 className="text-sm font-semibold text-white truncate">{printer.name}</h4>
+                  <h4 className="flex-1 text-sm font-semibold text-white truncate">{printer.name}</h4>
+                  <button
+                    type="button"
+                    onClick={() => setSettingsPrinter(printer)}
+                    className="text-gray-400 hover:text-white transition-colors flex-shrink-0"
+                    title={t('printerSettings.title')}
+                  >
+                    <Settings className="w-4 h-4" />
+                  </button>
                 </div>
 
                 {binding && (binding.provider || binding.display_endpoint) && (
@@ -126,5 +141,19 @@ export function MyPrintersList({ printerProfiles }: MyPrintersListProps) {
         </div>
       )}
     </div>
+
+    {settingsPrinter && (
+      <PhysicalPrinterSettingsModal
+        isOpen
+        printer={settingsPrinter}
+        binding={bindingByPrinter.get(settingsPrinter.id) ?? null}
+        onClose={() => setSettingsPrinter(null)}
+        onEditConfiguration={(profile) => {
+          setSettingsPrinter(null);
+          onEditConfiguration?.(profile);
+        }}
+      />
+    )}
+    </>
   );
 }

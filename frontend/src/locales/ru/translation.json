@@ -4443,6 +4443,8 @@
     "messageGeneric": "Вы уверены, что хотите удалить этот элемент? Это действие нельзя отменить."
   },
   "common": {
+    "close": "Закрыть",
+    "save": "Сохранить",
     "select": "Выберите...",
     "cancel": "Отмена",
     "loading": "Загрузка…",
@@ -5198,6 +5200,29 @@
     "ERR_SPOOL_USED_EXCEEDS_INITIAL": "Использованный вес не может превышать начальный",
     "ERR_SPOOL_LOCATION_CONFLICT": "Катушку уже перемещает другой запрос. Обновите страницу и повторите",
     "ERR_SNAPSHOT_TOO_FREQUENT": "Снимки отправляются слишком часто"
+  },
+  "printerSettings": {
+    "title": "Настройки принтера",
+    "basics": "Основное",
+    "name": "Имя",
+    "catalogModel": "Каталожная модель",
+    "catalogModelPlaceholder": "Выберите модель",
+    "catalogModelNotFound": "Модель не найдена",
+    "configurations": "Конфигурации Orca",
+    "noConfigurations": "Конфигурации ещё не привязаны",
+    "attachConfiguration": "Привязать конфигурацию",
+    "detach": "Отвязать",
+    "editConfiguration": "Настроить конфигурацию",
+    "connection": "Подключение",
+    "noConnection": "Нет данных о подключении",
+    "saveError": "Не удалось сохранить настройки"
+  },
+  "printerConfig": {
+    "mm": "мм",
+    "pickLabel": "Рекомендации под мой принтер",
+    "selectPrinter": "Выберите принтер",
+    "selectConfig": "Выберите конфигурацию",
+    "noConfigsForPrinter": "Нет конфигураций"
   },
   "myPrinters": {
     "title": "Мои принтеры",

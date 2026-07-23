@@ -1052,6 +1052,10 @@ export const ProfilePage: React.FC = () => {
         <div className="space-y-8">
           <MyPrintersList
             printerProfiles={myPrinterProfiles.map((p) => ({ id: p.id, name: p.name }))}
+            onEditConfiguration={(profile) => {
+              setEditingPrinterProfile(profile);
+              setIsCreatePrinterProfileModalOpen(true);
+            }}
           />
 
           <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between pt-6 border-t border-white/10">

@@ -16,7 +16,6 @@ import {
   Droplet,
   Palette,
   Fan,
-  Printer,
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { filamentsAPI, brandsAPI, savedPresetsAPI, qrAPI } from '../api/client';
@@ -26,6 +25,8 @@ import { isPluginEmbed, notifyProfileChanged } from '../utils/pluginBridge';
 import { Dropdown } from '../components/Dropdown';
 import { FilamentPreview } from '../components/FilamentPreview';
 import { RecommendedForPrinterSection } from '../components/RecommendedForPrinterSection';
+import { PrinterConfigPicker } from '../components/PrinterConfigPicker';
+import { usePrinterSelection } from '../hooks/usePrinterSelection';
 import { SEOHead } from '../components/SEOHead';
 import type { Filament } from '../types/api';
 import type { AxiosError } from 'axios';
@@ -40,6 +41,7 @@ export const CatalogPage: React.FC = () => {
   const [_printerModel, _setPrinterModel] = useState('Ender 3 Pro');
   const [materialTypeFilter, setMaterialTypeFilter] = useState<string | null>(null);
   const [brandFilter, setBrandFilter] = useState<number | null>(null);
+  const [printerSelection, setPrinterSelection] = usePrinterSelection();
   const [selectedFilament, _setSelectedFilament] = useState<number | null>(null);
   const [showQR, setShowQR] = useState<number | null>(null);
   
@@ -203,9 +205,8 @@ export const CatalogPage: React.FC = () => {
             />
           </div>
 
-          {/* Filters - stack on mobile, row on desktop.
-              Третьей кнопкой — компактный CTA выбора принтера (только залогиненным без printer_id). */}
-          <div className={`grid gap-2 sm:gap-4 ${user && !user.printer_id ? 'grid-cols-2 sm:grid-cols-3' : 'grid-cols-2'}`}>
+          {/* Filters - stack on mobile, row on desktop. */}
+          <div className="grid gap-2 sm:gap-4 grid-cols-2">
             <Dropdown
               value={materialTypeFilter || ''}
               onChange={(val) => setMaterialTypeFilter(val === '' ? null : (val as string))}
@@ -224,23 +225,18 @@ export const CatalogPage: React.FC = () => {
               ]}
               placeholder={t('catalogPage.allBrands')}
             />
-            {user && !user.printer_id && (
-              <button
-                type="button"
-                onClick={() => navigate('/profile', { state: { tab: 'settings' } })}
-                title={t('recommendedForPrinter.ctaText')}
-                className="flex items-center justify-center gap-2 px-3 sm:px-4 py-3 rounded-xl bg-white/10 border border-white/20 text-sm text-gray-200 hover:bg-white/15 hover:text-white transition-all"
-              >
-                <Printer className="w-4 h-4 text-purple-300 flex-shrink-0" />
-                <span className="truncate">{t('recommendedForPrinter.ctaTitle')}</span>
-              </button>
-            )}
           </div>
+
+          {/* Выбор принтера/конфигурации для рекомендаций (только залогиненным). */}
+          {user && (
+            <PrinterConfigPicker value={printerSelection} onChange={setPrinterSelection} />
+          )}
         </div>
       </div>
 
-      {/* Рекомендации под принтер пользователя (над основным гридом) */}
+      {/* Рекомендации под выбранную конфигурацию (над основным гридом) */}
       <RecommendedForPrinterSection
+        selection={printerSelection}
         savedPresetIds={savedPresetIds}
         onSavePreset={handleSavePreset}
       />

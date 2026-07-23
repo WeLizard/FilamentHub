@@ -17,6 +17,7 @@ from app.core.dependencies import (
     get_current_user_or_plugin_preset_read,
 )
 from app.core.errors import (
+    ERR_DEVICE_NOT_FOUND,
     ERR_EXPORT_MISSING_FIELDS,
     ERR_EXPORT_PRESET_ERROR,
     ERR_FILAMENT_NO_PRESETS,
@@ -29,6 +30,8 @@ from app.core.errors import (
     ERR_PRESET_NOT_FOUND,
     ERR_PRESET_NOT_OWNER,
     ERR_PRINTER_NOT_FOUND,
+    ERR_PRINTER_PROFILE_NOT_FOUND,
+    ERR_PRINTER_PROFILE_NOT_LINKED,
     ERR_WEIGHTED_PRESET_NO_DELETE,
     ERR_WEIGHTED_PRESET_READONLY,
     raise_error,
@@ -36,10 +39,13 @@ from app.core.errors import (
 from app.core.utils import like_pattern
 from app.db.session import get_db
 from app.models.filament import Filament
+from app.models.physical_printer_profile import UserPrinterProfileLink
 from app.models.preset import PUBLIC_PRESET_STATUSES, Preset, PresetModerationStatus
 from app.models.preset_printer import PresetPrinter
 from app.models.printer import Printer
+from app.models.printer_profile import PrinterProfile
 from app.models.user import User
+from app.models.user_printer_device import UserPrinterDevice
 from app.schemas.preset import (
     PresetActivateRequest,
     PresetCreate,
@@ -193,6 +199,26 @@ async def list_presets(
     )
 
 
+def _build_recommended_items(scored: list[Any]) -> list[RecommendedPresetItem]:
+    """Serialize scored presets into API items (shared by the recommendation routes)."""
+    items: list[RecommendedPresetItem] = []
+    for entry in scored:
+        preset_dict = PresetResponse.model_validate(entry.preset).model_dump()
+        preset_dict["printers"] = [
+            PrinterResponse.model_validate(link.printer).model_dump()
+            for link in entry.preset.printer_links
+            if link.printer is not None
+        ]
+        items.append(
+            RecommendedPresetItem(
+                preset=PresetResponse(**preset_dict),
+                match_score=round(entry.match_score, 3),
+                match_reason=entry.match_reason,
+            )
+        )
+    return items
+
+
 @router.get("/recommended-for-printer", response_model=RecommendedForPrinterResponse)
 async def recommended_for_printer(
     db: Annotated[AsyncSession, Depends(get_db)],
@@ -212,26 +238,65 @@ async def recommended_for_printer(
 
     scored = await get_recommended_presets(db, printer, filament_id, limit)
 
-    items: list[RecommendedPresetItem] = []
-    for entry in scored:
-        preset_dict = PresetResponse.model_validate(entry.preset).model_dump()
-        preset_dict["printers"] = [
-            PrinterResponse.model_validate(link.printer).model_dump()
-            for link in entry.preset.printer_links
-            if link.printer is not None
-        ]
-        items.append(
-            RecommendedPresetItem(
-                preset=PresetResponse(**preset_dict),
-                match_score=round(entry.match_score, 3),
-                match_reason=entry.match_reason,
+    return RecommendedForPrinterResponse(
+        printer_id=printer.id,
+        printer_name=printer.name,
+        items=_build_recommended_items(scored),
+    )
+
+
+@router.get("/recommended-for-configuration", response_model=RecommendedForPrinterResponse)
+async def recommended_for_configuration(
+    db: Annotated[AsyncSession, Depends(get_db)],
+    current_user: Annotated[User, Depends(get_current_active_user)],
+    printer_profile_id: int = Query(..., gt=0),
+    physical_printer_id: int | None = Query(None, gt=0),
+    filament_id: int | None = Query(None, gt=0),
+    limit: int = Query(20, ge=1, le=100),
+) -> RecommendedForPrinterResponse:
+    """Catalog preset recommendations for a chosen Orca configuration.
+
+    The configuration (PrinterProfile) resolves the catalog printer context on
+    the backend — the frontend never derives the catalog model itself. If a
+    physical printer is supplied, it must belong to the user and be linked to
+    the configuration. The connection endpoint/IP is never part of identity.
+    """
+    profile = await db.get(PrinterProfile, printer_profile_id)
+    if profile is None or (
+        profile.owner_user_id is not None and profile.owner_user_id != current_user.id
+    ):
+        raise_error(404, ERR_PRINTER_PROFILE_NOT_FOUND)
+
+    if physical_printer_id is not None:
+        device = await db.get(UserPrinterDevice, physical_printer_id)
+        if device is None or device.user_id != current_user.id:
+            raise_error(404, ERR_DEVICE_NOT_FOUND)
+        linked = (
+            await db.execute(
+                select(UserPrinterProfileLink.id)
+                .where(
+                    UserPrinterProfileLink.physical_printer_id == physical_printer_id,
+                    UserPrinterProfileLink.printer_profile_id == printer_profile_id,
+                )
+                .limit(1)
             )
-        )
+        ).scalar_one_or_none()
+        if linked is None:
+            raise_error(400, ERR_PRINTER_PROFILE_NOT_LINKED)
+
+    if profile.printer_id is None:
+        raise_error(404, ERR_PRINTER_NOT_FOUND)
+
+    printer = await db.get(Printer, profile.printer_id)
+    if printer is None:
+        raise_error(404, ERR_PRINTER_NOT_FOUND)
+
+    scored = await get_recommended_presets(db, printer, filament_id, limit)
 
     return RecommendedForPrinterResponse(
         printer_id=printer.id,
         printer_name=printer.name,
-        items=items,
+        items=_build_recommended_items(scored),
     )
 
 

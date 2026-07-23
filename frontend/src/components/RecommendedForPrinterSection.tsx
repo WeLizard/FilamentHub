@@ -7,8 +7,10 @@ import { Sparkles, Thermometer } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { presetsAPI } from '../api/client';
 import type { PresetMatchReason } from '../types/api';
+import type { PrinterSelection } from '../hooks/usePrinterSelection';
 
 interface RecommendedForPrinterSectionProps {
+  selection: PrinterSelection;
   savedPresetIds: Set<number>;
   onSavePreset: (presetId: number) => void;
 }
@@ -22,6 +24,7 @@ const REASON_STYLE: Record<PresetMatchReason, string> = {
 };
 
 export const RecommendedForPrinterSection: React.FC<RecommendedForPrinterSectionProps> = ({
+  selection,
   savedPresetIds,
   onSavePreset,
 }) => {
@@ -29,17 +32,21 @@ export const RecommendedForPrinterSection: React.FC<RecommendedForPrinterSection
   const { user } = useAuth();
   const navigate = useNavigate();
 
-  const printerId = user?.printer_id ?? null;
+  const profileId = selection.printerProfileId;
 
   const { data, isLoading } = useQuery({
-    queryKey: ['recommended-for-printer', printerId],
-    queryFn: () => presetsAPI.getRecommendedForPrinter(printerId as number),
-    enabled: !!printerId,
+    queryKey: ['recommended-for-configuration', profileId, selection.physicalPrinterId],
+    queryFn: () =>
+      presetsAPI.getRecommendedForConfiguration({
+        printer_profile_id: profileId as number,
+        physical_printer_id: selection.physicalPrinterId,
+      }),
+    enabled: !!profileId,
   });
 
-  // Секция показывается только залогиненному пользователю с выбранным принтером
-  // и непустыми рекомендациями. CTA «выберите принтер» живёт в ряду фильтров каталога.
-  if (!user || !printerId) return null;
+  // Секция показывается только при выбранной конфигурации и непустых
+  // рекомендациях. Сам выбор принтера/конфигурации живёт в PrinterConfigPicker.
+  if (!user || !profileId) return null;
   if (isLoading || !data || data.items.length === 0) return null;
 
   return (

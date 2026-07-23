@@ -4307,6 +4307,8 @@
     "messageGeneric": "您确定要删除此项目吗？此操作无法撤销。"
   },
   "common": {
+    "close": "关闭",
+    "save": "保存",
     "select": "选择...",
     "cancel": "取消",
     "loading": "加载中…",
@@ -5062,6 +5064,29 @@
     "ERR_SPOOL_USED_EXCEEDS_INITIAL": "已使用重量不能超过初始重量",
     "ERR_SPOOL_LOCATION_CONFLICT": "该线轴正被另一个请求移动，请刷新后重试",
     "ERR_SNAPSHOT_TOO_FREQUENT": "快照发送过于频繁"
+  },
+  "printerSettings": {
+    "title": "打印机设置",
+    "basics": "基本信息",
+    "name": "名称",
+    "catalogModel": "目录型号",
+    "catalogModelPlaceholder": "选择型号",
+    "catalogModelNotFound": "未找到型号",
+    "configurations": "Orca 配置",
+    "noConfigurations": "尚未关联配置",
+    "attachConfiguration": "关联配置",
+    "detach": "解除关联",
+    "editConfiguration": "编辑配置",
+    "connection": "连接",
+    "noConnection": "无连接数据",
+    "saveError": "保存设置失败"
+  },
+  "printerConfig": {
+    "mm": "毫米",
+    "pickLabel": "为我的打印机推荐",
+    "selectPrinter": "选择打印机",
+    "selectConfig": "选择配置",
+    "noConfigsForPrinter": "无配置"
   },
   "myPrinters": {
     "title": "我的打印机",

@@ -816,6 +816,29 @@ export const presetsAPI = {
     return response.data;
   },
 
+  // Recommendations resolved through the printer→configuration chain. The
+  // backend derives the catalog model from the configuration; a physical
+  // printer, if given, must belong to the user and be linked to the config.
+  getRecommendedForConfiguration: async (params: {
+    printer_profile_id: number;
+    physical_printer_id?: number | null;
+    filament_id?: number;
+    limit?: number;
+  }) => {
+    const response = await api.get<RecommendedForPrinterResponse>(
+      '/presets/recommended-for-configuration',
+      {
+        params: {
+          printer_profile_id: params.printer_profile_id,
+          physical_printer_id: params.physical_printer_id ?? undefined,
+          filament_id: params.filament_id,
+          limit: params.limit ?? 20,
+        },
+      },
+    );
+    return response.data;
+  },
+
   update: async (id: number, data: Partial<{
     name?: string;
     description?: string;
@@ -2510,6 +2533,28 @@ export const physicalPrintersAPI = {
   listBindings: async (): Promise<PrinterConnectionBinding[]> => {
     const response = await api.get<PrinterConnectionBinding[]>(
       '/orcaslicer/printer-connections/bindings',
+    );
+    return response.data;
+  },
+
+  update: async (
+    physicalPrinterId: number,
+    payload: { name?: string; printer_id?: number | null },
+  ): Promise<PhysicalPrinter> => {
+    const response = await api.patch<PhysicalPrinter>(
+      `/physical-printers/${physicalPrinterId}`,
+      payload,
+    );
+    return response.data;
+  },
+
+  setConfigurations: async (
+    physicalPrinterId: number,
+    printerProfileIds: number[],
+  ): Promise<PhysicalPrinter> => {
+    const response = await api.put<PhysicalPrinter>(
+      `/physical-printers/${physicalPrinterId}/configurations`,
+      { printer_profile_ids: printerProfileIds },
     );
     return response.data;
   },
