@@ -105,6 +105,16 @@ class User(Base):
     )
     # printer_id: выбранный принтер пользователя (для фильтрации релевантных пресетов)
 
+    # Catalog "recommend for my printer" selection (per-user, follows the account
+    # across devices). FK SET NULL so deleting the printer/config auto-clears the
+    # stale choice.
+    recommend_physical_printer_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("user_printer_devices.id", ondelete="SET NULL"), nullable=True
+    )
+    recommend_printer_profile_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("printer_profiles.id", ondelete="SET NULL"), nullable=True
+    )
+
     # Timestamps
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
@@ -125,7 +135,10 @@ class User(Base):
         "Notification", back_populates="user", cascade="all, delete-orphan", order_by="Notification.created_at.desc()"
     )
     printer_profiles: Mapped[list["PrinterProfile"]] = relationship(
-        "PrinterProfile", back_populates="owner", cascade="all, delete-orphan"
+        "PrinterProfile",
+        foreign_keys="PrinterProfile.owner_user_id",
+        back_populates="owner",
+        cascade="all, delete-orphan",
     )
     print_profiles: Mapped[list["PrintProfile"]] = relationship(
         "PrintProfile", back_populates="owner", cascade="all, delete-orphan"
@@ -140,7 +153,10 @@ class User(Base):
         "SyncDevice", back_populates="user", cascade="all, delete-orphan"
     )
     printer_devices: Mapped[list["UserPrinterDevice"]] = relationship(
-        "UserPrinterDevice", back_populates="user", cascade="all, delete-orphan"
+        "UserPrinterDevice",
+        foreign_keys="UserPrinterDevice.user_id",
+        back_populates="user",
+        cascade="all, delete-orphan",
     )
     spools: Mapped[list["UserSpool"]] = relationship(
         "UserSpool", back_populates="user", cascade="all, delete-orphan"

@@ -19,7 +19,7 @@ vi.mock('@tanstack/react-query', () => ({
     const key = queryKey[0];
     if (key === 'printers') return { data: { items: [{ id: 1, name: 'Voron 2.4 350' }] } };
     if (key === 'printer') return { data: { id: 1, name: 'Voron 2.4 350' } };
-    if (key === 'printer-profiles') return { data: { items: profiles } };
+    if (key === 'printer-profiles') return { data: profiles };
     return { data: undefined };
   },
   useMutation: ({
@@ -28,13 +28,13 @@ vi.mock('@tanstack/react-query', () => ({
     onError,
   }: {
     mutationFn: () => Promise<unknown>;
-    onSuccess?: () => void;
+    onSuccess?: (result: unknown) => void;
     onError?: (e: unknown) => void;
   }) => ({
     mutate: async () => {
       try {
-        await mutationFn();
-        onSuccess?.();
+        const result = await mutationFn();
+        onSuccess?.(result);
       } catch (e) {
         onError?.(e);
       }
@@ -120,6 +120,31 @@ describe('PhysicalPrinterSettingsModal', () => {
     await waitFor(() =>
       expect(setConfigurationsMock).toHaveBeenCalledWith(5, [10, 11]),
     );
+  });
+
+  it('reports partial success when configurations fail after basics saved', async () => {
+    setConfigurationsMock.mockRejectedValue(new Error('network'));
+    const { onClose } = await renderModal();
+    fireEvent.click(screen.getByTitle('printerSettings.detach')); // change configs
+    fireEvent.click(screen.getByText('common.save'));
+
+    await waitFor(() =>
+      expect(screen.getByText('printerSettings.savePartialError')).toBeTruthy(),
+    );
+    expect(updateMock).toHaveBeenCalled();
+    expect(onClose).not.toHaveBeenCalled();
+  });
+
+  it('guards unsaved changes before closing', async () => {
+    const { onClose } = await renderModal();
+    fireEvent.change(screen.getByDisplayValue('My Voron'), { target: { value: 'Changed' } });
+    fireEvent.click(screen.getByText('common.cancel'));
+
+    expect(onClose).not.toHaveBeenCalled();
+    expect(screen.getByText('unsavedGuard.title')).toBeTruthy();
+
+    fireEvent.click(screen.getByText('unsavedGuard.confirm'));
+    await waitFor(() => expect(onClose).toHaveBeenCalled());
   });
 
   it('surfaces a save error and does not close', async () => {

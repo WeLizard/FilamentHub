@@ -64,7 +64,9 @@ class PrinterProfile(Base):
     )
 
     printer: Mapped["Printer | None"] = relationship("Printer", back_populates="profiles")
-    owner: Mapped["User | None"] = relationship("User", back_populates="printer_profiles")
+    owner: Mapped["User | None"] = relationship(
+        "User", foreign_keys="PrinterProfile.owner_user_id", back_populates="printer_profiles"
+    )
     physical_printer_links: Mapped[list["UserPrinterProfileLink"]] = relationship(
         "UserPrinterProfileLink",
         back_populates="printer_profile",

@@ -262,9 +262,9 @@ async def recommended_for_configuration(
     the configuration. The connection endpoint/IP is never part of identity.
     """
     profile = await db.get(PrinterProfile, printer_profile_id)
-    if profile is None or (
-        profile.owner_user_id is not None and profile.owner_user_id != current_user.id
-    ):
+    if profile is None or profile.owner_user_id != current_user.id:
+        # Recommendations run against the user's own configurations only; shared
+        # official profiles are not selectable here (the picker loads owned only).
         raise_error(404, ERR_PRINTER_PROFILE_NOT_FOUND)
 
     if physical_printer_id is not None:

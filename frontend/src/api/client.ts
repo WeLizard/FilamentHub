@@ -293,7 +293,7 @@ export const authAPI = {
     };
   },
 
-  updateProfile: async (data: Partial<{ username: string; full_name: string | null; bio: string | null; password: string; printer_id: number | null }>) => {
+  updateProfile: async (data: Partial<{ username: string; full_name: string | null; bio: string | null; password: string; printer_id: number | null; recommend_physical_printer_id: number | null; recommend_printer_profile_id: number | null }>) => {
     const response = await api.patch<User>('/auth/me', data);
     return response.data;
   },
@@ -1030,6 +1030,22 @@ export const printerProfilesAPI = {
   }) => {
     const response = await api.get<ListResponse<PrinterProfile>>('/printer-profiles/', { params });
     return response.data;
+  },
+
+  // Fetch all of a user's own configurations across pages (no 100-row truncation).
+  listAllOwned: async (ownerUserId: number): Promise<PrinterProfile[]> => {
+    const size = 100;
+    const first = await printerProfilesAPI.list({
+      owner_user_id: ownerUserId, page: 1, size, active_only: false,
+    });
+    const items = [...first.items];
+    for (let page = 2; page <= first.pages; page += 1) {
+      const next = await printerProfilesAPI.list({
+        owner_user_id: ownerUserId, page, size, active_only: false,
+      });
+      items.push(...next.items);
+    }
+    return items;
   },
 
   get: async (id: number) => {

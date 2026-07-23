@@ -1,6 +1,7 @@
 {
   "recommendedForPrinter": {
     "title": "Recommended for {{printer}}",
+    "loadError": "Couldn't load recommendations: the selected configuration is unavailable.",
     "ctaTitle": "Select your printer",
     "ctaText": "Personalized preset recommendations for your model",
     "badge": {
@@ -5084,6 +5085,7 @@
     "editConfiguration": "Edit configuration",
     "connection": "Connection",
     "noConnection": "No connection data",
+    "savePartialError": "Name and model saved, but configurations couldn't be updated. Try again.",
     "saveError": "Failed to save settings"
   },
   "printerConfig": {

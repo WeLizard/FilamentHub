@@ -34,7 +34,7 @@ export const RecommendedForPrinterSection: React.FC<RecommendedForPrinterSection
 
   const profileId = selection.printerProfileId;
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isError } = useQuery({
     queryKey: ['recommended-for-configuration', profileId, selection.physicalPrinterId],
     queryFn: () =>
       presetsAPI.getRecommendedForConfiguration({
@@ -42,11 +42,20 @@ export const RecommendedForPrinterSection: React.FC<RecommendedForPrinterSection
         physical_printer_id: selection.physicalPrinterId,
       }),
     enabled: !!profileId,
+    retry: false,
   });
 
-  // Секция показывается только при выбранной конфигурации и непустых
-  // рекомендациях. Сам выбор принтера/конфигурации живёт в PrinterConfigPicker.
+  // Секция показывается только при выбранной конфигурации. Сам выбор
+  // принтера/конфигурации живёт в PrinterConfigPicker.
   if (!user || !profileId) return null;
+  // Не прячем ошибку молча: выбранная конфигурация могла стать недоступной.
+  if (isError) {
+    return (
+      <section className="bg-white/5 border border-white/10 rounded-xl sm:rounded-2xl p-4 sm:p-5">
+        <p className="text-sm text-amber-300/80">{t('recommendedForPrinter.loadError')}</p>
+      </section>
+    );
+  }
   if (isLoading || !data || data.items.length === 0) return null;
 
   return (

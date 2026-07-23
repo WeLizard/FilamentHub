@@ -1,6 +1,7 @@
 {
   "recommendedForPrinter": {
     "title": "为 {{printer}} 推荐",
+    "loadError": "无法加载推荐：所选配置不可用。",
     "ctaTitle": "选择您的打印机",
     "ctaText": "根据您的机型提供个性化预设推荐",
     "badge": {
@@ -5079,6 +5080,7 @@
     "editConfiguration": "编辑配置",
     "connection": "连接",
     "noConnection": "无连接数据",
+    "savePartialError": "名称和型号已保存，但配置更新失败。请重试。",
     "saveError": "保存设置失败"
   },
   "printerConfig": {

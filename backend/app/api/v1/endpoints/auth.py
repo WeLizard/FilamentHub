@@ -92,6 +92,7 @@ from app.core.errors import (
     ERR_ACCOUNT_BLOCKED,
     ERR_ACCOUNT_INACTIVE,
     ERR_BRAND_NOT_FOUND,
+    ERR_DEVICE_NOT_FOUND,
     ERR_EMAIL_EXISTS,
     ERR_EMAIL_MISMATCH,
     ERR_INVALID_REFRESH_TOKEN,
@@ -105,6 +106,7 @@ from app.core.errors import (
     ERR_OAUTH_PROVIDER_NOT_CONFIGURED,
     ERR_PASSWORD_HASH_ERROR,
     ERR_PRINTER_NOT_FOUND,
+    ERR_PRINTER_PROFILE_NOT_FOUND,
     ERR_RECAPTCHA_FAILED,
     ERR_RESPONSE_ERROR,
     ERR_USER_CREATE_ERROR,
@@ -786,6 +788,28 @@ async def update_current_user(
         printer = result.scalar_one_or_none()
         if not printer:
             raise_error(status.HTTP_404_NOT_FOUND, ERR_PRINTER_NOT_FOUND)
+
+    # Catalog recommendation selection must reference the user's own printer/config.
+    if update_data.get("recommend_physical_printer_id") is not None:
+        from app.models.user_printer_device import UserPrinterDevice
+        owned_device = await db.execute(
+            select(UserPrinterDevice.id).where(
+                UserPrinterDevice.id == update_data["recommend_physical_printer_id"],
+                UserPrinterDevice.user_id == current_user.id,
+            )
+        )
+        if owned_device.scalar_one_or_none() is None:
+            raise_error(status.HTTP_404_NOT_FOUND, ERR_DEVICE_NOT_FOUND)
+    if update_data.get("recommend_printer_profile_id") is not None:
+        from app.models.printer_profile import PrinterProfile
+        owned_profile = await db.execute(
+            select(PrinterProfile.id).where(
+                PrinterProfile.id == update_data["recommend_printer_profile_id"],
+                PrinterProfile.owner_user_id == current_user.id,
+            )
+        )
+        if owned_profile.scalar_one_or_none() is None:
+            raise_error(status.HTTP_404_NOT_FOUND, ERR_PRINTER_PROFILE_NOT_FOUND)
 
     # Применяем обновления
     for key, value in update_data.items():

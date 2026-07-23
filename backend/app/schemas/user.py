@@ -57,6 +57,8 @@ class UserUpdate(BaseModel):
             return validate_password_strength(v)
         return v
     printer_id: int | None = Field(None, gt=0, description="ID выбранного принтера из каталога. Передайте null чтобы сбросить выбор.")
+    recommend_physical_printer_id: int | None = Field(None, gt=0, description="Выбранный физический принтер для рекомендаций каталога. null — сброс.")
+    recommend_printer_profile_id: int | None = Field(None, gt=0, description="Выбранная конфигурация для рекомендаций каталога. null — сброс.")
     # Sync settings
     allow_filament_presets_import: bool | None = None
     allow_filament_presets_export: bool | None = None
@@ -116,6 +118,8 @@ class UserResponse(UserBase):
     brand_id: int | None = None
     brand_name: str | None = None  # Название бренда (для админки)
     printer_id: int | None = None  # ID выбранного принтера из каталога
+    recommend_physical_printer_id: int | None = None
+    recommend_printer_profile_id: int | None = None
     badges: list[str] | None = None  # Бейджи пользователя
     # Sync settings
     allow_filament_presets_import: bool = True

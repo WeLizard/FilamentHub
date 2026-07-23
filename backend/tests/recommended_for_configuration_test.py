@@ -190,6 +190,30 @@ async def test_foreign_profile_hidden(
 
 
 @pytest.mark.asyncio
+async def test_ownerless_official_config_not_selectable(
+    auth_client: AsyncClient, db_session: AsyncSession, auth_user: User
+) -> None:
+    # Shared/official configurations (owner_user_id IS NULL) are not selectable
+    # here: recommendations run against the user's own configurations only.
+    catalog = await _catalog_printer(db_session)
+    official = PrinterProfile(
+        owner_user_id=None,
+        printer_id=catalog.id,
+        name="Official Voron",
+        slug="official-voron",
+        is_official=True,
+        active=True,
+    )
+    db_session.add(official)
+    await db_session.commit()
+    await db_session.refresh(official)
+
+    resp = await auth_client.get(URL, params={"printer_profile_id": official.id})
+    assert resp.status_code == 404
+    assert resp.json()["detail"]["code"] == "ERR_PRINTER_PROFILE_NOT_FOUND"
+
+
+@pytest.mark.asyncio
 async def test_config_without_catalog_model(
     auth_client: AsyncClient, db_session: AsyncSession, auth_user: User
 ) -> None:

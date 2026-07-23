@@ -2,7 +2,7 @@
  *  configurations, and read-only connection info. Slicing parameters (nozzle,
  *  volume, limits) live in the configuration (PrinterProfile), not here. */
 
-import { useMemo, useState, FormEvent } from 'react';
+import { useMemo, useRef, useState, FormEvent } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { Loader2, Save, Wifi, X, Link2Off, SlidersHorizontal } from 'lucide-react';
@@ -13,6 +13,7 @@ import type { PrinterProfile } from '../types/api';
 import { useAuth } from '../contexts/AuthContext';
 import { useDebounce } from '../hooks/useDebounce';
 import { ModalOverlay } from './ModalOverlay';
+import { ConfirmModal } from './ConfirmModal';
 import { Dropdown } from './Dropdown';
 import { configLabel } from '../utils/printerConfig';
 import { formatLastSeen } from '../utils/deviceLink';
@@ -42,6 +43,8 @@ export const PhysicalPrinterSettingsModal: React.FC<PhysicalPrinterSettingsModal
   const [profileIds, setProfileIds] = useState<number[]>(printer.printer_profile_ids);
   const [printerSearch, setPrinterSearch] = useState('');
   const [error, setError] = useState<string | null>(null);
+  const [showDiscard, setShowDiscard] = useState(false);
+  const pendingActionRef = useRef<(() => void) | null>(null);
   const debouncedSearch = useDebounce(printerSearch, 250);
 
   const { data: catalogList } = useQuery({
@@ -55,18 +58,17 @@ export const PhysicalPrinterSettingsModal: React.FC<PhysicalPrinterSettingsModal
     queryFn: () => (printerId ? printersAPI.get(printerId) : null),
     enabled: isOpen && !!printerId,
   });
-  const { data: profilesData } = useQuery({
-    queryKey: ['printer-profiles', user?.id],
-    queryFn: () =>
-      printerProfilesAPI.list({ owner_user_id: user!.id, page: 1, size: 100, active_only: false }),
+  const { data: profilesList } = useQuery({
+    queryKey: ['printer-profiles', 'all-owned', user?.id],
+    queryFn: () => printerProfilesAPI.listAllOwned(user!.id),
     enabled: isOpen && !!user,
   });
 
   const profileById = useMemo(() => {
     const map = new Map<number, PrinterProfile>();
-    (profilesData?.items ?? []).forEach((p) => map.set(p.id, p));
+    (profilesList ?? []).forEach((p) => map.set(p.id, p));
     return map;
-  }, [profilesData]);
+  }, [profilesList]);
 
   const catalogOptions = useMemo(() => {
     const list = [...(catalogList?.items ?? [])];
@@ -76,26 +78,40 @@ export const PhysicalPrinterSettingsModal: React.FC<PhysicalPrinterSettingsModal
 
   const attachableOptions = useMemo(
     () =>
-      (profilesData?.items ?? [])
+      (profilesList ?? [])
         .filter((p) => !profileIds.includes(p.id))
         .map((p) => ({ value: p.id, label: configLabel(p, t) })),
-    [profilesData, profileIds, t],
+    [profilesList, profileIds, t],
   );
 
+  // Save is two calls (basics, then configurations). Report the partial case
+  // honestly instead of a single generic error, and keep what persisted visible.
   const saveMutation = useMutation({
-    mutationFn: async () => {
+    mutationFn: async (): Promise<{ partial: boolean }> => {
       await physicalPrintersAPI.update(printer.id, { name: name.trim(), printer_id: printerId });
       const same =
         profileIds.length === printer.printer_profile_ids.length &&
         profileIds.every((id) => printer.printer_profile_ids.includes(id));
-      if (!same) await physicalPrintersAPI.setConfigurations(printer.id, profileIds);
+      if (same) return { partial: false };
+      try {
+        await physicalPrintersAPI.setConfigurations(printer.id, profileIds);
+        return { partial: false };
+      } catch {
+        return { partial: true };
+      }
     },
-    onSuccess: () => {
-      setError(null);
+    onSuccess: (result) => {
       queryClient.invalidateQueries({ queryKey: ['physical-printers'] });
-      onClose();
+      if (result.partial) {
+        // Name/model saved; configurations did not. Stay open so the user retries.
+        setError(t('printerSettings.savePartialError'));
+      } else {
+        setError(null);
+        onClose();
+      }
     },
     onError: (err: AxiosError<{ detail: unknown }>) => {
+      // The basics call itself failed — nothing was persisted.
       setError(translateApiError(t, err.response?.data?.detail, t('printerSettings.saveError')));
     },
   });
@@ -104,8 +120,25 @@ export const PhysicalPrinterSettingsModal: React.FC<PhysicalPrinterSettingsModal
 
   const nameInvalid = name.trim().length === 0;
 
+  const isDirty =
+    name.trim() !== printer.name ||
+    printerId !== printer.printer_id ||
+    profileIds.length !== printer.printer_profile_ids.length ||
+    profileIds.some((id) => !printer.printer_profile_ids.includes(id));
+
+  // Guard destructive navigation (close / open configuration editor) when there
+  // are unsaved changes — same confirmation pattern as the filament modal.
+  const guard = (action: () => void) => {
+    if (isDirty) {
+      pendingActionRef.current = action;
+      setShowDiscard(true);
+    } else {
+      action();
+    }
+  };
+
   return (
-    <ModalOverlay onClose={onClose}>
+    <ModalOverlay onClose={() => guard(onClose)}>
       <div className="bg-gray-900 rounded-2xl border border-white/20 w-full max-w-lg max-h-[85vh] overflow-y-auto">
         <form
           onSubmit={(e: FormEvent) => {
@@ -117,7 +150,7 @@ export const PhysicalPrinterSettingsModal: React.FC<PhysicalPrinterSettingsModal
             <h2 className="text-lg font-semibold text-white">{t('printerSettings.title')}</h2>
             <button
               type="button"
-              onClick={onClose}
+              onClick={() => guard(onClose)}
               className="text-gray-400 hover:text-white transition-colors"
               aria-label={t('common.close')}
             >
@@ -181,7 +214,7 @@ export const PhysicalPrinterSettingsModal: React.FC<PhysicalPrinterSettingsModal
                         {profile && onEditConfiguration && (
                           <button
                             type="button"
-                            onClick={() => onEditConfiguration(profile)}
+                            onClick={() => guard(() => onEditConfiguration(profile))}
                             className="text-gray-400 hover:text-purple-300 transition-colors"
                             title={t('printerSettings.editConfiguration')}
                           >
@@ -242,7 +275,7 @@ export const PhysicalPrinterSettingsModal: React.FC<PhysicalPrinterSettingsModal
           <div className="flex justify-end gap-3 px-6 py-4 border-t border-white/10">
             <button
               type="button"
-              onClick={onClose}
+              onClick={() => guard(onClose)}
               className="px-4 py-2 rounded-lg border border-white/20 text-sm text-gray-200 hover:bg-white/10 transition-colors"
             >
               {t('common.cancel')}
@@ -262,6 +295,21 @@ export const PhysicalPrinterSettingsModal: React.FC<PhysicalPrinterSettingsModal
           </div>
         </form>
       </div>
+
+      <ConfirmModal
+        isOpen={showDiscard}
+        onClose={() => setShowDiscard(false)}
+        onConfirm={() => {
+          setShowDiscard(false);
+          const action = pendingActionRef.current;
+          pendingActionRef.current = null;
+          action?.();
+        }}
+        title={t('unsavedGuard.title')}
+        message={t('unsavedGuard.message')}
+        confirmText={t('unsavedGuard.confirm')}
+        cancelText={t('unsavedGuard.cancel')}
+      />
     </ModalOverlay>
   );
 };

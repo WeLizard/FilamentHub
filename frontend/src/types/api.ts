@@ -492,6 +492,8 @@ export interface User {
   brand_id: number | null;
   brand_name: string | null; // Название бренда (для админки)
   printer_id: number | null; // ID выбранного принтера из каталога
+  recommend_physical_printer_id: number | null; // Выбор для рекомендаций каталога (следует за аккаунтом между устройствами)
+  recommend_printer_profile_id: number | null;
   badges: string[] | null; // Бейджи пользователя (founder, beta_tester, contributor, verified, early_adopter, supporter)
   // Calculator Pro entitlement. New users activate a one-time trial explicitly.
   has_calculator_access?: boolean;

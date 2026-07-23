@@ -61,7 +61,9 @@ class UserPrinterDevice(Base):
     )
 
     # Relationships
-    user: Mapped["User"] = relationship("User", back_populates="printer_devices")
+    user: Mapped["User"] = relationship(
+        "User", foreign_keys="UserPrinterDevice.user_id", back_populates="printer_devices"
+    )
     gate_states: Mapped[list["PresetGateState"]] = relationship(
         "PresetGateState", back_populates="device", cascade="all, delete-orphan"
     )

@@ -28,16 +28,15 @@ export const PrinterConfigPicker: React.FC<PrinterConfigPickerProps> = ({ value,
     queryFn: physicalPrintersAPI.list,
     enabled: !!user,
   });
-  const { data: profilesData } = useQuery({
-    queryKey: ['printer-profiles', user?.id],
-    queryFn: () =>
-      printerProfilesAPI.list({ owner_user_id: user!.id, page: 1, size: 100, active_only: false }),
+  const { data: profilesList } = useQuery({
+    queryKey: ['printer-profiles', 'all-owned', user?.id],
+    queryFn: () => printerProfilesAPI.listAllOwned(user!.id),
     enabled: !!user,
   });
 
   const configs = useMemo(
-    () => (profilesData?.items ?? []).filter((p) => p.printer_id != null),
-    [profilesData],
+    () => (profilesList ?? []).filter((p) => p.printer_id != null),
+    [profilesList],
   );
   const configById = useMemo(() => new Map(configs.map((c) => [c.id, c])), [configs]);
 
