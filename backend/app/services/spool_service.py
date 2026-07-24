@@ -8,7 +8,7 @@ from datetime import datetime, timezone
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import joinedload
+from sqlalchemy.orm import joinedload, selectinload
 from sqlalchemy.orm.attributes import set_committed_value
 
 from app.core.errors import (
@@ -220,10 +220,13 @@ async def clear_spool_gate_assignments(
         gate_state.is_active = True
         cleared += 1
 
+    # selectinload, not joinedload: the latter builds an outer join, and Postgres
+    # refuses FOR UPDATE on the nullable side of one. SQLite accepts it, so this
+    # only ever surfaced against the real database.
     assignment_result = await db.execute(
         select(MaterialSlotAssignment)
         .where(MaterialSlotAssignment.spool_id == spool.id)
-        .options(joinedload(MaterialSlotAssignment.material_slot))
+        .options(selectinload(MaterialSlotAssignment.material_slot))
         .with_for_update()
     )
     for assignment in assignment_result.scalars().all():

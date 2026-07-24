@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import joinedload
+from sqlalchemy.orm import joinedload, selectinload
 from sqlalchemy.orm.attributes import set_committed_value
 
 from app.core.errors import (
@@ -95,12 +95,15 @@ async def _require_material_slot(
             MaterialSystem.active.is_(True),
             UserPrinterDevice.user_id == user_id,
         )
+        # selectinload, not joinedload: an outer join to an optional assignment or
+        # gate state makes Postgres reject FOR UPDATE. SQLite tolerates it, so this
+        # only breaks against the real database.
         .options(
-            joinedload(MaterialSlot.material_system).joinedload(
+            selectinload(MaterialSlot.material_system).selectinload(
                 MaterialSystem.physical_printer
             ),
-            joinedload(MaterialSlot.assignment),
-            joinedload(MaterialSlot.legacy_gate_state),
+            selectinload(MaterialSlot.assignment),
+            selectinload(MaterialSlot.legacy_gate_state),
         )
         .with_for_update()
     )
@@ -288,8 +291,8 @@ async def clear_material_system_assignments(
                     MaterialSlot.user_id == user.id,
                 )
                 .options(
-                    joinedload(MaterialSlot.assignment),
-                    joinedload(MaterialSlot.legacy_gate_state),
+                    selectinload(MaterialSlot.assignment),
+                    selectinload(MaterialSlot.legacy_gate_state),
                 )
                 .with_for_update()
             )
