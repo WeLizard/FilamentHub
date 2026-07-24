@@ -5112,6 +5112,7 @@
   "addPrinter": {
     "title": "Add a printer",
     "description": "Printers appear on their own when you print over the network from OrcaSlicer. Add a machine without a network address — a Bambu Lab, for instance — here.",
+    "foundInOrca": "Found in your OrcaSlicer",
     "name": "Name",
     "namePlaceholder": "What you call it",
     "model": "Model",

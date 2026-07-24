@@ -43,6 +43,14 @@ export function AddPhysicalPrinterModal({
   const [error, setError] = useState<string | null>(null);
   const debouncedSearch = useDebounce(search, 250);
 
+  // Machines already installed in the person's OrcaSlicer: the fastest way in,
+  // and the only practical one for a Bambu, which discovery cannot see.
+  const { data: candidates } = useQuery({
+    queryKey: ['printer-candidates'],
+    queryFn: physicalPrintersAPI.listInstalledCandidates,
+    enabled: isOpen && initialProfileIds.length === 0,
+  });
+
   const { data: catalogList } = useQuery({
     queryKey: ['printers', 'add-printer-picker', debouncedSearch],
     queryFn: () =>
@@ -100,6 +108,27 @@ export function AddPhysicalPrinterModal({
 
           <div className="space-y-4 px-6 py-5">
             <p className="text-xs text-gray-400">{t('addPrinter.description')}</p>
+
+            {(candidates?.length ?? 0) > 0 && (
+              <div>
+                <span className="text-sm text-gray-300">{t('addPrinter.foundInOrca')}</span>
+                <div className="mt-1.5 flex flex-wrap gap-1.5">
+                  {candidates!.map((candidate) => (
+                    <button
+                      key={candidate.model}
+                      type="button"
+                      onClick={() => {
+                        setName(candidate.model);
+                        setPrinterId(candidate.printer_id ?? 0);
+                      }}
+                      className="rounded-full border border-purple-400/30 bg-purple-500/15 px-2.5 py-1 text-xs text-purple-100 transition-colors hover:bg-purple-500/25"
+                    >
+                      {candidate.model}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
 
             <label className="block">
               <span className="text-sm text-gray-300">{t('addPrinter.name')}</span>

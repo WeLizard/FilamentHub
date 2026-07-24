@@ -673,26 +673,46 @@ def http_post_json(path, token, payload):
 
 
 def observe_printer_presets():
-    """User printer presets that carry a network endpoint, as observed connection
-    data (UI thread — reads preset_bundle). printhost_apikey is never sent."""
+    """What OrcaSlicer knows about the machines this person has (UI thread —
+    reads preset_bundle). Two kinds of entry, and printhost_apikey is in neither:
+
+    * a preset with a network endpoint — the connection FilamentHub can observe;
+    * every installed printer model, with no endpoint. A model is only present
+      because the person picked that machine in Orca's setup wizard, so it is a
+      statement of ownership rather than vendor data — which is how a Bambu, whose
+      presets never carry an endpoint, becomes visible at all. Reported once per
+      model: choosing one machine installs a preset per nozzle size, and those are
+      four presets of one printer. The model alone is enough, since the catalog
+      already mirrors Orca's models; an untouched vendor preset has nothing else
+      worth copying.
+    """
     observed = []
+    seen_models = set()
     try:
         printers = orca.host.preset_bundle().printers
         for i in range(printers.size()):
             preset = printers.preset(i)
-            if not preset.is_user():
-                continue
-            host = preset.config_value("print_host")
-            if not host:
-                continue
-            observed.append({
-                "preset_name": preset.name,
-                "printer_settings_id": preset.config_value("printer_settings_id") or "",
-                "inherits": preset.config_value("inherits") or "",
-                "printer_model": preset.config_value("printer_model") or "",
-                "print_host": host,
-                "host_type": preset.config_value("host_type") or "",
-            })
+            model = preset.config_value("printer_model") or ""
+            host = preset.config_value("print_host") if preset.is_user() else ""
+            if host:
+                observed.append({
+                    "preset_name": preset.name,
+                    "printer_settings_id": preset.config_value("printer_settings_id") or "",
+                    "inherits": preset.config_value("inherits") or "",
+                    "printer_model": model,
+                    "print_host": host,
+                    "host_type": preset.config_value("host_type") or "",
+                })
+            elif model and model not in seen_models:
+                seen_models.add(model)
+                observed.append({
+                    "preset_name": model,
+                    "printer_settings_id": model,
+                    "inherits": "",
+                    "printer_model": model,
+                    "print_host": "",
+                    "host_type": "",
+                })
     except Exception:
         pass
     return observed

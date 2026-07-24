@@ -15,6 +15,7 @@ from app.schemas.printer_connection_observation import (
 )
 from app.services.physical_printer_discovery_service import (
     display_endpoint,
+    list_installed_printer_candidates,
     list_user_bindings,
     reconcile_user_printers,
 )
@@ -38,6 +39,18 @@ async def observe_printer_connections(
     return PrinterConnectionObserveResponse(
         accepted=accepted, matched=matched, unmatched=unmatched
     )
+
+
+@router.get("/installed-candidates")
+async def list_installed_candidates(
+    current_user: Annotated[User, Depends(get_current_active_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> list[dict]:
+    """Printer models present in the user's OrcaSlicer but not registered here.
+
+    Offered as one-click additions; nothing is created without the user asking.
+    """
+    return await list_installed_printer_candidates(db, current_user.id)
 
 
 @router.get("/bindings", response_model=list[PrinterConnectionBindingResponse])

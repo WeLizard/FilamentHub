@@ -5107,6 +5107,7 @@
   "addPrinter": {
     "title": "添加打印机",
     "description": "通过 OrcaSlicer 联网打印时，打印机会自动出现。没有网络地址的机器（例如 Bambu Lab）请在此添加。",
+    "foundInOrca": "在您的 OrcaSlicer 中找到",
     "name": "名称",
     "namePlaceholder": "您对它的称呼",
     "model": "型号",

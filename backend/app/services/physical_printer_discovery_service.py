@@ -153,3 +153,65 @@ async def reconcile_user_printers(db: AsyncSession, user_id: int) -> int:
 
     await db.commit()
     return created
+
+
+async def list_installed_printer_candidates(
+    db: AsyncSession, user_id: int
+) -> list[dict]:
+    """Printer models seen in the user's OrcaSlicer that are not a printer here.
+
+    A model is installed in Orca because the person picked that machine in the
+    setup wizard, so it is worth offering — especially for a Bambu, whose presets
+    carry no endpoint and are therefore invisible to connection discovery. This
+    only proposes: nobody wants six printers created because they once installed
+    six vendor profiles out of curiosity.
+    """
+    from app.models.printer import Printer
+
+    observations = (
+        (
+            await db.execute(
+                select(OrcaPrinterConnectionObservation).where(
+                    OrcaPrinterConnectionObservation.owner_user_id == user_id,
+                    OrcaPrinterConnectionObservation.print_host.is_(None),
+                    OrcaPrinterConnectionObservation.printer_model.is_not(None),
+                )
+            )
+        )
+        .scalars()
+        .all()
+    )
+    if not observations:
+        return []
+
+    taken_printer_ids = set(
+        (
+            await db.execute(
+                select(UserPrinterDevice.printer_id).where(
+                    UserPrinterDevice.user_id == user_id,
+                    UserPrinterDevice.printer_id.is_not(None),
+                )
+            )
+        )
+        .scalars()
+        .all()
+    )
+
+    candidates: dict[str, dict] = {}
+    for obs in observations:
+        model = (obs.printer_model or "").strip()
+        if not model or model in candidates:
+            continue
+        printer = (
+            await db.execute(select(Printer).where(Printer.name == model).limit(1))
+        ).scalar_one_or_none()
+        printer_id = printer.id if printer else None
+        if printer_id is not None and printer_id in taken_printer_ids:
+            continue
+        candidates[model] = {
+            "model": model,
+            "printer_id": printer_id,
+            "catalog_name": printer.name if printer else None,
+            "last_seen_at": obs.last_seen_at,
+        }
+    return sorted(candidates.values(), key=lambda item: item["model"])
