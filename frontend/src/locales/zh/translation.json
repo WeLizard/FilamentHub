@@ -2427,6 +2427,8 @@
       "description": "添加打印机，将配置复制到Moonraker — 它将自动连接。",
       "addPrinter": "添加打印机",
       "selectPrinter": "打印机型号 (从目录)",
+      "ownPrinters": "您的打印机",
+      "ownPrintersHint": "选择您已有的打印机，密钥将发给它，不会重复创建记录。",
       "searchPrinter": "搜索打印机目录...",
       "nameLabel": "打印机名称",
       "namePlaceholder": "例如：Voron 2.4",
