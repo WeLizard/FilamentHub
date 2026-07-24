@@ -72,6 +72,7 @@ import { SettingsTab } from '../components/SettingsTab';
 import { ExportFromOrcaSlicerButton } from '../components/ExportFromOrcaSlicerButton';
 import { ExportPrinterProfilesButton } from '../components/ExportPrinterProfilesButton';
 import { MyPrintersList } from '../components/MyPrintersList';
+import { AddPhysicalPrinterModal } from '../components/AddPhysicalPrinterModal';
 const CreatePrinterProfileModal = lazy(() =>
   import('../components/CreatePrinterProfileModal').then(m => ({ default: m.CreatePrinterProfileModal }))
 );
@@ -330,6 +331,8 @@ export const ProfilePage: React.FC = () => {
   }, [myPrintProfiles]);
 
   // Группируем профили принтера по принтерам (по printer_id)
+  const [createPrinterFrom, setCreatePrinterFrom] = useState<PrinterProfile | null>(null);
+
   const { data: myPhysicalPrinters } = useQuery({
     queryKey: ['physical-printers'],
     queryFn: physicalPrintersAPI.list,
@@ -1121,6 +1124,16 @@ export const ProfilePage: React.FC = () => {
       {/* Printer Profiles Tab */}
       {userTab === 'printer-profiles' && (
         <div className="space-y-8">
+          {createPrinterFrom && (
+            <AddPhysicalPrinterModal
+              isOpen
+              onClose={() => setCreatePrinterFrom(null)}
+              initialName={createPrinterFrom.name}
+              initialPrinterId={createPrinterFrom.printer_id}
+              initialProfileIds={[createPrinterFrom.id]}
+            />
+          )}
+
           <MyPrintersList
             printerProfiles={myPrinterProfiles}
             printProfileCounts={printProfileCountByConfiguration}
@@ -1227,6 +1240,16 @@ export const ProfilePage: React.FC = () => {
                                 <div className="flex items-center gap-2 shrink-0">
                                   {printProfilesForPrinterProfile.length > 0 && (
                                     <StatusBadge label={t('profilePage.printProfilesCount', { count: printProfilesForPrinterProfile.length })} variant="accent" />
+                                  )}
+                                  {fullPrinterProfile && (
+                                    <button
+                                      type="button"
+                                      onClick={() => setCreatePrinterFrom(fullPrinterProfile)}
+                                      className="p-1.5 bg-white/10 hover:bg-white/20 rounded-lg text-white transition-all"
+                                      title={t('profilePage.createPrinterFromConfig')}
+                                    >
+                                      <Printer3DIcon className="w-4 h-4" />
+                                    </button>
                                   )}
                                   {fullPrinterProfile && (
                                     <button

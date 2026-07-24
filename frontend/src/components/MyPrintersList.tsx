@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
-import { Printer, Settings, Wifi } from 'lucide-react';
+import { Printer, Settings, Wifi, Plus } from 'lucide-react';
 import {
   physicalPrintersAPI,
   type PhysicalPrinter,
@@ -10,6 +10,7 @@ import {
 import type { PrinterProfile } from '../types/api';
 import { PhysicalPrinterSettingsModal } from './PhysicalPrinterSettingsModal';
 import { PrinterConfigurationRow } from './PrinterConfigurationRow';
+import { AddPhysicalPrinterModal } from './AddPhysicalPrinterModal';
 
 interface MyPrintersListProps {
   /** The user's Orca machine profiles, shown under the printer they belong to. */
@@ -35,6 +36,7 @@ export function MyPrintersList({
 }: MyPrintersListProps) {
   const { t } = useTranslation();
   const [settingsPrinter, setSettingsPrinter] = useState<PhysicalPrinter | null>(null);
+  const [showAdd, setShowAdd] = useState(false);
 
   const { data: printers, isLoading, isError } = useQuery({
     queryKey: ['physical-printers'],
@@ -62,9 +64,19 @@ export function MyPrintersList({
   return (
     <>
     <div className="space-y-4">
-      <div>
-        <h3 className="text-lg font-semibold text-white">{t('myPrinters.title')}</h3>
-        <p className="text-xs text-gray-400">{t('myPrinters.subtitle')}</p>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h3 className="text-lg font-semibold text-white">{t('myPrinters.title')}</h3>
+          <p className="text-xs text-gray-400">{t('myPrinters.subtitle')}</p>
+        </div>
+        <button
+          type="button"
+          onClick={() => setShowAdd(true)}
+          className="flex items-center gap-2 rounded-lg border border-white/20 px-3 py-1.5 text-sm text-white transition-colors hover:bg-white/10"
+        >
+          <Plus className="h-4 w-4" />
+          {t('addPrinter.title')}
+        </button>
       </div>
 
       {isLoading ? (
@@ -75,6 +87,7 @@ export function MyPrintersList({
         <div className="rounded-xl border border-dashed border-white/15 p-6 text-center">
           <Printer className="w-7 h-7 text-gray-500 mx-auto mb-2" />
           <p className="text-sm text-gray-400">{t('myPrinters.empty')}</p>
+          <p className="mt-1 text-xs text-gray-500">{t('myPrinters.emptyHint')}</p>
         </div>
       ) : (
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
@@ -150,6 +163,8 @@ export function MyPrintersList({
         </div>
       )}
     </div>
+
+    <AddPhysicalPrinterModal isOpen={showAdd} onClose={() => setShowAdd(false)} />
 
     {settingsPrinter && (
       <PhysicalPrinterSettingsModal

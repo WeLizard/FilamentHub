@@ -2224,6 +2224,7 @@
     "removeFromProfile": "从配置文件中移除",
     "delete": "删除",
     "createPrinterProfile": "创建打印机配置",
+    "createPrinterFromConfig": "根据此配置创建打印机",
     "addProfile": "添加配置文件",
     "noPrinters": "还没有打印机",
     "noPrintersDesc": "从OrcaSlicer导入配置文件或手动创建它们 - 它们将出现在这里。",
@@ -5103,12 +5104,25 @@
     "selectConfig": "选择配置",
     "noConfigsForPrinter": "无配置"
   },
+  "addPrinter": {
+    "title": "添加打印机",
+    "description": "通过 OrcaSlicer 联网打印时，打印机会自动出现。没有网络地址的机器（例如 Bambu Lab）请在此添加。",
+    "name": "名称",
+    "namePlaceholder": "您对它的称呼",
+    "model": "型号",
+    "modelPlaceholder": "从目录中选择型号",
+    "modelHint": "可不填，但材料推荐需要型号。",
+    "modelEmpty": "未找到型号",
+    "submit": "添加",
+    "error": "无法添加打印机"
+  },
   "myPrinters": {
     "title": "我的打印机",
     "subtitle": "通过网络打印时，它们会自动从 OrcaSlicer 出现。",
     "loading": "加载中…",
     "loadError": "无法加载打印机。",
     "empty": "一旦插件在 OrcaSlicer 中发现打印机，它们就会自动显示在这里。",
+    "emptyHint": "也可手动添加机器，例如网络发现无法识别的 Bambu Lab。",
     "configurations": "配置",
     "noConfigurations": "暂无配置",
     "noNozzles": "未列出喷嘴",

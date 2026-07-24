@@ -2227,6 +2227,7 @@
     "removeFromProfile": "Remove from profile",
     "delete": "Delete",
     "createPrinterProfile": "Create printer profile",
+    "createPrinterFromConfig": "Create a printer from this configuration",
     "addProfile": "Add profile",
     "noPrinters": "No printers yet",
     "noPrintersDesc": "Import profiles from OrcaSlicer or create them manually - they will appear here.",
@@ -5108,12 +5109,25 @@
     "selectConfig": "Select a configuration",
     "noConfigsForPrinter": "No configurations"
   },
+  "addPrinter": {
+    "title": "Add a printer",
+    "description": "Printers appear on their own when you print over the network from OrcaSlicer. Add a machine without a network address — a Bambu Lab, for instance — here.",
+    "name": "Name",
+    "namePlaceholder": "What you call it",
+    "model": "Model",
+    "modelPlaceholder": "Pick a model from the catalog",
+    "modelHint": "Optional, but material recommendations need the model.",
+    "modelEmpty": "No model found",
+    "submit": "Add",
+    "error": "Could not add the printer"
+  },
   "myPrinters": {
     "title": "My Printers",
     "subtitle": "They show up on their own from OrcaSlicer when you print over the network.",
     "loading": "Loading…",
     "loadError": "Failed to load printers.",
     "empty": "Printers will appear here on their own once the plugin sees them in OrcaSlicer.",
+    "emptyHint": "Or add a machine by hand — a Bambu Lab, say, which network discovery cannot see.",
     "configurations": "Configurations",
     "noConfigurations": "No configurations yet",
     "noNozzles": "No nozzles listed",
