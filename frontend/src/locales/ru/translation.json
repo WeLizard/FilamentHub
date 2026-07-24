@@ -2128,8 +2128,8 @@
     "spoolSetup": {
       "title": "Настройка Moonraker / Happy Hare",
       "description": "Скопируйте URL совместимости и вставьте его в секцию [spoolman] вашего Moonraker/Happy Hare.",
-      "show": "Настройка HH",
-      "hide": "Скрыть HH",
+      "show": "Настройка подачи",
+      "hide": "Скрыть настройку",
       "generateApiKey": "Сгенерировать API-ключ",
       "endpointLabel": "Готовый эндпоинт",
       "configLabel": "Пример конфигурации",

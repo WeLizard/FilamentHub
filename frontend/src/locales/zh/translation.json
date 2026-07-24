@@ -2412,8 +2412,8 @@
     "spoolSetup": {
       "title": "Moonraker / Happy Hare设置",
       "description": "复制兼容性URL并将其粘贴到您的Moonraker/Happy Hare配置的[spoolman]部分。",
-      "show": "HH设置",
-      "hide": "隐藏HH",
+      "show": "供料设置",
+      "hide": "隐藏设置",
       "generateApiKey": "生成API密钥",
       "endpointLabel": "就绪端点",
       "configLabel": "配置示例",
