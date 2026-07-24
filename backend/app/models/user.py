@@ -72,6 +72,10 @@ class User(Base):
     # allow_filament_presets_import: Разрешение на импорт filament presets из OrcaSlicer на сайт
     # allow_filament_presets_export: Разрешение на экспорт filament presets с сайта в OrcaSlicer
 
+    # null = согласие ещё не спрашивали; true/false = решение. Проактивный забор
+    # НЕсвязанных локальных пресетов Orca в драфты, отдельно от allow_* гейтов синка.
+    auto_import_local_presets: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+
     # Deleted preset rule (правило обработки удалённых пресетов)
     deleted_preset_rule: Mapped[str | None] = mapped_column(String(50), nullable=True)
     # deleted_preset_rule: "always_restore", "always_delete", "always_ask",

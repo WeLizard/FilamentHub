@@ -18,6 +18,7 @@ from sqlalchemy.orm import selectinload
 
 from app.core.dependencies import (
     get_current_active_user,
+    get_current_user_or_plugin_preset_read,
     get_current_user_or_plugin_preset_write,
 )
 from app.core.errors import (
@@ -2893,6 +2894,15 @@ async def import_filament_presets(
         logger.exception("Critical error in import_filament_presets endpoint")
         await db.rollback()
         raise_error(status.HTTP_500_INTERNAL_SERVER_ERROR, ERR_INTERNAL_ERROR)
+
+
+@router.get("/sync-prefs")
+async def get_sync_prefs(
+    current_user: Annotated[User, Depends(get_current_user_or_plugin_preset_read)],
+) -> dict:
+    """Sync preferences the plugin reads with its preset-scoped token (it never
+    holds a full account session, so /auth/me is out of reach)."""
+    return {"auto_import_local_presets": bool(current_user.auto_import_local_presets)}
 
 
 @router.post("/deleted-presets", response_model=DeletedPresetsResponse, status_code=status.HTTP_200_OK)

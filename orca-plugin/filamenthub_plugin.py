@@ -688,6 +688,154 @@ def send_printer_observations(token, observations):
                    {"observations": observations})
 
 
+def _collect_filament_presets(root, into, only_new):
+    """Walk {root}/<account>/filament/ (incl. base/) and add each preset by name to
+    `into`. only_new keeps existing entries (live set wins over older backups).
+    Skips our [fh]-managed presets and a "filamenthub:<id>" bundle_id."""
+    try:
+        accounts = os.listdir(root)
+    except OSError:
+        return
+    for account in accounts:
+        base = os.path.join(root, account, "filament")
+        if not os.path.isdir(base):
+            continue
+        for dirpath, _dirs, files in os.walk(base):
+            for fn in files:
+                if not fn.endswith(".json"):
+                    continue
+                try:
+                    with open(os.path.join(dirpath, fn), "r", encoding="utf-8") as fh:
+                        profile = json.load(fh)
+                except (OSError, ValueError):
+                    continue
+                if not isinstance(profile, dict) or not profile:
+                    continue
+                name = profile.get("name") or fn[:-len(".json")]
+                if "[fh]" in name or "@fh" in name:
+                    continue
+                if preset_id_from_bundle(profile.get("bundle_id")) is not None:
+                    continue
+                if only_new and name in into:
+                    continue
+                into.setdefault(name, profile)
+
+
+def scan_recovery_filaments():
+    """Every filament preset the user has on disk, for the explicit "find lost
+    filaments" action. Walks {data_dir}/user/<account>/filament/ (all accounts,
+    incl. base/) then the user_backup-v* version snapshots, adding a backup preset
+    only when its name is absent from the live set — so old/deleted presets are
+    recovered without stale duplicates. Skips our [fh]-managed ones; the Orca
+    system/ library is never touched. Vendor-materialized presets may come along;
+    the user picks what to keep. Read-only; disk-only, so it runs off the UI thread."""
+    by_name = {}
+    _collect_filament_presets(os.path.join(DATA_DIR, "user"), by_name, only_new=False)
+    try:
+        backups = [d for d in os.listdir(DATA_DIR) if d.startswith("user_backup")]
+    except OSError:
+        backups = []
+    for backup in backups:
+        _collect_filament_presets(os.path.join(DATA_DIR, backup), by_name, only_new=True)
+    return [{"name": name, "profile": profile} for name, profile in by_name.items()]
+
+
+def scan_active_user_filaments():
+    """The loaded account's own filament presets (UI thread — reads preset_bundle).
+    Mirrors the fork: keep is_user() presets, skip system/vendor and our [fh] ones.
+    Authoritative user/system split, active account only. The file is read for its
+    exact content; the bundle is used only for the is_user() decision."""
+    candidates = []
+    try:
+        filaments = orca.host.preset_bundle().filaments
+        for i in range(filaments.size()):
+            preset = filaments.preset(i)
+            if not preset.is_user():
+                continue
+            name = preset.name or ""
+            if "[fh]" in name or "@fh" in name:
+                continue
+            if preset_id_from_bundle(getattr(preset, "bundle_id", "")) is not None:
+                continue
+            path = preset.file
+            if not path or not os.path.exists(path):
+                continue
+            try:
+                with open(path, "r", encoding="utf-8") as fh:
+                    profile = json.load(fh)
+            except (OSError, ValueError):
+                continue
+            if isinstance(profile, dict) and profile:
+                candidates.append({"name": name, "profile": profile})
+    except Exception:
+        pass
+    return candidates
+
+
+def _auto_import_enabled(token):
+    """Whether the user opted into auto-importing local presets. Uses the
+    plugin-scoped /orcaslicer/sync-prefs (the plugin has no full account session)."""
+    status, body = http_get("/orcaslicer/sync-prefs", token=token)
+    if status != 200:
+        fh_log("sync-prefs HTTP %s -> auto-import off" % status)
+        return False
+    try:
+        return bool(json.loads(body.decode("utf-8")).get("auto_import_local_presets"))
+    except ValueError:
+        return False
+
+
+def _draft_id(name):
+    return "orca_local_" + hashlib.md5(name.encode("utf-8")).hexdigest()[:12]
+
+
+IMPORTED_DRAFTS_FILE = os.path.join(PLUGIN_DIR, ".fh_imported.json")
+
+
+def load_imported_draft_ids():
+    """Draft-ids already pushed by auto-import, kept next to the plugin so each
+    local preset is imported once: a draft the user later deletes on the site is
+    not resurrected on the next sync."""
+    try:
+        with open(IMPORTED_DRAFTS_FILE, "r", encoding="utf-8") as fh:
+            data = json.load(fh)
+        return data if isinstance(data, dict) else {}
+    except (OSError, ValueError):
+        return {}
+
+
+def save_imported_draft_ids(ids):
+    try:
+        write_json_atomic(IMPORTED_DRAFTS_FILE, ids)
+    except OSError:
+        pass
+
+
+def push_filament_drafts(token, candidates):
+    """Push candidate presets to FilamentHub as private drafts (batched ≤50). The
+    backend creates one draft per preset and dedups by a stable fhub_draft_id.
+    Returns the draft-ids accepted (HTTP 200)."""
+    sent_ids = []
+    batch = []
+    batch_ids = []
+    for c in candidates:
+        did = _draft_id(c["name"])
+        settings = dict(c["profile"])
+        settings["fhub_draft_id"] = did
+        batch.append({"name": c["name"][:200], "orcaslicer_settings": settings, "source": "orcaslicer"})
+        batch_ids.append(did)
+        if len(batch) >= 50:
+            st, _ = http_post_json("/orcaslicer/filaments/import", token, {"profiles": batch})
+            if st == 200:
+                sent_ids.extend(batch_ids)
+            batch, batch_ids = [], []
+    if batch:
+        st, _ = http_post_json("/orcaslicer/filaments/import", token, {"profiles": batch})
+        if st == 200:
+            sent_ids.extend(batch_ids)
+    return sent_ids
+
+
 # --------------------------------------------------------------------------- #
 # Two-way sync (all plugin-side; the host is never touched). Mirrors the fork's
 # model: identity is the "filamenthub:<id>" bundle_id; the FilamentHub version is
@@ -1266,7 +1414,8 @@ class FilamentHubCatalog(orca.script.ScriptPluginCapabilityBase):
         known = self._known_filament_preset_names()  # host read on the UI thread
         refresh_user_preset_folder()
         observations = observe_printer_presets()  # UI thread: read printer connection data
-        threading.Thread(target=self._do_sync, args=(token, known, announce), daemon=True).start()
+        active_filaments = scan_active_user_filaments()  # UI thread: loaded account's user presets
+        threading.Thread(target=self._do_sync, args=(token, known, announce, active_filaments), daemon=True).start()
         threading.Thread(target=send_printer_observations, args=(token, observations), daemon=True).start()
 
     def execute(self):
@@ -1319,7 +1468,8 @@ class FilamentHubCatalog(orca.script.ScriptPluginCapabilityBase):
             token = saved.get("accessToken") or ""
             known = self._known_filament_preset_names()  # host read on the UI thread
             refresh_user_preset_folder()
-            threading.Thread(target=self._do_sync, args=(token, known), daemon=True).start()
+            active_filaments = scan_active_user_filaments()  # UI thread: loaded account's user presets
+            threading.Thread(target=self._do_sync, args=(token, known, True, active_filaments), daemon=True).start()
         elif msg_type == "auth-token":
             # Login / token refresh in the catalog — persist for session restore,
             # then reconcile presets automatically (silently).
@@ -1488,7 +1638,7 @@ class FilamentHubCatalog(orca.script.ScriptPluginCapabilityBase):
         return {"updated_at": (remote or {}).get("updated_at") or "",
                 "hash": local_entry["hash"], "name": profile.get("name") or ""}
 
-    def _do_sync(self, token, known_presets, announce=True):
+    def _do_sync(self, token, known_presets, announce=True, active_filaments=None):
         if not token:
             if announce:
                 orca.host.ui.message("Sign in to FilamentHub in the window, then Sync.",
@@ -1638,6 +1788,16 @@ class FilamentHubCatalog(orca.script.ScriptPluginCapabilityBase):
             parts.append("%d up to date" % skipped)
         if failed:
             parts.append("%d failed" % failed)
+        if active_filaments and _auto_import_enabled(token):
+            imported = load_imported_draft_ids()
+            fresh = [c for c in active_filaments if _draft_id(c["name"]) not in imported]
+            sent_ids = push_filament_drafts(token, fresh) if fresh else []
+            fh_log("auto draft import: %d fresh of %d, %d sent" % (len(fresh), len(active_filaments), len(sent_ids)))
+            if sent_ids:
+                for did in sent_ids:
+                    imported[did] = 1
+                save_imported_draft_ids(imported)
+                parts.append("%d imported as drafts" % len(sent_ids))
         summary = ", ".join(parts) or "nothing to sync"
         fh_log("sync done: %s (pull=%d upd=%d push=%d rm=%d ren=%d skip=%d fail=%d)" % (summary, pulled, updated, pushed, removed, renamed, skipped, failed))
         note = ""
