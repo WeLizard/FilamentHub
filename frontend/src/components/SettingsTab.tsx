@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Settings, Lock, Mail, Save, CheckCircle, XCircle, Loader2, User as UserIcon, Eye, EyeOff, AlertTriangle, Trash2, Globe, Coins } from 'lucide-react';
+import { Settings, Lock, Mail, Save, CheckCircle, XCircle, Loader2, User as UserIcon, Eye, EyeOff, AlertTriangle, Trash2, Globe } from 'lucide-react';
 import { authAPI, calculatorAPI } from '../api/client';
 import { currencySymbol, normalizeCurrency, CURRENCY_CODES } from '../utils/currency';
 import { translateApiError } from '../utils/translateApiError';
@@ -241,44 +241,44 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({ user, onUserUpdate }) 
 
   return (
     <div className="max-w-7xl mx-auto space-y-6">
-      {/* Язык интерфейса */}
+      {/* Язык, валюта и страна */}
       <section className="bg-white/10 backdrop-blur-sm border border-white/20 rounded-2xl p-6 shadow-xl">
-        <div className="flex items-center justify-between gap-4 flex-wrap">
-          <div className="flex items-center gap-3">
-            <div className="p-2 bg-gradient-to-r from-purple-500/20 to-blue-500/20 rounded-lg">
-              <Globe className="w-5 h-5 text-purple-400" />
-            </div>
-            <div>
-              <h3 className="text-lg font-bold text-white">{t('settings.language')}</h3>
-              <p className="text-xs text-gray-400 mt-0.5">{t('settings.languageDescription')}</p>
-            </div>
+        <div className="flex items-center gap-3 mb-5">
+          <div className="p-2 bg-gradient-to-r from-purple-500/20 to-blue-500/20 rounded-lg">
+            <Globe className="w-5 h-5 text-purple-400" />
           </div>
-          <LanguageSwitcher />
+          <div>
+            <h3 className="text-lg font-bold text-white">{t('settings.regionTitle')}</h3>
+            <p className="text-xs text-gray-400 mt-0.5">{t('settings.regionDescription')}</p>
+          </div>
         </div>
-      </section>
-
-      {/* Валюта (калькулятор / КП) */}
-      <section className="bg-white/10 backdrop-blur-sm border border-white/20 rounded-2xl p-6 shadow-xl">
-        <div className="flex items-center justify-between gap-4 flex-wrap">
-          <div className="flex items-center gap-3">
-            <div className="p-2 bg-gradient-to-r from-purple-500/20 to-blue-500/20 rounded-lg">
-              <Coins className="w-5 h-5 text-purple-400" />
-            </div>
-            <div>
-              <h3 className="text-lg font-bold text-white">{t('settings.currency')}</h3>
-              <p className="text-xs text-gray-400 mt-0.5">{t('settings.currencyDescription')}</p>
-            </div>
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          <div>
+            <label className="block text-xs text-gray-400 mb-1.5">{t('settings.language')}</label>
+            <LanguageSwitcher />
           </div>
-          <select
-            value={currency}
-            onChange={(e) => updateCurrencyMutation.mutate(e.target.value)}
-            disabled={updateCurrencyMutation.isPending}
-            className="px-4 py-2.5 bg-white/10 border border-white/20 rounded-xl text-white focus:outline-none focus:ring-2 focus:ring-purple-500 disabled:opacity-50"
-          >
-            {CURRENCY_CODES.map((c) => (
-              <option key={c} value={c} className="bg-gray-900">{c} ({currencySymbol(c)})</option>
-            ))}
-          </select>
+          <div>
+            <label className="block text-xs text-gray-400 mb-1.5">{t('settings.currency')}</label>
+            <select
+              value={currency}
+              onChange={(e) => updateCurrencyMutation.mutate(e.target.value)}
+              disabled={updateCurrencyMutation.isPending}
+              className="w-full px-4 py-2 bg-white/10 border border-white/20 rounded-xl text-white focus:outline-none focus:ring-2 focus:ring-purple-500 disabled:opacity-50"
+            >
+              {CURRENCY_CODES.map((c) => (
+                <option key={c} value={c} className="bg-gray-900">{c} ({currencySymbol(c)})</option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label className="block text-xs text-gray-400 mb-1.5">{t('settings.country')}</label>
+            <select
+              disabled
+              className="w-full px-4 py-2 bg-white/10 border border-white/20 rounded-xl text-gray-400 disabled:opacity-60"
+            >
+              <option className="bg-gray-900">{t('settings.countrySoon')}</option>
+            </select>
+          </div>
         </div>
       </section>
 
