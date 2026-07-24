@@ -103,6 +103,28 @@ COMPOSE_BAKE=false docker compose up -d --build
 echo -e "   ${GREEN}✅ Контейнеры запущены${NC}"
 
 # -----------------------------------------------------------------------------
+# 3.6. Применение миграций БД (backup уже сделан в шаге 1 — это точка отката)
+# -----------------------------------------------------------------------------
+echo ""
+echo -e "${YELLOW}🗄️  Шаг 3.6: Применение миграций БД...${NC}"
+
+if docker ps --format '{{.Names}}' | grep -q "filamenthub_backend_prod"; then
+    if docker exec filamenthub_backend_prod alembic upgrade head; then
+        echo -e "   ${GREEN}✅ Миграции применены (или БД уже на head)${NC}"
+    else
+        echo -e "   ${RED}❌ Миграции НЕ применились — код задеплоен, но схема БД отстаёт.${NC}"
+        LATEST_BACKUP=$(ls -t "$BACKUP_DIR"/backup_*.sql.gz 2>/dev/null | head -1)
+        if [ -n "$LATEST_BACKUP" ]; then
+            echo -e "   ${RED}   Откат БД из backup шага 1:${NC}"
+            echo -e "   ${RED}   gunzip -c \"$LATEST_BACKUP\" | docker exec -i filamenthub_postgres_prod psql -U filamenthub filamenthub${NC}"
+        fi
+        exit 1
+    fi
+else
+    echo -e "   ${YELLOW}⚠️  Контейнер backend не запущен, пропускаю миграции${NC}"
+fi
+
+# -----------------------------------------------------------------------------
 # 3.5. Очистка старых Docker образов (оставляем текущий + предыдущий)
 # -----------------------------------------------------------------------------
 echo ""
