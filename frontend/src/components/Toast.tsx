@@ -11,6 +11,7 @@ export interface Toast {
   message: string;
   type: ToastType;
   duration?: number;
+  replaceKey?: string;
 }
 
 interface ToastProps {
@@ -32,13 +33,13 @@ const ToastItem: React.FC<ToastProps> = ({ toast, onClose }) => {
   const getIcon = () => {
     switch (toast.type) {
       case 'success':
-        return <CheckCircle className="w-5 h-5 text-green-400" />;
+        return <CheckCircle className="w-4 h-4 text-green-400" />;
       case 'error':
-        return <AlertCircle className="w-5 h-5 text-red-400" />;
+        return <AlertCircle className="w-4 h-4 text-red-400" />;
       case 'warning':
-        return <AlertTriangle className="w-5 h-5 text-yellow-400" />;
+        return <AlertTriangle className="w-4 h-4 text-yellow-400" />;
       case 'info':
-        return <Info className="w-5 h-5 text-blue-400" />;
+        return <Info className="w-4 h-4 text-blue-400" />;
     }
   };
 
@@ -57,13 +58,13 @@ const ToastItem: React.FC<ToastProps> = ({ toast, onClose }) => {
 
   return (
     <div
-      className={`${getBgColor()} border rounded-lg shadow-lg p-4 mb-3 flex items-start space-x-3 min-w-[300px] max-w-[500px] transition-all duration-300`}
+      className={`${getBgColor()} border rounded-lg shadow-lg p-3 mb-2 flex items-start space-x-2 min-w-[220px] max-w-[360px] transition-all duration-300`}
       style={{
         animation: 'slideIn 0.3s ease-out',
       }}
     >
       <div className="flex-shrink-0 mt-0.5">{getIcon()}</div>
-      <div className="flex-1 text-sm text-white">{toast.message}</div>
+      <div className="flex-1 text-xs text-white">{toast.message}</div>
       <button
         onClick={() => onClose(toast.id)}
         className="flex-shrink-0 text-gray-400 hover:text-white transition-colors"
@@ -104,29 +105,33 @@ const notifyListeners = () => {
 };
 
 export const toast = {
-  show: (message: string, type: ToastType = 'info', duration?: number) => {
-    // Дедупликация: не показывать одинаковые сообщения в рамках сессии
-    const dedupKey = `${type}:${message}`;
-    
-    if (shownMessages.has(dedupKey)) {
-      logToast('SKIP (duplicate)', message, type, `already shown in session`);
-      return null; // Пропускаем дубликат
+  show: (message: string, type: ToastType = 'info', duration?: number, replaceKey?: string) => {
+    // A keyed toast replaces the previous one on the same channel and always
+    // shows (no session dedup) — repeated actions like Sync must report each run.
+    if (replaceKey) {
+      for (let i = toasts.length - 1; i >= 0; i--) {
+        if (toasts[i].replaceKey === replaceKey) toasts.splice(i, 1);
+      }
+    } else {
+      const dedupKey = `${type}:${message}`;
+      if (shownMessages.has(dedupKey)) {
+        logToast('SKIP (duplicate)', message, type, `already shown in session`);
+        return null;
+      }
+      shownMessages.add(dedupKey);
     }
-    
-    // Отмечаем сообщение как показанное
-    shownMessages.add(dedupKey);
     logToast('SHOW', message, type, `total unique: ${shownMessages.size}`);
-    
+
     const id = `toast-${++toastIdCounter}`;
-    const toastItem: Toast = { id, message, type, duration };
+    const toastItem: Toast = { id, message, type, duration, replaceKey };
     toasts.push(toastItem);
     notifyListeners();
     return id;
   },
-  success: (message: string, duration?: number) => toast.show(message, 'success', duration),
-  error: (message: string, duration?: number) => toast.show(message, 'error', duration),
-  warning: (message: string, duration?: number) => toast.show(message, 'warning', duration),
-  info: (message: string, duration?: number) => toast.show(message, 'info', duration),
+  success: (message: string, duration?: number, replaceKey?: string) => toast.show(message, 'success', duration, replaceKey),
+  error: (message: string, duration?: number, replaceKey?: string) => toast.show(message, 'error', duration, replaceKey),
+  warning: (message: string, duration?: number, replaceKey?: string) => toast.show(message, 'warning', duration, replaceKey),
+  info: (message: string, duration?: number, replaceKey?: string) => toast.show(message, 'info', duration, replaceKey),
   remove: (id: string) => {
     const index = toasts.findIndex((t) => t.id === id);
     if (index !== -1) {

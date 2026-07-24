@@ -10,7 +10,6 @@ import { translateApiError } from '../utils/translateApiError';
 import type { User } from '../types/api';
 import { useAuth } from '../contexts/AuthContext';
 import { DeleteAccountModal } from './DeleteAccountModal';
-import { MyPrinterPicker } from './MyPrinterPicker';
 import { LanguageSwitcher } from './LanguageSwitcher';
 import type { AxiosError } from 'axios';
 
@@ -35,6 +34,7 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({ user, onUserUpdate }) 
     allow_printer_profiles_export: user.allow_printer_profiles_export ?? true,
     allow_print_profiles_import: user.allow_print_profiles_import ?? true,
     allow_print_profiles_export: user.allow_print_profiles_export ?? true,
+    auto_import_local_presets: user.auto_import_local_presets ?? false,
   });
 
   // Состояния для формы изменения username
@@ -241,9 +241,6 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({ user, onUserUpdate }) 
 
   return (
     <div className="max-w-7xl mx-auto space-y-6">
-      {/* Мой принтер */}
-      <MyPrinterPicker user={user} />
-
       {/* Язык интерфейса */}
       <section className="bg-white/10 backdrop-blur-sm border border-white/20 rounded-2xl p-6 shadow-xl">
         <div className="flex items-center justify-between gap-4 flex-wrap">
@@ -674,6 +671,28 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({ user, onUserUpdate }) 
             </div>
           </div>
         </div>
+
+        <label className="mt-4 flex items-start justify-between gap-4 bg-white/5 rounded-xl p-4 border border-white/10 cursor-pointer group">
+          <div className="min-w-0">
+            <div className="text-sm font-semibold text-white">{t('settings.autoImportLocal')}</div>
+            <p className="text-xs text-gray-400 mt-0.5">{t('settings.autoImportLocalHint')}</p>
+          </div>
+          <div className="relative flex-shrink-0 mt-0.5">
+            <input
+              type="checkbox"
+              checked={syncSettings.auto_import_local_presets}
+              onChange={(e) => handleSyncSettingsChange('auto_import_local_presets', e.target.checked)}
+              className="sr-only"
+            />
+            <div
+              className={`w-11 h-6 rounded-full transition-colors duration-200 flex items-center px-0.5 ${
+                syncSettings.auto_import_local_presets ? 'bg-purple-600 justify-end' : 'bg-gray-600 justify-start'
+              }`}
+            >
+              <div className="w-5 h-5 bg-white rounded-full shadow-md" />
+            </div>
+          </div>
+        </label>
 
         {/* Кнопка сохранения */}
         <div className="flex justify-end mt-4">

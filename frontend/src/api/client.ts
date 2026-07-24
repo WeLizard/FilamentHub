@@ -362,6 +362,7 @@ export const authAPI = {
     allow_printer_profiles_export?: boolean;
     allow_print_profiles_import?: boolean;
     allow_print_profiles_export?: boolean;
+    auto_import_local_presets?: boolean;
   }) => {
     const response = await api.patch<User>('/auth/me/settings', data);
     return response.data;

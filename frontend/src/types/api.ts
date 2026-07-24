@@ -479,6 +479,7 @@ export interface User {
   allow_printer_profiles_export?: boolean;
   allow_print_profiles_import?: boolean;
   allow_print_profiles_export?: boolean;
+  auto_import_local_presets?: boolean | null;
   api_key?: string | null;
   id: number;
   email: string;
