@@ -76,7 +76,11 @@ import orca
 # Configuration
 # --------------------------------------------------------------------------- #
 PLUGIN_VERSION = "0.0.6"
-SITE_URL = "https://filamenthub.ru"
+# Dev-convenient by default; build_package.py normalizes the prod wheel's default
+# to https://filamenthub.ru (and strips the dev diagnostics). Override at runtime
+# via FILAMENTHUB_SITE_URL to point the plugin at any contour — the dev frontend
+# serves the embed and proxies /api to the dev backend.
+SITE_URL = os.environ.get("FILAMENTHUB_SITE_URL", "http://localhost:3000").rstrip("/")
 EMBED_URL = SITE_URL + "/embed/catalog"
 API_BASE = SITE_URL + "/api/v1"
 HTTP_TIMEOUT = 20
@@ -258,6 +262,29 @@ def ensure_icon():
         return ""
 
 
+# fh-dev:start — diagnostic sync log; build_package.py strips this block and every
+# fh_log(...) call from the prod wheel, so the Hub artifact carries no dev code.
+# Active only off-prod (SITE_URL != prod); it exists because sync failures are
+# otherwise invisible (the summary shows only counts, the backend returns 200 on
+# per-item errors), so the reason must be captured here.
+DEBUG_LOG = SITE_URL != "https://filamenthub.ru"
+SYNC_LOG_FILE = os.path.join(PLUGIN_DIR, ".fh_sync.log")
+
+
+def fh_log(msg):
+    """Append one timestamped diagnostic line. Best-effort, never raises."""
+    if not DEBUG_LOG:
+        return
+    try:
+        import datetime
+        stamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        with open(SYNC_LOG_FILE, "a", encoding="utf-8") as fh:
+            fh.write("%s %s\n" % (stamp, msg))
+    except OSError:
+        pass
+# fh-dev:end
+
+
 # Session tokens live next to the plugin (inside data_dir, the allowed write
 # root) so signing in survives window/OrcaSlicer restarts — the iframe's own
 # storage is partitioned and dies with the window. Same role as the fork's
@@ -309,9 +336,24 @@ class ShellServer:
         self._oauth_secret = secrets.token_urlsafe(24)
         self._oauth = None
         self._oauth_lock = threading.Lock()
+        self._sync_lock = threading.Lock()
+        self._sync_result = ""
 
     def status_path(self):
         return "/s/" + self._oauth_secret
+
+    def sync_status_path(self):
+        return "/y/" + self._oauth_secret
+
+    def set_sync_result(self, text):
+        with self._sync_lock:
+            self._sync_result = text or ""
+
+    def _sync_status(self):
+        with self._sync_lock:
+            text = self._sync_result
+            self._sync_result = ""
+        return {"text": text}
 
     def deliver_url(self):
         # Absolute loopback URL the external browser is redirected to with the
@@ -376,6 +418,10 @@ class ShellServer:
                         return
                     if path == owner.status_path():
                         body = json.dumps(owner._oauth_status()).encode("utf-8")
+                        self._send(200, "application/json; charset=utf-8", body)
+                        return
+                    if path == owner.sync_status_path():
+                        body = json.dumps(owner._sync_status()).encode("utf-8")
                         self._send(200, "application/json; charset=utf-8", body)
                         return
                     if path == "/d/" + owner._oauth_secret:
@@ -842,6 +888,7 @@ PAGE = r"""<!DOCTYPE html>
 var SITE_ORIGIN = '__SITE_ORIGIN__';
 var EMBED_URL = '__EMBED_URL__';
 var OAUTH_STATUS_PATH = '__OAUTH_STATUS_PATH__';
+var SYNC_STATUS_PATH = '__SYNC_STATUS_PATH__';
 var frame = document.getElementById('fh');
 var wasLoggedIn = false;
 var oauthPollTimer = null;
@@ -972,6 +1019,7 @@ window.addEventListener('message', function (event) {
     startOAuthPolling();
     return;
   }
+  if (data.type === 'profile-changed') { startSyncPolling(); }
   try { orca.postMessage(data); } catch (e) { /* bridge not ready */ }
 });
 
@@ -1099,10 +1147,37 @@ document.getElementById('brand').addEventListener('click', function () {
   } catch (e) { /* iframe not ready */ }
 });
 
-// Sync: reconcile FilamentHub presets with the slicer, both directions. Runs in
-// Python; a summary dialog reports the result.
+// Python writes the sync summary to loopback; poll it and relay a toast to the embed.
+var syncPollTimer = null;
+var syncDeadline = 0;
+function stopSyncPolling() {
+  if (syncPollTimer) { clearTimeout(syncPollTimer); syncPollTimer = null; }
+}
+function startSyncPolling() {
+  stopSyncPolling();
+  syncDeadline = Date.now() + 30 * 1000;
+  pollSyncOnce();
+}
+function pollSyncOnce() {
+  if (Date.now() > syncDeadline) { stopSyncPolling(); return; }
+  fetch(SYNC_STATUS_PATH, { cache: 'no-store' })
+    .then(function (r) { return r.json(); })
+    .then(function (st) {
+      if (st.text) {
+        stopSyncPolling();
+        try {
+          frame.contentWindow.postMessage(
+            { source: 'filamenthub-plugin', type: 'sync-result', text: st.text }, SITE_ORIGIN);
+        } catch (e) { /* iframe not ready */ }
+        return;
+      }
+      syncPollTimer = setTimeout(pollSyncOnce, 1000);
+    })
+    .catch(function () { syncPollTimer = setTimeout(pollSyncOnce, 1500); });
+}
 document.getElementById('sync').addEventListener('click', function () {
   try { orca.postMessage({ source: 'filamenthub-plugin', type: 'sync' }); } catch (e) { /* bridge not ready */ }
+  startSyncPolling();
 });
 
 // Sign out: tell the catalog to log out; it clears the session and reports back
@@ -1117,7 +1192,8 @@ document.getElementById('logout').addEventListener('click', function () {
 </body>
 </html>
 """.replace("__EMBED_URL__", EMBED_URL).replace("__SITE_ORIGIN__", SITE_URL).replace(
-    "__OAUTH_STATUS_PATH__", SHELL_SERVER.status_path())
+    "__OAUTH_STATUS_PATH__", SHELL_SERVER.status_path()).replace(
+    "__SYNC_STATUS_PATH__", SHELL_SERVER.sync_status_path())
 
 
 # --------------------------------------------------------------------------- #
@@ -1361,10 +1437,12 @@ class FilamentHubCatalog(orca.script.ScriptPluginCapabilityBase):
         # group. Returns the sync-state record to store, or None on failure.
         status, body = http_get("/presets/%d/export/orcaslicer.json" % pid, token=token)
         if status != 200:
+            fh_log("pull %d FAILED: export HTTP %s" % (pid, status))
             return None
         try:
             profile = validate_filament_profile(json.loads(body.decode("utf-8")))
-        except (TypeError, ValueError):
+        except (TypeError, ValueError) as exc:
+            fh_log("pull %d FAILED: bad export payload: %r" % (pid, exc))
             return None
         ensure_parent_exists(profile, known_presets)
         ensure_filament_colour(profile)
@@ -1374,7 +1452,8 @@ class FilamentHubCatalog(orca.script.ScriptPluginCapabilityBase):
         base = profile_path[:-len(".json")]
         try:
             write_json_atomic(profile_path, profile)
-        except OSError:
+        except OSError as exc:
+            fh_log("pull %d FAILED: write error at %s: %r" % (pid, profile_path, exc))
             return None
         remove_stale_preset_files(folder, pid, profile_path)
         try:
@@ -1404,6 +1483,7 @@ class FilamentHubCatalog(orca.script.ScriptPluginCapabilityBase):
             pass
         status, _ = http_post_json("/orcaslicer/filaments/import", token, {"profiles": [item]})
         if status != 200:
+            fh_log("push %d FAILED: import HTTP %s" % (pid, status))
             return None
         return {"updated_at": (remote or {}).get("updated_at") or "",
                 "hash": local_entry["hash"], "name": profile.get("name") or ""}
@@ -1440,6 +1520,7 @@ class FilamentHubCatalog(orca.script.ScriptPluginCapabilityBase):
 
         local = scan_local_fh_presets(folder)
         state = load_sync_state()
+        fh_log("sync start: %d remote, %d local, folder=%s" % (len(remote_items), len(local), folder))
         pulled = updated = pushed = skipped = failed = renamed = 0
         for rp in remote_items:
             pid = rp.get("id")
@@ -1477,6 +1558,7 @@ class FilamentHubCatalog(orca.script.ScriptPluginCapabilityBase):
             local_changed = local_entry["hash"] != (rec.get("hash") or "")
             remote_newer = remote_updated > (rec.get("updated_at") or "")
             if local_changed:
+                fh_log("preset %d: local hash %s != stored %s -> push" % (pid, (local_entry["hash"] or "")[:8], (rec.get("hash") or "")[:8]))
                 res = self._push_one(pid, token, local_entry, rp)
                 if res:
                     state[str(pid)] = res
@@ -1557,12 +1639,13 @@ class FilamentHubCatalog(orca.script.ScriptPluginCapabilityBase):
         if failed:
             parts.append("%d failed" % failed)
         summary = ", ".join(parts) or "nothing to sync"
+        fh_log("sync done: %s (pull=%d upd=%d push=%d rm=%d ren=%d skip=%d fail=%d)" % (summary, pulled, updated, pushed, removed, renamed, skipped, failed))
         note = ""
         if pulled or updated or removed or renamed:
             note = ("\n\nThe filament dropdown is up to date." if reload_host_presets()
                     else "\n\nRestart OrcaSlicer to apply the changes in the filament dropdown.")
         if announce:
-            orca.host.ui.message("Sync complete: %s.%s" % (summary, note), title="FilamentHub", icon="info")
+            SHELL_SERVER.set_sync_result(("Sync complete: %s.%s" % (summary, note)).replace("\n\n", " "))
 
 
 @orca.plugin

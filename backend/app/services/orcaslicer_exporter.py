@@ -31,6 +31,16 @@ ORCASLICER_SCALAR_SETTING_KEYS = {
     "inherits",
 }
 
+# Identity / profile-header fields set authoritatively from the FilamentHub preset
+# (name, type, ids…). They must never be re-processed by the generic
+# orcaslicer_settings loop below: that loop wraps scalars into OrcaSlicer's
+# string-array convention, which would turn the scalar string `name` into a
+# one-element list and make the export fail the plugin's non-empty-*string* check.
+IDENTITY_KEYS = frozenset({
+    "name", "type", "version", "from", "instantiation",
+    "filament_settings_id", "setting_id", "filament_id",
+})
+
 
 # Process-scope keys (OrcaSlicer `s_Preset_print_options`) belong to a print/process profile,
 # not to a filament — a material must not carry them. Our frontend never emits these as filament
@@ -334,6 +344,10 @@ async def preset_to_orcaslicer_json(
     # Полезно для специальных настроек, которых нет в базовых полях FilamentHub
     if preset.orcaslicer_settings and isinstance(preset.orcaslicer_settings, dict) and len(preset.orcaslicer_settings) > 0:
         for key, value in preset.orcaslicer_settings.items():
+            # Идентити/заголовочные поля уже выставлены авторитетно выше; не даём
+            # массивной конвертации ниже испортить скалярный `name` (см. IDENTITY_KEYS).
+            if key in IDENTITY_KEYS:
+                continue
             # Process-scope ключи не место в filament-профиле — отбрасываем (см. PROCESS_SCOPE_KEYS)
             if key in PROCESS_SCOPE_KEYS:
                 logger.debug(f"Dropping process-scope key '{key}' from filament export of preset {preset.id}")

@@ -188,6 +188,28 @@ export function subscribeToPluginNavigation(onNavigate: (path: string) => void):
 }
 
 /**
+ * Подписка на сводку синка от шелла: Python пишет результат в loopback, шелл его
+ * опрашивает и шлёт вниз sync-result — SPA показывает тост вместо хост-диалога.
+ */
+export function subscribeToPluginSyncResult(onResult: (text: string) => void): () => void {
+  const handler = (event: MessageEvent) => {
+    if (!isTrustedPluginParentEvent(event)) {
+      return;
+    }
+    const data = event.data as Partial<PluginMessage> | undefined;
+    if (!data || data.source !== PLUGIN_MESSAGE_SOURCE || data.type !== 'sync-result') {
+      return;
+    }
+    const text = (data as { text?: unknown }).text;
+    if (typeof text === 'string' && text) {
+      onResult(text);
+    }
+  };
+  window.addEventListener('message', handler);
+  return () => window.removeEventListener('message', handler);
+}
+
+/**
  * Статус сессии для тулбара шелла: имя пользователя + счётчик пресетов
  * (аналог лейблов форковой панели). null — гость, шелл вернёт бренд-надпись.
  */

@@ -68,6 +68,25 @@ async def test_filament_scope_keys_survive():
 
 
 @pytest.mark.asyncio
+async def test_identity_name_stays_a_scalar_string():
+    # A reverse-synced blob carries name/filament_settings_id/ids. The array-wrapping
+    # passthrough must NOT re-process them, or the scalar `name` becomes a one-element
+    # list and the plugin rejects the export ("Preset name must be a non-empty string").
+    preset = _preset({
+        "name": "Stale Name From Orca",
+        "filament_settings_id": ["Stale Name From Orca"],
+        "setting_id": "STALE",
+        "type": "filament",
+    })
+
+    profile = await preset_to_orcaslicer_json(preset, _filament(), db=None)
+
+    assert isinstance(profile["name"], str)
+    assert profile["name"] == "Test [fh]"          # authoritative preset.name, unwrapped
+    assert profile["setting_id"] == "FHUB000001"   # authoritative id, not the stale blob
+
+
+@pytest.mark.asyncio
 async def test_compat_context_exported_as_provenance():
     preset = _preset({})
     preset.compat_context = {"nozzle_type": "CHT", "plate": "textured"}
