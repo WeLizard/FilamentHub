@@ -2562,6 +2562,15 @@ export const physicalPrintersAPI = {
     return response.data;
   },
 
+  create: async (payload: {
+    name: string;
+    printer_id?: number | null;
+    printer_profile_ids?: number[];
+  }): Promise<PhysicalPrinter> => {
+    const response = await api.post<PhysicalPrinter>('/physical-printers', payload);
+    return response.data;
+  },
+
   update: async (
     physicalPrinterId: number,
     payload: { name?: string; printer_id?: number | null },
