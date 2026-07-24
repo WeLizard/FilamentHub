@@ -201,3 +201,74 @@ def test_build_produces_single_file_package_and_checksum(plugin_module, tmp_path
     assert (package_dir / "SHA256SUMS").read_text(encoding="utf-8") == (
         f"{digest}  filamenthub_plugin.py\n"
     )
+
+
+def test_printer_profiles_never_leave_with_host_credentials(plugin_module, monkeypatch):
+    # A printer preset holds the credentials of its network host; they must stay
+    # on the user's machine even though the rest of the preset is reported.
+    sent = []
+    monkeypatch.setattr(
+        plugin_module, "http_post_json",
+        lambda path, token, payload: (sent.append((path, payload)), (200, b"{}"))[1],
+    )
+    items = [{"name": "Voron 350", "settings": {
+        "printer_settings_id": "voron-350",
+        "print_host": "192.168.1.50",
+        "printhost_apikey": "secret-key",
+        "printhost_password": "hunter2",
+        "printhost_user": "admin",
+        "nozzle_diameter": ["0.4"],
+    }}]
+    state = {}
+    assert plugin_module.push_user_profiles("machine", "tok", items, state) == (1, 0)
+    path, payload = sent[0]
+    assert path == "/orcaslicer/printer-profiles/import"
+    settings = payload["profiles"][0]["orcaslicer_settings"]
+    assert "printhost_apikey" not in settings
+    assert "printhost_password" not in settings
+    assert "printhost_user" not in settings
+    assert settings["print_host"] == "192.168.1.50"
+    assert settings["nozzle_diameter"] == ["0.4"]
+    assert payload["profiles"][0]["external_id"] == "voron-350"
+
+
+def test_unchanged_profiles_are_not_reported_again(plugin_module, monkeypatch):
+    calls = []
+    monkeypatch.setattr(
+        plugin_module, "http_post_json",
+        lambda path, token, payload: (calls.append(payload), (200, b"{}"))[1],
+    )
+    items = [{"name": "0.2mm Standard", "settings": {"layer_height": "0.2"}}]
+    state = {}
+    assert plugin_module.push_user_profiles("process", "tok", items, state) == (1, 0)
+    assert plugin_module.push_user_profiles("process", "tok", items, state) == (0, 0)
+    assert len(calls) == 1
+
+    items[0]["settings"]["layer_height"] = "0.3"
+    assert plugin_module.push_user_profiles("process", "tok", items, state) == (1, 0)
+    assert len(calls) == 2
+
+
+def test_failed_upload_is_retried_on_the_next_sync(plugin_module, monkeypatch):
+    # A rejected batch must not be recorded as reported, or the profile would be
+    # silently dropped until the user happens to edit it again.
+    monkeypatch.setattr(plugin_module, "http_post_json",
+                        lambda path, token, payload: (503, b""))
+    items = [{"name": "Voron 350", "settings": {"nozzle_diameter": ["0.4"]}}]
+    state = {}
+    assert plugin_module.push_user_profiles("machine", "tok", items, state) == (0, 1)
+    assert state == {}
+
+    monkeypatch.setattr(plugin_module, "http_post_json",
+                        lambda path, token, payload: (200, b"{}"))
+    assert plugin_module.push_user_profiles("machine", "tok", items, state) == (1, 0)
+
+
+def test_plugin_never_writes_machine_or_process_into_the_slicer(plugin_module):
+    # Printer and print profiles are collected from OrcaSlicer, never written
+    # back: OrcaCloud already syncs those between a user's own installs.
+    source = PLUGIN_PATH.read_text(encoding="utf-8")
+    assert "user_machine_dir" not in source
+    assert "user_process_dir" not in source
+    for spec in plugin_module.PROFILE_KINDS.values():
+        assert "folder" not in spec

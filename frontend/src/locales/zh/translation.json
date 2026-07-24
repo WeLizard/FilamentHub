@@ -3857,6 +3857,17 @@
     "empty": "未找到打印机。尝试不同的搜索。",
     "updateError": "无法更新选定的打印机"
   },
+  "recover": {
+    "title": "恢复预设",
+    "found": "找到 {{count}} 个本地预设。勾选要作为草稿导入到个人资料的预设。",
+    "empty": "未找到本地耗材预设。",
+    "selectAll": "全选",
+    "deselectAll": "取消全选",
+    "alreadyImported": "已导入",
+    "import": "导入（{{count}}）",
+    "close": "关闭",
+    "cancel": "取消"
+  },
   "settings": {
     "profile": "配置文件",
     "username": "用户名",

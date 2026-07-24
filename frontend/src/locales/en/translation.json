@@ -3862,6 +3862,17 @@
     "empty": "No printers found. Try a different search.",
     "updateError": "Could not update selected printer"
   },
+  "recover": {
+    "title": "Recover presets",
+    "found": "Found {{count}} local preset(s). Check the ones to import into your profile as drafts.",
+    "empty": "No local filament presets found.",
+    "selectAll": "Select all",
+    "deselectAll": "Deselect all",
+    "alreadyImported": "already imported",
+    "import": "Import ({{count}})",
+    "close": "Close",
+    "cancel": "Cancel"
+  },
   "settings": {
     "profile": "Profile",
     "username": "Username",

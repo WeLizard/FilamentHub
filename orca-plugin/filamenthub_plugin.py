@@ -338,12 +338,17 @@ class ShellServer:
         self._oauth_lock = threading.Lock()
         self._sync_lock = threading.Lock()
         self._sync_result = ""
+        self._recover_lock = threading.Lock()
+        self._recover_items = None
 
     def status_path(self):
         return "/s/" + self._oauth_secret
 
     def sync_status_path(self):
         return "/y/" + self._oauth_secret
+
+    def recover_status_path(self):
+        return "/r/" + self._oauth_secret
 
     def set_sync_result(self, text):
         with self._sync_lock:
@@ -354,6 +359,16 @@ class ShellServer:
             text = self._sync_result
             self._sync_result = ""
         return {"text": text}
+
+    def set_recover_items(self, items):
+        with self._recover_lock:
+            self._recover_items = list(items)
+
+    def _recover_status(self):
+        with self._recover_lock:
+            items = self._recover_items
+            self._recover_items = None
+        return {"ready": items is not None, "items": items or []}
 
     def deliver_url(self):
         # Absolute loopback URL the external browser is redirected to with the
@@ -422,6 +437,10 @@ class ShellServer:
                         return
                     if path == owner.sync_status_path():
                         body = json.dumps(owner._sync_status()).encode("utf-8")
+                        self._send(200, "application/json; charset=utf-8", body)
+                        return
+                    if path == owner.recover_status_path():
+                        body = json.dumps(owner._recover_status()).encode("utf-8")
                         self._send(200, "application/json; charset=utf-8", body)
                         return
                     if path == "/d/" + owner._oauth_secret:
@@ -938,6 +957,112 @@ def scan_local_fh_presets(folder):
 
 
 # --------------------------------------------------------------------------- #
+# Printer (machine) and print (process) profiles travel one way: read out of
+# OrcaSlicer and handed to FilamentHub, so the site knows which machine a spool,
+# a gate or a recommendation belongs to. Nothing is ever written back into the
+# slicer — OrcaCloud already syncs a user's own machine and process presets
+# across their installs, and FilamentHub's own library is filament presets. Each
+# profile is sent once and again only after it changes; the content hash lives in
+# the shared sync state.
+# --------------------------------------------------------------------------- #
+PROFILE_KINDS = {
+    "machine": {
+        "label": "printer",
+        "collection": "printers",
+        "state_prefix": "machine",
+        "import_path": "/orcaslicer/printer-profiles/import",
+        "id_key": "printer_settings_id",
+    },
+    "process": {
+        "label": "print",
+        "collection": "prints",
+        "state_prefix": "process",
+        "import_path": "/orcaslicer/print-profiles/import",
+        "id_key": "print_settings_id",
+    },
+}
+
+# A printer preset carries the credentials of its network host. They stay on the
+# user's machine: the profile is stripped before anything goes to FilamentHub.
+PRINTHOST_SECRET_KEYS = ("printhost_apikey", "printhost_password", "printhost_user")
+
+
+def strip_printhost_secrets(settings):
+    return {k: v for k, v in settings.items() if k not in PRINTHOST_SECRET_KEYS}
+
+
+def scan_user_profiles(kind):
+    """The loaded account's own presets of one collection (UI thread — reads
+    preset_bundle). Values come from config_value, which resolves inheritance:
+    the file on disk holds only the overrides, so a nozzle inherited from the
+    system preset would otherwise never reach FilamentHub."""
+    out = []
+    try:
+        collection = getattr(orca.host.preset_bundle(), PROFILE_KINDS[kind]["collection"])
+        for i in range(collection.size()):
+            preset = collection.preset(i)
+            if not preset.is_user():
+                continue
+            name = preset.name or ""
+            if "[fh]" in name or "@fh" in name:
+                continue
+            if str(getattr(preset, "bundle_id", "") or "").startswith(BUNDLE_ID):
+                continue
+            settings = {}
+            for key in preset.config_keys():
+                try:
+                    value = preset.config_value(key)
+                except Exception:
+                    continue
+                if value is None or isinstance(value, (str, int, float, bool, list, dict)):
+                    settings[key] = value
+            if settings:
+                out.append({"name": name, "settings": settings})
+    except Exception:
+        pass
+    return out
+
+
+def push_user_profiles(kind, token, items, state):
+    """Send the profiles whose content changed since the last sync. Returns
+    (sent, failed); unchanged profiles are silently left alone."""
+    spec = PROFILE_KINDS[kind]
+    changed = []
+    for item in items:
+        settings = item["settings"]
+        if kind == "machine":
+            settings = strip_printhost_secrets(settings)
+        key = "%s:%s" % (spec["state_prefix"], _draft_id(item["name"]))
+        digest = preset_content_hash(settings)
+        if state.get(key) == digest:
+            continue
+        # setting_id is how FilamentHub ties a network observation of this printer
+        # back to its profile, so it must travel with the profile, not only as the
+        # external id.
+        orca_id = str(settings.get(spec["id_key"]) or item["name"])[:200]
+        changed.append((key, digest, {
+            "name": item["name"][:200],
+            "external_id": orca_id,
+            "setting_id": orca_id,
+            "orcaslicer_settings": settings,
+            "source": "orcaslicer",
+        }))
+    sent = failed = 0
+    for batch_start in range(0, len(changed), 25):
+        batch = changed[batch_start:batch_start + 25]
+        status, _ = http_post_json(spec["import_path"], token,
+                                   {"profiles": [entry[2] for entry in batch]})
+        if status == 200:
+            for key, digest, _payload in batch:
+                state[key] = digest
+            sent += len(batch)
+        else:
+            fh_log("%s push HTTP %s for %d profile(s)" % (kind, status, len(batch)))
+            failed += len(batch)
+    return sent, failed
+
+
+# --------------------------------------------------------------------------- #
 # The shell page — an Orca-themed toolbar (host CSS variables, like the fork's
 # native FilamentHubPanel buttons) above a full-window iframe, plus two relays:
 # catalog -> Python (import) and toolbar -> catalog (SPA navigation, no reload).
@@ -1019,6 +1144,7 @@ PAGE = r"""<!DOCTYPE html>
     <button data-path="/profile">Profile</button>
     <button data-path="/wiki">Wiki</button>
     <button id="sync" title="Sync your FilamentHub presets with OrcaSlicer">Sync</button>
+    <button id="recover" title="Find your local OrcaSlicer filament presets and import the ones you pick as drafts">Recover</button>
   </div>
   <div id="content">
     <div id="service-status" role="status" aria-live="polite">
@@ -1037,6 +1163,7 @@ var SITE_ORIGIN = '__SITE_ORIGIN__';
 var EMBED_URL = '__EMBED_URL__';
 var OAUTH_STATUS_PATH = '__OAUTH_STATUS_PATH__';
 var SYNC_STATUS_PATH = '__SYNC_STATUS_PATH__';
+var RECOVER_STATUS_PATH = '__RECOVER_STATUS_PATH__';
 var frame = document.getElementById('fh');
 var wasLoggedIn = false;
 var oauthPollTimer = null;
@@ -1120,6 +1247,8 @@ function setAuthControls(loggedIn) {
   var profileBtn = document.querySelector('#bar button[data-path="/profile"]');
   if (profileBtn) profileBtn.style.display = loggedIn ? '' : 'none';
   document.getElementById('sync').style.display = loggedIn ? 'inline-block' : 'none';
+  var recoverBtn = document.getElementById('recover');
+  if (recoverBtn) recoverBtn.style.display = loggedIn ? 'inline-block' : 'none';
   var brand = document.getElementById('brand');
   brand.style.cursor = loggedIn ? 'default' : 'pointer';
   brand.title = loggedIn ? '' : 'Sign in to FilamentHub';
@@ -1167,7 +1296,7 @@ window.addEventListener('message', function (event) {
     startOAuthPolling();
     return;
   }
-  if (data.type === 'profile-changed') { startSyncPolling(); }
+  if (data.type === 'profile-changed' || data.type === 'recover-import') { startSyncPolling(); }
   try { orca.postMessage(data); } catch (e) { /* bridge not ready */ }
 });
 
@@ -1328,6 +1457,40 @@ document.getElementById('sync').addEventListener('click', function () {
   startSyncPolling();
 });
 
+// Recover: Python scans local presets and writes the list to loopback; poll it and
+// hand the list to the embed, which shows a checkbox picker and posts back the choice.
+var recoverPollTimer = null;
+var recoverDeadline = 0;
+function stopRecoverPolling() {
+  if (recoverPollTimer) { clearTimeout(recoverPollTimer); recoverPollTimer = null; }
+}
+function startRecoverPolling() {
+  stopRecoverPolling();
+  recoverDeadline = Date.now() + 30 * 1000;
+  pollRecoverOnce();
+}
+function pollRecoverOnce() {
+  if (Date.now() > recoverDeadline) { stopRecoverPolling(); return; }
+  fetch(RECOVER_STATUS_PATH, { cache: 'no-store' })
+    .then(function (r) { return r.json(); })
+    .then(function (st) {
+      if (st.ready) {
+        stopRecoverPolling();
+        try {
+          frame.contentWindow.postMessage(
+            { source: 'filamenthub-plugin', type: 'recover-list', items: st.items || [] }, SITE_ORIGIN);
+        } catch (e) { /* iframe not ready */ }
+        return;
+      }
+      recoverPollTimer = setTimeout(pollRecoverOnce, 800);
+    })
+    .catch(function () { recoverPollTimer = setTimeout(pollRecoverOnce, 1200); });
+}
+document.getElementById('recover').addEventListener('click', function () {
+  try { orca.postMessage({ source: 'filamenthub-plugin', type: 'recover' }); } catch (e) { /* bridge not ready */ }
+  startRecoverPolling();
+});
+
 // Sign out: tell the catalog to log out; it clears the session and reports back
 // (auth-state with no label), which hides this button again.
 document.getElementById('logout').addEventListener('click', function () {
@@ -1341,7 +1504,8 @@ document.getElementById('logout').addEventListener('click', function () {
 </html>
 """.replace("__EMBED_URL__", EMBED_URL).replace("__SITE_ORIGIN__", SITE_URL).replace(
     "__OAUTH_STATUS_PATH__", SHELL_SERVER.status_path()).replace(
-    "__SYNC_STATUS_PATH__", SHELL_SERVER.sync_status_path())
+    "__SYNC_STATUS_PATH__", SHELL_SERVER.sync_status_path()).replace(
+    "__RECOVER_STATUS_PATH__", SHELL_SERVER.recover_status_path())
 
 
 # --------------------------------------------------------------------------- #
@@ -1415,8 +1579,10 @@ class FilamentHubCatalog(orca.script.ScriptPluginCapabilityBase):
         refresh_user_preset_folder()
         observations = observe_printer_presets()  # UI thread: read printer connection data
         active_filaments = scan_active_user_filaments()  # UI thread: loaded account's user presets
-        threading.Thread(target=self._do_sync, args=(token, known, announce, active_filaments), daemon=True).start()
-        threading.Thread(target=send_printer_observations, args=(token, observations), daemon=True).start()
+        host_profiles = self._host_profiles()  # UI thread: machine/process presets
+        threading.Thread(target=self._do_sync,
+                         args=(token, known, announce, active_filaments, host_profiles, observations),
+                         daemon=True).start()
 
     def execute(self):
         created = self._open()
@@ -1442,6 +1608,11 @@ class FilamentHubCatalog(orca.script.ScriptPluginCapabilityBase):
         except Exception:
             pass
         return names
+
+    def _host_profiles(self):
+        # Machine/process presets of the loaded account, read on the UI thread and
+        # handed to the worker that reports them to FilamentHub.
+        return {kind: scan_user_profiles(kind) for kind in PROFILE_KINDS}
 
     # on_message runs on the UI thread — offload network + disk work to a worker.
     def on_message(self, msg):
@@ -1469,7 +1640,11 @@ class FilamentHubCatalog(orca.script.ScriptPluginCapabilityBase):
             known = self._known_filament_preset_names()  # host read on the UI thread
             refresh_user_preset_folder()
             active_filaments = scan_active_user_filaments()  # UI thread: loaded account's user presets
-            threading.Thread(target=self._do_sync, args=(token, known, True, active_filaments), daemon=True).start()
+            host_profiles = self._host_profiles()  # UI thread: machine/process presets
+            observations = observe_printer_presets()  # UI thread: printer connection data
+            threading.Thread(target=self._do_sync,
+                             args=(token, known, True, active_filaments, host_profiles, observations),
+                             daemon=True).start()
         elif msg_type == "auth-token":
             # Login / token refresh in the catalog — persist for session restore,
             # then reconcile presets automatically (silently).
@@ -1485,6 +1660,35 @@ class FilamentHubCatalog(orca.script.ScriptPluginCapabilityBase):
             self._start_external_oauth(msg.get("provider"))
         elif msg_type == "auth-logout":
             clear_auth()
+        elif msg_type == "recover":
+            token = (load_saved_auth() or {}).get("accessToken") or ""
+            threading.Thread(target=self._do_recover_scan, args=(token,), daemon=True).start()
+        elif msg_type == "recover-import":
+            token = (load_saved_auth() or {}).get("accessToken") or ""
+            threading.Thread(target=self._do_recover_import, args=(token, msg.get("names")), daemon=True).start()
+
+    def _do_recover_scan(self, token):
+        # Disk-only scan across every account + version backup; hand the list to the
+        # embed (via loopback) to show its checkbox picker. Marks already-imported.
+        candidates = scan_recovery_filaments()
+        imported = load_imported_draft_ids()
+        SHELL_SERVER.set_recover_items(
+            [{"name": c["name"], "imported": _draft_id(c["name"]) in imported} for c in candidates])
+
+    def _do_recover_import(self, token, names):
+        # Push only the presets the user checked in the embed picker as drafts.
+        if not token or not isinstance(names, list) or not names:
+            SHELL_SERVER.set_sync_result("Recovery: nothing selected.")
+            return
+        wanted = {str(n) for n in names}
+        candidates = [c for c in scan_recovery_filaments() if c["name"] in wanted]
+        sent_ids = push_filament_drafts(token, candidates)
+        if sent_ids:
+            imported = load_imported_draft_ids()
+            for did in sent_ids:
+                imported[did] = 1
+            save_imported_draft_ids(imported)
+        SHELL_SERVER.set_sync_result("Recovered %d preset(s) as drafts." % len(sent_ids))
 
     def _start_external_oauth(self, provider):
         # Google/Yandex block their consent pages in embedded WebViews, so run the
@@ -1638,7 +1842,8 @@ class FilamentHubCatalog(orca.script.ScriptPluginCapabilityBase):
         return {"updated_at": (remote or {}).get("updated_at") or "",
                 "hash": local_entry["hash"], "name": profile.get("name") or ""}
 
-    def _do_sync(self, token, known_presets, announce=True, active_filaments=None):
+    def _do_sync(self, token, known_presets, announce=True, active_filaments=None,
+                 host_profiles=None, observations=None):
         if not token:
             if announce:
                 orca.host.ui.message("Sign in to FilamentHub in the window, then Sync.",
@@ -1771,7 +1976,23 @@ class FilamentHubCatalog(orca.script.ScriptPluginCapabilityBase):
                         pass
             state.pop(str(pid), None)
             removed += 1
+
+        profile_parts = []
+        for kind in PROFILE_KINDS:
+            kind_sent, kind_failed = push_user_profiles(
+                kind, token, (host_profiles or {}).get(kind) or [], state)
+            bits = []
+            if kind_sent:
+                bits.append("%d sent to FilamentHub" % kind_sent)
+            if kind_failed:
+                bits.append("%d failed" % kind_failed)
+            if bits:
+                profile_parts.append("%s profiles: %s" % (PROFILE_KINDS[kind]["label"], ", ".join(bits)))
         save_sync_state(state)
+        # After the profiles, never before: FilamentHub ties an observed printer to
+        # its profile by the Orca preset id, so the profile has to exist first or
+        # the printer stays unlinked until the next sync.
+        send_printer_observations(token, observations)
 
         parts = []
         if pulled:
@@ -1798,6 +2019,7 @@ class FilamentHubCatalog(orca.script.ScriptPluginCapabilityBase):
                     imported[did] = 1
                 save_imported_draft_ids(imported)
                 parts.append("%d imported as drafts" % len(sent_ids))
+        parts.extend(profile_parts)
         summary = ", ".join(parts) or "nothing to sync"
         fh_log("sync done: %s (pull=%d upd=%d push=%d rm=%d ren=%d skip=%d fail=%d)" % (summary, pulled, updated, pushed, removed, renamed, skipped, failed))
         note = ""

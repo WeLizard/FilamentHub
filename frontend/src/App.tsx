@@ -13,10 +13,11 @@ import { OAuthPluginStartPage } from './pages/OAuthPluginStartPage';
 import { ConfirmEmailChangePage } from './pages/ConfirmEmailChangePage';
 import { BrandInvitePage } from './pages/BrandInvitePage';
 import { DownloadPage } from './pages/DownloadPage';
-import { ToastContainer } from './components/Toast';
+import { ToastContainer, toast } from './components/Toast';
 import { useOrcaSlicerNotifications } from './hooks/useOrcaSlicerNotifications';
-import { lazy, Suspense, useEffect } from 'react';
-import { isPluginEmbed, subscribeToPluginNavigation } from './utils/pluginBridge';
+import { lazy, Suspense, useEffect, useState } from 'react';
+import { isPluginEmbed, subscribeToPluginNavigation, subscribeToPluginSyncResult, subscribeToPluginRecoverList, sendRecoverImport, type RecoverItem } from './utils/pluginBridge';
+import { RecoverPresetsModal } from './components/RecoverPresetsModal';
 import { Notifications } from './components/Notifications';
 import { useAuth } from './contexts/AuthContext';
 import { MaintenancePage } from './components/MaintenancePage';
@@ -148,6 +149,21 @@ function AppContent() {
     return subscribeToPluginNavigation(navigate);
   }, [navigate]);
 
+  useEffect(() => {
+    if (!isPluginEmbed()) {
+      return;
+    }
+    return subscribeToPluginSyncResult((text) => toast.success(text, undefined, 'sync'));
+  }, []);
+
+  const [recoverItems, setRecoverItems] = useState<RecoverItem[] | null>(null);
+  useEffect(() => {
+    if (!isPluginEmbed()) {
+      return;
+    }
+    return subscribeToPluginRecoverList((items) => setRecoverItems(items));
+  }, []);
+
   // Показываем страницу технических работ если включён maintenance mode
   // НО: если пользователь уже авторизован как админ — показываем сайт
   if (isMaintenanceMode && (!user || user.role !== 'admin')) {
@@ -168,6 +184,16 @@ function AppContent() {
   return (
     <>
       <ToastContainer />
+      {recoverItems && (
+        <RecoverPresetsModal
+          items={recoverItems}
+          onClose={() => setRecoverItems(null)}
+          onImport={(names) => {
+            sendRecoverImport(names);
+            setRecoverItems(null);
+          }}
+        />
+      )}
       {/* Плавающая кнопка уведомлений для OrcaSlicer (когда нет хедера) */}
       {isInOrcaSlicer && user && <Notifications floating={true} />}
       <Routes>

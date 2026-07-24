@@ -209,6 +209,42 @@ export function subscribeToPluginSyncResult(onResult: (text: string) => void): (
   return () => window.removeEventListener('message', handler);
 }
 
+export interface RecoverItem {
+  name: string;
+  imported: boolean;
+}
+
+/**
+ * Подписка на список найденных локальных пресетов от кнопки Recover: плагин сканит
+ * диск, отдаёт список — SPA показывает окно выбора с чекбоксами.
+ */
+export function subscribeToPluginRecoverList(onList: (items: RecoverItem[]) => void): () => void {
+  const handler = (event: MessageEvent) => {
+    if (!isTrustedPluginParentEvent(event)) {
+      return;
+    }
+    const data = event.data as Partial<PluginMessage> | undefined;
+    if (!data || data.source !== PLUGIN_MESSAGE_SOURCE || data.type !== 'recover-list') {
+      return;
+    }
+    const items = (data as { items?: unknown }).items;
+    if (Array.isArray(items)) {
+      onList(
+        items.filter(
+          (i): i is RecoverItem => !!i && typeof (i as RecoverItem).name === 'string',
+        ),
+      );
+    }
+  };
+  window.addEventListener('message', handler);
+  return () => window.removeEventListener('message', handler);
+}
+
+/** Отправить плагину выбранные для импорта имена (из окна Recover). */
+export function sendRecoverImport(names: string[]): void {
+  postToPlugin({ source: PLUGIN_MESSAGE_SOURCE, type: 'recover-import', names });
+}
+
 /**
  * Статус сессии для тулбара шелла: имя пользователя + счётчик пресетов
  * (аналог лейблов форковой панели). null — гость, шелл вернёт бренд-надпись.
