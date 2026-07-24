@@ -819,70 +819,21 @@ async def _ensure_printer_id(
             if printer_vendor_key == vendor_key and printer_model_norm == model_normalized:
                 return printer.id
 
-    # Принтер не найден - создаем новый
-    logger.info(f"  ❌ Принтер не найден, создаем новый: manufacturer='{manufacturer}', model='{model}'")
-    if profile_name:
-        from app.services.slug_service import generate_unique_slug
-
-        # Формируем правильное имя принтера из manufacturer и model
-        # Используем очищенное имя профиля (без диаметра сопла) если оно лучше
-        clean_profile_name = _clean_identity_value(clean_printer_name) or _clean_identity_value(profile_name)
-        printer_display_name = clean_profile_name if clean_profile_name and clean_profile_name != profile_name else None
-
-        # Если manufacturer и model определены правильно, используем их для имени
-        if manufacturer_normalized and model_normalized:
-            # Формируем имя: "Manufacturer Model" или просто "Model" если manufacturer пустой
-            if manufacturer and manufacturer.lower() != "custom":
-                printer_display_name = f"{manufacturer} {model}".strip()
-            else:
-                printer_display_name = model.strip()
-        elif clean_profile_name:
-            # Используем очищенное имя профиля (без диаметра сопла)
-            printer_display_name = clean_profile_name
-        else:
-            # Жесткий fallback, когда входные данные полностью placeholder
-            printer_display_name = "Custom printer"
-
-        # Используем printer_slug если есть, иначе генерируем из правильного имени
-        final_slug = printer_slug
-        if not final_slug:
-            slug_source = f"{manufacturer} {model}".strip() if manufacturer_normalized and model_normalized else printer_display_name
-            final_slug = await generate_unique_slug(
-                db=db,
-                model=Printer,
-                source=slug_source,
-                fallback="printer",
-            )
-
-        logger.info(f"  🆕 Создание нового принтера: '{printer_display_name}' (manufacturer='{manufacturer}', model='{model}', slug: {final_slug})")
-        printer = Printer(
-            name=printer_display_name,  # Используем правильное имя, а не профиль с диаметром сопла
-            manufacturer=manufacturer,
-            model=model,
-            slug=final_slug,
-            source="user",
-            vendor=vendor_name or None,
-            model_id=model_id or None,
-            extra_metadata=combined_metadata if combined_metadata else None,
-            active=True,
-        )
-        db.add(printer)
-        try:
-            await db.flush()
-        except IntegrityError:
-            await db.rollback()
-            # Race condition: другой запрос создал принтер параллельно — ищем заново
-            result = await db.execute(
-                select(Printer).where(Printer.slug == final_slug)
-            )
-            existing = result.scalar_one_or_none()
-            if existing:
-                logger.info(f"  ♻️ Race condition resolved: found printer {existing.id} by slug")
-                return existing.id
-            logger.warning("IntegrityError при создании принтера, но повторный поиск не дал результата")
-            return None
-        return printer.id
-
+    # Принтер не найден — это не повод придумывать модель.
+    #
+    # Таблица принтеров у нас зеркало моделей OrcaSlicer: люди создают свои
+    # пресеты на её основе, и мы её обновляем из слайсера. Запись, собранная из
+    # пользовательского пресета, попадала в это зеркало вместе с личным именем
+    # машины («Ulti Generic Klipper Printer»), торчала в списке моделей у всех
+    # и мешала бы следующему обновлению каталога.
+    #
+    # Профиль остаётся без модели: точка сопоставления у пресета есть всегда
+    # (printer_model и inherits ссылаются на модель каталога), и если она не
+    # сошлась — это повод показать человеку выбор, а не выдумать запись.
+    logger.info(
+        "  ❌ Модель не сопоставлена: name='%s', vendor='%s', model='%s' — профиль остаётся без каталожной модели",
+        profile_name, vendor_name, model,
+    )
     return None
 
 

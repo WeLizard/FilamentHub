@@ -48,7 +48,7 @@ import {
 import { Printer3DIcon } from '../components/icons/Printer3DIcon';
 import { useAuth } from '../contexts/AuthContext';
 import { useHeaderVisible } from '../hooks/useHeaderVisible';
-import { presetsAPI, filamentsAPI, brandsAPI, savedPresetsAPI, filamentReviewsAPI, printerProfilesAPI, printProfilesAPI, authAPI, spoolsAPI, qrAPI, devicesAPI, presetSlotsAPI, printersAPI, calculatorAPI, crmAPI } from '../api/client';
+import { presetsAPI, filamentsAPI, brandsAPI, savedPresetsAPI, filamentReviewsAPI, printerProfilesAPI, printProfilesAPI, authAPI, spoolsAPI, qrAPI, devicesAPI, presetSlotsAPI, printersAPI, calculatorAPI, crmAPI, physicalPrintersAPI } from '../api/client';
 import { extractQrShortCode, createQrFrameDecoder } from '../utils/qrScanner';
 import type { UserSpool, SpoolState, UserPrinterDevice } from '../api/client';
 import { SpoolIcon } from '../components/icons/SpoolIcon';
@@ -330,6 +330,41 @@ export const ProfilePage: React.FC = () => {
   }, [myPrintProfiles]);
 
   // Группируем профили принтера по принтерам (по printer_id)
+  const { data: myPhysicalPrinters } = useQuery({
+    queryKey: ['physical-printers'],
+    queryFn: physicalPrintersAPI.list,
+  });
+
+  // Конфигурации, уже закреплённые за реальным принтером: они живут в его
+  // карточке, а не в общем списке.
+  const linkedPrinterProfileIds = useMemo(() => {
+    const linked = new Set<number>();
+    (myPhysicalPrinters ?? []).forEach((printer) => {
+      printer.printer_profile_ids.forEach((id) => linked.add(id));
+    });
+    return linked;
+  }, [myPhysicalPrinters]);
+
+  const printProfileCountByConfiguration = useMemo(() => {
+    const counts = new Map<number, number>();
+    myPrinterProfiles.forEach((profile) => {
+      if (!profile.printer_slug) {
+        counts.set(profile.id, 0);
+        return;
+      }
+      counts.set(
+        profile.id,
+        myPrintProfiles.filter(
+          (pp) =>
+            pp.printer_links?.some((link) => link.printer_slug === profile.printer_slug) ||
+            pp.compatible_printers?.includes(profile.printer_slug || '') ||
+            pp.compatible_printers?.includes(profile.name || ''),
+        ).length,
+      );
+    });
+    return counts;
+  }, [myPrinterProfiles, myPrintProfiles]);
+
   const printersWithProfiles = useMemo(() => {
     const printerMap = new Map<number, {
       id: number;
@@ -340,12 +375,22 @@ export const ProfilePage: React.FC = () => {
       profiles: PrinterProfile[];
     }>();
 
+    // Конфигурации, чью модель не удалось сопоставить с каталогом. Раньше они
+    // молча исчезали из списка; это настройки пользователя, и он должен их
+    // видеть, чтобы привязать модель вручную.
+    const unassigned: PrinterProfile[] = [];
+
     myPrinterProfiles.forEach((profile) => {
-      // Группируем только по printer_id (реальные принтеры из базы)
-      if (!profile.printer_id) {
-        return; // Пропускаем профили без привязанного принтера
+      // Привязанные к принтеру показываются в его карточке выше — здесь остаётся
+      // только то, что своего принтера ещё не нашло.
+      if (linkedPrinterProfileIds.has(profile.id)) {
+        return;
       }
-      
+      if (!profile.printer_id) {
+        unassigned.push(profile);
+        return;
+      }
+
       if (!printerMap.has(profile.printer_id)) {
         // Формируем название принтера:
         // 1. Приоритет: printer_name (имя из OrcaSlicer профиля, например "B2Bee", "Voron 2.4 350")
@@ -377,7 +422,7 @@ export const ProfilePage: React.FC = () => {
       printerMap.get(profile.printer_id)!.profiles.push(profile);
     });
 
-    return Array.from(printerMap.values()).sort((a, b) => {
+    const grouped = Array.from(printerMap.values()).sort((a, b) => {
       // Сортируем сначала по производителю, затем по модели
       const manufacturerA = a.manufacturer || '';
       const manufacturerB = b.manufacturer || '';
@@ -388,7 +433,19 @@ export const ProfilePage: React.FC = () => {
       const modelB = b.model || '';
       return modelA.localeCompare(modelB);
     });
-  }, [myPrinterProfiles]);
+
+    if (unassigned.length > 0) {
+      grouped.push({
+        id: 0,
+        slug: null,
+        name: t('profilePage.unassignedConfigurations'),
+        manufacturer: null,
+        model: null,
+        profiles: unassigned,
+      });
+    }
+    return grouped;
+  }, [myPrinterProfiles, linkedPrinterProfileIds, t]);
 
   const [printProfileQualityFilter, setPrintProfileQualityFilter] = useState<string | null>(null);
   const [printProfileNozzleFilter, setPrintProfileNozzleFilter] = useState<string | null>(null);
@@ -1065,11 +1122,13 @@ export const ProfilePage: React.FC = () => {
       {userTab === 'printer-profiles' && (
         <div className="space-y-8">
           <MyPrintersList
-            printerProfiles={myPrinterProfiles.map((p) => ({ id: p.id, name: p.name }))}
+            printerProfiles={myPrinterProfiles}
+            printProfileCounts={printProfileCountByConfiguration}
             onEditConfiguration={(profile) => {
               setEditingPrinterProfile(profile);
               setIsCreatePrinterProfileModalOpen(true);
             }}
+            onViewConfiguration={setSelectedPrinterProfile}
           />
 
           <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between pt-6 border-t border-white/10">

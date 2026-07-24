@@ -9,17 +9,17 @@ import {
 } from '../api/client';
 import type { PrinterProfile } from '../types/api';
 import { PhysicalPrinterSettingsModal } from './PhysicalPrinterSettingsModal';
-
-interface AttachableProfile {
-  id: number;
-  name: string;
-}
+import { PrinterConfigurationRow } from './PrinterConfigurationRow';
 
 interface MyPrintersListProps {
-  /** The user's Orca machine profiles, to resolve a printer's config names. */
-  printerProfiles: AttachableProfile[];
-  /** Open the configuration (PrinterProfile) editor from a printer's settings. */
+  /** The user's Orca machine profiles, shown under the printer they belong to. */
+  printerProfiles: PrinterProfile[];
+  /** How many print profiles each configuration carries, by configuration id. */
+  printProfileCounts?: Map<number, number>;
+  /** Open the configuration (PrinterProfile) editor. */
   onEditConfiguration?: (profile: PrinterProfile) => void;
+  /** Open the read-only configuration view. */
+  onViewConfiguration?: (profile: PrinterProfile) => void;
 }
 
 /**
@@ -27,7 +27,12 @@ interface MyPrintersListProps {
  * Identity is physical_printer_id; the endpoint is only a label. Gate/spool
  * layout lives in "My Filaments" — here we only show how a printer is equipped.
  */
-export function MyPrintersList({ printerProfiles, onEditConfiguration }: MyPrintersListProps) {
+export function MyPrintersList({
+  printerProfiles,
+  printProfileCounts,
+  onEditConfiguration,
+  onViewConfiguration,
+}: MyPrintersListProps) {
   const { t } = useTranslation();
   const [settingsPrinter, setSettingsPrinter] = useState<PhysicalPrinter | null>(null);
 
@@ -40,9 +45,9 @@ export function MyPrintersList({ printerProfiles, onEditConfiguration }: MyPrint
     queryFn: physicalPrintersAPI.listBindings,
   });
 
-  const profileName = useMemo(() => {
-    const map = new Map<number, string>();
-    printerProfiles.forEach((p) => map.set(p.id, p.name));
+  const profileById = useMemo(() => {
+    const map = new Map<number, PrinterProfile>();
+    printerProfiles.forEach((p) => map.set(p.id, p));
     return map;
   }, [printerProfiles]);
 
@@ -104,15 +109,19 @@ export function MyPrintersList({ printerProfiles, onEditConfiguration }: MyPrint
                     {t('myPrinters.configurations')}
                   </p>
                   {printer.printer_profile_ids.length > 0 ? (
-                    <div className="flex flex-wrap gap-1.5">
-                      {printer.printer_profile_ids.map((id) => (
-                        <span
-                          key={id}
-                          className="text-xs px-2 py-0.5 rounded-full bg-blue-500/15 border border-blue-400/25 text-blue-200"
-                        >
-                          {profileName.get(id) ?? `#${id}`}
-                        </span>
-                      ))}
+                    <div className="space-y-1.5">
+                      {printer.printer_profile_ids.map((id) => {
+                        const profile = profileById.get(id);
+                        return profile ? (
+                          <PrinterConfigurationRow
+                            key={id}
+                            profile={profile}
+                            printProfileCount={printProfileCounts?.get(id) ?? 0}
+                            onEdit={onEditConfiguration}
+                            onView={onViewConfiguration}
+                          />
+                        ) : null;
+                      })}
                     </div>
                   ) : (
                     <p className="text-xs text-gray-500">{t('myPrinters.noConfigurations')}</p>
