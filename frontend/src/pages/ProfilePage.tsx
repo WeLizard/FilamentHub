@@ -1,6 +1,7 @@
 /** Страница профиля пользователя */
 
 import { lazy, Suspense, useState, useMemo, useEffect, useRef, type ReactNode } from 'react';
+import { useClickOutside } from '../hooks/useClickOutside';
 import { useTranslation } from 'react-i18next';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useNavigate, useLocation } from 'react-router-dom';
@@ -286,18 +287,31 @@ export const ProfilePage: React.FC = () => {
     return [...created, ...saved];
   }, [userPresetsData, savedPresetsDetails]);
 
+  const syncByPresetId = useMemo(() => {
+    const m = new Map<number, boolean>();
+    for (const sp of savedPresetsData?.items ?? []) m.set(sp.preset_id, sp.sync !== false);
+    return m;
+  }, [savedPresetsData]);
+
   const filteredPresets = useMemo(() => {
+    const isSynced = (p: (typeof allMyPresets)[number]) =>
+      syncByPresetId.has(p.id) ? syncByPresetId.get(p.id)! : p.source === 'own';
+    let list: typeof allMyPresets;
     switch (presetFilter) {
       case 'own':
-        return allMyPresets.filter(p => p.source === 'own' && p.active);
+        list = allMyPresets.filter(p => p.source === 'own' && p.active);
+        break;
       case 'saved':
-        return allMyPresets.filter(p => p.source === 'saved');
+        list = allMyPresets.filter(p => p.source === 'saved');
+        break;
       case 'drafts':
-        return allMyPresets.filter(p => p.source === 'own' && (!p.active || p.moderation_status === 'pending'));
+        list = allMyPresets.filter(p => p.source === 'own' && (!p.active || p.moderation_status === 'pending'));
+        break;
       default:
-        return allMyPresets;
+        list = allMyPresets;
     }
-  }, [allMyPresets, presetFilter]);
+    return [...list].sort((a, b) => Number(isSynced(b)) - Number(isSynced(a)));
+  }, [allMyPresets, presetFilter, syncByPresetId]);
 
   const userPresets = filteredPresets;
 
@@ -2685,6 +2699,8 @@ const AddDeviceForm: React.FC<{
 }) => {
   const { t } = useTranslation();
   const [showDropdown, setShowDropdown] = useState(false);
+  const printerFieldRef = useRef<HTMLDivElement>(null);
+  useClickOutside({ ref: printerFieldRef, isOpen: showDropdown, onClose: () => setShowDropdown(false) });
 
   const { data: printersData } = useQuery({
     queryKey: ['printers-for-device', printerSearchQuery],
@@ -2704,7 +2720,7 @@ const AddDeviceForm: React.FC<{
       {/* Printer selection */}
       <div>
         <p className="text-xs text-gray-400 mb-1">{t('profilePage.deviceSetup.selectPrinter')}</p>
-        <div className="relative">
+        <div className="relative" ref={printerFieldRef}>
           <input
             type="text"
             value={selectedPrinterId ? (selectedPrinter ? `${selectedPrinter.manufacturer || ''} ${selectedPrinter.name}`.trim() : printerSearchQuery) : printerSearchQuery}
