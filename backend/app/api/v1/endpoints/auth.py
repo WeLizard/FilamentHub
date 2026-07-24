@@ -24,8 +24,8 @@ from sqlalchemy.orm import selectinload
 from app.core.config import settings
 from app.core.dependencies import (
     get_current_active_user,
-    get_current_user_or_plugin_preset_read,
     is_token_revoked,
+    require_preset_read,
 )
 from app.core.security import (
     create_access_token,
@@ -641,7 +641,7 @@ async def get_my_presets_stats(
 
 @router.get("/my-presets", response_model=PresetListResponse)
 async def get_my_presets(
-    current_user: Annotated[User, Depends(get_current_user_or_plugin_preset_read)],
+    current_user: Annotated[User, Depends(require_preset_read)],
     db: Annotated[AsyncSession, Depends(get_db)],
     updated_since: datetime | None = Query(
         None,

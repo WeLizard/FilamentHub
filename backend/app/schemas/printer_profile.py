@@ -62,12 +62,26 @@ class PrinterProfileUpdate(BaseModel):
     notes: str | None = Field(None, max_length=10_000)
 
 
+class LinkedPrinter(BaseModel):
+    """Catalog printer behind a profile, kept only to derive the flat fields."""
+
+    slug: str | None = None
+    name: str | None = None
+    manufacturer: str | None = None
+    model: str | None = None
+
+    model_config = {"from_attributes": True}
+
+
 class PrinterProfileResponse(PrinterProfileBase):
     """Schema for returning printer profile."""
 
     id: int
     created_at: datetime
     updated_at: datetime
+    # Loaded from the ORM relationship and dropped from the payload: the catalog
+    # facts are exposed as the flat printer_* fields below.
+    printer: LinkedPrinter | None = Field(default=None, exclude=True)
 
     model_config = {
         "from_attributes": True,
@@ -75,32 +89,20 @@ class PrinterProfileResponse(PrinterProfileBase):
     }
 
     @computed_field(return_type=str | None, alias="printer_slug")
-    def printer_slug(self) -> str | None:  # pragma: no cover - simple accessor
-        printer = getattr(self, "printer", None)
-        if printer is not None:
-            return getattr(printer, "slug", None)
-        return None
+    def printer_slug(self) -> str | None:
+        return self.printer.slug if self.printer else None
 
     @computed_field(return_type=str | None, alias="printer_name")
-    def printer_name(self) -> str | None:  # pragma: no cover - simple accessor
-        printer = getattr(self, "printer", None)
-        if printer is not None:
-            return getattr(printer, "name", None)
-        return None
+    def printer_name(self) -> str | None:
+        return self.printer.name if self.printer else None
 
     @computed_field(return_type=str | None, alias="printer_manufacturer")
-    def printer_manufacturer(self) -> str | None:  # pragma: no cover - simple accessor
-        printer = getattr(self, "printer", None)
-        if printer is not None:
-            return getattr(printer, "manufacturer", None)
-        return None
+    def printer_manufacturer(self) -> str | None:
+        return self.printer.manufacturer if self.printer else None
 
     @computed_field(return_type=str | None, alias="printer_model")
-    def printer_model(self) -> str | None:  # pragma: no cover - simple accessor
-        printer = getattr(self, "printer", None)
-        if printer is not None:
-            return getattr(printer, "model", None)
-        return None
+    def printer_model(self) -> str | None:
+        return self.printer.model if self.printer else None
 
 
 class PrinterProfileListResponse(BaseModel):

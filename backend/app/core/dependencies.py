@@ -189,7 +189,7 @@ async def _get_current_user_or_plugin_scope(
     return user
 
 
-async def get_current_user_or_plugin_preset_read(
+async def require_preset_read(
     request: Request,
     credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(security)],
     db: Annotated[AsyncSession, Depends(get_db)],
@@ -202,7 +202,7 @@ async def get_current_user_or_plugin_preset_read(
     )
 
 
-async def get_current_user_or_plugin_preset_write(
+async def require_preset_write(
     request: Request,
     credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(security)],
     db: Annotated[AsyncSession, Depends(get_db)],

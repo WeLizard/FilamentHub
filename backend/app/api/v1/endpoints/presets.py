@@ -14,7 +14,7 @@ from sqlalchemy.orm import selectinload
 from app.core.dependencies import (
     get_current_active_user,
     get_current_active_user_optional,
-    get_current_user_or_plugin_preset_read,
+    require_preset_read,
 )
 from app.core.errors import (
     ERR_DEVICE_NOT_FOUND,
@@ -789,7 +789,7 @@ async def activate_preset(
 async def export_preset_json(
     preset_id: int,
     db: Annotated[AsyncSession, Depends(get_db)],
-    current_user: Annotated[User, Depends(get_current_user_or_plugin_preset_read)],
+    current_user: Annotated[User, Depends(require_preset_read)],
 ) -> Response:
     """
     Экспортировать профиль в формате OrcaSlicer (.json).
@@ -920,7 +920,7 @@ async def export_preset_json(
 async def export_preset_info(
     preset_id: int,
     db: Annotated[AsyncSession, Depends(get_db)],
-    current_user: Annotated[User, Depends(get_current_user_or_plugin_preset_read)],
+    current_user: Annotated[User, Depends(require_preset_read)],
 ) -> Response:
     """
     Экспортировать .info файл в формате INI для OrcaSlicer.

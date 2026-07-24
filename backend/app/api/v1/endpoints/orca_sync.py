@@ -18,8 +18,8 @@ from sqlalchemy.orm import selectinload
 
 from app.core.dependencies import (
     get_current_active_user,
-    get_current_user_or_plugin_preset_read,
-    get_current_user_or_plugin_preset_write,
+    require_preset_read,
+    require_preset_write,
 )
 from app.core.errors import (
     ERR_ACCESS_DENIED,
@@ -145,6 +145,24 @@ def _normalize_for_match(value: str | None) -> str:
     if not value:
         return ""
     return " ".join(str(value).lower().strip().split())
+
+
+def _model_contains(haystack: str | None, needle: str | None) -> bool:
+    """Содержит ли одно название модели другое целыми словами.
+
+    Сравнение по подстроке склеивает несвязанные модели: каталожная «Hi» входит
+    в «The Machine Spirit» внутри слова «machine», и пользовательский принтер
+    молча получал чужую модель.
+    """
+    needle_tokens = _normalize_for_match(needle).split()
+    haystack_tokens = _normalize_for_match(haystack).split()
+    if not needle_tokens or not haystack_tokens:
+        return False
+    span = len(needle_tokens)
+    return any(
+        haystack_tokens[index:index + span] == needle_tokens
+        for index in range(len(haystack_tokens) - span + 1)
+    )
 
 
 _PLACEHOLDER_IDENTITIES = {
@@ -641,7 +659,7 @@ async def _ensure_printer_id(
                 logger.info(f"  ✅ Найден по точному совпадению имени: {printer.name} (id={printer.id})")
                 return printer.id
             # Или совпадение по model_id (если printer_model содержит model_id)
-            if printer.model_id and _normalize_for_match(printer.model_id) in _normalize_for_match(printer_model):
+            if printer.model_id and _model_contains(printer_model, printer.model_id):
                 logger.info(f"  ✅ Найден по model_id: {printer.model_id} (id={printer.id})")
                 return printer.id
 
@@ -679,22 +697,27 @@ async def _ensure_printer_id(
 
             # Проверяем различные варианты совпадения:
             # 1. Модель из OrcaSlicer содержится в нашей модели
-            if search_model in printer_model_norm:
+            if _model_contains(printer_model_norm, search_model):
                 logger.info(f"  ✅ Найден (модель содержится): '{search_model}' в '{printer_model_norm}' (id={printer.id})")
                 return printer.id
 
             # 2. Наша модель содержится в модели из OrcaSlicer
-            if printer_model_norm in search_model:
+            if _model_contains(search_model, printer_model_norm):
                 logger.info(f"  ✅ Найден (содержит модель): '{printer_model_norm}' в '{search_model}' (id={printer.id})")
                 return printer.id
 
-            # 3. Совпадение по ключевым словам (например "Ender 3" и "Ender 3 Pro")
+            # 3. Совпадение по ключевым словам (например "Ender 3" и "Ender 3 Pro").
+            # Общие слова должны покрывать половину обеих сторон: иначе одно общее
+            # слово вроде "generic" роднит несвязанные модели.
             search_words = set(search_model.split())
             printer_words = set(printer_model_norm.split())
             common_words = search_words & printer_words
 
-            # Если больше половины слов совпадают, считаем что это тот же принтер
-            if len(common_words) > 0 and len(common_words) >= len(search_words) * 0.5:
+            if (
+                common_words
+                and len(common_words) >= len(search_words) * 0.5
+                and len(common_words) >= len(printer_words) * 0.5
+            ):
                 logger.info(f"  ✅ Найден по ключевым словам: {common_words} из {search_words} (id={printer.id})")
                 return printer.id
 
@@ -735,7 +758,7 @@ async def _ensure_printer_id(
             # Частичное совпадение (если manufacturer совпадает, а model содержит искомую модель)
             if (
                 (printer_manufacturer == manufacturer_normalized or printer_manufacturer_key == vendor_key)
-                and model_normalized in printer_model_norm
+                and _model_contains(printer_model_norm, model_normalized)
             ):
                 return printer.id
 
@@ -1543,7 +1566,7 @@ async def _upsert_print_profile(
 
 @router.get("/printer-profiles", response_model=PrinterProfileListResponse)
 async def list_printer_profiles_for_sync(
-    current_user: Annotated[User, Depends(get_current_active_user)],
+    current_user: Annotated[User, Depends(require_preset_read)],
     db: Annotated[AsyncSession, Depends(get_db)],
     updated_since: datetime | None = Query(
         default=None,
@@ -1591,7 +1614,7 @@ async def list_printer_profiles_for_sync(
 
 @router.get("/print-profiles", response_model=PrintProfileListResponse)
 async def list_print_profiles_for_sync(
-    current_user: Annotated[User, Depends(get_current_active_user)],
+    current_user: Annotated[User, Depends(require_preset_read)],
     db: Annotated[AsyncSession, Depends(get_db)],
     updated_since: datetime | None = Query(
         default=None,
@@ -1607,7 +1630,10 @@ async def list_print_profiles_for_sync(
     if not current_user.allow_print_profiles_export:
         raise_error(status.HTTP_403_FORBIDDEN, ERR_EXPORT_PRINT_DISABLED)
 
-    query = select(PrintProfile)
+    query = select(PrintProfile).options(
+        selectinload(PrintProfile.printer_links),
+        selectinload(PrintProfile.filament_links),
+    )
     if include_official:
         query = query.where(
             or_(
@@ -1676,7 +1702,7 @@ async def get_preset_info_file(
 )
 async def import_printer_profiles(
     payload: PrinterProfileSyncRequest,
-    current_user: Annotated[User, Depends(get_current_active_user)],
+    current_user: Annotated[User, Depends(require_preset_write)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> PrinterProfileSyncResponse:
     """Import or update printer profiles submitted by OrcaSlicer."""
@@ -1722,7 +1748,7 @@ async def import_printer_profiles(
 )
 async def import_print_profiles(
     payload: PrintProfileSyncRequest,
-    current_user: Annotated[User, Depends(get_current_active_user)],
+    current_user: Annotated[User, Depends(require_preset_write)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> PrintProfileSyncResponse:
     """Import or update print profiles submitted by OrcaSlicer."""
@@ -2809,7 +2835,7 @@ async def _upsert_filament_preset(
 )
 async def import_filament_presets(
     payload: FilamentPresetSyncRequest,
-    current_user: Annotated[User, Depends(get_current_user_or_plugin_preset_write)],
+    current_user: Annotated[User, Depends(require_preset_write)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> FilamentPresetSyncResponse:
     """Import or update filament presets submitted by OrcaSlicer.
@@ -2898,7 +2924,7 @@ async def import_filament_presets(
 
 @router.get("/sync-prefs")
 async def get_sync_prefs(
-    current_user: Annotated[User, Depends(get_current_user_or_plugin_preset_read)],
+    current_user: Annotated[User, Depends(require_preset_read)],
 ) -> dict:
     """Sync preferences the plugin reads with its preset-scoped token (it never
     holds a full account session, so /auth/me is out of reach)."""
