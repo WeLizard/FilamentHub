@@ -1941,6 +1941,8 @@
     "delete": "Удалить",
     "createPrinterProfile": "Создать профиль принтера",
     "createPrinterFromConfig": "Создать принтер из этой конфигурации",
+    "deleteConfiguration": "Удалить конфигурацию",
+    "deleteConfigurationMessage": "Конфигурация «{{name}}» будет удалена с сайта. В OrcaSlicer она останется и приедет обратно при следующей синхронизации, если вы её там не удалите.",
     "addProfile": "Добавить профиль",
     "noPrinters": "Пока нет принтеров",
     "noPrintersDesc": "Импортируйте профили из OrcaSlicer или создайте их вручную - они появятся здесь.",

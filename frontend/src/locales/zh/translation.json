@@ -2225,6 +2225,8 @@
     "delete": "删除",
     "createPrinterProfile": "创建打印机配置",
     "createPrinterFromConfig": "根据此配置创建打印机",
+    "deleteConfiguration": "删除配置",
+    "deleteConfigurationMessage": "配置「{{name}}」将从网站移除。它仍保留在 OrcaSlicer 中，若不在那里删除，下次同步会再次出现。",
     "addProfile": "添加配置文件",
     "noPrinters": "还没有打印机",
     "noPrintersDesc": "从OrcaSlicer导入配置文件或手动创建它们 - 它们将出现在这里。",

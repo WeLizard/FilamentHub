@@ -2228,6 +2228,8 @@
     "delete": "Delete",
     "createPrinterProfile": "Create printer profile",
     "createPrinterFromConfig": "Create a printer from this configuration",
+    "deleteConfiguration": "Delete configuration",
+    "deleteConfigurationMessage": "Configuration \"{{name}}\" will be removed here. It stays in OrcaSlicer and will come back on the next sync unless you delete it there too.",
     "addProfile": "Add profile",
     "noPrinters": "No printers yet",
     "noPrintersDesc": "Import profiles from OrcaSlicer or create them manually - they will appear here.",

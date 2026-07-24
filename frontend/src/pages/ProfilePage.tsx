@@ -50,7 +50,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { useHeaderVisible } from '../hooks/useHeaderVisible';
 import { presetsAPI, filamentsAPI, brandsAPI, savedPresetsAPI, filamentReviewsAPI, printerProfilesAPI, printProfilesAPI, authAPI, spoolsAPI, qrAPI, devicesAPI, presetSlotsAPI, printersAPI, calculatorAPI, crmAPI, physicalPrintersAPI } from '../api/client';
 import { extractQrShortCode, createQrFrameDecoder } from '../utils/qrScanner';
-import type { UserSpool, SpoolState, UserPrinterDevice, PhysicalPrinter } from '../api/client';
+import type { UserSpool, SpoolState, UserPrinterDevice } from '../api/client';
 import { SpoolIcon } from '../components/icons/SpoolIcon';
 import api from '../api/client';
 import { translateApiError } from '../utils/translateApiError';
@@ -332,6 +332,15 @@ export const ProfilePage: React.FC = () => {
 
   // Группируем профили принтера по принтерам (по printer_id)
   const [createPrinterFrom, setCreatePrinterFrom] = useState<PrinterProfile | null>(null);
+  const [deletingConfiguration, setDeletingConfiguration] = useState<PrinterProfile | null>(null);
+  const deleteConfigurationMutation = useMutation({
+    mutationFn: (id: number) => printerProfilesAPI.delete(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['printer-profiles'] });
+      queryClient.invalidateQueries({ queryKey: ['physical-printers'] });
+      setDeletingConfiguration(null);
+    },
+  });
 
   const { data: myPhysicalPrinters } = useQuery({
     queryKey: ['physical-printers'],
@@ -1124,6 +1133,20 @@ export const ProfilePage: React.FC = () => {
       {/* Printer Profiles Tab */}
       {userTab === 'printer-profiles' && (
         <div className="space-y-8">
+      {deletingConfiguration && (
+        <ConfirmModal
+          isOpen
+          onClose={() => setDeletingConfiguration(null)}
+          onConfirm={() => deleteConfigurationMutation.mutate(deletingConfiguration.id)}
+          isLoading={deleteConfigurationMutation.isPending}
+          variant="danger"
+          title={t('profilePage.deleteConfiguration')}
+          message={t('profilePage.deleteConfigurationMessage', { name: deletingConfiguration.name })}
+          confirmText={t('profilePage.delete')}
+          cancelText={t('common.cancel')}
+        />
+      )}
+
           {createPrinterFrom && (
             <AddPhysicalPrinterModal
               isOpen
@@ -1240,6 +1263,16 @@ export const ProfilePage: React.FC = () => {
                                 <div className="flex items-center gap-2 shrink-0">
                                   {printProfilesForPrinterProfile.length > 0 && (
                                     <StatusBadge label={t('profilePage.printProfilesCount', { count: printProfilesForPrinterProfile.length })} variant="accent" />
+                                  )}
+                                  {fullPrinterProfile && (
+                                    <button
+                                      type="button"
+                                      onClick={() => setDeletingConfiguration(fullPrinterProfile)}
+                                      className="p-1.5 bg-white/10 hover:bg-rose-500/20 rounded-lg text-rose-300 transition-all"
+                                      title={t('profilePage.deleteConfiguration')}
+                                    >
+                                      <Trash2 className="w-4 h-4" />
+                                    </button>
                                   )}
                                   {fullPrinterProfile && (
                                     <button
@@ -2778,14 +2811,11 @@ const AddDeviceForm: React.FC<{
   isCreatingDevice: boolean;
   handleCreateDevice: () => void;
   onCancel: () => void;
-  ownPrinters: PhysicalPrinter[];
-  onUseOwnPrinter: (printer: PhysicalPrinter) => void;
 }> = ({
   newDeviceName, setNewDeviceName,
   selectedPrinterId, setSelectedPrinterId,
   printerSearchQuery, setPrinterSearchQuery,
   isCreatingDevice, handleCreateDevice, onCancel,
-  ownPrinters, onUseOwnPrinter,
 }) => {
   const { t } = useTranslation();
   const [showDropdown, setShowDropdown] = useState(false);
@@ -2807,27 +2837,6 @@ const AddDeviceForm: React.FC<{
 
   return (
     <div className="bg-black/20 border border-white/10 rounded-lg p-3 space-y-3">
-      {ownPrinters.length > 0 && (
-        <div>
-          {/* Устройства и принтеры — одна сущность. Свои показываем первыми,
-              иначе человек заводит вторую запись той же машины. */}
-          <p className="text-xs text-gray-400 mb-1">{t('profilePage.deviceSetup.ownPrinters')}</p>
-          <div className="flex flex-wrap gap-1.5">
-            {ownPrinters.map((printer) => (
-              <button
-                key={printer.id}
-                type="button"
-                onClick={() => onUseOwnPrinter(printer)}
-                className="rounded-full border border-purple-400/30 bg-purple-500/15 px-2.5 py-1 text-xs text-purple-100 transition-colors hover:bg-purple-500/25"
-              >
-                {printer.name}
-              </button>
-            ))}
-          </div>
-          <p className="mt-1 text-[11px] text-gray-500">{t('profilePage.deviceSetup.ownPrintersHint')}</p>
-        </div>
-      )}
-
       {/* Printer selection */}
       <div>
         <p className="text-xs text-gray-400 mb-1">{t('profilePage.deviceSetup.selectPrinter')}</p>
@@ -2938,18 +2947,6 @@ const SpoolsTab: React.FC<SpoolsTabProps> = ({
     staleTime: 60_000,
   });
 
-  // Устройство и принтер — одна запись; список устройств показывает только те,
-  // что уже прошли настройку. Остальные машины человека предлагаем здесь, чтобы
-  // он не заводил вторую запись той же железки.
-  const { data: allOwnPrinters = [] } = useQuery({
-    queryKey: ['physical-printers'],
-    queryFn: physicalPrintersAPI.list,
-  });
-  const printersWithoutKey = useMemo(() => {
-    const known = new Set(devices.map((d) => d.id));
-    return allOwnPrinters.filter((p) => !known.has(p.id));
-  }, [allOwnPrinters, devices]);
-
   const spoolCompatBaseUrl = useMemo(() => {
     if (typeof window === 'undefined' || !window.location?.origin) {
       return 'https://filamenthub.ru/api/v1/spool_compat';
@@ -2997,23 +2994,6 @@ const SpoolsTab: React.FC<SpoolsTabProps> = ({
       setPrinterSearchQuery('');
       setShowNewDeviceForm(false);
       queryClient.invalidateQueries({ queryKey: ['devices'] });
-      await refetchDevices();
-    } catch (error: any) {
-      setSetupError(translateApiError(t, error?.response?.data?.detail));
-    } finally {
-      setIsCreatingDevice(false);
-    }
-  };
-
-  const handleUseOwnPrinter = async (printer: PhysicalPrinter) => {
-    setSetupError(null);
-    setIsCreatingDevice(true);
-    try {
-      const result = await devicesAPI.regenerateKey(printer.id);
-      setRevealedKeys((prev) => ({ ...prev, [printer.id]: result.api_key }));
-      setShowNewDeviceForm(false);
-      queryClient.invalidateQueries({ queryKey: ['devices'] });
-      queryClient.invalidateQueries({ queryKey: ['physical-printers'] });
       await refetchDevices();
     } catch (error: any) {
       setSetupError(translateApiError(t, error?.response?.data?.detail));
@@ -3211,8 +3191,6 @@ const SpoolsTab: React.FC<SpoolsTabProps> = ({
 
           {showNewDeviceForm && (
             <AddDeviceForm
-              ownPrinters={printersWithoutKey}
-              onUseOwnPrinter={handleUseOwnPrinter}
               newDeviceName={newDeviceName}
               setNewDeviceName={setNewDeviceName}
               selectedPrinterId={selectedPrinterId}
