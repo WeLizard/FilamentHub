@@ -131,8 +131,13 @@ async def delete_device(
     current_user: Annotated[User, Depends(get_current_active_user)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> Response:
-    """Delete a printer device and all its gate states."""
-    device = await require_device(db, current_user.id, device_id)
-    await db.delete(device)
-    await db.commit()
+    """Delete a printer device and all its gate states.
+
+    A device and a physical printer are one record, so this goes through the same
+    path as deleting a printer: spools loaded in its gates return to the shelf
+    with their weight before the gates disappear.
+    """
+    from app.services.material_contract_service import delete_physical_printer
+
+    await delete_physical_printer(db, current_user.id, device_id)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
