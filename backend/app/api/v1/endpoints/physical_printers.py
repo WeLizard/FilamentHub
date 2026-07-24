@@ -24,6 +24,7 @@ from app.services.material_assignment_service import (
 from app.services.material_contract_service import (
     create_material_system,
     create_physical_printer,
+    delete_physical_printer,
     list_physical_printers,
     require_physical_printer,
     set_physical_printer_configurations,
@@ -63,6 +64,23 @@ async def get_item(
 ) -> PhysicalPrinterResponse:
     printer = await require_physical_printer(db, current_user.id, physical_printer_id)
     return PhysicalPrinterResponse.from_model(printer)
+
+
+@router.delete("/{physical_printer_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_item(
+    physical_printer_id: int,
+    current_user: Annotated[User, Depends(get_current_active_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> None:
+    """Remove a physical printer the user no longer has.
+
+    Spools loaded in its gates go back to the shelf first: they are real
+    material the person still owns, and the foreign keys would otherwise leave
+    them pointing at gates that no longer exist. Material systems, gate states,
+    configuration links and connection bindings go with the printer; print
+    history keeps its rows and simply loses the device reference.
+    """
+    await delete_physical_printer(db, current_user.id, physical_printer_id)
 
 
 @router.patch("/{physical_printer_id}", response_model=PhysicalPrinterResponse)

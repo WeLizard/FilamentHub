@@ -2565,6 +2565,10 @@ export const physicalPrintersAPI = {
     return response.data;
   },
 
+  remove: async (physicalPrinterId: number): Promise<void> => {
+    await api.delete(`/physical-printers/${physicalPrinterId}`);
+  },
+
   setConfigurations: async (
     physicalPrinterId: number,
     printerProfileIds: number[],

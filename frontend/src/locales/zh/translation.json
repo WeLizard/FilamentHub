@@ -2522,8 +2522,10 @@
     "myPrintersDescription": "管理打印机及其配置。与OrcaSlicer同步。",
     "orcaProfilesHeading": "未关联打印机的配置",
     "unassignedConfigurations": "无目录型号",
+    "noModelHint": "在配置设置中指定型号后，目录推荐即可对其生效。",
     "orcaProfilesDescription": "来自 OrcaSlicer 的机器设置，尚未关联到您的任何打印机。",
     "printersCount": "{{count}}台打印机",
+    "unattachedCount": "{{count}} 个配置",
     "profilesCount": "{{count}}个配置文件",
     "nozzles": "喷嘴",
     "mm": "mm",
@@ -3847,18 +3849,6 @@
       "importError": "导入目录失败"
     }
   },
-  "myPrinter": {
-    "title": "我的打印机",
-    "description": "从目录中选择打印机 — 这将为您提供推荐的预设并改进材料匹配",
-    "noneSelected": "未选择打印机。选择一个以获取个性化推荐。",
-    "notFound": "选定的打印机不再在目录中",
-    "choose": "选择打印机",
-    "change": "更改",
-    "clear": "清除选择",
-    "searchPlaceholder": "按制造商或型号搜索…",
-    "empty": "未找到打印机。尝试不同的搜索。",
-    "updateError": "无法更新选定的打印机"
-  },
   "recover": {
     "title": "恢复预设",
     "found": "找到 {{count}} 个本地预设。勾选要作为草稿导入到个人资料的预设。",
@@ -5087,6 +5077,10 @@
   },
   "printerSettings": {
     "title": "打印机设置",
+    "delete": "删除打印机",
+    "deleteTitle": "确定删除此打印机？",
+    "deleteMessage": "打印机「{{name}}」及其设置将被删除。其料仓中的料盘将按当前余量退回货架，您的 OrcaSlicer 配置保留，打印历史也会保留。",
+    "deleteError": "无法删除打印机",
     "basics": "基本信息",
     "name": "名称",
     "catalogModel": "目录型号",

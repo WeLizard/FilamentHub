@@ -5,7 +5,7 @@
 import { useMemo, useRef, useState, FormEvent } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
-import { Loader2, Save, Wifi, X, Link2Off, SlidersHorizontal } from 'lucide-react';
+import { Loader2, Save, Wifi, X, Link2Off, SlidersHorizontal, Trash2 } from 'lucide-react';
 import type { AxiosError } from 'axios';
 import { physicalPrintersAPI, printerProfilesAPI, printersAPI } from '../api/client';
 import type { PhysicalPrinter, PrinterConnectionBinding } from '../api/client';
@@ -44,6 +44,7 @@ export const PhysicalPrinterSettingsModal: React.FC<PhysicalPrinterSettingsModal
   const [printerSearch, setPrinterSearch] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [showDiscard, setShowDiscard] = useState(false);
+  const [showDelete, setShowDelete] = useState(false);
   const pendingActionRef = useRef<(() => void) | null>(null);
   const debouncedSearch = useDebounce(printerSearch, 250);
 
@@ -113,6 +114,22 @@ export const PhysicalPrinterSettingsModal: React.FC<PhysicalPrinterSettingsModal
     onError: (err: AxiosError<{ detail: unknown }>) => {
       // The basics call itself failed — nothing was persisted.
       setError(translateApiError(t, err.response?.data?.detail, t('printerSettings.saveError')));
+    },
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: () => physicalPrintersAPI.remove(printer.id),
+    onSuccess: () => {
+      // Spools leave their gates on the backend, so the filament lists change too.
+      queryClient.invalidateQueries({ queryKey: ['physical-printers'] });
+      queryClient.invalidateQueries({ queryKey: ['printer-bindings'] });
+      queryClient.invalidateQueries({ queryKey: ['spools'] });
+      setShowDelete(false);
+      onClose();
+    },
+    onError: (err: AxiosError<{ detail: unknown }>) => {
+      setShowDelete(false);
+      setError(translateApiError(t, err.response?.data?.detail, t('printerSettings.deleteError')));
     },
   });
 
@@ -272,7 +289,16 @@ export const PhysicalPrinterSettingsModal: React.FC<PhysicalPrinterSettingsModal
             {error && <p className="text-sm text-rose-400">{error}</p>}
           </div>
 
-          <div className="flex justify-end gap-3 px-6 py-4 border-t border-white/10">
+          <div className="flex items-center justify-between gap-3 px-6 py-4 border-t border-white/10">
+            <button
+              type="button"
+              onClick={() => setShowDelete(true)}
+              className="flex items-center gap-2 rounded-lg px-3 py-2 text-sm text-rose-300 transition-colors hover:bg-rose-500/10"
+            >
+              <Trash2 className="h-4 w-4" />
+              {t('printerSettings.delete')}
+            </button>
+            <div className="flex gap-3">
             <button
               type="button"
               onClick={() => guard(onClose)}
@@ -292,9 +318,22 @@ export const PhysicalPrinterSettingsModal: React.FC<PhysicalPrinterSettingsModal
               )}
               {t('common.save')}
             </button>
+            </div>
           </div>
         </form>
       </div>
+
+      <ConfirmModal
+        isOpen={showDelete}
+        onClose={() => setShowDelete(false)}
+        onConfirm={() => deleteMutation.mutate()}
+        isLoading={deleteMutation.isPending}
+        variant="danger"
+        title={t('printerSettings.deleteTitle')}
+        message={t('printerSettings.deleteMessage', { name: printer.name })}
+        confirmText={t('printerSettings.delete')}
+        cancelText={t('common.cancel')}
+      />
 
       <ConfirmModal
         isOpen={showDiscard}

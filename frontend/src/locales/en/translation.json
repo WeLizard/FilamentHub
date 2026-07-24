@@ -2525,8 +2525,10 @@
     "myPrintersDescription": "Manage printers and their profiles. Sync with OrcaSlicer.",
     "orcaProfilesHeading": "Configurations without a printer",
     "unassignedConfigurations": "No catalog model",
+    "noModelHint": "Set the model in the configuration settings and catalog recommendations will work for it.",
     "orcaProfilesDescription": "Machine settings from OrcaSlicer that are not attached to any of your printers yet.",
     "printersCount": "{{count}} printers",
+    "unattachedCount": "{{count}} configurations",
     "profilesCount": "{{count}} profiles",
     "nozzles": "Nozzles",
     "mm": "mm",
@@ -3852,18 +3854,6 @@
       "importError": "Failed to import catalog"
     }
   },
-  "myPrinter": {
-    "title": "My Printer",
-    "description": "Pick a printer from the catalog - this powers recommended presets and improves material matching",
-    "noneSelected": "No printer selected. Pick one to get personal recommendations.",
-    "notFound": "The selected printer is no longer in the catalog",
-    "choose": "Choose printer",
-    "change": "Change",
-    "clear": "Clear selection",
-    "searchPlaceholder": "Search by manufacturer or model…",
-    "empty": "No printers found. Try a different search.",
-    "updateError": "Could not update selected printer"
-  },
   "recover": {
     "title": "Recover presets",
     "found": "Found {{count}} local preset(s). Check the ones to import into your profile as drafts.",
@@ -5092,6 +5082,10 @@
   },
   "printerSettings": {
     "title": "Printer settings",
+    "delete": "Delete printer",
+    "deleteTitle": "Delete this printer?",
+    "deleteMessage": "The printer \"{{name}}\" and its settings will be removed. Spools loaded in its gates return to the shelf with their current weight, your OrcaSlicer configurations stay, and print history is kept.",
+    "deleteError": "Could not delete the printer",
     "basics": "Basics",
     "name": "Name",
     "catalogModel": "Catalog model",

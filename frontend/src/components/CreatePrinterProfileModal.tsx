@@ -1,6 +1,6 @@
 /** Модальное окно для создания printer profile */
 
-import { useState, useEffect, FormEvent, useMemo, useRef, useCallback } from 'react';
+import { useState, useEffect, FormEvent, useMemo, useCallback } from 'react';
 import { X, Save, Loader2, Pencil, ChevronRight, HelpCircle } from 'lucide-react';
 import { Printer3DIcon } from './icons/Printer3DIcon';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -877,14 +877,6 @@ export const CreatePrinterProfileModal: React.FC<CreatePrinterProfileModalProps>
     if (nozzles.length > 0) setNozzleDiameters(nozzles.map((n) => String(n)));
   }, []);
 
-  // Каталожная модель, выбранная пользователем в профиле (User.printer_id) — для предвыбора.
-  const { data: userSelectedPrinter } = useQuery({
-    queryKey: ['printer', user?.printer_id],
-    queryFn: () => printersAPI.get(user!.printer_id as number),
-    enabled: isOpen && !profile && !baseProfile && !!user?.printer_id,
-  });
-  const prefilledFromUserPrinterRef = useRef(false);
-
   // Генерируем slug из name при изменении
   useEffect(() => {
     if (!profile && !baseProfile && name) {
@@ -1205,7 +1197,6 @@ export const CreatePrinterProfileModal: React.FC<CreatePrinterProfileModalProps>
         setExtraMetadata(Object.keys(extraMetadataSource).length ? JSON.stringify(extraMetadataSource, null, 2) : '');
       } else {
         // Создание нового
-        prefilledFromUserPrinterRef.current = false;
         setName('');
         setSlug('');
         setDescription('');
@@ -1228,17 +1219,6 @@ export const CreatePrinterProfileModal: React.FC<CreatePrinterProfileModalProps>
       setShowGcodeModals({});
     }
   }, [isOpen, profile, baseProfile]);
-
-  // Один раз на открытие create: предвыбрать принтер пользователя и подставить его спеки.
-  // Идёт ПОСЛЕ populate-эффекта, чтобы не быть затёртым сбросом printerId в ветке создания.
-  useEffect(() => {
-    if (!isOpen || profile || baseProfile) return;
-    if (prefilledFromUserPrinterRef.current || !userSelectedPrinter) return;
-    prefilledFromUserPrinterRef.current = true;
-    setPrintersCache((prev) => ({ ...prev, [userSelectedPrinter.id]: userSelectedPrinter }));
-    setPrinterId(userSelectedPrinter.id);
-    applyPrinterModelDefaults(userSelectedPrinter);
-  }, [isOpen, profile, baseProfile, userSelectedPrinter, applyPrinterModelDefaults]);
 
   // Мутация для создания/обновления
   const createMutation = useMutation({

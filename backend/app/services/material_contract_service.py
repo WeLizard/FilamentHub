@@ -379,3 +379,46 @@ async def ensure_legacy_material_contract(
     )
     connector.last_seen_at = device.last_seen_at
     connector.active = True
+
+
+async def delete_physical_printer(
+    db: AsyncSession, user_id: int, physical_printer_id: int
+) -> None:
+    """Delete a physical printer, shelving the spools loaded in it first.
+
+    A spool in a gate is real material the person keeps after selling or
+    retiring the machine, so it is released and returned to the shelf before the
+    gates disappear with the printer. Everything that only describes this
+    machine — material systems, gate states, configuration links, connection
+    bindings — is removed by the cascades; usage history keeps its rows.
+    """
+    from app.models.user_spool import UserSpool
+    from app.services.spool_service import (
+        clear_spool_gate_assignments,
+        shelf_spool_if_unassigned,
+    )
+
+    printer = await require_physical_printer(db, user_id, physical_printer_id)
+
+    loaded_spool_ids = (
+        (
+            await db.execute(
+                select(PresetGateState.spool_id).where(
+                    PresetGateState.device_id == printer.id,
+                    PresetGateState.spool_id.is_not(None),
+                )
+            )
+        )
+        .scalars()
+        .all()
+    )
+
+    for spool_id in set(loaded_spool_ids):
+        spool = await db.get(UserSpool, spool_id)
+        if spool is None or spool.user_id != user_id:
+            continue
+        await clear_spool_gate_assignments(db, spool)
+        await shelf_spool_if_unassigned(db, spool)
+
+    await db.delete(printer)
+    await db.commit()

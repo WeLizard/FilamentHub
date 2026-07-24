@@ -352,3 +352,62 @@ async def test_two_identical_spools_keep_independent_locations(
     assert await _gate_rows_for_spool(db_session, spool_b.id) == []
     rows_a = await _gate_rows_for_spool(db_session, spool_a.id)
     assert [r.gate_index for r in rows_a] == [1]
+
+
+@pytest.mark.asyncio
+async def test_deleting_a_printer_returns_its_spools_to_the_shelf(
+    db_session: AsyncSession, auth_user: User
+):
+    # Selling or retiring a machine must not take the material with it: a spool
+    # sitting in one of its gates is still owned, half-used, and has to end up
+    # back on the shelf rather than pointing at a gate that no longer exists.
+    from app.services.material_contract_service import delete_physical_printer
+
+    filament = await _make_filament(db_session, "sold")
+    device = await _make_device(db_session, auth_user, "sold")
+    spool = await _make_spool(db_session, auth_user, filament)
+    spool.used_weight_g = 400.0
+    await db_session.commit()
+
+    await assign_spool_to_gate(
+        db=db_session,
+        user_id=auth_user.id,
+        spool=spool,
+        device=device,
+        gate_index=2,
+        source=PresetGateStateSource.web_manual,
+    )
+    await db_session.commit()
+    assert await _gate_rows_for_spool(db_session, spool.id)
+
+    await delete_physical_printer(db_session, auth_user.id, device.id)
+
+    assert await db_session.get(UserPrinterDevice, device.id) is None
+    survivor = await db_session.get(UserSpool, spool.id)
+    assert survivor is not None, "катушка не должна исчезнуть вместе с принтером"
+    assert survivor.state == UserSpoolState.shelf
+    assert survivor.used_weight_g == 400.0
+    assert await _gate_rows_for_spool(db_session, spool.id) == []
+
+
+@pytest.mark.asyncio
+async def test_deleting_a_printer_of_another_user_is_refused(
+    db_session: AsyncSession, auth_user: User
+):
+    from app.services.material_contract_service import delete_physical_printer
+
+    other = User(
+        email="other-owner@example.com",
+        username="other-owner",
+        password_hash="$2b$12$test",
+        active=True,
+    )
+    db_session.add(other)
+    await db_session.commit()
+    await db_session.refresh(other)
+    device = await _make_device(db_session, other, "foreign")
+
+    with pytest.raises(HTTPException) as exc:
+        await delete_physical_printer(db_session, auth_user.id, device.id)
+    assert exc.value.status_code == 404
+    assert await db_session.get(UserPrinterDevice, device.id) is not None

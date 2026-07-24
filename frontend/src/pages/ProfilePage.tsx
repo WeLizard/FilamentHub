@@ -1139,7 +1139,12 @@ export const ProfilePage: React.FC = () => {
               </p>
             </div>
             <div className="flex items-center gap-3">
-              <StatusBadge label={t('profilePage.printersCount', { count: printersWithProfiles.length })} variant="accent" />
+              <StatusBadge
+                label={t('profilePage.unattachedCount', {
+                  count: printersWithProfiles.reduce((sum, group) => sum + group.profiles.length, 0),
+                })}
+                variant="accent"
+              />
               {/* Кнопка экспорта из OrcaSlicer */}
               <ExportPrinterProfilesButton />
               <button
@@ -1177,8 +1182,8 @@ export const ProfilePage: React.FC = () => {
                             <h3 className="text-lg font-semibold text-white">{printer.model || printer.name}</h3>
                           </div>
                         </div>
-                        {printer.slug && (
-                          <p className="text-xs text-gray-500">Slug: {printer.slug}</p>
+                        {printer.id === 0 && (
+                          <p className="text-xs text-amber-200/80">{t('profilePage.noModelHint')}</p>
                         )}
                       </div>
                       <StatusBadge label={t('profilePage.profilesCount', { count: printer.profiles.length })} variant="accent" />
