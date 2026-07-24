@@ -3889,6 +3889,8 @@
     "currencyDescription": "For the print calculator and quotes",
     "syncTitle": "OrcaSlicer Sync",
     "syncDescription": "Manage import and export of filament presets, printer profiles, and print profiles",
+    "autoImportLocal": "Auto-import local presets",
+    "autoImportLocalHint": "Pull your own OrcaSlicer filament presets into your profile as private drafts. System presets are left untouched, and nothing is published without your confirmation.",
     "filamentPresets": "Filament presets",
     "printerProfiles": "Printer profiles",
     "printProfiles": "Print profiles",

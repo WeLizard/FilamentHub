@@ -3884,6 +3884,8 @@
     "currencyDescription": "用于打印计算器和报价",
     "syncTitle": "OrcaSlicer 同步",
     "syncDescription": "管理耗材预设、打印机配置和打印配置的导入和导出",
+    "autoImportLocal": "自动导入本地预设",
+    "autoImportLocalHint": "将你在 OrcaSlicer 中的自定义耗材预设作为私有草稿导入到个人资料。系统预设不受影响，未经你确认不会发布任何内容。",
     "filamentPresets": "耗材预设",
     "printerProfiles": "打印机配置",
     "printProfiles": "打印配置",
