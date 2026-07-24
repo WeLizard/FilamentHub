@@ -1271,7 +1271,8 @@
     "hardenedSteel": "硬化钢",
     "ruby": "红宝石",
     "tungstenCarbide": "碳化钨",
-    "abrasiveHint": "磨蚀性填料——建议使用硬化喷嘴（HRC ≥ 50）。"
+    "abrasiveHint": "磨蚀性填料——建议使用硬化喷嘴（HRC ≥ 50）。",
+    "abrasiveRecommend": "磨蚀性材料：会磨损黄铜。适用硬化钢、红宝石或碳化钨喷嘴。"
   },
   "createFilament": {
     "createTitle": "创建新耗材",

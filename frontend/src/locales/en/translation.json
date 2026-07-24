@@ -1274,7 +1274,8 @@
     "hardenedSteel": "Hardened steel",
     "ruby": "Ruby",
     "tungstenCarbide": "Tungsten carbide",
-    "abrasiveHint": "Abrasive filler - a hardened nozzle is recommended (HRC ≥ 50)."
+    "abrasiveHint": "Abrasive filler - a hardened nozzle is recommended (HRC ≥ 50).",
+    "abrasiveRecommend": "Abrasive material: it wears brass. Hardened steel, ruby or tungsten carbide will do."
   },
   "createFilament": {
     "createTitle": "Create new material",

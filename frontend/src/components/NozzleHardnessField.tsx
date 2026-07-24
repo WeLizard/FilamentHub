@@ -23,6 +23,21 @@ const ABRASIVE_FILLERS = new Set([
   'carbon', 'glass', 'fibers', 'metallic', 'luminescent', 'wood', 'stone',
 ]);
 
+// Reinforced grades name their filler in the material itself (PA-CF, PETG-GF,
+// PLA Carbon). The separate filler field is optional, so relying on it alone
+// leaves the abrasive warning silent for the very materials that need it.
+const ABRASIVE_TYPE_TOKENS = new Set(['cf', 'gf', 'gfx', 'carbon', 'glass', 'fiber', 'fibre']);
+
+function isAbrasiveMaterialType(materialType?: string | null): boolean {
+  if (!materialType) {
+    return false;
+  }
+  return materialType
+    .toLowerCase()
+    .split(/[^a-z]+/)
+    .some((token) => ABRASIVE_TYPE_TOKENS.has(token));
+}
+
 // Below this HRC a nozzle is considered soft (brass) for the abrasive hint.
 const HARDENED_HRC = 50;
 
@@ -30,7 +45,8 @@ export const NozzleHardnessField: React.FC<{
   value: number | null;
   onChange: (value: number | null) => void;
   filler?: string | null;
-}> = ({ value, onChange, filler }) => {
+  materialType?: string | null;
+}> = ({ value, onChange, filler, materialType }) => {
   const { t } = useTranslation();
 
   const options = [
@@ -41,7 +57,7 @@ export const NozzleHardnessField: React.FC<{
     })),
   ];
 
-  const abrasive = !!filler && ABRASIVE_FILLERS.has(filler);
+  const abrasive = (!!filler && ABRASIVE_FILLERS.has(filler)) || isAbrasiveMaterialType(materialType);
   const showHint = abrasive && (value === null || value < HARDENED_HRC);
 
   return (
@@ -50,6 +66,9 @@ export const NozzleHardnessField: React.FC<{
         {t('nozzleHardness.label')} <InfoHint text={t('paramHints.nozzleHardness')} />
       </label>
       <p className="text-gray-400 text-xs mb-2">{t('nozzleHardness.hint')}</p>
+      {abrasive && (
+        <p className="mb-2 text-xs text-amber-200/90">{t('nozzleHardness.abrasiveRecommend')}</p>
+      )}
       <CustomSelect
         value={value === null ? 'none' : String(value)}
         onChange={(v) => onChange(v === 'none' || v === null ? null : Number(v))}

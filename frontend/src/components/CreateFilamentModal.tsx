@@ -1033,7 +1033,12 @@ export const CreateFilamentModal: React.FC<CreateFilamentModalProps> = ({
 
           <RecommendedTempsField value={recTemps} onChange={setRecTemps} />
 
-          <NozzleHardnessField value={nozzleHrc} onChange={setNozzleHrc} filler={effectiveFiller} />
+          <NozzleHardnessField
+            value={nozzleHrc}
+            onChange={setNozzleHrc}
+            filler={effectiveFiller}
+            materialType={materialType === 'custom' ? customMaterialType : materialType}
+          />
 
           <AvailabilitySelect
             value={availability}

@@ -2474,7 +2474,12 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                   {/* Рекомендованный вендором диапазон температур (спека материала) */}
                   <RecommendedTempsField value={filamentRecTemps} onChange={setFilamentRecTemps} />
 
-                  <NozzleHardnessField value={filamentNozzleHrc} onChange={setFilamentNozzleHrc} filler={filamentVisualFiller} />
+                  <NozzleHardnessField
+                    value={filamentNozzleHrc}
+                    onChange={setFilamentNozzleHrc}
+                    filler={filamentVisualFiller}
+                    materialType={materialType}
+                  />
 
                   {/* Описание филамента */}
                   <div>

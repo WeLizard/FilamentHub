@@ -297,7 +297,12 @@ export function FilamentPaletteForm({ brandId, onClose, sourceFilament }: Filame
         <div className="mt-3">
           <RecommendedTempsField value={recTemps} onChange={setRecTemps} />
 
-          <NozzleHardnessField value={nozzleHrc} onChange={setNozzleHrc} filler={sourceFilament?.visual_settings?.filler} />
+          <NozzleHardnessField
+            value={nozzleHrc}
+            onChange={setNozzleHrc}
+            filler={sourceFilament?.visual_settings?.filler}
+            materialType={sourceFilament?.material_type}
+          />
         </div>
       </div>
 
