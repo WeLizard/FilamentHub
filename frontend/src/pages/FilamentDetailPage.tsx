@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { InfoHint } from '../components/InfoHint';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
@@ -716,7 +717,10 @@ export const FilamentDetailPage: React.FC = () => {
                     <div className="flex items-center space-x-2">
                       <Hammer className="w-5 h-5 text-amber-400" />
                       <div>
-                        <div className="text-gray-400 text-sm">{t('filamentDetailPage.nozzleHardness')}</div>
+                        <div className="text-gray-400 text-sm">
+                          {t('filamentDetailPage.nozzleHardness')}{' '}
+                          <InfoHint text={t('paramHints.nozzleHardness')} />
+                        </div>
                         <div className="text-white font-semibold">{officialRequiredNozzleHRC} HRC</div>
                       </div>
                     </div>
@@ -929,7 +933,7 @@ export const FilamentDetailPage: React.FC = () => {
                           <div className="flex items-center space-x-2">
                             <Hammer className="w-4 h-4 text-amber-400" />
                             <div>
-                              <div className="text-gray-400 text-xs">{t('filamentDetailPage.nozzleHardness')}</div>
+                              <div className="text-gray-400 text-xs">{t('filamentDetailPage.nozzleHardness')}{' '}<InfoHint text={t('paramHints.nozzleHardness')} /></div>
                               <div className="text-white text-sm font-semibold">{presetRequiredNozzleHRC} HRC</div>
                             </div>
                           </div>

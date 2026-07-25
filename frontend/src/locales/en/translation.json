@@ -1454,7 +1454,7 @@
     "pressureAdvance": "Compensates nozzle pressure - removes blobs at corners and line start/end. Needs calibration.",
     "diameter": "Filament diameter. Almost always 1.75 mm; rarely 2.85 mm. Must match what's actually loaded.",
     "density": "Material density (g/cm³). Needed to compute weight and print cost from filament length.",
-    "nozzleHardness": "Material abrasiveness. Composites (carbon, glass fiber, glow) wear out a brass nozzle - use hardened steel."
+    "nozzleHardness": "How abrasive the material is. Composites (carbon, glass, glow-in-the-dark) wear a brass nozzle down — hardened steel is needed. HRC is the Rockwell hardness scale: brass below 50, hardened steel 50–60, ruby around 60, tungsten carbide 70 and above."
   },
   "presetModal": {
     "errors": {
