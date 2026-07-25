@@ -221,9 +221,11 @@ export type EmailSenderProfile = 'support' | 'partnerships' | 'pr';
 export type EmailDeliveryStatus = 'received' | 'sent' | 'delivered' | 'delayed' | 'bounced' | 'complained';
 
 export interface EmailAttachment {
+  index: number;
   filename: string;
   content_type: string | null;
   size: number | null;
+  downloadable: boolean;
 }
 
 export interface EmailMessage {
@@ -233,6 +235,7 @@ export interface EmailMessage {
   recipient_emails: string[];
   subject: string;
   text_body: string;
+  html_body: string | null;
   attachment_metadata: EmailAttachment[];
   delivery_status: EmailDeliveryStatus | null;
   read_at: string | null;
@@ -266,6 +269,60 @@ export interface EmailThreadListResponse {
   size: number;
   pages: number;
   unread_total: number;
+}
+
+export type NotificationCampaignAudience = 'active' | 'all' | 'selected';
+export type NotificationCampaignStatus = 'draft' | 'sent' | 'cancelled' | 'expired';
+
+export interface NotificationCampaignRecipientPreview {
+  id: number;
+  email: string;
+  username: string;
+  full_name: string | null;
+}
+
+export interface NotificationCampaignPreview {
+  campaign_id: string;
+  audience: NotificationCampaignAudience;
+  recipient_count: number;
+  recipient_sample: NotificationCampaignRecipientPreview[];
+  excluded_user_ids: number[];
+  title: string;
+  message: string;
+  link: string | null;
+  confirmation_token: string;
+  confirmation_expires_at: string;
+}
+
+export interface NotificationCampaignSendResult {
+  campaign_id: string;
+  status: 'sent';
+  recipient_count: number;
+  replayed: boolean;
+  sent_at: string;
+}
+
+export interface NotificationCampaignHistoryItem {
+  campaign_id: string;
+  audience: NotificationCampaignAudience;
+  title: string;
+  message: string;
+  link: string | null;
+  recipient_count: number;
+  status: NotificationCampaignStatus;
+  created_by_id: number;
+  created_by_name: string;
+  created_at: string;
+  confirmation_expires_at: string;
+  sent_at: string | null;
+}
+
+export interface NotificationCampaignHistoryResponse {
+  items: NotificationCampaignHistoryItem[];
+  total: number;
+  page: number;
+  size: number;
+  pages: number;
 }
 
 export interface Printer {

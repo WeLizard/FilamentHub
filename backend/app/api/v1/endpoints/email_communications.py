@@ -13,19 +13,26 @@ from datetime import datetime, timezone
 from email.utils import parseaddr
 from html.parser import HTMLParser
 from math import ceil
-from typing import Annotated, Literal
+from typing import Annotated, Literal, TypeVar
+from urllib.parse import quote
 
-from fastapi import APIRouter, Depends, Query, Request
+from fastapi import APIRouter, Depends, Query, Request, Response
+from fastapi.exceptions import RequestValidationError
+from pydantic import BaseModel, ValidationError
 from sqlalchemy import func, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased, selectinload
 from starlette.concurrency import run_in_threadpool
+from starlette.datastructures import UploadFile
 
 from app.core.config import settings
 from app.core.dependencies import get_current_admin_user
 from app.core.errors import (
+    ERR_EMAIL_ATTACHMENT_FETCH_FAILED,
+    ERR_EMAIL_ATTACHMENT_NOT_FOUND,
     ERR_EMAIL_DELIVERY_FAILED,
+    ERR_EMAIL_IDEMPOTENCY_CONFLICT,
     ERR_EMAIL_INBOUND_FETCH_FAILED,
     ERR_EMAIL_THREAD_NOT_FOUND,
     ERR_EMAIL_WEBHOOK_INVALID,
@@ -46,9 +53,12 @@ from app.schemas.email_communication import (
     EmailThreadStatusUpdate,
     EmailThreadSummaryResponse,
 )
+from app.services.email_attachment_service import prepare_email_attachments
 from app.services.email_service import (
     get_email_sender,
     get_received_email,
+    get_received_email_attachment,
+    sanitize_admin_email_html,
     send_admin_reply_email,
 )
 
@@ -62,6 +72,7 @@ _MAX_BODY_CHARS = 100_000
 _WEBHOOK_TIMESTAMP_TOLERANCE_SECONDS = 5 * 60
 _REPLY_TOKEN_PATTERN = re.compile(r"^invite-([A-Za-z0-9_-]{20,64})$")
 _THREAD_TOKEN_PATTERN = re.compile(r"^thread-([A-Za-z0-9_-]{20,64})$")
+_RESEND_ATTACHMENT_ID_PATTERN = re.compile(r"^[A-Za-z0-9_-]{1,128}$")
 _MANUAL_SENDER_PROFILES = {"support", "partnerships", "pr"}
 _DELIVERY_EVENT_STATUSES = {
     "email.sent": "sent",
@@ -71,6 +82,7 @@ _DELIVERY_EVENT_STATUSES = {
     "email.complained": "complained",
 }
 _DELIVERY_STATUS_RANK = {"sent": 1, "delayed": 2, "delivered": 3}
+_EmailPayload = TypeVar("_EmailPayload", bound=BaseModel)
 
 
 class _PlainTextParser(HTMLParser):
@@ -198,11 +210,17 @@ def _attachment_metadata(value: object) -> list[dict]:
         raw_name = _header_value(item.get("filename"), 255).replace("\\", "/")
         filename = raw_name.rsplit("/", 1)[-1] or "attachment"
         size = item.get("size")
+        provider_attachment_id = _header_value(item.get("id"), 128)
         attachments.append(
             {
                 "filename": filename,
                 "content_type": _truncate(item.get("content_type"), 100) or None,
                 "size": size if isinstance(size, int) and size >= 0 else None,
+                "provider_attachment_id": (
+                    provider_attachment_id
+                    if _RESEND_ATTACHMENT_ID_PATTERN.fullmatch(provider_attachment_id)
+                    else None
+                ),
             }
         )
     return attachments
@@ -285,6 +303,22 @@ def _advance_delivery_status(current: str | None, incoming: str) -> str:
 
 
 def _message_response(message: EmailMessage) -> EmailMessageResponse:
+    attachments = []
+    for index, raw_attachment in enumerate(message.attachment_metadata):
+        attachment = raw_attachment if isinstance(raw_attachment, dict) else {}
+        attachments.append(
+            {
+                "index": index,
+                "filename": str(attachment.get("filename") or "attachment"),
+                "content_type": attachment.get("content_type"),
+                "size": attachment.get("size"),
+                "downloadable": bool(
+                    message.direction == "inbound"
+                    and message.provider_message_id
+                    and attachment.get("provider_attachment_id")
+                ),
+            }
+        )
     return EmailMessageResponse(
         id=message.id,
         direction=message.direction,
@@ -292,11 +326,47 @@ def _message_response(message: EmailMessage) -> EmailMessageResponse:
         recipient_emails=message.recipient_emails,
         subject=message.subject,
         text_body=message.text_body,
-        attachment_metadata=message.attachment_metadata,
+        html_body=message.html_body,
+        attachment_metadata=attachments,
         delivery_status=message.delivery_status,
         read_at=message.read_at,
         created_at=message.created_at,
     )
+
+
+async def _parse_email_payload(
+    request: Request,
+    model_type: type[_EmailPayload],
+) -> tuple[_EmailPayload, list[UploadFile]]:
+    """Accept legacy JSON and multipart composer requests on the same internal endpoint."""
+    uploads: list[UploadFile] = []
+    content_type = request.headers.get("content-type", "").casefold()
+    if content_type.startswith("multipart/form-data"):
+        form = await request.form()
+        payload: dict[str, object] = {
+            key: form.get(key)
+            for key in (
+                "to",
+                "participant_name",
+                "subject",
+                "body",
+                "html_body",
+                "sender_profile",
+                "idempotency_key",
+            )
+            if form.get(key) is not None
+        }
+        uploads = [item for item in form.getlist("attachments") if isinstance(item, UploadFile)]
+    else:
+        try:
+            raw_payload = await request.json()
+        except (json.JSONDecodeError, UnicodeDecodeError):
+            raw_payload = None
+        payload = raw_payload if isinstance(raw_payload, dict) else {}
+    try:
+        return model_type.model_validate(payload), uploads
+    except ValidationError as exc:
+        raise RequestValidationError(exc.errors()) from exc
 
 
 def _thread_summary(
@@ -596,11 +666,21 @@ async def list_email_threads(
 @limiter.limit("60/hour")
 async def create_email_thread(
     request: Request,
-    data: EmailThreadCreate,
     db: Annotated[AsyncSession, Depends(get_db)],
     admin: Annotated[User, Depends(get_current_admin_user)],
 ) -> EmailThreadDetailResponse:
     """Start an external email conversation from the administrative mailbox."""
+    data, uploads = await _parse_email_payload(request, EmailThreadCreate)
+    existing_message = await db.scalar(
+        select(EmailMessage).where(
+            EmailMessage.client_idempotency_key == data.idempotency_key,
+            EmailMessage.direction == "outbound",
+        )
+    )
+    if existing_message is not None:
+        return _thread_detail(await _load_thread(db, existing_message.thread_id))
+    attachments = await prepare_email_attachments(uploads)
+    sanitized_html = sanitize_admin_email_html(data.html_body)
     now = datetime.now(timezone.utc)
     participant_email = str(data.to).casefold()
     thread = EmailThread(
@@ -621,9 +701,12 @@ async def create_email_thread(
         to=participant_email,
         subject=data.subject,
         body=data.body,
+        html_body=sanitized_html,
         sender_profile=data.sender_profile,
         reply_to=_thread_reply_address(thread),
         headers=None,
+        attachments=[attachment.provider_payload() for attachment in attachments],
+        idempotency_key=data.idempotency_key,
     )
     if not result.sent:
         await db.rollback()
@@ -638,15 +721,28 @@ async def create_email_thread(
             recipient_emails=[participant_email],
             subject=data.subject,
             text_body=data.body,
+            html_body=sanitized_html,
+            client_idempotency_key=data.idempotency_key,
             provider_message_id=result.provider_message_id,
-            attachment_metadata=[],
+            attachment_metadata=[attachment.metadata() for attachment in attachments],
             delivery_status="sent",
             sent_by_id=admin.id,
             read_at=now,
             created_at=now,
         )
     )
-    await db.commit()
+    try:
+        await db.commit()
+    except IntegrityError:
+        await db.rollback()
+        replayed_message = await db.scalar(
+            select(EmailMessage).where(
+                EmailMessage.client_idempotency_key == data.idempotency_key
+            )
+        )
+        if replayed_message is None:
+            raise
+        return _thread_detail(await _load_thread(db, replayed_message.thread_id))
     return _thread_detail(await _load_thread(db, thread.id))
 
 
@@ -713,16 +809,91 @@ async def delete_email_thread(
     return {"deleted": True}
 
 
+@admin_router.get(
+    "/email-threads/{thread_id}/messages/{message_id}/attachments/{attachment_index}"
+)
+@limiter.limit("60/hour")
+async def download_email_attachment(
+    request: Request,
+    thread_id: int,
+    message_id: int,
+    attachment_index: int,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    admin: Annotated[User, Depends(get_current_admin_user)],
+) -> Response:
+    """Proxy one inbound attachment through the authenticated backend."""
+    del admin
+    message = await db.scalar(
+        select(EmailMessage).where(
+            EmailMessage.id == message_id,
+            EmailMessage.thread_id == thread_id,
+            EmailMessage.direction == "inbound",
+        )
+    )
+    if message is None or not message.provider_message_id:
+        raise_error(404, ERR_EMAIL_ATTACHMENT_NOT_FOUND)
+    if attachment_index < 0 or attachment_index >= len(message.attachment_metadata):
+        raise_error(404, ERR_EMAIL_ATTACHMENT_NOT_FOUND)
+    raw_attachment = message.attachment_metadata[attachment_index]
+    if not isinstance(raw_attachment, dict):
+        raise_error(404, ERR_EMAIL_ATTACHMENT_NOT_FOUND)
+    attachment_id = str(raw_attachment.get("provider_attachment_id") or "")
+    if not _RESEND_ATTACHMENT_ID_PATTERN.fullmatch(attachment_id):
+        raise_error(404, ERR_EMAIL_ATTACHMENT_NOT_FOUND)
+
+    try:
+        attachment = await run_in_threadpool(
+            get_received_email_attachment,
+            message.provider_message_id,
+            attachment_id,
+        )
+    except Exception:
+        logger.error(
+            "Failed to retrieve attachment %s for inbound email %s",
+            attachment_id,
+            message.provider_message_id,
+            exc_info=True,
+        )
+        raise_error(502, ERR_EMAIL_ATTACHMENT_FETCH_FAILED)
+
+    filename = _header_value(raw_attachment.get("filename"), 180) or "attachment"
+    encoded_filename = quote(filename, safe="")
+    content_type = attachment.content_type or raw_attachment.get("content_type")
+    return Response(
+        content=attachment.content,
+        media_type=str(content_type or "application/octet-stream"),
+        headers={
+            "Content-Disposition": (
+                f"attachment; filename=\"attachment\"; filename*=UTF-8''{encoded_filename}"
+            ),
+            "Cache-Control": "private, no-store",
+            "X-Content-Type-Options": "nosniff",
+        },
+    )
+
+
 @admin_router.post("/email-threads/{thread_id}/reply", response_model=EmailMessageResponse)
 @limiter.limit("60/hour")
 async def reply_to_email_thread(
     request: Request,
     thread_id: int,
-    data: EmailThreadReplyCreate,
     db: Annotated[AsyncSession, Depends(get_db)],
     admin: Annotated[User, Depends(get_current_admin_user)],
 ) -> EmailMessageResponse:
     """Reply through Resend while preserving the external email thread."""
+    data, uploads = await _parse_email_payload(request, EmailThreadReplyCreate)
+    existing_message = await db.scalar(
+        select(EmailMessage).where(
+            EmailMessage.client_idempotency_key == data.idempotency_key,
+            EmailMessage.direction == "outbound",
+        )
+    )
+    if existing_message is not None:
+        if existing_message.thread_id != thread_id:
+            raise_error(409, ERR_EMAIL_IDEMPOTENCY_CONFLICT)
+        return _message_response(existing_message)
+    attachments = await prepare_email_attachments(uploads)
+    sanitized_html = sanitize_admin_email_html(data.html_body)
     thread = await _load_thread(db, thread_id)
     sender_profile = data.sender_profile or thread.sender_profile
     if sender_profile not in _MANUAL_SENDER_PROFILES:
@@ -751,9 +922,12 @@ async def reply_to_email_thread(
         to=thread.participant_email,
         subject=subject,
         body=data.body,
+        html_body=sanitized_html,
         sender_profile=sender_profile,
         reply_to=reply_to,
         headers=headers,
+        attachments=[attachment.provider_payload() for attachment in attachments],
+        idempotency_key=data.idempotency_key,
     )
     if not result.sent:
         logger.error("Failed to send admin email reply for thread %s: %s", thread.id, result.error)
@@ -767,9 +941,11 @@ async def reply_to_email_thread(
         recipient_emails=[thread.participant_email],
         subject=subject,
         text_body=data.body,
+        html_body=sanitized_html,
+        client_idempotency_key=data.idempotency_key,
         provider_message_id=result.provider_message_id,
         in_reply_to=latest_inbound.internet_message_id if latest_inbound else None,
-        attachment_metadata=[],
+        attachment_metadata=[attachment.metadata() for attachment in attachments],
         delivery_status="sent",
         sent_by_id=admin.id,
         read_at=now,
@@ -780,6 +956,17 @@ async def reply_to_email_thread(
     thread.unread_count = 0
     thread.last_message_at = now
     thread.updated_at = now
-    await db.commit()
+    try:
+        await db.commit()
+    except IntegrityError:
+        await db.rollback()
+        replayed_message = await db.scalar(
+            select(EmailMessage).where(
+                EmailMessage.client_idempotency_key == data.idempotency_key
+            )
+        )
+        if replayed_message is None:
+            raise
+        return _message_response(replayed_message)
     await db.refresh(message)
     return _message_response(message)

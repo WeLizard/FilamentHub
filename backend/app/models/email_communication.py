@@ -81,6 +81,10 @@ class EmailMessage(Base):
     recipient_emails: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
     subject: Mapped[str] = mapped_column(String(500), nullable=False)
     text_body: Mapped[str] = mapped_column(Text, nullable=False)
+    html_body: Mapped[str | None] = mapped_column(Text, nullable=True)
+    client_idempotency_key: Mapped[str | None] = mapped_column(
+        String(128), unique=True, nullable=True, index=True
+    )
     provider_message_id: Mapped[str | None] = mapped_column(
         String(100), nullable=True, unique=True, index=True
     )

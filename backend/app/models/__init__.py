@@ -36,6 +36,7 @@ from app.models.material_property import MaterialProperty
 from app.models.material_slot_assignment import MaterialSlotAssignment
 from app.models.material_system import MaterialSlot, MaterialSystem, PhysicalPrinterConnector
 from app.models.notification import Notification, NotificationType
+from app.models.notification_campaign import NotificationCampaign, NotificationCampaignRecipient
 from app.models.organization import (
     Organization,
     OrganizationBrandAccess,
@@ -109,6 +110,8 @@ __all__ = [
     "MaterialSystem",
     "PhysicalPrinterConnector",
     "Notification",
+    "NotificationCampaign",
+    "NotificationCampaignRecipient",
     "NotificationType",
     "Organization",
     "OrganizationBrandAccess",

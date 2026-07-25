@@ -7,7 +7,7 @@ from typing import Annotated, Any, Optional
 
 from fastapi import APIRouter, Body, Depends, File, HTTPException, Query, UploadFile, status
 from fastapi.responses import FileResponse
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.dependencies import get_current_admin_user
@@ -34,7 +34,7 @@ from app.core.errors import (
     ERR_INVALID_FILE_EXT,
     ERR_INVALID_FILE_PATH,
     ERR_INVALID_FILENAME,
-    ERR_NO_ACTIVE_USERS_FOUND,
+    ERR_NOTIFICATION_PREVIEW_REQUIRED,
     ERR_PRESET_NOT_FOUND,
     ERR_PRIMARY_KEY_REQUIRED,
     ERR_PRINTER_NOT_FOUND,
@@ -46,7 +46,6 @@ from app.core.errors import (
     ERR_TABLE_NOT_FOUND,
     ERR_TABLE_STRUCTURE_ERROR,
     ERR_TABLE_UPDATE_ERROR,
-    ERR_USER_IDS_EMPTY,
     ERR_USER_NOT_FOUND,
     ERR_USER_NOT_IN_BRAND,
     raise_error,
@@ -57,7 +56,6 @@ from app.db.session import get_db
 # BadWord импортируется лениво в функциях, где используется
 from app.models.brand import Brand
 from app.models.brand_request import BrandRequest, BrandRequestStatus
-from app.models.notification import NotificationType
 from app.models.organization import OrganizationMemberRole, OrganizationMembership
 from app.models.preset import Preset, PresetModerationStatus
 from app.models.printer import Printer
@@ -148,7 +146,6 @@ from app.services.maintenance_service import (
     set_maintenance_mode,
 )
 from app.services.notification_service import (
-    notify_all_users,
     notify_brand_request_approved,
     notify_brand_request_rejected,
     notify_brand_verified,
@@ -525,6 +522,7 @@ async def list_users(
     role: UserRole | None = Query(None, description="Фильтр по роли (user/admin)"),
     active_only: bool = Query(True),
     with_brand: bool | None = Query(None, description="Фильтр по привязке к бренду (True=только с брендом, False=только без бренда)"),
+    search: str | None = Query(None, max_length=200),
 ) -> list[UserResponse]:
     """Получить список пользователей."""
     from sqlalchemy.orm import selectinload
@@ -535,6 +533,15 @@ async def list_users(
         query = query.where(User.active == True)
     if role:
         query = query.where(User.role == role)
+    if search and (term := search.strip()):
+        pattern = like_pattern(term)
+        query = query.where(
+            or_(
+                User.email.ilike(pattern, escape="\\"),
+                User.username.ilike(pattern, escape="\\"),
+                User.full_name.ilike(pattern, escape="\\"),
+            )
+        )
     if with_brand is not None:
         if with_brand:
             query = query.where(User.brand_id.isnot(None))
@@ -2130,86 +2137,19 @@ async def delete_bad_word(
 @router.post("/notifications/broadcast", response_model=dict)
 async def broadcast_notification(
     admin: Annotated[User, Depends(get_current_admin_user)],
-    db: Annotated[AsyncSession, Depends(get_db)],
-    title: str = Body(..., description="Заголовок сообщения"),
-    message: str = Body(..., description="Текст сообщения"),
-    link: str | None = Body(None, description="Ссылка (опционально)"),
-    active_only: bool = Body(True, description="Отправлять только активным пользователям"),
 ) -> dict:
-    """
-    Массовая рассылка уведомлений всем пользователям (только для админов).
-
-    Создает уведомление типа ADMIN_MESSAGE для всех активных пользователей.
-    """
-    count = await notify_all_users(
-        notification_type=NotificationType.ADMIN_MESSAGE,
-        title=title,
-        message=message,
-        db=db,
-        link=link,
-        active_only=active_only,
-    )
-
-    logger.info(f"Admin {admin.id} sent broadcast notification to {count} users. Title: {title}")
-
-    return {
-        "success": True,
-        "message": "notification_sent",
-        "count": count,
-    }
+    """Reject the retired direct-send route; campaigns require preview and confirmation."""
+    del admin
+    raise_error(status.HTTP_409_CONFLICT, ERR_NOTIFICATION_PREVIEW_REQUIRED)
 
 
 @router.post("/notifications/send", response_model=dict)
 async def send_notification_to_users(
     admin: Annotated[User, Depends(get_current_admin_user)],
-    db: Annotated[AsyncSession, Depends(get_db)],
-    user_ids: list[int] = Body(..., description="Список ID пользователей для отправки"),
-    title: str = Body(..., description="Заголовок сообщения"),
-    message: str = Body(..., description="Текст сообщения"),
-    link: str | None = Body(None, description="Ссылка (опционально)"),
 ) -> dict:
-    """
-    Отправить уведомление конкретным пользователям (только для админов).
-
-    Создает уведомление типа ADMIN_MESSAGE для указанных пользователей.
-    """
-    if not user_ids:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail={"code": ERR_USER_IDS_EMPTY},
-        )
-
-    # Проверяем, что пользователи существуют и активны
-    existing_users = await db.execute(
-        select(User.id).where(User.id.in_(user_ids), User.active == True)
-    )
-    valid_user_ids = list(existing_users.scalars().all())
-
-    if not valid_user_ids:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail={"code": ERR_NO_ACTIVE_USERS_FOUND},
-        )
-
-    from app.services.notification_service import create_bulk_notifications
-
-    count = await create_bulk_notifications(
-        user_ids=valid_user_ids,
-        notification_type=NotificationType.ADMIN_MESSAGE,
-        title=title,
-        message=message,
-        db=db,
-        link=link,
-    )
-
-    logger.info(f"Admin {admin.id} sent notification to {count} users (IDs: {valid_user_ids}). Title: {title}")
-
-    return {
-        "success": True,
-        "message": "notification_sent",
-        "count": count,
-        "sent_to": valid_user_ids,
-    }
+    """Reject the retired direct-send route; campaigns require preview and confirmation."""
+    del admin
+    raise_error(status.HTTP_409_CONFLICT, ERR_NOTIFICATION_PREVIEW_REQUIRED)
 
 
 @router.patch(

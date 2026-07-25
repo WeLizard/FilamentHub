@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   Archive,
@@ -8,6 +8,7 @@ import {
   CheckCircle2,
   CheckCheck,
   Clock3,
+  Download,
   Inbox,
   Mail,
   MailPlus,
@@ -30,14 +31,43 @@ import type {
   EmailThreadStatus,
 } from '../../types/api';
 import { translateApiError } from '../../utils/translateApiError';
+import { downloadBlob } from '../../utils/download';
 import { toast } from '../Toast';
 import { ModalOverlay } from '../ModalOverlay';
 import { ConfirmModal } from '../ConfirmModal';
 import { AdminFeedback } from './AdminFeedback';
-import { AdminNotifications } from './AdminNotifications';
+import { AdminNotificationCampaigns } from './AdminNotificationCampaigns';
+import { EmailComposer, type EmailComposerValue } from './EmailComposer';
 
 type CommunicationSection = 'inbox' | 'feedback' | 'broadcasts';
 type ThreadFilter = 'all' | EmailThreadStatus;
+type IdempotencyState = { fingerprint: string; key: string };
+
+const emptyEmailComposerValue = (): EmailComposerValue => ({
+  text: '',
+  html: '',
+  attachments: [],
+});
+
+const idempotencyKeyFor = (
+  state: React.MutableRefObject<IdempotencyState>,
+  fingerprint: string,
+): string => {
+  if (state.current.fingerprint !== fingerprint) {
+    state.current = { fingerprint, key: crypto.randomUUID() };
+  }
+  return state.current.key;
+};
+
+const emailDraftFingerprint = (
+  fields: unknown[],
+  draft: EmailComposerValue,
+): string => JSON.stringify([
+  ...fields,
+  draft.text,
+  draft.html,
+  draft.attachments.map((file) => [file.name, file.size, file.lastModified]),
+]);
 
 const formatBytes = (value: number | null, locale: string): string => {
   if (value === null) return '';
@@ -64,17 +94,33 @@ function EmailComposeModal({
   const [to, setTo] = useState('');
   const [participantName, setParticipantName] = useState('');
   const [subject, setSubject] = useState('');
-  const [body, setBody] = useState('');
+  const [draft, setDraft] = useState<EmailComposerValue>(emptyEmailComposerValue);
   const [profile, setProfile] = useState<EmailSenderProfile>('support');
+  const idempotencyState = useRef<IdempotencyState>({
+    fingerprint: '',
+    key: crypto.randomUUID(),
+  });
 
   const createMutation = useMutation({
-    mutationFn: () => adminCommunicationsAPI.createEmailThread({
-      to: to.trim(),
-      participant_name: participantName.trim() || undefined,
-      subject: subject.trim(),
-      body: body.trim(),
-      sender_profile: profile,
-    }),
+    mutationFn: () => {
+      const recipient = to.trim();
+      const name = participantName.trim();
+      const normalizedSubject = subject.trim();
+      const fingerprint = emailDraftFingerprint(
+        [recipient, name, normalizedSubject, profile],
+        draft,
+      );
+      return adminCommunicationsAPI.createEmailThread({
+        to: recipient,
+        participant_name: name || undefined,
+        subject: normalizedSubject,
+        body: draft.text,
+        html_body: draft.html || undefined,
+        sender_profile: profile,
+        idempotency_key: `email.create.${idempotencyKeyFor(idempotencyState, fingerprint)}`,
+        attachments: draft.attachments,
+      });
+    },
     onSuccess: (thread) => {
       toast.success(t('adminCommunications.compose.sent'));
       onSent(thread);
@@ -84,7 +130,7 @@ function EmailComposeModal({
     },
   });
 
-  const canSend = Boolean(to.trim() && subject.trim() && body.trim()) && !createMutation.isPending;
+  const canSend = Boolean(to.trim() && subject.trim() && draft.text) && !createMutation.isPending;
 
   return (
     <ModalOverlay onClose={onClose} closeOnOverlayClick={!createMutation.isPending} className="!bg-black/70">
@@ -127,7 +173,7 @@ function EmailComposeModal({
                 className="mt-2 w-full rounded-xl border border-white/10 bg-[#19172d] px-3.5 py-2.5 text-sm text-gray-100 focus:outline-none focus:ring-2 focus:ring-cyan-400/40"
               >
                 <option value="support">support@filamenthub.ru</option>
-                <option value="partnerships">partnerships@filamenthub.ru</option>
+                <option value="partnerships">partners@filamenthub.ru</option>
                 <option value="pr">pr@filamenthub.ru</option>
               </select>
             </label>
@@ -157,22 +203,23 @@ function EmailComposeModal({
             />
           </label>
 
-          <label className="block text-xs font-medium text-gray-300">
+          <div className="block text-xs font-medium text-gray-300">
             {t('adminCommunications.compose.message')}
-            <textarea
-              required
-              rows={9}
-              maxLength={20_000}
-              value={body}
-              onChange={(event) => setBody(event.target.value)}
-              placeholder={t('adminCommunications.compose.messagePlaceholder')}
-              className="mt-2 w-full resize-y rounded-xl border border-white/10 bg-white/5 px-3.5 py-3 text-sm leading-6 text-white placeholder:text-gray-600 focus:border-cyan-400/40 focus:outline-none focus:ring-2 focus:ring-cyan-400/20"
-            />
-          </label>
+            <div className="mt-2">
+              <EmailComposer
+                id="admin-email-compose"
+                disabled={createMutation.isPending}
+                onChange={setDraft}
+              />
+            </div>
+            <p className="mt-1.5 text-[11px] text-gray-500">
+              {t('adminCommunications.compose.messagePlaceholder')}
+            </p>
+          </div>
         </div>
 
         <footer className="flex flex-col-reverse gap-3 border-t border-white/10 bg-black/10 px-5 py-4 sm:flex-row sm:items-center sm:justify-between md:px-6">
-          <p className="text-[11px] leading-4 text-gray-500">{t('adminCommunications.plainTextHint')}</p>
+          <p className="text-[11px] leading-4 text-gray-500">{t('adminCommunications.richTextHint')}</p>
           <div className="flex justify-end gap-2">
             <button
               type="button"
@@ -202,10 +249,15 @@ function AdminEmailInbox() {
   const queryClient = useQueryClient();
   const [selectedThreadId, setSelectedThreadId] = useState<number | null>(null);
   const [filter, setFilter] = useState<ThreadFilter>('all');
-  const [replyBody, setReplyBody] = useState('');
+  const [replyDraft, setReplyDraft] = useState<EmailComposerValue>(emptyEmailComposerValue);
+  const [replyResetKey, setReplyResetKey] = useState(0);
   const [senderProfile, setSenderProfile] = useState<EmailSenderProfile>('support');
   const [composeOpen, setComposeOpen] = useState(false);
   const [deleteThreadId, setDeleteThreadId] = useState<number | null>(null);
+  const replyIdempotencyState = useRef<IdempotencyState>({
+    fingerprint: '',
+    key: crypto.randomUUID(),
+  });
 
   const listQuery = useQuery({
     queryKey: ['admin-email-threads', filter],
@@ -242,13 +294,31 @@ function AdminEmailInbox() {
   });
 
   const replyMutation = useMutation({
-    mutationFn: ({ threadId, body }: { threadId: number; body: string }) =>
-      adminCommunicationsAPI.replyToEmailThread(threadId, {
-        body,
-        sender_profile: senderProfile,
-      }),
+    mutationFn: ({
+      threadId,
+      draft,
+      profile,
+    }: {
+      threadId: number;
+      draft: EmailComposerValue;
+      profile: EmailSenderProfile;
+    }) => {
+      const fingerprint = emailDraftFingerprint([threadId, profile], draft);
+      return adminCommunicationsAPI.replyToEmailThread(threadId, {
+        body: draft.text,
+        html_body: draft.html || undefined,
+        sender_profile: profile,
+        idempotency_key: `email.reply.${idempotencyKeyFor(replyIdempotencyState, fingerprint)}`,
+        attachments: draft.attachments,
+      });
+    },
     onSuccess: (_message: EmailMessage, variables) => {
-      setReplyBody('');
+      setReplyDraft(emptyEmailComposerValue());
+      setReplyResetKey((value) => value + 1);
+      replyIdempotencyState.current = {
+        fingerprint: '',
+        key: crypto.randomUUID(),
+      };
       queryClient.invalidateQueries({ queryKey: ['admin-email-thread', variables.threadId] });
       queryClient.invalidateQueries({ queryKey: ['admin-email-threads'] });
       toast.success(t('adminCommunications.replySent'));
@@ -271,6 +341,35 @@ function AdminEmailInbox() {
     },
   });
 
+  const downloadAttachmentMutation = useMutation({
+    mutationFn: ({
+      threadId,
+      messageId,
+      attachmentIndex,
+    }: {
+      threadId: number;
+      messageId: number;
+      attachmentIndex: number;
+      filename: string;
+    }) => adminCommunicationsAPI.downloadEmailAttachment(
+      threadId,
+      messageId,
+      attachmentIndex,
+    ),
+    onSuccess: (blob, variables) => {
+      downloadBlob(blob, variables.filename);
+    },
+    onError: (error: AxiosError<{ detail: unknown }>) => {
+      toast.error(
+        translateApiError(
+          t,
+          error.response?.data?.detail,
+          t('adminCommunications.attachments.downloadError'),
+        ),
+      );
+    },
+  });
+
   useEffect(() => {
     const thread = detailQuery.data;
     if (thread && thread.unread_count > 0 && !markReadMutation.isPending) {
@@ -282,6 +381,12 @@ function AdminEmailInbox() {
     const thread = detailQuery.data;
     if (thread) {
       setSenderProfile(thread.suggested_sender_profile);
+      setReplyDraft(emptyEmailComposerValue());
+      setReplyResetKey((value) => value + 1);
+      replyIdempotencyState.current = {
+        fingerprint: '',
+        key: crypto.randomUUID(),
+      };
     }
   }, [detailQuery.data?.id]);
 
@@ -506,17 +611,48 @@ function AdminEmailInbox() {
                           <time>{dateFormatter.format(new Date(message.created_at))}</time>
                         </span>
                       </div>
-                      <p className="whitespace-pre-wrap break-words text-sm leading-6">{message.text_body || t('adminCommunications.noTextBody')}</p>
+                      {!inbound && message.html_body ? (
+                        <div
+                          className="break-words text-sm leading-6 [&_blockquote]:my-2 [&_blockquote]:border-l-2 [&_blockquote]:border-cyan-300/40 [&_blockquote]:pl-3 [&_h2]:my-2 [&_h2]:text-lg [&_h2]:font-semibold [&_h3]:my-2 [&_h3]:font-semibold [&_ol]:my-2 [&_ol]:list-decimal [&_ol]:pl-5 [&_p]:my-1.5 [&_pre]:overflow-x-auto [&_pre]:rounded-lg [&_pre]:bg-black/20 [&_pre]:p-2 [&_ul]:my-2 [&_ul]:list-disc [&_ul]:pl-5"
+                          dangerouslySetInnerHTML={{ __html: message.html_body }}
+                        />
+                      ) : (
+                        <p className="whitespace-pre-wrap break-words text-sm leading-6">
+                          {message.text_body || t('adminCommunications.noTextBody')}
+                        </p>
+                      )}
                       {message.attachment_metadata.length > 0 && (
                         <div className="mt-3 space-y-1.5 border-t border-white/10 pt-3">
                           {message.attachment_metadata.map((attachment, index) => (
-                            <div key={`${attachment.filename}-${index}`} className="flex items-center gap-2 text-xs text-gray-400">
-                              <Paperclip className="h-3.5 w-3.5 shrink-0" />
+                            <button
+                              key={`${attachment.filename}-${index}`}
+                              type="button"
+                              disabled={
+                                !attachment.downloadable
+                                || downloadAttachmentMutation.isPending
+                              }
+                              onClick={() => downloadAttachmentMutation.mutate({
+                                threadId: selectedThread.id,
+                                messageId: message.id,
+                                attachmentIndex: attachment.index,
+                                filename: attachment.filename,
+                              })}
+                              className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-xs text-gray-400 transition enabled:hover:bg-white/10 enabled:hover:text-white disabled:cursor-default"
+                            >
+                              {attachment.downloadable ? (
+                                <Download className="h-3.5 w-3.5 shrink-0 text-cyan-300" />
+                              ) : (
+                                <Paperclip className="h-3.5 w-3.5 shrink-0" />
+                              )}
                               <span className="truncate">{attachment.filename}</span>
                               {attachment.size !== null && <span className="shrink-0 text-gray-500">{formatBytes(attachment.size, i18n.language)}</span>}
-                            </div>
+                            </button>
                           ))}
-                          <p className="text-[10px] leading-4 text-amber-300/70">{t('adminCommunications.attachmentsMetadataOnly')}</p>
+                          {message.attachment_metadata.every((attachment) => !attachment.downloadable) && (
+                            <p className="text-[10px] leading-4 text-gray-500">
+                              {t('adminCommunications.attachments.notAvailable')}
+                            </p>
+                          )}
                         </div>
                       )}
                     </article>
@@ -528,8 +664,13 @@ function AdminEmailInbox() {
                 className="border-t border-white/10 bg-black/10 p-4 md:p-5"
                 onSubmit={(event) => {
                   event.preventDefault();
-                  const body = replyBody.trim();
-                  if (body) replyMutation.mutate({ threadId: selectedThread.id, body });
+                  if (replyDraft.text) {
+                    replyMutation.mutate({
+                      threadId: selectedThread.id,
+                      draft: replyDraft,
+                      profile: senderProfile,
+                    });
+                  }
                 }}
               >
                 <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
@@ -543,24 +684,21 @@ function AdminEmailInbox() {
                     className="rounded-lg border border-white/10 bg-[#19172d] px-2.5 py-1.5 text-xs text-gray-200 focus:outline-none focus:ring-2 focus:ring-cyan-400/40"
                   >
                     <option value="support">support@filamenthub.ru</option>
-                    <option value="partnerships">partnerships@filamenthub.ru</option>
+                    <option value="partnerships">partners@filamenthub.ru</option>
                     <option value="pr">pr@filamenthub.ru</option>
                   </select>
                 </div>
-                <textarea
+                <EmailComposer
                   id="admin-email-reply"
-                  value={replyBody}
-                  onChange={(event) => setReplyBody(event.target.value)}
-                  rows={4}
-                  maxLength={20_000}
-                  placeholder={t('adminCommunications.replyPlaceholder')}
-                  className="w-full resize-y rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-white placeholder:text-gray-600 focus:border-cyan-400/30 focus:outline-none focus:ring-2 focus:ring-cyan-400/20"
+                  disabled={replyMutation.isPending}
+                  resetKey={replyResetKey}
+                  onChange={setReplyDraft}
                 />
                 <div className="mt-3 flex items-center justify-between gap-3">
-                  <p className="text-[11px] text-gray-500">{t('adminCommunications.plainTextHint')}</p>
+                  <p className="text-[11px] text-gray-500">{t('adminCommunications.richTextHint')}</p>
                   <button
                     type="submit"
-                    disabled={!replyBody.trim() || replyMutation.isPending}
+                    disabled={!replyDraft.text || replyMutation.isPending}
                     className="inline-flex items-center gap-2 rounded-xl bg-cyan-400 px-4 py-2 text-sm font-semibold text-slate-950 transition hover:bg-cyan-300 disabled:cursor-not-allowed disabled:opacity-40"
                   >
                     <Send className="h-4 w-4" />
@@ -644,7 +782,7 @@ export function AdminCommunications() {
 
       {section === 'inbox' && <AdminEmailInbox />}
       {section === 'feedback' && <AdminFeedback />}
-      {section === 'broadcasts' && <AdminNotifications />}
+        {section === 'broadcasts' && <AdminNotificationCampaigns />}
     </div>
   );
 }

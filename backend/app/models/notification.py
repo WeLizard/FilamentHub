@@ -4,7 +4,7 @@ from datetime import datetime
 from enum import Enum
 from typing import TYPE_CHECKING
 
-from sqlalchemy import JSON, DateTime, ForeignKey, String, Text
+from sqlalchemy import JSON, DateTime, ForeignKey, String, Text, UniqueConstraint
 from sqlalchemy import Enum as SQLEnum
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.sql import func
@@ -12,6 +12,7 @@ from sqlalchemy.sql import func
 from app.db.base import Base
 
 if TYPE_CHECKING:
+    from app.models.notification_campaign import NotificationCampaign
     from app.models.user import User
 
 
@@ -31,6 +32,9 @@ class Notification(Base):
     """Модель уведомления для пользователя."""
 
     __tablename__ = "notifications"
+    __table_args__ = (
+        UniqueConstraint("campaign_id", "user_id", name="uq_notification_campaign_user"),
+    )
 
     # Primary key
     id: Mapped[int] = mapped_column(primary_key=True, index=True)
@@ -38,6 +42,11 @@ class Notification(Base):
     # Foreign keys
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True, nullable=False)
     # user_id: кому адресовано уведомление
+    campaign_id: Mapped[int | None] = mapped_column(
+        ForeignKey("notification_campaigns.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
 
     # Type and content
     type: Mapped[NotificationType] = mapped_column(
@@ -67,8 +76,10 @@ class Notification(Base):
 
     # Relationships
     user: Mapped["User"] = relationship("User", back_populates="notifications")
+    campaign: Mapped["NotificationCampaign | None"] = relationship(
+        "NotificationCampaign", foreign_keys=[campaign_id]
+    )
 
     def __repr__(self) -> str:
         """String representation."""
         return f"<Notification(id={self.id}, user_id={self.user_id}, type={self.type.value}, read={self.read})>"
-

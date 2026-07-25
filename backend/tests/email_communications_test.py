@@ -18,7 +18,7 @@ from app.models.brand import Brand
 from app.models.brand_invite import BrandInvite
 from app.models.email_communication import EmailMessage, EmailThread
 from app.services import email_service
-from app.services.email_service import EmailSendResult
+from app.services.email_service import EmailSendResult, ReceivedEmailAttachment
 
 
 async def _invite(db: AsyncSession) -> BrandInvite:
@@ -101,6 +101,7 @@ async def test_inbound_webhook_is_verified_sanitized_and_idempotent(
             "created_at": "2026-07-15T08:00:00Z",
             "attachments": [
                 {
+                    "id": "attachment-1",
                     "filename": "../../price-list.pdf",
                     "content_type": "application/pdf",
                     "size": 321,
@@ -134,7 +135,12 @@ async def test_inbound_webhook_is_verified_sanitized_and_idempotent(
     assert message.text_body == "Hello FilamentHub"
     assert "alert" not in message.text_body
     assert message.attachment_metadata == [
-        {"filename": "price-list.pdf", "content_type": "application/pdf", "size": 321}
+        {
+            "filename": "price-list.pdf",
+            "content_type": "application/pdf",
+            "size": 321,
+            "provider_attachment_id": "attachment-1",
+        }
     ]
 
     listed = await admin_client.get("/api/v1/admin/communications/email-threads")
@@ -219,6 +225,46 @@ def test_received_email_uses_compatible_resend_api(
     assert captured["params"] == {"html_format": "cid"}
 
 
+def test_tracked_email_uses_http_idempotency_header(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(settings, "RESEND_API_KEY", "re_test")
+    captured: dict[str, object] = {}
+
+    class FakeResponse:
+        def raise_for_status(self) -> None:
+            return None
+
+        def json(self) -> dict[str, str]:
+            return {"id": "sent-idempotent-1"}
+
+    def fake_post(url: str, **kwargs: object) -> FakeResponse:
+        captured["url"] = url
+        captured.update(kwargs)
+        return FakeResponse()
+
+    monkeypatch.setattr(email_service.httpx, "post", fake_post)
+    result = email_service.send_email_tracked(
+        to="recipient@example.com",
+        subject="Idempotent send",
+        html="<p>Hello</p>",
+        text="Hello",
+        sender_profile="support",
+        attachments=[{"filename": "note.txt", "content": "SGVsbG8="}],
+        idempotency_key="email.create.http-header-0001",
+    )
+
+    assert result.sent is True
+    assert result.provider_message_id == "sent-idempotent-1"
+    assert captured["url"] == "https://api.resend.com/emails"
+    assert captured["headers"] == {
+        "Authorization": "Bearer re_test",
+        "Idempotency-Key": "email.create.http-header-0001",
+        "User-Agent": f"FilamentHub/{settings.VERSION}",
+    }
+    assert captured["json"]["attachments"][0]["filename"] == "note.txt"
+
+
 @pytest.mark.asyncio
 async def test_admin_reply_preserves_thread_headers_and_sender(
     admin_client: AsyncClient,
@@ -264,7 +310,11 @@ async def test_admin_reply_preserves_thread_headers_and_sender(
 
     response = await admin_client.post(
         f"/api/v1/admin/communications/email-threads/{thread.id}/reply",
-        json={"body": "Thank you. We will help you onboard.", "sender_profile": "pr"},
+        json={
+            "body": "Thank you. We will help you onboard.",
+            "sender_profile": "pr",
+            "idempotency_key": "email.reply.test-reply-key-0001",
+        },
     )
     assert response.status_code == 200
     assert response.json()["direction"] == "outbound"
@@ -306,6 +356,7 @@ async def test_admin_can_start_email_thread(
             "subject": "FilamentHub partnership",
             "body": "Hello from FilamentHub.",
             "sender_profile": "support",
+            "idempotency_key": "email.create.test-create-key-0001",
         },
     )
 
@@ -485,3 +536,158 @@ async def test_admin_can_permanently_delete_email_thread(
     assert response.json() == {"deleted": True}
     assert await db_session.scalar(select(func.count(EmailThread.id))) == 0
     assert await db_session.scalar(select(func.count(EmailMessage.id))) == 0
+
+
+@pytest.mark.asyncio
+async def test_multipart_compose_sanitizes_html_sends_attachment_and_replays(
+    admin_client: AsyncClient,
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(settings, "EMAIL_INBOUND_DOMAIN", "reply.filamenthub.test")
+    captured_calls: list[dict] = []
+
+    def fake_send(**kwargs):
+        captured_calls.append(kwargs)
+        return EmailSendResult(sent=True, provider_message_id="sent-rich-compose-1")
+
+    monkeypatch.setattr(email_communications, "send_admin_reply_email", fake_send)
+    data = {
+        "to": "partner@example.com",
+        "participant_name": "Partner",
+        "subject": "Rich attachment",
+        "body": "Hello partner",
+        "html_body": "<p>Hello <strong>partner</strong></p><script>alert(1)</script>",
+        "sender_profile": "partnerships",
+        "idempotency_key": "email.create.multipart-rich-0001",
+    }
+    files = [
+        (
+            "attachments",
+            ("guide.pdf", b"%PDF-1.4\nFilamentHub\n%%EOF", "application/pdf"),
+        )
+    ]
+
+    first = await admin_client.post(
+        "/api/v1/admin/communications/email-threads",
+        data=data,
+        files=files,
+    )
+    replay = await admin_client.post(
+        "/api/v1/admin/communications/email-threads",
+        data=data,
+        files=files,
+    )
+
+    assert first.status_code == 201
+    assert replay.status_code == 201
+    assert len(captured_calls) == 1
+    assert captured_calls[0]["sender_profile"] == "partnerships"
+    assert captured_calls[0]["idempotency_key"] == data["idempotency_key"]
+    assert captured_calls[0]["attachments"][0]["filename"] == "guide.pdf"
+    assert "script" not in captured_calls[0]["html_body"]
+    payload = first.json()
+    assert payload["messages"][0]["html_body"] == "<p>Hello <strong>partner</strong></p>"
+    assert payload["messages"][0]["attachment_metadata"] == [
+        {
+            "index": 0,
+            "filename": "guide.pdf",
+            "content_type": "application/pdf",
+            "size": 26,
+            "downloadable": False,
+        }
+    ]
+    assert await db_session.scalar(select(func.count(EmailThread.id))) == 1
+    assert await db_session.scalar(select(func.count(EmailMessage.id))) == 1
+
+
+@pytest.mark.asyncio
+async def test_multipart_compose_rejects_extension_content_mismatch(
+    admin_client: AsyncClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    send_called = False
+
+    def fake_send(**kwargs):
+        nonlocal send_called
+        send_called = True
+        return EmailSendResult(sent=True, provider_message_id="should-not-send")
+
+    monkeypatch.setattr(email_communications, "send_admin_reply_email", fake_send)
+    response = await admin_client.post(
+        "/api/v1/admin/communications/email-threads",
+        data={
+            "to": "partner@example.com",
+            "subject": "Bad attachment",
+            "body": "Please see attachment",
+            "sender_profile": "support",
+            "idempotency_key": "email.create.bad-attachment-0001",
+        },
+        files=[
+            (
+                "attachments",
+                ("not-a-pdf.pdf", b"MZ executable content", "application/pdf"),
+            )
+        ],
+    )
+
+    assert response.status_code == 400
+    assert response.json()["detail"]["code"] == "ERR_EMAIL_ATTACHMENT_TYPE"
+    assert send_called is False
+
+
+@pytest.mark.asyncio
+async def test_admin_downloads_inbound_attachment_through_backend(
+    admin_client: AsyncClient,
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    thread = EmailThread(
+        participant_email="sender@example.com",
+        subject="Attachment",
+        reply_token="E" * 32,
+        sender_profile="support",
+    )
+    db_session.add(thread)
+    await db_session.flush()
+    message = EmailMessage(
+        thread_id=thread.id,
+        direction="inbound",
+        sender_email="sender@example.com",
+        recipient_emails=["support@filamenthub.test"],
+        subject=thread.subject,
+        text_body="Attached.",
+        provider_message_id="received-with-attachment-1",
+        attachment_metadata=[
+            {
+                "filename": "price list.pdf",
+                "content_type": "application/pdf",
+                "size": 12,
+                "provider_attachment_id": "attachment-download-1",
+            }
+        ],
+        delivery_status="received",
+    )
+    db_session.add(message)
+    await db_session.commit()
+    await db_session.refresh(message)
+
+    monkeypatch.setattr(
+        email_communications,
+        "get_received_email_attachment",
+        lambda email_id, attachment_id: ReceivedEmailAttachment(
+            content=b"%PDF-content",
+            content_type="application/pdf",
+        ),
+    )
+
+    response = await admin_client.get(
+        f"/api/v1/admin/communications/email-threads/{thread.id}"
+        f"/messages/{message.id}/attachments/0"
+    )
+
+    assert response.status_code == 200
+    assert response.content == b"%PDF-content"
+    assert response.headers["content-type"] == "application/pdf"
+    assert response.headers["cache-control"] == "private, no-store"
+    assert "price%20list.pdf" in response.headers["content-disposition"]

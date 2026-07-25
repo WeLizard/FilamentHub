@@ -20,6 +20,7 @@ from app.api.v1.endpoints import (
     filament_lines,
     filament_reviews,
     filaments,
+    notification_campaigns,
     notifications,
     orca_preset_slot_sync,
     orca_sync,
@@ -69,6 +70,7 @@ api_router.include_router(catalog_bundles.router)
 api_router.include_router(saved_presets.router)
 api_router.include_router(filament_reviews.router)
 api_router.include_router(notifications.router)
+api_router.include_router(notification_campaigns.router)
 api_router.include_router(orca_sync.router)
 api_router.include_router(orca_preset_slot_sync.router)
 api_router.include_router(preset_slots.router)

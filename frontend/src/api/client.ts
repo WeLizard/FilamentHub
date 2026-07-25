@@ -2,7 +2,7 @@
 
 import axios from 'axios';
 import type { InternalAxiosRequestConfig } from 'axios';
-import type { AccessibleBrand, Brand, BrandUsage, BrandRequest, BrandRequestStatus, BrandTeamInvite, BrandTeamRole, BrandTeamWorkspace, Filament, FilamentLine, FilamentImportResult, FilamentPalettePayload, BrandInvitePublic, BrandInviteAdmin, BrandInviteAcceptResult, BrandInviteBatchPreview, BrandInviteBatchSendResult, FilamentAvailability, FilamentVisualSettings, FilamentReview, FilamentRatingStats, Notification, NotificationListResponse, Preset, RecommendedPreset, RecommendedForPrinterResponse, Printer, PrinterProfile, PrintProfile, PrinterRequest, User, Token, RefreshTokenRequest, RefreshTokenResponse, ListResponse, AccountDeletionStats, UserSavedPreset, CalculatorEstimateRequest, CalculatorEstimateResponse, CalculatorProfileResponse, CalculatorProfileUpdate, Feedback, FeedbackListResponse, FeedbackType, CompatiblePrinter, CompatibleFilament, DownloadVersion, DownloadVersionsResponse, WikiCategory, WikiCategoryListResponse, WikiArticle, WikiArticleListResponse, WikiFeedbackStats, WikiFeedbackCreate, WikiFeedback, EmailThreadDetail, EmailThreadListResponse, EmailThreadStatus, EmailMessage, EmailSenderProfile } from '../types/api';
+import type { AccessibleBrand, Brand, BrandUsage, BrandRequest, BrandRequestStatus, BrandTeamInvite, BrandTeamRole, BrandTeamWorkspace, Filament, FilamentLine, FilamentImportResult, FilamentPalettePayload, BrandInvitePublic, BrandInviteAdmin, BrandInviteAcceptResult, BrandInviteBatchPreview, BrandInviteBatchSendResult, FilamentAvailability, FilamentVisualSettings, FilamentReview, FilamentRatingStats, Notification, NotificationListResponse, Preset, RecommendedPreset, RecommendedForPrinterResponse, Printer, PrinterProfile, PrintProfile, PrinterRequest, User, Token, RefreshTokenRequest, RefreshTokenResponse, ListResponse, AccountDeletionStats, UserSavedPreset, CalculatorEstimateRequest, CalculatorEstimateResponse, CalculatorProfileResponse, CalculatorProfileUpdate, Feedback, FeedbackListResponse, FeedbackType, CompatiblePrinter, CompatibleFilament, DownloadVersion, DownloadVersionsResponse, WikiCategory, WikiCategoryListResponse, WikiArticle, WikiArticleListResponse, WikiFeedbackStats, WikiFeedbackCreate, WikiFeedback, EmailThreadDetail, EmailThreadListResponse, EmailThreadStatus, EmailMessage, EmailSenderProfile, NotificationCampaignAudience, NotificationCampaignHistoryResponse, NotificationCampaignPreview, NotificationCampaignSendResult } from '../types/api';
 import { getCsrfToken, getRefreshToken, getToken, isCookieAuthMode, isJwtAuthMode, isOrcaEmbedded, removeToken, setToken, shouldPersistTokensLocally } from '../utils/auth';
 import { isPluginEmbed, reportPluginSessionToPlugin } from '../utils/pluginBridge';
 import { downloadBlob } from '../utils/download';
@@ -1552,7 +1552,7 @@ export const adminAPI = {
   },
 
   // Users
-  listUsers: async (params?: { page?: number; size?: number; role?: string; active_only?: boolean; with_brand?: boolean }): Promise<User[]> => {
+  listUsers: async (params?: { page?: number; size?: number; role?: string; active_only?: boolean; with_brand?: boolean; search?: string }): Promise<User[]> => {
     const response = await api.get<User[]>('/admin/users', { params });
     return response.data;
   },
@@ -2080,19 +2080,37 @@ export const adminFeedbackAPI = {
 
 // Admin Notifications API (только для админов)
 export const adminNotificationsAPI = {
-  // Массовая рассылка уведомлений
-  broadcast: async (data: {
+  preview: async (data: {
+    audience: NotificationCampaignAudience;
+    user_ids?: number[];
     title: string;
     message: string;
     link?: string | null;
-    active_only?: boolean;
-  }): Promise<{ success: boolean; message: string; count: number }> => {
-    const response = await api.post('/admin/notifications/broadcast', {
-      title: data.title,
-      message: data.message,
-      link: data.link || null,
-      active_only: data.active_only !== false,
-    });
+  }): Promise<NotificationCampaignPreview> => {
+    const response = await api.post<NotificationCampaignPreview>(
+      '/admin/communications/broadcasts/preview',
+      data,
+    );
+    return response.data;
+  },
+
+  confirm: async (confirmationToken: string): Promise<NotificationCampaignSendResult> => {
+    const response = await api.post<NotificationCampaignSendResult>(
+      '/admin/communications/broadcasts/confirm',
+      { confirmation_token: confirmationToken },
+    );
+    return response.data;
+  },
+
+  cancel: async (campaignId: string): Promise<void> => {
+    await api.delete(`/admin/communications/broadcasts/${campaignId}`);
+  },
+
+  history: async (params?: { page?: number; size?: number }): Promise<NotificationCampaignHistoryResponse> => {
+    const response = await api.get<NotificationCampaignHistoryResponse>(
+      '/admin/communications/broadcasts',
+      { params },
+    );
     return response.data;
   },
 };
@@ -2112,9 +2130,21 @@ export const adminCommunicationsAPI = {
     participant_name?: string;
     subject: string;
     body: string;
+    html_body?: string;
     sender_profile: EmailSenderProfile;
+    idempotency_key: string;
+    attachments?: File[];
   }): Promise<EmailThreadDetail> => {
-    const response = await api.post<EmailThreadDetail>('/admin/communications/email-threads', data);
+    const form = new FormData();
+    form.append('to', data.to);
+    if (data.participant_name) form.append('participant_name', data.participant_name);
+    form.append('subject', data.subject);
+    form.append('body', data.body);
+    if (data.html_body) form.append('html_body', data.html_body);
+    form.append('sender_profile', data.sender_profile);
+    form.append('idempotency_key', data.idempotency_key);
+    data.attachments?.forEach((file) => form.append('attachments', file, file.name));
+    const response = await api.post<EmailThreadDetail>('/admin/communications/email-threads', form);
     return response.data;
   },
 
@@ -2139,9 +2169,33 @@ export const adminCommunicationsAPI = {
 
   replyToEmailThread: async (threadId: number, data: {
     body: string;
+    html_body?: string;
     sender_profile?: EmailSenderProfile;
+    idempotency_key: string;
+    attachments?: File[];
   }): Promise<EmailMessage> => {
-    const response = await api.post<EmailMessage>(`/admin/communications/email-threads/${threadId}/reply`, data);
+    const form = new FormData();
+    form.append('body', data.body);
+    if (data.html_body) form.append('html_body', data.html_body);
+    if (data.sender_profile) form.append('sender_profile', data.sender_profile);
+    form.append('idempotency_key', data.idempotency_key);
+    data.attachments?.forEach((file) => form.append('attachments', file, file.name));
+    const response = await api.post<EmailMessage>(
+      `/admin/communications/email-threads/${threadId}/reply`,
+      form,
+    );
+    return response.data;
+  },
+
+  downloadEmailAttachment: async (
+    threadId: number,
+    messageId: number,
+    attachmentIndex: number,
+  ): Promise<Blob> => {
+    const response = await api.get(
+      `/admin/communications/email-threads/${threadId}/messages/${messageId}/attachments/${attachmentIndex}`,
+      { responseType: 'blob' },
+    );
     return response.data;
   },
 };

@@ -17,9 +17,11 @@ EmailDeliveryStatus = Literal[
 
 
 class EmailAttachmentResponse(BaseModel):
+    index: int
     filename: str
     content_type: str | None = None
     size: int | None = None
+    downloadable: bool = False
 
 
 class EmailMessageResponse(BaseModel):
@@ -29,6 +31,7 @@ class EmailMessageResponse(BaseModel):
     recipient_emails: list[str]
     subject: str
     text_body: str
+    html_body: str | None
     attachment_metadata: list[EmailAttachmentResponse]
     delivery_status: EmailDeliveryStatus | None
     read_at: datetime | None
@@ -73,7 +76,9 @@ class EmailThreadCreate(BaseModel):
     participant_name: str | None = Field(default=None, max_length=200)
     subject: str = Field(..., min_length=1, max_length=500)
     body: str = Field(..., min_length=1, max_length=20_000)
+    html_body: str | None = Field(default=None, max_length=50_000)
     sender_profile: EmailSenderProfile = "support"
+    idempotency_key: str = Field(..., min_length=16, max_length=128, pattern=r"^[A-Za-z0-9._:-]+$")
 
     @field_validator("participant_name")
     @classmethod
@@ -90,10 +95,19 @@ class EmailThreadCreate(BaseModel):
             raise ValueError("value cannot be blank")
         return normalized
 
+    @field_validator("idempotency_key")
+    @classmethod
+    def validate_idempotency_key(cls, value: str) -> str:
+        if not value.startswith("email.create."):
+            raise ValueError("invalid create idempotency namespace")
+        return value
+
 
 class EmailThreadReplyCreate(BaseModel):
     body: str = Field(..., min_length=1, max_length=20_000)
+    html_body: str | None = Field(default=None, max_length=50_000)
     sender_profile: EmailSenderProfile | None = None
+    idempotency_key: str = Field(..., min_length=16, max_length=128, pattern=r"^[A-Za-z0-9._:-]+$")
 
     @field_validator("body")
     @classmethod
@@ -102,3 +116,10 @@ class EmailThreadReplyCreate(BaseModel):
         if not normalized:
             raise ValueError("body cannot be blank")
         return normalized
+
+    @field_validator("idempotency_key")
+    @classmethod
+    def validate_idempotency_key(cls, value: str) -> str:
+        if not value.startswith("email.reply."):
+            raise ValueError("invalid reply idempotency namespace")
+        return value

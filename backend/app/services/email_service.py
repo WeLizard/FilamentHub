@@ -4,18 +4,40 @@ import logging
 import re
 from dataclasses import dataclass
 from pathlib import Path
+from urllib.parse import urlparse
 
 import httpx
+import nh3
 import resend
 from jinja2 import Environment, FileSystemLoader, select_autoescape
+from markupsafe import Markup
 
 from app.core.config import settings
 
 logger = logging.getLogger(__name__)
 
 _TEMPLATES_DIR = Path(__file__).resolve().parent.parent / "templates" / "email"
+_RESEND_EMAILS_URL = "https://api.resend.com/emails"
 _RESEND_RECEIVING_URL = "https://api.resend.com/emails/receiving"
 _RESEND_EMAIL_ID_PATTERN = re.compile(r"^[A-Za-z0-9_-]{1,128}$")
+_MAX_RECEIVED_ATTACHMENT_BYTES = 15 * 1024 * 1024
+_ADMIN_EMAIL_TAGS = {
+    "a",
+    "blockquote",
+    "br",
+    "code",
+    "em",
+    "h2",
+    "h3",
+    "li",
+    "ol",
+    "p",
+    "pre",
+    "s",
+    "strong",
+    "u",
+    "ul",
+}
 _jinja_env = Environment(
     loader=FileSystemLoader(str(_TEMPLATES_DIR)),
     autoescape=select_autoescape(["html"]),
@@ -41,6 +63,14 @@ class EmailSendResult:
 
     def __bool__(self) -> bool:
         return self.sent
+
+
+@dataclass(frozen=True)
+class ReceivedEmailAttachment:
+    """Bounded content downloaded from an authenticated Resend attachment URL."""
+
+    content: bytes
+    content_type: str | None
 
 
 def _get_from(profile: str = "transactional") -> str:
@@ -84,6 +114,8 @@ def send_email_tracked(
     sender_profile: str = "transactional",
     reply_to: str | None = None,
     headers: dict[str, str] | None = None,
+    attachments: list[dict[str, str]] | None = None,
+    idempotency_key: str | None = None,
 ) -> EmailSendResult:
     """Send email and return a trackable provider result."""
     if not _is_configured():
@@ -107,10 +139,26 @@ def send_email_tracked(
         params["reply_to"] = [reply_to]
     if headers:
         params["headers"] = headers
+    if attachments:
+        params["attachments"] = attachments
 
     resend.api_key = settings.RESEND_API_KEY
     try:
-        response = resend.Emails.send(params)  # type: ignore[arg-type]
+        if idempotency_key:
+            http_response = httpx.post(
+                _RESEND_EMAILS_URL,
+                headers={
+                    "Authorization": f"Bearer {settings.RESEND_API_KEY}",
+                    "Idempotency-Key": idempotency_key,
+                    "User-Agent": f"FilamentHub/{settings.VERSION}",
+                },
+                json=params,
+                timeout=20.0,
+            )
+            http_response.raise_for_status()
+            response = http_response.json()
+        else:
+            response = resend.Emails.send(params)  # type: ignore[arg-type]
         provider_id = response.get("id") if isinstance(response, dict) else None
         return EmailSendResult(sent=True, provider_message_id=provider_id)
     except Exception as exc:
@@ -143,20 +191,83 @@ def get_received_email(email_id: str) -> dict:
     return payload
 
 
+def get_received_email_attachment(email_id: str, attachment_id: str) -> ReceivedEmailAttachment:
+    """Retrieve one inbound attachment without exposing the provider's signed URL."""
+    if not _is_configured():
+        raise RuntimeError("RESEND_API_KEY is not configured")
+    if not _RESEND_EMAIL_ID_PATTERN.fullmatch(email_id) or not _RESEND_EMAIL_ID_PATTERN.fullmatch(
+        attachment_id
+    ):
+        raise ValueError("Invalid Resend attachment identity")
+
+    metadata_response = httpx.get(
+        f"{_RESEND_RECEIVING_URL}/{email_id}/attachments/{attachment_id}",
+        headers={"Authorization": f"Bearer {settings.RESEND_API_KEY}"},
+        timeout=15.0,
+    )
+    metadata_response.raise_for_status()
+    metadata = metadata_response.json()
+    if not isinstance(metadata, dict):
+        raise RuntimeError("Unexpected Resend attachment response")
+    download_url = metadata.get("download_url")
+    parsed_url = urlparse(str(download_url or ""))
+    hostname = (parsed_url.hostname or "").casefold()
+    if parsed_url.scheme != "https" or not (
+        hostname == "resend.com" or hostname.endswith(".resend.com")
+    ):
+        raise RuntimeError("Unexpected Resend attachment download URL")
+
+    chunks: list[bytes] = []
+    size = 0
+    with httpx.stream("GET", str(download_url), timeout=20.0, follow_redirects=False) as response:
+        response.raise_for_status()
+        content_length = response.headers.get("content-length")
+        if content_length and content_length.isdigit() and int(content_length) > _MAX_RECEIVED_ATTACHMENT_BYTES:
+            raise RuntimeError("Inbound attachment exceeds the download limit")
+        for chunk in response.iter_bytes():
+            size += len(chunk)
+            if size > _MAX_RECEIVED_ATTACHMENT_BYTES:
+                raise RuntimeError("Inbound attachment exceeds the download limit")
+            chunks.append(chunk)
+        content_type = response.headers.get("content-type")
+    return ReceivedEmailAttachment(content=b"".join(chunks), content_type=content_type)
+
+
+def sanitize_admin_email_html(value: str | None) -> str | None:
+    """Reduce editor HTML to the small formatting vocabulary allowed in email."""
+    if not value:
+        return None
+    cleaned = nh3.clean(
+        value,
+        tags=_ADMIN_EMAIL_TAGS,
+        attributes={"a": {"href", "title"}},
+        clean_content_tags={"iframe", "object", "script", "style", "svg", "template"},
+        url_schemes={"http", "https", "mailto"},
+        link_rel="noopener noreferrer",
+        strip_comments=True,
+    ).strip()
+    return cleaned or None
+
+
 def send_admin_reply_email(
     *,
     to: str,
     subject: str,
     body: str,
+    html_body: str | None,
     sender_profile: str,
     reply_to: str | None,
     headers: dict[str, str] | None = None,
+    attachments: list[dict[str, str]] | None = None,
+    idempotency_key: str | None = None,
 ) -> EmailSendResult:
-    """Send a safe plain-text authored reply using the shared email template."""
+    """Send sanitized authored content using the shared branded email template."""
+    sanitized_html = sanitize_admin_email_html(html_body)
     html = _render(
         "admin_reply.html",
         subject=subject,
         body=body,
+        body_html=Markup(sanitized_html) if sanitized_html else None,
         contact_email=settings.EMAIL_CONTACT,
     )
     return send_email_tracked(
@@ -167,6 +278,8 @@ def send_admin_reply_email(
         sender_profile=sender_profile,
         reply_to=reply_to,
         headers=headers,
+        attachments=attachments,
+        idempotency_key=idempotency_key,
     )
 
 
