@@ -62,7 +62,9 @@
     "title": "Page Not Found",
     "subtitle": "The page may have moved or no longer exists. Return to the catalog and continue where you left off.",
     "goHome": "Go to Catalog",
-    "goBack": "Go Back"
+    "goBack": "Go Back",
+    "soundOn": "Turn sound on",
+    "soundOff": "Turn sound off"
   },
   "qrScanner": {
     "open": "Scan QR",

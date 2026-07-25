@@ -62,7 +62,9 @@
     "title": "页面未找到",
     "subtitle": "该页面可能已移动或不再存在。请返回目录继续浏览。",
     "goHome": "返回目录",
-    "goBack": "返回"
+    "goBack": "返回",
+    "soundOn": "开启声音",
+    "soundOff": "关闭声音"
   },
   "qrScanner": {
     "open": "扫描二维码",

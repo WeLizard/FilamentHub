@@ -1,5 +1,5 @@
-import { Routes, Route, useNavigate, Link } from 'react-router-dom';
-import { ArrowLeft, Home, SearchX, Loader2 } from 'lucide-react';
+import { Routes, Route, useNavigate } from 'react-router-dom';
+import { Loader2 } from 'lucide-react';
 import { AuthProvider } from './contexts/AuthContext';
 import { ProtectedRoute } from './components/ProtectedRoute';
 import { Layout } from './components/Layout';
@@ -22,7 +22,7 @@ import { Notifications } from './components/Notifications';
 import { useAuth } from './contexts/AuthContext';
 import { MaintenancePage } from './components/MaintenancePage';
 
-import { useTranslation } from 'react-i18next';
+import { NotFoundPage } from './pages/NotFoundPage';
 
 // Lazy-loaded pages (code splitting)
 const ProfilePage = lazy(() => import('./pages/ProfilePage').then(m => ({ default: m.ProfilePage })));
@@ -62,61 +62,6 @@ function PageLoader() {
     </div>
   );
 }
-
-/** Страница 404 */
-function NotFoundPage() {
-  const { t } = useTranslation();
-  const navigate = useNavigate();
-
-  const handleGoBack = () => {
-    if (window.history.length > 1) {
-      navigate(-1);
-      return;
-    }
-
-    navigate('/');
-  };
-
-  return (
-    <Layout>
-      <div className="relative z-10 mx-auto flex min-h-[70vh] w-full max-w-4xl items-center justify-center px-4 py-12 sm:px-6">
-        <div className="w-full rounded-3xl border border-white/10 bg-black/30 p-8 shadow-2xl shadow-black/30 backdrop-blur-md sm:p-12">
-          <div className="mx-auto mb-6 flex h-20 w-20 items-center justify-center rounded-2xl bg-purple-500/20 ring-1 ring-purple-400/40">
-            <SearchX className="h-10 w-10 text-purple-300" />
-          </div>
-
-          <p className="text-center text-sm font-semibold uppercase tracking-[0.24em] text-purple-300">404</p>
-          <h1 className="mt-3 text-center text-3xl font-bold text-white sm:text-4xl">{t('notFound.title')}</h1>
-          <p className="mx-auto mt-4 max-w-xl text-center text-sm text-gray-300 sm:text-base">
-            {t('notFound.subtitle')}
-          </p>
-
-          <div className="mt-8 flex flex-col items-center justify-center gap-3 sm:flex-row">
-            <Link
-              to="/"
-              className="inline-flex min-w-[220px] items-center justify-center gap-2 rounded-xl bg-purple-600 px-5 py-3 text-sm font-semibold text-white transition hover:bg-purple-500"
-            >
-              <Home className="h-4 w-4" />
-              {t('notFound.goHome')}
-            </Link>
-
-            <button
-              type="button"
-              onClick={handleGoBack}
-              className="inline-flex min-w-[220px] items-center justify-center gap-2 rounded-xl border border-white/20 bg-white/5 px-5 py-3 text-sm font-semibold text-gray-200 transition hover:bg-white/10"
-            >
-              <ArrowLeft className="h-4 w-4" />
-              {t('notFound.goBack')}
-            </button>
-          </div>
-        </div>
-      </div>
-    </Layout>
-  );
-}
-
-// ... (AppContent and App)
-
 
 function AppContent() {
   // Обработчик уведомлений от OrcaSlicer
