@@ -2495,6 +2495,14 @@ export interface PrinterConnectionBinding {
   last_seen_at: string;
 }
 
+/** What OrcaSlicer had selected at the last sync. */
+export interface CurrentPrinterContext {
+  printer_profile_id: number;
+  physical_printer_id: number | null;
+  preset_name: string | null;
+  last_seen_at: string;
+}
+
 /** A machine the person installed in OrcaSlicer but has not registered here. */
 export interface InstalledPrinterCandidate {
   model: string;
@@ -2584,6 +2592,14 @@ export const physicalPrintersAPI = {
 
   remove: async (physicalPrinterId: number): Promise<void> => {
     await api.delete(`/physical-printers/${physicalPrinterId}`);
+  },
+
+  /** The machine selected in OrcaSlicer as of the last sync, if any. */
+  getCurrent: async (): Promise<CurrentPrinterContext | null> => {
+    const response = await api.get<CurrentPrinterContext | null>(
+      '/orcaslicer/printer-connections/current',
+    );
+    return response.data;
   },
 
   /** Printer models installed in the user's OrcaSlicer but not registered here. */

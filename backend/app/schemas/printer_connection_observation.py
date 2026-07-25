@@ -12,6 +12,10 @@ class PrinterConnectionObservationIn(BaseModel):
     printer_model: str | None = Field(None, max_length=200)
     print_host: str | None = Field(None, max_length=500)
     host_type: str | None = Field(None, max_length=50)
+    is_current: bool = Field(
+        default=False,
+        description="Пресет выбран в слайсере в момент наблюдения.",
+    )
 
     model_config = {"str_strip_whitespace": True}
 

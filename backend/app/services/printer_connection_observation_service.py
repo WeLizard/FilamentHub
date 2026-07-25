@@ -90,6 +90,9 @@ async def record_observations(
             "printer_model": obs.printer_model,
             "print_host": host,
             "host_type": obs.host_type,
+            # Which preset was selected in the slicer at that moment, so the site
+            # can offer the machine the person is working on instead of asking.
+            "is_current": bool(obs.is_current),
         }
 
         existing = (

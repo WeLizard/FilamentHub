@@ -14,6 +14,7 @@ from app.schemas.printer_connection_observation import (
     PrinterConnectionObserveResponse,
 )
 from app.services.physical_printer_discovery_service import (
+    current_printer_context,
     display_endpoint,
     list_installed_printer_candidates,
     list_user_bindings,
@@ -39,6 +40,15 @@ async def observe_printer_connections(
     return PrinterConnectionObserveResponse(
         accepted=accepted, matched=matched, unmatched=unmatched
     )
+
+
+@router.get("/current")
+async def get_current_printer(
+    current_user: Annotated[User, Depends(get_current_active_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> dict | None:
+    """The machine selected in OrcaSlicer as of the last sync, or null."""
+    return await current_printer_context(db, current_user.id)
 
 
 @router.get("/installed-candidates")

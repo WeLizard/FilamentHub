@@ -689,7 +689,14 @@ def observe_printer_presets():
     observed = []
     seen_models = set()
     try:
-        printers = orca.host.preset_bundle().printers
+        bundle = orca.host.preset_bundle()
+        # The preset selected right now: the site can then offer the machine the
+        # person is actually slicing on instead of asking them to pick again.
+        try:
+            current_name = bundle.current_printer_preset().name or ""
+        except Exception:
+            current_name = ""
+        printers = bundle.printers
         for i in range(printers.size()):
             preset = printers.preset(i)
             model = preset.config_value("printer_model") or ""
@@ -702,6 +709,7 @@ def observe_printer_presets():
                     "printer_model": model,
                     "print_host": host,
                     "host_type": preset.config_value("host_type") or "",
+                    "is_current": preset.name == current_name,
                 })
             elif model and model not in seen_models:
                 seen_models.add(model)
@@ -712,6 +720,7 @@ def observe_printer_presets():
                     "printer_model": model,
                     "print_host": "",
                     "host_type": "",
+                    "is_current": preset.name == current_name,
                 })
     except Exception:
         pass

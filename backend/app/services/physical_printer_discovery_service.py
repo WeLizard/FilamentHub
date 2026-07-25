@@ -215,3 +215,46 @@ async def list_installed_printer_candidates(
             "last_seen_at": obs.last_seen_at,
         }
     return sorted(candidates.values(), key=lambda item: item["model"])
+
+
+async def current_printer_context(db: AsyncSession, user_id: int) -> dict | None:
+    """The machine the user is slicing on right now, as last reported.
+
+    Lets the catalog offer that printer instead of asking the person to pick one
+    they have already chosen in the slicer. A snapshot from the last sync, not a
+    live subscription: switching presets in OrcaSlicer shows up on the next one.
+    """
+    observation = (
+        await db.execute(
+            select(OrcaPrinterConnectionObservation)
+            .where(
+                OrcaPrinterConnectionObservation.owner_user_id == user_id,
+                OrcaPrinterConnectionObservation.sanitized_payload["is_current"]
+                .as_boolean()
+                .is_(True),
+            )
+            .order_by(OrcaPrinterConnectionObservation.last_seen_at.desc())
+            .limit(1)
+        )
+    ).scalar_one_or_none()
+    if observation is None or observation.matched_printer_profile_id is None:
+        return None
+
+    physical_printer_id = (
+        await db.execute(
+            select(UserPrinterProfileLink.physical_printer_id)
+            .where(
+                UserPrinterProfileLink.user_id == user_id,
+                UserPrinterProfileLink.printer_profile_id
+                == observation.matched_printer_profile_id,
+            )
+            .limit(1)
+        )
+    ).scalar_one_or_none()
+
+    return {
+        "printer_profile_id": observation.matched_printer_profile_id,
+        "physical_printer_id": physical_printer_id,
+        "preset_name": observation.preset_name,
+        "last_seen_at": observation.last_seen_at,
+    }

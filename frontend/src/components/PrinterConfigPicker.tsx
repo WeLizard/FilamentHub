@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useEffect, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { Sparkles } from 'lucide-react';
@@ -33,6 +33,24 @@ export const PrinterConfigPicker: React.FC<PrinterConfigPickerProps> = ({ value,
     queryFn: () => printerProfilesAPI.listAllOwned(user!.id),
     enabled: !!user,
   });
+
+  // OrcaSlicer already knows which machine the person is slicing on. Offer it
+  // once instead of making them repeat the choice; an explicit pick always wins.
+  const { data: currentContext } = useQuery({
+    queryKey: ['printer-current'],
+    queryFn: physicalPrintersAPI.getCurrent,
+    enabled: !!user && value.printerProfileId === null,
+  });
+
+  useEffect(() => {
+    if (!currentContext || value.printerProfileId !== null) {
+      return;
+    }
+    onChange({
+      physicalPrinterId: currentContext.physical_printer_id,
+      printerProfileId: currentContext.printer_profile_id,
+    });
+  }, [currentContext, value.printerProfileId, onChange]);
 
   const configs = useMemo(
     () => (profilesList ?? []).filter((p) => p.printer_id != null),
