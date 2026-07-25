@@ -9,7 +9,6 @@ interface GateMapGridProps {
   gates: GateState[];
   presets: Record<number, Pick<Preset, 'id' | 'name' | 'extruder_temp' | 'bed_temp'>>;
   spools: UserSpool[];
-  /** Твёрдость сопла машины, чтобы предупредить об абразивном материале. */
   nozzleHrc?: number | null;
   onGateClick: (gate: GateState | null, slot: MaterialSlot) => void;
 }

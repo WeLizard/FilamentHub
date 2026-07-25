@@ -1,11 +1,3 @@
-/**
- * Твёрдость сопла конфигурации и сравнение с требованием материала.
- *
- * Таблица и правило повторяют хост (`resources/info/nozzle_info.json` и
- * `GCodeProcessor` HRC checker в OrcaSlicer): сначала явный `nozzle_hrc`, иначе
- * значение по типу сопла; неизвестная твёрдость (0) не предупреждает никогда,
- * чтобы отсутствие данных не выглядело как проблема с материалом.
- */
 const NOZZLE_TYPE_HRC: Record<string, number> = {
   hardened_steel: 55,
   stainless_steel: 20,
@@ -19,7 +11,6 @@ function firstValue(raw: unknown): unknown {
   return Array.isArray(raw) ? raw[0] : raw;
 }
 
-/** Твёрдость сопла конфигурации, или null если она неизвестна. */
 export function configuredNozzleHrc(settings: Record<string, unknown> | null | undefined): number | null {
   if (!settings) {
     return null;
@@ -39,7 +30,6 @@ export function configuredNozzleHrc(settings: Record<string, unknown> | null | u
   return byType != null && byType > 0 ? byType : null;
 }
 
-/** Сопло конфигурации мягче, чем требует материал. Предупреждение, не запрет. */
 export function isNozzleTooSoft(
   requiredHrc: number | null | undefined,
   configuredHrc: number | null | undefined,

@@ -19,7 +19,6 @@ interface MaterialSystemSectionProps {
   presetsSeedMap: Record<number, Pick<Preset, 'id' | 'name' | 'extruder_temp' | 'bed_temp'>>;
   spools: UserSpool[];
   printerProfileName?: string | null;
-  /** Твёрдость сопла машины (максимум по её конфигурациям), если известна. */
   nozzleHrc?: number | null;
   onGateClick: (
     gate: GateState | null,
@@ -344,9 +343,6 @@ export function PresetSlotsPanel({
 
   const spools = externalSpools ?? fetchedSpools;
 
-  // Твёрдость сопла машины — максимум по её конфигурациям: человек может резать
-  // на закалённой, поэтому предупреждать стоит лишь когда ни одна не подходит.
-  // Запрос делит кэш с выбором принтера в каталоге.
   const { data: ownedProfiles } = useQuery({
     queryKey: ['printer-profiles', 'all-owned', user?.id],
     queryFn: () => printerProfilesAPI.listAllOwned(user!.id),

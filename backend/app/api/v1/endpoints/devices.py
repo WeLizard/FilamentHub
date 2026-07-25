@@ -120,6 +120,8 @@ async def regenerate_device_key(
     device = await require_device(db, current_user.id, device_id)
     new_key = generate_api_key()
     device.api_key = new_key
+    if device.device_fingerprint is None:
+        device.device_fingerprint = f"manual-{uuid.uuid4().hex[:12]}"
     await ensure_legacy_material_contract(db, device)
     await db.commit()
     return DeviceRegenerateKeyResponse(api_key=new_key)

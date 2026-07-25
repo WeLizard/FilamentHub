@@ -1,9 +1,12 @@
 """Stage B tests: physical printers derived from connection observations."""
 
+from datetime import datetime, timedelta, timezone
+
 import pytest
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.models.orca_printer_connection_observation import OrcaPrinterConnectionObservation
 from app.models.physical_printer_profile import UserPrinterProfileLink
 from app.models.printer_connection_binding import PrinterConnectionBinding
 from app.models.printer_profile import PrinterProfile
@@ -109,6 +112,51 @@ async def test_unmatched_still_creates_printer_without_link(db_session: AsyncSes
     await reconcile_user_printers(db_session, auth_user.id)
     assert await _count(db_session, UserPrinterDevice) == 1
     assert await _count(db_session, UserPrinterProfileLink) == 0
+
+
+@pytest.mark.asyncio
+async def test_moved_address_keeps_one_printer(db_session: AsyncSession, auth_user: User):
+    await _make_profile(db_session, auth_user, "04", "Voron 0.4")
+    await _observe(db_session, auth_user, [
+        _obs(printer_settings_id="Voron 0.4", printer_model="Voron 2.4",
+             print_host="192.168.1.21", host_type="moonraker"),
+    ])
+    await reconcile_user_printers(db_session, auth_user.id)
+
+    stale = (await db_session.execute(select(OrcaPrinterConnectionObservation))).scalar_one()
+    stale.last_seen_at = datetime.now(timezone.utc) - timedelta(days=3)
+    await db_session.commit()
+
+    await _observe(db_session, auth_user, [
+        _obs(printer_settings_id="Voron 0.4", printer_model="Voron 2.4",
+             print_host="192.168.1.99", host_type="moonraker"),
+    ])
+    created = await reconcile_user_printers(db_session, auth_user.id)
+
+    assert created == 0
+    assert await _count(db_session, UserPrinterDevice) == 1
+    binding = (await db_session.execute(select(PrinterConnectionBinding))).scalar_one()
+    assert binding.host == "192.168.1.99"
+
+
+@pytest.mark.asyncio
+async def test_two_live_machines_sharing_a_preset_stay_apart(
+    db_session: AsyncSession, auth_user: User
+):
+    await _make_profile(db_session, auth_user, "04", "Voron 0.4")
+    await _observe(db_session, auth_user, [
+        _obs(printer_settings_id="Voron 0.4", print_host="192.168.1.21", host_type="moonraker"),
+    ])
+    await reconcile_user_printers(db_session, auth_user.id)
+
+    await _observe(db_session, auth_user, [
+        _obs(printer_settings_id="Voron 0.4", print_host="192.168.1.21", host_type="moonraker"),
+        _obs(printer_settings_id="Voron 0.4", print_host="192.168.1.22", host_type="moonraker"),
+    ])
+    await reconcile_user_printers(db_session, auth_user.id)
+
+    assert await _count(db_session, UserPrinterDevice) == 2
+    assert await _count(db_session, PrinterConnectionBinding) == 2
 
 
 def test_normalize_endpoint():

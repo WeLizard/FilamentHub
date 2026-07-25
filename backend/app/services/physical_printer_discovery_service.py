@@ -8,7 +8,7 @@ whose preset matched a PrinterProfile also link that profile to the printer
 never treated as the printer's permanent identity.
 """
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from urllib.parse import urlsplit
 
 from sqlalchemy import select
@@ -18,6 +18,8 @@ from app.models.orca_printer_connection_observation import OrcaPrinterConnection
 from app.models.physical_printer_profile import UserPrinterProfileLink
 from app.models.printer_connection_binding import PrinterConnectionBinding
 from app.models.user_printer_device import UserPrinterDevice
+
+_LIVE_WINDOW = timedelta(minutes=2)
 
 _DEFAULT_PORTS = {
     "moonraker": 7125, "klipper": 7125, "mainsail": 7125, "fluidd": 7125,
@@ -72,6 +74,44 @@ async def _ensure_profile_link(
         )
 
 
+async def _rebind_to_known_printer(
+    db: AsyncSession,
+    user_id: int,
+    physical_printer_id: int,
+    endpoint: dict,
+    obs: OrcaPrinterConnectionObservation,
+) -> PrinterConnectionBinding:
+    binding = (
+        await db.execute(
+            select(PrinterConnectionBinding)
+            .where(
+                PrinterConnectionBinding.user_id == user_id,
+                PrinterConnectionBinding.physical_printer_id == physical_printer_id,
+                PrinterConnectionBinding.provider == endpoint["provider"],
+            )
+            .limit(1)
+        )
+    ).scalar_one_or_none()
+
+    if binding is None:
+        binding = PrinterConnectionBinding(
+            user_id=user_id,
+            physical_printer_id=physical_printer_id,
+            provider=endpoint["provider"],
+        )
+        db.add(binding)
+
+    binding.normalized_endpoint = endpoint["normalized"]
+    binding.scheme = endpoint["scheme"]
+    binding.host = endpoint["host"]
+    binding.port = endpoint["port"]
+    binding.path = endpoint["path"]
+    binding.print_host = obs.print_host
+    binding.last_seen_at = datetime.now(timezone.utc)
+    await db.flush()
+    return binding
+
+
 def display_endpoint(binding: PrinterConnectionBinding) -> str | None:
     """A human-readable endpoint label (host[:port]) — never identity or secrets."""
     if binding.host:
@@ -91,18 +131,57 @@ async def list_user_bindings(db: AsyncSession, user_id: int) -> list[PrinterConn
     )
 
 
+async def _printer_for_profile(
+    db: AsyncSession, user_id: int, profile_id: int
+) -> int | None:
+    return (
+        await db.execute(
+            select(UserPrinterProfileLink.physical_printer_id)
+            .where(
+                UserPrinterProfileLink.user_id == user_id,
+                UserPrinterProfileLink.printer_profile_id == profile_id,
+            )
+            .limit(1)
+        )
+    ).scalar_one_or_none()
+
+
+def _as_utc(value: datetime) -> datetime:
+    return value if value.tzinfo is not None else value.replace(tzinfo=timezone.utc)
+
+
+def _live_endpoint_count(
+    observations: list[OrcaPrinterConnectionObservation], profile_id: int
+) -> int:
+    same_profile = [
+        obs for obs in observations
+        if obs.matched_printer_profile_id == profile_id and obs.print_host
+    ]
+    if not same_profile:
+        return 0
+    newest = max(_as_utc(obs.last_seen_at) for obs in same_profile)
+    return len({
+        normalize_endpoint(obs.print_host, obs.host_type)["normalized"]
+        for obs in same_profile
+        if (newest - _as_utc(obs.last_seen_at)) <= _LIVE_WINDOW
+    })
+
+
 async def reconcile_user_printers(db: AsyncSession, user_id: int) -> int:
     """Upsert physical printers + bindings from the user's observations.
 
-    Idempotent: a known endpoint updates its binding, a new endpoint creates a
-    printer. Returns the number of physical printers newly auto-created."""
-    observations = (
-        await db.execute(
-            select(OrcaPrinterConnectionObservation).where(
-                OrcaPrinterConnectionObservation.owner_user_id == user_id
+    Idempotent: a known endpoint updates its binding, a new endpoint joins the
+    printer its preset already identifies, and only an unclaimed endpoint creates
+    a printer. Returns the number of physical printers newly auto-created."""
+    observations = list(
+        (
+            await db.execute(
+                select(OrcaPrinterConnectionObservation).where(
+                    OrcaPrinterConnectionObservation.owner_user_id == user_id
+                )
             )
-        )
-    ).scalars().all()
+        ).scalars().all()
+    )
 
     created = 0
     for obs in observations:
@@ -118,6 +197,17 @@ async def reconcile_user_printers(db: AsyncSession, user_id: int) -> int:
                 )
             )
         ).scalar_one_or_none()
+
+        if binding is None and obs.matched_printer_profile_id is not None:
+            known_printer_id = await _printer_for_profile(
+                db, user_id, obs.matched_printer_profile_id
+            )
+            if known_printer_id is not None and _live_endpoint_count(
+                observations, obs.matched_printer_profile_id
+            ) == 1:
+                binding = await _rebind_to_known_printer(
+                    db, user_id, known_printer_id, endpoint, obs
+                )
 
         if binding is None:
             printer = UserPrinterDevice(

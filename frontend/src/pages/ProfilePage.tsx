@@ -2814,12 +2814,14 @@ const AddDeviceForm: React.FC<{
   setPrinterSearchQuery: (v: string) => void;
   isCreatingDevice: boolean;
   handleCreateDevice: () => void;
+  ownPrinters: { id: number; name: string }[];
+  onIssueKey: (printerId: number) => void;
   onCancel: () => void;
 }> = ({
   newDeviceName, setNewDeviceName,
   selectedPrinterId, setSelectedPrinterId,
   printerSearchQuery, setPrinterSearchQuery,
-  isCreatingDevice, handleCreateDevice, onCancel,
+  isCreatingDevice, handleCreateDevice, ownPrinters, onIssueKey, onCancel,
 }) => {
   const { t } = useTranslation();
   const [showDropdown, setShowDropdown] = useState(false);
@@ -2838,6 +2840,10 @@ const AddDeviceForm: React.FC<{
 
   const printers = printersData?.items || [];
   const selectedPrinter = printers.find(p => p.id === selectedPrinterId);
+  const query = printerSearchQuery.trim().toLowerCase();
+  const matchingOwnPrinters = query
+    ? ownPrinters.filter((printer) => printer.name.toLowerCase().includes(query))
+    : ownPrinters;
 
   return (
     <div className="bg-black/20 border border-white/10 rounded-lg p-3 space-y-3">
@@ -2857,8 +2863,31 @@ const AddDeviceForm: React.FC<{
             placeholder={t('profilePage.deviceSetup.searchPrinter')}
             className="w-full rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 text-sm text-white placeholder-gray-600 focus:border-purple-500 focus:outline-none"
           />
-          {showDropdown && printers.length > 0 && !selectedPrinterId && (
+          {showDropdown && (printers.length > 0 || matchingOwnPrinters.length > 0) && !selectedPrinterId && (
             <div className="absolute z-10 w-full mt-1 max-h-40 overflow-y-auto bg-gray-800 border border-white/20 rounded-lg shadow-lg">
+              {matchingOwnPrinters.length > 0 && (
+                <>
+                  <p className="px-3 pt-2 text-[11px] font-medium uppercase tracking-wide text-gray-500">
+                    {t('profilePage.deviceSetup.ownPrinters')}
+                  </p>
+                  {matchingOwnPrinters.map((printer) => (
+                    <button
+                      key={`own-${printer.id}`}
+                      type="button"
+                      onClick={() => {
+                        setShowDropdown(false);
+                        onIssueKey(printer.id);
+                      }}
+                      className="w-full text-left px-3 py-2 text-sm text-white hover:bg-purple-600/30 transition-colors"
+                    >
+                      {printer.name}
+                    </button>
+                  ))}
+                  <p className="border-b border-white/10 px-3 pb-2 text-[11px] leading-snug text-gray-500">
+                    {t('profilePage.deviceSetup.ownPrintersHint')}
+                  </p>
+                </>
+              )}
               {printers.map((printer) => (
                 <button
                   key={printer.id}
@@ -2951,6 +2980,19 @@ const SpoolsTab: React.FC<SpoolsTabProps> = ({
     staleTime: 60_000,
   });
 
+  const { data: physicalPrinters = [] } = useQuery({
+    queryKey: ['physical-printers'],
+    queryFn: physicalPrintersAPI.list,
+    staleTime: 60_000,
+  });
+
+  const printersWithoutKey = useMemo(
+    () => physicalPrinters
+      .filter((printer) => !devices.some((device) => device.id === printer.id))
+      .map((printer) => ({ id: printer.id, name: printer.name })),
+    [physicalPrinters, devices],
+  );
+
   const spoolCompatBaseUrl = useMemo(() => {
     if (typeof window === 'undefined' || !window.location?.origin) {
       return 'https://filamenthub.ru/api/v1/spool_compat';
@@ -3019,6 +3061,26 @@ const SpoolsTab: React.FC<SpoolsTabProps> = ({
       queryClient.invalidateQueries({ queryKey: ['devices'] });
     } catch (error: any) {
       setSetupError(translateApiError(t, error?.response?.data?.detail));
+    }
+  };
+
+  const handleIssueKeyToOwnPrinter = async (printerId: number) => {
+    setSetupError(null);
+    setIsCreatingDevice(true);
+    try {
+      const result = await devicesAPI.regenerateKey(printerId);
+      setRevealedKeys((prev) => ({ ...prev, [printerId]: result.api_key }));
+      setNewDeviceName('');
+      setSelectedPrinterId(null);
+      setPrinterSearchQuery('');
+      setShowNewDeviceForm(false);
+      queryClient.invalidateQueries({ queryKey: ['devices'] });
+      queryClient.invalidateQueries({ queryKey: ['physical-printers'] });
+      await refetchDevices();
+    } catch (error: any) {
+      setSetupError(translateApiError(t, error?.response?.data?.detail));
+    } finally {
+      setIsCreatingDevice(false);
     }
   };
 
@@ -3203,6 +3265,8 @@ const SpoolsTab: React.FC<SpoolsTabProps> = ({
               setPrinterSearchQuery={setPrinterSearchQuery}
               isCreatingDevice={isCreatingDevice}
               handleCreateDevice={handleCreateDevice}
+              ownPrinters={printersWithoutKey}
+              onIssueKey={handleIssueKeyToOwnPrinter}
               onCancel={() => {
                 setShowNewDeviceForm(false);
                 setNewDeviceName('');

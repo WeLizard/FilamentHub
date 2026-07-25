@@ -3,16 +3,12 @@ import { useTranslation } from 'react-i18next';
 import { InfoHint } from './InfoHint';
 import { isNozzleTooSoft } from '../utils/nozzleHardness';
 
-// Ниже этого HRC сопло считается мягким (латунь) — требования нет.
 const HARDENED_HRC = 50;
 
 interface NozzleRequirementBadgeProps {
   requiredHrc?: number | null;
-  /** Твёрдость сопла выбранной конфигурации, если она известна. */
   configuredHrc?: number | null;
-  /** Без поповера с объяснением — для плиток слотов, где ему некуда открыться. */
   compact?: boolean;
-  /** `chip` совпадает по размеру с чипом типа материала, `tight` — для плиток. */
   size?: 'chip' | 'tight';
   className?: string;
 }
@@ -22,13 +18,6 @@ const SIZE_CLASSES: Record<'chip' | 'tight', string> = {
   tight: 'px-1.5 py-0.5 text-[10px]',
 };
 
-/**
- * Требование материала к твёрдости сопла там, где человек берёт катушку: в
- * каталоге, на катушке в профиле, в слоте. Число остаётся числом, а объяснение
- * шкалы уходит за (i) — так человек учит матчасть, а не угадывает. Если сопло
- * выбранной конфигурации мягче требуемого, значок предупреждает; печатать это не
- * запрещает.
- */
 export const NozzleRequirementBadge: React.FC<NozzleRequirementBadgeProps> = ({
   requiredHrc,
   configuredHrc,

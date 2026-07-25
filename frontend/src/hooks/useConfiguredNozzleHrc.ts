@@ -4,11 +4,6 @@ import { useAuth } from '../contexts/AuthContext';
 import { usePrinterSelection } from './usePrinterSelection';
 import { configuredNozzleHrc } from '../utils/nozzleHardness';
 
-/**
- * Твёрдость сопла в конфигурации, выбранной для рекомендаций. Запрос делит
- * кэш с `PrinterConfigPicker`, поэтому лишней сетевой работы не добавляет.
- * null — конфигурация не выбрана или её сопло неизвестно.
- */
 export function useConfiguredNozzleHrc(): number | null {
   const { user } = useAuth();
   const [selection] = usePrinterSelection();

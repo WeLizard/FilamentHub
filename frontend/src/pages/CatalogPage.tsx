@@ -282,7 +282,6 @@ interface MaterialCardProps {
   showQR: boolean;
   onClick: () => void;
   savedPresetIds: Set<number>;
-  /** Твёрдость сопла выбранной конфигурации, чтобы предупредить об абразиве. */
   configuredNozzleHrc: number | null;
 }
 
