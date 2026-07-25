@@ -15,13 +15,9 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent
 SOURCE = ROOT / "filamenthub_plugin.py"
 
-# The source is kept dev-convenient — a localhost default and diagnostic logging so
-# it can be run directly against a local contour. The prod wheel must carry none of
-# that: prod_source() drops the marked dev block and every fh_log(...) call and
-# forces the prod site URL, so the Hub artifact stays lean and can never ship a
-# localhost default.
-DEV_BLOCK_START = "# fh-dev:start"
-DEV_BLOCK_END = "# fh-dev:end"
+# The source carries a localhost default so it can be run against a local contour.
+# The wheel must never ship that, so prod_source() forces the prod site URL. The
+# diagnostic log ships on purpose: a beta report is worth nothing without it.
 DEV_SITE_DEFAULT = '"http://localhost:3000"'
 PROD_SITE_DEFAULT = '"https://filamenthub.ru"'
 
@@ -67,36 +63,14 @@ def extract_runtime_version(source: str) -> str:
 
 
 def prod_source(source: str) -> str:
-    """Return the source stripped of all dev-only diagnostics with the prod site
-    URL forced. Raises if the input is not the expected dev source, so an
-    unnormalized wheel can never ship silently."""
-    out: list[str] = []
-    in_dev_block = False
-    saw_marker = False
-    for line in source.splitlines():
-        stripped = line.strip()
-        if stripped.startswith(DEV_BLOCK_START):
-            in_dev_block = True
-            saw_marker = True
-            continue
-        if stripped.startswith(DEV_BLOCK_END):
-            in_dev_block = False
-            continue
-        if in_dev_block or line.lstrip().startswith("fh_log("):
-            continue
-        out.append(line)
-    if not saw_marker:
-        raise ValueError(f"{DEV_BLOCK_START!r} marker not found — refusing to build an unnormalized wheel")
-    result = "\n".join(out)
-    if source.endswith("\n"):
-        result += "\n"
-    if DEV_SITE_DEFAULT not in result:
+    """Return the source with the prod site URL forced. Raises if the input is not
+    the expected dev source, so an unnormalized wheel can never ship silently."""
+    if DEV_SITE_DEFAULT not in source:
         raise ValueError("dev SITE_URL default not found — cannot force the prod URL")
-    result = result.replace(DEV_SITE_DEFAULT, PROD_SITE_DEFAULT)
+    result = source.replace(DEV_SITE_DEFAULT, PROD_SITE_DEFAULT)
     ast.parse(result, filename="filamenthub_plugin.py[prod]")
-    for token in ("fh_log", "DEBUG_LOG", ".fh_sync.log", DEV_BLOCK_START, DEV_SITE_DEFAULT):
-        if token in result:
-            raise ValueError(f"prod source still contains a dev token: {token!r}")
+    if DEV_SITE_DEFAULT in result:
+        raise ValueError(f"prod source still contains a dev token: {DEV_SITE_DEFAULT!r}")
     return result
 
 

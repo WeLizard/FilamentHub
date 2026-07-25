@@ -262,27 +262,51 @@ def ensure_icon():
         return ""
 
 
-# fh-dev:start — diagnostic sync log; build_package.py strips this block and every
-# fh_log(...) call from the prod wheel, so the Hub artifact carries no dev code.
-# Active only off-prod (SITE_URL != prod); it exists because sync failures are
-# otherwise invisible (the summary shows only counts, the backend returns 200 on
-# per-item errors), so the reason must be captured here.
-DEBUG_LOG = SITE_URL != "https://filamenthub.ru"
 SYNC_LOG_FILE = os.path.join(PLUGIN_DIR, ".fh_sync.log")
+SYNC_LOG_MAX_BYTES = 256 * 1024
+SYNC_LOG_KEEP_BYTES = 128 * 1024
+
+
+def redact_home(text):
+    """Replace the user's home directory with ~ so a shared log carries no name."""
+    home = os.path.expanduser("~")
+    if not home or home == "~":
+        return text
+    return text.replace(home, "~").replace(home.replace("\\", "/"), "~")
+
+
+def trim_sync_log():
+    """Keep only the tail once the log grows past its cap."""
+    try:
+        if os.path.getsize(SYNC_LOG_FILE) <= SYNC_LOG_MAX_BYTES:
+            return
+        with open(SYNC_LOG_FILE, "rb") as fh:
+            fh.seek(-SYNC_LOG_KEEP_BYTES, os.SEEK_END)
+            tail = fh.read()
+        write_bytes_atomic(SYNC_LOG_FILE, tail)
+    except OSError:
+        pass
 
 
 def fh_log(msg):
     """Append one timestamped diagnostic line. Best-effort, never raises."""
-    if not DEBUG_LOG:
-        return
     try:
         import datetime
+        trim_sync_log()
         stamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         with open(SYNC_LOG_FILE, "a", encoding="utf-8") as fh:
-            fh.write("%s %s\n" % (stamp, msg))
+            fh.write("%s %s\n" % (stamp, redact_home(str(msg))))
     except OSError:
         pass
-# fh-dev:end
+
+
+def read_sync_log():
+    """The log as text, empty when nothing has been written yet."""
+    try:
+        with open(SYNC_LOG_FILE, "r", encoding="utf-8", errors="replace") as fh:
+            return fh.read()
+    except OSError:
+        return ""
 
 
 # Session tokens live next to the plugin (inside data_dir, the allowed write
@@ -349,6 +373,9 @@ class ShellServer:
 
     def recover_status_path(self):
         return "/r/" + self._oauth_secret
+
+    def log_path(self):
+        return "/l/" + self._oauth_secret
 
     def set_sync_result(self, text):
         with self._sync_lock:
@@ -442,6 +469,10 @@ class ShellServer:
                     if path == owner.recover_status_path():
                         body = json.dumps(owner._recover_status()).encode("utf-8")
                         self._send(200, "application/json; charset=utf-8", body)
+                        return
+                    if path == owner.log_path():
+                        self._send(200, "text/plain; charset=utf-8",
+                                   read_sync_log().encode("utf-8"))
                         return
                     if path == "/d/" + owner._oauth_secret:
                         query = urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)
@@ -1174,6 +1205,7 @@ PAGE = r"""<!DOCTYPE html>
     <button data-path="/wiki">Wiki</button>
     <button id="sync" title="Sync your FilamentHub presets with OrcaSlicer">Sync</button>
     <button id="recover" title="Find your local OrcaSlicer filament presets and import the ones you pick as drafts">Recover</button>
+    <button id="diag" title="Copy the plugin log to the clipboard — attach it to a beta report">Log</button>
   </div>
   <div id="content">
     <div id="service-status" role="status" aria-live="polite">
@@ -1193,6 +1225,7 @@ var EMBED_URL = '__EMBED_URL__';
 var OAUTH_STATUS_PATH = '__OAUTH_STATUS_PATH__';
 var SYNC_STATUS_PATH = '__SYNC_STATUS_PATH__';
 var RECOVER_STATUS_PATH = '__RECOVER_STATUS_PATH__';
+var LOG_PATH = '__LOG_PATH__';
 var frame = document.getElementById('fh');
 var wasLoggedIn = false;
 var oauthPollTimer = null;
@@ -1520,6 +1553,27 @@ document.getElementById('recover').addEventListener('click', function () {
   startRecoverPolling();
 });
 
+function relayNote(text) {
+  try {
+    frame.contentWindow.postMessage(
+      { source: 'filamenthub-plugin', type: 'sync-result', text: text }, SITE_ORIGIN);
+  } catch (e) { /* iframe not ready */ }
+}
+document.getElementById('diag').addEventListener('click', function () {
+  fetch(LOG_PATH, { cache: 'no-store' })
+    .then(function (r) { return r.text(); })
+    .then(function (text) {
+      if (!text) {
+        relayNote('The plugin log is empty — run Sync once, then copy it again.');
+        return;
+      }
+      return navigator.clipboard.writeText(text).then(function () {
+        relayNote('Plugin log copied. Paste it into your beta feedback.');
+      });
+    })
+    .catch(function () { relayNote('Could not read the plugin log.'); });
+});
+
 // Sign out: tell the catalog to log out; it clears the session and reports back
 // (auth-state with no label), which hides this button again.
 document.getElementById('logout').addEventListener('click', function () {
@@ -1534,7 +1588,8 @@ document.getElementById('logout').addEventListener('click', function () {
 """.replace("__EMBED_URL__", EMBED_URL).replace("__SITE_ORIGIN__", SITE_URL).replace(
     "__OAUTH_STATUS_PATH__", SHELL_SERVER.status_path()).replace(
     "__SYNC_STATUS_PATH__", SHELL_SERVER.sync_status_path()).replace(
-    "__RECOVER_STATUS_PATH__", SHELL_SERVER.recover_status_path())
+    "__RECOVER_STATUS_PATH__", SHELL_SERVER.recover_status_path()).replace(
+    "__LOG_PATH__", SHELL_SERVER.log_path())
 
 
 # --------------------------------------------------------------------------- #
@@ -1904,7 +1959,8 @@ class FilamentHubCatalog(orca.script.ScriptPluginCapabilityBase):
 
         local = scan_local_fh_presets(folder)
         state = load_sync_state()
-        fh_log("sync start: %d remote, %d local, folder=%s" % (len(remote_items), len(local), folder))
+        fh_log("sync start: plugin %s, %d remote, %d local, folder=%s"
+               % (PLUGIN_VERSION, len(remote_items), len(local), folder))
         pulled = updated = pushed = skipped = failed = renamed = 0
         for rp in remote_items:
             pid = rp.get("id")
