@@ -1,11 +1,12 @@
 /** Компонент вкладки настроек пользователя */
 
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Settings, Lock, Mail, Save, CheckCircle, XCircle, Loader2, User as UserIcon, Eye, EyeOff, AlertTriangle, Trash2, Globe } from 'lucide-react';
 import { authAPI, calculatorAPI } from '../api/client';
 import { currencySymbol, normalizeCurrency, CURRENCY_CODES } from '../utils/currency';
+import { sortedCountries } from '../utils/countries';
 import { translateApiError } from '../utils/translateApiError';
 import type { User } from '../types/api';
 import { useAuth } from '../contexts/AuthContext';
@@ -21,7 +22,7 @@ interface SettingsTabProps {
 export const SettingsTab: React.FC<SettingsTabProps> = ({ user, onUserUpdate }) => {
   const queryClient = useQueryClient();
   const { refreshUser } = useAuth();
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
 
   // Состояние для модалки удаления аккаунта
   const [showDeleteModal, setShowDeleteModal] = useState(false);
@@ -239,6 +240,15 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({ user, onUserUpdate }) 
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['calculator-profile'] }),
   });
 
+  const countryOptions = useMemo(() => sortedCountries(i18n.language), [i18n.language]);
+  const updateCountryMutation = useMutation({
+    mutationFn: (code: string) => authAPI.updateProfile({ country: code || null }),
+    onSuccess: () => {
+      refreshUser();
+      onUserUpdate();
+    },
+  });
+
   return (
     <div className="max-w-7xl mx-auto space-y-6">
       {/* Язык, валюта и страна */}
@@ -273,11 +283,19 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({ user, onUserUpdate }) 
           <div>
             <label className="block text-xs text-gray-400 mb-1.5">{t('settings.country')}</label>
             <select
-              disabled
-              className="w-full px-4 py-2 bg-white/10 border border-white/20 rounded-xl text-gray-400 disabled:opacity-60"
+              value={user?.country ?? ''}
+              onChange={(e) => updateCountryMutation.mutate(e.target.value)}
+              disabled={updateCountryMutation.isPending}
+              className="w-full px-4 py-2 bg-white/10 border border-white/20 rounded-xl text-white focus:outline-none focus:ring-2 focus:ring-purple-500 disabled:opacity-50"
             >
-              <option className="bg-gray-900">{t('settings.countrySoon')}</option>
+              <option value="" className="bg-gray-900">{t('settings.countryNotSet')}</option>
+              {countryOptions.map((country) => (
+                <option key={country.code} value={country.code} className="bg-gray-900">
+                  {country.name}
+                </option>
+              ))}
             </select>
+            <p className="mt-1.5 text-[11px] text-gray-500">{t('settings.countryHint')}</p>
           </div>
         </div>
       </section>

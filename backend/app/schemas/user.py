@@ -48,6 +48,7 @@ class UserUpdate(BaseModel):
     username: str | None = Field(None, min_length=3, max_length=100)
     full_name: str | None = Field(None, max_length=255)
     bio: str | None = None
+    country: str | None = Field(None, pattern=r"^[A-Z]{2}$")
     password: str | None = Field(None, min_length=8, max_length=100)
 
     @field_validator('password')
@@ -117,6 +118,7 @@ class UserResponse(UserBase):
     active: bool
     email_verified: bool
     avatar_url: str | None = None  # Загруженный аватар пользователя
+    country: str | None = None
     brand_id: int | None = None
     brand_name: str | None = None  # Название бренда (для админки)
     printer_id: int | None = None  # ID выбранного принтера из каталога

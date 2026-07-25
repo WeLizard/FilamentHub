@@ -61,6 +61,7 @@ class User(Base):
     full_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
     bio: Mapped[str | None] = mapped_column(Text, nullable=True)
     avatar_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    country: Mapped[str | None] = mapped_column(String(2), nullable=True)
 
     # Sync settings (разрешения на импорт/экспорт профилей)
     allow_printer_profiles_import: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)

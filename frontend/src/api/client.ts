@@ -293,7 +293,7 @@ export const authAPI = {
     };
   },
 
-  updateProfile: async (data: Partial<{ username: string; full_name: string | null; bio: string | null; password: string; printer_id: number | null; recommend_physical_printer_id: number | null; recommend_printer_profile_id: number | null }>) => {
+  updateProfile: async (data: Partial<{ username: string; full_name: string | null; bio: string | null; country: string | null; password: string; printer_id: number | null; recommend_physical_printer_id: number | null; recommend_printer_profile_id: number | null }>) => {
     const response = await api.patch<User>('/auth/me', data);
     return response.data;
   },

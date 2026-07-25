@@ -484,6 +484,7 @@ export interface User {
   id: number;
   email: string;
   username: string;
+  country?: string | null;
   role: string;
   full_name: string | null;
   bio: string | null;
