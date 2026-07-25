@@ -1933,7 +1933,7 @@
     "activeBrandChangeError": "Не удалось переключить бренд",
     "myProfile": "Мой профиль",
     "achievements": "Достижения",
-    "printer3d": "3D печатник",
+    "role": { "brand": "Представитель бренда", "moderator": "Модератор", "admin": "Администратор" },
     "avatarUpload": "Загрузить аватар",
     "edit": "Редактировать",
     "viewPreset": "Посмотреть пресет подробно",

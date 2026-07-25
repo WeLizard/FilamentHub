@@ -193,6 +193,15 @@ export const ProfilePage: React.FC = () => {
     queryFn: crmAPI.getSummary,
     enabled: userTab === 'calculator-pro' && (user?.has_calculator_access ?? false),
   });
+  const identityLine = useMemo(() => {
+    if (!user) return '';
+    const displayName = user.full_name || user.username;
+    const parts: string[] = [];
+    if (user.username && user.username !== displayName) parts.push(`@${user.username}`);
+    if (user.role && user.role !== 'user') parts.push(t(`profilePage.role.${user.role}`));
+    return parts.join(' · ');
+  }, [user, t]);
+
   const profileBadges = useMemo(() => {
     const validBadgeTypes = new Set<BadgeType>(Object.keys(BADGE_CONFIG) as BadgeType[]);
     return (user?.badges ?? []).filter((badge): badge is BadgeType => validBadgeTypes.has(badge as BadgeType));
@@ -799,7 +808,9 @@ export const ProfilePage: React.FC = () => {
           </label>
           <div className="min-w-0">
             <p className="text-base md:text-xl font-bold text-white truncate">{user.full_name || user.username}</p>
-            <p className="text-xs md:text-sm text-gray-400">{t('profilePage.printer3d')}</p>
+            {identityLine && (
+              <p className="text-xs md:text-sm text-gray-400 truncate">{identityLine}</p>
+            )}
           </div>
           {profileBadges.length > 0 && (
             <div className="hidden sm:flex items-center gap-2 overflow-x-auto whitespace-nowrap scrollbar-hide min-w-0">
@@ -2864,7 +2875,7 @@ const AddDeviceForm: React.FC<{
             className="w-full rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 text-sm text-white placeholder-gray-600 focus:border-purple-500 focus:outline-none"
           />
           {showDropdown && (printers.length > 0 || matchingOwnPrinters.length > 0) && !selectedPrinterId && (
-            <div className="absolute z-10 w-full mt-1 max-h-40 overflow-y-auto bg-gray-800 border border-white/20 rounded-lg shadow-lg">
+            <div className="absolute z-10 w-full mt-1 max-h-64 overflow-y-auto bg-gray-800 border border-white/20 rounded-lg shadow-lg">
               {matchingOwnPrinters.length > 0 && (
                 <>
                   <p className="px-3 pt-2 text-[11px] font-medium uppercase tracking-wide text-gray-500">
