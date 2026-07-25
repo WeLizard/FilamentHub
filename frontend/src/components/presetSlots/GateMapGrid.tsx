@@ -2,12 +2,15 @@ import { useTranslation } from 'react-i18next';
 import type { GateState, MaterialSlot, UserSpool } from '../../api/client';
 import type { Preset } from '../../types/api';
 import { isUnidentifiedHHFilament } from '../../utils/hhGateState';
+import { NozzleRequirementBadge } from '../NozzleRequirementBadge';
 
 interface GateMapGridProps {
   slots: MaterialSlot[];
   gates: GateState[];
   presets: Record<number, Pick<Preset, 'id' | 'name' | 'extruder_temp' | 'bed_temp'>>;
   spools: UserSpool[];
+  /** Твёрдость сопла машины, чтобы предупредить об абразивном материале. */
+  nozzleHrc?: number | null;
   onGateClick: (gate: GateState | null, slot: MaterialSlot) => void;
 }
 
@@ -90,7 +93,7 @@ function hhStatusBadge(status: number | null, t: (k: string) => string): { label
   return null;
 }
 
-export function GateMapGrid({ slots, gates, presets, spools, onGateClick }: GateMapGridProps) {
+export function GateMapGrid({ slots, gates, presets, spools, nozzleHrc = null, onGateClick }: GateMapGridProps) {
   const { t } = useTranslation();
 
   const gateMap = new Map<number, GateState>(gates.map((g) => [g.gate_index, g]));
@@ -175,6 +178,14 @@ export function GateMapGrid({ slots, gates, presets, spools, onGateClick }: Gate
                 {[spool.filament.brand_name, spool.filament.name].filter(Boolean).join(' ')}
               </p>
             )}
+
+            <NozzleRequirementBadge
+              requiredHrc={spool?.filament?.required_nozzle_hrc}
+              configuredHrc={nozzleHrc}
+              size="tight"
+              compact
+            />
+
 
             {isUnidentified && (
               <p className="max-w-full truncate text-[10px] leading-tight text-amber-300/80">

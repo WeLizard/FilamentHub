@@ -24,9 +24,11 @@ import { currencySymbol } from '../utils/currency';
 import { isPluginEmbed, notifyProfileChanged } from '../utils/pluginBridge';
 import { Dropdown } from '../components/Dropdown';
 import { FilamentPreview } from '../components/FilamentPreview';
+import { NozzleRequirementBadge } from '../components/NozzleRequirementBadge';
 import { RecommendedForPrinterSection } from '../components/RecommendedForPrinterSection';
 import { PrinterConfigPicker } from '../components/PrinterConfigPicker';
 import { usePrinterSelection } from '../hooks/usePrinterSelection';
+import { useConfiguredNozzleHrc } from '../hooks/useConfiguredNozzleHrc';
 import { SEOHead } from '../components/SEOHead';
 import type { Filament } from '../types/api';
 import type { AxiosError } from 'axios';
@@ -42,6 +44,7 @@ export const CatalogPage: React.FC = () => {
   const [materialTypeFilter, setMaterialTypeFilter] = useState<string | null>(null);
   const [brandFilter, setBrandFilter] = useState<number | null>(null);
   const [printerSelection, setPrinterSelection] = usePrinterSelection();
+  const configuredNozzleHrc = useConfiguredNozzleHrc();
   const [selectedFilament, _setSelectedFilament] = useState<number | null>(null);
   const [showQR, setShowQR] = useState<number | null>(null);
   
@@ -254,6 +257,7 @@ export const CatalogPage: React.FC = () => {
             showQR={showQR === filament.id}
             onClick={() => navigate(`/filaments/${filament.id}`)}
             savedPresetIds={savedPresetIds}
+            configuredNozzleHrc={configuredNozzleHrc}
           />
         ))}
       </div>
@@ -278,6 +282,8 @@ interface MaterialCardProps {
   showQR: boolean;
   onClick: () => void;
   savedPresetIds: Set<number>;
+  /** Твёрдость сопла выбранной конфигурации, чтобы предупредить об абразиве. */
+  configuredNozzleHrc: number | null;
 }
 
 const MaterialCard: React.FC<MaterialCardProps> = ({
@@ -289,6 +295,7 @@ const MaterialCard: React.FC<MaterialCardProps> = ({
   showQR,
   onClick,
   savedPresetIds,
+  configuredNozzleHrc,
 }) => {
   const { t } = useTranslation();
   const navigate = useNavigate();
@@ -417,6 +424,12 @@ const MaterialCard: React.FC<MaterialCardProps> = ({
                   {t(`createFilament.availability.${filament.availability}`)}
                 </span>
               )}
+              <NozzleRequirementBadge
+                requiredHrc={filament.required_nozzle_hrc}
+                configuredHrc={configuredNozzleHrc}
+                compact
+              />
+
               {(filament.color_hex || filament.visual_settings) && (
               <span className="inline-flex items-center justify-center w-16 sm:w-24">
                 <div style={{ transform: 'scale(0.35)', transformOrigin: 'center center' }} className="sm:hidden">

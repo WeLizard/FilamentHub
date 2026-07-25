@@ -288,6 +288,7 @@ def _build_response(spool: UserSpool, filament: Filament | None) -> SpoolRespons
             brand_name=filament.brand.name if filament.brand is not None else None,
             price_per_kg=filament.price_per_kg,
             currency=filament.brand.currency if filament.brand is not None else None,
+            required_nozzle_hrc=filament.required_nozzle_hrc,
         )
     return SpoolResponse(
         id=spool.id,

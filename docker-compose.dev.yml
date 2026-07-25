@@ -82,6 +82,7 @@ services:
       VITE_RECAPTCHA_SITE_KEY: ""
       VITE_AUTH_WEB_MODE: dual
       VITE_AUTH_CSRF_HEADER_NAME: X-CSRF-Token
+      CHOKIDAR_USEPOLLING: "true"
     command: sh -c "npm install && npm run dev -- --host 0.0.0.0"
     depends_on:
       - backend-dev

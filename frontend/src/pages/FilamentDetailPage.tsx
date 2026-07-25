@@ -3,6 +3,8 @@
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { InfoHint } from '../components/InfoHint';
+import { useConfiguredNozzleHrc } from '../hooks/useConfiguredNozzleHrc';
+import { isNozzleTooSoft } from '../utils/nozzleHardness';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
@@ -44,6 +46,7 @@ import type { AxiosError } from 'axios';
 
 export const FilamentDetailPage: React.FC = () => {
   const { t } = useTranslation();
+  const configuredNozzleHrc = useConfiguredNozzleHrc();
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const location = useLocation();
@@ -722,6 +725,14 @@ export const FilamentDetailPage: React.FC = () => {
                           <InfoHint text={t('paramHints.nozzleHardness')} />
                         </div>
                         <div className="text-white font-semibold">{officialRequiredNozzleHRC} HRC</div>
+                        {isNozzleTooSoft(officialRequiredNozzleHRC, configuredNozzleHrc) && (
+                          <p className="mt-1 max-w-xs text-xs text-red-300">
+                            {t('nozzleHardness.tooSoft', {
+                              required: officialRequiredNozzleHRC,
+                              configured: configuredNozzleHrc,
+                            })}
+                          </p>
+                        )}
                       </div>
                     </div>
                   )}

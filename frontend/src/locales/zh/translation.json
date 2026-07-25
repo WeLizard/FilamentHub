@@ -1272,7 +1272,9 @@
     "ruby": "红宝石",
     "tungstenCarbide": "碳化钨",
     "abrasiveHint": "磨蚀性填料——建议使用硬化喷嘴（HRC ≥ 50）。",
-    "abrasiveRecommend": "磨蚀性材料：会磨损黄铜。适用硬化钢、红宝石或碳化钨喷嘴。"
+    "abrasiveRecommend": "磨蚀性材料：会磨损黄铜。适用硬化钢、红宝石或碳化钨喷嘴。",
+    "badge": "需要硬质喷嘴",
+    "tooSoft": "该材料需要 HRC ≥ {{required}} 的喷嘴，而所选配置为 HRC {{configured}}。仍可打印，但喷嘴会磨损。"
   },
   "createFilament": {
     "createTitle": "创建新耗材",
@@ -2429,8 +2431,6 @@
       "description": "添加打印机，将配置复制到Moonraker — 它将自动连接。",
       "addPrinter": "添加打印机",
       "selectPrinter": "打印机型号 (从目录)",
-      "ownPrinters": "您的打印机",
-      "ownPrintersHint": "选择您已有的打印机，密钥将发给它，不会重复创建记录。",
       "searchPrinter": "搜索打印机目录...",
       "nameLabel": "打印机名称",
       "namePlaceholder": "例如：Voron 2.4",

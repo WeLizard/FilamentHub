@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { Cpu, Clock, Layers, Zap, Trash2, Loader2, Wifi, WifiOff, AlertTriangle, Copy, Check, RefreshCw } from 'lucide-react';
-import { physicalPrintersAPI, presetsAPI, spoolsAPI } from '../../api/client';
+import { physicalPrintersAPI, presetsAPI, printerProfilesAPI, spoolsAPI } from '../../api/client';
 import type { GateState, MaterialSlot, MaterialSystem, PhysicalPrinter, UserSpool } from '../../api/client';
 import type { Preset } from '../../types/api';
 import { GateMapGrid } from './GateMapGrid';
@@ -10,6 +10,7 @@ import { PresetAssignModal } from './PresetAssignModal';
 import { toast } from '../Toast';
 import { translateApiError } from '../../utils/translateApiError';
 import { formatLastSeen, getDeviceLinkState, useNow } from '../../utils/deviceLink';
+import { configuredNozzleHrc } from '../../utils/nozzleHardness';
 import { useAuth } from '../../contexts/AuthContext';
 
 interface MaterialSystemSectionProps {
@@ -18,6 +19,8 @@ interface MaterialSystemSectionProps {
   presetsSeedMap: Record<number, Pick<Preset, 'id' | 'name' | 'extruder_temp' | 'bed_temp'>>;
   spools: UserSpool[];
   printerProfileName?: string | null;
+  /** Твёрдость сопла машины (максимум по её конфигурациям), если известна. */
+  nozzleHrc?: number | null;
   onGateClick: (
     gate: GateState | null,
     slot: MaterialSlot,
@@ -52,7 +55,7 @@ function materialSlotGateState(slot: MaterialSlot): GateState | null {
   };
 }
 
-function MaterialSystemSection({ printer, system, presetsSeedMap, spools, printerProfileName = null, onGateClick }: MaterialSystemSectionProps) {
+function MaterialSystemSection({ printer, system, presetsSeedMap, spools, printerProfileName = null, nozzleHrc = null, onGateClick }: MaterialSystemSectionProps) {
   const { t, i18n } = useTranslation();
   const queryClient = useQueryClient();
   const [clearing, setClearing] = useState(false);
@@ -289,6 +292,7 @@ function MaterialSystemSection({ printer, system, presetsSeedMap, spools, printe
         gates={gates}
         presets={effectivePresetsMap}
         spools={spools}
+        nozzleHrc={nozzleHrc}
         onGateClick={(gate, slot) => onGateClick(gate, slot, printer, system)}
       />
     </div>
@@ -339,6 +343,31 @@ export function PresetSlotsPanel({
   });
 
   const spools = externalSpools ?? fetchedSpools;
+
+  // Твёрдость сопла машины — максимум по её конфигурациям: человек может резать
+  // на закалённой, поэтому предупреждать стоит лишь когда ни одна не подходит.
+  // Запрос делит кэш с выбором принтера в каталоге.
+  const { data: ownedProfiles } = useQuery({
+    queryKey: ['printer-profiles', 'all-owned', user?.id],
+    queryFn: () => printerProfilesAPI.listAllOwned(user!.id),
+    enabled: !!user && physicalPrinters.length > 0,
+  });
+
+  const nozzleHrcByPrinterId = useMemo(() => {
+    const settingsByProfileId = new Map<number, Record<string, unknown>>();
+    for (const profile of ownedProfiles ?? []) {
+      settingsByProfileId.set(profile.id, profile.orcaslicer_settings ?? {});
+    }
+
+    const map = new Map<number, number | null>();
+    for (const printer of physicalPrinters) {
+      const known = printer.printer_profile_ids
+        .map((profileId) => configuredNozzleHrc(settingsByProfileId.get(profileId)))
+        .filter((hrc): hrc is number => hrc != null);
+      map.set(printer.id, known.length > 0 ? Math.max(...known) : null);
+    }
+    return map;
+  }, [ownedProfiles, physicalPrinters]);
 
   const printerProfileNameById = useMemo(() => {
     const map = new Map<number, string>();
@@ -413,6 +442,7 @@ export function PresetSlotsPanel({
               .map((profileId) => printerProfileNameById.get(profileId))
               .filter((name): name is string => name != null)
               .join(', ') || null}
+            nozzleHrc={nozzleHrcByPrinterId.get(printer.id) ?? null}
             onGateClick={handleGateClick}
           />
         ))}

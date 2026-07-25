@@ -52,6 +52,7 @@ import { presetsAPI, filamentsAPI, brandsAPI, savedPresetsAPI, filamentReviewsAP
 import { extractQrShortCode, createQrFrameDecoder } from '../utils/qrScanner';
 import type { UserSpool, SpoolState, UserPrinterDevice } from '../api/client';
 import { SpoolIcon } from '../components/icons/SpoolIcon';
+import { NozzleRequirementBadge } from '../components/NozzleRequirementBadge';
 import api from '../api/client';
 import { translateApiError } from '../utils/translateApiError';
 import { getSpoolCurrentLocation, getSpoolLastLocation } from '../utils/spoolLocation';
@@ -1849,10 +1850,13 @@ const SpoolCard: React.FC<SpoolCardProps> = ({ spool, isBusy = false, onEdit, on
 
         {/* Brand · material */}
         {spool.filament && (
-          <p className="text-gray-400 text-xs truncate">
-            {spool.filament.brand_name && `${spool.filament.brand_name} · `}
-            {spool.filament.material_type}
-          </p>
+          <div className="flex items-center gap-1.5 min-w-0">
+            <p className="text-gray-400 text-xs truncate">
+              {spool.filament.brand_name && `${spool.filament.brand_name} · `}
+              {spool.filament.material_type}
+            </p>
+            <NozzleRequirementBadge requiredHrc={spool.filament.required_nozzle_hrc} size="tight" />
+          </div>
         )}
 
         {/* Weight stats */}

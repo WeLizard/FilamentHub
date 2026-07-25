@@ -22,6 +22,7 @@ class SpoolFilamentInfo(BaseModel):
     brand_name: str | None
     price_per_kg: float | None
     currency: str | None = None  # валюта бренда (для price_per_kg)
+    required_nozzle_hrc: int | None = None
 
     model_config = {"from_attributes": True}
 

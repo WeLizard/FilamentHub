@@ -1275,7 +1275,9 @@
     "ruby": "Ruby",
     "tungstenCarbide": "Tungsten carbide",
     "abrasiveHint": "Abrasive filler - a hardened nozzle is recommended (HRC ≥ 50).",
-    "abrasiveRecommend": "Abrasive material: it wears brass. Hardened steel, ruby or tungsten carbide will do."
+    "abrasiveRecommend": "Abrasive material: it wears brass. Hardened steel, ruby or tungsten carbide will do.",
+    "badge": "Hard nozzle required",
+    "tooSoft": "This material needs a nozzle at HRC ≥ {{required}}; the selected configuration has HRC {{configured}}. You can still print, but the nozzle will wear."
   },
   "createFilament": {
     "createTitle": "Create new material",
@@ -2432,8 +2434,6 @@
       "description": "Add a printer, copy the config to Moonraker - it will connect automatically.",
       "addPrinter": "Add Printer",
       "selectPrinter": "Printer model (from catalog)",
-      "ownPrinters": "Your printers",
-      "ownPrintersHint": "Pick one of yours — it gets the key, no second record appears.",
       "searchPrinter": "Search printer catalog...",
       "nameLabel": "Printer name",
       "namePlaceholder": "E.g.: Voron 2.4",

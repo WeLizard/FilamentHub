@@ -1,6 +1,7 @@
 import { useTranslation } from 'react-i18next';
 import { Filament } from '../types/api';
 import { FilamentPreview } from './FilamentPreview';
+import { NozzleRequirementBadge } from './NozzleRequirementBadge';
 import { currencySymbol } from '../utils/currency';
 
 interface FilamentSummaryCardProps {
@@ -72,11 +73,14 @@ export const FilamentSummaryCard: React.FC<FilamentSummaryCardProps> = ({
             {brand_name}
           </span>
         )}
-        {material_type && (
-          <span className="inline-flex px-3 py-1 bg-purple-600/80 rounded-lg text-white text-sm font-medium self-start lg:self-auto">
-            {material_type}
-          </span>
-        )}
+        <div className="flex items-center gap-2 self-start lg:self-auto">
+          {material_type && (
+            <span className="inline-flex px-3 py-1 bg-purple-600/80 rounded-lg text-white text-sm font-medium">
+              {material_type}
+            </span>
+          )}
+          <NozzleRequirementBadge requiredHrc={filament.required_nozzle_hrc} />
+        </div>
       </div>
 
       <div className="mt-4 flex flex-wrap gap-x-6 gap-y-2 text-sm justify-center text-center">

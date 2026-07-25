@@ -13,6 +13,12 @@ export default defineConfig({
   server: {
     port: 3000,
     host: '0.0.0.0', // Слушать на всех интерфейсах (IPv4 и IPv6)
+    // Bind-mount с Windows-хоста в контейнер не доставляет события об изменении
+    // файлов, из-за чего Vite отдаёт полусобранный модуль до перезапуска. Опрос
+    // включается только в контейнере, чтобы не жечь CPU при локальном запуске.
+    watch: process.env.CHOKIDAR_USEPOLLING === 'true'
+      ? { usePolling: true, interval: 400 }
+      : undefined,
     proxy: {
       '/api': {
         target: proxyTarget,
