@@ -80,3 +80,15 @@ class SpoolUseRequest(BaseModel):
     """Record filament usage (add to used_weight_g)."""
 
     delta_weight_g: float = Field(..., gt=0, le=5_000)
+
+
+class SpoolUsageEventResponse(BaseModel):
+    """One recorded fact about a spool's consumption."""
+
+    id: int
+    event_type: str
+    delta_weight_g: float | None
+    remaining_weight_g: float | None
+    device_name: str | None
+    job_ref: str | None
+    created_at: datetime

@@ -700,6 +700,17 @@ export interface FilamentListResponse extends ListResponse<Filament> {
   printer_matched_ids: number[];
 }
 
+export interface SpoolUsageEvent {
+  id: number;
+  /** printer_report · manual_adjust · reconcile_adjust · print_estimate */
+  event_type: string;
+  delta_weight_g: number | null;
+  remaining_weight_g: number | null;
+  device_name: string | null;
+  job_ref: string | null;
+  created_at: string;
+}
+
 export interface ListResponse<T> {
   items: T[];
   total: number;

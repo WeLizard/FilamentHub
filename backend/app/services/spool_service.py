@@ -22,9 +22,11 @@ from app.core.errors import (
 from app.models.filament import Filament
 from app.models.material_slot_assignment import MaterialSlotAssignment
 from app.models.preset_gate_state import PresetGateState, PresetGateStateSource
+from app.models.preset_usage_event import PresetUsageEventType
 from app.models.user import User
 from app.models.user_printer_device import UserPrinterDevice
 from app.models.user_spool import UserSpool, UserSpoolState
+from app.services.spool_usage_service import record_spool_usage
 from app.schemas.spool import (
     SpoolCreateRequest,
     SpoolFilamentInfo,
@@ -446,9 +448,16 @@ async def use_spool(
     if spool is None or spool.user_id != user.id:
         raise_error(404, ERR_ACCESS_DENIED)
 
+    before = spool.used_weight_g
     spool.used_weight_g = min(
         spool.initial_weight_g,
         spool.used_weight_g + delta_weight_g,
+    )
+    await record_spool_usage(
+        db,
+        spool=spool,
+        event_type=PresetUsageEventType.manual_adjust,
+        delta_weight_g=spool.used_weight_g - before,
     )
     spool.last_used_at = datetime.now(timezone.utc)
     if spool.first_used_at is None:

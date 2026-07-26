@@ -38,6 +38,8 @@ from app.models.user_printer_device import UserPrinterDevice
 from app.models.user_spool import UserSpool, UserSpoolState
 from app.services.preset_enrichment_service import _load_material_defaults
 from app.services.preset_slot_sync_service import touch_device_last_seen
+from app.models.preset_usage_event import PresetUsageEventType
+from app.services.spool_usage_service import record_spool_usage
 from app.services.spool_service import (
     assign_spool_to_gate,
     clear_spool_gate_assignments,
@@ -1127,6 +1129,7 @@ async def patch_spool(
             return _err(status.HTTP_404_NOT_FOUND, f"No filament with ID {body.filament_id} found.")
         spool.filament_id = body.filament_id
 
+    before_used = spool.used_weight_g
     if body.initial_weight is not None:
         spool.initial_weight_g = float(body.initial_weight)
     if body.used_weight is not None:
@@ -1134,6 +1137,14 @@ async def patch_spool(
     if body.remaining_weight is not None:
         computed_used = max(spool.initial_weight_g - body.remaining_weight, 0.0)
         spool.used_weight_g = float(min(max(computed_used, 0.0), spool.initial_weight_g))
+    if spool.used_weight_g != before_used:
+        await record_spool_usage(
+            db,
+            spool=spool,
+            event_type=PresetUsageEventType.manual_adjust,
+            delta_weight_g=spool.used_weight_g - before_used,
+            device_id=_device.id if _device is not None else None,
+        )
     if "lot_nr" in fields_set:
         spool.lot_nr = body.lot_nr
     if "comment" in fields_set:
@@ -1213,7 +1224,15 @@ async def use_spool(
         delta_weight = body.use_weight or 0.0
 
     now = datetime.now(timezone.utc)
+    before_used = spool.used_weight_g
     spool.used_weight_g = float(min(spool.initial_weight_g, spool.used_weight_g + delta_weight))
+    await record_spool_usage(
+        db,
+        spool=spool,
+        event_type=PresetUsageEventType.printer_report,
+        delta_weight_g=spool.used_weight_g - before_used,
+        device_id=_device.id if _device is not None else None,
+    )
     if spool.first_used_at is None:
         spool.first_used_at = now
     spool.last_used_at = now
@@ -1251,7 +1270,16 @@ async def measure_spool(
     filament = spool.filament
     tare = filament.empty_spool_weight_g if filament is not None and filament.empty_spool_weight_g else 0.0
     remaining_weight = max(body.weight - tare, 0.0)
+    before_used = spool.used_weight_g
     spool.used_weight_g = float(min(spool.initial_weight_g, max(spool.initial_weight_g - remaining_weight, 0.0)))
+    await record_spool_usage(
+        db,
+        spool=spool,
+        event_type=PresetUsageEventType.reconcile_adjust,
+        delta_weight_g=spool.used_weight_g - before_used,
+        device_id=_device.id if _device is not None else None,
+        meta={"weighed_g": body.weight, "tare_g": tare},
+    )
     now = datetime.now(timezone.utc)
     if spool.first_used_at is None:
         spool.first_used_at = now

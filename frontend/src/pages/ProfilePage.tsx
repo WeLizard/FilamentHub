@@ -41,8 +41,7 @@ import {
   Lock,
   BriefcaseBusiness,
   FileText,
-  UsersRound,
-} from 'lucide-react';
+  UsersRound, History } from 'lucide-react';
 import { Printer3DIcon } from '../components/icons/Printer3DIcon';
 import { useAuth } from '../contexts/AuthContext';
 import { useHeaderVisible } from '../hooks/useHeaderVisible';
@@ -78,6 +77,7 @@ import { CreatePrintProfileModal } from '../components/CreatePrintProfileModal';
 import { PresetSyncToggle } from '../components/PresetSyncToggle';
 import { Badge, BADGE_CONFIG, type BadgeType } from '../components/Badge';
 import { PresetSlotsPanel } from '../components/presetSlots/PresetSlotsPanel';
+import { SpoolUsageModal } from '../components/SpoolUsageModal';
 import { BrandProfilePage } from './BrandProfilePage';
 import { CalculatorPage } from './CalculatorPage';
 import { CrmWorkspacePage } from './CrmWorkspacePage';
@@ -1828,6 +1828,7 @@ interface SpoolCardProps {
 
 const SpoolCard: React.FC<SpoolCardProps> = ({ spool, isBusy = false, onEdit, onUse, onDelete, onStateChange }) => {
   const { t } = useTranslation();
+  const [showUsage, setShowUsage] = useState(false);
   const pct = Math.max(0, Math.min(100, spool.remaining_pct));
   const stateKey = `profilePage.spoolState.${spool.state}` as const;
   const iconColor = spool.filament?.color_hex
@@ -1883,7 +1884,18 @@ const SpoolCard: React.FC<SpoolCardProps> = ({ spool, isBusy = false, onEdit, on
             {' / '}
             {spool.initial_weight_g.toFixed(0)} г
           </span>
+          {spool.used_weight_g > 0 && (
+            <button
+              type="button"
+              onClick={() => setShowUsage(true)}
+              title={t('spoolUsage.open')}
+              className="rounded p-0.5 text-gray-500 transition hover:bg-white/10 hover:text-white"
+            >
+              <History className="h-3.5 w-3.5" />
+            </button>
+          )}
         </div>
+        <SpoolUsageModal spool={spool} isOpen={showUsage} onClose={() => setShowUsage(false)} />
 
         <div className="h-1.5 w-full overflow-hidden rounded-full bg-white/10">
           <div

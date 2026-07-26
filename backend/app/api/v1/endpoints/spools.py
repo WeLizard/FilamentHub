@@ -10,7 +10,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.dependencies import get_current_active_user
 from app.db.session import get_db
 from app.models.user import User
-from app.schemas.spool import SpoolCreateRequest, SpoolResponse, SpoolUpdateRequest, SpoolUseRequest
+from app.schemas.spool import (
+    SpoolCreateRequest,
+    SpoolResponse,
+    SpoolUpdateRequest,
+    SpoolUsageEventResponse,
+    SpoolUseRequest,
+)
 from app.services.spool_service import (
     create_spool,
     delete_spool,
@@ -18,6 +24,7 @@ from app.services.spool_service import (
     update_spool,
     use_spool,
 )
+from app.services.spool_usage_service import list_spool_usage
 
 router = APIRouter(prefix="/spools", tags=["spools"])
 
@@ -71,3 +78,13 @@ async def remove_spool(
 ) -> None:
     """Delete a spool from inventory."""
     await delete_spool(db, current_user, spool_id)
+
+
+@router.get("/{spool_id}/usage", response_model=list[SpoolUsageEventResponse])
+async def get_spool_usage(
+    spool_id: int,
+    current_user: Annotated[User, Depends(get_current_active_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> list[SpoolUsageEventResponse]:
+    """Consumption history of one spool."""
+    return await list_spool_usage(db, user_id=current_user.id, spool_id=spool_id)

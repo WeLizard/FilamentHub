@@ -23,6 +23,7 @@ class PresetUsageEventType(str, enum.Enum):
     print_estimate = "print_estimate"
     reconcile_adjust = "reconcile_adjust"
     manual_adjust = "manual_adjust"
+    printer_report = "printer_report"
 
 
 class PresetUsageEvent(Base):
@@ -49,6 +50,9 @@ class PresetUsageEvent(Base):
         nullable=False,
     )
     delta_weight_g: Mapped[float | None] = mapped_column(Float, nullable=True)
+    # What was left right after this event, so the history reads without replaying
+    # every earlier row.
+    remaining_weight_g: Mapped[float | None] = mapped_column(Float, nullable=True)
     job_ref: Mapped[str | None] = mapped_column(String(200), nullable=True)
     meta: Mapped[dict | None] = mapped_column(JSON, nullable=True)
 

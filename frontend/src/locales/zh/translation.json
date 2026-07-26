@@ -5589,5 +5589,18 @@
       "temperature": "温度",
       "other": "其他"
     }
+  },
+  "spoolUsage": {
+    "title": "用量 · {{name}}",
+    "summary": "已用 {{used}} 克 / {{initial}} 克 · {{count}} 条记录",
+    "empty": "尚无扣减记录。",
+    "open": "用量",
+    "grams": "克",
+    "source": {
+      "printer_report": "打印机",
+      "manual_adjust": "手动",
+      "reconcile_adjust": "称重",
+      "print_estimate": "打印预估"
+    }
   }
 }

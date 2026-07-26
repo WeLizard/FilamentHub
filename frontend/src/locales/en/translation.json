@@ -5595,5 +5595,18 @@
       "temperature": "Temperatures",
       "other": "Other"
     }
+  },
+  "spoolUsage": {
+    "title": "Consumption · {{name}}",
+    "summary": "{{used}} g of {{initial}} g used · {{count}} records",
+    "empty": "Nothing has been written off yet.",
+    "open": "Consumption",
+    "grams": "g",
+    "source": {
+      "printer_report": "printer",
+      "manual_adjust": "by hand",
+      "reconcile_adjust": "weighed",
+      "print_estimate": "print estimate"
+    }
   }
 }

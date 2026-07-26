@@ -5606,5 +5606,18 @@
       "temperature": "Температуры",
       "other": "Прочее"
     }
+  },
+  "spoolUsage": {
+    "title": "Расход · {{name}}",
+    "summary": "Списано {{used}} г из {{initial}} г · записей: {{count}}",
+    "empty": "Пока ничего не списывалось.",
+    "open": "Расход",
+    "grams": "г",
+    "source": {
+      "printer_report": "принтер",
+      "manual_adjust": "вручную",
+      "reconcile_adjust": "взвешивание",
+      "print_estimate": "оценка печати"
+    }
   }
 }
