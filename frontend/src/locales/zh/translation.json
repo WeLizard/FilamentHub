@@ -2541,26 +2541,11 @@
     },
     "spoolHelp": {
       "toggle": "这是如何工作的？",
-      "title": "我的耗材 — 如何工作",
-      "line1": "手动或通过二维码添加线轴 — 系统将从目录中匹配材料。",
-      "line2": "线轴价格自动计算：每公斤价格 × 初始重量。",
-      "line3": "如果您配置了Happy Hare MMU — 添加线轴后，您可以立即将其分配给门槽。",
-      "line4": "门槽分配是从网络UI中进行的；Happy Hare通过Spoolman兼容的API看到它。"
-    },
-    "spoolSetup": {
-      "title": "Moonraker / Happy Hare设置",
-      "description": "复制兼容性URL并将其粘贴到您的Moonraker/Happy Hare配置的[spoolman]部分。",
-      "show": "供料设置",
-      "hide": "隐藏设置",
-      "generateApiKey": "生成API密钥",
-      "endpointLabel": "就绪端点",
-      "configLabel": "配置示例",
-      "copy": "复制",
-      "copyConfig": "复制配置",
-      "copied": "已复制",
-      "copyFailed": "复制到剪贴板失败。",
-      "note": "如果此密钥已在您的打印机上使用，请避免重新生成，除非需要。",
-      "warning": "生成新密钥后，更新您的Moonraker/Happy Hare设置中的URL。"
+      "title": "我的耗材 — 工作方式",
+      "line1": "手动添加料盘或扫描其二维码 — 材料会与目录匹配。",
+      "line2": "料盘价格自动计算：每公斤价格 × 初始重量。",
+      "line3": "若打印机已描述供料系统，添加后即可将料盘分配到槽位。",
+      "line4": "槽位在本站分配。打印机通过您在其设置中填入的链接获取这些信息 — Moonraker 配合 Happy Hare，或 OctoPrint 的 Spoolman 插件。"
     },
     "deviceSetup": {
       "title": "供料系统",
