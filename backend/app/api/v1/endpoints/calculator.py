@@ -632,13 +632,14 @@ async def estimate_cost(
         raise_error(400, ERR_UNSUPPORTED_PRICING_METHOD, params={"method": data.pricing_method})
 
 
-@router.post("/parse-gcode", response_model=CalculatorGcodeParseResponse)
-async def parse_gcode(
-    _: Annotated[User, Depends(require_calculator_access)],
-    file: UploadFile = File(...),
-    plate_index: int | None = Query(None, ge=1),
+async def parse_uploaded_gcode(
+    file: UploadFile, plate_index: int | None
 ) -> CalculatorGcodeParseResponse:
-    """Parse uploaded G-code metadata for Calculator Pro auto-fill."""
+    """Read an uploaded G-code the same way wherever it came from.
+
+    The site uploads the file a person dropped in; the OrcaSlicer plugin uploads
+    one it produced. Both land here so a calculation cannot depend on the route.
+    """
     if not is_supported_gcode_filename(file.filename):
         file_name = file.filename or ""
         file_ext = ".gcode.gz" if file_name.lower().endswith(".gcode.gz") else file_name[file_name.rfind(".") :].lower() if "." in file_name else ""
@@ -664,6 +665,16 @@ async def parse_gcode(
         raise_error(status.HTTP_400_BAD_REQUEST, ERR_GCODE_PARSE_FAILED)
 
     return CalculatorGcodeParseResponse(**parsed)
+
+
+@router.post("/parse-gcode", response_model=CalculatorGcodeParseResponse)
+async def parse_gcode(
+    _: Annotated[User, Depends(require_calculator_access)],
+    file: UploadFile = File(...),
+    plate_index: int | None = Query(None, ge=1),
+) -> CalculatorGcodeParseResponse:
+    """Parse uploaded G-code metadata for Calculator Pro auto-fill."""
+    return await parse_uploaded_gcode(file, plate_index)
 
 
 @router.get("/history", response_model=CalculatorHistoryEntryListResponse)

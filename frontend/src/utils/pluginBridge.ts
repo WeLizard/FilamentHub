@@ -327,6 +327,97 @@ export function importPresetToPlugin(presetId: number): void {
 }
 
 /**
+ * Попросить плагин разобрать нарезку: файл лежит на диске у человека, страница
+ * открыть его не может, поэтому называет ключ, а Python отправляет G-code в наш
+ * же разбор и возвращает результат — тот же, что при ручной загрузке.
+ */
+export function requestSliceParse(sourceKey: string, fileName: string): void {
+  postToPlugin({ source: PLUGIN_MESSAGE_SOURCE, type: 'parse-slice', sourceKey, fileName });
+}
+
+export interface PluginSliceParseResult {
+  parsed?: unknown;
+  error?: string;
+}
+
+/**
+ * Спросить плагин, какие из перечисленных нарезок ещё можно посчитать: список на
+ * сайте живёт дольше файлов за ним.
+ */
+export function requestSliceKeyCheck(keys: string[]): void {
+  if (keys.length === 0) {
+    return;
+  }
+  postToPlugin({ source: PLUGIN_MESSAGE_SOURCE, type: 'check-slices', keys });
+}
+
+export interface PluginSliceHookState {
+  /** Стоит ли FilamentHub в поле «Slicing Pipeline Plugin» текущего профиля печати. */
+  enabled: boolean;
+  /** Имя этого профиля печати. */
+  preset: string;
+}
+
+export interface PluginSliceStatus {
+  keys: string[];
+  hook: PluginSliceHookState | null;
+}
+
+/** Подписка на ответ плагина: живые нарезки и состояние конвейера нарезки. */
+export function subscribeToPluginSliceKeys(
+  onStatus: (status: PluginSliceStatus) => void,
+): () => void {
+  const handler = (event: MessageEvent) => {
+    if (!isTrustedPluginParentEvent(event)) {
+      return;
+    }
+    const data = event.data as Partial<PluginMessage> | undefined;
+    if (!data || data.source !== PLUGIN_MESSAGE_SOURCE || data.type !== 'slices-alive') {
+      return;
+    }
+    const keys = (data as { keys?: unknown }).keys;
+    const hook = (data as { hook?: unknown }).hook;
+    if (Array.isArray(keys)) {
+      onStatus({
+        keys: keys.filter((key): key is string => typeof key === 'string'),
+        hook:
+          hook && typeof hook === 'object' && typeof (hook as PluginSliceHookState).enabled === 'boolean'
+            ? {
+                enabled: (hook as PluginSliceHookState).enabled,
+                preset: String((hook as PluginSliceHookState).preset ?? ''),
+              }
+            : null,
+      });
+    }
+  };
+  window.addEventListener('message', handler);
+  return () => window.removeEventListener('message', handler);
+}
+
+/** Подписка на разобранную нарезку от шелла (ответ на parse-slice). */
+export function subscribeToPluginSliceParse(
+  onResult: (result: PluginSliceParseResult) => void,
+): () => void {
+  const handler = (event: MessageEvent) => {
+    if (!isTrustedPluginParentEvent(event)) {
+      return;
+    }
+    const data = event.data as Partial<PluginMessage> | undefined;
+    if (!data || data.source !== PLUGIN_MESSAGE_SOURCE || data.type !== 'parsed-slice') {
+      return;
+    }
+    const result = (data as { result?: unknown }).result;
+    if (result && typeof result === 'object') {
+      onResult(result as PluginSliceParseResult);
+    } else {
+      onResult({ error: 'empty' });
+    }
+  };
+  window.addEventListener('message', handler);
+  return () => window.removeEventListener('message', handler);
+}
+
+/**
  * Запустить вход через Google/Yandex во внешнем системном браузере. Внутри
  * встроенного WebView провайдеры отдают 403 (disallowed_useragent) / «refused to
  * connect», поэтому Python открывает браузер, а сессия возвращается в плагин по

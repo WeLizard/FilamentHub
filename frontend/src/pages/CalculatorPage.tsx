@@ -33,6 +33,9 @@ import {
   X,
 } from 'lucide-react';
 import { calculatorAPI, crmAPI, filamentsAPI, spoolsAPI, type UserSpool } from '../api/client';
+import { SlicedJobsPanel } from '../components/calculator/SlicedJobsPanel';
+import { toast } from '../components/Toast';
+import { isPluginEmbed, requestSliceParse, subscribeToPluginSliceParse } from '../utils/pluginBridge';
 import { ConfirmDeleteModal } from '../components/ConfirmDeleteModal';
 import { useAuth } from '../contexts/AuthContext';
 import { useHeaderVisible } from '../hooks/useHeaderVisible';
@@ -64,6 +67,7 @@ import type {
   CalculatorPrintJobRequest,
   CrmCustomer,
   Filament,
+  OrcaSliceReport,
   PricingMethod,
   RoundingMode,
 } from '../types/api';
@@ -1720,6 +1724,22 @@ export const CalculatorPage: React.FC<CalculatorPageProps> = ({
     setForm((prev) => ({ ...prev, [field]: value }));
   };
 
+  // Файл нарезки остался на компьютере человека: страница называет плагину ключ,
+  // тот отправляет G-code в наш разбор и возвращает результат.
+  const [pickedSliceId, setPickedSliceId] = useState<number | null>(null);
+  const [goneSourceKeys, setGoneSourceKeys] = useState<string[]>([]);
+  const pendingSliceRef = useRef<OrcaSliceReport | null>(null);
+
+  const handleSlicePick = (slice: OrcaSliceReport) => {
+    if (!slice.source_key) {
+      toast.error(t('slicedJobs.gone'));
+      return;
+    }
+    pendingSliceRef.current = slice;
+    setPickedSliceId(slice.id);
+    requestSliceParse(slice.source_key, slice.file_name);
+  };
+
   const handleSelectSpool = (spoolId: number | '') => {
     setAutoMaterialMatch(null);
     skipNextFilamentDefaultsRef.current = false;
@@ -1862,9 +1882,9 @@ export const CalculatorPage: React.FC<CalculatorPageProps> = ({
     calculateMutation.mutate(buildEstimateRequest(form, materialLines, parsedJobs, jobConfigs));
   };
 
-  const handleGcodeFiles = async (files: File[]) => {
-    const batch = await parseGcodeMutation.mutateAsync(files);
-    const firstJob = batch.jobs[0];
+  // Единственный путь, которым разобранный G-code попадает в расчёт: и файл,
+  // перетащенный сюда, и нарезка, поднятая плагином, проходят через него.
+  const applyParsedJobs = (jobs: ParsedJobState[], warning: string | null) => {
     calculateMutation.reset();
     priceManuallyEditedRef.current = false;
     lastAutoMatchedGcodeKeyRef.current = null;
@@ -1873,22 +1893,59 @@ export const CalculatorPage: React.FC<CalculatorPageProps> = ({
     setAutoMaterialMatch(null);
     setMaterialPriceSource('unset');
     setMaterialLinesError(null);
-    setParsedJobs(batch.jobs);
-    setJobConfigs(batch.jobs.map(createDefaultJobConfig));
-    setParsedGcode(firstJob?.parsed ?? null);
-    setBatchParseWarning(
+    setParsedJobs(jobs);
+    setJobConfigs(jobs.map(createDefaultJobConfig));
+    setParsedGcode(jobs[0]?.parsed ?? null);
+    setBatchParseWarning(warning);
+    setForm((prev) => ({
+      ...applyParsedJobsToForm(prev, jobs),
+      selectedFilamentId: '',
+      spoolPrice: 0,
+    }));
+  };
+
+  const handleGcodeFiles = async (files: File[]) => {
+    const batch = await parseGcodeMutation.mutateAsync(files);
+    applyParsedJobs(
+      batch.jobs,
       batch.failedFiles.length > 0 || batch.skippedCount > 0
         ? tc('batchParsePartial')
             .replace('{{failed}}', String(batch.failedFiles.length))
             .replace('{{skipped}}', String(batch.skippedCount))
         : null,
     );
-    setForm((prev) => ({
-      ...applyParsedJobsToForm(prev, batch.jobs),
-      selectedFilamentId: '',
-      spoolPrice: 0,
-    }));
   };
+
+  const applyParsedJobsRef = useRef(applyParsedJobs);
+  useEffect(() => {
+    applyParsedJobsRef.current = applyParsedJobs;
+  });
+
+  useEffect(() => {
+    if (!isPluginEmbed()) {
+      return;
+    }
+    return subscribeToPluginSliceParse((result) => {
+      const slice = pendingSliceRef.current;
+      pendingSliceRef.current = null;
+      setPickedSliceId(null);
+      if (result.error === 'gone') {
+        // The G-code the slice stands for is no longer on the person's disk.
+        if (slice?.source_key) {
+          setGoneSourceKeys((current) => [...current, slice.source_key as string]);
+        }
+        toast.error(t('slicedJobs.gone'));
+        return;
+      }
+      const parsed = result.parsed as CalculatorGcodeParseResponse | undefined;
+      if (!parsed || typeof parsed !== 'object') {
+        toast.error(translateCalculator(t, 'sliceParseFailed'));
+        return;
+      }
+      applyParsedJobsRef.current([{ key: parsedJobKey(parsed, 0), parsed }], null);
+      toast.success(t('slicedJobs.taken', { name: slice?.file_name ?? '' }));
+    });
+  }, [t]);
 
   const handleJobSelect = (jobKey: string) => {
     const job = parsedJobs.find((candidate) => candidate.key === jobKey);
@@ -2830,6 +2887,10 @@ export const CalculatorPage: React.FC<CalculatorPageProps> = ({
           onSpoolSelect={handleSelectSpool}
           onCatalogFilamentSelect={handleSelectCatalogFilament}
           onFileSelect={handleFileSelection}
+          onSlicePick={handleSlicePick}
+          pickingSliceId={pickedSliceId}
+          goneSourceKeys={goneSourceKeys}
+          insidePlugin={isPluginEmbed()}
           onJobSelect={handleJobSelect}
           onJobConfigChange={handleJobConfigChange}
           onMaterialLineSelection={handleMaterialLineSelection}
@@ -2951,6 +3012,11 @@ interface CalculatorViewProps {
   onStaticSettingsOpenChange: (open: boolean) => void;
   onQuoteProfileOpenChange: (open: boolean) => void;
   onFileSelect: (files: FileList | null) => Promise<void>;
+  onSlicePick: (slice: OrcaSliceReport) => void;
+  pickingSliceId: number | null;
+  goneSourceKeys: string[];
+  /** The slice list needs the plugin's bridge to reach a file at all. */
+  insidePlugin: boolean;
   onJobSelect: (jobKey: string) => void;
   onJobConfigChange: (
     jobKey: string,
@@ -3011,6 +3077,10 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
   onStaticSettingsOpenChange,
   onQuoteProfileOpenChange,
   onFileSelect,
+  onSlicePick,
+  pickingSliceId,
+  goneSourceKeys,
+  insidePlugin,
   onJobSelect,
   onJobConfigChange,
   onMaterialLineSelection,
@@ -3856,6 +3926,7 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
                 step="1"
                 title={tc('workspaceSourceTitle')}
               >
+                <div className={insidePlugin ? 'grid gap-4 lg:grid-cols-2' : ''}>
                 <label
                   htmlFor="calculator-gcode-upload"
                   role="button"
@@ -3901,6 +3972,15 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
                     </div>
                   </div>
                 </label>
+
+                {insidePlugin && (
+                  <SlicedJobsPanel
+                    onPick={onSlicePick}
+                    pickingId={pickingSliceId}
+                    goneSourceKeys={goneSourceKeys}
+                  />
+                )}
+                </div>
 
                 {parseGcodeError && (
                   <div className="rounded-[1.25rem] border border-red-400/25 bg-red-500/10 px-4 py-3 text-sm text-red-100">

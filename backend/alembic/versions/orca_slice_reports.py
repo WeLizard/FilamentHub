@@ -27,11 +27,7 @@ def upgrade() -> None:
         sa.Column("file_name", sa.String(length=300), nullable=False),
         sa.Column("target_host", sa.String(length=50), nullable=True),
         sa.Column("slicer_version", sa.String(length=50), nullable=True),
-        sa.Column("total_weight_g", sa.Float(), nullable=True),
-        sa.Column("filament_weights_g", sa.JSON(), nullable=True),
-        sa.Column("estimated_seconds", sa.Integer(), nullable=True),
-        sa.Column("filament_changes", sa.Integer(), nullable=True),
-        sa.Column("layer_count", sa.Integer(), nullable=True),
+        sa.Column("source_key", sa.String(length=64), nullable=True),
         sa.Column("sliced_at", sa.DateTime(timezone=True), nullable=True),
         sa.Column(
             "received_at",

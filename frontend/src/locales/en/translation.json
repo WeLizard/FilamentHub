@@ -2330,7 +2330,8 @@
         "quantity": "Qty",
         "unitPrice": "Unit price",
         "total": "Total"
-      }
+      },
+      "sliceParseFailed": "Could not read the slice file. Try again or drop the G-code here."
     },
     "userProfile": "User Profile",
     "companyProfile": "Company Profile",
@@ -5619,5 +5620,22 @@
     "warnReported": "The printer claimed {{reported}} g — the spool held less",
     "driftUnder": "The measurement came out {{grams}} g below our count",
     "driftOver": "The measurement came out {{grams}} g above our count"
+  },
+  "slicedJobs": {
+    "title": "Slices from OrcaSlicer",
+    "refresh": "Refresh",
+    "use": "Use",
+    "taken": "Taken into the calculation: {{name}}",
+    "unknownPrinter": "printer unknown",
+    "loadError": "Could not load the slices",
+    "howToEnable": "Slices land here on their own, but it has to be switched on once: in the process settings, in the «Slicing Pipeline Plugin» field, pick FilamentHub. The file stays with you — only the slice's name and the printer reach us.",
+    "gone": "This slice's file is no longer there — slice it again or drop the G-code here.",
+    "fileGone": "The file is gone — drop the G-code here",
+    "hookOn": "On in the process settings «{{preset}}» — slices will show up here by themselves. The file stays with you; only its name and the printer reach us.",
+    "hookOff": "Off in the process settings «{{preset}}». To switch it on, pick FilamentHub there in the «Slicing Pipeline Plugin» field.",
+    "empty": "No slices yet.",
+    "emptyEnabled": "Your next slice in OrcaSlicer will show up here.",
+    "remove": "Remove from the list",
+    "confirmRemove": "Remove?"
   }
 }

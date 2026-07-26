@@ -2327,7 +2327,8 @@
         "quantity": "数量",
         "unitPrice": "单价",
         "total": "总计"
-      }
+      },
+      "sliceParseFailed": "无法读取切片文件。请重试，或将 G-code 拖到这里。"
     },
     "userProfile": "用户配置文件",
     "companyProfile": "公司配置文件",
@@ -5613,5 +5614,22 @@
     "warnReported": "打印机上报 {{reported}} 克 — 料盘上不足此数",
     "driftUnder": "实测比我们的计数少 {{grams}} 克",
     "driftOver": "实测比我们的计数多 {{grams}} 克"
+  },
+  "slicedJobs": {
+    "title": "来自 OrcaSlicer 的切片",
+    "refresh": "刷新",
+    "use": "用于计算",
+    "taken": "已用于计算：{{name}}",
+    "unknownPrinter": "打印机未知",
+    "loadError": "无法获取切片列表",
+    "howToEnable": "切片会自动出现在这里，但需要先开启一次：在打印参数设置中的“Slicing Pipeline Plugin”字段选择 FilamentHub。文件仍保留在您的电脑上，我们只收到切片名称和打印机。",
+    "gone": "找不到该切片的文件 — 请重新切片，或将 G-code 拖到这里。",
+    "fileGone": "文件已不存在 — 请将 G-code 拖到这里",
+    "hookOn": "在打印参数“{{preset}}”中已开启 — 切片将自动出现在这里。文件仍在您那里，我们只收到名称和打印机。",
+    "hookOff": "在打印参数“{{preset}}”中未开启。请在该处的“Slicing Pipeline Plugin”字段选择 FilamentHub。",
+    "empty": "还没有切片。",
+    "emptyEnabled": "下次在 OrcaSlicer 切片后会显示在这里。",
+    "remove": "从列表中移除",
+    "confirmRemove": "移除？"
   }
 }

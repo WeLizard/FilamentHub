@@ -64,7 +64,9 @@ import json
 import os
 import re
 import secrets
+import shutil
 import ssl
+import tempfile
 import threading
 import urllib.error
 import urllib.parse
@@ -363,6 +365,9 @@ class ShellServer:
         self._sync_result = ""
         self._recover_lock = threading.Lock()
         self._recover_items = None
+        self._slice_lock = threading.Lock()
+        self._slice_parse = None
+        self._slice_alive = None
 
     def status_path(self):
         return "/s/" + self._oauth_secret
@@ -375,6 +380,12 @@ class ShellServer:
 
     def log_path(self):
         return "/l/" + self._oauth_secret
+
+    def slice_parse_path(self):
+        return "/g/" + self._oauth_secret
+
+    def slice_alive_path(self):
+        return "/k/" + self._oauth_secret
 
     def set_sync_result(self, text):
         with self._sync_lock:
@@ -395,6 +406,28 @@ class ShellServer:
             items = self._recover_items
             self._recover_items = None
         return {"ready": items is not None, "items": items or []}
+
+    def set_slice_parse(self, payload):
+        with self._slice_lock:
+            self._slice_parse = payload
+
+    def _slice_parse_status(self):
+        with self._slice_lock:
+            payload = self._slice_parse
+            self._slice_parse = None
+        return {"ready": payload is not None, "result": payload}
+
+    def set_slice_alive(self, keys, hook=None):
+        with self._slice_lock:
+            self._slice_alive = {"alive": list(keys), "hook": hook}
+
+    def _slice_alive_status(self):
+        with self._slice_lock:
+            payload = self._slice_alive
+            self._slice_alive = None
+        if payload is None:
+            return {"ready": False, "alive": [], "hook": None}
+        return {"ready": True, "alive": payload["alive"], "hook": payload["hook"]}
 
     def deliver_url(self):
         # Absolute loopback URL the external browser is redirected to with the
@@ -467,6 +500,14 @@ class ShellServer:
                         return
                     if path == owner.recover_status_path():
                         body = json.dumps(owner._recover_status()).encode("utf-8")
+                        self._send(200, "application/json; charset=utf-8", body)
+                        return
+                    if path == owner.slice_parse_path():
+                        body = json.dumps(owner._slice_parse_status()).encode("utf-8")
+                        self._send(200, "application/json; charset=utf-8", body)
+                        return
+                    if path == owner.slice_alive_path():
+                        body = json.dumps(owner._slice_alive_status()).encode("utf-8")
                         self._send(200, "application/json; charset=utf-8", body)
                         return
                     if path == owner.log_path():
@@ -695,6 +736,41 @@ def http_post_json(path, token, payload):
     req = urllib.request.Request(API_BASE + path, data=data, headers=headers, method="POST")
     try:
         with urllib.request.urlopen(req, timeout=HTTP_TIMEOUT, context=_SSL_CTX) as resp:
+            return resp.getcode(), _read_response_limited(resp)
+    except urllib.error.HTTPError as exc:
+        return exc.code, exc.read(MAX_RESPONSE_BYTES)
+    except (OSError, ValueError, urllib.error.URLError) as exc:
+        return 0, str(exc).encode("utf-8", errors="replace")
+
+
+def http_post_file(path, token, file_path, field="file", file_name=""):
+    """Send one file to FilamentHub the way a browser upload would.
+
+    The G-code never passes through the page: it goes from this machine straight
+    to the server, so a 25 MB slice costs nothing in the WebView.
+    """
+    boundary = "----FilamentHub" + secrets.token_hex(16)
+    name = file_name or os.path.basename(file_path)
+    crlf = chr(13) + chr(10)
+    with open(file_path, "rb") as fh:
+        content = fh.read()
+    head = (
+        "--" + boundary + crlf
+        + 'Content-Disposition: form-data; name="' + field + '"; filename="' + name + '"' + crlf
+        + "Content-Type: application/octet-stream" + crlf + crlf
+    )
+    tail = crlf + "--" + boundary + "--" + crlf
+    body = head.encode("utf-8") + content + tail.encode("utf-8")
+    headers = {
+        "Accept": "application/json",
+        "Content-Type": "multipart/form-data; boundary=" + boundary,
+        "User-Agent": "FilamentHub-OrcaPlugin/" + PLUGIN_VERSION,
+    }
+    if token:
+        headers["Authorization"] = "Bearer " + token
+    req = urllib.request.Request(API_BASE + path, data=body, headers=headers, method="POST")
+    try:
+        with urllib.request.urlopen(req, timeout=HTTP_TIMEOUT * 4, context=_SSL_CTX) as resp:
             return resp.getcode(), _read_response_limited(resp)
     except urllib.error.HTTPError as exc:
         return exc.code, exc.read(MAX_RESPONSE_BYTES)
@@ -1224,6 +1300,8 @@ var EMBED_URL = '__EMBED_URL__';
 var OAUTH_STATUS_PATH = '__OAUTH_STATUS_PATH__';
 var SYNC_STATUS_PATH = '__SYNC_STATUS_PATH__';
 var RECOVER_STATUS_PATH = '__RECOVER_STATUS_PATH__';
+var SLICE_PARSE_PATH = '__SLICE_PARSE_PATH__';
+var SLICE_ALIVE_PATH = '__SLICE_ALIVE_PATH__';
 var LOG_PATH = '__LOG_PATH__';
 var frame = document.getElementById('fh');
 var wasLoggedIn = false;
@@ -1347,6 +1425,18 @@ window.addEventListener('message', function (event) {
     setAuthControls(loggedIn);
     if (loggedIn && !wasLoggedIn) navigateActive();
     wasLoggedIn = loggedIn;
+    return;
+  }
+  if (data.type === 'parse-slice') {
+    // The catalog cannot read a file on disk; Python can, and sends it to the
+    // same parser a manual upload goes through.
+    try { orca.postMessage(data); } catch (e) { /* bridge not ready */ }
+    startSlicePolling();
+    return;
+  }
+  if (data.type === 'check-slices') {
+    try { orca.postMessage(data); } catch (e) { /* bridge not ready */ }
+    startSliceKeysPolling();
     return;
   }
   if (data.type === 'open-oauth') {
@@ -1552,6 +1642,68 @@ document.getElementById('recover').addEventListener('click', function () {
   startRecoverPolling();
 });
 
+var slicePollTimer = null;
+var sliceDeadline = 0;
+function stopSlicePolling() {
+  if (slicePollTimer) { clearTimeout(slicePollTimer); slicePollTimer = null; }
+}
+function startSlicePolling() {
+  stopSlicePolling();
+  // A big slice takes a while to travel and parse.
+  sliceDeadline = Date.now() + 180 * 1000;
+  pollSliceOnce();
+}
+function pollSliceOnce() {
+  if (Date.now() > sliceDeadline) {
+    stopSlicePolling();
+    relaySliceResult({ error: 'timeout' });
+    return;
+  }
+  fetch(SLICE_PARSE_PATH, { cache: 'no-store' })
+    .then(function (r) { return r.json(); })
+    .then(function (st) {
+      if (st.ready) {
+        stopSlicePolling();
+        relaySliceResult(st.result || { error: 'empty' });
+        return;
+      }
+      slicePollTimer = setTimeout(pollSliceOnce, 800);
+    })
+    .catch(function () { slicePollTimer = setTimeout(pollSliceOnce, 1200); });
+}
+var sliceKeysTimer = null;
+var sliceKeysDeadline = 0;
+function startSliceKeysPolling() {
+  if (sliceKeysTimer) { clearTimeout(sliceKeysTimer); sliceKeysTimer = null; }
+  sliceKeysDeadline = Date.now() + 20 * 1000;
+  pollSliceKeysOnce();
+}
+function pollSliceKeysOnce() {
+  if (Date.now() > sliceKeysDeadline) { sliceKeysTimer = null; return; }
+  fetch(SLICE_ALIVE_PATH, { cache: 'no-store' })
+    .then(function (r) { return r.json(); })
+    .then(function (st) {
+      if (st.ready) {
+        sliceKeysTimer = null;
+        try {
+          frame.contentWindow.postMessage(
+            { source: 'filamenthub-plugin', type: 'slices-alive',
+              keys: st.alive || [], hook: st.hook || null },
+            SITE_ORIGIN);
+        } catch (e) { /* iframe not ready */ }
+        return;
+      }
+      sliceKeysTimer = setTimeout(pollSliceKeysOnce, 500);
+    })
+    .catch(function () { sliceKeysTimer = setTimeout(pollSliceKeysOnce, 800); });
+}
+function relaySliceResult(result) {
+  try {
+    frame.contentWindow.postMessage(
+      { source: 'filamenthub-plugin', type: 'parsed-slice', result: result }, SITE_ORIGIN);
+  } catch (e) { /* iframe not ready */ }
+}
+
 function relayNote(text) {
   try {
     frame.contentWindow.postMessage(
@@ -1588,6 +1740,8 @@ document.getElementById('logout').addEventListener('click', function () {
     "__OAUTH_STATUS_PATH__", SHELL_SERVER.status_path()).replace(
     "__SYNC_STATUS_PATH__", SHELL_SERVER.sync_status_path()).replace(
     "__RECOVER_STATUS_PATH__", SHELL_SERVER.recover_status_path()).replace(
+    "__SLICE_PARSE_PATH__", SHELL_SERVER.slice_parse_path()).replace(
+    "__SLICE_ALIVE_PATH__", SHELL_SERVER.slice_alive_path()).replace(
     "__LOG_PATH__", SHELL_SERVER.log_path()).replace(
     "__DIAG_HIDDEN__", "" if DEV_CONTOUR else "hidden")
 
@@ -1595,102 +1749,183 @@ document.getElementById('logout').addEventListener('click', function () {
 # --------------------------------------------------------------------------- #
 # Slices leaving the slicer
 # --------------------------------------------------------------------------- #
-# Orca writes the totals of a slice into the G-code it produced, so reading the
-# file's tail is enough: grams per filament position, the total, time, layers,
-# filament changes, and the preset the slice was made with. The file itself stays
-# on this machine — FilamentHub gets the figures and offers them in the
-# calculator, where a full breakdown by role can be asked for later.
+# FilamentHub is told only what identifies a slice: the file's name and the
+# machine it was sliced for, which Orca writes into the G-code's config block.
+# No weights or times — those come from reading the file itself, so a listed
+# slice and a calculation can never disagree. The path stays here, behind a key:
+# it carries a person's folders, and the site asks for the file through the
+# window bridge when they want a calculation.
+# Older hosts have no slicing pipeline at all: the capability is declared only
+# when the base class exists, so the plugin still loads there without it.
+_SLICING = getattr(orca, "slicing", None)
+_SLICE_CAPABILITY_BASE = getattr(_SLICING, "SlicingPipelineCapabilityBase", None)
 _TAIL_BYTES = 300000
-_HEAD_BYTES = 4000
-_SUMMARY_KEYS = (
-    "; filament used [g] =",
-    "; total filament used [g] =",
-    "; estimated printing time (normal mode) =",
-    "; total filament change =",
-    "; total layer number:",
-    "; printer_settings_id =",
-    "; printer_model =",
-    "; generated by OrcaSlicer",
-)
+_SLICE_INDEX_FILE = os.path.join(PLUGIN_DIR, ".fh_slices.json")
+_SLICE_INDEX_LIMIT = 300
+_SLICE_INDEX_LOCK = threading.Lock()
+# Sending a print writes the G-code to a temporary file the host deletes right
+# after the upload, so the path alone would be worthless by the time a person
+# asks for a calculation. Those slices are kept here instead, newest few only.
+_SLICE_CACHE_DIR = os.path.join(PLUGIN_DIR, "slices")
+_SLICE_CACHE_FILES = 5
+_SLICE_CACHE_BYTES = 500 * 1024 * 1024
 
 
-def _parse_duration(text):
-    """"6h 24m 10s" -> seconds. Orca omits the parts that are zero."""
-    total = 0
-    for value, unit in re.findall(r"(\d+)\s*([hms])", text):
-        total += int(value) * {"h": 3600, "m": 60, "s": 1}[unit]
-    return total or None
-
-
-def _read_slice_summary(path):
-    """The figures Orca left in a produced G-code, or None if they are absent."""
-    summary = {}
+def _read_slice_identity(path):
+    """The preset and model Orca names in a produced G-code, plus its version."""
+    identity = {}
     try:
         size = os.path.getsize(path)
         with open(path, "r", encoding="utf-8", errors="replace") as fh:
-            head = fh.read(_HEAD_BYTES)
+            head = fh.read(2000)
             fh.seek(max(0, size - _TAIL_BYTES))
             tail = fh.read()
     except OSError:
         return None
 
-    for line in (head + chr(10) + tail).splitlines():
+    match = re.search(r"generated by OrcaSlicer\s+([\w.+-]+)", head)
+    if match:
+        identity["slicer_version"] = match.group(1)[:50]
+    for line in tail.splitlines():
         s = line.strip()
-        if not s.startswith(";") or not any(k in s for k in _SUMMARY_KEYS):
+        if not s.startswith(";"):
             continue
-        if s.startswith("; generated by OrcaSlicer"):
-            match = re.search(r"OrcaSlicer\s+([\w.+-]+)", s)
-            if match:
-                summary["slicer_version"] = match.group(1)[:50]
+        if "printer_settings_id =" in s:
+            identity["printer_settings_id"] = s.split("=", 1)[1].strip().strip('"')[:200]
+        elif "printer_model =" in s:
+            identity["printer_model"] = s.split("=", 1)[1].strip().strip('"')[:200]
+    return identity or None
+
+
+def _is_temporary_slice(path):
+    """Whether the host wrote this G-code only to hand it to a printer."""
+    if os.path.basename(path).startswith(".OrcaSlicer.upload"):
+        return True
+    try:
+        temp_root = os.path.realpath(tempfile.gettempdir())
+        return os.path.commonpath([temp_root, os.path.realpath(path)]) == temp_root
+    except (OSError, ValueError):
+        return False
+
+
+def _prune_slice_cache():
+    """Keep the newest few copies while they fit the budget; the newest always."""
+    try:
+        names = os.listdir(_SLICE_CACHE_DIR)
+    except OSError:
+        return
+    entries = []
+    for name in names:
+        cached = os.path.join(_SLICE_CACHE_DIR, name)
+        try:
+            info = os.stat(cached)
+        except OSError:
             continue
-        key, _, raw = s[1:].partition("=" if "=" in s else ":")
-        key, raw = key.strip(), raw.strip()
-        if key == "filament used [g]":
-            weights = [float(v) for v in re.findall(r"[\d.]+", raw)]
-            summary["filament_weights_g"] = [w for w in weights] or None
-        elif key == "total filament used [g]":
-            summary["total_weight_g"] = float(raw or 0) or None
-        elif key == "estimated printing time (normal mode)":
-            summary["estimated_seconds"] = _parse_duration(raw)
-        elif key == "total filament change":
-            summary["filament_changes"] = int(float(raw or 0))
-        elif key == "total layer number":
-            summary["layer_count"] = int(float(raw or 0))
-        elif key == "printer_settings_id":
-            summary["printer_settings_id"] = raw.strip('"')[:200]
-        elif key == "printer_model":
-            summary["printer_model"] = raw.strip('"')[:200]
-    return summary or None
+        if os.path.isfile(cached):
+            entries.append((info.st_mtime, info.st_size, cached))
+    entries.sort(reverse=True)
+    total = 0
+    for position, (_mtime, size, cached) in enumerate(entries):
+        total += size
+        if position == 0 or (position < _SLICE_CACHE_FILES and total <= _SLICE_CACHE_BYTES):
+            continue
+        try:
+            os.remove(cached)
+        except OSError:
+            pass
+
+
+def _cache_slice_file(path, key):
+    """A copy the plugin owns, for G-code the host is about to delete."""
+    try:
+        os.makedirs(_SLICE_CACHE_DIR, exist_ok=True)
+        cached = os.path.join(_SLICE_CACHE_DIR, key + ".gcode")
+        shutil.copyfile(path, cached)
+    except OSError:
+        return None
+    _prune_slice_cache()
+    return cached
+
+
+def _remember_slice_path(path, file_name=""):
+    """Keep path and name under a key so the site can ask by key alone.
+
+    The name matters on its own: a cached copy is named after the key, and a
+    calculation labelled with a hash tells a person nothing.
+    """
+    stamp = "%s|%s" % (path, os.path.getmtime(path))
+    key = hashlib.sha256(stamp.encode("utf-8")).hexdigest()
+    if _is_temporary_slice(path):
+        path = _cache_slice_file(path, key) or path
+    with _SLICE_INDEX_LOCK:
+        index = _load_slice_index()
+        index[key] = {"path": path, "name": file_name or os.path.basename(path)}
+        if len(index) > _SLICE_INDEX_LIMIT:
+            for stale in list(index)[: len(index) - _SLICE_INDEX_LIMIT]:
+                index.pop(stale, None)
+        try:
+            write_json_atomic(_SLICE_INDEX_FILE, index, mode=0o600)
+        except OSError:
+            pass
+    return key
+
+
+def _load_slice_index():
+    try:
+        with open(_SLICE_INDEX_FILE, "r", encoding="utf-8") as fh:
+            data = json.load(fh)
+        return data if isinstance(data, dict) else {}
+    except (OSError, ValueError):
+        return {}
+
+
+def slice_entry_for_key(key):
+    """The file a key stands for and its name, if it is still where it was."""
+    with _SLICE_INDEX_LOCK:
+        index = _load_slice_index()
+    entry = index.get(key)
+    if isinstance(entry, str):  # written by 0.0.7 before names were kept
+        entry = {"path": entry, "name": os.path.basename(entry)}
+    if not isinstance(entry, dict):
+        return None
+    path = entry.get("path")
+    if not path or not os.path.exists(path):
+        return None
+    return {"path": path, "name": entry.get("name") or os.path.basename(path)}
+
+
+def slice_path_for_key(key):
+    entry = slice_entry_for_key(key)
+    return entry["path"] if entry else None
 
 
 def report_slice(gcode_path, output_name="", host=""):
-    """Send one slice's figures. Returns (sent, reason)."""
-    summary = _read_slice_summary(gcode_path)
-    if not summary:
-        return False, "no summary in the G-code"
+    """Tell FilamentHub a slice exists. Returns (sent, reason)."""
+    identity = _read_slice_identity(gcode_path)
+    if identity is None:
+        return False, "unreadable G-code"
     token = (load_saved_auth() or {}).get("accessToken") or ""
     if not token:
         return False, "not signed in"
-    summary["file_name"] = (
+    identity["file_name"] = (
         os.path.basename(output_name or gcode_path) or "print.gcode"
     )[:300]
+    identity["source_key"] = _remember_slice_path(gcode_path, identity["file_name"])
     if host:
-        summary["target_host"] = host[:50]
-    status, _ = http_post_json("/orcaslicer/slices", token, {"slices": [summary]})
+        identity["target_host"] = host[:50]
+    status, _ = http_post_json("/orcaslicer/slices", token, {"slices": [identity]})
     if status != 200:
         return False, "HTTP %s" % status
-    return True, summary["file_name"]
+    return True, identity["file_name"]
 
 
-# Older hosts have no slicing pipeline at all: the capability is declared only
-# when the base class exists, so the plugin still loads there without it.
-_SLICING = getattr(orca, "slicing", None)
-_SLICE_CAPABILITY_BASE = getattr(_SLICING, "SlicingPipelineCapabilityBase", None)
+# The name the host matches against a process preset's slicing_pipeline_plugin.
+SLICE_CAPABILITY_NAME = "filamenthub-slice-reporter"
 
 
 class _SliceReporterMixin:
     def get_name(self):
-        return "filamenthub-slice-reporter"
+        return SLICE_CAPABILITY_NAME
 
     def execute(self, ctx):
         step = getattr(ctx, "step", None)
@@ -1828,12 +2063,58 @@ class FilamentHubCatalog(orca.script.ScriptPluginCapabilityBase):
             pass
         return names
 
+    def _slice_hook_state(self):
+        """Whether the process preset in use asks the host to run our step.
+
+        Host reads only happen on the UI thread, so this is gathered in
+        on_message and handed to the worker that answers the site.
+        """
+        try:
+            preset = orca.host.preset_bundle().current_process_preset()
+            enabled = preset.config_value("slicing_pipeline_plugin")
+            name = preset.name
+        except Exception:
+            return None
+        if isinstance(enabled, str):
+            enabled = [part for part in re.split(r"[;,]", enabled) if part]
+        elif not isinstance(enabled, (list, tuple)):
+            enabled = []
+        return {
+            "enabled": SLICE_CAPABILITY_NAME in [str(item).strip() for item in enabled],
+            "preset": str(name or "")[:120],
+        }
+
     def _host_profiles(self):
         # Machine/process presets of the loaded account, read on the UI thread and
         # handed to the worker that reports them to FilamentHub.
         return {kind: scan_user_profiles(kind) for kind in PROFILE_KINDS}
 
     # on_message runs on the UI thread — offload network + disk work to a worker.
+    def _do_parse_slice(self, key, token, file_name=""):
+        entry = slice_entry_for_key(key)
+        path = entry["path"] if entry else ""
+        if not path:
+            SHELL_SERVER.set_slice_parse({"error": "gone"})
+            return
+        if not token:
+            SHELL_SERVER.set_slice_parse({"error": "auth"})
+            return
+        # The list is what a person is looking at, so the name they see there
+        # wins; the remembered one covers slices seen before names were kept.
+        status, body = http_post_file(
+            "/orcaslicer/slices/parse", token, path, file_name=file_name or entry["name"]
+        )
+        if status != 200:
+            fh_log("slice parse HTTP %s for %s" % (status, os.path.basename(path)))
+            SHELL_SERVER.set_slice_parse({"error": "http", "status": status})
+            return
+        try:
+            parsed = json.loads(body.decode("utf-8"))
+        except (ValueError, UnicodeDecodeError):
+            SHELL_SERVER.set_slice_parse({"error": "body"})
+            return
+        SHELL_SERVER.set_slice_parse({"parsed": parsed})
+
     def on_message(self, msg):
         if not isinstance(msg, dict):
             return
@@ -1853,6 +2134,32 @@ class FilamentHubCatalog(orca.script.ScriptPluginCapabilityBase):
             known = self._known_filament_preset_names()  # host read on the UI thread
             refresh_user_preset_folder()
             threading.Thread(target=self._do_import, args=(preset_id, token, known), daemon=True).start()
+        elif msg_type == "check-slices":
+            # The list on the site outlives the files behind it; answer which of
+            # those slices can still be turned into a calculation.
+            keys = msg.get("keys")
+            if not isinstance(keys, list):
+                return
+            wanted = [k for k in keys if isinstance(k, str) and k][:50]
+            hook = self._slice_hook_state()  # host read on the UI thread
+            threading.Thread(
+                target=lambda: SHELL_SERVER.set_slice_alive(
+                    [k for k in wanted if slice_path_for_key(k)], hook
+                ),
+                daemon=True,
+            ).start()
+        elif msg_type == "parse-slice":
+            # The page cannot open a file on disk, so it asks by key and this
+            # side sends the G-code straight to FilamentHub's own parser.
+            key = msg.get("sourceKey")
+            if not isinstance(key, str) or not key:
+                return
+            shown = msg.get("fileName")
+            shown = os.path.basename(shown)[:300] if isinstance(shown, str) else ""
+            token = (load_saved_auth() or {}).get("accessToken") or ""
+            threading.Thread(
+                target=self._do_parse_slice, args=(key, token, shown), daemon=True
+            ).start()
         elif msg_type == "sync":
             saved = load_saved_auth() or {}
             token = saved.get("accessToken") or ""

@@ -700,6 +700,19 @@ export interface FilamentListResponse extends ListResponse<Filament> {
   printer_matched_ids: number[];
 }
 
+export interface OrcaSliceReport {
+  id: number;
+  file_name: string;
+  printer_settings_id: string | null;
+  printer_model: string | null;
+  physical_printer_id: number | null;
+  physical_printer_name: string | null;
+  target_host: string | null;
+  source_key: string | null;
+  sliced_at: string | null;
+  received_at: string;
+}
+
 export interface SpoolUsageEvent {
   id: number;
   /** printer_report · manual_adjust · reconcile_adjust · print_estimate */

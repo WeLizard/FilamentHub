@@ -181,3 +181,7 @@ opencode.json
 # Local reference clones and printer logs pulled for reading
 references/
 log_iotc.txt
+
+# Slice copies and their index, written next to the plugin when it runs locally
+orca-plugin/slices/
+orca-plugin/.fh_*

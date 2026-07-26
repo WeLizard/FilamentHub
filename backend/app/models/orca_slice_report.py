@@ -3,7 +3,7 @@
 from datetime import datetime
 from typing import TYPE_CHECKING
 
-from sqlalchemy import JSON, DateTime, Float, ForeignKey, Index, Integer, String
+from sqlalchemy import DateTime, ForeignKey, Index, Integer, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.sql import func
 
@@ -18,9 +18,11 @@ if TYPE_CHECKING:
 class OrcaSliceReport(Base):
     """A slice the plugin saw leaving OrcaSlicer.
 
-    Orca writes the totals into the G-code, so the plugin reads the file's tail
-    and sends the figures; the file itself stays on the person's machine until
-    they ask for a full breakdown.
+    Only what identifies it: the file's name, the machine it was sliced for, and
+    a key the plugin can turn back into a path on its own side. Figures are not
+    copied here — asking for the file and reading it is the one source of them,
+    so a listed slice and a calculation can never disagree. The path itself stays
+    with the plugin: it carries a person's folders.
     """
 
     __tablename__ = "orca_slice_reports"
@@ -46,12 +48,8 @@ class OrcaSliceReport(Base):
     target_host: Mapped[str | None] = mapped_column(String(50), nullable=True)
     slicer_version: Mapped[str | None] = mapped_column(String(50), nullable=True)
 
-    total_weight_g: Mapped[float | None] = mapped_column(Float, nullable=True)
-    # Grams per filament position, as the file lists them.
-    filament_weights_g: Mapped[list[float] | None] = mapped_column(JSON, nullable=True)
-    estimated_seconds: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    filament_changes: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    layer_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # The plugin's own handle for the file it produced; it keeps the path.
+    source_key: Mapped[str | None] = mapped_column(String(64), nullable=True)
 
     sliced_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     received_at: Mapped[datetime] = mapped_column(
@@ -74,5 +72,5 @@ class OrcaSliceReport(Base):
     def __repr__(self) -> str:
         return (
             f"<OrcaSliceReport(id={self.id}, user_id={self.user_id}, "
-            f"file={self.file_name!r}, weight={self.total_weight_g})>"
+            f"file={self.file_name!r})>"
         )

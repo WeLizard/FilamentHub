@@ -21,17 +21,15 @@ from app.schemas.orca_slice_report import (
 def _dedupe_key(user_id: int, payload: OrcaSliceReportIn) -> str:
     """Recognise the same slice arriving twice.
 
-    Exporting to a file and uploading to a printer each fire the plugin once, on
-    separate working copies, so the file name alone is not enough: the totals the
-    slice produced are what make it the same slice.
+    Exporting to a file and uploading to a printer each fire the plugin once, so
+    the same slice arrives twice; the plugin's own handle for the file is what
+    tells one slice from a later re-slice of the same name.
     """
     parts = [
         str(user_id),
         payload.file_name.strip().lower(),
         payload.printer_settings_id or "",
-        f"{payload.total_weight_g or 0:.3f}",
-        str(payload.estimated_seconds or 0),
-        str(payload.layer_count or 0),
+        payload.source_key or "",
     ]
     return hashlib.sha256("|".join(parts).encode("utf-8")).hexdigest()
 
@@ -94,11 +92,7 @@ async def record_slice_reports(
             file_name=payload.file_name.strip()[:300],
             target_host=payload.target_host,
             slicer_version=payload.slicer_version,
-            total_weight_g=payload.total_weight_g,
-            filament_weights_g=payload.filament_weights_g,
-            estimated_seconds=payload.estimated_seconds,
-            filament_changes=payload.filament_changes,
-            layer_count=payload.layer_count,
+            source_key=payload.source_key,
             sliced_at=payload.sliced_at,
             dedupe_key=key,
         )
@@ -141,13 +135,24 @@ async def list_slice_reports(
                 row.physical_printer.name if row.physical_printer is not None else None
             ),
             target_host=row.target_host,
-            total_weight_g=row.total_weight_g,
-            filament_weights_g=row.filament_weights_g,
-            estimated_seconds=row.estimated_seconds,
-            filament_changes=row.filament_changes,
-            layer_count=row.layer_count,
+            source_key=row.source_key,
             sliced_at=row.sliced_at,
             received_at=row.received_at,
         )
         for row in rows
     ]
+
+
+async def delete_slice_report(db: AsyncSession, *, user_id: int, slice_id: int) -> bool:
+    """Drop one slice from the list. Returns whether there was one to drop."""
+    report = await db.scalar(
+        select(OrcaSliceReport).where(
+            OrcaSliceReport.id == slice_id,
+            OrcaSliceReport.user_id == user_id,
+        )
+    )
+    if report is None:
+        return False
+    await db.delete(report)
+    await db.commit()
+    return True

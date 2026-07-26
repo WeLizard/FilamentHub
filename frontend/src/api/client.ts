@@ -2,7 +2,7 @@
 
 import axios from 'axios';
 import type { InternalAxiosRequestConfig } from 'axios';
-import type { AccessibleBrand, AuthMethods, Brand, BrandUsage, BrandRequest, BrandRequestStatus, BrandTeamInvite, BrandTeamRole, BrandTeamWorkspace, Filament, FilamentLine, FilamentImportResult, FilamentListResponse, FilamentPalettePayload, BrandInvitePublic, BrandInviteAdmin, BrandInviteAcceptResult, BrandInviteBatchPreview, BrandInviteBatchSendResult, FilamentAvailability, FilamentVisualSettings, FilamentReview, FilamentRatingStats, Notification, NotificationListResponse, Preset, RecommendedPreset, RecommendedForPrinterResponse, Printer, PrinterProfile, PrintProfile, PrinterRequest, User, Token, RefreshTokenRequest, RefreshTokenResponse, ListResponse, AccountDeletionStats, UserSavedPreset, CalculatorEstimateRequest, CalculatorEstimateResponse, CalculatorProfileResponse, CalculatorProfileUpdate, Feedback, FeedbackListResponse, FeedbackType, CompatiblePrinter, CompatibleFilament, DownloadVersion, DownloadVersionsResponse, WikiCategory, WikiCategoryListResponse, WikiArticle, WikiArticleListResponse, WikiFeedbackStats, WikiFeedbackCreate, WikiFeedback, EmailThreadDetail, EmailThreadListResponse, EmailThreadStatus, EmailMessage, EmailSenderProfile, NotificationCampaignAudience, NotificationCampaignHistoryResponse, NotificationCampaignPreview, NotificationCampaignSendResult, LegalAcceptancePayload, LegalRequirements, RegistrationPayload, SpoolUsageEvent } from '../types/api';
+import type { AccessibleBrand, AuthMethods, Brand, BrandUsage, BrandRequest, BrandRequestStatus, BrandTeamInvite, BrandTeamRole, BrandTeamWorkspace, Filament, FilamentLine, FilamentImportResult, FilamentListResponse, FilamentPalettePayload, BrandInvitePublic, BrandInviteAdmin, BrandInviteAcceptResult, BrandInviteBatchPreview, BrandInviteBatchSendResult, FilamentAvailability, FilamentVisualSettings, FilamentReview, FilamentRatingStats, Notification, NotificationListResponse, Preset, RecommendedPreset, RecommendedForPrinterResponse, Printer, PrinterProfile, PrintProfile, PrinterRequest, User, Token, RefreshTokenRequest, RefreshTokenResponse, ListResponse, AccountDeletionStats, UserSavedPreset, CalculatorEstimateRequest, CalculatorEstimateResponse, CalculatorProfileResponse, CalculatorProfileUpdate, Feedback, FeedbackListResponse, FeedbackType, CompatiblePrinter, CompatibleFilament, DownloadVersion, DownloadVersionsResponse, WikiCategory, WikiCategoryListResponse, WikiArticle, WikiArticleListResponse, WikiFeedbackStats, WikiFeedbackCreate, WikiFeedback, EmailThreadDetail, EmailThreadListResponse, EmailThreadStatus, EmailMessage, EmailSenderProfile, NotificationCampaignAudience, NotificationCampaignHistoryResponse, NotificationCampaignPreview, NotificationCampaignSendResult, LegalAcceptancePayload, LegalRequirements, RegistrationPayload, SpoolUsageEvent, OrcaSliceReport } from '../types/api';
 import { getCsrfToken, getRefreshToken, getToken, isCookieAuthMode, isJwtAuthMode, isOrcaEmbedded, removeToken, setToken, shouldPersistTokensLocally } from '../utils/auth';
 import { isPluginEmbed, reportPluginSessionToPlugin } from '../utils/pluginBridge';
 import { downloadBlob } from '../utils/download';
@@ -2412,6 +2412,17 @@ export interface SpoolUpdatePayload {
   lot_nr?: string | null;
   comment?: string | null;
 }
+
+export const orcaSlicesAPI = {
+  list: async (limit = 20): Promise<OrcaSliceReport[]> => {
+    const response = await api.get<OrcaSliceReport[]>('/orcaslicer/slices', { params: { limit } });
+    return response.data;
+  },
+
+  remove: async (sliceId: number): Promise<void> => {
+    await api.delete(`/orcaslicer/slices/${sliceId}`);
+  },
+};
 
 export const spoolsAPI = {
   list: async (): Promise<UserSpool[]> => {
