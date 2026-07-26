@@ -2516,6 +2516,7 @@ export interface MaterialSystem {
   provider: string;
   capabilities: string[];
   active: boolean;
+  declared_slot_count: number | null;
   slots: MaterialSlot[];
 }
 
