@@ -38,4 +38,3 @@ def downgrade() -> None:
         USING tags::text
     """)
 
-

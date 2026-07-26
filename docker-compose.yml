@@ -65,6 +65,8 @@ services:
       - ./backend/logs:/app/logs
       # Wiki content - чтобы можно было редактировать без пересборки
       - ./backend/wiki_content:/app/wiki_content
+      # MaxMind GeoLite2 Country database (binary is local and not committed).
+      - ./backend/data/geoip:/app/data/geoip:ro
     # Backend НЕ пробрасываем наружу - доступ только через nginx (frontend)
     # ports:
     #   - "${BACKEND_PORT:-8000}:8000"
@@ -85,6 +87,8 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
       POSTGRES_DB: ${POSTGRES_DB:-filamenthub}
       REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379/0
+      # Only the fixed frontend proxy may assert X-FilamentHub-Client-IP.
+      AUTH_TRUSTED_PROXY_NETWORKS: ${AUTH_TRUSTED_PROXY_NETWORKS:-172.30.0.10/32}
       # docker CLI (admin-stats) ходит через socket-proxy, не в сокет хоста
       DOCKER_HOST: tcp://docker-socket-proxy:2375
     env_file:
@@ -114,7 +118,8 @@ services:
       - backend
     restart: unless-stopped
     networks:
-      - filamenthub_network
+      filamenthub_network:
+        ipv4_address: ${FILAMENTHUB_FRONTEND_INTERNAL_IP:-172.30.0.10}
 
 volumes:
   # Базы данных
@@ -126,3 +131,6 @@ volumes:
 networks:
   filamenthub_network:
     driver: bridge
+    ipam:
+      config:
+        - subnet: ${FILAMENTHUB_NETWORK_SUBNET:-172.30.0.0/24}

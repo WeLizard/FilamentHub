@@ -60,6 +60,7 @@ services:
       SECRET_KEY: dev-secret-key-not-for-production
       ADMIN_PASSWORD: admin123
       DEBUG: "true"
+      AUTH_REGION_MODE: development
       LOG_LEVEL: DEBUG
       AUTH_WEB_MODE: dual
       AUTH_COOKIE_SAMESITE: lax

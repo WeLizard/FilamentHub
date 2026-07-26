@@ -103,6 +103,17 @@ If you're working on **OrcaSlicer-side integration** (third-party cloud provider
 
 ---
 
+## Acknowledgements
+
+FilamentHub grew out of the open-source 3D-printing ecosystem. We are especially grateful to:
+
+- [OrcaSlicer](https://github.com/OrcaSlicer/OrcaSlicer) and all of its contributors. Working with OrcaSlicer inspired the original idea behind FilamentHub: make materials, presets, printers, and everyday printing workflows easier to connect and reuse.
+- [Spoolman](https://github.com/Donkie/Spoolman), Daniel Hultgren, and its contributors. Spoolman's public API and its integration with Moonraker provided a valuable interoperability reference while we built FilamentHub's independently implemented Spoolman-compatible API for Moonraker and Happy Hare.
+
+No Spoolman source code is included in FilamentHub. These projects are independent; this acknowledgement does not imply affiliation or endorsement.
+
+---
+
 ## License
 
 [GNU Affero General Public License v3.0](LICENSE)
