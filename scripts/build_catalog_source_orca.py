@@ -1,10 +1,12 @@
 """Pack OrcaSlicer printer/preset profiles into a catalog source bundle.
 
-Source: submodule/OrcaSlicer/resources/profiles/
+Source: submodule/OrcaSlicer/resources/profiles/, or any profiles directory
+        given as the first argument — the submodule trails upstream, so a
+        fresh clone of it is usually the better source.
 Target: backend/data/catalog_sources/orca/bundle.zip
 
-Run from the project root before deploying when the OrcaSlicer submodule
-is updated and we want fresh printer/preset definitions on prod.
+Run from the project root before deploying when we want fresh printer/preset
+definitions on prod.
 
 OrcaSlicer is just one source of catalog data. Other sources (PrusaSlicer,
 Cura, Bambu Studio) will live next to it as backend/data/catalog_sources/<name>/.
@@ -26,6 +28,9 @@ TARGET_ZIP = TARGET_DIR / "bundle.zip"
 
 
 def main() -> int:
+    global SOURCE_DIR
+    if len(sys.argv) > 1:
+        SOURCE_DIR = Path(sys.argv[1]).resolve()
     if not SOURCE_DIR.exists():
         print(f"ERROR: source not found: {SOURCE_DIR}")
         print("Make sure the OrcaSlicer submodule is initialised:")

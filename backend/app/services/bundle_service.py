@@ -156,13 +156,18 @@ class BundleService:
                 {"bundle_id": bundle.id, "status": bundle.status},
             )
 
+        # Held as plain values: a failure rolls the session back, and reading them
+        # off the expired objects afterwards raised in the error handler itself,
+        # hiding whatever actually went wrong.
+        known_bundle_id = bundle.id
         audit = BundleImport(
-            bundle_id=bundle.id,
+            bundle_id=known_bundle_id,
             started_by_user_id=triggered_by_user_id,
             status=BundleImportStatus.STARTED,
         )
         self.db.add(audit)
         await self.db.flush()
+        known_audit_id = audit.id
 
         tmp_root = Path(tempfile.mkdtemp(prefix=f"bundle_{bundle.source}_"))
         try:
@@ -179,19 +184,21 @@ class BundleService:
             bundle.status = BundleStatus.IMPORTED
         except BundleServiceError:
             await self.db.rollback()
-            audit = await self._record_failure(audit_id=audit.id, bundle_id=bundle.id)
+            audit = await self._record_failure(
+                audit_id=known_audit_id, bundle_id=known_bundle_id
+            )
             raise
         except Exception as exc:  # noqa: BLE001
             await self.db.rollback()
-            LOG.exception("Bundle import failed (bundle_id=%s)", bundle.id)
+            LOG.exception("Bundle import failed (bundle_id=%s)", known_bundle_id)
             audit = await self._record_failure(
-                audit_id=audit.id, bundle_id=bundle.id, error=str(exc)[:2000]
+                audit_id=known_audit_id, bundle_id=known_bundle_id, error=str(exc)[:2000]
             )
             # Exception text stays in logs and the audit record, not in the HTTP detail
             raise BundleServiceError(
                 "ERR_BUNDLE_IMPORT_FAILED",
                 "Bundle import failed",
-                {"bundle_id": bundle.id},
+                {"bundle_id": known_bundle_id},
             ) from exc
         finally:
             shutil.rmtree(tmp_root, ignore_errors=True)

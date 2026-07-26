@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Any, Iterable, Mapping
 
 from pydantic import ValidationError
-from sqlalchemy import Select, select
+from sqlalchemy import Select, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
@@ -250,11 +250,12 @@ class OrcaBundleImporter:
         display_name, model_name = _normalize_model_name(vendor_name, machine_model.name)
 
         if printer is None:
-            slug_source = f"{vendor_name} {machine_model.name}"
+            # The raw name already opens with the vendor, so pairing them again
+            # produced slugs like "voron-voron-2-4-350".
             slug = await generate_unique_slug(
                 db=db,
                 model=Printer,
-                source=slug_source,
+                source=display_name,
                 fallback="printer",
             )
             printer = Printer(
@@ -568,26 +569,39 @@ class OrcaBundleImporter:
 
                 printer_profile = self._printer_profile_cache.get((vendor_name, name))
                 if not printer_profile:
-                    result = await db.execute(select(PrinterProfile).where(PrinterProfile.name == name))
-                    printer_profile = result.scalar_one_or_none()
+                    # Names repeat across vendors, and a second import reads these
+                    # from the database rather than from this run's cache.
+                    result = await db.execute(
+                        select(PrinterProfile)
+                        .where(PrinterProfile.name == name)
+                        .order_by(PrinterProfile.id)
+                    )
+                    printer_profile = result.scalars().first()
 
                 printer: Printer | None = None
-                if printer_profile:
-                    if printer_profile.printer is not None:
-                        printer = printer_profile.printer
-                    elif printer_profile.printer_id:
-                        printer = await db.get(Printer, printer_profile.printer_id)
+                if printer_profile is not None and printer_profile.printer_id:
+                    # Reading .printer would lazy-load a relation this row was not
+                    # loaded with, which async SQLAlchemy refuses mid-flight.
+                    printer = await db.get(Printer, printer_profile.printer_id)
 
                 if not printer:
                     base_name = _extract_base_printer_name(name)
                     if base_name:
                         printer = self._printer_cache.get((vendor_name, base_name))
                         if not printer:
-                            result = await db.execute(select(Printer).where(Printer.name == base_name))
-                            printer = result.scalar_one_or_none()
+                            result = await db.execute(
+                                select(Printer)
+                                .where(Printer.name == base_name)
+                                .order_by(Printer.id)
+                            )
+                            printer = result.scalars().first()
                         if not printer:
-                            result = await db.execute(select(Printer).where(Printer.model == base_name))
-                            printer = result.scalar_one_or_none()
+                            result = await db.execute(
+                                select(Printer)
+                                .where(Printer.model == base_name)
+                                .order_by(Printer.id)
+                            )
+                            printer = result.scalars().first()
 
                 printer_slug = (printer.slug if printer else _slugify_string(name))[:200]
                 if printer_slug in printer_slugs:
@@ -650,8 +664,10 @@ class OrcaBundleImporter:
         for candidate in candidates:
             if not candidate:
                 continue
-            result = await db.execute(select(Filament).where(Filament.name == candidate))
-            filament = result.scalar_one_or_none()
+            result = await db.execute(
+                select(Filament).where(Filament.name == candidate).order_by(Filament.id)
+            )
+            filament = result.scalars().first()
             if filament:
                 self._filament_cache[identifier] = filament
                 return filament
@@ -714,8 +730,9 @@ class OrcaBundleImporter:
                 PrinterProfile.name == parent_name,
                 PrinterProfile.source == "system",
             )
+            .order_by(PrinterProfile.id)
         )
-        parent_profile = result.scalar_one_or_none()
+        parent_profile = result.scalars().first()
 
         # Поиск 2: В любом vendor (общие профили типа fdm_machine_common)
         # Может быть несколько профилей с одним именем в разных vendor'ах
@@ -863,12 +880,33 @@ class OrcaBundleImporter:
     async def _find_printer(
         self, *, db: AsyncSession, vendor_name: str, model_id: str | None, name: str
     ) -> Printer | None:
-        if model_id:
-            stmt: Select = select(Printer).where(Printer.model_id == model_id)
-        else:
-            stmt = select(Printer).where(Printer.vendor == vendor_name, Printer.name == name)
-        result = await db.execute(stmt)
-        return result.scalar_one_or_none()
+        """Recognise a machine by vendor and name — the only pair Orca keeps unique.
+
+        Several models of one vendor share a model_id ("MINI" for both Prusa MINI
+        and MINI IS), so searching by it alone found many rows and the whole
+        re-import failed. The id still helps when a model was renamed upstream.
+        """
+        display_name, _ = _normalize_model_name(vendor_name, name)
+        # Records made before the bundle existed carry a manufacturer but no
+        # vendor; without matching those, the import adds a second record for a
+        # machine already in the catalog.
+        stmt: Select = (
+            select(Printer)
+            .where(
+                or_(Printer.vendor == vendor_name, Printer.manufacturer == vendor_name),
+                or_(Printer.name == name, Printer.name == display_name),
+            )
+            .order_by(Printer.id)
+        )
+        found = (await db.execute(stmt)).scalars().first()
+        if found is not None or not model_id:
+            return found
+        stmt = (
+            select(Printer)
+            .where(Printer.vendor == vendor_name, Printer.model_id == model_id)
+            .order_by(Printer.id)
+        )
+        return (await db.execute(stmt)).scalars().first()
 
     async def _find_printer_profile(
         self,
@@ -878,13 +916,24 @@ class OrcaBundleImporter:
         setting_id: str | None,
         name: str,
     ) -> PrinterProfile | None:
-        stmt = select(PrinterProfile).where(PrinterProfile.vendor == vendor_name)
-        if setting_id:
-            stmt = stmt.where(PrinterProfile.setting_id == setting_id)
-        else:
-            stmt = stmt.where(PrinterProfile.name == name)
-        result = await db.execute(stmt)
-        return result.scalar_one_or_none()
+        # setting_id repeats across a vendor's models, the name does not.
+        stmt = (
+            select(PrinterProfile)
+            .where(PrinterProfile.vendor == vendor_name, PrinterProfile.name == name)
+            .order_by(PrinterProfile.id)
+        )
+        found = (await db.execute(stmt)).scalars().first()
+        if found is not None or not setting_id:
+            return found
+        stmt = (
+            select(PrinterProfile)
+            .where(
+                PrinterProfile.vendor == vendor_name,
+                PrinterProfile.setting_id == setting_id,
+            )
+            .order_by(PrinterProfile.id)
+        )
+        return (await db.execute(stmt)).scalars().first()
 
     async def _find_print_profile(
         self,
@@ -894,13 +943,23 @@ class OrcaBundleImporter:
         setting_id: str | None,
         name: str,
     ) -> PrintProfile | None:
-        stmt = select(PrintProfile).where(PrintProfile.vendor == vendor_name)
-        if setting_id:
-            stmt = stmt.where(PrintProfile.setting_id == setting_id)
-        else:
-            stmt = stmt.where(PrintProfile.name == name)
-        result = await db.execute(stmt)
-        return result.scalar_one_or_none()
+        stmt = (
+            select(PrintProfile)
+            .where(PrintProfile.vendor == vendor_name, PrintProfile.name == name)
+            .order_by(PrintProfile.id)
+        )
+        found = (await db.execute(stmt)).scalars().first()
+        if found is not None or not setting_id:
+            return found
+        stmt = (
+            select(PrintProfile)
+            .where(
+                PrintProfile.vendor == vendor_name,
+                PrintProfile.setting_id == setting_id,
+            )
+            .order_by(PrintProfile.id)
+        )
+        return (await db.execute(stmt)).scalars().first()
 
     def _iter_machine_preset_paths(self, vendor_dir: Path) -> list[Path]:
         machine_dir = vendor_dir / "machine"
