@@ -695,6 +695,11 @@ export interface RefreshTokenResponse {
   token_type: string;
 }
 
+export interface FilamentListResponse extends ListResponse<Filament> {
+  /** Which of the listed materials have a preset for the printer asked about. */
+  printer_matched_ids: number[];
+}
+
 export interface ListResponse<T> {
   items: T[];
   total: number;

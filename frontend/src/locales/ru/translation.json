@@ -1,17 +1,4 @@
 {
-  "recommendedForPrinter": {
-    "title": "Рекомендовано для {{printer}}",
-    "loadError": "Не удалось загрузить рекомендации: выбранная конфигурация недоступна.",
-    "ctaTitle": "Выберите принтер",
-    "ctaText": "Персональные рекомендации пресетов под вашу модель",
-    "badge": {
-      "exact_match": "Тестировано на вашем принтере",
-      "same_model": "Тот же принтер",
-      "same_family": "Похожий принтер",
-      "same_manufacturer": "Тот же бренд",
-      "compatible_specs": "Совместимо по характеристикам"
-    }
-  },
   "sharedQuotePage": {
     "title": "Коммерческое предложение",
     "ctaTitle": "Создайте своё КП",
@@ -1175,7 +1162,11 @@
       "spool": "катушка",
       "g": "г"
     },
-    "priceOnRequest": "Цена по запросу"
+    "priceOnRequest": "Цена по запросу",
+    "allPrinters": "Все принтеры",
+    "fitsPrinter": "Есть пресеты под этот принтер",
+    "myPrintersGroup": "Мои принтеры",
+    "allPrintersGroup": "Все принтеры"
   },
   "downloadPage": {
     "seoTitle": "FilamentHub в OrcaSlicer — плагин",
@@ -5433,11 +5424,7 @@
     "saveError": "Не удалось сохранить настройки"
   },
   "printerConfig": {
-    "mm": "мм",
-    "pickLabel": "Рекомендации под мой принтер",
-    "selectPrinter": "Выберите принтер",
-    "selectConfig": "Выберите конфигурацию",
-    "noConfigsForPrinter": "Нет конфигураций"
+    "mm": "мм"
   },
   "addPrinter": {
     "title": "Добавить принтер",

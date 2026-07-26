@@ -31,13 +31,21 @@ async def list_printers(
     active_only: bool = Query(True),
     manufacturer: str | None = Query(None, min_length=1),
     search: str | None = Query(None, min_length=1),
+    ids: Annotated[list[int] | None, Query()] = None,
 ) -> PrinterListResponse:
-    """Получить список принтеров."""
+    """Получить список принтеров.
+
+    `ids` возвращает именно эти модели: список из одной страницы не содержит
+    редкую модель, которая нужна вызывающему (например, принтер пользователя).
+    """
     # Build query
     query = select(Printer)
 
     if active_only:
         query = query.where(Printer.active == True)
+
+    if ids:
+        query = query.where(Printer.id.in_(ids))
 
     if manufacturer:
         query = query.where(Printer.manufacturer.ilike(like_pattern(manufacturer)))
@@ -54,6 +62,8 @@ async def list_printers(
     count_query = select(func.count()).select_from(Printer)
     if active_only:
         count_query = count_query.where(Printer.active == True)
+    if ids:
+        count_query = count_query.where(Printer.id.in_(ids))
     if manufacturer:
         count_query = count_query.where(Printer.manufacturer.ilike(like_pattern(manufacturer)))
     if search:

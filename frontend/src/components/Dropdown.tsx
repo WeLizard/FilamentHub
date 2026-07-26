@@ -9,6 +9,8 @@ interface DropdownOption {
   value: string | number;
   label: string;
   icon?: ReactNode;
+  /** Options sharing a group are listed together under its heading. */
+  group?: string;
 }
 
 interface DropdownProps {
@@ -288,9 +290,14 @@ export const Dropdown: React.FC<DropdownProps> = ({
             onClick={(e) => e.stopPropagation()}
           >
             {filteredOptions.length > 0 ? (
-              filteredOptions.map((option) => (
+              filteredOptions.map((option, index) => (
+                <div key={option.value}>
+                {option.group && option.group !== filteredOptions[index - 1]?.group && (
+                  <div className="px-3 pt-2 pb-1 text-[11px] uppercase tracking-wide text-gray-400">
+                    {option.group}
+                  </div>
+                )}
                 <button
-                  key={option.value}
                   type="button"
                   onClick={() => handleOptionClick(option.value)}
                   className={`w-full ${optionSizeClasses} text-left hover:bg-white/10 transition-all text-white border-b border-white/5 last:border-b-0 flex items-center justify-between`}
@@ -309,6 +316,7 @@ export const Dropdown: React.FC<DropdownProps> = ({
                     </>
                   )}
                 </button>
+                </div>
               ))
             ) : (
               <div className="px-4 py-3 text-gray-400 text-sm text-center">

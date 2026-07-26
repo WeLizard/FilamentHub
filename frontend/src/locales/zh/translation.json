@@ -1,17 +1,4 @@
 {
-  "recommendedForPrinter": {
-    "title": "为 {{printer}} 推荐",
-    "loadError": "无法加载推荐：所选配置不可用。",
-    "ctaTitle": "选择您的打印机",
-    "ctaText": "根据您的机型提供个性化预设推荐",
-    "badge": {
-      "exact_match": "已在您的打印机上测试",
-      "same_model": "同款打印机",
-      "same_family": "相似打印机",
-      "same_manufacturer": "同品牌",
-      "compatible_specs": "参数兼容"
-    }
-  },
   "sharedQuotePage": {
     "title": "报价单",
     "ctaTitle": "创建您自己的报价单",
@@ -1019,7 +1006,11 @@
       "spool": "线轴",
       "g": "克"
     },
-    "priceOnRequest": "联系获取报价"
+    "priceOnRequest": "联系获取报价",
+    "allPrinters": "所有打印机",
+    "fitsPrinter": "有该打印机的配置",
+    "myPrintersGroup": "我的打印机",
+    "allPrintersGroup": "所有打印机"
   },
   "brandDetailPage": {
     "loading": "正在加载品牌信息...",
@@ -5291,11 +5282,7 @@
     "saveError": "保存设置失败"
   },
   "printerConfig": {
-    "mm": "毫米",
-    "pickLabel": "为我的打印机推荐",
-    "selectPrinter": "选择打印机",
-    "selectConfig": "选择配置",
-    "noConfigsForPrinter": "无配置"
+    "mm": "毫米"
   },
   "addPrinter": {
     "title": "添加打印机",

@@ -1,17 +1,4 @@
 {
-  "recommendedForPrinter": {
-    "title": "Recommended for {{printer}}",
-    "loadError": "Couldn't load recommendations: the selected configuration is unavailable.",
-    "ctaTitle": "Select your printer",
-    "ctaText": "Personalized preset recommendations for your model",
-    "badge": {
-      "exact_match": "Tested on your printer",
-      "same_model": "Same printer",
-      "same_family": "Similar printer",
-      "same_manufacturer": "Same brand",
-      "compatible_specs": "Spec-compatible"
-    }
-  },
   "sharedQuotePage": {
     "title": "Quote",
     "ctaTitle": "Create your own quote",
@@ -1019,7 +1006,11 @@
       "spool": "spool",
       "g": "g"
     },
-    "priceOnRequest": "Price on request"
+    "priceOnRequest": "Price on request",
+    "allPrinters": "All printers",
+    "fitsPrinter": "Has presets for this printer",
+    "myPrintersGroup": "My printers",
+    "allPrintersGroup": "All printers"
   },
   "brandDetailPage": {
     "loading": "Loading brand information...",
@@ -5295,11 +5286,7 @@
     "saveError": "Failed to save settings"
   },
   "printerConfig": {
-    "mm": "mm",
-    "pickLabel": "Recommend for my printer",
-    "selectPrinter": "Select a printer",
-    "selectConfig": "Select a configuration",
-    "noConfigsForPrinter": "No configurations"
+    "mm": "mm"
   },
   "addPrinter": {
     "title": "Add a printer",

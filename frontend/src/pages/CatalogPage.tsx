@@ -1,6 +1,6 @@
 /** Страница каталога материалов */
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
@@ -18,16 +18,13 @@ import {
   Fan,
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
-import { filamentsAPI, brandsAPI, savedPresetsAPI, qrAPI } from '../api/client';
+import { filamentsAPI, brandsAPI, savedPresetsAPI, qrAPI, printersAPI, physicalPrintersAPI } from '../api/client';
 import { translateApiError } from '../utils/translateApiError';
 import { currencySymbol } from '../utils/currency';
 import { isPluginEmbed, notifyProfileChanged } from '../utils/pluginBridge';
 import { Dropdown } from '../components/Dropdown';
 import { FilamentPreview } from '../components/FilamentPreview';
 import { NozzleRequirementBadge } from '../components/NozzleRequirementBadge';
-import { RecommendedForPrinterSection } from '../components/RecommendedForPrinterSection';
-import { PrinterConfigPicker } from '../components/PrinterConfigPicker';
-import { usePrinterSelection } from '../hooks/usePrinterSelection';
 import { useConfiguredNozzleHrc } from '../hooks/useConfiguredNozzleHrc';
 import { SEOHead } from '../components/SEOHead';
 import type { Filament } from '../types/api';
@@ -43,7 +40,8 @@ export const CatalogPage: React.FC = () => {
   const [_printerModel, _setPrinterModel] = useState('Ender 3 Pro');
   const [materialTypeFilter, setMaterialTypeFilter] = useState<string | null>(null);
   const [brandFilter, setBrandFilter] = useState<number | null>(null);
-  const [printerSelection, setPrinterSelection] = usePrinterSelection();
+  const [printerFilter, setPrinterFilter] = useState<number | null>(null);
+  const [printerSearch, setPrinterSearch] = useState('');
   const configuredNozzleHrc = useConfiguredNozzleHrc();
   const [selectedFilament, _setSelectedFilament] = useState<number | null>(null);
   const [showQR, setShowQR] = useState<number | null>(null);
@@ -56,6 +54,64 @@ export const CatalogPage: React.FC = () => {
   });
 
   const savedPresetIds = new Set(savedPresets?.items.map(sp => sp.preset_id) || []);
+
+  // The catalog holds hundreds of models, so the list stays short and typing
+  // searches the rest on the server instead of scrolling.
+  const { data: catalogPrinters } = useQuery({
+    queryKey: ['printers', 'catalog-filter', printerSearch],
+    queryFn: () =>
+      printersAPI.list({ active_only: true, size: 50, search: printerSearch || undefined }),
+  });
+  const { data: ownedPrinters } = useQuery({
+    queryKey: ['physical-printers'],
+    queryFn: physicalPrintersAPI.list,
+    enabled: !!user,
+  });
+
+  const ownedPrinterIds = useMemo(
+    () =>
+      Array.from(
+        new Set(
+          (ownedPrinters ?? [])
+            .map((printer) => printer.printer_id)
+            .filter((id): id is number => id != null),
+        ),
+      ),
+    [ownedPrinters],
+  );
+
+  // A person's own model is rarely on the first page of an alphabetical list,
+  // so those are asked for by id rather than hoped for.
+  const { data: ownedModels } = useQuery({
+    queryKey: ['printers', 'owned-models', ownedPrinterIds],
+    queryFn: () => printersAPI.list({ active_only: true, ids: ownedPrinterIds }),
+    enabled: ownedPrinterIds.length > 0,
+  });
+
+  // A person looks for their own machine first, so those lead under a heading.
+  const printerOptions = useMemo(() => {
+    const owned = new Set(ownedPrinterIds);
+    const byId = new Map<number, { value: number; label: string; owned: boolean }>();
+    for (const printer of [...(ownedModels?.items ?? []), ...(catalogPrinters?.items ?? [])]) {
+      if (!byId.has(printer.id)) {
+        byId.set(printer.id, {
+          value: printer.id,
+          label: printer.name,
+          owned: owned.has(printer.id),
+        });
+      }
+    }
+    return Array.from(byId.values())
+      .sort((a, b) => Number(b.owned) - Number(a.owned) || a.label.localeCompare(b.label))
+      .map(({ value, label, owned: isOwned }) => ({
+        value,
+        label,
+        group: isOwned
+          ? t('catalogPage.myPrintersGroup')
+          : t('catalogPage.allPrintersGroup'),
+      }));
+  }, [catalogPrinters, ownedModels, ownedPrinterIds, t]);
+
 
   // Мутация для сохранения пресета
   const savePresetMutation = useMutation({
@@ -98,16 +154,25 @@ export const CatalogPage: React.FC = () => {
     isLoading: isLoadingFilaments,
     error: filamentsError,
   } = useQuery({
-    queryKey: ['filaments', { material_type: materialTypeFilter, brand_id: brandFilter }],
+    queryKey: [
+      'filaments',
+      { material_type: materialTypeFilter, brand_id: brandFilter, printer_id: printerFilter },
+    ],
     queryFn: () =>
       filamentsAPI.list({
         active_only: true,
         material_type: materialTypeFilter || undefined,
         brand_id: brandFilter || undefined,
+        printer_id: printerFilter || undefined,
         page: 1,
         size: 100,
       }),
   });
+
+  const printerMatchedIds = useMemo(
+    () => new Set(filamentsData?.printer_matched_ids ?? []),
+    [filamentsData],
+  );
 
   // Загружаем бренды для фильтра и отображения
   const { data: brandsData } = useQuery({
@@ -209,7 +274,7 @@ export const CatalogPage: React.FC = () => {
           </div>
 
           {/* Filters - stack on mobile, row on desktop. */}
-          <div className="grid gap-2 sm:gap-4 grid-cols-2">
+          <div className="grid gap-2 sm:gap-4 grid-cols-2 sm:grid-cols-3">
             <Dropdown
               value={materialTypeFilter || ''}
               onChange={(val) => setMaterialTypeFilter(val === '' ? null : (val as string))}
@@ -228,21 +293,18 @@ export const CatalogPage: React.FC = () => {
               ]}
               placeholder={t('catalogPage.allBrands')}
             />
+            <Dropdown
+              value={printerFilter ?? ''}
+              onChange={(value) => setPrinterFilter(value === '' ? null : Number(value))}
+              options={printerOptions}
+              placeholder={t('catalogPage.allPrinters')}
+              filterable
+              filterValue={printerSearch}
+              onFilterChange={setPrinterSearch}
+            />
           </div>
-
-          {/* Выбор принтера/конфигурации для рекомендаций (только залогиненным). */}
-          {user && (
-            <PrinterConfigPicker value={printerSelection} onChange={setPrinterSelection} />
-          )}
         </div>
       </div>
-
-      {/* Рекомендации под выбранную конфигурацию (над основным гридом) */}
-      <RecommendedForPrinterSection
-        selection={printerSelection}
-        savedPresetIds={savedPresetIds}
-        onSavePreset={handleSavePreset}
-      />
 
       {/* Material Grid */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -258,6 +320,7 @@ export const CatalogPage: React.FC = () => {
             onClick={() => navigate(`/filaments/${filament.id}`)}
             savedPresetIds={savedPresetIds}
             configuredNozzleHrc={configuredNozzleHrc}
+            fitsPrinter={printerMatchedIds.has(filament.id)}
           />
         ))}
       </div>
@@ -283,6 +346,7 @@ interface MaterialCardProps {
   onClick: () => void;
   savedPresetIds: Set<number>;
   configuredNozzleHrc: number | null;
+  fitsPrinter?: boolean;
 }
 
 const MaterialCard: React.FC<MaterialCardProps> = ({
@@ -295,6 +359,7 @@ const MaterialCard: React.FC<MaterialCardProps> = ({
   onClick,
   savedPresetIds,
   configuredNozzleHrc,
+  fitsPrinter = false,
 }) => {
   const { t } = useTranslation();
   const navigate = useNavigate();
@@ -418,6 +483,11 @@ const MaterialCard: React.FC<MaterialCardProps> = ({
             <span className="px-2 py-0.5 sm:py-1 bg-purple-500/20 text-purple-300 text-xs rounded-full border border-purple-500/30">
                 {filament.material_type}
               </span>
+              {fitsPrinter && (
+                <span className="px-2 py-0.5 sm:py-1 bg-emerald-500/15 text-emerald-300 text-xs rounded-full border border-emerald-500/30">
+                  {t('catalogPage.fitsPrinter')}
+                </span>
+              )}
               {filament.availability && filament.availability !== 'available' && (
                 <span className="px-2 py-0.5 sm:py-1 bg-amber-500/20 text-amber-300 text-xs rounded-full border border-amber-500/30">
                   {t(`createFilament.availability.${filament.availability}`)}

@@ -161,6 +161,8 @@ class FilamentListResponse(BaseModel):
     page: int
     size: int
     pages: int
+    # Which of these materials have a preset for the printer asked about.
+    printer_matched_ids: list[int] = []
 
 
 class FilamentLineCreate(BaseModel):

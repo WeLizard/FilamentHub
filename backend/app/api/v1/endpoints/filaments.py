@@ -104,9 +104,14 @@ async def list_filaments(
     active_only: bool = Query(True),
     brand_id: int | None = Query(None),
     material_type: str | None = Query(None),
+    printer_id: int | None = Query(None, gt=0),
     search: str | None = Query(None, description="Поиск по названию материала"),
 ) -> FilamentListResponse:
-    """Получить список материалов."""
+    """Получить список материалов.
+
+    `printer_id` не сужает витрину: материалы, у которых есть пресет под этот
+    принтер, поднимаются наверх и перечисляются в `printer_matched_ids`.
+    """
     # Build query
     query = select(Filament).options(selectinload(Filament.brand), selectinload(Filament.line))
     if active_only:
@@ -147,7 +152,25 @@ async def list_filaments(
 
     # Paginate
     offset = (page - 1) * size
-    query = query.offset(offset).limit(size).order_by(Filament.name)
+    if printer_id is not None:
+        from app.models.preset import PUBLIC_PRESET_STATUSES, Preset
+        from app.models.preset_printer import PresetPrinter
+
+        fits_printer = (
+            select(1)
+            .select_from(Preset)
+            .join(PresetPrinter, PresetPrinter.preset_id == Preset.id)
+            .where(
+                Preset.filament_id == Filament.id,
+                PresetPrinter.printer_id == printer_id,
+                Preset.moderation_status.in_(PUBLIC_PRESET_STATUSES),
+            )
+            .exists()
+        )
+        query = query.order_by(fits_printer.desc(), Filament.name)
+    else:
+        query = query.order_by(Filament.name)
+    query = query.offset(offset).limit(size)
 
     # Execute
     result = await db.execute(query)
@@ -155,6 +178,23 @@ async def list_filaments(
     filament_ids = [filament.id for filament in filaments]
 
     pages = (total + size - 1) // size if total > 0 else 0
+
+    printer_matched_ids: list[int] = []
+    if printer_id is not None and filament_ids:
+        from app.models.preset import PUBLIC_PRESET_STATUSES, Preset
+        from app.models.preset_printer import PresetPrinter
+
+        matched_rows = await db.execute(
+            select(Preset.filament_id)
+            .join(PresetPrinter, PresetPrinter.preset_id == Preset.id)
+            .where(
+                Preset.filament_id.in_(filament_ids),
+                PresetPrinter.printer_id == printer_id,
+                Preset.moderation_status.in_(PUBLIC_PRESET_STATUSES),
+            )
+            .distinct()
+        )
+        printer_matched_ids = sorted({row[0] for row in matched_rows if row[0] is not None})
 
     preset_stats: dict[int, dict[str, int]] = {}
     preset_summary_map: dict[int, dict[str, object]] = {}
@@ -273,6 +313,7 @@ async def list_filaments(
         page=page,
         size=size,
         pages=pages,
+        printer_matched_ids=printer_matched_ids,
     )
 
 
