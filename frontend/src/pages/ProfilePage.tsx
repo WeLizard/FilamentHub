@@ -1257,19 +1257,17 @@ export const ProfilePage: React.FC = () => {
                           return (
                             <div key={profile.id} className="bg-white/5 rounded-xl border border-white/10 p-3">
                               {/* Заголовок профиля принтера */}
-                              <div className="flex items-start justify-between gap-3 mb-2">
-                                <div className="flex-1">
-                                  <div className="flex items-center gap-2 mb-1">
-                                    <Settings className="w-4 h-4 text-blue-400 flex-shrink-0" />
-                                    <h4 className="text-sm font-semibold text-white">{profile.name}</h4>
-                                  </div>
-                                  {profile.nozzle_diameters && profile.nozzle_diameters.length > 0 && (
-                                    <p className="text-xs text-gray-400 ml-6">
-                                      {t('profilePage.nozzles')}: {profile.nozzle_diameters.join(', ')} {t('profilePage.mm')}
-                                    </p>
-                                  )}
+                              <div className="mb-2">
+                                <div className="flex items-start gap-2">
+                                  <Settings className="mt-0.5 w-4 h-4 text-blue-400 flex-shrink-0" />
+                                  <h4 className="min-w-0 flex-1 text-sm font-semibold text-white break-words">{profile.name}</h4>
                                 </div>
-                                <div className="flex items-center gap-2 shrink-0">
+                                {profile.nozzle_diameters && profile.nozzle_diameters.length > 0 && (
+                                  <p className="text-xs text-gray-400 ml-6">
+                                    {t('profilePage.nozzles')}: {profile.nozzle_diameters.join(', ')} {t('profilePage.mm')}
+                                  </p>
+                                )}
+                                <div className="mt-2 ml-6 flex flex-wrap items-center gap-2">
                                   {printProfilesForPrinterProfile.length > 0 && (
                                     <StatusBadge label={t('profilePage.printProfilesCount', { count: printProfilesForPrinterProfile.length })} variant="accent" />
                                   )}
