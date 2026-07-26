@@ -2537,6 +2537,10 @@ export interface PhysicalPrinter {
   printer_profile_ids: number[];
   material_systems: MaterialSystem[];
   connectors: PhysicalPrinterConnector[];
+  has_api_key: boolean;
+  printer_hostname: string | null;
+  reports_feed: boolean;
+  last_seen_at: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -2594,10 +2598,15 @@ export const devicesAPI = {
     return response.data;
   },
 
-  createWithKey: async (name: string, printerId?: number): Promise<DeviceCreateWithKeyResponse> => {
+  createWithKey: async (
+    name: string,
+    printerId?: number,
+    gateCount?: number,
+  ): Promise<DeviceCreateWithKeyResponse> => {
     const response = await api.post<DeviceCreateWithKeyResponse>('/devices/create-with-key', {
       name,
       ...(printerId ? { printer_id: printerId } : {}),
+      ...(gateCount ? { gate_count: gateCount } : {}),
     });
     return response.data;
   },
@@ -2684,6 +2693,39 @@ export const physicalPrintersAPI = {
     const response = await api.patch<PhysicalPrinter>(
       `/physical-printers/${physicalPrinterId}/material-slots/${materialSlotId}`,
       payload,
+    );
+    return response.data;
+  },
+
+  updateSystem: async (
+    physicalPrinterId: number,
+    materialSystemId: number,
+    payload: { name?: string; slot_count?: number },
+  ): Promise<PhysicalPrinter> => {
+    const response = await api.patch<PhysicalPrinter>(
+      `/physical-printers/${physicalPrinterId}/material-systems/${materialSystemId}`,
+      payload,
+    );
+    return response.data;
+  },
+
+  createSystem: async (
+    physicalPrinterId: number,
+    payload: { name: string; kind: string; provider: string; slot_count: number },
+  ): Promise<PhysicalPrinter> => {
+    const response = await api.post<PhysicalPrinter>(
+      `/physical-printers/${physicalPrinterId}/material-systems`,
+      payload,
+    );
+    return response.data;
+  },
+
+  deleteSystem: async (
+    physicalPrinterId: number,
+    materialSystemId: number,
+  ): Promise<PhysicalPrinter> => {
+    const response = await api.delete<PhysicalPrinter>(
+      `/physical-printers/${physicalPrinterId}/material-systems/${materialSystemId}`,
     );
     return response.data;
   },

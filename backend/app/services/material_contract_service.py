@@ -8,11 +8,13 @@ from sqlalchemy.orm import selectinload
 
 from app.core.errors import (
     ERR_DEVICE_NOT_FOUND,
+    ERR_MATERIAL_SLOT_IN_USE,
     ERR_MATERIAL_SYSTEM_NOT_FOUND,
     ERR_PRINTER_NOT_FOUND,
     ERR_PRINTER_PROFILE_NOT_FOUND,
     raise_error,
 )
+from app.models.material_slot_assignment import MaterialSlotAssignment
 from app.models.material_system import (
     MaterialSlot,
     MaterialSystem,
@@ -24,7 +26,9 @@ from app.models.printer import Printer
 from app.models.printer_profile import PrinterProfile
 from app.models.user_printer_device import UserPrinterDevice
 from app.schemas.material_contract import (
+    MaterialSlotCreate,
     MaterialSystemCreate,
+    MaterialSystemUpdate,
     PhysicalPrinterConfigurationsUpdate,
     PhysicalPrinterConnectorCreate,
     PhysicalPrinterCreate,
@@ -32,7 +36,11 @@ from app.schemas.material_contract import (
 )
 from app.services.material_assignment_service import sync_legacy_material_assignment
 
-LEGACY_HH_CAPABILITIES = [
+# Happy Hare and the plain Klipper adapter describe the same feed, so they share
+# one system on the printer instead of each creating its own.
+KLIPPER_PROVIDERS = ("happy_hare", "legacy")
+
+HAPPY_HARE_CAPABILITIES = [
     "read",
     "write",
     "presence",
@@ -214,7 +222,14 @@ async def create_material_system(
         kind=payload.kind,
         provider=payload.provider,
         capabilities=list(payload.capabilities),
+        declared_slot_count=payload.slot_count,
     )
+    slots = list(payload.slots)
+    if not slots and payload.slot_count is not None:
+        slots = [
+            MaterialSlotCreate(provider_index=index)
+            for index in range(payload.slot_count)
+        ]
     system.slots = [
         MaterialSlot(
             user_id=user_id,
@@ -222,9 +237,107 @@ async def create_material_system(
             label=slot.label,
             kind=slot.kind,
         )
-        for slot in payload.slots
+        for slot in slots
     ]
     db.add(system)
+    await db.commit()
+    return await require_physical_printer(db, user_id, physical_printer_id)
+
+
+async def _first_occupied_slot_index(
+    db: AsyncSession, slots: list[MaterialSlot]
+) -> int | None:
+    """Lowest slot index holding a spool or a preset, by either assignment path.
+
+    Klipper systems keep the gate map and the slot assignment in step; systems of
+    any other provider only ever get the assignment, so both have to be checked.
+    """
+    slot_ids = [slot.id for slot in slots]
+    if not slot_ids:
+        return None
+    index_by_slot = {slot.id: slot.provider_index for slot in slots}
+
+    occupied: set[int] = set()
+    gate_rows = await db.execute(
+        select(PresetGateState.gate_index).where(
+            PresetGateState.material_slot_id.in_(slot_ids),
+            or_(
+                PresetGateState.spool_id.is_not(None),
+                PresetGateState.preset_id.is_not(None),
+            ),
+        )
+    )
+    occupied.update(gate_rows.scalars().all())
+
+    assignment_rows = await db.execute(
+        select(MaterialSlotAssignment.material_slot_id).where(
+            MaterialSlotAssignment.material_slot_id.in_(slot_ids),
+            or_(
+                MaterialSlotAssignment.spool_id.is_not(None),
+                MaterialSlotAssignment.preset_id.is_not(None),
+            ),
+        )
+    )
+    occupied.update(
+        index_by_slot[slot_id] for slot_id in assignment_rows.scalars().all()
+    )
+
+    return min(occupied) if occupied else None
+
+
+async def update_material_system(
+    db: AsyncSession,
+    user_id: int,
+    physical_printer_id: int,
+    material_system_id: int,
+    payload: MaterialSystemUpdate,
+) -> UserPrinterDevice:
+    """Rename a material system or resize it to a declared number of slots."""
+    system = await _require_material_system(
+        db,
+        user_id=user_id,
+        physical_printer_id=physical_printer_id,
+        material_system_id=material_system_id,
+    )
+    if payload.name is not None:
+        system.name = payload.name
+
+    if payload.slot_count is not None:
+        slots_result = await db.execute(
+            select(MaterialSlot)
+            .where(MaterialSlot.material_system_id == system.id)
+            .order_by(MaterialSlot.provider_index)
+        )
+        slots = list(slots_result.scalars().all())
+        by_index = {slot.provider_index: slot for slot in slots}
+        for provider_index in range(payload.slot_count):
+            if provider_index not in by_index:
+                db.add(
+                    MaterialSlot(
+                        user_id=user_id,
+                        material_system_id=system.id,
+                        provider_index=provider_index,
+                        kind="slot",
+                    )
+                )
+
+        doomed = [slot for slot in slots if slot.provider_index >= payload.slot_count]
+        if doomed:
+            busy = await _first_occupied_slot_index(db, doomed)
+            if busy is not None:
+                raise_error(409, ERR_MATERIAL_SLOT_IN_USE, params={"index": busy + 1})
+            await db.execute(
+                delete(MaterialSlot).where(
+                    MaterialSlot.id.in_([slot.id for slot in doomed])
+                )
+            )
+        system.declared_slot_count = payload.slot_count
+        if system.provider in KLIPPER_PROVIDERS:
+            # The legacy gate map still gates manual assignment, so it has to
+            # follow the declared size or the new slots refuse every spool.
+            printer = await require_physical_printer(db, user_id, physical_printer_id)
+            printer.gate_count = payload.slot_count
+
     await db.commit()
     return await require_physical_printer(db, user_id, physical_printer_id)
 
@@ -287,18 +400,31 @@ async def upsert_physical_printer_connector(
     return await require_physical_printer(db, user_id, physical_printer_id)
 
 
-async def ensure_legacy_material_contract(
+async def ensure_material_topology(
     db: AsyncSession,
     device: UserPrinterDevice,
     *,
+    provider: str | None = None,
     gate_indices: set[int] | None = None,
 ) -> None:
-    """Dual-write legacy HH/device topology into the expanded contract."""
+    """Write what a provider reports about a printer's feed into the contract.
+
+    Every provider owns its own system on the printer; a new one plugs in by
+    passing its name instead of inheriting the Klipper pair.
+    """
+    provider = provider or ("happy_hare" if device.supports_hh else "legacy")
+    siblings = (
+        list(KLIPPER_PROVIDERS) if provider in KLIPPER_PROVIDERS else [provider]
+    )
     indices = set(gate_indices or ())
     if device.gate_count is not None:
         indices.update(range(device.gate_count))
     if not device.supports_hh and not indices:
         return
+    if indices:
+        # A reported gate proves every lower gate exists, so the panel shows a
+        # contiguous system instead of a hole where no spool has been seen yet.
+        indices = set(range(max(indices) + 1))
 
     await db.flush()
     system = await db.scalar(
@@ -306,26 +432,49 @@ async def ensure_legacy_material_contract(
         .where(
             MaterialSystem.physical_printer_id == device.id,
             MaterialSystem.user_id == device.user_id,
-            MaterialSystem.provider.in_(["happy_hare", "legacy"]),
+            MaterialSystem.provider.in_(siblings),
         )
         .order_by(MaterialSystem.id)
     )
     if system is None:
+        # A printer normally feeds from one place. If the person already
+        # described it by hand, the arriving data belongs to that system rather
+        # than to a second one appearing beside it.
+        lonely = list(
+            (
+                await db.execute(
+                    select(MaterialSystem)
+                    .where(
+                        MaterialSystem.physical_printer_id == device.id,
+                        MaterialSystem.user_id == device.user_id,
+                    )
+                    .order_by(MaterialSystem.id)
+                )
+            )
+            .scalars()
+            .all()
+        )
+        if len(lonely) == 1:
+            system = lonely[0]
+    if system is None:
         system = MaterialSystem(
             user_id=device.user_id,
             physical_printer_id=device.id,
-            name="Legacy material system",
+            name="Happy Hare" if device.supports_hh else "Material system",
             kind="mmu",
             provider="happy_hare" if device.supports_hh else "legacy",
-            capabilities=LEGACY_HH_CAPABILITIES if device.supports_hh else [],
+            capabilities=HAPPY_HARE_CAPABILITIES if device.supports_hh else [],
         )
+        if device.gate_count is not None:
+            system.declared_slot_count = device.gate_count
         db.add(system)
         await db.flush()
     elif device.supports_hh:
         system.provider = "happy_hare"
-        system.kind = "mmu"
-        system.capabilities = list(LEGACY_HH_CAPABILITIES)
+        system.capabilities = list(HAPPY_HARE_CAPABILITIES)
         system.active = True
+    elif system.provider not in siblings:
+        system.provider = provider
 
     existing_slots_result = await db.execute(
         select(MaterialSlot).where(MaterialSlot.material_system_id == system.id)
@@ -345,6 +494,15 @@ async def ensure_legacy_material_contract(
             await db.flush()
             slots_by_index[provider_index] = slot
 
+    if (
+        system.declared_slot_count is not None
+        and indices
+        and max(indices) + 1 > system.declared_slot_count
+    ):
+        # The machine reported more slots than the person declared; their answer
+        # is stale, so ask again instead of hiding the extra slots.
+        system.declared_slot_count = None
+
     if slots_by_index:
         states_result = await db.execute(
             select(PresetGateState).where(
@@ -361,7 +519,7 @@ async def ensure_legacy_material_contract(
         .where(
             PhysicalPrinterConnector.physical_printer_id == device.id,
             PhysicalPrinterConnector.user_id == device.user_id,
-            PhysicalPrinterConnector.provider.in_(["happy_hare", "legacy"]),
+            PhysicalPrinterConnector.provider.in_(siblings),
         )
         .order_by(PhysicalPrinterConnector.id)
     )
@@ -375,10 +533,138 @@ async def ensure_legacy_material_contract(
         db.add(connector)
     connector.material_system_id = system.id
     connector.capabilities = (
-        list(LEGACY_HH_CAPABILITIES) if device.supports_hh else []
+        list(HAPPY_HARE_CAPABILITIES) if device.supports_hh else []
     )
     connector.last_seen_at = device.last_seen_at
     connector.active = True
+
+
+async def _shelve_spools(db: AsyncSession, user_id: int, spool_ids: set[int]) -> None:
+    from app.models.user_spool import UserSpool
+    from app.services.spool_service import (
+        clear_spool_gate_assignments,
+        shelf_spool_if_unassigned,
+    )
+
+    for spool_id in spool_ids:
+        spool = await db.get(UserSpool, spool_id)
+        if spool is None or spool.user_id != user_id:
+            continue
+        await clear_spool_gate_assignments(db, spool)
+        await shelf_spool_if_unassigned(db, spool)
+
+
+async def _loaded_spool_ids_for_device(db: AsyncSession, device_id: int) -> set[int]:
+    """Spools sitting in this printer, whichever assignment path put them there."""
+    gate_rows = await db.execute(
+        select(PresetGateState.spool_id).where(
+            PresetGateState.device_id == device_id,
+            PresetGateState.spool_id.is_not(None),
+        )
+    )
+    assignment_rows = await db.execute(
+        select(MaterialSlotAssignment.spool_id)
+        .join(MaterialSlot, MaterialSlot.id == MaterialSlotAssignment.material_slot_id)
+        .join(MaterialSystem, MaterialSystem.id == MaterialSlot.material_system_id)
+        .where(
+            MaterialSystem.physical_printer_id == device_id,
+            MaterialSlotAssignment.spool_id.is_not(None),
+        )
+    )
+    return set(gate_rows.scalars().all()) | set(assignment_rows.scalars().all())
+
+
+async def _shelve_loaded_spools(db: AsyncSession, user_id: int, device_id: int) -> None:
+    await _shelve_spools(
+        db, user_id, await _loaded_spool_ids_for_device(db, device_id)
+    )
+
+
+async def delete_material_system(
+    db: AsyncSession,
+    user_id: int,
+    physical_printer_id: int,
+    material_system_id: int,
+) -> UserPrinterDevice:
+    """Remove one material system, returning its spools to the shelf.
+
+    The printer keeps existing, and so does its key: the person can attach
+    another system later without asking for a new one.
+    """
+    system = await _require_material_system(
+        db,
+        user_id=user_id,
+        physical_printer_id=physical_printer_id,
+        material_system_id=material_system_id,
+    )
+
+    slots = list(
+        (
+            await db.execute(
+                select(MaterialSlot).where(
+                    MaterialSlot.material_system_id == system.id
+                )
+            )
+        )
+        .scalars()
+        .all()
+    )
+    slot_ids = [slot.id for slot in slots]
+
+    spool_ids: set[int] = set()
+    if slot_ids:
+        gate_rows = await db.execute(
+            select(PresetGateState.spool_id).where(
+                PresetGateState.material_slot_id.in_(slot_ids),
+                PresetGateState.spool_id.is_not(None),
+            )
+        )
+        assignment_rows = await db.execute(
+            select(MaterialSlotAssignment.spool_id).where(
+                MaterialSlotAssignment.material_slot_id.in_(slot_ids),
+                MaterialSlotAssignment.spool_id.is_not(None),
+            )
+        )
+        spool_ids = set(gate_rows.scalars().all()) | set(
+            assignment_rows.scalars().all()
+        )
+
+    if slot_ids:
+        # The bindings go first: a spool only counts as free once nothing points
+        # at it, and both tables are consulted for that.
+        await db.execute(
+            delete(MaterialSlotAssignment).where(
+                MaterialSlotAssignment.material_slot_id.in_(slot_ids)
+            )
+        )
+        await db.execute(
+            delete(PresetGateState).where(
+                PresetGateState.material_slot_id.in_(slot_ids)
+            )
+        )
+        await db.execute(delete(MaterialSlot).where(MaterialSlot.id.in_(slot_ids)))
+
+    await _shelve_spools(db, user_id, spool_ids)
+
+    provider = system.provider
+    await db.execute(
+        delete(PhysicalPrinterConnector).where(
+            PhysicalPrinterConnector.material_system_id == system.id
+        )
+    )
+    await db.execute(delete(MaterialSystem).where(MaterialSystem.id == system.id))
+    db.expunge(system)
+
+    printer = await require_physical_printer(db, user_id, physical_printer_id)
+    if provider in KLIPPER_PROVIDERS:
+        # The legacy gate map describes exactly this system, so it goes with it;
+        # otherwise the next system would inherit a phantom slot count.
+        printer.gate_count = None
+    await db.commit()
+    # The session keeps objects alive past commit, so the printer would answer
+    # with the collection it loaded before the system was removed.
+    db.expire_all()
+    return await require_physical_printer(db, user_id, physical_printer_id)
 
 
 async def delete_physical_printer(
@@ -392,33 +678,30 @@ async def delete_physical_printer(
     machine — material systems, gate states, configuration links, connection
     bindings — is removed by the cascades; usage history keeps its rows.
     """
-    from app.models.user_spool import UserSpool
-    from app.services.spool_service import (
-        clear_spool_gate_assignments,
-        shelf_spool_if_unassigned,
-    )
-
     printer = await require_physical_printer(db, user_id, physical_printer_id)
-
-    loaded_spool_ids = (
-        (
-            await db.execute(
-                select(PresetGateState.spool_id).where(
-                    PresetGateState.device_id == printer.id,
-                    PresetGateState.spool_id.is_not(None),
+    spool_ids = await _loaded_spool_ids_for_device(db, printer.id)
+    system_ids = [system.id for system in printer.material_systems]
+    if system_ids:
+        slot_ids = list(
+            (
+                await db.execute(
+                    select(MaterialSlot.id).where(
+                        MaterialSlot.material_system_id.in_(system_ids)
+                    )
                 )
             )
+            .scalars()
+            .all()
         )
-        .scalars()
-        .all()
+        if slot_ids:
+            await db.execute(
+                delete(MaterialSlotAssignment).where(
+                    MaterialSlotAssignment.material_slot_id.in_(slot_ids)
+                )
+            )
+    await db.execute(
+        delete(PresetGateState).where(PresetGateState.device_id == printer.id)
     )
-
-    for spool_id in set(loaded_spool_ids):
-        spool = await db.get(UserSpool, spool_id)
-        if spool is None or spool.user_id != user_id:
-            continue
-        await clear_spool_gate_assignments(db, spool)
-        await shelf_spool_if_unassigned(db, spool)
-
+    await _shelve_spools(db, user_id, spool_ids)
     await db.delete(printer)
     await db.commit()

@@ -29,16 +29,98 @@
     "subtitle": "将估算保存为可追溯版本的报价，跟进客户决定，并把已接受的报价转入生产。",
     "newCalculation": "新建估算",
     "search": "编号、订单或客户…",
-    "locked": { "title": "订单工作流属于 Calculator Pro", "description": "在计算器中启动试用，即可保存客户、报价版本和生产订单。", "action": "打开计算器" },
-    "metrics": { "awaiting": "等待决定", "accepted": "已接受报价", "activeOrders": "进行中", "customers": "客户" },
-    "tabs": { "quotes": "商业报价", "quotesShort": "报价", "orders": "订单", "customers": "客户" },
-    "feedback": { "quoteStatus": "报价状态已更新", "quoteCustomer": "报价客户已更新", "orderStatus": "订单阶段已更新", "customerSaved": "客户已保存", "linkCopied": "报价链接已复制", "noDocument": "此报价版本暂无文档", "error": "操作失败" },
-    "quotes": { "emptyTitle": "尚无已保存报价", "emptyText": "先计算打印成本，打开商业报价并保存到工作台。", "customer": "客户", "noCustomer": "未指定客户", "validUntil": "有效期至", "positions": "项", "amount": "报价金额", "positionsTitle": "当前版本项目", "history": "操作记录", "versions": "报价版本" },
-    "orders": { "emptyTitle": "报价接受后会生成订单", "emptyText": "客户接受报价后，FilamentHub 会创建关联的生产订单。", "amount": "金额", "dueDate": "期限", "fromQuote": "由已接受报价创建" },
-    "customers": { "add": "添加客户", "emptyTitle": "添加第一个客户", "emptyText": "联系方式独立保存，每份报价保留自己的不可变客户信息快照。", "archive": "归档客户", "noContacts": "未填写联系方式", "inn": "税号", "cardLabel": "客户卡片", "createTitle": "新客户", "editTitle": "编辑客户", "name": "姓名或公司", "contactName": "联系人", "phone": "电话", "email": "电子邮件", "address": "地址", "note": "备注" },
-    "actions": { "save": "保存", "cancel": "取消", "pdf": "下载 PDF", "share": "复制链接" },
-    "status": { "quote": { "draft": "草稿", "sent": "已发送", "accepted": "已接受", "rejected": "已拒绝", "expired": "已过期" }, "order": { "new": "新建", "planned": "已计划", "in_production": "生产中", "ready": "已就绪", "completed": "已完成", "cancelled": "已取消" } },
-    "events": { "created": "报价已创建", "version_created": "报价版本已创建", "status_changed": "状态已更改", "customer_changed": "客户已更改", "shared": "公共链接已创建" }
+    "locked": {
+      "title": "订单工作流属于 Calculator Pro",
+      "description": "在计算器中启动试用，即可保存客户、报价版本和生产订单。",
+      "action": "打开计算器"
+    },
+    "metrics": {
+      "awaiting": "等待决定",
+      "accepted": "已接受报价",
+      "activeOrders": "进行中",
+      "customers": "客户"
+    },
+    "tabs": {
+      "quotes": "商业报价",
+      "quotesShort": "报价",
+      "orders": "订单",
+      "customers": "客户"
+    },
+    "feedback": {
+      "quoteStatus": "报价状态已更新",
+      "quoteCustomer": "报价客户已更新",
+      "orderStatus": "订单阶段已更新",
+      "customerSaved": "客户已保存",
+      "linkCopied": "报价链接已复制",
+      "noDocument": "此报价版本暂无文档",
+      "error": "操作失败"
+    },
+    "quotes": {
+      "emptyTitle": "尚无已保存报价",
+      "emptyText": "先计算打印成本，打开商业报价并保存到工作台。",
+      "customer": "客户",
+      "noCustomer": "未指定客户",
+      "validUntil": "有效期至",
+      "positions": "项",
+      "amount": "报价金额",
+      "positionsTitle": "当前版本项目",
+      "history": "操作记录",
+      "versions": "报价版本"
+    },
+    "orders": {
+      "emptyTitle": "报价接受后会生成订单",
+      "emptyText": "客户接受报价后，FilamentHub 会创建关联的生产订单。",
+      "amount": "金额",
+      "dueDate": "期限",
+      "fromQuote": "由已接受报价创建"
+    },
+    "customers": {
+      "add": "添加客户",
+      "emptyTitle": "添加第一个客户",
+      "emptyText": "联系方式独立保存，每份报价保留自己的不可变客户信息快照。",
+      "archive": "归档客户",
+      "noContacts": "未填写联系方式",
+      "inn": "税号",
+      "cardLabel": "客户卡片",
+      "createTitle": "新客户",
+      "editTitle": "编辑客户",
+      "name": "姓名或公司",
+      "contactName": "联系人",
+      "phone": "电话",
+      "email": "电子邮件",
+      "address": "地址",
+      "note": "备注"
+    },
+    "actions": {
+      "save": "保存",
+      "cancel": "取消",
+      "pdf": "下载 PDF",
+      "share": "复制链接"
+    },
+    "status": {
+      "quote": {
+        "draft": "草稿",
+        "sent": "已发送",
+        "accepted": "已接受",
+        "rejected": "已拒绝",
+        "expired": "已过期"
+      },
+      "order": {
+        "new": "新建",
+        "planned": "已计划",
+        "in_production": "生产中",
+        "ready": "已就绪",
+        "completed": "已完成",
+        "cancelled": "已取消"
+      }
+    },
+    "events": {
+      "created": "报价已创建",
+      "version_created": "报价版本已创建",
+      "status_changed": "状态已更改",
+      "customer_changed": "客户已更改",
+      "shared": "公共链接已创建"
+    }
   },
   "errorBoundary": {
     "title": "出现了错误",
@@ -116,6 +198,7 @@
     "error_account_locked": "账户已锁定。请联系支持。",
     "error_server_error": "服务器错误。请稍后重试或联系支持。",
     "error_no_connection": "无法连接到服务器。请检查您的互联网连接。",
+    "error_legal_documents_unavailable": "无法加载当前文件。请刷新页面后重试。",
     "or_via": "或通过",
     "yandex": "Yandex",
     "title": "登录以访问您的个人账户",
@@ -140,10 +223,24 @@
     "password_tip": "最少8个字符，包括大小写字母和数字",
     "label_confirm_password": "确认密码",
     "passwords_match": "✓ 密码匹配",
+    "accept_terms": "我接受",
+    "accept_personal_data": "我另行同意",
+    "privacy_notice": "有关数据处理的详情，请参阅",
     "agree_terms_1": "我接受",
     "agree_terms_user_agreement": "服务条款",
     "agree_terms_2": "并同意",
     "agree_terms_personal_data": "个人数据处理"
+  },
+  "legalOnboarding": {
+    "title": "完成账户设置",
+    "description": "使用个人功能前，请分别接受当前服务条款并同意个人数据处理。",
+    "acceptTerms": "我接受",
+    "acceptPersonalData": "我另行同意",
+    "privacyNote": "FilamentHub 处理数据的方式见",
+    "continue": "继续",
+    "logout": "退出登录",
+    "loadError": "无法加载当前文件。请刷新页面后重试。",
+    "submitError": "无法保存您的选择。请重试。"
   },
   "forgotPasswordModal": {
     "title": "密码恢复",
@@ -213,20 +310,20 @@
   "termsPage": {
     "backHome": "返回主页",
     "title": "服务条款",
-    "lastUpdated": "最后更新：2026年3月",
+    "lastUpdated": "最后更新：2026年7月25日",
     "sections": {
       "subject": {
         "title": "1. 协议的主体",
         "paragraphs": [
           "1.1. 根据《俄罗斯联邦民法典》第437条规定的公开要约，Kuzmin I.I.个体经营者（以下简称“管理员”）向互联网信息和电信网络用户（以下简称“用户”）授予根据本用户协议（以下简称“协议”）条款使用服务的权利（以下简称“服务”）。14岁及以上的法人和个人可以使用该服务。",
-          "1.2. 管理员免费向用户授予使用服务的权利。"
+          "1.2. 公共目录和服务的核心功能免费提供。额外的专业工具可能根据另行披露的条款收费。"
         ]
       },
       "general": {
         "title": "2. 通则",
         "paragraphs": [
-          "2.1. 本协议是根据《俄罗斯联邦民法典》第437条规定的公开要约。在服务中注册和使用服务，包括以任何方式访问网站页面，即构成用户对协议的完全和无条件接受。",
-          "2.2. 协议的当前版本位于<agreementLink>/user-agreement</agreementLink>。管理员可以通过在同一地址发布新版本协议，在无需特殊通知的情况下修改协议。新版协议自发布到互联网之时起生效，除非新版本中另有规定。",
+          "2.1. 本协议是《俄罗斯联邦民法典》第437条规定的公开要约。用户在注册时或身份验证后的强制步骤中通过明确确认接受本协议。仅浏览网站公开页面不构成接受。",
+          "2.2. 当前协议位于<agreementLink>/user-agreement</agreementLink>。若条款发生重大变更，管理员可在用户继续使用个人服务功能前要求重新明确确认。",
           "2.3. 不同意协议当前版本的全部或部分条款的用户必须停止使用本服务。",
           "2.4. 用户违反协议条款可能导致终止对账户的访问或删除用户账户，以及全部或部分删除内容或限制访问，无需事先通知。"
         ]
@@ -236,14 +333,14 @@
         "items": {
           "authorization": "<strong>授权</strong>是指服务软件部分分析用户输入的认证数据，作为结果向用户授予账户访问权限的过程。",
           "account": "<strong>账户</strong>是指包含认证数据和用户在使用服务过程中提供的其他数据的用户账户。",
-          "authData": "<strong>认证数据</strong>是指用于授权的唯一用户识别手段（用户名和密码）。",
-          "content": "<strong>内容</strong>是指用户在服务中的信息，包括注册时指定的信息、关于3D打印耗材的信息、设置预设以及私聊中发送的信息。",
-          "profile": "<strong>配置文件</strong>是指注册时在服务中自动创建的公开页面，包含用户在注册期间指定的所有数据，以及后续更改或补充的账户数据，除了密码和注册地址。",
+          "authData": "<strong>认证数据</strong>是指用于访问账户的数据：邮箱或用户名和密码，或者从可用第三方认证服务获得的标识符。",
+          "content": "<strong>内容</strong>是指用户发布或上传的材料，包括3D打印材料信息、预设和配置、评价、图片以及通过服务功能自愿提交的文件。",
+          "profile": "<strong>配置文件</strong>是账户在服务中的呈现。只有服务支持且由用户选择或发布的字段和内容会公开；账户私密数据不会公开显示。",
           "paidServices": "<strong>付费服务</strong>是指不属于本协议主题的额外服务，由Kuzmin I.I.根据与用户签订的单独协议向用户提供。",
           "registration": "<strong>注册</strong>是指用户按照管理员建立的程序创建账户的操作。在注册期间，用户必须指定认证数据，并可以指定用户认为必要的其他可选信息。",
           "site": "<strong>网站</strong>是指在互联网信息和电信网络上由域名FilamentHub标识的网站。",
           "service": "<strong>服务</strong>是指FilamentHub服务，向用户提供管理3D打印耗材、设置预设、计算打印成本和使用管理员提供的其他功能的能力。",
-          "moderator": "<strong>版主</strong>是指社区所有者向其授予社区管理特殊功能访问权限的用户。"
+          "moderator": "<strong>版主</strong>是管理员授权在其权限范围内审核和管理内容的人员。"
         }
       },
       "registration": {
@@ -251,19 +348,19 @@
         "paragraphs": [
           "4.1. 一些服务功能，包括创建预设和管理耗材，仅在用户注册后才可用。",
           "4.2. 注册时，用户提供注册表中指定的信息。如果管理员有理由相信用户提供的信息不真实或不是最新的，管理员可自行决定终止对用户账户的访问或删除账户。",
-          "4.3. 填写注册表后，用户必须按照管理员发送到用户在注册期间指定的电子邮箱地址（注册地址）的说明确认注册。",
+          "4.3. 管理员可能会为特定功能、数据变更、账户恢复或账户安全要求验证邮箱地址。",
           "4.4. 管理员可自行决定禁止使用某些用户名，并为用户名和密码建立要求（字符数量、可接受符号等）。如果发现将单词（字母组合）用作用户名，且这些单词可能被视为影响管理员和/或第三方的权利和合法利益，管理员可自行决定删除用户账户或限制访问，直到用户名符合管理员的要求。",
-          "4.5. 注册后，创建用户账户和用户配置文件。",
+          "4.5. 注册会创建用户账户。特定信息是否公开显示取决于用户的操作和相关功能设置。",
           "4.6. 用户对选择的认证数据的安全性（抵抗暴力破解）和保密性负责。",
           "4.7. 用户对使用用户认证数据执行的所有操作负责。使用用户认证数据授权后执行的所有操作被视为由用户执行，除非用户按照协议规定的方式事先通知管理员存在未授权访问的可能性和/或怀疑违反用户认证数据保密性的行为。",
           "4.8. 用户对数据可能的丢失或损坏，以及因用户违反协议条款而可能发生的任何性质的其他后果负责。",
-          "4.9. 用户可以使用用户的Google或Yandex账户（第三方账户）进行授权，以获得对额外服务功能的访问。通过第三方账户提供的功能可能与账户功能相比受到限制。有关使用第三方授权服务时的数据处理信息见隐私政策。"
+          "4.9. 在技术条件和适用法律允许的情况下，用户可以通过Google或Yandex（第三方账户）进行认证。使用第三方认证服务时的数据处理信息见隐私政策。"
         ]
       },
       "userData": {
         "title": "5. 用户数据",
         "paragraphs": [
-          "5.1. 通过注册账户，用户同意管理员进行处理，即执行以下操作：按照本协议和隐私政策处理（包括收集、系统化、累积、存储、澄清（更新、修改）、使用、去个人化、阻止、销毁）用户的个人数据。",
+          "5.1. 用户通过单独的明确操作同意处理个人数据；仅接受本协议或浏览网站并不视为已同意。隐私政策说明适用的数据处理方式。",
           "5.2. 申请访问制造商平台时，用户可能提供与用户代表的品牌或法人实体相关的数据。这些数据根据个人数据处理同意进行处理，仅用于验证和运营制造商平台的目的。",
           "关于个人数据处理同意的详细信息可在<consentTextLink>个人数据处理同意</consentTextLink>页面（<consentPathLink>/personal-data-consent</consentPathLink>）上获取。"
         ]
@@ -274,8 +371,8 @@
         "adminParagraph": "6.1.1. 如果用户连续6个月以上未访问账户，或由于违反协议而在相同期间内访问受到限制，管理员保留删除账户的权利。",
         "userTitle": "6.2. 用户终止账户",
         "userParagraphs": [
-          "6.2.2. 用户可以通过个人账户界面独立启动账户删除，或通过反馈表或发送通知到电子邮箱地址admin@filamenthub.ru请求删除。删除账户时，对其的访问被终止，其他用户失去对内容的访问权。",
-          "6.2.3. 确认删除请求后，用户的所有个人数据和使用账户发布的内容被完全删除，除非需要根据《俄罗斯联邦》法律要求进行保存的数据。"
+          "6.2.2. 用户可通过个人账户界面发起删除，也可通过反馈表或support@filamenthub.ru提出请求。删除后将无法访问账户。为保持目录完整性及合法运营服务，公开、官方或社区正在使用的内容可在解除与已删除账户的关联后保留。",
+          "6.2.3. 可识别身份的私密数据会在适用法律及技术上必要的流程所要求的期限内删除或匿名化。在存在合法依据时，某些记录可能保留更久，包括履行法定义务、安全和争议解决。详情见隐私政策。"
         ]
       },
       "content": {
@@ -285,7 +382,7 @@
           "7.1.1. 保证向管理员发布的内容和放置条件符合适用法律要求，用户已获得发布内容所需的所有权利和权限；",
           "7.1.2. 对于构成知识产权的内容，向管理员授予非独占（简单）许可证，用以为提供服务目的而使用内容，包括复制内容和向公众公开内容，有效期为内容在服务中发布期间的整个期间。",
           "7.2. 禁止用户：",
-          "7.3. 与内容相关的所有索赔必须使用反馈表或发送通知到电子邮箱地址admin@filamenthub.ru发送给管理员"
+          "7.3. 与内容相关的所有索赔必须使用反馈表或发送通知到电子邮箱地址support@filamenthub.ru发送给管理员"
         ],
         "prohibitedActions": [
           "以他人名义在服务中注册为用户；",
@@ -322,7 +419,7 @@
           "10.2. 管理员可随时更改在服务中放置的广告的方法、类型和数量。",
           "10.3. 用户参与在服务中宣传的促销和事件，以及用户购买在服务中宣传的商品、作品或服务，仅在用户和销售相关商品、作品或服务的人或进行促销或事件的人之间产生权利和义务。",
           "10.4. 用户在服务中发布广告内容（或承诺进行此类发布）不为管理员创建任何义务。",
-          "10.5. 管理员仅向用户发送与服务运作相关的服务（交易性）信息（电子邮件确认、密码重置、系统通知）。不进行广告和营销邮寄。"
+          "10.5. 管理员可以发送账户运行、安全、支持以及用户所请求操作所需的服务和交易信息。只有在具有适用法律依据并在法律要求时提供退出方式的情况下，才会发送信息或营销消息。"
         ]
       },
       "final": {
@@ -331,7 +428,7 @@
           "11.1. 发送具有法律意义通知的适当地址为：",
           "11.1.1. 对于管理员：",
           "11.1.1.1. 对于与内容相关的通知：反馈表，",
-          "11.1.1.2. 对于其他通知：admin@filamenthub.ru",
+          "11.1.1.2. 对于其他通知：support@filamenthub.ru",
           "11.1.2. 对于用户：注册地址。",
           "11.2. 所有由协议引起和/或与服务和内容相关的争议在双方采取庭外争议解决措施后，自索赔（请求）发送到协议第11.1条中规定的地址之日起30个日历日期满后可提交法院。",
           "11.3. 如果争议在第11.2条中规定的期间内未解决，争议可提交到管理员所在地的法院。"
@@ -342,8 +439,8 @@
   "consentPage": {
     "backHome": "返回首页",
     "title": "个人数据处理同意书",
-    "lastUpdated": "最后更新：2026年3月",
-    "intro": "本人自愿、出于自身利益，并确认具有法律行为能力，同意将个人数据的处理委托给库兹明 I.I.（应用特殊税务制度“职业所得税”的个人纳税人），联系邮箱为 admin@filamenthub.ru（以下简称“运营者”），在以下条件下进行个人数据处理：",
+    "lastUpdated": "最后更新：2026年7月25日",
+    "intro": "本人自愿、出于自身利益并确认具有法律行为能力，通过单独的明确操作同意库兹明 I.I.（适用“职业所得税”特殊税制的个人纳税人，联系邮箱：support@filamenthub.ru，以下简称“运营者”）按照以下条件处理本人的个人数据：",
     "sections": {
       "general": {
         "title": "1. 总则",
@@ -355,10 +452,14 @@
           "email": "邮箱地址；",
           "nickname": "昵称（用户名）；",
           "fullName": "全名（仅限用户在配置文件中或与运营者联系时自愿提供）；",
-          "profileData": "用户自愿提供的其他配置文件数据（例如“关于我”字段）；",
+          "profileData": "用户自愿提供的其他配置文件数据（例如“关于我”字段、头像以及为地区功能选择的国家）；",
+          "oauthData": "从用户选择的身份验证服务接收的数据：账户标识符、邮箱地址、姓名以及授权范围内的其他信息；",
+          "accountData": "个人资料库及所选服务功能数据：线轴、打印机、材料系统、预设、配置、计算结果及相关操作历史；",
+          "publishedContent": "用户发布并与其昵称或其他标识符相关联的评论、评分、配置及其他社区材料；",
+          "supportCorrespondence": "向运营者提交的请求及与其通信，包括地址、消息内容、投递技术数据以及用户提交的附件；",
           "brandVerificationIntro": "申请作为品牌或制造商代表进行验证时提供的数据：",
           "brandVerificationNote": "指定数据仅用于验证用户权限和管理制造商后台。品牌数据不涉及用户的个人数据，而是由用户自愿提供并经用户同意的。",
-          "technicalData": "使用服务时处理的技术数据：IP地址、用户代理、请求的日期和时间、服务技术标识符。",
+          "technicalData": "使用服务时处理的技术数据：IP地址、根据该地址确定的当前网络连接国家/地区、用户代理、请求日期和时间以及服务技术标识符。连接国家/地区仅用于选择可用的登录方式和安全措施，不被视为国籍或个人资料中的国家/地区。",
           "syncSettings": "使用同步功能时传输的打印设置：耗材预设、打印机配置、打印配置及相关技术参数（温度、速度、流量比等）。"
         },
         "brandVerificationItems": [
@@ -374,8 +475,9 @@
         "paragraph": "2.1. 个人数据处理的目的是在 FilamentHub 网站上注册用户、提供服务，以及根据 <agreementTextLink>服务条款</agreementTextLink>（<agreementPathLink>/user-agreement</agreementPathLink>）验证用户是否为3D打印材料品牌或制造商的官方代表，包括：",
         "items": [
           "与用户保持及时沟通；",
-          "简化服务用户之间的沟通；",
+          "运行个人账户、材料库、打印配置、地区功能及服务集成；",
           "向用户发送服务（交易）通知（邮箱确认、密码重置、系统通知）；",
+          "根据当前网络连接国家/地区选择可用的登录方式和注册保护措施；",
           "确保服务使用的安全性；",
           "提高所提供服务的质量；",
           "服务使用统计和分析。"
@@ -404,17 +506,17 @@
       "term": {
         "title": "4. 同意书有效期",
         "paragraphs": [
-          "4.1. 个人数据的处理一直持续到用户删除网站上的个人账户为止。",
-          "4.2. 用户对个人数据处理的同意在撤销之前无限期有效。",
-          "4.3. 若撤销同意，运营者将立即停止个人数据的处理，并在收到撤销申请之日起不超过7天内销毁数据（通过个人账户界面独立删除时）或在通过反馈表或邮件申请后30天内销毁，除非个人数据主体所属的协议或运营者与个人数据主体之间的另一协议另有规定。"
+          "4.1. 个人数据在账户使用期间处理，此后仅在实现所述目的或法律要求的必要范围内处理。",
+          "4.2. 同意有效至处理目的实现、账户删除或同意被撤回（以先发生者为准），除非其他合法依据允许或要求继续处理。",
+          "4.3. 同意撤回后，运营者停止以该同意为依据的处理，并在适用法律要求的期限内删除或匿名化相关数据。仅在存在其他合法依据时方可继续处理。"
         ]
       },
       "revocation": {
         "title": "5. 同意撤销程序",
         "paragraphs": [
-          "5.1. 个人数据主体或其代理人可通过向运营者邮箱 admin@filamenthub.ru 发送申请来撤销同意。",
+          "5.1. 个人数据主体或其代理人可通过向运营者邮箱 support@filamenthub.ru 发送申请来撤销同意。",
           "5.2. 撤销同意的申请必须包含以下信息：",
-          "5.3. 运营者收到撤销申请后，将按照本同意书第4.3条规定停止处理个人数据并删除个人数据。"
+          "5.3. 收到申请后，运营者将按照本同意书第4.3条及适用法律处理。撤回同意可能导致无法继续使用账户的个人功能。"
         ],
         "items": [
           "账户注册时的邮箱地址；",
@@ -426,23 +528,23 @@
       "protection": {
         "title": "6. 个人数据保护",
         "paragraphs": [
-          "6.1. 为确保服务功能正常，运营者使用以下第三方服务，且仅在必要的最小程度上转移个人数据：Google OAuth 和 Yandex OAuth（授权）、Google reCAPTCHA v3（机器人保护）、Resend（服务邮件投递）。有关第三方服务和跨境数据转移的详细信息，请参阅隐私政策。",
+          "6.1. 对于特定功能，运营者可能使用第三方认证、防滥用、电子邮件投递和技术基础设施服务。仅提供所选功能所必需的数据；有关此类接收方类别和可能的境外处理的重要信息见隐私政策。",
           "6.2. 运营者采取必要的法律、组织和技术措施保护个人数据免遭未授权或意外访问、销毁、修改、阻止、复制、提供、分发及与个人数据相关的其他非法行为。",
-          "6.3. 运营者保证个人数据的机密性，未经个人数据主体同意不予披露，俄罗斯联邦法律另有规定的除外。"
+          "6.3. 运营者维护个人数据的机密性，并将披露限制在具有合法依据或用户所选功能所必需的情形。"
         ]
       },
       "cookies": {
         "title": "7. Cookie 使用说明",
         "paragraphs": [
-          "7.1. 运营者收集不涉及用户身份识别信息的数据，这些数据是由客户端使用网站而产生的。",
-          "7.2. 运营者使用 Cookie 来确保网站某些功能的正常运行，包括：",
-          "7.3. 用户可在浏览器设置中禁用 Cookie 的使用；但这可能会导致网站功能受限。"
+          "7.1. 网站使用必要的 Cookie 和类似技术标识符，以执行用户请求的操作并提供身份验证、安全保护和用户选择的功能。",
+          "7.2. 这些功能包括：",
+          "7.3. 当前网络连接国家/地区由服务器根据 IP 地址确定，该过程本身不会设置 Cookie。用户可在浏览器设置中禁用 Cookie，但身份验证和网站的部分功能可能因此无法使用。"
         ],
         "items": [
           "用户授权；",
           "保存用户设置；",
-          "访问分析；",
-          "改进网站功能。"
+          "会话保护和防止滥用；",
+          "运行用户选择的网站功能。"
         ]
       },
       "rights": {
@@ -459,12 +561,12 @@
       "contacts": {
         "title": "9. 联系信息",
         "paragraphs": [
-          "9.1. 如有与个人数据处理相关的任何事项，个人数据主体可联系运营者的邮箱：admin@filamenthub.ru。",
+          "9.1. 如有与个人数据处理相关的任何事项，个人数据主体可联系运营者的邮箱：support@filamenthub.ru。",
           "9.2. 服务条款可在 <agreementTextLink>服务条款</agreementTextLink> 页面（<agreementPathLink>/user-agreement</agreementPathLink>）查看。"
         ]
       }
     },
-    "confirmation": "通过在 FilamentHub 网站上确认注册，用户确认已阅读本个人数据处理同意书的条款并完全接受。"
+    "confirmation": "同意通过注册时或身份验证后的强制步骤中的单独肯定操作给出。接受服务条款或仅浏览网站不能替代该操作。"
   },
   "deletedPresetsModal": {
     "title": "预设在OrcaSlicer中被删除",
@@ -562,6 +664,23 @@
     "alert_rejection_reason_required": "请提供拒绝原因"
   },
   "adminDatabase": {
+    "diag": {
+      "note": "只读。架构和数据更改在服务器上完成（psql/运维），不通过网页。",
+      "tab": "诊断",
+      "migrations": "迁移",
+      "current": "当前",
+      "applied": "已应用",
+      "pending": "待处理",
+      "integrity": "完整性",
+      "integrityOk": "架构与模型一致。",
+      "integrityBad": "发现架构不一致。",
+      "missingTables": "缺失的表",
+      "stats": "表大小",
+      "table": "表",
+      "rows": "行数（估计）",
+      "size": "大小",
+      "loading": "加载中…"
+    },
     "title": "数据库管理",
     "description": "迁移、导出和导入数据库",
     "tabs": {
@@ -1196,7 +1315,11 @@
   },
   "brandTeam": {
     "organization": "公司",
-    "roles": { "admin": "FilamentHub 管理员", "owner": "所有者", "editor": "编辑者" },
+    "roles": {
+      "admin": "FilamentHub 管理员",
+      "owner": "所有者",
+      "editor": "编辑者"
+    },
     "inviteTitle": "添加团队成员",
     "emailPlaceholder": "工作或个人邮箱",
     "send": "发送",
@@ -1232,7 +1355,14 @@
     "reject": "拒绝",
     "invitesTitle": "邀请",
     "revoke": "撤销",
-    "status": { "pending": "已创建", "sent": "已发送", "failed": "失败", "accepted": "已接受", "expired": "已过期", "revoked": "已撤销" }
+    "status": {
+      "pending": "已创建",
+      "sent": "已发送",
+      "failed": "失败",
+      "accepted": "已接受",
+      "expired": "已过期",
+      "revoked": "已撤销"
+    }
   },
   "palette": {
     "lineLabel": "产品线",
@@ -2219,7 +2349,11 @@
     "activeBrandChangeError": "无法切换当前品牌",
     "myProfile": "我的配置文件",
     "achievements": "成就",
-    "role": { "brand": "品牌代表", "moderator": "版主", "admin": "管理员" },
+    "role": {
+      "brand": "品牌代表",
+      "moderator": "版主",
+      "admin": "管理员"
+    },
     "avatarUpload": "上传头像",
     "edit": "编辑",
     "viewPreset": "查看预设详情",
@@ -2399,7 +2533,7 @@
       "edit": "编辑",
       "use": "消耗",
       "delete": "删除",
-      "deleteConfirm": "删除此线轴？",
+      "deleteConfirm": "删除这台打印机的供料系统？槽位将消失，其中的料盘退回库存，密钥失效。打印机本身保留。",
       "invalidInitialWeight": "初始重量必须大于0。",
       "invalidUsedWeight": "已使用重量不能为负。",
       "usedGreaterThanInitial": "已使用重量不能超过初始重量。",
@@ -2429,17 +2563,20 @@
       "warning": "生成新密钥后，更新您的Moonraker/Happy Hare设置中的URL。"
     },
     "deviceSetup": {
-      "title": "我的打印机",
-      "description": "添加打印机，将配置复制到Moonraker — 它将自动连接。",
-      "addPrinter": "添加打印机",
+      "title": "供料系统",
+      "description": "添加系统 — 直接供料、MMU 或 AMS — 并绑定到打印机。如果打印机能报告通道内容，请把配置行粘贴到 Moonraker。",
+      "addPrinter": "添加供料系统",
       "selectPrinter": "打印机型号 (从目录)",
       "ownPrinters": "您的打印机",
       "ownPrintersHint": "选择自己的打印机 — 密钥会发给它，不会新增第二条记录。",
       "searchPrinter": "搜索打印机目录...",
       "nameLabel": "打印机名称",
       "namePlaceholder": "例如：Voron 2.4",
+      "gateCountLabel": "通道数量",
+      "gateCountPlaceholder": "例如：8",
+      "gateCountHint": "单色打印机请留空。数量以后可以修改。",
       "create": "创建",
-      "noDevices": "没有打印机连接。单击\"添加打印机\"开始。",
+      "noDevices": "没有打印机连接。单击\"添加供料系统\"开始。",
       "connected": "已连接",
       "connectedGates_one": "已连接 ({{count}}插槽)",
       "connectedGates_other": "已连接 ({{count}}插槽)",
@@ -2453,8 +2590,9 @@
       "noKey": "未生成密钥。",
       "regenerateKey": "重新生成密钥",
       "regenerateConfirm": "旧密钥将停止工作。继续？",
-      "deleteDevice": "删除打印机",
-      "deleteConfirm": "删除打印机及其所有门槽？这无法撤销。",
+      "deleteDevice": "删除供料系统",
+      "feedRemoved": "供料系统已删除，料盘已退回库存。",
+      "deleteConfirm": "删除这台打印机的供料系统？槽位将消失，其中的料盘退回库存，密钥失效。打印机本身保留。",
       "hostnameLabel": "Klipper主机名",
       "hostnameNotSet": "未设置 (单击输入)",
       "note": "添加配置后，重启Moonraker。打印机将在第一次请求时自动连接。"
@@ -4464,6 +4602,9 @@
     "markAllRead": "标记全部已读",
     "clearing": "清除中...",
     "clearAll": "清除所有通知",
+    "deleteSystem": "删除系统",
+    "deleteSystemConfirm": "删除「{{name}}」？槽位将消失，其中的料盘退回库存。打印机保留。",
+    "systemDeleted": "系统已删除，料盘已退回库存。",
     "link": "链接：",
     "keys": {
       "preset_updated": "预设已更新",
@@ -5018,6 +5159,7 @@
     "ERR_OAUTH_INVALID_STATE": "无效的状态参数",
     "ERR_OAUTH_EMAIL_MISSING": "{{provider}} 账户没有邮箱",
     "ERR_OAUTH_PROVIDER_NOT_CONFIGURED": "提供商 {{provider}} 未配置",
+    "ERR_OAUTH_PROVIDER_NOT_AVAILABLE": "此登录区域不提供 {{provider}}",
     "ERR_OAUTH_INVALID_PROVIDER": "未知的提供商：{{provider}}",
     "ERR_OAUTH_EMAIL_TAKEN": "此邮箱已通过 {{provider}} 关联",
     "ERR_COULD_NOT_VALIDATE": "无法验证凭证",
@@ -5027,6 +5169,8 @@
     "ERR_CALCULATOR_ACCESS_REQUIRED": "计算器需要 Pro 访问权限",
     "ERR_CALCULATOR_TRIAL_ALREADY_USED": "试用期已使用",
     "ERR_INVALID_API_KEY": "无效的 API 密钥",
+    "ERR_LEGAL_ACCEPTANCE_REQUIRED": "请先接受当前条款及数据处理同意书",
+    "ERR_LEGAL_DOCUMENT_VERSION_MISMATCH": "文件已更新。请查看当前版本并重新确认。",
     "ERR_EMAIL_DOMAIN_TYPO": "您的意思是 @{{domain}} 吗？",
     "ERR_DOMAIN_NO_MAIL": "域名 @{{domain}} 无法接收邮件",
     "ERR_EMAIL_THREAD_NOT_FOUND": "未找到邮件会话",
@@ -5128,6 +5272,7 @@
     "ERR_DEVICE_NOT_FOUND": "未找到设备",
     "ERR_MATERIAL_SYSTEM_NOT_FOUND": "未找到材料系统",
     "ERR_MATERIAL_SLOT_NOT_FOUND": "未找到材料系统槽位",
+    "ERR_MATERIAL_SLOT_IN_USE": "通道 {{index}} 中仍有料盘或预设，请先清空",
     "ERR_DEVICE_NOT_OWNER": "您不拥有此设备",
     "ERR_GATE_INDEX_INVALID": "无效的门索引：{{gate}}（最大 {{max}}）",
     "ERR_GATE_STATE_NOT_FOUND": "未找到门 {{gate}} 的状态",
@@ -5189,7 +5334,7 @@
     "configurations": "配置",
     "noConfigurations": "暂无配置",
     "noNozzles": "未列出喷嘴",
-    "gates": "{{count}} 个通道",
+    "gates_other": "{{count}} 个通道",
     "directFeed": "直接供料"
   },
   "deviceLink": {
@@ -5207,25 +5352,47 @@
     }
   },
   "presetSlots": {
-    "title": "打印机位置",
-    "subtitle": "MMU / AMS 位置的预设分配",
     "noDevices": "未注册打印机",
     "noDevicesDesc": "在 OrcaSlicer 中打开 FilamentHub — 您的打印机将自动注册",
-    "noMappedDevices": "没有设备匹配到您的打印机配置文件",
-    "noMappedDevicesDesc": "检查设备到打印机的绑定，并确保您的账户中存在打印机配置文件",
-    "noMaterialSystems": "此打印机还没有材料系统",
-    "noMaterialSystemsDesc": "添加手动送料系统或连接受支持的提供方；无需重新创建打印机",
     "mappedPrinter": "打印机: {{name}}",
-    "gates_one": "{{count}} 个位置",
-    "gates_other": "{{count}} 个位置",
-    "hhActive": "Happy Hare",
-    "manualMode": "手动模式",
+    "noSystems": "还没有供料系统",
+    "noSystemsDesc": "添加系统 — 直接供料、MMU、AMS 或 CFS — 并绑定到你的打印机。",
+    "newSystem": {
+      "add": "添加供料系统",
+      "title": "新的供料系统",
+      "printer": "打印机",
+      "printerPlaceholder": "选择打印机",
+      "slotCount": "槽位数量",
+      "create": "创建",
+      "done": "完成",
+      "keyTitle": "系统已创建。接下来与打印机建立连接",
+      "keyHint": "把这段粘贴到 moonraker.conf 并重启 Moonraker。此行只显示一次 — 之后可在系统卡片中重新签发密钥。",
+      "hintManual": "只有一卷料，无需布置。重量需手动修正。",
+      "hintLinked": "创建后会得到一段 moonraker.conf 配置。粘贴后布局和用量会自动同步；不粘贴则手动放置料盘。",
+      "system": "系统"
+    },
+    "provider": {
+      "happy_hare": "Happy Hare",
+      "legacy": "Klipper",
+      "manual": "手动",
+      "octoprint": "OctoPrint"
+    },
+    "slotCount": {
+      "question_other": "找到 {{count}} 个槽位。对吗？",
+      "hint": "打印机只会报告放过料盘的槽位。如果实际更多，请填写真实数量。",
+      "confirm": "确认",
+      "placeholder": "多少个？",
+      "save": "保存",
+      "change": "修改槽位数量"
+    },
     "gateEmpty": "空",
-    "gateUnknown": "无数据",
     "unknownFilament": "未知耗材",
     "identifySpool": "指定线轴",
     "assignPreset": "分配预设",
     "clearAll": "清空所有位置",
+    "deleteSystem": "删除系统",
+    "deleteSystemConfirm": "删除「{{name}}」？槽位将消失，其中的料盘退回库存。打印机保留。",
+    "systemDeleted": "系统已删除，料盘已退回库存。",
     "clearAllConfirm": "清空 \"{{name}}\" 的所有分配？",
     "cleared": "所有位置已清空",
     "source": {
@@ -5240,10 +5407,6 @@
       "buffer": "缓冲区"
     },
     "pairing": {
-      "title": "完成 Happy Hare 连接",
-      "description": "首次连接时，Happy Hare 不会在普通 Spoolman 请求中发送其内部打印机名称。请将下面的命令粘贴到 Mainsail 或 Fluidd 控制台并执行一次，让 HH 自行报告正确名称。之后，Sync Spoolman 将获得正确的位置映射。",
-      "waitingForSpool": "请先将任意线轴分配到一个位置，随后这里会显示可直接复制的一次性命令。",
-      "commandLabel": "一次性命令",
       "copy": "复制",
       "copied": "已复制",
       "check": "检查连接"
@@ -5267,15 +5430,27 @@
       "cancel": "取消",
       "assigned": "位置 {{gate}} 的分配已保存"
     },
-    "edit": {
-      "button": "设置",
-      "name": "设备名称",
-      "gateCount": "位置数量",
-      "gateCountHint": "1–256，留空以自动检测",
-      "save": "保存",
-      "cancel": "取消",
-      "saved": "设备设置已保存"
-    }
+    "feedSystem": {
+      "direct": "直接供料",
+      "happy_hare": "Happy Hare"
+    },
+    "happyHare": {
+      "hostname": "Klipper 主机名",
+      "hostnameNotSet": "未设置",
+      "pairingTitle": "打印机还没有自报名称",
+      "pairingDescription": "在打印机控制台执行一次此命令 — 之后它就会自行报告各槽位的内容。",
+      "pairingWaiting": "把任意料盘放入槽位，命令就会出现在这里。"
+    },
+    "link": {
+      "label": "与打印机的连接",
+      "issued": "已签发密钥",
+      "none": "没有密钥 — 手动放置料盘",
+      "issue": "签发密钥",
+      "reissue": "重新签发",
+      "snippetHint": "粘贴到 moonraker.conf 并重启 Moonraker。只显示一次；该机器此前的密钥已失效。"
+    },
+    "gates_other": "{{count}} 个槽位",
+    "gateNoData": "无数据"
   },
   "confirmEmailChange": {
     "loading": "正在确认邮箱变更...",
@@ -5288,15 +5463,15 @@
   "privacyPage": {
     "backHome": "返回首页",
     "title": "隐私政策",
-    "lastUpdated": "最后更新：2026年3月",
+    "lastUpdated": "最后更新：2026年7月25日",
     "sections": {
       "general": {
         "title": "1. 一般条款",
         "paragraphs": [
           "1.1. 本隐私政策（以下简称“政策”）定义了FilamentHub服务用户个人数据的处理和保护流程（以下简称“服务”），该服务可访问于filamenthub.ru。",
-          "1.2. 个人数据处理方为Kuzmin I.I.，一名应用特殊税制“专业收入税”(NPD纳税人)的个人。联系邮箱：admin@filamenthub.ru。",
+          "1.2. 个人数据处理方为Kuzmin I.I.，一名应用特殊税制“专业收入税”(NPD纳税人)的个人。联系邮箱：support@filamenthub.ru。",
           "1.3. 本政策根据《俄罗斯联邦关于个人数据法案》(2006年7月27日第152-FZ号法)及俄罗斯联邦其他适用的法律法规制定。",
-          "1.4. 使用本服务即表示用户同意本政策。如果用户不同意本政策的条款，用户必须停止使用该服务。",
+          "1.4. 本政策属于信息性文件，本身不能代替对个人数据处理的单独同意。浏览本服务的公开页面不构成接受服务条款或提供该等同意。",
           "1.5. 本服务可由已达14岁的个人及法人使用。"
         ]
       },
@@ -5304,64 +5479,69 @@
         "title": "2. 我们收集的数据",
         "intro": "2.1. 使用本服务时，以下类别的个人数据将被处理：",
         "categories": [
-          "邮箱地址（注册必需）；",
+          "邮箱地址、登录名以及注册、登录、账户恢复和账户安全所需的数据；",
           "昵称（用户名）；",
           "全名（仅限用户自愿提供）；",
-          "用户自愿提供的个人资料（例如“关于我”字段）；",
+          "用户自愿提供的个人资料（例如“关于我”字段、头像以及用户为区域功能选择的国家/地区）；",
           "申请品牌认证时提供的数据（品牌名称、企业邮箱、网站、社交媒体链接、支持文件）；",
-          "技术数据：IP地址、用户代理、请求的日期和时间、服务标识符；",
+          "个人资料库数据和服务设置：线轴、打印机、材料系统、预设、配置、计算结果及相关操作历史；",
+          "用户发布的材料，包括评论、评分、配置及其他社区内容；",
+          "向处理方提交的支持请求和其他通信，包括发件人和收件人地址、消息内容、投递技术数据以及提交的附件；",
+          "技术数据：IP地址、根据该地址确定的当前网络连接国家/地区、用户代理、请求日期和时间以及服务标识符。连接国家/地区仅用于选择可用的登录方式和安全措施，不被视为国籍或个人资料中的国家/地区；",
           "使用同步功能时的打印设置：耗材预设、打印机配置、打印配置及技术参数。"
         ],
-        "oauth": "2.2. 通过第三方服务（Google、Yandex）授权时，我们根据您在授权期间授予的权限接收您的邮箱、姓名和用户标识。"
+        "oauth": "2.2. 当第三方登录方式可用于当前网络连接，且用户主动通过 Google 或 Yandex 登录时，我们会在用户授予的权限范围内接收邮箱地址、姓名和用户标识。"
       },
       "purposes": {
         "title": "3. 数据处理的目的",
         "intro": "3.1. 个人数据的处理用于以下目的：",
         "items": [
           "在服务上注册和授权用户；",
+          "根据当前网络连接国家/地区选择可用的登录方式和注册保护措施；",
           "提供服务功能（材料目录、预设、计算器、OrcaSlicer同步）；",
           "验证品牌和制造商代表；",
           "发送服务通知（邮箱确认、密码重置、系统通知）；",
           "确保服务安全并防止滥用；",
-          "改进服务质量和使用情况分析。"
+          "用户支持、错误诊断、改进服务质量并分析服务运行情况，包括使用汇总指标。"
         ],
-        "note": "3.2. 本服务不发送广告或营销邮件。所有发送的消息均为纯交易性（服务相关）性质。"
+        "note": "3.2. 处理方可以发送必要的服务消息、请求回复，以及适用法律和用户所选设置允许的其他通信。",
+        "legalBasis": "3.3. 根据具体操作，处理可基于用户的单独同意、应用户请求为订立或履行服务条款而采取的步骤、处理方的法定义务或法律规定的其他依据。在OAuth过程中，仅处理完成用户所请求登录所需的最少数据；在用户分别确认条款并提供同意之前，个人功能保持不可用。"
       },
       "thirdParty": {
         "title": "4. 第三方服务",
         "intro": "4.1. 为确保服务的正常运作，我们使用以下第三方服务，某些数据可能会被转移到这些服务：",
         "services": [
-          "Google OAuth (Google Ireland Limited / Google LLC, 爱尔兰 / 美国) — 通过Google账户授权。发出请求以获取用户的邮箱和基本资料。Google隐私政策：https://policies.google.com/privacy",
+          "Google OAuth (Google Ireland Limited / Google LLC, 爱尔兰 / 美国) — 当该登录方式可用于当前网络连接且由用户选择时，通过 Google 账户登录。会请求用户的邮箱地址和基本资料。Google 隐私政策：https://policies.google.com/privacy",
           "Yandex OAuth (Yandex LLC, 俄罗斯) — 通过Yandex账户授权。发出请求以获取用户的邮箱和基本资料。Yandex隐私政策：https://yandex.ru/legal/confidential/",
-          "Google reCAPTCHA v3 (Google Ireland Limited / Google LLC, 爱尔兰 / 美国) — 在注册期间防止自动请求和机器人。为了用户行为评估，技术数据被传输。Google隐私政策：https://policies.google.com/privacy",
-          "Resend (Resend Inc., 美国，处理位置在欧盟 / 爱尔兰) — 发送交易性电子邮件（邮箱确认、密码重置、系统通知）。接收者的邮箱地址被传输。Resend隐私政策：https://resend.com/legal/privacy-policy"
+          "Google reCAPTCHA v3 (Google Ireland Limited / Google LLC, 爱尔兰 / 美国) — 在该服务可用的地区，为普通注册防止自动化请求。正常浏览公开页面时不会加载该脚本。验证时会传输技术数据。Google 隐私政策：https://policies.google.com/privacy",
+          "Resend (Plus Five Five, Inc., 美国) — 投递服务消息和处理支持通信。必要时可能传输发件人和收件人地址、消息内容、附件以及投递技术数据。消息可能通过爱尔兰的基础设施发送，而提供商的部分服务数据在美国处理。Resend隐私政策：https://resend.com/legal/privacy-policy"
         ],
         "note": "4.2. 这些服务根据各自的隐私政策处理数据。我们不会向这些服务传输任何超过必要范围之外的数据以保证相应功能的运行。"
       },
       "crossBorder": {
         "title": "5. 跨境数据转移",
         "paragraphs": [
-          "5.1. 由于使用第三方服务（第4部分），个人数据可能被转移到以下司法管辖区：爱尔兰（欧盟）、美国。",
+          "5.1. 由于使用第三方服务（第4部分），必要数据可能被传输至爱尔兰（欧盟）、美国，以及相关提供商及其受托处理者运营所在的其他司法管辖区。",
           "5.2. 数据转移仅在提供服务功能所需的范围内进行（授权、机器人防护、服务邮件交付）。",
-          "5.3. 指定司法管辖区根据Roskomnadzor规定和国际协议确保个人数据的充分保护水平。",
-          "5.4. 通过使用本服务，用户确认同意为指定目的进行个人数据的跨境转移。"
+          "5.3. 此类传输的条件和法律依据将结合适用法律及相关功能的具体情况确定。",
+          "5.4. 当特定操作需要用户单独同意或其他合法依据时，处理方会在执行该操作前取得该依据。仅使用本服务本身不被视为对跨境传输的单独同意。"
         ]
       },
       "retention": {
         "title": "6. 数据保留和删除",
         "paragraphs": [
-          "6.1. 个人数据存储直到用户删除其账户。",
-          "6.2. 用户可以通过个人账户界面或发送请求至admin@filamenthub.ru来自行删除其账户。",
-          "6.3. 账户删除后，所有个人数据在不超过7天（自主删除）或30天（通过邮件请求）内完全删除，除了根据俄罗斯联邦立法规定需要保留的数据。",
-          "6.4. 非活跃账户（超过6个月未登录）可能会被管理员删除。"
+          "6.1. 个人数据的保留时间不会超过处理目的、账户运行、保护各方权利和合法利益以及强制性法律要求所需的期限。",
+          "6.2. 用户可以通过个人账户界面或发送请求至support@filamenthub.ru来自行删除其账户。",
+          "6.3. 删除账户时，私人标识符和账户数据将根据适用法律予以删除或匿名化。除非法律或用户权利另有要求，已发布的社区材料可以在与已删除账户解除关联后保留。",
+          "6.4. 有限数据可能会在备份、安全日志和法律要求保留的记录中暂时存在，并受到目的和保留期限限制。在合理可行的情况下，非活跃账户可在事先通知后删除。"
         ]
       },
       "security": {
         "title": "7. 数据安全",
         "paragraphs": [
           "7.1. 处理方采取必要的法律、组织和技术措施来保护个人数据免受未授权访问、破坏、修改、阻止和其他非法行为。",
-          "7.2. 密码以哈希形式（bcrypt）存储。数据库访问受限。数据传输通过加密通道（HTTPS/TLS）进行。",
-          "7.3. 处理方保证个人数据的机密性，除非根据俄罗斯联邦立法规定，否则不得未经数据主体同意而披露。"
+          "7.2. 此类措施包括访问控制、凭据保护、传输加密以及与处理性质和风险相适应的其他保障措施。",
+          "7.3. 处理方维护个人数据的机密性，并仅在具有合法依据时披露。任何传输或存储方法都无法保证绝对安全。"
         ]
       },
       "rights": {
@@ -5371,16 +5551,18 @@
           "获取关于其个人数据处理的信息；",
           "要求澄清、阻止或删除个人数据；",
           "撤销对个人数据处理的同意；",
-          "删除其账户和所有关联数据；",
+          "删除账户并要求删除或匿名化相关个人数据，但受法律例外和先前已发布材料所适用规则的限制；",
           "向Roskomnadzor或法院对处理方的行为提起上诉。"
         ],
-        "note": "8.2. 为了行使其权利，用户可以通过admin@filamenthub.ru与处理方联系。"
+        "note": "8.2. 为了行使其权利，用户可以通过support@filamenthub.ru与处理方联系。"
       },
       "cookies": {
         "title": "9. Cookie",
         "paragraphs": [
-          "9.1. 本服务使用cookie来确保授权、保存用户设置和访问分析。",
-          "9.2. 用户可以在浏览器设置中禁用cookie；但这可能会限制服务功能。"
+          "9.1. 本服务使用必要的 Cookie 和类似技术标识符，用于身份验证、会话保护、保存用户设置以及运行用户选择的功能。",
+          "9.2. 当前网络连接国家/地区由服务器根据 IP 地址确定，该过程本身不会设置 Cookie。",
+          "9.3. 截至本版本，用户正常浏览页面时，本服务不会设置非必要的广告或分析 Cookie。",
+          "9.4. 用户可以在浏览器设置中禁用 Cookie，但身份验证和服务的部分功能可能因此无法使用。"
         ]
       },
       "children": {
@@ -5394,13 +5576,13 @@
         "title": "11. 政策变更",
         "paragraphs": [
           "11.1. 处理方可能会修改本政策。当前版本发布于<privacyLink>/privacy-policy</privacyLink>。",
-          "11.2. 在发布变更后继续使用本服务即表示用户同意新版本的政策。"
+          "11.2. 本政策属于信息性文件。如果变更需要重新接受服务条款或另行同意，本服务将请求用户执行相应的明确操作。"
         ]
       },
       "contacts": {
         "title": "12. 联系信息",
         "paragraphs": [
-          "12.1. 如有任何与个人数据处理相关的事项，请通过以下方式与我们联系：admin@filamenthub.ru。",
+          "12.1. 如有任何与个人数据处理相关的事项，请通过以下方式与我们联系：support@filamenthub.ru。",
           "12.2. 服务条款：<termsLink>/user-agreement</termsLink>。个人数据处理同意：<consentLink>/personal-data-consent</consentLink>。"
         ]
       }

@@ -1,10 +1,13 @@
 import { useMemo, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
-import { Cpu, Clock, Layers, Zap, Trash2, Loader2, Wifi, WifiOff, AlertTriangle, Copy, Check, RefreshCw } from 'lucide-react';
-import { physicalPrintersAPI, presetsAPI, printerProfilesAPI, spoolsAPI } from '../../api/client';
+import { Cpu, Clock, Eraser, KeyRound, Layers, Trash2, Loader2, Wifi, WifiOff, AlertTriangle, Copy, Check, Plus } from 'lucide-react';
+import { devicesAPI, physicalPrintersAPI, presetsAPI, printerProfilesAPI, spoolsAPI } from '../../api/client';
 import type { GateState, MaterialSlot, MaterialSystem, PhysicalPrinter, UserSpool } from '../../api/client';
 import type { Preset } from '../../types/api';
+import { ConfirmDeleteModal } from '../ConfirmDeleteModal';
+import { FEED_ADAPTERS, feedAdapterFor } from './adapters';
+import { Dropdown } from '../Dropdown';
 import { GateMapGrid } from './GateMapGrid';
 import { PresetAssignModal } from './PresetAssignModal';
 import { toast } from '../Toast';
@@ -18,6 +21,7 @@ interface MaterialSystemSectionProps {
   system: MaterialSystem;
   presetsSeedMap: Record<number, Pick<Preset, 'id' | 'name' | 'extruder_temp' | 'bed_temp'>>;
   spools: UserSpool[];
+  spoolCompatBaseUrl: string;
   printerProfileName?: string | null;
   nozzleHrc?: number | null;
   onGateClick: (
@@ -27,6 +31,14 @@ interface MaterialSystemSectionProps {
     system: MaterialSystem,
   ) => void;
 }
+
+// Names we generate ourselves are placeholders, not something a person typed.
+const GENERATED_SYSTEM_NAMES = new Set([
+  'Material system',
+  'Happy Hare',
+  'Legacy material system',
+  'Direct feed',
+]);
 
 function gateSource(value: string | undefined): GateState['source'] {
   if (value === 'hh_snapshot' || value === 'manual_orca' || value === 'web_manual') {
@@ -54,55 +66,214 @@ function materialSlotGateState(slot: MaterialSlot): GateState | null {
   };
 }
 
-function MaterialSystemSection({ printer, system, presetsSeedMap, spools, printerProfileName = null, nozzleHrc = null, onGateClick }: MaterialSystemSectionProps) {
-  const { t, i18n } = useTranslation();
-  const queryClient = useQueryClient();
-  const [clearing, setClearing] = useState(false);
-  const [pairingCommandCopied, setPairingCommandCopied] = useState(false);
-  const now = useNow();
-  const connector = printer.connectors.find(
-    (item) => item.material_system_id === system.id && item.active,
-  ) ?? null;
-  const linkState = getDeviceLinkState(connector?.last_seen_at ?? null, now);
-  const isHappyHare = system.provider === 'happy_hare';
-  const gates = useMemo(
-    () => system.slots.map(materialSlotGateState).filter((gate): gate is GateState => gate !== null),
-    [system.slots],
-  );
 
-  const pairingGate = useMemo(
-    () => gates.find((gate) => gate.spool_id != null) ?? null,
-    [gates],
-  );
-  const pairingCommand = pairingGate?.spool_id != null
-    ? `MMU_SPOOLMAN GATE=${pairingGate.gate_index} SPOOLID=${pairingGate.spool_id}`
+
+function NewSystemCard({
+  printers,
+  spoolCompatBaseUrl,
+  onDone,
+}: {
+  printers: PhysicalPrinter[];
+  spoolCompatBaseUrl: string;
+  onDone: () => void;
+}) {
+  const { t } = useTranslation();
+  const [printerId, setPrinterId] = useState<number | ''>(printers[0]?.id ?? '');
+  const [system, setSystem] = useState<string>(FEED_ADAPTERS[0].id);
+  const [slotCount, setSlotCount] = useState<string>('');
+  const [saving, setSaving] = useState(false);
+  const [issuedKey, setIssuedKey] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
+
+  const chosen = feedAdapterFor(system);
+  const count = chosen.fixedSlots ?? Number(slotCount);
+  const valid = printerId !== '' && Number.isInteger(count) && count >= 1 && count <= 256;
+  const configSnippet = issuedKey
+    ? `[spoolman]
+server: ${spoolCompatBaseUrl}/${issuedKey}
+sync_rate: 5`
     : null;
 
-  const handleCopyPairingCommand = async () => {
-    if (!pairingCommand) return;
+  const handleCreate = async () => {
+    if (!valid) return;
+    setSaving(true);
     try {
-      if (navigator.clipboard?.writeText) {
-        await navigator.clipboard.writeText(pairingCommand);
-      } else {
-        const textarea = document.createElement('textarea');
-        textarea.value = pairingCommand;
-        textarea.style.position = 'fixed';
-        textarea.style.opacity = '0';
-        document.body.appendChild(textarea);
-        textarea.focus();
-        textarea.select();
-        document.execCommand('copy');
-        textarea.remove();
+      await physicalPrintersAPI.createSystem(Number(printerId), {
+        name: t(chosen.labelKey),
+        kind: count > 1 ? 'mmu' : 'direct_feed',
+        provider: chosen.id,
+        slot_count: count,
+      });
+      if (chosen.needsLink) {
+        const { api_key } = await devicesAPI.regenerateKey(Number(printerId));
+        setIssuedKey(api_key);
+        return;
       }
-      setPairingCommandCopied(true);
-      window.setTimeout(() => setPairingCommandCopied(false), 1800);
+      onDone();
+    } catch (err: any) {
+      toast.error(translateApiError(t, err?.response?.data?.detail, t('common.error')));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleCopy = async () => {
+    if (!configSnippet) return;
+    try {
+      await navigator.clipboard.writeText(configSnippet);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1800);
     } catch {
       toast.error(t('common.error'));
     }
   };
 
-  const handleCheckPairing = async () => {
-    await queryClient.invalidateQueries({ queryKey: ['physical-printers'] });
+  if (configSnippet) {
+    return (
+      <div className="rounded-2xl border border-dashed border-purple-400/30 bg-white/3 p-5">
+        <h2 className="text-sm font-semibold text-white">{t('presetSlots.newSystem.keyTitle')}</h2>
+        <p className="mt-1 text-xs text-gray-400">{t('presetSlots.newSystem.keyHint')}</p>
+        <pre className="mt-3 overflow-x-auto rounded-lg border border-white/10 bg-black/30 px-3 py-2 text-xs text-white">{configSnippet}</pre>
+        <div className="mt-3 flex flex-wrap gap-2">
+          <button
+            type="button"
+            onClick={handleCopy}
+            className="inline-flex items-center gap-1.5 rounded-lg bg-purple-600 px-4 py-1.5 text-sm font-medium text-white transition hover:bg-purple-500"
+          >
+            {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
+            {t(copied ? 'presetSlots.pairing.copied' : 'presetSlots.pairing.copy')}
+          </button>
+          <button
+            type="button"
+            onClick={onDone}
+            className="rounded-lg border border-white/15 px-3 py-1.5 text-sm text-gray-300 transition hover:bg-white/10"
+          >
+            {t('presetSlots.newSystem.done')}
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="rounded-2xl border border-dashed border-purple-400/30 bg-white/3 p-5">
+      <h2 className="text-sm font-semibold text-white">{t('presetSlots.newSystem.title')}</h2>
+      <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+        <div className="min-w-0">
+          <p className="mb-1 text-xs text-gray-400">{t('presetSlots.newSystem.printer')}</p>
+          <Dropdown
+            size="sm"
+            value={printerId}
+            onChange={(value) => setPrinterId(value === '' ? '' : Number(value))}
+            options={printers.map((printer) => ({ value: printer.id, label: printer.name }))}
+            placeholder={t('presetSlots.newSystem.printerPlaceholder')}
+          />
+        </div>
+        <div className="min-w-0">
+          <p className="mb-1 text-xs text-gray-400">{t('presetSlots.newSystem.system')}</p>
+          <Dropdown
+            size="sm"
+            value={system}
+            onChange={(value) => setSystem(String(value))}
+            options={FEED_ADAPTERS.map((adapter) => ({
+              value: adapter.id,
+              label: t(adapter.labelKey),
+            }))}
+          />
+        </div>
+        {chosen.fixedSlots == null && (
+          <div className="min-w-0">
+            <p className="mb-1 text-xs text-gray-400">{t('presetSlots.newSystem.slotCount')}</p>
+            <input
+              type="number"
+              min={1}
+              max={256}
+              value={slotCount}
+              onChange={(e) => setSlotCount(e.target.value)}
+              className="w-24 rounded-lg border border-white/15 bg-black/30 px-3 py-1.5 text-sm text-white focus:border-purple-500 focus:outline-none"
+            />
+          </div>
+        )}
+      </div>
+      <div className="mt-4 flex flex-wrap items-center gap-2">
+        <button
+          type="button"
+          onClick={handleCreate}
+          disabled={!valid || saving}
+          className="inline-flex items-center gap-1.5 rounded-lg bg-purple-600 px-4 py-1.5 text-sm font-medium text-white transition hover:bg-purple-500 disabled:opacity-50"
+        >
+          {saving && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+          {t('presetSlots.newSystem.create')}
+        </button>
+        <button
+          type="button"
+          onClick={onDone}
+          className="rounded-lg border border-white/15 px-3 py-1.5 text-sm text-gray-300 transition hover:bg-white/10"
+        >
+          {t('common.cancel')}
+        </button>
+        <p className="min-w-[14rem] flex-1 text-[11px] leading-4 text-gray-500">
+          {t(chosen.needsLink ? 'presetSlots.newSystem.hintLinked' : 'presetSlots.newSystem.hintManual')}
+        </p>
+      </div>
+    </div>
+  );
+}
+
+function MaterialSystemSection({ printer, system, presetsSeedMap, spools, spoolCompatBaseUrl, printerProfileName = null, nozzleHrc = null, onGateClick }: MaterialSystemSectionProps) {
+  const { t, i18n } = useTranslation();
+  const queryClient = useQueryClient();
+  const [clearing, setClearing] = useState(false);
+  const [slotCountDraft, setSlotCountDraft] = useState('');
+  const [editingSlots, setEditingSlots] = useState(false);
+  const [savingSlotCount, setSavingSlotCount] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [issuedKey, setIssuedKey] = useState<string | null>(null);
+  const [issuingKey, setIssuingKey] = useState(false);
+  const [keyCopied, setKeyCopied] = useState(false);
+  const now = useNow();
+  const connector = printer.connectors.find(
+    (item) => item.material_system_id === system.id && item.active,
+  ) ?? null;
+  const linkState = getDeviceLinkState(connector?.last_seen_at ?? null, now);
+  const adapter = feedAdapterFor(system.provider);
+  const linkConfirmed = printer.reports_feed;
+  const providerLabel = t(`presetSlots.provider.${system.provider}`, {
+    defaultValue: system.provider,
+  });
+  const systemLabel = GENERATED_SYSTEM_NAMES.has(system.name) ? providerLabel : system.name;
+  const gates = useMemo(
+    () => system.slots.map(materialSlotGateState).filter((gate): gate is GateState => gate !== null),
+    [system.slots],
+  );
+
+  const linkSnippet = issuedKey
+    ? `[spoolman]\nserver: ${spoolCompatBaseUrl}/${issuedKey}\nsync_rate: 5`
+    : null;
+
+  const handleIssueKey = async () => {
+    setIssuingKey(true);
+    try {
+      const { api_key } = await devicesAPI.regenerateKey(printer.id);
+      setIssuedKey(api_key);
+      await queryClient.invalidateQueries({ queryKey: ['physical-printers'] });
+    } catch (err: any) {
+      toast.error(translateApiError(t, err?.response?.data?.detail, t('common.error')));
+    } finally {
+      setIssuingKey(false);
+    }
+  };
+
+  const handleCopyKey = async () => {
+    if (!linkSnippet) return;
+    try {
+      await navigator.clipboard.writeText(linkSnippet);
+      setKeyCopied(true);
+      window.setTimeout(() => setKeyCopied(false), 1800);
+    } catch {
+      toast.error(t('common.error'));
+    }
   };
 
   const missingPresetIds = useMemo(() => {
@@ -146,8 +317,40 @@ function MaterialSystemSection({ printer, system, presetsSeedMap, spools, printe
     return map;
   }, [missingPresets, presetsSeedMap]);
 
+  const handleConfirmSlotCount = async (slotCount: number) => {
+    setSavingSlotCount(true);
+    try {
+      await physicalPrintersAPI.updateSystem(printer.id, system.id, { slot_count: slotCount });
+      await queryClient.invalidateQueries({ queryKey: ['physical-printers'] });
+      setSlotCountDraft('');
+      setEditingSlots(false);
+    } catch (err: any) {
+      toast.error(translateApiError(t, err?.response?.data?.detail, t('common.error')));
+    } finally {
+      setSavingSlotCount(false);
+    }
+  };
+
+  const handleDeleteSystem = async () => {
+    setDeleting(true);
+    try {
+      await physicalPrintersAPI.deleteSystem(printer.id, system.id);
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['physical-printers'] }),
+        queryClient.invalidateQueries({ queryKey: ['spools'] }),
+        queryClient.invalidateQueries({ queryKey: ['devices'] }),
+      ]);
+      toast.success(t('presetSlots.systemDeleted'));
+    } catch (err: any) {
+      toast.error(translateApiError(t, err?.response?.data?.detail, t('common.error')));
+    } finally {
+      setDeleting(false);
+      setConfirmDelete(false);
+    }
+  };
+
   const handleClearAll = async () => {
-    if (!window.confirm(t('presetSlots.clearAllConfirm', { name: system.name }))) return;
+    if (!window.confirm(t('presetSlots.clearAllConfirm', { name: systemLabel }))) return;
     setClearing(true);
     try {
       await physicalPrintersAPI.clearSystem(printer.id, system.id);
@@ -172,8 +375,10 @@ function MaterialSystemSection({ printer, system, presetsSeedMap, spools, printe
           </div>
           <div>
             <h2 className="text-sm font-semibold text-white">{printer.name}</h2>
-            <p className="mt-0.5 text-[11px] text-gray-400">{system.name}</p>
-            {printerProfileName && (
+            <p className="mt-0.5 text-[11px] text-gray-400">{systemLabel}</p>
+            {printerProfileName
+              && !printer.name.includes(printerProfileName)
+              && !printerProfileName.includes(printer.name) && (
               <p className="text-[11px] text-purple-300 mt-0.5">
                 {t('presetSlots.mappedPrinter', { name: printerProfileName })}
               </p>
@@ -181,107 +386,206 @@ function MaterialSystemSection({ printer, system, presetsSeedMap, spools, printe
           </div>
         </div>
 
-        <div className="flex flex-wrap items-center gap-2">
-          <span
-            title={t('deviceLink.tooltip')}
-            className={[
-              'flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-medium',
-              linkState === 'active'
-                ? 'bg-emerald-500/15 text-emerald-300'
-                : linkState === 'delayed'
-                  ? 'bg-amber-500/15 text-amber-300'
-                  : linkState === 'inactive'
-                    ? 'bg-white/10 text-gray-400'
-                    : 'bg-white/5 text-gray-500',
-            ].join(' ')}
-          >
-            {linkState === 'active' ? (
-              <Wifi className="h-3 w-3" />
-            ) : linkState === 'delayed' ? (
-              <AlertTriangle className="h-3 w-3" />
-            ) : linkState === 'inactive' ? (
-              <WifiOff className="h-3 w-3" />
+        <div className="flex flex-col items-start gap-1.5 sm:items-end">
+          <div className="flex flex-wrap items-center gap-1.5">
+            <span
+              title={t('deviceLink.tooltip')}
+              className={[
+                'flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium',
+                linkState === 'active'
+                  ? 'bg-emerald-500/15 text-emerald-300'
+                  : linkState === 'delayed'
+                    ? 'bg-amber-500/15 text-amber-300'
+                    : linkState === 'inactive'
+                      ? 'bg-white/10 text-gray-400'
+                      : 'bg-white/5 text-gray-500',
+              ].join(' ')}
+            >
+              {linkState === 'active' ? (
+                <Wifi className="h-3 w-3" />
+              ) : linkState === 'delayed' ? (
+                <AlertTriangle className="h-3 w-3" />
+              ) : linkState === 'inactive' ? (
+                <WifiOff className="h-3 w-3" />
+              ) : (
+                <Clock className="h-3 w-3" />
+              )}
+              {t(`deviceLink.${linkState}`)}
+            </span>
+            {editingSlots ? (
+              <span className="flex items-center gap-1">
+                <input
+                  type="number"
+                  min={1}
+                  max={256}
+                  value={slotCountDraft}
+                  onChange={(e) => setSlotCountDraft(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === 'Enter') void handleConfirmSlotCount(Number(slotCountDraft)); }}
+                  autoFocus
+                  className="w-16 rounded border border-white/20 bg-black/30 px-1.5 py-0.5 text-[11px] text-white focus:border-purple-500 focus:outline-none"
+                />
+                <button
+                  type="button"
+                  onClick={() => handleConfirmSlotCount(Number(slotCountDraft))}
+                  disabled={savingSlotCount || !Number.isInteger(Number(slotCountDraft))
+                    || Number(slotCountDraft) < 1 || Number(slotCountDraft) > 256}
+                  className="text-[11px] text-purple-300 hover:text-purple-200 disabled:opacity-40"
+                >
+                  {savingSlotCount ? '…' : t('common.save')}
+                </button>
+              </span>
             ) : (
-              <Clock className="h-3 w-3" />
+              <button
+                type="button"
+                onClick={() => {
+                  setSlotCountDraft(String(system.slots.length));
+                  setEditingSlots(true);
+                }}
+                title={t('presetSlots.slotCount.change')}
+                className="rounded-full bg-white/5 px-2 py-0.5 text-[11px] text-gray-400 transition hover:bg-white/10 hover:text-white"
+              >
+                {t('presetSlots.gates', { count: system.slots.length })}
+              </button>
             )}
-            {t(`deviceLink.${linkState}`)}
-          </span>
+            {connector?.last_seen_at && (
+              <span className="rounded-full bg-white/5 px-2 py-0.5 text-[11px] text-gray-500">
+                {formatLastSeen(connector.last_seen_at, t, i18n.language, now)}
+              </span>
+            )}
+          </div>
 
-          {isHappyHare ? (
-            <span className="flex items-center gap-1 rounded-full bg-green-500/15 px-2.5 py-1 text-xs font-medium text-green-400">
-              <Zap className="h-3 w-3" />
-              {t('presetSlots.hhActive')}
-            </span>
+          {!adapter.needsLink ? null : linkConfirmed ? (
+            <button
+              type="button"
+              onClick={handleIssueKey}
+              disabled={issuingKey}
+              title={t('presetSlots.link.reissue')}
+              className="rounded p-0.5 text-gray-500 transition hover:bg-white/10 hover:text-white disabled:opacity-40"
+            >
+              {issuingKey ? <Loader2 className="h-3 w-3 animate-spin" /> : <KeyRound className="h-3 w-3" />}
+            </button>
           ) : (
-            <span className="flex items-center gap-1 rounded-full bg-blue-500/15 px-2.5 py-1 text-xs font-medium text-blue-300">
-              <Layers className="h-3 w-3" />
-              {system.provider === 'manual' ? t('presetSlots.manualMode') : system.provider}
-            </span>
+            <div className="flex flex-wrap items-center gap-1.5 text-[11px] text-gray-400">
+              <span
+                title={t(printer.has_api_key ? 'presetSlots.link.issued' : 'presetSlots.link.none')}
+                className="flex items-center gap-1"
+              >
+                {printer.has_api_key ? (
+                  <Check className="h-3 w-3 text-emerald-400" />
+                ) : (
+                  <AlertTriangle className="h-3 w-3 text-amber-400" />
+                )}
+                {t('presetSlots.link.label')}
+              </span>
+              {adapter.renderSettings?.({ printer, system, gates, linkConfirmed })}
+              <button
+                type="button"
+                onClick={handleIssueKey}
+                disabled={issuingKey}
+                className="flex items-center gap-1 rounded px-1 py-0.5 text-gray-400 transition hover:bg-white/10 hover:text-white disabled:opacity-40"
+              >
+                {issuingKey ? <Loader2 className="h-3 w-3 animate-spin" /> : <KeyRound className="h-3 w-3" />}
+                {t(printer.has_api_key ? 'presetSlots.link.reissue' : 'presetSlots.link.issue')}
+              </button>
+            </div>
           )}
-          <span className="flex items-center gap-1 rounded-full bg-white/5 px-2.5 py-1 text-xs text-gray-400">
-            <Layers className="h-3 w-3" />
-            {t('presetSlots.gates', { count: system.slots.length })}
-          </span>
-          <span className="flex items-center gap-1 rounded-full bg-white/5 px-2.5 py-1 text-xs text-gray-500">
-            <Clock className="h-3 w-3" />
-            {formatLastSeen(connector?.last_seen_at ?? null, t, i18n.language, now)}
-          </span>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-2">
           <button
             type="button"
             onClick={handleClearAll}
             disabled={clearing || gates.every((g) => !g.preset_id && !g.spool_id)}
-            className="flex items-center gap-1.5 rounded-xl border border-white/10 bg-white/5 px-3 py-1.5 text-xs text-red-400 transition hover:bg-red-500/10 disabled:opacity-40"
+            title={t('presetSlots.clearAll')}
+            className="rounded-lg border border-white/10 bg-white/5 p-1.5 text-gray-400 transition hover:bg-white/10 hover:text-red-300 disabled:opacity-40"
           >
             {clearing ? (
               <Loader2 className="h-3.5 w-3.5 animate-spin" />
             ) : (
+              <Eraser className="h-3.5 w-3.5" />
+            )}
+          </button>
+          <button
+            type="button"
+            onClick={() => setConfirmDelete(true)}
+            disabled={deleting}
+            title={t('presetSlots.deleteSystem')}
+            className="rounded-lg border border-white/10 bg-white/5 p-1.5 text-gray-400 transition hover:bg-white/10 hover:text-red-300 disabled:opacity-40"
+          >
+            {deleting ? (
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            ) : (
               <Trash2 className="h-3.5 w-3.5" />
             )}
-            {t('presetSlots.clearAll')}
           </button>
         </div>
       </div>
 
-      {isHappyHare && connector?.last_seen_at == null && (
-        <div className="mb-4 rounded-xl border border-amber-400/25 bg-amber-500/10 p-4">
-          <div className="flex items-start gap-3">
-            <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-amber-300" />
-            <div className="min-w-0 flex-1">
-              <p className="text-sm font-semibold text-amber-100">{t('presetSlots.pairing.title')}</p>
-              <p className="mt-1 text-xs leading-relaxed text-amber-100/75">
-                {t('presetSlots.pairing.description')}
-              </p>
-              {pairingCommand ? (
-                <>
-                  <p className="mt-3 text-[11px] font-medium uppercase tracking-wide text-amber-200/70">
-                    {t('presetSlots.pairing.commandLabel')}
-                  </p>
-                  <code className="mt-1 block overflow-x-auto rounded-lg border border-white/10 bg-black/30 px-3 py-2 text-xs text-white">
-                    {pairingCommand}
-                  </code>
-                  <div className="mt-3 flex flex-wrap gap-2">
-                    <button
-                      type="button"
-                      onClick={handleCopyPairingCommand}
-                      className="inline-flex items-center gap-1.5 rounded-lg bg-amber-400 px-3 py-1.5 text-xs font-medium text-black transition hover:bg-amber-300"
-                    >
-                      {pairingCommandCopied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
-                      {t(pairingCommandCopied ? 'presetSlots.pairing.copied' : 'presetSlots.pairing.copy')}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={handleCheckPairing}
-                      className="inline-flex items-center gap-1.5 rounded-lg border border-amber-300/25 bg-white/5 px-3 py-1.5 text-xs text-amber-100 transition hover:bg-white/10"
-                    >
-                      <RefreshCw className="h-3.5 w-3.5" />
-                      {t('presetSlots.pairing.check')}
-                    </button>
-                  </div>
-                </>
-              ) : (
-                <p className="mt-3 text-xs text-amber-200/80">{t('presetSlots.pairing.waitingForSpool')}</p>
-              )}
-            </div>
+      <ConfirmDeleteModal
+        isOpen={confirmDelete}
+        onClose={() => setConfirmDelete(false)}
+        onConfirm={handleDeleteSystem}
+        isLoading={deleting}
+        title={t('presetSlots.deleteSystem')}
+        confirmText={t('presetSlots.deleteSystem')}
+        message={t('presetSlots.deleteSystemConfirm', { name: systemLabel })}
+      />
+
+      {adapter.renderSetup?.({ printer, system, gates, linkConfirmed })}
+
+      {linkSnippet && (
+        <div className="mb-4 rounded-xl border border-white/10 bg-white/5 p-4">
+          <p className="text-xs text-gray-400">{t('presetSlots.link.snippetHint')}</p>
+          <pre className="mt-2 overflow-x-auto rounded-lg border border-white/10 bg-black/30 px-3 py-2 text-xs text-white">{linkSnippet}</pre>
+          <button
+            type="button"
+            onClick={handleCopyKey}
+            className="mt-2 inline-flex items-center gap-1.5 rounded-lg bg-purple-600 px-3 py-1.5 text-xs font-medium text-white transition hover:bg-purple-500"
+          >
+            {keyCopied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
+            {t(keyCopied ? 'presetSlots.pairing.copied' : 'presetSlots.pairing.copy')}
+          </button>
+        </div>
+      )}
+
+      {system.declared_slot_count == null && system.slots.length > 0 && (
+        <div className="mb-4 rounded-xl border border-white/10 bg-white/5 p-4">
+          <p className="text-sm text-white">
+            {t('presetSlots.slotCount.question', { count: system.slots.length })}
+          </p>
+          <p className="mt-1 text-xs text-gray-400">{t('presetSlots.slotCount.hint')}</p>
+          <div className="mt-3 flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={() => handleConfirmSlotCount(system.slots.length)}
+              disabled={savingSlotCount}
+              className="inline-flex items-center gap-1.5 rounded-lg bg-purple-600 px-3 py-1.5 text-xs font-medium text-white transition hover:bg-purple-500 disabled:opacity-50"
+            >
+              {savingSlotCount && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+              {t('presetSlots.slotCount.confirm')}
+            </button>
+            <input
+              type="number"
+              min={1}
+              max={256}
+              value={slotCountDraft}
+              onChange={(e) => setSlotCountDraft(e.target.value)}
+              placeholder={t('presetSlots.slotCount.placeholder')}
+              className="w-28 rounded-lg border border-white/15 bg-black/30 px-2 py-1.5 text-xs text-white placeholder-gray-600 focus:border-purple-500 focus:outline-none"
+            />
+            <button
+              type="button"
+              onClick={() => handleConfirmSlotCount(Number(slotCountDraft))}
+              disabled={
+                savingSlotCount
+                || !Number.isInteger(Number(slotCountDraft))
+                || Number(slotCountDraft) < 1
+                || Number(slotCountDraft) > 256
+              }
+              className="inline-flex items-center gap-1.5 rounded-lg border border-white/15 bg-white/5 px-3 py-1.5 text-xs text-gray-200 transition hover:bg-white/10 disabled:opacity-40"
+            >
+              {t('presetSlots.slotCount.save')}
+            </button>
           </div>
         </div>
       )}
@@ -311,6 +615,7 @@ export function PresetSlotsPanel({
 }: PresetSlotsPanelProps) {
   const { t } = useTranslation();
   const { user } = useAuth();
+  const queryClient = useQueryClient();
 
   const [modalState, setModalState] = useState<{
     open: boolean;
@@ -319,11 +624,23 @@ export function PresetSlotsPanel({
     printer: PhysicalPrinter | null;
     system: MaterialSystem | null;
   }>({ open: false, gate: null, slot: null, printer: null, system: null });
+  const [addingSystem, setAddingSystem] = useState(false);
 
   const { data: physicalPrinters = [], isLoading: loadingPrinters } = useQuery({
     queryKey: ['physical-printers'],
     queryFn: physicalPrintersAPI.list,
-    staleTime: 60_000,
+    staleTime: 10_000,
+    // Someone who just pasted the key sits and waits for the printer to answer;
+    // they have no reason to guess that the page needs reloading.
+    refetchInterval: (query) => {
+      const printers = query.state.data ?? [];
+      const waiting = printers.some(
+        (printer) => printer.has_api_key
+          && printer.material_systems.some((system) => system.active)
+          && !printer.reports_feed,
+      );
+      return waiting ? 10_000 : false;
+    },
   });
 
   const { data: presetsPage } = useQuery({
@@ -387,6 +704,19 @@ export function PresetSlotsPanel({
     presetsMap[preset.id] = preset;
   });
 
+  const spoolCompatBaseUrl = useMemo(() => {
+    if (typeof window === 'undefined' || !window.location?.origin) {
+      return 'https://filamenthub.ru/api/v1/spool_compat';
+    }
+    return `${window.location.origin}/api/v1/spool_compat`;
+  }, []);
+
+  const handleSystemAdded = () => {
+    setAddingSystem(false);
+    void queryClient.invalidateQueries({ queryKey: ['physical-printers'] });
+    void queryClient.invalidateQueries({ queryKey: ['devices'] });
+  };
+
   const handleGateClick = (
     gate: GateState | null,
     slot: MaterialSlot,
@@ -414,12 +744,25 @@ export function PresetSlotsPanel({
     );
   }
 
-  if (materialSections.length === 0) {
+  const addButton = (
+    <button
+      type="button"
+      onClick={() => setAddingSystem(true)}
+      disabled={addingSystem}
+      className="inline-flex items-center gap-1.5 rounded-xl bg-purple-600 px-4 py-1.5 text-sm font-medium text-white transition hover:bg-purple-500 disabled:opacity-50"
+    >
+      <Plus className="h-4 w-4" />
+      {t('presetSlots.newSystem.add')}
+    </button>
+  );
+
+  if (materialSections.length === 0 && !addingSystem) {
     return (
       <div className="flex flex-col items-center justify-center rounded-2xl border border-dashed border-white/10 py-12 text-center">
         <Layers className="mb-4 h-12 w-12 text-gray-600" />
-        <h2 className="mb-2 text-lg font-semibold text-white">{t('presetSlots.noMaterialSystems')}</h2>
-        <p className="max-w-sm text-sm text-gray-500">{t('presetSlots.noMaterialSystemsDesc')}</p>
+        <h2 className="mb-2 text-lg font-semibold text-white">{t('presetSlots.noSystems')}</h2>
+        <p className="mb-4 max-w-sm text-sm text-gray-500">{t('presetSlots.noSystemsDesc')}</p>
+        {addButton}
       </div>
     );
   }
@@ -427,6 +770,14 @@ export function PresetSlotsPanel({
   return (
     <>
       <div className={compact ? 'space-y-4' : 'space-y-6'}>
+        <div className="flex justify-end">{addButton}</div>
+        {addingSystem && (
+          <NewSystemCard
+            printers={physicalPrinters}
+            spoolCompatBaseUrl={spoolCompatBaseUrl}
+            onDone={handleSystemAdded}
+          />
+        )}
         {materialSections.map(({ printer, system }) => (
           <MaterialSystemSection
             key={system.id}
@@ -434,6 +785,7 @@ export function PresetSlotsPanel({
             system={system}
             presetsSeedMap={presetsMap}
             spools={spools}
+            spoolCompatBaseUrl={spoolCompatBaseUrl}
             printerProfileName={printer.printer_profile_ids
               .map((profileId) => printerProfileNameById.get(profileId))
               .filter((name): name is string => name != null)

@@ -20,6 +20,7 @@ export default defineConfig({
       '/api': {
         target: proxyTarget,
         changeOrigin: true,
+        ws: true,
         timeout: 180000, // 3 минуты для длительных операций (миграции)
       },
       '/uploads': {

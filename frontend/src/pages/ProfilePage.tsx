@@ -1,7 +1,6 @@
 /** Страница профиля пользователя */
 
 import { lazy, Suspense, useState, useMemo, useEffect, useRef, type ReactNode } from 'react';
-import { useClickOutside } from '../hooks/useClickOutside';
 import { useTranslation } from 'react-i18next';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useNavigate, useLocation } from 'react-router-dom';
@@ -31,7 +30,6 @@ import {
   ChevronDown,
   ChevronUp,
   CheckCircle,
-  Copy,
   HelpCircle,
   X,
   BookOpen,
@@ -48,7 +46,7 @@ import {
 import { Printer3DIcon } from '../components/icons/Printer3DIcon';
 import { useAuth } from '../contexts/AuthContext';
 import { useHeaderVisible } from '../hooks/useHeaderVisible';
-import { presetsAPI, filamentsAPI, brandsAPI, savedPresetsAPI, filamentReviewsAPI, printerProfilesAPI, printProfilesAPI, authAPI, spoolsAPI, qrAPI, devicesAPI, presetSlotsAPI, printersAPI, calculatorAPI, crmAPI, physicalPrintersAPI } from '../api/client';
+import { presetsAPI, filamentsAPI, brandsAPI, savedPresetsAPI, filamentReviewsAPI, printerProfilesAPI, printProfilesAPI, authAPI, spoolsAPI, qrAPI, devicesAPI, presetSlotsAPI, calculatorAPI, crmAPI, physicalPrintersAPI } from '../api/client';
 import { extractQrShortCode, createQrFrameDecoder } from '../utils/qrScanner';
 import type { UserSpool, SpoolState, UserPrinterDevice } from '../api/client';
 import { SpoolIcon } from '../components/icons/SpoolIcon';
@@ -56,7 +54,6 @@ import { NozzleRequirementBadge } from '../components/NozzleRequirementBadge';
 import api from '../api/client';
 import { translateApiError } from '../utils/translateApiError';
 import { getSpoolCurrentLocation, getSpoolLastLocation } from '../utils/spoolLocation';
-import { getDeviceLinkState, useNow } from '../utils/deviceLink';
 import { notifyProfileChanged } from '../utils/pluginBridge';
 import { downloadBlob } from '../utils/download';
 const CreatePresetModal = lazy(() =>
@@ -2816,142 +2813,6 @@ interface SpoolsTabProps {
   initialSource?: 'manual' | 'qr';
 }
 
-const AddDeviceForm: React.FC<{
-  newDeviceName: string;
-  setNewDeviceName: (v: string) => void;
-  selectedPrinterId: number | null;
-  setSelectedPrinterId: (v: number | null) => void;
-  printerSearchQuery: string;
-  setPrinterSearchQuery: (v: string) => void;
-  isCreatingDevice: boolean;
-  handleCreateDevice: () => void;
-  ownPrinters: { id: number; name: string }[];
-  onIssueKey: (printerId: number) => void;
-  onCancel: () => void;
-}> = ({
-  newDeviceName, setNewDeviceName,
-  selectedPrinterId, setSelectedPrinterId,
-  printerSearchQuery, setPrinterSearchQuery,
-  isCreatingDevice, handleCreateDevice, ownPrinters, onIssueKey, onCancel,
-}) => {
-  const { t } = useTranslation();
-  const [showDropdown, setShowDropdown] = useState(false);
-  const printerFieldRef = useRef<HTMLDivElement>(null);
-  useClickOutside({ ref: printerFieldRef, isOpen: showDropdown, onClose: () => setShowDropdown(false) });
-
-  const { data: printersData } = useQuery({
-    queryKey: ['printers-for-device', printerSearchQuery],
-    queryFn: () => printersAPI.list({
-      active_only: true,
-      page: 1,
-      size: 20,
-      search: printerSearchQuery || undefined,
-    }),
-  });
-
-  const printers = printersData?.items || [];
-  const selectedPrinter = printers.find(p => p.id === selectedPrinterId);
-  const query = printerSearchQuery.trim().toLowerCase();
-  const matchingOwnPrinters = query
-    ? ownPrinters.filter((printer) => printer.name.toLowerCase().includes(query))
-    : ownPrinters;
-
-  return (
-    <div className="bg-black/20 border border-white/10 rounded-lg p-3 space-y-3">
-      {/* Printer selection */}
-      <div>
-        <p className="text-xs text-gray-400 mb-1">{t('profilePage.deviceSetup.selectPrinter')}</p>
-        <div className="relative" ref={printerFieldRef}>
-          <input
-            type="text"
-            value={selectedPrinterId ? (selectedPrinter ? `${selectedPrinter.manufacturer || ''} ${selectedPrinter.name}`.trim() : printerSearchQuery) : printerSearchQuery}
-            onChange={(e) => {
-              setPrinterSearchQuery(e.target.value);
-              setSelectedPrinterId(null);
-              setShowDropdown(true);
-            }}
-            onFocus={() => setShowDropdown(true)}
-            placeholder={t('profilePage.deviceSetup.searchPrinter')}
-            className="w-full rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 text-sm text-white placeholder-gray-600 focus:border-purple-500 focus:outline-none"
-          />
-          {showDropdown && (printers.length > 0 || matchingOwnPrinters.length > 0) && !selectedPrinterId && (
-            <div className="absolute z-10 w-full mt-1 max-h-64 overflow-y-auto bg-gray-800 border border-white/20 rounded-lg shadow-lg">
-              {matchingOwnPrinters.length > 0 && (
-                <>
-                  <p className="px-3 pt-2 text-[11px] font-medium uppercase tracking-wide text-gray-500">
-                    {t('profilePage.deviceSetup.ownPrinters')}
-                  </p>
-                  {matchingOwnPrinters.map((printer) => (
-                    <button
-                      key={`own-${printer.id}`}
-                      type="button"
-                      onClick={() => {
-                        setShowDropdown(false);
-                        onIssueKey(printer.id);
-                      }}
-                      className="w-full text-left px-3 py-2 text-sm text-white hover:bg-purple-600/30 transition-colors"
-                    >
-                      {printer.name}
-                    </button>
-                  ))}
-                  <p className="border-b border-white/10 px-3 pb-2 text-[11px] leading-snug text-gray-500">
-                    {t('profilePage.deviceSetup.ownPrintersHint')}
-                  </p>
-                </>
-              )}
-              {printers.map((printer) => (
-                <button
-                  key={printer.id}
-                  type="button"
-                  onClick={() => {
-                    setSelectedPrinterId(printer.id);
-                    setNewDeviceName(`${printer.manufacturer || ''} ${printer.name}`.trim());
-                    setPrinterSearchQuery('');
-                    setShowDropdown(false);
-                  }}
-                  className="w-full text-left px-3 py-2 text-sm text-gray-200 hover:bg-purple-600/30 transition-colors"
-                >
-                  <span className="text-gray-400">{printer.manufacturer}</span>{' '}
-                  <span className="text-white font-medium">{printer.name}</span>
-                </button>
-              ))}
-            </div>
-          )}
-        </div>
-      </div>
-      {/* Device name */}
-      <div>
-        <p className="text-xs text-gray-400 mb-1">{t('profilePage.deviceSetup.nameLabel')}</p>
-        <div className="flex gap-2">
-          <input
-            type="text"
-            value={newDeviceName}
-            onChange={(e) => setNewDeviceName(e.target.value)}
-            placeholder={t('profilePage.deviceSetup.namePlaceholder')}
-            maxLength={200}
-            className="flex-1 rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 text-sm text-white placeholder-gray-600 focus:border-purple-500 focus:outline-none"
-            onKeyDown={(e) => { if (e.key === 'Enter') handleCreateDevice(); }}
-          />
-          <button
-            onClick={handleCreateDevice}
-            disabled={isCreatingDevice || !newDeviceName.trim()}
-            className="inline-flex items-center gap-1.5 px-4 py-1.5 rounded-lg bg-purple-600 text-white text-sm font-medium transition-colors hover:bg-purple-500 disabled:opacity-50"
-          >
-            {isCreatingDevice && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
-            {t('profilePage.deviceSetup.create')}
-          </button>
-          <button
-            onClick={onCancel}
-            className="px-3 py-1.5 rounded-lg border border-white/10 text-gray-400 text-sm hover:bg-white/10"
-          >
-            {t('common.cancel')}
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-};
-
 const SpoolsTab: React.FC<SpoolsTabProps> = ({
   spools,
   printerProfiles,
@@ -2968,173 +2829,16 @@ const SpoolsTab: React.FC<SpoolsTabProps> = ({
   const [usingSpool, setUsingSpool] = useState<UserSpool | null>(null);
   const [busySpoolId, setBusySpoolId] = useState<number | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
-  const [setupError, setSetupError] = useState<string | null>(null);
-  const [isSetupOpen, setIsSetupOpen] = useState(false);
   const [isHelpOpen, setIsHelpOpen] = useState(false);
-  const [newDeviceName, setNewDeviceName] = useState('');
-  const [isCreatingDevice, setIsCreatingDevice] = useState(false);
-  const [showNewDeviceForm, setShowNewDeviceForm] = useState(false);
-  const [selectedPrinterId, setSelectedPrinterId] = useState<number | null>(null);
-  const [printerSearchQuery, setPrinterSearchQuery] = useState('');
-  const [revealedKeys, setRevealedKeys] = useState<Record<number, string>>({});
-  const [copiedDeviceId, setCopiedDeviceId] = useState<number | null>(null);
-  const [editingHostname, setEditingHostname] = useState<Record<number, string>>({});
-  const [savingHostname, setSavingHostname] = useState<number | null>(null);
-  const [regeneratingDeviceId, setRegeneratingDeviceId] = useState<number | null>(null);
-  const [deletingDeviceId, setDeletingDeviceId] = useState<number | null>(null);
-  const deviceLinkNow = useNow();
   const [deletingSpoolId, setDeletingSpoolId] = useState<number | null>(null);
 
-  const { data: devices = [], refetch: refetchDevices } = useQuery({
-    queryKey: ['devices'],
-    queryFn: devicesAPI.list,
-    staleTime: 60_000,
-  });
+  // the machines themselves live on the Printers tab.
 
-  const { data: physicalPrinters = [] } = useQuery({
-    queryKey: ['physical-printers'],
-    queryFn: physicalPrintersAPI.list,
-    staleTime: 60_000,
-  });
 
-  const printersWithoutKey = useMemo(
-    () => physicalPrinters
-      .filter((printer) => !devices.some((device) => device.id === printer.id))
-      .map((printer) => ({ id: printer.id, name: printer.name })),
-    [physicalPrinters, devices],
-  );
 
-  const spoolCompatBaseUrl = useMemo(() => {
-    if (typeof window === 'undefined' || !window.location?.origin) {
-      return 'https://filamenthub.ru/api/v1/spool_compat';
-    }
-    return `${window.location.origin}/api/v1/spool_compat`;
-  }, []);
 
-  const handleCopyConfig = async (apiKey: string, deviceId: number) => {
-    const endpoint = `${spoolCompatBaseUrl}/${apiKey}`;
-    const snippet = `[spoolman]\nserver: ${endpoint}\nsync_rate: 5`;
-    setSetupError(null);
-    try {
-      if (navigator.clipboard?.writeText) {
-        await navigator.clipboard.writeText(snippet);
-      } else {
-        const textarea = document.createElement('textarea');
-        textarea.value = snippet;
-        textarea.style.position = 'fixed';
-        textarea.style.opacity = '0';
-        document.body.appendChild(textarea);
-        textarea.focus();
-        textarea.select();
-        document.execCommand('copy');
-        textarea.remove();
-      }
-      setCopiedDeviceId(deviceId);
-      setTimeout(() => {
-        setCopiedDeviceId((prev) => (prev === deviceId ? null : prev));
-      }, 1800);
-    } catch {
-      setSetupError(t('profilePage.deviceSetup.copyFailed'));
-    }
-  };
 
-  const handleCreateDevice = async () => {
-    const name = newDeviceName.trim();
-    if (!name) return;
-    setSetupError(null);
-    setIsCreatingDevice(true);
-    try {
-      const result = await devicesAPI.createWithKey(name, selectedPrinterId || undefined);
-      setRevealedKeys((prev) => ({ ...prev, [result.device.id]: result.api_key }));
-      setNewDeviceName('');
-      setSelectedPrinterId(null);
-      setPrinterSearchQuery('');
-      setShowNewDeviceForm(false);
-      queryClient.invalidateQueries({ queryKey: ['devices'] });
-      await refetchDevices();
-    } catch (error: any) {
-      setSetupError(translateApiError(t, error?.response?.data?.detail));
-    } finally {
-      setIsCreatingDevice(false);
-    }
-  };
 
-  const handleRegenerateKey = (deviceId: number) => {
-    setRegeneratingDeviceId(deviceId);
-  };
-
-  const performRegenerateKey = async (deviceId: number) => {
-    setRegeneratingDeviceId(null);
-    setSetupError(null);
-    try {
-      const result = await devicesAPI.regenerateKey(deviceId);
-      setRevealedKeys((prev) => ({ ...prev, [deviceId]: result.api_key }));
-      queryClient.invalidateQueries({ queryKey: ['devices'] });
-    } catch (error: any) {
-      setSetupError(translateApiError(t, error?.response?.data?.detail));
-    }
-  };
-
-  const handleIssueKeyToOwnPrinter = async (printerId: number) => {
-    setSetupError(null);
-    setIsCreatingDevice(true);
-    try {
-      const result = await devicesAPI.regenerateKey(printerId);
-      setRevealedKeys((prev) => ({ ...prev, [printerId]: result.api_key }));
-      setNewDeviceName('');
-      setSelectedPrinterId(null);
-      setPrinterSearchQuery('');
-      setShowNewDeviceForm(false);
-      queryClient.invalidateQueries({ queryKey: ['devices'] });
-      queryClient.invalidateQueries({ queryKey: ['physical-printers'] });
-      await refetchDevices();
-    } catch (error: any) {
-      setSetupError(translateApiError(t, error?.response?.data?.detail));
-    } finally {
-      setIsCreatingDevice(false);
-    }
-  };
-
-  const handleSaveHostname = async (deviceId: number) => {
-    const hostname = (editingHostname[deviceId] ?? '').trim();
-    setSavingHostname(deviceId);
-    setSetupError(null);
-    try {
-      await devicesAPI.update(deviceId, { printer_hostname: hostname || null });
-      setEditingHostname((prev) => {
-        const next = { ...prev };
-        delete next[deviceId];
-        return next;
-      });
-      queryClient.invalidateQueries({ queryKey: ['devices'] });
-      await refetchDevices();
-    } catch (error: any) {
-      setSetupError(translateApiError(t, error?.response?.data?.detail));
-    } finally {
-      setSavingHostname(null);
-    }
-  };
-
-  const handleDeleteDevice = (deviceId: number) => {
-    setDeletingDeviceId(deviceId);
-  };
-
-  const performDeleteDevice = async (deviceId: number) => {
-    setDeletingDeviceId(null);
-    setSetupError(null);
-    try {
-      await devicesAPI.remove(deviceId);
-      setRevealedKeys((prev) => {
-        const next = { ...prev };
-        delete next[deviceId];
-        return next;
-      });
-      queryClient.invalidateQueries({ queryKey: ['devices'] });
-      await refetchDevices();
-    } catch (error: any) {
-      setSetupError(translateApiError(t, error?.response?.data?.detail));
-    }
-  };
 
   const handleDelete = (id: number) => {
     setDeletingSpoolId(id);
@@ -3214,16 +2918,6 @@ const SpoolsTab: React.FC<SpoolsTabProps> = ({
         </div>
         <div className="flex items-center gap-2">
           <button
-            onClick={() => setIsSetupOpen((prev) => !prev)}
-            className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg border border-white/20 text-gray-200 hover:bg-white/10 transition-colors text-sm"
-            title={isSetupOpen ? t('profilePage.spoolSetup.hide') : t('profilePage.spoolSetup.show')}
-          >
-            <Cog className="w-4 h-4" />
-            <span className="hidden sm:inline">
-              {isSetupOpen ? t('profilePage.spoolSetup.hide') : t('profilePage.spoolSetup.show')}
-            </span>
-          </button>
-          <button
             onClick={() => {
               setEditingSpool(null);
               setUsingSpool(null);
@@ -3249,170 +2943,6 @@ const SpoolsTab: React.FC<SpoolsTabProps> = ({
         </div>
       )}
 
-      {isSetupOpen && (
-        <div className="bg-white/10 backdrop-blur-sm border border-white/20 rounded-2xl p-4 md:p-5 space-y-4">
-          <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-            <div>
-              <h4 className="text-white font-semibold text-base md:text-lg">{t('profilePage.deviceSetup.title')}</h4>
-              <p className="text-gray-300 text-sm mt-1">{t('profilePage.deviceSetup.description')}</p>
-            </div>
-            <button
-              onClick={() => setShowNewDeviceForm(true)}
-              disabled={showNewDeviceForm}
-              className="inline-flex items-center justify-center gap-2 px-3 py-2 rounded-lg bg-purple-600/80 hover:bg-purple-600 text-white text-sm font-medium transition-colors disabled:opacity-60"
-            >
-              <Plus className="w-4 h-4" />
-              <span>{t('profilePage.deviceSetup.addPrinter')}</span>
-            </button>
-          </div>
-
-          {showNewDeviceForm && (
-            <AddDeviceForm
-              newDeviceName={newDeviceName}
-              setNewDeviceName={setNewDeviceName}
-              selectedPrinterId={selectedPrinterId}
-              setSelectedPrinterId={setSelectedPrinterId}
-              printerSearchQuery={printerSearchQuery}
-              setPrinterSearchQuery={setPrinterSearchQuery}
-              isCreatingDevice={isCreatingDevice}
-              handleCreateDevice={handleCreateDevice}
-              ownPrinters={printersWithoutKey}
-              onIssueKey={handleIssueKeyToOwnPrinter}
-              onCancel={() => {
-                setShowNewDeviceForm(false);
-                setNewDeviceName('');
-                setSelectedPrinterId(null);
-                setPrinterSearchQuery('');
-              }}
-            />
-          )}
-
-          {devices.length === 0 && !showNewDeviceForm && (
-            <div className="text-center py-6 text-gray-500 text-sm">
-              {t('profilePage.deviceSetup.noDevices')}
-            </div>
-          )}
-
-          {devices.map((device) => {
-            const apiKey = revealedKeys[device.id];
-            const endpoint = apiKey ? `${spoolCompatBaseUrl}/${apiKey}` : null;
-            const configSnippet = endpoint ? `[spoolman]\nserver: ${endpoint}\nsync_rate: 5` : null;
-            const linkState = getDeviceLinkState(device.last_seen_at, deviceLinkNow);
-            return (
-              <div key={device.id} className="bg-black/20 border border-white/10 rounded-lg p-3 space-y-2">
-                <div className="flex items-center justify-between gap-2">
-                  <div className="flex items-center gap-2">
-                    <span className="text-white font-medium text-sm">{device.name}</span>
-                    {linkState === 'active' ? (
-                      <span title={t('deviceLink.tooltip')} className="flex items-center gap-1 rounded-full bg-emerald-500/15 px-2 py-0.5 text-[11px] font-medium text-emerald-300">
-                        <Zap className="w-3 h-3" />
-                        {device.gate_count != null
-                          ? t('profilePage.deviceSetup.connectedGates', { count: device.gate_count })
-                          : t('profilePage.deviceSetup.connected')}
-                      </span>
-                    ) : linkState === 'never' ? (
-                      <span title={t('deviceLink.tooltip')} className="flex items-center gap-1 rounded-full bg-amber-500/15 px-2 py-0.5 text-[11px] font-medium text-amber-300">
-                        <Clock className="w-3 h-3" />
-                        {t('profilePage.deviceSetup.awaitingConnection')}
-                      </span>
-                    ) : (
-                      <span
-                        title={t('deviceLink.tooltip')}
-                        className={`flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium ${
-                          linkState === 'delayed' ? 'bg-amber-500/15 text-amber-300' : 'bg-white/10 text-gray-400'
-                        }`}
-                      >
-                        <Clock className="w-3 h-3" />
-                        {t(`deviceLink.${linkState}`)}
-                      </span>
-                    )}
-                  </div>
-                  <div className="flex items-center gap-1.5">
-                    <button
-                      onClick={() => handleRegenerateKey(device.id)}
-                      className="p-1.5 rounded-md text-gray-400 hover:text-white hover:bg-white/10 transition-colors"
-                      title={t('profilePage.deviceSetup.regenerateKey')}
-                    >
-                      <RefreshCw className="w-3.5 h-3.5" />
-                    </button>
-                    <button
-                      onClick={() => handleDeleteDevice(device.id)}
-                      className="p-1.5 rounded-md text-gray-400 hover:text-red-400 hover:bg-red-500/10 transition-colors"
-                      title={t('profilePage.deviceSetup.deleteDevice')}
-                    >
-                      <Trash2 className="w-3.5 h-3.5" />
-                    </button>
-                  </div>
-                </div>
-
-                <div className="flex items-center gap-2">
-                  <span className="text-xs text-gray-400">{t('profilePage.deviceSetup.hostnameLabel')}:</span>
-                  {editingHostname[device.id] !== undefined ? (
-                    <div className="flex items-center gap-1.5">
-                      <input
-                        type="text"
-                        value={editingHostname[device.id]}
-                        onChange={(e) => setEditingHostname((prev) => ({ ...prev, [device.id]: e.target.value }))}
-                        onKeyDown={(e) => { if (e.key === 'Enter') handleSaveHostname(device.id); }}
-                        className="bg-black/30 border border-white/20 rounded px-2 py-0.5 text-xs text-white w-32 focus:border-blue-500 focus:outline-none"
-                        placeholder="voron"
-                        autoFocus
-                      />
-                      <button
-                        onClick={() => handleSaveHostname(device.id)}
-                        disabled={savingHostname === device.id}
-                        className="text-xs text-blue-400 hover:text-blue-300"
-                      >
-                        {savingHostname === device.id ? '...' : '✓'}
-                      </button>
-                      <button
-                        onClick={() => setEditingHostname((prev) => { const n = { ...prev }; delete n[device.id]; return n; })}
-                        className="text-xs text-gray-500 hover:text-gray-300"
-                      >✕</button>
-                    </div>
-                  ) : (
-                    <button
-                      onClick={() => setEditingHostname((prev) => ({ ...prev, [device.id]: device.printer_hostname ?? '' }))}
-                      className="text-xs text-gray-300 hover:text-white transition-colors"
-                    >
-                      {device.printer_hostname || <span className="text-amber-400 italic">{t('profilePage.deviceSetup.hostnameNotSet')}</span>}
-                    </button>
-                  )}
-                </div>
-
-                {apiKey && configSnippet ? (
-                  <>
-                    <p className="text-xs text-gray-400">{t('profilePage.deviceSetup.configLabel')}</p>
-                    <pre className="text-xs md:text-sm text-gray-100 bg-black/30 rounded-md px-3 py-2 overflow-x-auto">{configSnippet}</pre>
-                    <button
-                      onClick={() => handleCopyConfig(apiKey, device.id)}
-                      className="inline-flex items-center justify-center gap-2 px-3 py-1.5 rounded-md border border-white/15 text-gray-200 hover:bg-white/10 transition-colors text-sm"
-                    >
-                      {copiedDeviceId === device.id ? <CheckCircle className="w-4 h-4 text-green-400" /> : <Copy className="w-4 h-4" />}
-                      <span>{copiedDeviceId === device.id ? t('profilePage.deviceSetup.copied') : t('profilePage.deviceSetup.copyConfig')}</span>
-                    </button>
-                    <p className="text-[11px] text-amber-300/80">{t('profilePage.deviceSetup.keyShownOnce')}</p>
-                  </>
-                ) : (
-                  <p className="text-xs text-gray-500">
-                    {device.has_api_key
-                      ? t('profilePage.deviceSetup.keyHidden')
-                      : t('profilePage.deviceSetup.noKey')}
-                  </p>
-                )}
-              </div>
-            );
-          })}
-
-          <div className="text-xs text-gray-400 space-y-1">
-            <p>{t('profilePage.deviceSetup.note')}</p>
-          </div>
-
-          {setupError && (
-            <p className="text-xs text-red-300 bg-red-500/10 border border-red-500/30 rounded-lg px-3 py-2">{setupError}</p>
-          )}
-        </div>
-      )}
 
       <div className="space-y-4 md:space-y-6">
         {isAddOpen && (
@@ -3559,24 +3089,6 @@ const SpoolsTab: React.FC<SpoolsTabProps> = ({
         )}
       </div>
 
-      <ConfirmModal
-        isOpen={regeneratingDeviceId !== null}
-        onClose={() => setRegeneratingDeviceId(null)}
-        onConfirm={() => {
-          if (regeneratingDeviceId !== null) void performRegenerateKey(regeneratingDeviceId);
-        }}
-        message={t('profilePage.deviceSetup.regenerateConfirm')}
-        variant="warning"
-      />
-
-      <ConfirmDeleteModal
-        isOpen={deletingDeviceId !== null}
-        onClose={() => setDeletingDeviceId(null)}
-        onConfirm={() => {
-          if (deletingDeviceId !== null) void performDeleteDevice(deletingDeviceId);
-        }}
-        message={t('profilePage.deviceSetup.deleteConfirm')}
-      />
 
       <ConfirmDeleteModal
         isOpen={deletingSpoolId !== null}

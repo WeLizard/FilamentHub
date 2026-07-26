@@ -150,9 +150,9 @@ async def assign_spool_to_gate(
     except IntegrityError:
         raise_error(409, ERR_SPOOL_LOCATION_CONFLICT)
 
-    from app.services.material_contract_service import ensure_legacy_material_contract
+    from app.services.material_contract_service import ensure_material_topology
 
-    await ensure_legacy_material_contract(db, device, gate_indices={gate_index})
+    await ensure_material_topology(db, device, gate_indices={gate_index})
 
     if displaced_spool_id is not None and displaced_spool_id != spool.id:
         displaced_result = await db.execute(

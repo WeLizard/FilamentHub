@@ -7,6 +7,7 @@ from httpx import AsyncClient
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.models.material_slot_assignment import MaterialSlotAssignment
 from app.models.material_system import MaterialSlot, MaterialSystem, PhysicalPrinterConnector
 from app.models.preset_gate_state import PresetGateState
 from app.models.printer import Printer
@@ -14,6 +15,7 @@ from app.models.printer_profile import PrinterProfile
 from app.models.user import User
 from app.models.user_printer_device import UserPrinterDevice
 from app.models.user_spool import UserSpool, UserSpoolState
+from app.services.material_contract_service import ensure_material_topology
 
 
 async def _profile(
@@ -445,5 +447,233 @@ async def test_manual_systems_with_same_provider_index_assign_by_slot_id(
         if slot["id"] == second_slot_id
     )
     assert cleared_slot["assignment"] is None
+    await db_session.refresh(spool)
+    assert spool.state == UserSpoolState.shelf
+
+
+@pytest.mark.asyncio
+async def test_reported_gate_fills_the_slots_below_it(
+    auth_client: AsyncClient,
+    auth_user: User,
+    db_session: AsyncSession,
+) -> None:
+    created = await auth_client.post(
+        "/api/v1/devices/create-with-key", json={"name": "ERCF"}
+    )
+    assert created.status_code == 200
+    device_id = created.json()["device"]["id"]
+
+    spool = UserSpool(
+        user_id=auth_user.id,
+        initial_weight_g=1000,
+        used_weight_g=0,
+        state=UserSpoolState.shelf,
+        source="manual",
+    )
+    db_session.add(spool)
+    await db_session.commit()
+    await db_session.refresh(spool)
+
+    assigned = await auth_client.patch(
+        f"/api/v1/preset-slots/{device_id}/4", json={"spool_id": spool.id}
+    )
+    assert assigned.status_code == 200
+
+    physical = await auth_client.get(f"/api/v1/physical-printers/{device_id}")
+    assert physical.status_code == 200
+    system = physical.json()["material_systems"][0]
+    assert [slot["provider_index"] for slot in system["slots"]] == [0, 1, 2, 3, 4]
+    assert system["declared_slot_count"] is None
+
+
+@pytest.mark.asyncio
+async def test_declared_slot_count_resizes_and_protects_occupied_slots(
+    auth_client: AsyncClient,
+    auth_user: User,
+    db_session: AsyncSession,
+) -> None:
+    created = await auth_client.post(
+        "/api/v1/devices/create-with-key", json={"name": "MMU", "gate_count": 2}
+    )
+    assert created.status_code == 200
+    device_id = created.json()["device"]["id"]
+
+    physical = await auth_client.get(f"/api/v1/physical-printers/{device_id}")
+    system = physical.json()["material_systems"][0]
+    assert system["declared_slot_count"] == 2
+
+    grown = await auth_client.patch(
+        f"/api/v1/physical-printers/{device_id}/material-systems/{system['id']}",
+        json={"slot_count": 5},
+    )
+    assert grown.status_code == 200
+    assert [
+        slot["provider_index"] for slot in grown.json()["material_systems"][0]["slots"]
+    ] == [0, 1, 2, 3, 4]
+
+    spool = UserSpool(
+        user_id=auth_user.id,
+        initial_weight_g=1000,
+        used_weight_g=0,
+        state=UserSpoolState.shelf,
+        source="manual",
+    )
+    db_session.add(spool)
+    await db_session.commit()
+    await db_session.refresh(spool)
+    assigned = await auth_client.patch(
+        f"/api/v1/preset-slots/{device_id}/4", json={"spool_id": spool.id}
+    )
+    assert assigned.status_code == 200
+
+    refused = await auth_client.patch(
+        f"/api/v1/physical-printers/{device_id}/material-systems/{system['id']}",
+        json={"slot_count": 3},
+    )
+    assert refused.status_code == 409
+    assert refused.json()["detail"]["code"] == "ERR_MATERIAL_SLOT_IN_USE"
+
+    shrunk = await auth_client.patch(
+        f"/api/v1/physical-printers/{device_id}/material-systems/{system['id']}",
+        json={"slot_count": 5},
+    )
+    assert shrunk.status_code == 200
+    assert shrunk.json()["material_systems"][0]["declared_slot_count"] == 5
+
+
+@pytest.mark.asyncio
+async def test_a_gate_beyond_the_declared_count_asks_the_question_again(
+    auth_client: AsyncClient,
+    auth_user: User,
+    db_session: AsyncSession,
+) -> None:
+    created = await auth_client.post(
+        "/api/v1/devices/create-with-key", json={"name": "MMU", "gate_count": 2}
+    )
+    assert created.status_code == 200
+    device_id = created.json()["device"]["id"]
+
+    device = await db_session.get(UserPrinterDevice, device_id)
+    assert device is not None
+    # Happy Hare reports gates over the Spoolman-compatible API, which is not
+    # bound by the legacy gate map the manual endpoint checks.
+    await ensure_material_topology(db_session, device, gate_indices={6})
+    await db_session.commit()
+
+    physical = await auth_client.get(f"/api/v1/physical-printers/{device_id}")
+    system = physical.json()["material_systems"][0]
+    assert system["declared_slot_count"] is None
+    assert len(system["slots"]) == 7
+
+
+@pytest.mark.asyncio
+async def test_deleting_a_system_returns_spools_and_keeps_the_printer(
+    auth_client: AsyncClient,
+    auth_user: User,
+    db_session: AsyncSession,
+) -> None:
+    created = await auth_client.post(
+        "/api/v1/devices/create-with-key", json={"name": "ERCF", "gate_count": 8}
+    )
+    assert created.status_code == 200
+    device_id = created.json()["device"]["id"]
+    system_id = (
+        await auth_client.get(f"/api/v1/physical-printers/{device_id}")
+    ).json()["material_systems"][0]["id"]
+
+    spool = UserSpool(
+        user_id=auth_user.id,
+        initial_weight_g=1000,
+        used_weight_g=0,
+        state=UserSpoolState.shelf,
+        source="manual",
+    )
+    db_session.add(spool)
+    await db_session.commit()
+    await db_session.refresh(spool)
+    assigned = await auth_client.patch(
+        f"/api/v1/preset-slots/{device_id}/3", json={"spool_id": spool.id}
+    )
+    assert assigned.status_code == 200
+    await db_session.refresh(spool)
+    assert spool.state == UserSpoolState.active
+
+    removed = await auth_client.delete(
+        f"/api/v1/physical-printers/{device_id}/material-systems/{system_id}"
+    )
+    assert removed.status_code == 200
+    assert removed.json()["material_systems"] == []
+    assert removed.json()["has_api_key"] is True
+
+    assert (await db_session.execute(select(MaterialSlot))).scalars().all() == []
+    assert (
+        await db_session.execute(select(MaterialSlotAssignment))
+    ).scalars().all() == []
+    assert (
+        await db_session.execute(
+            select(PresetGateState).where(PresetGateState.device_id == device_id)
+        )
+    ).scalars().all() == []
+
+    await db_session.refresh(spool)
+    assert spool.state == UserSpoolState.shelf
+
+
+@pytest.mark.asyncio
+async def test_manual_system_spools_are_shelved_and_protected_like_legacy_ones(
+    auth_client: AsyncClient,
+    auth_user: User,
+    db_session: AsyncSession,
+) -> None:
+    printer = await auth_client.post(
+        "/api/v1/physical-printers", json={"name": "AMS printer"}
+    )
+    printer_id = printer.json()["id"]
+    created = await auth_client.post(
+        f"/api/v1/physical-printers/{printer_id}/material-systems",
+        json={
+            "name": "AMS",
+            "kind": "mmu",
+            "provider": "manual",
+            "capabilities": [],
+            "slots": [{"provider_index": index} for index in range(4)],
+        },
+    )
+    assert created.status_code == 201
+    system = created.json()["material_systems"][0]
+    last_slot_id = system["slots"][3]["id"]
+
+    spool = UserSpool(
+        user_id=auth_user.id,
+        initial_weight_g=1000,
+        used_weight_g=0,
+        state=UserSpoolState.shelf,
+        source="manual",
+    )
+    db_session.add(spool)
+    await db_session.commit()
+    await db_session.refresh(spool)
+
+    assigned = await auth_client.patch(
+        f"/api/v1/physical-printers/{printer_id}/material-slots/{last_slot_id}",
+        json={"spool_id": spool.id},
+    )
+    assert assigned.status_code == 200
+    await db_session.refresh(spool)
+    assert spool.state == UserSpoolState.active
+
+    shrunk = await auth_client.patch(
+        f"/api/v1/physical-printers/{printer_id}/material-systems/{system['id']}",
+        json={"slot_count": 2},
+    )
+    assert shrunk.status_code == 409
+    assert shrunk.json()["detail"]["code"] == "ERR_MATERIAL_SLOT_IN_USE"
+
+    removed = await auth_client.delete(
+        f"/api/v1/physical-printers/{printer_id}/material-systems/{system['id']}"
+    )
+    assert removed.status_code == 200
+    assert removed.json()["material_systems"] == []
+
     await db_session.refresh(spool)
     assert spool.state == UserSpoolState.shelf

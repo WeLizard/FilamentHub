@@ -29,16 +29,98 @@
     "subtitle": "Save estimates as versioned quotes, track the customer's decision, and move accepted proposals into production.",
     "newCalculation": "New estimate",
     "search": "Number, order, or customer…",
-    "locked": { "title": "Order workflow is part of Calculator Pro", "description": "Start the calculator trial to save customers, quote versions, and production orders.", "action": "Open calculator" },
-    "metrics": { "awaiting": "Awaiting decision", "accepted": "Accepted quotes", "activeOrders": "In progress", "customers": "Customers" },
-    "tabs": { "quotes": "Commercial proposals", "quotesShort": "Quotes", "orders": "Orders", "customers": "Customers" },
-    "feedback": { "quoteStatus": "Quote status updated", "quoteCustomer": "Quote customer updated", "orderStatus": "Order stage updated", "customerSaved": "Customer saved", "linkCopied": "Quote link copied", "noDocument": "This quote version has no document yet", "error": "The action could not be completed" },
-    "quotes": { "emptyTitle": "No saved quotes yet", "emptyText": "Calculate a print, open the commercial proposal, and save it to the workspace.", "customer": "Customer", "noCustomer": "No customer assigned", "validUntil": "Valid until", "positions": "lines", "amount": "Proposal amount", "positionsTitle": "Current version lines", "history": "Activity", "versions": "Quote versions" },
-    "orders": { "emptyTitle": "Orders appear after quote acceptance", "emptyText": "When a customer accepts a proposal, FilamentHub creates a linked production order.", "amount": "Amount", "dueDate": "Due date", "fromQuote": "Created from an accepted quote" },
-    "customers": { "add": "Add customer", "emptyTitle": "Add your first customer", "emptyText": "Contacts are stored separately while each quote keeps its own immutable party snapshot.", "archive": "Archive customer", "noContacts": "No contact details", "inn": "Tax ID", "cardLabel": "Customer card", "createTitle": "New customer", "editTitle": "Edit customer", "name": "Name or company", "contactName": "Contact person", "phone": "Phone", "email": "Email", "address": "Address", "note": "Note" },
-    "actions": { "save": "Save", "cancel": "Cancel", "pdf": "Download PDF", "share": "Copy link" },
-    "status": { "quote": { "draft": "Draft", "sent": "Sent", "accepted": "Accepted", "rejected": "Rejected", "expired": "Expired" }, "order": { "new": "New", "planned": "Planned", "in_production": "In production", "ready": "Ready", "completed": "Completed", "cancelled": "Cancelled" } },
-    "events": { "created": "Quote created", "version_created": "Quote version created", "status_changed": "Status changed", "customer_changed": "Customer changed", "shared": "Public link created" }
+    "locked": {
+      "title": "Order workflow is part of Calculator Pro",
+      "description": "Start the calculator trial to save customers, quote versions, and production orders.",
+      "action": "Open calculator"
+    },
+    "metrics": {
+      "awaiting": "Awaiting decision",
+      "accepted": "Accepted quotes",
+      "activeOrders": "In progress",
+      "customers": "Customers"
+    },
+    "tabs": {
+      "quotes": "Commercial proposals",
+      "quotesShort": "Quotes",
+      "orders": "Orders",
+      "customers": "Customers"
+    },
+    "feedback": {
+      "quoteStatus": "Quote status updated",
+      "quoteCustomer": "Quote customer updated",
+      "orderStatus": "Order stage updated",
+      "customerSaved": "Customer saved",
+      "linkCopied": "Quote link copied",
+      "noDocument": "This quote version has no document yet",
+      "error": "The action could not be completed"
+    },
+    "quotes": {
+      "emptyTitle": "No saved quotes yet",
+      "emptyText": "Calculate a print, open the commercial proposal, and save it to the workspace.",
+      "customer": "Customer",
+      "noCustomer": "No customer assigned",
+      "validUntil": "Valid until",
+      "positions": "lines",
+      "amount": "Proposal amount",
+      "positionsTitle": "Current version lines",
+      "history": "Activity",
+      "versions": "Quote versions"
+    },
+    "orders": {
+      "emptyTitle": "Orders appear after quote acceptance",
+      "emptyText": "When a customer accepts a proposal, FilamentHub creates a linked production order.",
+      "amount": "Amount",
+      "dueDate": "Due date",
+      "fromQuote": "Created from an accepted quote"
+    },
+    "customers": {
+      "add": "Add customer",
+      "emptyTitle": "Add your first customer",
+      "emptyText": "Contacts are stored separately while each quote keeps its own immutable party snapshot.",
+      "archive": "Archive customer",
+      "noContacts": "No contact details",
+      "inn": "Tax ID",
+      "cardLabel": "Customer card",
+      "createTitle": "New customer",
+      "editTitle": "Edit customer",
+      "name": "Name or company",
+      "contactName": "Contact person",
+      "phone": "Phone",
+      "email": "Email",
+      "address": "Address",
+      "note": "Note"
+    },
+    "actions": {
+      "save": "Save",
+      "cancel": "Cancel",
+      "pdf": "Download PDF",
+      "share": "Copy link"
+    },
+    "status": {
+      "quote": {
+        "draft": "Draft",
+        "sent": "Sent",
+        "accepted": "Accepted",
+        "rejected": "Rejected",
+        "expired": "Expired"
+      },
+      "order": {
+        "new": "New",
+        "planned": "Planned",
+        "in_production": "In production",
+        "ready": "Ready",
+        "completed": "Completed",
+        "cancelled": "Cancelled"
+      }
+    },
+    "events": {
+      "created": "Quote created",
+      "version_created": "Quote version created",
+      "status_changed": "Status changed",
+      "customer_changed": "Customer changed",
+      "shared": "Public link created"
+    }
   },
   "errorBoundary": {
     "title": "Something went wrong",
@@ -116,6 +198,7 @@
     "error_account_locked": "Account is locked. Please contact support.",
     "error_server_error": "Server error. Please try again later or contact support.",
     "error_no_connection": "Could not connect to the server. Check your internet connection.",
+    "error_legal_documents_unavailable": "The current documents could not be loaded. Refresh the page and try again.",
     "or_via": "or via",
     "yandex": "Yandex",
     "title": "Log in to access your personal account",
@@ -140,10 +223,24 @@
     "password_tip": "Minimum 8 characters, including uppercase and lowercase letters, and numbers",
     "label_confirm_password": "Confirm password",
     "passwords_match": "✓ Passwords match",
+    "accept_terms": "I accept the",
+    "accept_personal_data": "I separately consent to",
+    "privacy_notice": "For details about data processing, see the",
     "agree_terms_1": "I accept the",
     "agree_terms_user_agreement": "Terms of Service",
     "agree_terms_2": "and consent to the",
     "agree_terms_personal_data": "processing of personal data"
+  },
+  "legalOnboarding": {
+    "title": "Finish setting up your account",
+    "description": "Before using personal features, separately accept the current terms and consent to personal data processing.",
+    "acceptTerms": "I accept the",
+    "acceptPersonalData": "I separately consent to",
+    "privacyNote": "How FilamentHub processes data is described in the",
+    "continue": "Continue",
+    "logout": "Sign out",
+    "loadError": "The current documents could not be loaded. Refresh the page and try again.",
+    "submitError": "Your choice could not be saved. Try again."
   },
   "forgotPasswordModal": {
     "title": "Password Recovery",
@@ -213,20 +310,20 @@
   "termsPage": {
     "backHome": "Back to Home",
     "title": "Terms of Service",
-    "lastUpdated": "Last updated: March 2026",
+    "lastUpdated": "Last updated: July 25, 2026",
     "sections": {
       "subject": {
         "title": "1. Subject of the Agreement",
         "paragraphs": [
           "1.1. Kuzmin I.I., an individual applying the special tax regime “Tax on Professional Income” (NPD taxpayer) (hereinafter referred to as the Administration), grants the user of the information and telecommunications network Internet (hereinafter referred to as the User) the possibility to use the Service on the terms set out in this user agreement (hereinafter referred to as the Agreement). The Service may be used by legal entities and individuals who have reached the age of 14.",
-          "1.2. The Administration grants the User the possibility to use the Service free of charge."
+          "1.2. The public catalogue and core Service features are provided free of charge. Additional professional tools may be offered for a fee under separately disclosed terms."
         ]
       },
       "general": {
         "title": "2. General Provisions",
         "paragraphs": [
-          "2.1. The Agreement is a public offer in accordance with Article 437 of the Civil Code of the Russian Federation. Registration in the Service and use of the Service, including each access to the pages of the Site by any means, constitutes the User’s full and unconditional acceptance of the Agreement.",
-          "2.2. The current version of the Agreement is available at <agreementLink>/user-agreement</agreementLink>. The Agreement may be amended by the Administration without special notice by posting a new version of the Agreement at the same address. The new version of the Agreement enters into force from the moment it is posted on the Internet, unless otherwise provided in the new version of the Agreement.",
+          "2.1. The Agreement is a public offer under Article 437 of the Civil Code of the Russian Federation. The User accepts it through an explicit confirmation during registration or in a mandatory step after authentication. Merely viewing public Site pages does not constitute acceptance.",
+          "2.2. The current Agreement is available at <agreementLink>/user-agreement</agreementLink>. If the terms change materially, the Administration may request a new explicit confirmation before personal Service features can be used again.",
           "2.3. A User who does not agree, in whole or in part, with the terms of the current version of the Agreement must cease any use of the Service.",
           "2.4. Violation of the terms of the Agreement by the User may result in termination of access to the Account or deletion of such User’s Account, as well as full or partial deletion of Content or restriction of access to it without prior notice."
         ]
@@ -236,14 +333,14 @@
         "items": {
           "authorization": "<strong>Authorization</strong> means the process by which the software part of the Service analyzes the Authentication Data entered by the User, as a result of which the User is granted access to the Account.",
           "account": "<strong>Account</strong> means the User’s account containing Authentication Data and other data provided by the User in the course of using the Service.",
-          "authData": "<strong>Authentication Data</strong> means unique means of identifying the User (login and password) used for Authorization.",
-          "content": "<strong>Content</strong> means the User’s information on the Service, including information specified during Registration, information about 3D printing materials, settings presets, as well as information sent in private messages.",
-          "profile": "<strong>Profile</strong> means a publicly accessible page automatically created on the Service upon Registration, containing all data specified by the User during Registration, as well as when further changing or supplementing the Account data, except for the password and Registration address.",
+          "authData": "<strong>Authentication Data</strong> means data used to access the Account: an email address or username and password, or an identifier received from an available third-party authentication service.",
+          "content": "<strong>Content</strong> means materials published or uploaded by the User, including information about 3D-printing materials, presets and profiles, reviews, images, and documents voluntarily submitted through Service features.",
+          "profile": "<strong>Profile</strong> means the representation of an Account within the Service. Only fields and Content supported by the Service and selected or published by the User are public; private Account data is not displayed publicly.",
           "paidServices": "<strong>Paid Services</strong> means additional services that are not the subject of this Agreement, provided to the User by Kuzmin I.I., an NPD taxpayer, under a separate agreement concluded between the User and Kuzmin I.I.",
           "registration": "<strong>Registration</strong> means the User’s actions to create an Account according to the procedure established by the Administration. During Registration, the User must specify Authentication Data and may also specify other optional information that the User considers necessary.",
           "site": "<strong>Site</strong> means the site on the information and telecommunications network Internet identified by the domain name FilamentHub.",
           "service": "<strong>Service</strong> means the FilamentHub Service that provides Users with the ability to manage 3D printing materials, settings presets, calculate printing costs, and use other functionality offered by the Administration.",
-          "moderator": "<strong>Moderator</strong> means a User to whom the owner of a community on the Service has granted access to special functionality for community management."
+          "moderator": "<strong>Moderator</strong> means a person authorized by the Administration to review and manage Content within the powers granted to them."
         }
       },
       "registration": {
@@ -251,19 +348,19 @@
         "paragraphs": [
           "4.1. A number of Service functions, including creating presets and managing materials, are available to the User only after Registration.",
           "4.2. For Registration, the User provides the information specified by the registration form. If the Administration has grounds to believe that the information provided by the User is not reliable and up to date, the Administration may, at its discretion, terminate access to the User’s Account or delete the Account.",
-          "4.3. After filling out the Registration form, the User must confirm Registration according to the instructions sent by the Administration to the email address specified by the User during Registration (Registration address).",
+          "4.3. The Administration may require email verification for specific features, data changes, account recovery, or Account security.",
           "4.4. The Administration may, at its discretion, prohibit the use of certain logins and also establish requirements for the login and password (number of characters, acceptable symbols, etc.). If the use of words (letter combinations) as logins is detected and such words may be regarded as affecting the rights and legitimate interests of the Administration and/or third parties, the Administration may, at its discretion, delete the User’s Account or restrict access to it until the User’s login is brought into compliance with the Administration’s requirements.",
-          "4.5. As a result of Registration, the User’s Account and the User’s Profile are created.",
+          "4.5. Registration creates the User’s Account. Public display of particular details depends on the User’s actions and the settings of the relevant features.",
           "4.6. The User is responsible for the security (resistance to brute-force attacks) of the Authentication Data chosen by the User and for its confidentiality.",
           "4.7. The User is responsible for all actions performed using the User’s Authentication Data. All actions performed after Authorization using the User’s Authentication Data are deemed to have been performed by the User, except when the User, in the manner provided by the Agreement, has previously notified the Administration of the possibility of unauthorized access and/or of any violation (suspected violation) of the confidentiality of the User’s Authentication Data.",
           "4.8. The User is responsible for possible loss or distortion of data, as well as other consequences of any nature that may occur due to the User’s violation of the provisions of the Agreement.",
-          "4.9. The User may obtain access to additional Service functions using the User’s Google or Yandex account (Third-Party Account) for Authorization. The functionality available via the Third-Party Account may be limited compared to the functionality of the Account. Information about data processing when using third-party authorization services is set out in the Privacy Policy."
+          "4.9. Where a method is available under technical and applicable legal restrictions, the User may authenticate through Google or Yandex (Third-Party Account). Information about data processing when using third-party authentication services is set out in the Privacy Policy."
         ]
       },
       "userData": {
         "title": "5. User Data",
         "paragraphs": [
-          "5.1. By registering an Account, the User gives consent to the Administration for processing, that is, performing the following actions: processing (including collection, systematization, accumulation, storage, clarification (updating, modification), use, depersonalization, blocking, destruction) of the User’s personal data in accordance with this Agreement and the Privacy Policy.",
+          "5.1. Consent to personal data processing is given by the User through a separate explicit action and is not deemed given merely by accepting this Agreement or viewing the Site. The Privacy Policy describes the applicable data-processing practices.",
           "5.2. When applying for access to the manufacturer’s cabinet, the User may provide data related to the brand or legal entity represented by the User. Such data is processed in accordance with the Consent to Personal Data Processing and is used exclusively for the purposes of verification and operation of the manufacturer’s cabinet.",
           "Detailed information about consent to the processing of personal data is available on the <consentTextLink>consent to personal data processing</consentTextLink> page (<consentPathLink>/personal-data-consent</consentPathLink>)."
         ]
@@ -274,8 +371,8 @@
         "adminParagraph": "6.1.1. The Administration reserves the right to delete an Account if the User has not accessed the Account for more than 6 consecutive months or access has been restricted for the same period due to violation of the Agreement.",
         "userTitle": "6.2. Termination of the Account by the User",
         "userParagraphs": [
-          "6.2.2. The User may initiate deletion of the Account independently through the personal account interface, or request deletion through the feedback form or by sending a notice to the email address admin@filamenthub.ru. When the Account is deleted, access to it is terminated, and other Users lose access to the Content.",
-          "6.2.3. After confirmation of the deletion request, all of the User’s personal data and Content posted using the Account are deleted in full, except for data subject to storage in accordance with the requirements of the legislation of the Russian Federation."
+          "6.2.2. The User may initiate Account deletion through the personal account interface or request it through the feedback form or at support@filamenthub.ru. Access to the Account ends after deletion. Public, official, or community-used Content may remain without a link to the deleted Account where needed for catalogue integrity and lawful operation of the Service.",
+          "6.2.3. Identifying and private data is deleted or anonymized within the time required by applicable law and the technically necessary process. Certain records may be retained longer where a lawful basis exists, including compliance, security, and dispute resolution. Details are provided in the Privacy Policy."
         ]
       },
       "content": {
@@ -285,7 +382,7 @@
           "7.1.1. Guarantees to the Administration that the Content and the conditions of its placement comply with the requirements of applicable law, and that the User has obtained all rights and permissions necessary for posting the Content;",
           "7.1.2. With respect to Content that is the result of intellectual activity, grants the Administration a non-exclusive (simple) license to use the Content for the purposes of providing the Service by reproducing the Content and making the Content available to the public for the entire period during which the Content is posted on the Service.",
           "7.2. The User is prohibited from:",
-          "7.3. All claims related to Content must be sent to the Administration using the feedback form or by sending a notice to the email address admin@filamenthub.ru"
+          "7.3. All claims related to Content must be sent to the Administration using the feedback form or by sending a notice to the email address support@filamenthub.ru"
         ],
         "prohibitedActions": [
           "registering as a User on behalf of another person;",
@@ -322,7 +419,7 @@
           "10.2. The Administration may at any time change the method, type, and amount of advertising placed on the Service.",
           "10.3. The User’s participation in promotions and events advertised on the Service, as well as the User’s purchase of goods, works, or services advertised on the Service, gives rise to rights and obligations exclusively between the User and the person selling the relevant goods, works, or services or conducting the promotion or event.",
           "10.4. Posting advertising Content on the Service by the User (or a promise to make such posting) does not create any obligations for the Administration.",
-          "10.5. The Administration sends the User exclusively service (transactional) messages related to the operation of the Service (email confirmation, password reset, system notifications). Advertising and marketing mailings are not carried out."
+          "10.5. The Administration may send service and transactional messages needed for Account operation, security, support, and actions requested by the User. Informational or marketing messages are sent only where an applicable legal basis exists and an opt-out is provided when required by law."
         ]
       },
       "final": {
@@ -331,7 +428,7 @@
           "11.1. Proper addresses for sending legally significant notices are:",
           "11.1.1. for the Administration:",
           "11.1.1.1. for notices related to Content: the feedback form,",
-          "11.1.1.2. for other notices: admin@filamenthub.ru",
+          "11.1.1.2. for other notices: support@filamenthub.ru",
           "11.1.2. for the User: the Registration address.",
           "11.2. All disputes arising out of the Agreement and/or related to the Service and Content may be referred to a court after the Parties have taken measures for pre-trial settlement of the dispute upon expiration of 30 calendar days from the date of sending a claim (demand) to the addresses specified in clause 11.1 of the Agreement.",
           "11.3. If the dispute is not settled within the period specified in clause 11.2, the dispute may be referred to a court at the location of the Administration."
@@ -342,8 +439,8 @@
   "consentPage": {
     "backHome": "Back to Home",
     "title": "Consent to Personal Data Processing",
-    "lastUpdated": "Last updated: March 2026",
-    "intro": "Acting freely, of my own will and in my own interest, and also confirming my legal capacity, the individual gives consent to Kuzmin I.I., an individual applying the special tax regime “Tax on Professional Income” (NPD taxpayer), contact email address: admin@filamenthub.ru (hereinafter referred to as the Operator), to process personal data under the following conditions:",
+    "lastUpdated": "Last updated: July 25, 2026",
+    "intro": "Acting freely, of my own will and in my own interest, and confirming my legal capacity, I give Kuzmin I.I., an individual applying the special tax regime “Tax on Professional Income” (NPD taxpayer), contact email: support@filamenthub.ru (the Operator), consent to process my personal data through a separate explicit action under the following conditions:",
     "sections": {
       "general": {
         "title": "1. General Provisions",
@@ -355,10 +452,14 @@
           "email": "Email address;",
           "nickname": "Nickname (username);",
           "fullName": "Full name (only if voluntarily provided by the User in the profile or when contacting the Operator);",
-          "profileData": "Other profile data that the User provides voluntarily (for example, the “about me” field);",
+          "profileData": "Other profile data voluntarily provided by the User (for example, the “about me” field, avatar, and country selected for regional features);",
+          "oauthData": "Data received from the authentication service selected by the User: account identifier, email address, name, and other information within the permissions granted;",
+          "accountData": "Personal library and selected Service feature data: spools, printers, material systems, presets, profiles, calculations, and history of related actions;",
+          "publishedContent": "Reviews, ratings, profiles, and other community materials published by the User where they are linked to the User’s nickname or another identifier;",
+          "supportCorrespondence": "Requests to and correspondence with the Operator, including addresses, message content, delivery metadata, and attachments submitted by the User;",
           "brandVerificationIntro": "Data provided when applying for verification as a representative of a brand or manufacturer:",
           "brandVerificationNote": "The specified data is processed exclusively for the purposes of verifying the User’s authority and administering the manufacturer’s cabinet. Brand data does not relate to the User’s personal data, but is provided by the User voluntarily and with the User’s consent.",
-          "technicalData": "Technical data processed when using the service: IP address, user-agent, date and time of requests, service technical identifiers.",
+          "technicalData": "Technical data processed when using the Service: IP address, the current network connection country derived from it, user-agent, request date and time, and service technical identifiers. The connection country is used only to select available sign-in methods and security measures and is not treated as citizenship or profile country.",
           "syncSettings": "Printing settings transmitted when using the synchronization function: material presets, printer profiles, print profiles, and related technical parameters (temperatures, speeds, flow ratios, etc.)."
         },
         "brandVerificationItems": [
@@ -374,8 +475,9 @@
         "paragraph": "2.1. The purpose of personal data processing is registration of the user on the FilamentHub website, provision of services, as well as verification of the User as an official representative of a brand or manufacturer of 3D printing materials in accordance with the <agreementTextLink>Terms of Service</agreementTextLink> (<agreementPathLink>/user-agreement</agreementPathLink>), including:",
         "items": [
           "Maintaining prompt communication with the User;",
-          "Simplifying communication among Users of the Service;",
+          "Operating the personal account, material library, print profiles, regional features, and Service integrations;",
           "Sending service (transactional) notifications to the User (email confirmation, password reset, system notifications);",
+          "Selecting available sign-in methods and registration safeguards based on the current network connection country;",
           "Ensuring the security of using the Service;",
           "Improving the quality of the services provided;",
           "Statistics and analytics of Service usage."
@@ -404,17 +506,17 @@
       "term": {
         "title": "4. Term of Consent",
         "paragraphs": [
-          "4.1. Personal data is processed until the user deletes the personal account on the website.",
-          "4.2. The User’s consent to the processing of personal data is valid indefinitely until the consent is withdrawn.",
-          "4.3. In the event of withdrawal of consent, the Operator terminates the processing of personal data and destroys it within no more than 7 days from the date of receipt of the withdrawal (when deleted independently through the personal account interface) or 30 days upon request through the feedback form or postal notice, unless otherwise provided by an agreement to which the personal data subject is a party or by another agreement between the Operator and the personal data subject."
+          "4.1. Personal data is processed while the Account is used and afterwards only to the extent necessary for the stated purposes or required by law.",
+          "4.2. Consent remains valid until the processing purposes are achieved, the Account is deleted, or consent is withdrawn, whichever occurs first, unless another lawful basis permits or requires continued processing.",
+          "4.3. After consent is withdrawn, the Operator stops processing based specifically on consent and deletes or anonymizes the relevant data within the period required by applicable law. Processing may continue only where another lawful basis exists."
         ]
       },
       "revocation": {
         "title": "5. Procedure for Withdrawal of Consent",
         "paragraphs": [
-          "5.1. Consent may be withdrawn by the personal data subject or the subject’s representative by sending an application to the Operator at the email address: admin@filamenthub.ru.",
+          "5.1. Consent may be withdrawn by the personal data subject or the subject’s representative by sending an application to the Operator at the email address: support@filamenthub.ru.",
           "5.2. The application for withdrawal of consent must contain the following information:",
-          "5.3. After receipt of the withdrawal application, the Operator terminates the processing of personal data and deletes personal data in accordance with clause 4.3 of this Consent."
+          "5.3. After receiving the request, the Operator acts under clause 4.3 of this Consent and applicable law. Withdrawal may make continued use of personal Account features impossible."
         ],
         "items": [
           "The email address to which the account was registered;",
@@ -426,23 +528,23 @@
       "protection": {
         "title": "6. Protection of Personal Data",
         "paragraphs": [
-          "6.1. To ensure the functionality of the Service, the Operator engages the following third-party services to which personal data is transferred to the minimum extent necessary: Google OAuth and Yandex OAuth (authorization), Google reCAPTCHA v3 (bot protection), Resend (delivery of service emails). Detailed information about third-party services and cross-border data transfer is set out in the Privacy Policy.",
+          "6.1. For specific features, the Operator may engage third-party services for authentication, abuse prevention, email delivery, and technical infrastructure. Only data necessary for the selected feature is provided; material information about these recipient categories and possible processing abroad is set out in the Privacy Policy.",
           "6.2. The Operator takes necessary legal, organizational, and technical measures to protect personal data from unauthorized or accidental access, destruction, modification, blocking, copying, provision, distribution, and from other unlawful actions in relation to personal data.",
-          "6.3. The Operator guarantees the confidentiality of personal data and does not disclose it without the consent of the personal data subject, except as provided by the legislation of the Russian Federation."
+          "6.3. The Operator maintains the confidentiality of personal data and limits disclosure to cases with a lawful basis or those necessary for a feature selected by the User."
         ]
       },
       "cookies": {
         "title": "7. Notice on the Use of Cookies",
         "paragraphs": [
-          "7.1. The Operator collects data that does not relate to information identifying the User’s identity and that becomes available as a result of the client’s use of the Website.",
-          "7.2. The Operator uses cookies to ensure the operation of certain Website functions, including:",
-          "7.3. The User may disable the use of cookies in the browser settings; however, this may lead to limited functionality of the site."
+          "7.1. The Website uses necessary cookies and similar technical identifiers to perform actions requested by the User and to provide authentication, security, and selected features.",
+          "7.2. These functions include:",
+          "7.3. The current network connection country is determined server-side from the IP address and does not itself set cookies. The User may disable cookies in browser settings, but authentication and some Website features may then become unavailable."
         ],
         "items": [
           "User authorization;",
           "Saving user settings;",
-          "Visit analytics;",
-          "Improving site functionality."
+          "Session protection and abuse prevention;",
+          "Operation of Website features selected by the User."
         ]
       },
       "rights": {
@@ -459,12 +561,12 @@
       "contacts": {
         "title": "9. Contact Information",
         "paragraphs": [
-          "9.1. For all matters related to the processing of personal data, the personal data subject may contact the Operator at the email address: admin@filamenthub.ru.",
+          "9.1. For all matters related to the processing of personal data, the personal data subject may contact the Operator at the email address: support@filamenthub.ru.",
           "9.2. The Terms of Service are available on the <agreementTextLink>Terms of Service</agreementTextLink> page (<agreementPathLink>/user-agreement</agreementPathLink>)."
         ]
       }
     },
-    "confirmation": "By confirming registration on the FilamentHub website, the User confirms that the User has read the terms of this Consent to Personal Data Processing and fully accepts them."
+    "confirmation": "Consent is given through a separate affirmative action during registration or in a mandatory step after authentication. Accepting the Terms of Service or merely viewing the Site does not replace that action."
   },
   "deletedPresetsModal": {
     "title": "Presets deleted in OrcaSlicer",
@@ -562,6 +664,23 @@
     "alert_rejection_reason_required": "Please provide a rejection reason"
   },
   "adminDatabase": {
+    "diag": {
+      "note": "Read-only. Schema and data changes are done on the server (psql/ops), not via the web.",
+      "tab": "Diagnostics",
+      "migrations": "Migrations",
+      "current": "Current",
+      "applied": "applied",
+      "pending": "pending",
+      "integrity": "Integrity",
+      "integrityOk": "Schema matches the models.",
+      "integrityBad": "Schema mismatches found.",
+      "missingTables": "Missing tables",
+      "stats": "Table sizes",
+      "table": "Table",
+      "rows": "Rows (est.)",
+      "size": "Size",
+      "loading": "Loading…"
+    },
     "title": "Database Management",
     "description": "Migrations, export and import of the database",
     "tabs": {
@@ -1199,7 +1318,11 @@
   },
   "brandTeam": {
     "organization": "Company",
-    "roles": { "admin": "FilamentHub administrator", "owner": "Owner", "editor": "Editor" },
+    "roles": {
+      "admin": "FilamentHub administrator",
+      "owner": "Owner",
+      "editor": "Editor"
+    },
     "inviteTitle": "Add a team member",
     "emailPlaceholder": "Work or personal email",
     "send": "Send",
@@ -1235,7 +1358,14 @@
     "reject": "Reject",
     "invitesTitle": "Invitations",
     "revoke": "Revoke",
-    "status": { "pending": "Created", "sent": "Sent", "failed": "Failed", "accepted": "Accepted", "expired": "Expired", "revoked": "Revoked" }
+    "status": {
+      "pending": "Created",
+      "sent": "Sent",
+      "failed": "Failed",
+      "accepted": "Accepted",
+      "expired": "Expired",
+      "revoked": "Revoked"
+    }
   },
   "palette": {
     "lineLabel": "Product line",
@@ -2222,7 +2352,11 @@
     "activeBrandChangeError": "Could not change the active brand",
     "myProfile": "My Profile",
     "achievements": "Achievements",
-    "role": { "brand": "Brand representative", "moderator": "Moderator", "admin": "Administrator" },
+    "role": {
+      "brand": "Brand representative",
+      "moderator": "Moderator",
+      "admin": "Administrator"
+    },
     "avatarUpload": "Upload avatar",
     "edit": "Edit",
     "viewPreset": "View preset details",
@@ -2402,7 +2536,7 @@
       "edit": "Edit",
       "use": "Consume",
       "delete": "Delete",
-      "deleteConfirm": "Delete this spool?",
+      "deleteConfirm": "Remove this printer's material system? The slots go away, the spools in them return to storage, and the key stops working. The printer itself stays.",
       "invalidInitialWeight": "Initial weight must be greater than 0.",
       "invalidUsedWeight": "Used weight cannot be negative.",
       "usedGreaterThanInitial": "Used weight cannot exceed initial weight.",
@@ -2432,17 +2566,20 @@
       "warning": "After generating a new key, update the URL in your Moonraker/Happy Hare settings."
     },
     "deviceSetup": {
-      "title": "My Printers",
-      "description": "Add a printer, copy the config to Moonraker - it will connect automatically.",
-      "addPrinter": "Add Printer",
+      "title": "Material systems",
+      "description": "Add a system — direct feed, MMU or AMS — and bind it to a printer. If the printer can report what is in its gates, paste the config line into Moonraker.",
+      "addPrinter": "Add material system",
       "selectPrinter": "Printer model (from catalog)",
       "ownPrinters": "Your printers",
       "ownPrintersHint": "Pick one of yours — it gets the key, no second record appears.",
       "searchPrinter": "Search printer catalog...",
       "nameLabel": "Printer name",
       "namePlaceholder": "E.g.: Voron 2.4",
+      "gateCountLabel": "How many gates",
+      "gateCountPlaceholder": "E.g.: 8",
+      "gateCountHint": "Leave empty for a single-material printer. You can change the number later.",
       "create": "Create",
-      "noDevices": "No printers connected. Click \"Add Printer\" to get started.",
+      "noDevices": "No printers connected. Click \"Add material system\" to get started.",
       "connected": "Connected",
       "connectedGates_one": "Connected ({{count}} slot)",
       "connectedGates_other": "Connected ({{count}} slots)",
@@ -2456,8 +2593,9 @@
       "noKey": "No key generated.",
       "regenerateKey": "Regenerate key",
       "regenerateConfirm": "The old key will stop working. Continue?",
-      "deleteDevice": "Delete printer",
-      "deleteConfirm": "Delete printer and all its gates? This cannot be undone.",
+      "deleteDevice": "Remove material system",
+      "feedRemoved": "Material system removed, spools returned to storage.",
+      "deleteConfirm": "Remove this printer's material system? The slots go away, the spools in them return to storage, and the key stops working. The printer itself stays.",
       "hostnameLabel": "Klipper hostname",
       "hostnameNotSet": "not set (click to enter)",
       "note": "After adding the config, restart Moonraker. The printer will connect automatically on first request."
@@ -3482,7 +3620,7 @@
     "usageAnalytics": "Usage analytics",
     "spoolsTracked": "Spools tracked by users",
     "presetUsage": "Preset uses",
-    "presetsCount": "Brand presets",
+    "presetsCount": "Presets",
     "regionalStats": "Regional statistics",
     "placeholder": "PLACEHOLDER",
     "popularPrinters": "Printers with your profiles",
@@ -3636,7 +3774,6 @@
     "showQRCode": "Show QR code",
     "active": "Active",
     "officialPreset": "Official preset",
-    "presetsCount": "Presets",
     "views": "Views",
     "scans": "Scans",
     "scansWord_one": "scan",
@@ -4469,6 +4606,9 @@
     "markAllRead": "Mark all as read",
     "clearing": "Clearing...",
     "clearAll": "Clear notifications",
+    "deleteSystem": "Remove system",
+    "deleteSystemConfirm": "Remove \"{{name}}\"? The slots go away and their spools return to storage. The printer stays.",
+    "systemDeleted": "System removed, spools returned to storage.",
     "link": "Link:",
     "keys": {
       "preset_updated": "Preset updated",
@@ -5023,6 +5163,7 @@
     "ERR_OAUTH_INVALID_STATE": "Invalid state parameter",
     "ERR_OAUTH_EMAIL_MISSING": "{{provider}} account has no email",
     "ERR_OAUTH_PROVIDER_NOT_CONFIGURED": "Provider {{provider}} is not configured",
+    "ERR_OAUTH_PROVIDER_NOT_AVAILABLE": "Provider {{provider}} is not available on this sign-in surface",
     "ERR_OAUTH_INVALID_PROVIDER": "Unknown provider: {{provider}}",
     "ERR_OAUTH_EMAIL_TAKEN": "This email is already linked via {{provider}}",
     "ERR_COULD_NOT_VALIDATE": "Could not validate credentials",
@@ -5032,6 +5173,8 @@
     "ERR_CALCULATOR_ACCESS_REQUIRED": "The calculator requires Pro access",
     "ERR_CALCULATOR_TRIAL_ALREADY_USED": "The trial has already been used",
     "ERR_INVALID_API_KEY": "Invalid API key",
+    "ERR_LEGAL_ACCEPTANCE_REQUIRED": "Accept the current terms and data-processing consent first",
+    "ERR_LEGAL_DOCUMENT_VERSION_MISMATCH": "The documents have changed. Review the current version and confirm again.",
     "ERR_EMAIL_DOMAIN_TYPO": "Did you mean @{{domain}}?",
     "ERR_DOMAIN_NO_MAIL": "Domain @{{domain}} cannot receive mail",
     "ERR_EMAIL_THREAD_NOT_FOUND": "Conversation not found",
@@ -5133,6 +5276,7 @@
     "ERR_DEVICE_NOT_FOUND": "Device not found",
     "ERR_MATERIAL_SYSTEM_NOT_FOUND": "Material system not found",
     "ERR_MATERIAL_SLOT_NOT_FOUND": "Material system slot not found",
+    "ERR_MATERIAL_SLOT_IN_USE": "Gate {{index}} still holds a spool or a preset — free it first",
     "ERR_DEVICE_NOT_OWNER": "You do not own this device",
     "ERR_GATE_INDEX_INVALID": "Invalid gate index: {{gate}} (max {{max}})",
     "ERR_GATE_STATE_NOT_FOUND": "Gate {{gate}} state not found",
@@ -5194,7 +5338,8 @@
     "configurations": "Configurations",
     "noConfigurations": "No configurations yet",
     "noNozzles": "No nozzles listed",
-    "gates": "{{count}} gates",
+    "gates_one": "{{count}} gate",
+    "gates_other": "{{count}} gates",
     "directFeed": "Direct feed"
   },
   "deviceLink": {
@@ -5212,25 +5357,48 @@
     }
   },
   "presetSlots": {
-    "title": "Printer Slots",
-    "subtitle": "Preset assignments for MMU / AMS gates",
     "noDevices": "No registered printers",
     "noDevicesDesc": "Open FilamentHub in OrcaSlicer - your printer will register automatically",
-    "noMappedDevices": "No devices matched to your printer profiles",
-    "noMappedDevicesDesc": "Check device-to-printer binding and ensure printer profiles exist in your account",
-    "noMaterialSystems": "This printer has no material system yet",
-    "noMaterialSystemsDesc": "Add a manual feeder or connect a supported provider; the printer does not need to be recreated",
     "mappedPrinter": "Printer: {{name}}",
-    "gates_one": "{{count}} slot",
-    "gates_other": "{{count}} slots",
-    "hhActive": "Happy Hare",
-    "manualMode": "Manual mode",
+    "noSystems": "No material systems yet",
+    "noSystemsDesc": "Add a system — direct feed, MMU, AMS or CFS — and bind it to one of your printers.",
+    "newSystem": {
+      "add": "Add material system",
+      "title": "New material system",
+      "printer": "Printer",
+      "printerPlaceholder": "Pick a printer",
+      "slotCount": "How many slots",
+      "create": "Create",
+      "done": "Done",
+      "keyTitle": "System created. Now link it to the printer",
+      "keyHint": "Paste this into moonraker.conf and restart Moonraker. The line is shown once — a new key can be issued later from the system card.",
+      "hintManual": "One spool, nothing to lay out. The weight is corrected by hand.",
+      "hintLinked": "After creating you get a line for moonraker.conf. Paste it and the layout and usage arrive on their own; skip it and you place spools by hand.",
+      "system": "System"
+    },
+    "provider": {
+      "happy_hare": "Happy Hare",
+      "legacy": "Klipper",
+      "manual": "Manual",
+      "octoprint": "OctoPrint"
+    },
+    "slotCount": {
+      "question_one": "Found {{count}} slot. Is that right?",
+      "question_other": "Found {{count}} slots. Is that right?",
+      "hint": "The printer only reports slots that have held a spool. If there are more, enter the real number.",
+      "confirm": "Confirm",
+      "placeholder": "How many?",
+      "save": "Save",
+      "change": "Change the slot count"
+    },
     "gateEmpty": "Empty",
-    "gateUnknown": "No data",
     "unknownFilament": "Unknown filament",
     "identifySpool": "Identify spool",
     "assignPreset": "Assign preset",
     "clearAll": "Clear all slots",
+    "deleteSystem": "Remove system",
+    "deleteSystemConfirm": "Remove \"{{name}}\"? The slots go away and their spools return to storage. The printer stays.",
+    "systemDeleted": "System removed, spools returned to storage.",
     "clearAllConfirm": "Clear all assignments for \"{{name}}\"?",
     "cleared": "All slots cleared",
     "source": {
@@ -5245,10 +5413,6 @@
       "buffer": "Buffer"
     },
     "pairing": {
-      "title": "Finish linking Happy Hare",
-      "description": "On its first connection Happy Hare does not include its internal printer name in a normal Spoolman request. Paste the command below into the Mainsail or Fluidd console once so HH can report the correct name. After that, Sync Spoolman will receive the correct gate map.",
-      "waitingForSpool": "Assign any spool to a gate first. A ready-to-copy one-time command will appear here.",
-      "commandLabel": "One-time command",
       "copy": "Copy",
       "copied": "Copied",
       "check": "Check connection"
@@ -5272,15 +5436,28 @@
       "cancel": "Cancel",
       "assigned": "Assignment for gate {{gate}} saved"
     },
-    "edit": {
-      "button": "Settings",
-      "name": "Device name",
-      "gateCount": "Gate count",
-      "gateCountHint": "1–256, leave empty for auto-detect",
-      "save": "Save",
-      "cancel": "Cancel",
-      "saved": "Device settings saved"
-    }
+    "feedSystem": {
+      "direct": "Direct feed",
+      "happy_hare": "Happy Hare"
+    },
+    "happyHare": {
+      "hostname": "Klipper hostname",
+      "hostnameNotSet": "not set",
+      "pairingTitle": "The printer has not introduced itself yet",
+      "pairingDescription": "Run this command once in the printer console — after that it starts reporting what sits in the slots.",
+      "pairingWaiting": "Put any spool into a slot and the command appears here."
+    },
+    "link": {
+      "label": "Link to the printer",
+      "issued": "Key issued",
+      "none": "No key — spools are placed by hand",
+      "issue": "Issue a key",
+      "reissue": "Issue a new one",
+      "snippetHint": "Paste into moonraker.conf and restart Moonraker. Shown once; this machine's previous key has stopped working."
+    },
+    "gates_one": "{{count}} slot",
+    "gates_other": "{{count}} slots",
+    "gateNoData": "No data"
   },
   "confirmEmailChange": {
     "loading": "Confirming email change...",
@@ -5293,15 +5470,15 @@
   "privacyPage": {
     "backHome": "Back to Home",
     "title": "Privacy Policy",
-    "lastUpdated": "Last updated: March 2026",
+    "lastUpdated": "Last updated: July 25, 2026",
     "sections": {
       "general": {
         "title": "1. General Provisions",
         "paragraphs": [
           "1.1. This Privacy Policy (hereinafter referred to as the Policy) defines the procedure for processing and protecting personal data of users of the FilamentHub service (hereinafter referred to as the Service), available at filamenthub.ru.",
-          "1.2. The personal data operator is Kuzmin I.I., an individual applying the special tax regime “Tax on Professional Income” (NPD taxpayer). Contact email address: admin@filamenthub.ru.",
+          "1.2. The personal data operator is Kuzmin I.I., an individual applying the special tax regime “Tax on Professional Income” (NPD taxpayer). Contact email address: support@filamenthub.ru.",
           "1.3. The Policy is developed in accordance with Federal Law No. 152-FZ dated July 27, 2006 “On Personal Data” and other regulatory legal acts of the Russian Federation.",
-          "1.4. Use of the Service constitutes the User’s consent to this Policy. If the User does not agree with the terms of the Policy, the User must cease using the Service.",
+          "1.4. This Policy is an informational document and does not itself replace a separate consent to personal data processing. Viewing public pages of the Service does not constitute acceptance of the Terms of Service or provision of such consent.",
           "1.5. The Service may be used by individuals who have reached the age of 14 and by legal entities."
         ]
       },
@@ -5309,64 +5486,69 @@
         "title": "2. Data We Collect",
         "intro": "2.1. The following categories of personal data are processed when using the Service:",
         "categories": [
-          "Email address (required for registration);",
+          "Email address, login, and data necessary for registration, sign-in, account recovery, and account security;",
           "Nickname (username);",
           "Full name (only if voluntarily provided by the User);",
-          "Profile data provided voluntarily (e.g., the “about me” field);",
+          "Profile data provided voluntarily (e.g., the “about me” field, avatar, and the country selected by the User for regional features);",
           "Data provided when applying for brand verification (brand name, corporate email, website, social media links, supporting documents);",
-          "Technical data: IP address, user-agent, date and time of requests, service identifiers;",
+          "Personal library data and Service settings: spools, printers, material systems, presets, profiles, calculations, and history of related actions;",
+          "Materials published by the User, including reviews, ratings, profiles, and other community content;",
+          "Support requests and other correspondence with the Operator, including sender and recipient addresses, message content, delivery metadata, and attachments when submitted;",
+          "Technical data: IP address, the current network connection country derived from it, user-agent, request date and time, and service identifiers. The connection country is used only to select available sign-in methods and security measures and is not treated as citizenship or profile country;",
           "Printing settings when using the synchronization function: material presets, printer profiles, print profiles, and technical parameters."
         ],
-        "oauth": "2.2. When authorizing through third-party services (Google, Yandex), we receive your email, name, and user identifier in accordance with the permissions you grant during authorization."
+        "oauth": "2.2. When a third-party sign-in method is available for the current network connection and the User initiates sign-in through Google or Yandex, we receive the email address, name, and user identifier within the permissions granted."
       },
       "purposes": {
         "title": "3. Purposes of Data Processing",
         "intro": "3.1. Personal data is processed for the following purposes:",
         "items": [
           "Registration and authorization of the user on the Service;",
+          "Selecting available sign-in methods and registration safeguards based on the current network connection country;",
           "Providing Service functionality (materials catalog, presets, calculator, OrcaSlicer synchronization);",
           "Verification of brand and manufacturer representatives;",
           "Sending service notifications (email confirmation, password reset, system notifications);",
           "Ensuring Service security and protection against abuse;",
-          "Improving Service quality and usage analysis."
+          "User support, error diagnostics, improving Service quality, and analyzing its operation, including through aggregated metrics."
         ],
-        "note": "3.2. The Service does not send advertising or marketing emails. All messages sent are exclusively transactional (service-related) in nature."
+        "note": "3.2. The Operator may send necessary service messages, replies to requests, and other communications permitted by applicable law and the User’s selected settings.",
+        "legalBasis": "3.3. Depending on the operation, processing is based on the User’s separate consent, steps requested by the User to enter into or perform the Terms of Service, the Operator’s legal obligations, or another basis provided by law. During OAuth, minimum data is processed to complete the sign-in requested by the User; personal features remain unavailable until the terms and consent are separately confirmed."
       },
       "thirdParty": {
         "title": "4. Third-Party Services",
         "intro": "4.1. To ensure the operation of the Service, we use the following third-party services to which certain data may be transferred:",
         "services": [
-          "Google OAuth (Google Ireland Limited / Google LLC, Ireland / USA) - authorization via Google account. A request is made to obtain the user’s email and basic profile. Google Privacy Policy: https://policies.google.com/privacy",
+          "Google OAuth (Google Ireland Limited / Google LLC, Ireland / USA) - sign-in through a Google account when this method is available for the current network connection and selected by the User. A request is made to obtain the user’s email and basic profile. Google Privacy Policy: https://policies.google.com/privacy",
           "Yandex OAuth (Yandex LLC, Russia) - authorization via Yandex account. A request is made to obtain the user’s email and basic profile. Yandex Privacy Policy: https://yandex.ru/legal/confidential/",
-          "Google reCAPTCHA v3 (Google Ireland Limited / Google LLC, Ireland / USA) - protection against automated requests and bots during registration. Technical data is transmitted for user behavior assessment. Google Privacy Policy: https://policies.google.com/privacy",
-          "Resend (Resend Inc., USA, processing in EU / Ireland) - sending transactional email messages (email confirmation, password reset, system notifications). The recipient’s email address is transmitted. Resend Privacy Policy: https://resend.com/legal/privacy-policy"
+          "Google reCAPTCHA v3 (Google Ireland Limited / Google LLC, Ireland / USA) - protection against automated requests during standard registration in regions where this service is available. The script is not loaded during ordinary viewing of public pages. Technical data is transmitted for verification. Google Privacy Policy: https://policies.google.com/privacy",
+          "Resend (Plus Five Five, Inc., USA) - delivery of service messages and processing of support correspondence. Sender and recipient addresses, message content, attachments, and technical delivery data may be transferred as necessary. Messages may be dispatched through infrastructure in Ireland, while certain provider service data is processed in the USA. Resend Privacy Policy: https://resend.com/legal/privacy-policy"
         ],
         "note": "4.2. These services process data in accordance with their own privacy policies. We do not transfer any data to these services beyond the minimum necessary for the operation of the respective function."
       },
       "crossBorder": {
         "title": "5. Cross-Border Data Transfer",
         "paragraphs": [
-          "5.1. In connection with the use of third-party services (Section 4), personal data may be transferred to the following jurisdictions: Ireland (EU), USA.",
+          "5.1. In connection with the use of third-party services (Section 4), necessary data may be transferred to Ireland (EU), the USA, and other jurisdictions where the relevant providers and their processors operate.",
           "5.2. Data transfer is carried out exclusively to the extent necessary to provide Service functionality (authorization, bot protection, delivery of service emails).",
-          "5.3. The specified jurisdictions ensure an adequate level of personal data protection in accordance with Roskomnadzor regulations and international agreements.",
-          "5.4. By using the Service, the User confirms consent to cross-border transfer of personal data for the specified purposes."
+          "5.3. The conditions and legal basis for such transfers are determined with regard to applicable law and the specifics of the relevant function.",
+          "5.4. Where a particular operation requires separate User consent or another lawful basis, the Operator obtains it before performing that operation. Use of the Service alone is not treated as separate consent to a cross-border transfer."
         ]
       },
       "retention": {
         "title": "6. Data Retention and Deletion",
         "paragraphs": [
-          "6.1. Personal data is stored until the User deletes their account.",
-          "6.2. The User may delete their account independently through the personal account interface or by sending a request to admin@filamenthub.ru.",
-          "6.3. Upon account deletion, all personal data is completely deleted within no more than 7 days (for self-deletion) or 30 days (for requests via email), except for data subject to retention in accordance with the legislation of the Russian Federation.",
-          "6.4. Inactive accounts (no login for more than 6 months) may be deleted by the Administration."
+          "6.1. Personal data is retained no longer than required for the processing purposes, operation of the account, protection of the parties’ rights and legitimate interests, and mandatory legal requirements.",
+          "6.2. The User may delete their account independently through the personal account interface or by sending a request to support@filamenthub.ru.",
+          "6.3. When an account is deleted, private identifiers and account data are deleted or anonymized in accordance with applicable law. Published community materials may be retained without a link to the deleted account unless otherwise required by law or the User’s rights.",
+          "6.4. Limited data may remain temporarily in backups, security logs, and records that must be retained by law, with restrictions on purpose and retention period. Inactive accounts may be deleted after prior notice where reasonably practicable."
         ]
       },
       "security": {
         "title": "7. Data Security",
         "paragraphs": [
           "7.1. The Operator takes necessary legal, organizational, and technical measures to protect personal data from unauthorized access, destruction, modification, blocking, and other unlawful actions.",
-          "7.2. Passwords are stored in hashed form (bcrypt). Database access is restricted. Data transmission is carried out over an encrypted channel (HTTPS/TLS).",
-          "7.3. The Operator guarantees the confidentiality of personal data and does not disclose it without the consent of the data subject, except as provided by the legislation of the Russian Federation."
+          "7.2. Such measures include access controls, protection of credentials, encryption in transit, and other safeguards appropriate to the nature and risks of processing.",
+          "7.3. The Operator maintains the confidentiality of personal data and discloses it only where a lawful basis exists. No method of transmission or storage can guarantee absolute security."
         ]
       },
       "rights": {
@@ -5376,16 +5558,18 @@
           "Receive information about the processing of their personal data;",
           "Require clarification, blocking, or deletion of personal data;",
           "Withdraw consent to personal data processing;",
-          "Delete their account and all associated data;",
+          "Delete their account and request deletion or anonymization of related personal data, subject to legal exceptions and rules applicable to previously published materials;",
           "Appeal actions of the Operator to Roskomnadzor or in court."
         ],
-        "note": "8.2. To exercise their rights, the User may contact the Operator at admin@filamenthub.ru."
+        "note": "8.2. To exercise their rights, the User may contact the Operator at support@filamenthub.ru."
       },
       "cookies": {
         "title": "9. Cookies",
         "paragraphs": [
-          "9.1. The Service uses cookies to ensure authorization, save user settings, and for visit analytics.",
-          "9.2. The User may disable cookies in browser settings; however, this may limit Service functionality."
+          "9.1. The Service uses necessary cookies and similar technical identifiers for authentication, session protection, saving user settings, and operation of features selected by the User.",
+          "9.2. The current network connection country is determined server-side from the IP address and does not itself set cookies.",
+          "9.3. As of this version, the Service does not set optional advertising or analytics cookies during ordinary page viewing.",
+          "9.4. The User may disable cookies in browser settings, but authentication and some Service features may then become unavailable."
         ]
       },
       "children": {
@@ -5399,13 +5583,13 @@
         "title": "11. Changes to the Policy",
         "paragraphs": [
           "11.1. The Operator may amend this Policy. The current version is posted at <privacyLink>/privacy-policy</privacyLink>.",
-          "11.2. Continued use of the Service after publication of changes constitutes the User’s consent to the new version of the Policy."
+          "11.2. The Policy is informational. If changes require renewed acceptance of the Terms of Service or separate consent, the Service will request the corresponding explicit action from the User."
         ]
       },
       "contacts": {
         "title": "12. Contact Information",
         "paragraphs": [
-          "12.1. For all matters related to personal data processing, please contact us at: admin@filamenthub.ru.",
+          "12.1. For all matters related to personal data processing, please contact us at: support@filamenthub.ru.",
           "12.2. Terms of Service: <termsLink>/user-agreement</termsLink>. Consent to Personal Data Processing: <consentLink>/personal-data-consent</consentLink>."
         ]
       }

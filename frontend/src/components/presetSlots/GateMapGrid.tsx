@@ -168,7 +168,11 @@ export function GateMapGrid({ slots, gates, presets, spools, nozzleHrc = null, o
             ) : isUnidentified ? (
               <span className="text-[11px] font-medium text-amber-200">{t('presetSlots.unknownFilament')}</span>
             ) : (
-              <span className="text-[11px] text-gray-400">{t('presetSlots.gateEmpty')}</span>
+              // Only the printer can say a slot is empty; our silence means we
+              // simply do not know, and the filament may well be sitting there.
+              <span className="text-[11px] text-gray-400">
+                {t(gate?.hh_status === 0 ? 'presetSlots.gateEmpty' : 'presetSlots.gateNoData')}
+              </span>
             )}
 
             {/* Brand + filament name */}

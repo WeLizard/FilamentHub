@@ -36,6 +36,9 @@ class MaterialSystem(Base):
         JSON, nullable=False, default=list, server_default="[]"
     )
     active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    # Set once a person confirms how many slots the system really has; until then
+    # the slot list is only what the provider happened to report.
+    declared_slot_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )

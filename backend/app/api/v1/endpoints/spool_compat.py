@@ -546,10 +546,16 @@ async def _apply_location_assignment(
     location: str | None,
     device_from_key: UserPrinterDevice | None = None,
 ) -> tuple[bool, str | None]:
+    # A request carrying the printer's own key is the printer talking, not a
+    # person clicking on the site, and the record has to say so.
+    source = (
+        PresetGateStateSource.hh_snapshot
+        if device_from_key is not None
+        else PresetGateStateSource.web_manual
+    )
+
     if location is None or location.strip() == "":
-        await release_spool_location(
-            db, spool, source=PresetGateStateSource.web_manual
-        )
+        await release_spool_location(db, spool, source=source)
         return True, None
 
     if (
@@ -593,6 +599,8 @@ async def _apply_location_assignment(
         if device.printer_hostname != device_hint:
             device.printer_hostname = device_hint
             logger.info("Detected printer hostname for device id=%s", device.id)
+        if device_from_key is not None:
+            device.supports_hh = True
 
     if device is None:
         return False, f"Device '{device_hint}' not found for this API key."
@@ -604,7 +612,7 @@ async def _apply_location_assignment(
             spool=spool,
             device=device,
             gate_index=gate_index,
-            source=PresetGateStateSource.web_manual,
+            source=source,
         )
     except HTTPException as exc:
         if exc.status_code != 409:
@@ -658,6 +666,9 @@ async def _sync_extra_to_gate_state(
 
     if device is not None and printer_name:
         device.printer_hostname = printer_name
+        # Happy Hare names itself only when it writes a gate assignment, so this
+        # is the moment the printer stops being silent about its material feed.
+        device.supports_hh = True
 
     if device is None:
         device_result = await db.execute(
@@ -670,6 +681,7 @@ async def _sync_extra_to_gate_state(
         device = device_result.scalar_one_or_none()
         if device is not None:
             device.printer_hostname = printer_name
+            device.supports_hh = True
 
     if device is None:
         logger.warning(

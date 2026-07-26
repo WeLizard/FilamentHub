@@ -67,6 +67,7 @@ class MaterialSystemCreate(BaseModel):
     kind: str = Field(default="direct_feed", min_length=1, max_length=50)
     provider: str = Field(default="manual", min_length=1, max_length=50)
     capabilities: list[CapabilityName] = Field(default_factory=list)
+    slot_count: int | None = Field(default=None, ge=1, le=256)
     slots: list[MaterialSlotCreate] = Field(default_factory=list, max_length=256)
 
     model_config = {"str_strip_whitespace": True}
@@ -84,6 +85,13 @@ class MaterialSystemCreate(BaseModel):
         if len(indices) != len(set(indices)):
             raise ValueError("slot provider_index values must be unique within a system")
         return self
+
+
+class MaterialSystemUpdate(BaseModel):
+    name: str | None = Field(default=None, min_length=1, max_length=200)
+    slot_count: int | None = Field(default=None, ge=1, le=256)
+
+    model_config = {"str_strip_whitespace": True}
 
 
 class MaterialSlotAssignmentUpdate(BaseModel):
@@ -148,6 +156,7 @@ class MaterialSystemResponse(BaseModel):
     provider: str
     capabilities: list[str]
     active: bool
+    declared_slot_count: int | None
     slots: list[MaterialSlotResponse]
 
     model_config = {"from_attributes": True}
@@ -173,6 +182,10 @@ class PhysicalPrinterResponse(BaseModel):
     printer_profile_ids: list[int]
     material_systems: list[MaterialSystemResponse]
     connectors: list[PhysicalPrinterConnectorResponse]
+    has_api_key: bool
+    printer_hostname: str | None
+    reports_feed: bool
+    last_seen_at: datetime | None
     created_at: datetime
     updated_at: datetime
 
@@ -184,6 +197,10 @@ class PhysicalPrinterResponse(BaseModel):
             logical_id=printer.logical_id,
             printer_id=printer.printer_id,
             name=printer.name,
+            has_api_key=printer.api_key is not None,
+            printer_hostname=printer.printer_hostname,
+            reports_feed=printer.supports_hh,
+            last_seen_at=printer.last_seen_at,
             printer_profile_ids=sorted(
                 link.printer_profile_id for link in printer.profile_links
             ),
@@ -240,5 +257,6 @@ class PhysicalPrinterResponse(BaseModel):
             provider=system.provider,
             capabilities=list(system.capabilities),
             active=system.active,
+            declared_slot_count=system.declared_slot_count,
             slots=slots,
         )

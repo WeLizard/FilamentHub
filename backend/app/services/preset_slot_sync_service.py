@@ -36,7 +36,7 @@ from app.services.material_assignment_service import (
     require_accessible_spool,
     sync_legacy_material_assignment,
 )
-from app.services.material_contract_service import ensure_legacy_material_contract
+from app.services.material_contract_service import ensure_material_topology
 from app.services.spool_service import (
     clear_spool_gate_assignments,
     lock_spool_row,
@@ -122,7 +122,7 @@ async def register_or_update_device(
             device.gate_count = payload.gate_count
     touch_device_last_seen(device)
 
-    await ensure_legacy_material_contract(db, device)
+    await ensure_material_topology(db, device)
     await db.commit()
     await db.refresh(device)
     return device
@@ -143,7 +143,7 @@ async def update_device(
         device.supports_hh = payload.supports_hh
     if payload.printer_hostname is not None:
         device.printer_hostname = payload.printer_hostname
-    await ensure_legacy_material_contract(db, device)
+    await ensure_material_topology(db, device)
     await db.commit()
     await db.refresh(device)
     return device
@@ -366,7 +366,7 @@ async def handle_heartbeat(
             device.name = device_name
     touch_device_last_seen(device)
 
-    await ensure_legacy_material_contract(db, device)
+    await ensure_material_topology(db, device)
     await db.commit()
     await db.refresh(device)
     return device
@@ -484,7 +484,7 @@ async def handle_hh_snapshot(
         if preset_material and hh_material and preset_material != hh_material:
             mismatches.append(gate_index)
 
-    await ensure_legacy_material_contract(
+    await ensure_material_topology(
         db,
         device,
         gate_indices={state.gate_index for _, state in gate_state_updates}
@@ -592,7 +592,7 @@ async def handle_manual_assignment(
     except IntegrityError:
         raise_error(409, ERR_SPOOL_LOCATION_CONFLICT)
 
-    await ensure_legacy_material_contract(
+    await ensure_material_topology(
         db, resolved_device, gate_indices={payload.gate}
     )
 
