@@ -23,6 +23,6 @@ The same window also gives you access to your FilamentHub spool inventory and pr
 **Requirements:** Requires a free FilamentHub account and an OrcaSlicer build with Python plugin support.
 
 **Active Testing & Known Limitations (Alpha):**
-This plugin is being tested against OrcaSlicer PR #14530 artifacts. The upstream plugin API is still evolving, so updates may be frequent.
+This plugin is in active testing. The upstream plugin API is still evolving, so updates may be frequent.
 - **Preset Loading:** On current official artifacts, imported or updated presets require an OrcaSlicer restart to appear, because the host cannot yet reload filament presets on request.
 - **Reporting:** Please include your OrcaSlicer build hash and plugin version when reporting a problem.

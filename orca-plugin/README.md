@@ -1,12 +1,12 @@
 # FilamentHub — OrcaSlicer Python plugin (iframe passthrough)
 
-A single-file plugin for OrcaSlicer's new Python plugin system (upstream PR
-**#14530**, branch `feat/plugin-feature`). It opens a **FilamentHub catalog
-window** inside OrcaSlicer that **embeds our real React catalog** in an
+A single-file plugin for OrcaSlicer's Python plugin system. It opens a
+**FilamentHub catalog window** inside OrcaSlicer that **embeds our real React
+catalog** in an
 `<iframe>`, and synchronizes the user's saved presets into OrcaSlicer.
 
-**Active testing:** this is an alpha plugin tested against OrcaSlicer PR #14530
-artifacts. The upstream plugin API is still evolving and updates may be frequent.
+**Active testing:** this is an alpha plugin. The upstream plugin API is still
+evolving and updates may be frequent.
 
 Replaces the ~9.5K-LOC C++ WebView fork with **one `.py` file** plus a small
 embed route in our existing frontend.
@@ -120,7 +120,7 @@ The label comes ready-made (i18n happens in the SPA) from the same
 ```
 
 Zero dependencies (stdlib `urllib`/`json`/`ssl`/`threading`). `network` is the
-forward-looking outbound-HTTPS allow-list we're proposing on PR #14530.
+forward-looking outbound-HTTPS allow-list we're proposing upstream.
 
 The shell accepts messages only from `https://filamenthub.ru` and only from its
 catalog iframe. HTTP responses are bounded to 5 MiB; preset/state writes use
@@ -194,7 +194,7 @@ with a retry action. Local OrcaSlicer presets remain available.
 
 | # | Gap | Impact | Workaround |
 |---|---|---|---|
-| 1 | **No preset-install / hot-reload host API.** `orca.host` is read-only; `PluginType.Importer` has no capability base. | Import needs an **app restart**. Not a publish blocker; rough UX. | Atomic file-write to `data_dir/user/<active>/_local/filamenthub/filament/` + native "restart" dialog. Ask on PR #14530 for `orca.host.presets.install(...)` / `reload_user_presets()`. |
+| 1 | **No preset-install / hot-reload host API.** `orca.host` is read-only; `PluginType.Importer` has no capability base. | Import needs an **app restart**. Not a publish blocker; rough UX. | Atomic file-write to `data_dir/user/<active>/_local/filamenthub/filament/` + native "restart" dialog. Ask upstream for `orca.host.presets.install(...)` / `reload_user_presets()`. |
 | 2 | **A short-lived plugin capability crosses the iframe boundary** with `targetOrigin: '*'` because the `file://` parent has an opaque origin. | The shell rejects every message not originating from the exact catalog iframe and `https://filamenthub.ru`; account access/refresh credentials never cross. | Keep the origin/source regression test and rotate the capability every 30 minutes. |
 | 3 | **Outbound HTTPS is ungated today** and the declared network allow-list is not enforced yet. | A future host policy may require an explicit permission contract. | Keep `network = [...]` declared and follow the host's audit-first permission design. |
 | 4 | **Package updates recreate the plugin install directory.** | Sidecar auth/sync caches are not guaranteed to survive an update. | The embedded cookie session mints a fresh scoped plugin capability, and sync rebuilds identity from managed preset content; migrate durable state to the host storage API when it lands. |

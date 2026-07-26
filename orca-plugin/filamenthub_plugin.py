@@ -9,12 +9,12 @@
 # author = "FilamentHub"
 # version = "0.0.6"
 #
-# # Proposed forward-looking key (see README gap / PR #14530 feedback). The current
+# # Proposed forward-looking key (see README gap). The current
 # # host reads only name/description/author/version/dependencies and ignores unknown
 # # keys, so declaring this today is harmless and documents intent.
 # network = ["filamenthub.ru", "*.filamenthub.ru"]
 # ///
-"""FilamentHub plugin for OrcaSlicer's Python plugin system (PR #14530).
+"""FilamentHub plugin for OrcaSlicer's Python plugin system.
 
 iframe passthrough: the plugin window is a thin shell that embeds our real React
 catalog (https://filamenthub.ru/embed/catalog) in an <iframe>. The React app runs
