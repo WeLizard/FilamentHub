@@ -2647,12 +2647,10 @@
     "myPrinters": "My Printers",
     "myPrintersDescription": "Manage printers and their profiles. Sync with OrcaSlicer.",
     "orcaProfilesHeading": "Configurations without a printer",
-    "unassignedConfigurations": "No catalog model",
-    "noModelHint": "Set the model in the configuration settings and catalog recommendations will work for it.",
+    "unassignedConfigurations": "No model set",
+    "noModelHint": "Set the model in the configuration's settings and it joins the catalog filter.",
     "orcaProfilesDescription": "Machine settings from OrcaSlicer that are not attached to any of your printers yet.",
     "printersCount": "{{count}} printers",
-    "unattachedCount": "{{count}} configurations",
-    "profilesCount": "{{count}} profiles",
     "nozzles": "Nozzles",
     "mm": "mm",
     "printProfilesCount": "{{count}} print profiles",
@@ -2818,7 +2816,13 @@
       "total": "Total",
       "error": "Calculation error",
       "unknownError": "Unknown error"
-    }
+    },
+    "profilesCount_one": "{{count}} configuration",
+    "profilesCount_few": "{{count}} configurations",
+    "profilesCount_many": "{{count}} configurations",
+    "unattachedCount_one": "{{count}} configuration",
+    "unattachedCount_few": "{{count}} configurations",
+    "unattachedCount_many": "{{count}} configurations"
   },
   "printerProfile": {
     "titleCreate": "Create printer profile",
@@ -4013,7 +4017,7 @@
     "currency": "Currency",
     "currencyDescription": "For the print calculator and quotes",
     "syncTitle": "OrcaSlicer Sync",
-    "syncDescription": "Manage import and export of filament presets, printer profiles, and print profiles",
+    "syncDescription": "What goes from OrcaSlicer to FilamentHub and what comes back.",
     "autoImportLocal": "Auto-import local presets",
     "autoImportLocalHint": "Your OrcaSlicer filament presets land in your profile as private drafts. Nobody sees them until you publish them yourself.",
     "regionTitle": "Language and region",
@@ -4021,11 +4025,6 @@
     "country": "Country",
     "countryNotSet": "Not set",
     "countryHint": "Used to show materials available where you are. We never guess it from your address.",
-    "filamentPresets": "Filament presets",
-    "printerProfiles": "Printer profiles",
-    "printProfiles": "Print profiles",
-    "import": "Import",
-    "export": "Export",
     "usernameChangeError": "Error changing username",
     "passwordChangeError": "Error changing password",
     "emailChangeError": "Error changing email",
@@ -4041,7 +4040,14 @@
     "emailMustDiffer": "New email must differ from the current one",
     "dangerZone": "Danger Zone",
     "deleteAccountWarning": "Account deletion is irreversible. Content you created (presets, profiles) will remain on the site in anonymized form, as described in the user agreement.",
-    "deleteAccountButton": "Delete Account"
+    "deleteAccountButton": "Delete Account",
+    "syncFilamentTitle": "Filament",
+    "syncFilamentHint": "Filament presets.",
+    "syncPrinterTitle": "Printers",
+    "syncPrinterHint": "Printers, their configurations and print processes.",
+    "syncToHub": "To FilamentHub",
+    "syncToSlicer": "To the slicer",
+    "syncNotYet": "not available yet"
   },
   "adminUsers": {
     "proAccessTitle": "Calculator Pro access (grant/revoke)",
@@ -4673,14 +4679,14 @@
     "exportError": "Error importing profiles. Check logs for details."
   },
   "exportPrinterProfiles": {
-    "title": "Export printer profiles from OrcaSlicer to FilamentHub",
+    "title": "Take printer configurations from OrcaSlicer",
     "button": "From OrcaSlicer",
     "exporting": "Exporting...",
     "done": "Done",
     "error": "Error",
-    "exportError": "Error exporting printer profiles. Check logs for details.",
-    "disabled": "Printer profiles export is disabled in settings. Enable it in Profile Settings.",
-    "onlyInOrca": "Export is only available inside OrcaSlicer"
+    "exportError": "Could not take the printer configurations.",
+    "disabled": "Receiving printer configurations is switched off in profile settings.",
+    "onlyInOrca": "Available only inside OrcaSlicer"
   },
   "exportPrintProfiles": {
     "title": "Export print profiles from OrcaSlicer to FilamentHub",
@@ -5311,9 +5317,11 @@
     "configurations": "Configurations",
     "noConfigurations": "No configurations yet",
     "noNozzles": "No nozzles listed",
-    "gates_one": "{{count}} gate",
+    "gates_one": "{{count}} slot",
     "gates_other": "{{count}} gates",
-    "directFeed": "Direct feed"
+    "gates_few": "{{count}} slots",
+    "gates_many": "{{count}} slots",
+    "noFeedSystem": "No feed system described"
   },
   "deviceLink": {
     "label": "Plugin link",

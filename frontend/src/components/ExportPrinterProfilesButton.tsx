@@ -16,7 +16,9 @@ export const ExportPrinterProfilesButton: React.FC<ExportPrinterProfilesButtonPr
   const [exportStatus, setExportStatus] = useState<'idle' | 'success' | 'error'>('idle');
   const [statusMessage, setStatusMessage] = useState<string>('');
   const [isInOrcaSlicer, setIsInOrcaSlicer] = useState(false);
-  const isExportDisabled = user?.allow_printer_profiles_export === false;
+  // The button pulls configurations from the slicer into FilamentHub, so it
+  // follows the inbound switch — the outbound one is about the other direction.
+  const isExportDisabled = user?.allow_printer_profiles_import === false;
 
   // Проверяем, запущен ли frontend внутри OrcaSlicer
   useEffect(() => {

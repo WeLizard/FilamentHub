@@ -2644,12 +2644,10 @@
     "myPrinters": "我的打印机",
     "myPrintersDescription": "管理打印机及其配置。与OrcaSlicer同步。",
     "orcaProfilesHeading": "未关联打印机的配置",
-    "unassignedConfigurations": "无目录型号",
-    "noModelHint": "在配置设置中指定型号后，目录推荐即可对其生效。",
+    "unassignedConfigurations": "未指定型号",
+    "noModelHint": "在配置设置中指定型号，它便会出现在目录筛选中。",
     "orcaProfilesDescription": "来自 OrcaSlicer 的机器设置，尚未关联到您的任何打印机。",
     "printersCount": "{{count}}台打印机",
-    "unattachedCount": "{{count}} 个配置",
-    "profilesCount": "{{count}}个配置文件",
     "nozzles": "喷嘴",
     "mm": "mm",
     "printProfilesCount": "{{count}}个打印配置",
@@ -2815,7 +2813,13 @@
       "total": "总计",
       "error": "计算错误",
       "unknownError": "未知错误"
-    }
+    },
+    "profilesCount_one": "{{count}} 项配置",
+    "profilesCount_few": "{{count}} 项配置",
+    "profilesCount_many": "{{count}} 项配置",
+    "unattachedCount_one": "{{count}} 项配置",
+    "unattachedCount_few": "{{count}} 项配置",
+    "unattachedCount_many": "{{count}} 项配置"
   },
   "printerProfile": {
     "titleCreate": "创建打印机配置",
@@ -4009,7 +4013,7 @@
     "currency": "货币",
     "currencyDescription": "用于打印计算器和报价",
     "syncTitle": "OrcaSlicer 同步",
-    "syncDescription": "管理耗材预设、打印机配置和打印配置的导入和导出",
+    "syncDescription": "哪些内容从 OrcaSlicer 上传到 FilamentHub，以及哪些回传。",
     "autoImportLocal": "自动导入本地预设",
     "autoImportLocalHint": "您在 OrcaSlicer 中的耗材预设将作为私人草稿导入您的个人资料。在您自行发布之前，其他人无法看到。",
     "regionTitle": "语言与地区",
@@ -4017,11 +4021,6 @@
     "country": "国家",
     "countryNotSet": "未设置",
     "countryHint": "用于显示您所在地区可购买的材料。我们绝不通过网络地址推测它。",
-    "filamentPresets": "耗材预设",
-    "printerProfiles": "打印机配置",
-    "printProfiles": "打印配置",
-    "import": "导入",
-    "export": "导出",
     "usernameChangeError": "更改用户名出错",
     "passwordChangeError": "更改密码出错",
     "emailChangeError": "更改邮箱出错",
@@ -4037,7 +4036,14 @@
     "emailMustDiffer": "新邮箱必须与当前邮箱不同",
     "dangerZone": "危险区域",
     "deleteAccountWarning": "账户删除不可逆转。您创建的内容（预设、配置文件）将以匿名形式保留在网站上，如用户协议中所述。",
-    "deleteAccountButton": "删除账户"
+    "deleteAccountButton": "删除账户",
+    "syncFilamentTitle": "耗材",
+    "syncFilamentHint": "耗材配置。",
+    "syncPrinterTitle": "打印机",
+    "syncPrinterHint": "打印机、其配置及打印工艺。",
+    "syncToHub": "上传到 FilamentHub",
+    "syncToSlicer": "下发到切片软件",
+    "syncNotYet": "暂不可用"
   },
   "adminUsers": {
     "proAccessTitle": "计算器 Pro 访问（授予/撤销）",
@@ -4669,14 +4675,14 @@
     "exportError": "导入配置文件出错。查看日志了解详情。"
   },
   "exportPrinterProfiles": {
-    "title": "从OrcaSlicer导出打印机配置到FilamentHub",
+    "title": "从 OrcaSlicer 获取打印机配置",
     "button": "从OrcaSlicer",
     "exporting": "正在导出...",
     "done": "完成",
     "error": "错误",
-    "exportError": "导出打印机配置出错。查看日志了解详情。",
-    "disabled": "打印机配置导出在设置中已禁用。请在配置文件设置中启用。",
-    "onlyInOrca": "导出仅在OrcaSlicer内部可用"
+    "exportError": "无法获取打印机配置。",
+    "disabled": "个人设置中已关闭接收打印机配置。",
+    "onlyInOrca": "仅在 OrcaSlicer 内可用"
   },
   "exportPrintProfiles": {
     "title": "从 OrcaSlicer 导出打印配置到 FilamentHub",
@@ -5308,7 +5314,10 @@
     "noConfigurations": "暂无配置",
     "noNozzles": "未列出喷嘴",
     "gates_other": "{{count}} 个通道",
-    "directFeed": "直接供料"
+    "gates_one": "{{count}} 个槽位",
+    "gates_few": "{{count}} 个槽位",
+    "gates_many": "{{count}} 个槽位",
+    "noFeedSystem": "未描述供料系统"
   },
   "deviceLink": {
     "label": "插件连接",

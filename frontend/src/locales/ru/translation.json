@@ -2368,12 +2368,10 @@
     "myPrinters": "Мои принтеры",
     "myPrintersDescription": "Управление принтерами и их профилями. Синхронизация с OrcaSlicer.",
     "orcaProfilesHeading": "Конфигурации без принтера",
-    "unassignedConfigurations": "Без модели из каталога",
-    "noModelHint": "Укажите модель в настройках конфигурации — тогда для неё заработают подборки в каталоге.",
+    "unassignedConfigurations": "Модель не указана",
+    "noModelHint": "Укажите модель в настройках конфигурации — тогда она попадёт в фильтр каталога.",
     "orcaProfilesDescription": "Настройки машин из OrcaSlicer, которые ещё не закреплены ни за одним вашим принтером.",
     "printersCount": "{{count}} принтеров",
-    "unattachedCount": "Конфигураций: {{count}}",
-    "profilesCount": "{{count}} профилей",
     "nozzles": "Сопла",
     "mm": "мм",
     "printProfilesCount": "{{count}} профилей печати",
@@ -2955,7 +2953,13 @@
         "unitPrice": "Цена за ед.",
         "total": "Сумма"
       }
-    }
+    },
+    "profilesCount_one": "{{count}} конфигурация",
+    "profilesCount_few": "{{count}} конфигурации",
+    "profilesCount_many": "{{count}} конфигураций",
+    "unattachedCount_one": "{{count}} конфигурация",
+    "unattachedCount_few": "{{count}} конфигурации",
+    "unattachedCount_many": "{{count}} конфигураций"
   },
   "printerProfile": {
     "titleCreate": "Создать профиль принтера",
@@ -4151,7 +4155,7 @@
     "currency": "Валюта",
     "currencyDescription": "Для калькулятора печати и коммерческих предложений",
     "syncTitle": "Синхронизация с OrcaSlicer",
-    "syncDescription": "Управление импортом и экспортом пресетов филамента, профилей принтеров и печати",
+    "syncDescription": "Что уходит из OrcaSlicer в FilamentHub и что возвращается обратно.",
     "autoImportLocal": "Автоимпорт локальных пресетов",
     "autoImportLocalHint": "Ваши пресеты филамента из OrcaSlicer попадут в профиль как приватные черновики. Никто их не увидит, пока вы сами не опубликуете.",
     "regionTitle": "Язык и регион",
@@ -4159,11 +4163,6 @@
     "country": "Страна",
     "countryNotSet": "Не указана",
     "countryHint": "Нужна, чтобы показывать материалы, доступные у вас. Мы её не угадываем по адресу.",
-    "filamentPresets": "Пресеты филамента",
-    "printerProfiles": "Профили принтеров",
-    "printProfiles": "Профили печати",
-    "import": "Импорт",
-    "export": "Экспорт",
     "usernameChangeError": "Ошибка при изменении имени пользователя",
     "passwordChangeError": "Ошибка при изменении пароля",
     "emailChangeError": "Ошибка при изменении эл. почты",
@@ -4179,7 +4178,14 @@
     "emailMustDiffer": "Новая эл. почта должна отличаться от текущей",
     "dangerZone": "Опасная зона",
     "deleteAccountWarning": "Удаление аккаунта необратимо. Созданный вами контент (пресеты, профили) останется на сайте в анонимизированном виде, как описано в пользовательском соглашении.",
-    "deleteAccountButton": "Удалить аккаунт"
+    "deleteAccountButton": "Удалить аккаунт",
+    "syncFilamentTitle": "Филамент",
+    "syncFilamentHint": "Пресеты филамента.",
+    "syncPrinterTitle": "Принтеры",
+    "syncPrinterHint": "Принтеры, их конфигурации и процессы печати.",
+    "syncToHub": "В FilamentHub",
+    "syncToSlicer": "В слайсер",
+    "syncNotYet": "пока недоступно"
   },
   "adminUsers": {
     "proAccessTitle": "Pro-доступ к калькулятору (выдать/отозвать)",
@@ -4811,14 +4817,14 @@
     "exportError": "Ошибка при импорте профилей. Проверьте логи для деталей."
   },
   "exportPrinterProfiles": {
-    "title": "Экспортировать printer profiles из OrcaSlicer в FilamentHub",
+    "title": "Забрать конфигурации принтеров из OrcaSlicer",
     "button": "Из OrcaSlicer",
     "exporting": "Экспорт...",
     "done": "Готово",
     "error": "Ошибка",
-    "exportError": "Ошибка при экспорте профилей принтера. Проверьте логи для деталей.",
-    "disabled": "Экспорт профилей принтеров отключён в настройках. Включите в разделе Настройки профиля.",
-    "onlyInOrca": "Экспорт доступен только внутри OrcaSlicer"
+    "exportError": "Не удалось забрать конфигурации принтеров.",
+    "disabled": "Приём конфигураций принтеров выключен в настройках профиля.",
+    "onlyInOrca": "Доступно только внутри OrcaSlicer"
   },
   "exportPrintProfiles": {
     "title": "Экспортировать print profiles из OrcaSlicer в FilamentHub",
@@ -5449,10 +5455,10 @@
     "configurations": "Конфигурации",
     "noConfigurations": "Пока без конфигураций",
     "noNozzles": "Сопла не указаны",
-    "gates_one": "{{count}} гейт",
-    "gates_few": "{{count}} гейта",
-    "gates_many": "{{count}} гейтов",
-    "directFeed": "Прямая подача"
+    "gates_one": "{{count}} слот",
+    "gates_few": "{{count}} слота",
+    "gates_many": "{{count}} слотов",
+    "noFeedSystem": "Система подачи не описана"
   },
   "deviceLink": {
     "label": "Связь с плагином",

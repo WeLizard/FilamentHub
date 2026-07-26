@@ -1216,8 +1216,8 @@ export const ProfilePage: React.FC = () => {
                 return (
                   <div key={printer.id} className="bg-white/10 backdrop-blur-sm border border-white/15 rounded-2xl p-6 shadow-xl">
                     {/* Заголовок принтера */}
-                    <div className="flex items-start justify-between gap-3 mb-4">
-                      <div className="flex-1">
+                    <div className="flex flex-wrap items-start justify-between gap-x-3 gap-y-2 mb-4">
+                      <div className="min-w-full sm:min-w-0 sm:flex-1">
                         <div className="flex items-center gap-3 mb-2">
                           <Printer3DIcon className="w-6 h-6 text-purple-400 flex-shrink-0" />
                           <div>
@@ -1231,7 +1231,14 @@ export const ProfilePage: React.FC = () => {
                           <p className="text-xs text-amber-200/80">{t('profilePage.noModelHint')}</p>
                         )}
                       </div>
-                      <StatusBadge label={t('profilePage.profilesCount', { count: printer.profiles.length })} variant="accent" />
+                      {printer.id !== 0 && (
+                        <div className="flex-shrink-0">
+                          <StatusBadge
+                            label={t('profilePage.profilesCount', { count: printer.profiles.length })}
+                            variant="accent"
+                          />
+                        </div>
+                      )}
                     </div>
 
                     {/* Профили принтера */}

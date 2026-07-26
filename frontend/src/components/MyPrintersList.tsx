@@ -154,7 +154,9 @@ export function MyPrintersList({
                       ))}
                     </div>
                   ) : (
-                    <span className="text-xs text-gray-500">{t('myPrinters.directFeed')}</span>
+                    <span className="text-xs px-2 py-0.5 rounded-full bg-white/5 border border-white/10 text-gray-400">
+                      {t('myPrinters.noFeedSystem')}
+                    </span>
                   )}
                 </div>
               </div>

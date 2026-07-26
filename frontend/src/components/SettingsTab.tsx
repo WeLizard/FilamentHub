@@ -19,6 +19,60 @@ interface SettingsTabProps {
   onUserUpdate: () => void;
 }
 
+type SyncSettingKey =
+  | 'allow_filament_presets_import'
+  | 'allow_filament_presets_export'
+  | 'allow_printer_profiles_import'
+  | 'allow_printer_profiles_export'
+  | 'allow_print_profiles_import'
+  | 'allow_print_profiles_export'
+  | 'auto_import_local_presets';
+
+// A printer is the machine, its configurations and their print processes, so one
+// switch covers all three. Sending them back to the slicer has no consumer yet:
+// the switch stays, off, so the place for it is already there when it does.
+const SYNC_CONTOURS: {
+  id: string;
+  titleKey: string;
+  hintKey: string;
+  directions: { labelKey: string; keys: SyncSettingKey[]; available: boolean }[];
+}[] = [
+  {
+    id: 'filament',
+    titleKey: 'settings.syncFilamentTitle',
+    hintKey: 'settings.syncFilamentHint',
+    directions: [
+      {
+        labelKey: 'settings.syncToHub',
+        keys: ['allow_filament_presets_import'],
+        available: true,
+      },
+      {
+        labelKey: 'settings.syncToSlicer',
+        keys: ['allow_filament_presets_export'],
+        available: true,
+      },
+    ],
+  },
+  {
+    id: 'printer',
+    titleKey: 'settings.syncPrinterTitle',
+    hintKey: 'settings.syncPrinterHint',
+    directions: [
+      {
+        labelKey: 'settings.syncToHub',
+        keys: ['allow_printer_profiles_import', 'allow_print_profiles_import'],
+        available: true,
+      },
+      {
+        labelKey: 'settings.syncToSlicer',
+        keys: ['allow_printer_profiles_export', 'allow_print_profiles_export'],
+        available: false,
+      },
+    ],
+  },
+];
+
 export const SettingsTab: React.FC<SettingsTabProps> = ({ user, onUserUpdate }) => {
   const queryClient = useQueryClient();
   const { refreshUser } = useAuth();
@@ -535,8 +589,8 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({ user, onUserUpdate }) 
       <section className="bg-white/10 backdrop-blur-sm border border-white/20 rounded-2xl p-6 shadow-xl">
         <div className="flex items-center justify-between mb-4">
           <div className="flex items-center gap-3">
-            <div className="p-2 bg-green-500/20 rounded-lg">
-              <Settings className="w-5 h-5 text-green-400" />
+            <div className="p-2 bg-purple-500/20 rounded-lg">
+              <Settings className="w-5 h-5 text-purple-300" />
             </div>
             <div>
               <h3 className="text-lg font-bold text-white">{t('settings.syncTitle')}</h3>
@@ -547,147 +601,58 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({ user, onUserUpdate }) 
           </div>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-          {/* Пресеты филамента */}
-          <div className="min-w-0 bg-white/5 rounded-xl p-4 border border-white/10">
-            <h4 className="text-sm font-semibold text-white mb-3 flex items-start gap-2 min-h-[40px]">
-              <span className="w-2 h-2 bg-blue-500 rounded-full flex-shrink-0"></span>
-              <span className="min-w-0 leading-tight break-words">{t('settings.filamentPresets')}</span>
-            </h4>
-            <div className="space-y-2">
-              <label className="flex items-center justify-between cursor-pointer group">
-                <span className="text-sm text-gray-300 w-16">{t('settings.import')}</span>
-                <div className="relative">
-                  <input
-                    type="checkbox"
-                    checked={syncSettings.allow_filament_presets_import}
-                    onChange={(e) => handleSyncSettingsChange('allow_filament_presets_import', e.target.checked)}
-                    className="sr-only"
-                  />
-                  <div
-                    className={`w-11 h-6 rounded-full transition-colors duration-200 flex items-center px-0.5 ${
-                      syncSettings.allow_filament_presets_import ? 'bg-purple-600 justify-end' : 'bg-gray-600 justify-start'
-                    }`}
-                  >
-                    <div className="w-5 h-5 bg-white rounded-full shadow-md" />
-                  </div>
-                </div>
-              </label>
-
-              <label className="flex items-center justify-between cursor-pointer group">
-                <span className="text-sm text-gray-300 w-16">{t('settings.export')}</span>
-                <div className="relative">
-                  <input
-                    type="checkbox"
-                    checked={syncSettings.allow_filament_presets_export}
-                    onChange={(e) => handleSyncSettingsChange('allow_filament_presets_export', e.target.checked)}
-                    className="sr-only"
-                  />
-                  <div
-                    className={`w-11 h-6 rounded-full transition-colors duration-200 flex items-center px-0.5 ${
-                      syncSettings.allow_filament_presets_export ? 'bg-purple-600 justify-end' : 'bg-gray-600 justify-start'
-                    }`}
-                  >
-                    <div className="w-5 h-5 bg-white rounded-full shadow-md" />
-                  </div>
-                </div>
-              </label>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {SYNC_CONTOURS.map((contour) => (
+            <div key={contour.id} className="min-w-0 bg-white/5 rounded-xl p-4 border border-white/10">
+              <h4 className="mb-1 text-sm font-semibold text-white">{t(contour.titleKey)}</h4>
+              <p className="mb-3 text-xs text-gray-400">{t(contour.hintKey)}</p>
+              <div className="space-y-2">
+                {contour.directions.map((direction) => {
+                  const enabled = direction.keys.some((key) => syncSettings[key]);
+                  return (
+                    <label
+                      key={direction.labelKey}
+                      className={`flex items-center justify-between gap-3 ${
+                        direction.available ? 'cursor-pointer' : 'cursor-default'
+                      }`}
+                      title={direction.available ? undefined : t('settings.syncNotYet')}
+                    >
+                      <span className={`text-sm ${direction.available ? 'text-gray-300' : 'text-gray-500'}`}>
+                        {t(direction.labelKey)}
+                        {!direction.available && (
+                          <span className="ml-1.5 text-[11px] text-gray-500">
+                            {t('settings.syncNotYet')}
+                          </span>
+                        )}
+                      </span>
+                      <div className="relative flex-shrink-0">
+                        <input
+                          type="checkbox"
+                          checked={direction.available && enabled}
+                          disabled={!direction.available}
+                          onChange={(e) => {
+                            for (const key of direction.keys) {
+                              handleSyncSettingsChange(key, e.target.checked);
+                            }
+                          }}
+                          className="sr-only"
+                        />
+                        <div
+                          className={`w-11 h-6 rounded-full transition-colors duration-200 flex items-center px-0.5 ${
+                            direction.available && enabled
+                              ? 'bg-purple-600 justify-end'
+                              : 'bg-gray-600 justify-start'
+                          } ${direction.available ? '' : 'opacity-50'}`}
+                        >
+                          <div className="w-5 h-5 bg-white rounded-full shadow-md" />
+                        </div>
+                      </div>
+                    </label>
+                  );
+                })}
+              </div>
             </div>
-          </div>
-
-          {/* Профили принтеров */}
-          <div className="min-w-0 bg-white/5 rounded-xl p-4 border border-white/10">
-            <h4 className="text-sm font-semibold text-white mb-3 flex items-start gap-2 min-h-[40px]">
-              <span className="w-2 h-2 bg-purple-500 rounded-full flex-shrink-0"></span>
-              <span className="min-w-0 leading-tight break-words">{t('settings.printerProfiles')}</span>
-            </h4>
-            <div className="space-y-2">
-              <label className="flex items-center justify-between cursor-pointer group">
-                <span className="text-sm text-gray-300 w-16">{t('settings.import')}</span>
-                <div className="relative">
-                  <input
-                    type="checkbox"
-                    checked={syncSettings.allow_printer_profiles_import}
-                    onChange={(e) => handleSyncSettingsChange('allow_printer_profiles_import', e.target.checked)}
-                    className="sr-only"
-                  />
-                  <div
-                    className={`w-11 h-6 rounded-full transition-colors duration-200 flex items-center px-0.5 ${
-                      syncSettings.allow_printer_profiles_import ? 'bg-purple-600 justify-end' : 'bg-gray-600 justify-start'
-                    }`}
-                  >
-                    <div className="w-5 h-5 bg-white rounded-full shadow-md" />
-                  </div>
-                </div>
-              </label>
-
-              <label className="flex items-center justify-between cursor-pointer group">
-                <span className="text-sm text-gray-300 w-16">{t('settings.export')}</span>
-                <div className="relative">
-                  <input
-                    type="checkbox"
-                    checked={syncSettings.allow_printer_profiles_export}
-                    onChange={(e) => handleSyncSettingsChange('allow_printer_profiles_export', e.target.checked)}
-                    className="sr-only"
-                  />
-                  <div
-                    className={`w-11 h-6 rounded-full transition-colors duration-200 flex items-center px-0.5 ${
-                      syncSettings.allow_printer_profiles_export ? 'bg-purple-600 justify-end' : 'bg-gray-600 justify-start'
-                    }`}
-                  >
-                    <div className="w-5 h-5 bg-white rounded-full shadow-md" />
-                  </div>
-                </div>
-              </label>
-            </div>
-          </div>
-
-          {/* Профили печати */}
-          <div className="min-w-0 bg-white/5 rounded-xl p-4 border border-white/10">
-            <h4 className="text-sm font-semibold text-white mb-3 flex items-start gap-2 min-h-[40px]">
-              <span className="w-2 h-2 bg-pink-500 rounded-full flex-shrink-0"></span>
-              <span className="min-w-0 leading-tight break-words">{t('settings.printProfiles')}</span>
-            </h4>
-            <div className="space-y-2">
-              <label className="flex items-center justify-between cursor-pointer group">
-                <span className="text-sm text-gray-300 w-16">{t('settings.import')}</span>
-                <div className="relative">
-                  <input
-                    type="checkbox"
-                    checked={syncSettings.allow_print_profiles_import}
-                    onChange={(e) => handleSyncSettingsChange('allow_print_profiles_import', e.target.checked)}
-                    className="sr-only"
-                  />
-                  <div
-                    className={`w-11 h-6 rounded-full transition-colors duration-200 flex items-center px-0.5 ${
-                      syncSettings.allow_print_profiles_import ? 'bg-purple-600 justify-end' : 'bg-gray-600 justify-start'
-                    }`}
-                  >
-                    <div className="w-5 h-5 bg-white rounded-full shadow-md" />
-                  </div>
-                </div>
-              </label>
-
-              <label className="flex items-center justify-between cursor-pointer group">
-                <span className="text-sm text-gray-300 w-16">{t('settings.export')}</span>
-                <div className="relative">
-                  <input
-                    type="checkbox"
-                    checked={syncSettings.allow_print_profiles_export}
-                    onChange={(e) => handleSyncSettingsChange('allow_print_profiles_export', e.target.checked)}
-                    className="sr-only"
-                  />
-                  <div
-                    className={`w-11 h-6 rounded-full transition-colors duration-200 flex items-center px-0.5 ${
-                      syncSettings.allow_print_profiles_export ? 'bg-purple-600 justify-end' : 'bg-gray-600 justify-start'
-                    }`}
-                  >
-                    <div className="w-5 h-5 bg-white rounded-full shadow-md" />
-                  </div>
-                </div>
-              </label>
-            </div>
-          </div>
+          ))}
         </div>
 
         <label className="mt-4 flex items-start justify-between gap-4 bg-white/5 rounded-xl p-4 border border-white/10 cursor-pointer group">
@@ -717,7 +682,7 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({ user, onUserUpdate }) 
           <button
             onClick={handleSaveSyncSettings}
             disabled={updateSettingsMutation.isPending}
-            className="flex items-center gap-2 px-5 py-2.5 bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700 text-white text-sm rounded-lg transition-all shadow-lg shadow-green-500/25 hover:shadow-green-500/40 disabled:opacity-50 disabled:cursor-not-allowed"
+            className="flex items-center gap-2 px-5 py-2.5 bg-purple-600 hover:bg-purple-500 text-white text-sm rounded-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {updateSettingsMutation.isPending ? (
               <>
