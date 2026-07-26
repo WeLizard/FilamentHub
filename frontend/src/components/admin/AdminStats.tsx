@@ -2,7 +2,7 @@
 
 import { useTranslation } from 'react-i18next';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import type { LucideIcon } from 'lucide-react';
 import {
   BarChart3, Users, Building2, Settings, TrendingUp,
@@ -369,11 +369,21 @@ function DockerSection({ t }: { t: (key: string) => string }) {
 /* ─── Main Component ─── */
 export function AdminStats() {
   const { t } = useTranslation();
+  // The manual refresh must bypass the server-side cache; the 60s auto-refetch
+  // may serve the cached snapshot. A ref flags which kind of fetch is running.
+  const forceRefresh = useRef(false);
   const { data: stats, isLoading, refetch, isFetching, dataUpdatedAt } = useQuery({
     queryKey: ['admin-stats'],
-    queryFn: () => adminAPI.getStats(),
+    queryFn: () => adminAPI.getStats(forceRefresh.current),
     refetchInterval: 60_000,
   });
+
+  const handleRefresh = () => {
+    forceRefresh.current = true;
+    refetch().finally(() => {
+      forceRefresh.current = false;
+    });
+  };
 
   if (isLoading) {
     return <div className="text-center py-12 text-gray-400">{t('adminStats.loading')}</div>;
@@ -393,7 +403,7 @@ export function AdminStats() {
         <div className="flex items-center gap-2">
           {updatedAt && <span className="text-gray-500 text-xs">{updatedAt}</span>}
           <button
-            onClick={() => refetch()}
+            onClick={handleRefresh}
             className="p-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-gray-400 hover:text-white transition-colors"
             title={t('adminStats.refresh')}
           >

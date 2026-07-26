@@ -13,7 +13,7 @@ import { AdminUsers } from '../components/admin/AdminUsers';
 import { AdminStats } from '../components/admin/AdminStats';
 import { AdminPrinters } from '../components/admin/AdminPrinters';
 import { AdminPrinterRequests } from '../components/admin/AdminPrinterRequests';
-import { AdminDatabase } from '../components/admin/AdminDatabase';
+import { AdminDatabaseDiagnostics } from '../components/admin/AdminDatabaseDiagnostics';
 import { AdminCommunications } from '../components/admin/AdminCommunications';
 import { AdminMaintenance } from '../components/admin/AdminMaintenance';
 import { AdminWiki } from '../components/admin/AdminWiki';
@@ -140,7 +140,7 @@ export function AdminPanel() {
           {activeTab === 'communications' && <AdminCommunications />}
           {activeTab === 'wiki' && <AdminWiki />}
           {activeTab === 'stats' && <AdminStats />}
-          {activeTab === 'database' && <AdminDatabase />}
+          {activeTab === 'database' && <AdminDatabaseDiagnostics />}
           {activeTab === 'subscriptions' && <AdminSubscriptions />}
           {activeTab === 'maintenance' && <AdminMaintenance />}
         </div>

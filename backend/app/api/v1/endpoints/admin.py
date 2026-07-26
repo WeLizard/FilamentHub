@@ -3,7 +3,7 @@
 import logging
 from datetime import datetime
 from pathlib import Path
-from typing import Annotated, Any, Optional
+from typing import Annotated, Optional
 
 from fastapi import APIRouter, Body, Depends, File, HTTPException, Query, UploadFile, status
 from fastapi.responses import FileResponse
@@ -23,29 +23,17 @@ from app.core.errors import (
     ERR_BRAND_SLUG_INVALID,
     ERR_BRAND_SLUG_RENAME_REQUIRED,
     ERR_BRAND_SLUG_STALE,
-    ERR_DATA_REQUIRED,
-    ERR_DB_IMPORT_ERROR,
-    ERR_DUMP_NOT_FOUND,
     ERR_FILE_EXT_NOT_ALLOWED,
     ERR_FILE_SIZE_EXCEEDED,
-    ERR_FILE_TOO_LARGE,
-    ERR_FILENAME_REQUIRED,
     ERR_INVALID_BADGES,
-    ERR_INVALID_FILE_EXT,
     ERR_INVALID_FILE_PATH,
-    ERR_INVALID_FILENAME,
     ERR_NOTIFICATION_PREVIEW_REQUIRED,
     ERR_PRESET_NOT_FOUND,
-    ERR_PRIMARY_KEY_REQUIRED,
     ERR_PRINTER_NOT_FOUND,
     ERR_PRINTER_REQUEST_NOT_FOUND,
     ERR_PRINTER_SLUG_EXISTS,
     ERR_REQUEST_NOT_PENDING,
-    ERR_TABLE_DATA_ERROR,
-    ERR_TABLE_DELETE_ERROR,
-    ERR_TABLE_NOT_FOUND,
     ERR_TABLE_STRUCTURE_ERROR,
-    ERR_TABLE_UPDATE_ERROR,
     ERR_USER_NOT_FOUND,
     ERR_USER_NOT_IN_BRAND,
     raise_error,
@@ -70,22 +58,9 @@ from app.schemas.brand_request import (
     BrandRequestUpdate,
 )
 from app.schemas.database import (
-    DatabaseDumpDeleteResponse,
-    DatabaseDumpInfo,
-    DatabaseDumpListResponse,
-    DatabaseExportRequest,
-    DatabaseExportResponse,
-    DatabaseImportResponse,
     DatabaseIntegrityResponse,
     DatabaseStatsResponse,
-    MigrationApplyRequest,
-    MigrationApplyResponse,
     MigrationHistoryResponse,
-    MigrationStampRequest,
-    MigrationStampResponse,
-    RecreateTablesResponse,
-    TableDataResponse,
-    TableDataUpdateRequest,
     TableStructureResponse,
 )
 from app.schemas.preset import PresetResponse
@@ -98,40 +73,13 @@ from app.schemas.printer_request import (
 from app.schemas.user import UserResponse
 from app.services.brand_slug_service import apply_brand_slug_rename, choose_brand_slug
 from app.services.database_service import (
-    apply_migration as apply_migration_service,
-)
-from app.services.database_service import (
-    delete_database_dump as delete_database_dump_service,
-)
-from app.services.database_service import (
-    downgrade_migration as downgrade_migration_service,
-)
-from app.services.database_service import (
-    export_database as export_database_service,
-)
-from app.services.database_service import (
     get_database_stats as get_database_stats_service,
 )
 from app.services.database_service import (
     get_migration_history as get_migration_history_service,
 )
 from app.services.database_service import (
-    get_table_data as get_table_data_service,
-)
-from app.services.database_service import (
     get_table_structure as get_table_structure_service,
-)
-from app.services.database_service import (
-    import_database as import_database_service,
-)
-from app.services.database_service import (
-    list_database_dumps as list_database_dumps_service,
-)
-from app.services.database_service import (
-    recreate_missing_tables as recreate_missing_tables_service,
-)
-from app.services.database_service import (
-    stamp_migration as stamp_migration_service,
 )
 from app.services.database_service import (
     validate_migration_integrity as validate_migration_integrity_service,
@@ -729,144 +677,12 @@ async def unlink_user_from_brand(
 async def get_admin_stats(
     admin: Annotated[User, Depends(get_current_admin_user)],
     db: Annotated[AsyncSession, Depends(get_db)],
+    refresh: bool = False,
 ) -> dict:
-    """Получить расширенную статистику для админки."""
-    from datetime import timedelta
+    """Получить расширенную статистику для админки. refresh=true минует кэш."""
+    from app.services.admin_stats_service import get_admin_stats as _admin_stats
 
-    from app.models.filament import Filament
-    from app.models.filament_review import FilamentReview
-    from app.models.notification import Notification
-    from app.models.preset_gate_state import PresetGateState
-    from app.models.printer_profile import PrinterProfile
-    from app.models.sync_device import SyncDevice
-    from app.models.user_printer_device import UserPrinterDevice
-    from app.models.user_spool import UserSpool
-    from app.models.wiki_article import WikiArticle
-
-    # Use naive UTC datetimes — all timestamp columns are TIMESTAMP WITHOUT TIME ZONE
-    now = datetime.utcnow()
-    day_ago = now - timedelta(days=1)
-    week_ago = now - timedelta(days=7)
-    month_ago = now - timedelta(days=30)
-
-    # --- Users ---
-    users_total = await db.scalar(select(func.count(User.id)))
-    users_brands = await db.scalar(select(func.count(User.id)).where(User.brand_id.isnot(None)))
-    users_admins = await db.scalar(select(func.count(User.id)).where(User.role == UserRole.ADMIN))
-    users_24h = await db.scalar(
-        select(func.count(User.id)).where(User.created_at >= day_ago)
-    )
-    users_7d = await db.scalar(
-        select(func.count(User.id)).where(User.created_at >= week_ago)
-    )
-    users_30d = await db.scalar(
-        select(func.count(User.id)).where(User.created_at >= month_ago)
-    )
-    users_active_24h = await db.scalar(
-        select(func.count(User.id)).where(User.last_login >= day_ago)
-    )
-    users_active_7d = await db.scalar(
-        select(func.count(User.id)).where(User.last_login >= week_ago)
-    )
-
-    # --- Brands ---
-    brands_total = await db.scalar(select(func.count(Brand.id)))
-    brands_verified = await db.scalar(select(func.count(Brand.id)).where(Brand.verified == True))
-    brands_pending = await db.scalar(select(func.count(Brand.id)).where(Brand.verified == False))
-
-    # --- Presets ---
-    presets_total = await db.scalar(select(func.count(Preset.id)))
-    presets_pending = await db.scalar(
-        select(func.count(Preset.id)).where(Preset.moderation_status == PresetModerationStatus.PENDING)
-    )
-    presets_approved = await db.scalar(
-        select(func.count(Preset.id)).where(Preset.moderation_status == PresetModerationStatus.APPROVED)
-    )
-    presets_rejected = await db.scalar(
-        select(func.count(Preset.id)).where(Preset.moderation_status == PresetModerationStatus.REJECTED)
-    )
-
-    # --- Filaments ---
-    filaments_total = await db.scalar(select(func.count(Filament.id)))
-
-    # --- Reviews ---
-    reviews_total = await db.scalar(select(func.count(FilamentReview.id)))
-    reviews_7d = await db.scalar(
-        select(func.count(FilamentReview.id)).where(FilamentReview.created_at >= week_ago)
-    )
-
-    # --- Printers & Profiles ---
-    printers_total = await db.scalar(select(func.count(Printer.id)))
-    printer_profiles_total = await db.scalar(select(func.count(PrinterProfile.id)))
-
-    # --- Devices (user's physical printers) ---
-    devices_total = await db.scalar(select(func.count(UserPrinterDevice.id)))
-
-    # --- Spools ---
-    spools_total = await db.scalar(select(func.count(UserSpool.id)))
-
-    # --- Gate states (slot assignments) ---
-    gates_total = await db.scalar(select(func.count(PresetGateState.id)))
-    gates_with_preset = await db.scalar(
-        select(func.count(PresetGateState.id)).where(PresetGateState.preset_id.isnot(None))
-    )
-
-    # --- Sync devices (OrcaSlicer installations) ---
-    sync_devices_total = await db.scalar(select(func.count(SyncDevice.id)))
-    sync_devices_active_7d = await db.scalar(
-        select(func.count(SyncDevice.id)).where(SyncDevice.last_sync_at >= week_ago)
-    )
-
-    # --- Wiki ---
-    wiki_articles = await db.scalar(select(func.count(WikiArticle.id)))
-
-    # --- Notifications ---
-    notifications_unread = await db.scalar(
-        select(func.count(Notification.id)).where(Notification.read == False)
-    )
-
-    return {
-        "users": {
-            "total": users_total or 0,
-            "brands": users_brands or 0,
-            "admins": users_admins or 0,
-            "registered_24h": users_24h or 0,
-            "registered_7d": users_7d or 0,
-            "registered_30d": users_30d or 0,
-            "active_24h": users_active_24h or 0,
-            "active_7d": users_active_7d or 0,
-        },
-        "brands": {
-            "total": brands_total or 0,
-            "verified": brands_verified or 0,
-            "pending_verification": brands_pending or 0,
-        },
-        "presets": {
-            "total": presets_total or 0,
-            "pending_moderation": presets_pending or 0,
-            "approved": presets_approved or 0,
-            "rejected": presets_rejected or 0,
-        },
-        "content": {
-            "filaments": filaments_total or 0,
-            "printers": printers_total or 0,
-            "printer_profiles": printer_profiles_total or 0,
-            "reviews_total": reviews_total or 0,
-            "reviews_7d": reviews_7d or 0,
-            "wiki_articles": wiki_articles or 0,
-        },
-        "hardware": {
-            "devices": devices_total or 0,
-            "spools": spools_total or 0,
-            "gate_slots": gates_total or 0,
-            "gate_slots_assigned": gates_with_preset or 0,
-            "sync_devices": sync_devices_total or 0,
-            "sync_devices_active_7d": sync_devices_active_7d or 0,
-        },
-        "notifications": {
-            "unread": notifications_unread or 0,
-        },
-    }
+    return await _admin_stats(db, force_refresh=refresh)
 
 
 # ==================== Admin Settings (Redis) ====================
@@ -1538,62 +1354,6 @@ async def get_migration_history(
     return MigrationHistoryResponse(**history)
 
 
-@router.post("/database/migrations/apply", response_model=MigrationApplyResponse)
-async def apply_migration(
-    data: MigrationApplyRequest,
-    admin: Annotated[User, Depends(get_current_admin_user)],
-    db: AsyncSession = Depends(get_db),
-) -> MigrationApplyResponse:
-    """Применить миграцию Alembic с валидацией и записью в историю."""
-    applied_by = f"{admin.email} ({admin.id})"
-    success, message, current_revision, validation_errors = await apply_migration_service(data.revision, applied_by=applied_by)
-    return MigrationApplyResponse(
-        success=success,
-        message=message,
-        current_revision=current_revision,
-        validation_errors=validation_errors,
-    )
-
-
-@router.post("/database/migrations/downgrade", response_model=MigrationApplyResponse)
-async def downgrade_migration(
-    data: MigrationApplyRequest,
-    admin: Annotated[User, Depends(get_current_admin_user)],
-) -> MigrationApplyResponse:
-    """Откатить миграцию Alembic с записью в историю."""
-    downgraded_by = f"{admin.email} ({admin.id})"
-    success, message, current_revision = await downgrade_migration_service(data.revision, downgraded_by=downgraded_by)
-    return MigrationApplyResponse(
-        success=success,
-        message=message,
-        current_revision=current_revision,
-    )
-
-
-@router.post("/database/migrations/stamp", response_model=MigrationStampResponse)
-async def stamp_migration(
-    data: MigrationStampRequest,
-    admin: Annotated[User, Depends(get_current_admin_user)],
-) -> MigrationStampResponse:
-    """
-    Пометить миграцию как применённую БЕЗ выполнения SQL.
-
-    Используйте когда:
-    - Миграция частично применилась (например, enum создан, но таблица нет)
-    - Нужно синхронизировать состояние alembic_version с реальной БД
-    - БД была настроена вручную и нужно пометить миграции
-
-    ВНИМАНИЕ: Это НЕ выполняет SQL из миграции, только обновляет alembic_version.
-    """
-    stamped_by = f"{admin.email} ({admin.id})"
-    success, message, current_revision = await stamp_migration_service(data.revision, stamped_by=stamped_by)
-    return MigrationStampResponse(
-        success=success,
-        message=message,
-        current_revision=current_revision,
-    )
-
-
 @router.get("/database/stats", response_model=DatabaseStatsResponse)
 async def get_database_stats(
     admin: Annotated[User, Depends(get_current_admin_user)],
@@ -1602,174 +1362,6 @@ async def get_database_stats(
     """Получить статистику базы данных."""
     stats = await get_database_stats_service(db)
     return DatabaseStatsResponse(**stats)
-
-
-@router.post("/database/export", response_model=DatabaseExportResponse)
-async def export_database(
-    data: DatabaseExportRequest,
-    admin: Annotated[User, Depends(get_current_admin_user)],
-) -> DatabaseExportResponse:
-    """Экспортировать базу данных."""
-    success, message, filename, size = await export_database_service(
-        format=data.format,
-        include_data=data.include_data,
-        tables=data.tables,
-    )
-
-    download_url = None
-    if success and filename:
-        # Формируем полный URL для скачивания
-        # В продакшене нужно использовать settings.BACKEND_URL или определять из запроса
-        download_url = f"/api/v1/admin/database/download/{filename}"
-
-    return DatabaseExportResponse(
-        success=success,
-        message=message,
-        filename=filename,
-        download_url=download_url,
-        size=size,
-    )
-
-
-@router.get("/database/download/{filename}")
-async def download_database_dump(
-    filename: str,
-    admin: Annotated[User, Depends(get_current_admin_user)],
-) -> FileResponse:
-    """Скачать файл дампа базы данных."""
-    from pathlib import Path
-
-    from app.core.config import settings
-
-    if '/' in filename or '\\' in filename or '..' in filename:
-        raise_error(status.HTTP_400_BAD_REQUEST, ERR_INVALID_FILENAME)
-
-    dump_file = Path(settings.UPLOAD_DIR) / "database_dumps" / filename
-
-    if not dump_file.exists():
-        raise_error(status.HTTP_404_NOT_FOUND, ERR_DUMP_NOT_FOUND)
-
-    return FileResponse(
-        path=str(dump_file),
-        filename=filename,
-        media_type="application/octet-stream",
-    )
-
-
-@router.post("/database/import", response_model=DatabaseImportResponse)
-async def import_database(
-    admin: Annotated[User, Depends(get_current_admin_user)],
-    file: UploadFile = File(...),
-    format: str = Query("custom", description="Формат импорта: custom, plain, tar"),
-    clean: bool = Query(False, description="Очистить базу перед импортом"),
-    create: bool = Query(False, description="Создать базу если не существует"),
-) -> DatabaseImportResponse:
-    """Импортировать базу данных из файла дампа."""
-    from pathlib import Path
-
-    from app.core.config import settings
-
-    # Валидация файла
-    if not file.filename:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail={"code": ERR_FILENAME_REQUIRED},
-        )
-
-    # Проверяем расширение файла
-    valid_extensions = {
-        'custom': ['.dump'],
-        'plain': ['.sql'],
-        'tar': ['.tar'],
-    }
-    file_ext = Path(file.filename).suffix.lower()
-    if file_ext not in valid_extensions.get(format, []):
-        raise_error(status.HTTP_400_BAD_REQUEST, ERR_INVALID_FILE_EXT, {"ext": file_ext, "expected": ", ".join(valid_extensions.get(format, []))})
-
-    # Проверяем размер файла (максимум 1GB)
-    MAX_FILE_SIZE = 1024 * 1024 * 1024  # 1GB
-    content = await file.read()
-    if len(content) > MAX_FILE_SIZE:
-        raise_error(status.HTTP_400_BAD_REQUEST, ERR_FILE_TOO_LARGE, {"max_size": "1GB"})
-
-    # Сохраняем загруженный файл
-    dumps_dir = (Path(settings.UPLOAD_DIR) / "database_dumps").resolve()
-    dumps_dir.mkdir(parents=True, exist_ok=True)
-
-    # Never include the client-supplied filename in a filesystem path. Keep only
-    # the validated extension and generate the storage name server-side.
-    import uuid
-
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    safe_filename = f"{timestamp}_{uuid.uuid4().hex}{file_ext}"
-    filepath = (dumps_dir / safe_filename).resolve()
-    if not filepath.is_relative_to(dumps_dir):
-        raise_error(status.HTTP_400_BAD_REQUEST, ERR_INVALID_FILE_PATH)
-
-    with open(filepath, "wb") as f:
-        f.write(content)
-
-    # Импортируем базу данных
-    logger.info(f"Начинаем импорт базы данных: файл={safe_filename}, формат={format}, clean={clean}, create={create}")
-    try:
-        success, message = await import_database_service(
-            filepath=safe_filename,
-            format=format,
-            clean=clean,
-            create=create,
-        )
-        logger.info(f"Импорт завершён: success={success}, message={message}")
-    except Exception as e:
-        logger.error(f"Ошибка при импорте базы данных: {e}", exc_info=True)
-        # Удаляем временный файл при ошибке
-        if filepath.exists():
-            filepath.unlink()
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail={"code": ERR_DB_IMPORT_ERROR},
-        ) from e
-
-    # Удаляем временный файл после импорта
-    if filepath.exists():
-        filepath.unlink()
-
-    return DatabaseImportResponse(
-        success=success,
-        message=message,
-    )
-
-
-@router.get("/database/dumps", response_model=DatabaseDumpListResponse)
-async def list_database_dumps(
-    admin: Annotated[User, Depends(get_current_admin_user)],
-) -> DatabaseDumpListResponse:
-    """Получить список всех дампов базы данных."""
-    dumps = await list_database_dumps_service()
-    return DatabaseDumpListResponse(dumps=[DatabaseDumpInfo(**dump) for dump in dumps])
-
-
-@router.delete("/database/dumps/{filename}", response_model=DatabaseDumpDeleteResponse)
-async def delete_database_dump(
-    filename: str,
-    admin: Annotated[User, Depends(get_current_admin_user)],
-) -> DatabaseDumpDeleteResponse:
-    """Удалить файл дампа базы данных."""
-    # Безопасность: проверяем, что filename не содержит путь
-    if '/' in filename or '\\' in filename or '..' in filename:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail={"code": ERR_INVALID_FILENAME},
-        )
-
-    success, message = await delete_database_dump_service(filename)
-
-    if not success:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=message,
-        )
-
-    return DatabaseDumpDeleteResponse(success=success, message=message)
 
 
 @router.get("/database/tables/{table_name}/structure", response_model=TableStructureResponse)
@@ -1808,140 +1400,6 @@ async def check_database_integrity(
         missing_tables=missing_tables,
         message=message,
     )
-
-
-@router.post("/database/recreate-tables", response_model=RecreateTablesResponse)
-async def recreate_tables(
-    admin: Annotated[User, Depends(get_current_admin_user)],
-    db: AsyncSession = Depends(get_db),
-) -> RecreateTablesResponse:
-    """Восстановить все недостающие таблицы на основе моделей SQLAlchemy."""
-    success, message, created_tables = await recreate_missing_tables_service(db)
-
-    return RecreateTablesResponse(
-        success=success,
-        message=message,
-        created_tables=created_tables,
-    )
-
-
-@router.get("/database/tables/{table_name}/data", response_model=TableDataResponse)
-async def get_table_data(
-    table_name: str,
-    admin: Annotated[User, Depends(get_current_admin_user)],
-    db: Annotated[AsyncSession, Depends(get_db)],
-    schema_name: str = Query("public", description="Имя схемы"),
-    page: int = Query(1, ge=1, description="Номер страницы"),
-    size: int = Query(50, ge=1, le=1000, description="Размер страницы"),
-    order_by: Optional[str] = Query(None, description="Колонка для сортировки"),
-    order_desc: bool = Query(False, description="Сортировка по убыванию"),
-    search: Optional[str] = Query(None, description="Поиск по всем колонкам"),
-) -> TableDataResponse:
-    """Получить данные из таблицы с пагинацией."""
-    try:
-        table_data = await get_table_data_service(
-            db,
-            table_name=table_name,
-            schema_name=schema_name,
-            page=page,
-            size=size,
-            order_by=order_by,
-            order_desc=order_desc,
-            search=search,
-        )
-        return TableDataResponse(**table_data)
-    except ValueError:
-        raise_error(status.HTTP_404_NOT_FOUND, ERR_TABLE_NOT_FOUND)
-    except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail={"code": ERR_TABLE_DATA_ERROR},
-        ) from e
-
-
-@router.patch("/database/tables/{table_name}/data", response_model=dict)
-async def update_table_data(
-    table_name: str,
-    request: TableDataUpdateRequest,
-    admin: Annotated[User, Depends(get_current_admin_user)],
-    db: Annotated[AsyncSession, Depends(get_db)],
-    schema_name: str = Query("public", description="Имя схемы"),
-) -> dict:
-    """Обновить данные в таблице."""
-    from app.services.database_service import (
-        update_table_row_service as update_table_row_service_func,
-    )
-
-    try:
-        primary_key = request.primary_key
-        update_data = request.data
-
-        if not primary_key:
-            raise_error(status.HTTP_400_BAD_REQUEST, ERR_PRIMARY_KEY_REQUIRED)
-
-        if not update_data:
-            raise_error(status.HTTP_400_BAD_REQUEST, ERR_DATA_REQUIRED)
-
-        success, message = await update_table_row_service_func(
-            db,
-            table_name=table_name,
-            schema_name=schema_name,
-            primary_key=primary_key,
-            update_data=update_data,
-        )
-
-        if not success:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=message,
-            )
-
-        return {"success": True, "message": message}
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail={"code": ERR_TABLE_UPDATE_ERROR},
-        ) from e
-
-
-@router.delete("/database/tables/{table_name}/data", response_model=dict)
-async def delete_table_data(
-    table_name: str,
-    primary_key: dict[str, Any] = Body(..., description="Значения первичного ключа для идентификации строки"),
-    admin: Annotated[User, Depends(get_current_admin_user)] = None,
-    db: Annotated[AsyncSession, Depends(get_db)] = None,
-    schema_name: str = Query("public", description="Имя схемы"),
-) -> dict:
-    """Удалить строку из таблицы."""
-    from app.services.database_service import delete_table_row_service
-
-    try:
-        if not primary_key:
-            raise_error(status.HTTP_400_BAD_REQUEST, ERR_PRIMARY_KEY_REQUIRED)
-
-        success, message = await delete_table_row_service(
-            db,
-            table_name=table_name,
-            schema_name=schema_name,
-            primary_key=primary_key,
-        )
-
-        if not success:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=message,
-            )
-
-        return {"success": True, "message": message}
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail={"code": ERR_TABLE_DELETE_ERROR},
-        ) from e
 
 
 # ==================== Bad Words Management ====================
