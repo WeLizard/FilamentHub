@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
-import { Cpu, Clock, Eraser, KeyRound, Layers, Trash2, Loader2, Wifi, WifiOff, AlertTriangle, Copy, Check, Plus } from 'lucide-react';
+import { Cpu, Clock, Eraser, KeyRound, Layers, Trash2, X, Loader2, Wifi, WifiOff, AlertTriangle, Copy, Check, Plus } from 'lucide-react';
 import { devicesAPI, physicalPrintersAPI, presetsAPI, printerProfilesAPI, spoolsAPI } from '../../api/client';
 import type { GateState, MaterialSlot, MaterialSystem, PhysicalPrinter, UserSpool } from '../../api/client';
 import type { Preset } from '../../types/api';
@@ -533,9 +533,19 @@ function MaterialSystemSection({ printer, system, presetsSeedMap, spools, spoolC
 
       {adapter.renderSetup?.({ printer, system, gates, linkConfirmed })}
 
-      {linkSnippet && (
+      {linkSnippet && !linkConfirmed && (
         <div className="mb-4 rounded-xl border border-white/10 bg-white/5 p-4">
-          <p className="text-xs text-gray-400">{t('presetSlots.link.snippetHint')}</p>
+          <div className="flex items-start gap-3">
+            <p className="flex-1 text-xs text-gray-400">{t('presetSlots.link.snippetHint')}</p>
+            <button
+              type="button"
+              onClick={() => setIssuedKey(null)}
+              title={t('common.close')}
+              className="rounded p-0.5 text-gray-500 transition hover:bg-white/10 hover:text-white"
+            >
+              <X className="h-3.5 w-3.5" />
+            </button>
+          </div>
           <pre className="mt-2 overflow-x-auto rounded-lg border border-white/10 bg-black/30 px-3 py-2 text-xs text-white">{linkSnippet}</pre>
           <button
             type="button"
