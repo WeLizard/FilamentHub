@@ -16,8 +16,8 @@ ROOT = Path(__file__).resolve().parent
 SOURCE = ROOT / "filamenthub_plugin.py"
 
 # The source carries a localhost default so it can be run against a local contour.
-# The wheel must never ship that, so prod_source() forces the prod site URL. The
-# diagnostic log ships on purpose: a beta report is worth nothing without it.
+# The wheel must never ship that, so prod_source() forces the prod site URL, which
+# also flips the plugin off its dev contour and hides the Log button.
 DEV_SITE_DEFAULT = '"http://localhost:3000"'
 PROD_SITE_DEFAULT = '"https://filamenthub.ru"'
 

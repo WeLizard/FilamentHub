@@ -76,11 +76,9 @@ import orca
 # Configuration
 # --------------------------------------------------------------------------- #
 PLUGIN_VERSION = "0.0.6"
-# Dev-convenient by default; build_package.py normalizes the prod wheel's default
-# to https://filamenthub.ru (and strips the dev diagnostics). Override at runtime
-# via FILAMENTHUB_SITE_URL to point the plugin at any contour — the dev frontend
-# serves the embed and proxies /api to the dev backend.
+PROD_SITE_URL = "https://filamenthub.ru"
 SITE_URL = os.environ.get("FILAMENTHUB_SITE_URL", "http://localhost:3000").rstrip("/")
+DEV_CONTOUR = SITE_URL != PROD_SITE_URL
 EMBED_URL = SITE_URL + "/embed/catalog"
 API_BASE = SITE_URL + "/api/v1"
 HTTP_TIMEOUT = 20
@@ -1205,7 +1203,7 @@ PAGE = r"""<!DOCTYPE html>
     <button data-path="/wiki">Wiki</button>
     <button id="sync" title="Sync your FilamentHub presets with OrcaSlicer">Sync</button>
     <button id="recover" title="Find your local OrcaSlicer filament presets and import the ones you pick as drafts">Recover</button>
-    <button id="diag" title="Copy the plugin log to the clipboard — attach it to a beta report">Log</button>
+    <button id="diag" __DIAG_HIDDEN__ title="Copy the plugin log to the clipboard">Log</button>
   </div>
   <div id="content">
     <div id="service-status" role="status" aria-live="polite">
@@ -1589,7 +1587,8 @@ document.getElementById('logout').addEventListener('click', function () {
     "__OAUTH_STATUS_PATH__", SHELL_SERVER.status_path()).replace(
     "__SYNC_STATUS_PATH__", SHELL_SERVER.sync_status_path()).replace(
     "__RECOVER_STATUS_PATH__", SHELL_SERVER.recover_status_path()).replace(
-    "__LOG_PATH__", SHELL_SERVER.log_path())
+    "__LOG_PATH__", SHELL_SERVER.log_path()).replace(
+    "__DIAG_HIDDEN__", "" if DEV_CONTOUR else "hidden")
 
 
 # --------------------------------------------------------------------------- #
