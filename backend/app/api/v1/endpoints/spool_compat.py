@@ -601,6 +601,7 @@ async def _apply_location_assignment(
             logger.info("Detected printer hostname for device id=%s", device.id)
         if device_from_key is not None:
             device.supports_hh = True
+            device.reports_feed = True
 
     if device is None:
         return False, f"Device '{device_hint}' not found for this API key."
@@ -669,6 +670,7 @@ async def _sync_extra_to_gate_state(
         # Happy Hare names itself only when it writes a gate assignment, so this
         # is the moment the printer stops being silent about its material feed.
         device.supports_hh = True
+        device.reports_feed = True
 
     if device is None:
         device_result = await db.execute(
@@ -682,6 +684,7 @@ async def _sync_extra_to_gate_state(
         if device is not None:
             device.printer_hostname = printer_name
             device.supports_hh = True
+            device.reports_feed = True
 
     if device is None:
         logger.warning(
@@ -1190,6 +1193,11 @@ async def use_spool(
     spool = await _get_user_spool(db, user.id, spool_id)
     if spool is None:
         return _err(status.HTTP_404_NOT_FOUND, f"No spool with ID {spool_id} found.")
+
+    if _device is not None:
+        # Reporting what was actually extruded is the printer speaking, whichever
+        # host does it, and it is the whole point of handing out the key.
+        _device.reports_feed = True
 
     if body.use_weight is not None and body.use_length is not None:
         return _err(status.HTTP_400_BAD_REQUEST, "Only specify either use_weight or use_length.")

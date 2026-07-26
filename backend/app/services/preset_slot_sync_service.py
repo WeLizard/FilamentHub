@@ -396,6 +396,7 @@ async def handle_hh_snapshot(
     else:
         device.supports_hh = True
         device.gate_count = payload.gate_count
+    device.reports_feed = True
     touch_device_last_seen(device)
 
     snapshot_ts = _normalize_utc(payload.snapshot_ts)

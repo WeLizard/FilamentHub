@@ -123,7 +123,7 @@ async def regenerate_device_key(
     device.api_key = new_key
     # The old key dies with this call, so whatever used to report through it is
     # silent again until someone pastes the new one.
-    device.supports_hh = False
+    device.reports_feed = False
     if device.device_fingerprint is None:
         device.device_fingerprint = f"manual-{uuid.uuid4().hex[:12]}"
     await ensure_material_topology(db, device)

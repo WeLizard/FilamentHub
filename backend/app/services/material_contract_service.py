@@ -469,11 +469,15 @@ async def ensure_material_topology(
             system.declared_slot_count = device.gate_count
         db.add(system)
         await db.flush()
+    elif system.provider not in {*siblings, "manual"}:
+        # This feed already names its own way of reporting, so nothing here is
+        # about it: neither its name, nor its slots, nor how many it declares.
+        return
     elif device.supports_hh:
         system.provider = "happy_hare"
         system.capabilities = list(HAPPY_HARE_CAPABILITIES)
         system.active = True
-    elif system.provider not in siblings:
+    elif system.provider == "manual":
         system.provider = provider
 
     existing_slots_result = await db.execute(
@@ -519,7 +523,10 @@ async def ensure_material_topology(
         .where(
             PhysicalPrinterConnector.physical_printer_id == device.id,
             PhysicalPrinterConnector.user_id == device.user_id,
-            PhysicalPrinterConnector.provider.in_(siblings),
+            or_(
+                PhysicalPrinterConnector.material_system_id == system.id,
+                PhysicalPrinterConnector.provider.in_(siblings),
+            ),
         )
         .order_by(PhysicalPrinterConnector.id)
     )
@@ -527,7 +534,7 @@ async def ensure_material_topology(
         connector = PhysicalPrinterConnector(
             user_id=device.user_id,
             physical_printer_id=device.id,
-            provider="happy_hare" if device.supports_hh else "legacy",
+            provider=system.provider,
             transport="spoolman_compat" if device.api_key else "legacy_adapter",
         )
         db.add(connector)

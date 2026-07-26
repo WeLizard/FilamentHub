@@ -172,6 +172,28 @@ async def test_spool_compat_v1_requires_api_key(client: AsyncClient):
 
 
 @pytest.mark.asyncio
+async def test_reported_usage_does_not_turn_the_printer_into_happy_hare(
+    client: AsyncClient,
+    db_session: AsyncSession,
+):
+    """A host that only writes off filament still counts as the printer speaking."""
+    _user, spool, device = await _seed_spool_context(db_session)
+    device.supports_hh = False
+    device.reports_feed = False
+    await db_session.commit()
+
+    response = await client.put(
+        f"/api/v1/spool_compat/{device.api_key}/api/v1/spool/{spool.id}/use",
+        json={"use_weight": 25},
+    )
+    assert response.status_code == 200
+
+    await db_session.refresh(device)
+    assert device.reports_feed is True
+    assert device.supports_hh is False
+
+
+@pytest.mark.asyncio
 async def test_spool_compat_v1_list_get_use_spool(client: AsyncClient, db_session: AsyncSession):
     """Compatibility spool flow: list -> get -> use."""
     _user, spool, device = await _seed_spool_context(db_session)

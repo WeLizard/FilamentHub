@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
-import { Cpu, Clock, Eraser, KeyRound, Layers, Trash2, X, Loader2, Wifi, WifiOff, AlertTriangle, Copy, Check, Plus } from 'lucide-react';
+import { Cpu, Clock, Eraser, KeyRound, Layers, Trash2, Loader2, Wifi, WifiOff, AlertTriangle, Check, Plus } from 'lucide-react';
 import { devicesAPI, physicalPrintersAPI, presetsAPI, printerProfilesAPI, spoolsAPI } from '../../api/client';
 import type { GateState, MaterialSlot, MaterialSystem, PhysicalPrinter, UserSpool } from '../../api/client';
 import type { Preset } from '../../types/api';
@@ -9,6 +9,7 @@ import { ConfirmDeleteModal } from '../ConfirmDeleteModal';
 import { FEED_ADAPTERS, feedAdapterFor } from './adapters';
 import { Dropdown } from '../Dropdown';
 import { GateMapGrid } from './GateMapGrid';
+import { LinkInstructions } from './LinkInstructions';
 import { PresetAssignModal } from './PresetAssignModal';
 import { toast } from '../Toast';
 import { translateApiError } from '../../utils/translateApiError';
@@ -83,16 +84,10 @@ function NewSystemCard({
   const [slotCount, setSlotCount] = useState<string>('');
   const [saving, setSaving] = useState(false);
   const [issuedKey, setIssuedKey] = useState<string | null>(null);
-  const [copied, setCopied] = useState(false);
 
   const chosen = feedAdapterFor(system);
   const count = chosen.fixedSlots ?? Number(slotCount);
   const valid = printerId !== '' && Number.isInteger(count) && count >= 1 && count <= 256;
-  const configSnippet = issuedKey
-    ? `[spoolman]
-server: ${spoolCompatBaseUrl}/${issuedKey}
-sync_rate: 5`
-    : null;
 
   const handleCreate = async () => {
     if (!valid) return;
@@ -104,7 +99,7 @@ sync_rate: 5`
         provider: chosen.id,
         slot_count: count,
       });
-      if (chosen.needsLink) {
+      if (chosen.link) {
         const { api_key } = await devicesAPI.regenerateKey(Number(printerId));
         setIssuedKey(api_key);
         return;
@@ -117,40 +112,19 @@ sync_rate: 5`
     }
   };
 
-  const handleCopy = async () => {
-    if (!configSnippet) return;
-    try {
-      await navigator.clipboard.writeText(configSnippet);
-      setCopied(true);
-      window.setTimeout(() => setCopied(false), 1800);
-    } catch {
-      toast.error(t('common.error'));
-    }
-  };
-
-  if (configSnippet) {
+  if (issuedKey && chosen.link) {
     return (
       <div className="rounded-2xl border border-dashed border-purple-400/30 bg-white/3 p-5">
-        <h2 className="text-sm font-semibold text-white">{t('presetSlots.newSystem.keyTitle')}</h2>
-        <p className="mt-1 text-xs text-gray-400">{t('presetSlots.newSystem.keyHint')}</p>
-        <pre className="mt-3 overflow-x-auto rounded-lg border border-white/10 bg-black/30 px-3 py-2 text-xs text-white">{configSnippet}</pre>
-        <div className="mt-3 flex flex-wrap gap-2">
-          <button
-            type="button"
-            onClick={handleCopy}
-            className="inline-flex items-center gap-1.5 rounded-lg bg-purple-600 px-4 py-1.5 text-sm font-medium text-white transition hover:bg-purple-500"
-          >
-            {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
-            {t(copied ? 'presetSlots.pairing.copied' : 'presetSlots.pairing.copy')}
-          </button>
+        <h2 className="mb-2 text-sm font-semibold text-white">{t('presetSlots.newSystem.keyTitle')}</h2>
+        <LinkInstructions link={chosen.link} url={`${spoolCompatBaseUrl}/${issuedKey}`}>
           <button
             type="button"
             onClick={onDone}
-            className="rounded-lg border border-white/15 px-3 py-1.5 text-sm text-gray-300 transition hover:bg-white/10"
+            className="rounded-lg border border-white/15 px-3 py-1.5 text-xs text-gray-300 transition hover:bg-white/10"
           >
             {t('presetSlots.newSystem.done')}
           </button>
-        </div>
+        </LinkInstructions>
       </div>
     );
   }
@@ -213,7 +187,7 @@ sync_rate: 5`
           {t('common.cancel')}
         </button>
         <p className="min-w-[14rem] flex-1 text-[11px] leading-4 text-gray-500">
-          {t(chosen.needsLink ? 'presetSlots.newSystem.hintLinked' : 'presetSlots.newSystem.hintManual')}
+          {t(chosen.link ? 'presetSlots.newSystem.hintLinked' : 'presetSlots.newSystem.hintManual')}
         </p>
       </div>
     </div>
@@ -231,12 +205,14 @@ function MaterialSystemSection({ printer, system, presetsSeedMap, spools, spoolC
   const [deleting, setDeleting] = useState(false);
   const [issuedKey, setIssuedKey] = useState<string | null>(null);
   const [issuingKey, setIssuingKey] = useState(false);
-  const [keyCopied, setKeyCopied] = useState(false);
   const now = useNow();
   const connector = printer.connectors.find(
     (item) => item.material_system_id === system.id && item.active,
   ) ?? null;
-  const linkState = getDeviceLinkState(connector?.last_seen_at ?? null, now);
+  // The key belongs to the printer, so a system without its own connector still
+  // hears from it; falling back keeps a reporting printer from looking silent.
+  const lastSeenAt = connector?.last_seen_at ?? printer.last_seen_at;
+  const linkState = getDeviceLinkState(lastSeenAt, now);
   const adapter = feedAdapterFor(system.provider);
   const linkConfirmed = printer.reports_feed;
   const providerLabel = t(`presetSlots.provider.${system.provider}`, {
@@ -248,10 +224,6 @@ function MaterialSystemSection({ printer, system, presetsSeedMap, spools, spoolC
     [system.slots],
   );
 
-  const linkSnippet = issuedKey
-    ? `[spoolman]\nserver: ${spoolCompatBaseUrl}/${issuedKey}\nsync_rate: 5`
-    : null;
-
   const handleIssueKey = async () => {
     setIssuingKey(true);
     try {
@@ -262,17 +234,6 @@ function MaterialSystemSection({ printer, system, presetsSeedMap, spools, spoolC
       toast.error(translateApiError(t, err?.response?.data?.detail, t('common.error')));
     } finally {
       setIssuingKey(false);
-    }
-  };
-
-  const handleCopyKey = async () => {
-    if (!linkSnippet) return;
-    try {
-      await navigator.clipboard.writeText(linkSnippet);
-      setKeyCopied(true);
-      window.setTimeout(() => setKeyCopied(false), 1800);
-    } catch {
-      toast.error(t('common.error'));
     }
   };
 
@@ -447,14 +408,14 @@ function MaterialSystemSection({ printer, system, presetsSeedMap, spools, spoolC
                 {t('presetSlots.gates', { count: system.slots.length })}
               </button>
             )}
-            {connector?.last_seen_at && (
+            {lastSeenAt && (
               <span className="rounded-full bg-white/5 px-2 py-0.5 text-[11px] text-gray-500">
-                {formatLastSeen(connector.last_seen_at, t, i18n.language, now)}
+                {formatLastSeen(lastSeenAt, t, i18n.language, now)}
               </span>
             )}
           </div>
 
-          {!adapter.needsLink ? null : (
+          {!adapter.link ? null : (
             <div className="flex flex-wrap items-center gap-1.5 text-[11px] text-gray-400">
               <span
                 title={t(printer.has_api_key ? 'presetSlots.link.issued' : 'presetSlots.link.none')}
@@ -523,28 +484,13 @@ function MaterialSystemSection({ printer, system, presetsSeedMap, spools, spoolC
 
       {adapter.renderSetup?.({ printer, system, gates, linkConfirmed })}
 
-      {linkSnippet && !linkConfirmed && (
+      {issuedKey && adapter.link && !linkConfirmed && (
         <div className="mb-4 rounded-xl border border-white/10 bg-white/5 p-4">
-          <div className="flex items-start gap-3">
-            <p className="flex-1 text-xs text-gray-400">{t('presetSlots.link.snippetHint')}</p>
-            <button
-              type="button"
-              onClick={() => setIssuedKey(null)}
-              title={t('common.close')}
-              className="rounded p-0.5 text-gray-500 transition hover:bg-white/10 hover:text-white"
-            >
-              <X className="h-3.5 w-3.5" />
-            </button>
-          </div>
-          <pre className="mt-2 overflow-x-auto rounded-lg border border-white/10 bg-black/30 px-3 py-2 text-xs text-white">{linkSnippet}</pre>
-          <button
-            type="button"
-            onClick={handleCopyKey}
-            className="mt-2 inline-flex items-center gap-1.5 rounded-lg bg-purple-600 px-3 py-1.5 text-xs font-medium text-white transition hover:bg-purple-500"
-          >
-            {keyCopied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
-            {t(keyCopied ? 'presetSlots.pairing.copied' : 'presetSlots.pairing.copy')}
-          </button>
+          <LinkInstructions
+            link={adapter.link}
+            url={`${spoolCompatBaseUrl}/${issuedKey}`}
+            onClose={() => setIssuedKey(null)}
+          />
         </div>
       )}
 

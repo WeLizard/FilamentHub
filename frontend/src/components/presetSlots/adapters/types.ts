@@ -8,6 +8,13 @@ export interface AdapterViewContext {
   linkConfirmed: boolean;
 }
 
+export interface FeedAdapterLink {
+  /** Locale key telling where this address goes on the printer. */
+  hintKey: string;
+  /** What a person copies: a config block, a bare address, whatever fits. */
+  snippet: (url: string) => string;
+}
+
 export interface FeedAdapter {
   /** Stored on the system as its provider. */
   id: string;
@@ -15,8 +22,8 @@ export interface FeedAdapter {
   labelKey: string;
   /** Systems with a fixed shape do not ask how many slots they have. */
   fixedSlots: number | null;
-  /** Whether the printer needs a key to report into this system. */
-  needsLink: boolean;
+  /** How the printer is pointed at us; null when nothing is linked at all. */
+  link: FeedAdapterLink | null;
   /** Extra controls this system needs and no other one does. */
   renderSettings?: (context: AdapterViewContext) => ReactNode;
   /** Steps left before the data starts arriving. */

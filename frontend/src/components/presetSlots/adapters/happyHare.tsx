@@ -129,7 +129,12 @@ export const happyHareAdapter: FeedAdapter = {
   id: 'happy_hare',
   labelKey: 'presetSlots.feedSystem.happy_hare',
   fixedSlots: null,
-  needsLink: true,
+  link: {
+    hintKey: 'presetSlots.happyHare.linkHint',
+    snippet: (url) => `[spoolman]
+server: ${url}
+sync_rate: 5`,
+  },
   renderSettings: ({ printer }) => <HostnameField printer={printer} />,
   renderSetup: ({ gates, linkConfirmed }) =>
     (linkConfirmed ? null : <PairingStep gates={gates} />),

@@ -5366,9 +5366,8 @@
       "create": "创建",
       "done": "完成",
       "keyTitle": "系统已创建。接下来与打印机建立连接",
-      "keyHint": "把这段粘贴到 moonraker.conf 并重启 Moonraker。此行只显示一次 — 之后可在系统卡片中重新签发密钥。",
       "hintManual": "只有一卷料，无需布置。重量需手动修正。",
-      "hintLinked": "创建后会得到一段 moonraker.conf 配置。粘贴后布局和用量会自动同步；不粘贴则手动放置料盘。",
+      "hintLinked": "创建后会得到一条给打印机的链接。填入后用量与配料会自动同步；不填则需手动摆放料盘。",
       "system": "系统"
     },
     "provider": {
@@ -5432,14 +5431,16 @@
     },
     "feedSystem": {
       "direct": "直接供料",
-      "happy_hare": "Happy Hare"
+      "happy_hare": "Happy Hare",
+      "octoprint": "OctoPrint"
     },
     "happyHare": {
       "hostname": "Klipper 主机名",
       "hostnameNotSet": "未设置",
       "pairingTitle": "打印机还没有自报名称",
       "pairingDescription": "在打印机控制台执行一次此命令 — 之后它就会自行报告各槽位的内容。",
-      "pairingWaiting": "把任意料盘放入槽位，命令就会出现在这里。"
+      "pairingWaiting": "把任意料盘放入槽位，命令就会出现在这里。",
+      "linkHint": "把这段粘贴到打印机的 moonraker.conf 并重启 Moonraker。"
     },
     "link": {
       "label": "与打印机的连接",
@@ -5447,10 +5448,16 @@
       "none": "没有密钥 — 手动放置料盘",
       "issue": "签发密钥",
       "reissue": "重新签发",
-      "snippetHint": "粘贴到 moonraker.conf 并重启 Moonraker。只显示一次；该机器此前的密钥已失效。"
+      "onceHint": "链接只显示一次。可在系统卡片中重新签发 — 届时旧链接失效。"
     },
     "gates_other": "{{count}} 个槽位",
-    "gateNoData": "无数据"
+    "gateNoData": "无数据",
+    "octoprint": {
+      "linkHint": "在 OctoPrint 中打开 Spoolman 插件设置，把此链接填入 Spoolman 地址字段。",
+      "setupTitle": "OctoPrint 需要安装 Spoolman 插件",
+      "pluginPage": "插件页面",
+      "setupDescription": "插件从 OctoPrint 插件库安装。之后每次打印后用量会自动扣减。哪卷料在哪个槽位由这里记录 — 插件不会上报。"
+    }
   },
   "confirmEmailChange": {
     "loading": "正在确认邮箱变更...",

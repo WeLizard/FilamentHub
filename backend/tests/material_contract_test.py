@@ -452,6 +452,43 @@ async def test_manual_systems_with_same_provider_index_assign_by_slot_id(
 
 
 @pytest.mark.asyncio
+async def test_issuing_a_key_leaves_another_providers_system_alone(
+    auth_client: AsyncClient,
+    auth_user: User,
+    db_session: AsyncSession,
+) -> None:
+    """A system that names its own way of reporting is not relabelled by Klipper."""
+    created = await auth_client.post(
+        "/api/v1/physical-printers", json={"name": "OctoPrint printer"}
+    )
+    printer_id = created.json()["id"]
+
+    system_response = await auth_client.post(
+        f"/api/v1/physical-printers/{printer_id}/material-systems",
+        json={
+            "name": "OctoPrint",
+            "kind": "mmu",
+            "provider": "octoprint",
+            "slot_count": 2,
+        },
+    )
+    assert system_response.status_code == 201
+
+    device = await db_session.get(UserPrinterDevice, printer_id)
+    device.gate_count = 7
+    await db_session.commit()
+
+    reissued = await auth_client.post(f"/api/v1/devices/{printer_id}/regenerate-key")
+    assert reissued.status_code == 200
+
+    physical = await auth_client.get(f"/api/v1/physical-printers/{printer_id}")
+    systems = physical.json()["material_systems"]
+    assert [system["provider"] for system in systems] == ["octoprint"]
+    assert len(systems[0]["slots"]) == 2
+    assert systems[0]["declared_slot_count"] == 2
+
+
+@pytest.mark.asyncio
 async def test_reported_gate_fills_the_slots_below_it(
     auth_client: AsyncClient,
     auth_user: User,

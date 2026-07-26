@@ -5371,9 +5371,8 @@
       "create": "Create",
       "done": "Done",
       "keyTitle": "System created. Now link it to the printer",
-      "keyHint": "Paste this into moonraker.conf and restart Moonraker. The line is shown once — a new key can be issued later from the system card.",
       "hintManual": "One spool, nothing to lay out. The weight is corrected by hand.",
-      "hintLinked": "After creating you get a line for moonraker.conf. Paste it and the layout and usage arrive on their own; skip it and you place spools by hand.",
+      "hintLinked": "Once created you get a link for the printer. Paste it and usage and layout arrive on their own; skip it and you place the spools by hand.",
       "system": "System"
     },
     "provider": {
@@ -5438,14 +5437,16 @@
     },
     "feedSystem": {
       "direct": "Direct feed",
-      "happy_hare": "Happy Hare"
+      "happy_hare": "Happy Hare",
+      "octoprint": "OctoPrint"
     },
     "happyHare": {
       "hostname": "Klipper hostname",
       "hostnameNotSet": "not set",
       "pairingTitle": "The printer has not introduced itself yet",
       "pairingDescription": "Run this command once in the printer console — after that it starts reporting what sits in the slots.",
-      "pairingWaiting": "Put any spool into a slot and the command appears here."
+      "pairingWaiting": "Put any spool into a slot and the command appears here.",
+      "linkHint": "Paste this into moonraker.conf on the printer and restart Moonraker."
     },
     "link": {
       "label": "Link to the printer",
@@ -5453,11 +5454,17 @@
       "none": "No key — spools are placed by hand",
       "issue": "Issue a key",
       "reissue": "Issue a new one",
-      "snippetHint": "Paste into moonraker.conf and restart Moonraker. Shown once; this machine's previous key has stopped working."
+      "onceHint": "The link is shown once. A new one can be issued from the system card — the old one stops working then."
     },
     "gates_one": "{{count}} slot",
     "gates_other": "{{count}} slots",
-    "gateNoData": "No data"
+    "gateNoData": "No data",
+    "octoprint": {
+      "linkHint": "In OctoPrint open the Spoolman plugin settings and paste this link into the Spoolman address field.",
+      "setupTitle": "The Spoolman plugin is needed in OctoPrint",
+      "pluginPage": "Plugin page",
+      "setupDescription": "The plugin is installed from the OctoPrint repository. After that usage is subtracted on its own after every print. Which spool sits in which slot is kept here — the plugin does not report it."
+    }
   },
   "confirmEmailChange": {
     "loading": "Confirming email change...",

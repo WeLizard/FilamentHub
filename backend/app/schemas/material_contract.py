@@ -199,7 +199,7 @@ class PhysicalPrinterResponse(BaseModel):
             name=printer.name,
             has_api_key=printer.api_key is not None,
             printer_hostname=printer.printer_hostname,
-            reports_feed=printer.supports_hh,
+            reports_feed=printer.reports_feed,
             last_seen_at=printer.last_seen_at,
             printer_profile_ids=sorted(
                 link.printer_profile_id for link in printer.profile_links
