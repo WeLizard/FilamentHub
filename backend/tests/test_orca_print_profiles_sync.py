@@ -668,3 +668,56 @@ async def test_import_reads_compatibility_from_the_hosts_own_format(
         "voron-2-4-300",
         "voron-2-4-350-compat",
     ]
+
+
+@pytest.mark.asyncio
+async def test_configuration_takes_its_model_from_the_parent_preset(
+    client: AsyncClient,
+    db_session: AsyncSession,
+):
+    """A preset made from a system one keeps only its parent as a reliable clue.
+
+    The name is the person's to change, so recognising the model by it fails on a
+    renamed copy; the parent points at the system profile whose model is known.
+    """
+    headers, _ = await _register_and_login(client, "orca-inherits-model")
+
+    printer = Printer(
+        name="MyKlipper",
+        manufacturer="Custom",
+        model="MyKlipper",
+        slug="myklipper-inherits",
+        source="system",
+        active=True,
+    )
+    db_session.add(printer)
+    await db_session.flush()
+
+    system_profile = PrinterProfile(
+        printer_id=printer.id,
+        owner_user_id=None,
+        is_official=True,
+        name="MyKlipper 0.4 nozzle",
+        slug="myklipper-0-4-nozzle-inherits",
+        active=True,
+        source="system",
+    )
+    db_session.add(system_profile)
+    await db_session.commit()
+
+    response = await client.post(
+        "/api/v1/orcaslicer/printer-profiles/import",
+        headers=headers,
+        json={
+            "profiles": [
+                {
+                    "name": "Renamed by hand",
+                    "external_id": "renamed-by-hand",
+                    "orcaslicer_settings": {"inherits": "MyKlipper 0.4 nozzle"},
+                }
+            ]
+        },
+    )
+    assert response.status_code == 200
+    imported = await db_session.get(PrinterProfile, response.json()["results"][0]["fhub_id"])
+    assert imported.printer_id == printer.id

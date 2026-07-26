@@ -489,6 +489,34 @@ def _extract_material_type_from_inherits(inherits: str | None) -> str:
     return "PLA"
 
 
+async def _printer_id_from_inherits(
+    db: AsyncSession, inherits: object, depth: int = 4
+) -> int | None:
+    """Follow a preset's parent until a profile that knows its catalog model.
+
+    A copy of a copy is normal in OrcaSlicer, so the chain is walked a few steps;
+    the depth stops a parent that points at itself from looping forever.
+    """
+    name = str(inherits or "").strip()
+    seen: set[str] = set()
+    while name and name not in seen and depth > 0:
+        seen.add(name)
+        depth -= 1
+        result = await db.execute(
+            select(PrinterProfile)
+            .where(PrinterProfile.name == name)
+            .order_by(PrinterProfile.owner_user_id.is_(None).desc(), PrinterProfile.id)
+        )
+        parent = result.scalars().first()
+        if parent is None:
+            return None
+        if parent.printer_id:
+            return parent.printer_id
+        settings = parent.orcaslicer_settings or {}
+        name = str(settings.get("inherits") or "").strip()
+    return None
+
+
 async def _ensure_printer_id(
     *,
     db: AsyncSession,
@@ -547,11 +575,23 @@ async def _ensure_printer_id(
         if printer:
             return printer.id
 
-    # 3. Поиск по model_id (самый надежный способ сопоставления)
+    # 3. По родителю пресета. Человек почти всегда делает свой пресет из
+    # системного и правит под себя, а имя меняет как хочет — родитель же
+    # указывает на системный профиль однозначно, и его модель уже известна.
+    inherited_model = await _printer_id_from_inherits(
+        db, combined_metadata.get("inherits")
+    )
+    if inherited_model is not None:
+        return inherited_model
+
+    # 4. Поиск по model_id. Он не уникален: несколько моделей одного вендора
+    # делят один идентификатор, поэтому берём первую по порядку, а не «ровно одну».
     model_id = combined_metadata.get("model_id") or combined_metadata.get("printer_model_id")
     if model_id:
-        result = await db.execute(select(Printer).where(Printer.model_id == str(model_id)))
-        printer = result.scalar_one_or_none()
+        result = await db.execute(
+            select(Printer).where(Printer.model_id == str(model_id)).order_by(Printer.id)
+        )
+        printer = result.scalars().first()
         if printer:
             return printer.id
 
