@@ -9,6 +9,7 @@ from sqlalchemy.orm import selectinload
 from app.core.errors import (
     ERR_DEVICE_NOT_FOUND,
     ERR_MATERIAL_SLOT_IN_USE,
+    ERR_MATERIAL_SYSTEM_EXISTS,
     ERR_MATERIAL_SYSTEM_NOT_FOUND,
     ERR_PRINTER_NOT_FOUND,
     ERR_PRINTER_PROFILE_NOT_FOUND,
@@ -215,6 +216,16 @@ async def create_material_system(
     payload: MaterialSystemCreate,
 ) -> UserPrinterDevice:
     await require_physical_printer(db, user_id, physical_printer_id)
+    # A printer feeds from one place. Two systems on it would mean two sources
+    # racing to say what sits in a slot, with no way to tell which is right.
+    taken = await db.scalar(
+        select(MaterialSystem.id).where(
+            MaterialSystem.physical_printer_id == physical_printer_id,
+            MaterialSystem.user_id == user_id,
+        )
+    )
+    if taken is not None:
+        raise_error(409, ERR_MATERIAL_SYSTEM_EXISTS)
     system = MaterialSystem(
         user_id=user_id,
         physical_printer_id=physical_printer_id,

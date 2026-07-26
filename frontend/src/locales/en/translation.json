@@ -2548,7 +2548,7 @@
       "line1": "Add a spool by hand or from its QR code — the material is matched against the catalog.",
       "line2": "The spool price is calculated automatically: price per kilogram × initial weight.",
       "line3": "If the printer has a feed system described, a spool can be assigned to a slot right away.",
-      "line4": "Slots are assigned here, on the site. The printer receives them through the link you entered in its settings — in Moonraker with Happy Hare, or in the Spoolman plugin for OctoPrint."
+      "line4": "Slots are assigned here, on the site. The printer receives them through the link you entered in its settings."
     },
     "deviceSetup": {
       "title": "Material systems",
@@ -5270,7 +5270,8 @@
     "ERR_SPOOL_EMPTY_ON_CREATE": "An already empty spool cannot be added",
     "ERR_SPOOL_USED_EXCEEDS_INITIAL": "Used weight cannot exceed initial weight",
     "ERR_SPOOL_LOCATION_CONFLICT": "This spool is being moved by another request. Refresh and try again",
-    "ERR_SNAPSHOT_TOO_FREQUENT": "Snapshots are being sent too frequently"
+    "ERR_SNAPSHOT_TOO_FREQUENT": "Snapshots are being sent too frequently",
+    "ERR_MATERIAL_SYSTEM_EXISTS": "This printer already has a feed system."
   },
   "printerSettings": {
     "title": "Printer settings",
@@ -5435,11 +5436,11 @@
     },
     "link": {
       "label": "Link to the printer",
-      "issued": "Key issued",
-      "none": "No key — spools are placed by hand",
       "issue": "Issue a key",
       "reissue": "Issue a new one",
-      "onceHint": "The link is shown once. A new one can be issued from the system card — the old one stops working then."
+      "onceHint": "The link is shown once. A new one can be issued from the system card — the old one stops working then.",
+      "notSet": "Link not set up",
+      "waiting": "Waiting for the printer"
     },
     "gates_one": "{{count}} slot",
     "gates_other": "{{count}} slots",

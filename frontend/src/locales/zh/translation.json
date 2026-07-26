@@ -2545,7 +2545,7 @@
       "line1": "手动添加料盘或扫描其二维码 — 材料会与目录匹配。",
       "line2": "料盘价格自动计算：每公斤价格 × 初始重量。",
       "line3": "若打印机已描述供料系统，添加后即可将料盘分配到槽位。",
-      "line4": "槽位在本站分配。打印机通过您在其设置中填入的链接获取这些信息 — Moonraker 配合 Happy Hare，或 OctoPrint 的 Spoolman 插件。"
+      "line4": "槽位在本站分配。打印机通过您在其设置中填入的链接获取这些信息。"
     },
     "deviceSetup": {
       "title": "供料系统",
@@ -5266,7 +5266,8 @@
     "ERR_SPOOL_EMPTY_ON_CREATE": "无法添加已空的线轴",
     "ERR_SPOOL_USED_EXCEEDS_INITIAL": "已使用重量不能超过初始重量",
     "ERR_SPOOL_LOCATION_CONFLICT": "该线轴正被另一个请求移动，请刷新后重试",
-    "ERR_SNAPSHOT_TOO_FREQUENT": "快照发送过于频繁"
+    "ERR_SNAPSHOT_TOO_FREQUENT": "快照发送过于频繁",
+    "ERR_MATERIAL_SYSTEM_EXISTS": "该打印机已有供料系统。"
   },
   "printerSettings": {
     "title": "打印机设置",
@@ -5429,11 +5430,11 @@
     },
     "link": {
       "label": "与打印机的连接",
-      "issued": "已签发密钥",
-      "none": "没有密钥 — 手动放置料盘",
       "issue": "签发密钥",
       "reissue": "重新签发",
-      "onceHint": "链接只显示一次。可在系统卡片中重新签发 — 届时旧链接失效。"
+      "onceHint": "链接只显示一次。可在系统卡片中重新签发 — 届时旧链接失效。",
+      "notSet": "未建立连接",
+      "waiting": "等待打印机"
     },
     "gates_other": "{{count}} 个槽位",
     "gateNoData": "无数据",

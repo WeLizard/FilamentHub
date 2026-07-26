@@ -359,18 +359,23 @@ async def test_legacy_hh_flow_dual_writes_system_slots_and_connector(
 
 
 @pytest.mark.asyncio
-async def test_manual_systems_with_same_provider_index_assign_by_slot_id(
+async def test_slots_sharing_a_provider_index_assign_by_slot_id(
     auth_client: AsyncClient,
     auth_user: User,
     db_session: AsyncSession,
 ) -> None:
-    created = await auth_client.post(
-        "/api/v1/physical-printers", json={"name": "Two material systems"}
+    """Slot zero exists on every printer, so a spool moves by slot id, not index."""
+    left = await auth_client.post(
+        "/api/v1/physical-printers", json={"name": "Left printer"}
     )
-    printer_id = created.json()["id"]
+    right = await auth_client.post(
+        "/api/v1/physical-printers", json={"name": "Right printer"}
+    )
+    left_id = left.json()["id"]
+    right_id = right.json()["id"]
 
     first = await auth_client.post(
-        f"/api/v1/physical-printers/{printer_id}/material-systems",
+        f"/api/v1/physical-printers/{left_id}/material-systems",
         json={
             "name": "Left feeder",
             "kind": "direct_feed",
@@ -378,10 +383,9 @@ async def test_manual_systems_with_same_provider_index_assign_by_slot_id(
             "slots": [{"provider_index": 0, "label": "Left"}],
         },
     )
-    first_system = first.json()["material_systems"][0]
-    first_slot_id = first_system["slots"][0]["id"]
+    first_slot_id = first.json()["material_systems"][0]["slots"][0]["id"]
     second = await auth_client.post(
-        f"/api/v1/physical-printers/{printer_id}/material-systems",
+        f"/api/v1/physical-printers/{right_id}/material-systems",
         json={
             "name": "Right feeder",
             "kind": "direct_feed",
@@ -389,11 +393,7 @@ async def test_manual_systems_with_same_provider_index_assign_by_slot_id(
             "slots": [{"provider_index": 0, "label": "Right"}],
         },
     )
-    second_system = next(
-        system
-        for system in second.json()["material_systems"]
-        if system["name"] == "Right feeder"
-    )
+    second_system = second.json()["material_systems"][0]
     second_slot_id = second_system["slots"][0]["id"]
 
     spool = UserSpool(
@@ -408,7 +408,7 @@ async def test_manual_systems_with_same_provider_index_assign_by_slot_id(
     await db_session.refresh(spool)
 
     assigned_first = await auth_client.patch(
-        f"/api/v1/physical-printers/{printer_id}/material-slots/{first_slot_id}",
+        f"/api/v1/physical-printers/{left_id}/material-slots/{first_slot_id}",
         json={"spool_id": spool.id},
     )
     assert assigned_first.status_code == 200
@@ -416,11 +416,17 @@ async def test_manual_systems_with_same_provider_index_assign_by_slot_id(
     assert systems[0]["slots"][0]["assignment"]["spool_id"] == spool.id
 
     assigned_second = await auth_client.patch(
-        f"/api/v1/physical-printers/{printer_id}/material-slots/{second_slot_id}",
+        f"/api/v1/physical-printers/{right_id}/material-slots/{second_slot_id}",
         json={"spool_id": spool.id},
     )
     assert assigned_second.status_code == 200
-    systems = assigned_second.json()["material_systems"]
+    both = await auth_client.get("/api/v1/physical-printers")
+    systems = [
+        system
+        for printer in both.json()
+        if printer["id"] in (left_id, right_id)
+        for system in printer["material_systems"]
+    ]
     slots_by_id = {
         slot["id"]: slot
         for system in systems
@@ -436,7 +442,7 @@ async def test_manual_systems_with_same_provider_index_assign_by_slot_id(
     assert await db_session.scalar(select(PresetGateState.id)) is None
 
     cleared = await auth_client.post(
-        f"/api/v1/physical-printers/{printer_id}/material-systems/"
+        f"/api/v1/physical-printers/{right_id}/material-systems/"
         f"{second_system['id']}/clear"
     )
     assert cleared.status_code == 200
@@ -449,6 +455,33 @@ async def test_manual_systems_with_same_provider_index_assign_by_slot_id(
     assert cleared_slot["assignment"] is None
     await db_session.refresh(spool)
     assert spool.state == UserSpoolState.shelf
+
+
+@pytest.mark.asyncio
+async def test_a_printer_takes_only_one_feed_system(
+    auth_client: AsyncClient,
+) -> None:
+    """Two systems on one printer would race to describe the same slots."""
+    created = await auth_client.post(
+        "/api/v1/physical-printers", json={"name": "One feed only"}
+    )
+    printer_id = created.json()["id"]
+    payload = {"name": "Happy Hare", "kind": "mmu", "provider": "happy_hare", "slot_count": 8}
+
+    first = await auth_client.post(
+        f"/api/v1/physical-printers/{printer_id}/material-systems", json=payload
+    )
+    assert first.status_code == 201
+
+    second = await auth_client.post(
+        f"/api/v1/physical-printers/{printer_id}/material-systems",
+        json={"name": "OctoPrint", "kind": "mmu", "provider": "octoprint", "slot_count": 1},
+    )
+    assert second.status_code == 409
+    assert second.json()["detail"]["code"] == "ERR_MATERIAL_SYSTEM_EXISTS"
+
+    physical = await auth_client.get(f"/api/v1/physical-printers/{printer_id}")
+    assert [s["provider"] for s in physical.json()["material_systems"]] == ["happy_hare"]
 
 
 @pytest.mark.asyncio

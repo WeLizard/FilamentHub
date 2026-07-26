@@ -420,16 +420,23 @@ function MaterialSystemSection({ printer, system, presetsSeedMap, spools, spoolC
 
           {!adapter.link ? null : (
             <div className="flex flex-wrap items-center gap-1.5 text-[11px] text-gray-400">
-              <span
-                title={t(printer.has_api_key ? 'presetSlots.link.issued' : 'presetSlots.link.none')}
-                className="flex items-center gap-1"
-              >
-                {printer.has_api_key ? (
-                  <Check className="h-3 w-3 text-emerald-400" />
+              <span className="flex items-center gap-1">
+                {!printer.has_api_key ? (
+                  <>
+                    <AlertTriangle className="h-3 w-3 text-amber-400" />
+                    {t('presetSlots.link.notSet')}
+                  </>
+                ) : !linkConfirmed ? (
+                  <>
+                    <Clock className="h-3 w-3 text-gray-400" />
+                    {t('presetSlots.link.waiting')}
+                  </>
                 ) : (
-                  <AlertTriangle className="h-3 w-3 text-amber-400" />
+                  <>
+                    <Check className="h-3 w-3 text-emerald-400" />
+                    {t('presetSlots.link.label')}
+                  </>
                 )}
-                {t('presetSlots.link.label')}
               </span>
               {adapter.renderSettings?.({ printer, system, gates, linkConfirmed })}
               <button
@@ -693,7 +700,13 @@ export function PresetSlotsPanel({
     );
   }
 
-  const addButton = (
+  // One printer feeds from one place, so a printer already described is not
+  // offered again.
+  const freePrinters = physicalPrinters.filter(
+    (printer) => printer.material_systems.length === 0,
+  );
+
+  const addButton = freePrinters.length === 0 ? null : (
     <button
       type="button"
       onClick={() => setAddingSystem(true)}
@@ -722,7 +735,7 @@ export function PresetSlotsPanel({
         <div className="flex justify-end">{addButton}</div>
         {addingSystem && (
           <NewSystemCard
-            printers={physicalPrinters}
+            printers={freePrinters}
             spoolCompatBaseUrl={spoolCompatBaseUrl}
             onDone={handleSystemAdded}
           />
