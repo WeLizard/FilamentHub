@@ -371,6 +371,23 @@ async def _resolve_print_profile_filament_link(
     return None, _slugify_string(name)[:200]
 
 
+def _orca_compatible_list(raw: object) -> list[str] | None:
+    """Read a compatibility list the way the host serialises it.
+
+    The plugin forwards a preset's config untouched, and Orca hands out this key
+    as one string of quoted names separated by semicolons. Read only as a list,
+    it looked empty, so an imported process ended up compatible with nothing.
+    """
+    if isinstance(raw, (list, tuple)):
+        items = [str(item).strip().strip('"') for item in raw]
+    elif isinstance(raw, str):
+        items = [part.strip().strip('"') for part in raw.split(";")]
+    else:
+        return None
+    names = [item for item in items if item]
+    return names or None
+
+
 async def _sync_imported_print_profile_links(
     *,
     db: AsyncSession,
@@ -1442,11 +1459,19 @@ async def _upsert_print_profile(
         result = await db.execute(query)
         profile = result.scalars().first()
 
-    compatible_printers = (
-        [str(item) for item in payload.compatible_printers] if payload.compatible_printers else None
+    settings_for_compat = payload.orcaslicer_settings or {}
+    compatible_condition = payload.compatible_printers_condition or (
+        str(settings_for_compat.get("compatible_printers_condition") or "").strip() or None
     )
-    compatible_filaments = (
-        [str(item) for item in payload.compatible_filaments] if payload.compatible_filaments else None
+    compatible_printers = _orca_compatible_list(
+        payload.compatible_printers
+        if payload.compatible_printers
+        else settings_for_compat.get("compatible_printers")
+    )
+    compatible_filaments = _orca_compatible_list(
+        payload.compatible_filaments
+        if payload.compatible_filaments
+        else settings_for_compat.get("compatible_filaments")
     )
 
     if profile is not None and not _can_edit_profile(profile, current_user):
@@ -1500,9 +1525,9 @@ async def _upsert_print_profile(
             profile.orcaslicer_settings = profile.orcaslicer_settings or {}
         if payload.extra_metadata:
             profile.extra_metadata = payload.extra_metadata
-        if payload.compatible_printers_condition:
+        if compatible_condition:
             extra = dict(profile.extra_metadata or {})
-            extra["compatible_printers_condition"] = payload.compatible_printers_condition
+            extra["compatible_printers_condition"] = compatible_condition
             profile.extra_metadata = extra
         profile.notes = payload.notes
         await _sync_imported_print_profile_links(db=db, profile=profile)
@@ -1550,7 +1575,7 @@ async def _upsert_print_profile(
         compatible_printers=compatible_printers,
         compatible_filaments=compatible_filaments,
         orcaslicer_settings=profile_orcaslicer_settings,
-        extra_metadata=_merge_extra_metadata(payload.extra_metadata, payload.compatible_printers_condition),
+        extra_metadata=_merge_extra_metadata(payload.extra_metadata, compatible_condition),
         notes=payload.notes,
     )
     db.add(profile)

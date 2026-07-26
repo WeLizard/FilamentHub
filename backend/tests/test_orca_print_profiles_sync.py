@@ -609,3 +609,62 @@ async def test_reimport_recognizes_a_configuration_by_name(
         )
     ).scalars().all()
     assert len(rows) == 1
+
+
+@pytest.mark.asyncio
+async def test_import_reads_compatibility_from_the_hosts_own_format(
+    client: AsyncClient,
+    db_session: AsyncSession,
+):
+    """Orca hands out compatible_printers as one semicolon-separated string.
+
+    Read only as a list it looked empty, so a process imported from the plugin
+    arrived compatible with nothing while the data was in the payload all along.
+    """
+    headers, _ = await _register_and_login(client, "orca-compat-string")
+
+    printer = Printer(
+        name="Voron 2.4 350",
+        manufacturer="Voron",
+        model="2.4 350",
+        slug="voron-2-4-350-compat",
+        source="user",
+        active=True,
+    )
+    db_session.add(printer)
+    await db_session.commit()
+
+    response = await client.post(
+        "/api/v1/orcaslicer/print-profiles/import",
+        headers=headers,
+        json={
+            "profiles": [
+                {
+                    "name": "0.20mm Standard @Voron2.4",
+                    "external_id": "0.20mm Standard @Voron2.4",
+                    "setting_id": "0.20mm Standard @Voron2.4",
+                    "source": "orcaslicer",
+                    "orcaslicer_settings": {
+                        "print_settings_id": "0.20mm Standard @Voron2.4",
+                        "compatible_printers": '"Voron 2.4 350";"Voron 2.4 300"',
+                    },
+                }
+            ]
+        },
+    )
+    assert response.status_code == 200
+    result = response.json()["results"][0]
+
+    profile = (
+        await db_session.execute(
+            select(PrintProfile)
+            .where(PrintProfile.id == result["fhub_id"])
+            .options(selectinload(PrintProfile.printer_links))
+        )
+    ).scalar_one()
+
+    assert profile.compatible_printers == ["Voron 2.4 350", "Voron 2.4 300"]
+    assert sorted(link.printer_slug for link in profile.printer_links) == [
+        "voron-2-4-300",
+        "voron-2-4-350-compat",
+    ]
