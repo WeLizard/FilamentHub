@@ -454,17 +454,7 @@ function MaterialSystemSection({ printer, system, presetsSeedMap, spools, spoolC
             )}
           </div>
 
-          {!adapter.needsLink ? null : linkConfirmed ? (
-            <button
-              type="button"
-              onClick={handleIssueKey}
-              disabled={issuingKey}
-              title={t('presetSlots.link.reissue')}
-              className="rounded p-0.5 text-gray-500 transition hover:bg-white/10 hover:text-white disabled:opacity-40"
-            >
-              {issuingKey ? <Loader2 className="h-3 w-3 animate-spin" /> : <KeyRound className="h-3 w-3" />}
-            </button>
-          ) : (
+          {!adapter.needsLink ? null : (
             <div className="flex flex-wrap items-center gap-1.5 text-[11px] text-gray-400">
               <span
                 title={t(printer.has_api_key ? 'presetSlots.link.issued' : 'presetSlots.link.none')}
