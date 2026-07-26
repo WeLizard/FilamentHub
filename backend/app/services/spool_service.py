@@ -26,13 +26,13 @@ from app.models.preset_usage_event import PresetUsageEventType
 from app.models.user import User
 from app.models.user_printer_device import UserPrinterDevice
 from app.models.user_spool import UserSpool, UserSpoolState
-from app.services.spool_usage_service import record_spool_usage
 from app.schemas.spool import (
     SpoolCreateRequest,
     SpoolFilamentInfo,
     SpoolResponse,
     SpoolUpdateRequest,
 )
+from app.services.spool_usage_service import record_spool_usage
 
 
 def _read_projected_location(extra: dict) -> tuple[str, int]:

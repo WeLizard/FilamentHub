@@ -19,7 +19,6 @@ from app.models.preset_usage_event import PresetUsageEvent, PresetUsageEventType
 from app.models.user_spool import UserSpool, UserSpoolState
 from app.schemas.spool import SpoolUsageEventResponse
 
-
 # A repeat of the same request looks exactly like this: one printer, the same
 # amount, seconds apart. A print cannot spend an identical amount twice that fast.
 _REPEAT_WINDOW = timedelta(seconds=60)

@@ -33,13 +33,12 @@ from app.models.brand import Brand
 from app.models.filament import Filament
 from app.models.preset import PUBLIC_PRESET_STATUSES, Preset
 from app.models.preset_gate_state import PresetGateState, PresetGateStateSource
+from app.models.preset_usage_event import PresetUsageEventType
 from app.models.user import User
 from app.models.user_printer_device import UserPrinterDevice
 from app.models.user_spool import UserSpool, UserSpoolState
 from app.services.preset_enrichment_service import _load_material_defaults
 from app.services.preset_slot_sync_service import touch_device_last_seen
-from app.models.preset_usage_event import PresetUsageEventType
-from app.services.spool_usage_service import record_spool_usage
 from app.services.spool_service import (
     assign_spool_to_gate,
     clear_spool_gate_assignments,
@@ -48,6 +47,7 @@ from app.services.spool_service import (
     release_spool_location,
     shelf_spool_if_unassigned,
 )
+from app.services.spool_usage_service import record_spool_usage
 
 from . import spool_compat_fields
 from .spool_compat_ws import spool_ws_manager

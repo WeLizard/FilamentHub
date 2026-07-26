@@ -22,8 +22,8 @@ if TYPE_CHECKING:
     from app.models.printer_profile import PrinterProfile
     from app.models.subscription import Subscription
     from app.models.sync_device import SyncDevice
-    from app.models.user_printer_device import UserPrinterDevice
     from app.models.user_legal_acceptance import UserLegalAcceptance
+    from app.models.user_printer_device import UserPrinterDevice
     from app.models.user_saved_preset import UserSavedPreset
     from app.models.user_spool import UserSpool
     from app.models.wiki_feedback import WikiArticleFeedback
