@@ -2,6 +2,10 @@
 
 Newest first. The top entry is the text pasted into the Plugin Hub on release.
 
+## 0.0.7
+- Slices you export or send to a printer now show up in FilamentHub's calculator: pick one and it fills in weight, time and the machine it was sliced for, instead of hunting for the file. Only the figures OrcaSlicer already wrote into the G-code travel — the file itself stays on your computer. Turn it on by choosing FilamentHub in the process preset's Slicing Pipeline Plugin field.
+- The same slice arriving twice (saving to a file and uploading to the printer both fire once) is counted once.
+
 ## 0.0.6
 - Fixed import and sync breaking after OrcaSlicer's plugin audit blocked reading the app config.
 - Your printer and print profiles now reach FilamentHub during sync, so the site knows which machine a spool or material belongs to. Only your own profiles, each one again only after you change it; printer host passwords and API keys never leave your computer. Nothing is written into your slicer profiles.
