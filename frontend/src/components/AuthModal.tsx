@@ -5,14 +5,14 @@ import { Mail, Lock, LogIn, UserPlus, User, X, Check, Eye, EyeOff, AlertCircle, 
 import { useAuth } from '../contexts/AuthContext';
 import { authAPI } from '../api/client';
 import { Recaptcha, getRecaptchaToken } from './Captcha';
-import { TermsModal } from './TermsModal';
-import { ConsentModal } from './ConsentModal';
 import { ForgotPasswordModal } from './ForgotPasswordModal';
 import { ModalOverlay } from './ModalOverlay';
 import { useTranslation } from 'react-i18next';
+import { Link } from 'react-router-dom';
 import { translateApiError } from '../utils/translateApiError';
 import { rememberAuthReturnTo } from '../utils/authReturn';
 import { isPluginEmbed, startPluginOAuth } from '../utils/pluginBridge';
+import type { AuthMethods, LegalRequirements } from '../types/api';
 
 interface AuthModalProps {
   isOpen: boolean;
@@ -22,9 +22,6 @@ interface AuthModalProps {
 
 export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMode = 'login' }) => {
   const { t, i18n } = useTranslation();
-  // Закон РФ: для русскоязычного интерфейса не предлагаем авторизацию через
-  // нероссийские сервисы (Google). Кнопка скрывается полностью.
-  const showGoogleOAuth = !(i18n.language || '').toLowerCase().startsWith('ru');
   const [authMode, setAuthMode] = useState<'login' | 'register'>(initialMode);
   const [oauthLoading, setOauthLoading] = useState<'google' | 'yandex' | null>(null);
   const [email, setEmail] = useState('');
@@ -33,11 +30,12 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [username, setUsername] = useState('');
-  const [agreed, setAgreed] = useState(false);
+  const [termsAccepted, setTermsAccepted] = useState(false);
+  const [personalDataConsent, setPersonalDataConsent] = useState(false);
+  const [legalRequirements, setLegalRequirements] = useState<LegalRequirements | null>(null);
+  const [authMethods, setAuthMethods] = useState<AuthMethods | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
-  const [isTermsModalOpen, setIsTermsModalOpen] = useState(false);
-  const [isConsentModalOpen, setIsConsentModalOpen] = useState(false);
   const [isForgotPasswordModalOpen, setIsForgotPasswordModalOpen] = useState(false);
   // Встроенный WebView блокирует страницы согласия Google/Yandex, поэтому в
   // плагине OAuth уходит в системный браузер; ждём возврата сессии по loopback.
@@ -68,12 +66,57 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
   // Очищаем ошибки при закрытии модального окна
   useEffect(() => {
     if (!isOpen) {
+      return;
+    }
+
+    let cancelled = false;
+    setAuthMethods(null);
+    void authAPI.getAuthMethods()
+      .then((methods) => {
+        if (!cancelled) {
+          setAuthMethods(methods);
+        }
+      })
+      .catch(() => {
+        // Local login remains available. OAuth stays fail-closed when the
+        // server capability document cannot be loaded.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [isOpen]);
+
+  useEffect(() => {
+    if (!isOpen) {
       setError(null);
       setIsLoading(false);
       setOauthLoading(null);
       setOauthExternalPending(false);
     }
   }, [isOpen]);
+
+  useEffect(() => {
+    if (!isOpen || authMode !== 'register') {
+      return;
+    }
+
+    let cancelled = false;
+    setLegalRequirements(null);
+    void authAPI.getLegalRequirements()
+      .then((requirements) => {
+        if (!cancelled) {
+          setLegalRequirements(requirements);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setError(t('authModal.error_legal_documents_unavailable'));
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [authMode, isOpen, t]);
 
   // Внешний OAuth завершился успехом (auth-restore → вход) — закрываем модалку.
   useEffect(() => {
@@ -100,8 +143,13 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
         setError(null); // Очищаем ошибки при успехе
       } else {
         // Валидация без очистки полей
-        if (!agreed) {
+        if (!termsAccepted || !personalDataConsent) {
           setError(t('authModal.error_agree_terms'));
+          setIsLoading(false);
+          return;
+        }
+        if (!legalRequirements) {
+          setError(t('authModal.error_legal_documents_unavailable'));
           setIsLoading(false);
           return;
         }
@@ -126,7 +174,9 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
           return;
         }
         
-        const freshRecaptchaToken = await getRecaptchaToken('register');
+        const freshRecaptchaToken = authMethods?.registration_captcha === 'recaptcha'
+          ? await getRecaptchaToken('register')
+          : null;
 
         // Все проверки пройдены - регистрируем со свежим reCAPTCHA токеном
         await register({
@@ -135,6 +185,12 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
           password,
           role: 'user',
           recaptcha_token: freshRecaptchaToken ?? undefined,
+          terms_accepted: true,
+          personal_data_consent: true,
+          terms_version: legalRequirements.terms_version,
+          personal_data_consent_version: legalRequirements.personal_data_consent_version,
+          privacy_policy_version: legalRequirements.privacy_policy_version,
+          legal_language: (i18n.resolvedLanguage || i18n.language || 'en').slice(0, 2).toLowerCase(),
         });
         
         // Успешная регистрация - закрываем модальное окно
@@ -145,14 +201,16 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
         setPassword('');
         setConfirmPassword('');
         setUsername('');
-        setAgreed(false);
+        setTermsAccepted(false);
+        setPersonalDataConsent(false);
         setIsLoading(false);
       }
     } catch (err: any) {
       if (err?.registrationSucceeded) {
         setAuthMode('login');
         setConfirmPassword('');
-        setAgreed(false);
+        setTermsAccepted(false);
+        setPersonalDataConsent(false);
         setError(t('authModal.registration_succeeded_login_required'));
         setIsLoading(false);
         return;
@@ -435,51 +493,77 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
                 <div className="flex items-start space-x-2">
                   <button
                     type="button"
-                    onClick={() => setAgreed(!agreed)}
+                    role="checkbox"
+                    aria-checked={termsAccepted}
+                    onClick={() => setTermsAccepted(!termsAccepted)}
                     className={`mt-1 w-5 h-5 flex items-center justify-center rounded ${
-                      agreed
+                      termsAccepted
                         ? 'bg-purple-600 text-white'
                         : 'bg-white/10 border border-white/20 text-transparent'
                     } transition-all`}
                   >
-                    {agreed && <Check className="w-4 h-4" />}
+                    {termsAccepted && <Check className="w-4 h-4" />}
                   </button>
                   <label className="text-gray-300 text-sm cursor-pointer flex-1">
-                    {t('authModal.agree_terms_1')}{' '}
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.preventDefault();
-                        e.stopPropagation();
-                        setIsTermsModalOpen(true);
-                      }}
+                    {t('authModal.accept_terms')}{' '}
+                    <Link
+                      to="/user-agreement"
+                      target="_blank"
+                      rel="noopener noreferrer"
                       className="text-purple-400 hover:text-purple-300 underline"
                     >
                       {t('authModal.agree_terms_user_agreement')}
-                    </button>{' '}
-                    {t('authModal.agree_terms_2')}{' '}
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.preventDefault();
-                        e.stopPropagation();
-                        setIsConsentModalOpen(true);
-                      }}
+                    </Link>
+                  </label>
+                </div>
+                <div className="flex items-start space-x-2">
+                  <button
+                    type="button"
+                    role="checkbox"
+                    aria-checked={personalDataConsent}
+                    onClick={() => setPersonalDataConsent(!personalDataConsent)}
+                    className={`mt-1 w-5 h-5 flex items-center justify-center rounded ${
+                      personalDataConsent
+                        ? 'bg-purple-600 text-white'
+                        : 'bg-white/10 border border-white/20 text-transparent'
+                    } transition-all`}
+                  >
+                    {personalDataConsent && <Check className="w-4 h-4" />}
+                  </button>
+                  <label className="text-gray-300 text-sm cursor-pointer flex-1">
+                    {t('authModal.accept_personal_data')}{' '}
+                    <Link
+                      to="/personal-data-consent"
+                      target="_blank"
+                      rel="noopener noreferrer"
                       className="text-purple-400 hover:text-purple-300 underline"
                     >
                       {t('authModal.agree_terms_personal_data')}
-                    </button>
+                    </Link>
                   </label>
                 </div>
+                <p className="text-xs text-gray-400">
+                  {t('authModal.privacy_notice')}{' '}
+                  <Link
+                    to="/privacy-policy"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-purple-400 hover:text-purple-300 underline"
+                  >
+                    {t('layout.footer_privacy')}
+                  </Link>
+                </p>
 
                 {/* reCAPTCHA v3 — скрипт прогревается заранее, токен берём перед submit */}
-                <Recaptcha action="register" />
+                {authMethods?.registration_captcha === 'recaptcha' && (
+                  <Recaptcha action="register" />
+                )}
               </>
             )}
 
             <button
               type="submit"
-              disabled={isLoading || isOauthBusy || (authMode === 'register' && !agreed)}
+              disabled={isLoading || isOauthBusy || (authMode === 'register' && (!termsAccepted || !personalDataConsent || !legalRequirements))}
               className="w-full mt-4 bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white py-3 px-6 rounded-xl transition-all shadow-lg shadow-purple-500/25 hover:shadow-purple-500/40 disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {isLoading ? (
@@ -502,6 +586,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
             </button>
 
             {/* OAuth buttons */}
+            {authMethods && authMethods.oauth_providers.length > 0 && (
             <div className="mt-4">
               <div className="relative flex items-center my-3">
                 <div className="flex-1 border-t border-white/10" />
@@ -509,8 +594,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
                 <div className="flex-1 border-t border-white/10" />
               </div>
               <div className="flex gap-2">
-                {/* Google — скрыт для русскоязычного интерфейса (требование закона РФ) */}
-                {showGoogleOAuth && (
+                {authMethods.oauth_providers.includes('google') && (
                 <button
                   type="button"
                   onClick={() => handleOAuthLogin('google')}
@@ -531,6 +615,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
                 </button>
                 )}
                 {/* Yandex */}
+                {authMethods.oauth_providers.includes('yandex') && (
                 <button
                   type="button"
                   onClick={() => handleOAuthLogin('yandex')}
@@ -546,18 +631,14 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
                   )}
                   <span>{t('authModal.yandex')}</span>
                 </button>
+                )}
               </div>
             </div>
+            )}
           </div>
         </form>
         </div>
       </div>
-
-      {/* Terms Modal */}
-      <TermsModal isOpen={isTermsModalOpen} onClose={() => setIsTermsModalOpen(false)} />
-
-      {/* Consent Modal */}
-      <ConsentModal isOpen={isConsentModalOpen} onClose={() => setIsConsentModalOpen(false)} />
 
       {/* Forgot Password Modal */}
       <ForgotPasswordModal
@@ -570,4 +651,3 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
     </ModalOverlay>
   );
 };
-

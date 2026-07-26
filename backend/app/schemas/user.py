@@ -25,7 +25,6 @@ class UserBase(BaseModel):
     email: EmailStr
     username: str = Field(..., min_length=3, max_length=100)
     full_name: str | None = Field(None, max_length=255)
-    bio: str | None = None
 
 
 class UserCreate(UserBase):
@@ -47,7 +46,6 @@ class UserUpdate(BaseModel):
     email: EmailStr | None = None
     username: str | None = Field(None, min_length=3, max_length=100)
     full_name: str | None = Field(None, max_length=255)
-    bio: str | None = None
     country: str | None = Field(None, pattern=r"^[A-Z]{2}$")
     password: str | None = Field(None, min_length=8, max_length=100)
 
@@ -138,6 +136,7 @@ class UserResponse(UserBase):
     created_at: datetime
     updated_at: datetime
     last_login: datetime | None = None
+    legal_onboarding_required: bool = False
     # Calculator Pro entitlement (effective flag + subscription summary).
     # Named to avoid colliding with the ORM `subscription` relationship (from_attributes);
     # serialized to the client as `subscription`.
@@ -157,6 +156,12 @@ class UserResponse(UserBase):
             from app.services.subscription_service import pro_active, subscription_summary
             instance.has_calculator_access = pro_active(obj)
             instance.subscription_info = subscription_summary(obj)
+        if hasattr(obj, "terms_version_accepted"):
+            from app.services.legal_acceptance_service import (
+                requires_current_legal_acceptance,
+            )
+
+            instance.legal_onboarding_required = requires_current_legal_acceptance(obj)
         return instance
 
 
@@ -200,6 +205,7 @@ class Token(BaseModel):
     access_token: str
     refresh_token: str | None = None
     token_type: str = "bearer"
+    legal_onboarding_required: bool = False
 
 
 class RefreshTokenRequest(BaseModel):
@@ -248,6 +254,44 @@ class RegisterRequest(UserCreate):
     """Schema for register request."""
 
     recaptcha_token: str | None = Field(None, description="reCAPTCHA v3 token")
+    terms_accepted: Literal[True]
+    personal_data_consent: Literal[True]
+    terms_version: str = Field(..., max_length=32)
+    personal_data_consent_version: str = Field(..., max_length=32)
+    privacy_policy_version: str = Field(..., max_length=32)
+    legal_language: str = Field(default="en", pattern=r"^[a-z]{2}$")
+
+
+class LegalRequirementsResponse(BaseModel):
+    """Current public legal document versions and routes."""
+
+    terms_version: str
+    personal_data_consent_version: str
+    privacy_policy_version: str
+    terms_url: str
+    personal_data_consent_url: str
+    privacy_policy_url: str
+
+
+class AuthMethodsResponse(BaseModel):
+    """Authentication capabilities enabled for the current request region."""
+
+    access_region: Literal["ru", "intl", "unknown"]
+    local_login: bool = True
+    local_registration: bool = True
+    oauth_providers: list[Literal["google", "yandex"]]
+    registration_captcha: Literal["recaptcha"] | None = None
+
+
+class LegalAcceptanceRequest(BaseModel):
+    """Separate affirmative choices for the current mandatory documents."""
+
+    terms_accepted: Literal[True]
+    personal_data_consent: Literal[True]
+    terms_version: str = Field(..., max_length=32)
+    personal_data_consent_version: str = Field(..., max_length=32)
+    privacy_policy_version: str = Field(..., max_length=32)
+    legal_language: str = Field(default="en", pattern=r"^[a-z]{2}$")
 
 
 class OAuthUrlResponse(BaseModel):

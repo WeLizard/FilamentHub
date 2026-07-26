@@ -31,6 +31,12 @@ async def _register_and_login(client: AsyncClient, suffix: str) -> tuple[dict[st
             "username": f"user_{suffix}",
             "password": password,
             "role": "user",
+            "terms_accepted": True,
+            "personal_data_consent": True,
+            "terms_version": "2026-07-25",
+            "personal_data_consent_version": "2026-07-25",
+        "privacy_policy_version": "2026-07-25",
+            "legal_language": "en",
         },
     )
     assert register_response.status_code == 201

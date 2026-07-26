@@ -8,6 +8,7 @@ from urllib.parse import urlencode
 import httpx
 
 from app.core.config import settings
+from app.services.request_region_service import AccessRegion
 
 logger = logging.getLogger(__name__)
 
@@ -202,3 +203,36 @@ def is_provider_configured(provider: str) -> bool:
     if provider == "yandex":
         return bool(settings.YANDEX_CLIENT_ID and settings.YANDEX_CLIENT_SECRET)
     return False
+
+
+def oauth_provider_policy(access_region: AccessRegion) -> tuple[str, ...]:
+    """Return providers permitted for this request's resolved region."""
+    if access_region == AccessRegion.INTL:
+        return ("google", "yandex")
+    return ("yandex",)
+
+
+def allowed_oauth_providers(access_region: AccessRegion) -> tuple[str, ...]:
+    """Return configured providers allowed for the current request."""
+    return tuple(
+        provider
+        for provider in oauth_provider_policy(access_region)
+        if is_provider_configured(provider)
+    )
+
+
+def is_provider_allowed(provider: str, access_region: AccessRegion) -> bool:
+    """Enforce request policy independently from frontend visibility."""
+    return provider in oauth_provider_policy(access_region)
+
+
+def registration_captcha_provider(access_region: AccessRegion) -> str | None:
+    """Return the configured registration captcha for this request region.
+
+    Phase 1 keeps reCAPTCHA only outside Russia. Russian and unresolved requests
+    remain protected by existing request rate limits until the local CAPTCHA
+    phase is implemented.
+    """
+    if access_region != AccessRegion.INTL or not settings.RECAPTCHA_SECRET_KEY:
+        return None
+    return "recaptcha"

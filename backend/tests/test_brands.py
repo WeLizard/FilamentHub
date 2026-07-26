@@ -5,6 +5,7 @@ from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.brand import Brand
+from tests.conftest import registration_payload
 
 
 @pytest.mark.asyncio
@@ -83,12 +84,7 @@ async def test_brand_request_proof_files_are_gated(client: AsyncClient, db_sessi
         email = f"{suffix}@example.com"
         resp = await client.post(
             "/api/v1/auth/register",
-            json={
-                "email": email,
-                "username": f"user_{suffix}",
-                "password": "testpassword123",
-                "role": "user",
-            },
+            json=registration_payload(email=email, username=f"user_{suffix}", password="testpassword123", role="user"),
         )
         assert resp.status_code == 201
         login = await client.post(
@@ -130,6 +126,9 @@ async def test_brand_request_proof_files_are_gated(client: AsyncClient, db_sessi
 
         endpoint = f"/api/v1/brand-requests/{request.id}/proof/proof-test.png"
 
+        # Logging in above left an auth cookie on the client; a truly anonymous
+        # request has to start without it.
+        client.cookies.clear()
         anon = await client.get(endpoint)
         assert anon.status_code == 401
 

@@ -69,6 +69,10 @@ export const ConsentPage = () => {
                 <li>{t('consentPage.sections.general.personalData.nickname')}</li>
                 <li>{t('consentPage.sections.general.personalData.fullName')}</li>
                 <li>{t('consentPage.sections.general.personalData.profileData')}</li>
+                <li>{t('consentPage.sections.general.personalData.oauthData')}</li>
+                <li>{t('consentPage.sections.general.personalData.accountData')}</li>
+                <li>{t('consentPage.sections.general.personalData.publishedContent')}</li>
+                <li>{t('consentPage.sections.general.personalData.supportCorrespondence')}</li>
                 <li>
                   {t('consentPage.sections.general.personalData.brandVerificationIntro')}
                   <ul className="list-disc list-inside ml-6 mt-1 space-y-1">

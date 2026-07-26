@@ -88,6 +88,7 @@ export const PrivacyPolicyPage = () => {
                 ))}
               </ul>
               <p className="mb-2 font-medium text-purple-300">{t('privacyPage.sections.purposes.note')}</p>
+              <p className="mb-2">{t('privacyPage.sections.purposes.legalBasis')}</p>
             </section>
 
             {/* 4. Third-Party Services */}

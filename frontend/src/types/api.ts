@@ -544,7 +544,6 @@ export interface User {
   country?: string | null;
   role: string;
   full_name: string | null;
-  bio: string | null;
   avatar_url: string | null; // загруженный аватар пользователя
   active: boolean;
   email_verified: boolean;
@@ -568,6 +567,7 @@ export interface User {
   created_at: string;
   updated_at: string;
   last_login: string | null; // Дата последнего входа
+  legal_onboarding_required: boolean;
 }
 
 export interface AccessibleBrand {
@@ -649,6 +649,41 @@ export interface Token {
   access_token: string;
   refresh_token?: string;
   token_type?: string;
+  legal_onboarding_required?: boolean;
+}
+
+export interface LegalRequirements {
+  terms_version: string;
+  personal_data_consent_version: string;
+  privacy_policy_version: string;
+  terms_url: string;
+  personal_data_consent_url: string;
+  privacy_policy_url: string;
+}
+
+export interface AuthMethods {
+  access_region: 'ru' | 'intl' | 'unknown';
+  local_login: boolean;
+  local_registration: boolean;
+  oauth_providers: Array<'google' | 'yandex'>;
+  registration_captcha: 'recaptcha' | null;
+}
+
+export interface LegalAcceptancePayload {
+  terms_accepted: true;
+  personal_data_consent: true;
+  terms_version: string;
+  personal_data_consent_version: string;
+  privacy_policy_version: string;
+  legal_language: string;
+}
+
+export interface RegistrationPayload extends LegalAcceptancePayload {
+  email: string;
+  username: string;
+  password: string;
+  role: string;
+  recaptcha_token?: string;
 }
 
 export interface RefreshTokenRequest {

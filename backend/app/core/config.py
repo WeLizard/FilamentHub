@@ -1,5 +1,6 @@
 """Application configuration."""
 
+from typing import Literal
 from urllib.parse import quote_plus
 
 from pydantic import model_validator
@@ -49,6 +50,17 @@ class Settings(BaseSettings):
     AUTH_COOKIE_DOMAIN: str | None = None
     AUTH_COOKIE_SECURE: bool = False
     AUTH_COOKIE_SAMESITE: str = "lax"  # lax | strict | none
+    # Request-scoped auth region policy. GeoIP failures are handled fail-closed
+    # by the resolver; development explicitly enables both OAuth providers.
+    AUTH_REGION_MODE: Literal[
+        "geoip",
+        "static_ru",
+        "static_intl",
+        "development",
+    ] = "geoip"
+    GEOIP_COUNTRY_DB_PATH: str = "/app/data/geoip/GeoLite2-Country.mmdb"
+    AUTH_CLIENT_IP_HEADER: str = "X-FilamentHub-Client-IP"
+    AUTH_TRUSTED_PROXY_NETWORKS: str = "172.30.0.10/32"
 
     # CORS
     CORS_ORIGINS: list[str] = [

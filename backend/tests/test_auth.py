@@ -2,12 +2,319 @@
 
 import pytest
 from httpx import AsyncClient
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.models.brand import Brand
 from app.models.user import User
+from app.models.user_legal_acceptance import UserLegalAcceptance
+from app.services.legal_acceptance_service import (
+    CURRENT_PERSONAL_DATA_CONSENT_VERSION,
+    CURRENT_TERMS_VERSION,
+)
 from app.services.organization_access import grant_brand_owner_membership
+
+
+LEGAL_REGISTRATION_FIELDS = {
+    "terms_accepted": True,
+    "personal_data_consent": True,
+    "terms_version": CURRENT_TERMS_VERSION,
+    "personal_data_consent_version": CURRENT_PERSONAL_DATA_CONSENT_VERSION,
+    "privacy_policy_version": "2026-07-25",
+    "legal_language": "en",
+}
+
+
+@pytest.mark.asyncio
+async def test_auth_methods_are_server_authoritative(
+    client: AsyncClient,
+    monkeypatch,
+):
+    monkeypatch.setattr(settings, "GOOGLE_CLIENT_ID", "google-id")
+    monkeypatch.setattr(settings, "GOOGLE_CLIENT_SECRET", "google-secret")
+    monkeypatch.setattr(settings, "YANDEX_CLIENT_ID", "yandex-id")
+    monkeypatch.setattr(settings, "YANDEX_CLIENT_SECRET", "yandex-secret")
+    monkeypatch.setattr(settings, "RECAPTCHA_SECRET_KEY", "recaptcha-secret")
+
+    monkeypatch.setattr(settings, "AUTH_REGION_MODE", "static_ru")
+    ru_response = await client.get("/api/v1/auth/methods")
+    assert ru_response.status_code == 200
+    assert ru_response.headers["Cache-Control"] == "private, no-store"
+    assert ru_response.json() == {
+        "access_region": "ru",
+        "local_login": True,
+        "local_registration": True,
+        "oauth_providers": ["yandex"],
+        "registration_captcha": None,
+    }
+
+    monkeypatch.setattr(settings, "AUTH_REGION_MODE", "static_intl")
+    intl_response = await client.get("/api/v1/auth/methods")
+    assert intl_response.status_code == 200
+    assert intl_response.json() == {
+        "access_region": "intl",
+        "local_login": True,
+        "local_registration": True,
+        "oauth_providers": ["google", "yandex"],
+        "registration_captcha": "recaptcha",
+    }
+
+    monkeypatch.setattr(settings, "AUTH_REGION_MODE", "geoip")
+    monkeypatch.setattr(settings, "GEOIP_COUNTRY_DB_PATH", "missing-country.mmdb")
+    unknown_response = await client.get("/api/v1/auth/methods")
+    assert unknown_response.status_code == 200
+    assert unknown_response.json() == {
+        "access_region": "unknown",
+        "local_login": True,
+        "local_registration": True,
+        "oauth_providers": ["yandex"],
+        "registration_captcha": None,
+    }
+
+
+@pytest.mark.asyncio
+async def test_oauth_provider_policy_is_enforced_on_direct_api_calls(
+    client: AsyncClient,
+    monkeypatch,
+):
+    monkeypatch.setattr(settings, "GOOGLE_CLIENT_ID", "google-id")
+    monkeypatch.setattr(settings, "GOOGLE_CLIENT_SECRET", "google-secret")
+    monkeypatch.setattr(settings, "YANDEX_CLIENT_ID", "yandex-id")
+    monkeypatch.setattr(settings, "YANDEX_CLIENT_SECRET", "yandex-secret")
+
+    monkeypatch.setattr(settings, "AUTH_REGION_MODE", "static_ru")
+    blocked_google = await client.get("/api/v1/auth/oauth/google/url")
+    assert blocked_google.status_code == 403
+    assert blocked_google.json()["detail"] == {
+        "code": "ERR_OAUTH_PROVIDER_NOT_AVAILABLE",
+        "params": {"provider": "google"},
+    }
+
+    blocked_google_callback = await client.post(
+        "/api/v1/auth/oauth/google/callback",
+        json={"code": "unused", "state": "unused"},
+    )
+    assert blocked_google_callback.status_code == 403
+    assert blocked_google_callback.json()["detail"]["code"] == (
+        "ERR_OAUTH_PROVIDER_NOT_AVAILABLE"
+    )
+
+    monkeypatch.setattr(settings, "AUTH_REGION_MODE", "static_intl")
+    allowed_yandex = await client.get("/api/v1/auth/oauth/yandex/url")
+    assert allowed_yandex.status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_ru_registration_never_invokes_google_recaptcha(
+    client: AsyncClient,
+    monkeypatch,
+):
+    from app.core import utils as core_utils
+
+    calls = 0
+
+    async def rejected_recaptcha(token: str, remote_ip: str | None = None) -> bool:
+        nonlocal calls
+        calls += 1
+        return False
+
+    monkeypatch.setattr(core_utils, "verify_recaptcha", rejected_recaptcha)
+    monkeypatch.setattr(settings, "AUTH_REGION_MODE", "static_ru")
+    monkeypatch.setattr(settings, "RECAPTCHA_SECRET_KEY", "recaptcha-secret")
+
+    response = await client.post(
+        "/api/v1/auth/register",
+        json={
+            "email": "ru-no-recaptcha@example.com",
+            "username": "ru_no_recaptcha",
+            "password": "Password123",
+            "role": "user",
+            **LEGAL_REGISTRATION_FIELDS,
+        },
+    )
+
+    assert response.status_code == 201
+    assert calls == 0
+
+
+@pytest.mark.asyncio
+async def test_legal_requirements_are_public_and_versioned(client: AsyncClient):
+    response = await client.get("/api/v1/auth/legal-requirements")
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "terms_version": CURRENT_TERMS_VERSION,
+        "personal_data_consent_version": CURRENT_PERSONAL_DATA_CONSENT_VERSION,
+        "privacy_policy_version": "2026-07-25",
+        "terms_url": "/user-agreement",
+        "personal_data_consent_url": "/personal-data-consent",
+        "privacy_policy_url": "/privacy-policy",
+    }
+
+
+@pytest.mark.asyncio
+async def test_registration_requires_separate_current_legal_acceptance(
+    client: AsyncClient,
+):
+    base = {
+        "email": "legal-required@example.com",
+        "username": "legal_required",
+        "password": "testpassword123",
+        "role": "user",
+    }
+
+    missing = await client.post("/api/v1/auth/register", json=base)
+    assert missing.status_code == 422
+
+    stale = await client.post(
+        "/api/v1/auth/register",
+        json={
+            **base,
+            **LEGAL_REGISTRATION_FIELDS,
+            "terms_version": "stale",
+        },
+    )
+    assert stale.status_code == 409
+    assert stale.json()["detail"]["code"] == "ERR_LEGAL_DOCUMENT_VERSION_MISMATCH"
+
+    stale_privacy = await client.post(
+        "/api/v1/auth/register",
+        json={
+            **base,
+            **LEGAL_REGISTRATION_FIELDS,
+            "privacy_policy_version": "stale",
+        },
+    )
+    assert stale_privacy.status_code == 409
+    assert (
+        stale_privacy.json()["detail"]["code"]
+        == "ERR_LEGAL_DOCUMENT_VERSION_MISMATCH"
+    )
+
+
+@pytest.mark.asyncio
+async def test_registration_records_separate_legal_evidence(
+    client: AsyncClient,
+    db_session: AsyncSession,
+):
+    response = await client.post(
+        "/api/v1/auth/register",
+        json={
+            "email": "legal-evidence@example.com",
+            "username": "legal_evidence",
+            "password": "testpassword123",
+            "role": "user",
+            **LEGAL_REGISTRATION_FIELDS,
+        },
+    )
+
+    assert response.status_code == 201
+    assert response.json()["legal_onboarding_required"] is False
+    user = (
+        await db_session.execute(
+            select(User).where(User.email == "legal-evidence@example.com")
+        )
+    ).scalar_one()
+    rows = (
+        await db_session.execute(
+            select(UserLegalAcceptance)
+            .where(UserLegalAcceptance.user_id == user.id)
+            .order_by(UserLegalAcceptance.document_type)
+        )
+    ).scalars().all()
+    assert [row.document_type for row in rows] == [
+        "personal_data_consent",
+        "terms",
+    ]
+    assert {row.acceptance_source for row in rows} == {"registration"}
+    assert {row.language for row in rows} == {"en"}
+    assert {row.related_privacy_policy_version for row in rows} == {"2026-07-25"}
+    assert user.privacy_policy_version_presented == "2026-07-25"
+
+
+@pytest.mark.asyncio
+async def test_existing_or_oauth_user_must_accept_before_private_features(
+    client: AsyncClient,
+    db_session: AsyncSession,
+):
+    from app.core.security import create_access_token
+
+    user = User(
+        email="legal-onboarding@example.com",
+        username="legal_onboarding",
+        oauth_provider="google",
+        oauth_provider_id="google-legal-1",
+        active=True,
+        email_verified=True,
+    )
+    db_session.add(user)
+    await db_session.commit()
+    await db_session.refresh(user)
+    token = create_access_token({"sub": user.email, "user_id": user.id})
+    headers = {"Authorization": f"Bearer {token}"}
+
+    me = await client.get("/api/v1/auth/me", headers=headers)
+    assert me.status_code == 200
+    assert me.json()["legal_onboarding_required"] is True
+
+    blocked = await client.post(
+        "/api/v1/auth/plugin-session",
+        json={},
+        headers=headers,
+    )
+    assert blocked.status_code == 403
+    assert blocked.json()["detail"]["code"] == "ERR_LEGAL_ACCEPTANCE_REQUIRED"
+
+    legacy_dependency_blocked = await client.get(
+        "/api/v1/filament-reviews/my",
+        headers=headers,
+    )
+    assert legacy_dependency_blocked.status_code == 403
+    assert (
+        legacy_dependency_blocked.json()["detail"]["code"]
+        == "ERR_LEGAL_ACCEPTANCE_REQUIRED"
+    )
+
+    stale = await client.post(
+        "/api/v1/auth/legal-acceptance",
+        headers=headers,
+        json={
+            **LEGAL_REGISTRATION_FIELDS,
+            "terms_version": "stale",
+        },
+    )
+    assert stale.status_code == 409
+
+    accepted = await client.post(
+        "/api/v1/auth/legal-acceptance",
+        headers=headers,
+        json=LEGAL_REGISTRATION_FIELDS,
+    )
+    assert accepted.status_code == 200
+    assert accepted.json()["legal_onboarding_required"] is False
+
+    repeated = await client.post(
+        "/api/v1/auth/legal-acceptance",
+        headers=headers,
+        json=LEGAL_REGISTRATION_FIELDS,
+    )
+    assert repeated.status_code == 200
+    rows = (
+        await db_session.execute(
+            select(UserLegalAcceptance).where(
+                UserLegalAcceptance.user_id == user.id
+            )
+        )
+    ).scalars().all()
+    assert len(rows) == 2
+
+    unlocked = await client.post(
+        "/api/v1/auth/plugin-session",
+        json={},
+        headers=headers,
+    )
+    assert unlocked.status_code == 200
 
 
 @pytest.mark.asyncio
@@ -18,6 +325,7 @@ async def test_register_user(client: AsyncClient):
         "username": "testuser",
         "password": "testpassword123",
         "role": "user",
+        **LEGAL_REGISTRATION_FIELDS,
     }
     response = await client.post("/api/v1/auth/register", json=user_data)
     assert response.status_code == 201
@@ -36,6 +344,7 @@ async def test_register_duplicate_email(client: AsyncClient):
         "username": "user1",
         "password": "password123",
         "role": "user",
+        **LEGAL_REGISTRATION_FIELDS,
     }
     # First registration
     response = await client.post("/api/v1/auth/register", json=user_data)
@@ -57,6 +366,7 @@ async def test_login(client: AsyncClient):
         "username": "loginuser",
         "password": "loginpassword123",
         "role": "user",
+        **LEGAL_REGISTRATION_FIELDS,
     }
     await client.post("/api/v1/auth/register", json=user_data)
     
@@ -81,6 +391,7 @@ async def test_login_wrong_password(client: AsyncClient):
         "username": "wrongpassuser",
         "password": "correctpassword123",
         "role": "user",
+        **LEGAL_REGISTRATION_FIELDS,
     }
     await client.post("/api/v1/auth/register", json=user_data)
     
@@ -94,6 +405,58 @@ async def test_login_wrong_password(client: AsyncClient):
 
 
 @pytest.mark.asyncio
+async def test_oauth_only_user_can_set_local_password_via_reset(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    monkeypatch,
+):
+    """Disabling an OAuth provider must not lock its existing users out."""
+    from app.api.v1.endpoints import auth as auth_module
+
+    user = User(
+        email="oauth-reset@example.com",
+        username="oauthreset",
+        password_hash=None,
+        oauth_provider="google",
+        oauth_provider_id="google-reset-1",
+        active=True,
+        email_verified=True,
+    )
+    db_session.add(user)
+    await db_session.commit()
+
+    sent: dict[str, str] = {}
+
+    def capture_reset_email(*, to: str, reset_url: str) -> bool:
+        sent["to"] = to
+        sent["reset_url"] = reset_url
+        return True
+
+    monkeypatch.setattr(auth_module, "send_password_reset_email", capture_reset_email)
+
+    forgot = await client.post(
+        "/api/v1/auth/forgot-password",
+        json={"email": user.email},
+    )
+    assert forgot.status_code == 200
+    assert sent["to"] == user.email
+
+    reset_token = sent["reset_url"].rsplit("token=", 1)[1]
+    reset = await client.post(
+        "/api/v1/auth/reset-password",
+        json={"token": reset_token, "new_password": "NewLocalPassword123!"},
+    )
+    assert reset.status_code == 200
+
+    login = await client.post(
+        "/api/v1/auth/login",
+        json={"email": user.email, "password": "NewLocalPassword123!"},
+    )
+    assert login.status_code == 200
+    assert login.json()["access_token"]
+
+
+@pytest.mark.asyncio
 async def test_get_current_user(client: AsyncClient):
     """Test getting current user info."""
     # Register and login
@@ -102,6 +465,7 @@ async def test_get_current_user(client: AsyncClient):
         "username": "currentuser",
         "password": "password123",
         "role": "user",
+        **LEGAL_REGISTRATION_FIELDS,
     }
     await client.post("/api/v1/auth/register", json=user_data)
     
@@ -244,6 +608,7 @@ async def test_cookie_auth_login_and_me_in_dual_mode(client: AsyncClient, monkey
         "username": "cookie_dual_user",
         "password": "password123",
         "role": "user",
+        **LEGAL_REGISTRATION_FIELDS,
     }
     register_response = await client.post("/api/v1/auth/register", json=user_data)
     assert register_response.status_code == 201
@@ -270,6 +635,7 @@ async def test_cookie_auth_requires_csrf_for_mutation(client: AsyncClient, monke
         "username": "csrf_user",
         "password": "password123",
         "role": "user",
+        **LEGAL_REGISTRATION_FIELDS,
     }
     register_response = await client.post("/api/v1/auth/register", json=user_data)
     assert register_response.status_code == 201
@@ -308,6 +674,7 @@ async def test_legacy_bearer_still_works_in_dual_mode(client: AsyncClient, monke
         "username": "legacy_dual_user",
         "password": "password123",
         "role": "user",
+        **LEGAL_REGISTRATION_FIELDS,
     }
     register_response = await client.post("/api/v1/auth/register", json=user_data)
     assert register_response.status_code == 201
@@ -335,6 +702,7 @@ async def test_logout_revokes_legacy_access_token(client: AsyncClient):
         "username": "revoke_user",
         "password": "password123",
         "role": "user",
+        **LEGAL_REGISTRATION_FIELDS,
     }
     register_response = await client.post("/api/v1/auth/register", json=user_data)
     assert register_response.status_code == 201
@@ -371,6 +739,7 @@ async def test_cookie_refresh_requires_csrf_in_dual_mode(client: AsyncClient, mo
         "username": "cookie_refresh_csrf_user",
         "password": "password123",
         "role": "user",
+        **LEGAL_REGISTRATION_FIELDS,
     }
     register_response = await client.post("/api/v1/auth/register", json=user_data)
     assert register_response.status_code == 201
@@ -404,6 +773,7 @@ async def test_legacy_refresh_body_still_works_in_dual_mode(client: AsyncClient,
         "username": "legacy_refresh_user",
         "password": "password123",
         "role": "user",
+        **LEGAL_REGISTRATION_FIELDS,
     }
     register_response = await client.post("/api/v1/auth/register", json=user_data)
     assert register_response.status_code == 201
@@ -427,8 +797,8 @@ async def test_legacy_refresh_body_still_works_in_dual_mode(client: AsyncClient,
 @pytest.mark.asyncio
 async def test_upload_avatar(client: AsyncClient, monkeypatch, tmp_path):
     """Avatar uploads are decoded, normalized to WebP and replace the old file."""
-    from io import BytesIO
     import struct
+    from io import BytesIO
 
     from PIL import Image
 
@@ -440,6 +810,7 @@ async def test_upload_avatar(client: AsyncClient, monkeypatch, tmp_path):
         "username": "avataruser",
         "password": "password123",
         "role": "user",
+        **LEGAL_REGISTRATION_FIELDS,
     }
     await client.post("/api/v1/auth/register", json=user_data)
     login = await client.post(
@@ -517,6 +888,7 @@ async def test_oauth_callback_validates_state(client: AsyncClient, monkeypatch):
     from app.api.v1.endpoints import auth as auth_module
     from app.services.oauth_service import OAuthUserInfo
 
+    monkeypatch.setattr(settings, "AUTH_REGION_MODE", "static_intl")
     monkeypatch.setattr(auth_module, "is_provider_configured", lambda provider: True)
     monkeypatch.setattr(
         auth_module,
@@ -563,6 +935,7 @@ async def test_oauth_callback_validates_state(client: AsyncClient, monkeypatch):
     )
     assert ok.status_code == 200
     assert ok.json()["access_token"]
+    assert ok.json()["legal_onboarding_required"] is True
 
 
 @pytest.mark.asyncio

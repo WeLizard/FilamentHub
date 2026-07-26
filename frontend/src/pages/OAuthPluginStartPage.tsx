@@ -1,7 +1,7 @@
 /**
  * OAuth entry point for the OrcaSlicer plugin, opened in the user's real browser.
  *
- * The plugin can't run Google/Yandex consent inside its embedded WebView, so
+ * The plugin can't run provider consent inside its embedded WebView, so
  * Python opens this route in the system browser with a loopback callback (cb) and
  * a one-time nonce. Here we stash cb+nonce, start the normal provider flow (which
  * sets the httpOnly state cookie in THIS browser), and let the standard
@@ -39,6 +39,10 @@ export function OAuthPluginStartPage() {
 
     (async () => {
       try {
+        const methods = await authAPI.getAuthMethods();
+        if (!methods.oauth_providers.includes(provider as 'google' | 'yandex')) {
+          throw new Error('OAuth provider is not available on this service surface');
+        }
         sessionStorage.setItem(PLUGIN_OAUTH_HANDOFF_KEY, JSON.stringify({ cb, nonce }));
         const { url } = await authAPI.getOAuthUrl(provider);
         window.location.href = url;

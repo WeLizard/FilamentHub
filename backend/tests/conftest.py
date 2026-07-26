@@ -96,12 +96,18 @@ async def client(db_session: AsyncSession) -> AsyncGenerator[AsyncClient, None]:
 async def auth_user(db_session: AsyncSession) -> "User":
     """Create a regular authenticated user for protected-endpoint tests."""
     from app.models.user import User
+    from app.services.legal_acceptance_service import (
+        CURRENT_PERSONAL_DATA_CONSENT_VERSION,
+        CURRENT_TERMS_VERSION,
+    )
 
     user = User(
         email="auth_user@example.com",
         username="authuser",
         password_hash="$2b$12$test",
         active=True,
+        terms_version_accepted=CURRENT_TERMS_VERSION,
+        personal_data_consent_version=CURRENT_PERSONAL_DATA_CONSENT_VERSION,
     )
     db_session.add(user)
     await db_session.commit()
@@ -123,6 +129,10 @@ async def auth_client(client: AsyncClient, auth_user: "User") -> AsyncClient:
 async def admin_user(db_session: AsyncSession) -> "User":
     """Create an admin user for admin-only / privileged endpoint tests."""
     from app.models.user import User, UserRole
+    from app.services.legal_acceptance_service import (
+        CURRENT_PERSONAL_DATA_CONSENT_VERSION,
+        CURRENT_TERMS_VERSION,
+    )
 
     user = User(
         email="admin_user@example.com",
@@ -130,6 +140,8 @@ async def admin_user(db_session: AsyncSession) -> "User":
         password_hash="$2b$12$test",
         active=True,
         role=UserRole.ADMIN,
+        terms_version_accepted=CURRENT_TERMS_VERSION,
+        personal_data_consent_version=CURRENT_PERSONAL_DATA_CONSENT_VERSION,
     )
     db_session.add(user)
     await db_session.commit()
@@ -155,3 +167,37 @@ def test_client() -> TestClient:
     Note: For async tests, use the 'client' fixture instead.
     """
     return TestClient(app)
+
+
+def registration_payload(**overrides) -> dict:
+    """Registration body with the legal acceptance the endpoint requires."""
+    from app.services.legal_acceptance_service import (
+        CURRENT_PERSONAL_DATA_CONSENT_VERSION,
+        CURRENT_PRIVACY_POLICY_VERSION,
+        CURRENT_TERMS_VERSION,
+    )
+
+    payload = {
+        "role": "user",
+        "terms_accepted": True,
+        "personal_data_consent": True,
+        "terms_version": CURRENT_TERMS_VERSION,
+        "personal_data_consent_version": CURRENT_PERSONAL_DATA_CONSENT_VERSION,
+        "privacy_policy_version": CURRENT_PRIVACY_POLICY_VERSION,
+        "legal_language": "en",
+    }
+    payload.update(overrides)
+    return payload
+
+
+def accepted_legal() -> dict:
+    """Legal acceptance a directly created test user needs to pass auth."""
+    from app.services.legal_acceptance_service import (
+        CURRENT_PERSONAL_DATA_CONSENT_VERSION,
+        CURRENT_TERMS_VERSION,
+    )
+
+    return {
+        "terms_version_accepted": CURRENT_TERMS_VERSION,
+        "personal_data_consent_version": CURRENT_PERSONAL_DATA_CONSENT_VERSION,
+    }

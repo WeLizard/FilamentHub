@@ -16,6 +16,7 @@ from app.core.errors import (
     ERR_CALCULATOR_ACCESS_REQUIRED,
     ERR_COULD_NOT_VALIDATE,
     ERR_INVALID_API_KEY,
+    ERR_LEGAL_ACCEPTANCE_REQUIRED,
     ERR_NOT_ADMIN,
     ERR_NOT_BRAND_USER,
     ERR_USER_INACTIVE,
@@ -31,6 +32,7 @@ from app.core.security import (
 from app.db.session import get_db
 from app.models.revoked_token import RevokedToken
 from app.models.user import User, UserRole
+from app.services.legal_acceptance_service import requires_current_legal_acceptance
 
 logger = logging.getLogger(__name__)
 
@@ -64,12 +66,16 @@ async def is_token_revoked(token: str, db: AsyncSession) -> bool:
     return result.scalar_one_or_none() is not None
 
 
-async def get_current_user(
+async def get_current_user_for_legal_onboarding(
     request: Request,
     credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(security)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> User:
-    """Get current authenticated user from JWT token."""
+    """Authenticate an active account without requiring legal onboarding.
+
+    This dependency is intentionally restricted to the onboarding allow-list:
+    current-user information, legal acceptance, and logout.
+    """
     token: str | None = None
     using_cookie_auth = False
 
@@ -116,6 +122,15 @@ async def get_current_user(
         raise_error(status.HTTP_403_FORBIDDEN, ERR_USER_INACTIVE)
 
     return user
+
+
+async def get_current_user(
+    current_user: Annotated[User, Depends(get_current_user_for_legal_onboarding)],
+) -> User:
+    """Get an authenticated user who accepted the current legal documents."""
+    if requires_current_legal_acceptance(current_user):
+        raise_error(status.HTTP_403_FORBIDDEN, ERR_LEGAL_ACCEPTANCE_REQUIRED)
+    return current_user
 
 
 async def _get_current_user_or_plugin_scope(
@@ -186,6 +201,8 @@ async def _get_current_user_or_plugin_scope(
         )
     if not user.active:
         raise_error(status.HTTP_403_FORBIDDEN, ERR_USER_INACTIVE)
+    if requires_current_legal_acceptance(user):
+        raise_error(status.HTTP_403_FORBIDDEN, ERR_LEGAL_ACCEPTANCE_REQUIRED)
     return user
 
 
@@ -218,7 +235,7 @@ async def require_preset_write(
 async def get_current_active_user(
     current_user: Annotated[User, Depends(get_current_user)],
 ) -> User:
-    """Get current active user."""
+    """Compatibility dependency for endpoints requiring an active user."""
     return current_user
 
 
@@ -262,14 +279,18 @@ async def get_current_active_user_optional(
     result = await db.execute(select(User).where(User.email == email))
     user = result.scalar_one_or_none()
 
-    if user is None or not user.active:
+    if (
+        user is None
+        or not user.active
+        or requires_current_legal_acceptance(user)
+    ):
         return None
 
     return user
 
 
 async def get_current_brand_user(
-    current_user: Annotated[User, Depends(get_current_user)],
+    current_user: Annotated[User, Depends(get_current_active_user)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> User:
     """Get a user with an authorized active brand workspace."""
@@ -284,7 +305,7 @@ async def get_current_brand_user(
 
 
 async def get_current_admin_user(
-    current_user: Annotated[User, Depends(get_current_user)],
+    current_user: Annotated[User, Depends(get_current_active_user)],
 ) -> User:
     """Get current user with admin role."""
     if current_user.role != UserRole.ADMIN:
@@ -323,4 +344,6 @@ async def get_current_user_by_api_key(
         raise_error(status.HTTP_401_UNAUTHORIZED, ERR_INVALID_API_KEY)
     if not user.active:
         raise_error(status.HTTP_403_FORBIDDEN, ERR_USER_INACTIVE)
+    if requires_current_legal_acceptance(user):
+        raise_error(status.HTTP_403_FORBIDDEN, ERR_LEGAL_ACCEPTANCE_REQUIRED)
     return user

@@ -4,7 +4,7 @@ import React, { createContext, useContext, useState, useEffect, ReactNode } from
 import { authAPI } from '../api/client';
 import { getRefreshToken, getToken, isCookieAuthMode, isOrcaEmbedded, removeToken, setRefreshToken, setToken, setUserId, shouldPersistTokensLocally } from '../utils/auth';
 import { isPluginEmbed, reportLogoutToPlugin, reportPluginSessionToPlugin, subscribeToPluginAuthRestore, subscribeToPluginLogout } from '../utils/pluginBridge';
-import type { User } from '../types/api';
+import type { LegalAcceptancePayload, RegistrationPayload, User } from '../types/api';
 
 interface AuthContextType {
   user: User | null;
@@ -13,8 +13,9 @@ interface AuthContextType {
   isMaintenanceMode: boolean;
   maintenanceMessage: string | null;
   login: (email: string, password: string) => Promise<void>;
-  loginWithToken: (accessToken: string, refreshToken?: string | null) => Promise<void>;
-  register: (data: { email: string; username: string; password: string; role: string; recaptcha_token?: string }) => Promise<void>;
+  loginWithToken: (accessToken: string, refreshToken?: string | null) => Promise<User>;
+  register: (data: RegistrationPayload) => Promise<void>;
+  acceptLegalDocuments: (data: LegalAcceptancePayload) => Promise<User>;
   logout: () => Promise<void>;
   refreshUser: () => Promise<void>;
   clearMaintenanceMode: () => void;
@@ -191,7 +192,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   // embed session appears (including cookie-restored sessions after a plugin
   // update), then refresh it before expiry while the window stays open.
   useEffect(() => {
-    if (!user || !isPluginEmbed()) {
+    if (!user || user.legal_onboarding_required || !isPluginEmbed()) {
       return;
     }
 
@@ -219,7 +220,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         clearTimeout(refreshTimer);
       }
     };
-  }, [user?.id]);
+  }, [user?.id, user?.legal_onboarding_required]);
 
   const login = async (email: string, password: string) => {
     try {
@@ -268,13 +269,14 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       if (userData.id && persistLocally) {
         setUserId(userData.id);
       }
+      return userData;
     } catch (error: any) {
       removeToken();
       throw error;
     }
   };
 
-  const register = async (data: { email: string; username: string; password: string; role: string; recaptcha_token?: string }) => {
+  const register = async (data: RegistrationPayload) => {
     try {
       // Регистрируем пользователя
       await authAPI.register(data);
@@ -299,6 +301,12 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       // Пробрасываем ошибку дальше для обработки в компоненте
       throw error;
     }
+  };
+
+  const acceptLegalDocuments = async (data: LegalAcceptancePayload): Promise<User> => {
+    const userData = await authAPI.acceptLegalDocuments(data);
+    setUser(userData);
+    return userData;
   };
 
   const logout = async () => {
@@ -358,6 +366,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     login,
     loginWithToken,
     register,
+    acceptLegalDocuments,
     logout,
     refreshUser,
     clearMaintenanceMode,

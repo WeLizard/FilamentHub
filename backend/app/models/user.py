@@ -23,6 +23,7 @@ if TYPE_CHECKING:
     from app.models.subscription import Subscription
     from app.models.sync_device import SyncDevice
     from app.models.user_printer_device import UserPrinterDevice
+    from app.models.user_legal_acceptance import UserLegalAcceptance
     from app.models.user_saved_preset import UserSavedPreset
     from app.models.user_spool import UserSpool
     from app.models.wiki_feedback import WikiArticleFeedback
@@ -59,7 +60,6 @@ class User(Base):
 
     # Profile info
     full_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
-    bio: Mapped[str | None] = mapped_column(Text, nullable=True)
     avatar_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
     country: Mapped[str | None] = mapped_column(String(2), nullable=True)
 
@@ -85,6 +85,19 @@ class User(Base):
     # Status
     active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     email_verified: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    terms_version_accepted: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    personal_data_consent_version: Mapped[str | None] = mapped_column(
+        String(32), nullable=True
+    )
+    privacy_policy_version_presented: Mapped[str | None] = mapped_column(
+        String(32), nullable=True
+    )
+    legal_accepted_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    legal_acceptance_language: Mapped[str | None] = mapped_column(
+        String(8), nullable=True
+    )
 
     # Wiki editing permission
     can_edit_wiki: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
@@ -165,6 +178,11 @@ class User(Base):
     )
     spools: Mapped[list["UserSpool"]] = relationship(
         "UserSpool", back_populates="user", cascade="all, delete-orphan"
+    )
+    legal_acceptances: Mapped[list["UserLegalAcceptance"]] = relationship(
+        "UserLegalAcceptance",
+        back_populates="user",
+        cascade="all, delete-orphan",
     )
     subscription: Mapped["Subscription | None"] = relationship(
         "Subscription", back_populates="user", uselist=False, cascade="all, delete-orphan"

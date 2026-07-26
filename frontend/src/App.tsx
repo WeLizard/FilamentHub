@@ -1,4 +1,4 @@
-import { Routes, Route, useNavigate } from 'react-router-dom';
+import { Routes, Route, useNavigate, useLocation } from 'react-router-dom';
 import { Loader2 } from 'lucide-react';
 import { AuthProvider } from './contexts/AuthContext';
 import { ProtectedRoute } from './components/ProtectedRoute';
@@ -17,12 +17,12 @@ import { ToastContainer, toast } from './components/Toast';
 import { useOrcaSlicerNotifications } from './hooks/useOrcaSlicerNotifications';
 import { lazy, Suspense, useEffect, useState } from 'react';
 import { isPluginEmbed, subscribeToPluginNavigation, subscribeToPluginSyncResult, subscribeToPluginRecoverList, sendRecoverImport, type RecoverItem } from './utils/pluginBridge';
-import { RecoverPresetsModal } from './components/RecoverPresetsModal';
 import { Notifications } from './components/Notifications';
 import { useAuth } from './contexts/AuthContext';
 import { MaintenancePage } from './components/MaintenancePage';
-
 import { NotFoundPage } from './pages/NotFoundPage';
+import { RecoverPresetsModal } from './components/RecoverPresetsModal';
+import { LegalOnboardingModal } from './components/LegalOnboardingModal';
 
 // Lazy-loaded pages (code splitting)
 const ProfilePage = lazy(() => import('./pages/ProfilePage').then(m => ({ default: m.ProfilePage })));
@@ -63,11 +63,17 @@ function PageLoader() {
   );
 }
 
+const LEGAL_PATHS = ['/user-agreement', '/privacy-policy', '/personal-data-consent'];
+
 function AppContent() {
   // Обработчик уведомлений от OrcaSlicer
   useOrcaSlicerNotifications();
   const navigate = useNavigate();
+  const location = useLocation();
   const { user, isMaintenanceMode, maintenanceMessage, clearMaintenanceMode } = useAuth();
+  // The onboarding modal links to these pages; covering them makes the documents
+  // a person is asked to accept unreadable.
+  const onLegalPage = LEGAL_PATHS.includes(location.pathname);
   
   // Проверяем, запущен ли frontend внутри OrcaSlicer
   const isInOrcaSlicer = typeof window !== 'undefined' && (
@@ -129,6 +135,7 @@ function AppContent() {
   return (
     <>
       <ToastContainer />
+      {user?.legal_onboarding_required && !onLegalPage && <LegalOnboardingModal />}
       {recoverItems && (
         <RecoverPresetsModal
           items={recoverItems}

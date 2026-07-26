@@ -37,6 +37,7 @@ from app.models.material_slot_assignment import MaterialSlotAssignment
 from app.models.material_system import MaterialSlot, MaterialSystem, PhysicalPrinterConnector
 from app.models.notification import Notification, NotificationType
 from app.models.notification_campaign import NotificationCampaign, NotificationCampaignRecipient
+from app.models.orca_printer_connection_observation import OrcaPrinterConnectionObservation
 from app.models.organization import (
     Organization,
     OrganizationBrandAccess,
@@ -54,6 +55,7 @@ from app.models.print_profile import PrintProfile
 from app.models.print_profile_filament import PrintProfileFilament
 from app.models.print_profile_printer import PrintProfilePrinter
 from app.models.printer import Printer
+from app.models.printer_connection_binding import PrinterConnectionBinding
 from app.models.printer_profile import PrinterProfile
 from app.models.printer_request import PrinterRequest, PrinterRequestStatus
 from app.models.revoked_token import RevokedToken
@@ -62,6 +64,7 @@ from app.models.subscription import Subscription, SubscriptionStatus
 from app.models.sync_device import SyncDevice
 from app.models.sync_history import SyncHistory, SyncOperation, SyncPresetType, SyncStatus
 from app.models.user import User, UserRole
+from app.models.user_legal_acceptance import UserLegalAcceptance
 from app.models.user_printer_device import UserPrinterDevice
 from app.models.user_saved_preset import UserSavedPreset, UserSavedPresetTarget
 from app.models.user_spool import UserSpool, UserSpoolState
@@ -113,6 +116,7 @@ __all__ = [
     "NotificationCampaign",
     "NotificationCampaignRecipient",
     "NotificationType",
+    "OrcaPrinterConnectionObservation",
     "Organization",
     "OrganizationBrandAccess",
     "OrganizationMembership",
@@ -128,6 +132,7 @@ __all__ = [
     "PresetModerationStatus",
     "PresetPrinter",
     "Printer",
+    "PrinterConnectionBinding",
     "PrinterRequest",
     "PrinterRequestStatus",
     "PrinterProfile",
@@ -146,6 +151,7 @@ __all__ = [
     "SyncPresetType",
     "SyncStatus",
     "User",
+    "UserLegalAcceptance",
     "UserPrinterDevice",
     "UserRole",
     "UserSavedPreset",

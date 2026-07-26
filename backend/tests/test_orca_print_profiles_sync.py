@@ -12,6 +12,7 @@ from app.models.print_profile import PrintProfile
 from app.models.printer import Printer
 from app.models.printer_profile import PrinterProfile
 from app.models.user import User
+from tests.conftest import registration_payload
 
 
 async def _register_and_login(
@@ -24,12 +25,7 @@ async def _register_and_login(
 
     register_response = await client.post(
         "/api/v1/auth/register",
-        json={
-            "email": email,
-            "username": f"user_{suffix}",
-            "password": password,
-            "role": "user",
-        },
+        json=registration_payload(email=email, username=f"user_{suffix}", password=password, role="user"),
     )
     assert register_response.status_code == 201
 

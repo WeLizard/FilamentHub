@@ -15,9 +15,14 @@ export function OAuthCallbackPage() {
   const [searchParams] = useSearchParams();
   const { provider } = useParams<{ provider: string }>();
   const navigate = useNavigate();
-  const { loginWithToken } = useAuth();
+  const { loginWithToken, user } = useAuth();
   const [error, setError] = useState<string | null>(null);
+  const [pendingTokens, setPendingTokens] = useState<{
+    accessToken: string;
+    refreshToken: string | null;
+  } | null>(null);
   const calledRef = useRef(false);
+  const completedRef = useRef(false);
 
   useEffect(() => {
     // Guard against React StrictMode double-invoke
@@ -42,18 +47,10 @@ export function OAuthCallbackPage() {
       try {
         const tokenData = await authAPI.oauthCallback(provider, code, state);
         await loginWithToken(tokenData.access_token, tokenData.refresh_token);
-        // Плагинный флоу: сессию нужно вернуть в OrcaSlicer по loopback, а не
-        // остаться в браузере. cb уже провалидирован как loopback при записи.
-        const handoff = consumePluginOAuthHandoff();
-        if (handoff) {
-          const deliver = new URL(handoff.cb);
-          deliver.searchParams.set('access', tokenData.access_token);
-          deliver.searchParams.set('refresh', tokenData.refresh_token ?? '');
-          deliver.searchParams.set('nonce', handoff.nonce);
-          window.location.replace(deliver.toString());
-          return;
-        }
-        navigate(consumeAuthReturnTo() ?? '/', { replace: true });
+        setPendingTokens({
+          accessToken: tokenData.access_token,
+          refreshToken: tokenData.refresh_token ?? null,
+        });
       } catch (err: any) {
         const detail = err?.response?.data?.detail;
         const fallback = t('oauthCallback.error_fallback', { provider: provider ?? '' });
@@ -61,6 +58,39 @@ export function OAuthCallbackPage() {
       }
     })();
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    if (
+      completedRef.current
+      || !pendingTokens
+      || !user
+    ) {
+      return;
+    }
+
+    // The plugin receives the normal account session so its embedded app can
+    // display the mandatory onboarding itself. Until both choices are accepted,
+    // backend dependencies block personal APIs and no plugin capability token
+    // is minted. cb was validated as loopback when the flow started.
+    const handoff = consumePluginOAuthHandoff();
+    if (handoff) {
+      completedRef.current = true;
+      const deliver = new URL(handoff.cb);
+      deliver.searchParams.set('access', pendingTokens.accessToken);
+      deliver.searchParams.set('refresh', pendingTokens.refreshToken ?? '');
+      deliver.searchParams.set('nonce', handoff.nonce);
+      window.location.replace(deliver.toString());
+      return;
+    }
+
+    // Normal browser OAuth keeps the user on this page under the global legal
+    // modal, then completes the redirect after acceptance.
+    if (user.legal_onboarding_required) {
+      return;
+    }
+    completedRef.current = true;
+    navigate(consumeAuthReturnTo() ?? '/', { replace: true });
+  }, [navigate, pendingTokens, user]);
 
   return (
     <div className="min-h-screen bg-gray-950 flex items-center justify-center">

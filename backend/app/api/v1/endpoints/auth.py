@@ -24,6 +24,7 @@ from sqlalchemy.orm import selectinload
 from app.core.config import settings
 from app.core.dependencies import (
     get_current_active_user,
+    get_current_user_for_legal_onboarding,
     is_token_revoked,
     require_preset_read,
 )
@@ -38,7 +39,6 @@ from app.core.security import (
     decode_refresh_token,
     generate_api_key,
     generate_email_change_token,
-    generate_email_verification_token,
     generate_password_reset_token,
     get_password_hash,
     token_fingerprint,
@@ -57,10 +57,13 @@ from app.schemas.user import (
     AccountDeletionStats,
     ActiveBrandUpdate,
     APIKeyResponse,
+    AuthMethodsResponse,
     ConfirmEmailChangeResponse,
     EmailChangeResponse,
     ForgotPasswordRequest,
     ForgotPasswordResponse,
+    LegalAcceptanceRequest,
+    LegalRequirementsResponse,
     LoginRequest,
     LogoutRequest,
     OAuthCallbackRequest,
@@ -81,7 +84,20 @@ from app.schemas.user import (
 )
 from app.services.email_service import send_email_change_email, send_password_reset_email
 from app.services.email_validator import validate_email_domain
+from app.services.legal_acceptance_service import (
+    CURRENT_PERSONAL_DATA_CONSENT_VERSION,
+    CURRENT_PRIVACY_POLICY_VERSION,
+    CURRENT_TERMS_VERSION,
+    current_legal_requirements,
+    record_current_legal_acceptance,
+    requires_current_legal_acceptance,
+)
 from app.services.organization_access import can_select_active_brand, list_accessible_brands
+from app.services.request_region_service import (
+    AccessRegion,
+    get_request_client_ip,
+    resolve_access_region,
+)
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 logger = logging.getLogger(__name__)
@@ -98,11 +114,13 @@ from app.core.errors import (
     ERR_INVALID_REFRESH_TOKEN,
     ERR_INVALID_RESET_TOKEN,
     ERR_INVALID_VERIFICATION_TOKEN,
+    ERR_LEGAL_DOCUMENT_VERSION_MISMATCH,
     ERR_OAUTH_EMAIL_MISSING,
     ERR_OAUTH_EMAIL_TAKEN,
     ERR_OAUTH_FAILED,
     ERR_OAUTH_INVALID_PROVIDER,
     ERR_OAUTH_INVALID_STATE,
+    ERR_OAUTH_PROVIDER_NOT_AVAILABLE,
     ERR_OAUTH_PROVIDER_NOT_CONFIGURED,
     ERR_PASSWORD_HASH_ERROR,
     ERR_PRINTER_NOT_FOUND,
@@ -116,6 +134,24 @@ from app.core.errors import (
     raise_error,
 )
 from app.core.limiter import limiter
+
+
+def _validate_legal_document_versions(
+    *,
+    terms_version: str,
+    personal_data_consent_version: str,
+    privacy_policy_version: str,
+) -> None:
+    if (
+        terms_version != CURRENT_TERMS_VERSION
+        or personal_data_consent_version
+        != CURRENT_PERSONAL_DATA_CONSENT_VERSION
+        or privacy_policy_version != CURRENT_PRIVACY_POLICY_VERSION
+    ):
+        raise_error(
+            status.HTTP_409_CONFLICT,
+            ERR_LEGAL_DOCUMENT_VERSION_MISMATCH,
+        )
 
 
 def _extract_expiry(payload: dict | None) -> datetime | None:
@@ -200,6 +236,35 @@ def _clear_auth_cookies(response: Response) -> None:
     response.delete_cookie(settings.AUTH_CSRF_COOKIE_NAME, **common)
 
 
+@router.get("/legal-requirements", response_model=LegalRequirementsResponse)
+async def get_legal_requirements() -> LegalRequirementsResponse:
+    """Return the current public legal document versions and routes."""
+    return LegalRequirementsResponse(**current_legal_requirements())
+
+
+@router.post("/legal-acceptance", response_model=UserResponse)
+async def accept_legal_documents(
+    data: LegalAcceptanceRequest,
+    current_user: Annotated[User, Depends(get_current_user_for_legal_onboarding)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> UserResponse:
+    """Record separate acceptance of the current mandatory documents."""
+    _validate_legal_document_versions(
+        terms_version=data.terms_version,
+        personal_data_consent_version=data.personal_data_consent_version,
+        privacy_policy_version=data.privacy_policy_version,
+    )
+    await record_current_legal_acceptance(
+        db=db,
+        user=current_user,
+        language=data.legal_language,
+        source="onboarding",
+    )
+    await db.commit()
+    await db.refresh(current_user)
+    return UserResponse.model_validate(current_user)
+
+
 @router.post("/register", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
 @limiter.limit("3/minute")  # Rate limiting: 3 попытки в минуту
 async def register(
@@ -212,6 +277,12 @@ async def register(
     import logging
     logger = logging.getLogger(__name__)
 
+    _validate_legal_document_versions(
+        terms_version=data.terms_version,
+        personal_data_consent_version=data.personal_data_consent_version,
+        privacy_policy_version=data.privacy_policy_version,
+    )
+
     # Проверка домена email: опечатки + DNS MX/A
     domain_error = await validate_email_domain(data.email)
     if domain_error:
@@ -220,15 +291,15 @@ async def register(
             detail=domain_error,  # already {"code": ..., "params": ...} from validator
         )
 
-    # reCAPTCHA v3 verification
+    # reCAPTCHA v3 verification (international requests only in Phase 1).
     from app.core.utils import verify_recaptcha
-    forwarded_for = request.headers.get("x-forwarded-for", "")
-    remote_ip = forwarded_for.split(",", 1)[0].strip() if forwarded_for else None
-    if not remote_ip and request.client:
-        remote_ip = request.client.host
+    access_region = resolve_access_region(request)
+    client_ip = get_request_client_ip(request)
+    remote_ip = str(client_ip) if client_ip is not None else None
 
-    if not await verify_recaptcha(data.recaptcha_token or "", remote_ip=remote_ip):
-        raise_error(status.HTTP_400_BAD_REQUEST, ERR_RECAPTCHA_FAILED)
+    if registration_captcha_provider(access_region) == "recaptcha":
+        if not await verify_recaptcha(data.recaptcha_token or "", remote_ip=remote_ip):
+            raise_error(status.HTTP_400_BAD_REQUEST, ERR_RECAPTCHA_FAILED)
 
     # Проверка существования email
     result = await db.execute(select(User).where(User.email == data.email))
@@ -253,11 +324,6 @@ async def register(
         if not is_valid:
             raise HTTPException(status_code=400, detail=error_msg)
 
-    if data.bio:
-        is_valid, error_msg = await validate_text_field(data.bio, db, "bio")
-        if not is_valid:
-            raise HTTPException(status_code=400, detail=error_msg)
-
     # Роль всегда "user" при регистрации - роль "brand" присваивается только после верификации email
     # если email совпадает с доменом существующего верифицированного бренда
     user_role = UserRole.USER
@@ -277,25 +343,24 @@ async def register(
         role=user_role,
         brand_id=None,  # Привязка к бренду происходит только после верификации email
         full_name=data.full_name if data.full_name else None,
-        bio=data.bio if data.bio else None,
         active=True,
         email_verified=False,
     )
 
     try:
         db.add(user)
+        await db.flush()
+        await record_current_legal_acceptance(
+            db=db,
+            user=user,
+            language=data.legal_language,
+            source="registration",
+        )
         await db.commit()
         await db.refresh(user)
         # Trial is opt-in: the user starts it explicitly via POST /calculator/start-trial,
         # so it never counts down silently before they know it exists.
-        logger.info(f"User registered successfully: {user.email} (id={user.id})")
-
-        # Генерируем токен для верификации email
-        verification_token = generate_email_verification_token(user.id, user.email)
-
-        # Примечание: Отправка email с токеном верификации будет реализована при добавлении email-сервиса
-        # Ссылка для верификации: {FRONTEND_URL}/verify-email?token={verification_token}
-        logger.info(f"Email verification token generated for user {user.email}: {verification_token[:20]}...")
+        logger.info("User registered successfully: user_id=%d", user.id)
     except Exception as e:
         await db.rollback()
         logger.error(f"Error creating user: {str(e)}", exc_info=True)
@@ -357,7 +422,11 @@ async def login(
     if _cookie_auth_enabled():
         _set_auth_cookies(response, access_token, refresh_token)
 
-    return Token(access_token=access_token, refresh_token=refresh_token)
+    return Token(
+        access_token=access_token,
+        refresh_token=refresh_token,
+        legal_onboarding_required=requires_current_legal_acceptance(user),
+    )
 
 
 @router.post("/refresh", response_model=RefreshTokenResponse)
@@ -422,7 +491,7 @@ async def refresh_token(
 async def logout(
     request: Request,
     response: Response,
-    current_user: Annotated[User, Depends(get_current_active_user)],
+    current_user: Annotated[User, Depends(get_current_user_for_legal_onboarding)],
     db: Annotated[AsyncSession, Depends(get_db)],
     data: LogoutRequest | None = Body(default=None),
 ) -> None:
@@ -464,7 +533,7 @@ async def logout(
 
 @router.get("/me", response_model=UserResponse)
 async def get_current_user_info(
-    current_user: Annotated[User, Depends(get_current_active_user)],
+    current_user: Annotated[User, Depends(get_current_user_for_legal_onboarding)],
 ) -> UserResponse:
     """Получить информацию о текущем пользователе."""
     return UserResponse.model_validate(current_user)
@@ -775,11 +844,6 @@ async def update_current_user(
         if not is_valid:
             raise HTTPException(status_code=400, detail=error_msg)
 
-    if "bio" in update_data and update_data["bio"]:
-        is_valid, error_msg = await validate_text_field(update_data["bio"], db, "bio")
-        if not is_valid:
-            raise HTTPException(status_code=400, detail=error_msg)
-
     # Если обновляется printer_id, проверяем что принтер существует
     # (None допустим — это сброс выбранного принтера)
     if "printer_id" in update_data and update_data["printer_id"] is not None:
@@ -931,7 +995,7 @@ async def verify_email(
 
     # Проверяем, не верифицирован ли уже
     if user.email_verified:
-        logger.info(f"Email already verified for user {user.email} (id={user.id})")
+        logger.info("Email already verified: user_id=%d", user.id)
         return UserResponse.model_validate(user)
 
     # Устанавливаем email_verified = True
@@ -998,7 +1062,7 @@ async def forgot_password(
         reset_url = f"{settings.BASE_URL}/reset-password?token={reset_token}"
         sent = send_password_reset_email(to=user.email, reset_url=reset_url)
         if not sent:
-            logger.info(f"Password reset link (email not sent): {reset_url}")
+            logger.warning("Password reset email delivery failed: user_id=%d", user.id)
 
     # Всегда возвращаем успешный ответ для безопасности (чтобы не раскрывать существование email)
     return ForgotPasswordResponse()
@@ -1056,7 +1120,7 @@ async def reset_password(
     user.password_hash = password_hash
     await db.commit()
 
-    logger.info(f"Password reset successful for user {user.email} (id={user.id})")
+    logger.info("Password reset successful: user_id=%d", user.id)
 
     return ResetPasswordResponse()
 
@@ -1204,13 +1268,16 @@ async def confirm_email_change(
 import logging as _logging
 
 from app.services.oauth_service import (
+    allowed_oauth_providers,
     exchange_google_code,
     exchange_yandex_code,
     generate_oauth_state,
     generate_username_from_email,
     get_google_auth_url,
     get_yandex_auth_url,
+    is_provider_allowed,
     is_provider_configured,
+    registration_captcha_provider,
 )
 
 _oauth_logger = _logging.getLogger(__name__)
@@ -1224,11 +1291,38 @@ _OAUTH_STATE_COOKIE = "fh_oauth_state"
 _OAUTH_STATE_MAX_AGE = 600  # seconds
 
 
+@router.get("/methods", response_model=AuthMethodsResponse)
+async def get_auth_methods(request: Request, response: Response) -> AuthMethodsResponse:
+    """Return server-authoritative methods for the current request region."""
+    access_region = resolve_access_region(request)
+    response.headers["Cache-Control"] = "private, no-store"
+    return AuthMethodsResponse(
+        access_region=access_region,
+        oauth_providers=list(allowed_oauth_providers(access_region)),
+        registration_captcha=registration_captcha_provider(access_region),
+    )
+
+
+def _require_provider_allowed(provider: str, access_region: AccessRegion) -> None:
+    if not is_provider_allowed(provider, access_region):
+        raise_error(
+            status.HTTP_403_FORBIDDEN,
+            ERR_OAUTH_PROVIDER_NOT_AVAILABLE,
+            params={"provider": provider},
+        )
+
+
 @router.get("/oauth/{provider}/url", response_model=OAuthUrlResponse)
-async def get_oauth_url(provider: str, response: Response) -> OAuthUrlResponse:
+async def get_oauth_url(
+    provider: str,
+    request: Request,
+    response: Response,
+) -> OAuthUrlResponse:
     """Get OAuth authorization URL for the specified provider."""
     if provider not in _VALID_PROVIDERS:
         raise_error(status.HTTP_400_BAD_REQUEST, ERR_OAUTH_INVALID_PROVIDER, params={"provider": provider})
+
+    _require_provider_allowed(provider, resolve_access_region(request))
 
     if not is_provider_configured(provider):
         raise_error(status.HTTP_400_BAD_REQUEST, ERR_OAUTH_PROVIDER_NOT_CONFIGURED, params={"provider": provider})
@@ -1274,6 +1368,8 @@ async def oauth_callback(
     """
     if provider not in _VALID_PROVIDERS:
         raise_error(status.HTTP_400_BAD_REQUEST, ERR_OAUTH_INVALID_PROVIDER, params={"provider": provider})
+
+    _require_provider_allowed(provider, resolve_access_region(request))
 
     if not is_provider_configured(provider):
         raise_error(status.HTTP_400_BAD_REQUEST, ERR_OAUTH_PROVIDER_NOT_CONFIGURED, params={"provider": provider})
@@ -1355,7 +1451,7 @@ async def oauth_callback(
                 email_verified=oauth_info.email_verified,
             )
             db.add(user)
-            _oauth_logger.info("OAuth new user: provider=%s, email=%s", provider, oauth_info.email)
+            _oauth_logger.info("OAuth new user pending commit: provider=%s", provider)
 
     # Update last login
     user.last_login = datetime.now(timezone.utc)
@@ -1370,4 +1466,8 @@ async def oauth_callback(
     if _cookie_auth_enabled():
         _set_auth_cookies(response, access_token, refresh_token)
 
-    return Token(access_token=access_token, refresh_token=refresh_token)
+    return Token(
+        access_token=access_token,
+        refresh_token=refresh_token,
+        legal_onboarding_required=requires_current_legal_acceptance(user),
+    )

@@ -15,6 +15,7 @@ from app.core.limiter import limiter
 from app.middleware.maintenance import MaintenanceMiddleware
 from app.services.file_service import ensure_upload_dir_compatibility, get_upload_root_dir
 from app.services.maintenance_service import get_maintenance_info
+from app.services.request_region_service import geoip_database_health
 
 # Create FastAPI app
 # Hide OpenAPI docs in production [INFRA-15]
@@ -106,7 +107,7 @@ app.mount("/wiki_content/images", StaticFiles(directory=str(wiki_images_dir)), n
 
 # Health check endpoint
 @app.get("/health")
-async def health_check() -> dict[str, str | bool | None]:
+async def health_check() -> dict[str, object]:
     """Health check endpoint."""
     maintenance_info = get_maintenance_info()
     return {
@@ -115,6 +116,7 @@ async def health_check() -> dict[str, str | bool | None]:
         "project": settings.PROJECT_NAME,
         "maintenance_mode": maintenance_info["enabled"],
         "maintenance_message": maintenance_info["message"] if maintenance_info["enabled"] else None,
+        "auth_region": geoip_database_health(),
     }
 
 

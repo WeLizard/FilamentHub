@@ -18,6 +18,7 @@ from app.models.organization import (
 )
 from app.models.user import User, UserRole
 from app.services.account_deletion import delete_user_account
+from tests.conftest import accepted_legal
 
 
 async def _workspace(
@@ -68,12 +69,14 @@ async def test_team_invite_is_bound_to_exact_email(
         username="invited-person",
         password_hash="$2b$12$test",
         active=True,
+        **accepted_legal(),
     )
     wrong = User(
         email="other@private.example",
         username="wrong-person",
         password_hash="$2b$12$test",
         active=True,
+        **accepted_legal(),
     )
     db_session.add_all([invited, wrong])
     await db_session.commit()
@@ -132,6 +135,7 @@ async def test_removed_owner_reinvited_as_editor_does_not_regain_owner_role(
         username="former-owner",
         password_hash="$2b$12$test",
         active=True,
+        **accepted_legal(),
     )
     db_session.add(former_owner)
     await db_session.flush()
@@ -184,6 +188,7 @@ async def test_verified_brand_join_is_reviewed_by_owner_as_scoped_editor(
         username="joiner",
         password_hash="$2b$12$test",
         active=True,
+        **accepted_legal(),
     )
     db_session.add(requester)
     await db_session.commit()
@@ -240,6 +245,7 @@ async def test_editor_sees_only_self_and_cannot_invite(
         active=True,
         role=UserRole.BRAND,
         brand_id=brand.id,
+        **accepted_legal(),
     )
     db_session.add(editor)
     await db_session.flush()
@@ -322,6 +328,7 @@ async def test_owner_cannot_remove_member_from_another_organization(
         username="second-owner",
         password_hash="$2b$12$test",
         active=True,
+        **accepted_legal(),
     )
     db_session.add(second_owner)
     await db_session.flush()
@@ -350,6 +357,7 @@ async def test_admin_approval_of_owned_brand_join_grants_scoped_editor(
         username="admin-reviewed-editor",
         password_hash="$2b$12$test",
         active=True,
+        **accepted_legal(),
     )
     db_session.add(requester)
     await db_session.commit()
@@ -398,6 +406,7 @@ async def test_last_owner_must_transfer_before_account_deletion(
         active=True,
         role=UserRole.BRAND,
         brand_id=brand.id,
+        **accepted_legal(),
     )
     db_session.add(editor)
     await db_session.flush()

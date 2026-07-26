@@ -10,6 +10,7 @@ from app.models.filament import Filament
 from app.models.preset import Preset, PresetModerationStatus
 from app.models.user import User
 from app.services.organization_access import grant_brand_owner_membership
+from tests.conftest import registration_payload
 
 
 async def _register_and_login(
@@ -22,12 +23,7 @@ async def _register_and_login(
 
     register_response = await client.post(
         "/api/v1/auth/register",
-        json={
-            "email": email,
-            "username": f"user_{suffix}",
-            "password": password,
-            "role": "user",
-        },
+        json=registration_payload(email=email, username=f"user_{suffix}", password=password, role="user"),
     )
     assert register_response.status_code == 201
 

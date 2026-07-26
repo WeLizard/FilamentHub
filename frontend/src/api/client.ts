@@ -2,7 +2,7 @@
 
 import axios from 'axios';
 import type { InternalAxiosRequestConfig } from 'axios';
-import type { AccessibleBrand, Brand, BrandUsage, BrandRequest, BrandRequestStatus, BrandTeamInvite, BrandTeamRole, BrandTeamWorkspace, Filament, FilamentLine, FilamentImportResult, FilamentPalettePayload, BrandInvitePublic, BrandInviteAdmin, BrandInviteAcceptResult, BrandInviteBatchPreview, BrandInviteBatchSendResult, FilamentAvailability, FilamentVisualSettings, FilamentReview, FilamentRatingStats, Notification, NotificationListResponse, Preset, RecommendedPreset, RecommendedForPrinterResponse, Printer, PrinterProfile, PrintProfile, PrinterRequest, User, Token, RefreshTokenRequest, RefreshTokenResponse, ListResponse, AccountDeletionStats, UserSavedPreset, CalculatorEstimateRequest, CalculatorEstimateResponse, CalculatorProfileResponse, CalculatorProfileUpdate, Feedback, FeedbackListResponse, FeedbackType, CompatiblePrinter, CompatibleFilament, DownloadVersion, DownloadVersionsResponse, WikiCategory, WikiCategoryListResponse, WikiArticle, WikiArticleListResponse, WikiFeedbackStats, WikiFeedbackCreate, WikiFeedback, EmailThreadDetail, EmailThreadListResponse, EmailThreadStatus, EmailMessage, EmailSenderProfile, NotificationCampaignAudience, NotificationCampaignHistoryResponse, NotificationCampaignPreview, NotificationCampaignSendResult } from '../types/api';
+import type { AccessibleBrand, AuthMethods, Brand, BrandUsage, BrandRequest, BrandRequestStatus, BrandTeamInvite, BrandTeamRole, BrandTeamWorkspace, Filament, FilamentLine, FilamentImportResult, FilamentPalettePayload, BrandInvitePublic, BrandInviteAdmin, BrandInviteAcceptResult, BrandInviteBatchPreview, BrandInviteBatchSendResult, FilamentAvailability, FilamentVisualSettings, FilamentReview, FilamentRatingStats, Notification, NotificationListResponse, Preset, RecommendedPreset, RecommendedForPrinterResponse, Printer, PrinterProfile, PrintProfile, PrinterRequest, User, Token, RefreshTokenRequest, RefreshTokenResponse, ListResponse, AccountDeletionStats, UserSavedPreset, CalculatorEstimateRequest, CalculatorEstimateResponse, CalculatorProfileResponse, CalculatorProfileUpdate, Feedback, FeedbackListResponse, FeedbackType, CompatiblePrinter, CompatibleFilament, DownloadVersion, DownloadVersionsResponse, WikiCategory, WikiCategoryListResponse, WikiArticle, WikiArticleListResponse, WikiFeedbackStats, WikiFeedbackCreate, WikiFeedback, EmailThreadDetail, EmailThreadListResponse, EmailThreadStatus, EmailMessage, EmailSenderProfile, NotificationCampaignAudience, NotificationCampaignHistoryResponse, NotificationCampaignPreview, NotificationCampaignSendResult, LegalAcceptancePayload, LegalRequirements, RegistrationPayload } from '../types/api';
 import { getCsrfToken, getRefreshToken, getToken, isCookieAuthMode, isJwtAuthMode, isOrcaEmbedded, removeToken, setToken, shouldPersistTokensLocally } from '../utils/auth';
 import { isPluginEmbed, reportPluginSessionToPlugin } from '../utils/pluginBridge';
 import { downloadBlob } from '../utils/download';
@@ -240,7 +240,7 @@ api.interceptors.response.use(
 
 // Auth API
 export const authAPI = {
-  register: async (data: { email: string; username: string; password: string; role: string; recaptcha_token?: string }) => {
+  register: async (data: RegistrationPayload) => {
     const response = await api.post<User>('/auth/register', data);
     return response.data;
   },
@@ -267,6 +267,11 @@ export const authAPI = {
     await api.post('/auth/logout', refreshToken ? { refresh_token: refreshToken } : undefined);
   },
 
+  getAuthMethods: async (): Promise<AuthMethods> => {
+    const response = await api.get<AuthMethods>('/auth/methods');
+    return response.data;
+  },
+
   getOAuthUrl: async (provider: string) => {
     const response = await api.get<{ url: string; state: string }>(`/auth/oauth/${provider}/url`);
     return response.data;
@@ -282,6 +287,16 @@ export const authAPI = {
     return response.data;
   },
 
+  getLegalRequirements: async (): Promise<LegalRequirements> => {
+    const response = await api.get<LegalRequirements>('/auth/legal-requirements');
+    return response.data;
+  },
+
+  acceptLegalDocuments: async (data: LegalAcceptancePayload): Promise<User> => {
+    const response = await api.post<User>('/auth/legal-acceptance', data);
+    return response.data;
+  },
+
   getMaintenanceStatus: async (): Promise<{ maintenance_mode: boolean; message: string | null }> => {
     const response = await axios.get<{ maintenance_mode?: boolean; maintenance_message?: string | null }>(
       '/health',
@@ -293,7 +308,7 @@ export const authAPI = {
     };
   },
 
-  updateProfile: async (data: Partial<{ username: string; full_name: string | null; bio: string | null; country: string | null; password: string; printer_id: number | null; recommend_physical_printer_id: number | null; recommend_printer_profile_id: number | null }>) => {
+  updateProfile: async (data: Partial<{ username: string; full_name: string | null; country: string | null; password: string; printer_id: number | null; recommend_physical_printer_id: number | null; recommend_printer_profile_id: number | null }>) => {
     const response = await api.patch<User>('/auth/me', data);
     return response.data;
   },
@@ -1626,7 +1641,7 @@ export const adminAPI = {
   },
 
   // Stats
-  getStats: async (): Promise<{
+  getStats: async (refresh?: boolean): Promise<{
     users: {
       total: number; brands: number; admins: number;
       registered_24h: number; registered_7d: number; registered_30d: number;
@@ -1645,7 +1660,7 @@ export const adminAPI = {
     };
     notifications: { unread: number };
   }> => {
-    const response = await api.get('/admin/stats');
+    const response = await api.get('/admin/stats', refresh ? { params: { refresh: true } } : undefined);
     return response.data;
   },
 
@@ -2635,6 +2650,22 @@ export const physicalPrintersAPI = {
     return response.data;
   },
 
+  /** The machine selected in OrcaSlicer as of the last sync, if any. */
+  getCurrent: async (): Promise<CurrentPrinterContext | null> => {
+    const response = await api.get<CurrentPrinterContext | null>(
+      '/orcaslicer/printer-connections/current',
+    );
+    return response.data;
+  },
+
+  /** Printer models installed in the user's OrcaSlicer but not registered here. */
+  listInstalledCandidates: async (): Promise<InstalledPrinterCandidate[]> => {
+    const response = await api.get<InstalledPrinterCandidate[]>(
+      '/orcaslicer/printer-connections/installed-candidates',
+    );
+    return response.data;
+  },
+
   create: async (payload: {
     name: string;
     printer_id?: number | null;
@@ -2657,22 +2688,6 @@ export const physicalPrintersAPI = {
 
   remove: async (physicalPrinterId: number): Promise<void> => {
     await api.delete(`/physical-printers/${physicalPrinterId}`);
-  },
-
-  /** The machine selected in OrcaSlicer as of the last sync, if any. */
-  getCurrent: async (): Promise<CurrentPrinterContext | null> => {
-    const response = await api.get<CurrentPrinterContext | null>(
-      '/orcaslicer/printer-connections/current',
-    );
-    return response.data;
-  },
-
-  /** Printer models installed in the user's OrcaSlicer but not registered here. */
-  listInstalledCandidates: async (): Promise<InstalledPrinterCandidate[]> => {
-    const response = await api.get<InstalledPrinterCandidate[]>(
-      '/orcaslicer/printer-connections/installed-candidates',
-    );
-    return response.data;
   },
 
   setConfigurations: async (

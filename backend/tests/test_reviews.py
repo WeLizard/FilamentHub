@@ -8,15 +8,18 @@ from app.models.brand import Brand
 from app.models.filament import Filament
 from app.models.preset import Preset, PresetModerationStatus
 from app.models.user import User
+from tests.conftest import registration_payload
 
 
 async def _register_and_login(client: AsyncClient, suffix: str) -> tuple[dict, int]:
     email = f"{suffix}@example.com"
     password = "testpassword123"
-    reg = await client.post("/api/v1/auth/register", json={
-        "email": email, "username": f"user_{suffix}",
-        "password": password, "role": "user",
-    })
+    reg = await client.post(
+        "/api/v1/auth/register",
+        json=registration_payload(
+            email=email, username=f"user_{suffix}", password=password
+        ),
+    )
     assert reg.status_code == 201
     user_id = reg.json()["id"]
     login = await client.post("/api/v1/auth/login", json={"email": email, "password": password})

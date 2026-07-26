@@ -74,6 +74,12 @@ async def test_backfill_endpoint_forbidden_for_non_owner(client: AsyncClient, db
     email, password = "qr-backfill@example.com", "testpassword123"
     await client.post("/api/v1/auth/register", json={
         "email": email, "username": "qr_backfill", "password": password, "role": "user",
+        "terms_accepted": True,
+        "personal_data_consent": True,
+        "terms_version": "2026-07-25",
+        "personal_data_consent_version": "2026-07-25",
+        "privacy_policy_version": "2026-07-25",
+        "legal_language": "en",
     })
     login = await client.post("/api/v1/auth/login", json={"email": email, "password": password})
     headers = {"Authorization": f"Bearer {login.json()['access_token']}"}
