@@ -1060,7 +1060,37 @@ async def _upsert_printer_profile(
                 f"Found printer profile by external_id {payload.external_id} instead of fhub_id {payload.fhub_id}"
             )
 
-    # Приоритет 4: Ищем по slug (fallback)
+    # Приоритет 4: настройка Orca, если она приехала
+    if profile is None and payload.setting_id:
+        query = (
+            select(PrinterProfile)
+            .where(
+                PrinterProfile.setting_id == payload.setting_id,
+                PrinterProfile.owner_user_id == current_user.id,
+                PrinterProfile.is_official.is_(False),
+            )
+            .order_by(PrinterProfile.id.desc())
+        )
+        result = await db.execute(query)
+        profile = result.scalars().first()
+
+    # Приоритет 5: имя внутри аккаунта. Идентификаторы Orca за историю сменили
+    # формат трижды, а имя пресета внутри бандла уникально и переживает это,
+    # поэтому без этого шага каждая смена формата плодила копию.
+    if profile is None and payload.name:
+        query = (
+            select(PrinterProfile)
+            .where(
+                PrinterProfile.name == payload.name,
+                PrinterProfile.owner_user_id == current_user.id,
+                PrinterProfile.is_official.is_(False),
+            )
+            .order_by(PrinterProfile.id.desc())
+        )
+        result = await db.execute(query)
+        profile = result.scalars().first()
+
+    # Приоритет 6: Ищем по slug (fallback)
     if profile is None and payload.slug:
         query = select(PrinterProfile).where(
             PrinterProfile.slug == payload.slug,
@@ -1372,7 +1402,36 @@ async def _upsert_print_profile(
                 f"Found print profile by external_id {payload.external_id} instead of fhub_id {payload.fhub_id}"
             )
 
-    # Приоритет 4: Ищем по slug (fallback)
+    # Приоритет 4: настройка Orca, если она приехала
+    if profile is None and payload.setting_id:
+        query = (
+            select(PrintProfile)
+            .where(
+                PrintProfile.setting_id == payload.setting_id,
+                PrintProfile.owner_user_id == current_user.id,
+                PrintProfile.is_official.is_(False),
+            )
+            .order_by(PrintProfile.id.desc())
+        )
+        result = await db.execute(query)
+        profile = result.scalars().first()
+
+    # Приоритет 5: имя внутри аккаунта, по той же причине, что и у конфигураций
+    # принтера: имя пресета переживает смену формата идентификаторов Orca.
+    if profile is None and payload.name:
+        query = (
+            select(PrintProfile)
+            .where(
+                PrintProfile.name == payload.name,
+                PrintProfile.owner_user_id == current_user.id,
+                PrintProfile.is_official.is_(False),
+            )
+            .order_by(PrintProfile.id.desc())
+        )
+        result = await db.execute(query)
+        profile = result.scalars().first()
+
+    # Приоритет 6: Ищем по slug (fallback)
     if profile is None and payload.slug:
         query = select(PrintProfile).where(
             PrintProfile.slug == payload.slug,

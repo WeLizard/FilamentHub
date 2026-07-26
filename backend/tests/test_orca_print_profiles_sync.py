@@ -563,3 +563,49 @@ async def test_import_print_profile_rebuilds_links_on_update(
     assert len(profile.printer_links) == 1
     assert profile.printer_links[0].printer_id == printer_b.id
     assert profile.printer_links[0].printer_slug == printer_b.slug
+
+
+@pytest.mark.asyncio
+async def test_reimport_recognizes_a_configuration_by_name(
+    client: AsyncClient,
+    db_session: AsyncSession,
+):
+    """Orca's identifiers changed format three times; the name did not.
+
+    Without recognising by name, every format change created a copy of the same
+    configuration, which is how one machine ended up with four of them.
+    """
+    headers, _ = await _register_and_login(client, "orca-config-dedup")
+
+    async def send(external_id: str, setting_id: str) -> dict:
+        response = await client.post(
+            "/api/v1/orcaslicer/printer-profiles/import",
+            headers=headers,
+            json={
+                "profiles": [
+                    {
+                        "name": "LARETC 0.5",
+                        "external_id": external_id,
+                        "setting_id": setting_id,
+                    }
+                ]
+            },
+        )
+        assert response.status_code == 200
+        return response.json()["results"][0]
+
+    first = await send("PMUS1f214ffc877cfa", "PMUS1f214ffc877cfa")
+    assert first["status"] == "created"
+
+    second = await send("1afe21d2-dade-586b-b0b1-000000000000", "LARETC 0.5")
+    assert second["fhub_id"] == first["fhub_id"]
+
+    third = await send("LARETC 0.5", "LARETC 0.5")
+    assert third["fhub_id"] == first["fhub_id"]
+
+    rows = (
+        await db_session.execute(
+            select(PrinterProfile).where(PrinterProfile.name == "LARETC 0.5")
+        )
+    ).scalars().all()
+    assert len(rows) == 1
