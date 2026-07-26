@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from datetime import datetime, timezone
+
 import pytest
 from httpx import AsyncClient
 from sqlalchemy import select
@@ -456,6 +458,31 @@ async def test_slots_sharing_a_provider_index_assign_by_slot_id(
     assert cleared_slot["assignment"] is None
     await db_session.refresh(spool)
     assert spool.state == UserSpoolState.shelf
+
+
+@pytest.mark.asyncio
+async def test_a_new_system_starts_with_a_silent_printer(
+    auth_client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Reporting belongs to a feed system, so a fresh one inherits nothing."""
+    created = await auth_client.post(
+        "/api/v1/physical-printers", json={"name": "Replaced feed"}
+    )
+    printer_id = created.json()["id"]
+
+    device = await db_session.get(UserPrinterDevice, printer_id)
+    device.reports_feed = True
+    device.last_seen_at = datetime.now(timezone.utc)
+    await db_session.commit()
+
+    system_response = await auth_client.post(
+        f"/api/v1/physical-printers/{printer_id}/material-systems",
+        json={"name": "OctoPrint", "kind": "mmu", "provider": "octoprint", "slot_count": 2},
+    )
+    assert system_response.status_code == 201
+    assert system_response.json()["reports_feed"] is False
+    assert system_response.json()["last_seen_at"] is None
 
 
 @pytest.mark.asyncio

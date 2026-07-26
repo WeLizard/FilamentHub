@@ -209,13 +209,24 @@ async def set_physical_printer_configurations(
     return await require_physical_printer(db, user_id, physical_printer_id)
 
 
+def _forget_reporting(printer: UserPrinterDevice) -> None:
+    """Drop what the previous feed system said about this printer.
+
+    Reporting is a fact about a feed system, while the flag lives on the printer
+    that carries the key. Keeping it across systems would show a fresh system as
+    already connected, with data from a system that is gone.
+    """
+    printer.reports_feed = False
+    printer.last_seen_at = None
+
+
 async def create_material_system(
     db: AsyncSession,
     user_id: int,
     physical_printer_id: int,
     payload: MaterialSystemCreate,
 ) -> UserPrinterDevice:
-    await require_physical_printer(db, user_id, physical_printer_id)
+    printer = await require_physical_printer(db, user_id, physical_printer_id)
     # A printer feeds from one place. Two systems on it would mean two sources
     # racing to say what sits in a slot, with no way to tell which is right.
     taken = await db.scalar(
@@ -226,6 +237,7 @@ async def create_material_system(
     )
     if taken is not None:
         raise_error(409, ERR_MATERIAL_SYSTEM_EXISTS)
+    _forget_reporting(printer)
     system = MaterialSystem(
         user_id=user_id,
         physical_printer_id=physical_printer_id,
@@ -252,6 +264,9 @@ async def create_material_system(
     ]
     db.add(system)
     await db.commit()
+    # The session keeps objects alive past commit, so the printer would answer
+    # with the collection it loaded before this system existed.
+    db.expire(printer)
     return await require_physical_printer(db, user_id, physical_printer_id)
 
 
@@ -674,6 +689,7 @@ async def delete_material_system(
     db.expunge(system)
 
     printer = await require_physical_printer(db, user_id, physical_printer_id)
+    _forget_reporting(printer)
     if provider in KLIPPER_PROVIDERS:
         # The legacy gate map describes exactly this system, so it goes with it;
         # otherwise the next system would inherit a phantom slot count.
