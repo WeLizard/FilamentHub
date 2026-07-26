@@ -107,6 +107,8 @@ backend/docs/
 backend/wiki_content/
 backend/database_dumps/
 backend/data/geoip/*.mmdb
+# Загруженные бандлы — рабочие копии, не исходники
+backend/data/uploaded_bundles/
 backend/uploads/database_dumps/
 
 # Distributions (OrcaSlicer builds - too large for Git)

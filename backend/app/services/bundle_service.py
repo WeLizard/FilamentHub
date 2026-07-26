@@ -32,12 +32,14 @@ from app.models import (
 LOG = logging.getLogger(__name__)
 
 
-def _project_root() -> Path:
-    # backend/app/services/bundle_service.py → parents[3] = backend
-    return Path(__file__).resolve().parents[3]
+def _backend_root() -> Path:
+    # backend/app/services/bundle_service.py → parents[2] = backend, which inside
+    # the container is /app: one level higher landed on /data, outside the working
+    # directory and unwritable, so every upload failed there.
+    return Path(__file__).resolve().parents[2]
 
 
-UPLOAD_ROOT = _project_root() / "data" / "uploaded_bundles"
+UPLOAD_ROOT = _backend_root() / "data" / "uploaded_bundles"
 
 
 class BundleServiceError(Exception):
