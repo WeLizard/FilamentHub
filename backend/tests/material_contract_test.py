@@ -5,6 +5,7 @@ from __future__ import annotations
 import pytest
 from httpx import AsyncClient
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.material_slot_assignment import MaterialSlotAssignment
@@ -460,6 +461,8 @@ async def test_slots_sharing_a_provider_index_assign_by_slot_id(
 @pytest.mark.asyncio
 async def test_a_printer_takes_only_one_feed_system(
     auth_client: AsyncClient,
+    auth_user: User,
+    db_session: AsyncSession,
 ) -> None:
     """Two systems on one printer would race to describe the same slots."""
     created = await auth_client.post(
@@ -482,6 +485,21 @@ async def test_a_printer_takes_only_one_feed_system(
 
     physical = await auth_client.get(f"/api/v1/physical-printers/{printer_id}")
     assert [s["provider"] for s in physical.json()["material_systems"]] == ["happy_hare"]
+
+    # The rule holds below the API too, so no other path can slip a second one in.
+    with pytest.raises(IntegrityError):
+        db_session.add(
+            MaterialSystem(
+                user_id=auth_user.id,
+                physical_printer_id=printer_id,
+                name="Sneaked in",
+                kind="mmu",
+                provider="octoprint",
+                capabilities=[],
+            )
+        )
+        await db_session.commit()
+    await db_session.rollback()
 
 
 @pytest.mark.asyncio

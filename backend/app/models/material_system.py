@@ -3,7 +3,7 @@
 from datetime import datetime
 from typing import TYPE_CHECKING
 
-from sqlalchemy import JSON, Boolean, DateTime, ForeignKey, Integer, String, UniqueConstraint
+from sqlalchemy import JSON, Boolean, DateTime, ForeignKey, Index, Integer, String, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.sql import func
 
@@ -47,6 +47,16 @@ class MaterialSystem(Base):
         server_default=func.now(),
         onupdate=func.now(),
         nullable=False,
+    )
+
+    # A printer feeds from one place; two systems on it would race to say what
+    # sits in a slot. Several AMS units are one system counting gates in a row.
+    __table_args__ = (
+        Index(
+            "uq_material_system_per_printer",
+            "physical_printer_id",
+            unique=True,
+        ),
     )
 
     physical_printer: Mapped["UserPrinterDevice"] = relationship(
