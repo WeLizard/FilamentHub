@@ -5268,7 +5268,10 @@
     "ERR_SPOOL_USED_EXCEEDS_INITIAL": "Used weight cannot exceed initial weight",
     "ERR_SPOOL_LOCATION_CONFLICT": "This spool is being moved by another request. Refresh and try again",
     "ERR_SNAPSHOT_TOO_FREQUENT": "Snapshots are being sent too frequently",
-    "ERR_MATERIAL_SYSTEM_EXISTS": "This printer already has a feed system."
+    "ERR_MATERIAL_SYSTEM_EXISTS": "This printer already has a feed system.",
+    "ERR_USAGE_EVENT_NOT_FOUND": "Consumption record not found",
+    "ERR_USAGE_EVENT_NOT_REVERTIBLE": "This record cannot be reverted",
+    "ERR_USAGE_EVENT_ALREADY_REVERTED": "This record has already been reverted"
   },
   "printerSettings": {
     "title": "Printer settings",
@@ -5605,8 +5608,16 @@
     "source": {
       "printer_report": "printer",
       "manual_adjust": "by hand",
-      "reconcile_adjust": "weighed",
-      "print_estimate": "print estimate"
-    }
+      "reconcile_adjust": "measured remainder",
+      "print_estimate": "print estimate",
+      "reversal": "reverted write-off"
+    },
+    "revert": "Revert",
+    "confirmRevert": "Give {{grams}} g back to the spool?",
+    "reverted": "reverted",
+    "warnRepeat": "Looks like the same write-off arrived twice",
+    "warnReported": "The printer claimed {{reported}} g — the spool held less",
+    "driftUnder": "The measurement came out {{grams}} g below our count",
+    "driftOver": "The measurement came out {{grams}} g above our count"
   }
 }

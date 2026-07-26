@@ -5264,7 +5264,10 @@
     "ERR_SPOOL_USED_EXCEEDS_INITIAL": "已使用重量不能超过初始重量",
     "ERR_SPOOL_LOCATION_CONFLICT": "该线轴正被另一个请求移动，请刷新后重试",
     "ERR_SNAPSHOT_TOO_FREQUENT": "快照发送过于频繁",
-    "ERR_MATERIAL_SYSTEM_EXISTS": "该打印机已有供料系统。"
+    "ERR_MATERIAL_SYSTEM_EXISTS": "该打印机已有供料系统。",
+    "ERR_USAGE_EVENT_NOT_FOUND": "未找到用量记录",
+    "ERR_USAGE_EVENT_NOT_REVERTIBLE": "该记录无法撤销",
+    "ERR_USAGE_EVENT_ALREADY_REVERTED": "该记录已撤销"
   },
   "printerSettings": {
     "title": "打印机设置",
@@ -5599,8 +5602,16 @@
     "source": {
       "printer_report": "打印机",
       "manual_adjust": "手动",
-      "reconcile_adjust": "称重",
-      "print_estimate": "打印预估"
-    }
+      "reconcile_adjust": "实测余量",
+      "print_estimate": "打印预估",
+      "reversal": "撤销扣减"
+    },
+    "revert": "撤销",
+    "confirmRevert": "将 {{grams}} 克退回料盘？",
+    "reverted": "已撤销",
+    "warnRepeat": "同一次扣减似乎重复上报",
+    "warnReported": "打印机上报 {{reported}} 克 — 料盘上不足此数",
+    "driftUnder": "实测比我们的计数少 {{grams}} 克",
+    "driftOver": "实测比我们的计数多 {{grams}} 克"
   }
 }

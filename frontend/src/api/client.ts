@@ -2424,6 +2424,13 @@ export const spoolsAPI = {
     return response.data;
   },
 
+  revertUsage: async (spoolId: number, eventId: number): Promise<SpoolUsageEvent> => {
+    const response = await api.post<SpoolUsageEvent>(
+      `/spools/${spoolId}/usage/${eventId}/revert`,
+    );
+    return response.data;
+  },
+
   create: async (payload: SpoolCreatePayload): Promise<UserSpool> => {
     const response = await api.post<UserSpool>('/spools', payload);
     return response.data;

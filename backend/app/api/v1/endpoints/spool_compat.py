@@ -1232,6 +1232,7 @@ async def use_spool(
         event_type=PresetUsageEventType.printer_report,
         delta_weight_g=spool.used_weight_g - before_used,
         device_id=_device.id if _device is not None else None,
+        reported_weight_g=delta_weight,
     )
     if spool.first_used_at is None:
         spool.first_used_at = now
@@ -1278,7 +1279,12 @@ async def measure_spool(
         event_type=PresetUsageEventType.reconcile_adjust,
         delta_weight_g=spool.used_weight_g - before_used,
         device_id=_device.id if _device is not None else None,
-        meta={"weighed_g": body.weight, "tare_g": tare},
+        # The measured amount is the only fact here; the gap against our own count
+        # is how much the reports had drifted, in whichever direction.
+        meta={
+            "measured_remaining_g": remaining_weight,
+            "our_remaining_g": spool.initial_weight_g - before_used,
+        },
     )
     now = datetime.now(timezone.utc)
     if spool.first_used_at is None:

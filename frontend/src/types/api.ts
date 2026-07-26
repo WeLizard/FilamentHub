@@ -709,6 +709,9 @@ export interface SpoolUsageEvent {
   device_name: string | null;
   job_ref: string | null;
   created_at: string;
+  /** What did not add up: the weight the printer claimed, a repeat, a
+   *  measurement, or a note that the record was reverted. */
+  meta: Record<string, unknown> | null;
 }
 
 export interface ListResponse<T> {

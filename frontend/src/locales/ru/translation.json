@@ -5406,7 +5406,10 @@
     "ERR_SPOOL_USED_EXCEEDS_INITIAL": "Использованный вес не может превышать начальный",
     "ERR_SPOOL_LOCATION_CONFLICT": "Катушку уже перемещает другой запрос. Обновите страницу и повторите",
     "ERR_SNAPSHOT_TOO_FREQUENT": "Снимки отправляются слишком часто",
-    "ERR_MATERIAL_SYSTEM_EXISTS": "На этом принтере уже есть система подачи."
+    "ERR_MATERIAL_SYSTEM_EXISTS": "На этом принтере уже есть система подачи.",
+    "ERR_USAGE_EVENT_NOT_FOUND": "Запись расхода не найдена",
+    "ERR_USAGE_EVENT_NOT_REVERTIBLE": "Эту запись отменить нельзя",
+    "ERR_USAGE_EVENT_ALREADY_REVERTED": "Эта запись уже отменена"
   },
   "printerSettings": {
     "title": "Настройки принтера",
@@ -5616,8 +5619,16 @@
     "source": {
       "printer_report": "принтер",
       "manual_adjust": "вручную",
-      "reconcile_adjust": "взвешивание",
-      "print_estimate": "оценка печати"
-    }
+      "reconcile_adjust": "замер остатка",
+      "print_estimate": "оценка печати",
+      "reversal": "отмена списания"
+    },
+    "revert": "Отменить",
+    "confirmRevert": "Вернуть {{grams}} г на катушку?",
+    "reverted": "отменено",
+    "warnRepeat": "Похоже на повторную отправку того же списания",
+    "warnReported": "Принтер сообщил {{reported}} г — на катушке было меньше",
+    "driftUnder": "Замер показал меньше нашего счёта на {{grams}} г",
+    "driftOver": "Замер показал больше нашего счёта на {{grams}} г"
   }
 }

@@ -24,7 +24,7 @@ from app.services.spool_service import (
     update_spool,
     use_spool,
 )
-from app.services.spool_usage_service import list_spool_usage
+from app.services.spool_usage_service import list_spool_usage, revert_spool_usage
 
 router = APIRouter(prefix="/spools", tags=["spools"])
 
@@ -88,3 +88,16 @@ async def get_spool_usage(
 ) -> list[SpoolUsageEventResponse]:
     """Consumption history of one spool."""
     return await list_spool_usage(db, user_id=current_user.id, spool_id=spool_id)
+
+
+@router.post("/{spool_id}/usage/{event_id}/revert", response_model=SpoolUsageEventResponse)
+async def revert_spool_usage_event(
+    spool_id: int,
+    event_id: int,
+    current_user: Annotated[User, Depends(get_current_active_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> SpoolUsageEventResponse:
+    """Give back what one consumption record took."""
+    return await revert_spool_usage(
+        db, user_id=current_user.id, spool_id=spool_id, event_id=event_id
+    )

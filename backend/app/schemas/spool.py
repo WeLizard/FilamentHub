@@ -92,3 +92,6 @@ class SpoolUsageEventResponse(BaseModel):
     device_name: str | None
     job_ref: str | None
     created_at: datetime
+    # Что именно не сошлось: заявленный принтером вес, признак повтора,
+    # результат замера, пометка об отмене.
+    meta: dict | None = None

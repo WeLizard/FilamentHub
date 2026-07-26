@@ -67,3 +67,31 @@ async def test_history_belongs_to_its_owner(
 
     hidden = await auth_client.get(f"/api/v1/spools/{spool.id}/usage")
     assert hidden.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_reverting_gives_the_grams_back_once(
+    auth_client: AsyncClient,
+    auth_user: User,
+    db_session: AsyncSession,
+) -> None:
+    """A wrong write-off has to be undoable, and only once."""
+    spool = await _spool(db_session, auth_user.id)
+    await auth_client.post(f"/api/v1/spools/{spool.id}/use", json={"delta_weight_g": 200})
+    event_id = (await auth_client.get(f"/api/v1/spools/{spool.id}/usage")).json()[0]["id"]
+
+    reverted = await auth_client.post(
+        f"/api/v1/spools/{spool.id}/usage/{event_id}/revert"
+    )
+    assert reverted.status_code == 200
+    assert reverted.json()["delta_weight_g"] == -200
+    assert reverted.json()["remaining_weight_g"] == 1000
+
+    await db_session.refresh(spool)
+    assert spool.used_weight_g == 0
+
+    again = await auth_client.post(f"/api/v1/spools/{spool.id}/usage/{event_id}/revert")
+    assert again.status_code == 409
+    assert again.json()["detail"]["code"] == "ERR_USAGE_EVENT_ALREADY_REVERTED"
+    await db_session.refresh(spool)
+    assert spool.used_weight_g == 0
