@@ -1,7 +1,7 @@
 """Record the slot count a person confirmed for a material system
 
 Revision ID: material_system_declared_slots
-Revises: user_legal_acceptance
+Revises: user_country
 Create Date: 2026-07-25
 
 """
@@ -10,7 +10,7 @@ import sqlalchemy as sa
 
 
 revision = "material_system_declared_slots"
-down_revision = "user_legal_acceptance"
+down_revision = "user_country"
 branch_labels = None
 depends_on = None
 
