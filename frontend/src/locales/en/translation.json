@@ -5371,8 +5371,8 @@
       "create": "Create",
       "done": "Done",
       "keyTitle": "System created. Now link it to the printer",
-      "hintManual": "One spool, nothing to lay out. The weight is corrected by hand.",
-      "hintLinked": "Once created you get a link for the printer. Paste it and usage and layout arrive on their own; skip it and you place the spools by hand.",
+      "hintManual": "A single slot — no layout is required. The remaining weight is entered manually.",
+      "hintLinked": "Once created, a link for the printer appears. Entered on the printer, it keeps usage and the slot layout updated automatically. Without it, the layout is maintained manually.",
       "system": "System"
     },
     "provider": {
@@ -5463,7 +5463,7 @@
       "linkHint": "In OctoPrint open the Spoolman plugin settings and paste this link into the Spoolman address field.",
       "setupTitle": "The Spoolman plugin is needed in OctoPrint",
       "pluginPage": "Plugin page",
-      "setupDescription": "The plugin is installed from the OctoPrint repository. After that usage is subtracted on its own after every print. Which spool sits in which slot is kept here — the plugin does not report it."
+      "setupDescription": "The plugin is installed from the OctoPrint repository. After that, usage is subtracted automatically after every print. Which spool belongs to which slot is recorded here: the plugin does not send that."
     }
   },
   "confirmEmailChange": {

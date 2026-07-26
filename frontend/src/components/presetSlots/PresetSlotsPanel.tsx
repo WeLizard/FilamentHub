@@ -81,13 +81,14 @@ function NewSystemCard({
   const { t } = useTranslation();
   const [printerId, setPrinterId] = useState<number | ''>(printers[0]?.id ?? '');
   const [system, setSystem] = useState<string>(FEED_ADAPTERS[0].id);
-  const [slotCount, setSlotCount] = useState<string>('');
+  const [slotCount, setSlotCount] = useState<string>('1');
   const [saving, setSaving] = useState(false);
   const [issuedKey, setIssuedKey] = useState<string | null>(null);
 
   const chosen = feedAdapterFor(system);
   const count = chosen.fixedSlots ?? Number(slotCount);
   const valid = printerId !== '' && Number.isInteger(count) && count >= 1 && count <= 256;
+  const chosenPrinter = printers.find((printer) => printer.id === Number(printerId)) ?? null;
 
   const handleCreate = async () => {
     if (!valid) return;
@@ -99,7 +100,9 @@ function NewSystemCard({
         provider: chosen.id,
         slot_count: count,
       });
-      if (chosen.link) {
+      // A printer that already holds a key is already linked; issuing a new one
+      // here would silently break the connection its other system relies on.
+      if (chosen.link && !chosenPrinter?.has_api_key) {
         const { api_key } = await devicesAPI.regenerateKey(Number(printerId));
         setIssuedKey(api_key);
         return;
