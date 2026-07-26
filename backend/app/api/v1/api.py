@@ -23,6 +23,7 @@ from app.api.v1.endpoints import (
     notification_campaigns,
     notifications,
     orca_preset_slot_sync,
+    orca_slices,
     orca_sync,
     physical_printers,
     preset_slots,
@@ -66,6 +67,7 @@ api_router.include_router(print_profiles.router)
 api_router.include_router(printer_requests.router)
 api_router.include_router(calculator.router)
 api_router.include_router(crm.router)
+api_router.include_router(orca_slices.router)
 api_router.include_router(spool_compat.router, prefix="/spool_compat")
 api_router.include_router(admin.router)
 api_router.include_router(catalog_bundles.router)

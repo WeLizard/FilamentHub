@@ -38,6 +38,7 @@ from app.models.material_system import MaterialSlot, MaterialSystem, PhysicalPri
 from app.models.notification import Notification, NotificationType
 from app.models.notification_campaign import NotificationCampaign, NotificationCampaignRecipient
 from app.models.orca_printer_connection_observation import OrcaPrinterConnectionObservation
+from app.models.orca_slice_report import OrcaSliceReport
 from app.models.organization import (
     Organization,
     OrganizationBrandAccess,
@@ -117,6 +118,7 @@ __all__ = [
     "NotificationCampaignRecipient",
     "NotificationType",
     "OrcaPrinterConnectionObservation",
+    "OrcaSliceReport",
     "Organization",
     "OrganizationBrandAccess",
     "OrganizationMembership",
