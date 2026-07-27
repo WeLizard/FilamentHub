@@ -14,19 +14,15 @@ export type EconomicsField = keyof EconomicsValues;
 
 interface EconomicsFieldsProps {
   values: EconomicsValues;
-  /** Where each number came from, shown under the field: yours, average, estimate. */
   origins?: Partial<Record<EconomicsField, string>>;
   symbol: string;
   onChange: (field: EconomicsField, value: number) => void;
   onCommit?: (field: EconomicsField, value: number) => void;
-  /** Cost per hour of running, and the margin the rate leaves on top of it. */
   breakdown: { depreciation: number; electricity: number; maintenance: number; cost: number };
   detailsOpen: boolean;
   onToggleDetails: () => void;
   usage?: ReactNode;
-  /** Quick picks under the upkeep field, phrased as how demanding the machine is. */
   upkeepExtra?: ReactNode;
-  /** Extra controls under the wattage field, such as the per-part breakdown. */
   powerExtra?: ReactNode;
   rateChoices?: ReactNode;
   header?: ReactNode;

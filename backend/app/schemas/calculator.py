@@ -519,6 +519,11 @@ class CalculatorProfileUpdate(BaseModel):
     seller_inn: str | None = Field(None, max_length=32)
     seller_phone: str | None = Field(None, max_length=64)
     payment_terms: str | None = Field(None, max_length=512)
+    seller_registration_id: str | None = Field(None, max_length=64)
+    seller_tax_code: str | None = Field(None, max_length=32)
+    seller_address: str | None = Field(None, max_length=512)
+    seller_bank_details: str | None = Field(None, max_length=512)
+    quote_market: str | None = Field(None, pattern=r"^(ru|intl|cn)?$")
     validity_days: int | None = Field(None, ge=1, le=365)
     disclaimer_mode: str | None = Field(None, pattern=r"^(offer|not_offer)$")
     currency: str | None = Field(None, pattern=r"^[A-Z]{3}$")
@@ -576,6 +581,11 @@ class CalculatorProfileResponse(BaseModel):
     seller_inn: str
     seller_phone: str
     payment_terms: str
+    seller_registration_id: str
+    seller_tax_code: str
+    seller_address: str
+    seller_bank_details: str
+    quote_market: str
     validity_days: int
     disclaimer_mode: str
     currency: str

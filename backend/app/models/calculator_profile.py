@@ -22,7 +22,6 @@ class UserCalculatorProfile(Base):
         index=True,
     )
 
-    # ── Economics (static calculator settings) ──────────────────────────
     electricity_cost_per_kwh: Mapped[float] = mapped_column(Float, nullable=False, default=6.0)
     printer_power_w: Mapped[float] = mapped_column(Float, nullable=False, default=350.0)
     modeling_rate_per_hour: Mapped[float] = mapped_column(Float, nullable=False, default=934.0)
@@ -38,8 +37,6 @@ class UserCalculatorProfile(Base):
     round_to_nearest: Mapped[int] = mapped_column(Integer, nullable=False, default=10)
     rounding_mode: Mapped[str] = mapped_column(String(16), nullable=False, default="up")
 
-    # Standard machine numbers: what any printer falls back to before it has
-    # economics of its own. They follow the account, not the browser.
     printer_purchase_price: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
     printer_useful_hours: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     maintenance_cost_per_hour: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
@@ -48,19 +45,20 @@ class UserCalculatorProfile(Base):
     power_steppers_w: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
     power_electronics_w: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
 
-    # ── Quote profile ───────────────────────────────────────────────────
-    # Stored encrypted (see core/field_encryption): the columns hold ciphertext,
-    # which is longer than what a person typed.
     seller_name: Mapped[str] = mapped_column(String(1024), nullable=False, default="")
     seller_inn: Mapped[str] = mapped_column(String(512), nullable=False, default="")
     seller_phone: Mapped[str] = mapped_column(String(512), nullable=False, default="")
     payment_terms: Mapped[str] = mapped_column(String(2048), nullable=False, default="")
+    seller_registration_id: Mapped[str] = mapped_column(String(512), nullable=False, default="")
+    seller_tax_code: Mapped[str] = mapped_column(String(512), nullable=False, default="")
+    seller_address: Mapped[str] = mapped_column(String(2048), nullable=False, default="")
+    seller_bank_details: Mapped[str] = mapped_column(String(2048), nullable=False, default="")
+    quote_market: Mapped[str] = mapped_column(String(8), nullable=False, default="")
     validity_days: Mapped[int] = mapped_column(Integer, nullable=False, default=14)
     disclaimer_mode: Mapped[str] = mapped_column(String(16), nullable=False, default="not_offer")
     currency: Mapped[str] = mapped_column(String(4), nullable=False, default="RUB")
     quote_number_prefix: Mapped[str] = mapped_column(String(32), nullable=False, default="КП")
 
-    # ── Timestamps ──────────────────────────────────────────────────────
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         server_default=func.now(),

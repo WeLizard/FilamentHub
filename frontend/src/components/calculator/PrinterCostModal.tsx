@@ -13,7 +13,6 @@ interface PrinterCostModalProps {
   onSaved?: (economics: PrinterEconomics) => void;
 }
 
-/** The same form the calculator's economics column shows, for the printers section. */
 export const PrinterCostModal: React.FC<PrinterCostModalProps> = ({
   printerId,
   printerName,
@@ -22,8 +21,6 @@ export const PrinterCostModal: React.FC<PrinterCostModalProps> = ({
   onSaved,
 }) => {
   const { t } = useTranslation();
-  // The same averaged numbers the calculator falls back to, so this window and
-  // the economics column cannot show different things about one machine.
   const accountDefaults = loadAccountMachineDefaults();
 
   return (

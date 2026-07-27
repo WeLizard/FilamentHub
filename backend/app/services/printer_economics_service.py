@@ -21,8 +21,6 @@ from app.models.printer import Printer
 from app.models.printer_profile import PrinterProfile
 from app.models.user_printer_device import UserPrinterDevice
 
-# How hard the machine is worked, in hours before it is written off. These are
-# starting points for a calculation, not a manufacturer's rated life.
 USAGE_LIFE_HOURS = {
     "occasional": 3000,
     "regular": 7000,
@@ -30,8 +28,6 @@ USAGE_LIFE_HOURS = {
 }
 DEFAULT_USAGE = "regular"
 
-# Machine classes we can tell apart from data we already hold: bed size, whether
-# the frame moves the bed or the head, and how many extruders there are.
 CLASS_COMPACT = "compact"
 CLASS_STANDARD = "standard"
 CLASS_LARGE = "large"
@@ -40,8 +36,6 @@ CLASS_MULTI_TOOL = "multi_tool"
 CLASS_RESIN = "resin"
 CLASS_UNKNOWN = "unknown"
 
-# Average draw over a whole print, not peak: the bed and hotend spend most of
-# the job holding temperature rather than reaching it.
 CLASS_POWER_W = {
     CLASS_COMPACT: 120.0,
     CLASS_STANDARD: 250.0,
@@ -60,8 +54,6 @@ CLASS_MAINTENANCE_PER_HOUR = {
     CLASS_RESIN: 4.0,
     CLASS_UNKNOWN: 5.0,
 }
-# How much a suggestion can be trusted. A factory-built machine is what it says
-# it is; a self-built or heavily modified one is a guess we should admit to.
 CONFIDENCE_MODEL = "model"
 CONFIDENCE_CLASS = "class"
 CONFIDENCE_MODIFIED = "modified"
@@ -81,7 +73,6 @@ class MachineProfile:
     model_name: str | None = None
     bed_max_mm: float | None = None
     extruders: int = 1
-    # Orca's own per-hour machine cost, when the person filled it in there.
     orca_time_cost: float | None = None
 
 
@@ -99,9 +90,7 @@ class ResolvedEconomics:
     """Numbers the calculator can use, already free of double counting."""
 
     printer_power_w: float
-    # The line the calculator calls amortisation: wear plus upkeep.
     amortization_rate_per_hour: float
-    # What is left of the machine-hour rate once its own cost is covered.
     printing_rate_per_hour: float
     electricity_cost_per_kwh: float
 
@@ -295,7 +284,6 @@ async def resolve_economics(
         if rate is not None:
             sources["rate"] = "printer"
     if rate is None:
-        # Nothing set anywhere: keep the account behaviour exactly as it was.
         account_printing = float(account.printing_rate_per_hour if account else 0.0)
         sources["rate"] = "account"
         return ResolvedEconomics(
@@ -317,7 +305,6 @@ async def resolve_economics(
     return ResolvedEconomics(
         printer_power_w=power,
         amortization_rate_per_hour=wear_and_upkeep,
-        # A rate under its own cost would otherwise push the order below cost.
         printing_rate_per_hour=max(0.0, margin),
         electricity_cost_per_kwh=tariff,
         machine_hour_rate=rate,

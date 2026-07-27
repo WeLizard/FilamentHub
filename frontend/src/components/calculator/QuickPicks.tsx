@@ -4,13 +4,10 @@ interface QuickPicksProps {
   options: { label: string; value: number }[];
   value: number;
   onPick: (value: number) => void;
-  /** Shown once under the row, to say these are starting points, not rules. */
   hint?: boolean;
-  /** A short line under the row saying what the usual range is. */
   caption?: string;
 }
 
-/** Starting points under a settings field, so nobody types a number from nothing. */
 export const QuickPicks: React.FC<QuickPicksProps> = ({
   options,
   value,

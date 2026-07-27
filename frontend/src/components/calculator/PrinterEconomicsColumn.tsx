@@ -10,22 +10,18 @@ import { PrinterCostForm } from './PrinterCostForm';
 
 interface PrinterEconomicsColumnProps {
   printers: PhysicalPrinter[];
-  /** Whose numbers are on screen: the averaged ones, or one machine's. */
   editedPrinterId: number | '';
   onEditedPrinterChange: (printerId: number | '') => void;
   currency: string;
   electricityCostPerKwh: number;
-  /** The averaged values, used by every machine that has none of its own. */
   averaged: EconomicsValues;
   onAveragedChange: (field: EconomicsField, value: number) => void;
-  /** How the standard wattage is put together, from the machine's parts. */
   powerBreakdown?: ReactNode;
 }
 
 const selectClass =
   'w-full rounded-2xl border border-white/10 bg-slate-950/60 px-4 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-cyan-400/60';
 
-// What upkeep costs per hour, phrased the way a person can actually answer.
 const UPKEEP_OPTIONS = [
   { key: 'upkeepLow', value: 2 },
   { key: 'upkeepMid', value: 5 },
@@ -36,8 +32,6 @@ const roundMoney = (value: number): number => Math.round(value * 100) / 100;
 
 const USAGE_OPTIONS = ['occasional', 'regular', 'intensive'] as const;
 type Usage = (typeof USAGE_OPTIONS)[number];
-// The same starting points the server suggests per machine, so the standard
-// values and a machine's own are built the same way.
 const USAGE_HOURS: Record<Usage, number> = {
   occasional: 3000,
   regular: 7000,
@@ -78,8 +72,6 @@ export const PrinterEconomicsColumn: React.FC<PrinterEconomicsColumnProps> = ({
     const base = breakdown.cost;
     const step = base < 20 ? 1 : 5;
     const round = (value: number) => Math.ceil(value / step) * step;
-    // Three distinct numbers even when the cost is tiny: identical chips would
-    // read as a bug rather than a choice.
     const min = round(base * 1.25);
     const balanced = Math.max(round(base * 1.9), min + step);
     return [

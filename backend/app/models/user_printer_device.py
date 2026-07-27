@@ -44,7 +44,6 @@ class UserPrinterDevice(Base):
     device_fingerprint: Mapped[str | None] = mapped_column(String(200), nullable=True)
     api_key: Mapped[str | None] = mapped_column(String(64), unique=True, index=True, nullable=True)
     supports_hh: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
-    # Whichever host does the talking, this says the printer itself has spoken.
     reports_feed: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     gate_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
     printer_hostname: Mapped[str | None] = mapped_column(String(200), nullable=True)
@@ -52,21 +51,15 @@ class UserPrinterDevice(Base):
         DateTime(timezone=True), nullable=True
     )
 
-    # What this machine costs to run. Kept here and never in the OrcaSlicer
-    # preset, which has to stay exactly what the slicer wrote. Everything is
-    # optional: an unset machine falls back to the account-wide economics.
     purchase_cost: Mapped[float | None] = mapped_column(Float, nullable=True)
     residual_value: Mapped[float | None] = mapped_column(Float, nullable=True)
     useful_life_hours: Mapped[int | None] = mapped_column(Integer, nullable=True)
     average_power_watts: Mapped[float | None] = mapped_column(Float, nullable=True)
-    # What the average draw is made of. Two printers of one model rarely carry
-    # the same heaters and board, so these belong to the machine, not the model.
     power_hotend_w: Mapped[float | None] = mapped_column(Float, nullable=True)
     power_bed_w: Mapped[float | None] = mapped_column(Float, nullable=True)
     power_steppers_w: Mapped[float | None] = mapped_column(Float, nullable=True)
     power_electronics_w: Mapped[float | None] = mapped_column(Float, nullable=True)
     maintenance_cost_per_hour: Mapped[float | None] = mapped_column(Float, nullable=True)
-    # What the person charges per machine hour; they decide it, we only suggest.
     machine_hour_rate: Mapped[float | None] = mapped_column(Float, nullable=True)
     economics_currency: Mapped[str | None] = mapped_column(String(4), nullable=True)
 
@@ -81,7 +74,6 @@ class UserPrinterDevice(Base):
         UniqueConstraint("user_id", "device_fingerprint", name="uq_user_device_fingerprint"),
     )
 
-    # Relationships
     user: Mapped["User"] = relationship(
         "User", foreign_keys="UserPrinterDevice.user_id", back_populates="printer_devices"
     )

@@ -13,10 +13,8 @@ import {
 } from '../../utils/pluginBridge';
 
 interface SlicedJobsPanelProps {
-  /** Hands the chosen slice over for a full breakdown, file and all. */
   onPick: (slice: OrcaSliceReport) => void;
   pickingId?: number | null;
-  /** Slices the plugin could not open when they were picked. */
   goneSourceKeys?: string[];
 }
 
@@ -27,8 +25,6 @@ export const SlicedJobsPanel: React.FC<SlicedJobsPanelProps> = ({
 }) => {
   const { t, i18n } = useTranslation();
   const queryClient = useQueryClient();
-  // null until the plugin answers: until then every slice is offered, because
-  // silence is not proof a file is missing.
   const [aliveKeys, setAliveKeys] = useState<string[] | null>(null);
   const [hook, setHook] = useState<PluginSliceHookState | null>(null);
   const [confirmingId, setConfirmingId] = useState<number | null>(null);
@@ -53,12 +49,9 @@ export const SlicedJobsPanel: React.FC<SlicedJobsPanelProps> = ({
     [],
   );
 
-  // Asked on every settled load, not on a changed list: pressing refresh is how
-  // a person re-checks after putting a file back.
   useEffect(() => {
     const keys = slices.map((slice) => slice.source_key).filter((key): key is string => !!key);
     requestSliceKeyCheck(keys);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [dataUpdatedAt]);
 
   const isGone = (slice: OrcaSliceReport): boolean => {
@@ -95,8 +88,6 @@ export const SlicedJobsPanel: React.FC<SlicedJobsPanelProps> = ({
         </button>
       </div>
 
-      {/* Where this is switched on comes first, always: a list without it leaves
-          a person guessing what produced it and how to get more. */}
       <p className="mb-3 text-[11px] leading-4 text-slate-400">
         {hook
           ? t(hook.enabled ? 'slicedJobs.hookOn' : 'slicedJobs.hookOff', { preset: hook.preset })

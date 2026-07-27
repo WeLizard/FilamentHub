@@ -15,7 +15,6 @@ interface PowerPartsBreakdownProps {
 const inputClass =
   'w-full rounded-xl border border-white/10 bg-slate-950/60 px-3 py-1.5 text-xs text-white placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-cyan-400/60';
 
-/** Adds the machine's wattage up from its heaters, motors and board. */
 export const PowerPartsBreakdown: React.FC<PowerPartsBreakdownProps> = ({
   hotend,
   bed,

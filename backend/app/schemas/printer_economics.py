@@ -51,7 +51,6 @@ class PrinterEconomicsResponse(BaseModel):
     machine_hour_rate: float | None
     economics_currency: str | None
 
-    # Per hour of printing, as shown in the breakdown.
     depreciation_per_hour: float
     electricity_per_hour: float
     maintenance_per_hour: float
@@ -59,7 +58,6 @@ class PrinterEconomicsResponse(BaseModel):
     effective_machine_hour_rate: float
     rate_below_cost: bool
 
-    # The calculator's own fields, already split so nothing is counted twice.
     calculator_printer_power_w: float
     calculator_printing_rate_per_hour: float
     calculator_amortization_rate_per_hour: float
@@ -82,5 +80,4 @@ class PrinterEconomicsSuggestion(BaseModel):
     average_power_watts: float
     useful_life_hours: int
     maintenance_cost_per_hour: float
-    # Present when the person filled OrcaSlicer's own per-hour machine cost.
     orca_time_cost: float | None

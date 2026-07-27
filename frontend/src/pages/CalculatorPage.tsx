@@ -67,6 +67,7 @@ import {
   type CalculatorQuoteMode,
 } from '../utils/calculatorBatch';
 import { safeStorage } from '../utils/storage';
+import { quoteMarketRules, resolveQuoteMarket, QUOTE_MARKETS } from '../utils/quoteMarket';
 import { CALCULATOR_DEFAULTS_STORAGE_KEY } from '../utils/calculatorDefaults';
 import { normalizeFilamentColor, resolveMaterialDisplayColors } from '../utils/calculatorMaterialColors';
 import type {
@@ -114,6 +115,11 @@ interface QuoteProfileState {
   sellerName: string;
   sellerInn: string;
   sellerPhone: string;
+  sellerRegistrationId: string;
+  sellerTaxCode: string;
+  sellerAddress: string;
+  sellerBankDetails: string;
+  quoteMarket: string;
   paymentTerms: string;
   validityDays: number;
   disclaimerMode: QuoteDisclaimerMode;
@@ -352,11 +358,16 @@ const DEFAULT_QUOTE_PROFILE: QuoteProfileState = {
   sellerName: '',
   sellerInn: '',
   sellerPhone: '',
+  sellerRegistrationId: '',
+  sellerTaxCode: '',
+  sellerAddress: '',
+  sellerBankDetails: '',
+  quoteMarket: '',
   paymentTerms: '',
   validityDays: 14,
   disclaimerMode: 'not_offer',
   currency: 'RUB',
-  quoteNumberPrefix: 'КП',
+  quoteNumberPrefix: '',
 };
 const DEFAULT_QUOTE_PARTY_FORM: QuotePartyFormState = {
   ...DEFAULT_QUOTE_PROFILE,
@@ -417,8 +428,6 @@ export const buildEstimateRequest = (
   materialLines: CalculatorMaterialLineState[] = [],
   parsedJobs: ParsedJobState[] = [],
   jobConfigs: CalculatorJobConfig[] = [],
-  // A chosen machine's own economics override the account defaults for this
-  // order only — the person's default settings are never rewritten by a pick.
   printerEconomics: PrinterEconomics | null = null,
 ): CalculatorEstimateRequest => {
   const requestData: CalculatorEstimateRequest = {
@@ -765,7 +774,6 @@ const formatParsedTemperaturePair = (
 const suggestComplexityCoefficient = (parsed: CalculatorGcodeParseResponse): number => {
   let coef = 1.0;
 
-  // Multi-material / toolchanges
   if (parsed.toolchange_count != null && parsed.toolchange_count > 20) {
     coef += 0.3;
   } else if (parsed.toolchange_count != null && parsed.toolchange_count > 5) {
@@ -774,31 +782,26 @@ const suggestComplexityCoefficient = (parsed: CalculatorGcodeParseResponse): num
     coef += 0.1;
   }
 
-  // Supports (tree/organic more complex than normal)
   if (parsed.support_type && parsed.support_type.toLowerCase() !== 'none') {
     const st = parsed.support_type.toLowerCase();
     coef += st.includes('tree') || st.includes('organic') ? 0.15 : 0.1;
   }
 
-  // Fine layers
   if (parsed.layer_height_mm != null) {
     if (parsed.layer_height_mm < 0.1) coef += 0.2;
     else if (parsed.layer_height_mm < 0.15) coef += 0.1;
   }
 
-  // High infill density
   if (parsed.sparse_infill_density_percent != null) {
     if (parsed.sparse_infill_density_percent > 80) coef += 0.15;
     else if (parsed.sparse_infill_density_percent > 60) coef += 0.1;
   }
 
-  // Multiple objects on plate
   if (parsed.object_count != null) {
     if (parsed.object_count > 3) coef += 0.1;
     else if (parsed.object_count > 1) coef += 0.05;
   }
 
-  // Many wall loops
   if (parsed.wall_loops != null) {
     if (parsed.wall_loops > 6) coef += 0.15;
     else if (parsed.wall_loops > 4) coef += 0.1;
@@ -824,7 +827,6 @@ const applyParsedGcodeToForm = (
     nextForm.timeSec = duration.seconds;
   }
 
-  // Auto-suggest complexity coefficient from G-code metadata
   const suggestedComplexity = suggestComplexityCoefficient(parsed);
   if (suggestedComplexity > 1.0) {
     nextForm.complexityCoefficient = suggestedComplexity;
@@ -979,6 +981,7 @@ interface BuildQuoteHtmlParams {
   parties: QuotePartyFormState;
   formatCurrency: (value: number | null | undefined) => string;
   quoteNumber?: string;
+  taxRatePercent?: number;
 }
 
 export const buildQuoteLineItems = (
@@ -1198,7 +1201,7 @@ const buildQuoteIncludedItems = (t: TFunction, result: CalculatorEstimateRespons
 const buildQuoteDisclaimerLabel = (t: TFunction, mode: QuoteDisclaimerMode): string =>
   mode === 'offer' ? t('profilePage.calculator.quoteDisclaimerOffer') : t('profilePage.calculator.quoteDisclaimerNotOffer');
 
-const buildQuoteDocumentHtml = ({
+export const buildQuoteDocumentHtml = ({
   t,
   items,
   includedItems,
@@ -1206,13 +1209,20 @@ const buildQuoteDocumentHtml = ({
   parties,
   formatCurrency,
   quoteNumber,
+  taxRatePercent = 0,
 }: BuildQuoteHtmlParams): string => {
   const lineItems = items;
   const issuedAt = new Date();
-  const today = new Intl.DateTimeFormat('ru-RU', { dateStyle: 'long' }).format(issuedAt);
+  const rules = quoteMarketRules(resolveQuoteMarket(parties.quoteMarket, parties.currency));
+  const formatDate = (value: Date): string =>
+    new Intl.DateTimeFormat(rules.dateLocale, { dateStyle: 'long' }).format(value);
+  const today = formatDate(issuedAt);
   const validityDays = Math.max(1, Math.round(parties.validityDays || DEFAULT_QUOTE_PROFILE.validityDays));
-  const validUntil = new Intl.DateTimeFormat('ru-RU', { dateStyle: 'long' }).format(addDays(issuedAt, validityDays));
-  const disclaimerLabel = buildQuoteDisclaimerLabel(t, parties.disclaimerMode || DEFAULT_QUOTE_PROFILE.disclaimerMode);
+  const validUntil = formatDate(addDays(issuedAt, validityDays));
+  const disclaimerMode = parties.disclaimerMode || DEFAULT_QUOTE_PROFILE.disclaimerMode;
+  const disclaimerLabel = t(
+    disclaimerMode === 'offer' ? rules.disclaimerKeys.binding : rules.disclaimerKeys.nonBinding,
+  );
   const buyerFallback = t('profilePage.calculator.quoteBuyerFallback');
 
   const tableRows = lineItems
@@ -1232,6 +1242,23 @@ const buildQuoteDocumentHtml = ({
     .join('');
 
   const includedMarkup = includedItems.map((item) => `<li>${escapeHtml(item)}</li>`).join('');
+
+  const showsTaxSeparately = rules.showTaxLine && taxRatePercent > 0;
+  const taxAmount = showsTaxSeparately
+    ? grandTotal - grandTotal / (1 + taxRatePercent / 100)
+    : 0;
+  const netAmount = grandTotal - taxAmount;
+  const taxRows = showsTaxSeparately
+    ? `
+          <tr>
+            <td colspan="4" class="p-2 border border-gray-400 text-sm text-right">${escapeHtml(t('quoteMarket.netAmount'))}:</td>
+            <td class="p-2 border border-gray-400 text-sm text-right">${escapeHtml(formatCurrency(netAmount))}</td>
+          </tr>
+          <tr>
+            <td colspan="4" class="p-2 border border-gray-400 text-sm text-right">${escapeHtml(t('quoteMarket.taxLine'))} ${escapeHtml(String(taxRatePercent))}%:</td>
+            <td class="p-2 border border-gray-400 text-sm text-right">${escapeHtml(formatCurrency(taxAmount))}</td>
+          </tr>`
+    : '';
 
   const buyerName = parties.buyerName.trim() || buyerFallback;
   const buyerInn = parties.buyerInn.trim();
@@ -1305,8 +1332,20 @@ const buildQuoteDocumentHtml = ({
         <div class="header-right">
           <p><strong>${escapeHtml(t('profilePage.calculator.quoteExecutor'))}:</strong></p>
           <p>${escapeHtml(sellerName)}</p>
-          <p>${escapeHtml(t('profilePage.calculator.quoteInn'))}: ${escapeHtml(parties.sellerInn.trim() || '—')}</p>
+          <p>${escapeHtml(t(rules.taxIdKey))}: ${escapeHtml(parties.sellerInn.trim() || '—')}</p>
+          ${rules.registrationIdKey && parties.sellerRegistrationId.trim()
+            ? `<p>${escapeHtml(t(rules.registrationIdKey))}: ${escapeHtml(parties.sellerRegistrationId.trim())}</p>`
+            : ''}
+          ${rules.showTaxCode && parties.sellerTaxCode.trim()
+            ? `<p>${escapeHtml(t('quoteMarket.ru.taxCode'))}: ${escapeHtml(parties.sellerTaxCode.trim())}</p>`
+            : ''}
+          ${parties.sellerAddress.trim()
+            ? `<p>${escapeHtml(t('quoteMarket.sellerAddress'))}: ${escapeHtml(parties.sellerAddress.trim())}</p>`
+            : ''}
           <p>${escapeHtml(t('profilePage.calculator.quotePhone'))}: ${escapeHtml(parties.sellerPhone.trim() || '—')}</p>
+          ${rules.showBankDetails && parties.sellerBankDetails.trim()
+            ? `<p>${escapeHtml(t('quoteMarket.sellerBank'))}: ${escapeHtml(parties.sellerBankDetails.trim())}</p>`
+            : ''}
           <p class="status">${escapeHtml(t('profilePage.calculator.quoteTaxStatus'))}</p>
         </div>
       </div>
@@ -1342,6 +1381,7 @@ const buildQuoteDocumentHtml = ({
           ${tableRows}
         </tbody>
         <tfoot>
+          ${taxRows}
           <tr class="total-row">
             <td colspan="4" class="p-2 border border-gray-400 text-sm text-right">${escapeHtml(t('profilePage.calculator.totalCost'))}:</td>
             <td class="p-2 border border-gray-400 text-sm text-right">${escapeHtml(formatCurrency(grandTotal))}</td>
@@ -1356,6 +1396,7 @@ const buildQuoteDocumentHtml = ({
       </div>
 
       <div class="box" style="background: transparent; border-color: #e5e7eb;">
+        ${showsTaxSeparately ? '' : `<p class="box-muted">${escapeHtml(t('quoteMarket.taxIncluded'))}</p>`}
         <p class="box-muted">${escapeHtml(t('profilePage.calculator.quoteLegalStatus'))}: ${escapeHtml(disclaimerLabel)}</p>
       </div>
 
@@ -1453,8 +1494,6 @@ export const CalculatorPage: React.FC<CalculatorPageProps> = ({
     [quoteProfile.currency],
   );
 
-  // Всегда актуальная валюта калькулятора — чтобы эффект автоподстановки не тянул
-  // её в зависимости (иначе смена валюты затирала бы введённую цену).
   const calcCurrencyRef = useRef(quoteProfile.currency);
   calcCurrencyRef.current = quoteProfile.currency;
 
@@ -1640,9 +1679,7 @@ export const CalculatorPage: React.FC<CalculatorPageProps> = ({
         }));
       })
       .catch(() => {
-        // Not signed in, offline or no profile yet — the local copy stands.
       });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [hasCalculatorAccess]);
 
   useEffect(() => {
@@ -1656,9 +1693,6 @@ export const CalculatorPage: React.FC<CalculatorPageProps> = ({
       }
 
       const defaults = deriveUserSpoolDefaults(selectedSpool);
-      // Если у катушки нет своей цены, deriveUserSpoolDefaults берёт цену бренда
-      // (в валюте бренда). Не подставляем её, если она не совпадает с валютой
-      // калькулятора — пользователь укажет свою (как и для каталога).
       const usesBrandFallback =
         selectedSpool.price == null && selectedSpool.filament?.price_per_kg != null;
       const spoolBrandCurrency = selectedSpool.filament?.currency
@@ -1700,8 +1734,6 @@ export const CalculatorPage: React.FC<CalculatorPageProps> = ({
 
     setForm((prev) => ({
       ...prev,
-      // Каталожная цена — в валюте бренда. Подставляем её только если валюта совпадает
-      // с валютой калькулятора, иначе оставляем пользователю ввести свою (без смешивания валют).
       spoolPrice: currencyMatches ? (defaults.spoolPrice ?? prev.spoolPrice) : prev.spoolPrice,
       spoolWeightKg: defaults.spoolWeightKg ?? prev.spoolWeightKg,
     }));
@@ -1713,7 +1745,6 @@ export const CalculatorPage: React.FC<CalculatorPageProps> = ({
     const nextProfile: QuoteProfileState = {
       ...DEFAULT_QUOTE_PROFILE,
       ...stored,
-      // Пока пользователь не выбрал валюту — дефолт по языку UI.
       currency: normalizeCurrency(stored.currency || defaultCurrencyForLanguage(i18n.language)),
       sellerName:
         typeof stored.sellerName === 'string' && stored.sellerName.trim()
@@ -1797,18 +1828,12 @@ export const CalculatorPage: React.FC<CalculatorPageProps> = ({
     setForm((prev) => ({ ...prev, [field]: value }));
   };
 
-  // Файл нарезки остался на компьютере человека: страница называет плагину ключ,
-  // тот отправляет G-code в наш разбор и возвращает результат.
   const [pickedSliceId, setPickedSliceId] = useState<number | null>(null);
   const [goneSourceKeys, setGoneSourceKeys] = useState<string[]>([]);
   const pendingSliceRef = useRef<OrcaSliceReport | null>(null);
 
-  // Which machine this order runs on. Its economics fill the equipment fields
-  // that already exist; nothing else about the calculation changes.
   const [selectedPrinterId, setSelectedPrinterId] = useState<number | ''>('');
   const [printerPickedFrom, setPrinterPickedFrom] = useState<string | null>(null);
-  // Одни и те же машины: в экономике их значения правятся, в производстве
-  // подтягиваются. Столбец следует за машиной заказа, пока его не увели вручную.
   const [economicsPrinterId, setEconomicsPrinterId] = useState<number | ''>('');
 
   useEffect(() => {
@@ -1971,8 +1996,6 @@ export const CalculatorPage: React.FC<CalculatorPageProps> = ({
       const next = { ...prev, [field]: value };
       const settings = extractStaticSettings(next);
       saveStoredCalculatorDefaults(settings);
-      // The account is where these belong; the local copy stays as the offline
-      // fallback. Typing is bursty, so the write is held back a moment.
       window.clearTimeout(economicsSyncRef.current);
       economicsSyncRef.current = window.setTimeout(() => {
         void calculatorAPI
@@ -2001,7 +2024,6 @@ export const CalculatorPage: React.FC<CalculatorPageProps> = ({
             currency: currencyRef.current,
           })
           .catch(() => {
-            // The local copy already holds it; a failed write is not worth a toast.
           });
       }, 800);
       return next;
@@ -2017,7 +2039,6 @@ export const CalculatorPage: React.FC<CalculatorPageProps> = ({
       void calculatorAPI
         .updateProfile({ currency: value as string })
         .catch(() => {
-          // The local copy already holds it.
         });
     }
     setQuoteParties((prev) => ({
@@ -2037,8 +2058,6 @@ export const CalculatorPage: React.FC<CalculatorPageProps> = ({
     );
   };
 
-  // Единственный путь, которым разобранный G-code попадает в расчёт: и файл,
-  // перетащенный сюда, и нарезка, поднятая плагином, проходят через него.
   const applyParsedJobs = (jobs: ParsedJobState[], warning: string | null) => {
     calculateMutation.reset();
     priceManuallyEditedRef.current = false;
@@ -2085,7 +2104,6 @@ export const CalculatorPage: React.FC<CalculatorPageProps> = ({
       pendingSliceRef.current = null;
       setPickedSliceId(null);
       if (result.error === 'gone') {
-        // The G-code the slice stands for is no longer on the person's disk.
         if (slice?.source_key) {
           setGoneSourceKeys((current) => [...current, slice.source_key as string]);
         }
@@ -2271,7 +2289,9 @@ export const CalculatorPage: React.FC<CalculatorPageProps> = ({
     }
 
     quoteSequenceRef.current += 1;
-    const prefix = quoteProfile.quoteNumberPrefix || 'КП';
+    const prefix =
+      quoteProfile.quoteNumberPrefix
+      || quoteMarketRules(resolveQuoteMarket(quoteProfile.quoteMarket, quoteProfile.currency)).numberPrefix;
     const seq = quoteSequenceRef.current;
     const dateStr = new Date().toISOString().slice(0, 10).replace(/-/g, '');
     const quoteNumber = `${prefix}-${dateStr}-${String(seq).padStart(2, '0')}`;
@@ -2292,7 +2312,9 @@ export const CalculatorPage: React.FC<CalculatorPageProps> = ({
     setIsSharing(true);
     try {
       quoteSequenceRef.current += 1;
-      const prefix = quoteProfile.quoteNumberPrefix || 'КП';
+      const prefix =
+      quoteProfile.quoteNumberPrefix
+      || quoteMarketRules(resolveQuoteMarket(quoteProfile.quoteMarket, quoteProfile.currency)).numberPrefix;
       const seq = quoteSequenceRef.current;
       const dateStr = new Date().toISOString().slice(0, 10).replace(/-/g, '');
       const quoteNumber = `${prefix}-${dateStr}-${String(seq).padStart(2, '0')}`;
@@ -2328,7 +2350,9 @@ export const CalculatorPage: React.FC<CalculatorPageProps> = ({
     setIsPdfDownloading(true);
     try {
       quoteSequenceRef.current += 1;
-      const prefix = quoteProfile.quoteNumberPrefix || 'КП';
+      const prefix =
+      quoteProfile.quoteNumberPrefix
+      || quoteMarketRules(resolveQuoteMarket(quoteProfile.quoteMarket, quoteProfile.currency)).numberPrefix;
       const seq = quoteSequenceRef.current;
       const dateStr = new Date().toISOString().slice(0, 10).replace(/-/g, '');
       const quoteNumber = `${prefix}-${dateStr}-${String(seq).padStart(2, '0')}`;
@@ -2417,7 +2441,16 @@ export const CalculatorPage: React.FC<CalculatorPageProps> = ({
       grandTotal = 0;
     }
 
-    return { t, items, includedItems, grandTotal, parties: quoteParties, formatCurrency, quoteNumber };
+    return {
+      t,
+      items,
+      includedItems,
+      grandTotal,
+      parties: quoteParties,
+      formatCurrency,
+      quoteNumber,
+      taxRatePercent: form.taxRatePercent,
+    };
   };
 
   const handleQuoteCustomerSelection = (selection: string) => {
@@ -2543,6 +2576,11 @@ export const CalculatorPage: React.FC<CalculatorPageProps> = ({
         seller_name: quoteProfile.sellerName,
         seller_inn: quoteProfile.sellerInn,
         seller_phone: quoteProfile.sellerPhone,
+        seller_registration_id: quoteProfile.sellerRegistrationId,
+        seller_tax_code: quoteProfile.sellerTaxCode,
+        seller_address: quoteProfile.sellerAddress,
+        seller_bank_details: quoteProfile.sellerBankDetails,
+        quote_market: quoteProfile.quoteMarket,
         payment_terms: quoteProfile.paymentTerms,
         validity_days: quoteProfile.validityDays,
         disclaimer_mode: quoteProfile.disclaimerMode,
@@ -2566,6 +2604,11 @@ export const CalculatorPage: React.FC<CalculatorPageProps> = ({
         sellerName: profile.seller_name,
         sellerInn: profile.seller_inn,
         sellerPhone: profile.seller_phone,
+        sellerRegistrationId: profile.seller_registration_id,
+        sellerTaxCode: profile.seller_tax_code,
+        sellerAddress: profile.seller_address,
+        sellerBankDetails: profile.seller_bank_details,
+        quoteMarket: profile.quote_market,
         paymentTerms: profile.payment_terms,
         validityDays: profile.validity_days,
         disclaimerMode: profile.disclaimer_mode as QuoteDisclaimerMode,
@@ -2576,6 +2619,11 @@ export const CalculatorPage: React.FC<CalculatorPageProps> = ({
         sellerName: profile.seller_name,
         sellerInn: profile.seller_inn,
         sellerPhone: profile.seller_phone,
+        sellerRegistrationId: profile.seller_registration_id,
+        sellerTaxCode: profile.seller_tax_code,
+        sellerAddress: profile.seller_address,
+        sellerBankDetails: profile.seller_bank_details,
+        quoteMarket: profile.quote_market,
         paymentTerms: profile.payment_terms,
         validityDays: profile.validity_days,
         disclaimerMode: profile.disclaimer_mode as QuoteDisclaimerMode,
@@ -2779,8 +2827,6 @@ export const CalculatorPage: React.FC<CalculatorPageProps> = ({
       priceManuallyEditedRef.current = false;
       const exactSpoolId = spoolMatch.item.spoolIds.length === 1 ? spoolMatch.item.spoolIds[0] : '';
       if (!exactSpoolId) {
-        // The material identity is clear, but choosing an arbitrary physical
-        // spool would silently pick the wrong purchase price or remaining stock.
         skipNextFilamentDefaultsRef.current = true;
         setMaterialPriceSource('unset');
       }
@@ -2826,7 +2872,6 @@ export const CalculatorPage: React.FC<CalculatorPageProps> = ({
     spoolsQuery.isPending,
   ]);
 
-  // Калькулятор — Pro-функция. Триал запускается только явным действием пользователя.
   if (!hasCalculatorAccess) {
     const trialError = startTrialMutation.error as {
       response?: { data?: { detail?: unknown } };
@@ -3291,7 +3336,6 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
         low: tc('materialMatchConfidenceLow'),
       }[autoMaterialMatch.confidence]
     : null;
-  // Каталожная цена бренда в другой валюте: её не подставили в форму, просим указать свою.
   const catalogBrandCurrency = !selectedSpool && selectedCatalogFilament?.currency
     ? normalizeCurrency(selectedCatalogFilament.currency)
     : null;
@@ -3317,6 +3361,10 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
               : '—'
           }`
         : null;
+  const activeQuoteRules = quoteMarketRules(
+    resolveQuoteMarket(quoteProfile.quoteMarket, quoteProfile.currency),
+  );
+
   const roundingModeLabel =
     form.roundingMode === 'down'
       ? t('profilePage.calc.roundingModeDown')
@@ -3853,7 +3901,6 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
                   <p className="mb-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">{tc('economicsGroupRounding')}</p>
                   <div className={compactFieldsClass}>
                   <FieldBlock label={t('profilePage.calc.roundTo')}>
-                    {/* Округление — одна настройка: до какой суммы и в какую сторону. */}
                     <div className="flex flex-wrap items-center gap-2">
                       <InputWithSuffix
                         value={form.roundToNearest}
@@ -3937,9 +3984,6 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
                       rate: 'printingRatePerHour',
                     } as const;
                     onStaticChange(mapping[field], value);
-                    // Wear is no longer a field of its own — it is what the price,
-                    // the expected life and the upkeep add up to. Kept in step here
-                    // so the calculation cannot drift from the breakdown on screen.
                     if (field === 'purchaseCost' || field === 'lifeHours' || field === 'maintenance') {
                       const price = field === 'purchaseCost' ? value : form.printerPurchasePrice;
                       const hours = field === 'lifeHours' ? value : form.printerUsefulHours;
@@ -3962,7 +4006,41 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
                     {(quoteProfile.sellerName || tc('quoteProfileSummaryEmpty')) +
                       ` · ${tc('quoteValidityDaysShort')}: ${quoteProfile.validityDays} ${tc('dayAbbr')}`}
                   </p>
-                <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
+                <div className="mt-4 rounded-2xl border border-white/10 bg-white/[0.03] p-3">
+                  <p className="text-xs font-semibold text-slate-200">{t('quoteMarket.title')}</p>
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      onClick={() => onQuoteProfileChange('quoteMarket', '')}
+                      className={`rounded-full border px-3 py-1.5 text-xs transition ${
+                        quoteProfile.quoteMarket === ''
+                          ? 'border-cyan-400/50 bg-cyan-500/15 text-cyan-200'
+                          : 'border-white/10 bg-slate-950/40 text-slate-300 hover:border-white/20'
+                      }`}
+                    >
+                      {t('quoteMarket.auto')}
+                    </button>
+                    {QUOTE_MARKETS.map((market) => (
+                      <button
+                        key={market}
+                        type="button"
+                        onClick={() => onQuoteProfileChange('quoteMarket', market)}
+                        className={`rounded-full border px-3 py-1.5 text-xs transition ${
+                          quoteProfile.quoteMarket === market
+                            ? 'border-cyan-400/50 bg-cyan-500/15 text-cyan-200'
+                            : 'border-white/10 bg-slate-950/40 text-slate-300 hover:border-white/20'
+                        }`}
+                      >
+                        {t(`quoteMarket.markets.${market}`)}
+                      </button>
+                    ))}
+                  </div>
+                  <p className="mt-2 text-[11px] leading-4 text-slate-500">{t('quoteMarket.hint')}</p>
+                </div>
+
+                <div className="mt-3">
+                  <p className="mb-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">{tc('quoteGroupSupplier')}</p>
+                  <div className={`grid grid-cols-2 gap-x-3 gap-y-3 sm:grid-cols-3 xl:grid-cols-4 ${compactFieldsClass}`}>
                   <FieldBlock label={tc('quoteSellerName')}>
                     <TextInput
                       value={quoteProfile.sellerName}
@@ -3970,13 +4048,47 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
                       placeholder={tc('quoteSellerNamePlaceholder')}
                     />
                   </FieldBlock>
-                  <FieldBlock label={tc('quoteSellerInn')}>
+                  <FieldBlock label={t(activeQuoteRules.taxIdKey)}>
                     <TextInput
                       value={quoteProfile.sellerInn}
                       onChange={(value) => onQuoteProfileChange('sellerInn', value)}
-                      placeholder="123456789012"
+                      placeholder=""
                     />
                   </FieldBlock>
+                  {activeQuoteRules.registrationIdKey ? (
+                    <FieldBlock label={t(activeQuoteRules.registrationIdKey)}>
+                      <TextInput
+                        value={quoteProfile.sellerRegistrationId}
+                        onChange={(value) => onQuoteProfileChange('sellerRegistrationId', value)}
+                        placeholder=""
+                      />
+                    </FieldBlock>
+                  ) : null}
+                  {activeQuoteRules.showTaxCode ? (
+                    <FieldBlock label={t('quoteMarket.ru.taxCode')}>
+                      <TextInput
+                        value={quoteProfile.sellerTaxCode}
+                        onChange={(value) => onQuoteProfileChange('sellerTaxCode', value)}
+                        placeholder=""
+                      />
+                    </FieldBlock>
+                  ) : null}
+                  <FieldBlock label={t('quoteMarket.sellerAddress')}>
+                    <TextInput
+                      value={quoteProfile.sellerAddress}
+                      onChange={(value) => onQuoteProfileChange('sellerAddress', value)}
+                      placeholder=""
+                    />
+                  </FieldBlock>
+                  {activeQuoteRules.showBankDetails ? (
+                    <FieldBlock label={t('quoteMarket.sellerBank')}>
+                      <TextInput
+                        value={quoteProfile.sellerBankDetails}
+                        onChange={(value) => onQuoteProfileChange('sellerBankDetails', value)}
+                        placeholder=""
+                      />
+                    </FieldBlock>
+                  ) : null}
                   <FieldBlock label={tc('quoteSellerPhone')}>
                     <TextInput
                       value={quoteProfile.sellerPhone}
@@ -3984,6 +4096,11 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
                       placeholder="+7 (999) 000-00-00"
                     />
                   </FieldBlock>
+                  </div>
+                </div>
+                <div className="mt-3">
+                  <p className="mb-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">{tc('quoteGroupDocument')}</p>
+                  <div className={`grid grid-cols-2 gap-x-3 gap-y-3 sm:grid-cols-3 xl:grid-cols-4 ${compactFieldsClass}`}>
                   <FieldBlock label={tc('quoteValidityDays')} hint={tc('quoteValidityDaysHint')}>
                     <NumberInput
                       value={quoteProfile.validityDays}
@@ -4004,6 +4121,18 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
                       <option value="offer">{tc('quoteDisclaimerOffer')}</option>
                     </select>
                   </FieldBlock>
+                  <FieldBlock label={tc('quoteNumberPrefix')} hint={tc('quoteNumberPrefixHint')}>
+                    <TextInput
+                      value={quoteProfile.quoteNumberPrefix}
+                      placeholder={activeQuoteRules.numberPrefix}
+                      onChange={(value) => onQuoteProfileChange('quoteNumberPrefix', value)}
+                    />
+                  </FieldBlock>
+                  </div>
+                </div>
+                <div className="mt-3">
+                  <p className="mb-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">{tc('quoteGroupMoney')}</p>
+                  <div className={`grid grid-cols-2 gap-x-3 gap-y-3 sm:grid-cols-3 xl:grid-cols-4 ${compactFieldsClass}`}>
                   <FieldBlock label={tc('quoteCurrency')}>
                     <select
                       className={`${inputClass} w-full sm:max-w-[18rem]`}
@@ -4017,14 +4146,7 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
                       ))}
                     </select>
                   </FieldBlock>
-                  <FieldBlock label={tc('quoteNumberPrefix')} hint={tc('quoteNumberPrefixHint')}>
-                    <TextInput
-                      value={quoteProfile.quoteNumberPrefix}
-                      onChange={(value) => onQuoteProfileChange('quoteNumberPrefix', value)}
-                      placeholder="КП"
-                    />
-                  </FieldBlock>
-                  <div className="md:col-span-2 xl:col-span-3">
+                  <div className="col-span-2 sm:col-span-3 xl:col-span-4">
                     <FieldBlock label={tc('quotePaymentTerms')}>
                       <TextareaInput
                         value={quoteProfile.paymentTerms}
@@ -4032,6 +4154,7 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
                         placeholder={tc('quotePaymentTermsPlaceholder')}
                       />
                     </FieldBlock>
+                  </div>
                   </div>
                 </div>
                 </div>
@@ -5895,8 +6018,6 @@ const StepBadge: React.FC<{ step: string }> = ({ step }) => (
   </div>
 );
 
-// Настройки по умолчанию — это плотная таблица значений, а не форма, которую
-// заполняют каждый раз: подписи прижаты к полям, поля ниже, колонок больше.
 const compactFieldsClass = [
   '[&_label>span:first-child]:min-h-0',
   '[&_label>span:first-child]:mb-1',
@@ -5904,8 +6025,6 @@ const compactFieldsClass = [
   '[&_label>span:first-child]:leading-4',
   '[&_input]:py-2',
   '[&_select]:py-2',
-  // A number here is six or seven characters at most; the rest was empty space.
-  // Only the input narrows — the quick picks under it keep the full width.
   '[&_label>div>div:first-child]:max-w-[13rem]',
   '[&_select]:max-w-[13rem]',
 ].join(' ');

@@ -6,12 +6,10 @@ import { currencySymbol } from '../../utils/currency';
 
 interface PrinterCostRowProps {
   printers: PhysicalPrinter[];
-  /** The machine this order is printed on. Its settings live in the economics. */
   selectedPrinterId: number | '';
   onSelect: (printerId: number | '') => void;
   economics: PrinterEconomics | null;
   currency: string;
-  /** How the machine came to be chosen, when it was not picked by hand. */
   pickedFromLabel?: string | null;
 }
 

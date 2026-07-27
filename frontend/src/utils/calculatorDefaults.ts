@@ -1,13 +1,7 @@
 import { safeStorage } from './storage';
 
-/** Where the calculator keeps the numbers a person set once for the account. */
 export const CALCULATOR_DEFAULTS_STORAGE_KEY = 'filamenthub_calculator_defaults_v1';
 
-/**
- * The machine-shaped part of those account defaults. A machine nobody has
- * configured yet starts from these instead of an empty form — they are what the
- * person already told us about their printing, just in the wrong place.
- */
 export interface AccountMachineDefaults {
   printerPowerW: number;
   printingRatePerHour: number;

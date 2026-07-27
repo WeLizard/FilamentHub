@@ -14,17 +14,14 @@ interface PrinterCostFormProps {
   printerId: number;
   printerName: string;
   currency: string;
-  /** The standard numbers this machine falls back to, field by field. */
   fallback: EconomicsValues;
   onSaved?: (economics: PrinterEconomics) => void;
-  /** Where to show "saved" — the column header, away from the text below it. */
   onStatusChange?: (status: 'saving' | 'saved' | null) => void;
 }
 
 const USAGE_OPTIONS = ['occasional', 'regular', 'intensive'] as const;
 type Usage = (typeof USAGE_OPTIONS)[number];
 
-// What upkeep costs per hour, phrased the way a person can actually answer.
 const UPKEEP_OPTIONS = [
   { key: 'upkeepLow', value: 2 },
   { key: 'upkeepMid', value: 5 },
@@ -54,8 +51,6 @@ export const PrinterCostForm: React.FC<PrinterCostFormProps> = ({
     rate: 0,
   });
   const [detailsOpen, setDetailsOpen] = useState(false);
-  // The parts that add up to this machine's wattage. Stored with the machine:
-  // two printers of one model rarely carry the same heaters and board.
   const [parts, setParts] = useState({ hotend: 0, bed: 0, steppers: 0, electronics: 0 });
   const savedTimerRef = useRef<number | undefined>(undefined);
 
@@ -73,8 +68,6 @@ export const PrinterCostForm: React.FC<PrinterCostFormProps> = ({
   const saved = economicsQuery.data;
   const suggestion = suggestionQuery.data;
 
-  // The machine's own number wins; then the averaged one; then what we can tell
-  // from the machine itself. A field is never empty and never a mystery.
   useEffect(() => {
     if (!saved) {
       return;
@@ -139,8 +132,6 @@ export const PrinterCostForm: React.FC<PrinterCostFormProps> = ({
     const base = breakdown.cost;
     const step = base < 20 ? 1 : 5;
     const round = (value: number) => Math.ceil(value / step) * step;
-    // Three distinct numbers even when the cost is tiny: identical chips would
-    // read as a bug rather than a choice.
     const min = round(base * 1.25);
     const balanced = Math.max(round(base * 1.9), min + step);
     return [
@@ -187,8 +178,6 @@ export const PrinterCostForm: React.FC<PrinterCostFormProps> = ({
   const change = (field: EconomicsField, value: number) =>
     setValues((current) => ({ ...current, [field]: value }));
 
-  // Saved when a field is left, the way the rest of the calculator remembers
-  // what a person types.
   const commit = (field: EconomicsField, value: number) => {
     const next = { ...values, [field]: value };
     setValues(next);

@@ -76,8 +76,6 @@ async def start_calculator_trial(
 ) -> UserResponse:
     """Activate the current user's one-time Calculator Pro trial."""
     if not paywall_enforced():
-        # Do not consume a one-time trial while an administrator has explicitly
-        # opened Calculator Pro to everyone.
         return UserResponse.model_validate(current_user)
 
     try:
@@ -298,7 +296,6 @@ async def estimate_cost(
     )
     tax_rate_percent = data.tax_rate_percent or 0.0
 
-    # ========== Простые методы (для обратной совместимости) ==========
     if data.pricing_method == PricingMethod.BY_WEIGHT:
         material_line_costs: list[CalculatorMaterialLineCost] = []
         if data.material_lines:
@@ -314,10 +311,8 @@ async def estimate_cost(
 
             delivery = data.delivery_cost or 0.0
             weight_kg = (data.weight_g * quantity) / 1000.0
-            # Формула из Excel: ((цена_катушки + доставка) / вес_катушки_кг) / 1000 * (вес_г * количество)
             cost_material = ((data.spool_price + delivery) / data.spool_weight_kg) / 1000.0 * (data.weight_g * quantity)
 
-        # Электроэнергия (если указана)
         cost_electricity = 0.0
         time_hours = time_hours_per_run if time_hours_total > 0 else None
         if time_hours_total > 0:
@@ -358,7 +353,6 @@ async def estimate_cost(
 
         cost_printing = time_hours_total * data.price_per_hour
 
-        # Электроэнергия (если указана, рассчитывается на общее время печати партии)
         cost_electricity = 0.0
         if data.electricity_cost_per_kwh and data.printer_power_w and time_hours_total > 0:
             power_kw = data.printer_power_w / 1000.0
@@ -392,9 +386,7 @@ async def estimate_cost(
             applied_tax_rate_percent=tax_rate_percent if tax_rate_percent > 0 else None,
         )
 
-    # ========== Комбинированный метод (полная формула из Excel + профессиональная формула) ==========
     elif data.pricing_method == PricingMethod.COMBINED:
-        # 1. Материал (с учетом поддержек и коэффициента потерь)
         cost_material = 0.0
         weight_kg = None
         material_line_costs: list[CalculatorMaterialLineCost] = []
@@ -407,70 +399,53 @@ async def estimate_cost(
             delivery = data.delivery_cost or 0.0
             price_per_gram = ((data.spool_price + delivery) / data.spool_weight_kg) / 1000.0
 
-            # Вес детали
             part_weight = data.weight_g * quantity
             weight_kg = part_weight / 1000.0
 
-            # Вес поддержек (если указан)
             supports_weight = (data.supports_weight_g or 0.0) * quantity
             supports_loss_coef = data.supports_loss_coefficient or 1.2
 
-            # Формула из документа: (Вес детали × Цена материала) + (Вес поддержек × Цена материала × Коэффициент потерь)
             cost_material = (part_weight * price_per_gram) + (supports_weight * price_per_gram * supports_loss_coef)
 
-        # 1b. Подготовка стола (клей, спрей, протирка — за каждый запуск)
         cost_bed_prep = 0.0
         if data.bed_prep_cost_per_print and data.bed_prep_cost_per_print > 0:
             cost_bed_prep = data.bed_prep_cost_per_print * print_runs
 
-        # 1c. Потери материала (пурга, скирт, дефекты — помимо поддержек)
         cost_waste = 0.0
         waste_factor_percent = data.waste_factor_percent or 0.0
         if waste_factor_percent > 0 and cost_material > 0:
             cost_waste = cost_material * (waste_factor_percent / 100.0)
 
-        # 3. Электроэнергия (рассчитывается на общее время печати партии)
         cost_electricity = 0.0
         if data.electricity_cost_per_kwh and data.printer_power_w and time_hours_total > 0:
             power_kw = data.printer_power_w / 1000.0
-            # Формула из Excel: мощность_кВт * цена_кВт·ч * время_печати_часы_всего
             cost_electricity = power_kw * data.electricity_cost_per_kwh * time_hours_total
 
-        # 4. Моделирование (делается один раз для всей партии, не умножается на quantity)
         cost_modeling = 0.0
         if data.modeling_rate_per_hour:
             modeling_time = _convert_time_to_hours(data.modeling_hours, data.modeling_minutes)
-            # Формула из Excel: (часы + минуты/60) * ставка_за_час
             cost_modeling = modeling_time * data.modeling_rate_per_hour
 
-        # 5. Печать (почасовая ставка, умножается на общее время печати партии)
         cost_printing = 0.0
         if data.printing_rate_per_hour and time_hours_total > 0:
-            # Формула из Excel: время_печати_часы_всего * ставка_за_час
             cost_printing = time_hours_total * data.printing_rate_per_hour
 
-        # 6. Постобработка (умножается на количество деталей, так как каждая деталь обрабатывается отдельно)
         cost_postprocessing = 0.0
         if data.postprocessing_rate_per_hour:
             postprocessing_time_per_part = _convert_time_to_hours(data.postprocessing_hours, data.postprocessing_minutes)
             postprocessing_time_total = postprocessing_time_per_part * quantity
-            # Формула из Excel: (время_на_деталь * количество) * ставка_за_час
             cost_postprocessing = postprocessing_time_total * data.postprocessing_rate_per_hour
 
-        # 6b. Мониторинг (пассивное время оператора — 5-15% от времени печати)
         cost_monitoring = 0.0
         monitoring_factor = data.monitoring_factor or 0.0
         if monitoring_factor > 0 and time_hours_total > 0 and data.printing_rate_per_hour:
             monitoring_time_hours = time_hours_total * monitoring_factor
             cost_monitoring = monitoring_time_hours * data.printing_rate_per_hour
 
-        # 7. Амортизация (привязана к общему времени печати партии)
         cost_amortization = 0.0
         if data.amortization_rate_per_hour and time_hours_total > 0:
-            # Формула из Excel: время_печати_часы_всего * ставка_амортизации_за_час
             cost_amortization = time_hours_total * data.amortization_rate_per_hour
 
-        # 7b. Износ сопла (объёмная модель — по см³ экструзии, не по часам)
         cost_nozzle_wear = 0.0
         if data.nozzle_price and data.nozzle_life_cm3:
             if data.material_lines:
@@ -487,14 +462,12 @@ async def estimate_cost(
                     wear_equivalent_volume_cm3 / data.nozzle_life_cm3
                 )
             elif data.weight_g:
-                # Объём = вес / плотность. Плотность по умолчанию 1.24 г/см³ (PLA)
                 density = data.filament_density or 1.24
                 total_weight_g = data.weight_g * quantity + (data.supports_weight_g or 0.0) * quantity
                 extruded_volume_cm3 = total_weight_g / density
                 abrasiveness = data.material_abrasiveness or 1.0
                 cost_nozzle_wear = data.nozzle_price * (extruded_volume_cm3 / data.nozzle_life_cm3) * abrasiveness
 
-        # 8. Прямые затраты (материалы + время + труд + износ)
         cost_direct = (
             cost_material +
             cost_bed_prep +
@@ -508,49 +481,34 @@ async def estimate_cost(
             cost_nozzle_wear
         )
 
-        # 9. Накладные расходы (процент от прямых затрат)
         overhead_percent = data.overhead_percent or 20.0  # По умолчанию 20%
         cost_overhead = cost_direct * (overhead_percent / 100.0)
 
-        # 10. Фиксированные расходы
         fixed_costs = data.fixed_costs or 0.0
 
-        # 11. Стоимость до наценки
         cost_before_markup = cost_direct + cost_overhead + fixed_costs
 
-        # 12. Наценка (процент от стоимости до наценки)
         markup_percent = data.markup_percent or 30.0  # По умолчанию 30%
         cost_markup = cost_before_markup * (markup_percent / 100.0)
 
-        # 13. Промежуточная цена (до применения коэффициентов)
         intermediate_price = cost_before_markup + cost_markup
 
-        # 14. Применение коэффициентов корректировки
         urgency_coef = data.urgency_coefficient or 1.0
         complexity_coef = data.complexity_coefficient or 1.0
         volume_discount_coef = data.volume_discount_coefficient or 1.0
 
-        # Применяем коэффициенты
         taxable_subtotal = intermediate_price * urgency_coef * complexity_coef * volume_discount_coef
 
-        # 15. Минимальная цена заказа (если указана)
         if data.min_order_price and taxable_subtotal < data.min_order_price:
             taxable_subtotal = data.min_order_price
 
-        # 16. Налог (если указан)
         cost_tax = _calculate_tax(taxable_subtotal, tax_rate_percent)
         cost_final_before_rounding = taxable_subtotal + cost_tax
         cost_final = cost_final_before_rounding
 
-        # 17. Округление (если указано)
         if data.round_to_nearest and data.round_to_nearest > 0:
             cost_final = _apply_rounding(cost_final, data.round_to_nearest, data.rounding_mode)
 
-        # 18. Расчет цены первой детали и последующих (для отображения)
-        # В combined-mode все промежуточные суммы выше считаются для всей партии.
-        # Поэтому:
-        # - subsequent = цена одной детали без one-time затрат на моделирование
-        # - first part = остаток от общей партии после вычитания остальных subsequent деталей
         if quantity > 1:
             cost_without_modeling = (
                 cost_material +
@@ -571,10 +529,8 @@ async def estimate_cost(
             cost_first_part = cost_final
             cost_subsequent_parts = cost_first_part
 
-        # 19. Общая стоимость партии
         cost_total = cost_final
 
-        # 20. Расчет общего времени (печать + мониторинг + подготовка + постобработка)
         total_time_hours = time_hours_total
         if monitoring_factor > 0 and time_hours_total > 0:
             total_time_hours += time_hours_total * monitoring_factor
@@ -586,8 +542,6 @@ async def estimate_cost(
             postprocessing_time_total = postprocessing_time_per_part * quantity  # Постобработка каждой детали
             total_time_hours += postprocessing_time_total
 
-        # 21. Расчет маржинальности / прибыли
-        # Себестоимость = прямые затраты + накладные + фиксированные расходы
         cost_of_goods_sold = cost_before_markup
         revenue_before_tax = max(cost_final - cost_tax, 0.0)
         profit_margin = revenue_before_tax - cost_of_goods_sold
@@ -748,13 +702,18 @@ async def delete_calculator_history(
     await db.commit()
 
 
-# ── Calculator profile ──────────────────────────────────────────────────
 
 
-# The quote details are a person's own contact and tax data. They are stored
-# encrypted so a leaked copy of the database reads as noise; the server holds
-# the key, because it has to show them back to their owner.
-ENCRYPTED_PROFILE_FIELDS = ("seller_name", "seller_inn", "seller_phone", "payment_terms")
+ENCRYPTED_PROFILE_FIELDS = (
+    "seller_name",
+    "seller_inn",
+    "seller_phone",
+    "payment_terms",
+    "seller_registration_id",
+    "seller_tax_code",
+    "seller_address",
+    "seller_bank_details",
+)
 
 
 def _profile_response(profile: UserCalculatorProfile) -> CalculatorProfileResponse:
@@ -810,11 +769,9 @@ async def update_calculator_profile(
     return _profile_response(profile)
 
 
-# ── Shared quotes (public КП links) ──────────────────────────────────
 
 SHARED_QUOTE_LIFETIME_DAYS = 90
 
-# Client-supplied HTML served on our own origin: forbid scripts to prevent stored XSS.
 _SHARED_QUOTE_CSP = (
     "default-src 'none'; style-src 'unsafe-inline'; img-src data: https: http:; "
     "font-src data:; base-uri 'none'; form-action 'none'"

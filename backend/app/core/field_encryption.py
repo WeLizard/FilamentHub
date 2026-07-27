@@ -25,8 +25,6 @@ PREFIX = "fh1:"
 
 
 def _cipher() -> Fernet:
-    # The application secret is not a Fernet key by shape, so it is stretched
-    # into one. A separate salt keeps this key apart from token signing.
     digest = hashlib.sha256(f"field-encryption:{settings.SECRET_KEY}".encode("utf-8")).digest()
     return Fernet(base64.urlsafe_b64encode(digest))
 
@@ -47,7 +45,5 @@ def decrypt_field(value: str | None) -> str:
     try:
         return _cipher().decrypt(value[len(PREFIX):].encode("ascii")).decode("utf-8")
     except (InvalidToken, ValueError):
-        # A changed secret makes old values unreadable; losing a phone number is
-        # better than failing the whole profile request.
         logger.warning("Could not decrypt a stored field", exc_info=True)
         return ""

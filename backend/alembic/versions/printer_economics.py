@@ -23,16 +23,12 @@ COLUMNS = (
     sa.Column("residual_value", sa.Float(), nullable=True),
     sa.Column("useful_life_hours", sa.Integer(), nullable=True),
     sa.Column("average_power_watts", sa.Float(), nullable=True),
-    # The parts that add up to the average draw, kept per machine because two
-    # printers of the same model rarely carry the same heaters and board.
     sa.Column("power_hotend_w", sa.Float(), nullable=True),
     sa.Column("power_bed_w", sa.Float(), nullable=True),
     sa.Column("power_steppers_w", sa.Float(), nullable=True),
     sa.Column("power_electronics_w", sa.Float(), nullable=True),
     sa.Column("maintenance_cost_per_hour", sa.Float(), nullable=True),
     sa.Column("machine_hour_rate", sa.Float(), nullable=True),
-    # The currency the two money fields were entered in, so changing the
-    # account currency later cannot silently reinterpret them.
     sa.Column("economics_currency", sa.String(length=4), nullable=True),
 )
 

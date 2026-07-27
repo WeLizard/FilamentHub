@@ -1159,6 +1159,11 @@ export interface CalculatorProfileResponse {
   seller_inn: string;
   seller_phone: string;
   payment_terms: string;
+  seller_registration_id: string;
+  seller_tax_code: string;
+  seller_address: string;
+  seller_bank_details: string;
+  quote_market: string;
   validity_days: number;
   disclaimer_mode: string;
   currency: string;
