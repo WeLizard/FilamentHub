@@ -541,6 +541,31 @@ def _sort_key(payload: dict, field_name: str):
     return (value is None, value)
 
 
+async def _claim_printer_hostname(
+    db: AsyncSession, device: UserPrinterDevice, hostname: str
+) -> None:
+    """Move a reported hostname onto the device that reported it.
+
+    One machine answers at one hostname, so leaving it on an older card would
+    keep two records claiming the same printer.
+    """
+    previous = (
+        await db.execute(
+            select(UserPrinterDevice).where(
+                UserPrinterDevice.user_id == device.user_id,
+                UserPrinterDevice.printer_hostname == hostname,
+                UserPrinterDevice.id != device.id,
+            )
+        )
+    ).scalars().all()
+    for other in previous:
+        other.printer_hostname = None
+        logger.info(
+            "Printer hostname moved from device id=%s to id=%s", other.id, device.id
+        )
+    device.printer_hostname = hostname
+
+
 async def _apply_location_assignment(
     db: AsyncSession,
     user: User,
@@ -581,32 +606,17 @@ async def _apply_location_assignment(
     device_hint = match.group("device").strip()
     gate_index = int(match.group("gate"))
 
-    # Try to find device by name, hostname, or fingerprint
-    device_result = await db.execute(
-        select(UserPrinterDevice).where(
-            UserPrinterDevice.user_id == user.id,
-            (UserPrinterDevice.name == device_hint)
-            | (UserPrinterDevice.printer_hostname == device_hint)
-            | (UserPrinterDevice.device_fingerprint == device_hint),
-        )
-    )
-    device = device_result.scalar_one_or_none()
-
-    # Fallback: use the device resolved from the API key
-    if device is None and device_from_key is not None:
-        device = device_from_key
-
-    # Save the hostname from location string (HH sends "voron @ MMU Gate:1")
-    if device is not None and device_hint:
-        if device.printer_hostname != device_hint:
-            device.printer_hostname = device_hint
-            logger.info("Detected printer hostname for device id=%s", device.id)
-        if device_from_key is not None:
-            device.supports_hh = True
-            device.reports_feed = True
-
+    # The key names the machine. The hint in the location string is the printer
+    # naming itself, and a stock Voron calls itself "voron" like every other
+    # one, so it can describe the device that authenticated but never choose it.
+    device = device_from_key
     if device is None:
-        return False, f"Device '{device_hint}' not found for this API key."
+        return False, "This endpoint requires the printer's own API key."
+
+    if device_hint and device.printer_hostname != device_hint:
+        await _claim_printer_hostname(db, device, device_hint)
+    device.supports_hh = True
+    device.reports_feed = True
 
     try:
         await assign_spool_to_gate(

@@ -524,3 +524,86 @@ def test_spool_payload_ungated_uses_representative_preset():
     payload = _to_spool_payload(spool, {}, {})
     assert payload["filament"]["settings_extruder_temp"] == 248.0
     assert payload["filament"]["settings_bed_temp"] == 88.0
+
+
+async def _second_device(db: AsyncSession, user: User, name: str, api_key: str) -> UserPrinterDevice:
+    device = UserPrinterDevice(
+        user=user,
+        name=name,
+        device_fingerprint=f"fp-{api_key}",
+        api_key=api_key,
+        supports_hh=True,
+    )
+    db.add(device)
+    await db.commit()
+    await db.refresh(device)
+    return device
+
+
+@pytest.mark.asyncio
+async def test_location_binds_to_the_key_not_to_the_reported_name(
+    client: AsyncClient, db_session: AsyncSession
+):
+    """A stock Voron calls itself "voron"; the key decides which card it is."""
+    user, spool, reporting = await _seed_spool_context(db_session)
+    other = await _second_device(db_session, user, "Larec", "other_device_api_key")
+    other.printer_hostname = "voron"
+    await db_session.commit()
+
+    response = await client.patch(
+        f"/api/v1/spool_compat/{reporting.api_key}/v1/spool/{spool.id}",
+        json={"location": "voron @ MMU Gate:4"},
+    )
+    assert response.status_code == 200
+
+    await db_session.refresh(reporting)
+    await db_session.refresh(other)
+    assert reporting.printer_hostname == "voron"
+    assert other.printer_hostname is None
+
+    state = (
+        await db_session.execute(
+            select(PresetGateState).where(PresetGateState.spool_id == spool.id)
+        )
+    ).scalars().one()
+    assert state.device_id == reporting.id
+
+
+@pytest.mark.asyncio
+async def test_two_printers_sharing_a_hostname_each_keep_their_own_card(
+    client: AsyncClient, db_session: AsyncSession
+):
+    """A farm of Vorons all answer to "voron" and must not collide."""
+    user, spool, first = await _seed_spool_context(db_session)
+    second = await _second_device(db_session, user, "Voron 2.4 350", "second_voron_api_key")
+    second_spool = UserSpool(
+        user=user,
+        filament_id=spool.filament_id,
+        initial_weight_g=1000.0,
+        used_weight_g=0.0,
+        state=UserSpoolState.active,
+        source="manual",
+    )
+    db_session.add(second_spool)
+    await db_session.commit()
+    await db_session.refresh(second_spool)
+
+    first_response = await client.patch(
+        f"/api/v1/spool_compat/{first.api_key}/v1/spool/{spool.id}",
+        json={"location": "voron @ MMU Gate:0"},
+    )
+    second_response = await client.patch(
+        f"/api/v1/spool_compat/{second.api_key}/v1/spool/{second_spool.id}",
+        json={"location": "voron @ MMU Gate:0"},
+    )
+    assert first_response.status_code == 200
+    assert second_response.status_code == 200
+
+    states = (
+        await db_session.execute(
+            select(PresetGateState).where(PresetGateState.user_id == user.id)
+        )
+    ).scalars().all()
+    by_spool = {state.spool_id: state.device_id for state in states}
+    assert by_spool[spool.id] == first.id
+    assert by_spool[second_spool.id] == second.id
