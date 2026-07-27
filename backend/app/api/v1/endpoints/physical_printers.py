@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.dependencies import get_current_active_user
 from app.db.session import get_db
 from app.models.user import User
+from app.models.user_printer_device import UserPrinterDevice
 from app.schemas.material_contract import (
     MaterialSlotAssignmentUpdate,
     MaterialSystemCreate,
@@ -17,6 +18,11 @@ from app.schemas.material_contract import (
     PhysicalPrinterCreate,
     PhysicalPrinterResponse,
     PhysicalPrinterUpdate,
+)
+from app.schemas.printer_economics import (
+    PrinterEconomicsResponse,
+    PrinterEconomicsSuggestion,
+    PrinterEconomicsUpdate,
 )
 from app.services.material_assignment_service import (
     clear_material_system_assignments,
@@ -33,6 +39,12 @@ from app.services.material_contract_service import (
     update_material_system,
     update_physical_printer,
     upsert_physical_printer_connector,
+)
+from app.services.printer_economics_service import (
+    DEFAULT_USAGE,
+    USAGE_LIFE_HOURS,
+    resolve_economics,
+    suggest_economics,
 )
 
 router = APIRouter(prefix="/physical-printers", tags=["physical-printers"])
@@ -225,3 +237,105 @@ async def clear_material_system(
         db, current_user.id, physical_printer_id
     )
     return PhysicalPrinterResponse.from_model(printer)
+
+
+async def _economics_response(
+    db: AsyncSession, printer: UserPrinterDevice
+) -> PrinterEconomicsResponse:
+    resolved = await resolve_economics(db, printer)
+    return PrinterEconomicsResponse(
+        printer_id=printer.id,
+        configured=any(
+            value is not None
+            for value in (
+                printer.purchase_cost,
+                printer.useful_life_hours,
+                printer.average_power_watts,
+                printer.maintenance_cost_per_hour,
+                printer.machine_hour_rate,
+            )
+        ),
+        purchase_cost=printer.purchase_cost,
+        residual_value=printer.residual_value,
+        useful_life_hours=printer.useful_life_hours,
+        average_power_watts=printer.average_power_watts,
+        power_hotend_w=printer.power_hotend_w,
+        power_bed_w=printer.power_bed_w,
+        power_steppers_w=printer.power_steppers_w,
+        power_electronics_w=printer.power_electronics_w,
+        maintenance_cost_per_hour=printer.maintenance_cost_per_hour,
+        machine_hour_rate=printer.machine_hour_rate,
+        economics_currency=printer.economics_currency,
+        depreciation_per_hour=round(resolved.depreciation_per_hour, 2),
+        electricity_per_hour=round(resolved.electricity_per_hour, 2),
+        maintenance_per_hour=round(resolved.maintenance_per_hour, 2),
+        machine_cost_per_hour=round(resolved.machine_cost_per_hour, 2),
+        effective_machine_hour_rate=round(resolved.machine_hour_rate, 2),
+        rate_below_cost=resolved.rate_below_cost,
+        calculator_printer_power_w=round(resolved.printer_power_w, 2),
+        calculator_printing_rate_per_hour=round(resolved.printing_rate_per_hour, 2),
+        calculator_amortization_rate_per_hour=round(
+            resolved.amortization_rate_per_hour, 2
+        ),
+        calculator_electricity_cost_per_kwh=round(resolved.electricity_cost_per_kwh, 2),
+        sources=resolved.sources,
+    )
+
+
+@router.get("/{physical_printer_id}/economics", response_model=PrinterEconomicsResponse)
+async def get_economics(
+    physical_printer_id: int,
+    current_user: Annotated[User, Depends(get_current_active_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> PrinterEconomicsResponse:
+    """What this machine costs to run, and what the calculator will charge."""
+    printer = await require_physical_printer(db, current_user.id, physical_printer_id)
+    return await _economics_response(db, printer)
+
+
+@router.patch("/{physical_printer_id}/economics", response_model=PrinterEconomicsResponse)
+async def update_economics(
+    physical_printer_id: int,
+    payload: PrinterEconomicsUpdate,
+    current_user: Annotated[User, Depends(get_current_active_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> PrinterEconomicsResponse:
+    """Set once, change whenever. Fields left out keep their current value."""
+    printer = await require_physical_printer(db, current_user.id, physical_printer_id)
+    for field_name in payload.model_fields_set:
+        setattr(printer, field_name, getattr(payload, field_name))
+    await db.commit()
+    await db.refresh(printer)
+    return await _economics_response(db, printer)
+
+
+@router.get(
+    "/{physical_printer_id}/economics/suggestion",
+    response_model=PrinterEconomicsSuggestion,
+)
+async def get_economics_suggestion(
+    physical_printer_id: int,
+    current_user: Annotated[User, Depends(get_current_active_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+    usage: str = DEFAULT_USAGE,
+) -> PrinterEconomicsSuggestion:
+    """Starting numbers, so nobody has to know their printer's wattage first."""
+    printer = await require_physical_printer(db, current_user.id, physical_printer_id)
+    suggestion = await suggest_economics(
+        db, printer, usage if usage in USAGE_LIFE_HOURS else DEFAULT_USAGE
+    )
+    machine = suggestion.machine
+    return PrinterEconomicsSuggestion(
+        printer_id=printer.id,
+        machine_class=machine.machine_class,
+        confidence=machine.confidence,
+        vendor=machine.vendor,
+        model_name=machine.model_name,
+        bed_max_mm=machine.bed_max_mm,
+        extruders=machine.extruders,
+        usage=suggestion.usage,
+        average_power_watts=suggestion.average_power_watts,
+        useful_life_hours=suggestion.useful_life_hours,
+        maintenance_cost_per_hour=suggestion.maintenance_cost_per_hour,
+        orca_time_cost=machine.orca_time_cost,
+    )

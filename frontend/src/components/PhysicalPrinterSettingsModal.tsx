@@ -5,17 +5,19 @@
 import { useMemo, useRef, useState, FormEvent } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
-import { Loader2, Save, Wifi, X, Link2Off, SlidersHorizontal, Trash2 } from 'lucide-react';
+import { Coins, Loader2, Save, Wifi, X, Link2Off, SlidersHorizontal, Trash2 } from 'lucide-react';
 import type { AxiosError } from 'axios';
-import { physicalPrintersAPI, printerProfilesAPI, printersAPI } from '../api/client';
+import { calculatorAPI, physicalPrintersAPI, printerProfilesAPI, printersAPI } from '../api/client';
 import type { PhysicalPrinter, PrinterConnectionBinding } from '../api/client';
 import type { PrinterProfile } from '../types/api';
 import { useAuth } from '../contexts/AuthContext';
 import { useDebounce } from '../hooks/useDebounce';
 import { ModalOverlay } from './ModalOverlay';
+import { PrinterCostModal } from './calculator/PrinterCostModal';
 import { ConfirmModal } from './ConfirmModal';
 import { Dropdown } from './Dropdown';
 import { configLabel } from '../utils/printerConfig';
+import { defaultCurrencyForLanguage, normalizeCurrency } from '../utils/currency';
 import { formatLastSeen } from '../utils/deviceLink';
 import { translateApiError } from '../utils/translateApiError';
 
@@ -45,6 +47,7 @@ export const PhysicalPrinterSettingsModal: React.FC<PhysicalPrinterSettingsModal
   const [error, setError] = useState<string | null>(null);
   const [showDiscard, setShowDiscard] = useState(false);
   const [showDelete, setShowDelete] = useState(false);
+  const [costModalOpen, setCostModalOpen] = useState(false);
   const pendingActionRef = useRef<(() => void) | null>(null);
   const debouncedSearch = useDebounce(printerSearch, 250);
 
@@ -59,6 +62,21 @@ export const PhysicalPrinterSettingsModal: React.FC<PhysicalPrinterSettingsModal
     queryFn: () => (printerId ? printersAPI.get(printerId) : null),
     enabled: isOpen && !!printerId,
   });
+  // The person's own currency lives with the calculator profile; a machine's
+  // money is entered in that same currency.
+  const { data: calculatorProfile } = useQuery({
+    queryKey: ['calculator-profile', 'currency'],
+    queryFn: () => calculatorAPI.getProfile(),
+    staleTime: 300_000,
+    enabled: costModalOpen,
+    retry: false,
+  });
+  // The person's own currency, with the same language-based default the
+  // calculator uses when they have not chosen one yet.
+  const economicsCurrency = normalizeCurrency(
+    calculatorProfile?.currency || defaultCurrencyForLanguage(i18n.language),
+  );
+
   const { data: profilesList } = useQuery({
     queryKey: ['printer-profiles', 'all-owned', user?.id],
     queryFn: () => printerProfilesAPI.listAllOwned(user!.id),
@@ -153,6 +171,17 @@ export const PhysicalPrinterSettingsModal: React.FC<PhysicalPrinterSettingsModal
       action();
     }
   };
+
+  if (costModalOpen) {
+    return (
+      <PrinterCostModal
+        printerId={printer.id}
+        printerName={printer.name}
+        currency={economicsCurrency}
+        onClose={() => setCostModalOpen(false)}
+      />
+    );
+  }
 
   return (
     <ModalOverlay onClose={() => guard(onClose)}>
@@ -264,6 +293,21 @@ export const PhysicalPrinterSettingsModal: React.FC<PhysicalPrinterSettingsModal
                   }}
                 />
               )}
+            </section>
+
+            {/* Стоимость работы машины: то же окно, что открывается из расчёта */}
+            <section className="space-y-2">
+              <h3 className="text-xs uppercase tracking-wide text-gray-500">
+                {t('printerCost.title')}
+              </h3>
+              <button
+                type="button"
+                onClick={() => setCostModalOpen(true)}
+                className="flex w-full items-center gap-2 rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm text-gray-300 transition hover:border-white/20 hover:text-white"
+              >
+                <Coins className="h-4 w-4 flex-shrink-0 text-gray-400" />
+                <span className="flex-1 text-left">{t('printerCost.configure')}</span>
+              </button>
             </section>
 
             {/* Подключение (read-only) */}

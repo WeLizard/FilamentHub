@@ -1058,7 +1058,12 @@ export const ProfilePage: React.FC = () => {
                   <div className="flex flex-wrap gap-2">
                     <button
                       type="button"
-                      onClick={() => setCalculatorEconomicsOpen((open) => !open)}
+                      onClick={() => {
+                        setCalculatorEconomicsOpen((open) => {
+                          if (!open) setCalculatorQuoteProfileOpen(false);
+                          return !open;
+                        });
+                      }}
                       aria-expanded={calculatorEconomicsOpen}
                       className={`inline-flex items-center gap-2 rounded-xl border px-3 py-2 text-xs font-medium transition ${calculatorEconomicsOpen ? 'border-cyan-400/30 bg-cyan-400/15 text-cyan-50' : 'border-white/10 bg-white/5 text-slate-300 hover:bg-white/10 hover:text-white'}`}
                     >
@@ -1068,7 +1073,12 @@ export const ProfilePage: React.FC = () => {
                     </button>
                     <button
                       type="button"
-                      onClick={() => setCalculatorQuoteProfileOpen((open) => !open)}
+                      onClick={() => {
+                        setCalculatorQuoteProfileOpen((open) => {
+                          if (!open) setCalculatorEconomicsOpen(false);
+                          return !open;
+                        });
+                      }}
                       aria-expanded={calculatorQuoteProfileOpen}
                       className={`inline-flex items-center gap-2 rounded-xl border px-3 py-2 text-xs font-medium transition ${calculatorQuoteProfileOpen ? 'border-cyan-400/30 bg-cyan-400/15 text-cyan-50' : 'border-white/10 bg-white/5 text-slate-300 hover:bg-white/10 hover:text-white'}`}
                     >

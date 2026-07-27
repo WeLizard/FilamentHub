@@ -7,6 +7,7 @@ from uuid import uuid4
 from sqlalchemy import (
     Boolean,
     DateTime,
+    Float,
     ForeignKey,
     Integer,
     String,
@@ -50,6 +51,24 @@ class UserPrinterDevice(Base):
     last_seen_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
+
+    # What this machine costs to run. Kept here and never in the OrcaSlicer
+    # preset, which has to stay exactly what the slicer wrote. Everything is
+    # optional: an unset machine falls back to the account-wide economics.
+    purchase_cost: Mapped[float | None] = mapped_column(Float, nullable=True)
+    residual_value: Mapped[float | None] = mapped_column(Float, nullable=True)
+    useful_life_hours: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    average_power_watts: Mapped[float | None] = mapped_column(Float, nullable=True)
+    # What the average draw is made of. Two printers of one model rarely carry
+    # the same heaters and board, so these belong to the machine, not the model.
+    power_hotend_w: Mapped[float | None] = mapped_column(Float, nullable=True)
+    power_bed_w: Mapped[float | None] = mapped_column(Float, nullable=True)
+    power_steppers_w: Mapped[float | None] = mapped_column(Float, nullable=True)
+    power_electronics_w: Mapped[float | None] = mapped_column(Float, nullable=True)
+    maintenance_cost_per_hour: Mapped[float | None] = mapped_column(Float, nullable=True)
+    # What the person charges per machine hour; they decide it, we only suggest.
+    machine_hour_rate: Mapped[float | None] = mapped_column(Float, nullable=True)
+    economics_currency: Mapped[str | None] = mapped_column(String(4), nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False

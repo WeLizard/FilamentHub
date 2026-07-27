@@ -2591,6 +2591,64 @@ export interface PhysicalPrinter {
   updated_at: string;
 }
 
+/** What a machine costs to run, and what the calculator will charge for it. */
+export interface PrinterEconomics {
+  printer_id: number;
+  configured: boolean;
+  purchase_cost: number | null;
+  residual_value: number | null;
+  useful_life_hours: number | null;
+  average_power_watts: number | null;
+  power_hotend_w: number | null;
+  power_bed_w: number | null;
+  power_steppers_w: number | null;
+  power_electronics_w: number | null;
+  maintenance_cost_per_hour: number | null;
+  machine_hour_rate: number | null;
+  economics_currency: string | null;
+  depreciation_per_hour: number;
+  electricity_per_hour: number;
+  maintenance_per_hour: number;
+  machine_cost_per_hour: number;
+  effective_machine_hour_rate: number;
+  rate_below_cost: boolean;
+  calculator_printer_power_w: number;
+  calculator_printing_rate_per_hour: number;
+  calculator_amortization_rate_per_hour: number;
+  calculator_electricity_cost_per_kwh: number;
+  sources: Record<string, string>;
+}
+
+export interface PrinterEconomicsUpdate {
+  purchase_cost?: number | null;
+  residual_value?: number | null;
+  useful_life_hours?: number | null;
+  average_power_watts?: number | null;
+  power_hotend_w?: number | null;
+  power_bed_w?: number | null;
+  power_steppers_w?: number | null;
+  power_electronics_w?: number | null;
+  maintenance_cost_per_hour?: number | null;
+  machine_hour_rate?: number | null;
+  economics_currency?: string | null;
+}
+
+/** Starting numbers for a machine nobody has measured yet. */
+export interface PrinterEconomicsSuggestion {
+  printer_id: number;
+  machine_class: string;
+  confidence: string;
+  vendor: string | null;
+  model_name: string | null;
+  bed_max_mm: number | null;
+  extruders: number;
+  usage: string;
+  average_power_watts: number;
+  useful_life_hours: number;
+  maintenance_cost_per_hour: number;
+  orca_time_cost: number | null;
+}
+
 // Safe display view of a connection binding. The printer is identified by
 // physical_printer_id; the endpoint is a volatile label, never identity.
 export interface PrinterConnectionBinding {
@@ -2670,6 +2728,33 @@ export const devicesAPI = {
 export const physicalPrintersAPI = {
   list: async (): Promise<PhysicalPrinter[]> => {
     const response = await api.get<PhysicalPrinter[]>('/physical-printers');
+    return response.data;
+  },
+
+  economics: async (printerId: number): Promise<PrinterEconomics> => {
+    const response = await api.get<PrinterEconomics>(`/physical-printers/${printerId}/economics`);
+    return response.data;
+  },
+
+  updateEconomics: async (
+    printerId: number,
+    payload: PrinterEconomicsUpdate,
+  ): Promise<PrinterEconomics> => {
+    const response = await api.patch<PrinterEconomics>(
+      `/physical-printers/${printerId}/economics`,
+      payload,
+    );
+    return response.data;
+  },
+
+  economicsSuggestion: async (
+    printerId: number,
+    usage: string,
+  ): Promise<PrinterEconomicsSuggestion> => {
+    const response = await api.get<PrinterEconomicsSuggestion>(
+      `/physical-printers/${printerId}/economics/suggestion`,
+      { params: { usage } },
+    );
     return response.data;
   },
 

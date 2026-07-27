@@ -31,6 +31,7 @@ from app.core.errors import (
     ERR_WEIGHT_REQUIRED,
     raise_error,
 )
+from app.core.field_encryption import decrypt_field, encrypt_field
 from app.db.session import get_db
 from app.models.calculator_history_entry import CalculatorHistoryEntry
 from app.models.calculator_profile import UserCalculatorProfile
@@ -750,6 +751,19 @@ async def delete_calculator_history(
 # ── Calculator profile ──────────────────────────────────────────────────
 
 
+# The quote details are a person's own contact and tax data. They are stored
+# encrypted so a leaked copy of the database reads as noise; the server holds
+# the key, because it has to show them back to their owner.
+ENCRYPTED_PROFILE_FIELDS = ("seller_name", "seller_inn", "seller_phone", "payment_terms")
+
+
+def _profile_response(profile: UserCalculatorProfile) -> CalculatorProfileResponse:
+    response = CalculatorProfileResponse.model_validate(profile)
+    return response.model_copy(
+        update={name: decrypt_field(getattr(profile, name)) for name in ENCRYPTED_PROFILE_FIELDS}
+    )
+
+
 @router.get("/profile", response_model=CalculatorProfileResponse)
 async def get_calculator_profile(
     current_user: Annotated[User, Depends(require_calculator_access)],
@@ -767,7 +781,7 @@ async def get_calculator_profile(
         await db.commit()
         await db.refresh(profile)
 
-    return CalculatorProfileResponse.model_validate(profile)
+    return _profile_response(profile)
 
 
 @router.put("/profile", response_model=CalculatorProfileResponse)
@@ -787,11 +801,13 @@ async def update_calculator_profile(
         db.add(profile)
 
     for field_name, value in data.model_dump(exclude_unset=True).items():
+        if field_name in ENCRYPTED_PROFILE_FIELDS:
+            value = encrypt_field(value)
         setattr(profile, field_name, value)
 
     await db.commit()
     await db.refresh(profile)
-    return CalculatorProfileResponse.model_validate(profile)
+    return _profile_response(profile)
 
 
 # ── Shared quotes (public КП links) ──────────────────────────────────

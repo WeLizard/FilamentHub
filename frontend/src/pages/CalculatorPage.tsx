@@ -32,8 +32,21 @@ import {
   Upload,
   X,
 } from 'lucide-react';
-import { calculatorAPI, crmAPI, filamentsAPI, spoolsAPI, type UserSpool } from '../api/client';
+import {
+  calculatorAPI,
+  crmAPI,
+  filamentsAPI,
+  physicalPrintersAPI,
+  spoolsAPI,
+  type PhysicalPrinter,
+  type PrinterEconomics,
+  type UserSpool,
+} from '../api/client';
 import { SlicedJobsPanel } from '../components/calculator/SlicedJobsPanel';
+import { PrinterCostRow } from '../components/calculator/PrinterCostRow';
+import { PrinterEconomicsColumn } from '../components/calculator/PrinterEconomicsColumn';
+import { PowerPartsBreakdown } from '../components/calculator/PowerPartsBreakdown';
+import { QuickPicks } from '../components/calculator/QuickPicks';
 import { toast } from '../components/Toast';
 import { isPluginEmbed, requestSliceParse, subscribeToPluginSliceParse } from '../utils/pluginBridge';
 import { ConfirmDeleteModal } from '../components/ConfirmDeleteModal';
@@ -54,6 +67,7 @@ import {
   type CalculatorQuoteMode,
 } from '../utils/calculatorBatch';
 import { safeStorage } from '../utils/storage';
+import { CALCULATOR_DEFAULTS_STORAGE_KEY } from '../utils/calculatorDefaults';
 import { normalizeFilamentColor, resolveMaterialDisplayColors } from '../utils/calculatorMaterialColors';
 import type {
   CalculatorEstimateRequest,
@@ -134,6 +148,7 @@ interface CalculatorFormState {
   postprocessingRatePerHour: number;
   printingRatePerHour: number;
   amortizationRatePerHour: number;
+  maintenanceCostPerHour: number;
   printerPurchasePrice: number;
   printerUsefulHours: number;
   quantity: number;
@@ -236,6 +251,7 @@ const DEFAULT_FORM_STATE: CalculatorFormState = {
   postprocessingRatePerHour: 100,
   printingRatePerHour: 170,
   amortizationRatePerHour: 16,
+  maintenanceCostPerHour: 0,
   printerPurchasePrice: 0,
   printerUsefulHours: 0,
   quantity: 1,
@@ -263,6 +279,7 @@ const CALCULATOR_STATIC_FIELDS = [
   'postprocessingRatePerHour',
   'printingRatePerHour',
   'amortizationRatePerHour',
+  'maintenanceCostPerHour',
   'printerPurchasePrice',
   'printerUsefulHours',
   'overheadPercent',
@@ -308,7 +325,7 @@ const saveCustomPricingPresets = (presets: PricingPreset[]): void => {
   safeStorage.set(PRICING_PRESETS_STORAGE_KEY, JSON.stringify(presets));
 };
 
-const CALCULATOR_DEFAULTS_STORAGE_KEY = 'filamenthub_calculator_defaults_v1';
+
 const QUOTE_PROFILE_STORAGE_KEY = 'filamenthub_calculator_quote_profile_v1';
 const CURRENCY_OPTIONS: CurrencyCode[] = CURRENCY_CODES;
 
@@ -400,6 +417,9 @@ export const buildEstimateRequest = (
   materialLines: CalculatorMaterialLineState[] = [],
   parsedJobs: ParsedJobState[] = [],
   jobConfigs: CalculatorJobConfig[] = [],
+  // A chosen machine's own economics override the account defaults for this
+  // order only — the person's default settings are never rewritten by a pick.
+  printerEconomics: PrinterEconomics | null = null,
 ): CalculatorEstimateRequest => {
   const requestData: CalculatorEstimateRequest = {
     pricing_method: 'combined',
@@ -500,6 +520,12 @@ export const buildEstimateRequest = (
   requestData.fixed_costs = form.fixedCosts || undefined;
   requestData.bed_prep_cost_per_print = form.bedPrepCostPerPrint || undefined;
   requestData.min_order_price = form.minOrderPrice || undefined;
+
+  if (printerEconomics && printerEconomics.configured) {
+    requestData.printer_power_w = printerEconomics.calculator_printer_power_w || undefined;
+    requestData.printing_rate_per_hour = printerEconomics.calculator_printing_rate_per_hour;
+    requestData.amortization_rate_per_hour = printerEconomics.calculator_amortization_rate_per_hour;
+  }
 
   return requestData;
 };
@@ -627,6 +653,7 @@ const extractStaticSettings = (form: CalculatorFormState): CalculatorStaticSetti
   postprocessingRatePerHour: form.postprocessingRatePerHour,
   printingRatePerHour: form.printingRatePerHour,
   amortizationRatePerHour: form.amortizationRatePerHour,
+  maintenanceCostPerHour: form.maintenanceCostPerHour,
   printerPurchasePrice: form.printerPurchasePrice,
   printerUsefulHours: form.printerUsefulHours,
   overheadPercent: form.overheadPercent,
@@ -667,6 +694,7 @@ const loadStoredCalculatorDefaults = (): CalculatorStaticSettings => {
       postprocessingRatePerHour: numberOrFallback(parsed.postprocessingRatePerHour, fallback.postprocessingRatePerHour),
       printingRatePerHour: numberOrFallback(parsed.printingRatePerHour, fallback.printingRatePerHour),
       amortizationRatePerHour: numberOrFallback(parsed.amortizationRatePerHour, fallback.amortizationRatePerHour),
+      maintenanceCostPerHour: numberOrFallback(parsed.maintenanceCostPerHour, fallback.maintenanceCostPerHour),
       printerPurchasePrice: numberOrFallback(parsed.printerPurchasePrice, fallback.printerPurchasePrice),
       printerUsefulHours: numberOrFallback(parsed.printerUsefulHours, fallback.printerUsefulHours),
       overheadPercent: numberOrFallback(parsed.overheadPercent, fallback.overheadPercent),
@@ -860,8 +888,9 @@ const buildHistoryPayload = (
   materialLines: CalculatorMaterialLineState[] = [],
   parsedJobs: ParsedJobState[] = [],
   jobConfigs: CalculatorJobConfig[] = [],
+  printerEconomics: PrinterEconomics | null = null,
 ): CalculatorHistoryEntryCreate => ({
-  request_data: buildEstimateRequest(form, materialLines, parsedJobs, jobConfigs),
+  request_data: buildEstimateRequest(form, materialLines, parsedJobs, jobConfigs, printerEconomics),
   result_data: result,
   parsed_gcode: parsedGcode
     ? {
@@ -1377,10 +1406,18 @@ export const CalculatorPage: React.FC<CalculatorPageProps> = ({
   const setStaticSettingsOpen = (open: boolean) => {
     if (controlledStaticSettingsOpen === undefined) setInternalStaticSettingsOpen(open);
     onStaticSettingsOpenChange?.(open);
+    if (open) {
+      if (controlledQuoteProfileOpen === undefined) setInternalQuoteProfileOpen(false);
+      onQuoteProfileOpenChange?.(false);
+    }
   };
   const setQuoteProfileOpen = (open: boolean) => {
     if (controlledQuoteProfileOpen === undefined) setInternalQuoteProfileOpen(open);
     onQuoteProfileOpenChange?.(open);
+    if (open) {
+      if (controlledStaticSettingsOpen === undefined) setInternalStaticSettingsOpen(false);
+      onStaticSettingsOpenChange?.(false);
+    }
   };
   const [form, setForm] = useState<CalculatorFormState>(DEFAULT_FORM_STATE);
   const [parsedGcode, setParsedGcode] = useState<CalculatorGcodeParseResponse | null>(null);
@@ -1570,7 +1607,43 @@ export const CalculatorPage: React.FC<CalculatorPageProps> = ({
       ...prev,
       ...loadStoredCalculatorDefaults(),
     }));
-  }, []);
+
+    if (!hasCalculatorAccess) {
+      return;
+    }
+    void calculatorAPI
+      .getProfile()
+      .then((profile) => {
+        setForm((prev) => ({
+          ...prev,
+          electricityCostPerKwh: profile.electricity_cost_per_kwh,
+          printerPowerW: profile.printer_power_w,
+          modelingRatePerHour: profile.modeling_rate_per_hour,
+          postprocessingRatePerHour: profile.postprocessing_rate_per_hour,
+          printingRatePerHour: profile.printing_rate_per_hour,
+          amortizationRatePerHour: profile.amortization_rate_per_hour,
+          overheadPercent: profile.overhead_percent,
+          markupPercent: profile.markup_percent,
+          taxRatePercent: profile.tax_rate_percent,
+          fixedCosts: profile.fixed_costs,
+          bedPrepCostPerPrint: profile.bed_prep_cost_per_print,
+          minOrderPrice: profile.min_order_price,
+          roundToNearest: profile.round_to_nearest,
+          roundingMode: profile.rounding_mode as RoundingMode,
+          printerPurchasePrice: profile.printer_purchase_price,
+          printerUsefulHours: profile.printer_useful_hours,
+          maintenanceCostPerHour: profile.maintenance_cost_per_hour,
+          powerHotendW: profile.power_hotend_w,
+          powerBedW: profile.power_bed_w,
+          powerSteppersW: profile.power_steppers_w,
+          powerElectronicsW: profile.power_electronics_w,
+        }));
+      })
+      .catch(() => {
+        // Not signed in, offline or no profile yet — the local copy stands.
+      });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hasCalculatorAccess]);
 
   useEffect(() => {
     if (selectedSpool) {
@@ -1730,6 +1803,41 @@ export const CalculatorPage: React.FC<CalculatorPageProps> = ({
   const [goneSourceKeys, setGoneSourceKeys] = useState<string[]>([]);
   const pendingSliceRef = useRef<OrcaSliceReport | null>(null);
 
+  // Which machine this order runs on. Its economics fill the equipment fields
+  // that already exist; nothing else about the calculation changes.
+  const [selectedPrinterId, setSelectedPrinterId] = useState<number | ''>('');
+  const [printerPickedFrom, setPrinterPickedFrom] = useState<string | null>(null);
+  // Одни и те же машины: в экономике их значения правятся, в производстве
+  // подтягиваются. Столбец следует за машиной заказа, пока его не увели вручную.
+  const [economicsPrinterId, setEconomicsPrinterId] = useState<number | ''>('');
+
+  useEffect(() => {
+    if (selectedPrinterId !== '') {
+      setEconomicsPrinterId(selectedPrinterId);
+    }
+  }, [selectedPrinterId]);
+
+  const printersQuery = useQuery({
+    queryKey: ['calculator', 'physical-printers'],
+    queryFn: () => physicalPrintersAPI.list(),
+    staleTime: 60_000,
+    enabled: hasCalculatorAccess,
+  });
+  const printers = printersQuery.data ?? [];
+
+  const printerEconomicsQuery = useQuery({
+    queryKey: ['printer-economics', selectedPrinterId],
+    queryFn: () => physicalPrintersAPI.economics(selectedPrinterId as number),
+    enabled: selectedPrinterId !== '',
+    retry: false,
+  });
+  const printerEconomics = selectedPrinterId === '' ? null : printerEconomicsQuery.data ?? null;
+
+  const handlePrinterSelect = (printerId: number | '') => {
+    setSelectedPrinterId(printerId);
+    setPrinterPickedFrom(null);
+  };
+
   const handleSlicePick = (slice: OrcaSliceReport) => {
     if (!slice.source_key) {
       toast.error(t('slicedJobs.gone'));
@@ -1854,10 +1962,48 @@ export const CalculatorPage: React.FC<CalculatorPageProps> = ({
     );
   };
 
+  const economicsSyncRef = useRef<number | undefined>(undefined);
+  const currencyRef = useRef(quoteProfile.currency);
+  currencyRef.current = quoteProfile.currency;
+
   const updateStaticField = <K extends CalculatorStaticSettingKey>(field: K, value: CalculatorFormState[K]) => {
     setForm((prev) => {
       const next = { ...prev, [field]: value };
-      saveStoredCalculatorDefaults(extractStaticSettings(next));
+      const settings = extractStaticSettings(next);
+      saveStoredCalculatorDefaults(settings);
+      // The account is where these belong; the local copy stays as the offline
+      // fallback. Typing is bursty, so the write is held back a moment.
+      window.clearTimeout(economicsSyncRef.current);
+      economicsSyncRef.current = window.setTimeout(() => {
+        void calculatorAPI
+          .updateProfile({
+            electricity_cost_per_kwh: settings.electricityCostPerKwh,
+            printer_power_w: settings.printerPowerW,
+            modeling_rate_per_hour: settings.modelingRatePerHour,
+            postprocessing_rate_per_hour: settings.postprocessingRatePerHour,
+            printing_rate_per_hour: settings.printingRatePerHour,
+            amortization_rate_per_hour: settings.amortizationRatePerHour,
+            overhead_percent: settings.overheadPercent,
+            markup_percent: settings.markupPercent,
+            tax_rate_percent: settings.taxRatePercent,
+            fixed_costs: settings.fixedCosts,
+            bed_prep_cost_per_print: settings.bedPrepCostPerPrint,
+            min_order_price: settings.minOrderPrice,
+            round_to_nearest: settings.roundToNearest,
+            rounding_mode: settings.roundingMode,
+            printer_purchase_price: settings.printerPurchasePrice,
+            printer_useful_hours: Math.round(settings.printerUsefulHours),
+            maintenance_cost_per_hour: settings.maintenanceCostPerHour,
+            power_hotend_w: settings.powerHotendW,
+            power_bed_w: settings.powerBedW,
+            power_steppers_w: settings.powerSteppersW,
+            power_electronics_w: settings.powerElectronicsW,
+            currency: currencyRef.current,
+          })
+          .catch(() => {
+            // The local copy already holds it; a failed write is not worth a toast.
+          });
+      }, 800);
       return next;
     });
   };
@@ -1867,6 +2013,13 @@ export const CalculatorPage: React.FC<CalculatorPageProps> = ({
       const next = { ...prev, [field]: value };
       return next;
     });
+    if (field === 'currency' && hasCalculatorAccess) {
+      void calculatorAPI
+        .updateProfile({ currency: value as string })
+        .catch(() => {
+          // The local copy already holds it.
+        });
+    }
     setQuoteParties((prev) => ({
       ...prev,
       [field]: value,
@@ -1879,7 +2032,9 @@ export const CalculatorPage: React.FC<CalculatorPageProps> = ({
       return;
     }
     setMaterialLinesError(null);
-    calculateMutation.mutate(buildEstimateRequest(form, materialLines, parsedJobs, jobConfigs));
+    calculateMutation.mutate(
+      buildEstimateRequest(form, materialLines, parsedJobs, jobConfigs, printerEconomics),
+    );
   };
 
   // Единственный путь, которым разобранный G-code попадает в расчёт: и файл,
@@ -1943,6 +2098,10 @@ export const CalculatorPage: React.FC<CalculatorPageProps> = ({
         return;
       }
       applyParsedJobsRef.current([{ key: parsedJobKey(parsed, 0), parsed }], null);
+      if (slice?.physical_printer_id) {
+        setSelectedPrinterId(slice.physical_printer_id);
+        setPrinterPickedFrom(t('printerCost.pickedFromSlice', { name: slice.file_name }));
+      }
       toast.success(t('slicedJobs.taken', { name: slice?.file_name ?? '' }));
     });
   }, [t]);
@@ -1994,6 +2153,7 @@ export const CalculatorPage: React.FC<CalculatorPageProps> = ({
           materialLines,
           parsedJobs,
           jobConfigs,
+          printerEconomics,
         ),
       );
       setHistoryFeedback({ kind: 'success', message: tc('historySaved') });
@@ -2292,6 +2452,7 @@ export const CalculatorPage: React.FC<CalculatorPageProps> = ({
           materialLines,
           parsedJobs,
           jobConfigs,
+          printerEconomics,
         )
       : null;
 
@@ -2378,22 +2539,7 @@ export const CalculatorPage: React.FC<CalculatorPageProps> = ({
   const handleCloudSave = async () => {
     setIsCloudBusy(true);
     try {
-      const staticSettings = extractStaticSettings(form);
       await calculatorAPI.updateProfile({
-        electricity_cost_per_kwh: staticSettings.electricityCostPerKwh,
-        printer_power_w: staticSettings.printerPowerW,
-        modeling_rate_per_hour: staticSettings.modelingRatePerHour,
-        postprocessing_rate_per_hour: staticSettings.postprocessingRatePerHour,
-        printing_rate_per_hour: staticSettings.printingRatePerHour,
-        amortization_rate_per_hour: staticSettings.amortizationRatePerHour,
-        overhead_percent: staticSettings.overheadPercent,
-        markup_percent: staticSettings.markupPercent,
-        tax_rate_percent: staticSettings.taxRatePercent,
-        fixed_costs: staticSettings.fixedCosts,
-        bed_prep_cost_per_print: staticSettings.bedPrepCostPerPrint,
-        min_order_price: staticSettings.minOrderPrice,
-        round_to_nearest: staticSettings.roundToNearest,
-        rounding_mode: staticSettings.roundingMode,
         seller_name: quoteProfile.sellerName,
         seller_inn: quoteProfile.sellerInn,
         seller_phone: quoteProfile.sellerPhone,
@@ -2415,23 +2561,6 @@ export const CalculatorPage: React.FC<CalculatorPageProps> = ({
     setIsCloudBusy(true);
     try {
       const profile = await calculatorAPI.getProfile();
-      setForm((prev) => ({
-        ...prev,
-        electricityCostPerKwh: profile.electricity_cost_per_kwh,
-        printerPowerW: profile.printer_power_w,
-        modelingRatePerHour: profile.modeling_rate_per_hour,
-        postprocessingRatePerHour: profile.postprocessing_rate_per_hour,
-        printingRatePerHour: profile.printing_rate_per_hour,
-        amortizationRatePerHour: profile.amortization_rate_per_hour,
-        overheadPercent: profile.overhead_percent,
-        markupPercent: profile.markup_percent,
-        taxRatePercent: profile.tax_rate_percent,
-        fixedCosts: profile.fixed_costs,
-        bedPrepCostPerPrint: profile.bed_prep_cost_per_print,
-        minOrderPrice: profile.min_order_price,
-        roundToNearest: profile.round_to_nearest,
-        roundingMode: profile.rounding_mode as RoundingMode,
-      }));
       setQuoteProfile((prev) => ({
         ...prev,
         sellerName: profile.seller_name,
@@ -2443,28 +2572,6 @@ export const CalculatorPage: React.FC<CalculatorPageProps> = ({
         currency: normalizeCurrency(profile.currency),
         quoteNumberPrefix: profile.quote_number_prefix,
       }));
-      saveStoredCalculatorDefaults({
-        electricityCostPerKwh: profile.electricity_cost_per_kwh,
-        printerPowerW: profile.printer_power_w,
-        powerHotendW: form.powerHotendW,
-        powerBedW: form.powerBedW,
-        powerSteppersW: form.powerSteppersW,
-        powerElectronicsW: form.powerElectronicsW,
-        modelingRatePerHour: profile.modeling_rate_per_hour,
-        postprocessingRatePerHour: profile.postprocessing_rate_per_hour,
-        printingRatePerHour: profile.printing_rate_per_hour,
-        amortizationRatePerHour: profile.amortization_rate_per_hour,
-        printerPurchasePrice: form.printerPurchasePrice,
-        printerUsefulHours: form.printerUsefulHours,
-        overheadPercent: profile.overhead_percent,
-        markupPercent: profile.markup_percent,
-        taxRatePercent: profile.tax_rate_percent,
-        fixedCosts: profile.fixed_costs,
-        bedPrepCostPerPrint: profile.bed_prep_cost_per_print,
-        minOrderPrice: profile.min_order_price,
-        roundToNearest: profile.round_to_nearest,
-        roundingMode: profile.rounding_mode as RoundingMode,
-      });
       saveStoredQuoteProfile({
         sellerName: profile.seller_name,
         sellerInn: profile.seller_inn,
@@ -2890,6 +2997,13 @@ export const CalculatorPage: React.FC<CalculatorPageProps> = ({
           onSlicePick={handleSlicePick}
           pickingSliceId={pickedSliceId}
           goneSourceKeys={goneSourceKeys}
+          printers={printers}
+          selectedPrinterId={selectedPrinterId}
+          printerEconomics={printerEconomics}
+          printerPickedFrom={printerPickedFrom}
+          onPrinterSelect={handlePrinterSelect}
+          economicsPrinterId={economicsPrinterId}
+          onEconomicsPrinterChange={setEconomicsPrinterId}
           insidePlugin={isPluginEmbed()}
           onJobSelect={handleJobSelect}
           onJobConfigChange={handleJobConfigChange}
@@ -2967,6 +3081,7 @@ export const CalculatorPage: React.FC<CalculatorPageProps> = ({
         message={tc('historyDeleteConfirm')}
         isLoading={deleteHistoryMutation.isPending}
       />
+
     </div>
   );
 };
@@ -3015,6 +3130,13 @@ interface CalculatorViewProps {
   onSlicePick: (slice: OrcaSliceReport) => void;
   pickingSliceId: number | null;
   goneSourceKeys: string[];
+  printers: PhysicalPrinter[];
+  selectedPrinterId: number | '';
+  printerEconomics: PrinterEconomics | null;
+  printerPickedFrom: string | null;
+  onPrinterSelect: (printerId: number | '') => void;
+  economicsPrinterId: number | '';
+  onEconomicsPrinterChange: (printerId: number | '') => void;
   /** The slice list needs the plugin's bridge to reach a file at all. */
   insidePlugin: boolean;
   onJobSelect: (jobKey: string) => void;
@@ -3080,6 +3202,13 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
   onSlicePick,
   pickingSliceId,
   goneSourceKeys,
+  printers,
+  selectedPrinterId,
+  printerEconomics,
+  printerPickedFrom,
+  onPrinterSelect,
+  economicsPrinterId,
+  onEconomicsPrinterChange,
   insidePlugin,
   onJobSelect,
   onJobConfigChange,
@@ -3530,7 +3659,11 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
               ) : null}
 
               {staticSettingsOpen ? (
-                <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
+                <div className="mt-3 grid gap-4 xl:grid-cols-[1.75fr_1fr] xl:items-start">
+                <div className="space-y-3">
+                <div>
+                  <p className="mb-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">{tc('economicsGroupHourly')}</p>
+                  <div className={`grid grid-cols-2 gap-x-3 gap-y-3 sm:grid-cols-3 ${compactFieldsClass}`}>
                   <FieldBlock
                     label={
                       <TooltipLabel
@@ -3550,94 +3683,10 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
                   <FieldBlock
                     label={
                       <TooltipLabel
-                        label={t('profilePage.calc.printerPower')}
-                        tooltipText={tc('defaultPrinterPowerTooltip')}
-                      />
-                    }
-                    hint={
-                      form.powerHotendW + form.powerBedW + form.powerSteppersW + form.powerElectronicsW > 0
-                        ? `${tc('autoCalc')}: ${form.powerHotendW + form.powerBedW + form.powerSteppersW + form.powerElectronicsW} ${tc('wattAbbr')}`
-                        : undefined
-                    }
-                  >
-                    <InputWithSuffix
-                      value={form.printerPowerW}
-                      onChange={(value) => onStaticChange('printerPowerW', value)}
-                      placeholder="350"
-                      suffix={tc('wattAbbr')}
-                    />
-                  </FieldBlock>
-                  <FieldBlock label={tc('powerHotend')} hint={tc('powerHotendHint')}>
-                    <InputWithSuffix
-                      value={form.powerHotendW}
-                      onChange={(value) => {
-                        onStaticChange('powerHotendW', value);
-                        const total = value + form.powerBedW + form.powerSteppersW + form.powerElectronicsW;
-                        if (total > 0) onStaticChange('printerPowerW', total);
-                      }}
-                      placeholder="0"
-                      suffix={tc('wattAbbr')}
-                    />
-                  </FieldBlock>
-                  <FieldBlock label={tc('powerBed')} hint={tc('powerBedHint')}>
-                    <InputWithSuffix
-                      value={form.powerBedW}
-                      onChange={(value) => {
-                        onStaticChange('powerBedW', value);
-                        const total = form.powerHotendW + value + form.powerSteppersW + form.powerElectronicsW;
-                        if (total > 0) onStaticChange('printerPowerW', total);
-                      }}
-                      placeholder="0"
-                      suffix={tc('wattAbbr')}
-                    />
-                  </FieldBlock>
-                  <FieldBlock label={tc('powerSteppers')} hint={tc('powerSteppersHint')}>
-                    <InputWithSuffix
-                      value={form.powerSteppersW}
-                      onChange={(value) => {
-                        onStaticChange('powerSteppersW', value);
-                        const total = form.powerHotendW + form.powerBedW + value + form.powerElectronicsW;
-                        if (total > 0) onStaticChange('printerPowerW', total);
-                      }}
-                      placeholder="0"
-                      suffix={tc('wattAbbr')}
-                    />
-                  </FieldBlock>
-                  <FieldBlock label={tc('powerElectronics')} hint={tc('powerElectronicsHint')}>
-                    <InputWithSuffix
-                      value={form.powerElectronicsW}
-                      onChange={(value) => {
-                        onStaticChange('powerElectronicsW', value);
-                        const total = form.powerHotendW + form.powerBedW + form.powerSteppersW + value;
-                        if (total > 0) onStaticChange('printerPowerW', total);
-                      }}
-                      placeholder="0"
-                      suffix={tc('wattAbbr')}
-                    />
-                  </FieldBlock>
-                  <FieldBlock
-                    label={
-                      <TooltipLabel
-                        label={t('profilePage.calc.printingRate')}
-                        tooltipText={tc('defaultPrintingRateTooltip')}
-                      />
-                    }
-                  >
-                    <InputWithSuffix
-                      value={form.printingRatePerHour}
-                      onChange={(value) => onStaticChange('printingRatePerHour', value)}
-                      placeholder="170"
-                      suffix={`${currencySymbol(quoteProfile.currency)}/${tc('hourAbbr')}`}
-                    />
-                  </FieldBlock>
-                  <FieldBlock
-                    label={
-                      <TooltipLabel
                         label={t('profilePage.calc.modeling')}
                         tooltipText={tc('defaultModelingRateTooltip')}
                       />
                     }
-                    hint={t('profilePage.calc.rate')}
                   >
                     <InputWithSuffix
                       value={form.modelingRatePerHour}
@@ -3653,7 +3702,6 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
                         tooltipText={tc('defaultPostprocessingRateTooltip')}
                       />
                     }
-                    hint={t('profilePage.calc.rate')}
                   >
                     <InputWithSuffix
                       value={form.postprocessingRatePerHour}
@@ -3662,52 +3710,61 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
                       suffix={`${currencySymbol(quoteProfile.currency)}/${tc('hourAbbr')}`}
                     />
                   </FieldBlock>
+                  </div>
+                </div>
+                <div>
+                  <p className="mb-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">{tc('economicsGroupPerOrder')}</p>
+                  <div className={`grid grid-cols-2 gap-x-3 gap-y-3 sm:grid-cols-3 ${compactFieldsClass}`}>
                   <FieldBlock
                     label={
                       <TooltipLabel
-                        label={t('profilePage.calc.amortizationRate')}
-                        tooltipText={tc('defaultAmortizationRateTooltip')}
+                        label={t('profilePage.calc.bedPrepCost')}
+                        tooltipText={t('profilePage.calc.bedPrepCostHint')}
                       />
-                    }
-                    hint={
-                      form.printerPurchasePrice > 0 && form.printerUsefulHours > 0
-                        ? `${tc('autoCalc')}: ${(form.printerPurchasePrice / form.printerUsefulHours).toFixed(2)} ${currencySymbol(quoteProfile.currency)}/${tc('hourAbbr')}`
-                        : undefined
                     }
                   >
                     <InputWithSuffix
-                      value={form.amortizationRatePerHour}
-                      onChange={(value) => onStaticChange('amortizationRatePerHour', value)}
-                      placeholder="16"
-                      suffix={`${currencySymbol(quoteProfile.currency)}/${tc('hourAbbr')}`}
-                    />
-                  </FieldBlock>
-                  <FieldBlock label={tc('printerPurchasePrice')} hint={tc('printerPurchasePriceHint')}>
-                    <InputWithSuffix
-                      value={form.printerPurchasePrice}
-                      onChange={(value) => {
-                        onStaticChange('printerPurchasePrice', value);
-                        if (value > 0 && form.printerUsefulHours > 0) {
-                          onStaticChange('amortizationRatePerHour', Math.round((value / form.printerUsefulHours) * 100) / 100);
-                        }
-                      }}
+                      value={form.bedPrepCostPerPrint}
+                      onChange={(value) => onStaticChange('bedPrepCostPerPrint', value)}
                       placeholder="0"
                       suffix={currencySymbol(quoteProfile.currency)}
                     />
                   </FieldBlock>
-                  <FieldBlock label={tc('printerUsefulHours')} hint={tc('printerUsefulHoursHint')}>
+                  <FieldBlock
+                    label={
+                      <TooltipLabel
+                        label={t('profilePage.calc.fixedCosts')}
+                        tooltipText={t('profilePage.calc.fixedCostsHint')}
+                      />
+                    }
+                  >
                     <InputWithSuffix
-                      value={form.printerUsefulHours}
-                      onChange={(value) => {
-                        onStaticChange('printerUsefulHours', value);
-                        if (form.printerPurchasePrice > 0 && value > 0) {
-                          onStaticChange('amortizationRatePerHour', Math.round((form.printerPurchasePrice / value) * 100) / 100);
-                        }
-                      }}
+                      value={form.fixedCosts}
+                      onChange={(value) => onStaticChange('fixedCosts', value)}
                       placeholder="0"
-                      suffix={tc('hoursAbbr')}
+                      suffix={currencySymbol(quoteProfile.currency)}
                     />
                   </FieldBlock>
+                  <FieldBlock
+                    label={
+                      <TooltipLabel
+                        label={t('profilePage.calc.minOrderPrice')}
+                        tooltipText={t('profilePage.calc.minOrderPriceHint')}
+                      />
+                    }
+                  >
+                    <InputWithSuffix
+                      value={form.minOrderPrice}
+                      onChange={(value) => onStaticChange('minOrderPrice', value)}
+                      placeholder="0"
+                      suffix={currencySymbol(quoteProfile.currency)}
+                    />
+                  </FieldBlock>
+                  </div>
+                </div>
+                <div>
+                  <p className="mb-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">{tc('economicsGroupMargins')}</p>
+                  <div className={`grid grid-cols-2 gap-x-3 gap-y-3 sm:grid-cols-3 ${compactFieldsClass}`}>
                   <FieldBlock
                     label={
                       <TooltipLabel
@@ -3715,7 +3772,6 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
                         tooltipText={tc('defaultOverheadTooltip')}
                       />
                     }
-                    hint={t('profilePage.calc.overheadHint')}
                   >
                     <InputWithSuffix
                       value={form.overheadPercent}
@@ -3723,6 +3779,17 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
                       placeholder="20"
                       suffix="%"
                       step="0.1"
+                    />
+                    <QuickPicks
+                      options={[
+                      { label: tc('overheadLow'), value: 10 },
+                      { label: tc('overheadMid'), value: 20 },
+                      { label: tc('overheadHigh'), value: 30 },
+                    ]}
+                      value={form.overheadPercent}
+                      onPick={(value) => onStaticChange('overheadPercent', value)}
+                      caption={tc('overheadCaption')}
+                      hint={false}
                     />
                   </FieldBlock>
                   <FieldBlock
@@ -3732,7 +3799,6 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
                         tooltipText={tc('defaultMarkupTooltip')}
                       />
                     }
-                    hint={t('profilePage.calc.markupHint')}
                   >
                     <InputWithSuffix
                       value={form.markupPercent}
@@ -3741,8 +3807,26 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
                       suffix="%"
                       step="0.1"
                     />
+                    <QuickPicks
+                      options={[
+                      { label: tc('markupLow'), value: 20 },
+                      { label: tc('markupMid'), value: 40 },
+                      { label: tc('markupHigh'), value: 70 },
+                    ]}
+                      value={form.markupPercent}
+                      onPick={(value) => onStaticChange('markupPercent', value)}
+                      caption={tc('markupCaption')}
+                      hint={false}
+                    />
                   </FieldBlock>
-                  <FieldBlock label={t('profilePage.calc.taxRatePercent')} hint={t('profilePage.calc.taxRateHint')}>
+                  <FieldBlock
+                    label={
+                      <TooltipLabel
+                        label={t('profilePage.calc.taxRatePercent')}
+                        tooltipText={t('profilePage.calc.taxRateHint')}
+                      />
+                    }
+                  >
                     <InputWithSuffix
                       value={form.taxRatePercent}
                       onChange={(value) => onStaticChange('taxRatePercent', value)}
@@ -3750,50 +3834,124 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
                       suffix="%"
                       step="0.1"
                     />
-                  </FieldBlock>
-                  <FieldBlock label={t('profilePage.calc.fixedCosts')} hint={t('profilePage.calc.fixedCostsHint')}>
-                    <InputWithSuffix
-                      value={form.fixedCosts}
-                      onChange={(value) => onStaticChange('fixedCosts', value)}
-                      placeholder="0"
-                      suffix={currencySymbol(quoteProfile.currency)}
+                    <QuickPicks
+                      options={[
+                      { label: '0%', value: 0 },
+                      { label: '4%', value: 4 },
+                      { label: '6%', value: 6 },
+                      { label: '20%', value: 20 },
+                    ]}
+                      value={form.taxRatePercent}
+                      onPick={(value) => onStaticChange('taxRatePercent', value)}
+                      caption={tc('taxCaption')}
+                      hint={false}
                     />
                   </FieldBlock>
-                  <FieldBlock label={t('profilePage.calc.bedPrepCost')} hint={t('profilePage.calc.bedPrepCostHint')}>
-                    <InputWithSuffix
-                      value={form.bedPrepCostPerPrint}
-                      onChange={(value) => onStaticChange('bedPrepCostPerPrint', value)}
-                      placeholder="0"
-                      suffix={currencySymbol(quoteProfile.currency)}
-                    />
-                  </FieldBlock>
-                  <FieldBlock label={t('profilePage.calc.minOrderPrice')} hint={t('profilePage.calc.minOrderPriceHint')}>
-                    <InputWithSuffix
-                      value={form.minOrderPrice}
-                      onChange={(value) => onStaticChange('minOrderPrice', value)}
-                      placeholder="0"
-                      suffix={currencySymbol(quoteProfile.currency)}
-                    />
-                  </FieldBlock>
+                  </div>
+                </div>
+                <div>
+                  <p className="mb-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">{tc('economicsGroupRounding')}</p>
+                  <div className={compactFieldsClass}>
                   <FieldBlock label={t('profilePage.calc.roundTo')}>
-                    <InputWithSuffix
+                    {/* Округление — одна настройка: до какой суммы и в какую сторону. */}
+                    <div className="flex flex-wrap items-center gap-2">
+                      <InputWithSuffix
+                        value={form.roundToNearest}
+                        onChange={(value) => onStaticChange('roundToNearest', value)}
+                        placeholder="10"
+                        suffix={currencySymbol(quoteProfile.currency)}
+                      />
+                      <select
+                        className={`${inputClass} w-auto min-w-[8rem] flex-1`}
+                        value={form.roundingMode}
+                        aria-label={t('profilePage.calc.roundingMode')}
+                        onChange={(event) => onStaticChange('roundingMode', event.target.value as RoundingMode)}
+                      >
+                        <option value="up">{t('profilePage.calc.roundingModeUp')}</option>
+                        <option value="nearest">{t('profilePage.calc.roundingModeNearest')}</option>
+                        <option value="down">{t('profilePage.calc.roundingModeDown')}</option>
+                      </select>
+                    </div>
+                    <QuickPicks
+                      options={[
+                        { label: tc('roundNone'), value: 0 },
+                        { label: '10', value: 10 },
+                        { label: '50', value: 50 },
+                        { label: '100', value: 100 },
+                      ]}
                       value={form.roundToNearest}
-                      onChange={(value) => onStaticChange('roundToNearest', value)}
-                      placeholder="10"
-                      suffix={currencySymbol(quoteProfile.currency)}
+                      onPick={(value) => onStaticChange('roundToNearest', value)}
+                      caption={tc('roundCaption')}
+                      hint={false}
                     />
                   </FieldBlock>
-                  <FieldBlock label={t('profilePage.calc.roundingMode')}>
-                    <select
-                      className={`${inputClass} w-full sm:max-w-[15rem]`}
-                      value={form.roundingMode}
-                      onChange={(event) => onStaticChange('roundingMode', event.target.value as RoundingMode)}
-                    >
-                      <option value="up">{t('profilePage.calc.roundingModeUp')}</option>
-                      <option value="nearest">{t('profilePage.calc.roundingModeNearest')}</option>
-                      <option value="down">{t('profilePage.calc.roundingModeDown')}</option>
-                    </select>
-                  </FieldBlock>
+                  </div>
+                </div>
+                </div>
+                <PrinterEconomicsColumn
+                  printers={printers}
+                  editedPrinterId={economicsPrinterId}
+                  onEditedPrinterChange={onEconomicsPrinterChange}
+                  currency={quoteProfile.currency}
+                  electricityCostPerKwh={form.electricityCostPerKwh}
+                  averaged={{
+                    purchaseCost: form.printerPurchasePrice,
+                    lifeHours: form.printerUsefulHours,
+                    powerWatts: form.printerPowerW,
+                    maintenance: form.maintenanceCostPerHour,
+                    rate: form.printingRatePerHour,
+                  }}
+                  powerBreakdown={
+                    <PowerPartsBreakdown
+                      hotend={form.powerHotendW}
+                      bed={form.powerBedW}
+                      steppers={form.powerSteppersW}
+                      electronics={form.powerElectronicsW}
+                      onChange={(part, value) => {
+                        const map = {
+                          hotend: 'powerHotendW',
+                          bed: 'powerBedW',
+                          steppers: 'powerSteppersW',
+                          electronics: 'powerElectronicsW',
+                        } as const;
+                        onStaticChange(map[part], value);
+                        const totals = {
+                          hotend: form.powerHotendW,
+                          bed: form.powerBedW,
+                          steppers: form.powerSteppersW,
+                          electronics: form.powerElectronicsW,
+                          [part]: value,
+                        };
+                        const total =
+                          totals.hotend + totals.bed + totals.steppers + totals.electronics;
+                        if (total > 0) onStaticChange('printerPowerW', total);
+                      }}
+                    />
+                  }
+                  onAveragedChange={(field, value) => {
+                    const mapping = {
+                      purchaseCost: 'printerPurchasePrice',
+                      lifeHours: 'printerUsefulHours',
+                      powerWatts: 'printerPowerW',
+                      maintenance: 'maintenanceCostPerHour',
+                      rate: 'printingRatePerHour',
+                    } as const;
+                    onStaticChange(mapping[field], value);
+                    // Wear is no longer a field of its own — it is what the price,
+                    // the expected life and the upkeep add up to. Kept in step here
+                    // so the calculation cannot drift from the breakdown on screen.
+                    if (field === 'purchaseCost' || field === 'lifeHours' || field === 'maintenance') {
+                      const price = field === 'purchaseCost' ? value : form.printerPurchasePrice;
+                      const hours = field === 'lifeHours' ? value : form.printerUsefulHours;
+                      const upkeep = field === 'maintenance' ? value : form.maintenanceCostPerHour;
+                      const perHour = hours > 0 ? price / hours : 0;
+                      onStaticChange(
+                        'amortizationRatePerHour',
+                        Math.round((perHour + upkeep) * 100) / 100,
+                      );
+                    }
+                  }}
+                />
                 </div>
               ) : null}
 
@@ -3898,6 +4056,9 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
                   {isCloudBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <CloudDownload className="h-4 w-4" />}
                   {tc('cloudLoad')}
                 </button>
+                <span className="flex items-center">
+                  <HelpTooltip text={tc('cloudStorageTooltip')} />
+                </span>
               </div>
             </div>
           ) : null}
@@ -4040,6 +4201,13 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
                 </div>
               ) : null}
 
+              <div
+                className={
+                  hasParsedJobs
+                    ? 'space-y-5'
+                    : 'grid gap-5 xl:grid-cols-2 xl:items-start'
+                }
+              >
               <WorkspacePanel
                 step="2"
                 title={hasParsedJobs ? tc('orderCompositionTitle') : tc('workspaceMaterialTitle')}
@@ -4151,7 +4319,7 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
                               </div>
 
                               {objectGroups.length > 0 ? (
-                                <div className="mt-3 space-y-2">
+                                <div className={`mt-3 grid gap-2 ${objectGroups.length > 1 ? '2xl:grid-cols-2' : ''}`}>
                                   {objectGroups.map((group, groupIndex) => {
                                     const groupWeightG = (job.parsed.total_filament_weight_g ?? 0)
                                       * Math.max(0, group.extrusion_share ?? 0);
@@ -4310,7 +4478,17 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
                           <div className="border-t border-white/[0.07] p-4">
                             <p className="mb-3 text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-500">{tc('jobMaterials')}</p>
                             {jobLines.length > 0 ? (
-                              <div className={`grid min-w-0 grid-cols-1 gap-3 ${jobLines.length > 1 ? '2xl:grid-cols-2' : ''}`}>{jobLines.map(renderMaterialLine)}</div>
+                              <div
+                                className={`grid min-w-0 grid-cols-1 gap-3 ${
+                                  jobLines.length > 2
+                                    ? 'lg:grid-cols-2 2xl:grid-cols-3'
+                                    : jobLines.length > 1
+                                      ? 'lg:grid-cols-2'
+                                      : ''
+                                }`}
+                              >
+                                {jobLines.map(renderMaterialLine)}
+                              </div>
                             ) : (
                               <p className="text-xs leading-5 text-slate-400">
                                 {isFilamentsLoading || isSpoolsLoading ? tc('loadingMaterials') : tc('jobMaterialsUnavailable')}
@@ -4486,29 +4664,38 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
                 </div>
                 ) : null}
               </WorkspacePanel>
-            </div>
 
-            {!hasParsedJobs ? (
-              <WorkspacePanel
-                step="3"
-                title={tc('workspaceProductionTitle')}
-              >
-                <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
+            <WorkspacePanel
+              step="3"
+              title={tc('workspaceProductionTitle')}
+            >
+              {!hasParsedJobs ? (
+                <div className="grid grid-cols-2 gap-4 sm:grid-cols-4 xl:grid-cols-2 2xl:grid-cols-4">
                   <FieldBlock label={t('profilePage.calc.quantity')}>
                     <NumberInput value={form.quantity} onChange={(value) => onChange('quantity', Math.max(1, value))} min="1" placeholder="1" />
                   </FieldBlock>
                   <FieldBlock label={t('profilePage.calc.hours')}>
                     <NumberInput value={form.timeHours} onChange={(value) => onChange('timeHours', value)} placeholder="0" />
                   </FieldBlock>
-                <FieldBlock label={t('profilePage.calc.minutes')}>
-                  <NumberInput value={form.timeMinutes} onChange={(value) => onChange('timeMinutes', value)} placeholder="0" />
-                </FieldBlock>
+                  <FieldBlock label={t('profilePage.calc.minutes')}>
+                    <NumberInput value={form.timeMinutes} onChange={(value) => onChange('timeMinutes', value)} placeholder="0" />
+                  </FieldBlock>
                   <FieldBlock label={t('profilePage.calc.seconds')}>
                     <NumberInput value={form.timeSec} onChange={(value) => onChange('timeSec', value)} placeholder="0" />
                   </FieldBlock>
                 </div>
-              </WorkspacePanel>
-            ) : null}
+              ) : null}
+              <PrinterCostRow
+                printers={printers}
+                selectedPrinterId={selectedPrinterId}
+                onSelect={onPrinterSelect}
+                economics={printerEconomics}
+                currency={quoteProfile.currency}
+                pickedFromLabel={printerPickedFrom}
+              />
+            </WorkspacePanel>
+            </div>
+            </div>
 
             {parsedGcode && (
               <details className="group rounded-[1.35rem] border border-white/[0.08] bg-black/15">
@@ -5679,7 +5866,6 @@ const HelpTooltip: React.FC<{ text: string }> = ({ text }) => (
       type="button"
       className="inline-flex h-4 w-4 items-center justify-center rounded-full text-slate-500 transition-colors hover:text-cyan-200 focus:outline-none focus:text-cyan-200"
       aria-label={text}
-      title={text}
       onClick={(event) => {
         event.preventDefault();
         event.stopPropagation();
@@ -5708,6 +5894,21 @@ const StepBadge: React.FC<{ step: string }> = ({ step }) => (
     {step}
   </div>
 );
+
+// Настройки по умолчанию — это плотная таблица значений, а не форма, которую
+// заполняют каждый раз: подписи прижаты к полям, поля ниже, колонок больше.
+const compactFieldsClass = [
+  '[&_label>span:first-child]:min-h-0',
+  '[&_label>span:first-child]:mb-1',
+  '[&_label>span:first-child]:text-xs',
+  '[&_label>span:first-child]:leading-4',
+  '[&_input]:py-2',
+  '[&_select]:py-2',
+  // A number here is six or seven characters at most; the rest was empty space.
+  // Only the input narrows — the quick picks under it keep the full width.
+  '[&_label>div>div:first-child]:max-w-[13rem]',
+  '[&_select]:max-w-[13rem]',
+].join(' ');
 
 const WorkspacePanel: React.FC<{
   step: string;

@@ -506,6 +506,13 @@ class CalculatorProfileUpdate(BaseModel):
     min_order_price: float | None = Field(None, ge=0)
     round_to_nearest: int | None = Field(None, ge=0)
     rounding_mode: RoundingMode | None = None
+    printer_purchase_price: float | None = Field(None, ge=0)
+    printer_useful_hours: int | None = Field(None, ge=0)
+    maintenance_cost_per_hour: float | None = Field(None, ge=0)
+    power_hotend_w: float | None = Field(None, ge=0)
+    power_bed_w: float | None = Field(None, ge=0)
+    power_steppers_w: float | None = Field(None, ge=0)
+    power_electronics_w: float | None = Field(None, ge=0)
 
     # Quote
     seller_name: str | None = Field(None, max_length=255)
@@ -556,6 +563,13 @@ class CalculatorProfileResponse(BaseModel):
     min_order_price: float
     round_to_nearest: int
     rounding_mode: str
+    printer_purchase_price: float
+    printer_useful_hours: int
+    maintenance_cost_per_hour: float
+    power_hotend_w: float
+    power_bed_w: float
+    power_steppers_w: float
+    power_electronics_w: float
 
     # Quote
     seller_name: str

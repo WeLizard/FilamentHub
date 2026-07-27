@@ -1147,6 +1147,13 @@ export interface CalculatorProfileResponse {
   bed_prep_cost_per_print: number;
   min_order_price: number;
   round_to_nearest: number;
+  printer_purchase_price: number;
+  printer_useful_hours: number;
+  maintenance_cost_per_hour: number;
+  power_hotend_w: number;
+  power_bed_w: number;
+  power_steppers_w: number;
+  power_electronics_w: number;
   rounding_mode: string;
   seller_name: string;
   seller_inn: string;

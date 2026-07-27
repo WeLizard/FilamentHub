@@ -38,11 +38,23 @@ class UserCalculatorProfile(Base):
     round_to_nearest: Mapped[int] = mapped_column(Integer, nullable=False, default=10)
     rounding_mode: Mapped[str] = mapped_column(String(16), nullable=False, default="up")
 
+    # Standard machine numbers: what any printer falls back to before it has
+    # economics of its own. They follow the account, not the browser.
+    printer_purchase_price: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    printer_useful_hours: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    maintenance_cost_per_hour: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    power_hotend_w: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    power_bed_w: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    power_steppers_w: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    power_electronics_w: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+
     # ── Quote profile ───────────────────────────────────────────────────
-    seller_name: Mapped[str] = mapped_column(String(255), nullable=False, default="")
-    seller_inn: Mapped[str] = mapped_column(String(32), nullable=False, default="")
-    seller_phone: Mapped[str] = mapped_column(String(64), nullable=False, default="")
-    payment_terms: Mapped[str] = mapped_column(String(512), nullable=False, default="")
+    # Stored encrypted (see core/field_encryption): the columns hold ciphertext,
+    # which is longer than what a person typed.
+    seller_name: Mapped[str] = mapped_column(String(1024), nullable=False, default="")
+    seller_inn: Mapped[str] = mapped_column(String(512), nullable=False, default="")
+    seller_phone: Mapped[str] = mapped_column(String(512), nullable=False, default="")
+    payment_terms: Mapped[str] = mapped_column(String(2048), nullable=False, default="")
     validity_days: Mapped[int] = mapped_column(Integer, nullable=False, default=14)
     disclaimer_mode: Mapped[str] = mapped_column(String(16), nullable=False, default="not_offer")
     currency: Mapped[str] = mapped_column(String(4), nullable=False, default="RUB")
