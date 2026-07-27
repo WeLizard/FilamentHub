@@ -105,13 +105,21 @@ async def claim_printer_hostname(
     the printer's own reports to whichever was found first, which is the whole
     reason reports stopped being routed by name.
     """
+    if device.printer_hostname == hostname:
+        return
+    # Two printers of the same person can report in the same instant, so the
+    # holders are locked before being read. The unique constraint behind this
+    # is the backstop, not the plan.
     previous = (
         await db.execute(
-            select(UserPrinterDevice).where(
+            select(UserPrinterDevice)
+            .where(
                 UserPrinterDevice.user_id == device.user_id,
                 UserPrinterDevice.printer_hostname == hostname,
                 UserPrinterDevice.id != device.id,
             )
+            .order_by(UserPrinterDevice.id)
+            .with_for_update()
         )
     ).scalars().all()
     for other in previous:
@@ -119,6 +127,10 @@ async def claim_printer_hostname(
         logger.info(
             "Printer hostname moved from device id=%s to id=%s", other.id, device.id
         )
+    if previous:
+        # The name has to be free before it is taken, or the constraint fires
+        # on the order the flush happens to pick.
+        await db.flush()
     device.printer_hostname = hostname
 
 

@@ -680,3 +680,34 @@ async def test_printer_settings_cannot_hand_a_hostname_to_a_second_card(
     await db_session.refresh(second)
     assert second.printer_hostname == "voron"
     assert first.printer_hostname is None
+
+
+@pytest.mark.asyncio
+async def test_the_database_refuses_two_cards_holding_one_hostname(
+    db_session: AsyncSession,
+):
+    """The rule survives a path that forgets it, because the schema holds it."""
+    from sqlalchemy.exc import IntegrityError
+
+    user, _, first = await _seed_spool_context(db_session)
+    first.printer_hostname = "voron"
+    second = await _second_device(db_session, user, "Larec", "constraint_probe_api_key")
+    await db_session.commit()
+
+    second.printer_hostname = "voron"
+    with pytest.raises(IntegrityError):
+        await db_session.commit()
+    await db_session.rollback()
+
+
+@pytest.mark.asyncio
+async def test_unpaired_cards_do_not_collide_on_an_empty_hostname(
+    db_session: AsyncSession,
+):
+    """Most cards have no hostname at all and must stay independent."""
+    user, _, first = await _seed_spool_context(db_session)
+    assert first.printer_hostname is None
+    second = await _second_device(db_session, user, "Second", "empty_hostname_api_key")
+
+    assert second.printer_hostname is None
+    await db_session.commit()

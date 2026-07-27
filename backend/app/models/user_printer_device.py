@@ -72,6 +72,11 @@ class UserPrinterDevice(Base):
 
     __table_args__ = (
         UniqueConstraint("user_id", "device_fingerprint", name="uq_user_device_fingerprint"),
+        # One machine answers at one hostname. Two cards holding the same one is
+        # what sent a printer's reports to the wrong card, so the database
+        # refuses it instead of trusting every write path to remember.
+        # Empty hostnames stay distinct, so unpaired cards are unaffected.
+        UniqueConstraint("user_id", "printer_hostname", name="uq_user_printer_hostname"),
     )
 
     user: Mapped["User"] = relationship(
