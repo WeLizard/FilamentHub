@@ -41,9 +41,11 @@ from app.services.material_assignment_service import sync_legacy_material_assign
 # one system on the printer instead of each creating its own.
 KLIPPER_PROVIDERS = ("happy_hare", "legacy")
 
-# The largest gate a real feed reports. Chained AMS units and the biggest MMU
-# builds stay far below it; anything above is a client sending nonsense.
-MAX_GATE_INDEX = 127
+# Twice the largest feed that exists: four chained AMS units give sixteen gates
+# and the biggest MMU builds stay under that. Anything past this is a client
+# sending nonsense, and without the cap one such number becomes a row and a
+# round-trip per gate.
+MAX_GATE_INDEX = 31
 
 HAPPY_HARE_CAPABILITIES = [
     "read",
