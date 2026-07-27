@@ -2166,7 +2166,9 @@ export const adminCommunicationsAPI = {
     form.append('sender_profile', data.sender_profile);
     form.append('idempotency_key', data.idempotency_key);
     data.attachments?.forEach((file) => form.append('attachments', file, file.name));
-    const response = await api.post<EmailThreadDetail>('/admin/communications/email-threads', form);
+    const response = await api.post<EmailThreadDetail>('/admin/communications/email-threads', form, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    });
     return response.data;
   },
 
@@ -2205,6 +2207,7 @@ export const adminCommunicationsAPI = {
     const response = await api.post<EmailMessage>(
       `/admin/communications/email-threads/${threadId}/reply`,
       form,
+      { headers: { 'Content-Type': 'multipart/form-data' } },
     );
     return response.data;
   },
