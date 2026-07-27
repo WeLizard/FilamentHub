@@ -2,6 +2,9 @@
 
 Newest first. The top entry is the text pasted into the Plugin Hub on release.
 
+## 0.0.8
+- Fixed the plugin connecting to the wrong address, which left it unable to reach FilamentHub. If 0.0.7 did nothing for you, this is why.
+
 ## 0.0.7
 - The print calculator on FilamentHub now picks up what you slice in OrcaSlicer: choose a slice and it is counted as if you had uploaded the file yourself. Switch it on once by choosing FilamentHub in the process settings, in the "Slicing Pipeline Plugin" field.
 
