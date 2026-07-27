@@ -6,7 +6,7 @@ from datetime import datetime, timezone
 
 import pytest
 from httpx import AsyncClient
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.v1.endpoints.spool_compat import (
@@ -607,3 +607,76 @@ async def test_two_printers_sharing_a_hostname_each_keep_their_own_card(
     by_spool = {state.spool_id: state.device_id for state in states}
     assert by_spool[spool.id] == first.id
     assert by_spool[second_spool.id] == second.id
+
+
+@pytest.mark.asyncio
+async def test_absurd_gate_number_is_refused_instead_of_breaking(
+    client: AsyncClient, db_session: AsyncSession
+):
+    """A client sending nonsense must not cost a worker or a table."""
+    from app.models.material_system import MaterialSlot
+
+    _, spool, device = await _seed_spool_context(db_session)
+
+    response = await client.patch(
+        f"/api/v1/spool_compat/{device.api_key}/v1/spool/{spool.id}",
+        json={"location": "voron @ MMU Gate:99999999999"},
+    )
+    assert response.status_code == 400
+
+    slots = (
+        await db_session.execute(select(func.count(MaterialSlot.id)))
+    ).scalar_one()
+    assert slots == 0
+
+
+@pytest.mark.asyncio
+async def test_a_reported_gate_never_grows_more_slots_than_a_feed_can_have(
+    client: AsyncClient, db_session: AsyncSession
+):
+    from app.models.material_system import MaterialSlot
+    from app.services.material_contract_service import MAX_GATE_INDEX
+
+    _, spool, device = await _seed_spool_context(db_session)
+
+    response = await client.patch(
+        f"/api/v1/spool_compat/{device.api_key}/v1/spool/{spool.id}",
+        json={"location": f"voron @ MMU Gate:{MAX_GATE_INDEX}"},
+    )
+    assert response.status_code == 200
+
+    slots = (
+        await db_session.execute(select(func.count(MaterialSlot.id)))
+    ).scalar_one()
+    assert slots == MAX_GATE_INDEX + 1
+
+
+@pytest.mark.asyncio
+async def test_printer_settings_cannot_hand_a_hostname_to_a_second_card(
+    client: AsyncClient, db_session: AsyncSession
+):
+    """The rule has to hold from the settings screen too, not only from reports."""
+    from app.core.security import create_access_token
+    from app.services.legal_acceptance_service import (
+        CURRENT_PERSONAL_DATA_CONSENT_VERSION,
+        CURRENT_TERMS_VERSION,
+    )
+
+    user, _, first = await _seed_spool_context(db_session)
+    first.printer_hostname = "voron"
+    user.terms_version_accepted = CURRENT_TERMS_VERSION
+    user.personal_data_consent_version = CURRENT_PERSONAL_DATA_CONSENT_VERSION
+    second = await _second_device(db_session, user, "Larec", "settings_screen_api_key")
+    await db_session.commit()
+
+    client.headers["Authorization"] = f"Bearer {create_access_token({'sub': user.email})}"
+    response = await client.patch(
+        f"/api/v1/devices/{second.id}",
+        json={"printer_hostname": "voron"},
+    )
+    assert response.status_code == 200
+
+    await db_session.refresh(first)
+    await db_session.refresh(second)
+    assert second.printer_hostname == "voron"
+    assert first.printer_hostname is None

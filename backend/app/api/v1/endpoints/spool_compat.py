@@ -37,8 +37,12 @@ from app.models.preset_usage_event import PresetUsageEventType
 from app.models.user import User
 from app.models.user_printer_device import UserPrinterDevice
 from app.models.user_spool import UserSpool, UserSpoolState
+from app.services.material_contract_service import MAX_GATE_INDEX
 from app.services.preset_enrichment_service import _load_material_defaults
-from app.services.preset_slot_sync_service import touch_device_last_seen
+from app.services.preset_slot_sync_service import (
+    claim_printer_hostname,
+    touch_device_last_seen,
+)
 from app.services.spool_service import (
     assign_spool_to_gate,
     clear_spool_gate_assignments,
@@ -541,31 +545,6 @@ def _sort_key(payload: dict, field_name: str):
     return (value is None, value)
 
 
-async def _claim_printer_hostname(
-    db: AsyncSession, device: UserPrinterDevice, hostname: str
-) -> None:
-    """Move a reported hostname onto the device that reported it.
-
-    One machine answers at one hostname, so leaving it on an older card would
-    keep two records claiming the same printer.
-    """
-    previous = (
-        await db.execute(
-            select(UserPrinterDevice).where(
-                UserPrinterDevice.user_id == device.user_id,
-                UserPrinterDevice.printer_hostname == hostname,
-                UserPrinterDevice.id != device.id,
-            )
-        )
-    ).scalars().all()
-    for other in previous:
-        other.printer_hostname = None
-        logger.info(
-            "Printer hostname moved from device id=%s to id=%s", other.id, device.id
-        )
-    device.printer_hostname = hostname
-
-
 async def _apply_location_assignment(
     db: AsyncSession,
     user: User,
@@ -605,6 +584,8 @@ async def _apply_location_assignment(
 
     device_hint = match.group("device").strip()
     gate_index = int(match.group("gate"))
+    if gate_index > MAX_GATE_INDEX:
+        return False, f"Gate index above {MAX_GATE_INDEX} is not supported."
 
     # The key names the machine. The hint in the location string is the printer
     # naming itself, and a stock Voron calls itself "voron" like every other
@@ -614,7 +595,7 @@ async def _apply_location_assignment(
         return False, "This endpoint requires the printer's own API key."
 
     if device_hint and device.printer_hostname != device_hint:
-        await _claim_printer_hostname(db, device, device_hint)
+        await claim_printer_hostname(db, device, device_hint)
     device.supports_hh = True
     device.reports_feed = True
 
@@ -683,20 +664,6 @@ async def _sync_extra_to_gate_state(
         # is the moment the printer stops being silent about its material feed.
         device.supports_hh = True
         device.reports_feed = True
-
-    if device is None:
-        device_result = await db.execute(
-            select(UserPrinterDevice).where(
-                UserPrinterDevice.user_id == user.id,
-                (UserPrinterDevice.printer_hostname == printer_name)
-                | (UserPrinterDevice.name == printer_name),
-            )
-        )
-        device = device_result.scalar_one_or_none()
-        if device is not None:
-            device.printer_hostname = printer_name
-            device.supports_hh = True
-            device.reports_feed = True
 
     if device is None:
         logger.warning(

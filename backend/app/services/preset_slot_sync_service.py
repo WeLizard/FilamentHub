@@ -96,6 +96,32 @@ async def require_device(
     return device
 
 
+async def claim_printer_hostname(
+    db: AsyncSession, device: UserPrinterDevice, hostname: str
+) -> None:
+    """Give a hostname to one device and take it from any other.
+
+    One machine answers at one hostname. Two cards holding the same one send
+    the printer's own reports to whichever was found first, which is the whole
+    reason reports stopped being routed by name.
+    """
+    previous = (
+        await db.execute(
+            select(UserPrinterDevice).where(
+                UserPrinterDevice.user_id == device.user_id,
+                UserPrinterDevice.printer_hostname == hostname,
+                UserPrinterDevice.id != device.id,
+            )
+        )
+    ).scalars().all()
+    for other in previous:
+        other.printer_hostname = None
+        logger.info(
+            "Printer hostname moved from device id=%s to id=%s", other.id, device.id
+        )
+    device.printer_hostname = hostname
+
+
 async def register_or_update_device(
     db: AsyncSession,
     user: User,
@@ -142,7 +168,7 @@ async def update_device(
     if payload.supports_hh is not None:
         device.supports_hh = payload.supports_hh
     if payload.printer_hostname is not None:
-        device.printer_hostname = payload.printer_hostname
+        await claim_printer_hostname(db, device, payload.printer_hostname)
     await ensure_material_topology(db, device)
     await db.commit()
     await db.refresh(device)

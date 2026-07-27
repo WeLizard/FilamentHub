@@ -41,6 +41,10 @@ from app.services.material_assignment_service import sync_legacy_material_assign
 # one system on the printer instead of each creating its own.
 KLIPPER_PROVIDERS = ("happy_hare", "legacy")
 
+# The largest gate a real feed reports. Chained AMS units and the biggest MMU
+# builds stay far below it; anything above is a client sending nonsense.
+MAX_GATE_INDEX = 127
+
 HAPPY_HARE_CAPABILITIES = [
     "read",
     "write",
@@ -450,7 +454,9 @@ async def ensure_material_topology(
     if indices:
         # A reported gate proves every lower gate exists, so the panel shows a
         # contiguous system instead of a hole where no spool has been seen yet.
-        indices = set(range(max(indices) + 1))
+        # The cap is what keeps one wrong number from turning into a row and a
+        # round-trip per gate: no feed has thousands of them.
+        indices = set(range(min(max(indices), MAX_GATE_INDEX) + 1))
 
     await db.flush()
     system = await db.scalar(
