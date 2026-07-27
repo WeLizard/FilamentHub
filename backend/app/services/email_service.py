@@ -105,6 +105,26 @@ def send_email(*, to: str, subject: str, html: str) -> bool:
         return False
 
 
+ADMIN_REPLY_TEMPLATES = {
+    "support": "admin_reply_plain.html",
+    "transactional": "admin_reply_plain.html",
+    "partnerships": "admin_reply.html",
+    "pr": "admin_reply.html",
+}
+
+
+def format_recipient(address: str, name: str | None) -> str:
+    """Address a letter to a person, not to a mailbox."""
+    forbidden = set(chr(34) + chr(92) + "<>,;" + chr(13) + chr(10))
+    clean_name = "".join(
+        char for char in (name or "").strip()
+        if char.isprintable() and char not in forbidden
+    ).strip()
+    if not clean_name:
+        return address
+    return chr(34) + clean_name + chr(34) + " <" + address + ">"
+
+
 def send_email_tracked(
     *,
     to: str,
@@ -256,6 +276,7 @@ def send_admin_reply_email(
     body: str,
     html_body: str | None,
     sender_profile: str,
+    participant_name: str | None = None,
     reply_to: str | None,
     headers: dict[str, str] | None = None,
     attachments: list[dict[str, str]] | None = None,
@@ -264,14 +285,14 @@ def send_admin_reply_email(
     """Send sanitized authored content using the shared branded email template."""
     sanitized_html = sanitize_admin_email_html(html_body)
     html = _render(
-        "admin_reply.html",
+        ADMIN_REPLY_TEMPLATES.get(sender_profile, "admin_reply.html"),
         subject=subject,
         body=body,
         body_html=Markup(sanitized_html) if sanitized_html else None,
         contact_email=settings.EMAIL_CONTACT,
     )
     return send_email_tracked(
-        to=to,
+        to=format_recipient(to, participant_name),
         subject=subject,
         html=html,
         text=body,

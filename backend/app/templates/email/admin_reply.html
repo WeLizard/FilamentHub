@@ -1,25 +1,37 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="ru">
-  <head>
-    <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>{{ subject }}</title>
-  </head>
-  <body style="margin:0;background:#f4f1f8;color:#252033;font-family:Arial,sans-serif;">
-    <div style="max-width:680px;margin:0 auto;padding:32px 18px;">
-      <div style="overflow:hidden;border:1px solid #ddd5e8;border-radius:18px;background:#ffffff;box-shadow:0 12px 34px rgba(38,24,68,.08);">
-        <div style="padding:22px 28px;background:#21143a;color:#ffffff;font-size:18px;font-weight:700;">FilamentHub</div>
-        <div style="padding:30px 28px;font-size:15px;line-height:1.65;">
-          {% if body_html %}
-            {{ body_html }}
-          {% else %}
-            <div style="white-space:pre-wrap;">{{ body }}</div>
-          {% endif %}
-        </div>
-        <div style="border-top:1px solid #eee8f4;padding:18px 28px;color:#746b80;font-size:12px;line-height:1.5;">
-          Ответ отправлен командой FilamentHub · {{ contact_email }}
-        </div>
-      </div>
-    </div>
-  </body>
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{{ subject }}</title>
+</head>
+<body style="margin:0;padding:0;background:#0f172a;font-family:system-ui,sans-serif;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="background:#0f172a;padding:40px 0;">
+    <tr>
+      <td align="center">
+        <table width="560" cellpadding="0" cellspacing="0" style="background:#1e293b;border-radius:16px;border:1px solid rgba(255,255,255,0.1);overflow:hidden;">
+          <tr>
+            <td style="padding:32px;">
+              <div style="margin:0 0 18px;font-size:16px;font-weight:600;letter-spacing:0.3px;color:#a78bfa;">
+                Filament<span style="color:#34d399;">Hub</span>
+              </div>
+              <div style="color:#cbd5e1;font-size:15px;line-height:1.65;">
+                {% if body_html %}
+                  {{ body_html }}
+                {% else %}
+                  <div style="white-space:pre-wrap;">{{ body }}</div>
+                {% endif %}
+              </div>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:16px 32px;border-top:1px solid rgba(255,255,255,0.08);color:#64748b;font-size:12px;line-height:1.5;">
+              Ответ отправлен командой FilamentHub · {{ contact_email }}
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
 </html>

@@ -691,3 +691,41 @@ async def test_admin_downloads_inbound_attachment_through_backend(
     assert response.headers["content-type"] == "application/pdf"
     assert response.headers["cache-control"] == "private, no-store"
     assert "price%20list.pdf" in response.headers["content-disposition"]
+
+@pytest.mark.asyncio
+async def test_a_web_page_reaches_the_provider_and_the_recipient_is_named(
+    admin_client: AsyncClient,
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The whole trip: a chosen .html file has to arrive at the provider intact."""
+    monkeypatch.setattr(settings, "EMAIL_INBOUND_DOMAIN", "reply.filamenthub.test")
+    captured_calls: list[dict] = []
+
+    def fake_send(**kwargs):
+        captured_calls.append(kwargs)
+        return EmailSendResult(sent=True, provider_message_id="sent-html-1")
+
+    monkeypatch.setattr(email_communications, "send_admin_reply_email", fake_send)
+    page = b"<!doctype html><html><body><h1>Partner application</h1></body></html>"
+    response = await admin_client.post(
+        "/api/v1/admin/communications/email-threads",
+        data={
+            "to": "team@orcaslicer.example.com",
+            "participant_name": "OrcaSlicer team",
+            "subject": "Partner application",
+            "body": "Please find our filled application attached.",
+            "sender_profile": "partnerships",
+            "idempotency_key": "email.create.html-attachment-0001",
+        },
+        files=[("attachments", ("application.html", page, "text/html"))],
+    )
+
+    assert response.status_code == 201, response.text
+    assert captured_calls[0]["attachments"][0]["filename"] == "application.html"
+    assert base64.b64decode(captured_calls[0]["attachments"][0]["content"]) == page
+    assert captured_calls[0]["participant_name"] == "OrcaSlicer team"
+
+    stored = response.json()["messages"][0]["attachment_metadata"]
+    assert stored[0]["filename"] == "application.html"
+    assert stored[0]["content_type"] == "text/html"
