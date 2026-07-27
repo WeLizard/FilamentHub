@@ -354,6 +354,14 @@ class AccountDeletionStats(BaseModel):
     sole_owner_organizations_count: int = 0
     ownership_transfer_required: bool = False
     representation_release_available: bool = False
+    spools_count: int = Field(default=0, description="Количество катушек в личной библиотеке")
+    printers_count: int = Field(default=0, description="Количество заведённых принтеров")
+    printer_profiles_count: int = Field(default=0, description="Количество конфигураций принтеров")
+    print_profiles_count: int = Field(default=0, description="Количество профилей печати")
+    calculations_count: int = Field(default=0, description="Количество сохранённых расчётов")
+    quotes_count: int = Field(default=0, description="Количество коммерческих предложений")
+    customers_count: int = Field(default=0, description="Количество клиентов в записной книжке")
+    slice_reports_count: int = Field(default=0, description="Количество сведений о нарезках")
 
 
 class ForgotPasswordRequest(BaseModel):

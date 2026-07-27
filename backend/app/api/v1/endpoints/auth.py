@@ -93,6 +93,7 @@ from app.services.legal_acceptance_service import (
     requires_current_legal_acceptance,
 )
 from app.services.organization_access import can_select_active_brand, list_accessible_brands
+from app.services.provisional_account_service import sweep_abandoned_provisional_accounts
 from app.services.request_region_service import (
     AccessRegion,
     get_request_client_ip,
@@ -947,7 +948,7 @@ async def generate_api_key_endpoint(
 
 @router.get("/deletion-stats", response_model=AccountDeletionStats)
 async def get_deletion_stats(
-    current_user: Annotated[User, Depends(get_current_active_user)],
+    current_user: Annotated[User, Depends(get_current_user_for_legal_onboarding)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> AccountDeletionStats:
     """Получить статистику данных пользователя перед удалением аккаунта."""
@@ -1010,7 +1011,7 @@ async def verify_email(
 @router.delete("/me", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_account(
     data: Annotated[AccountDeleteRequest, Body()],
-    current_user: Annotated[User, Depends(get_current_active_user)],
+    current_user: Annotated[User, Depends(get_current_user_for_legal_onboarding)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> None:
     """
@@ -1449,6 +1450,7 @@ async def oauth_callback(
                 role=UserRole.USER,
                 active=True,
                 email_verified=oauth_info.email_verified,
+                provisional_since=datetime.now(timezone.utc),
             )
             db.add(user)
             _oauth_logger.info("OAuth new user pending commit: provider=%s", provider)
@@ -1457,6 +1459,13 @@ async def oauth_callback(
     user.last_login = datetime.now(timezone.utc)
     await db.commit()
     await db.refresh(user)
+
+    try:
+        await sweep_abandoned_provisional_accounts(db)
+    except Exception:
+        # Housekeeping must never cost someone their sign-in.
+        _oauth_logger.warning("Provisional account sweep failed", exc_info=True)
+        await db.rollback()
 
     # Create JWT tokens
     token_data = {"sub": user.email, "user_id": user.id, "role": user.role.value}

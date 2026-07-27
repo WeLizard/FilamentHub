@@ -39,11 +39,15 @@ async def _warm_app_settings_cache() -> None:
     import logging as _logging
 
     from app.db.session import AsyncSessionLocal
+    from app.services.provisional_account_service import (
+        sweep_abandoned_provisional_accounts,
+    )
     from app.services.subscription_service import refresh_settings_cache
 
     try:
         async with AsyncSessionLocal() as db:
             await refresh_settings_cache(db)
+            await sweep_abandoned_provisional_accounts(db)
     except Exception:
         _logging.getLogger(__name__).warning("Failed to warm app-settings cache", exc_info=True)
 

@@ -80,3 +80,5 @@ async def record_current_legal_acceptance(
     user.privacy_policy_version_presented = CURRENT_PRIVACY_POLICY_VERSION
     user.legal_accepted_at = accepted_at
     user.legal_acceptance_language = language
+    # The account has answered, so it is no longer waiting to be swept.
+    user.provisional_since = None

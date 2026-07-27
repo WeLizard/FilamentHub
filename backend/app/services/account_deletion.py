@@ -11,11 +11,42 @@ from app.core.errors import (
 )
 from app.models.brand import Brand
 from app.models.brand_request import BrandRequest, BrandRequestStatus
+from app.models.calculator_history_entry import CalculatorHistoryEntry
+from app.models.crm import CrmCustomer, CrmQuote
 from app.models.filament_review import FilamentReview
+from app.models.orca_slice_report import OrcaSliceReport
 from app.models.organization import Organization, OrganizationMemberRole, OrganizationMembership
 from app.models.preset import Preset, PresetModerationStatus
+from app.models.print_profile import PrintProfile
+from app.models.printer_profile import PrinterProfile
 from app.models.user import User, UserRole
+from app.models.user_printer_device import UserPrinterDevice
 from app.models.user_saved_preset import UserSavedPreset
+from app.models.user_spool import UserSpool
+
+
+async def _library_stats(user_id: int, db: AsyncSession) -> dict:
+    """Count what leaves with the account, not only what stays in the catalog.
+
+    Presets and reviews survive deletion without their author, so a summary
+    built from them alone tells someone with a full shelf that they have
+    nothing to lose.
+    """
+    counts: dict[str, int] = {}
+    for key, model, owner in (
+        ("spools_count", UserSpool, UserSpool.user_id),
+        ("printers_count", UserPrinterDevice, UserPrinterDevice.user_id),
+        ("printer_profiles_count", PrinterProfile, PrinterProfile.owner_user_id),
+        ("print_profiles_count", PrintProfile, PrintProfile.owner_user_id),
+        ("calculations_count", CalculatorHistoryEntry, CalculatorHistoryEntry.user_id),
+        ("quotes_count", CrmQuote, CrmQuote.user_id),
+        ("customers_count", CrmCustomer, CrmCustomer.user_id),
+        ("slice_reports_count", OrcaSliceReport, OrcaSliceReport.user_id),
+    ):
+        counts[key] = int(
+            await db.scalar(select(func.count(model.id)).where(owner == user_id)) or 0
+        )
+    return counts
 
 
 async def get_deletion_stats(user_id: int, db: AsyncSession) -> dict:
@@ -125,7 +156,10 @@ async def get_deletion_stats(user_id: int, db: AsyncSession) -> dict:
                 sole_owner_organizations_count += 1
                 transfer_required = transfer_required or other_members > 0
 
+    library = await _library_stats(user_id, db)
+
     return {
+        **library,
         "presets_count": presets_count,
         "official_presets_count": official_presets_count,
         "approved_presets_count": approved_presets_count,

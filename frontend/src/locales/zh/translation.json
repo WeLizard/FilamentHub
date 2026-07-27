@@ -227,7 +227,9 @@
     "continue": "继续",
     "logout": "退出登录",
     "loadError": "无法加载当前文件。请刷新页面后重试。",
-    "submitError": "无法保存您的选择。请重试。"
+    "submitError": "无法保存您的选择。请重试。",
+    "declineNote": "如果条款不适合您，请退出或删除账户。通过 Google 或 Yandex 登录创建但未确认的账户将在 30 天内自动删除。",
+    "deleteAccount": "删除账户"
   },
   "forgotPasswordModal": {
     "title": "密码恢复",
@@ -1910,7 +1912,15 @@
     "errorMessage": "账户删除失败",
     "confirmPrompt": "你确定要删除你的账户吗？此操作不可逆！",
     "enterConfirmWord": "请键入 \"DELETE\" 以确认删除",
-    "enterPassword": "输入你的密码以确认"
+    "enterPassword": "输入你的密码以确认",
+    "spoolsCount": "线材卷",
+    "printersCount": "打印机",
+    "printerProfilesCount": "打印机配置",
+    "printProfilesCount": "打印配置文件",
+    "calculationsCount": "已保存的计算",
+    "quotesCount": "报价单",
+    "customersCount": "客户",
+    "sliceReportsCount": "切片记录"
   },
   "profilePage": {
     "calculator": {

@@ -227,7 +227,9 @@
     "continue": "Continue",
     "logout": "Sign out",
     "loadError": "The current documents could not be loaded. Refresh the page and try again.",
-    "submitError": "Your choice could not be saved. Try again."
+    "submitError": "Your choice could not be saved. Try again.",
+    "declineNote": "If the terms do not suit you, sign out or delete the account. An account created by a Google or Yandex sign-in that is never confirmed is removed on its own within 30 days.",
+    "deleteAccount": "Delete account"
   },
   "forgotPasswordModal": {
     "title": "Password Recovery",
@@ -1913,7 +1915,15 @@
     "errorMessage": "Failed to delete account",
     "confirmPrompt": "Are you sure you want to delete your account? This action is irreversible!",
     "enterConfirmWord": "Please type \"DELETE\" to confirm deletion",
-    "enterPassword": "Enter your password to confirm"
+    "enterPassword": "Enter your password to confirm",
+    "spoolsCount": "Spools",
+    "printersCount": "Printers",
+    "printerProfilesCount": "Printer configurations",
+    "printProfilesCount": "Print profiles",
+    "calculationsCount": "Saved calculations",
+    "quotesCount": "Quotes",
+    "customersCount": "Customers",
+    "sliceReportsCount": "Slice records"
   },
   "profilePage": {
     "calculator": {

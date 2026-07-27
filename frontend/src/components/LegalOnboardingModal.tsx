@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Check, Loader2, LogOut, ShieldCheck } from 'lucide-react';
+import { Check, Loader2, LogOut, ShieldCheck, Trash2 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 
@@ -7,6 +7,7 @@ import { authAPI } from '../api/client';
 import { useAuth } from '../contexts/AuthContext';
 import type { LegalRequirements } from '../types/api';
 import { translateApiError } from '../utils/translateApiError';
+import { DeleteAccountModal } from './DeleteAccountModal';
 import { ModalOverlay } from './ModalOverlay';
 
 export function LegalOnboardingModal() {
@@ -17,6 +18,7 @@ export function LegalOnboardingModal() {
   const [personalDataConsent, setPersonalDataConsent] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [showDelete, setShowDelete] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -159,16 +161,31 @@ export function LegalOnboardingModal() {
           </Link>
         </p>
 
+        <p className="mt-4 text-xs leading-5 text-slate-400">
+          {t('legalOnboarding.declineNote')}
+        </p>
+
         <div className="mt-6 flex flex-col-reverse gap-3 sm:flex-row sm:justify-between">
-          <button
-            type="button"
-            onClick={() => void logout()}
-            disabled={isSubmitting}
-            className="inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm text-slate-300 transition-colors hover:bg-white/5 hover:text-white disabled:opacity-50"
-          >
-            <LogOut className="h-4 w-4" />
-            {t('legalOnboarding.logout')}
-          </button>
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+            <button
+              type="button"
+              onClick={() => void logout()}
+              disabled={isSubmitting}
+              className="inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm text-slate-300 transition-colors hover:bg-white/5 hover:text-white disabled:opacity-50"
+            >
+              <LogOut className="h-4 w-4" />
+              {t('legalOnboarding.logout')}
+            </button>
+            <button
+              type="button"
+              onClick={() => setShowDelete(true)}
+              disabled={isSubmitting}
+              className="inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm text-red-300/90 transition-colors hover:bg-red-500/10 hover:text-red-200 disabled:opacity-50"
+            >
+              <Trash2 className="h-4 w-4" />
+              {t('legalOnboarding.deleteAccount')}
+            </button>
+          </div>
           <button
             type="button"
             onClick={() => void handleAccept()}
@@ -180,6 +197,7 @@ export function LegalOnboardingModal() {
           </button>
         </div>
       </div>
+      <DeleteAccountModal isOpen={showDelete} onClose={() => setShowDelete(false)} />
     </ModalOverlay>
   );
 }

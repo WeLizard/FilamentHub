@@ -595,6 +595,14 @@ export interface AccountDeletionStats {
   sole_owner_organizations_count: number;
   ownership_transfer_required: boolean;
   representation_release_available: boolean;
+  spools_count: number;
+  printers_count: number;
+  printer_profiles_count: number;
+  print_profiles_count: number;
+  calculations_count: number;
+  quotes_count: number;
+  customers_count: number;
+  slice_reports_count: number;
 }
 
 export type BrandTeamRole = 'owner' | 'editor';

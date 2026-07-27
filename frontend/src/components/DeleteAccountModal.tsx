@@ -17,6 +17,18 @@ interface DeleteAccountModalProps {
   onClose: () => void;
 }
 
+/** Presets and reviews outlive the account; everything here leaves with it. */
+const LIBRARY_ROWS = [
+  { key: 'spools_count', label: 'deleteAccount.spoolsCount' },
+  { key: 'printers_count', label: 'deleteAccount.printersCount' },
+  { key: 'printer_profiles_count', label: 'deleteAccount.printerProfilesCount' },
+  { key: 'print_profiles_count', label: 'deleteAccount.printProfilesCount' },
+  { key: 'calculations_count', label: 'deleteAccount.calculationsCount' },
+  { key: 'quotes_count', label: 'deleteAccount.quotesCount' },
+  { key: 'customers_count', label: 'deleteAccount.customersCount' },
+  { key: 'slice_reports_count', label: 'deleteAccount.sliceReportsCount' },
+] as const;
+
 export const DeleteAccountModal: React.FC<DeleteAccountModalProps> = ({ isOpen, onClose }) => {
   const { t } = useTranslation();
   const { user, logout } = useAuth();
@@ -161,6 +173,14 @@ export const DeleteAccountModal: React.FC<DeleteAccountModalProps> = ({ isOpen, 
                   <p className="text-gray-400">{t('deleteAccount.brandRequests')}</p>
                   <p className="text-white font-semibold">{stats.brand_requests_count}</p>
                 </div>
+                {LIBRARY_ROWS.map(({ key, label }) => (
+                  stats[key] > 0 && (
+                    <div key={key}>
+                      <p className="text-gray-400">{t(label)}</p>
+                      <p className="text-white font-semibold">{stats[key]}</p>
+                    </div>
+                  )
+                ))}
                 {stats.is_brand_representative && (
                   <div className="col-span-2">
                     <p className="text-gray-400">{t('deleteAccount.brandRepresentative')}</p>
