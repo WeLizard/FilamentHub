@@ -33,6 +33,7 @@ const ACCEPTED_ATTACHMENTS = {
   'image/png': ['.png'],
   'image/webp': ['.webp'],
   'text/csv': ['.csv'],
+  'text/html': ['.html', '.htm'],
   'text/plain': ['.txt'],
 };
 

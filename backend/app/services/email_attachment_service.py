@@ -25,6 +25,8 @@ _ALLOWED_CONTENT_TYPES = {
     ".csv": "text/csv",
     ".doc": "application/msword",
     ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    ".htm": "text/html",
+    ".html": "text/html",
     ".jpeg": "image/jpeg",
     ".jpg": "image/jpeg",
     ".pdf": "application/pdf",
@@ -93,7 +95,7 @@ def _content_matches(extension: str, content: bytes) -> bool:
         return _valid_office_zip(content, "xl")
     if extension == ".pptx":
         return _valid_office_zip(content, "ppt")
-    if extension in {".txt", ".csv"}:
+    if extension in {".htm", ".html", ".txt", ".csv"}:
         if b"\x00" in content:
             return False
         try:
