@@ -23,6 +23,8 @@ from app.core.errors import (
     ERR_BRAND_SLUG_INVALID,
     ERR_BRAND_SLUG_RENAME_REQUIRED,
     ERR_BRAND_SLUG_STALE,
+    ERR_DATABASE_DUMP_NOT_FOUND,
+    ERR_DATABASE_EXPORT_FAILED,
     ERR_FILE_EXT_NOT_ALLOWED,
     ERR_FILE_SIZE_EXCEEDED,
     ERR_INVALID_BADGES,
@@ -58,6 +60,7 @@ from app.schemas.brand_request import (
     BrandRequestUpdate,
 )
 from app.schemas.database import (
+    DatabaseExportRequest,
     DatabaseIntegrityResponse,
     DatabaseStatsResponse,
     MigrationHistoryResponse,
@@ -1362,6 +1365,56 @@ async def get_database_stats(
     """Получить статистику базы данных."""
     stats = await get_database_stats_service(db)
     return DatabaseStatsResponse(**stats)
+
+
+@router.post("/database/export")
+async def export_database(
+    payload: DatabaseExportRequest,
+    admin: Annotated[User, Depends(get_current_admin_user)],
+) -> dict:
+    """Выгрузить базу в файл. Дамп шифруется ключом резервных копий."""
+    from app.services.database_service import export_database as export_database_service
+
+    success, message, filename, size = await export_database_service(
+        format=payload.format,
+        include_data=payload.include_data,
+        tables=payload.tables,
+    )
+    if not success:
+        raise_error(status.HTTP_500_INTERNAL_SERVER_ERROR, ERR_DATABASE_EXPORT_FAILED)
+    logger.info("Admin %s exported the database to %s", admin.id, filename)
+    return {
+        "success": True,
+        "filename": filename,
+        "download_url": None,
+        "size": size,
+        "message": message,
+    }
+
+
+@router.get("/database/dumps")
+async def list_database_dumps(
+    admin: Annotated[User, Depends(get_current_admin_user)],
+) -> dict:
+    """Список сохранённых дампов."""
+    from app.services.database_service import list_database_dumps as list_dumps_service
+
+    return {"dumps": await list_dumps_service()}
+
+
+@router.delete("/database/dumps/{filename}")
+async def delete_database_dump(
+    filename: str,
+    admin: Annotated[User, Depends(get_current_admin_user)],
+) -> dict:
+    """Удалить дамп."""
+    from app.services.database_service import delete_database_dump as delete_dump_service
+
+    success, message = await delete_dump_service(filename)
+    if not success:
+        raise_error(status.HTTP_404_NOT_FOUND, ERR_DATABASE_DUMP_NOT_FOUND)
+    logger.info("Admin %s deleted dump %s", admin.id, filename)
+    return {"success": True, "message": message}
 
 
 @router.get("/database/tables/{table_name}/structure", response_model=TableStructureResponse)

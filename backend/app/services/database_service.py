@@ -775,6 +775,39 @@ async def get_database_stats(db: AsyncSession) -> dict:
     }
 
 
+async def _encrypt_dump(filepath: Path) -> tuple[Path, bool]:
+    key_file = Path(settings.BACKUP_PUBLIC_KEY)
+    if not key_file.is_file():
+        return filepath, False
+
+    encrypted = filepath.with_suffix(filepath.suffix + ".gpg")
+
+    def run_gpg() -> bool:
+        process = subprocess.run(
+            [
+                "gpg", "--batch", "--yes", "--quiet", "--trust-model", "always",
+                "--recipient-file", str(key_file),
+                "--output", str(encrypted), "--encrypt", str(filepath),
+            ],
+            stderr=subprocess.PIPE,
+        )
+        return process.returncode == 0
+
+    try:
+        ok = await asyncio.to_thread(run_gpg)
+    except FileNotFoundError:
+        logger.error("gpg is not available, dump stays unencrypted")
+        return filepath, False
+
+    if not ok or not encrypted.exists() or encrypted.stat().st_size == 0:
+        encrypted.unlink(missing_ok=True)
+        logger.error("Failed to encrypt dump, it stays unencrypted")
+        return filepath, False
+
+    filepath.unlink(missing_ok=True)
+    return encrypted, True
+
+
 async def export_database(
     format: str = "custom",
     include_data: bool = True,
@@ -856,8 +889,14 @@ async def export_database(
         success = await asyncio.to_thread(run_export)
 
         if success:
+            filepath, encrypted = await _encrypt_dump(filepath)
             size = filepath.stat().st_size
-            return True, "Database exported successfully", filename, size
+            message = (
+                "Database exported successfully"
+                if encrypted
+                else "Database exported, but the dump is NOT encrypted"
+            )
+            return True, message, filepath.name, size
         else:
             return False, "Database export error", None, None
 
