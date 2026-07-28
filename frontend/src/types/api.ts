@@ -568,6 +568,8 @@ export interface User {
   updated_at: string;
   last_login: string | null; // Дата последнего входа
   legal_onboarding_required: boolean;
+  /** Аккаунт уже принимал более раннюю редакцию — значит это повторный показ. */
+  legal_previously_accepted?: boolean;
 }
 
 export interface AdminUserListResponse {
@@ -675,6 +677,9 @@ export interface LegalRequirements {
   terms_url: string;
   personal_data_consent_url: string;
   privacy_policy_url: string;
+  /** ISO date (YYYY-MM-DD) — formatted for display by the client locale. */
+  legal_update_effective_date: string;
+  legal_update_note: string;
 }
 
 export interface AuthMethods {

@@ -1,7 +1,7 @@
 """Pydantic schemas for User."""
 
 import re
-from datetime import datetime
+from datetime import date, datetime
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
@@ -137,6 +137,9 @@ class UserResponse(UserBase):
     updated_at: datetime
     last_login: datetime | None = None
     legal_onboarding_required: bool = False
+    # True when the account accepted some earlier version, so the mandatory
+    # screen is a re-ask rather than a first-time one.
+    legal_previously_accepted: bool = False
     # Calculator Pro entitlement (effective flag + subscription summary).
     # Named to avoid colliding with the ORM `subscription` relationship (from_attributes);
     # serialized to the client as `subscription`.
@@ -162,6 +165,7 @@ class UserResponse(UserBase):
             )
 
             instance.legal_onboarding_required = requires_current_legal_acceptance(obj)
+            instance.legal_previously_accepted = bool(obj.terms_version_accepted)
         return instance
 
 
@@ -281,6 +285,8 @@ class LegalRequirementsResponse(BaseModel):
     terms_url: str
     personal_data_consent_url: str
     privacy_policy_url: str
+    legal_update_effective_date: date
+    legal_update_note: str = ""
 
 
 class AuthMethodsResponse(BaseModel):

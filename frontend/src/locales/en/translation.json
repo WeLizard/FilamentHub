@@ -227,6 +227,8 @@
   "legalOnboarding": {
     "title": "Finish setting up your account",
     "description": "Before using personal features, separately accept the current terms and consent to personal data processing.",
+    "updated": "We have updated the terms — the revision of {{date}} now applies.",
+    "noReregistration": "No need to register again.",
     "acceptTerms": "I accept the",
     "acceptPersonalData": "I separately consent to",
     "privacyNote": "How FilamentHub processes data is described in the",

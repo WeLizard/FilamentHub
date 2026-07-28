@@ -12,6 +12,8 @@ from app.models.user_legal_acceptance import UserLegalAcceptance
 from app.services.legal_acceptance_service import (
     CURRENT_PERSONAL_DATA_CONSENT_VERSION,
     CURRENT_TERMS_VERSION,
+    LEGAL_UPDATE_EFFECTIVE_DATE,
+    LEGAL_UPDATE_NOTE,
 )
 from app.services.organization_access import grant_brand_owner_membership
 
@@ -150,6 +152,8 @@ async def test_legal_requirements_are_public_and_versioned(client: AsyncClient):
         "terms_url": "/user-agreement",
         "personal_data_consent_url": "/personal-data-consent",
         "privacy_policy_url": "/privacy-policy",
+        "legal_update_effective_date": LEGAL_UPDATE_EFFECTIVE_DATE.isoformat(),
+        "legal_update_note": LEGAL_UPDATE_NOTE,
     }
 
 

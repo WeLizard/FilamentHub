@@ -12,7 +12,7 @@ import { ModalOverlay } from './ModalOverlay';
 
 export function LegalOnboardingModal() {
   const { t, i18n } = useTranslation();
-  const { acceptLegalDocuments, logout } = useAuth();
+  const { acceptLegalDocuments, logout, user } = useAuth();
   const [requirements, setRequirements] = useState<LegalRequirements | null>(null);
   const [termsAccepted, setTermsAccepted] = useState(false);
   const [personalDataConsent, setPersonalDataConsent] = useState(false);
@@ -37,6 +37,15 @@ export function LegalOnboardingModal() {
       cancelled = true;
     };
   }, [t]);
+
+  const isReacceptance = Boolean(user?.legal_previously_accepted);
+  const effectiveDate = requirements
+    ? new Intl.DateTimeFormat(i18n.resolvedLanguage || i18n.language, {
+        day: 'numeric',
+        month: 'long',
+        year: 'numeric',
+      }).format(new Date(`${requirements.legal_update_effective_date}T00:00:00`))
+    : '';
 
   const handleAccept = async () => {
     if (!requirements || !termsAccepted || !personalDataConsent) {
@@ -92,6 +101,16 @@ export function LegalOnboardingModal() {
             </p>
           </div>
         </div>
+
+        {isReacceptance && requirements && (
+          <div className="mb-4 rounded-xl border border-purple-400/25 bg-purple-500/10 px-4 py-3 text-sm leading-6 text-purple-100">
+            <p>{t('legalOnboarding.updated', { date: effectiveDate })}</p>
+            <p className="text-slate-300">{t('legalOnboarding.noReregistration')}</p>
+            {requirements.legal_update_note && (
+              <p className="mt-1 text-slate-300">{requirements.legal_update_note}</p>
+            )}
+          </div>
+        )}
 
         {error && (
           <div className="mb-4 rounded-xl border border-red-400/25 bg-red-500/10 px-4 py-3 text-sm text-red-200">

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -14,6 +14,14 @@ CURRENT_TERMS_VERSION = "2026-07-25"
 CURRENT_PERSONAL_DATA_CONSENT_VERSION = "2026-07-25"
 CURRENT_PRIVACY_POLICY_VERSION = "2026-07-25"
 
+# Shown to someone asked to accept again. Kept as a date rather than derived
+# from the version strings, so the wording can be localised and the versions
+# stay free to change format.
+LEGAL_UPDATE_EFFECTIVE_DATE = date(2026, 7, 25)
+# Optional single sentence for a change worth naming. Empty means nothing extra
+# is shown; filling it is never required.
+LEGAL_UPDATE_NOTE = ""
+
 
 def requires_current_legal_acceptance(user: User) -> bool:
     """Return whether the account still needs the current mandatory documents."""
@@ -24,7 +32,7 @@ def requires_current_legal_acceptance(user: User) -> bool:
     )
 
 
-def current_legal_requirements() -> dict[str, str]:
+def current_legal_requirements() -> dict[str, object]:
     """Public current versions and stable document routes."""
     return {
         "terms_version": CURRENT_TERMS_VERSION,
@@ -33,6 +41,8 @@ def current_legal_requirements() -> dict[str, str]:
         "terms_url": "/user-agreement",
         "personal_data_consent_url": "/personal-data-consent",
         "privacy_policy_url": "/privacy-policy",
+        "legal_update_effective_date": LEGAL_UPDATE_EFFECTIVE_DATE,
+        "legal_update_note": LEGAL_UPDATE_NOTE,
     }
 
 
