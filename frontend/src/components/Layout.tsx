@@ -451,6 +451,7 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
               <Link to="/user-agreement" className="hover:text-gray-300 transition-colors">{t('layout.footer_terms')}</Link>
               <Link to="/privacy-policy" className="hover:text-gray-300 transition-colors">{t('layout.footer_privacy')}</Link>
               <Link to="/personal-data-consent" className="hover:text-gray-300 transition-colors">{t('layout.footer_consent')}</Link>
+              <a href="https://db-ip.com" target="_blank" rel="noreferrer" className="hover:text-gray-300 transition-colors">{t('layout.footer_geoip_attribution')}</a>
             </div>
           </div>
         </footer>

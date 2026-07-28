@@ -166,6 +166,7 @@
     "footer_terms": "Terms of Service",
     "footer_privacy": "Privacy Policy",
     "footer_consent": "Data Processing",
+    "footer_geoip_attribution": "IP geolocation by DB-IP",
     "footer_copyright": "© {{year}} FilamentHub",
     "pluginPresetsStats": "Presets: {{total}} ({{synced}} synced)"
   },

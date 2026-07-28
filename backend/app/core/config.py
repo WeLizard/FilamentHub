@@ -58,7 +58,7 @@ class Settings(BaseSettings):
         "static_intl",
         "development",
     ] = "geoip"
-    GEOIP_COUNTRY_DB_PATH: str = "/app/data/geoip/GeoLite2-Country.mmdb"
+    GEOIP_COUNTRY_DB_PATH: str = "/app/data/geoip/dbip-country-lite.mmdb"
     AUTH_CLIENT_IP_HEADER: str = "X-FilamentHub-Client-IP"
     AUTH_TRUSTED_PROXY_NETWORKS: str = "172.30.0.10/32"
 

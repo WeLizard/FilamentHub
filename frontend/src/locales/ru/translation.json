@@ -166,6 +166,7 @@
     "footer_terms": "Пользовательское соглашение",
     "footer_privacy": "Политика конфиденциальности",
     "footer_consent": "Обработка данных",
+    "footer_geoip_attribution": "IP-геолокация: DB-IP",
     "footer_copyright": "© {{year}} FilamentHub",
     "pluginPresetsStats": "Пресеты: {{total}} (синхр.: {{synced}})"
   },

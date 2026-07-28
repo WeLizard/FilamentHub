@@ -118,3 +118,71 @@ def test_geoip_health_does_not_require_database_for_static_modes(monkeypatch):
         "database_build_epoch": None,
         "database_age_seconds": None,
     }
+
+
+def test_reader_reloads_after_atomic_database_replacement(monkeypatch, tmp_path):
+    database_path = tmp_path / "country.mmdb"
+    database_path.write_bytes(b"first")
+    opened_readers = []
+
+    class FakeReader:
+        def __init__(self, path):
+            self.path = path
+            self.closed = False
+            opened_readers.append(self)
+
+        def close(self):
+            self.closed = True
+
+    monkeypatch.setattr(request_region_service.geoip2.database, "Reader", FakeReader)
+    request_region_service._close_reader()
+
+    try:
+        first = request_region_service._reader_for_path(str(database_path))
+        assert request_region_service._reader_for_path(str(database_path)) is first
+        assert len(opened_readers) == 1
+
+        replacement = tmp_path / "replacement.mmdb"
+        replacement.write_bytes(b"second database")
+        replacement.replace(database_path)
+
+        second = request_region_service._reader_for_path(str(database_path))
+        assert second is not first
+        assert first.closed is True
+        assert len(opened_readers) == 2
+    finally:
+        request_region_service._close_reader()
+
+
+def test_reader_retries_when_database_changes_during_open(monkeypatch):
+    opened_readers = []
+    signatures = iter(
+        [
+            (1, 1, 100, 1),
+            (1, 1, 100, 1),
+            (1, 2, 200, 2),
+            (1, 2, 200, 2),
+            (1, 2, 200, 2),
+        ]
+    )
+
+    class FakeReader:
+        def __init__(self, path):
+            self.path = path
+            self.closed = False
+            opened_readers.append(self)
+
+        def close(self):
+            self.closed = True
+
+    monkeypatch.setattr(request_region_service, "_database_signature", lambda _path: next(signatures))
+    monkeypatch.setattr(request_region_service.geoip2.database, "Reader", FakeReader)
+    request_region_service._close_reader()
+
+    try:
+        reader = request_region_service._reader_for_path("country.mmdb")
+        assert reader is opened_readers[1]
+        assert opened_readers[0].closed is True
+        assert reader.closed is False
+    finally:
+        request_region_service._close_reader()

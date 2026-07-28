@@ -30,18 +30,20 @@ class AccessRegion(StrEnum):
 
 _reader: geoip2.database.Reader | None = None
 _reader_path: str | None = None
+_reader_signature: tuple[int, int, int, int] | None = None
 _reader_lock = Lock()
 _reported_reader_errors: set[str] = set()
 
 
 def _close_reader() -> None:
-    global _reader, _reader_path
+    global _reader, _reader_path, _reader_signature
 
     with _reader_lock:
         if _reader is not None:
             _reader.close()
         _reader = None
         _reader_path = None
+        _reader_signature = None
 
 
 atexit.register(_close_reader)
@@ -92,22 +94,47 @@ def get_request_client_ip(
     return forwarded or peer
 
 
+def _database_signature(path: str) -> tuple[int, int, int, int]:
+    stat = Path(path).stat()
+    return (stat.st_dev, stat.st_ino, stat.st_size, stat.st_mtime_ns)
+
+
 def _reader_for_path(path: str) -> geoip2.database.Reader:
-    global _reader, _reader_path
+    global _reader, _reader_path, _reader_signature
 
     with _reader_lock:
-        if _reader is not None and _reader_path == path:
+        signature = _database_signature(path)
+        if (
+            _reader is not None
+            and _reader_path == path
+            and _reader_signature == signature
+        ):
             return _reader
 
         if _reader is not None:
             _reader.close()
             _reader = None
             _reader_path = None
+            _reader_signature = None
 
-        reader = geoip2.database.Reader(path)
-        _reader = reader
-        _reader_path = path
-        return reader
+        for _attempt in range(2):
+            signature_before_open = _database_signature(path)
+            reader = geoip2.database.Reader(path)
+            try:
+                signature_after_open = _database_signature(path)
+            except OSError:
+                reader.close()
+                raise
+
+            if signature_before_open == signature_after_open:
+                _reader = reader
+                _reader_path = path
+                _reader_signature = signature_after_open
+                return reader
+
+            reader.close()
+
+        raise OSError("GeoIP country database changed repeatedly while opening")
 
 
 def _report_reader_error_once(error_key: str, message: str, *args: object) -> None:

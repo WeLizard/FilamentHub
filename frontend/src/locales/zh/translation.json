@@ -166,6 +166,7 @@
     "footer_terms": "服务条款",
     "footer_privacy": "隐私政策",
     "footer_consent": "数据处理",
+    "footer_geoip_attribution": "IP 地理定位：DB-IP",
     "footer_copyright": "© {{year}} FilamentHub",
     "pluginPresetsStats": "预设：{{total}}（已同步 {{synced}}）"
   },
