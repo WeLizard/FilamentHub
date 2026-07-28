@@ -168,23 +168,38 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
                     className="w-10 h-10 sm:w-12 sm:h-12 object-contain"
                   />
                 </div>
-                <div className="hidden xs:block">
-                  <h1 className="text-lg sm:text-2xl font-bold text-white">FilamentHub</h1>
-                  <p className="text-xs sm:text-sm text-gray-400 hidden sm:block">{t('layout.tagline')}</p>
+                <div className="hidden xs:block shrink-0">
+                  <h1 className="text-lg sm:text-2xl font-bold text-white whitespace-nowrap">FilamentHub</h1>
+                  <p className="text-xs sm:text-sm text-gray-400 hidden sm:block whitespace-nowrap">{t('layout.tagline')}</p>
                 </div>
               </Link>
-              
-              {/* Кнопка обратной связи - скрыта на мобильных, показывается в меню */}
-              {user && (
-                <button
-                  onClick={() => setIsFeedbackModalOpen(true)}
-                  className="hidden md:flex ml-4 px-3 py-1.5 rounded-lg bg-purple-600/20 hover:bg-purple-600/30 border border-purple-500/30 text-purple-300 hover:text-purple-200 text-xs font-medium transition-all items-center gap-1.5"
-                  title={t('layout.feedback_tooltip')}
+
+              {/* Отметка о бете видна всем, обратная связь внутри неё — вошедшим.
+                  Пояснение раскрывается поверх страницы, поэтому шапка не растёт. */}
+              <div className="ml-2 sm:ml-4 shrink-0 relative group">
+                <div className="flex items-center gap-2 rounded-lg border border-amber-400/50 bg-amber-400/15 px-2 py-1 sm:px-2.5 sm:py-1.5">
+                  <span className="rounded bg-amber-400 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-gray-900">
+                    {t('layout.beta.badge')}
+                  </span>
+                  {user && (
+                    <button
+                      onClick={() => setIsFeedbackModalOpen(true)}
+                      className="hidden md:flex items-center gap-1.5 rounded-md bg-amber-400/20 hover:bg-amber-400/30 px-2 py-1 text-xs font-medium text-amber-100 hover:text-white transition-colors"
+                    >
+                      <MessageCircle className="w-3.5 h-3.5" />
+                      <span>{t('layout.beta.action')}</span>
+                    </button>
+                  )}
+                </div>
+
+                <div
+                  role="tooltip"
+                  className="pointer-events-none absolute left-0 top-full z-[60] mt-2 w-72 origin-top -translate-y-1 scale-95 rounded-xl border border-amber-400/30 bg-gray-900/95 p-3 opacity-0 shadow-xl backdrop-blur-sm transition-all duration-150 group-hover:translate-y-0 group-hover:scale-100 group-hover:opacity-100 group-focus-within:translate-y-0 group-focus-within:scale-100 group-focus-within:opacity-100"
                 >
-                  <MessageCircle className="w-3.5 h-3.5" />
-                  <span>{t('layout.feedback_button')}</span>
-                </button>
-              )}
+                  <p className="text-sm font-semibold text-amber-200">{t('layout.beta.title')}</p>
+                  <p className="mt-1 text-xs leading-relaxed text-gray-300">{t('layout.beta.body')}</p>
+                </div>
+              </div>
             </div>
 
             {/* Desktop Navigation */}
