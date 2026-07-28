@@ -1259,7 +1259,7 @@ async def confirm_email_change(
     user.email = new_email
     user.email_verified = True
     await db.commit()
-    logger.info(f"Email changed for user id={user_id} to {new_email}")
+    logger.info("Email changed: user_id=%s", user_id)
 
     return ConfirmEmailChangeResponse()
 

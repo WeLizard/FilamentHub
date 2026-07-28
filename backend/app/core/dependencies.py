@@ -114,11 +114,11 @@ async def get_current_user_for_legal_onboarding(
     user = result.scalar_one_or_none()
 
     if user is None:
-        logger.warning("User not found for email: %s (from JWT token)", email)
+        logger.warning("Token names an account that no longer exists")
         raise_error(status.HTTP_401_UNAUTHORIZED, ERR_USER_NOT_FOUND, headers={"WWW-Authenticate": "Bearer"})
 
     if not user.active:
-        logger.warning("User account is inactive: %s (id: %d)", email, user.id)
+        logger.warning("Inactive account tried to authenticate: user_id=%d", user.id)
         raise_error(status.HTTP_403_FORBIDDEN, ERR_USER_INACTIVE)
 
     return user
