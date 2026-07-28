@@ -33,8 +33,16 @@ echo -e "${YELLOW}📦 Шаг 1: Backup базы данных...${NC}"
 
 BACKUP_DIR="${BACKUP_DIR:-$PROJECT_DIR/backups}"
 BACKUP_KEY="${BACKUP_PUBLIC_KEY:-$PROJECT_DIR/backup-key.pub.asc}"
-mkdir -p "$BACKUP_DIR"
-chmod 700 "$BACKUP_DIR"
+mkdir -p "$BACKUP_DIR" 2>/dev/null || true
+# Docker создаёт недостающую папку тома от root, поэтому она может оказаться
+# чужой. Молча продолжать нельзя — backup всё равно не запишется.
+if [ ! -w "$BACKUP_DIR" ]; then
+    echo -e "   ${RED}❌ Нет прав на запись в $BACKUP_DIR${NC}"
+    echo -e "   Выполните один раз и повторите деплой:"
+    echo -e "   ${YELLOW}sudo chown -R $(id -un):$(id -gn) \"$BACKUP_DIR\"${NC}"
+    exit 1
+fi
+chmod 700 "$BACKUP_DIR" 2>/dev/null || true
 
 if docker ps --format '{{.Names}}' | grep -q "filamenthub_postgres_prod"; then
     BACKUP_FILE="$BACKUP_DIR/backup_$(date +%Y%m%d_%H%M%S).sql"
