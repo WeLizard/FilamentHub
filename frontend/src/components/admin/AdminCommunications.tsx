@@ -83,6 +83,48 @@ const deliveryStatusIcon = (status: EmailDeliveryStatus) => {
   return Check;
 };
 
+const INBOUND_FRAME_MAX_HEIGHT = 720;
+
+const inboundFrameDocument = (html: string): string => `<!doctype html>
+<html><head><meta charset="utf-8"><base target="_blank" rel="noopener noreferrer">
+<style>
+html,body{margin:0;padding:12px;background:#fff;color:#111;
+font:14px/1.6 -apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;
+word-break:break-word;overflow-wrap:anywhere}
+img,table{max-width:100%}img{height:auto}
+blockquote{margin:8px 0;padding-left:12px;border-left:2px solid #cbd5e1;color:#475569}
+a{color:#0369a1}
+</style></head><body>${html}</body></html>`;
+
+/** A letter from a stranger is untrusted markup: it is shown inside a frame the
+ * browser refuses to run scripts in, so the mail reads as a letter without
+ * being able to touch the admin page around it. */
+export function InboundHtmlMessage({ html }: { html: string }) {
+  const frameRef = useRef<HTMLIFrameElement>(null);
+  const [height, setHeight] = useState(180);
+
+  const fitToContent = () => {
+    // Readable only because the frame keeps our origin; scripts stay blocked,
+    // which is what makes the markup harmless.
+    const body = frameRef.current?.contentDocument?.body;
+    if (body) {
+      setHeight(Math.min(body.scrollHeight + 24, INBOUND_FRAME_MAX_HEIGHT));
+    }
+  };
+
+  return (
+    <iframe
+      ref={frameRef}
+      onLoad={fitToContent}
+      sandbox="allow-same-origin allow-popups allow-popups-to-escape-sandbox"
+      srcDoc={inboundFrameDocument(html)}
+      title=""
+      className="w-full rounded-lg border border-white/10 bg-white"
+      style={{ height }}
+    />
+  );
+}
+
 function EmailComposeModal({
   onClose,
   onSent,
@@ -611,7 +653,9 @@ function AdminEmailInbox() {
                           <time>{dateFormatter.format(new Date(message.created_at))}</time>
                         </span>
                       </div>
-                      {!inbound && message.html_body ? (
+                      {inbound && message.html_body ? (
+                        <InboundHtmlMessage html={message.html_body} />
+                      ) : !inbound && message.html_body ? (
                         <div
                           className="break-words text-sm leading-6 [&_blockquote]:my-2 [&_blockquote]:border-l-2 [&_blockquote]:border-cyan-300/40 [&_blockquote]:pl-3 [&_h2]:my-2 [&_h2]:text-lg [&_h2]:font-semibold [&_h3]:my-2 [&_h3]:font-semibold [&_ol]:my-2 [&_ol]:list-decimal [&_ol]:pl-5 [&_p]:my-1.5 [&_pre]:overflow-x-auto [&_pre]:rounded-lg [&_pre]:bg-black/20 [&_pre]:p-2 [&_ul]:my-2 [&_ul]:list-disc [&_ul]:pl-5"
                           dangerouslySetInnerHTML={{ __html: message.html_body }}
