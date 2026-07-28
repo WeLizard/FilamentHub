@@ -234,7 +234,7 @@ class BundleService:
         if audit is None:
             audit = BundleImport(
                 bundle_id=bundle_id,
-                started_by_user_id=0,
+                started_by_user_id=None,
                 status=BundleImportStatus.FAILED,
             )
             self.db.add(audit)
