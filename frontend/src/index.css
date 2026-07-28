@@ -7,9 +7,6 @@ body,
 }
 
 :root {
-  /* The page is dark, so the browser must draw its own controls dark too:
-     number steppers, date pickers and autofill are otherwise painted for a
-     light page and disappear against our background. */
   color-scheme: dark;
 }
 
@@ -23,10 +20,6 @@ body {
   -moz-osx-font-smoothing: grayscale;
 }
 
-/* Chromium 121 adopted the standard scrollbar properties, and where they are
-   set they silence every ::-webkit-scrollbar rule below. Handing them only to
-   browsers without the old pseudo-elements keeps one scrollbar design instead
-   of two fighting ones. */
 @supports not selector(::-webkit-scrollbar) {
   body {
     scrollbar-color: rgba(139, 92, 246, 0.5) rgba(15, 23, 42, 0.5);
@@ -86,10 +79,11 @@ body {
   background: transparent;
 }
 
-/* Firefox */
-.custom-scrollbar {
-  scrollbar-width: thin;
-  scrollbar-color: rgba(255, 255, 255, 0.2) transparent;
+@supports not selector(::-webkit-scrollbar) {
+  .custom-scrollbar {
+    scrollbar-width: thin;
+    scrollbar-color: rgba(255, 255, 255, 0.2) transparent;
+  }
 }
 
 /* Глобальный скроллбар для всего сайта */
