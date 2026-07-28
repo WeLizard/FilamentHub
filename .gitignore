@@ -132,10 +132,6 @@ linkedin_post.txt
 *.bak
 orca-cloud-home.png
 
-# Frontend tests (local development only)
-frontend/src/tests/
-frontend/tests/
-
 # Brands folder (local data)
 brands/
 

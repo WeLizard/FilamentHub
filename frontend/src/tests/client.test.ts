@@ -1,0 +1,220 @@
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+
+const authMocks = vi.hoisted(() => ({
+  getCsrfToken: vi.fn(() => null),
+  getRefreshToken: vi.fn(() => 'refresh-token'),
+  getToken: vi.fn(() => localStorage.getItem('access_token')),
+  isCookieAuthMode: vi.fn(() => false),
+  isJwtAuthMode: vi.fn(() => true),
+  isOrcaEmbedded: vi.fn(() => false),
+  removeToken: vi.fn(() => {
+    localStorage.removeItem('access_token');
+    localStorage.removeItem('refresh_token');
+    localStorage.removeItem('user_id');
+  }),
+  setToken: vi.fn((token: string) => {
+    localStorage.setItem('access_token', token);
+  }),
+  shouldPersistTokensLocally: vi.fn(() => true),
+}));
+
+const axiosState = vi.hoisted(() => {
+  const state: {
+    requestFulfilled: ((config: any) => any) | null;
+    responseRejected: ((error: any) => Promise<any>) | null;
+    apiInstance: any;
+    create: any;
+    post: any;
+    get: any;
+  } = {
+    requestFulfilled: null,
+    responseRejected: null,
+    apiInstance: null,
+    create: vi.fn(),
+    post: vi.fn(),
+    get: vi.fn(),
+  };
+
+  const apiInstance: any = vi.fn((config: any) => Promise.resolve({ data: { ok: true }, config }));
+  apiInstance.get = vi.fn();
+  apiInstance.post = vi.fn();
+  apiInstance.patch = vi.fn();
+  apiInstance.delete = vi.fn();
+  apiInstance.interceptors = {
+    request: {
+      use: vi.fn((fulfilled: (config: any) => any) => {
+        state.requestFulfilled = fulfilled;
+        return 0;
+      }),
+    },
+    response: {
+      use: vi.fn((_: (response: any) => any, rejected: (error: any) => Promise<any>) => {
+        state.responseRejected = rejected;
+        return 0;
+      }),
+    },
+  };
+
+  state.apiInstance = apiInstance;
+  state.create.mockReturnValue(apiInstance);
+
+  return state;
+});
+
+vi.mock('../utils/auth', () => authMocks);
+
+vi.mock('axios', () => ({
+  default: {
+    create: axiosState.create,
+    post: axiosState.post,
+    get: axiosState.get,
+  },
+}));
+
+async function loadClientModule() {
+  vi.resetModules();
+  return import('../api/client');
+}
+
+describe('api/client interceptors', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    vi.clearAllMocks();
+    axiosState.requestFulfilled = null;
+    axiosState.responseRejected = null;
+
+    authMocks.getRefreshToken.mockReturnValue('refresh-token');
+    authMocks.isCookieAuthMode.mockReturnValue(false);
+    authMocks.isJwtAuthMode.mockReturnValue(true);
+    authMocks.shouldPersistTokensLocally.mockReturnValue(true);
+  });
+
+  it('adds Authorization header in request interceptor', async () => {
+    localStorage.setItem('access_token', 'access-123');
+    await loadClientModule();
+
+    const requestInterceptor = axiosState.requestFulfilled;
+    expect(requestInterceptor).toBeTypeOf('function');
+
+    const config = { headers: {}, method: 'get' };
+    const updatedConfig = requestInterceptor!(config);
+
+    expect(updatedConfig.headers.Authorization).toBe('Bearer access-123');
+  });
+
+  it('triggers refresh flow on 401 response', async () => {
+    localStorage.setItem('access_token', 'expired-token');
+    localStorage.setItem('refresh_token', 'refresh-token');
+
+    await loadClientModule();
+
+    axiosState.post.mockResolvedValueOnce({
+      data: { access_token: 'new-token' },
+    });
+
+    const responseRejected = axiosState.responseRejected;
+    expect(responseRejected).toBeTypeOf('function');
+
+    await responseRejected!({
+      response: { status: 401 },
+      config: { url: '/protected', method: 'get', headers: {} },
+    });
+
+    expect(axiosState.post).toHaveBeenCalledWith(
+      '/api/v1/auth/refresh',
+      { refresh_token: 'refresh-token' },
+      expect.objectContaining({ withCredentials: false })
+    );
+  });
+
+  it('retries original request after successful refresh', async () => {
+    localStorage.setItem('access_token', 'expired-token');
+    localStorage.setItem('refresh_token', 'refresh-token');
+
+    await loadClientModule();
+
+    axiosState.post.mockResolvedValueOnce({
+      data: { access_token: 'new-token' },
+    });
+    axiosState.apiInstance.mockResolvedValueOnce({ data: { retried: true } });
+
+    const originalRequest: { url: string; method: string; headers: Record<string, string> } = {
+      url: '/protected',
+      method: 'get',
+      headers: {},
+    };
+    const responseRejected = axiosState.responseRejected;
+
+    const result = await responseRejected!({
+      response: { status: 401 },
+      config: originalRequest,
+    });
+
+    expect(localStorage.getItem('access_token')).toBe('new-token');
+    expect(originalRequest.headers.Authorization).toBe('Bearer new-token');
+    expect(axiosState.apiInstance).toHaveBeenCalledWith(originalRequest);
+    expect(result).toEqual({ data: { retried: true } });
+  });
+
+  it('calls logout logic when refresh fails', async () => {
+    localStorage.setItem('access_token', 'expired-token');
+    localStorage.setItem('refresh_token', 'refresh-token');
+
+    await loadClientModule();
+
+    axiosState.post.mockRejectedValueOnce(new Error('refresh failed'));
+
+    const responseRejected = axiosState.responseRejected;
+
+    await expect(
+      responseRejected!({
+        response: { status: 401 },
+        config: { url: '/protected', method: 'get', headers: {} },
+      })
+    ).rejects.toThrow('refresh failed');
+
+    expect(authMocks.removeToken).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('admin email uploads', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    vi.clearAllMocks();
+  });
+
+  it('sends a new letter as multipart so the files survive', async () => {
+    const { adminCommunicationsAPI } = await loadClientModule();
+    axiosState.apiInstance.post.mockResolvedValueOnce({ data: {} });
+
+    await adminCommunicationsAPI.createEmailThread({
+      to: 'team@example.com',
+      subject: 'Subject',
+      body: 'Body',
+      sender_profile: 'support',
+      idempotency_key: 'email.create.1',
+      attachments: [new File(['<html></html>'], 'application.html', { type: 'text/html' })],
+    });
+
+    const [, payload, config] = axiosState.apiInstance.post.mock.calls[0];
+    expect(payload).toBeInstanceOf(FormData);
+    expect((payload as FormData).getAll('attachments')).toHaveLength(1);
+    expect(config.headers['Content-Type']).toBe('multipart/form-data');
+  });
+
+  it('sends a reply as multipart so the files survive', async () => {
+    const { adminCommunicationsAPI } = await loadClientModule();
+    axiosState.apiInstance.post.mockResolvedValueOnce({ data: {} });
+
+    await adminCommunicationsAPI.replyToEmailThread(7, {
+      body: 'Body',
+      idempotency_key: 'email.reply.1',
+      attachments: [new File(['<html></html>'], 'application.html', { type: 'text/html' })],
+    });
+
+    const [, payload, config] = axiosState.apiInstance.post.mock.calls[0];
+    expect(payload).toBeInstanceOf(FormData);
+    expect((payload as FormData).getAll('attachments')).toHaveLength(1);
+    expect(config.headers['Content-Type']).toBe('multipart/form-data');
+  });
+});
