@@ -1,5 +1,6 @@
 """CRM-lite endpoints: customers, versioned quotes, and production orders."""
 
+import json
 import uuid as uuid_mod
 from datetime import datetime, timedelta, timezone
 from decimal import ROUND_HALF_UP, Decimal
@@ -115,6 +116,22 @@ def _plain_customer(customer: CrmCustomer) -> dict:
     }
 
 
+def _seal_snapshot(value: dict | None) -> str | dict:
+    if not value:
+        return {}
+    return encrypt_field(json.dumps(value, ensure_ascii=False))
+
+
+def _open_snapshot(value) -> dict:
+    if isinstance(value, str):
+        opened = decrypt_field(value)
+        try:
+            return json.loads(opened)
+        except (TypeError, ValueError):
+            return {}
+    return dict(value or {})
+
+
 def _customer_snapshot(customer: CrmCustomer | None) -> dict:
     if customer is None:
         return {}
@@ -179,15 +196,15 @@ def _serialize_version(version: CrmQuoteVersion) -> CrmQuoteVersionResponse:
         version_number=version.version_number,
         source_history_id=version.source_history_id,
         shared_quote_id=version.shared_quote_id,
-        seller_snapshot=dict(version.seller_snapshot or {}),
-        customer_snapshot=dict(version.customer_snapshot or {}),
+        seller_snapshot=_open_snapshot(version.seller_snapshot),
+        customer_snapshot=_open_snapshot(version.customer_snapshot),
         calculation_snapshot=version.calculation_snapshot,
         payment_terms=version.payment_terms,
         disclaimer_mode=version.disclaimer_mode,
         subtotal=float(version.subtotal),
         tax_total=float(version.tax_total),
         grand_total=float(version.grand_total),
-        html_content=version.html_content,
+        html_content=decrypt_field(version.html_content),
         lines=[_serialize_line(line) for line in version.lines],
         created_at=version.created_at,
     )
@@ -327,15 +344,15 @@ async def _add_version(
         quote_id=quote.id,
         version_number=version_number,
         source_history_id=payload.source_history_id,
-        seller_snapshot=payload.seller_snapshot,
-        customer_snapshot=payload.customer_snapshot,
+        seller_snapshot=_seal_snapshot(payload.seller_snapshot),
+        customer_snapshot=_seal_snapshot(payload.customer_snapshot),
         calculation_snapshot=payload.calculation_snapshot,
         payment_terms=payload.payment_terms,
         disclaimer_mode=payload.disclaimer_mode,
         subtotal=subtotal,
         tax_total=tax_total,
         grand_total=_money(subtotal + tax_total),
-        html_content=payload.html_content,
+        html_content=encrypt_field(payload.html_content) if payload.html_content else None,
     )
     db.add(version)
     await db.flush()

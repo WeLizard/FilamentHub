@@ -4,6 +4,7 @@ import pytest
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.field_encryption import decrypt_field
 from app.models.shared_quote import SharedQuote
 from app.services import subscription_service
 
@@ -78,8 +79,9 @@ async def test_quote_acceptance_creates_order_and_preserves_version(
         select(SharedQuote).where(SharedQuote.uuid == share_response.json()["uuid"])
     )
     assert shared is not None
-    assert quote["number"] in shared.html_content
-    assert "{{CRM_QUOTE_NUMBER}}" not in shared.html_content
+    published = decrypt_field(shared.html_content)
+    assert quote["number"] in published
+    assert "{{CRM_QUOTE_NUMBER}}" not in published
 
     accepted_response = await auth_client.post(
         f"/api/v1/crm/quotes/{quote_id}/status", json={"status": "accepted"}
@@ -217,3 +219,38 @@ async def test_customer_search_still_finds_what_the_database_cannot_read(
     assert [item["name"] for item in by_phone.json()["items"]] == ["ООО «Ромашка»"]
     assert missing.json()["items"] == []
     assert missing.json()["total"] == 0
+
+
+@pytest.mark.asyncio
+async def test_every_copy_of_the_document_is_sealed_at_rest(
+    auth_client, db_session: AsyncSession
+):
+    """The customer book was only one copy: versions and shared pages hold more."""
+    from app.models.crm import CrmQuoteVersion
+    from app.models.shared_quote import SharedQuote
+
+    await subscription_service.set_paywall_enforced(db_session, False)
+
+    created = await auth_client.post("/api/v1/crm/quotes", json=quote_payload())
+    assert created.status_code == 201
+    quote_id = created.json()["id"]
+
+    shared = await auth_client.post(f"/api/v1/crm/quotes/{quote_id}/share")
+    assert shared.status_code in (200, 201)
+
+    version = (
+        await db_session.execute(select(CrmQuoteVersion))
+    ).scalars().first()
+    assert isinstance(version.customer_snapshot, str)
+    assert version.customer_snapshot.startswith("fh1:")
+    assert isinstance(version.seller_snapshot, str)
+    assert version.seller_snapshot.startswith("fh1:")
+    assert version.html_content.startswith("fh1:")
+    assert "Тестовая мастерская" not in version.html_content
+
+    page = (await db_session.execute(select(SharedQuote))).scalars().first()
+    if page is not None:
+        assert page.html_content.startswith("fh1:")
+
+    readable = await auth_client.get(f"/api/v1/crm/quotes/{quote_id}")
+    assert readable.status_code == 200

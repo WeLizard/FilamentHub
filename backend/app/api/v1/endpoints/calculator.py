@@ -790,7 +790,7 @@ async def create_shared_quote(
     quote = SharedQuote(
         user_id=current_user.id,
         title=data.title[:255] if data.title else "",
-        html_content=data.html_content,
+        html_content=encrypt_field(data.html_content),
         expires_at=expires_at,
     )
     db.add(quote)
@@ -819,7 +819,7 @@ async def get_shared_quote(
         raise_error(status.HTTP_410_GONE, ERR_SHARED_QUOTE_EXPIRED)
 
     return HTMLResponse(
-        content=quote.html_content,
+        content=decrypt_field(quote.html_content),
         headers={
             "Content-Security-Policy": _SHARED_QUOTE_CSP,
             "X-Content-Type-Options": "nosniff",
