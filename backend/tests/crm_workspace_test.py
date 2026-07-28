@@ -162,3 +162,58 @@ async def test_invalid_quote_transition_is_rejected(
 
     assert response.status_code == 409
     assert response.json()["detail"]["code"] == "ERR_CRM_INVALID_STATUS_TRANSITION"
+
+
+@pytest.mark.asyncio
+async def test_customer_details_are_unreadable_in_the_database(
+    auth_client, db_session: AsyncSession
+):
+    """A leaked dump must not hand over the contacts a person keeps here."""
+    from app.models.crm import CrmCustomer
+
+    await subscription_service.set_paywall_enforced(db_session, False)
+
+    created = await auth_client.post(
+        "/api/v1/crm/customers",
+        json={
+            "name": "ООО «Ромашка»",
+            "contact_name": "Иван Петров",
+            "email": "ivan@romashka.example",
+            "phone": "+7 900 000-00-00",
+            "inn": "7701234567",
+            "address": "Москва, ул. Ленина, 1",
+        },
+    )
+    assert created.status_code == 201
+    body = created.json()
+    assert body["name"] == "ООО «Ромашка»"
+    assert body["phone"] == "+7 900 000-00-00"
+
+    stored = (await db_session.execute(select(CrmCustomer))).scalars().one()
+    for column in ("name", "contact_name", "email", "phone", "inn", "address"):
+        raw = getattr(stored, column)
+        assert raw.startswith("fh1:"), column
+    assert "Ромашка" not in stored.name
+    assert "7701234567" not in stored.inn
+
+
+@pytest.mark.asyncio
+async def test_customer_search_still_finds_what_the_database_cannot_read(
+    auth_client, db_session: AsyncSession
+):
+    await subscription_service.set_paywall_enforced(db_session, False)
+
+    await auth_client.post(
+        "/api/v1/crm/customers",
+        json={"name": "ООО «Ромашка»", "phone": "+7 900 111-22-33"},
+    )
+    await auth_client.post("/api/v1/crm/customers", json={"name": "ЗАО «Василёк»"})
+
+    by_name = await auth_client.get("/api/v1/crm/customers", params={"search": "ромашка"})
+    by_phone = await auth_client.get("/api/v1/crm/customers", params={"search": "111-22"})
+    missing = await auth_client.get("/api/v1/crm/customers", params={"search": "берёза"})
+
+    assert [item["name"] for item in by_name.json()["items"]] == ["ООО «Ромашка»"]
+    assert [item["name"] for item in by_phone.json()["items"]] == ["ООО «Ромашка»"]
+    assert missing.json()["items"] == []
+    assert missing.json()["total"] == 0

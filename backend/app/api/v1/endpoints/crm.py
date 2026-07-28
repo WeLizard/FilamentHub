@@ -6,6 +6,7 @@ from decimal import ROUND_HALF_UP, Decimal
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Query, status
+from sqlalchemy import false as sa_false
 from sqlalchemy import func, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -23,6 +24,7 @@ from app.core.errors import (
     ERR_CRM_QUOTE_NUMBER_EXISTS,
     raise_error,
 )
+from app.core.field_encryption import decrypt_field, encrypt_field
 from app.db.session import get_db
 from app.models.calculator_history_entry import CalculatorHistoryEntry
 from app.models.calculator_profile import UserCalculatorProfile
@@ -88,22 +90,71 @@ def _money(value: float | Decimal) -> Decimal:
     return Decimal(str(value)).quantize(MONEY_STEP, rounding=ROUND_HALF_UP)
 
 
-def _customer_snapshot(customer: CrmCustomer | None) -> dict:
-    if customer is None:
-        return {}
+ENCRYPTED_CUSTOMER_FIELDS = (
+    "name",
+    "contact_name",
+    "email",
+    "phone",
+    "inn",
+    "address",
+    "note",
+)
+
+
+def _apply_customer_fields(customer: CrmCustomer, values: dict) -> None:
+    for field_name, value in values.items():
+        if field_name in ENCRYPTED_CUSTOMER_FIELDS and isinstance(value, str):
+            value = encrypt_field(value)
+        setattr(customer, field_name, value)
+
+
+def _plain_customer(customer: CrmCustomer) -> dict:
     return {
-        "id": customer.id,
-        "name": customer.name,
-        "contact_name": customer.contact_name,
-        "email": customer.email,
-        "phone": customer.phone,
-        "inn": customer.inn,
-        "address": customer.address,
+        field_name: decrypt_field(getattr(customer, field_name))
+        for field_name in ENCRYPTED_CUSTOMER_FIELDS
     }
 
 
+def _customer_snapshot(customer: CrmCustomer | None) -> dict:
+    if customer is None:
+        return {}
+    plain = _plain_customer(customer)
+    return {
+        "id": customer.id,
+        "name": plain["name"],
+        "contact_name": plain["contact_name"],
+        "email": plain["email"],
+        "phone": plain["phone"],
+        "inn": plain["inn"],
+        "address": plain["address"],
+    }
+
+
+def _customer_response(customer: CrmCustomer) -> CrmCustomerResponse:
+    response = CrmCustomerResponse.model_validate(customer)
+    return response.model_copy(update=_plain_customer(customer))
+
+
+async def _matching_customer_ids(
+    db: AsyncSession, user_id: int, search: str
+) -> list[int]:
+    """Find customers by a search term the database can no longer read."""
+    needle = search.strip().casefold()
+    rows = (
+        await db.execute(select(CrmCustomer).where(CrmCustomer.user_id == user_id))
+    ).scalars().all()
+    return [
+        row.id
+        for row in rows
+        if any(
+            needle in (value or "").casefold()
+            for value in _plain_customer(row).values()
+        )
+    ]
+
+
 def _serialize_customer(customer: CrmCustomer | None) -> CrmCustomerResponse | None:
-    return CrmCustomerResponse.model_validate(customer) if customer is not None else None
+    return _customer_response(customer) if customer is not None else None
 
 
 def _serialize_line(line: CrmQuoteLine):
@@ -393,16 +444,8 @@ async def list_customers(
     if not include_archived:
         filters.append(CrmCustomer.archived.is_(False))
     if search and search.strip():
-        pattern = f"%{search.strip()}%"
-        filters.append(
-            or_(
-                CrmCustomer.name.ilike(pattern),
-                CrmCustomer.contact_name.ilike(pattern),
-                CrmCustomer.email.ilike(pattern),
-                CrmCustomer.phone.ilike(pattern),
-                CrmCustomer.inn.ilike(pattern),
-            )
-        )
+        matched = await _matching_customer_ids(db, current_user.id, search)
+        filters.append(CrmCustomer.id.in_(matched) if matched else sa_false())
     total = await db.scalar(select(func.count()).select_from(CrmCustomer).where(*filters)) or 0
     customers = (
         await db.execute(
@@ -414,7 +457,7 @@ async def list_customers(
         )
     ).scalars().all()
     return CrmCustomerListResponse(
-        items=[CrmCustomerResponse.model_validate(customer) for customer in customers], total=total
+        items=[_customer_response(customer) for customer in customers], total=total
     )
 
 
@@ -424,11 +467,12 @@ async def create_customer(
     current_user: Annotated[User, Depends(require_calculator_access)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> CrmCustomerResponse:
-    customer = CrmCustomer(user_id=current_user.id, **payload.model_dump(mode="json"))
+    customer = CrmCustomer(user_id=current_user.id)
+    _apply_customer_fields(customer, payload.model_dump(mode="json"))
     db.add(customer)
     await db.commit()
     await db.refresh(customer)
-    return CrmCustomerResponse.model_validate(customer)
+    return _customer_response(customer)
 
 
 @router.patch("/customers/{customer_id}", response_model=CrmCustomerResponse)
@@ -439,11 +483,10 @@ async def update_customer(
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> CrmCustomerResponse:
     customer = await _load_customer(db, current_user.id, customer_id)
-    for field_name, value in payload.model_dump(exclude_unset=True, mode="json").items():
-        setattr(customer, field_name, value)
+    _apply_customer_fields(customer, payload.model_dump(exclude_unset=True, mode="json"))
     await db.commit()
     await db.refresh(customer)
-    return CrmCustomerResponse.model_validate(customer)
+    return _customer_response(customer)
 
 
 @router.get("/quotes", response_model=CrmQuoteListResponse)
@@ -462,10 +505,11 @@ async def list_quotes(
     count_query = select(func.count(CrmQuote.id)).outerjoin(CrmCustomer).where(*filters)
     if search and search.strip():
         pattern = f"%{search.strip()}%"
+        matched = await _matching_customer_ids(db, current_user.id, search)
         search_filter = or_(
             CrmQuote.number.ilike(pattern),
             CrmQuote.title.ilike(pattern),
-            CrmCustomer.name.ilike(pattern),
+            CrmQuote.customer_id.in_(matched) if matched else sa_false(),
         )
         query = query.where(search_filter)
         count_query = count_query.where(search_filter)
