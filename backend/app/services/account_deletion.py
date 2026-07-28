@@ -1,6 +1,6 @@
 """Сервис для удаления аккаунта пользователя с обработкой связанных данных."""
 
-from sqlalchemy import and_, func, select
+from sqlalchemy import and_, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -13,6 +13,8 @@ from app.models.brand import Brand
 from app.models.brand_request import BrandRequest, BrandRequestStatus
 from app.models.calculator_history_entry import CalculatorHistoryEntry
 from app.models.crm import CrmCustomer, CrmQuote
+from app.models.email_communication import EmailThread
+from app.models.feedback import Feedback
 from app.models.filament_review import FilamentReview
 from app.models.orca_slice_report import OrcaSliceReport
 from app.models.organization import Organization, OrganizationMemberRole, OrganizationMembership
@@ -330,6 +332,22 @@ async def delete_user_account(
     user.brand_id = None
     if user.role == UserRole.BRAND:
         user.role = UserRole.USER
+
+    threads = (
+        await db.scalars(
+            select(EmailThread).where(
+                func.lower(EmailThread.participant_email) == user.email.lower()
+            )
+        )
+    ).all()
+    for thread in threads:
+        await db.delete(thread)
+
+    await db.execute(
+        update(Feedback)
+        .where(func.lower(Feedback.email) == user.email.lower())
+        .values(email=None)
+    )
 
     await db.delete(user)
 

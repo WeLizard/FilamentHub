@@ -183,3 +183,59 @@ async def test_a_kept_review_stays_readable_without_its_author(
     assert kept.user_id is None
     assert kept.active is True
     assert kept.comment == "Печатается отлично"
+
+
+@pytest.mark.asyncio
+async def test_support_correspondence_leaves_with_the_account(db_session: AsyncSession):
+    """Threads are keyed by address, so no cascade reaches them."""
+    from app.models.email_communication import EmailMessage, EmailThread
+    from app.models.feedback import Feedback, FeedbackType
+    from app.services.account_deletion import delete_user_account
+
+    user = await _user(
+        db_session,
+        "writes@example.com",
+        terms_version_accepted=CURRENT_TERMS_VERSION,
+        personal_data_consent_version=CURRENT_PERSONAL_DATA_CONSENT_VERSION,
+    )
+    thread = EmailThread(
+        participant_email="Writes@Example.com",
+        subject="Не печатается PETG",
+        status="open",
+    )
+    other = EmailThread(
+        participant_email="someone-else@example.com", subject="Другое", status="open"
+    )
+    db_session.add_all([thread, other])
+    await db_session.flush()
+    db_session.add(
+        EmailMessage(
+            thread_id=thread.id,
+            direction="inbound",
+            sender_email="writes@example.com",
+            recipient_emails=["support@filamenthub.ru"],
+            subject="Не печатается PETG",
+            text_body="Помогите",
+        )
+    )
+    anonymous = Feedback(
+        type=FeedbackType.BUG,
+        subject="Кнопка не нажимается",
+        message="Ничего не происходит",
+        email="writes@example.com",
+    )
+    db_session.add(anonymous)
+    await db_session.commit()
+    thread_id, other_id, feedback_id = thread.id, other.id, anonymous.id
+
+    await delete_user_account(
+        user=user, delete_reviews=False, release_brand_representation=False, db=db_session
+    )
+
+    assert await db_session.get(EmailThread, thread_id) is None
+    assert await db_session.get(EmailThread, other_id) is not None
+
+    kept = await db_session.get(Feedback, feedback_id)
+    assert kept is not None
+    assert kept.email is None
+    assert kept.message == "Ничего не происходит"
