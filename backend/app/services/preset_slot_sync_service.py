@@ -99,17 +99,9 @@ async def require_device(
 async def claim_printer_hostname(
     db: AsyncSession, device: UserPrinterDevice, hostname: str
 ) -> None:
-    """Give a hostname to one device and take it from any other.
-
-    One machine answers at one hostname. Two cards holding the same one send
-    the printer's own reports to whichever was found first, which is the whole
-    reason reports stopped being routed by name.
-    """
+    """Give a hostname to one device and take it from any other."""
     if device.printer_hostname == hostname:
         return
-    # Two printers of the same person can report in the same instant, so the
-    # holders are locked before being read. The unique constraint behind this
-    # is the backstop, not the plan.
     previous = (
         await db.execute(
             select(UserPrinterDevice)
@@ -128,8 +120,6 @@ async def claim_printer_hostname(
             "Printer hostname moved from device id=%s to id=%s", other.id, device.id
         )
     if previous:
-        # The name has to be free before it is taken, or the constraint fires
-        # on the order the flush happens to pick.
         await db.flush()
     device.printer_hostname = hostname
 

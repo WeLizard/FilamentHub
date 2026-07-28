@@ -17,7 +17,6 @@ interface DeleteAccountModalProps {
   onClose: () => void;
 }
 
-/** Presets and reviews outlive the account; everything here leaves with it. */
 const LIBRARY_ROWS = [
   { key: 'spools_count', label: 'deleteAccount.spoolsCount' },
   { key: 'printers_count', label: 'deleteAccount.printersCount' },

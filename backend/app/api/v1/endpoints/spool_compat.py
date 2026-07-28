@@ -587,9 +587,6 @@ async def _apply_location_assignment(
     if gate_index > MAX_GATE_INDEX:
         return False, f"Gate index above {MAX_GATE_INDEX} is not supported."
 
-    # The key names the machine. The hint in the location string is the printer
-    # naming itself, and a stock Voron calls itself "voron" like every other
-    # one, so it can describe the device that authenticated but never choose it.
     device = device_from_key
     if device is None:
         return False, "This endpoint requires the printer's own API key."

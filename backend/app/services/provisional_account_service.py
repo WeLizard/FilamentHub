@@ -17,16 +17,7 @@ _SWEEP_BATCH = 100
 
 
 async def sweep_abandoned_provisional_accounts(db: AsyncSession) -> int:
-    """Delete sign-ins nobody came back to finish.
-
-    Someone can start a provider sign-in, get distracted before accepting the
-    documents and return the next day, so the record waits. Waiting forever is
-    a different thing, and the account holds an address given for a login that
-    never completed.
-
-    Only accounts marked at creation are visible here: everything that predates
-    the legal gate carries no mark and is out of reach by construction.
-    """
+    """Delete sign-ins nobody came back to finish."""
     cutoff = datetime.now(timezone.utc) - timedelta(days=PROVISIONAL_ACCOUNT_TTL_DAYS)
     abandoned = (
         await db.scalars(

@@ -92,9 +92,6 @@ class User(Base):
     privacy_policy_version_presented: Mapped[str | None] = mapped_column(
         String(32), nullable=True
     )
-    # Set when a provider sign-in creates the account and cleared on the first
-    # acceptance. Accounts that predate the legal gate keep it empty, so the
-    # sweep can never reach them.
     provisional_since: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
