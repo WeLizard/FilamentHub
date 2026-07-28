@@ -399,3 +399,74 @@ async def test_brand_invite_unknown_token(admin_client: AsyncClient):
     resp = await admin_client.get("/api/v1/brand-invites/nope-nope-nope")
     assert resp.status_code == 200
     assert resp.json()["valid"] is False
+
+
+async def _make_user(db: AsyncSession, email: str, username: str):
+    from app.models.user import User
+    from app.services.legal_acceptance_service import (
+        CURRENT_PERSONAL_DATA_CONSENT_VERSION,
+        CURRENT_TERMS_VERSION,
+    )
+
+    user = User(
+        email=email,
+        username=username,
+        password_hash="$2b$12$test",
+        active=True,
+        terms_version_accepted=CURRENT_TERMS_VERSION,
+        personal_data_consent_version=CURRENT_PERSONAL_DATA_CONSENT_VERSION,
+    )
+    db.add(user)
+    await db.commit()
+    return user
+
+
+@pytest.mark.asyncio
+async def test_public_domain_invite_requires_the_exact_address(
+    admin_client: AsyncClient, db_session: AsyncSession
+):
+    """On a public mail host the domain proves nothing, so only the invited
+    address may accept — otherwise anyone holding the link takes the brand."""
+    created = await admin_client.post(
+        "/api/v1/admin/brand-invites",
+        json={"email": "invited@gmail.com", "brand_name": "Public Domain Brand"},
+    )
+    assert created.status_code == 201
+
+    await _make_user(db_session, "bystander@gmail.com", "bystander")
+    admin_client.headers["Authorization"] = (
+        f"Bearer {create_access_token({'sub': 'bystander@gmail.com'})}"
+    )
+
+    accepted = await admin_client.post(
+        f"/api/v1/brand-invites/{created.json()['token']}/accept", json={}
+    )
+
+    assert accepted.status_code == 403
+    assert accepted.json()["detail"]["code"] == "ERR_BRAND_INVITE_EMAIL_MISMATCH"
+
+
+@pytest.mark.asyncio
+async def test_corporate_domain_invite_still_accepts_a_colleague(
+    admin_client: AsyncClient, db_session: AsyncSession, monkeypatch
+):
+    """A colleague on the company domain must keep working: that is the point
+    of matching by domain, and the public-host rule must not break it."""
+    monkeypatch.setattr(qr_service, "save_qr_code_image", lambda *args, **kwargs: [])
+    created = await admin_client.post(
+        "/api/v1/admin/brand-invites",
+        json={"email": "sales@corporate.example", "brand_name": "Corporate Brand"},
+    )
+    assert created.status_code == 201
+
+    await _make_user(db_session, "ivan@corporate.example", "ivancorp")
+    admin_client.headers["Authorization"] = (
+        f"Bearer {create_access_token({'sub': 'ivan@corporate.example'})}"
+    )
+
+    accepted = await admin_client.post(
+        f"/api/v1/brand-invites/{created.json()['token']}/accept", json={}
+    )
+
+    assert accepted.status_code == 200
+    assert accepted.json()["brand_name"] == "Corporate Brand"

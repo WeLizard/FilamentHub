@@ -57,7 +57,7 @@ from app.schemas.brand_invite import (
 )
 from app.services.brand_slug_service import suggest_brand_slug
 from app.services.email_service import send_brand_invite_email, send_brand_team_invite_email
-from app.services.email_validator import validate_email_domain
+from app.services.email_validator import is_personal_email, validate_email_domain
 from app.services.qr_service import backfill_brand_qr_codes
 from app.services.slug_service import generate_unique_slug
 
@@ -459,9 +459,13 @@ async def accept_brand_invite(
         raise_error(400, ERR_BRAND_INVITE_INVALID)
     if not _is_active(invite):
         raise_error(400, ERR_BRAND_INVITE_INVALID)
+    # A colleague on the same corporate domain may take a representative invite —
+    # that is the point of matching by domain. On a public mail host the domain
+    # says nothing about the company, so there the address must match exactly.
+    requires_exact_address = invite.purpose == "team" or is_personal_email(invite.email)
     email_matches = (
         secrets.compare_digest(current_user.email.strip().casefold(), invite.email)
-        if invite.purpose == "team"
+        if requires_exact_address
         else secrets.compare_digest(
             _email_domain(current_user.email),
             _email_domain(invite.email),
