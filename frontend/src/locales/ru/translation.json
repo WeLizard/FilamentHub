@@ -4625,6 +4625,49 @@
     "syncActive7d": "активных за 7 дней: {{count}}",
     "notificationsSection": "Уведомления",
     "unreadNotifications": "Непрочитанных",
+    "calculator": {
+      "title": "Калькулятор",
+      "estimates24h": "расчётов за сутки",
+      "estimates7d": "расчётов за неделю",
+      "estimates30d": "расчётов за месяц",
+      "users7d": "считали за неделю",
+      "users30d": "за месяц: {{count}}",
+      "countersUnavailable": "Счётчики расчётов недоступны — нет связи с Redis. Показаны только сохранённые данные.",
+      "profiles": "заполнено ставок",
+      "saved": "сохранённых расчётов",
+      "savedDetail": "за месяц: {{month}}, людей: {{people}}",
+      "quotes": "коммерческих предложений",
+      "quotes30d": "за месяц: {{count}}",
+      "methods": "Способ расчёта за месяц",
+      "method": {
+        "by_weight": "по весу",
+        "by_time": "по времени",
+        "combined": "комбинированный"
+      }
+    },
+    "feed": {
+      "title": "Системы подачи",
+      "total": "систем подачи",
+      "active": "активных: {{count}}",
+      "printers": "принтеров с системой",
+      "slots": "ячеек",
+      "happyHare": "устройств с Happy Hare",
+      "reportingFeed": "присылают состояние: {{count}}",
+      "seen7d": "на связи за неделю",
+      "seen30d": "за месяц: {{count}}",
+      "byKind": "По типу",
+      "byProvider": "По источнику",
+      "kind": {
+        "mmu": "MMU",
+        "ams": "AMS",
+        "direct_feed": "прямая подача"
+      },
+      "provider": {
+        "happy_hare": "Happy Hare",
+        "legacy": "старый протокол",
+        "manual": "вручную"
+      }
+    },
     "seo": {
       "title": "SEO-инструменты",
       "yandexWebmaster": "Яндекс.Вебмастер",

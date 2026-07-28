@@ -1665,6 +1665,21 @@ export const adminAPI = {
       gate_slots: number; gate_slots_assigned: number;
       sync_devices: number; sync_devices_active_7d: number;
     };
+    calculator: {
+      available: boolean;
+      estimates_24h?: number; estimates_7d?: number; estimates_30d?: number;
+      users_24h?: number; users_7d?: number; users_30d?: number;
+      methods_30d?: Record<string, number>;
+      profiles: number; saved_total: number; saved_30d: number; saved_by_users: number;
+      quotes: number; quotes_30d: number;
+    };
+    feed_systems: {
+      total: number; active: number;
+      by_kind: Record<string, number>; by_provider: Record<string, number>;
+      slots: number; printers_with_system: number;
+      devices_happy_hare: number; devices_reporting_feed: number;
+      devices_seen_7d: number; devices_seen_30d: number;
+    };
     notifications: { unread: number };
   }> => {
     const response = await api.get('/admin/stats', refresh ? { params: { refresh: true } } : undefined);

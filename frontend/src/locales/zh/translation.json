@@ -4483,6 +4483,49 @@
     "syncActive7d": "活跃（7天）：{{count}}",
     "notificationsSection": "通知",
     "unreadNotifications": "未读",
+    "calculator": {
+      "title": "计算器",
+      "estimates24h": "24 小时内计算次数",
+      "estimates7d": "7 天内计算次数",
+      "estimates30d": "30 天内计算次数",
+      "users7d": "7 天内使用人数",
+      "users30d": "30 天内：{{count}}",
+      "countersUnavailable": "无法获取计算次数——未连接到 Redis。仅显示已保存的数据。",
+      "profiles": "已填写费率",
+      "saved": "已保存的计算",
+      "savedDetail": "30 天内：{{month}}，人数：{{people}}",
+      "quotes": "报价单",
+      "quotes30d": "30 天内：{{count}}",
+      "methods": "30 天内的计价方式",
+      "method": {
+        "by_weight": "按重量",
+        "by_time": "按时间",
+        "combined": "综合"
+      }
+    },
+    "feed": {
+      "title": "供料系统",
+      "total": "供料系统",
+      "active": "启用：{{count}}",
+      "printers": "已配置系统的打印机",
+      "slots": "料槽",
+      "happyHare": "支持 Happy Hare 的设备",
+      "reportingFeed": "上报状态：{{count}}",
+      "seen7d": "7 天内在线",
+      "seen30d": "30 天内：{{count}}",
+      "byKind": "按类型",
+      "byProvider": "按来源",
+      "kind": {
+        "mmu": "MMU",
+        "ams": "AMS",
+        "direct_feed": "直接供料"
+      },
+      "provider": {
+        "happy_hare": "Happy Hare",
+        "legacy": "旧协议",
+        "manual": "手动"
+      }
+    },
     "seo": {
       "title": "SEO工具",
       "yandexWebmaster": "Yandex网站管理员",

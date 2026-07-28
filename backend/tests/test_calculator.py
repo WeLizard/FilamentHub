@@ -363,3 +363,38 @@ async def test_calculator_estimate_open_when_paywall_off(auth_client: AsyncClien
     response = await auth_client.post("/api/v1/calculator/estimate", json=_ACCESS_REQUEST)
     assert response.status_code == 200
 
+
+
+@pytest.mark.asyncio
+async def test_rejected_estimate_is_not_counted_as_usage(
+    admin_client: AsyncClient, monkeypatch
+):
+    """A request that fails validation is not a calculation, so it must leave the
+    usage counters alone — otherwise the dashboard reports work nobody did."""
+    recorded: list[tuple[int, str]] = []
+
+    async def fake_record(user_id: int, pricing_method: str) -> None:
+        recorded.append((user_id, pricing_method))
+
+    monkeypatch.setattr(
+        "app.api.v1.endpoints.calculator.record_calculator_estimate", fake_record
+    )
+
+    rejected = await admin_client.post(
+        "/api/v1/calculator/estimate",
+        json={"pricing_method": "by_time", "time_hours": 2},
+    )
+    assert rejected.status_code == 400
+    assert recorded == []
+
+    accepted = await admin_client.post(
+        "/api/v1/calculator/estimate",
+        json={
+            "pricing_method": "by_weight",
+            "weight_g": 100,
+            "spool_price": 1500,
+            "spool_weight_kg": 1,
+        },
+    )
+    assert accepted.status_code == 200
+    assert [method for _, method in recorded] == ["by_weight"]

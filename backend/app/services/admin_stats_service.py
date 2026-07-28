@@ -21,8 +21,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.models.brand import Brand
+from app.models.calculator_history_entry import CalculatorHistoryEntry
+from app.models.calculator_profile import UserCalculatorProfile
+from app.models.crm import CrmQuote
 from app.models.filament import Filament
 from app.models.filament_review import FilamentReview
+from app.models.material_system import MaterialSlot, MaterialSystem
 from app.models.notification import Notification
 from app.models.preset import Preset, PresetModerationStatus
 from app.models.preset_gate_state import PresetGateState
@@ -33,6 +37,8 @@ from app.models.user import User, UserRole
 from app.models.user_printer_device import UserPrinterDevice
 from app.models.user_spool import UserSpool
 from app.models.wiki_article import WikiArticle
+from app.schemas.calculator import PricingMethod
+from app.services.usage_metrics_service import calculator_usage
 
 logger = logging.getLogger(__name__)
 
@@ -41,6 +47,8 @@ STATS_CACHE_TTL = 120  # seconds — a dashboard does not need per-second accura
 # Below this row count an exact COUNT is instant, so use it and stay correct;
 # only above it is the (analyze-dependent) estimate worth trusting over a scan.
 ESTIMATE_TRUST_THRESHOLD = 50_000
+
+PRICING_METHODS = tuple(method.value for method in PricingMethod)
 
 # Plain totals served from Postgres estimates (no WHERE clause needed).
 _TOTAL_MODELS = [
@@ -91,6 +99,14 @@ async def _count(db: AsyncSession, model: type, *conditions) -> int:
     for condition in conditions:
         stmt = stmt.where(condition)
     return await db.scalar(stmt) or 0
+
+
+async def _group_counts(db: AsyncSession, column, *conditions) -> dict[str, int]:
+    stmt = select(column, func.count()).group_by(column)
+    for condition in conditions:
+        stmt = stmt.where(condition)
+    rows = await db.execute(stmt)
+    return {str(value): count for value, count in rows.all() if value is not None}
 
 
 async def _compute(db: AsyncSession) -> dict:
@@ -147,6 +163,41 @@ async def _compute(db: AsyncSession) -> dict:
             "sync_devices": total[SyncDevice],
             "sync_devices_active_7d": await _count(
                 db, SyncDevice, SyncDevice.last_sync_at >= week_ago
+            ),
+        },
+        "calculator": {
+            **await calculator_usage(PRICING_METHODS),
+            "profiles": await _count(db, UserCalculatorProfile),
+            "saved_total": await _count(db, CalculatorHistoryEntry),
+            "saved_30d": await _count(
+                db, CalculatorHistoryEntry, CalculatorHistoryEntry.created_at >= month_ago
+            ),
+            "saved_by_users": await db.scalar(
+                select(func.count(func.distinct(CalculatorHistoryEntry.user_id)))
+            ) or 0,
+            "quotes": await _count(db, CrmQuote),
+            "quotes_30d": await _count(db, CrmQuote, CrmQuote.created_at >= month_ago),
+        },
+        "feed_systems": {
+            "total": await _count(db, MaterialSystem),
+            "active": await _count(db, MaterialSystem, MaterialSystem.active == True),  # noqa: E712
+            "by_kind": await _group_counts(db, MaterialSystem.kind),
+            "by_provider": await _group_counts(db, MaterialSystem.provider),
+            "slots": await _count(db, MaterialSlot),
+            "printers_with_system": await db.scalar(
+                select(func.count(func.distinct(MaterialSystem.physical_printer_id)))
+            ) or 0,
+            "devices_happy_hare": await _count(
+                db, UserPrinterDevice, UserPrinterDevice.supports_hh == True  # noqa: E712
+            ),
+            "devices_reporting_feed": await _count(
+                db, UserPrinterDevice, UserPrinterDevice.reports_feed == True  # noqa: E712
+            ),
+            "devices_seen_7d": await _count(
+                db, UserPrinterDevice, UserPrinterDevice.last_seen_at >= week_ago
+            ),
+            "devices_seen_30d": await _count(
+                db, UserPrinterDevice, UserPrinterDevice.last_seen_at >= month_ago
             ),
         },
         "notifications": {

@@ -8,7 +8,8 @@ import {
   BarChart3, Users, Building2, Settings, TrendingUp,
   Package, HardDrive, Printer, BookOpen, Star,
   Bell, RefreshCw, Globe, Search, Server,
-  Activity, Gauge, Loader2,
+  Activity, Gauge, Loader2, Calculator, FileText,
+  Layers, Wifi,
 } from 'lucide-react';
 import { adminAPI } from '../../api/client';
 
@@ -29,6 +30,29 @@ function Stat({ icon: Icon, label, value, sub, accent }: {
           <span className="text-gray-400 text-xs truncate">{label}</span>
         </div>
         {sub && <p className="text-gray-500 text-[11px] truncate mt-0.5">{sub}</p>}
+      </div>
+    </div>
+  );
+}
+
+/* ─── Named breakdown (kinds, providers, pricing methods) ─── */
+function Breakdown({ title, counts, labelFor }: {
+  title: string;
+  counts: Record<string, number>;
+  labelFor: (key: string) => string;
+}) {
+  const entries = Object.entries(counts).filter(([, count]) => count > 0);
+  if (entries.length === 0) return null;
+
+  return (
+    <div className="bg-white/5 rounded-lg px-3 py-2.5 border border-white/10">
+      <p className="text-gray-400 text-[11px] mb-1.5">{title}</p>
+      <div className="flex flex-wrap gap-1.5">
+        {entries.map(([key, count]) => (
+          <span key={key} className="text-xs bg-white/5 rounded px-2 py-0.5 text-gray-300">
+            {labelFor(key)} <span className="text-white font-semibold">{count}</span>
+          </span>
+        ))}
       </div>
     </div>
   );
@@ -467,6 +491,66 @@ export function AdminStats() {
             accent={stats.notifications.unread > 0 ? 'text-orange-400' : 'text-purple-400'} />
         </Section>
       </div>
+
+      {/* Calculator */}
+      <Section icon={Calculator} title={t('adminStats.calculator.title')}>
+        {stats.calculator.available ? (
+          <>
+            <Stat icon={Calculator} label={t('adminStats.calculator.estimates24h')}
+              value={stats.calculator.estimates_24h ?? 0} accent="text-green-400" />
+            <Stat icon={Calculator} label={t('adminStats.calculator.estimates7d')}
+              value={stats.calculator.estimates_7d ?? 0} accent="text-green-400" />
+            <Stat icon={Calculator} label={t('adminStats.calculator.estimates30d')}
+              value={stats.calculator.estimates_30d ?? 0} accent="text-green-400" />
+            <Stat icon={Users} label={t('adminStats.calculator.users7d')}
+              value={stats.calculator.users_7d ?? 0}
+              sub={t('adminStats.calculator.users30d', { count: stats.calculator.users_30d ?? 0 })}
+              accent="text-blue-400" />
+          </>
+        ) : (
+          <div className="col-span-full bg-white/5 rounded-lg px-3 py-2.5 border border-white/10">
+            <p className="text-gray-400 text-xs">{t('adminStats.calculator.countersUnavailable')}</p>
+          </div>
+        )}
+        <Stat icon={Settings} label={t('adminStats.calculator.profiles')} value={stats.calculator.profiles} />
+        <Stat icon={BookOpen} label={t('adminStats.calculator.saved')} value={stats.calculator.saved_total}
+          sub={t('adminStats.calculator.savedDetail', {
+            month: stats.calculator.saved_30d,
+            people: stats.calculator.saved_by_users,
+          })} />
+        <Stat icon={FileText} label={t('adminStats.calculator.quotes')} value={stats.calculator.quotes}
+          sub={t('adminStats.calculator.quotes30d', { count: stats.calculator.quotes_30d })} />
+        {stats.calculator.methods_30d && (
+          <Breakdown
+            title={t('adminStats.calculator.methods')}
+            counts={stats.calculator.methods_30d}
+            labelFor={key => t(`adminStats.calculator.method.${key}`, { defaultValue: key })}
+          />
+        )}
+      </Section>
+
+      {/* Feed systems */}
+      <Section icon={Layers} title={t('adminStats.feed.title')}>
+        <Stat icon={Layers} label={t('adminStats.feed.total')} value={stats.feed_systems.total}
+          sub={t('adminStats.feed.active', { count: stats.feed_systems.active })} />
+        <Stat icon={Printer} label={t('adminStats.feed.printers')} value={stats.feed_systems.printers_with_system} />
+        <Stat icon={Package} label={t('adminStats.feed.slots')} value={stats.feed_systems.slots} />
+        <Stat icon={Settings} label={t('adminStats.feed.happyHare')} value={stats.feed_systems.devices_happy_hare}
+          sub={t('adminStats.feed.reportingFeed', { count: stats.feed_systems.devices_reporting_feed })} />
+        <Stat icon={Wifi} label={t('adminStats.feed.seen7d')} value={stats.feed_systems.devices_seen_7d}
+          sub={t('adminStats.feed.seen30d', { count: stats.feed_systems.devices_seen_30d })}
+          accent="text-green-400" />
+        <Breakdown
+          title={t('adminStats.feed.byKind')}
+          counts={stats.feed_systems.by_kind}
+          labelFor={key => t(`adminStats.feed.kind.${key}`, { defaultValue: key })}
+        />
+        <Breakdown
+          title={t('adminStats.feed.byProvider')}
+          counts={stats.feed_systems.by_provider}
+          labelFor={key => t(`adminStats.feed.provider.${key}`, { defaultValue: key })}
+        />
+      </Section>
 
       {/* Docker */}
       <DockerSection t={t} />

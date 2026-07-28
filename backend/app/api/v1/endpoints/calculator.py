@@ -64,6 +64,7 @@ from app.services.subscription_service import (
     paywall_enforced,
     start_trial,
 )
+from app.services.usage_metrics_service import record_calculator_estimate
 
 router = APIRouter(prefix="/calculator", tags=["calculator"])
 logger = logging.getLogger(__name__)
@@ -272,9 +273,16 @@ def _serialize_history_entry(entry: CalculatorHistoryEntry) -> CalculatorHistory
 
 @router.post("/estimate", response_model=CalculatorEstimateResponse)
 async def estimate_cost(
-    _: Annotated[User, Depends(require_calculator_access)],
+    current_user: Annotated[User, Depends(require_calculator_access)],
     data: CalculatorEstimateRequest,
 ) -> CalculatorEstimateResponse:
+    """Рассчитать стоимость печати; учесть расчёт в статистике только если он удался."""
+    estimate = await _build_estimate(data)
+    await record_calculator_estimate(current_user.id, data.pricing_method.value)
+    return estimate
+
+
+async def _build_estimate(data: CalculatorEstimateRequest) -> CalculatorEstimateResponse:
     """
     Рассчитать стоимость печати по различным методам.
 

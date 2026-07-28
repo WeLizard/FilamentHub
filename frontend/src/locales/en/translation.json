@@ -4487,6 +4487,49 @@
     "syncActive7d": "active (7 days): {{count}}",
     "notificationsSection": "Notifications",
     "unreadNotifications": "Unread",
+    "calculator": {
+      "title": "Calculator",
+      "estimates24h": "estimates today",
+      "estimates7d": "estimates this week",
+      "estimates30d": "estimates this month",
+      "users7d": "people this week",
+      "users30d": "this month: {{count}}",
+      "countersUnavailable": "Estimate counters are unavailable — no connection to Redis. Only stored data is shown.",
+      "profiles": "rate profiles filled in",
+      "saved": "saved estimates",
+      "savedDetail": "this month: {{month}}, people: {{people}}",
+      "quotes": "quotes",
+      "quotes30d": "this month: {{count}}",
+      "methods": "Pricing method this month",
+      "method": {
+        "by_weight": "by weight",
+        "by_time": "by time",
+        "combined": "combined"
+      }
+    },
+    "feed": {
+      "title": "Feed systems",
+      "total": "feed systems",
+      "active": "active: {{count}}",
+      "printers": "printers with a system",
+      "slots": "slots",
+      "happyHare": "devices with Happy Hare",
+      "reportingFeed": "reporting state: {{count}}",
+      "seen7d": "seen this week",
+      "seen30d": "this month: {{count}}",
+      "byKind": "By type",
+      "byProvider": "By source",
+      "kind": {
+        "mmu": "MMU",
+        "ams": "AMS",
+        "direct_feed": "direct feed"
+      },
+      "provider": {
+        "happy_hare": "Happy Hare",
+        "legacy": "legacy protocol",
+        "manual": "manual"
+      }
+    },
     "seo": {
       "title": "SEO Tools",
       "yandexWebmaster": "Yandex Webmaster",
