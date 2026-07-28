@@ -82,7 +82,11 @@ class PublicStaticFiles(StaticFiles):
     /brand-requests/{id}/proof/{file} and /printer-requests/{id}/proof/{file}.
     """
 
-    _protected_prefixes = ("brand_requests/", "printer_requests/")
+    _protected_prefixes = (
+        "brand_requests/",
+        "printer_requests/",
+        "database_dumps/",
+    )
 
     async def get_response(self, path: str, scope):
         if path.replace("\\", "/").lstrip("/").startswith(self._protected_prefixes):
