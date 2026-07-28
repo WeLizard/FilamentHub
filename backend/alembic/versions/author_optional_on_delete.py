@@ -43,15 +43,30 @@ def _constraint(table: str, column: str) -> str:
     return f"{table}_{column}_fkey"
 
 
+def _existing_constraint(table: str, column: str) -> str | None:
+    """Name the database actually gave this foreign key. Older migrations named
+    some of them explicitly, so the Postgres default cannot be assumed."""
+    inspector = sa.inspect(op.get_bind())
+    for fk in inspector.get_foreign_keys(table):
+        if fk.get("constrained_columns") == [column] and fk.get("name"):
+            return fk["name"]
+    return None
+
+
+def _rebind(table: str, column: str, *, ondelete: str | None) -> None:
+    existing = _existing_constraint(table, column)
+    if existing:
+        op.drop_constraint(existing, table, type_="foreignkey")
+    op.create_foreign_key(
+        _constraint(table, column), table, "users", [column], ["id"], ondelete=ondelete
+    )
+
+
 def upgrade() -> None:
     for table, column, was_required in _SHARED_AUTHORS:
         if was_required:
             op.alter_column(table, column, existing_type=sa.Integer(), nullable=True)
-        constraint = _constraint(table, column)
-        op.drop_constraint(constraint, table, type_="foreignkey")
-        op.create_foreign_key(
-            constraint, table, "users", [column], ["id"], ondelete="SET NULL"
-        )
+        _rebind(table, column, ondelete="SET NULL")
 
     op.execute(
         sa.text(
@@ -63,6 +78,4 @@ def upgrade() -> None:
 
 def downgrade() -> None:
     for table, column, _ in _SHARED_AUTHORS:
-        constraint = _constraint(table, column)
-        op.drop_constraint(constraint, table, type_="foreignkey")
-        op.create_foreign_key(constraint, table, "users", [column], ["id"])
+        _rebind(table, column, ondelete=None)
