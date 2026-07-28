@@ -168,7 +168,10 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
                     className="w-10 h-10 sm:w-12 sm:h-12 object-contain"
                   />
                 </div>
-                <div className="hidden xs:block shrink-0">
+                {/* Название и подзаголовок скрыты, пока в шапке стоит плашка о
+                    бете: вместе с ней они не помещаются в строку. Вернуть,
+                    когда плашка уедет в подвал. */}
+                <div className="hidden shrink-0">
                   <h1 className="text-lg sm:text-2xl font-bold text-white whitespace-nowrap">FilamentHub</h1>
                   <p className="text-xs sm:text-sm text-gray-400 hidden sm:block whitespace-nowrap">{t('layout.tagline')}</p>
                 </div>
