@@ -85,6 +85,7 @@ class Settings(BaseSettings):
     MAX_UPLOAD_SIZE_MB: int = 50
     MAX_FILES_PER_REQUEST: int = 10  # Максимум файлов на одну заявку
     UPLOAD_DIR: str = "uploads"
+    DATABASE_DUMP_DIR: str = "backups"
     ALLOWED_PROOF_FILE_EXTENSIONS: list[str] = [".pdf", ".jpg", ".jpeg", ".png", ".doc", ".docx"]
     # Автоматическая очистка файлов от завершенных/отклоненных заявок через N дней
     CLEANUP_FILES_AFTER_DAYS: int = 30

@@ -644,7 +644,7 @@ async def list_database_dumps() -> list[dict]:
         List of dicts with dump info: filename, size, created_at, format
     """
     try:
-        dumps_dir = Path(settings.UPLOAD_DIR) / "database_dumps"
+        dumps_dir = Path(settings.DATABASE_DUMP_DIR)
         if not dumps_dir.exists():
             return []
 
@@ -692,7 +692,7 @@ async def delete_database_dump(filename: str) -> tuple[bool, str]:
         (success, message)
     """
     try:
-        dumps_dir = Path(settings.UPLOAD_DIR) / "database_dumps"
+        dumps_dir = Path(settings.DATABASE_DUMP_DIR)
         dump_file = dumps_dir / filename
 
         # Check that file exists and is in the correct directory
@@ -803,7 +803,7 @@ async def export_database(
         db_port = parsed.port or 5432
 
         # Create dumps directory if it doesn't exist
-        dumps_dir = Path(settings.UPLOAD_DIR) / "database_dumps"
+        dumps_dir = Path(settings.DATABASE_DUMP_DIR)
         dumps_dir.mkdir(parents=True, exist_ok=True)
 
         # Generate filename
@@ -899,7 +899,7 @@ async def import_database(
         db_port = parsed.port or 5432
 
         # Check file existence
-        dumps_dir = (Path(settings.UPLOAD_DIR) / "database_dumps").resolve()
+        dumps_dir = Path(settings.DATABASE_DUMP_DIR).resolve()
         dump_file = (dumps_dir / filepath).resolve()
         if not dump_file.is_relative_to(dumps_dir):
             return False, "Invalid dump file path"

@@ -31,20 +31,37 @@ echo -e "${GREEN}📁 Директория:${NC} $PROJECT_DIR"
 echo ""
 echo -e "${YELLOW}📦 Шаг 1: Backup базы данных...${NC}"
 
-BACKUP_DIR="$PROJECT_DIR/backend/uploads/database_dumps"
+BACKUP_DIR="${BACKUP_DIR:-$PROJECT_DIR/backups}"
+BACKUP_KEY="${BACKUP_PUBLIC_KEY:-$PROJECT_DIR/backup-key.pub.asc}"
 mkdir -p "$BACKUP_DIR"
+chmod 700 "$BACKUP_DIR"
 
 if docker ps --format '{{.Names}}' | grep -q "filamenthub_postgres_prod"; then
     BACKUP_FILE="$BACKUP_DIR/backup_$(date +%Y%m%d_%H%M%S).sql"
     echo "   Создаю backup в $BACKUP_FILE..."
-    
+
     if docker exec filamenthub_postgres_prod pg_dump -U filamenthub filamenthub > "$BACKUP_FILE" 2>/dev/null; then
-        # Сжимаем backup
         gzip "$BACKUP_FILE"
-        echo -e "   ${GREEN}✅ Backup создан: ${BACKUP_FILE}.gz${NC}"
-        
-        # Удаляем старые backup'ы (оставляем последние 5)
-        ls -t "$BACKUP_DIR"/backup_*.sql.gz 2>/dev/null | tail -n +6 | xargs -r rm -f
+        BACKUP_FILE="$BACKUP_FILE.gz"
+
+        if [ -f "$BACKUP_KEY" ]; then
+            if gpg --batch --yes --quiet --trust-model always \
+                   --recipient-file "$BACKUP_KEY" \
+                   --output "$BACKUP_FILE.gpg" --encrypt "$BACKUP_FILE" \
+               && [ -s "$BACKUP_FILE.gpg" ]; then
+                rm -f "$BACKUP_FILE"
+                BACKUP_FILE="$BACKUP_FILE.gpg"
+                echo -e "   ${GREEN}✅ Backup создан и зашифрован: $BACKUP_FILE${NC}"
+            else
+                rm -f "$BACKUP_FILE.gpg"
+                echo -e "   ${RED}❌ Не удалось зашифровать backup. Оставлен незашифрованным: $BACKUP_FILE${NC}"
+            fi
+        else
+            echo -e "   ${RED}❌ Ключ шифрования не найден: $BACKUP_KEY${NC}"
+            echo -e "   ${RED}   Backup лежит в открытом виде: $BACKUP_FILE${NC}"
+        fi
+
+        ls -t "$BACKUP_DIR"/backup_*.sql.gz* 2>/dev/null | tail -n +6 | xargs -r rm -f
         echo "   Старые backup'ы очищены (оставлено последних 5)"
     else
         echo -e "   ${YELLOW}⚠️  Не удалось создать backup (продолжаем без него)${NC}"
