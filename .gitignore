@@ -185,3 +185,7 @@ log_iotc.txt
 # Slice copies and their index, written next to the plugin when it runs locally
 orca-plugin/slices/
 orca-plugin/.fh_*
+
+# Database dumps and the public backup key live next to the project, never in it
+backups/
+backup-key.pub.asc

@@ -67,6 +67,9 @@ services:
       - ./backend/wiki_content:/app/wiki_content
       # MaxMind GeoLite2 Country database (binary is local and not committed).
       - ./backend/data/geoip:/app/data/geoip:ro
+      # Дампы из админки — в ту же папку, куда пишет бэкап деплоя.
+      # Без этого они остаются внутри контейнера и пропадают при пересоздании.
+      - ./backups:/app/backups
     # Backend НЕ пробрасываем наружу - доступ только через nginx (frontend)
     # ports:
     #   - "${BACKEND_PORT:-8000}:8000"
